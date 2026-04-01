@@ -1,66 +1,89 @@
-import { useMemo, useState } from 'react';
-import { FlashcardViewer } from './components/FlashcardViewer';
-import { PracticePanel } from './components/PracticePanel';
-import { sampleWords } from './data/words';
-import type { WordItem } from './types';
-import { buildPracticePrompt } from './lib/ai';
-
-const categories = ['All', ...Array.from(new Set(sampleWords.map((word) => word.category)))];
+import { useEffect, useState } from 'react';
+import type { ReviewItem, Word } from './types';
+import { fetchReviewItems, fetchStatus, fetchWords } from './services/api';
 
 function App() {
-  const [activeWordId, setActiveWordId] = useState(sampleWords[0].id);
-  const [category, setCategory] = useState('All');
-  const [aiResponse, setAIResponse] = useState('');
-  const activeWord = sampleWords.find((word) => word.id === activeWordId) as WordItem;
+  const [words, setWords] = useState<Word[]>([]);
+  const [dueItems, setDueItems] = useState<ReviewItem[]>([]);
+  const [backendStatus, setBackendStatus] = useState('Unknown');
+  const [error, setError] = useState<string | null>(null);
 
-  const filteredWords = useMemo(
-    () => sampleWords.filter((word) => category === 'All' || word.category === category),
-    [category],
-  );
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [wordsResponse, reviewItemsResponse, statusResponse] = await Promise.all([
+          fetchWords(),
+          fetchReviewItems(true),
+          fetchStatus(),
+        ]);
+        setWords(wordsResponse);
+        setDueItems(reviewItemsResponse);
+        setBackendStatus(`${statusResponse.status} @ ${new Date(statusResponse.time).toLocaleTimeString()}`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unknown error');
+      }
+    }
+
+    loadData();
+  }, []);
 
   return (
     <div className="container">
       <header className="header">
         <div>
-          <h1 className="title">Chinese Study App</h1>
-          <p className="subtitle">Practice vocabulary, review flashcards, and build AI-powered language prompts.</p>
+          <h1 className="title">Mandarin SRS App</h1>
+          <p className="subtitle">Unit 1: backend + SQLite persistence demo.</p>
         </div>
         <div>
-          <select value={category} onChange={(event) => setCategory(event.target.value)}>
-            {categories.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
+          <p className="badge">Backend: {backendStatus}</p>
         </div>
       </header>
 
+      {error ? (
+        <div className="panel">
+          <h2>Error</h2>
+          <p className="notes">{error}</p>
+        </div>
+      ) : null}
+
       <div className="grid">
         <div className="panel">
-          <h2>Vocabulary</h2>
-          <FlashcardViewer
-            words={filteredWords}
-            activeWordId={activeWordId}
-            onSelectWord={setActiveWordId}
-          />
+          <h2>Word list</h2>
+          <p className="notes">Loaded {words.length} words from the backend.</p>
+          <ul className="word-list">
+            {words.map((word) => (
+              <li key={word.id} className="word-item">
+                <div>
+                  <strong>{word.hanzi}</strong>
+                  <span>{word.pinyin}</span>
+                </div>
+                <div>{word.meaning}</div>
+              </li>
+            ))}
+          </ul>
         </div>
 
         <div className="panel">
-          <h2>Study Hub</h2>
-          <PracticePanel
-            word={activeWord}
-            prompt={buildPracticePrompt(activeWord)}
-            aiResponse={aiResponse}
-            onGenerate={() => {
-              setAIResponse(`Practice sentence for ${activeWord.chinese}: ${activeWord.example}`);
-            }}
-          />
+          <h2>Due review items</h2>
+          <p className="notes">{dueItems.length} review directions are due now.</p>
+          <ul className="word-list">
+            {dueItems.map((item) => (
+              <li key={item.id} className="word-item">
+                <div>
+                  <strong>{item.direction === 'forward' ? 'Hanzi → Meaning' : 'Meaning → Hanzi'}</strong>
+                  <span>{item.status}</span>
+                </div>
+                <div>
+                  <small>Interval {item.intervalDays}d</small>
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
 
       <footer className="footer">
-        Tip: add your own word list in <code>src/data/words.ts</code> and hook an OpenAI or local LLM endpoint in <code>src/lib/ai.ts</code>.
+        Unit 1: backend connected, sample data loaded, SQLite persistence ready.
       </footer>
     </div>
   );

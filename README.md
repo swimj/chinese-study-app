@@ -1,13 +1,15 @@
 # Chinese Study App
 
-A browser-based language learning starter built with React, Vite, and TypeScript.
+A local-first Mandarin study app built with a React/Vite frontend and a small local backend.
 
-## Features
+## Unit 1 Status
 
-- Vocabulary flashcard browser
-- Category filtering
-- AI practice prompt generator
-- Lightweight, single-page setup for fast experimentation
+The current milestone includes:
+
+- local Express backend in [`server/`](/Users/jw/dev/chinese-study-app/server)
+- SQLite persistence in [`data/app.db`](/Users/jw/dev/chinese-study-app/data/app.db)
+- sample `Word` and `ReviewItem` records
+- frontend dashboard that loads words and due review items from the backend API
 
 ## Getting Started
 
@@ -17,32 +19,26 @@ A browser-based language learning starter built with React, Vite, and TypeScript
    npm install
    ```
 
-2. Start development server:
+2. Start the backend:
 
    ```bash
-   npm run dev
+   npm run dev:backend
    ```
 
-3. Open the app in your browser at `http://localhost:4173`.
+3. In a second terminal, start the frontend:
 
-## AI Integration
+   ```bash
+   npm run dev:frontend
+   ```
 
-The app includes a sample AI helper in `src/lib/ai.ts`.
+4. Open the app in your browser at `http://localhost:4173`.
 
-To use OpenAI, set `VITE_OPENAI_API_KEY` in a `.env` file at the project root:
+The frontend calls the backend at `http://localhost:5174` by default. You can override that with `VITE_API_BASE`.
 
-```env
-VITE_OPENAI_API_KEY=your_openai_api_key
-```
+## Data
 
-Then extend the `onGenerate` callback in `src/App.tsx` to call `fetchAICompletion`.
+- SQLite database: [`data/app.db`](/Users/jw/dev/chinese-study-app/data/app.db)
+- Backend entrypoint: [`server/index.ts`](/Users/jw/dev/chinese-study-app/server/index.ts)
+- Database setup: [`server/db.ts`](/Users/jw/dev/chinese-study-app/server/db.ts)
 
-## Customize
-
-- Update vocabulary in `src/data/words.ts`
-- Adjust UI in `src/styles.css`
-- Add more practice modes in `src/components/PracticePanel.tsx`
-
-## Notes
-
-This is a starter workspace for building a personalized language study browser app. The code is intentionally simple so you can iterate quickly.
+If a legacy [`data/app.json`](/Users/jw/dev/chinese-study-app/data/app.json) file exists from the earlier prototype, the backend will import that data into SQLite the first time it initializes an empty database.

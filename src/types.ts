@@ -1,3 +1,26 @@
+export type Word = {
+  id: string;
+  hanzi: string;
+  pinyin: string;
+  meaning: string;
+  examples: string[];
+  status: 'unstudied' | 'learning' | 'review' | 'mature';
+  availableAt: string;
+  priority: number;
+  createdAt: string;
+};
+
+export type ReviewItem = {
+  id: string;
+  wordId: string;
+  direction: 'forward' | 'reverse';
+  status: 'unstudied' | 'learning' | 'review' | 'mature';
+  intervalDays: number;
+  lastReviewedAt: string | null;
+  nextDueAt: string | null;
+  easeFactor: number;
+};
+
 export type WordItem = {
   id: string;
   english: string;
