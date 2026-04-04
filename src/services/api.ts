@@ -8,9 +8,20 @@ type BackendStatus = {
   mode: 'dev' | 'study';
   dataDir: string;
   dbPath: string;
+  wordStatusCounts: Record<Word['status'], number>;
+  dailyNewWordLimit: number;
+  introducedToday: number;
+  remainingToday: number;
 };
 
-export type { BackendStatus };
+type IntroduceWordsResult = {
+  introducedWords: Word[];
+  introducedCount: number;
+  introducedToday: number;
+  remainingToday: number;
+};
+
+export type { BackendStatus, IntroduceWordsResult };
 
 export async function fetchWords(): Promise<Word[]> {
   const response = await fetch(`${API_BASE}/api/words`);
@@ -48,6 +59,22 @@ export async function submitReviewAnswer(reviewItemId: string, rating: ReviewRat
 
   if (!response.ok) {
     throw new Error('Failed to submit review answer');
+  }
+
+  return response.json();
+}
+
+export async function introduceNewWords(count?: number): Promise<IntroduceWordsResult> {
+  const response = await fetch(`${API_BASE}/api/words/introduce`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(count === undefined ? {} : { count }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to introduce new words');
   }
 
   return response.json();

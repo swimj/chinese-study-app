@@ -8,6 +8,7 @@
     "dev:backend": "node --import tsx server/index.ts --mode=dev",
     "study:backend": "node --import tsx server/index.ts --mode=study",
     "reset:dev-data": "node --import tsx server/reset-dev-db.ts",
+    "export:hack-chinese": "node --import tsx scripts/export-hack-chinese-migration.ts",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },

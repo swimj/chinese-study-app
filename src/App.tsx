@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReviewItem, ReviewRating, Word } from './types';
 import type { BackendStatus } from './services/api';
-import { fetchReviewItems, fetchStatus, fetchWords, submitReviewAnswer } from './services/api';
+import { fetchReviewItems, fetchStatus, fetchWords, introduceNewWords, submitReviewAnswer } from './services/api';
 
 function App() {
   const [words, setWords] = useState<Word[]>([]);
@@ -12,18 +12,23 @@ function App() {
   const [answerRevealed, setAnswerRevealed] = useState(false);
   const [submittingRating, setSubmittingRating] = useState<ReviewRating | null>(null);
   const [answeredCount, setAnsweredCount] = useState(0);
+  const [introducingWords, setIntroducingWords] = useState(false);
+
+  async function reloadDashboard() {
+    const [wordsResponse, reviewItemsResponse, statusResponse] = await Promise.all([
+      fetchWords(),
+      fetchReviewItems(true),
+      fetchStatus(),
+    ]);
+    setWords(wordsResponse);
+    setDueItems(reviewItemsResponse);
+    setBackendStatus(statusResponse);
+  }
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [wordsResponse, reviewItemsResponse, statusResponse] = await Promise.all([
-          fetchWords(),
-          fetchReviewItems(true),
-          fetchStatus(),
-        ]);
-        setWords(wordsResponse);
-        setDueItems(reviewItemsResponse);
-        setBackendStatus(statusResponse);
+        await reloadDashboard();
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error');
       }
@@ -50,8 +55,7 @@ function App() {
 
     try {
       await submitReviewAnswer(activeReviewItem.id, rating);
-      const updatedDueItems = await fetchReviewItems(true);
-      setDueItems(updatedDueItems);
+      await reloadDashboard();
       setAnsweredCount((count) => count + 1);
       setAnswerRevealed(false);
     } catch (err) {
@@ -61,7 +65,28 @@ function App() {
     }
   }
 
+  async function handleIntroduceWords() {
+    setIntroducingWords(true);
+    setError(null);
+
+    try {
+      await introduceNewWords();
+      await reloadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setIntroducingWords(false);
+    }
+  }
+
   const reviewedCount = sessionStarted ? answeredCount : 0;
+  const wordStatusCounts = backendStatus?.wordStatusCounts ?? {
+    unstudied: 0,
+    learning: 0,
+    review: 0,
+    mature: 0,
+  };
+  const unstudiedWords = words.filter((word) => word.status === 'unstudied');
   const activePrompt =
     activeReviewItem && activeWord
       ? activeReviewItem.direction === 'forward'
@@ -86,7 +111,7 @@ function App() {
       <header className="header">
         <div>
           <h1 className="title">Mandarin SRS App</h1>
-          <p className="subtitle">Unit 2: basic review session flow on top of the local backend.</p>
+          <p className="subtitle">Unit 3: separate unstudied words from active review and introduce them gradually.</p>
         </div>
         <div>
           <p className="badge">
@@ -109,6 +134,16 @@ function App() {
           <p className="notes">Loaded {words.length} words from the backend.</p>
           <div className="stack">
             <div className="stat-card">
+              <span className="stat-label">Unstudied</span>
+              <strong className="stat-value">{wordStatusCounts.unstudied}</strong>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Learning / Review / Mature</span>
+              <strong className="stat-value">
+                {wordStatusCounts.learning} / {wordStatusCounts.review} / {wordStatusCounts.mature}
+              </strong>
+            </div>
+            <div className="stat-card">
               <span className="stat-label">Due now</span>
               <strong className="stat-value">{dueItems.length}</strong>
             </div>
@@ -116,6 +151,19 @@ function App() {
               <span className="stat-label">Reviewed this session</span>
               <strong className="stat-value">{reviewedCount}</strong>
             </div>
+          </div>
+          <div className="stack">
+            <p className="notes">
+              Daily new-word limit: {backendStatus?.dailyNewWordLimit ?? 0}. Introduced today:{' '}
+              {backendStatus?.introducedToday ?? 0}. Remaining today: {backendStatus?.remainingToday ?? 0}.
+            </p>
+            <button
+              type="button"
+              onClick={handleIntroduceWords}
+              disabled={introducingWords || (backendStatus?.remainingToday ?? 0) === 0 || unstudiedWords.length === 0}
+            >
+              {introducingWords ? 'Introducing...' : 'Introduce today’s new words'}
+            </button>
           </div>
           <button
             type="button"
@@ -145,6 +193,18 @@ function App() {
               );
             })}
           </ul>
+          <h3>Unstudied words</h3>
+          <ul className="word-list">
+            {unstudiedWords.map((word) => (
+              <li key={word.id} className="word-item">
+                <div>
+                  <strong>{word.hanzi}</strong>
+                  <span>{word.pinyin}</span>
+                </div>
+                <div>{word.meaning}</div>
+              </li>
+            ))}
+          </ul>
         </div>
 
         <div className="panel">
@@ -167,7 +227,7 @@ function App() {
               <div className="prompt-block">
                 <span className="prompt-label">Prompt</span>
                 <strong className="prompt-value">{activePrompt}</strong>
-                <span className="prompt-meta">{activeWord.examples[0]}</span>
+                <span className="prompt-meta">Word status: {activeWord.status}</span>
               </div>
               {answerRevealed ? (
                 <div className="answer-block">
@@ -177,6 +237,7 @@ function App() {
                     Status {activeReviewItem.status} · Interval {activeReviewItem.intervalDays} day
                     {activeReviewItem.intervalDays === 1 ? '' : 's'}
                   </span>
+                  <span className="prompt-meta">{activeWord.examples[0]}</span>
                 </div>
               ) : (
                 <button type="button" onClick={() => setAnswerRevealed(true)}>
@@ -206,7 +267,7 @@ function App() {
       </div>
 
       <footer className="footer">
-        Unit 2: answer one direction at a time and persist the updated due state.
+        Unit 3: unstudied words stay out of review until you explicitly introduce them.
       </footer>
     </div>
   );

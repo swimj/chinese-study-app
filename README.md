@@ -11,6 +11,8 @@ The current milestone includes:
 - basic one-card-at-a-time review flow
 - separate `dev` and `study` backend modes
 - sample `Word` and `ReviewItem` records in `dev` mode
+- `unstudied`, `learning`, `review`, and `mature` word states
+- a simple daily new-word introduction flow
 - frontend dashboard that loads words and due review items from the backend API
 
 ## Getting Started
@@ -58,6 +60,8 @@ To reset the default dev database:
 ```bash
 npm run reset:dev-data
 ```
+
+If your current dev database was created before the Unit 3 seed changes, reset it once to get the new `unstudied` sample data split.
 
 ### Study mode
 
