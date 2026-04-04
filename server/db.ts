@@ -1,10 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { getAppConfig } from './config.ts';
 
-const dataDir = path.resolve(process.cwd(), 'data');
-const dbPath = path.resolve(dataDir, 'app.db');
+const config = getAppConfig();
+const dataDir = config.dataDir;
+const dbPath = config.dbPath;
 const legacyJsonPath = path.resolve(dataDir, 'app.json');
+const dbExists = fs.existsSync(dbPath);
 
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
@@ -33,10 +36,7 @@ type ReviewItem = {
   easeFactor: number;
 };
 
-type DatabaseSchema = {
-  words: Word[];
-  reviewItems: ReviewItem[];
-};
+type ReviewRating = 'forgot' | 'hard' | 'good' | 'easy';
 
 type WordRow = {
   id: string;
@@ -63,39 +63,12 @@ type ReviewItemRow = {
 
 const db = new DatabaseSync(dbPath);
 
-db.exec(`
-  PRAGMA foreign_keys = ON;
-
-  CREATE TABLE IF NOT EXISTS words (
-    id TEXT PRIMARY KEY,
-    hanzi TEXT NOT NULL,
-    pinyin TEXT NOT NULL,
-    meaning TEXT NOT NULL,
-    examples_json TEXT NOT NULL,
-    status TEXT NOT NULL,
-    available_at TEXT NOT NULL,
-    priority INTEGER NOT NULL,
-    created_at TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS review_items (
-    id TEXT PRIMARY KEY,
-    word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
-    direction TEXT NOT NULL,
-    status TEXT NOT NULL,
-    interval_days INTEGER NOT NULL,
-    last_reviewed_at TEXT,
-    next_due_at TEXT,
-    ease_factor REAL NOT NULL
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_words_priority ON words(priority DESC, created_at ASC);
-  CREATE INDEX IF NOT EXISTS idx_review_items_due ON review_items(next_due_at ASC);
-`);
+db.exec('PRAGMA foreign_keys = ON;');
 
 initializeDatabase();
 
-export type { ReviewItem, Word };
+export type { ReviewItem, ReviewRating, Word };
+export { config as dbConfig };
 
 export function getWords(): Word[] {
   const rows = db
@@ -135,7 +108,137 @@ export function getReviewItems(): ReviewItem[] {
   return rows.map(mapReviewItemRow);
 }
 
+export function submitReviewAnswer(reviewItemId: string, rating: ReviewRating): ReviewItem {
+  const existingRow = db
+    .prepare(`
+      SELECT id, word_id, direction, status, interval_days, last_reviewed_at, next_due_at, ease_factor
+      FROM review_items
+      WHERE id = ?
+    `)
+    .get(reviewItemId) as ReviewItemRow | undefined;
+
+  if (!existingRow) {
+    throw new Error('Review item not found');
+  }
+
+  const currentItem = mapReviewItemRow(existingRow);
+  const now = new Date().toISOString();
+  const updatedItem = scheduleReviewItem(currentItem, rating, now);
+
+  db.prepare(`
+    UPDATE review_items
+    SET status = ?,
+        interval_days = ?,
+        last_reviewed_at = ?,
+        next_due_at = ?,
+        ease_factor = ?
+    WHERE id = ?
+  `).run(
+    updatedItem.status,
+    updatedItem.intervalDays,
+    updatedItem.lastReviewedAt,
+    updatedItem.nextDueAt,
+    updatedItem.easeFactor,
+    updatedItem.id,
+  );
+
+  return updatedItem;
+}
+
 function initializeDatabase() {
+  if (!dbExists) {
+    createSchema();
+    seedDatabase();
+    return;
+  }
+
+  validateSchema();
+  ensureIndexes();
+}
+
+function createSchema() {
+  db.exec(`
+    CREATE TABLE words (
+      id TEXT PRIMARY KEY,
+      hanzi TEXT NOT NULL,
+      pinyin TEXT NOT NULL,
+      meaning TEXT NOT NULL,
+      examples_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      available_at TEXT NOT NULL,
+      priority INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE review_items (
+      id TEXT PRIMARY KEY,
+      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      direction TEXT NOT NULL,
+      status TEXT NOT NULL,
+      interval_days INTEGER NOT NULL,
+      last_reviewed_at TEXT,
+      next_due_at TEXT,
+      ease_factor REAL NOT NULL
+    );
+  `);
+
+  ensureIndexes();
+}
+
+function ensureIndexes() {
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_words_priority ON words(priority DESC, created_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_review_items_due ON review_items(next_due_at ASC);
+  `);
+}
+
+function validateSchema() {
+  assertTableColumns('words', [
+    'id',
+    'hanzi',
+    'pinyin',
+    'meaning',
+    'examples_json',
+    'status',
+    'available_at',
+    'priority',
+    'created_at',
+  ]);
+  assertTableColumns('review_items', [
+    'id',
+    'word_id',
+    'direction',
+    'status',
+    'interval_days',
+    'last_reviewed_at',
+    'next_due_at',
+    'ease_factor',
+  ]);
+}
+
+function assertTableColumns(tableName: string, expectedColumns: string[]) {
+  const pragmaQuery = `PRAGMA table_info(${tableName})`;
+  const rows = db.prepare(pragmaQuery).all() as Array<{ name: string }>;
+  const availableColumns = new Set(rows.map((row) => row.name));
+
+  if (availableColumns.size === 0) {
+    throw new Error(`Database at ${dbPath} is missing the required "${tableName}" table.`);
+  }
+
+  for (const column of expectedColumns) {
+    if (!availableColumns.has(column)) {
+      throw new Error(
+        `Database at ${dbPath} has an incompatible "${tableName}" table. Missing column "${column}".`,
+      );
+    }
+  }
+}
+
+function seedDatabase() {
+  if (!config.seedSampleData) {
+    return;
+  }
+
   const wordCount = db.prepare('SELECT COUNT(*) as count FROM words').get() as { count: number };
   if (wordCount.count > 0) {
     return;
@@ -169,6 +272,11 @@ function readLegacyJson(): DatabaseSchema | null {
     reviewItems: parsed.reviewItems as ReviewItem[],
   };
 }
+
+type DatabaseSchema = {
+  words: Word[];
+  reviewItems: ReviewItem[];
+};
 
 function insertSeedData(words: Word[], reviewItems: ReviewItem[]) {
   const insertWord = db.prepare(`
@@ -338,4 +446,60 @@ function mapReviewItemRow(row: ReviewItemRow): ReviewItem {
     nextDueAt: row.next_due_at,
     easeFactor: row.ease_factor,
   };
+}
+
+function scheduleReviewItem(item: ReviewItem, rating: ReviewRating, reviewedAt: string): ReviewItem {
+  if (rating === 'forgot') {
+    return {
+      ...item,
+      status: 'learning',
+      intervalDays: 1,
+      lastReviewedAt: reviewedAt,
+      nextDueAt: reviewedAt,
+      easeFactor: 2.1,
+    };
+  }
+
+  if (rating === 'hard') {
+    const nextInterval = Math.max(1, Math.ceil(item.intervalDays * 1.5));
+
+    return {
+      ...item,
+      status: nextInterval >= 7 ? 'review' : 'learning',
+      intervalDays: nextInterval,
+      lastReviewedAt: reviewedAt,
+      nextDueAt: addDays(reviewedAt, nextInterval),
+      easeFactor: Math.max(1.8, Number((item.easeFactor - 0.15).toFixed(2))),
+    };
+  }
+
+  if (rating === 'good') {
+    const baseInterval = item.intervalDays <= 1 ? 3 : Math.ceil(item.intervalDays * item.easeFactor);
+
+    return {
+      ...item,
+      status: baseInterval >= 21 ? 'mature' : 'review',
+      intervalDays: baseInterval,
+      lastReviewedAt: reviewedAt,
+      nextDueAt: addDays(reviewedAt, baseInterval),
+      easeFactor: Number(item.easeFactor.toFixed(2)),
+    };
+  }
+
+  const nextInterval = item.intervalDays <= 1 ? 4 : Math.ceil(item.intervalDays * (item.easeFactor + 0.35));
+
+  return {
+    ...item,
+    status: nextInterval >= 21 ? 'mature' : 'review',
+    intervalDays: nextInterval,
+    lastReviewedAt: reviewedAt,
+    nextDueAt: addDays(reviewedAt, nextInterval),
+    easeFactor: Number((item.easeFactor + 0.15).toFixed(2)),
+  };
+}
+
+function addDays(isoTimestamp: string, days: number): string {
+  const date = new Date(isoTimestamp);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString();
 }

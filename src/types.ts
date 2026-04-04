@@ -21,6 +21,8 @@ export type ReviewItem = {
   easeFactor: number;
 };
 
+export type ReviewRating = 'forgot' | 'hard' | 'good' | 'easy';
+
 export type WordItem = {
   id: string;
   english: string;

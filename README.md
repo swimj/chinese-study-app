@@ -2,13 +2,15 @@
 
 A local-first Mandarin study app built with a React/Vite frontend and a small local backend.
 
-## Unit 1 Status
+## Current Status
 
 The current milestone includes:
 
 - local Express backend in [`server/`](/Users/jw/dev/chinese-study-app/server)
-- SQLite persistence in [`data/app.db`](/Users/jw/dev/chinese-study-app/data/app.db)
-- sample `Word` and `ReviewItem` records
+- SQLite persistence
+- basic one-card-at-a-time review flow
+- separate `dev` and `study` backend modes
+- sample `Word` and `ReviewItem` records in `dev` mode
 - frontend dashboard that loads words and due review items from the backend API
 
 ## Getting Started
@@ -25,6 +27,8 @@ The current milestone includes:
    npm run dev:backend
    ```
 
+   This runs the backend in `dev` mode and uses the repo-local database at [`data/app.db`](/Users/jw/dev/chinese-study-app/data/app.db).
+
 3. In a second terminal, start the frontend:
 
    ```bash
@@ -35,10 +39,53 @@ The current milestone includes:
 
 The frontend calls the backend at `http://localhost:5174` by default. You can override that with `VITE_API_BASE`.
 
-## Data
+## Modes and Data
 
-- SQLite database: [`data/app.db`](/Users/jw/dev/chinese-study-app/data/app.db)
+### Dev mode
+
+- Command:
+
+  ```bash
+  npm run dev:backend
+  ```
+
+- Uses the repo-local database at [`data/app.db`](/Users/jw/dev/chinese-study-app/data/app.db)
+- Seeds sample data on first run
+- Safe to reset during development
+
+To reset the default dev database:
+
+```bash
+npm run reset:dev-data
+```
+
+### Study mode
+
+- Command:
+
+  ```bash
+  npm run study:backend -- --data-dir="$HOME/path/to/chinese-study-data"
+  ```
+
+- Requires an explicit data directory
+- Uses `app.db` inside that directory
+- Does not seed sample data on first run
+- Intended for real study history that you care about preserving
+
+We recommend keeping study data outside the cloned repo, even though this version does not enforce that.
+
+## Recommended Workflow
+
+- Keep one clone of the repo for development and another for your stable study use.
+- Use `dev` mode in the development clone.
+- Use `study` mode in the stable clone, pointing at an explicit external data directory.
+- Treat upgrades into the study clone like releases: update code, restart the app, and keep the same study data directory.
+
+## Data Layout
+
 - Backend entrypoint: [`server/index.ts`](/Users/jw/dev/chinese-study-app/server/index.ts)
+- Backend config: [`server/config.ts`](/Users/jw/dev/chinese-study-app/server/config.ts)
 - Database setup: [`server/db.ts`](/Users/jw/dev/chinese-study-app/server/db.ts)
+- Default dev database: [`data/app.db`](/Users/jw/dev/chinese-study-app/data/app.db)
 
 If a legacy [`data/app.json`](/Users/jw/dev/chinese-study-app/data/app.json) file exists from the earlier prototype, the backend will import that data into SQLite the first time it initializes an empty database.

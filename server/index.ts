@@ -1,9 +1,9 @@
 import cors from 'cors';
 import express from 'express';
-import { getDueReviewItems, getReviewItems, getWords } from './db.ts';
+import { dbConfig, getDueReviewItems, getReviewItems, getWords, submitReviewAnswer } from './db.ts';
 
 const app = express();
-const port = Number(process.env.PORT ?? 5174);
+const port = dbConfig.port;
 
 app.use(cors());
 app.use(express.json());
@@ -20,9 +20,38 @@ app.get('/api/review-items', (req, res) => {
 });
 
 app.get('/api/status', (req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    time: new Date().toISOString(),
+    mode: dbConfig.mode,
+    dataDir: dbConfig.dataDir,
+    dbPath: dbConfig.dbPath,
+  });
+});
+
+app.post('/api/review-items/:id/answer', (req, res) => {
+  const rating = req.body?.rating;
+
+  if (rating !== 'forgot' && rating !== 'hard' && rating !== 'good' && rating !== 'easy') {
+    res.status(400).json({ error: 'Invalid rating' });
+    return;
+  }
+
+  try {
+    const updatedItem = submitReviewAnswer(req.params.id, rating);
+    res.json(updatedItem);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Review item not found') {
+      res.status(404).json({ error: error.message });
+      return;
+    }
+
+    res.status(500).json({ error: 'Failed to update review item' });
+  }
 });
 
 app.listen(port, () => {
   console.log(`Backend server running at http://localhost:${port}`);
+  console.log(`Mode: ${dbConfig.mode}`);
+  console.log(`Database: ${dbConfig.dbPath}`);
 });

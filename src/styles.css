@@ -65,6 +65,13 @@ button:hover {
   color: #cbd5e1;
 }
 
+.status-meta {
+  margin: 0.5rem 0 0;
+  color: #94a3b8;
+  font-size: 0.85rem;
+  text-align: right;
+}
+
 .grid {
   display: grid;
   gap: 1.5rem;
@@ -87,6 +94,10 @@ button:hover {
 
 .panel h2 {
   margin-top: 0;
+}
+
+.panel h3 {
+  margin: 1.5rem 0 0.75rem;
 }
 
 .word-list {
@@ -116,12 +127,6 @@ button:hover {
   display: block;
 }
 
-.word-details {
-  margin-top: 1rem;
-  display: grid;
-  gap: 1rem;
-}
-
 .badge {
   display: inline-flex;
   align-items: center;
@@ -136,6 +141,86 @@ button:hover {
 .notes {
   color: #cbd5e1;
   line-height: 1.65;
+}
+
+.stack {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.stat-card {
+  padding: 1rem;
+  border-radius: 1rem;
+  background: rgba(30, 41, 59, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.stat-label {
+  display: block;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.stat-value {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 2rem;
+}
+
+.review-card {
+  display: grid;
+  gap: 1rem;
+}
+
+.prompt-block,
+.answer-block {
+  display: grid;
+  gap: 0.4rem;
+  padding: 1.25rem;
+  border-radius: 1rem;
+  background: rgba(30, 41, 59, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.prompt-label {
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.prompt-value,
+.answer-value {
+  font-size: clamp(1.8rem, 5vw, 3rem);
+  line-height: 1.1;
+}
+
+.prompt-meta {
+  color: #cbd5e1;
+}
+
+.rating-grid {
+  display: grid;
+  gap: 0.85rem;
+}
+
+@media (min-width: 720px) {
+  .rating-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.rating-button {
+  display: grid;
+  gap: 0.35rem;
+  text-align: left;
+  min-height: 100px;
+}
+
+.rating-button span {
+  color: rgba(255, 255, 255, 0.82);
+  line-height: 1.45;
 }
 
 .footer {
