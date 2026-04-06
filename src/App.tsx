@@ -148,12 +148,20 @@ function App() {
   const activeReviewState =
     activeReviewProgress && activeReviewProgress.failureCount > 0 ? 'Reinforcement active' : 'Initial recall';
 
-  const ratingOptions: Array<{ value: ReviewRating; label: string; note: string }> = [
+  const reviewRatingOptions: Array<{ value: ReviewRating; label: string; note: string }> = [
     { value: 'forgot', label: 'Forgot', note: 'Counts as a failure and may trigger same-session reinforcement.' },
     { value: 'hard', label: 'Hard', note: 'Successful recall with effort.' },
     { value: 'good', label: 'Good', note: 'Successful recall with normal confidence.' },
     { value: 'easy', label: 'Easy', note: 'Successful recall with strong confidence.' },
   ];
+
+  const binaryRecallOptions: Array<{ value: ReviewRating; label: string; note: string }> = [
+    { value: 'forgot', label: 'Forgot', note: 'Did not recall it correctly.' },
+    { value: 'good', label: 'Good', note: 'Correct recall.' },
+  ];
+
+  const activeRatingOptions =
+    activeWord?.status === 'review' ? reviewRatingOptions : binaryRecallOptions;
 
   async function reloadDashboard() {
     const [wordsResponse, reviewItemsResponse, sessionItemsResponse, statusResponse] = await Promise.all([
@@ -333,10 +341,10 @@ function App() {
       consecutiveSuccesses: { ...currentProgress.consecutiveSuccesses },
     };
 
-    if (rating === 'forgot') {
-      nextProgress.consecutiveSuccesses[direction] = 0;
-    } else {
+    if (rating === 'good') {
       nextProgress.consecutiveSuccesses[direction] += 1;
+    } else {
+      nextProgress.consecutiveSuccesses[direction] = 0;
     }
 
     const done =
@@ -344,8 +352,15 @@ function App() {
       nextProgress.consecutiveSuccesses.reverse >= 3;
 
     if (!done) {
+      const directionCovered = nextProgress.consecutiveSuccesses[direction] >= 3;
       setUnstudiedProgress((current) => ({ ...current, [word.id]: nextProgress }));
-      setActiveSessionItems((currentItems) => rotateCurrentItem(currentItems));
+      setActiveSessionItems((currentItems) => {
+        if (directionCovered) {
+          return currentItems.filter((queuedItem) => queuedItem.id !== item.id);
+        }
+
+        return rotateCurrentItem(currentItems);
+      });
       return;
     }
 
@@ -530,8 +545,8 @@ function App() {
                       {activeWord.status === 'review'
                         ? `${activeReviewState} · Failures ${activeReviewProgress?.failureCount ?? 0}`
                         : activeWord.status === 'learning'
-                          ? `Covered ${Number(activeLearningProgress?.coveredDirections.forward ?? false) + Number(activeLearningProgress?.coveredDirections.reverse ?? false)}/2 directions`
-                          : `Consecutive successes ${activeUnstudiedProgress?.consecutiveSuccesses.forward ?? 0}/3 forward · ${activeUnstudiedProgress?.consecutiveSuccesses.reverse ?? 0}/3 reverse`}
+                          ? `Binary recall · Covered ${Number(activeLearningProgress?.coveredDirections.forward ?? false) + Number(activeLearningProgress?.coveredDirections.reverse ?? false)}/2 directions`
+                          : `Binary recall · Consecutive successes ${activeUnstudiedProgress?.consecutiveSuccesses.forward ?? 0}/3 forward · ${activeUnstudiedProgress?.consecutiveSuccesses.reverse ?? 0}/3 reverse`}
                     </span>
                   </div>
                   {answerRevealed ? (
@@ -551,7 +566,7 @@ function App() {
 
                   {answerRevealed ? (
                     <div className="rating-grid">
-                      {ratingOptions.map((option) => (
+                      {activeRatingOptions.map((option) => (
                         <button
                           key={option.value}
                           type="button"
