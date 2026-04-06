@@ -8,11 +8,13 @@ The current milestone includes:
 
 - local Express backend in [`server/`](/Users/jw/dev/chinese-study-app/server)
 - SQLite persistence
-- basic one-card-at-a-time review flow
+- revised word/review schema aligned to the learning-review spec
 - separate `dev` and `study` backend modes
 - sample `Word` and `ReviewItem` records in `dev` mode
-- `unstudied`, `learning`, `review`, and `mature` word states
-- a simple daily new-word introduction flow
+- persisted word states: `unstudied`, `learning`, `review`
+- direction-specific review intervals tracked in hours
+- mixed study sessions containing due review items, active learning words, and top-priority unstudied words
+- active session snapshot owned by the frontend after session start
 - frontend dashboard that loads words and due review items from the backend API
 
 ## Getting Started
@@ -61,7 +63,7 @@ To reset the default dev database:
 npm run reset:dev-data
 ```
 
-If your current dev database was created before the Unit 3 seed changes, reset it once to get the new `unstudied` sample data split.
+If your current dev database was created before the latest schema rewrite, reset it once before starting the backend again.
 
 ### Study mode
 
@@ -90,6 +92,7 @@ We recommend keeping study data outside the cloned repo, even though this versio
 - Backend entrypoint: [`server/index.ts`](/Users/jw/dev/chinese-study-app/server/index.ts)
 - Backend config: [`server/config.ts`](/Users/jw/dev/chinese-study-app/server/config.ts)
 - Database setup: [`server/db.ts`](/Users/jw/dev/chinese-study-app/server/db.ts)
+- Product model spec: [`SPECS/learning-review-model.md`](/Users/jw/dev/chinese-study-app/SPECS/learning-review-model.md)
 - Default dev database: [`data/app.db`](/Users/jw/dev/chinese-study-app/data/app.db)
 
 If a legacy [`data/app.json`](/Users/jw/dev/chinese-study-app/data/app.json) file exists from the earlier prototype, the backend will import that data into SQLite the first time it initializes an empty database.

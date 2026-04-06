@@ -4,18 +4,19 @@ export type Word = {
   pinyin: string;
   meaning: string;
   examples: string[];
-  status: 'unstudied' | 'learning' | 'review' | 'mature';
-  availableAt: string;
+  status: 'unstudied' | 'learning' | 'review';
   priority: number;
   createdAt: string;
+  learningStreak: number;
+  lastLearningSuccessOn: string | null;
+  lastLearningCoveredOn: string | null;
 };
 
 export type ReviewItem = {
   id: string;
   wordId: string;
   direction: 'forward' | 'reverse';
-  status: 'unstudied' | 'learning' | 'review' | 'mature';
-  intervalDays: number;
+  intervalHours: number;
   lastReviewedAt: string | null;
   nextDueAt: string | null;
   easeFactor: number;

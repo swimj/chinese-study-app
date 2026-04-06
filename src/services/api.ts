@@ -9,19 +9,10 @@ type BackendStatus = {
   dataDir: string;
   dbPath: string;
   wordStatusCounts: Record<Word['status'], number>;
-  dailyNewWordLimit: number;
-  introducedToday: number;
-  remainingToday: number;
+  learningCoverageDate: string;
 };
 
-type IntroduceWordsResult = {
-  introducedWords: Word[];
-  introducedCount: number;
-  introducedToday: number;
-  remainingToday: number;
-};
-
-export type { BackendStatus, IntroduceWordsResult };
+export type { BackendStatus };
 
 export async function fetchWords(): Promise<Word[]> {
   const response = await fetch(`${API_BASE}/api/words`);
@@ -40,6 +31,14 @@ export async function fetchReviewItems(dueOnly = false): Promise<ReviewItem[]> {
   return response.json();
 }
 
+export async function fetchSessionItems(): Promise<ReviewItem[]> {
+  const response = await fetch(`${API_BASE}/api/session-items`);
+  if (!response.ok) {
+    throw new Error('Failed to load session items');
+  }
+  return response.json();
+}
+
 export async function fetchStatus(): Promise<BackendStatus> {
   const response = await fetch(`${API_BASE}/api/status`);
   if (!response.ok) {
@@ -48,33 +47,49 @@ export async function fetchStatus(): Promise<BackendStatus> {
   return response.json();
 }
 
-export async function submitReviewAnswer(reviewItemId: string, rating: ReviewRating): Promise<ReviewItem> {
-  const response = await fetch(`${API_BASE}/api/review-items/${reviewItemId}/answer`, {
+export async function completeReviewSession(
+  reviewItemId: string,
+  failureCount: number,
+  terminalRating: 'hard' | 'good' | 'easy' | null,
+): Promise<ReviewItem> {
+  const response = await fetch(`${API_BASE}/api/review-items/${reviewItemId}/complete-session`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ rating }),
+    body: JSON.stringify({ failureCount, terminalRating }),
   });
 
   if (!response.ok) {
-    throw new Error('Failed to submit review answer');
+    throw new Error('Failed to complete review session');
   }
 
   return response.json();
 }
 
-export async function introduceNewWords(count?: number): Promise<IntroduceWordsResult> {
-  const response = await fetch(`${API_BASE}/api/words/introduce`, {
+export async function completeLearningSession(wordId: string, success: boolean): Promise<Word> {
+  const response = await fetch(`${API_BASE}/api/words/${wordId}/complete-learning-session`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(count === undefined ? {} : { count }),
+    body: JSON.stringify({ success }),
   });
 
   if (!response.ok) {
-    throw new Error('Failed to introduce new words');
+    throw new Error('Failed to complete learning session');
+  }
+
+  return response.json();
+}
+
+export async function completeUnstudiedSession(wordId: string): Promise<Word> {
+  const response = await fetch(`${API_BASE}/api/words/${wordId}/complete-unstudied-session`, {
+    method: 'POST',
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to complete unstudied session');
   }
 
   return response.json();

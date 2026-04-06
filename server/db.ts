@@ -1,17 +1,16 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { getAppConfig } from './config.ts';
 
 const config = getAppConfig();
-const dataDir = config.dataDir;
 const dbPath = config.dbPath;
-const legacyJsonPath = path.resolve(dataDir, 'app.json');
 const dbExists = fs.existsSync(dbPath);
 
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+if (!fs.existsSync(config.dataDir)) {
+  fs.mkdirSync(config.dataDir, { recursive: true });
 }
+
+type WordStatus = 'unstudied' | 'learning' | 'review';
 
 type Word = {
   id: string;
@@ -19,30 +18,26 @@ type Word = {
   pinyin: string;
   meaning: string;
   examples: string[];
-  status: 'unstudied' | 'learning' | 'review' | 'mature';
-  availableAt: string;
+  status: WordStatus;
   priority: number;
   createdAt: string;
+  learningStreak: number;
+  lastLearningSuccessOn: string | null;
+  lastLearningCoveredOn: string | null;
 };
 
 type ReviewItem = {
   id: string;
   wordId: string;
   direction: 'forward' | 'reverse';
-  status: 'unstudied' | 'learning' | 'review' | 'mature';
-  intervalDays: number;
+  intervalHours: number;
   lastReviewedAt: string | null;
   nextDueAt: string | null;
   easeFactor: number;
 };
 
 type ReviewRating = 'forgot' | 'hard' | 'good' | 'easy';
-type IntroduceWordsResult = {
-  introducedWords: Word[];
-  introducedCount: number;
-  introducedToday: number;
-  remainingToday: number;
-};
+type ReviewPassRating = 'hard' | 'good' | 'easy';
 
 type WordRow = {
   id: string;
@@ -50,37 +45,49 @@ type WordRow = {
   pinyin: string;
   meaning: string;
   examples_json: string;
-  status: Word['status'];
-  available_at: string;
+  status: WordStatus;
   priority: number;
   created_at: string;
+  learning_streak: number;
+  last_learning_success_on: string | null;
+  last_learning_covered_on: string | null;
 };
 
 type ReviewItemRow = {
   id: string;
   word_id: string;
   direction: ReviewItem['direction'];
-  status: ReviewItem['status'];
-  interval_days: number;
+  interval_hours: number;
   last_reviewed_at: string | null;
   next_due_at: string | null;
   ease_factor: number;
 };
 
 const db = new DatabaseSync(dbPath);
-const DAILY_NEW_WORD_LIMIT = 3;
+const DAILY_NEW_WORD_LIMIT = 2;
 
 db.exec('PRAGMA foreign_keys = ON;');
 
 initializeDatabase();
 
-export type { IntroduceWordsResult, ReviewItem, ReviewRating, Word };
+export type { ReviewItem, ReviewPassRating, ReviewRating, Word, WordStatus };
 export { config as dbConfig };
 
 export function getWords(): Word[] {
   const rows = db
     .prepare(`
-      SELECT id, hanzi, pinyin, meaning, examples_json, status, available_at, priority, created_at
+      SELECT
+        id,
+        hanzi,
+        pinyin,
+        meaning,
+        examples_json,
+        status,
+        priority,
+        created_at,
+        learning_streak,
+        last_learning_success_on,
+        last_learning_covered_on
       FROM words
       ORDER BY priority DESC, created_at ASC
     `)
@@ -93,20 +100,104 @@ export function getDueReviewItems(): ReviewItem[] {
   const now = new Date().toISOString();
   const rows = db
     .prepare(`
-      SELECT id, word_id, direction, status, interval_days, last_reviewed_at, next_due_at, ease_factor
+      SELECT
+        review_items.id,
+        review_items.word_id,
+        review_items.direction,
+        review_items.interval_hours,
+        review_items.last_reviewed_at,
+        review_items.next_due_at,
+        review_items.ease_factor
       FROM review_items
-      WHERE next_due_at IS NOT NULL AND next_due_at <= ?
-      ORDER BY next_due_at ASC
+      INNER JOIN words ON words.id = review_items.word_id
+      WHERE words.status IN ('learning', 'review')
+        AND review_items.next_due_at IS NOT NULL
+        AND review_items.next_due_at <= ?
+      ORDER BY review_items.next_due_at ASC
     `)
     .all(now) as ReviewItemRow[];
 
   return rows.map(mapReviewItemRow);
 }
 
+export function getSessionItems(): ReviewItem[] {
+  const now = new Date().toISOString();
+  const today = getTodayKey();
+  const dueReviewRows = db
+    .prepare(`
+      SELECT
+        review_items.id,
+        review_items.word_id,
+        review_items.direction,
+        review_items.interval_hours,
+        review_items.last_reviewed_at,
+        review_items.next_due_at,
+        review_items.ease_factor
+      FROM review_items
+      INNER JOIN words ON words.id = review_items.word_id
+      WHERE words.status = 'review'
+        AND review_items.next_due_at IS NOT NULL
+        AND review_items.next_due_at <= ?
+      ORDER BY review_items.next_due_at ASC
+    `)
+    .all(now) as ReviewItemRow[];
+
+  const learningRows = db
+    .prepare(`
+      SELECT
+        review_items.id,
+        review_items.word_id,
+        review_items.direction,
+        review_items.interval_hours,
+        review_items.last_reviewed_at,
+        review_items.next_due_at,
+        review_items.ease_factor
+      FROM review_items
+      INNER JOIN words ON words.id = review_items.word_id
+      WHERE words.status = 'learning'
+        AND (words.last_learning_covered_on IS NULL OR words.last_learning_covered_on != ?)
+      ORDER BY words.priority DESC, words.created_at ASC, review_items.direction ASC
+    `)
+    .all(today) as ReviewItemRow[];
+
+  const unstudiedRows = db
+    .prepare(`
+      SELECT
+        review_items.id,
+        review_items.word_id,
+        review_items.direction,
+        review_items.interval_hours,
+        review_items.last_reviewed_at,
+        review_items.next_due_at,
+        review_items.ease_factor
+      FROM review_items
+      INNER JOIN words ON words.id = review_items.word_id
+      WHERE words.status = 'unstudied'
+        AND words.id IN (
+          SELECT id
+          FROM words
+          WHERE status = 'unstudied'
+          ORDER BY priority DESC, created_at ASC
+          LIMIT ?
+        )
+      ORDER BY words.priority DESC, words.created_at ASC, review_items.direction ASC
+    `)
+    .all(DAILY_NEW_WORD_LIMIT) as ReviewItemRow[];
+
+  return [...dueReviewRows, ...learningRows, ...unstudiedRows].map(mapReviewItemRow);
+}
+
 export function getReviewItems(): ReviewItem[] {
   const rows = db
     .prepare(`
-      SELECT id, word_id, direction, status, interval_days, last_reviewed_at, next_due_at, ease_factor
+      SELECT
+        id,
+        word_id,
+        direction,
+        interval_hours,
+        last_reviewed_at,
+        next_due_at,
+        ease_factor
       FROM review_items
       ORDER BY next_due_at ASC
     `)
@@ -115,20 +206,19 @@ export function getReviewItems(): ReviewItem[] {
   return rows.map(mapReviewItemRow);
 }
 
-export function getWordStatusCounts(): Record<Word['status'], number> {
+export function getWordStatusCounts(): Record<WordStatus, number> {
   const rows = db
     .prepare(`
       SELECT status, COUNT(*) as count
       FROM words
       GROUP BY status
     `)
-    .all() as Array<{ status: Word['status']; count: number }>;
+    .all() as Array<{ status: WordStatus; count: number }>;
 
-  const counts: Record<Word['status'], number> = {
+  const counts: Record<WordStatus, number> = {
     unstudied: 0,
     learning: 0,
     review: 0,
-    mature: 0,
   };
 
   for (const row of rows) {
@@ -138,105 +228,85 @@ export function getWordStatusCounts(): Record<Word['status'], number> {
   return counts;
 }
 
-export function getDailyIntroductionStats() {
-  const introducedToday = db
-    .prepare(`
-      SELECT COUNT(*) as count
-      FROM words
-      WHERE status != 'unstudied' AND substr(available_at, 1, 10) = ?
-    `)
-    .get(getTodayKey()) as { count: number };
-
+export function getLearningPolicy() {
   return {
     dailyNewWordLimit: DAILY_NEW_WORD_LIMIT,
-    introducedToday: introducedToday.count,
-    remainingToday: Math.max(0, DAILY_NEW_WORD_LIMIT - introducedToday.count),
+    learningCoverageDate: getTodayKey(),
   };
 }
 
-export function introduceNewWords(requestedCount = DAILY_NEW_WORD_LIMIT): IntroduceWordsResult {
-  const stats = getDailyIntroductionStats();
-  const count = Math.max(0, Math.min(requestedCount, stats.remainingToday));
-
-  if (count === 0) {
-    return {
-      introducedWords: [],
-      introducedCount: 0,
-      introducedToday: stats.introducedToday,
-      remainingToday: stats.remainingToday,
-    };
-  }
-
-  const wordsToIntroduce = db
+export function completeUnstudiedWordSession(wordId: string): Word {
+  const existingWord = db
     .prepare(`
-      SELECT id, hanzi, pinyin, meaning, examples_json, status, available_at, priority, created_at
+      SELECT
+        id,
+        hanzi,
+        pinyin,
+        meaning,
+        examples_json,
+        status,
+        priority,
+        created_at,
+        learning_streak,
+        last_learning_success_on,
+        last_learning_covered_on
       FROM words
-      WHERE status = 'unstudied'
-      ORDER BY priority DESC, created_at ASC
-      LIMIT ?
+      WHERE id = ?
     `)
-    .all(count) as WordRow[];
+    .get(wordId) as WordRow | undefined;
 
-  if (wordsToIntroduce.length === 0) {
-    return {
-      introducedWords: [],
-      introducedCount: 0,
-      introducedToday: stats.introducedToday,
-      remainingToday: stats.remainingToday,
-    };
+  if (!existingWord) {
+    throw new Error('Word not found');
   }
 
-  const now = new Date().toISOString();
-  const updateWord = db.prepare(`
+  const today = getTodayKey();
+
+  db.prepare(`
     UPDATE words
     SET status = 'learning',
-        available_at = ?
+        learning_streak = 0,
+        last_learning_success_on = NULL,
+        last_learning_covered_on = ?
     WHERE id = ?
-  `);
-  const updateReviewItems = db.prepare(`
-    UPDATE review_items
-    SET status = 'learning',
-        interval_days = 1,
-        last_reviewed_at = NULL,
-        next_due_at = ?,
-        ease_factor = 2.5
-    WHERE word_id = ?
-  `);
+  `).run(today, wordId);
 
-  db.exec('BEGIN');
+  const updatedWord = db
+    .prepare(`
+      SELECT
+        id,
+        hanzi,
+        pinyin,
+        meaning,
+        examples_json,
+        status,
+        priority,
+        created_at,
+        learning_streak,
+        last_learning_success_on,
+        last_learning_covered_on
+      FROM words
+      WHERE id = ?
+    `)
+    .get(wordId) as WordRow;
 
-  try {
-    for (const row of wordsToIntroduce) {
-      updateWord.run(now, row.id);
-      updateReviewItems.run(now, row.id);
-    }
-
-    db.exec('COMMIT');
-  } catch (error) {
-    db.exec('ROLLBACK');
-    throw error;
-  }
-
-  const refreshedStats = getDailyIntroductionStats();
-
-  return {
-    introducedWords: wordsToIntroduce.map((row) =>
-      mapWordRow({
-        ...row,
-        status: 'learning',
-        available_at: now,
-      }),
-    ),
-    introducedCount: wordsToIntroduce.length,
-    introducedToday: refreshedStats.introducedToday,
-    remainingToday: refreshedStats.remainingToday,
-  };
+  return mapWordRow(updatedWord);
 }
 
-export function submitReviewAnswer(reviewItemId: string, rating: ReviewRating): ReviewItem {
+export function completeReviewItemSession(
+  reviewItemId: string,
+  failureCount: number,
+  terminalRating: ReviewPassRating | null,
+): ReviewItem {
   const existingRow = db
     .prepare(`
-      SELECT id, word_id, direction, status, interval_days, last_reviewed_at, next_due_at, ease_factor
+      SELECT
+        id,
+        word_id,
+        direction,
+        interval_hours,
+        last_reviewed_at,
+        next_due_at,
+        ease_factor
       FROM review_items
       WHERE id = ?
     `)
@@ -247,29 +317,101 @@ export function submitReviewAnswer(reviewItemId: string, rating: ReviewRating): 
   }
 
   const currentItem = mapReviewItemRow(existingRow);
-  const now = new Date().toISOString();
-  const updatedItem = scheduleReviewItem(currentItem, rating, now);
+  const updatedItem = scheduleReviewItemFromSession(currentItem, failureCount, terminalRating);
 
   db.prepare(`
     UPDATE review_items
-    SET status = ?,
-        interval_days = ?,
+    SET interval_hours = ?,
         last_reviewed_at = ?,
         next_due_at = ?,
         ease_factor = ?
     WHERE id = ?
   `).run(
-    updatedItem.status,
-    updatedItem.intervalDays,
+    updatedItem.intervalHours,
     updatedItem.lastReviewedAt,
     updatedItem.nextDueAt,
     updatedItem.easeFactor,
     updatedItem.id,
   );
 
-  syncWordStatus(updatedItem.wordId);
-
   return updatedItem;
+}
+
+export function completeLearningWordSession(wordId: string, success: boolean): Word {
+  const existingWord = db
+    .prepare(`
+      SELECT
+        id,
+        hanzi,
+        pinyin,
+        meaning,
+        examples_json,
+        status,
+        priority,
+        created_at,
+        learning_streak,
+        last_learning_success_on,
+        last_learning_covered_on
+      FROM words
+      WHERE id = ?
+    `)
+    .get(wordId) as WordRow | undefined;
+
+  if (!existingWord) {
+    throw new Error('Word not found');
+  }
+
+  const today = getTodayKey();
+  const nextLearningStreak = success ? existingWord.learning_streak + 1 : 0;
+  const nextStatus: WordStatus = nextLearningStreak >= 3 ? 'review' : 'learning';
+
+  db.prepare(`
+    UPDATE words
+    SET status = ?,
+        learning_streak = ?,
+        last_learning_success_on = ?,
+        last_learning_covered_on = ?
+    WHERE id = ?
+  `).run(
+    nextStatus,
+    nextLearningStreak,
+    success ? today : existingWord.last_learning_success_on,
+    today,
+    wordId,
+  );
+
+  if (nextStatus === 'review') {
+    const now = new Date().toISOString();
+    db.prepare(`
+      UPDATE review_items
+      SET interval_hours = 24,
+          last_reviewed_at = ?,
+          next_due_at = ?,
+          ease_factor = 2.5
+      WHERE word_id = ?
+    `).run(now, addHours(now, 24), wordId);
+  }
+
+  const updatedWord = db
+    .prepare(`
+      SELECT
+        id,
+        hanzi,
+        pinyin,
+        meaning,
+        examples_json,
+        status,
+        priority,
+        created_at,
+        learning_streak,
+        last_learning_success_on,
+        last_learning_covered_on
+      FROM words
+      WHERE id = ?
+    `)
+    .get(wordId) as WordRow;
+
+  return mapWordRow(updatedWord);
 }
 
 function initializeDatabase() {
@@ -292,17 +434,18 @@ function createSchema() {
       meaning TEXT NOT NULL,
       examples_json TEXT NOT NULL,
       status TEXT NOT NULL,
-      available_at TEXT NOT NULL,
       priority INTEGER NOT NULL,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      learning_streak INTEGER NOT NULL DEFAULT 0,
+      last_learning_success_on TEXT,
+      last_learning_covered_on TEXT
     );
 
     CREATE TABLE review_items (
       id TEXT PRIMARY KEY,
       word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
       direction TEXT NOT NULL,
-      status TEXT NOT NULL,
-      interval_days INTEGER NOT NULL,
+      interval_hours INTEGER NOT NULL,
       last_reviewed_at TEXT,
       next_due_at TEXT,
       ease_factor REAL NOT NULL
@@ -327,16 +470,17 @@ function validateSchema() {
     'meaning',
     'examples_json',
     'status',
-    'available_at',
     'priority',
     'created_at',
+    'learning_streak',
+    'last_learning_success_on',
+    'last_learning_covered_on',
   ]);
   assertTableColumns('review_items', [
     'id',
     'word_id',
     'direction',
-    'status',
-    'interval_days',
+    'interval_hours',
     'last_reviewed_at',
     'next_due_at',
     'ease_factor',
@@ -344,8 +488,7 @@ function validateSchema() {
 }
 
 function assertTableColumns(tableName: string, expectedColumns: string[]) {
-  const pragmaQuery = `PRAGMA table_info(${tableName})`;
-  const rows = db.prepare(pragmaQuery).all() as Array<{ name: string }>;
+  const rows = db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
   const availableColumns = new Set(rows.map((row) => row.name));
 
   if (availableColumns.size === 0) {
@@ -355,7 +498,7 @@ function assertTableColumns(tableName: string, expectedColumns: string[]) {
   for (const column of expectedColumns) {
     if (!availableColumns.has(column)) {
       throw new Error(
-        `Database at ${dbPath} has an incompatible "${tableName}" table. Missing column "${column}".`,
+        `Database at ${dbPath} has an incompatible "${tableName}" table. Missing column "${column}". Reset the dev database or create a fresh study database under the new schema.`,
       );
     }
   }
@@ -366,68 +509,42 @@ function seedDatabase() {
     return;
   }
 
-  const wordCount = db.prepare('SELECT COUNT(*) as count FROM words').get() as { count: number };
-  if (wordCount.count > 0) {
-    return;
-  }
-
-  const legacyData = readLegacyJson();
-  if (legacyData) {
-    insertSeedData(legacyData.words, legacyData.reviewItems);
-    return;
-  }
-
   const sampleWords = buildSampleWords();
   const sampleReviewItems = buildSampleReviewItems(sampleWords);
-  insertSeedData(sampleWords, sampleReviewItems);
-}
 
-function readLegacyJson(): DatabaseSchema | null {
-  if (!fs.existsSync(legacyJsonPath)) {
-    return null;
-  }
-
-  const raw = fs.readFileSync(legacyJsonPath, 'utf8');
-  const parsed = JSON.parse(raw) as Partial<DatabaseSchema>;
-
-  if (!Array.isArray(parsed.words) || !Array.isArray(parsed.reviewItems)) {
-    return null;
-  }
-
-  return {
-    words: parsed.words as Word[],
-    reviewItems: parsed.reviewItems as ReviewItem[],
-  };
-}
-
-type DatabaseSchema = {
-  words: Word[];
-  reviewItems: ReviewItem[];
-};
-
-function insertSeedData(words: Word[], reviewItems: ReviewItem[]) {
   const insertWord = db.prepare(`
-    INSERT INTO words (id, hanzi, pinyin, meaning, examples_json, status, available_at, priority, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO words (
+      id,
+      hanzi,
+      pinyin,
+      meaning,
+      examples_json,
+      status,
+      priority,
+      created_at,
+      learning_streak,
+      last_learning_success_on,
+      last_learning_covered_on
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertReviewItem = db.prepare(`
     INSERT INTO review_items (
       id,
       word_id,
       direction,
-      status,
-      interval_days,
+      interval_hours,
       last_reviewed_at,
       next_due_at,
       ease_factor
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
   db.exec('BEGIN');
 
   try {
-    for (const word of words) {
+    for (const word of sampleWords) {
       insertWord.run(
         word.id,
         word.hanzi,
@@ -435,19 +552,20 @@ function insertSeedData(words: Word[], reviewItems: ReviewItem[]) {
         word.meaning,
         JSON.stringify(word.examples),
         word.status,
-        word.availableAt,
         word.priority,
         word.createdAt,
+        word.learningStreak,
+        word.lastLearningSuccessOn,
+        word.lastLearningCoveredOn,
       );
     }
 
-    for (const reviewItem of reviewItems) {
+    for (const reviewItem of sampleReviewItems) {
       insertReviewItem.run(
         reviewItem.id,
         reviewItem.wordId,
         reviewItem.direction,
-        reviewItem.status,
-        reviewItem.intervalDays,
+        reviewItem.intervalHours,
         reviewItem.lastReviewedAt,
         reviewItem.nextDueAt,
         reviewItem.easeFactor,
@@ -463,7 +581,7 @@ function insertSeedData(words: Word[], reviewItems: ReviewItem[]) {
 
 function buildSampleWords(): Word[] {
   const now = new Date().toISOString();
-  const seededLearningAvailableAt = addDays(now, -1);
+  const today = getTodayKey();
 
   return [
     {
@@ -472,10 +590,12 @@ function buildSampleWords(): Word[] {
       pinyin: 'nǐ hǎo',
       meaning: 'hello',
       examples: ['你好！你今天怎么样？'],
-      status: 'learning',
-      availableAt: seededLearningAvailableAt,
+      status: 'review',
       priority: 100,
       createdAt: now,
+      learningStreak: 0,
+      lastLearningSuccessOn: null,
+      lastLearningCoveredOn: null,
     },
     {
       id: 'word-2',
@@ -484,9 +604,11 @@ function buildSampleWords(): Word[] {
       meaning: 'thank you',
       examples: ['谢谢你的帮助。'],
       status: 'learning',
-      availableAt: seededLearningAvailableAt,
       priority: 99,
       createdAt: now,
+      learningStreak: 1,
+      lastLearningSuccessOn: addDaysToDateKey(today, -1),
+      lastLearningCoveredOn: null,
     },
     {
       id: 'word-3',
@@ -494,10 +616,12 @@ function buildSampleWords(): Word[] {
       pinyin: 'xué xí',
       meaning: 'to study',
       examples: ['我每天学习汉语。'],
-      status: 'unstudied',
-      availableAt: now,
+      status: 'learning',
       priority: 98,
       createdAt: now,
+      learningStreak: 0,
+      lastLearningSuccessOn: null,
+      lastLearningCoveredOn: null,
     },
     {
       id: 'word-4',
@@ -506,9 +630,11 @@ function buildSampleWords(): Word[] {
       meaning: 'friend',
       examples: ['她是我的好朋友。'],
       status: 'unstudied',
-      availableAt: now,
       priority: 97,
       createdAt: now,
+      learningStreak: 0,
+      lastLearningSuccessOn: null,
+      lastLearningCoveredOn: null,
     },
     {
       id: 'word-5',
@@ -517,36 +643,43 @@ function buildSampleWords(): Word[] {
       meaning: 'to speak',
       examples: ['你会说中文吗？'],
       status: 'unstudied',
-      availableAt: now,
       priority: 96,
       createdAt: now,
+      learningStreak: 0,
+      lastLearningSuccessOn: null,
+      lastLearningCoveredOn: null,
     },
   ];
 }
 
 function buildSampleReviewItems(words: Word[]): ReviewItem[] {
-  return words.flatMap((word) => [
-    {
-      id: `${word.id}-forward`,
-      wordId: word.id,
-      direction: 'forward',
-      status: word.status === 'unstudied' ? 'unstudied' : 'learning',
-      intervalDays: 1,
-      lastReviewedAt: null,
-      nextDueAt: word.status === 'unstudied' ? null : word.availableAt,
-      easeFactor: 2.5,
-    },
-    {
-      id: `${word.id}-reverse`,
-      wordId: word.id,
-      direction: 'reverse',
-      status: word.status === 'unstudied' ? 'unstudied' : 'learning',
-      intervalDays: 1,
-      lastReviewedAt: null,
-      nextDueAt: word.status === 'unstudied' ? null : word.availableAt,
-      easeFactor: 2.5,
-    },
-  ]);
+  const overdueAt = addHours(new Date().toISOString(), -24);
+  const learningDueAt = addHours(new Date().toISOString(), -1);
+
+  return words.flatMap((word) => {
+    const nextDueAt = word.status === 'unstudied' ? null : word.status === 'review' ? overdueAt : learningDueAt;
+
+    return [
+      {
+        id: `${word.id}-forward`,
+        wordId: word.id,
+        direction: 'forward',
+        intervalHours: word.status === 'review' ? 48 : 6,
+        lastReviewedAt: null,
+        nextDueAt,
+        easeFactor: 2.5,
+      },
+      {
+        id: `${word.id}-reverse`,
+        wordId: word.id,
+        direction: 'reverse',
+        intervalHours: word.status === 'review' ? 36 : 6,
+        lastReviewedAt: null,
+        nextDueAt,
+        easeFactor: 2.5,
+      },
+    ];
+  });
 }
 
 function mapWordRow(row: WordRow): Word {
@@ -557,9 +690,11 @@ function mapWordRow(row: WordRow): Word {
     meaning: row.meaning,
     examples: JSON.parse(row.examples_json) as string[],
     status: row.status,
-    availableAt: row.available_at,
     priority: row.priority,
     createdAt: row.created_at,
+    learningStreak: row.learning_streak,
+    lastLearningSuccessOn: row.last_learning_success_on,
+    lastLearningCoveredOn: row.last_learning_covered_on,
   };
 }
 
@@ -568,102 +703,81 @@ function mapReviewItemRow(row: ReviewItemRow): ReviewItem {
     id: row.id,
     wordId: row.word_id,
     direction: row.direction,
-    status: row.status,
-    intervalDays: row.interval_days,
+    intervalHours: row.interval_hours,
     lastReviewedAt: row.last_reviewed_at,
     nextDueAt: row.next_due_at,
     easeFactor: row.ease_factor,
   };
 }
 
-function scheduleReviewItem(item: ReviewItem, rating: ReviewRating, reviewedAt: string): ReviewItem {
-  if (rating === 'forgot') {
+function scheduleReviewItemFromSession(
+  item: ReviewItem,
+  failureCount: number,
+  terminalRating: ReviewPassRating | null,
+): ReviewItem {
+  const reviewedAt = new Date().toISOString();
+
+  if (failureCount > 0) {
+    const penaltyEase = Math.max(1.8, Number((item.easeFactor - 0.15 * failureCount).toFixed(2)));
+
     return {
       ...item,
-      status: 'learning',
-      intervalDays: 1,
+      intervalHours: 6,
       lastReviewedAt: reviewedAt,
-      nextDueAt: reviewedAt,
-      easeFactor: 2.1,
+      nextDueAt: addHours(reviewedAt, 6),
+      easeFactor: penaltyEase,
     };
   }
 
-  if (rating === 'hard') {
-    const nextInterval = Math.max(1, Math.ceil(item.intervalDays * 1.5));
+  if (terminalRating === 'hard') {
+    const nextInterval = Math.max(6, Math.ceil(item.intervalHours * 1.5));
 
     return {
       ...item,
-      status: nextInterval >= 7 ? 'review' : 'learning',
-      intervalDays: nextInterval,
+      intervalHours: nextInterval,
       lastReviewedAt: reviewedAt,
-      nextDueAt: addDays(reviewedAt, nextInterval),
+      nextDueAt: addHours(reviewedAt, nextInterval),
       easeFactor: Math.max(1.8, Number((item.easeFactor - 0.15).toFixed(2))),
     };
   }
 
-  if (rating === 'good') {
-    const baseInterval = item.intervalDays <= 1 ? 3 : Math.ceil(item.intervalDays * item.easeFactor);
+  if (terminalRating === 'good') {
+    const baseInterval = item.intervalHours <= 6 ? 18 : Math.ceil(item.intervalHours * item.easeFactor);
 
     return {
       ...item,
-      status: baseInterval >= 21 ? 'mature' : 'review',
-      intervalDays: baseInterval,
+      intervalHours: baseInterval,
       lastReviewedAt: reviewedAt,
-      nextDueAt: addDays(reviewedAt, baseInterval),
+      nextDueAt: addHours(reviewedAt, baseInterval),
       easeFactor: Number(item.easeFactor.toFixed(2)),
     };
   }
 
-  const nextInterval = item.intervalDays <= 1 ? 4 : Math.ceil(item.intervalDays * (item.easeFactor + 0.35));
+  if (terminalRating !== 'easy') {
+    throw new Error('Expected terminal review rating');
+  }
+
+  const nextInterval = item.intervalHours <= 6 ? 24 : Math.ceil(item.intervalHours * (item.easeFactor + 0.35));
 
   return {
     ...item,
-    status: nextInterval >= 21 ? 'mature' : 'review',
-    intervalDays: nextInterval,
+    intervalHours: nextInterval,
     lastReviewedAt: reviewedAt,
-    nextDueAt: addDays(reviewedAt, nextInterval),
+    nextDueAt: addHours(reviewedAt, nextInterval),
     easeFactor: Number((item.easeFactor + 0.15).toFixed(2)),
   };
 }
 
-function addDays(isoTimestamp: string, days: number): string {
+function addHours(isoTimestamp: string, hours: number): string {
   const date = new Date(isoTimestamp);
-  date.setUTCDate(date.getUTCDate() + days);
+  date.setUTCHours(date.getUTCHours() + hours);
   return date.toISOString();
 }
 
-function syncWordStatus(wordId: string) {
-  const rows = db
-    .prepare(`
-      SELECT status
-      FROM review_items
-      WHERE word_id = ?
-    `)
-    .all(wordId) as Array<{ status: ReviewItem['status'] }>;
-
-  const nextStatus = summarizeWordStatus(rows.map((row) => row.status));
-
-  db.prepare(`
-    UPDATE words
-    SET status = ?
-    WHERE id = ?
-  `).run(nextStatus, wordId);
-}
-
-function summarizeWordStatus(statuses: ReviewItem['status'][]): Word['status'] {
-  if (statuses.every((status) => status === 'unstudied')) {
-    return 'unstudied';
-  }
-
-  if (statuses.every((status) => status === 'mature')) {
-    return 'mature';
-  }
-
-  if (statuses.some((status) => status === 'review' || status === 'mature')) {
-    return 'review';
-  }
-
-  return 'learning';
+function addDaysToDateKey(dateKey: string, days: number): string {
+  const date = new Date(`${dateKey}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 function getTodayKey() {

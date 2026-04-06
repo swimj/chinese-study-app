@@ -1,14 +1,16 @@
 import cors from 'cors';
 import express from 'express';
 import {
+  completeLearningWordSession,
+  completeReviewItemSession,
+  completeUnstudiedWordSession,
   dbConfig,
-  getDailyIntroductionStats,
   getDueReviewItems,
+  getLearningPolicy,
   getReviewItems,
+  getSessionItems,
   getWords,
   getWordStatusCounts,
-  introduceNewWords,
-  submitReviewAnswer,
 } from './db.ts';
 
 const app = express();
@@ -28,9 +30,11 @@ app.get('/api/review-items', (req, res) => {
   res.json(reviewItems);
 });
 
-app.get('/api/status', (req, res) => {
-  const introductionStats = getDailyIntroductionStats();
+app.get('/api/session-items', (req, res) => {
+  res.json(getSessionItems());
+});
 
+app.get('/api/status', (req, res) => {
   res.json({
     status: 'ok',
     time: new Date().toISOString(),
@@ -38,36 +42,26 @@ app.get('/api/status', (req, res) => {
     dataDir: dbConfig.dataDir,
     dbPath: dbConfig.dbPath,
     wordStatusCounts: getWordStatusCounts(),
-    ...introductionStats,
+    ...getLearningPolicy(),
   });
 });
 
-app.post('/api/words/introduce', (req, res) => {
-  const requestedCount = req.body?.count;
+app.post('/api/review-items/:id/complete-session', (req, res) => {
+  const failureCount = req.body?.failureCount;
+  const terminalRating = req.body?.terminalRating ?? null;
 
-  if (requestedCount !== undefined && (!Number.isInteger(requestedCount) || requestedCount < 0)) {
-    res.status(400).json({ error: 'Invalid introduction count' });
+  if (!Number.isInteger(failureCount) || failureCount < 0) {
+    res.status(400).json({ error: 'Expected non-negative integer failureCount' });
+    return;
+  }
+
+  if (terminalRating !== null && terminalRating !== 'hard' && terminalRating !== 'good' && terminalRating !== 'easy') {
+    res.status(400).json({ error: 'Invalid terminal rating' });
     return;
   }
 
   try {
-    const result = introduceNewWords(requestedCount);
-    res.json(result);
-  } catch {
-    res.status(500).json({ error: 'Failed to introduce new words' });
-  }
-});
-
-app.post('/api/review-items/:id/answer', (req, res) => {
-  const rating = req.body?.rating;
-
-  if (rating !== 'forgot' && rating !== 'hard' && rating !== 'good' && rating !== 'easy') {
-    res.status(400).json({ error: 'Invalid rating' });
-    return;
-  }
-
-  try {
-    const updatedItem = submitReviewAnswer(req.params.id, rating);
+    const updatedItem = completeReviewItemSession(req.params.id, failureCount, terminalRating);
     res.json(updatedItem);
   } catch (error) {
     if (error instanceof Error && error.message === 'Review item not found') {
@@ -75,7 +69,42 @@ app.post('/api/review-items/:id/answer', (req, res) => {
       return;
     }
 
-    res.status(500).json({ error: 'Failed to update review item' });
+    res.status(500).json({ error: 'Failed to complete review item session' });
+  }
+});
+
+app.post('/api/words/:id/complete-learning-session', (req, res) => {
+  const success = req.body?.success;
+
+  if (typeof success !== 'boolean') {
+    res.status(400).json({ error: 'Expected boolean success flag' });
+    return;
+  }
+
+  try {
+    const updatedWord = completeLearningWordSession(req.params.id, success);
+    res.json(updatedWord);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Word not found') {
+      res.status(404).json({ error: error.message });
+      return;
+    }
+
+    res.status(500).json({ error: 'Failed to complete learning session' });
+  }
+});
+
+app.post('/api/words/:id/complete-unstudied-session', (req, res) => {
+  try {
+    const updatedWord = completeUnstudiedWordSession(req.params.id);
+    res.json(updatedWord);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Word not found') {
+      res.status(404).json({ error: error.message });
+      return;
+    }
+
+    res.status(500).json({ error: 'Failed to complete unstudied session' });
   }
 });
 
