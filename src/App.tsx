@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { ReviewItem, ReviewRating, Word } from './types';
 import type { BackendStatus } from './services/api';
 import {
@@ -29,8 +29,14 @@ type ReviewItemProgress = {
 
 type AppPage = 'home' | 'words';
 
-type WordWithReviewItems = {
+type InspectableRow = {
+  id: string;
   word: Word;
+  status: 'learning' | 'review';
+  nextScheduledAt: string | null;
+  direction: ReviewItem['direction'] | null;
+  intervalHours: number | null;
+  reviewItem: ReviewItem | null;
   reviewItems: ReviewItem[];
 };
 
@@ -98,31 +104,68 @@ function App() {
   const learningWords = words.filter((word) => word.status === 'learning');
   const unstudiedWords = words.filter((word) => word.status === 'unstudied');
 
-  const inspectableWords = useMemo(
-    () =>
-      words
-        .filter((word) => word.status === 'learning' || word.status === 'review')
-        .map((word) => ({
+  const inspectableRows = useMemo(() => {
+    const rows: InspectableRow[] = [];
+
+    for (const word of words) {
+      if (word.status !== 'learning' && word.status !== 'review') {
+        continue;
+      }
+
+      const items = reviewItemsByWordId.get(word.id) ?? [];
+
+      if (word.status === 'learning') {
+        rows.push({
+          id: `word-${word.id}`,
           word,
-          reviewItems: reviewItemsByWordId.get(word.id) ?? [],
-        }))
-        .sort((left, right) => {
-          const statusDelta = getStatusSortOrder(left.word.status) - getStatusSortOrder(right.word.status);
-          if (statusDelta !== 0) {
-            return statusDelta;
-          }
+          status: 'learning',
+          nextScheduledAt: word.lastLearningCoveredOn ? `${word.lastLearningCoveredOn}T00:00:00` : null,
+          direction: null,
+          intervalHours: null,
+          reviewItem: null,
+          reviewItems: items,
+        });
+        continue;
+      }
 
-          if (right.word.priority !== left.word.priority) {
-            return right.word.priority - left.word.priority;
-          }
+      for (const item of items) {
+        rows.push({
+          id: item.id,
+          word,
+          status: 'review',
+          nextScheduledAt: item.nextDueAt,
+          direction: item.direction,
+          intervalHours: item.intervalHours,
+          reviewItem: item,
+          reviewItems: items,
+        });
+      }
+    }
 
-          return left.word.createdAt.localeCompare(right.word.createdAt);
-        }),
-    [reviewItemsByWordId, words],
-  );
+    rows.sort((left, right) => {
+      const statusDelta = getStatusSortOrder(left.status) - getStatusSortOrder(right.status);
+      if (statusDelta !== 0) {
+        return statusDelta;
+      }
 
-  const totalWordPages = Math.max(1, Math.ceil(inspectableWords.length / WORDS_PAGE_SIZE));
-  const pagedInspectableWords = inspectableWords.slice(
+      const leftScheduled = left.nextScheduledAt ?? '';
+      const rightScheduled = right.nextScheduledAt ?? '';
+      if (leftScheduled !== rightScheduled) {
+        return leftScheduled.localeCompare(rightScheduled);
+      }
+
+      if (right.word.priority !== left.word.priority) {
+        return right.word.priority - left.word.priority;
+      }
+
+      return left.word.createdAt.localeCompare(right.word.createdAt);
+    });
+
+    return rows;
+  }, [reviewItemsByWordId, words]);
+
+  const totalWordPages = Math.max(1, Math.ceil(inspectableRows.length / WORDS_PAGE_SIZE));
+  const pagedInspectableRows = inspectableRows.slice(
     wordsPageNumber * WORDS_PAGE_SIZE,
     wordsPageNumber * WORDS_PAGE_SIZE + WORDS_PAGE_SIZE,
   );
@@ -587,10 +630,10 @@ function App() {
         </>
       ) : (
         <WordsPage
-          items={pagedInspectableWords}
+          rows={pagedInspectableRows}
           currentPage={wordsPageNumber}
           totalPages={totalWordPages}
-          totalItems={inspectableWords.length}
+          totalItems={inspectableRows.length}
           pageSize={WORDS_PAGE_SIZE}
           onPreviousPage={() => setWordsPageNumber((current) => Math.max(0, current - 1))}
           onNextPage={() => setWordsPageNumber((current) => Math.min(totalWordPages - 1, current + 1))}
@@ -605,7 +648,7 @@ function App() {
 }
 
 function WordsPage({
-  items,
+  rows,
   currentPage,
   totalPages,
   totalItems,
@@ -613,7 +656,7 @@ function WordsPage({
   onPreviousPage,
   onNextPage,
 }: {
-  items: WordWithReviewItems[];
+  rows: InspectableRow[];
   currentPage: number;
   totalPages: number;
   totalItems: number;
@@ -623,6 +666,28 @@ function WordsPage({
 }) {
   const startIndex = totalItems === 0 ? 0 : currentPage * pageSize + 1;
   const endIndex = Math.min(totalItems, (currentPage + 1) * pageSize);
+  const [expandedRowIds, setExpandedRowIds] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setExpandedRowIds((current) => {
+      const next: Record<string, boolean> = {};
+
+      for (const row of rows) {
+        if (current[row.id]) {
+          next[row.id] = true;
+        }
+      }
+
+      return next;
+    });
+  }, [rows]);
+
+  function toggleRow(rowId: string) {
+    setExpandedRowIds((current) => ({
+      ...current,
+      [rowId]: !current[rowId],
+    }));
+  }
 
   return (
     <section className="words-page">
@@ -651,84 +716,158 @@ function WordsPage({
           </div>
         </div>
 
-        {items.length === 0 ? (
+        {rows.length === 0 ? (
           <p className="notes">No words are currently in learning or review.</p>
         ) : (
-          <div className="words-grid">
-            {items.map(({ word, reviewItems }) => (
-              <article key={word.id} className="word-record">
-                <div className="word-record-header">
-                  <div>
-                    <h2>{word.hanzi}</h2>
-                    <p className="notes">{word.pinyin} · {word.meaning}</p>
-                  </div>
-                  <span className={`status-pill status-${word.status}`}>{word.status}</span>
-                </div>
+          <div className="table-shell">
+            <table className="words-table">
+              <thead>
+                <tr>
+                  <th>Word</th>
+                  <th>Status</th>
+                  <th>Next scheduled date</th>
+                  <th>Direction</th>
+                  <th>Interval</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => {
+                  const isExpanded = Boolean(expandedRowIds[row.id]);
 
-                <dl className="metadata-grid">
-                  <div>
-                    <dt>Word ID</dt>
-                    <dd>{word.id}</dd>
-                  </div>
-                  <div>
-                    <dt>Priority</dt>
-                    <dd>{word.priority}</dd>
-                  </div>
-                  <div>
-                    <dt>Learning streak</dt>
-                    <dd>{word.learningStreak}</dd>
-                  </div>
-                  <div>
-                    <dt>Created</dt>
-                    <dd>{formatDateTime(word.createdAt)}</dd>
-                  </div>
-                  <div>
-                    <dt>Last learning success</dt>
-                    <dd>{formatDate(word.lastLearningSuccessOn)}</dd>
-                  </div>
-                  <div>
-                    <dt>Last learning covered</dt>
-                    <dd>{formatDate(word.lastLearningCoveredOn)}</dd>
-                  </div>
-                </dl>
-
-                <div className="review-items-section">
-                  <h3>Review directions</h3>
-                  {reviewItems.length === 0 ? (
-                    <p className="notes">No review items found for this word.</p>
-                  ) : (
-                    <div className="review-items-grid">
-                      {reviewItems.map((item) => (
-                        <div key={item.id} className="review-item-card">
-                          <div className="review-item-topline">
-                            <strong>{item.direction === 'forward' ? 'Hanzi → Meaning' : 'Meaning → Hanzi'}</strong>
-                            <span className="badge">{item.id}</span>
+                  return (
+                    <Fragment key={row.id}>
+                      <tr
+                        className={`table-row ${isExpanded ? 'expanded' : ''}`}
+                        onClick={() => toggleRow(row.id)}
+                      >
+                        <td>
+                          <div className="table-word-cell">
+                            <strong>{row.word.hanzi}</strong>
+                            <span>{row.word.pinyin}</span>
                           </div>
-                          <dl className="metadata-grid compact">
-                            <div>
-                              <dt>Interval</dt>
-                              <dd>{item.intervalHours}h</dd>
+                        </td>
+                        <td>
+                          <span className={`status-pill status-${row.status}`}>{row.status}</span>
+                        </td>
+                        <td>{formatScheduledValue(row)}</td>
+                        <td>{row.direction ? formatDirection(row.direction) : 'N/A'}</td>
+                        <td>{row.intervalHours !== null ? `${row.intervalHours}h` : 'N/A'}</td>
+                      </tr>
+                      {isExpanded ? (
+                        <tr className="detail-row">
+                          <td colSpan={5}>
+                            <div className="detail-panel">
+                              <div className="word-record-header">
+                                <div>
+                                  <h2>{row.word.hanzi}</h2>
+                                  <p className="notes">{row.word.pinyin} · {row.word.meaning}</p>
+                                </div>
+                                <span className={`status-pill status-${row.status}`}>{row.status}</span>
+                              </div>
+
+                              <dl className="metadata-grid">
+                                <div>
+                                  <dt>Word ID</dt>
+                                  <dd>{row.word.id}</dd>
+                                </div>
+                                <div>
+                                  <dt>Priority</dt>
+                                  <dd>{row.word.priority}</dd>
+                                </div>
+                                <div>
+                                  <dt>Learning streak</dt>
+                                  <dd>{row.word.learningStreak}</dd>
+                                </div>
+                                <div>
+                                  <dt>Created</dt>
+                                  <dd>{formatDateTime(row.word.createdAt)}</dd>
+                                </div>
+                                <div>
+                                  <dt>Last learning success</dt>
+                                  <dd>{formatDate(row.word.lastLearningSuccessOn)}</dd>
+                                </div>
+                                <div>
+                                  <dt>Last learning covered</dt>
+                                  <dd>{formatDate(row.word.lastLearningCoveredOn)}</dd>
+                                </div>
+                              </dl>
+
+                              {row.reviewItem ? (
+                                <div className="review-items-section">
+                                  <h3>Selected review item</h3>
+                                  <dl className="metadata-grid compact">
+                                    <div>
+                                      <dt>Review item ID</dt>
+                                      <dd>{row.reviewItem.id}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>Direction</dt>
+                                      <dd>{formatDirection(row.reviewItem.direction)}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>Interval</dt>
+                                      <dd>{row.reviewItem.intervalHours}h</dd>
+                                    </div>
+                                    <div>
+                                      <dt>Ease factor</dt>
+                                      <dd>{row.reviewItem.easeFactor.toFixed(2)}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>Last reviewed</dt>
+                                      <dd>{formatDateTime(row.reviewItem.lastReviewedAt)}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>Next due</dt>
+                                      <dd>{formatDateTime(row.reviewItem.nextDueAt)}</dd>
+                                    </div>
+                                  </dl>
+                                </div>
+                              ) : null}
+
+                              <div className="review-items-section">
+                                <h3>All review directions</h3>
+                                {row.reviewItems.length === 0 ? (
+                                  <p className="notes">No review items found for this word.</p>
+                                ) : (
+                                  <div className="review-items-grid">
+                                    {row.reviewItems.map((item) => (
+                                      <div key={item.id} className="review-item-card">
+                                        <div className="review-item-topline">
+                                          <strong>{formatDirection(item.direction)}</strong>
+                                          <span className="badge">{item.id}</span>
+                                        </div>
+                                        <dl className="metadata-grid compact">
+                                          <div>
+                                            <dt>Interval</dt>
+                                            <dd>{item.intervalHours}h</dd>
+                                          </div>
+                                          <div>
+                                            <dt>Ease factor</dt>
+                                            <dd>{item.easeFactor.toFixed(2)}</dd>
+                                          </div>
+                                          <div>
+                                            <dt>Last reviewed</dt>
+                                            <dd>{formatDateTime(item.lastReviewedAt)}</dd>
+                                          </div>
+                                          <div>
+                                            <dt>Next due</dt>
+                                            <dd>{formatDateTime(item.nextDueAt)}</dd>
+                                          </div>
+                                        </dl>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                            <div>
-                              <dt>Ease factor</dt>
-                              <dd>{item.easeFactor.toFixed(2)}</dd>
-                            </div>
-                            <div>
-                              <dt>Last reviewed</dt>
-                              <dd>{formatDateTime(item.lastReviewedAt)}</dd>
-                            </div>
-                            <div>
-                              <dt>Next due</dt>
-                              <dd>{formatDateTime(item.nextDueAt)}</dd>
-                            </div>
-                          </dl>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </article>
-            ))}
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
@@ -802,6 +941,18 @@ function formatDateTime(value: string | null) {
   }
 
   return new Date(value).toLocaleString();
+}
+
+function formatDirection(direction: ReviewItem['direction']) {
+  return direction === 'forward' ? 'Hanzi → Meaning' : 'Meaning → Hanzi';
+}
+
+function formatScheduledValue(row: InspectableRow) {
+  if (row.status === 'learning') {
+    return row.word.lastLearningCoveredOn ? formatDate(row.word.lastLearningCoveredOn) : 'Not yet covered';
+  }
+
+  return formatDateTime(row.nextScheduledAt);
 }
 
 function rotateCurrentItem(items: ReviewItem[]) {

@@ -310,6 +310,65 @@ button:disabled:hover {
   gap: 1rem;
 }
 
+.table-shell {
+  overflow-x: auto;
+  border-radius: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.words-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+  background: rgba(30, 41, 59, 0.45);
+}
+
+.words-table th,
+.words-table td {
+  padding: 1rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  vertical-align: top;
+}
+
+.words-table th {
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.table-row {
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.table-row:hover,
+.table-row.expanded {
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.table-word-cell {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.table-word-cell span {
+  color: #cbd5e1;
+}
+
+.detail-row td {
+  padding: 0;
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.detail-panel {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
 .word-record {
   display: grid;
   gap: 1rem;
