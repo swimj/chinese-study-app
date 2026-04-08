@@ -96,30 +96,6 @@ export function getWords(): Word[] {
   return rows.map(mapWordRow);
 }
 
-export function getDueReviewItems(): ReviewItem[] {
-  const now = new Date().toISOString();
-  const rows = db
-    .prepare(`
-      SELECT
-        review_items.id,
-        review_items.word_id,
-        review_items.direction,
-        review_items.interval_hours,
-        review_items.last_reviewed_at,
-        review_items.next_due_at,
-        review_items.ease_factor
-      FROM review_items
-      INNER JOIN words ON words.id = review_items.word_id
-      WHERE words.status IN ('learning', 'review')
-        AND review_items.next_due_at IS NOT NULL
-        AND review_items.next_due_at <= ?
-      ORDER BY review_items.next_due_at ASC
-    `)
-    .all(now) as ReviewItemRow[];
-
-  return rows.map(mapReviewItemRow);
-}
-
 export function getSessionItems(): ReviewItem[] {
   const now = new Date().toISOString();
   const today = getTodayKey();

@@ -7,8 +7,13 @@ This document captures the intended product model for word lifecycle and session
 This spec assumes:
 
 - single local user
-- backend-local calendar day is the definition of "today"
+- UTC calendar day is the definition of "today" for this prototype
 - session abort behavior is deferred for later design
+
+For clarity:
+
+- persisted timestamps use UTC ISO-8601 strings
+- persisted date-only coverage keys use `YYYY-MM-DD` derived from UTC
 
 ## Core Principle
 
@@ -171,6 +176,7 @@ The following are intentionally out of scope for this spec version:
 - demotion rules
 - balancing/freezing between direction intervals
 - multi-user or timezone-aware policy logic
+- local-timezone day boundaries
 - detailed abort-session rollback behavior
 
 ## Persisted Data Implications

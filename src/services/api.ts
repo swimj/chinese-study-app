@@ -22,9 +22,8 @@ export async function fetchWords(): Promise<Word[]> {
   return response.json();
 }
 
-export async function fetchReviewItems(dueOnly = false): Promise<ReviewItem[]> {
-  const query = dueOnly ? '?due=true' : '';
-  const response = await fetch(`${API_BASE}/api/review-items${query}`);
+export async function fetchReviewItems(): Promise<ReviewItem[]> {
+  const response = await fetch(`${API_BASE}/api/review-items`);
   if (!response.ok) {
     throw new Error('Failed to load review items');
   }

@@ -5,7 +5,6 @@ import {
   completeReviewItemSession,
   completeUnstudiedWordSession,
   dbConfig,
-  getDueReviewItems,
   getLearningPolicy,
   getReviewItems,
   getSessionItems,
@@ -25,9 +24,7 @@ app.get('/api/words', (req, res) => {
 });
 
 app.get('/api/review-items', (req, res) => {
-  const dueOnly = req.query.due === 'true';
-  const reviewItems = dueOnly ? getDueReviewItems() : getReviewItems();
-  res.json(reviewItems);
+  res.json(getReviewItems());
 });
 
 app.get('/api/session-items', (req, res) => {
