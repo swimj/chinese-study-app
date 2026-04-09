@@ -235,6 +235,18 @@ export function completeUnstudiedWordSession(wordId: string): Word {
     throw new Error('Word not found');
   }
 
+  if (existingWord.status !== 'unstudied') {
+    throw new Error('Expected unstudied word');
+  }
+
+  if (
+    existingWord.learning_streak !== 0 ||
+    existingWord.last_learning_success_on !== null ||
+    existingWord.last_learning_covered_on !== null
+  ) {
+    throw new Error('Unstudied word has unexpected learning progress');
+  }
+
   const today = getTodayKey();
 
   db.prepare(`
@@ -686,6 +698,11 @@ function mapReviewItemRow(row: ReviewItemRow): ReviewItem {
   };
 }
 
+// Applies the persisted scheduling update for a covered review-item session.
+// - `failureCount > 0`: treat as lapse-and-recovery, reset interval to 6h and reduce ease by `0.15 * failureCount` with a floor of `1.8`
+// - clean `hard`: multiply interval by `1.5`, then round up to the next whole hour with a minimum of 6h; reduce ease by `0.15`, floor `1.8`
+// - clean `good`: multiply interval by current ease, then round up to the next whole hour; ease stays unchanged
+// - clean `easy`: multiply interval by `ease + 0.35`, then round up to the next whole hour; ease increases by `0.15`
 function scheduleReviewItemFromSession(
   item: ReviewItem,
   failureCount: number,
@@ -706,7 +723,7 @@ function scheduleReviewItemFromSession(
   }
 
   if (terminalRating === 'hard') {
-    const nextInterval = Math.max(6, Math.ceil(item.intervalHours * 1.5));
+    const nextInterval = Math.max(6, ceilIntervalHours(item.intervalHours * 1.5));
 
     return {
       ...item,
@@ -718,7 +735,7 @@ function scheduleReviewItemFromSession(
   }
 
   if (terminalRating === 'good') {
-    const baseInterval = item.intervalHours <= 6 ? 18 : Math.ceil(item.intervalHours * item.easeFactor);
+    const baseInterval = ceilIntervalHours(item.intervalHours * item.easeFactor);
 
     return {
       ...item,
@@ -733,7 +750,7 @@ function scheduleReviewItemFromSession(
     throw new Error('Expected terminal review rating');
   }
 
-  const nextInterval = item.intervalHours <= 6 ? 24 : Math.ceil(item.intervalHours * (item.easeFactor + 0.35));
+  const nextInterval = ceilIntervalHours(item.intervalHours * (item.easeFactor + 0.35));
 
   return {
     ...item,
@@ -748,6 +765,10 @@ function addHours(isoTimestamp: string, hours: number): string {
   const date = new Date(isoTimestamp);
   date.setUTCHours(date.getUTCHours() + hours);
   return date.toISOString();
+}
+
+function ceilIntervalHours(hours: number) {
+  return Math.max(1, Math.ceil(hours));
 }
 
 function addDaysToDateKey(dateKey: string, days: number): string {

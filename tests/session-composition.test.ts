@@ -102,6 +102,7 @@ describe('session composition', { concurrency: false }, () => {
       wordId: 'review-word',
       direction: 'forward',
       intervalHours: 48,
+      // Make only one direction due so the session includes just that review obligation.
       nextDueAt: isoHoursAgo(2),
     });
     insertReviewItem({
@@ -109,6 +110,7 @@ describe('session composition', { concurrency: false }, () => {
       wordId: 'review-word',
       direction: 'reverse',
       intervalHours: 48,
+      // Keep the opposite direction in the future to verify it stays out of the session.
       nextDueAt: isoHoursFromNow(2),
     });
 
@@ -134,6 +136,7 @@ describe('session composition', { concurrency: false }, () => {
       wordId: 'learning-word',
       direction: 'forward',
       intervalHours: 6,
+      // Learning inclusion should ignore review scheduling metadata entirely.
       nextDueAt: isoHoursFromNow(48),
     });
     insertReviewItem({
@@ -353,6 +356,8 @@ describe('session composition', { concurrency: false }, () => {
     assert.equal(updatedWord.lastLearningCoveredOn, today);
     assert.deepEqual(dbModule.getSessionItems().map((item) => item.id), []);
 
+    // Simulate the next UTC day by moving the persisted coverage marker back one day.
+    // This is standing in for clock control until we introduce an explicit backend clock seam.
     sqlite.prepare(`
       UPDATE words
       SET last_learning_covered_on = ?
