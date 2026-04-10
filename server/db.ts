@@ -121,7 +121,12 @@ export function getSessionItems(): ReviewItem[] {
       WHERE words.status = 'review'
         AND review_items.next_due_at IS NOT NULL
         AND review_items.next_due_at <= ?
-      ORDER BY review_items.next_due_at ASC
+      ORDER BY
+        CASE review_items.direction
+          WHEN 'reverse' THEN 0
+          ELSE 1
+        END ASC,
+        review_items.next_due_at ASC
     `)
     .all(now) as ReviewItemRow[];
 
@@ -139,7 +144,11 @@ export function getSessionItems(): ReviewItem[] {
       INNER JOIN words ON words.id = review_items.word_id
       WHERE words.status = 'learning'
         AND (words.last_learning_covered_on IS NULL OR words.last_learning_covered_on != ?)
-      ORDER BY words.priority DESC, words.created_at ASC, review_items.direction ASC
+      ORDER BY
+        CASE review_items.direction
+          WHEN 'reverse' THEN 0
+          ELSE 1
+        END ASC
     `)
     .all(today) as ReviewItemRow[];
 
@@ -163,7 +172,13 @@ export function getSessionItems(): ReviewItem[] {
           ORDER BY priority DESC, created_at ASC
           LIMIT ?
         )
-      ORDER BY words.priority DESC, words.created_at ASC, review_items.direction ASC
+      ORDER BY
+        words.priority DESC,
+        words.created_at ASC,
+        CASE review_items.direction
+          WHEN 'forward' THEN 0
+          ELSE 1
+        END ASC
     `)
     .all(DAILY_NEW_WORD_LIMIT) as ReviewItemRow[];
 

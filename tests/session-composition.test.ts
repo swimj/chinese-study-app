@@ -118,6 +118,66 @@ describe('session composition', { concurrency: false }, () => {
     assert.deepEqual(sessionIds, ['review-word-forward']);
   });
 
+  test('orders due review items with all reverse directions before all forward directions', () => {
+    insertWord({
+      id: 'review-word-a',
+      hanzi: '说',
+      pinyin: 'shuo',
+      meaning: 'speak',
+      examples: ['你会说中文吗？'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(72),
+    });
+    insertWord({
+      id: 'review-word-b',
+      hanzi: '看',
+      pinyin: 'kan',
+      meaning: 'look',
+      examples: ['我看书。'],
+      status: 'review',
+      priority: 90,
+      createdAt: isoHoursAgo(48),
+    });
+
+    insertReviewItem({
+      id: 'review-word-a-forward',
+      wordId: 'review-word-a',
+      direction: 'forward',
+      intervalHours: 24,
+      nextDueAt: isoHoursAgo(3),
+    });
+    insertReviewItem({
+      id: 'review-word-a-reverse',
+      wordId: 'review-word-a',
+      direction: 'reverse',
+      intervalHours: 24,
+      nextDueAt: isoHoursAgo(1),
+    });
+    insertReviewItem({
+      id: 'review-word-b-forward',
+      wordId: 'review-word-b',
+      direction: 'forward',
+      intervalHours: 24,
+      nextDueAt: isoHoursAgo(4),
+    });
+    insertReviewItem({
+      id: 'review-word-b-reverse',
+      wordId: 'review-word-b',
+      direction: 'reverse',
+      intervalHours: 24,
+      nextDueAt: isoHoursAgo(2),
+    });
+
+    const sessionIds = dbModule.getSessionItems().map((item) => item.id);
+    assert.deepEqual(sessionIds, [
+      'review-word-b-reverse',
+      'review-word-a-reverse',
+      'review-word-b-forward',
+      'review-word-a-forward',
+    ]);
+  });
+
   test('includes uncovered learning words based on coverage day, not review scheduling fields', () => {
     insertWord({
       id: 'learning-word',
@@ -148,7 +208,7 @@ describe('session composition', { concurrency: false }, () => {
     });
 
     const sessionIds = dbModule.getSessionItems().map((item) => item.id);
-    assert.deepEqual(sessionIds, ['learning-word-forward', 'learning-word-reverse']);
+    assert.deepEqual(sessionIds, ['learning-word-reverse', 'learning-word-forward']);
   });
 
   test('excludes learning words already covered on the current UTC day', () => {
@@ -313,8 +373,8 @@ describe('session composition', { concurrency: false }, () => {
     const sessionIds = dbModule.getSessionItems().map((item) => item.id);
     assert.deepEqual(sessionIds, [
       'review-word-forward',
-      'learning-word-forward',
       'learning-word-reverse',
+      'learning-word-forward',
       'unstudied-word-forward',
       'unstudied-word-reverse',
     ]);
@@ -365,8 +425,8 @@ describe('session composition', { concurrency: false }, () => {
     `).run(yesterday);
 
     assert.deepEqual(dbModule.getSessionItems().map((item) => item.id), [
-      'new-word-forward',
       'new-word-reverse',
+      'new-word-forward',
     ]);
   });
 
