@@ -32,6 +32,20 @@ type InspectableRow = {
   reviewItems: ReviewItem[];
 };
 
+type SessionSummary = {
+  startedAt: string;
+  completedAt: string | null;
+  initialQueueLength: number;
+  answeredCount: number;
+  completedReviewItems: number;
+  encounteredReviewItemIds: string[];
+  lapsedReviewItems: number;
+  lapsedReviewLabels: string[];
+  completedLearningWords: number;
+  completedUnstudiedWords: number;
+  completionMode: 'natural' | 'drain';
+};
+
 const WORDS_PAGE_SIZE = 20;
 
 function App() {
@@ -43,6 +57,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [sessionStarted, setSessionStarted] = useState(false);
   const [sessionState, setSessionState] = useState<SessionState | null>(null);
+  const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
   const [answerRevealed, setAnswerRevealed] = useState(false);
   const [submittingRating, setSubmittingRating] = useState<ReviewRating | null>(null);
@@ -225,6 +240,19 @@ function App() {
       setSessionPreviewItems(sessionItemsResponse);
       setBackendStatus(statusResponse);
       setSessionState(createSessionState(sessionItemsResponse));
+      setSessionSummary({
+        startedAt: new Date().toISOString(),
+        completedAt: null,
+        initialQueueLength: sessionItemsResponse.length,
+        answeredCount: 0,
+        completedReviewItems: 0,
+        encounteredReviewItemIds: [],
+        lapsedReviewItems: 0,
+        lapsedReviewLabels: [],
+        completedLearningWords: 0,
+        completedUnstudiedWords: 0,
+        completionMode: 'natural',
+      });
       setAnswerRevealed(false);
       setSessionStarted(true);
     } catch (err) {
@@ -236,13 +264,28 @@ function App() {
 
   async function handleEndSession() {
     if (sessionStarted && sessionState && sessionState.phase === 'active') {
-      setSessionState(beginDrainSession(sessionState));
+      const drainedState = beginDrainSession(sessionState);
+      setSessionState(drainedState);
+      setSessionSummary((current) =>
+        current
+          ? {
+              ...current,
+              answeredCount: drainedState.answeredCount,
+              completionMode: 'drain',
+              completedAt:
+                drainedState.phase === 'completed' && current.completedAt === null
+                  ? new Date().toISOString()
+                  : current.completedAt,
+            }
+          : current,
+      );
       setAnswerRevealed(false);
       return;
     }
 
     setSessionStarted(false);
     setSessionState(null);
+    setSessionSummary(null);
     setAnswerRevealed(false);
     await reloadDashboard();
   }
@@ -260,16 +303,35 @@ function App() {
 
       switch (transition.commit.type) {
         case 'commit-review-item-session': {
+          const reviewCommit = transition.commit;
+          const reviewEncounterLabel = formatReviewEncounterLabel(activeItem, activeWord);
           const updatedItem = await completeReviewSession(
-            transition.commit.reviewItemId,
-            transition.commit.failureCount,
-            transition.commit.terminalRating,
+            reviewCommit.reviewItemId,
+            reviewCommit.failureCount,
+            reviewCommit.terminalRating,
           );
           setReviewItems((currentItems) =>
             currentItems.map((existing) => (existing.id === updatedItem.id ? updatedItem : existing)),
           );
           setSessionPreviewItems((currentItems) =>
             currentItems.map((queuedItem) => (queuedItem.id === updatedItem.id ? updatedItem : queuedItem)),
+          );
+          setSessionSummary((current) =>
+            current
+              ? {
+                  ...current,
+                  completedReviewItems: current.completedReviewItems + 1,
+                  encounteredReviewItemIds: current.encounteredReviewItemIds.includes(reviewCommit.reviewItemId)
+                    ? current.encounteredReviewItemIds
+                    : [...current.encounteredReviewItemIds, reviewCommit.reviewItemId],
+                  lapsedReviewItems:
+                    current.lapsedReviewItems + (reviewCommit.terminalRating === null ? 1 : 0),
+                  lapsedReviewLabels:
+                    reviewCommit.terminalRating === null
+                      ? [...current.lapsedReviewLabels, reviewEncounterLabel]
+                      : current.lapsedReviewLabels,
+                }
+              : current,
           );
           break;
         }
@@ -281,12 +343,28 @@ function App() {
           setWords((currentWords) =>
             currentWords.map((entry) => (entry.id === updatedWord.id ? updatedWord : entry)),
           );
+          setSessionSummary((current) =>
+            current
+              ? {
+                  ...current,
+                  completedLearningWords: current.completedLearningWords + 1,
+                }
+              : current,
+          );
           break;
         }
         case 'commit-unstudied-word-session': {
           const updatedWord = await completeUnstudiedSession(transition.commit.wordId);
           setWords((currentWords) =>
             currentWords.map((entry) => (entry.id === updatedWord.id ? updatedWord : entry)),
+          );
+          setSessionSummary((current) =>
+            current
+              ? {
+                  ...current,
+                  completedUnstudiedWords: current.completedUnstudiedWords + 1,
+                }
+              : current,
           );
           break;
         }
@@ -295,6 +373,24 @@ function App() {
       }
 
       setSessionState(transition.state);
+      setSessionSummary((current) =>
+        current
+          ? {
+              ...current,
+              answeredCount: transition.state.answeredCount,
+              completedAt:
+                transition.state.phase === 'completed' && current.completedAt === null
+                  ? new Date().toISOString()
+                  : current.completedAt,
+              completionMode:
+                transition.state.phase === 'completed'
+                  ? sessionState.phase === 'draining'
+                    ? 'drain'
+                    : current.completionMode
+                  : current.completionMode,
+            }
+          : current,
+      );
       setAnswerRevealed(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -391,7 +487,11 @@ function App() {
                 </button>
               ) : (
                 <button type="button" onClick={handleEndSession}>
-                  {sessionState?.phase === 'active' ? 'End session' : 'Back to overview'}
+                  {sessionState?.phase === 'active'
+                    ? 'End session'
+                    : sessionState?.phase === 'completed'
+                      ? 'Close summary'
+                      : 'Back to overview'}
                 </button>
               )}
               <h3>Session snapshot</h3>
@@ -439,12 +539,12 @@ function App() {
               <h2>Study session</h2>
               {!sessionStarted ? (
                 <p className="notes">Start the session to freeze the current session snapshot into frontend state.</p>
+              ) : sessionState?.phase === 'completed' && sessionSummary ? (
+                <SessionSummaryPanel summary={sessionSummary} />
               ) : !activeItem || !activeWord ? (
                 <div className="stack">
                   <p className="notes">
-                    {sessionState?.phase === 'completed'
-                      ? 'Drain complete. No open session items remain.'
-                      : 'No session items remain in the active snapshot.'}
+                    No session items remain in the active snapshot.
                   </p>
                   <button type="button" onClick={handleEndSession}>
                     Back to overview
@@ -765,6 +865,71 @@ function WordsPage({
   );
 }
 
+function SessionSummaryPanel({ summary }: { summary: SessionSummary }) {
+  const elapsedLabel = formatElapsedTime(summary.startedAt, summary.completedAt ?? new Date().toISOString());
+
+  return (
+    <div className="summary-card">
+      <p className="badge">
+        {summary.completionMode === 'drain' ? 'Session complete via drain mode' : 'Session complete'}
+      </p>
+      <h3>Session summary</h3>
+      <p className="notes">
+        {summary.completionMode === 'drain'
+          ? 'You ended intake and finished the remaining open work.'
+          : 'You naturally exhausted the session queue.'}
+      </p>
+      <div className="summary-topline">
+        <span className="badge">Unique review items encountered {summary.encounteredReviewItemIds.length}</span>
+        <span className="badge">Lapses {summary.lapsedReviewItems}</span>
+      </div>
+      {summary.lapsedReviewLabels.length > 0 ? (
+        <div className="summary-lapses">
+          <p className="notes">Lapsed review items</p>
+          <ul className="word-list">
+            {summary.lapsedReviewLabels.map((label, index) => (
+              <li key={`${label}-${index}`} className="word-item">
+                <div>
+                  <strong>{label}</strong>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <div className="summary-grid">
+        <div className="stat-card">
+          <span className="stat-label">Elapsed time</span>
+          <strong className="stat-value">{elapsedLabel}</strong>
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">Answers given</span>
+          <strong className="stat-value">{summary.answeredCount}</strong>
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">Session items at start</span>
+          <strong className="stat-value">{summary.initialQueueLength}</strong>
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">Review items completed</span>
+          <strong className="stat-value">{summary.completedReviewItems}</strong>
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">Learning words covered</span>
+          <strong className="stat-value">{summary.completedLearningWords}</strong>
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">New words introduced</span>
+          <strong className="stat-value">{summary.completedUnstudiedWords}</strong>
+        </div>
+      </div>
+      <p className="notes">
+        Started {formatDateTime(summary.startedAt)}{summary.completedAt ? ` · Completed ${formatDateTime(summary.completedAt)}` : ''}
+      </p>
+    </div>
+  );
+}
+
 function countWordStatuses(words: Word[]) {
   return words.reduce(
     (counts, word) => {
@@ -808,6 +973,27 @@ function formatDateTime(value: string | null) {
 
 function formatDirection(direction: ReviewItem['direction']) {
   return direction === 'forward' ? 'Hanzi → Meaning' : 'Meaning → Hanzi';
+}
+
+function formatReviewEncounterLabel(item: ReviewItem, word: Word) {
+  return item.direction === 'forward'
+    ? `${word.hanzi} -> ${word.meaning}`
+    : `${word.meaning} -> ${word.hanzi}`;
+}
+
+function formatElapsedTime(startedAt: string, completedAt: string) {
+  const elapsedMs = Math.max(0, new Date(completedAt).getTime() - new Date(startedAt).getTime());
+  const totalSeconds = Math.floor(elapsedMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (minutes < 60) {
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${hours}:${remainingMinutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
 function formatScheduledValue(row: InspectableRow) {

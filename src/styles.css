@@ -245,6 +245,37 @@ button:hover {
   gap: 0.85rem;
 }
 
+.summary-card {
+  display: grid;
+  gap: 1rem;
+}
+
+.summary-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.summary-topline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.summary-lapses {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.summary-lapses .notes {
+  margin: 0;
+}
+
+@media (min-width: 720px) {
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (min-width: 720px) {
   .rating-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
