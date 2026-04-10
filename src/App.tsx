@@ -465,7 +465,7 @@ function App() {
           return;
         }
 
-        if (activeWord && activeWord.status !== 'review') {
+        if (activeRatingOptions.some((option) => option.value === 'good')) {
           void handleRate('good');
         }
         return;
