@@ -11,6 +11,7 @@ import {
   fetchWords,
 } from './services/api';
 import {
+  beginDrainSession,
   beginUnstudiedDrill,
   createSessionState,
   markCurrentItemStarted,
@@ -234,6 +235,12 @@ function App() {
   }
 
   async function handleEndSession() {
+    if (sessionStarted && sessionState && sessionState.phase === 'active') {
+      setSessionState(beginDrainSession(sessionState));
+      setAnswerRevealed(false);
+      return;
+    }
+
     setSessionStarted(false);
     setSessionState(null);
     setAnswerRevealed(false);
@@ -384,7 +391,7 @@ function App() {
                 </button>
               ) : (
                 <button type="button" onClick={handleEndSession}>
-                  End session
+                  {sessionState?.phase === 'active' ? 'End session' : 'Back to overview'}
                 </button>
               )}
               <h3>Session snapshot</h3>
@@ -434,7 +441,11 @@ function App() {
                 <p className="notes">Start the session to freeze the current session snapshot into frontend state.</p>
               ) : !activeItem || !activeWord ? (
                 <div className="stack">
-                  <p className="notes">No session items remain in the active snapshot.</p>
+                  <p className="notes">
+                    {sessionState?.phase === 'completed'
+                      ? 'Drain complete. No open session items remain.'
+                      : 'No session items remain in the active snapshot.'}
+                  </p>
                   <button type="button" onClick={handleEndSession}>
                     Back to overview
                   </button>
@@ -455,7 +466,7 @@ function App() {
               ) : (
                 <div className="review-card">
                   <p className="badge">
-                    {activeWord.status === 'review' ? 'Review' : activeWord.status === 'learning' ? 'Learning' : 'New word'}
+                    {sessionState?.phase === 'draining' ? 'Draining' : activeWord.status === 'review' ? 'Review' : activeWord.status === 'learning' ? 'Learning' : 'New word'}
                     {' · '}
                     {activeItem.direction === 'forward' ? 'Hanzi → Meaning' : 'Meaning → Hanzi'}
                   </p>

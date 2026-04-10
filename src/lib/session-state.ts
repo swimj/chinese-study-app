@@ -18,7 +18,7 @@ export type ReviewItemProgress = {
   reinforcementStreak: number;
 };
 
-export type SessionPhase = 'active';
+export type SessionPhase = 'active' | 'draining' | 'completed';
 
 export type SessionState = {
   phase: SessionPhase;
@@ -90,6 +90,38 @@ export function beginUnstudiedDrill(state: SessionState, wordId: string): Sessio
   };
 }
 
+export function beginDrainSession(state: SessionState): SessionState {
+  assertDrainablePhase(state);
+
+  const openWordIds = new Set<string>([
+    ...Object.keys(state.learningProgress),
+    ...Object.keys(state.unstudiedProgress),
+  ]);
+  const openReviewItemIds = new Set<string>(Object.keys(state.reviewProgress));
+
+  const filteredQueue = state.queue.filter((item, index) => {
+    if (index === 0 && state.startedItemIds.includes(item.id)) {
+      return true;
+    }
+
+    if (openReviewItemIds.has(item.id)) {
+      return true;
+    }
+
+    if (openWordIds.has(item.wordId)) {
+      return true;
+    }
+
+    return false;
+  });
+
+  return {
+    ...state,
+    phase: filteredQueue.length === 0 ? 'completed' : 'draining',
+    queue: filteredQueue,
+  };
+}
+
 export function rateCurrentItem(
   state: SessionState,
   wordsById: Map<string, Word>,
@@ -122,12 +154,12 @@ function handleReviewAttempt(
 
   if (currentProgress.failureCount === 0 && rating !== 'forgot') {
     return {
-      state: {
+      state: finalizePostRatingState({
         ...state,
         answeredCount: state.answeredCount + 1,
         queue: state.queue.filter((queuedItem) => queuedItem.id !== item.id),
         reviewProgress: removeKey(state.reviewProgress, item.id),
-      },
+      }),
       commit: {
         type: 'commit-review-item-session',
         reviewItemId: item.id,
@@ -144,12 +176,12 @@ function handleReviewAttempt(
 
   if (nextProgress.reinforcementStreak >= 3) {
     return {
-      state: {
+      state: finalizePostRatingState({
         ...state,
         answeredCount: state.answeredCount + 1,
         queue: state.queue.filter((queuedItem) => queuedItem.id !== item.id),
         reviewProgress: removeKey(state.reviewProgress, item.id),
-      },
+      }),
       commit: {
         type: 'commit-review-item-session',
         reviewItemId: item.id,
@@ -160,7 +192,7 @@ function handleReviewAttempt(
   }
 
   return {
-    state: {
+    state: finalizePostRatingState({
       ...state,
       answeredCount: state.answeredCount + 1,
       queue: rotateCurrentItem(state.queue),
@@ -168,7 +200,7 @@ function handleReviewAttempt(
         ...state.reviewProgress,
         [item.id]: nextProgress,
       },
-    },
+    }),
     commit: { type: 'none' },
   };
 }
@@ -200,7 +232,7 @@ function handleLearningAttempt(
 
   if (!bothCovered) {
     return {
-      state: {
+      state: finalizePostRatingState({
         ...state,
         answeredCount: state.answeredCount + 1,
         queue: rating === 'good' ? state.queue.slice(1) : appendCurrentItem(state.queue),
@@ -208,18 +240,18 @@ function handleLearningAttempt(
           ...state.learningProgress,
           [word.id]: nextProgress,
         },
-      },
+      }),
       commit: { type: 'none' },
     };
   }
 
   return {
-    state: {
+    state: finalizePostRatingState({
       ...state,
       answeredCount: state.answeredCount + 1,
       queue: state.queue.filter((queuedItem) => queuedItem.wordId !== word.id),
       learningProgress: removeKey(state.learningProgress, word.id),
-    },
+    }),
     commit: {
       type: 'commit-learning-word-session',
       wordId: word.id,
@@ -255,7 +287,7 @@ function handleUnstudiedAttempt(
     const directionCovered = nextProgress.consecutiveSuccesses[direction] >= 3;
 
     return {
-      state: {
+      state: finalizePostRatingState({
         ...state,
         answeredCount: state.answeredCount + 1,
         queue: directionCovered
@@ -265,18 +297,18 @@ function handleUnstudiedAttempt(
           ...state.unstudiedProgress,
           [word.id]: nextProgress,
         },
-      },
+      }),
       commit: { type: 'none' },
     };
   }
 
   return {
-    state: {
+    state: finalizePostRatingState({
       ...state,
       answeredCount: state.answeredCount + 1,
       queue: state.queue.filter((queuedItem) => queuedItem.wordId !== word.id),
       unstudiedProgress: removeKey(state.unstudiedProgress, word.id),
-    },
+    }),
     commit: {
       type: 'commit-unstudied-word-session',
       wordId: word.id,
@@ -334,6 +366,17 @@ function removeKey<T>(record: Record<string, T>, key: string) {
   return copy;
 }
 
+function finalizePostRatingState(state: SessionState): SessionState {
+  if ((state.phase === 'active' || state.phase === 'draining') && state.queue.length === 0) {
+    return {
+      ...state,
+      phase: 'completed',
+    };
+  }
+
+  return state;
+}
+
 function assertCurrentItemStarted(state: SessionState, currentItem: ReviewItem, rating: ReviewRating) {
   if (state.startedItemIds.includes(currentItem.id)) {
     return;
@@ -366,6 +409,23 @@ function assertCurrentItemPresent(state: SessionState, rating: ReviewRating): ne
 
   console.error('[session-state] invariant failed', debugInfo);
   throw new Error('Session invariant violated: cannot rate the current item when the queue is empty.');
+}
+
+function assertDrainablePhase(state: SessionState) {
+  if (state.phase === 'active') {
+    return;
+  }
+
+  const debugInfo = {
+    message: 'Attempted to begin drain mode from a non-active session phase',
+    phase: state.phase,
+    queueIds: state.queue.map((item) => item.id),
+    startedItemIds: state.startedItemIds,
+    answeredCount: state.answeredCount,
+  };
+
+  console.error('[session-state] invariant failed', debugInfo);
+  throw new Error(`Session invariant violated: cannot begin drain mode from phase "${state.phase}".`);
 }
 
 function assertCurrentWordPresent(
