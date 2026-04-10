@@ -62,6 +62,7 @@ function App() {
   const [answerRevealed, setAnswerRevealed] = useState(false);
   const [submittingRating, setSubmittingRating] = useState<ReviewRating | null>(null);
   const [wordsPageNumber, setWordsPageNumber] = useState(0);
+  const [sessionNow, setSessionNow] = useState(() => new Date().toISOString());
 
   useEffect(() => {
     async function loadData() {
@@ -184,12 +185,13 @@ function App() {
         : activeWord.meaning
       : null;
 
-  const activeAnswer =
+  const activeAnswerText =
     activeItem && activeWord
       ? activeItem.direction === 'forward'
-        ? `${activeWord.meaning} (${activeWord.pinyin})`
-        : `${activeWord.hanzi} (${activeWord.pinyin})`
+        ? activeWord.meaning
+        : activeWord.hanzi
       : null;
+  const activeAnswerPinyin = activeItem && activeWord ? activeWord.pinyin : null;
 
   const activeReviewState =
     activeReviewProgress && activeReviewProgress.failureCount > 0 ? 'Reinforcement active' : 'Initial recall';
@@ -208,6 +210,10 @@ function App() {
 
   const activeRatingOptions =
     activeWord?.status === 'review' ? reviewRatingOptions : binaryRecallOptions;
+  const activeElapsedTime =
+    sessionStarted && sessionSummary
+      ? formatElapsedTime(sessionSummary.startedAt, sessionSummary.completedAt ?? sessionNow)
+      : '0:00';
 
   async function reloadDashboard() {
     const [wordsResponse, reviewItemsResponse, sessionItemsResponse, statusResponse] = await Promise.all([
@@ -239,9 +245,11 @@ function App() {
       setReviewItems(reviewItemsResponse);
       setSessionPreviewItems(sessionItemsResponse);
       setBackendStatus(statusResponse);
+      const startedAt = new Date().toISOString();
+      setSessionNow(startedAt);
       setSessionState(createSessionState(sessionItemsResponse));
       setSessionSummary({
-        startedAt: new Date().toISOString(),
+        startedAt,
         completedAt: null,
         initialQueueLength: sessionItemsResponse.length,
         answeredCount: 0,
@@ -411,6 +419,95 @@ function App() {
     setSessionState((current) => (current ? markCurrentItemStarted(current) : current));
   }, [answerRevealed, sessionStarted, sessionState]);
 
+  useEffect(() => {
+    if (!sessionStarted || sessionState?.phase === 'completed' || !sessionSummary) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setSessionNow(new Date().toISOString());
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [sessionStarted, sessionState?.phase, sessionSummary?.startedAt]);
+
+  useEffect(() => {
+    if (!sessionStarted || !sessionState || sessionState.phase === 'completed') {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented || submittingRating !== null) {
+        return;
+      }
+
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (event.key === ' ') {
+        event.preventDefault();
+
+        if (activeWord?.status === 'unstudied' && !activeUnstudiedProgress?.introComplete) {
+          handleBeginUnstudiedDrill(activeWord.id);
+          return;
+        }
+
+        if (!answerRevealed) {
+          setAnswerRevealed(true);
+          return;
+        }
+
+        if (activeWord && activeWord.status !== 'review') {
+          void handleRate('good');
+        }
+        return;
+      }
+
+      if (!answerRevealed) {
+        return;
+      }
+
+      const ratingByKey: Partial<Record<string, ReviewRating>> = {
+        '1': 'forgot',
+        '2': 'hard',
+        '3': 'good',
+        '4': 'easy',
+      };
+
+      const nextRating = ratingByKey[event.key];
+      if (!nextRating) {
+        return;
+      }
+
+      const ratingAllowed = activeRatingOptions.some((option) => option.value === nextRating);
+      if (!ratingAllowed) {
+        return;
+      }
+
+      event.preventDefault();
+      void handleRate(nextRating);
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    activeRatingOptions,
+    activeUnstudiedProgress?.introComplete,
+    activeWord,
+    answerRevealed,
+    sessionStarted,
+    sessionState,
+    submittingRating,
+  ]);
+
   return (
     <div className="container">
       <nav className="navbar" aria-label="Primary">
@@ -570,7 +667,9 @@ function App() {
                     {' · '}
                     {activeItem.direction === 'forward' ? 'Hanzi → Meaning' : 'Meaning → Hanzi'}
                   </p>
-                  <p className="notes">Answered {reviewedCount} this session · {sessionState?.queue.length ?? 0} still queued.</p>
+                  <p className="notes">
+                    Answered {reviewedCount} this session · {sessionState?.queue.length ?? 0} still queued · Elapsed {activeElapsedTime}
+                  </p>
                   <div className="prompt-block">
                     <span className="prompt-label">Prompt</span>
                     <strong className="prompt-value">{activePrompt}</strong>
@@ -585,7 +684,8 @@ function App() {
                   {answerRevealed ? (
                     <div className="answer-block">
                       <span className="prompt-label">Answer</span>
-                      <strong className="answer-value">{activeAnswer}</strong>
+                      <span className="answer-pinyin">{activeAnswerPinyin}</span>
+                      <strong className="answer-value">{activeAnswerText}</strong>
                       <span className="prompt-meta">
                         Interval {activeItem.intervalHours} hour{activeItem.intervalHours === 1 ? '' : 's'}
                       </span>

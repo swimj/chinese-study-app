@@ -236,6 +236,12 @@ button:hover {
   line-height: 1.1;
 }
 
+.answer-pinyin {
+  font-size: 1rem;
+  color: #94a3b8;
+  letter-spacing: 0.02em;
+}
+
 .prompt-meta {
   color: #cbd5e1;
 }
