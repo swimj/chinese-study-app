@@ -1,9 +1,11 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { getAppConfig } from './config.ts';
 
 const config = getAppConfig();
 const dbPath = config.dbPath;
+const appJsonPath = path.join(config.dataDir, 'app.json');
 const dbExists = fs.existsSync(dbPath);
 
 if (!fs.existsSync(config.dataDir)) {
@@ -61,6 +63,11 @@ type ReviewItemRow = {
   last_reviewed_at: string | null;
   next_due_at: string | null;
   ease_factor: number;
+};
+
+type SeedData = {
+  words: Word[];
+  reviewItems: ReviewItem[];
 };
 
 const db = new DatabaseSync(dbPath);
@@ -497,8 +504,7 @@ function seedDatabase() {
     return;
   }
 
-  const sampleWords = buildSampleWords();
-  const sampleReviewItems = buildSampleReviewItems(sampleWords);
+  const seedData = readSeedData() ?? buildSampleSeedData();
 
   const insertWord = db.prepare(`
     INSERT INTO words (
@@ -532,7 +538,7 @@ function seedDatabase() {
   db.exec('BEGIN');
 
   try {
-    for (const word of sampleWords) {
+    for (const word of seedData.words) {
       insertWord.run(
         word.id,
         word.hanzi,
@@ -548,7 +554,7 @@ function seedDatabase() {
       );
     }
 
-    for (const reviewItem of sampleReviewItems) {
+    for (const reviewItem of seedData.reviewItems) {
       insertReviewItem.run(
         reviewItem.id,
         reviewItem.wordId,
@@ -565,6 +571,31 @@ function seedDatabase() {
     db.exec('ROLLBACK');
     throw error;
   }
+}
+
+function readSeedData(): SeedData | null {
+  if (!fs.existsSync(appJsonPath)) {
+    return null;
+  }
+
+  const parsed = JSON.parse(fs.readFileSync(appJsonPath, 'utf8')) as Partial<SeedData>;
+
+  if (!Array.isArray(parsed.words) || !Array.isArray(parsed.reviewItems)) {
+    return null;
+  }
+
+  return {
+    words: parsed.words as Word[],
+    reviewItems: parsed.reviewItems as ReviewItem[],
+  };
+}
+
+function buildSampleSeedData(): SeedData {
+  const words = buildSampleWords();
+  return {
+    words,
+    reviewItems: buildSampleReviewItems(words),
+  };
 }
 
 function buildSampleWords(): Word[] {

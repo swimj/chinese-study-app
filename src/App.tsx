@@ -10,22 +10,13 @@ import {
   fetchStatus,
   fetchWords,
 } from './services/api';
-
-type LearningWordProgress = {
-  coveredDirections: Record<'forward' | 'reverse', boolean>;
-  firstTryGood: Record<'forward' | 'reverse', boolean>;
-  attempts: Record<'forward' | 'reverse', number>;
-};
-
-type UnstudiedWordProgress = {
-  introComplete: boolean;
-  consecutiveSuccesses: Record<'forward' | 'reverse', number>;
-};
-
-type ReviewItemProgress = {
-  failureCount: number;
-  reinforcementStreak: number;
-};
+import {
+  beginUnstudiedDrill,
+  createSessionState,
+  markCurrentItemStarted,
+  rateCurrentItem,
+  type SessionState,
+} from './lib/session-state';
 
 type AppPage = 'home' | 'words';
 
@@ -47,17 +38,13 @@ function App() {
   const [words, setWords] = useState<Word[]>([]);
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
   const [sessionPreviewItems, setSessionPreviewItems] = useState<ReviewItem[]>([]);
-  const [activeSessionItems, setActiveSessionItems] = useState<ReviewItem[]>([]);
   const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sessionStarted, setSessionStarted] = useState(false);
+  const [sessionState, setSessionState] = useState<SessionState | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
   const [answerRevealed, setAnswerRevealed] = useState(false);
   const [submittingRating, setSubmittingRating] = useState<ReviewRating | null>(null);
-  const [answeredCount, setAnsweredCount] = useState(0);
-  const [learningProgress, setLearningProgress] = useState<Record<string, LearningWordProgress>>({});
-  const [unstudiedProgress, setUnstudiedProgress] = useState<Record<string, UnstudiedWordProgress>>({});
-  const [reviewProgress, setReviewProgress] = useState<Record<string, ReviewItemProgress>>({});
   const [wordsPageNumber, setWordsPageNumber] = useState(0);
 
   useEffect(() => {
@@ -93,13 +80,13 @@ function App() {
     return grouped;
   }, [reviewItems]);
 
-  const displayedSessionItems = sessionStarted ? activeSessionItems : sessionPreviewItems;
-  const activeItem = sessionStarted ? activeSessionItems[0] ?? null : null;
+  const displayedSessionItems = sessionStarted ? sessionState?.queue ?? [] : sessionPreviewItems;
+  const activeItem = sessionStarted ? sessionState?.queue[0] ?? null : null;
   const activeWord = activeItem ? wordsById.get(activeItem.wordId) ?? null : null;
-  const activeLearningProgress = activeWord ? learningProgress[activeWord.id] : undefined;
-  const activeUnstudiedProgress = activeWord ? unstudiedProgress[activeWord.id] : undefined;
-  const activeReviewProgress = activeItem ? reviewProgress[activeItem.id] : undefined;
-  const reviewedCount = sessionStarted ? answeredCount : 0;
+  const activeLearningProgress = activeWord ? sessionState?.learningProgress[activeWord.id] : undefined;
+  const activeUnstudiedProgress = activeWord ? sessionState?.unstudiedProgress[activeWord.id] : undefined;
+  const activeReviewProgress = activeItem ? sessionState?.reviewProgress[activeItem.id] : undefined;
+  const reviewedCount = sessionStarted ? sessionState?.answeredCount ?? 0 : 0;
   const wordStatusCounts = countWordStatuses(words);
   const learningWords = words.filter((word) => word.status === 'learning');
   const unstudiedWords = words.filter((word) => word.status === 'unstudied');
@@ -236,11 +223,7 @@ function App() {
       setReviewItems(reviewItemsResponse);
       setSessionPreviewItems(sessionItemsResponse);
       setBackendStatus(statusResponse);
-      setActiveSessionItems(sessionItemsResponse);
-      setLearningProgress({});
-      setUnstudiedProgress({});
-      setReviewProgress({});
-      setAnsweredCount(0);
+      setSessionState(createSessionState(sessionItemsResponse));
       setAnswerRevealed(false);
       setSessionStarted(true);
     } catch (err) {
@@ -252,16 +235,13 @@ function App() {
 
   async function handleEndSession() {
     setSessionStarted(false);
-    setActiveSessionItems([]);
-    setLearningProgress({});
-    setUnstudiedProgress({});
-    setReviewProgress({});
+    setSessionState(null);
     setAnswerRevealed(false);
     await reloadDashboard();
   }
 
   async function handleRate(rating: ReviewRating) {
-    if (!activeItem || !activeWord) {
+    if (!sessionState || !activeItem || !activeWord) {
       return;
     }
 
@@ -269,15 +249,45 @@ function App() {
     setError(null);
 
     try {
-      if (activeWord.status === 'review') {
-        await handleReviewAttempt(activeItem, rating);
-      } else if (activeWord.status === 'learning') {
-        await handleLearningAttempt(activeItem, activeWord, rating);
-      } else {
-        await handleUnstudiedAttempt(activeItem, activeWord, rating);
+      const transition = rateCurrentItem(sessionState, wordsById, rating);
+
+      switch (transition.commit.type) {
+        case 'commit-review-item-session': {
+          const updatedItem = await completeReviewSession(
+            transition.commit.reviewItemId,
+            transition.commit.failureCount,
+            transition.commit.terminalRating,
+          );
+          setReviewItems((currentItems) =>
+            currentItems.map((existing) => (existing.id === updatedItem.id ? updatedItem : existing)),
+          );
+          setSessionPreviewItems((currentItems) =>
+            currentItems.map((queuedItem) => (queuedItem.id === updatedItem.id ? updatedItem : queuedItem)),
+          );
+          break;
+        }
+        case 'commit-learning-word-session': {
+          const updatedWord = await completeLearningSession(
+            transition.commit.wordId,
+            transition.commit.success,
+          );
+          setWords((currentWords) =>
+            currentWords.map((entry) => (entry.id === updatedWord.id ? updatedWord : entry)),
+          );
+          break;
+        }
+        case 'commit-unstudied-word-session': {
+          const updatedWord = await completeUnstudiedSession(transition.commit.wordId);
+          setWords((currentWords) =>
+            currentWords.map((entry) => (entry.id === updatedWord.id ? updatedWord : entry)),
+          );
+          break;
+        }
+        case 'none':
+          break;
       }
 
-      setAnsweredCount((count) => count + 1);
+      setSessionState(transition.state);
       setAnswerRevealed(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -286,148 +296,17 @@ function App() {
     }
   }
 
-  async function handleReviewAttempt(item: ReviewItem, rating: ReviewRating) {
-    const currentProgress = reviewProgress[item.id] ?? { failureCount: 0, reinforcementStreak: 0 };
-
-    if (currentProgress.failureCount === 0 && rating !== 'forgot') {
-      const updatedItem = await completeReviewSession(item.id, 0, rating);
-      setWords((currentWords) => currentWords);
-      setReviewItems((currentItems) =>
-        currentItems.map((existing) => (existing.id === updatedItem.id ? updatedItem : existing)),
-      );
-      setReviewProgress((current) => {
-        const copy = { ...current };
-        delete copy[item.id];
-        return copy;
-      });
-      setActiveSessionItems((currentItems) => currentItems.filter((queuedItem) => queuedItem.id !== item.id));
-      setSessionPreviewItems((currentItems) =>
-        currentItems.map((queuedItem) => (queuedItem.id === updatedItem.id ? updatedItem : queuedItem)),
-      );
-      return;
-    }
-
-    const nextProgress: ReviewItemProgress = {
-      failureCount: currentProgress.failureCount + (rating === 'forgot' ? 1 : 0),
-      reinforcementStreak: rating === 'forgot' ? 0 : currentProgress.reinforcementStreak + 1,
-    };
-
-    if (nextProgress.reinforcementStreak >= 3) {
-      const updatedItem = await completeReviewSession(item.id, nextProgress.failureCount, null);
-      setReviewItems((currentItems) =>
-        currentItems.map((existing) => (existing.id === updatedItem.id ? updatedItem : existing)),
-      );
-      setReviewProgress((current) => {
-        const copy = { ...current };
-        delete copy[item.id];
-        return copy;
-      });
-      setActiveSessionItems((currentItems) => currentItems.filter((queuedItem) => queuedItem.id !== item.id));
-      setSessionPreviewItems((currentItems) =>
-        currentItems.map((queuedItem) => (queuedItem.id === updatedItem.id ? updatedItem : queuedItem)),
-      );
-      return;
-    }
-
-    setReviewProgress((current) => ({ ...current, [item.id]: nextProgress }));
-    setActiveSessionItems((currentItems) => rotateCurrentItem(currentItems));
-  }
-
-  async function handleLearningAttempt(item: ReviewItem, word: Word, rating: ReviewRating) {
-    const currentProgress = learningProgress[word.id] ?? createInitialLearningProgress();
-    const direction = item.direction;
-    const nextProgress: LearningWordProgress = {
-      coveredDirections: { ...currentProgress.coveredDirections },
-      firstTryGood: { ...currentProgress.firstTryGood },
-      attempts: { ...currentProgress.attempts },
-    };
-
-    nextProgress.attempts[direction] += 1;
-
-    if (rating === 'good') {
-      nextProgress.coveredDirections[direction] = true;
-      if (nextProgress.attempts[direction] === 1) {
-        nextProgress.firstTryGood[direction] = true;
-      }
-    }
-
-    const bothCovered = nextProgress.coveredDirections.forward && nextProgress.coveredDirections.reverse;
-
-    if (!bothCovered) {
-      setLearningProgress((current) => ({ ...current, [word.id]: nextProgress }));
-      setActiveSessionItems((currentItems) => {
-        const remaining = currentItems.slice(1);
-        return rating === 'good' ? remaining : [...remaining, item];
-      });
-      return;
-    }
-
-    const success = nextProgress.firstTryGood.forward && nextProgress.firstTryGood.reverse;
-    const updatedWord = await completeLearningSession(word.id, success);
-
-    setWords((currentWords) =>
-      currentWords.map((entry) => (entry.id === updatedWord.id ? updatedWord : entry)),
-    );
-    setLearningProgress((current) => {
-      const copy = { ...current };
-      delete copy[word.id];
-      return copy;
-    });
-    setActiveSessionItems((currentItems) => currentItems.filter((queuedItem) => queuedItem.wordId !== word.id));
-  }
-
-  async function handleUnstudiedAttempt(item: ReviewItem, word: Word, rating: ReviewRating) {
-    const currentProgress = unstudiedProgress[word.id] ?? createInitialUnstudiedProgress();
-    const direction = item.direction;
-    const nextProgress: UnstudiedWordProgress = {
-      introComplete: currentProgress.introComplete,
-      consecutiveSuccesses: { ...currentProgress.consecutiveSuccesses },
-    };
-
-    if (rating === 'good') {
-      nextProgress.consecutiveSuccesses[direction] += 1;
-    } else {
-      nextProgress.consecutiveSuccesses[direction] = 0;
-    }
-
-    const done =
-      nextProgress.consecutiveSuccesses.forward >= 3 &&
-      nextProgress.consecutiveSuccesses.reverse >= 3;
-
-    if (!done) {
-      const directionCovered = nextProgress.consecutiveSuccesses[direction] >= 3;
-      setUnstudiedProgress((current) => ({ ...current, [word.id]: nextProgress }));
-      setActiveSessionItems((currentItems) => {
-        if (directionCovered) {
-          return currentItems.filter((queuedItem) => queuedItem.id !== item.id);
-        }
-
-        return rotateCurrentItem(currentItems);
-      });
-      return;
-    }
-
-    const updatedWord = await completeUnstudiedSession(word.id);
-    setWords((currentWords) =>
-      currentWords.map((entry) => (entry.id === updatedWord.id ? updatedWord : entry)),
-    );
-    setUnstudiedProgress((current) => {
-      const copy = { ...current };
-      delete copy[word.id];
-      return copy;
-    });
-    setActiveSessionItems((currentItems) => currentItems.filter((queuedItem) => queuedItem.wordId !== word.id));
-  }
-
   function handleBeginUnstudiedDrill(wordId: string) {
-    setUnstudiedProgress((current) => ({
-      ...current,
-      [wordId]: {
-        ...(current[wordId] ?? createInitialUnstudiedProgress()),
-        introComplete: true,
-      },
-    }));
+    setSessionState((current) => (current ? beginUnstudiedDrill(current, wordId) : current));
   }
+
+  useEffect(() => {
+    if (!sessionStarted || !sessionState || answerRevealed) {
+      return;
+    }
+
+    setSessionState((current) => (current ? markCurrentItemStarted(current) : current));
+  }, [answerRevealed, sessionStarted, sessionState]);
 
   return (
     <div className="container">
@@ -580,7 +459,7 @@ function App() {
                     {' · '}
                     {activeItem.direction === 'forward' ? 'Hanzi → Meaning' : 'Meaning → Hanzi'}
                   </p>
-                  <p className="notes">Answered {reviewedCount} this session · {activeSessionItems.length} still queued.</p>
+                  <p className="notes">Answered {reviewedCount} this session · {sessionState?.queue.length ?? 0} still queued.</p>
                   <div className="prompt-block">
                     <span className="prompt-label">Prompt</span>
                     <strong className="prompt-value">{activePrompt}</strong>
@@ -875,33 +754,6 @@ function WordsPage({
   );
 }
 
-function createInitialLearningProgress(): LearningWordProgress {
-  return {
-    coveredDirections: {
-      forward: false,
-      reverse: false,
-    },
-    firstTryGood: {
-      forward: false,
-      reverse: false,
-    },
-    attempts: {
-      forward: 0,
-      reverse: 0,
-    },
-  };
-}
-
-function createInitialUnstudiedProgress(): UnstudiedWordProgress {
-  return {
-    introComplete: false,
-    consecutiveSuccesses: {
-      forward: 0,
-      reverse: 0,
-    },
-  };
-}
-
 function countWordStatuses(words: Word[]) {
   return words.reduce(
     (counts, word) => {
@@ -953,14 +805,6 @@ function formatScheduledValue(row: InspectableRow) {
   }
 
   return formatDateTime(row.nextScheduledAt);
-}
-
-function rotateCurrentItem(items: ReviewItem[]) {
-  if (items.length <= 1) {
-    return items;
-  }
-
-  return [...items.slice(1), items[0]];
 }
 
 export default App;

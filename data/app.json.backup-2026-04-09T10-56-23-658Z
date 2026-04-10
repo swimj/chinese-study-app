@@ -1,0 +1,171 @@
+{
+  "words": [
+    {
+      "id": "word-1",
+      "hanzi": "你好",
+      "pinyin": "nǐ hǎo",
+      "meaning": "hello",
+      "examples": [
+        "你好！你今天怎么样？"
+      ],
+      "status": "learning",
+      "availableAt": "2026-04-01T15:53:01.239Z",
+      "priority": 100,
+      "createdAt": "2026-04-01T15:53:01.239Z"
+    },
+    {
+      "id": "word-2",
+      "hanzi": "谢谢",
+      "pinyin": "xiè xie",
+      "meaning": "thank you",
+      "examples": [
+        "谢谢你的帮助。"
+      ],
+      "status": "learning",
+      "availableAt": "2026-04-01T15:53:01.239Z",
+      "priority": 99,
+      "createdAt": "2026-04-01T15:53:01.239Z"
+    },
+    {
+      "id": "word-3",
+      "hanzi": "学习",
+      "pinyin": "xué xí",
+      "meaning": "to study",
+      "examples": [
+        "我每天学习汉语。"
+      ],
+      "status": "learning",
+      "availableAt": "2026-04-01T15:53:01.239Z",
+      "priority": 98,
+      "createdAt": "2026-04-01T15:53:01.239Z"
+    },
+    {
+      "id": "word-4",
+      "hanzi": "朋友",
+      "pinyin": "péng you",
+      "meaning": "friend",
+      "examples": [
+        "她是我的好朋友。"
+      ],
+      "status": "learning",
+      "availableAt": "2026-04-01T15:53:01.239Z",
+      "priority": 97,
+      "createdAt": "2026-04-01T15:53:01.239Z"
+    },
+    {
+      "id": "word-5",
+      "hanzi": "说",
+      "pinyin": "shuō",
+      "meaning": "to speak",
+      "examples": [
+        "你会说中文吗？"
+      ],
+      "status": "learning",
+      "availableAt": "2026-04-01T15:53:01.239Z",
+      "priority": 96,
+      "createdAt": "2026-04-01T15:53:01.239Z"
+    }
+  ],
+  "reviewItems": [
+    {
+      "id": "word-1-forward",
+      "wordId": "word-1",
+      "direction": "forward",
+      "status": "learning",
+      "intervalDays": 1,
+      "lastReviewedAt": null,
+      "nextDueAt": "2026-04-01T15:53:01.239Z",
+      "easeFactor": 2.5
+    },
+    {
+      "id": "word-1-reverse",
+      "wordId": "word-1",
+      "direction": "reverse",
+      "status": "learning",
+      "intervalDays": 1,
+      "lastReviewedAt": null,
+      "nextDueAt": "2026-04-01T15:53:01.239Z",
+      "easeFactor": 2.5
+    },
+    {
+      "id": "word-2-forward",
+      "wordId": "word-2",
+      "direction": "forward",
+      "status": "learning",
+      "intervalDays": 1,
+      "lastReviewedAt": null,
+      "nextDueAt": "2026-04-01T15:53:01.239Z",
+      "easeFactor": 2.5
+    },
+    {
+      "id": "word-2-reverse",
+      "wordId": "word-2",
+      "direction": "reverse",
+      "status": "learning",
+      "intervalDays": 1,
+      "lastReviewedAt": null,
+      "nextDueAt": "2026-04-01T15:53:01.239Z",
+      "easeFactor": 2.5
+    },
+    {
+      "id": "word-3-forward",
+      "wordId": "word-3",
+      "direction": "forward",
+      "status": "learning",
+      "intervalDays": 1,
+      "lastReviewedAt": null,
+      "nextDueAt": "2026-04-01T15:53:01.239Z",
+      "easeFactor": 2.5
+    },
+    {
+      "id": "word-3-reverse",
+      "wordId": "word-3",
+      "direction": "reverse",
+      "status": "learning",
+      "intervalDays": 1,
+      "lastReviewedAt": null,
+      "nextDueAt": "2026-04-01T15:53:01.239Z",
+      "easeFactor": 2.5
+    },
+    {
+      "id": "word-4-forward",
+      "wordId": "word-4",
+      "direction": "forward",
+      "status": "learning",
+      "intervalDays": 1,
+      "lastReviewedAt": null,
+      "nextDueAt": "2026-04-01T15:53:01.239Z",
+      "easeFactor": 2.5
+    },
+    {
+      "id": "word-4-reverse",
+      "wordId": "word-4",
+      "direction": "reverse",
+      "status": "learning",
+      "intervalDays": 1,
+      "lastReviewedAt": null,
+      "nextDueAt": "2026-04-01T15:53:01.239Z",
+      "easeFactor": 2.5
+    },
+    {
+      "id": "word-5-forward",
+      "wordId": "word-5",
+      "direction": "forward",
+      "status": "learning",
+      "intervalDays": 1,
+      "lastReviewedAt": null,
+      "nextDueAt": "2026-04-01T15:53:01.239Z",
+      "easeFactor": 2.5
+    },
+    {
+      "id": "word-5-reverse",
+      "wordId": "word-5",
+      "direction": "reverse",
+      "status": "learning",
+      "intervalDays": 1,
+      "lastReviewedAt": null,
+      "nextDueAt": "2026-04-01T15:53:01.239Z",
+      "easeFactor": 2.5
+    }
+  ]
+}
