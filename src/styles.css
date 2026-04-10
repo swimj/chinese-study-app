@@ -140,6 +140,28 @@ button:hover {
   margin: 1.5rem 0 0.75rem;
 }
 
+.sidebar-stack {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.session-launch-panel {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
+.mini-stats {
+  display: grid;
+  gap: 0.85rem;
+}
+
+@media (min-width: 720px) {
+  .mini-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .word-list {
   list-style: none;
   margin: 0;
@@ -194,6 +216,10 @@ button:hover {
   border-radius: 1rem;
   background: rgba(30, 41, 59, 0.85);
   border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.stat-card.compact {
+  padding: 0.9rem 1rem;
 }
 
 .stat-label {

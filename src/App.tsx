@@ -556,80 +556,109 @@ function App() {
           </header>
 
           <div className="grid">
-            <div className="panel">
-              <h2>Overview</h2>
-              <p className="notes">Loaded {words.length} words from the backend.</p>
-              <div className="stack">
-                <div className="stat-card">
-                  <span className="stat-label">Unstudied</span>
-                  <strong className="stat-value">{wordStatusCounts.unstudied}</strong>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-label">Learning / Review</span>
-                  <strong className="stat-value">{wordStatusCounts.learning} / {wordStatusCounts.review}</strong>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-label">{sessionStarted ? 'Items left in session' : 'Session preview items'}</span>
-                  <strong className="stat-value">{displayedSessionItems.length}</strong>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-label">Answered this session</span>
-                  <strong className="stat-value">{reviewedCount}</strong>
+            <div className="sidebar-stack">
+              <div className="panel session-launch-panel">
+                <p className="badge">
+                  {sessionStarted
+                    ? sessionState?.phase === 'draining'
+                      ? 'Drain mode active'
+                      : sessionState?.phase === 'completed'
+                        ? 'Session complete'
+                        : 'Session in progress'
+                    : 'Ready to study'}
+                </p>
+                <h2>{sessionStarted ? 'Current session' : 'Start session'}</h2>
+                <p className="notes">
+                  {sessionStarted
+                    ? sessionState?.phase === 'active'
+                      ? 'Stop taking new work and drain only the items already opened in this session.'
+                      : sessionState?.phase === 'draining'
+                        ? 'Finish the remaining open work, then review the summary.'
+                        : 'Review the session summary, then close it when you are ready.'
+                    : 'Launch a frozen study snapshot from the current backend session preview.'}
+                </p>
+                {!sessionStarted ? (
+                  <button type="button" onClick={handleStartSession} disabled={sessionLoading || sessionPreviewItems.length === 0}>
+                    {sessionLoading ? 'Preparing session...' : 'Start session'}
+                  </button>
+                ) : (
+                  <button type="button" onClick={handleEndSession}>
+                    {sessionState?.phase === 'active'
+                      ? 'End session'
+                      : sessionState?.phase === 'completed'
+                        ? 'Close summary'
+                        : 'Back to overview'}
+                  </button>
+                )}
+                <div className="mini-stats">
+                  <div className="stat-card compact">
+                    <span className="stat-label">{sessionStarted ? 'Items left' : 'Preview items'}</span>
+                    <strong className="stat-value">{displayedSessionItems.length}</strong>
+                  </div>
+                  <div className="stat-card compact">
+                    <span className="stat-label">Answered</span>
+                    <strong className="stat-value">{reviewedCount}</strong>
+                  </div>
                 </div>
               </div>
-              <p className="notes">Learning coverage day: {backendStatus?.learningCoverageDate ?? 'Unknown'}.</p>
-              {!sessionStarted ? (
-                <button type="button" onClick={handleStartSession} disabled={sessionLoading || sessionPreviewItems.length === 0}>
-                  {sessionLoading ? 'Preparing session...' : 'Start session'}
-                </button>
-              ) : (
-                <button type="button" onClick={handleEndSession}>
-                  {sessionState?.phase === 'active'
-                    ? 'End session'
-                    : sessionState?.phase === 'completed'
-                      ? 'Close summary'
-                      : 'Back to overview'}
-                </button>
-              )}
-              <h3>Session snapshot</h3>
-              <ul className="word-list">
-                {displayedSessionItems.map((item) => {
-                  const word = wordsById.get(item.wordId);
-                  return (
-                    <li key={item.id} className="word-item">
+
+              <div className="panel">
+                <h2>Overview</h2>
+                <p className="notes">Loaded {words.length} words from the backend.</p>
+                <div className="stack">
+                  <div className="stat-card">
+                    <span className="stat-label">Unstudied</span>
+                    <strong className="stat-value">{wordStatusCounts.unstudied}</strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Learning / Review</span>
+                    <strong className="stat-value">{wordStatusCounts.learning} / {wordStatusCounts.review}</strong>
+                  </div>
+                </div>
+                <p className="notes">Learning coverage day: {backendStatus?.learningCoverageDate ?? 'Unknown'}.</p>
+              </div>
+
+              <div className="panel">
+                <h2>Session snapshot</h2>
+                <ul className="word-list">
+                  {displayedSessionItems.map((item) => {
+                    const word = wordsById.get(item.wordId);
+                    return (
+                      <li key={item.id} className="word-item">
+                        <div>
+                          <strong>{word?.hanzi ?? item.wordId}</strong>
+                          <span>{item.direction === 'forward' ? 'Hanzi → Meaning' : 'Meaning → Hanzi'}</span>
+                        </div>
+                        <div>{word?.meaning ?? 'Unknown word'}</div>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <h3>Learning words</h3>
+                <ul className="word-list">
+                  {learningWords.map((word) => (
+                    <li key={word.id} className="word-item">
                       <div>
-                        <strong>{word?.hanzi ?? item.wordId}</strong>
-                        <span>{item.direction === 'forward' ? 'Hanzi → Meaning' : 'Meaning → Hanzi'}</span>
+                        <strong>{word.hanzi}</strong>
+                        <span>Streak {word.learningStreak}</span>
                       </div>
-                      <div>{word?.meaning ?? 'Unknown word'}</div>
+                      <div>{word.meaning}</div>
                     </li>
-                  );
-                })}
-              </ul>
-              <h3>Learning words</h3>
-              <ul className="word-list">
-                {learningWords.map((word) => (
-                  <li key={word.id} className="word-item">
-                    <div>
-                      <strong>{word.hanzi}</strong>
-                      <span>Streak {word.learningStreak}</span>
-                    </div>
-                    <div>{word.meaning}</div>
-                  </li>
-                ))}
-              </ul>
-              <h3>Unstudied words</h3>
-              <ul className="word-list">
-                {unstudiedWords.map((word) => (
-                  <li key={word.id} className="word-item">
-                    <div>
-                      <strong>{word.hanzi}</strong>
-                      <span>{word.pinyin}</span>
-                    </div>
-                    <div>{word.meaning}</div>
-                  </li>
-                ))}
-              </ul>
+                  ))}
+                </ul>
+                <h3>Unstudied words</h3>
+                <ul className="word-list">
+                  {unstudiedWords.map((word) => (
+                    <li key={word.id} className="word-item">
+                      <div>
+                        <strong>{word.hanzi}</strong>
+                        <span>{word.pinyin}</span>
+                      </div>
+                      <div>{word.meaning}</div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
 
             <div className="panel">
