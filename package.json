@@ -9,6 +9,8 @@
     "study:backend": "node --import tsx server/index.ts --mode=study",
     "reset:dev-data": "node --import tsx server/reset-dev-db.ts",
     "export:hack-chinese": "node --import tsx scripts/export-hack-chinese-migration.ts",
+    "build:canonical-wordlist": "node --import tsx scripts/build-canonical-wordlist.ts",
+    "report:canonical-overlap": "node --import tsx scripts/report-canonical-overlap.ts",
     "fixture:hack-chinese-review": "node --import tsx scripts/load-hack-chinese-review-fixture.ts",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",
     "build": "tsc && vite build",
