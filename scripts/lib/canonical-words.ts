@@ -1,4 +1,4 @@
-export type SourceTag = 'moe' | 'subtlex' | 'cc-cedict' | 'tatoeba' | 'hack-chinese';
+export type SourceTag = 'subtlex' | 'cc-cedict' | 'tatoeba' | 'hack-chinese';
 
 export type CanonicalWord = {
   id: string;
@@ -9,11 +9,11 @@ export type CanonicalWord = {
   pinyinSearch: string;
   meaning: string;
   meanings: string[];
-  hskLevel: string | null;
   frequencyRank: number | null;
   frequencyScore: number | null;
   priority: number | null;
   exampleSentenceIds: number[];
+  posFrequency: Array<{ pos: string; count: number }>;
   mergeStatus: 'seed' | 'cc-cedict-exact' | 'cc-cedict-neutral-fallback' | 'hack-only';
   sourceKeys: Partial<Record<SourceTag, string>>;
 };
@@ -119,11 +119,11 @@ export function buildCanonicalWord(seed: CanonicalWordSeed): CanonicalWord {
     pinyinSearch: stripPinyinTones(pinyinDisplay),
     meaning: seed.meanings[0] ?? '',
     meanings: [...new Set(seed.meanings.map((meaning) => meaning.trim()).filter(Boolean))],
-    hskLevel: null,
     frequencyRank: null,
     frequencyScore: null,
     priority: null,
     exampleSentenceIds: [],
+    posFrequency: [],
     mergeStatus: 'seed',
     sourceKeys: {},
   };

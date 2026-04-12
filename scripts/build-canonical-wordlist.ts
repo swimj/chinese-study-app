@@ -2,54 +2,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   buildCanonicalWord,
-  canMatchByNeutralToneFallback,
   canonicalJoinKey,
-  fuzzyJoinKey,
   type CanonicalWord,
 } from './lib/canonical-words.ts';
 import { parseCedictFile, type CedictEntry } from './lib/cc-cedict.ts';
+import { parseSubtlex, readSubtlexFile, type SubtlexEntry } from './lib/subtlex.ts';
 
 type BuildSummary = {
   outputPath: string;
   itemCount: number;
-  exactCedictMatches: number;
-  neutralFallbackMatches: number;
-  hackOnlyCount: number;
+  cedictSeedCount: number;
+  subtlexMatchCount: number;
+  prioritizedCount: number;
   notes: string[];
   sample: CanonicalWord[];
 };
 
 const cwd = process.cwd();
-const outputPath = path.resolve(cwd, process.argv[2] ?? 'data/canonical-wordlist-scaffold.json');
+const outputPath = path.resolve(cwd, process.argv[2] ?? 'data/canonical-corpus.json');
 const cedictPath = path.resolve(cwd, 'data/sources/cc-cedict/cedict_ts.u8');
-
-function buildSeedFromHackChinese(): CanonicalWord[] {
-  const hackChinesePath = path.resolve(cwd, 'data/hack-chinese-migration-v2.json');
-
-  if (!fs.existsSync(hackChinesePath)) {
-    return [];
-  }
-
-  const parsed = JSON.parse(fs.readFileSync(hackChinesePath, 'utf8')) as {
-    records: Array<{
-      hanzi: string;
-      pinyin: string;
-      meanings: string[];
-    }>;
-  };
-
-  return parsed.records.map((record) => {
-    const word = buildCanonicalWord({
-      hanzi: record.hanzi,
-      pinyin: record.pinyin,
-      meanings: record.meanings,
-    });
-
-    word.mergeStatus = 'hack-only';
-    word.sourceKeys['hack-chinese'] = canonicalJoinKey(record.hanzi, record.pinyin);
-    return word;
-  });
-}
+const subtlexPath = path.resolve(cwd, 'data/sources/subtlex/SUBTLEX-CH-WF_PoS');
 
 function loadCedictEntries(): CedictEntry[] {
   if (!fs.existsSync(cedictPath)) {
@@ -59,72 +31,112 @@ function loadCedictEntries(): CedictEntry[] {
   return parseCedictFile(fs.readFileSync(cedictPath, 'utf8'));
 }
 
-function mergeWordsWithCedict(hackWords: CanonicalWord[], cedictEntries: CedictEntry[]): CanonicalWord[] {
-  const exactMap = new Map<string, CedictEntry[]>();
-  const fuzzyMap = new Map<string, CedictEntry[]>();
-
-  for (const entry of cedictEntries) {
-    const exactKey = canonicalJoinKey(entry.simplified, entry.toneMarkedPinyin);
-    const fuzzyKey = fuzzyJoinKey(entry.simplified, entry.toneMarkedPinyin);
-    const exactGroup = exactMap.get(exactKey) ?? [];
-    const fuzzyGroup = fuzzyMap.get(fuzzyKey) ?? [];
-    exactGroup.push(entry);
-    fuzzyGroup.push(entry);
-    exactMap.set(exactKey, exactGroup);
-    fuzzyMap.set(fuzzyKey, fuzzyGroup);
+function loadSubtlexEntries(): SubtlexEntry[] {
+  if (!fs.existsSync(subtlexPath)) {
+    return [];
   }
 
-  return hackWords.map((hackWord) => {
-    const exactGroup = exactMap.get(canonicalJoinKey(hackWord.hanzi, hackWord.pinyinDisplay)) ?? [];
+  return parseSubtlex(readSubtlexFile(subtlexPath));
+}
 
-    if (exactGroup.length > 0) {
-      return mergeHackWordWithCedict(hackWord, exactGroup[0], 'cc-cedict-exact');
+function buildCanonicalSeedFromCedict(cedictEntries: CedictEntry[]): CanonicalWord[] {
+  const grouped = new Map<string, CedictEntry[]>();
+
+  for (const entry of cedictEntries) {
+    const key = canonicalJoinKey(entry.simplified, entry.toneMarkedPinyin);
+    const group = grouped.get(key) ?? [];
+    group.push(entry);
+    grouped.set(key, group);
+  }
+
+  return [...grouped.entries()]
+    .map(([key, entries]) => {
+      const first = entries[0];
+      const traditionalVariants = [...new Set(entries.map((entry) => entry.traditional.trim()).filter(Boolean))];
+      const meanings = [...new Set(entries.flatMap((entry) => entry.glosses).map((gloss) => gloss.trim()).filter(Boolean))];
+      const word = buildCanonicalWord({
+        hanzi: first.simplified,
+        traditional: traditionalVariants.length === 0 ? null : traditionalVariants.join(' / '),
+        pinyin: first.toneMarkedPinyin,
+        meanings,
+      });
+
+      word.mergeStatus = 'cc-cedict-exact';
+      word.sourceKeys['cc-cedict'] = key;
+      return word;
+    })
+    .sort((left, right) => left.hanzi.localeCompare(right.hanzi, 'zh-Hans-CN') || left.pinyinDisplay.localeCompare(right.pinyinDisplay));
+}
+
+function enrichWordsWithSubtlex(words: CanonicalWord[], subtlexEntries: SubtlexEntry[]): CanonicalWord[] {
+  const entryMap = new Map<string, SubtlexEntry>();
+
+  for (const entry of subtlexEntries) {
+    if (!entryMap.has(entry.lemma)) {
+      entryMap.set(entry.lemma, entry);
+    }
+  }
+
+  const sortedByFrequency = [...entryMap.values()].sort((a, b) => b.lemmaCount - a.lemmaCount);
+  const rankMap = new Map<string, number>();
+  sortedByFrequency.forEach((entry, index) => {
+    rankMap.set(entry.lemma, index + 1);
+  });
+
+  return words.map((word) => {
+    const subtlex = entryMap.get(word.hanzi);
+    if (!subtlex) {
+      return word;
     }
 
-    const fuzzyGroup = fuzzyMap.get(fuzzyJoinKey(hackWord.hanzi, hackWord.pinyinDisplay)) ?? [];
-    const neutralCandidates = fuzzyGroup.filter((entry) =>
-      canMatchByNeutralToneFallback(hackWord.pinyinDisplay, entry.toneMarkedPinyin),
-    );
-
-    if (neutralCandidates.length === 1) {
-      return mergeHackWordWithCedict(hackWord, neutralCandidates[0], 'cc-cedict-neutral-fallback');
-    }
-
-    return hackWord;
+    return {
+      ...word,
+      frequencyRank: rankMap.get(word.hanzi) ?? null,
+      frequencyScore: subtlex.lemmaCount,
+      posFrequency: subtlex.posRows.map((row) => ({ pos: row.pos, count: row.count })),
+      sourceKeys: {
+        ...word.sourceKeys,
+        subtlex: subtlex.sourceKey,
+      },
+    };
   });
 }
 
-function mergeHackWordWithCedict(
-  hackWord: CanonicalWord,
-  cedictEntry: CedictEntry,
-  mergeStatus: CanonicalWord['mergeStatus'],
-): CanonicalWord {
-  const mergedMeanings = [
-    ...new Set([...hackWord.meanings, ...cedictEntry.glosses].map((meaning) => meaning.trim()).filter(Boolean)),
-  ];
+function assignPriority(words: CanonicalWord[]): CanonicalWord[] {
+  const sorted = [...words].sort((left, right) => {
+    const leftHasFrequency = left.frequencyRank !== null;
+    const rightHasFrequency = right.frequencyRank !== null;
 
-  return {
-    ...hackWord,
-    traditional: cedictEntry.traditional,
-    meaning: cedictEntry.glosses[0] ?? hackWord.meaning,
-    meanings: mergedMeanings,
-    mergeStatus,
-    sourceKeys: {
-      ...hackWord.sourceKeys,
-      'cc-cedict': canonicalJoinKey(cedictEntry.simplified, cedictEntry.toneMarkedPinyin),
-    },
-  };
+    if (leftHasFrequency && rightHasFrequency) {
+      if (left.frequencyRank !== right.frequencyRank) {
+        return (left.frequencyRank ?? Number.MAX_SAFE_INTEGER) - (right.frequencyRank ?? Number.MAX_SAFE_INTEGER);
+      }
+    } else if (leftHasFrequency !== rightHasFrequency) {
+      return leftHasFrequency ? -1 : 1;
+    }
+
+    return left.hanzi.localeCompare(right.hanzi, 'zh-Hans-CN') || left.pinyinDisplay.localeCompare(right.pinyinDisplay);
+  });
+
+  const priorityById = new Map<string, number>();
+  sorted.forEach((word, index) => {
+    priorityById.set(word.id, sorted.length - index);
+  });
+
+  return words.map((word) => ({
+    ...word,
+    priority: priorityById.get(word.id) ?? 1,
+  }));
 }
 
 function main() {
-  const hackWords = buildSeedFromHackChinese();
   const cedictEntries = loadCedictEntries();
-  const canonicalWords = mergeWordsWithCedict(hackWords, cedictEntries);
-  const exactCedictMatches = canonicalWords.filter((word) => word.mergeStatus === 'cc-cedict-exact').length;
-  const neutralFallbackMatches = canonicalWords.filter(
-    (word) => word.mergeStatus === 'cc-cedict-neutral-fallback',
-  ).length;
-  const hackOnlyCount = canonicalWords.filter((word) => word.mergeStatus === 'hack-only').length;
+  const subtlexEntries = loadSubtlexEntries();
+  const cedictSeedWords = buildCanonicalSeedFromCedict(cedictEntries);
+  const wordsAfterSubtlex = enrichWordsWithSubtlex(cedictSeedWords, subtlexEntries);
+  const canonicalWords = assignPriority(wordsAfterSubtlex);
+  const subtlexMatches = canonicalWords.filter((word) => word.frequencyRank !== null).length;
+  const prioritizedCount = canonicalWords.filter((word) => word.priority !== null).length;
 
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(
@@ -133,10 +145,10 @@ function main() {
       {
         meta: {
           generatedAt: new Date().toISOString(),
-          purpose: 'Scaffold for canonical vocabulary ingestion pipeline',
+          purpose: 'Canonical vocabulary corpus for study import',
           sourceAvailability: {
-            hackChinese: hackWords.length > 0,
             ccCedict: cedictEntries.length > 0,
+            subtlex: subtlexEntries.length > 0,
           },
           pinyinPolicy: {
             display: 'tone-marked pinyin preserved as authored',
@@ -144,9 +156,13 @@ function main() {
               'tone-marked, lowercased, NFC-normalized pinyin used as the primary cross-source match key',
             search: 'tone-stripped pinyin reserved for fuzzy fallback or UI search only',
           },
+          priorityPolicy: {
+            current: 'frequency-first global ordering from SUBTLEX rank, with unmatched words placed after ranked words',
+            note: 'Ranked words sort ahead of unranked words; ties fall back to stable hanzi+pinyin order',
+          },
           joinPolicy: {
             primary: '(hanzi, pinyinNormalized)',
-            fuzzyFallback: 'only when the only difference is neutral-tone marking on one side',
+            fuzzyFallback: 'not used in canonical corpus build; reserved for source reconciliation tasks',
           },
         },
         words: canonicalWords,
@@ -159,18 +175,22 @@ function main() {
   const summary: BuildSummary = {
     outputPath,
     itemCount: canonicalWords.length,
-    exactCedictMatches,
-    neutralFallbackMatches,
-    hackOnlyCount,
+    cedictSeedCount: cedictSeedWords.length,
+    subtlexMatchCount: subtlexMatches,
+    prioritizedCount,
     notes: [
-      'The scaffold now starts from Hack Chinese progress records and enriches them with CC-CEDICT lexical data when safely matchable.',
+      'The canonical corpus now starts from the full CC-CEDICT entry set grouped by simplified form + tone-marked pinyin.',
       cedictEntries.length > 0
         ? `Parsed ${cedictEntries.length} CC-CEDICT entries from ${cedictPath}.`
         : `No local CC-CEDICT file found at ${cedictPath} yet.`,
-      'MOE, SUBTLEX, CC-CEDICT, and Tatoeba ingestion should merge onto pinyinNormalized, not pinyinSearch.',
-      'Neutral-tone fallback is allowed only when stripped syllables match and exactly one side omits tone marks.',
+      subtlexEntries.length > 0
+        ? `Parsed ${subtlexEntries.length} SUBTLEX lemma rows from ${subtlexPath}.`
+        : `No local SUBTLEX file found at ${subtlexPath} yet.`,
+      `Built ${cedictSeedWords.length} canonical seed words from grouped CC-CEDICT entries.`,
+      `SUBTLEX matched ${subtlexMatches} canonical words by hanzi lemma.`,
+      `Assigned priority to ${prioritizedCount} canonical words.`,
+      'SUBTLEX ranking is used for priority only and does not override CC-CEDICT readings.',
       `Unique primary join keys: ${new Set(canonicalWords.map((word) => canonicalJoinKey(word.hanzi, word.pinyinDisplay))).size}`,
-      `Unique fuzzy join keys: ${new Set(canonicalWords.map((word) => fuzzyJoinKey(word.hanzi, word.pinyinDisplay))).size}`,
     ],
     sample: canonicalWords.slice(0, 5),
   };

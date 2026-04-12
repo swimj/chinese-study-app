@@ -1,6 +1,7 @@
 export type Word = {
   id: string;
   hanzi: string;
+  traditional: string | null;
   pinyin: string;
   meaning: string;
   examples: string[];

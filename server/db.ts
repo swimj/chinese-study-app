@@ -17,6 +17,7 @@ type WordStatus = 'unstudied' | 'learning' | 'review';
 type Word = {
   id: string;
   hanzi: string;
+  traditional: string | null;
   pinyin: string;
   meaning: string;
   examples: string[];
@@ -44,6 +45,7 @@ type ReviewPassRating = 'hard' | 'good' | 'easy';
 type WordRow = {
   id: string;
   hanzi: string;
+  traditional: string | null;
   pinyin: string;
   meaning: string;
   examples_json: string;
@@ -86,6 +88,7 @@ export function getWords(): Word[] {
       SELECT
         id,
         hanzi,
+        traditional,
         pinyin,
         meaning,
         examples_json,
@@ -226,6 +229,7 @@ export function getWordStatusCounts(): Record<WordStatus, number> {
   return counts;
 }
 
+// what is this used for / when was it added?
 export function getLearningPolicy() {
   return {
     dailyNewWordLimit: DAILY_NEW_WORD_LIMIT,
@@ -239,6 +243,7 @@ export function completeUnstudiedWordSession(wordId: string): Word {
       SELECT
         id,
         hanzi,
+        traditional,
         pinyin,
         meaning,
         examples_json,
@@ -285,6 +290,7 @@ export function completeUnstudiedWordSession(wordId: string): Word {
       SELECT
         id,
         hanzi,
+        traditional,
         pinyin,
         meaning,
         examples_json,
@@ -353,6 +359,7 @@ export function completeLearningWordSession(wordId: string, success: boolean): W
       SELECT
         id,
         hanzi,
+        traditional,
         pinyin,
         meaning,
         examples_json,
@@ -407,6 +414,7 @@ export function completeLearningWordSession(wordId: string, success: boolean): W
       SELECT
         id,
         hanzi,
+        traditional,
         pinyin,
         meaning,
         examples_json,
@@ -440,6 +448,7 @@ function createSchema() {
     CREATE TABLE words (
       id TEXT PRIMARY KEY,
       hanzi TEXT NOT NULL,
+      traditional TEXT,
       pinyin TEXT NOT NULL,
       meaning TEXT NOT NULL,
       examples_json TEXT NOT NULL,
@@ -476,6 +485,7 @@ function validateSchema() {
   assertTableColumns('words', [
     'id',
     'hanzi',
+    'traditional',
     'pinyin',
     'meaning',
     'examples_json',
@@ -525,6 +535,7 @@ function seedDatabase() {
     INSERT INTO words (
       id,
       hanzi,
+      traditional,
       pinyin,
       meaning,
       examples_json,
@@ -535,7 +546,7 @@ function seedDatabase() {
       last_learning_success_on,
       last_learning_covered_on
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertReviewItem = db.prepare(`
     INSERT INTO review_items (
@@ -557,6 +568,7 @@ function seedDatabase() {
       insertWord.run(
         word.id,
         word.hanzi,
+        word.traditional,
         word.pinyin,
         word.meaning,
         JSON.stringify(word.examples),
@@ -621,6 +633,7 @@ function buildSampleWords(): Word[] {
     {
       id: 'word-1',
       hanzi: '你好',
+      traditional: '你好',
       pinyin: 'nǐ hǎo',
       meaning: 'hello',
       examples: ['你好！你今天怎么样？'],
@@ -634,6 +647,7 @@ function buildSampleWords(): Word[] {
     {
       id: 'word-2',
       hanzi: '谢谢',
+      traditional: '謝謝',
       pinyin: 'xiè xie',
       meaning: 'thank you',
       examples: ['谢谢你的帮助。'],
@@ -647,6 +661,7 @@ function buildSampleWords(): Word[] {
     {
       id: 'word-3',
       hanzi: '学习',
+      traditional: '學習',
       pinyin: 'xué xí',
       meaning: 'to study',
       examples: ['我每天学习汉语。'],
@@ -660,6 +675,7 @@ function buildSampleWords(): Word[] {
     {
       id: 'word-4',
       hanzi: '朋友',
+      traditional: '朋友',
       pinyin: 'péng you',
       meaning: 'friend',
       examples: ['她是我的好朋友。'],
@@ -673,6 +689,7 @@ function buildSampleWords(): Word[] {
     {
       id: 'word-5',
       hanzi: '说',
+      traditional: '說',
       pinyin: 'shuō',
       meaning: 'to speak',
       examples: ['你会说中文吗？'],
@@ -720,6 +737,7 @@ function mapWordRow(row: WordRow): Word {
   return {
     id: row.id,
     hanzi: row.hanzi,
+    traditional: row.traditional,
     pinyin: row.pinyin,
     meaning: row.meaning,
     examples: JSON.parse(row.examples_json) as string[],

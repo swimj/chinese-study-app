@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 type MigrationRecord = {
   id: string;
   hanzi: string;
+  traditional?: string | null;
   pinyin: string;
   meanings: string[];
   intervalDays: number;
@@ -67,6 +68,7 @@ db.exec(`
   CREATE TABLE words (
     id TEXT PRIMARY KEY,
     hanzi TEXT NOT NULL,
+    traditional TEXT,
     pinyin TEXT NOT NULL,
     meaning TEXT NOT NULL,
     examples_json TEXT NOT NULL,
@@ -96,6 +98,7 @@ const insertWord = db.prepare(`
   INSERT INTO words (
     id,
     hanzi,
+    traditional,
     pinyin,
     meaning,
     examples_json,
@@ -106,7 +109,7 @@ const insertWord = db.prepare(`
     last_learning_success_on,
     last_learning_covered_on
   )
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const insertReviewItem = db.prepare(`
@@ -129,6 +132,7 @@ try {
     insertWord.run(
       record.id,
       record.hanzi,
+      record.traditional ?? null,
       record.pinyin,
       record.meanings.join('; '),
       JSON.stringify([]),
@@ -164,6 +168,7 @@ try {
 const seedWords = dueRecords.map((record, index) => ({
   id: record.id,
   hanzi: record.hanzi,
+  traditional: record.traditional ?? null,
   pinyin: record.pinyin,
   meaning: record.meanings.join('; '),
   examples: [],
