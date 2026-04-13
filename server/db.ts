@@ -111,6 +111,7 @@ type SessionItemWithWordRow = {
 
 let db = openDatabase(dbPath);
 const DAILY_NEW_WORD_LIMIT = 2;
+const INITIAL_REVIEW_EASE_FACTOR = 2.5;
 
 initializeDatabase();
 
@@ -421,9 +422,9 @@ export function completeLearningWordSession(wordId: string, success: boolean): W
       SET interval_hours = 24,
           last_reviewed_at = ?,
           next_due_at = ?,
-          ease_factor = 2.5
+          ease_factor = ?
       WHERE word_id = ?
-    `).run(now, addHours(now, 24), wordId);
+    `).run(now, addHours(now, 24), INITIAL_REVIEW_EASE_FACTOR, wordId);
   }
 
   const updatedWord = db
@@ -725,7 +726,7 @@ function normalizeSeedReviewItem(reviewItem: Partial<ReviewItem>): ReviewItem {
     intervalHours: reviewItem.intervalHours ?? 0,
     lastReviewedAt: reviewItem.lastReviewedAt ?? null,
     nextDueAt: reviewItem.nextDueAt ?? null,
-    easeFactor: reviewItem.easeFactor ?? 2.5,
+    easeFactor: reviewItem.easeFactor ?? INITIAL_REVIEW_EASE_FACTOR,
   };
 }
 
@@ -830,7 +831,7 @@ function buildSampleReviewItems(words: Word[]): ReviewItem[] {
         intervalHours: word.status === 'review' ? 48 : 6,
         lastReviewedAt: null,
         nextDueAt,
-        easeFactor: 2.5,
+        easeFactor: INITIAL_REVIEW_EASE_FACTOR,
       },
       {
         id: `${word.id}-reverse`,
@@ -839,7 +840,7 @@ function buildSampleReviewItems(words: Word[]): ReviewItem[] {
         intervalHours: word.status === 'review' ? 36 : 6,
         lastReviewedAt: null,
         nextDueAt,
-        easeFactor: 2.5,
+        easeFactor: INITIAL_REVIEW_EASE_FACTOR,
       },
     ];
   });
