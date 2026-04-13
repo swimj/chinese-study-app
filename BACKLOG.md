@@ -14,6 +14,7 @@ Noncritical improvements worth remembering as the project evolves.
 - Move example sentences to the revealed answer only, regardless of review direction. The prompt side should stay pure recall: show only `hanzi` for forward cards and only English for reverse cards.
 - Show clearer post-answer feedback, such as the next due date after a rating is submitted.
 - Consider a session summary screen after all due cards are completed.
+- Design and implement a mid-session `Undo` action for the most recent rating/advance, so fast keyboard inputs (especially `Space`) are recoverable.
 
 ## Data and Operations
 

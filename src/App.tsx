@@ -550,7 +550,7 @@ function App() {
           return;
         }
 
-        if (activeWord && activeWord.status !== 'review') {
+        if (activeWord) {
           void handleRate('good');
         }
         return;
