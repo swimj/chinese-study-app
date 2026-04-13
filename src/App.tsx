@@ -48,6 +48,7 @@ type SessionSummary = {
 };
 
 const WORDS_PAGE_SIZE = 20;
+const APP_VERSION = __APP_VERSION__;
 
 type SessionPrefetchStatus = 'idle' | 'pending' | 'ready' | 'error';
 
@@ -598,7 +599,7 @@ function App() {
       <nav className="navbar" aria-label="Primary">
         <div className="nav-brand">
           <strong>Mandarin SRS App</strong>
-          <span>Study workflow and inspection tools</span>
+          <span>Study workflow and inspection tools · v{APP_VERSION}</span>
         </div>
         <div className="nav-tabs">
           <button
@@ -785,7 +786,7 @@ function App() {
       )}
 
       <footer className="footer">
-        Session coverage is now determined entirely in frontend state before durable backend updates are committed.
+        v{APP_VERSION} · Session coverage is now determined entirely in frontend state before durable backend updates are committed.
       </footer>
     </div>
   );
