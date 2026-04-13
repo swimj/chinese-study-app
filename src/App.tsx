@@ -15,7 +15,6 @@ import {
   beginUnstudiedDrill,
   createSessionState,
   getCurrentQueueItem,
-  getQueueItems,
   markCurrentItemStarted,
   rateCurrentItem,
   type SessionState,
@@ -102,8 +101,7 @@ function App() {
   }, [reviewItems]);
 
   const sessionWordLookup = sessionWordsById ?? wordsById;
-  const displayedWordsById = sessionStarted ? sessionWordLookup : wordsById;
-  const displayedSessionItems = sessionStarted && sessionState ? getQueueItems(sessionState.queue) : sessionPreviewItems;
+  const displayedSessionItemCount = sessionStarted ? sessionState?.queue.length ?? 0 : sessionPreviewItems.length;
   const activeItem = sessionStarted && sessionState ? getCurrentQueueItem(sessionState.queue) ?? null : null;
   const activeWord = activeItem ? sessionWordLookup.get(activeItem.wordId) ?? null : null;
   const activeLearningProgress = activeWord ? sessionState?.learningProgress[activeWord.id] : undefined;
@@ -111,8 +109,6 @@ function App() {
   const activeReviewProgress = activeItem ? sessionState?.reviewProgress[activeItem.id] : undefined;
   const reviewedCount = sessionStarted ? sessionState?.answeredCount ?? 0 : 0;
   const wordStatusCounts = countWordStatuses(words);
-  const learningWords = words.filter((word) => word.status === 'learning');
-  const unstudiedWords = words.filter((word) => word.status === 'unstudied');
 
   const inspectableRows = useMemo(() => {
     const rows: InspectableRow[] = [];
@@ -589,7 +585,7 @@ function App() {
                 </div>
                 <div className="stat-card">
                   <span className="stat-label">{sessionStarted ? 'Items left in session' : 'Session preview items'}</span>
-                  <strong className="stat-value">{displayedSessionItems.length}</strong>
+                  <strong className="stat-value">{displayedSessionItemCount}</strong>
                 </div>
                 <div className="stat-card">
                   <span className="stat-label">Answered this session</span>
@@ -610,45 +606,6 @@ function App() {
                       : 'Back to overview'}
                 </button>
               )}
-              <h3>Session snapshot</h3>
-              <ul className="word-list">
-                  {displayedSessionItems.map((item) => {
-                    const word = displayedWordsById.get(item.wordId);
-                    return (
-                    <li key={item.id} className="word-item">
-                      <div>
-                        <strong>{word?.hanzi ?? item.wordId}</strong>
-                        <span>{item.direction === 'forward' ? 'Hanzi → Meaning' : 'Meaning → Hanzi'}</span>
-                      </div>
-                      <div>{word?.meaning ?? 'Unknown word'}</div>
-                    </li>
-                  );
-                })}
-              </ul>
-              <h3>Learning words</h3>
-              <ul className="word-list">
-                {learningWords.map((word) => (
-                  <li key={word.id} className="word-item">
-                    <div>
-                      <strong>{word.hanzi}</strong>
-                      <span>Streak {word.learningStreak}</span>
-                    </div>
-                    <div>{word.meaning}</div>
-                  </li>
-                ))}
-              </ul>
-              <h3>Unstudied words</h3>
-              <ul className="word-list">
-                {unstudiedWords.map((word) => (
-                  <li key={word.id} className="word-item">
-                    <div>
-                      <strong>{word.hanzi}</strong>
-                      <span>{word.pinyin}</span>
-                    </div>
-                    <div>{word.meaning}</div>
-                  </li>
-                ))}
-              </ul>
             </div>
 
             <div className="panel">
