@@ -72,12 +72,24 @@ type SeedData = {
   reviewItems: ReviewItem[];
 };
 
+type HomeOverview = {
+  dueReviewItemCount: number;
+  pendingLearningWordCount: number;
+  newWordIntroCount: number;
+  hasSessionWork: boolean;
+};
+
+type SessionPayload = {
+  items: ReviewItem[];
+  words: Word[];
+};
+
 let db = openDatabase(dbPath);
 const DAILY_NEW_WORD_LIMIT = 2;
 
 initializeDatabase();
 
-export type { ReviewItem, ReviewPassRating, ReviewRating, Word, WordStatus };
+export type { HomeOverview, ReviewItem, ReviewPassRating, ReviewRating, SessionPayload, Word, WordStatus };
 export { config as dbConfig };
 
 export function getWords(): Word[] {
@@ -186,6 +198,16 @@ export function getSessionItems(): ReviewItem[] {
   return [...dueReviewRows, ...learningRows, ...unstudiedRows].map(mapReviewItemRow);
 }
 
+export function getSessionPayload(): SessionPayload {
+  const items = getSessionItems();
+  const wordIds = [...new Set(items.map((item) => item.wordId))];
+
+  return {
+    items,
+    words: getWordsByIds(wordIds),
+  };
+}
+
 export function getReviewItems(): ReviewItem[] {
   const rows = db
     .prepare(`
@@ -225,6 +247,51 @@ export function getWordStatusCounts(): Record<WordStatus, number> {
   }
 
   return counts;
+}
+
+export function getHomeOverview(): HomeOverview {
+  const dueReviewItemCount = db
+    .prepare(`
+      SELECT COUNT(*) as count
+      FROM review_items
+      INNER JOIN words ON words.id = review_items.word_id
+      WHERE words.status = 'review'
+        AND review_items.next_due_at IS NOT NULL
+        AND review_items.next_due_at <= ?
+    `)
+    .get(new Date().toISOString()) as { count: number };
+
+  const pendingLearningWordCount = db
+    .prepare(`
+      SELECT COUNT(*) as count
+      FROM words
+      WHERE status = 'learning'
+        AND (last_learning_covered_on IS NULL OR last_learning_covered_on != ?)
+    `)
+    .get(getTodayKey()) as { count: number };
+
+  const newWordIntroCount = db
+    .prepare(`
+      SELECT COUNT(*) as count
+      FROM (
+        SELECT id
+        FROM words
+        WHERE status = 'unstudied'
+        ORDER BY priority DESC, created_at ASC
+        LIMIT ?
+      )
+    `)
+    .get(DAILY_NEW_WORD_LIMIT) as { count: number };
+
+  return {
+    dueReviewItemCount: dueReviewItemCount.count,
+    pendingLearningWordCount: pendingLearningWordCount.count,
+    newWordIntroCount: newWordIntroCount.count,
+    hasSessionWork:
+      dueReviewItemCount.count > 0 ||
+      pendingLearningWordCount.count > 0 ||
+      newWordIntroCount.count > 0,
+  };
 }
 
 // what is this used for / when was it added?
@@ -841,6 +908,39 @@ function mapWordRow(row: WordRow): Word {
     lastLearningSuccessOn: row.last_learning_success_on,
     lastLearningCoveredOn: row.last_learning_covered_on,
   };
+}
+
+function getWordsByIds(wordIds: string[]): Word[] {
+  if (wordIds.length === 0) {
+    return [];
+  }
+
+  const placeholders = wordIds.map(() => '?').join(', ');
+  const rows = db
+    .prepare(`
+      SELECT
+        id,
+        hanzi,
+        traditional,
+        pinyin,
+        meaning,
+        examples_json,
+        status,
+        priority,
+        created_at,
+        learning_streak,
+        last_learning_success_on,
+        last_learning_covered_on
+      FROM words
+      WHERE id IN (${placeholders})
+    `)
+    .all(...wordIds) as WordRow[];
+
+  const words = rows.map(mapWordRow);
+  const orderById = new Map(wordIds.map((id, index) => [id, index]));
+  words.sort((left, right) => (orderById.get(left.id) ?? 0) - (orderById.get(right.id) ?? 0));
+
+  return words;
 }
 
 function mapReviewItemRow(row: ReviewItemRow): ReviewItem {

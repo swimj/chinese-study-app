@@ -118,6 +118,96 @@ describe('session composition', { concurrency: false }, () => {
     assert.deepEqual(sessionIds, ['review-word-forward']);
   });
 
+  test('home overview reports due review, uncovered learning, and limited new-word intake counts', () => {
+    insertWord({
+      id: 'overview-review-word',
+      hanzi: '听',
+      pinyin: 'ting',
+      meaning: 'listen',
+      examples: ['我听音乐。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(48),
+    });
+    insertReviewItem({
+      id: 'overview-review-word-forward',
+      wordId: 'overview-review-word',
+      direction: 'forward',
+      intervalHours: 24,
+      nextDueAt: isoHoursAgo(2),
+    });
+    insertReviewItem({
+      id: 'overview-review-word-reverse',
+      wordId: 'overview-review-word',
+      direction: 'reverse',
+      intervalHours: 24,
+      nextDueAt: isoHoursFromNow(4),
+    });
+
+    insertWord({
+      id: 'overview-learning-open',
+      hanzi: '写',
+      pinyin: 'xie',
+      meaning: 'write',
+      examples: ['我写汉字。'],
+      status: 'learning',
+      priority: 90,
+      createdAt: isoHoursAgo(24),
+      lastLearningCoveredOn: yesterday,
+    });
+    insertReviewItem({
+      id: 'overview-learning-open-forward',
+      wordId: 'overview-learning-open',
+      direction: 'forward',
+      intervalHours: 6,
+      nextDueAt: null,
+    });
+    insertReviewItem({
+      id: 'overview-learning-open-reverse',
+      wordId: 'overview-learning-open',
+      direction: 'reverse',
+      intervalHours: 6,
+      nextDueAt: null,
+    });
+
+    insertWord({
+      id: 'overview-learning-covered',
+      hanzi: '读',
+      pinyin: 'du',
+      meaning: 'read',
+      examples: ['我读书。'],
+      status: 'learning',
+      priority: 80,
+      createdAt: isoHoursAgo(24),
+      lastLearningCoveredOn: today,
+    });
+    insertReviewItem({
+      id: 'overview-learning-covered-forward',
+      wordId: 'overview-learning-covered',
+      direction: 'forward',
+      intervalHours: 6,
+      nextDueAt: null,
+    });
+    insertReviewItem({
+      id: 'overview-learning-covered-reverse',
+      wordId: 'overview-learning-covered',
+      direction: 'reverse',
+      intervalHours: 6,
+      nextDueAt: null,
+    });
+
+    insertUnstudiedWordPair('overview-new-a', 70, '2026-01-01T00:00:00.000Z');
+    insertUnstudiedWordPair('overview-new-b', 60, '2026-01-02T00:00:00.000Z');
+    insertUnstudiedWordPair('overview-new-c', 50, '2026-01-03T00:00:00.000Z');
+
+    assert.deepEqual(dbModule.getHomeOverview(), {
+      dueReviewItemCount: 1,
+      pendingLearningWordCount: 1,
+      newWordIntroCount: 2,
+      hasSessionWork: true,
+    });
+  });
+
   test('orders due review items with all reverse directions before all forward directions', () => {
     insertWord({
       id: 'review-word-a',
@@ -298,6 +388,97 @@ describe('session composition', { concurrency: false }, () => {
       'unstudied-old-high-reverse',
       'unstudied-new-high-forward',
       'unstudied-new-high-reverse',
+    ]);
+  });
+
+  test('session payload bundles only the words referenced by current session items', () => {
+    insertWord({
+      id: 'payload-review-word',
+      hanzi: '走',
+      pinyin: 'zou',
+      meaning: 'walk',
+      examples: ['我走路去。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(48),
+    });
+    insertReviewItem({
+      id: 'payload-review-word-forward',
+      wordId: 'payload-review-word',
+      direction: 'forward',
+      intervalHours: 24,
+      nextDueAt: isoHoursAgo(3),
+    });
+    insertReviewItem({
+      id: 'payload-review-word-reverse',
+      wordId: 'payload-review-word',
+      direction: 'reverse',
+      intervalHours: 24,
+      nextDueAt: isoHoursFromNow(3),
+    });
+
+    insertWord({
+      id: 'payload-learning-word',
+      hanzi: '跑',
+      pinyin: 'pao',
+      meaning: 'run',
+      examples: ['他跑得很快。'],
+      status: 'learning',
+      priority: 90,
+      createdAt: isoHoursAgo(24),
+      lastLearningCoveredOn: yesterday,
+    });
+    insertReviewItem({
+      id: 'payload-learning-word-forward',
+      wordId: 'payload-learning-word',
+      direction: 'forward',
+      intervalHours: 6,
+      nextDueAt: null,
+    });
+    insertReviewItem({
+      id: 'payload-learning-word-reverse',
+      wordId: 'payload-learning-word',
+      direction: 'reverse',
+      intervalHours: 6,
+      nextDueAt: null,
+    });
+
+    insertWord({
+      id: 'payload-excluded-word',
+      hanzi: '坐',
+      pinyin: 'zuo',
+      meaning: 'sit',
+      examples: ['请坐。'],
+      status: 'learning',
+      priority: 80,
+      createdAt: isoHoursAgo(24),
+      lastLearningCoveredOn: today,
+    });
+    insertReviewItem({
+      id: 'payload-excluded-word-forward',
+      wordId: 'payload-excluded-word',
+      direction: 'forward',
+      intervalHours: 6,
+      nextDueAt: null,
+    });
+    insertReviewItem({
+      id: 'payload-excluded-word-reverse',
+      wordId: 'payload-excluded-word',
+      direction: 'reverse',
+      intervalHours: 6,
+      nextDueAt: null,
+    });
+
+    const payload = dbModule.getSessionPayload();
+
+    assert.deepEqual(payload.items.map((item) => item.id), [
+      'payload-review-word-forward',
+      'payload-learning-word-reverse',
+      'payload-learning-word-forward',
+    ]);
+    assert.deepEqual(payload.words.map((word) => word.id), [
+      'payload-review-word',
+      'payload-learning-word',
     ]);
   });
 
@@ -483,6 +664,34 @@ function insertReviewItem(record: ReviewItemRecord) {
     record.nextDueAt ?? null,
     record.easeFactor ?? 2.5,
   );
+}
+
+function insertUnstudiedWordPair(id: string, priority: number, createdAt: string) {
+  insertWord({
+    id,
+    hanzi: `${id}-hanzi`,
+    pinyin: `${id}-pinyin`,
+    meaning: `${id}-meaning`,
+    examples: [`${id}-example`],
+    status: 'unstudied',
+    priority,
+    createdAt,
+  });
+
+  insertReviewItem({
+    id: `${id}-forward`,
+    wordId: id,
+    direction: 'forward',
+    intervalHours: 6,
+    nextDueAt: null,
+  });
+  insertReviewItem({
+    id: `${id}-reverse`,
+    wordId: id,
+    direction: 'reverse',
+    intervalHours: 6,
+    nextDueAt: null,
+  });
 }
 
 function isoHoursAgo(hours: number) {

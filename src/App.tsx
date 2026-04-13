@@ -1,12 +1,12 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { ReviewItem, ReviewRating, Word } from './types';
-import type { BackendStatus } from './services/api';
+import type { BackendStatus, SessionPayload } from './services/api';
 import {
   completeLearningSession,
   completeReviewSession,
   completeUnstudiedSession,
   fetchReviewItems,
-  fetchSessionItems,
+  fetchSessionPayload,
   fetchStatus,
   fetchWords,
 } from './services/api';
@@ -49,12 +49,86 @@ type SessionSummary = {
 
 const WORDS_PAGE_SIZE = 20;
 
+type SessionPrefetchStatus = 'idle' | 'pending' | 'ready' | 'error';
+
+type SessionPrefetchState = {
+  status: SessionPrefetchStatus;
+  payload: SessionPayload | null;
+  fetchedAt: string | null;
+  error: string | null;
+};
+
+let sessionPrefetchPromise: Promise<SessionPayload> | null = null;
+let sessionPrefetchStateCache: SessionPrefetchState = {
+  status: 'idle',
+  payload: null,
+  fetchedAt: null,
+  error: null,
+};
+
+function getSessionPrefetchSnapshot(): SessionPrefetchState {
+  return {
+    ...sessionPrefetchStateCache,
+  };
+}
+
+function resetSessionPrefetchCache() {
+  sessionPrefetchPromise = null;
+  sessionPrefetchStateCache = {
+    status: 'idle',
+    payload: null,
+    fetchedAt: null,
+    error: null,
+  };
+}
+
+function beginSessionPrefetch(): Promise<SessionPayload> {
+  if (sessionPrefetchStateCache.status === 'ready' && sessionPrefetchStateCache.payload) {
+    return Promise.resolve(sessionPrefetchStateCache.payload);
+  }
+
+  if (sessionPrefetchStateCache.status === 'pending' && sessionPrefetchPromise) {
+    return sessionPrefetchPromise;
+  }
+
+  sessionPrefetchStateCache = {
+    status: 'pending',
+    payload: null,
+    fetchedAt: null,
+    error: null,
+  };
+
+  sessionPrefetchPromise = fetchSessionPayload()
+    .then((payload) => {
+      sessionPrefetchStateCache = {
+        status: 'ready',
+        payload,
+        fetchedAt: new Date().toISOString(),
+        error: null,
+      };
+      sessionPrefetchPromise = null;
+      return payload;
+    })
+    .catch((error) => {
+      sessionPrefetchStateCache = {
+        status: 'error',
+        payload: null,
+        fetchedAt: null,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+      sessionPrefetchPromise = null;
+      throw error;
+    });
+
+  return sessionPrefetchPromise;
+}
+
 function App() {
   const [currentPage, setCurrentPage] = useState<AppPage>('home');
   const [words, setWords] = useState<Word[]>([]);
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
-  const [sessionPreviewItems, setSessionPreviewItems] = useState<ReviewItem[]>([]);
   const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);
+  const [sessionPrefetch, setSessionPrefetch] = useState<SessionPrefetchState>(() => getSessionPrefetchSnapshot());
   const [error, setError] = useState<string | null>(null);
   const [sessionStarted, setSessionStarted] = useState(false);
   const [sessionState, setSessionState] = useState<SessionState | null>(null);
@@ -68,9 +142,15 @@ function App() {
   const [sessionWordsById, setSessionWordsById] = useState<Map<string, Word> | null>(null);
 
   useEffect(() => {
+    function syncSessionPrefetchState() {
+      setSessionPrefetch(getSessionPrefetchSnapshot());
+    }
+
     async function loadData() {
       try {
         await reloadDashboard();
+        syncSessionPrefetchState();
+        void ensureSessionPrefetch(syncSessionPrefetchState).catch(() => undefined);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error');
       }
@@ -101,16 +181,26 @@ function App() {
   }, [reviewItems]);
 
   const sessionWordLookup = sessionWordsById ?? wordsById;
-  const displayedSessionItemCount = sessionStarted ? sessionState?.queue.length ?? 0 : sessionPreviewItems.length;
+  const displayedSessionItemCount = sessionStarted
+    ? sessionState?.queue.length ?? 0
+    : sessionPrefetch.payload?.items.length ?? 0;
   const activeItem = sessionStarted && sessionState ? getCurrentQueueItem(sessionState.queue) ?? null : null;
   const activeWord = activeItem ? sessionWordLookup.get(activeItem.wordId) ?? null : null;
   const activeLearningProgress = activeWord ? sessionState?.learningProgress[activeWord.id] : undefined;
   const activeUnstudiedProgress = activeWord ? sessionState?.unstudiedProgress[activeWord.id] : undefined;
   const activeReviewProgress = activeItem ? sessionState?.reviewProgress[activeItem.id] : undefined;
   const reviewedCount = sessionStarted ? sessionState?.answeredCount ?? 0 : 0;
-  const wordStatusCounts = countWordStatuses(words);
+  const homeStatusCounts = backendStatus?.wordStatusCounts ?? {
+    unstudied: 0,
+    learning: 0,
+    review: 0,
+  };
 
   const inspectableRows = useMemo(() => {
+    if (currentPage !== 'words') {
+      return [];
+    }
+
     const rows: InspectableRow[] = [];
 
     for (const word of words) {
@@ -168,7 +258,7 @@ function App() {
     });
 
     return rows;
-  }, [reviewItemsByWordId, words]);
+  }, [currentPage, reviewItemsByWordId, words]);
 
   const totalWordPages = Math.max(1, Math.ceil(inspectableRows.length / WORDS_PAGE_SIZE));
   const pagedInspectableRows = inspectableRows.slice(
@@ -218,16 +308,7 @@ function App() {
       : '0:00';
 
   async function reloadDashboard() {
-    const [wordsResponse, reviewItemsResponse, sessionItemsResponse, statusResponse] = await Promise.all([
-      fetchWords(),
-      fetchReviewItems(),
-      fetchSessionItems(),
-      fetchStatus(),
-    ]);
-
-    setWords(wordsResponse);
-    setReviewItems(reviewItemsResponse);
-    setSessionPreviewItems(sessionItemsResponse);
+    const statusResponse = await fetchStatus();
     setBackendStatus(statusResponse);
   }
 
@@ -236,25 +317,20 @@ function App() {
     setError(null);
 
     try {
-      const [wordsResponse, reviewItemsResponse, sessionItemsResponse, statusResponse] = await Promise.all([
-        fetchWords(),
-        fetchReviewItems(),
-        fetchSessionItems(),
-        fetchStatus(),
-      ]);
+      const sessionPayload = await ensureSessionPrefetch(() => setSessionPrefetch(getSessionPrefetchSnapshot()));
+      if (sessionPayload.items.length === 0) {
+        setError('No session items are currently available.');
+        return;
+      }
 
-      setWords(wordsResponse);
-      setReviewItems(reviewItemsResponse);
-      setSessionPreviewItems(sessionItemsResponse);
-      setBackendStatus(statusResponse);
-      setSessionWordsById(new Map(wordsResponse.map((word) => [word.id, word])));
+      setSessionWordsById(new Map(sessionPayload.words.map((word) => [word.id, word])));
       const startedAt = new Date().toISOString();
       setSessionNow(startedAt);
-      setSessionState(createSessionState(sessionItemsResponse));
+      setSessionState(createSessionState(sessionPayload.items));
       setSessionSummary({
         startedAt,
         completedAt: null,
-        initialQueueLength: sessionItemsResponse.length,
+        initialQueueLength: sessionPayload.items.length,
         answeredCount: 0,
         completedReviewItems: 0,
         encounteredReviewItemIds: [],
@@ -299,7 +375,10 @@ function App() {
     setSessionWordsById(null);
     setSessionSummary(null);
     setAnswerRevealed(false);
+    resetSessionPrefetchCache();
+    setSessionPrefetch(getSessionPrefetchSnapshot());
     await reloadDashboard();
+    void ensureSessionPrefetch(() => setSessionPrefetch(getSessionPrefetchSnapshot())).catch(() => undefined);
   }
 
   async function handleOpenWordsPage() {
@@ -573,28 +652,34 @@ function App() {
           <div className="grid">
             <div className="panel">
               <h2>Overview</h2>
-              <p className="notes">Loaded {words.length} words from the backend.</p>
+              <p className="notes">Home loads lightweight counts first, then prefetches the session payload in the background.</p>
               <div className="stack">
                 <div className="stat-card">
-                  <span className="stat-label">Unstudied</span>
-                  <strong className="stat-value">{wordStatusCounts.unstudied}</strong>
+                  <span className="stat-label">Due review items</span>
+                  <strong className="stat-value">{backendStatus?.dueReviewItemCount ?? 0}</strong>
                 </div>
                 <div className="stat-card">
-                  <span className="stat-label">Learning / Review</span>
-                  <strong className="stat-value">{wordStatusCounts.learning} / {wordStatusCounts.review}</strong>
+                  <span className="stat-label">Learning words due</span>
+                  <strong className="stat-value">{backendStatus?.pendingLearningWordCount ?? 0}</strong>
                 </div>
                 <div className="stat-card">
-                  <span className="stat-label">{sessionStarted ? 'Items left in session' : 'Session preview items'}</span>
-                  <strong className="stat-value">{displayedSessionItemCount}</strong>
+                  <span className="stat-label">{sessionStarted ? 'Items left in session' : 'New words to introduce'}</span>
+                  <strong className="stat-value">{sessionStarted ? displayedSessionItemCount : backendStatus?.newWordIntroCount ?? 0}</strong>
                 </div>
                 <div className="stat-card">
-                  <span className="stat-label">Answered this session</span>
-                  <strong className="stat-value">{reviewedCount}</strong>
+                  <span className="stat-label">{sessionStarted ? 'Answered this session' : 'Prefetched session items'}</span>
+                  <strong className="stat-value">{sessionStarted ? reviewedCount : displayedSessionItemCount}</strong>
                 </div>
               </div>
+              <p className="notes">Corpus status counts: {homeStatusCounts.learning} learning, {homeStatusCounts.review} review, {homeStatusCounts.unstudied} unstudied.</p>
               <p className="notes">Learning coverage day: {backendStatus?.learningCoverageDate ?? 'Unknown'}.</p>
               {!sessionStarted ? (
-                <button type="button" onClick={handleStartSession} disabled={sessionLoading || sessionPreviewItems.length === 0}>
+                <p className="notes">
+                  Session prefetch: {formatSessionPrefetchStatus(sessionPrefetch)}
+                </p>
+              ) : null}
+              {!sessionStarted ? (
+                <button type="button" onClick={handleStartSession} disabled={sessionLoading || !backendStatus?.hasSessionWork}>
                   {sessionLoading ? 'Preparing session...' : 'Start session'}
                 </button>
               ) : (
@@ -1006,18 +1091,32 @@ function SessionSummaryPanel({ summary }: { summary: SessionSummary }) {
   );
 }
 
-function countWordStatuses(words: Word[]) {
-  return words.reduce(
-    (counts, word) => {
-      counts[word.status] += 1;
-      return counts;
-    },
-    {
-      unstudied: 0,
-      learning: 0,
-      review: 0,
-    } as Record<Word['status'], number>,
-  );
+async function ensureSessionPrefetch(onStateChange: () => void): Promise<SessionPayload> {
+  onStateChange();
+
+  try {
+    const payload = await beginSessionPrefetch();
+    onStateChange();
+    return payload;
+  } catch (error) {
+    onStateChange();
+    throw error;
+  }
+}
+
+function formatSessionPrefetchStatus(sessionPrefetch: SessionPrefetchState) {
+  switch (sessionPrefetch.status) {
+    case 'idle':
+      return 'idle';
+    case 'pending':
+      return 'prefetching session data';
+    case 'ready':
+      return `ready (${sessionPrefetch.payload?.items.length ?? 0} items)`;
+    case 'error':
+      return sessionPrefetch.error ? `error: ${sessionPrefetch.error}` : 'error';
+    default:
+      return 'unknown';
+  }
 }
 
 function getStatusSortOrder(status: Word['status']) {

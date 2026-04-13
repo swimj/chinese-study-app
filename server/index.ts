@@ -5,9 +5,11 @@ import {
   completeReviewItemSession,
   completeUnstudiedWordSession,
   dbConfig,
+  getHomeOverview,
   getLearningPolicy,
   getReviewItems,
   getSessionItems,
+  getSessionPayload,
   getWords,
   getWordStatusCounts,
 } from './db.ts';
@@ -31,6 +33,10 @@ app.get('/api/session-items', (req, res) => {
   res.json(getSessionItems());
 });
 
+app.get('/api/session-payload', (req, res) => {
+  res.json(getSessionPayload());
+});
+
 app.get('/api/status', (req, res) => {
   res.json({
     status: 'ok',
@@ -39,6 +45,7 @@ app.get('/api/status', (req, res) => {
     dataDir: dbConfig.dataDir,
     dbPath: dbConfig.dbPath,
     wordStatusCounts: getWordStatusCounts(),
+    ...getHomeOverview(),
     ...getLearningPolicy(),
   });
 });

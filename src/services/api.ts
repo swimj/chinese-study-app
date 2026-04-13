@@ -9,7 +9,16 @@ type BackendStatus = {
   dataDir: string;
   dbPath: string;
   wordStatusCounts: Record<Word['status'], number>;
+  dueReviewItemCount: number;
+  pendingLearningWordCount: number;
+  newWordIntroCount: number;
+  hasSessionWork: boolean;
   learningCoverageDate: string;
+};
+
+export type SessionPayload = {
+  items: ReviewItem[];
+  words: Word[];
 };
 
 export type { BackendStatus };
@@ -35,6 +44,15 @@ export async function fetchSessionItems(): Promise<ReviewItem[]> {
   if (!response.ok) {
     throw new Error('Failed to load session items');
   }
+  return response.json();
+}
+
+export async function fetchSessionPayload(): Promise<SessionPayload> {
+  const response = await fetch(`${API_BASE}/api/session-payload`);
+  if (!response.ok) {
+    throw new Error('Failed to load session payload');
+  }
+
   return response.json();
 }
 
