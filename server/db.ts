@@ -6,7 +6,7 @@ import { getAppConfig } from './config.ts';
 const config = getAppConfig();
 const dbPath = config.dbPath;
 const appJsonPath = path.join(config.dataDir, 'app.json');
-const dbExists = fs.existsSync(dbPath);
+const dbExistedOnStartup = fs.existsSync(dbPath);
 
 if (!fs.existsSync(config.dataDir)) {
   fs.mkdirSync(config.dataDir, { recursive: true });
@@ -72,10 +72,8 @@ type SeedData = {
   reviewItems: ReviewItem[];
 };
 
-const db = new DatabaseSync(dbPath);
+let db = openDatabase(dbPath);
 const DAILY_NEW_WORD_LIMIT = 2;
-
-db.exec('PRAGMA foreign_keys = ON;');
 
 initializeDatabase();
 
@@ -433,14 +431,80 @@ export function completeLearningWordSession(wordId: string, success: boolean): W
 }
 
 function initializeDatabase() {
-  if (!dbExists) {
+  if (!dbExistedOnStartup) {
     createSchema();
     seedDatabase();
     return;
   }
 
-  validateSchema();
-  ensureIndexes();
+  try {
+    validateSchema();
+    ensureIndexes();
+    seedEmptyDevDatabase();
+  } catch (error) {
+    if (!shouldRebuildDevDatabase(error)) {
+      throw error;
+    }
+
+    rebuildDevDatabase(error);
+  }
+}
+
+function openDatabase(targetPath: string) {
+  const database = new DatabaseSync(targetPath);
+  database.exec('PRAGMA foreign_keys = ON;');
+  return database;
+}
+
+function shouldRebuildDevDatabase(error: unknown) {
+  if (config.mode !== 'dev') {
+    return false;
+  }
+
+  return error instanceof Error && error.message.startsWith(`Database at ${dbPath} `);
+}
+
+function rebuildDevDatabase(error: unknown) {
+  const backupPath = path.join(
+    config.dataDir,
+    `app.db.invalid-backup-${new Date().toISOString().replace(/[:.]/g, '-')}`,
+  );
+
+  db.close();
+
+  if (fs.existsSync(dbPath)) {
+    fs.renameSync(dbPath, backupPath);
+  }
+
+  console.warn(
+    [
+      `Dev database at ${dbPath} is invalid; rebuilding it from seed data.`,
+      error instanceof Error ? error.message : String(error),
+      `Original file backed up to ${backupPath}.`,
+    ].join(' '),
+  );
+
+  db = openDatabase(dbPath);
+  createSchema();
+  seedDatabase();
+}
+
+function seedEmptyDevDatabase() {
+  if (!config.seedSampleData) {
+    return;
+  }
+
+  const counts = db
+    .prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM words) AS word_count,
+        (SELECT COUNT(*) FROM review_items) AS review_item_count
+    `)
+    .get() as { word_count: number; review_item_count: number };
+
+  if (counts.word_count === 0 && counts.review_item_count === 0) {
+    seedDatabase();
+  }
 }
 
 function createSchema() {
@@ -612,8 +676,37 @@ function readSeedData(): SeedData | null {
   }
 
   return {
-    words: parsed.words as Word[],
-    reviewItems: parsed.reviewItems as ReviewItem[],
+    words: parsed.words.map(normalizeSeedWord),
+    reviewItems: parsed.reviewItems.map(normalizeSeedReviewItem),
+  };
+}
+
+function normalizeSeedWord(word: Partial<Word>): Word {
+  return {
+    id: word.id ?? '',
+    hanzi: word.hanzi ?? '',
+    traditional: word.traditional ?? null,
+    pinyin: word.pinyin ?? '',
+    meaning: word.meaning ?? '',
+    examples: Array.isArray(word.examples) ? word.examples : [],
+    status: word.status ?? 'unstudied',
+    priority: word.priority ?? 0,
+    createdAt: word.createdAt ?? new Date().toISOString(),
+    learningStreak: word.learningStreak ?? 0,
+    lastLearningSuccessOn: word.lastLearningSuccessOn ?? null,
+    lastLearningCoveredOn: word.lastLearningCoveredOn ?? null,
+  };
+}
+
+function normalizeSeedReviewItem(reviewItem: Partial<ReviewItem>): ReviewItem {
+  return {
+    id: reviewItem.id ?? '',
+    wordId: reviewItem.wordId ?? '',
+    direction: reviewItem.direction === 'reverse' ? 'reverse' : 'forward',
+    intervalHours: reviewItem.intervalHours ?? 0,
+    lastReviewedAt: reviewItem.lastReviewedAt ?? null,
+    nextDueAt: reviewItem.nextDueAt ?? null,
+    easeFactor: reviewItem.easeFactor ?? 2.5,
   };
 }
 

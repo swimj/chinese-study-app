@@ -4,6 +4,7 @@ import {
   beginDrainSession,
   beginUnstudiedDrill,
   createSessionState,
+  getQueueItems,
   markCurrentItemStarted,
   rateCurrentItem,
 } from '../src/lib/session-state.ts';
@@ -24,7 +25,7 @@ describe('session state', () => {
       terminalRating: 'good',
     });
     assert.equal(result.state.answeredCount, 1);
-    assert.deepEqual(result.state.queue, []);
+    assert.deepEqual(getQueueItems(result.state.queue), []);
     assert.deepEqual(result.state.startedItemIds, [reviewItem.id]);
   });
 
@@ -72,7 +73,7 @@ describe('session state', () => {
       terminalRating: null,
     });
     assert.equal(result.state.answeredCount, 6);
-    assert.deepEqual(result.state.queue, []);
+    assert.deepEqual(getQueueItems(result.state.queue), []);
     assert.equal(result.state.reviewProgress[reviewItem.id], undefined);
   });
 
@@ -86,7 +87,7 @@ describe('session state', () => {
 
     let result = rateCurrentItem(state, wordsById, 'good');
     assert.deepEqual(result.commit, { type: 'none' });
-    assert.deepEqual(result.state.queue.map((item) => item.id), [reverseItem.id]);
+    assert.deepEqual(getQueueItems(result.state.queue).map((item) => item.id), [reverseItem.id]);
     assert.deepEqual(result.state.learningProgress[learningWord.id], {
       coveredDirections: {
         forward: true,
@@ -109,7 +110,7 @@ describe('session state', () => {
       wordId: learningWord.id,
       success: true,
     });
-    assert.deepEqual(result.state.queue, []);
+    assert.deepEqual(getQueueItems(result.state.queue), []);
     assert.equal(result.state.learningProgress[learningWord.id], undefined);
   });
 
@@ -122,7 +123,7 @@ describe('session state', () => {
     let state = markCurrentItemStarted(createSessionState([forwardItem, reverseItem]));
 
     let result = rateCurrentItem(state, wordsById, 'forgot');
-    assert.deepEqual(result.state.queue.map((item) => item.id), [reverseItem.id, forwardItem.id]);
+    assert.deepEqual(getQueueItems(result.state.queue).map((item) => item.id), [reverseItem.id, forwardItem.id]);
 
     state = markCurrentItemStarted(result.state);
     result = rateCurrentItem(state, wordsById, 'good');
@@ -135,7 +136,7 @@ describe('session state', () => {
       wordId: learningWord.id,
       success: false,
     });
-    assert.deepEqual(result.state.queue, []);
+    assert.deepEqual(getQueueItems(result.state.queue), []);
   });
 
   test('unstudied flow requires intro completion and removes a covered direction while leaving the other in queue', () => {
@@ -162,7 +163,7 @@ describe('session state', () => {
     result = rateCurrentItem(state, wordsById, 'good');
 
     assert.deepEqual(result.commit, { type: 'none' });
-    assert.deepEqual(result.state.queue.map((item) => item.id), [reverseItem.id]);
+    assert.deepEqual(getQueueItems(result.state.queue).map((item) => item.id), [reverseItem.id]);
     assert.equal(result.state.unstudiedProgress[unstudiedWord.id]?.consecutiveSuccesses.forward, 3);
     assert.equal(result.state.unstudiedProgress[unstudiedWord.id]?.consecutiveSuccesses.reverse, 2);
   });
@@ -184,7 +185,7 @@ describe('session state', () => {
     const drainedState = beginDrainSession(state);
 
     assert.equal(drainedState.phase, 'completed');
-    assert.deepEqual(drainedState.queue, []);
+    assert.deepEqual(getQueueItems(drainedState.queue), []);
   });
 
   test('beginDrainSession throws when the session is not active', () => {
@@ -211,7 +212,7 @@ describe('session state', () => {
     const drainedState = beginDrainSession(state);
 
     assert.equal(drainedState.phase, 'draining');
-    assert.deepEqual(drainedState.queue.map((item) => item.id), [firstItem.id]);
+    assert.deepEqual(getQueueItems(drainedState.queue).map((item) => item.id), [firstItem.id]);
   });
 
   test('beginDrainSession keeps a review item that is in reinforcement', () => {
@@ -227,7 +228,7 @@ describe('session state', () => {
     const drainedState = beginDrainSession(state);
 
     assert.equal(drainedState.phase, 'draining');
-    assert.deepEqual(drainedState.queue.map((item) => item.id), [reviewItem.id]);
+    assert.deepEqual(getQueueItems(drainedState.queue).map((item) => item.id), [reviewItem.id]);
     assert.deepEqual(drainedState.reviewProgress[reviewItem.id], {
       failureCount: 1,
       reinforcementStreak: 0,
@@ -248,7 +249,7 @@ describe('session state', () => {
     const drainedState = beginDrainSession(state);
 
     assert.equal(drainedState.phase, 'draining');
-    assert.deepEqual(drainedState.queue.map((item) => item.id), [reverseItem.id]);
+    assert.deepEqual(getQueueItems(drainedState.queue).map((item) => item.id), [reverseItem.id]);
     assert.deepEqual(drainedState.learningProgress[learningWord.id], {
       coveredDirections: {
         forward: true,
@@ -281,7 +282,7 @@ describe('session state', () => {
     const drainedState = beginDrainSession(state);
 
     assert.equal(drainedState.phase, 'draining');
-    assert.deepEqual(drainedState.queue.map((item) => item.id), [reverseItem.id, forwardItem.id]);
+    assert.deepEqual(getQueueItems(drainedState.queue).map((item) => item.id), [reverseItem.id, forwardItem.id]);
     assert.deepEqual(drainedState.unstudiedProgress[unstudiedWord.id], {
       introComplete: true,
       consecutiveSuccesses: {
@@ -307,7 +308,7 @@ describe('session state', () => {
       failureCount: 0,
       terminalRating: 'good',
     });
-    assert.deepEqual(result.state.queue, []);
+    assert.deepEqual(getQueueItems(result.state.queue), []);
     assert.equal(result.state.phase, 'completed');
   });
 
@@ -325,7 +326,7 @@ describe('session state', () => {
       failureCount: 0,
       terminalRating: 'good',
     });
-    assert.deepEqual(result.state.queue, []);
+    assert.deepEqual(getQueueItems(result.state.queue), []);
     assert.equal(result.state.phase, 'completed');
   });
 

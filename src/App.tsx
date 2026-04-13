@@ -14,6 +14,8 @@ import {
   beginDrainSession,
   beginUnstudiedDrill,
   createSessionState,
+  getCurrentQueueItem,
+  getQueueItems,
   markCurrentItemStarted,
   rateCurrentItem,
   type SessionState,
@@ -59,10 +61,12 @@ function App() {
   const [sessionState, setSessionState] = useState<SessionState | null>(null);
   const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
+  const [wordsPageLoading, setWordsPageLoading] = useState(false);
   const [answerRevealed, setAnswerRevealed] = useState(false);
   const [submittingRating, setSubmittingRating] = useState<ReviewRating | null>(null);
   const [wordsPageNumber, setWordsPageNumber] = useState(0);
   const [sessionNow, setSessionNow] = useState(() => new Date().toISOString());
+  const [sessionWordsById, setSessionWordsById] = useState<Map<string, Word> | null>(null);
 
   useEffect(() => {
     async function loadData() {
@@ -97,9 +101,11 @@ function App() {
     return grouped;
   }, [reviewItems]);
 
-  const displayedSessionItems = sessionStarted ? sessionState?.queue ?? [] : sessionPreviewItems;
-  const activeItem = sessionStarted ? sessionState?.queue[0] ?? null : null;
-  const activeWord = activeItem ? wordsById.get(activeItem.wordId) ?? null : null;
+  const sessionWordLookup = sessionWordsById ?? wordsById;
+  const displayedWordsById = sessionStarted ? sessionWordLookup : wordsById;
+  const displayedSessionItems = sessionStarted && sessionState ? getQueueItems(sessionState.queue) : sessionPreviewItems;
+  const activeItem = sessionStarted && sessionState ? getCurrentQueueItem(sessionState.queue) ?? null : null;
+  const activeWord = activeItem ? sessionWordLookup.get(activeItem.wordId) ?? null : null;
   const activeLearningProgress = activeWord ? sessionState?.learningProgress[activeWord.id] : undefined;
   const activeUnstudiedProgress = activeWord ? sessionState?.unstudiedProgress[activeWord.id] : undefined;
   const activeReviewProgress = activeItem ? sessionState?.reviewProgress[activeItem.id] : undefined;
@@ -245,6 +251,7 @@ function App() {
       setReviewItems(reviewItemsResponse);
       setSessionPreviewItems(sessionItemsResponse);
       setBackendStatus(statusResponse);
+      setSessionWordsById(new Map(wordsResponse.map((word) => [word.id, word])));
       const startedAt = new Date().toISOString();
       setSessionNow(startedAt);
       setSessionState(createSessionState(sessionItemsResponse));
@@ -293,9 +300,34 @@ function App() {
 
     setSessionStarted(false);
     setSessionState(null);
+    setSessionWordsById(null);
     setSessionSummary(null);
     setAnswerRevealed(false);
     await reloadDashboard();
+  }
+
+  async function handleOpenWordsPage() {
+    if (currentPage === 'words') {
+      return;
+    }
+
+    setWordsPageLoading(true);
+    setError(null);
+
+    try {
+      const [wordsResponse, reviewItemsResponse] = await Promise.all([
+        fetchWords(),
+        fetchReviewItems(),
+      ]);
+
+      setWords(wordsResponse);
+      setReviewItems(reviewItemsResponse);
+      setCurrentPage('words');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setWordsPageLoading(false);
+    }
   }
 
   async function handleRate(rating: ReviewRating) {
@@ -307,22 +339,16 @@ function App() {
     setError(null);
 
     try {
-      const transition = rateCurrentItem(sessionState, wordsById, rating);
+      const transition = rateCurrentItem(sessionState, sessionWordLookup, rating);
 
       switch (transition.commit.type) {
         case 'commit-review-item-session': {
           const reviewCommit = transition.commit;
           const reviewEncounterLabel = formatReviewEncounterLabel(activeItem, activeWord);
-          const updatedItem = await completeReviewSession(
+          await completeReviewSession(
             reviewCommit.reviewItemId,
             reviewCommit.failureCount,
             reviewCommit.terminalRating,
-          );
-          setReviewItems((currentItems) =>
-            currentItems.map((existing) => (existing.id === updatedItem.id ? updatedItem : existing)),
-          );
-          setSessionPreviewItems((currentItems) =>
-            currentItems.map((queuedItem) => (queuedItem.id === updatedItem.id ? updatedItem : queuedItem)),
           );
           setSessionSummary((current) =>
             current
@@ -344,13 +370,7 @@ function App() {
           break;
         }
         case 'commit-learning-word-session': {
-          const updatedWord = await completeLearningSession(
-            transition.commit.wordId,
-            transition.commit.success,
-          );
-          setWords((currentWords) =>
-            currentWords.map((entry) => (entry.id === updatedWord.id ? updatedWord : entry)),
-          );
+          await completeLearningSession(transition.commit.wordId, transition.commit.success);
           setSessionSummary((current) =>
             current
               ? {
@@ -362,10 +382,7 @@ function App() {
           break;
         }
         case 'commit-unstudied-word-session': {
-          const updatedWord = await completeUnstudiedSession(transition.commit.wordId);
-          setWords((currentWords) =>
-            currentWords.map((entry) => (entry.id === updatedWord.id ? updatedWord : entry)),
-          );
+          await completeUnstudiedSession(transition.commit.wordId);
           setSessionSummary((current) =>
             current
               ? {
@@ -520,15 +537,17 @@ function App() {
             type="button"
             className={`nav-tab ${currentPage === 'home' ? 'active' : ''}`}
             onClick={() => setCurrentPage('home')}
+            disabled={wordsPageLoading}
           >
             Home
           </button>
           <button
             type="button"
             className={`nav-tab ${currentPage === 'words' ? 'active' : ''}`}
-            onClick={() => setCurrentPage('words')}
+            onClick={() => void handleOpenWordsPage()}
+            disabled={wordsPageLoading}
           >
-            Words
+            {wordsPageLoading ? 'Loading words...' : 'Words'}
           </button>
         </div>
       </nav>
@@ -593,9 +612,9 @@ function App() {
               )}
               <h3>Session snapshot</h3>
               <ul className="word-list">
-                {displayedSessionItems.map((item) => {
-                  const word = wordsById.get(item.wordId);
-                  return (
+                  {displayedSessionItems.map((item) => {
+                    const word = displayedWordsById.get(item.wordId);
+                    return (
                     <li key={item.id} className="word-item">
                       <div>
                         <strong>{word?.hanzi ?? item.wordId}</strong>
