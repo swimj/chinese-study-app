@@ -25,6 +25,11 @@ export type ReviewItem = {
 
 export type ReviewRating = 'forgot' | 'hard' | 'good' | 'easy';
 
+export type SessionItemWithWord = {
+  reviewItem: ReviewItem;
+  word: Word;
+};
+
 export type WordItem = {
   id: string;
   english: string;

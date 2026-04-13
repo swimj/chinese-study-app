@@ -1,4 +1,4 @@
-import type { ReviewItem, ReviewRating, Word } from '../types';
+import type { ReviewItem, ReviewRating, SessionItemWithWord, Word } from '../types';
 
 type Direction = ReviewItem['direction'];
 
@@ -21,7 +21,7 @@ export type ReviewItemProgress = {
 export type SessionPhase = 'active' | 'draining' | 'completed';
 
 type SessionQueueNode = {
-  item: ReviewItem;
+  item: SessionItemWithWord;
   next: SessionQueueNode | null;
 };
 
@@ -64,7 +64,7 @@ export type SessionTransitionResult = {
   commit: SessionCommitIntent;
 };
 
-export function createSessionState(items: ReviewItem[]): SessionState {
+export function createSessionState(items: SessionItemWithWord[]): SessionState {
   return {
     phase: 'active',
     queue: createSessionQueue(items),
@@ -76,7 +76,7 @@ export function createSessionState(items: ReviewItem[]): SessionState {
   };
 }
 
-export function createSessionQueue(items: ReviewItem[]): SessionQueue {
+export function createSessionQueue(items: SessionItemWithWord[]): SessionQueue {
   if (items.length === 0) {
     return {
       head: null,
@@ -107,12 +107,12 @@ export function createSessionQueue(items: ReviewItem[]): SessionQueue {
   };
 }
 
-export function getCurrentQueueItem(queue: SessionQueue): ReviewItem | undefined {
+export function getCurrentQueueItem(queue: SessionQueue): SessionItemWithWord | undefined {
   return queue.head?.item;
 }
 
-export function getQueueItems(queue: SessionQueue): ReviewItem[] {
-  const items: ReviewItem[] = [];
+export function getQueueItems(queue: SessionQueue): SessionItemWithWord[] {
+  const items: SessionItemWithWord[] = [];
   let currentNode = queue.head;
 
   while (currentNode) {
@@ -125,13 +125,13 @@ export function getQueueItems(queue: SessionQueue): ReviewItem[] {
 
 export function markCurrentItemStarted(state: SessionState): SessionState {
   const currentItem = getCurrentQueueItem(state.queue);
-  if (!currentItem || state.startedItemIds.includes(currentItem.id)) {
+  if (!currentItem || state.startedItemIds.includes(currentItem.reviewItem.id)) {
     return state;
   }
 
   return {
     ...state,
-    startedItemIds: [...state.startedItemIds, currentItem.id],
+    startedItemIds: [...state.startedItemIds, currentItem.reviewItem.id],
   };
 }
 
@@ -158,15 +158,15 @@ export function beginDrainSession(state: SessionState): SessionState {
   const openReviewItemIds = new Set<string>(Object.keys(state.reviewProgress));
   const queueItems = getQueueItems(state.queue);
   const filteredQueue = queueItems.filter((item, index) => {
-    if (index === 0 && state.startedItemIds.includes(item.id)) {
+    if (index === 0 && state.startedItemIds.includes(item.reviewItem.id)) {
       return true;
     }
 
-    if (openReviewItemIds.has(item.id)) {
+    if (openReviewItemIds.has(item.reviewItem.id)) {
       return true;
     }
 
-    if (openWordIds.has(item.wordId)) {
+    if (openWordIds.has(item.word.id)) {
       return true;
     }
 
@@ -182,14 +182,14 @@ export function beginDrainSession(state: SessionState): SessionState {
 
 export function rateCurrentItem(
   state: SessionState,
-  wordsById: Map<string, Word>,
   rating: ReviewRating,
 ): SessionTransitionResult {
   const currentItem = getCurrentQueueItem(state.queue) ?? assertCurrentItemPresent(state, rating);
 
   assertCurrentItemStarted(state, currentItem, rating);
 
-  const currentWord = wordsById.get(currentItem.wordId) ?? assertCurrentWordPresent(state, currentItem, rating);
+  const currentWord = currentItem.word;
+  const currentReviewItem = currentItem.reviewItem;
 
   switch (currentWord.status) {
     case 'review':
@@ -199,16 +199,17 @@ export function rateCurrentItem(
     case 'unstudied':
       return handleUnstudiedAttempt(state, currentItem, currentWord, rating);
     default:
-      return assertUnreachableWordStatus(state, currentItem, currentWord, rating);
+      return assertUnreachableWordStatus(state, currentReviewItem, currentWord, rating);
   }
 }
 
 function handleReviewAttempt(
   state: SessionState,
-  item: ReviewItem,
+  item: SessionItemWithWord,
   rating: ReviewRating,
 ): SessionTransitionResult {
-  const currentProgress = state.reviewProgress[item.id] ?? { failureCount: 0, reinforcementStreak: 0 };
+  const reviewItem = item.reviewItem;
+  const currentProgress = state.reviewProgress[reviewItem.id] ?? { failureCount: 0, reinforcementStreak: 0 };
 
   if (currentProgress.failureCount === 0 && rating !== 'forgot') {
     return {
@@ -216,11 +217,11 @@ function handleReviewAttempt(
         ...state,
         answeredCount: state.answeredCount + 1,
         queue: dequeueCurrentItem(state.queue),
-        reviewProgress: removeKey(state.reviewProgress, item.id),
+        reviewProgress: removeKey(state.reviewProgress, reviewItem.id),
       }),
       commit: {
         type: 'commit-review-item-session',
-        reviewItemId: item.id,
+        reviewItemId: reviewItem.id,
         failureCount: 0,
         terminalRating: rating,
       },
@@ -238,11 +239,11 @@ function handleReviewAttempt(
         ...state,
         answeredCount: state.answeredCount + 1,
         queue: dequeueCurrentItem(state.queue),
-        reviewProgress: removeKey(state.reviewProgress, item.id),
+        reviewProgress: removeKey(state.reviewProgress, reviewItem.id),
       }),
       commit: {
         type: 'commit-review-item-session',
-        reviewItemId: item.id,
+        reviewItemId: reviewItem.id,
         failureCount: nextProgress.failureCount,
         terminalRating: null, // rating only needed when item recalled without failureCount of 0
       },
@@ -256,7 +257,7 @@ function handleReviewAttempt(
       queue: rotateCurrentItem(state.queue),
       reviewProgress: {
         ...state.reviewProgress,
-        [item.id]: nextProgress,
+        [reviewItem.id]: nextProgress,
       },
     }),
     commit: { type: 'none' },
@@ -265,12 +266,12 @@ function handleReviewAttempt(
 
 function handleLearningAttempt(
   state: SessionState,
-  item: ReviewItem,
+  item: SessionItemWithWord,
   word: Word,
   rating: ReviewRating,
 ): SessionTransitionResult {
   const currentProgress = state.learningProgress[word.id] ?? createInitialLearningProgress();
-  const direction = item.direction;
+  const direction = item.reviewItem.direction;
   const nextProgress: LearningWordProgress = {
     coveredDirections: { ...currentProgress.coveredDirections },
     firstTryGood: { ...currentProgress.firstTryGood },
@@ -320,12 +321,12 @@ function handleLearningAttempt(
 
 function handleUnstudiedAttempt(
   state: SessionState,
-  item: ReviewItem,
+  item: SessionItemWithWord,
   word: Word,
   rating: ReviewRating,
 ): SessionTransitionResult {
   const currentProgress = state.unstudiedProgress[word.id] ?? createInitialUnstudiedProgress();
-  const direction = item.direction;
+  const direction = item.reviewItem.direction;
   const nextProgress: UnstudiedWordProgress = {
     introComplete: currentProgress.introComplete,
     consecutiveSuccesses: { ...currentProgress.consecutiveSuccesses },
@@ -457,17 +458,17 @@ function finalizePostRatingState(state: SessionState): SessionState {
   return state;
 }
 
-function assertCurrentItemStarted(state: SessionState, currentItem: ReviewItem, rating: ReviewRating) {
-  if (state.startedItemIds.includes(currentItem.id)) {
+function assertCurrentItemStarted(state: SessionState, currentItem: SessionItemWithWord, rating: ReviewRating) {
+  if (state.startedItemIds.includes(currentItem.reviewItem.id)) {
     return;
   }
 
   const debugInfo = {
     message: 'Attempted to rate a session item before it was marked started',
     rating,
-    currentItemId: currentItem.id,
-    currentWordId: currentItem.wordId,
-    queueIds: getQueueItems(state.queue).map((item) => item.id),
+    currentItemId: currentItem.reviewItem.id,
+    currentWordId: currentItem.word.id,
+    queueIds: getQueueItems(state.queue).map((item) => item.reviewItem.id),
     startedItemIds: state.startedItemIds,
     answeredCount: state.answeredCount,
     phase: state.phase,
@@ -481,7 +482,7 @@ function assertCurrentItemPresent(state: SessionState, rating: ReviewRating): ne
   const debugInfo = {
     message: 'Attempted to rate a session item when the active queue was empty',
     rating,
-    queueIds: getQueueItems(state.queue).map((item) => item.id),
+    queueIds: getQueueItems(state.queue).map((item) => item.reviewItem.id),
     startedItemIds: state.startedItemIds,
     answeredCount: state.answeredCount,
     phase: state.phase,
@@ -499,33 +500,13 @@ function assertDrainablePhase(state: SessionState) {
   const debugInfo = {
     message: 'Attempted to begin drain mode from a non-active session phase',
     phase: state.phase,
-    queueIds: getQueueItems(state.queue).map((item) => item.id),
+    queueIds: getQueueItems(state.queue).map((item) => item.reviewItem.id),
     startedItemIds: state.startedItemIds,
     answeredCount: state.answeredCount,
   };
 
   console.error('[session-state] invariant failed', debugInfo);
   throw new Error(`Session invariant violated: cannot begin drain mode from phase "${state.phase}".`);
-}
-
-function assertCurrentWordPresent(
-  state: SessionState,
-  currentItem: ReviewItem,
-  rating: ReviewRating,
-): never {
-  const debugInfo = {
-    message: 'Attempted to rate a session item whose word record was missing from the session word map',
-    rating,
-    currentItemId: currentItem.id,
-    currentWordId: currentItem.wordId,
-    queueIds: getQueueItems(state.queue).map((item) => item.id),
-    startedItemIds: state.startedItemIds,
-    answeredCount: state.answeredCount,
-    phase: state.phase,
-  };
-
-  console.error('[session-state] invariant failed', debugInfo);
-  throw new Error('Session invariant violated: current item references a missing word record.');
 }
 
 function assertUnreachableWordStatus(
@@ -540,7 +521,7 @@ function assertUnreachableWordStatus(
     currentItemId: currentItem.id,
     currentWordId: currentItem.wordId,
     currentWordStatus: currentWord.status,
-    queueIds: getQueueItems(state.queue).map((item) => item.id),
+    queueIds: getQueueItems(state.queue).map((item) => item.reviewItem.id),
     startedItemIds: state.startedItemIds,
     answeredCount: state.answeredCount,
     phase: state.phase,

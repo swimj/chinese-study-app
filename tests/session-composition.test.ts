@@ -471,15 +471,18 @@ describe('session composition', { concurrency: false }, () => {
 
     const payload = dbModule.getSessionPayload();
 
-    assert.deepEqual(payload.items.map((item) => item.id), [
+    assert.deepEqual(payload.items.map((item) => item.reviewItem.id), [
       'payload-review-word-forward',
       'payload-learning-word-reverse',
       'payload-learning-word-forward',
     ]);
-    assert.deepEqual(payload.words.map((word) => word.id), [
+    assert.deepEqual(
+      [...new Set(payload.items.map((item) => item.word.id))],
+      [
       'payload-review-word',
       'payload-learning-word',
-    ]);
+      ],
+    );
   });
 
   test('merges session categories as review items first, then learning words, then unstudied intake', () => {

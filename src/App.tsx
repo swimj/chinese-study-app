@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import type { ReviewItem, ReviewRating, Word } from './types';
+import type { ReviewItem, ReviewRating, SessionItemWithWord, Word } from './types';
 import type { BackendStatus, SessionPayload } from './services/api';
 import {
   completeLearningSession,
@@ -139,7 +139,6 @@ function App() {
   const [submittingRating, setSubmittingRating] = useState<ReviewRating | null>(null);
   const [wordsPageNumber, setWordsPageNumber] = useState(0);
   const [sessionNow, setSessionNow] = useState(() => new Date().toISOString());
-  const [sessionWordsById, setSessionWordsById] = useState<Map<string, Word> | null>(null);
 
   useEffect(() => {
     function syncSessionPrefetchState() {
@@ -159,11 +158,6 @@ function App() {
     loadData();
   }, []);
 
-  const wordsById = useMemo(
-    () => new Map(words.map((word) => [word.id, word])),
-    [words],
-  );
-
   const reviewItemsByWordId = useMemo(() => {
     const grouped = new Map<string, ReviewItem[]>();
 
@@ -180,15 +174,16 @@ function App() {
     return grouped;
   }, [reviewItems]);
 
-  const sessionWordLookup = sessionWordsById ?? wordsById;
   const displayedSessionItemCount = sessionStarted
     ? sessionState?.queue.length ?? 0
     : sessionPrefetch.payload?.items.length ?? 0;
-  const activeItem = sessionStarted && sessionState ? getCurrentQueueItem(sessionState.queue) ?? null : null;
-  const activeWord = activeItem ? sessionWordLookup.get(activeItem.wordId) ?? null : null;
+  const activeItem: SessionItemWithWord | null =
+    sessionStarted && sessionState ? getCurrentQueueItem(sessionState.queue) ?? null : null;
+  const activeWord = activeItem?.word ?? null;
+  const activeReviewItem = activeItem?.reviewItem ?? null;
   const activeLearningProgress = activeWord ? sessionState?.learningProgress[activeWord.id] : undefined;
   const activeUnstudiedProgress = activeWord ? sessionState?.unstudiedProgress[activeWord.id] : undefined;
-  const activeReviewProgress = activeItem ? sessionState?.reviewProgress[activeItem.id] : undefined;
+  const activeReviewProgress = activeReviewItem ? sessionState?.reviewProgress[activeReviewItem.id] : undefined;
   const reviewedCount = sessionStarted ? sessionState?.answeredCount ?? 0 : 0;
   const homeStatusCounts = backendStatus?.wordStatusCounts ?? {
     unstudied: 0,
@@ -271,15 +266,15 @@ function App() {
   }, [totalWordPages]);
 
   const activePrompt =
-    activeItem && activeWord
-      ? activeItem.direction === 'forward'
+    activeReviewItem && activeWord
+      ? activeReviewItem.direction === 'forward'
         ? activeWord.hanzi
         : activeWord.meaning
       : null;
 
   const activeAnswerText =
-    activeItem && activeWord
-      ? activeItem.direction === 'forward'
+    activeReviewItem && activeWord
+      ? activeReviewItem.direction === 'forward'
         ? activeWord.meaning
         : activeWord.hanzi
       : null;
@@ -323,7 +318,6 @@ function App() {
         return;
       }
 
-      setSessionWordsById(new Map(sessionPayload.words.map((word) => [word.id, word])));
       const startedAt = new Date().toISOString();
       setSessionNow(startedAt);
       setSessionState(createSessionState(sessionPayload.items));
@@ -372,7 +366,6 @@ function App() {
 
     setSessionStarted(false);
     setSessionState(null);
-    setSessionWordsById(null);
     setSessionSummary(null);
     setAnswerRevealed(false);
     resetSessionPrefetchCache();
@@ -414,12 +407,12 @@ function App() {
     setError(null);
 
     try {
-      const transition = rateCurrentItem(sessionState, sessionWordLookup, rating);
+      const transition = rateCurrentItem(sessionState, rating);
 
       switch (transition.commit.type) {
         case 'commit-review-item-session': {
           const reviewCommit = transition.commit;
-          const reviewEncounterLabel = formatReviewEncounterLabel(activeItem, activeWord);
+          const reviewEncounterLabel = formatReviewEncounterLabel(activeItem.reviewItem, activeItem.word);
           await completeReviewSession(
             reviewCommit.reviewItemId,
             reviewCommit.failureCount,
@@ -726,7 +719,7 @@ function App() {
                   <p className="badge">
                     {sessionState?.phase === 'draining' ? 'Draining' : activeWord.status === 'review' ? 'Review' : activeWord.status === 'learning' ? 'Learning' : 'New word'}
                     {' · '}
-                    {activeItem.direction === 'forward' ? 'Hanzi → Meaning' : 'Meaning → Hanzi'}
+                    {activeItem.reviewItem.direction === 'forward' ? 'Hanzi → Meaning' : 'Meaning → Hanzi'}
                   </p>
                   <p className="notes">
                     Answered {reviewedCount} this session · {sessionState?.queue.length ?? 0} still queued · Elapsed {activeElapsedTime}
@@ -748,7 +741,7 @@ function App() {
                       <span className="answer-pinyin">{activeAnswerPinyin}</span>
                       <strong className="answer-value">{activeAnswerText}</strong>
                       <span className="prompt-meta">
-                        Interval {activeItem.intervalHours} hour{activeItem.intervalHours === 1 ? '' : 's'}
+                        Interval {activeItem.reviewItem.intervalHours} hour{activeItem.reviewItem.intervalHours === 1 ? '' : 's'}
                       </span>
                       <span className="prompt-meta">{activeWord.examples[0]}</span>
                     </div>

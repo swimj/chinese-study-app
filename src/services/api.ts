@@ -1,4 +1,4 @@
-import type { Word, ReviewItem, ReviewRating } from '../types';
+import type { Word, ReviewItem, ReviewRating, SessionItemWithWord } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:5174';
 
@@ -17,8 +17,7 @@ type BackendStatus = {
 };
 
 export type SessionPayload = {
-  items: ReviewItem[];
-  words: Word[];
+  items: SessionItemWithWord[];
 };
 
 export type { BackendStatus };

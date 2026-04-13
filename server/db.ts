@@ -39,6 +39,11 @@ type ReviewItem = {
   easeFactor: number;
 };
 
+type SessionItemWithWord = {
+  reviewItem: ReviewItem;
+  word: Word;
+};
+
 type ReviewRating = 'forgot' | 'hard' | 'good' | 'easy';
 type ReviewPassRating = 'hard' | 'good' | 'easy';
 
@@ -80,8 +85,28 @@ type HomeOverview = {
 };
 
 type SessionPayload = {
-  items: ReviewItem[];
-  words: Word[];
+  items: SessionItemWithWord[];
+};
+
+type SessionItemWithWordRow = {
+  id: string;
+  word_id: string;
+  direction: ReviewItem['direction'];
+  interval_hours: number;
+  last_reviewed_at: string | null;
+  next_due_at: string | null;
+  ease_factor: number;
+  word_hanzi: string;
+  word_traditional: string | null;
+  word_pinyin: string;
+  word_meaning: string;
+  word_examples_json: string;
+  word_status: WordStatus;
+  word_priority: number;
+  word_created_at: string;
+  word_learning_streak: number;
+  word_last_learning_success_on: string | null;
+  word_last_learning_covered_on: string | null;
 };
 
 let db = openDatabase(dbPath);
@@ -89,7 +114,16 @@ const DAILY_NEW_WORD_LIMIT = 2;
 
 initializeDatabase();
 
-export type { HomeOverview, ReviewItem, ReviewPassRating, ReviewRating, SessionPayload, Word, WordStatus };
+export type {
+  HomeOverview,
+  ReviewItem,
+  ReviewPassRating,
+  ReviewRating,
+  SessionItemWithWord,
+  SessionPayload,
+  Word,
+  WordStatus,
+};
 export { config as dbConfig };
 
 export function getWords(): Word[] {
@@ -117,94 +151,12 @@ export function getWords(): Word[] {
 }
 
 export function getSessionItems(): ReviewItem[] {
-  const now = new Date().toISOString();
-  const today = getTodayKey();
-  const dueReviewRows = db
-    .prepare(`
-      SELECT
-        review_items.id,
-        review_items.word_id,
-        review_items.direction,
-        review_items.interval_hours,
-        review_items.last_reviewed_at,
-        review_items.next_due_at,
-        review_items.ease_factor
-      FROM review_items
-      INNER JOIN words ON words.id = review_items.word_id
-      WHERE words.status = 'review'
-        AND review_items.next_due_at IS NOT NULL
-        AND review_items.next_due_at <= ?
-      ORDER BY
-        CASE review_items.direction
-          WHEN 'reverse' THEN 0
-          ELSE 1
-        END ASC,
-        review_items.next_due_at ASC
-    `)
-    .all(now) as ReviewItemRow[];
-
-  const learningRows = db
-    .prepare(`
-      SELECT
-        review_items.id,
-        review_items.word_id,
-        review_items.direction,
-        review_items.interval_hours,
-        review_items.last_reviewed_at,
-        review_items.next_due_at,
-        review_items.ease_factor
-      FROM review_items
-      INNER JOIN words ON words.id = review_items.word_id
-      WHERE words.status = 'learning'
-        AND (words.last_learning_covered_on IS NULL OR words.last_learning_covered_on != ?)
-      ORDER BY
-        CASE review_items.direction
-          WHEN 'reverse' THEN 0
-          ELSE 1
-        END ASC
-    `)
-    .all(today) as ReviewItemRow[];
-
-  const unstudiedRows = db
-    .prepare(`
-      SELECT
-        review_items.id,
-        review_items.word_id,
-        review_items.direction,
-        review_items.interval_hours,
-        review_items.last_reviewed_at,
-        review_items.next_due_at,
-        review_items.ease_factor
-      FROM review_items
-      INNER JOIN words ON words.id = review_items.word_id
-      WHERE words.status = 'unstudied'
-        AND words.id IN (
-          SELECT id
-          FROM words
-          WHERE status = 'unstudied'
-          ORDER BY priority DESC, created_at ASC
-          LIMIT ?
-        )
-      ORDER BY
-        words.priority DESC,
-        words.created_at ASC,
-        CASE review_items.direction
-          WHEN 'forward' THEN 0
-          ELSE 1
-        END ASC
-    `)
-    .all(DAILY_NEW_WORD_LIMIT) as ReviewItemRow[];
-
-  return [...dueReviewRows, ...learningRows, ...unstudiedRows].map(mapReviewItemRow);
+  return getSessionItemsWithWords().map((item) => item.reviewItem);
 }
 
 export function getSessionPayload(): SessionPayload {
-  const items = getSessionItems();
-  const wordIds = [...new Set(items.map((item) => item.wordId))];
-
   return {
-    items,
-    words: getWordsByIds(wordIds),
+    items: getSessionItemsWithWords(),
   };
 }
 
@@ -910,39 +862,6 @@ function mapWordRow(row: WordRow): Word {
   };
 }
 
-function getWordsByIds(wordIds: string[]): Word[] {
-  if (wordIds.length === 0) {
-    return [];
-  }
-
-  const placeholders = wordIds.map(() => '?').join(', ');
-  const rows = db
-    .prepare(`
-      SELECT
-        id,
-        hanzi,
-        traditional,
-        pinyin,
-        meaning,
-        examples_json,
-        status,
-        priority,
-        created_at,
-        learning_streak,
-        last_learning_success_on,
-        last_learning_covered_on
-      FROM words
-      WHERE id IN (${placeholders})
-    `)
-    .all(...wordIds) as WordRow[];
-
-  const words = rows.map(mapWordRow);
-  const orderById = new Map(wordIds.map((id, index) => [id, index]));
-  words.sort((left, right) => (orderById.get(left.id) ?? 0) - (orderById.get(right.id) ?? 0));
-
-  return words;
-}
-
 function mapReviewItemRow(row: ReviewItemRow): ReviewItem {
   return {
     id: row.id,
@@ -952,6 +871,141 @@ function mapReviewItemRow(row: ReviewItemRow): ReviewItem {
     lastReviewedAt: row.last_reviewed_at,
     nextDueAt: row.next_due_at,
     easeFactor: row.ease_factor,
+  };
+}
+
+function getSessionItemsWithWords(): SessionItemWithWord[] {
+  const now = new Date().toISOString();
+  const today = getTodayKey();
+  const dueReviewRows = db
+    .prepare(`
+      SELECT
+        review_items.id,
+        review_items.word_id,
+        review_items.direction,
+        review_items.interval_hours,
+        review_items.last_reviewed_at,
+        review_items.next_due_at,
+        review_items.ease_factor,
+        words.hanzi AS word_hanzi,
+        words.traditional AS word_traditional,
+        words.pinyin AS word_pinyin,
+        words.meaning AS word_meaning,
+        words.examples_json AS word_examples_json,
+        words.status AS word_status,
+        words.priority AS word_priority,
+        words.created_at AS word_created_at,
+        words.learning_streak AS word_learning_streak,
+        words.last_learning_success_on AS word_last_learning_success_on,
+        words.last_learning_covered_on AS word_last_learning_covered_on
+      FROM review_items
+      INNER JOIN words ON words.id = review_items.word_id
+      WHERE words.status = 'review'
+        AND review_items.next_due_at IS NOT NULL
+        AND review_items.next_due_at <= ?
+      ORDER BY
+        CASE review_items.direction
+          WHEN 'reverse' THEN 0
+          ELSE 1
+        END ASC,
+        review_items.next_due_at ASC
+    `)
+    .all(now) as SessionItemWithWordRow[];
+
+  const learningRows = db
+    .prepare(`
+      SELECT
+        review_items.id,
+        review_items.word_id,
+        review_items.direction,
+        review_items.interval_hours,
+        review_items.last_reviewed_at,
+        review_items.next_due_at,
+        review_items.ease_factor,
+        words.hanzi AS word_hanzi,
+        words.traditional AS word_traditional,
+        words.pinyin AS word_pinyin,
+        words.meaning AS word_meaning,
+        words.examples_json AS word_examples_json,
+        words.status AS word_status,
+        words.priority AS word_priority,
+        words.created_at AS word_created_at,
+        words.learning_streak AS word_learning_streak,
+        words.last_learning_success_on AS word_last_learning_success_on,
+        words.last_learning_covered_on AS word_last_learning_covered_on
+      FROM review_items
+      INNER JOIN words ON words.id = review_items.word_id
+      WHERE words.status = 'learning'
+        AND (words.last_learning_covered_on IS NULL OR words.last_learning_covered_on != ?)
+      ORDER BY
+        CASE review_items.direction
+          WHEN 'reverse' THEN 0
+          ELSE 1
+        END ASC
+    `)
+    .all(today) as SessionItemWithWordRow[];
+
+  const unstudiedRows = db
+    .prepare(`
+      SELECT
+        review_items.id,
+        review_items.word_id,
+        review_items.direction,
+        review_items.interval_hours,
+        review_items.last_reviewed_at,
+        review_items.next_due_at,
+        review_items.ease_factor,
+        words.hanzi AS word_hanzi,
+        words.traditional AS word_traditional,
+        words.pinyin AS word_pinyin,
+        words.meaning AS word_meaning,
+        words.examples_json AS word_examples_json,
+        words.status AS word_status,
+        words.priority AS word_priority,
+        words.created_at AS word_created_at,
+        words.learning_streak AS word_learning_streak,
+        words.last_learning_success_on AS word_last_learning_success_on,
+        words.last_learning_covered_on AS word_last_learning_covered_on
+      FROM review_items
+      INNER JOIN words ON words.id = review_items.word_id
+      WHERE words.status = 'unstudied'
+        AND words.id IN (
+          SELECT id
+          FROM words
+          WHERE status = 'unstudied'
+          ORDER BY priority DESC, created_at ASC
+          LIMIT ?
+        )
+      ORDER BY
+        words.priority DESC,
+        words.created_at ASC,
+        CASE review_items.direction
+          WHEN 'forward' THEN 0
+          ELSE 1
+        END ASC
+    `)
+    .all(DAILY_NEW_WORD_LIMIT) as SessionItemWithWordRow[];
+
+  return [...dueReviewRows, ...learningRows, ...unstudiedRows].map(mapSessionItemWithWordRow);
+}
+
+function mapSessionItemWithWordRow(row: SessionItemWithWordRow): SessionItemWithWord {
+  return {
+    reviewItem: mapReviewItemRow(row),
+    word: {
+      id: row.word_id,
+      hanzi: row.word_hanzi,
+      traditional: row.word_traditional,
+      pinyin: row.word_pinyin,
+      meaning: row.word_meaning,
+      examples: JSON.parse(row.word_examples_json) as string[],
+      status: row.word_status,
+      priority: row.word_priority,
+      createdAt: row.word_created_at,
+      learningStreak: row.word_learning_streak,
+      lastLearningSuccessOn: row.word_last_learning_success_on,
+      lastLearningCoveredOn: row.word_last_learning_covered_on,
+    },
   };
 }
 
