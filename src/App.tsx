@@ -42,6 +42,7 @@ type SessionSummary = {
   encounteredReviewItemIds: string[];
   lapsedReviewItems: number;
   lapsedReviewLabels: string[];
+  lapsedReviewItemIds: string[];
   completedLearningWords: number;
   completedUnstudiedWords: number;
   completionMode: 'natural' | 'drain';
@@ -186,6 +187,9 @@ function App() {
   const activeUnstudiedProgress = activeWord ? sessionState?.unstudiedProgress[activeWord.id] : undefined;
   const activeReviewProgress = activeReviewItem ? sessionState?.reviewProgress[activeReviewItem.id] : undefined;
   const reviewedCount = sessionStarted ? sessionState?.answeredCount ?? 0 : 0;
+  const activeReviewFailureCount = activeReviewProgress?.failureCount ?? 0;
+  const activeReviewReinforcementStreak = activeReviewProgress?.reinforcementStreak ?? 0;
+  const reviewInReinforcement = activeWord?.status === 'review' && activeReviewFailureCount > 0;
   const homeStatusCounts = backendStatus?.wordStatusCounts ?? {
     unstudied: 0,
     learning: 0,
@@ -282,7 +286,9 @@ function App() {
   const activeAnswerPinyin = activeItem && activeWord ? activeWord.pinyin : null;
 
   const activeReviewState =
-    activeReviewProgress && activeReviewProgress.failureCount > 0 ? 'Reinforcement active' : 'Initial recall';
+    reviewInReinforcement
+      ? `Reinforcement ${activeReviewReinforcementStreak}/3 · Forgotten recalls ${activeReviewFailureCount}`
+      : `Initial recall`;
 
   const reviewRatingOptions: Array<{ value: ReviewRating; label: string; note: string }> = [
     { value: 'forgot', label: 'Forgot', note: 'Counts as a failure and may trigger same-session reinforcement.' },
@@ -290,14 +296,21 @@ function App() {
     { value: 'good', label: 'Good', note: 'Successful recall with normal confidence.' },
     { value: 'easy', label: 'Easy', note: 'Successful recall with strong confidence.' },
   ];
+  const reviewReinforcementOptions: Array<{ value: ReviewRating; label: string; note: string }> = [
+    { value: 'forgot', label: 'No', note: 'Still missed recall. Increments lapse count.' },
+    { value: 'good', label: 'Yes', note: 'Correct recall. Advances reinforcement streak.' },
+  ];
 
   const binaryRecallOptions: Array<{ value: ReviewRating; label: string; note: string }> = [
     { value: 'forgot', label: 'Forgot', note: 'Did not recall it correctly.' },
     { value: 'good', label: 'Good', note: 'Correct recall.' },
   ];
 
-  const activeRatingOptions =
-    activeWord?.status === 'review' ? reviewRatingOptions : binaryRecallOptions;
+  const activeRatingOptions = activeWord?.status === 'review'
+    ? reviewInReinforcement
+      ? reviewReinforcementOptions
+      : reviewRatingOptions
+    : binaryRecallOptions;
   const activeElapsedTime =
     sessionStarted && sessionSummary
       ? formatElapsedTime(sessionSummary.startedAt, sessionSummary.completedAt ?? sessionNow)
@@ -331,6 +344,7 @@ function App() {
         encounteredReviewItemIds: [],
         lapsedReviewItems: 0,
         lapsedReviewLabels: [],
+        lapsedReviewItemIds: [],
         completedLearningWords: 0,
         completedUnstudiedWords: 0,
         completionMode: 'natural',
@@ -409,6 +423,22 @@ function App() {
 
     try {
       const transition = rateCurrentItem(sessionState, rating);
+      if (activeWord.status === 'review' && rating === 'forgot') {
+        setSessionSummary((current) => {
+          if (!current) {
+            return current;
+          }
+
+          if (current.lapsedReviewItemIds.includes(activeItem.reviewItem.id)) {
+            return current;
+          }
+
+          return {
+            ...current,
+            lapsedReviewItemIds: [...current.lapsedReviewItemIds, activeItem.reviewItem.id],
+          };
+        });
+      }
 
       switch (transition.commit.type) {
         case 'commit-review-item-session': {
@@ -561,14 +591,7 @@ function App() {
         return;
       }
 
-      const ratingByKey: Partial<Record<string, ReviewRating>> = {
-        '1': 'forgot',
-        '2': 'hard',
-        '3': 'good',
-        '4': 'easy',
-      };
-
-      const nextRating = ratingByKey[event.key];
+      const nextRating = getRatingForKey(event.key, activeRatingOptions);
       if (!nextRating) {
         return;
       }
@@ -718,12 +741,21 @@ function App() {
               ) : (
                 <div className="review-card">
                   <p className="badge">
-                    {sessionState?.phase === 'draining' ? 'Draining' : activeWord.status === 'review' ? 'Review' : activeWord.status === 'learning' ? 'Learning' : 'New word'}
+                    {sessionState?.phase === 'draining'
+                      ? 'Draining'
+                      : activeWord.status === 'review'
+                        ? reviewInReinforcement
+                          ? 'Review reinforcement'
+                          : 'Review'
+                        : activeWord.status === 'learning'
+                          ? 'Learning'
+                          : 'New word'}
                     {' · '}
                     {activeItem.reviewItem.direction === 'forward' ? 'Hanzi → Meaning' : 'Meaning → Hanzi'}
                   </p>
                   <p className="notes">
-                    Answered {reviewedCount} this session · {sessionState?.queue.length ?? 0} still queued · Elapsed {activeElapsedTime}
+                    Answered {reviewedCount} this session · {sessionState?.queue.length ?? 0} still queued ·
+                    {' '}Unique lapse items {sessionSummary?.lapsedReviewItemIds.length ?? 0} · Elapsed {activeElapsedTime}
                   </p>
                   <div className="prompt-block">
                     <span className="prompt-label">Prompt</span>
@@ -1148,6 +1180,36 @@ function formatReviewEncounterLabel(item: ReviewItem, word: Word) {
   return item.direction === 'forward'
     ? `${word.hanzi} -> ${word.meaning}`
     : `${word.meaning} -> ${word.hanzi}`;
+}
+
+function getRatingForKey(
+  key: string,
+  ratingOptions: Array<{ value: ReviewRating; label: string; note: string }>,
+) {
+  const availableRatings = new Set(ratingOptions.map((option) => option.value));
+  const binaryRecall =
+    availableRatings.size === 2 && availableRatings.has('forgot') && availableRatings.has('good');
+
+  if (binaryRecall) {
+    if (key === '1') {
+      return 'forgot' as const;
+    }
+
+    if (key === '2' || key === '3') {
+      return 'good' as const;
+    }
+
+    return null;
+  }
+
+  const ratingByKey: Partial<Record<string, ReviewRating>> = {
+    '1': 'forgot',
+    '2': 'hard',
+    '3': 'good',
+    '4': 'easy',
+  };
+
+  return ratingByKey[key] ?? null;
 }
 
 function formatElapsedTime(startedAt: string, completedAt: string) {
