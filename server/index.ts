@@ -1,5 +1,6 @@
 import cors from 'cors';
 import express from 'express';
+import { pathToFileURL } from 'node:url';
 import {
   completeLearningWordSession,
   completeReviewItemSession,
@@ -12,108 +13,144 @@ import {
   getSessionPayload,
   getWords,
   getWordStatusCounts,
+  updateWordMeaning,
 } from './db.ts';
 
-const app = express();
 const port = dbConfig.port;
 
-app.use(cors());
-app.use(express.json());
+export function createApp() {
+  const app = express();
 
-app.get('/api/words', (req, res) => {
-  const words = getWords();
-  res.json(words);
-});
+  app.use(cors());
+  app.use(express.json());
 
-app.get('/api/review-items', (req, res) => {
-  res.json(getReviewItems());
-});
-
-app.get('/api/session-items', (req, res) => {
-  res.json(getSessionItems());
-});
-
-app.get('/api/session-payload', (req, res) => {
-  res.json(getSessionPayload());
-});
-
-app.get('/api/status', (req, res) => {
-  res.json({
-    status: 'ok',
-    time: new Date().toISOString(),
-    mode: dbConfig.mode,
-    dataDir: dbConfig.dataDir,
-    dbPath: dbConfig.dbPath,
-    wordStatusCounts: getWordStatusCounts(),
-    ...getHomeOverview(),
-    ...getLearningPolicy(),
+  app.get('/api/words', (req, res) => {
+    const words = getWords();
+    res.json(words);
   });
-});
 
-app.post('/api/review-items/:id/complete-session', (req, res) => {
-  const failureCount = req.body?.failureCount;
-  const terminalRating = req.body?.terminalRating ?? null;
+  app.get('/api/review-items', (req, res) => {
+    res.json(getReviewItems());
+  });
 
-  if (!Number.isInteger(failureCount) || failureCount < 0) {
-    res.status(400).json({ error: 'Expected non-negative integer failureCount' });
-    return;
-  }
+  app.get('/api/session-items', (req, res) => {
+    res.json(getSessionItems());
+  });
 
-  if (terminalRating !== null && terminalRating !== 'hard' && terminalRating !== 'good' && terminalRating !== 'easy') {
-    res.status(400).json({ error: 'Invalid terminal rating' });
-    return;
-  }
+  app.get('/api/session-payload', (req, res) => {
+    res.json(getSessionPayload());
+  });
 
-  try {
-    const updatedItem = completeReviewItemSession(req.params.id, failureCount, terminalRating);
-    res.json(updatedItem);
-  } catch (error) {
-    if (error instanceof Error && error.message === 'Review item not found') {
-      res.status(404).json({ error: error.message });
+  app.get('/api/status', (req, res) => {
+    res.json({
+      status: 'ok',
+      time: new Date().toISOString(),
+      mode: dbConfig.mode,
+      dataDir: dbConfig.dataDir,
+      dbPath: dbConfig.dbPath,
+      wordStatusCounts: getWordStatusCounts(),
+      ...getHomeOverview(),
+      ...getLearningPolicy(),
+    });
+  });
+
+  app.post('/api/review-items/:id/complete-session', (req, res) => {
+    const failureCount = req.body?.failureCount;
+    const terminalRating = req.body?.terminalRating ?? null;
+
+    if (!Number.isInteger(failureCount) || failureCount < 0) {
+      res.status(400).json({ error: 'Expected non-negative integer failureCount' });
       return;
     }
 
-    res.status(500).json({ error: 'Failed to complete review item session' });
-  }
-});
-
-app.post('/api/words/:id/complete-learning-session', (req, res) => {
-  const success = req.body?.success;
-
-  if (typeof success !== 'boolean') {
-    res.status(400).json({ error: 'Expected boolean success flag' });
-    return;
-  }
-
-  try {
-    const updatedWord = completeLearningWordSession(req.params.id, success);
-    res.json(updatedWord);
-  } catch (error) {
-    if (error instanceof Error && error.message === 'Word not found') {
-      res.status(404).json({ error: error.message });
+    if (terminalRating !== null && terminalRating !== 'hard' && terminalRating !== 'good' && terminalRating !== 'easy') {
+      res.status(400).json({ error: 'Invalid terminal rating' });
       return;
     }
 
-    res.status(500).json({ error: 'Failed to complete learning session' });
-  }
-});
+    try {
+      const updatedItem = completeReviewItemSession(req.params.id, failureCount, terminalRating);
+      res.json(updatedItem);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Review item not found') {
+        res.status(404).json({ error: error.message });
+        return;
+      }
 
-app.post('/api/words/:id/complete-unstudied-session', (req, res) => {
-  try {
-    const updatedWord = completeUnstudiedWordSession(req.params.id);
-    res.json(updatedWord);
-  } catch (error) {
-    if (error instanceof Error && error.message === 'Word not found') {
-      res.status(404).json({ error: error.message });
+      res.status(500).json({ error: 'Failed to complete review item session' });
+    }
+  });
+
+  app.post('/api/words/:id/complete-learning-session', (req, res) => {
+    const success = req.body?.success;
+
+    if (typeof success !== 'boolean') {
+      res.status(400).json({ error: 'Expected boolean success flag' });
       return;
     }
 
-    res.status(500).json({ error: 'Failed to complete unstudied session' });
-  }
-});
+    try {
+      const updatedWord = completeLearningWordSession(req.params.id, success);
+      res.json(updatedWord);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Word not found') {
+        res.status(404).json({ error: error.message });
+        return;
+      }
 
-app.listen(port, () => {
-  console.log(`Backend server running at http://localhost:${port}`);
-  console.log(`Mode: ${dbConfig.mode}`);
-  console.log(`Database: ${dbConfig.dbPath}`);
-});
+      res.status(500).json({ error: 'Failed to complete learning session' });
+    }
+  });
+
+  app.post('/api/words/:id/complete-unstudied-session', (req, res) => {
+    try {
+      const updatedWord = completeUnstudiedWordSession(req.params.id);
+      res.json(updatedWord);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Word not found') {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to complete unstudied session' });
+    }
+  });
+
+  app.patch('/api/words/:id/meaning', (req, res) => {
+    const meaning = req.body?.meaning;
+
+    if (typeof meaning !== 'string') {
+      res.status(400).json({ error: 'Expected string meaning' });
+      return;
+    }
+
+    const trimmedMeaning = meaning.trim();
+    if (trimmedMeaning.length === 0) {
+      res.status(400).json({ error: 'Meaning must not be empty' });
+      return;
+    }
+
+    try {
+      const updatedWord = updateWordMeaning(req.params.id, trimmedMeaning);
+      res.json(updatedWord);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Word not found') {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to update word meaning' });
+    }
+  });
+
+  return app;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const app = createApp();
+  app.listen(port, () => {
+    console.log(`Backend server running at http://localhost:${port}`);
+    console.log(`Mode: ${dbConfig.mode}`);
+    console.log(`Database: ${dbConfig.dbPath}`);
+  });
+}

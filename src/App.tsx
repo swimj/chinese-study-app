@@ -9,6 +9,7 @@ import {
   fetchSessionPayload,
   fetchStatus,
   fetchWords,
+  updateWordMeaning,
 } from './services/api';
 import {
   beginDrainSession,
@@ -141,6 +142,11 @@ function App() {
   const [submittingRating, setSubmittingRating] = useState<ReviewRating | null>(null);
   const [wordsPageNumber, setWordsPageNumber] = useState(0);
   const [sessionNow, setSessionNow] = useState(() => new Date().toISOString());
+  const [sessionMeaningOverridesByWordId, setSessionMeaningOverridesByWordId] = useState<Record<string, string>>({});
+  const [definitionEditorTargetWordId, setDefinitionEditorTargetWordId] = useState<string | null>(null);
+  const [definitionEditorDraft, setDefinitionEditorDraft] = useState('');
+  const [definitionEditorSaving, setDefinitionEditorSaving] = useState(false);
+  const [definitionEditorError, setDefinitionEditorError] = useState<string | null>(null);
 
   useEffect(() => {
     function syncSessionPrefetchState() {
@@ -181,7 +187,14 @@ function App() {
     : sessionPrefetch.payload?.items.length ?? 0;
   const activeItem: SessionItemWithWord | null =
     sessionStarted && sessionState ? getCurrentQueueItem(sessionState.queue) ?? null : null;
-  const activeWord = activeItem?.word ?? null;
+  const activeWordBase = activeItem?.word ?? null;
+  const activeWordOverride = activeWordBase ? sessionMeaningOverridesByWordId[activeWordBase.id] : undefined;
+  const activeWord = activeWordBase
+    ? {
+        ...activeWordBase,
+        meaning: activeWordOverride ?? activeWordBase.meaning,
+      }
+    : null;
   const activeReviewItem = activeItem?.reviewItem ?? null;
   const activeLearningProgress = activeWord ? sessionState?.learningProgress[activeWord.id] : undefined;
   const activeUnstudiedProgress = activeWord ? sessionState?.unstudiedProgress[activeWord.id] : undefined;
@@ -315,6 +328,9 @@ function App() {
     sessionStarted && sessionSummary
       ? formatElapsedTime(sessionSummary.startedAt, sessionSummary.completedAt ?? sessionNow)
       : '0:00';
+  const definitionEditorOpen = definitionEditorTargetWordId !== null;
+  const definitionEditorCanSubmit =
+    definitionEditorDraft.trim().length > 0 && !definitionEditorSaving;
 
   async function reloadDashboard() {
     const statusResponse = await fetchStatus();
@@ -335,6 +351,11 @@ function App() {
       const startedAt = new Date().toISOString();
       setSessionNow(startedAt);
       setSessionState(createSessionState(sessionPayload.items));
+      setSessionMeaningOverridesByWordId({});
+      setDefinitionEditorTargetWordId(null);
+      setDefinitionEditorDraft('');
+      setDefinitionEditorSaving(false);
+      setDefinitionEditorError(null);
       setSessionSummary({
         startedAt,
         completedAt: null,
@@ -383,6 +404,11 @@ function App() {
     setSessionState(null);
     setSessionSummary(null);
     setAnswerRevealed(false);
+    setSessionMeaningOverridesByWordId({});
+    setDefinitionEditorTargetWordId(null);
+    setDefinitionEditorDraft('');
+    setDefinitionEditorSaving(false);
+    setDefinitionEditorError(null);
     resetSessionPrefetchCache();
     setSessionPrefetch(getSessionPrefetchSnapshot());
     await reloadDashboard();
@@ -443,7 +469,7 @@ function App() {
       switch (transition.commit.type) {
         case 'commit-review-item-session': {
           const reviewCommit = transition.commit;
-          const reviewEncounterLabel = formatReviewEncounterLabel(activeItem.reviewItem, activeItem.word);
+          const reviewEncounterLabel = formatReviewEncounterLabel(activeItem.reviewItem, activeWord);
           await completeReviewSession(
             reviewCommit.reviewItemId,
             reviewCommit.failureCount,
@@ -527,6 +553,50 @@ function App() {
     setSessionState((current) => (current ? beginUnstudiedDrill(current, wordId) : current));
   }
 
+  function handleOpenDefinitionEditor() {
+    if (!activeWord) {
+      return;
+    }
+
+    setDefinitionEditorTargetWordId(activeWord.id);
+    setDefinitionEditorDraft(activeWord.meaning);
+    setDefinitionEditorError(null);
+  }
+
+  function handleCancelDefinitionEditor() {
+    setDefinitionEditorTargetWordId(null);
+    setDefinitionEditorDraft('');
+    setDefinitionEditorSaving(false);
+    setDefinitionEditorError(null);
+  }
+
+  async function handleSaveDefinitionEditor() {
+    if (!definitionEditorTargetWordId) {
+      return;
+    }
+
+    const trimmedMeaning = definitionEditorDraft.trim();
+    if (trimmedMeaning.length === 0) {
+      setDefinitionEditorError('Definition cannot be empty.');
+      return;
+    }
+
+    setDefinitionEditorSaving(true);
+    setDefinitionEditorError(null);
+
+    try {
+      await updateWordMeaning(definitionEditorTargetWordId, trimmedMeaning);
+      setSessionMeaningOverridesByWordId((current) => ({
+        ...current,
+        [definitionEditorTargetWordId]: trimmedMeaning,
+      }));
+      handleCancelDefinitionEditor();
+    } catch (err) {
+      setDefinitionEditorError(err instanceof Error ? err.message : 'Failed to save definition');
+      setDefinitionEditorSaving(false);
+    }
+  }
+
   useEffect(() => {
     if (!sessionStarted || !sessionState || answerRevealed) {
       return;
@@ -553,7 +623,7 @@ function App() {
     }
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented || submittingRating !== null) {
+      if (event.defaultPrevented || submittingRating !== null || definitionEditorOpen) {
         return;
       }
 
@@ -612,6 +682,7 @@ function App() {
     activeUnstudiedProgress?.introComplete,
     activeWord,
     answerRevealed,
+    definitionEditorOpen,
     sessionStarted,
     sessionState,
     submittingRating,
@@ -727,32 +798,67 @@ function App() {
                 </div>
               ) : activeWord.status === 'unstudied' && !activeUnstudiedProgress?.introComplete ? (
                 <div className="review-card">
-                  <p className="badge">New word introduction</p>
+                  <div className="review-card-header">
+                    <p className="badge">New word introduction</p>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={handleOpenDefinitionEditor}
+                      disabled={definitionEditorSaving}
+                    >
+                      Edit definition
+                    </button>
+                  </div>
                   <div className="prompt-block">
                     <span className="prompt-label">Hanzi</span>
                     <strong className="prompt-value">{activeWord.hanzi}</strong>
                     <span className="prompt-meta">{activeWord.pinyin} · {activeWord.meaning}</span>
                     <span className="prompt-meta">{activeWord.examples[0]}</span>
                   </div>
-                  <button type="button" onClick={() => handleBeginUnstudiedDrill(activeWord.id)}>
+                  <button
+                    type="button"
+                    onClick={() => handleBeginUnstudiedDrill(activeWord.id)}
+                    disabled={definitionEditorOpen}
+                  >
                     Begin recall drills
                   </button>
+                  {definitionEditorOpen ? (
+                    <DefinitionEditorOverlay
+                      value={definitionEditorDraft}
+                      isSaving={definitionEditorSaving}
+                      error={definitionEditorError}
+                      canSubmit={definitionEditorCanSubmit}
+                      onChange={setDefinitionEditorDraft}
+                      onCancel={handleCancelDefinitionEditor}
+                      onSave={handleSaveDefinitionEditor}
+                    />
+                  ) : null}
                 </div>
               ) : (
                 <div className="review-card">
-                  <p className="badge">
-                    {sessionState?.phase === 'draining'
-                      ? 'Draining'
-                      : activeWord.status === 'review'
-                        ? reviewInReinforcement
-                          ? 'Review reinforcement'
-                          : 'Review'
-                        : activeWord.status === 'learning'
-                          ? 'Learning'
-                          : 'New word'}
-                    {' · '}
-                    {activeItem.reviewItem.direction === 'forward' ? 'Hanzi → Meaning' : 'Meaning → Hanzi'}
-                  </p>
+                  <div className="review-card-header">
+                    <p className="badge">
+                      {sessionState?.phase === 'draining'
+                        ? 'Draining'
+                        : activeWord.status === 'review'
+                          ? reviewInReinforcement
+                            ? 'Review reinforcement'
+                            : 'Review'
+                          : activeWord.status === 'learning'
+                            ? 'Learning'
+                            : 'New word'}
+                      {' · '}
+                      {activeItem.reviewItem.direction === 'forward' ? 'Hanzi → Meaning' : 'Meaning → Hanzi'}
+                    </p>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={handleOpenDefinitionEditor}
+                      disabled={definitionEditorSaving}
+                    >
+                      Edit definition
+                    </button>
+                  </div>
                   <p className="notes">
                     Answered {reviewedCount} this session · {sessionState?.queue.length ?? 0} still queued ·
                     {' '}Unique lapse items {sessionSummary?.lapsedReviewItemIds.length ?? 0} · Elapsed {activeElapsedTime}
@@ -779,7 +885,7 @@ function App() {
                       <span className="prompt-meta">{activeWord.examples[0]}</span>
                     </div>
                   ) : (
-                    <button type="button" onClick={() => setAnswerRevealed(true)}>
+                    <button type="button" onClick={() => setAnswerRevealed(true)} disabled={definitionEditorOpen}>
                       Reveal answer
                     </button>
                   )}
@@ -792,13 +898,24 @@ function App() {
                           type="button"
                           className="rating-button"
                           onClick={() => handleRate(option.value)}
-                          disabled={submittingRating !== null}
+                          disabled={submittingRating !== null || definitionEditorOpen}
                         >
                           <strong>{option.label}</strong>
                           <span>{option.note}</span>
                         </button>
                       ))}
                     </div>
+                  ) : null}
+                  {definitionEditorOpen ? (
+                    <DefinitionEditorOverlay
+                      value={definitionEditorDraft}
+                      isSaving={definitionEditorSaving}
+                      error={definitionEditorError}
+                      canSubmit={definitionEditorCanSubmit}
+                      onChange={setDefinitionEditorDraft}
+                      onCancel={handleCancelDefinitionEditor}
+                      onSave={handleSaveDefinitionEditor}
+                    />
                   ) : null}
                 </div>
               )}
@@ -1113,6 +1230,49 @@ function SessionSummaryPanel({ summary }: { summary: SessionSummary }) {
       <p className="notes">
         Started {formatDateTime(summary.startedAt)}{summary.completedAt ? ` · Completed ${formatDateTime(summary.completedAt)}` : ''}
       </p>
+    </div>
+  );
+}
+
+function DefinitionEditorOverlay({
+  value,
+  isSaving,
+  error,
+  canSubmit,
+  onChange,
+  onCancel,
+  onSave,
+}: {
+  value: string;
+  isSaving: boolean;
+  error: string | null;
+  canSubmit: boolean;
+  onChange: (next: string) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <div className="definition-editor-overlay">
+      <div className="definition-editor-header">
+        <strong>Edit definition</strong>
+        <span className="notes">Applies immediately and persists to backend.</span>
+      </div>
+      <textarea
+        className="definition-editor-input"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        disabled={isSaving}
+        rows={4}
+      />
+      {error ? <p className="notes definition-editor-error">{error}</p> : null}
+      <div className="definition-editor-actions">
+        <button type="button" className="secondary-button" onClick={onCancel} disabled={isSaving}>
+          Cancel
+        </button>
+        <button type="button" onClick={onSave} disabled={!canSubmit}>
+          {isSaving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
     </div>
   );
 }
