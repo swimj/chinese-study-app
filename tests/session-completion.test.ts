@@ -282,6 +282,30 @@ describe('session completion', { concurrency: false }, () => {
     );
   });
 
+  test('updating word meaning persists the new definition and returns the updated word', () => {
+    insertWord({
+      id: 'meaning-update-word',
+      hanzi: '改',
+      pinyin: 'gai',
+      meaning: 'old definition',
+      examples: ['我改了定义。'],
+      status: 'learning',
+      priority: 55,
+      createdAt: isoHoursAgo(2),
+    });
+
+    const updatedWord = dbModule.updateWordMeaning('meaning-update-word', 'new definition');
+    assert.equal(updatedWord.meaning, 'new definition');
+    assert.equal(fetchWord('meaning-update-word').meaning, 'new definition');
+  });
+
+  test('updating word meaning rejects unknown words', () => {
+    assert.throws(
+      () => dbModule.updateWordMeaning('missing-word', 'new definition'),
+      /Word not found/,
+    );
+  });
+
   test('unstudied completion transitions the word into learning', () => {
     insertWord({
       id: 'unstudied-transition-word',

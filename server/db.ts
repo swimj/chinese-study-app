@@ -151,6 +151,49 @@ export function getWords(): Word[] {
   return rows.map(mapWordRow);
 }
 
+export function updateWordMeaning(wordId: string, meaning: string): Word {
+  const existingWord = db
+    .prepare(`
+      SELECT
+        id
+      FROM words
+      WHERE id = ?
+    `)
+    .get(wordId) as { id: string } | undefined;
+
+  if (!existingWord) {
+    throw new Error('Word not found');
+  }
+
+  db.prepare(`
+    UPDATE words
+    SET meaning = ?
+    WHERE id = ?
+  `).run(meaning, wordId);
+
+  const updatedWord = db
+    .prepare(`
+      SELECT
+        id,
+        hanzi,
+        traditional,
+        pinyin,
+        meaning,
+        examples_json,
+        status,
+        priority,
+        created_at,
+        learning_streak,
+        last_learning_success_on,
+        last_learning_covered_on
+      FROM words
+      WHERE id = ?
+    `)
+    .get(wordId) as WordRow;
+
+  return mapWordRow(updatedWord);
+}
+
 export function getSessionItems(): ReviewItem[] {
   return getSessionItemsWithWords().map((item) => item.reviewItem);
 }

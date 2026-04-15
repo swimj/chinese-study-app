@@ -21,7 +21,8 @@ body {
 }
 
 button,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -239,6 +240,23 @@ button:hover {
   gap: 1rem;
 }
 
+.review-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.secondary-button {
+  background: rgba(30, 41, 59, 0.92);
+  color: #cbd5e1;
+}
+
+.secondary-button:hover {
+  background: rgba(51, 65, 85, 0.92);
+}
+
 .prompt-block,
 .answer-block {
   display: grid;
@@ -324,6 +342,46 @@ button:hover {
 .rating-button span {
   color: rgba(255, 255, 255, 0.82);
   line-height: 1.45;
+}
+
+.definition-editor-overlay {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.88);
+}
+
+.definition-editor-header {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.definition-editor-input {
+  width: 100%;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.95);
+  color: #e2e8f0;
+  resize: vertical;
+}
+
+.definition-editor-input:focus {
+  outline: 2px solid rgba(37, 99, 235, 0.5);
+  outline-offset: 1px;
+}
+
+.definition-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.definition-editor-error {
+  color: #fca5a5;
+  margin: 0;
 }
 
 .footer {
