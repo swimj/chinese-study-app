@@ -15,6 +15,7 @@
   "import:canonical-study-db": "node --import tsx scripts/import-canonical-study-db.ts",
   "patch:hack-chinese-review": "node --import tsx scripts/patch-hack-chinese-review-progress.ts",
   "import:hack-chinese-curated-unmatched": "node --import tsx scripts/import-curated-hack-chinese-unmatched.ts",
+  "backfill:word-meanings": "node --import tsx scripts/backfill-word-meanings.ts",
   "report:canonical-overlap": "node --import tsx scripts/report-canonical-overlap.ts",
     "fixture:hack-chinese-review": "node --import tsx scripts/load-hack-chinese-review-fixture.ts",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",

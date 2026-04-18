@@ -20,6 +20,7 @@ type Word = {
   traditional: string | null;
   pinyin: string;
   meaning: string;
+  meanings: string[];
   examples: string[];
   status: WordStatus;
   priority: number;
@@ -53,6 +54,7 @@ type WordRow = {
   traditional: string | null;
   pinyin: string;
   meaning: string;
+  meanings_json: string;
   examples_json: string;
   status: WordStatus;
   priority: number;
@@ -100,6 +102,7 @@ type SessionItemWithWordRow = {
   word_traditional: string | null;
   word_pinyin: string;
   word_meaning: string;
+  word_meanings_json: string;
   word_examples_json: string;
   word_status: WordStatus;
   word_priority: number;
@@ -136,6 +139,7 @@ export function getWords(): Word[] {
         traditional,
         pinyin,
         meaning,
+        meanings_json,
         examples_json,
         status,
         priority,
@@ -179,6 +183,7 @@ export function updateWordMeaning(wordId: string, meaning: string): Word {
         traditional,
         pinyin,
         meaning,
+        meanings_json,
         examples_json,
         status,
         priority,
@@ -307,6 +312,7 @@ export function completeUnstudiedWordSession(wordId: string): Word {
         traditional,
         pinyin,
         meaning,
+        meanings_json,
         examples_json,
         status,
         priority,
@@ -354,6 +360,7 @@ export function completeUnstudiedWordSession(wordId: string): Word {
         traditional,
         pinyin,
         meaning,
+        meanings_json,
         examples_json,
         status,
         priority,
@@ -423,6 +430,7 @@ export function completeLearningWordSession(wordId: string, success: boolean): W
         traditional,
         pinyin,
         meaning,
+        meanings_json,
         examples_json,
         status,
         priority,
@@ -478,6 +486,7 @@ export function completeLearningWordSession(wordId: string, success: boolean): W
         traditional,
         pinyin,
         meaning,
+        meanings_json,
         examples_json,
         status,
         priority,
@@ -501,6 +510,7 @@ function initializeDatabase() {
   }
 
   try {
+    applyLightweightSchemaMigrations();
     validateSchema();
     ensureIndexes();
     seedEmptyDevDatabase();
@@ -517,6 +527,20 @@ function openDatabase(targetPath: string) {
   const database = new DatabaseSync(targetPath);
   database.exec('PRAGMA foreign_keys = ON;');
   return database;
+}
+
+function applyLightweightSchemaMigrations() {
+  const wordColumns = db.prepare(`PRAGMA table_info(words)`).all() as Array<{ name: string }>;
+  const hasWordsTable = wordColumns.length > 0;
+
+  if (!hasWordsTable) {
+    return;
+  }
+
+  const hasMeaningsJson = wordColumns.some((column) => column.name === 'meanings_json');
+  if (!hasMeaningsJson) {
+    db.exec(`ALTER TABLE words ADD COLUMN meanings_json TEXT NOT NULL DEFAULT '[]'`);
+  }
 }
 
 function shouldRebuildDevDatabase(error: unknown) {
@@ -578,6 +602,7 @@ function createSchema() {
       traditional TEXT,
       pinyin TEXT NOT NULL,
       meaning TEXT NOT NULL,
+      meanings_json TEXT NOT NULL DEFAULT '[]',
       examples_json TEXT NOT NULL,
       status TEXT NOT NULL,
       priority INTEGER NOT NULL,
@@ -615,6 +640,7 @@ function validateSchema() {
     'traditional',
     'pinyin',
     'meaning',
+    'meanings_json',
     'examples_json',
     'status',
     'priority',
@@ -665,6 +691,7 @@ function seedDatabase() {
       traditional,
       pinyin,
       meaning,
+      meanings_json,
       examples_json,
       status,
       priority,
@@ -673,7 +700,7 @@ function seedDatabase() {
       last_learning_success_on,
       last_learning_covered_on
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertReviewItem = db.prepare(`
     INSERT INTO review_items (
@@ -698,6 +725,7 @@ function seedDatabase() {
         word.traditional,
         word.pinyin,
         word.meaning,
+        JSON.stringify(word.meanings),
         JSON.stringify(word.examples),
         word.status,
         word.priority,
@@ -751,6 +779,9 @@ function normalizeSeedWord(word: Partial<Word>): Word {
     traditional: word.traditional ?? null,
     pinyin: word.pinyin ?? '',
     meaning: word.meaning ?? '',
+    meanings: Array.isArray((word as Partial<Word> & { meanings?: unknown }).meanings)
+      ? ((word as Partial<Word> & { meanings?: unknown }).meanings as string[]).filter((meaning) => meaning.trim().length > 0)
+      : [word.meaning ?? ''],
     examples: Array.isArray(word.examples) ? word.examples : [],
     status: word.status ?? 'unstudied',
     priority: word.priority ?? 0,
@@ -792,6 +823,7 @@ function buildSampleWords(): Word[] {
       traditional: '你好',
       pinyin: 'nǐ hǎo',
       meaning: 'hello',
+      meanings: ['hello'],
       examples: ['你好！你今天怎么样？'],
       status: 'review',
       priority: 100,
@@ -806,6 +838,7 @@ function buildSampleWords(): Word[] {
       traditional: '謝謝',
       pinyin: 'xiè xie',
       meaning: 'thank you',
+      meanings: ['thank you'],
       examples: ['谢谢你的帮助。'],
       status: 'learning',
       priority: 99,
@@ -820,6 +853,7 @@ function buildSampleWords(): Word[] {
       traditional: '學習',
       pinyin: 'xué xí',
       meaning: 'to study',
+      meanings: ['to study'],
       examples: ['我每天学习汉语。'],
       status: 'learning',
       priority: 98,
@@ -834,6 +868,7 @@ function buildSampleWords(): Word[] {
       traditional: '朋友',
       pinyin: 'péng you',
       meaning: 'friend',
+      meanings: ['friend'],
       examples: ['她是我的好朋友。'],
       status: 'unstudied',
       priority: 97,
@@ -848,6 +883,7 @@ function buildSampleWords(): Word[] {
       traditional: '說',
       pinyin: 'shuō',
       meaning: 'to speak',
+      meanings: ['to speak'],
       examples: ['你会说中文吗？'],
       status: 'unstudied',
       priority: 96,
@@ -896,6 +932,7 @@ function mapWordRow(row: WordRow): Word {
     traditional: row.traditional,
     pinyin: row.pinyin,
     meaning: row.meaning,
+    meanings: parseMeaningsJson(row.meanings_json, row.meaning),
     examples: JSON.parse(row.examples_json) as string[],
     status: row.status,
     priority: row.priority,
@@ -935,6 +972,7 @@ function getSessionItemsWithWords(): SessionItemWithWord[] {
         words.traditional AS word_traditional,
         words.pinyin AS word_pinyin,
         words.meaning AS word_meaning,
+        words.meanings_json AS word_meanings_json,
         words.examples_json AS word_examples_json,
         words.status AS word_status,
         words.priority AS word_priority,
@@ -970,6 +1008,7 @@ function getSessionItemsWithWords(): SessionItemWithWord[] {
         words.traditional AS word_traditional,
         words.pinyin AS word_pinyin,
         words.meaning AS word_meaning,
+        words.meanings_json AS word_meanings_json,
         words.examples_json AS word_examples_json,
         words.status AS word_status,
         words.priority AS word_priority,
@@ -1003,6 +1042,7 @@ function getSessionItemsWithWords(): SessionItemWithWord[] {
         words.traditional AS word_traditional,
         words.pinyin AS word_pinyin,
         words.meaning AS word_meaning,
+        words.meanings_json AS word_meanings_json,
         words.examples_json AS word_examples_json,
         words.status AS word_status,
         words.priority AS word_priority,
@@ -1042,6 +1082,7 @@ function mapSessionItemWithWordRow(row: SessionItemWithWordRow): SessionItemWith
       traditional: row.word_traditional,
       pinyin: row.word_pinyin,
       meaning: row.word_meaning,
+      meanings: parseMeaningsJson(row.word_meanings_json, row.word_meaning),
       examples: JSON.parse(row.word_examples_json) as string[],
       status: row.word_status,
       priority: row.word_priority,
@@ -1120,6 +1161,22 @@ function addHours(isoTimestamp: string, hours: number): string {
   const date = new Date(isoTimestamp);
   date.setUTCHours(date.getUTCHours() + hours);
   return date.toISOString();
+}
+
+function parseMeaningsJson(raw: string, fallbackMeaning: string): string[] {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed)) {
+      const cleaned = parsed.filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+      if (cleaned.length > 0) {
+        return cleaned;
+      }
+    }
+  } catch {
+    // Fall through to the persisted single-string meaning.
+  }
+
+  return fallbackMeaning.trim() ? [fallbackMeaning] : [];
 }
 
 function ceilIntervalHours(hours: number) {

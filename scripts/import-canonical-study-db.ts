@@ -8,6 +8,7 @@ type StudyWord = {
   traditional: string | null;
   pinyin: string;
   meaning: string;
+  meanings: string[];
   examples: string[];
   status: 'unstudied' | 'learning' | 'review';
   priority: number;
@@ -54,6 +55,7 @@ db.exec(`
     traditional TEXT,
     pinyin TEXT NOT NULL,
     meaning TEXT NOT NULL,
+    meanings_json TEXT NOT NULL DEFAULT '[]',
     examples_json TEXT NOT NULL,
     status TEXT NOT NULL,
     priority INTEGER NOT NULL,
@@ -84,6 +86,7 @@ const insertWord = db.prepare(`
     traditional,
     pinyin,
     meaning,
+    meanings_json,
     examples_json,
     status,
     priority,
@@ -92,7 +95,7 @@ const insertWord = db.prepare(`
     last_learning_success_on,
     last_learning_covered_on
   )
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const insertReviewItem = db.prepare(`
@@ -118,6 +121,7 @@ try {
       word.traditional,
       word.pinyin,
       word.meaning,
+      JSON.stringify(word.meanings),
       JSON.stringify(word.examples),
       word.status,
       word.priority,

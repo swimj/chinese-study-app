@@ -55,6 +55,7 @@ fs.copyFileSync(dbPath, backupPath);
 
 const db = new DatabaseSync(dbPath);
 db.exec('PRAGMA foreign_keys = ON;');
+ensureMeaningsJsonColumn(db);
 
 const existingWords = db.prepare(`SELECT id, hanzi, pinyin FROM words`).all() as WordRow[];
 const existingMap = new Map<string, WordRow>();
@@ -70,6 +71,7 @@ const insertWord = db.prepare(`
     traditional,
     pinyin,
     meaning,
+    meanings_json,
     examples_json,
     status,
     priority,
@@ -78,7 +80,7 @@ const insertWord = db.prepare(`
     last_learning_success_on,
     last_learning_covered_on
   )
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const insertReviewItem = db.prepare(`
@@ -146,6 +148,7 @@ try {
       null,
       curatedWord.pinyin,
       meaning,
+      JSON.stringify(patchRecord.meanings),
       '[]',
       'review',
       0,
@@ -278,4 +281,13 @@ function applyReviewState(
     patchRecord.nextDueAt,
     wordId,
   );
+}
+
+function ensureMeaningsJsonColumn(database: DatabaseSync) {
+  const columns = database.prepare(`PRAGMA table_info(words)`).all() as Array<{ name: string }>;
+  const hasMeaningsJson = columns.some((column) => column.name === 'meanings_json');
+
+  if (!hasMeaningsJson) {
+    database.exec(`ALTER TABLE words ADD COLUMN meanings_json TEXT NOT NULL DEFAULT '[]'`);
+  }
 }

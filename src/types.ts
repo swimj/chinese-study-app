@@ -4,6 +4,7 @@ export type Word = {
   traditional: string | null;
   pinyin: string;
   meaning: string;
+  meanings: string[];
   examples: string[];
   status: 'unstudied' | 'learning' | 'review';
   priority: number;

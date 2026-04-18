@@ -195,6 +195,16 @@ function App() {
         meaning: activeWordOverride ?? activeWordBase.meaning,
       }
     : null;
+  const activeDisplayedMeanings =
+    activeWord === null
+      ? []
+      : activeWordOverride !== undefined
+        ? [activeWordOverride]
+        : activeWord.meanings.length > 0
+          ? activeWord.meanings
+          : activeWord.meaning.trim().length > 0
+            ? [activeWord.meaning]
+            : [];
   const activeReviewItem = activeItem?.reviewItem ?? null;
   const activeLearningProgress = activeWord ? sessionState?.learningProgress[activeWord.id] : undefined;
   const activeUnstudiedProgress = activeWord ? sessionState?.unstudiedProgress[activeWord.id] : undefined;
@@ -287,13 +297,13 @@ function App() {
     activeReviewItem && activeWord
       ? activeReviewItem.direction === 'forward'
         ? activeWord.hanzi
-        : activeWord.meaning
+        : activeDisplayedMeanings[0] ?? activeWord.meaning
       : null;
 
   const activeAnswerText =
     activeReviewItem && activeWord
       ? activeReviewItem.direction === 'forward'
-        ? activeWord.meaning
+        ? activeDisplayedMeanings[0] ?? activeWord.meaning
         : activeWord.hanzi
       : null;
   const activeAnswerPinyin = activeItem && activeWord ? activeWord.pinyin : null;
@@ -812,7 +822,8 @@ function App() {
                   <div className="prompt-block">
                     <span className="prompt-label">Hanzi</span>
                     <strong className="prompt-value">{activeWord.hanzi}</strong>
-                    <span className="prompt-meta">{activeWord.pinyin} · {activeWord.meaning}</span>
+                    <span className="prompt-meta">{activeWord.pinyin}</span>
+                    <MeaningList meanings={activeDisplayedMeanings} />
                     <span className="prompt-meta">{activeWord.examples[0]}</span>
                   </div>
                   <button
@@ -865,7 +876,11 @@ function App() {
                   </p>
                   <div className="prompt-block">
                     <span className="prompt-label">Prompt</span>
-                    <strong className="prompt-value">{activePrompt}</strong>
+                    {activeItem.reviewItem.direction === 'forward' ? (
+                      <strong className="prompt-value">{activePrompt}</strong>
+                    ) : (
+                      <MeaningList meanings={activeDisplayedMeanings} className="meaning-list-prompt" />
+                    )}
                     <span className="prompt-meta">
                       {activeWord.status === 'review'
                         ? `${activeReviewState} · Failures ${activeReviewProgress?.failureCount ?? 0}`
@@ -879,6 +894,7 @@ function App() {
                       <span className="prompt-label">Answer</span>
                       <span className="answer-pinyin">{activeAnswerPinyin}</span>
                       <strong className="answer-value">{activeAnswerText}</strong>
+                      <MeaningList meanings={activeDisplayedMeanings} />
                       <span className="prompt-meta">
                         Interval {activeItem.reviewItem.intervalHours} hour{activeItem.reviewItem.intervalHours === 1 ? '' : 's'}
                       </span>
@@ -1393,6 +1409,24 @@ function formatScheduledValue(row: InspectableRow) {
   }
 
   return formatDateTime(row.nextScheduledAt);
+}
+
+function MeaningList({ meanings, className }: { meanings: string[]; className?: string }) {
+  if (meanings.length === 0) {
+    return null;
+  }
+
+  if (meanings.length === 1) {
+    return <span className={className ? `prompt-meta ${className}` : 'prompt-meta'}>{meanings[0]}</span>;
+  }
+
+  return (
+    <ul className={className ? `meaning-list ${className}` : 'meaning-list'}>
+      {meanings.map((meaning, index) => (
+        <li key={`${index}-${meaning}`}>{meaning}</li>
+      ))}
+    </ul>
+  );
 }
 
 export default App;
