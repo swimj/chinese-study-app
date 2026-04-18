@@ -7,6 +7,9 @@ Noncritical improvements worth remembering as the project evolves.
 - Rename or remove the `Resume review` button until there is a true pause/resume flow.
 - Add an `npm` script for resetting sample data, such as `reset:data`, so repeated manual testing is easier.
 - Consider a one-command local dev workflow for starting frontend and backend together once day-to-day iteration gets more frequent.
+- Migrate more UI surfaces to prefer `meanings[]` over the legacy single-string `meaning`, while keeping compact surfaces readable.
+- Once the UI meaning model fully prefers `meanings[]`, make definition editing work on a per-meaning basis instead of editing one flattened definition blob.
+- Add per-meaning visibility controls so each gloss can be marked as “show on main session card” versus secondary/expandable detail.
 
 ## Review Flow
 

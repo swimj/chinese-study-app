@@ -290,6 +290,23 @@ button:hover {
   color: #cbd5e1;
 }
 
+.meaning-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: #cbd5e1;
+  display: grid;
+  gap: 0.35rem;
+  line-height: 1.55;
+}
+
+.meaning-list li {
+  margin: 0;
+}
+
+.meaning-list-prompt {
+  padding-left: 1.5rem;
+}
+
 .rating-grid {
   display: grid;
   gap: 0.85rem;

@@ -71,6 +71,7 @@ db.exec(`
     traditional TEXT,
     pinyin TEXT NOT NULL,
     meaning TEXT NOT NULL,
+    meanings_json TEXT NOT NULL DEFAULT '[]',
     examples_json TEXT NOT NULL,
     status TEXT NOT NULL,
     priority INTEGER NOT NULL,
@@ -101,6 +102,7 @@ const insertWord = db.prepare(`
     traditional,
     pinyin,
     meaning,
+    meanings_json,
     examples_json,
     status,
     priority,
@@ -109,7 +111,7 @@ const insertWord = db.prepare(`
     last_learning_success_on,
     last_learning_covered_on
   )
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const insertReviewItem = db.prepare(`
@@ -135,6 +137,7 @@ try {
       record.traditional ?? null,
       record.pinyin,
       record.meanings.join('; '),
+      JSON.stringify(record.meanings),
       JSON.stringify([]),
       'review',
       fixtureSize - index,
@@ -171,6 +174,7 @@ const seedWords = dueRecords.map((record, index) => ({
   traditional: record.traditional ?? null,
   pinyin: record.pinyin,
   meaning: record.meanings.join('; '),
+  meanings: record.meanings,
   examples: [],
   status: 'review',
   priority: fixtureSize - index,
