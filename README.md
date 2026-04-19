@@ -1,6 +1,17 @@
 # Chinese Study App
 
-A local-first Mandarin study app built with a React/Vite frontend and a small local backend.
+A Mandarin study app currently built for a local-browser-first PoC workflow, with a React/Vite frontend and a local backend.
+
+## Architecture Direction
+
+Current architecture is optimized for fast product iteration on one machine.
+
+This is a phase, not a forever constraint:
+
+- Near-to-medium term: local-browser-first development and validation.
+- Longer term: keep code and boundaries friendly to a potential hosted web-service migration.
+
+When making changes, prefer designs that avoid unnecessary coupling to single-machine assumptions.
 
 ## Current Status
 
