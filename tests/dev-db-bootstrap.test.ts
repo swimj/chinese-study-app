@@ -90,6 +90,7 @@ describe('dev database bootstrap', { concurrency: false }, () => {
         pinyin TEXT NOT NULL,
         meaning TEXT NOT NULL,
         meanings_json TEXT NOT NULL DEFAULT '[]',
+        personal_notes TEXT NOT NULL DEFAULT '',
         examples_json TEXT NOT NULL,
         status TEXT NOT NULL,
         priority INTEGER NOT NULL,

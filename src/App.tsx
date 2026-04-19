@@ -9,7 +9,7 @@ import {
   fetchSessionPayload,
   fetchStatus,
   fetchWords,
-  updateWordMeaning,
+  updateWordPersonalNotes,
 } from './services/api';
 import {
   beginDrainSession,
@@ -142,11 +142,13 @@ function App() {
   const [submittingRating, setSubmittingRating] = useState<ReviewRating | null>(null);
   const [wordsPageNumber, setWordsPageNumber] = useState(0);
   const [sessionNow, setSessionNow] = useState(() => new Date().toISOString());
-  const [sessionMeaningOverridesByWordId, setSessionMeaningOverridesByWordId] = useState<Record<string, string>>({});
-  const [definitionEditorTargetWordId, setDefinitionEditorTargetWordId] = useState<string | null>(null);
-  const [definitionEditorDraft, setDefinitionEditorDraft] = useState('');
-  const [definitionEditorSaving, setDefinitionEditorSaving] = useState(false);
-  const [definitionEditorError, setDefinitionEditorError] = useState<string | null>(null);
+  const [sessionPersonalNotesOverridesByWordId, setSessionPersonalNotesOverridesByWordId] = useState<
+    Record<string, string>
+  >({});
+  const [personalNotesEditorTargetWordId, setPersonalNotesEditorTargetWordId] = useState<string | null>(null);
+  const [personalNotesEditorDraft, setPersonalNotesEditorDraft] = useState('');
+  const [personalNotesEditorSaving, setPersonalNotesEditorSaving] = useState(false);
+  const [personalNotesEditorError, setPersonalNotesEditorError] = useState<string | null>(null);
 
   useEffect(() => {
     function syncSessionPrefetchState() {
@@ -187,24 +189,17 @@ function App() {
     : sessionPrefetch.payload?.items.length ?? 0;
   const activeItem: SessionItemWithWord | null =
     sessionStarted && sessionState ? getCurrentQueueItem(sessionState.queue) ?? null : null;
-  const activeWordBase = activeItem?.word ?? null;
-  const activeWordOverride = activeWordBase ? sessionMeaningOverridesByWordId[activeWordBase.id] : undefined;
-  const activeWord = activeWordBase
-    ? {
-        ...activeWordBase,
-        meaning: activeWordOverride ?? activeWordBase.meaning,
-      }
-    : null;
+  const activeWord = activeItem?.word ?? null;
+  const activeWordPersonalNotesOverride = activeWord ? sessionPersonalNotesOverridesByWordId[activeWord.id] : undefined;
+  const activeWordPersonalNotes = activeWordPersonalNotesOverride ?? activeWord?.personalNotes ?? '';
   const activeDisplayedMeanings =
     activeWord === null
       ? []
-      : activeWordOverride !== undefined
-        ? [activeWordOverride]
-        : activeWord.meanings.length > 0
-          ? activeWord.meanings
-          : activeWord.meaning.trim().length > 0
-            ? [activeWord.meaning]
-            : [];
+      : activeWord.meanings.length > 0
+        ? activeWord.meanings
+        : activeWord.meaning.trim().length > 0
+          ? [activeWord.meaning]
+          : [];
   const activeReviewItem = activeItem?.reviewItem ?? null;
   const activeLearningProgress = activeWord ? sessionState?.learningProgress[activeWord.id] : undefined;
   const activeUnstudiedProgress = activeWord ? sessionState?.unstudiedProgress[activeWord.id] : undefined;
@@ -338,9 +333,8 @@ function App() {
     sessionStarted && sessionSummary
       ? formatElapsedTime(sessionSummary.startedAt, sessionSummary.completedAt ?? sessionNow)
       : '0:00';
-  const definitionEditorOpen = definitionEditorTargetWordId !== null;
-  const definitionEditorCanSubmit =
-    definitionEditorDraft.trim().length > 0 && !definitionEditorSaving;
+  const personalNotesEditorOpen = personalNotesEditorTargetWordId !== null;
+  const personalNotesEditorCanSubmit = !personalNotesEditorSaving;
 
   async function reloadDashboard() {
     const statusResponse = await fetchStatus();
@@ -361,11 +355,11 @@ function App() {
       const startedAt = new Date().toISOString();
       setSessionNow(startedAt);
       setSessionState(createSessionState(sessionPayload.items));
-      setSessionMeaningOverridesByWordId({});
-      setDefinitionEditorTargetWordId(null);
-      setDefinitionEditorDraft('');
-      setDefinitionEditorSaving(false);
-      setDefinitionEditorError(null);
+      setSessionPersonalNotesOverridesByWordId({});
+      setPersonalNotesEditorTargetWordId(null);
+      setPersonalNotesEditorDraft('');
+      setPersonalNotesEditorSaving(false);
+      setPersonalNotesEditorError(null);
       setSessionSummary({
         startedAt,
         completedAt: null,
@@ -414,11 +408,11 @@ function App() {
     setSessionState(null);
     setSessionSummary(null);
     setAnswerRevealed(false);
-    setSessionMeaningOverridesByWordId({});
-    setDefinitionEditorTargetWordId(null);
-    setDefinitionEditorDraft('');
-    setDefinitionEditorSaving(false);
-    setDefinitionEditorError(null);
+    setSessionPersonalNotesOverridesByWordId({});
+    setPersonalNotesEditorTargetWordId(null);
+    setPersonalNotesEditorDraft('');
+    setPersonalNotesEditorSaving(false);
+    setPersonalNotesEditorError(null);
     resetSessionPrefetchCache();
     setSessionPrefetch(getSessionPrefetchSnapshot());
     await reloadDashboard();
@@ -563,47 +557,43 @@ function App() {
     setSessionState((current) => (current ? beginUnstudiedDrill(current, wordId) : current));
   }
 
-  function handleOpenDefinitionEditor() {
+  function handleOpenPersonalNotesEditor() {
     if (!activeWord) {
       return;
     }
 
-    setDefinitionEditorTargetWordId(activeWord.id);
-    setDefinitionEditorDraft(activeWord.meaning);
-    setDefinitionEditorError(null);
+    setPersonalNotesEditorTargetWordId(activeWord.id);
+    setPersonalNotesEditorDraft(activeWordPersonalNotes);
+    setPersonalNotesEditorError(null);
   }
 
-  function handleCancelDefinitionEditor() {
-    setDefinitionEditorTargetWordId(null);
-    setDefinitionEditorDraft('');
-    setDefinitionEditorSaving(false);
-    setDefinitionEditorError(null);
+  function handleCancelPersonalNotesEditor() {
+    setPersonalNotesEditorTargetWordId(null);
+    setPersonalNotesEditorDraft('');
+    setPersonalNotesEditorSaving(false);
+    setPersonalNotesEditorError(null);
   }
 
-  async function handleSaveDefinitionEditor() {
-    if (!definitionEditorTargetWordId) {
+  async function handleSavePersonalNotesEditor() {
+    if (!personalNotesEditorTargetWordId) {
       return;
     }
 
-    const trimmedMeaning = definitionEditorDraft.trim();
-    if (trimmedMeaning.length === 0) {
-      setDefinitionEditorError('Definition cannot be empty.');
-      return;
-    }
+    const nextPersonalNotes = personalNotesEditorDraft.trim();
 
-    setDefinitionEditorSaving(true);
-    setDefinitionEditorError(null);
+    setPersonalNotesEditorSaving(true);
+    setPersonalNotesEditorError(null);
 
     try {
-      await updateWordMeaning(definitionEditorTargetWordId, trimmedMeaning);
-      setSessionMeaningOverridesByWordId((current) => ({
+      await updateWordPersonalNotes(personalNotesEditorTargetWordId, nextPersonalNotes);
+      setSessionPersonalNotesOverridesByWordId((current) => ({
         ...current,
-        [definitionEditorTargetWordId]: trimmedMeaning,
+        [personalNotesEditorTargetWordId]: nextPersonalNotes,
       }));
-      handleCancelDefinitionEditor();
+      handleCancelPersonalNotesEditor();
     } catch (err) {
-      setDefinitionEditorError(err instanceof Error ? err.message : 'Failed to save definition');
-      setDefinitionEditorSaving(false);
+      setPersonalNotesEditorError(err instanceof Error ? err.message : 'Failed to save personal notes');
+      setPersonalNotesEditorSaving(false);
     }
   }
 
@@ -633,7 +623,7 @@ function App() {
     }
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented || submittingRating !== null || definitionEditorOpen) {
+      if (event.defaultPrevented || submittingRating !== null || personalNotesEditorOpen) {
         return;
       }
 
@@ -692,7 +682,7 @@ function App() {
     activeUnstudiedProgress?.introComplete,
     activeWord,
     answerRevealed,
-    definitionEditorOpen,
+    personalNotesEditorOpen,
     sessionStarted,
     sessionState,
     submittingRating,
@@ -813,10 +803,10 @@ function App() {
                     <button
                       type="button"
                       className="secondary-button"
-                      onClick={handleOpenDefinitionEditor}
-                      disabled={definitionEditorSaving}
+                      onClick={handleOpenPersonalNotesEditor}
+                      disabled={personalNotesEditorSaving}
                     >
-                      Edit definition
+                      Edit notes
                     </button>
                   </div>
                   <div className="prompt-block">
@@ -825,23 +815,26 @@ function App() {
                     <span className="prompt-meta">{activeWord.pinyin}</span>
                     <MeaningList meanings={activeDisplayedMeanings} />
                     <span className="prompt-meta">{activeWord.examples[0]}</span>
+                    {activeWordPersonalNotes.trim().length > 0 ? (
+                      <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
+                    ) : null}
                   </div>
                   <button
                     type="button"
                     onClick={() => handleBeginUnstudiedDrill(activeWord.id)}
-                    disabled={definitionEditorOpen}
+                    disabled={personalNotesEditorOpen}
                   >
                     Begin recall drills
                   </button>
-                  {definitionEditorOpen ? (
-                    <DefinitionEditorOverlay
-                      value={definitionEditorDraft}
-                      isSaving={definitionEditorSaving}
-                      error={definitionEditorError}
-                      canSubmit={definitionEditorCanSubmit}
-                      onChange={setDefinitionEditorDraft}
-                      onCancel={handleCancelDefinitionEditor}
-                      onSave={handleSaveDefinitionEditor}
+                  {personalNotesEditorOpen ? (
+                    <PersonalNotesEditorOverlay
+                      value={personalNotesEditorDraft}
+                      isSaving={personalNotesEditorSaving}
+                      error={personalNotesEditorError}
+                      canSubmit={personalNotesEditorCanSubmit}
+                      onChange={setPersonalNotesEditorDraft}
+                      onCancel={handleCancelPersonalNotesEditor}
+                      onSave={handleSavePersonalNotesEditor}
                     />
                   ) : null}
                 </div>
@@ -864,10 +857,10 @@ function App() {
                     <button
                       type="button"
                       className="secondary-button"
-                      onClick={handleOpenDefinitionEditor}
-                      disabled={definitionEditorSaving}
+                      onClick={handleOpenPersonalNotesEditor}
+                      disabled={personalNotesEditorSaving}
                     >
-                      Edit definition
+                      Edit notes
                     </button>
                   </div>
                   <p className="notes">
@@ -888,6 +881,9 @@ function App() {
                           ? `Binary recall · Covered ${Number(activeLearningProgress?.coveredDirections.forward ?? false) + Number(activeLearningProgress?.coveredDirections.reverse ?? false)}/2 directions`
                           : `Binary recall · Consecutive successes ${activeUnstudiedProgress?.consecutiveSuccesses.forward ?? 0}/3 forward · ${activeUnstudiedProgress?.consecutiveSuccesses.reverse ?? 0}/3 reverse`}
                     </span>
+                    {activeWordPersonalNotes.trim().length > 0 ? (
+                      <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
+                    ) : null}
                   </div>
                   {answerRevealed ? (
                     <div className="answer-block">
@@ -895,13 +891,16 @@ function App() {
                       <span className="answer-pinyin">{activeAnswerPinyin}</span>
                       <strong className="answer-value">{activeAnswerText}</strong>
                       <MeaningList meanings={activeDisplayedMeanings} />
+                      {activeWordPersonalNotes.trim().length > 0 ? (
+                        <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
+                      ) : null}
                       <span className="prompt-meta">
                         Interval {activeItem.reviewItem.intervalHours} hour{activeItem.reviewItem.intervalHours === 1 ? '' : 's'}
                       </span>
                       <span className="prompt-meta">{activeWord.examples[0]}</span>
                     </div>
                   ) : (
-                    <button type="button" onClick={() => setAnswerRevealed(true)} disabled={definitionEditorOpen}>
+                    <button type="button" onClick={() => setAnswerRevealed(true)} disabled={personalNotesEditorOpen}>
                       Reveal answer
                     </button>
                   )}
@@ -914,7 +913,7 @@ function App() {
                           type="button"
                           className="rating-button"
                           onClick={() => handleRate(option.value)}
-                          disabled={submittingRating !== null || definitionEditorOpen}
+                          disabled={submittingRating !== null || personalNotesEditorOpen}
                         >
                           <strong>{option.label}</strong>
                           <span>{option.note}</span>
@@ -922,15 +921,15 @@ function App() {
                       ))}
                     </div>
                   ) : null}
-                  {definitionEditorOpen ? (
-                    <DefinitionEditorOverlay
-                      value={definitionEditorDraft}
-                      isSaving={definitionEditorSaving}
-                      error={definitionEditorError}
-                      canSubmit={definitionEditorCanSubmit}
-                      onChange={setDefinitionEditorDraft}
-                      onCancel={handleCancelDefinitionEditor}
-                      onSave={handleSaveDefinitionEditor}
+                  {personalNotesEditorOpen ? (
+                    <PersonalNotesEditorOverlay
+                      value={personalNotesEditorDraft}
+                      isSaving={personalNotesEditorSaving}
+                      error={personalNotesEditorError}
+                      canSubmit={personalNotesEditorCanSubmit}
+                      onChange={setPersonalNotesEditorDraft}
+                      onCancel={handleCancelPersonalNotesEditor}
+                      onSave={handleSavePersonalNotesEditor}
                     />
                   ) : null}
                 </div>
@@ -1071,6 +1070,9 @@ function WordsPage({
                                 <div>
                                   <h2>{row.word.hanzi}</h2>
                                   <p className="notes">{row.word.pinyin} · {row.word.meaning}</p>
+                                  {row.word.personalNotes.trim().length > 0 ? (
+                                    <p className="notes">Notes: {row.word.personalNotes}</p>
+                                  ) : null}
                                 </div>
                                 <span className={`status-pill status-${row.status}`}>{row.status}</span>
                               </div>
@@ -1250,7 +1252,7 @@ function SessionSummaryPanel({ summary }: { summary: SessionSummary }) {
   );
 }
 
-function DefinitionEditorOverlay({
+function PersonalNotesEditorOverlay({
   value,
   isSaving,
   error,
@@ -1270,7 +1272,7 @@ function DefinitionEditorOverlay({
   return (
     <div className="definition-editor-overlay">
       <div className="definition-editor-header">
-        <strong>Edit definition</strong>
+        <strong>Edit personal notes</strong>
         <span className="notes">Applies immediately and persists to backend.</span>
       </div>
       <textarea

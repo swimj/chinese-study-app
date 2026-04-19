@@ -21,6 +21,7 @@ type Word = {
   pinyin: string;
   meaning: string;
   meanings: string[];
+  personalNotes: string;
   examples: string[];
   status: WordStatus;
   priority: number;
@@ -55,6 +56,7 @@ type WordRow = {
   pinyin: string;
   meaning: string;
   meanings_json: string;
+  personal_notes: string;
   examples_json: string;
   status: WordStatus;
   priority: number;
@@ -103,6 +105,7 @@ type SessionItemWithWordRow = {
   word_pinyin: string;
   word_meaning: string;
   word_meanings_json: string;
+  word_personal_notes: string;
   word_examples_json: string;
   word_status: WordStatus;
   word_priority: number;
@@ -140,6 +143,7 @@ export function getWords(): Word[] {
         pinyin,
         meaning,
         meanings_json,
+        personal_notes,
         examples_json,
         status,
         priority,
@@ -155,7 +159,7 @@ export function getWords(): Word[] {
   return rows.map(mapWordRow);
 }
 
-export function updateWordMeaning(wordId: string, meaning: string): Word {
+export function updateWordPersonalNotes(wordId: string, personalNotes: string): Word {
   const existingWord = db
     .prepare(`
       SELECT
@@ -171,9 +175,9 @@ export function updateWordMeaning(wordId: string, meaning: string): Word {
 
   db.prepare(`
     UPDATE words
-    SET meaning = ?
+    SET personal_notes = ?
     WHERE id = ?
-  `).run(meaning, wordId);
+  `).run(personalNotes, wordId);
 
   const updatedWord = db
     .prepare(`
@@ -184,6 +188,7 @@ export function updateWordMeaning(wordId: string, meaning: string): Word {
         pinyin,
         meaning,
         meanings_json,
+        personal_notes,
         examples_json,
         status,
         priority,
@@ -313,6 +318,7 @@ export function completeUnstudiedWordSession(wordId: string): Word {
         pinyin,
         meaning,
         meanings_json,
+        personal_notes,
         examples_json,
         status,
         priority,
@@ -361,6 +367,7 @@ export function completeUnstudiedWordSession(wordId: string): Word {
         pinyin,
         meaning,
         meanings_json,
+        personal_notes,
         examples_json,
         status,
         priority,
@@ -431,6 +438,7 @@ export function completeLearningWordSession(wordId: string, success: boolean): W
         pinyin,
         meaning,
         meanings_json,
+        personal_notes,
         examples_json,
         status,
         priority,
@@ -487,6 +495,7 @@ export function completeLearningWordSession(wordId: string, success: boolean): W
         pinyin,
         meaning,
         meanings_json,
+        personal_notes,
         examples_json,
         status,
         priority,
@@ -540,6 +549,11 @@ function applyLightweightSchemaMigrations() {
   const hasMeaningsJson = wordColumns.some((column) => column.name === 'meanings_json');
   if (!hasMeaningsJson) {
     db.exec(`ALTER TABLE words ADD COLUMN meanings_json TEXT NOT NULL DEFAULT '[]'`);
+  }
+
+  const hasPersonalNotes = wordColumns.some((column) => column.name === 'personal_notes');
+  if (!hasPersonalNotes) {
+    db.exec(`ALTER TABLE words ADD COLUMN personal_notes TEXT NOT NULL DEFAULT ''`);
   }
 }
 
@@ -603,6 +617,7 @@ function createSchema() {
       pinyin TEXT NOT NULL,
       meaning TEXT NOT NULL,
       meanings_json TEXT NOT NULL DEFAULT '[]',
+      personal_notes TEXT NOT NULL DEFAULT '',
       examples_json TEXT NOT NULL,
       status TEXT NOT NULL,
       priority INTEGER NOT NULL,
@@ -641,6 +656,7 @@ function validateSchema() {
     'pinyin',
     'meaning',
     'meanings_json',
+    'personal_notes',
     'examples_json',
     'status',
     'priority',
@@ -692,6 +708,7 @@ function seedDatabase() {
       pinyin,
       meaning,
       meanings_json,
+      personal_notes,
       examples_json,
       status,
       priority,
@@ -700,7 +717,7 @@ function seedDatabase() {
       last_learning_success_on,
       last_learning_covered_on
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertReviewItem = db.prepare(`
     INSERT INTO review_items (
@@ -726,6 +743,7 @@ function seedDatabase() {
         word.pinyin,
         word.meaning,
         JSON.stringify(word.meanings),
+        word.personalNotes,
         JSON.stringify(word.examples),
         word.status,
         word.priority,
@@ -782,6 +800,7 @@ function normalizeSeedWord(word: Partial<Word>): Word {
     meanings: Array.isArray((word as Partial<Word> & { meanings?: unknown }).meanings)
       ? ((word as Partial<Word> & { meanings?: unknown }).meanings as string[]).filter((meaning) => meaning.trim().length > 0)
       : [word.meaning ?? ''],
+    personalNotes: word.personalNotes ?? '',
     examples: Array.isArray(word.examples) ? word.examples : [],
     status: word.status ?? 'unstudied',
     priority: word.priority ?? 0,
@@ -824,6 +843,7 @@ function buildSampleWords(): Word[] {
       pinyin: 'nǐ hǎo',
       meaning: 'hello',
       meanings: ['hello'],
+      personalNotes: '',
       examples: ['你好！你今天怎么样？'],
       status: 'review',
       priority: 100,
@@ -839,6 +859,7 @@ function buildSampleWords(): Word[] {
       pinyin: 'xiè xie',
       meaning: 'thank you',
       meanings: ['thank you'],
+      personalNotes: '',
       examples: ['谢谢你的帮助。'],
       status: 'learning',
       priority: 99,
@@ -854,6 +875,7 @@ function buildSampleWords(): Word[] {
       pinyin: 'xué xí',
       meaning: 'to study',
       meanings: ['to study'],
+      personalNotes: '',
       examples: ['我每天学习汉语。'],
       status: 'learning',
       priority: 98,
@@ -869,6 +891,7 @@ function buildSampleWords(): Word[] {
       pinyin: 'péng you',
       meaning: 'friend',
       meanings: ['friend'],
+      personalNotes: '',
       examples: ['她是我的好朋友。'],
       status: 'unstudied',
       priority: 97,
@@ -884,6 +907,7 @@ function buildSampleWords(): Word[] {
       pinyin: 'shuō',
       meaning: 'to speak',
       meanings: ['to speak'],
+      personalNotes: '',
       examples: ['你会说中文吗？'],
       status: 'unstudied',
       priority: 96,
@@ -933,6 +957,7 @@ function mapWordRow(row: WordRow): Word {
     pinyin: row.pinyin,
     meaning: row.meaning,
     meanings: parseMeaningsJson(row.meanings_json, row.meaning),
+    personalNotes: row.personal_notes,
     examples: JSON.parse(row.examples_json) as string[],
     status: row.status,
     priority: row.priority,
@@ -973,6 +998,7 @@ function getSessionItemsWithWords(): SessionItemWithWord[] {
         words.pinyin AS word_pinyin,
         words.meaning AS word_meaning,
         words.meanings_json AS word_meanings_json,
+        words.personal_notes AS word_personal_notes,
         words.examples_json AS word_examples_json,
         words.status AS word_status,
         words.priority AS word_priority,
@@ -1009,6 +1035,7 @@ function getSessionItemsWithWords(): SessionItemWithWord[] {
         words.pinyin AS word_pinyin,
         words.meaning AS word_meaning,
         words.meanings_json AS word_meanings_json,
+        words.personal_notes AS word_personal_notes,
         words.examples_json AS word_examples_json,
         words.status AS word_status,
         words.priority AS word_priority,
@@ -1043,6 +1070,7 @@ function getSessionItemsWithWords(): SessionItemWithWord[] {
         words.pinyin AS word_pinyin,
         words.meaning AS word_meaning,
         words.meanings_json AS word_meanings_json,
+        words.personal_notes AS word_personal_notes,
         words.examples_json AS word_examples_json,
         words.status AS word_status,
         words.priority AS word_priority,
@@ -1083,6 +1111,7 @@ function mapSessionItemWithWordRow(row: SessionItemWithWordRow): SessionItemWith
       pinyin: row.word_pinyin,
       meaning: row.word_meaning,
       meanings: parseMeaningsJson(row.word_meanings_json, row.word_meaning),
+      personalNotes: row.word_personal_notes,
       examples: JSON.parse(row.word_examples_json) as string[],
       status: row.word_status,
       priority: row.word_priority,

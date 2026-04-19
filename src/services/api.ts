@@ -111,17 +111,17 @@ export async function completeUnstudiedSession(wordId: string): Promise<Word> {
   return response.json();
 }
 
-export async function updateWordMeaning(wordId: string, meaning: string): Promise<Word> {
-  const response = await fetch(`${API_BASE}/api/words/${wordId}/meaning`, {
+export async function updateWordPersonalNotes(wordId: string, personalNotes: string): Promise<Word> {
+  const response = await fetch(`${API_BASE}/api/words/${wordId}/personal-notes`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ meaning }),
+    body: JSON.stringify({ personalNotes }),
   });
 
   if (!response.ok) {
-    throw new Error('Failed to update word meaning');
+    throw new Error('Failed to update word personal notes');
   }
 
   return response.json();
