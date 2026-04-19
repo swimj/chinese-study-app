@@ -13,7 +13,7 @@ import {
   getSessionPayload,
   getWords,
   getWordStatusCounts,
-  updateWordMeaning,
+  updateWordPersonalNotes,
 } from './db.ts';
 
 const port = dbConfig.port;
@@ -116,22 +116,16 @@ export function createApp() {
     }
   });
 
-  app.patch('/api/words/:id/meaning', (req, res) => {
-    const meaning = req.body?.meaning;
+  app.patch('/api/words/:id/personal-notes', (req, res) => {
+    const personalNotes = req.body?.personalNotes;
 
-    if (typeof meaning !== 'string') {
-      res.status(400).json({ error: 'Expected string meaning' });
-      return;
-    }
-
-    const trimmedMeaning = meaning.trim();
-    if (trimmedMeaning.length === 0) {
-      res.status(400).json({ error: 'Meaning must not be empty' });
+    if (typeof personalNotes !== 'string') {
+      res.status(400).json({ error: 'Expected string personalNotes' });
       return;
     }
 
     try {
-      const updatedWord = updateWordMeaning(req.params.id, trimmedMeaning);
+      const updatedWord = updateWordPersonalNotes(req.params.id, personalNotes.trim());
       res.json(updatedWord);
     } catch (error) {
       if (error instanceof Error && error.message === 'Word not found') {
@@ -139,7 +133,7 @@ export function createApp() {
         return;
       }
 
-      res.status(500).json({ error: 'Failed to update word meaning' });
+      res.status(500).json({ error: 'Failed to update personal notes' });
     }
   });
 

@@ -5,6 +5,7 @@ export type Word = {
   pinyin: string;
   meaning: string;
   meanings: string[];
+  personalNotes: string;
   examples: string[];
   status: 'unstudied' | 'learning' | 'review';
   priority: number;

@@ -282,9 +282,9 @@ describe('session completion', { concurrency: false }, () => {
     );
   });
 
-  test('updating word meaning persists the new definition and returns the updated word', () => {
+  test('updating word personal notes persists the new notes and returns the updated word', () => {
     insertWord({
-      id: 'meaning-update-word',
+      id: 'personal-notes-update-word',
       hanzi: '改',
       pinyin: 'gai',
       meaning: 'old definition',
@@ -294,14 +294,15 @@ describe('session completion', { concurrency: false }, () => {
       createdAt: isoHoursAgo(2),
     });
 
-    const updatedWord = dbModule.updateWordMeaning('meaning-update-word', 'new definition');
-    assert.equal(updatedWord.meaning, 'new definition');
-    assert.equal(fetchWord('meaning-update-word').meaning, 'new definition');
+    const updatedWord = dbModule.updateWordPersonalNotes('personal-notes-update-word', 'Remember this collocation.');
+    assert.equal(updatedWord.personalNotes, 'Remember this collocation.');
+    assert.equal(fetchWord('personal-notes-update-word').personalNotes, 'Remember this collocation.');
+    assert.equal(fetchWord('personal-notes-update-word').meaning, 'old definition');
   });
 
-  test('updating word meaning rejects unknown words', () => {
+  test('updating word personal notes rejects unknown words', () => {
     assert.throws(
-      () => dbModule.updateWordMeaning('missing-word', 'new definition'),
+      () => dbModule.updateWordPersonalNotes('missing-word', 'new notes'),
       /Word not found/,
     );
   });
