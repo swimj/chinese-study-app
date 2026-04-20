@@ -14,10 +14,13 @@ import {
 import {
   beginDrainSession,
   beginUnstudiedDrill,
+  createSessionQueue,
   createSessionState,
   getCurrentQueueItem,
+  getQueueItems,
   markCurrentItemStarted,
   rateCurrentItem,
+  type SessionCommitIntent,
   type SessionState,
 } from './lib/session-state';
 
@@ -48,6 +51,13 @@ type SessionSummary = {
   completedUnstudiedWords: number;
   completionMode: 'natural' | 'drain';
 };
+
+type SessionUndoSnapshot = {
+  sessionState: SessionState;
+  sessionSummary: SessionSummary | null;
+};
+
+type DeferredSessionCommit = Exclude<SessionCommitIntent, { type: 'none' }>;
 
 const WORDS_PAGE_SIZE = 20;
 const APP_VERSION = __APP_VERSION__;
@@ -140,6 +150,8 @@ function App() {
   const [wordsPageLoading, setWordsPageLoading] = useState(false);
   const [answerRevealed, setAnswerRevealed] = useState(false);
   const [submittingRating, setSubmittingRating] = useState<ReviewRating | null>(null);
+  const [pendingSessionCommit, setPendingSessionCommit] = useState<DeferredSessionCommit | null>(null);
+  const [lastUndoSnapshot, setLastUndoSnapshot] = useState<SessionUndoSnapshot | null>(null);
   const [wordsPageNumber, setWordsPageNumber] = useState(0);
   const [sessionNow, setSessionNow] = useState(() => new Date().toISOString());
   const [sessionPersonalNotesOverridesByWordId, setSessionPersonalNotesOverridesByWordId] = useState<
@@ -341,6 +353,21 @@ function App() {
     setBackendStatus(statusResponse);
   }
 
+  async function applyPendingSessionCommit(commit: DeferredSessionCommit) {
+    switch (commit.type) {
+      case 'commit-review-item-session': {
+        await completeReviewSession(commit.reviewItemId, commit.failureCount, commit.terminalRating);
+        return;
+      }
+      case 'commit-learning-word-session':
+        await completeLearningSession(commit.wordId, commit.success);
+        return;
+      case 'commit-unstudied-word-session':
+        await completeUnstudiedSession(commit.wordId);
+        return;
+    }
+  }
+
   async function handleStartSession() {
     setSessionLoading(true);
     setError(null);
@@ -360,6 +387,8 @@ function App() {
       setPersonalNotesEditorDraft('');
       setPersonalNotesEditorSaving(false);
       setPersonalNotesEditorError(null);
+      setPendingSessionCommit(null);
+      setLastUndoSnapshot(null);
       setSessionSummary({
         startedAt,
         completedAt: null,
@@ -404,6 +433,17 @@ function App() {
       return;
     }
 
+    if (pendingSessionCommit) {
+      try {
+        await applyPendingSessionCommit(pendingSessionCommit);
+        setPendingSessionCommit(null);
+        setLastUndoSnapshot(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unknown error');
+        return;
+      }
+    }
+
     setSessionStarted(false);
     setSessionState(null);
     setSessionSummary(null);
@@ -413,6 +453,8 @@ function App() {
     setPersonalNotesEditorDraft('');
     setPersonalNotesEditorSaving(false);
     setPersonalNotesEditorError(null);
+    setPendingSessionCommit(null);
+    setLastUndoSnapshot(null);
     resetSessionPrefetchCache();
     setSessionPrefetch(getSessionPrefetchSnapshot());
     await reloadDashboard();
@@ -452,98 +494,31 @@ function App() {
     setError(null);
 
     try {
+      // the user has submitted another rating, this means they no longer expect the pending one to be able to be undone.
+      // apply it now.
+      if (pendingSessionCommit) {
+        await applyPendingSessionCommit(pendingSessionCommit);
+        setPendingSessionCommit(null);
+      }
+
+      setLastUndoSnapshot({
+        sessionState: cloneSessionState(sessionState),
+        sessionSummary,
+      });
+
       const transition = rateCurrentItem(sessionState, rating);
-      if (activeWord.status === 'review' && rating === 'forgot') {
-        setSessionSummary((current) => {
-          if (!current) {
-            return current;
-          }
-
-          if (current.lapsedReviewItemIds.includes(activeItem.reviewItem.id)) {
-            return current;
-          }
-
-          return {
-            ...current,
-            lapsedReviewItemIds: [...current.lapsedReviewItemIds, activeItem.reviewItem.id],
-          };
-        });
-      }
-
-      switch (transition.commit.type) {
-        case 'commit-review-item-session': {
-          const reviewCommit = transition.commit;
-          const reviewEncounterLabel = formatReviewEncounterLabel(activeItem.reviewItem, activeWord);
-          await completeReviewSession(
-            reviewCommit.reviewItemId,
-            reviewCommit.failureCount,
-            reviewCommit.terminalRating,
-          );
-          setSessionSummary((current) =>
-            current
-              ? {
-                  ...current,
-                  completedReviewItems: current.completedReviewItems + 1,
-                  encounteredReviewItemIds: current.encounteredReviewItemIds.includes(reviewCommit.reviewItemId)
-                    ? current.encounteredReviewItemIds
-                    : [...current.encounteredReviewItemIds, reviewCommit.reviewItemId],
-                  lapsedReviewItems:
-                    current.lapsedReviewItems + (reviewCommit.terminalRating === null ? 1 : 0),
-                  lapsedReviewLabels:
-                    reviewCommit.terminalRating === null
-                      ? [...current.lapsedReviewLabels, reviewEncounterLabel]
-                      : current.lapsedReviewLabels,
-                }
-              : current,
-          );
-          break;
-        }
-        case 'commit-learning-word-session': {
-          await completeLearningSession(transition.commit.wordId, transition.commit.success);
-          setSessionSummary((current) =>
-            current
-              ? {
-                  ...current,
-                  completedLearningWords: current.completedLearningWords + 1,
-                }
-              : current,
-          );
-          break;
-        }
-        case 'commit-unstudied-word-session': {
-          await completeUnstudiedSession(transition.commit.wordId);
-          setSessionSummary((current) =>
-            current
-              ? {
-                  ...current,
-                  completedUnstudiedWords: current.completedUnstudiedWords + 1,
-                }
-              : current,
-          );
-          break;
-        }
-        case 'none':
-          break;
-      }
+      setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
 
       setSessionState(transition.state);
       setSessionSummary((current) =>
-        current
-          ? {
-              ...current,
-              answeredCount: transition.state.answeredCount,
-              completedAt:
-                transition.state.phase === 'completed' && current.completedAt === null
-                  ? new Date().toISOString()
-                  : current.completedAt,
-              completionMode:
-                transition.state.phase === 'completed'
-                  ? sessionState.phase === 'draining'
-                    ? 'drain'
-                    : current.completionMode
-                  : current.completionMode,
-            }
-          : current,
+        updateSessionSummaryForRating({
+          summary: current,
+          transition,
+          rating,
+          activeWord,
+          activeItem,
+          previousPhase: sessionState.phase,
+        }),
       );
       setAnswerRevealed(false);
     } catch (err) {
@@ -551,6 +526,19 @@ function App() {
     } finally {
       setSubmittingRating(null);
     }
+  }
+
+  function handleUndoLastRating() {
+    if (!lastUndoSnapshot || submittingRating !== null) {
+      return;
+    }
+
+    setSessionState(cloneSessionState(lastUndoSnapshot.sessionState));
+    setSessionSummary(lastUndoSnapshot.sessionSummary);
+    setAnswerRevealed(true);
+    setPendingSessionCommit(null);
+    setLastUndoSnapshot(null);
+    setError(null);
   }
 
   function handleBeginUnstudiedDrill(wordId: string) {
@@ -657,6 +645,12 @@ function App() {
         return;
       }
 
+      if ((event.key === 'z' || event.key === 'Z') && lastUndoSnapshot) {
+        event.preventDefault();
+        handleUndoLastRating();
+        return;
+      }
+
       if (!answerRevealed) {
         return;
       }
@@ -682,6 +676,7 @@ function App() {
     activeUnstudiedProgress?.introComplete,
     activeWord,
     answerRevealed,
+    lastUndoSnapshot,
     personalNotesEditorOpen,
     sessionStarted,
     sessionState,
@@ -786,12 +781,34 @@ function App() {
               {!sessionStarted ? (
                 <p className="notes">Start the session to freeze the current session snapshot into frontend state.</p>
               ) : sessionState?.phase === 'completed' && sessionSummary ? (
-                <SessionSummaryPanel summary={sessionSummary} />
+                <div className="stack">
+                  <SessionSummaryPanel summary={sessionSummary} />
+                  {lastUndoSnapshot ? (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={handleUndoLastRating}
+                      disabled={submittingRating !== null || personalNotesEditorOpen}
+                    >
+                      Undo last rating
+                    </button>
+                  ) : null}
+                </div>
               ) : !activeItem || !activeWord ? (
                 <div className="stack">
                   <p className="notes">
                     No session items remain in the active snapshot.
                   </p>
+                  {lastUndoSnapshot ? (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={handleUndoLastRating}
+                      disabled={submittingRating !== null || personalNotesEditorOpen}
+                    >
+                      Undo last rating
+                    </button>
+                  ) : null}
                   <button type="button" onClick={handleEndSession}>
                     Back to overview
                   </button>
@@ -826,6 +843,16 @@ function App() {
                   >
                     Begin recall drills
                   </button>
+                  {lastUndoSnapshot ? (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={handleUndoLastRating}
+                      disabled={submittingRating !== null || personalNotesEditorOpen}
+                    >
+                      Undo last rating
+                    </button>
+                  ) : null}
                   {personalNotesEditorOpen ? (
                     <PersonalNotesEditorOverlay
                       value={personalNotesEditorDraft}
@@ -867,6 +894,16 @@ function App() {
                     Answered {reviewedCount} this session · {sessionState?.queue.length ?? 0} still queued ·
                     {' '}Unique lapse items {sessionSummary?.lapsedReviewItemIds.length ?? 0} · Elapsed {activeElapsedTime}
                   </p>
+                  {lastUndoSnapshot ? (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={handleUndoLastRating}
+                      disabled={submittingRating !== null || personalNotesEditorOpen}
+                    >
+                      Undo last rating
+                    </button>
+                  ) : null}
                   <div className="prompt-block">
                     <span className="prompt-label">Prompt</span>
                     {activeItem.reviewItem.direction === 'forward' ? (
@@ -1308,6 +1345,71 @@ async function ensureSessionPrefetch(onStateChange: () => void): Promise<Session
   }
 }
 
+function updateSessionSummaryForRating({
+  summary,
+  transition,
+  rating,
+  activeWord,
+  activeItem,
+  previousPhase,
+}: {
+  summary: SessionSummary | null;
+  transition: { state: SessionState; commit: SessionCommitIntent };
+  rating: ReviewRating;
+  activeWord: Word;
+  activeItem: SessionItemWithWord;
+  previousPhase: SessionState['phase'];
+}): SessionSummary | null {
+  if (!summary) {
+    return summary;
+  }
+
+  const nextSummary: SessionSummary = {
+    ...summary,
+    answeredCount: transition.state.answeredCount,
+    completedAt:
+      transition.state.phase === 'completed' && summary.completedAt === null
+        ? new Date().toISOString()
+        : summary.completedAt,
+    completionMode:
+      transition.state.phase === 'completed'
+        ? previousPhase === 'draining'
+          ? 'drain'
+          : summary.completionMode
+        : summary.completionMode,
+  };
+
+  if (activeWord.status === 'review' && rating === 'forgot' && !nextSummary.lapsedReviewItemIds.includes(activeItem.reviewItem.id)) {
+    nextSummary.lapsedReviewItemIds = [...nextSummary.lapsedReviewItemIds, activeItem.reviewItem.id];
+  }
+
+  switch (transition.commit.type) {
+    case 'commit-review-item-session':
+      nextSummary.completedReviewItems += 1;
+      if (!nextSummary.encounteredReviewItemIds.includes(transition.commit.reviewItemId)) {
+        nextSummary.encounteredReviewItemIds = [...nextSummary.encounteredReviewItemIds, transition.commit.reviewItemId];
+      }
+      if (transition.commit.terminalRating === null) {
+        nextSummary.lapsedReviewItems += 1;
+        nextSummary.lapsedReviewLabels = [
+          ...nextSummary.lapsedReviewLabels,
+          formatReviewEncounterLabel(activeItem.reviewItem, activeWord),
+        ];
+      }
+      break;
+    case 'commit-learning-word-session':
+      nextSummary.completedLearningWords += 1;
+      break;
+    case 'commit-unstudied-word-session':
+      nextSummary.completedUnstudiedWords += 1;
+      break;
+    case 'none':
+      break;
+  }
+
+  return nextSummary;
+}
+
 function formatSessionPrefetchStatus(sessionPrefetch: SessionPrefetchState) {
   switch (sessionPrefetch.status) {
     case 'idle':
@@ -1321,6 +1423,53 @@ function formatSessionPrefetchStatus(sessionPrefetch: SessionPrefetchState) {
     default:
       return 'unknown';
   }
+}
+
+function cloneSessionState(state: SessionState): SessionState {
+  return {
+    ...state,
+    queue: createSessionQueue(getQueueItems(state.queue).map(cloneSessionItemWithWord)),
+    startedItemIds: [...state.startedItemIds],
+    learningProgress: Object.fromEntries(
+      Object.entries(state.learningProgress).map(([wordId, progress]) => [
+        wordId,
+        {
+          coveredDirections: { ...progress.coveredDirections },
+          firstTryGood: { ...progress.firstTryGood },
+          attempts: { ...progress.attempts },
+        },
+      ]),
+    ),
+    unstudiedProgress: Object.fromEntries(
+      Object.entries(state.unstudiedProgress).map(([wordId, progress]) => [
+        wordId,
+        {
+          introComplete: progress.introComplete,
+          consecutiveSuccesses: { ...progress.consecutiveSuccesses },
+        },
+      ]),
+    ),
+    reviewProgress: Object.fromEntries(
+      Object.entries(state.reviewProgress).map(([reviewItemId, progress]) => [
+        reviewItemId,
+        {
+          failureCount: progress.failureCount,
+          reinforcementStreak: progress.reinforcementStreak,
+        },
+      ]),
+    ),
+  };
+}
+
+function cloneSessionItemWithWord(item: SessionItemWithWord): SessionItemWithWord {
+  return {
+    reviewItem: { ...item.reviewItem },
+    word: {
+      ...item.word,
+      meanings: [...item.word.meanings],
+      examples: [...item.word.examples],
+    },
+  };
 }
 
 function getStatusSortOrder(status: Word['status']) {
