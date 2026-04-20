@@ -832,7 +832,7 @@ function App() {
                     <span className="prompt-meta">{activeWord.pinyin}</span>
                     <MeaningList meanings={activeDisplayedMeanings} />
                     <span className="prompt-meta">{activeWord.examples[0]}</span>
-                    {activeWordPersonalNotes.trim().length > 0 ? (
+                    {activeItem.reviewItem.direction === 'forward' && activeWordPersonalNotes.trim().length > 0 ? (
                       <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
                     ) : null}
                   </div>
@@ -1316,6 +1316,18 @@ function PersonalNotesEditorOverlay({
         className="definition-editor-input"
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' && !isSaving) {
+            event.preventDefault();
+            onCancel();
+            return;
+          }
+
+          if (event.key === 'Enter' && event.ctrlKey && canSubmit) {
+            event.preventDefault();
+            onSave();
+          }
+        }}
         disabled={isSaving}
         rows={4}
       />
