@@ -918,9 +918,6 @@ function App() {
                           ? `Binary recall · Covered ${Number(activeLearningProgress?.coveredDirections.forward ?? false) + Number(activeLearningProgress?.coveredDirections.reverse ?? false)}/2 directions`
                           : `Binary recall · Consecutive successes ${activeUnstudiedProgress?.consecutiveSuccesses.forward ?? 0}/3 forward · ${activeUnstudiedProgress?.consecutiveSuccesses.reverse ?? 0}/3 reverse`}
                     </span>
-                    {activeItem.reviewItem.direction === 'forward' && activeWordPersonalNotes.trim().length > 0 ? (
-                      <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
-                    ) : null}
                   </div>
                   {answerRevealed ? (
                     <div className="answer-block">
