@@ -149,7 +149,7 @@ type PriorityWordRow = WordRow & {
 };
 
 let db = openDatabase(dbPath);
-const DAILY_NEW_WORD_LIMIT = 2;
+const DAILY_NEW_WORD_LIMIT = 10;
 const PRIORITY_BUMP_UNIT = 12248;
 const UNSTUDIED_COUNT_BASELINE = 116000;
 const PRIORITY_MAX_BASELINE = PRIORITY_BUMP_UNIT * 10;

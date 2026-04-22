@@ -119,6 +119,8 @@ describe('session composition', { concurrency: false }, () => {
   });
 
   test('home overview reports due review, uncovered learning, and limited new-word intake counts', () => {
+    const { dailyNewWordLimit } = dbModule.getLearningPolicy();
+
     insertWord({
       id: 'overview-review-word',
       hanzi: '听',
@@ -203,7 +205,7 @@ describe('session composition', { concurrency: false }, () => {
     assert.deepEqual(dbModule.getHomeOverview(), {
       dueReviewItemCount: 1,
       pendingLearningWordCount: 1,
-      newWordIntroCount: 2,
+      newWordIntroCount: Math.min(3, dailyNewWordLimit),
       hasSessionWork: true,
     });
   });
@@ -334,38 +336,29 @@ describe('session composition', { concurrency: false }, () => {
   });
 
   test('caps unstudied intake and orders it by priority then creation time', () => {
-    insertWord({
-      id: 'unstudied-old-high',
-      hanzi: '朋友',
-      pinyin: 'peng you',
-      meaning: 'friend',
-      examples: ['他是我的朋友。'],
-      status: 'unstudied',
-      priority: 50,
-      createdAt: '2026-01-01T00:00:00.000Z',
-    });
-    insertWord({
-      id: 'unstudied-new-high',
-      hanzi: '老师',
-      pinyin: 'lao shi',
-      meaning: 'teacher',
-      examples: ['她是老师。'],
-      status: 'unstudied',
-      priority: 50,
-      createdAt: '2026-01-02T00:00:00.000Z',
-    });
-    insertWord({
-      id: 'unstudied-lower',
-      hanzi: '学生',
-      pinyin: 'xue sheng',
-      meaning: 'student',
-      examples: ['我是学生。'],
-      status: 'unstudied',
-      priority: 40,
-      createdAt: '2026-01-01T00:00:00.000Z',
+    const { dailyNewWordLimit } = dbModule.getLearningPolicy();
+    const totalUnstudiedWords = dailyNewWordLimit + 1;
+
+    const words = Array.from({ length: totalUnstudiedWords }, (_, index) => {
+      const isTopPriorityPair = index < 2;
+      const day = String(index + 1).padStart(2, '0');
+      return {
+        id: `unstudied-${index + 1}`,
+        hanzi: `词${index + 1}`,
+        pinyin: `ci ${index + 1}`,
+        meaning: `word ${index + 1}`,
+        examples: [`例句 ${index + 1}`],
+        status: 'unstudied' as const,
+        priority: isTopPriorityPair ? 50 : 40 - index,
+        createdAt: `2026-01-${day}T00:00:00.000Z`,
+      };
     });
 
-    for (const wordId of ['unstudied-old-high', 'unstudied-new-high', 'unstudied-lower']) {
+    for (const word of words) {
+      insertWord(word);
+    }
+
+    for (const { id: wordId } of words) {
       insertReviewItem({
         id: `${wordId}-forward`,
         wordId,
@@ -383,12 +376,18 @@ describe('session composition', { concurrency: false }, () => {
     }
 
     const sessionIds = dbModule.getSessionItems().map((item) => item.id);
-    assert.deepEqual(sessionIds, [
-      'unstudied-old-high-forward',
-      'unstudied-old-high-reverse',
-      'unstudied-new-high-forward',
-      'unstudied-new-high-reverse',
+    assert.equal(sessionIds.length, dailyNewWordLimit * 2);
+
+    // Highest priorities should come first; ties break by older created_at first.
+    assert.deepEqual(sessionIds.slice(0, 4), [
+      'unstudied-1-forward',
+      'unstudied-1-reverse',
+      'unstudied-2-forward',
+      'unstudied-2-reverse',
     ]);
+
+    assert.equal(sessionIds.includes(`unstudied-${totalUnstudiedWords}-forward`), false);
+    assert.equal(sessionIds.includes(`unstudied-${totalUnstudiedWords}-reverse`), false);
   });
 
   test('session payload bundles only the words referenced by current session items', () => {
