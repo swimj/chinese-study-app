@@ -15,6 +15,14 @@ export type Word = {
   lastLearningCoveredOn: string | null;
 };
 
+export type PriorityWord = {
+  word: Word;
+  bumpCount: number;
+  forceTop: boolean;
+  effectivePriority: number;
+  effectiveRank: number;
+};
+
 export type ReviewItem = {
   id: string;
   wordId: string;

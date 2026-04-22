@@ -77,3 +77,15 @@ Noncritical improvements worth remembering as the project evolves.
 
 - Consider separating import-time DB initialization from reusable data types/query logic so tests can share types more easily and control setup explicitly.
 - If this backlog grows, consider splitting it into milestone-specific sections or moving to issues/projects. For now, a single markdown file is likely enough.
+
+## Unstudied Intake Modeling
+
+- Revisit whether `unstudied` session rows should depend on persisted `review_items` rows at all.
+- Current implementation uses the `WITH ranked_unstudied AS (...) ... LIMIT ?` pattern to select top words first, then expands to per-direction review items by joining `review_items`.
+- This is correct for today because session runtime logic is keyed off `reviewItem` identity/direction across all statuses, including `unstudied`.
+- A future decoupling path:
+  - keep `review` and `learning` on persisted `review_items` as-is
+  - model `unstudied` as synthetic in-session drill tasks keyed by `{wordId, direction}` (or equivalent task id)
+  - compose unstudied intake from words only, then create directional tasks in frontend session state
+  - persist only the final unstudied completion outcome (`completeUnstudiedWordSession`), not per-direction review-item updates
+- If we pursue this, update session-state identity/progress maps first, then simplify the unstudied SQL branch in `server/db.ts`.
