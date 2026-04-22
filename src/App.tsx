@@ -1092,6 +1092,7 @@ function App() {
           onSearchHanziChange={setPrioritySearchHanzi}
           onSearchSubmit={() => void handleSubmitPrioritySearch()}
           updatingWordId={updatingPriorityWordId}
+          onBumpAgain={(wordId) => void handleUpdateWordPriority(wordId, { bumpDelta: 1 })}
           onRemove={(wordId) => void handleUpdateWordPriority(wordId, { reset: true })}
         />
       )}
@@ -1464,6 +1465,7 @@ function PriorityPage({
   onSearchHanziChange,
   onSearchSubmit,
   updatingWordId,
+  onBumpAgain,
   onRemove,
 }: {
   rows: PriorityWord[];
@@ -1475,6 +1477,7 @@ function PriorityPage({
   onSearchHanziChange: (value: string) => void;
   onSearchSubmit: () => void;
   updatingWordId: string | null;
+  onBumpAgain: (wordId: string) => void;
   onRemove: (wordId: string) => void;
 }) {
   const [expandedDefinitionByWordId, setExpandedDefinitionByWordId] = useState<Record<string, boolean>>({});
@@ -1569,6 +1572,9 @@ function PriorityPage({
                       <td>{word.bumpCount}</td>
                       <td>
                         <div className="pagination-actions">
+                          <button type="button" onClick={() => onBumpAgain(word.word.id)} disabled={rowUpdating}>
+                            Bump again
+                          </button>
                           <button type="button" onClick={() => onRemove(word.word.id)} disabled={rowUpdating}>
                             Remove
                           </button>
