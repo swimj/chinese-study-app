@@ -1,15 +1,18 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import type { ReviewItem, ReviewRating, SessionItemWithWord, Word } from './types';
+import type { PriorityWord, ReviewItem, ReviewRating, SessionItemWithWord, Word } from './types';
 import type { BackendStatus, SessionPayload } from './services/api';
 import {
+  addUnstudiedPriorityByHanzi,
   completeLearningSession,
   completeReviewSession,
   completeUnstudiedSession,
   fetchReviewItems,
+  fetchUnstudiedPriorityWords,
   fetchSessionPayload,
   fetchStatus,
   fetchWords,
   updateWordPersonalNotes,
+  updateWordUserPriority,
 } from './services/api';
 import {
   beginDrainSession,
@@ -24,7 +27,7 @@ import {
   type SessionState,
 } from './lib/session-state';
 
-type AppPage = 'home' | 'words';
+type AppPage = 'home' | 'words' | 'priority';
 
 type InspectableRow = {
   id: string;
@@ -148,6 +151,13 @@ function App() {
   const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
   const [wordsPageLoading, setWordsPageLoading] = useState(false);
+  const [priorityPageLoading, setPriorityPageLoading] = useState(false);
+  const [priorityWords, setPriorityWords] = useState<PriorityWord[]>([]);
+  const [priorityUnstudiedTotalCount, setPriorityUnstudiedTotalCount] = useState(0);
+  const [prioritySearchHanzi, setPrioritySearchHanzi] = useState('');
+  const [prioritySearchSubmitting, setPrioritySearchSubmitting] = useState(false);
+  const [prioritySearchNotice, setPrioritySearchNotice] = useState<string | null>(null);
+  const [updatingPriorityWordId, setUpdatingPriorityWordId] = useState<string | null>(null);
   const [answerRevealed, setAnswerRevealed] = useState(false);
   const [submittingRating, setSubmittingRating] = useState<ReviewRating | null>(null);
   const [pendingSessionCommit, setPendingSessionCommit] = useState<DeferredSessionCommit | null>(null);
@@ -485,6 +495,88 @@ function App() {
     }
   }
 
+  async function handleOpenPriorityPage() {
+    if (currentPage === 'priority') {
+      return;
+    }
+
+    setPriorityPageLoading(true);
+    setError(null);
+
+    try {
+      const priorityWordsResponse = await fetchUnstudiedPriorityWords();
+      setPriorityWords(sortPriorityWords(priorityWordsResponse.words));
+      setPriorityUnstudiedTotalCount(priorityWordsResponse.unstudiedTotalCount);
+      setPrioritySearchNotice(null);
+      setCurrentPage('priority');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setPriorityPageLoading(false);
+    }
+  }
+
+  async function handleUpdateWordPriority(
+    wordId: string,
+    patch: {
+      bumpDelta?: number;
+      forceTop?: boolean;
+      reset?: boolean;
+    },
+  ) {
+    setUpdatingPriorityWordId(wordId);
+    setError(null);
+
+    try {
+      const updatedWord = await updateWordUserPriority(wordId, patch);
+      setPriorityWords((current) => {
+        if (patch.reset) {
+          return current.filter((entry) => entry.word.id !== updatedWord.word.id);
+        }
+
+        const updated = current.some((entry) => entry.word.id === updatedWord.word.id)
+          ? current.map((entry) => (entry.word.id === updatedWord.word.id ? updatedWord : entry))
+          : [...current, updatedWord];
+        return sortPriorityWords(updated);
+      });
+      setPrioritySearchNotice(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setUpdatingPriorityWordId(null);
+    }
+  }
+
+  async function handleSubmitPrioritySearch() {
+    const normalizedHanzi = prioritySearchHanzi.trim();
+    if (normalizedHanzi.length === 0) {
+      setPrioritySearchNotice('Enter hanzi before submitting.');
+      return;
+    }
+
+    setPrioritySearchSubmitting(true);
+    setError(null);
+
+    try {
+      const response = await addUnstudiedPriorityByHanzi(normalizedHanzi);
+      setPriorityWords((current) => {
+        const byId = new Map(current.map((entry) => [entry.word.id, entry]));
+        for (const word of response.words) {
+          byId.set(word.word.id, word);
+        }
+
+        return sortPriorityWords([...byId.values()]);
+      });
+      setPriorityUnstudiedTotalCount(response.unstudiedTotalCount);
+      setPrioritySearchNotice(`Added ${response.addedCount} matching word${response.addedCount === 1 ? '' : 's'} for "${normalizedHanzi}".`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setPrioritySearchNotice(message);
+    } finally {
+      setPrioritySearchSubmitting(false);
+    }
+  }
+
   async function handleRate(rating: ReviewRating) {
     if (!sessionState || !activeItem || !activeWord) {
       return;
@@ -703,9 +795,17 @@ function App() {
             type="button"
             className={`nav-tab ${currentPage === 'words' ? 'active' : ''}`}
             onClick={() => void handleOpenWordsPage()}
-            disabled={wordsPageLoading}
+            disabled={wordsPageLoading || priorityPageLoading}
           >
             {wordsPageLoading ? 'Loading words...' : 'Words'}
+          </button>
+          <button
+            type="button"
+            className={`nav-tab ${currentPage === 'priority' ? 'active' : ''}`}
+            onClick={() => void handleOpenPriorityPage()}
+            disabled={wordsPageLoading || priorityPageLoading}
+          >
+            {priorityPageLoading ? 'Loading priority...' : 'Priority'}
           </button>
         </div>
       </nav>
@@ -971,7 +1071,7 @@ function App() {
             </div>
           </div>
         </>
-      ) : (
+      ) : currentPage === 'words' ? (
         <WordsPage
           rows={pagedInspectableRows}
           currentPage={wordsPageNumber}
@@ -980,6 +1080,19 @@ function App() {
           pageSize={WORDS_PAGE_SIZE}
           onPreviousPage={() => setWordsPageNumber((current) => Math.max(0, current - 1))}
           onNextPage={() => setWordsPageNumber((current) => Math.min(totalWordPages - 1, current + 1))}
+        />
+      ) : (
+        <PriorityPage
+          rows={priorityWords}
+          unstudiedTotalCount={priorityUnstudiedTotalCount}
+          searchHanzi={prioritySearchHanzi}
+          searchNotice={prioritySearchNotice}
+          searchSubmitting={prioritySearchSubmitting}
+          dailyNewWordLimit={backendStatus?.dailyNewWordLimit ?? 2}
+          onSearchHanziChange={setPrioritySearchHanzi}
+          onSearchSubmit={() => void handleSubmitPrioritySearch()}
+          updatingWordId={updatingPriorityWordId}
+          onRemove={(wordId) => void handleUpdateWordPriority(wordId, { reset: true })}
         />
       )}
 
@@ -1341,6 +1454,138 @@ function PersonalNotesEditorOverlay({
   );
 }
 
+function PriorityPage({
+  rows,
+  unstudiedTotalCount,
+  searchHanzi,
+  searchNotice,
+  searchSubmitting,
+  dailyNewWordLimit,
+  onSearchHanziChange,
+  onSearchSubmit,
+  updatingWordId,
+  onRemove,
+}: {
+  rows: PriorityWord[];
+  unstudiedTotalCount: number;
+  searchHanzi: string;
+  searchNotice: string | null;
+  searchSubmitting: boolean;
+  dailyNewWordLimit: number;
+  onSearchHanziChange: (value: string) => void;
+  onSearchSubmit: () => void;
+  updatingWordId: string | null;
+  onRemove: (wordId: string) => void;
+}) {
+  const [expandedDefinitionByWordId, setExpandedDefinitionByWordId] = useState<Record<string, boolean>>({});
+
+  return (
+    <section className="words-page">
+      <header className="header">
+        <div>
+          <h1 className="title">Priority</h1>
+          <p className="subtitle">Search by hanzi to add matching unstudied words to the priority list.</p>
+        </div>
+      </header>
+
+      <div className="panel">
+        <h2>Add by hanzi</h2>
+        <div className="pagination-actions">
+          <input
+            type="text"
+            value={searchHanzi}
+            onChange={(event) => onSearchHanziChange(event.target.value)}
+            placeholder="Enter hanzi and submit"
+            disabled={searchSubmitting}
+          />
+          <button type="button" onClick={onSearchSubmit} disabled={searchSubmitting}>
+            {searchSubmitting ? 'Adding...' : 'Add matches'}
+          </button>
+        </div>
+        {searchNotice ? <p className="notes">{searchNotice}</p> : null}
+      </div>
+
+      <div className="panel">
+        <h2>Prioritized list</h2>
+        {rows.length === 0 ? (
+          <p className="notes">No prioritized unstudied words yet.</p>
+        ) : (
+          <div className="table-shell">
+            <table className="words-table">
+              <thead>
+                <tr>
+                  <th>Word</th>
+                  <th>Definition</th>
+                  <th>Priority</th>
+                  <th>Approx days</th>
+                  <th>Bumps</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((word) => {
+                  const rowUpdating = updatingWordId === word.word.id;
+                  const isDefinitionExpanded = expandedDefinitionByWordId[word.word.id] ?? false;
+                  const firstMeaning = word.word.meanings[0] ?? word.word.meaning;
+                  const hasAdditionalMeanings = word.word.meanings.length > 1;
+                  const definitionsToShow = isDefinitionExpanded ? word.word.meanings : [firstMeaning];
+                  const priorityPercentile = word.forceTop
+                    ? null
+                    : getPriorityPercentileText(word.effectiveRank, unstudiedTotalCount);
+                  const approxDaysToStudy = getApproxDaysToStudyText(
+                    word.effectiveRank,
+                    dailyNewWordLimit,
+                  );
+
+                  return (
+                    <tr key={word.word.id}>
+                      <td>
+                        <div className="table-word-cell">
+                          <strong>{word.word.hanzi}</strong>
+                          <span>{word.word.pinyin}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="stack">
+                          <MeaningList meanings={definitionsToShow} />
+                          {hasAdditionalMeanings ? (
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() =>
+                                setExpandedDefinitionByWordId((current) => ({
+                                  ...current,
+                                  [word.word.id]: !isDefinitionExpanded,
+                                }))
+                              }
+                            >
+                              {isDefinitionExpanded ? 'Show less' : `Show all (${word.word.meanings.length})`}
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td>{priorityPercentile ?? <span className="notes">N/A</span>}</td>
+                      <td>{approxDaysToStudy}</td>
+                      <td>{word.bumpCount}</td>
+                      <td>
+                        <div className="pagination-actions">
+                          <button type="button" onClick={() => onRemove(word.word.id)} disabled={rowUpdating}>
+                            Remove
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 async function ensureSessionPrefetch(onStateChange: () => void): Promise<SessionPayload> {
   onStateChange();
 
@@ -1492,6 +1737,25 @@ function getStatusSortOrder(status: Word['status']) {
   }
 }
 
+function sortPriorityWords(words: PriorityWord[]) {
+  return [...words].sort((left, right) => {
+    const forceTopDelta = Number(right.forceTop) - Number(left.forceTop);
+    if (forceTopDelta !== 0) {
+      return forceTopDelta;
+    }
+
+    if (right.effectivePriority !== left.effectivePriority) {
+      return right.effectivePriority - left.effectivePriority;
+    }
+
+    if (right.word.priority !== left.word.priority) {
+      return right.word.priority - left.word.priority;
+    }
+
+    return left.word.createdAt.localeCompare(right.word.createdAt);
+  });
+}
+
 function formatDate(value: string | null) {
   if (!value) {
     return 'Never';
@@ -1510,6 +1774,23 @@ function formatDateTime(value: string | null) {
 
 function formatDirection(direction: ReviewItem['direction']) {
   return direction === 'forward' ? 'Hanzi → Meaning' : 'Meaning → Hanzi';
+}
+
+function getPriorityPercentileText(effectiveRank: number | null, unstudiedTotalCount: number | null) {
+  if (!effectiveRank || !unstudiedTotalCount || unstudiedTotalCount <= 0) {
+    return 'N/A';
+  }
+
+  const higherThanPercent = Math.max(0, Math.round(((unstudiedTotalCount - effectiveRank) / unstudiedTotalCount) * 100));
+  return `Higher than ${higherThanPercent}%`;
+}
+
+function getApproxDaysToStudyText(effectiveRank: number | null, dailyNewWordLimit: number) {
+  if (!effectiveRank || dailyNewWordLimit <= 0) {
+    return 'N/A';
+  }
+
+  return (effectiveRank / dailyNewWordLimit).toFixed(1);
 }
 
 function formatReviewEncounterLabel(item: ReviewItem, word: Word) {

@@ -1,4 +1,4 @@
-import type { Word, ReviewItem, ReviewRating, SessionItemWithWord } from '../types';
+import type { PriorityWord, Word, ReviewItem, ReviewRating, SessionItemWithWord } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:5174';
 
@@ -13,6 +13,7 @@ type BackendStatus = {
   pendingLearningWordCount: number;
   newWordIntroCount: number;
   hasSessionWork: boolean;
+  dailyNewWordLimit: number;
   learningCoverageDate: string;
 };
 
@@ -21,6 +22,23 @@ export type SessionPayload = {
 };
 
 export type { BackendStatus };
+
+type UserPriorityPatch = {
+  bumpDelta?: number;
+  forceTop?: boolean;
+  reset?: boolean;
+};
+
+type AddPriorityByHanziResponse = {
+  addedCount: number;
+  unstudiedTotalCount: number;
+  words: PriorityWord[];
+};
+
+type PriorityWordsResponse = {
+  unstudiedTotalCount: number;
+  words: PriorityWord[];
+};
 
 export async function fetchWords(): Promise<Word[]> {
   const response = await fetch(`${API_BASE}/api/words`);
@@ -125,4 +143,57 @@ export async function updateWordPersonalNotes(wordId: string, personalNotes: str
   }
 
   return response.json();
+}
+
+export async function fetchUnstudiedPriorityWords(): Promise<PriorityWordsResponse> {
+  const response = await fetch(`${API_BASE}/api/priority/unstudied`);
+  if (!response.ok) {
+    throw new Error('Failed to load unstudied priority words');
+  }
+  return response.json();
+}
+
+export async function addUnstudiedPriorityByHanzi(hanzi: string): Promise<AddPriorityByHanziResponse> {
+  const response = await fetch(`${API_BASE}/api/priority/unstudied/add-by-hanzi`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ hanzi }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to add priority words'));
+  }
+
+  return response.json();
+}
+
+export async function updateWordUserPriority(wordId: string, patch: UserPriorityPatch): Promise<PriorityWord> {
+  const response = await fetch(`${API_BASE}/api/words/${wordId}/user-priority`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(patch),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to update user priority'));
+  }
+
+  return response.json();
+}
+
+async function readApiErrorMessage(response: Response, fallbackMessage: string) {
+  try {
+    const payload = (await response.json()) as { error?: unknown };
+    if (typeof payload.error === 'string' && payload.error.length > 0) {
+      return payload.error;
+    }
+  } catch {
+    // no-op: fallback below
+  }
+
+  return fallbackMessage;
 }

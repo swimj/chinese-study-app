@@ -31,6 +31,19 @@ type Word = {
   lastLearningCoveredOn: string | null;
 };
 
+type PriorityWord = {
+  word: Word;
+  bumpCount: number;
+  forceTop: boolean;
+  effectivePriority: number;
+  effectiveRank: number;
+};
+
+type PriorityWordsPayload = {
+  unstudiedTotalCount: number;
+  words: PriorityWord[];
+};
+
 type ReviewItem = {
   id: string;
   wordId: string;
@@ -64,6 +77,19 @@ type WordRow = {
   learning_streak: number;
   last_learning_success_on: string | null;
   last_learning_covered_on: string | null;
+};
+
+type UserWordPriorityRow = {
+  word_id: string;
+  bump_count: number;
+  force_top: number;
+  updated_at: string;
+};
+
+type UserWordPriorityPatch = {
+  bumpDelta?: number;
+  forceTop?: boolean;
+  reset?: boolean;
 };
 
 type ReviewItemRow = {
@@ -115,8 +141,18 @@ type SessionItemWithWordRow = {
   word_last_learning_covered_on: string | null;
 };
 
+type PriorityWordRow = WordRow & {
+  bump_count: number;
+  force_top: number;
+  effective_priority: number;
+  effective_rank: number;
+};
+
 let db = openDatabase(dbPath);
 const DAILY_NEW_WORD_LIMIT = 2;
+const PRIORITY_BUMP_UNIT = 12248;
+const UNSTUDIED_COUNT_BASELINE = 116000;
+const PRIORITY_MAX_BASELINE = PRIORITY_BUMP_UNIT * 10;
 const INITIAL_REVIEW_EASE_FACTOR = 2.5;
 
 initializeDatabase();
@@ -128,10 +164,16 @@ export type {
   ReviewRating,
   SessionItemWithWord,
   SessionPayload,
+  PriorityWord,
+  PriorityWordsPayload,
   Word,
   WordStatus,
 };
 export { config as dbConfig };
+
+export function getUnstudiedCountBaseline(): number {
+  return UNSTUDIED_COUNT_BASELINE;
+}
 
 export function getWords(): Word[] {
   const rows = db
@@ -157,6 +199,60 @@ export function getWords(): Word[] {
     .all() as WordRow[];
 
   return rows.map(mapWordRow);
+}
+
+export function getUnstudiedPriorityWords(): PriorityWordsPayload {
+  const rows = db
+    .prepare(`
+      SELECT
+        words.id,
+        words.hanzi,
+        words.traditional,
+        words.pinyin,
+        words.meaning,
+        words.meanings_json,
+        words.personal_notes,
+        words.examples_json,
+        words.status,
+        words.priority,
+        words.created_at,
+        words.learning_streak,
+        words.last_learning_success_on,
+        words.last_learning_covered_on,
+        COALESCE(user_word_priority.bump_count, 0) AS bump_count,
+        COALESCE(user_word_priority.force_top, 0) AS force_top,
+        words.priority
+          + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} AS effective_priority,
+        ROW_NUMBER() OVER (
+          ORDER BY
+            COALESCE(user_word_priority.force_top, 0) DESC,
+            words.priority + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} DESC,
+            words.priority DESC,
+            words.created_at ASC
+        ) AS effective_rank
+      FROM words
+      LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
+      WHERE words.status = 'unstudied'
+      ORDER BY
+        force_top DESC,
+        effective_priority DESC,
+        priority DESC,
+        created_at ASC
+    `)
+    .all() as PriorityWordRow[];
+
+  return {
+    unstudiedTotalCount: UNSTUDIED_COUNT_BASELINE,
+    words: rows.map(mapPriorityWordRow),
+  };
+}
+
+export function getPrioritizedUnstudiedWords(): PriorityWordsPayload {
+  const allUnstudied = getUnstudiedPriorityWords();
+  return {
+    unstudiedTotalCount: allUnstudied.unstudiedTotalCount,
+    words: allUnstudied.words.filter((entry) => entry.forceTop || entry.bumpCount > 0),
+  };
 }
 
 export function updateWordPersonalNotes(wordId: string, personalNotes: string): Word {
@@ -202,6 +298,122 @@ export function updateWordPersonalNotes(wordId: string, personalNotes: string): 
     .get(wordId) as WordRow;
 
   return mapWordRow(updatedWord);
+}
+
+export function updateWordUserPriority(wordId: string, patch: UserWordPriorityPatch): PriorityWord {
+  const existingWord = db
+    .prepare(`
+      SELECT
+        id,
+        status
+      FROM words
+      WHERE id = ?
+    `)
+    .get(wordId) as { id: string; status: WordStatus } | undefined;
+
+  if (!existingWord) {
+    throw new Error('Word not found');
+  }
+
+  if (existingWord.status !== 'unstudied') {
+    throw new Error('Expected unstudied word');
+  }
+
+  const existingPriorityRow = db
+    .prepare(`
+      SELECT
+        word_id,
+        bump_count,
+        force_top,
+        updated_at
+      FROM user_word_priority
+      WHERE word_id = ?
+    `)
+    .get(wordId) as UserWordPriorityRow | undefined;
+
+  const currentBumpCount = existingPriorityRow?.bump_count ?? 0;
+  const currentForceTop = (existingPriorityRow?.force_top ?? 0) !== 0;
+  const reset = patch.reset === true;
+  const nextBumpCount = reset ? 0 : clampInteger(currentBumpCount + (patch.bumpDelta ?? 0), 0, 10);
+  const nextForceTop = reset ? false : patch.forceTop ?? currentForceTop;
+
+  if (nextBumpCount === 0 && !nextForceTop) {
+    db.prepare(`
+      DELETE FROM user_word_priority
+      WHERE word_id = ?
+    `).run(wordId);
+  } else {
+    db.prepare(`
+      INSERT INTO user_word_priority (
+        word_id,
+        bump_count,
+        force_top,
+        updated_at
+      ) VALUES (?, ?, ?, ?)
+      ON CONFLICT(word_id) DO UPDATE SET
+        bump_count = excluded.bump_count,
+        force_top = excluded.force_top,
+        updated_at = excluded.updated_at
+    `).run(wordId, nextBumpCount, nextForceTop ? 1 : 0, new Date().toISOString());
+  }
+
+  return getUnstudiedPriorityWordById(wordId);
+}
+
+export function addUnstudiedUserPriorityByHanzi(hanzi: string): PriorityWord[] {
+  const matches = db
+    .prepare(`
+      SELECT
+        id
+      FROM words
+      WHERE status = 'unstudied'
+        AND hanzi = ?
+      ORDER BY created_at ASC
+    `)
+    .all(hanzi) as Array<{ id: string }>;
+
+  if (matches.length === 0) {
+    throw new Error('No matching unstudied words found');
+  }
+
+  db.exec('BEGIN');
+
+  try {
+    for (const match of matches) {
+      const existingPriorityRow = db
+        .prepare(`
+          SELECT
+            bump_count,
+            force_top
+          FROM user_word_priority
+          WHERE word_id = ?
+        `)
+        .get(match.id) as { bump_count: number; force_top: number } | undefined;
+
+      const nextBumpCount = Math.max(existingPriorityRow?.bump_count ?? 0, 1);
+      const nextForceTop = existingPriorityRow?.force_top ?? 0;
+
+      db.prepare(`
+        INSERT INTO user_word_priority (
+          word_id,
+          bump_count,
+          force_top,
+          updated_at
+        ) VALUES (?, ?, ?, ?)
+        ON CONFLICT(word_id) DO UPDATE SET
+          bump_count = excluded.bump_count,
+          force_top = excluded.force_top,
+          updated_at = excluded.updated_at
+      `).run(match.id, nextBumpCount, nextForceTop, new Date().toISOString());
+    }
+
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+
+  return matches.map((match) => getUnstudiedPriorityWordById(match.id));
 }
 
 export function getSessionItems(): ReviewItem[] {
@@ -555,6 +767,15 @@ function applyLightweightSchemaMigrations() {
   if (!hasPersonalNotes) {
     db.exec(`ALTER TABLE words ADD COLUMN personal_notes TEXT NOT NULL DEFAULT ''`);
   }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_word_priority (
+      word_id TEXT PRIMARY KEY REFERENCES words(id) ON DELETE CASCADE,
+      bump_count INTEGER NOT NULL DEFAULT 0,
+      force_top INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL
+    );
+  `);
 }
 
 function shouldRebuildDevDatabase(error: unknown) {
@@ -636,6 +857,13 @@ function createSchema() {
       next_due_at TEXT,
       ease_factor REAL NOT NULL
     );
+
+    CREATE TABLE user_word_priority (
+      word_id TEXT PRIMARY KEY REFERENCES words(id) ON DELETE CASCADE,
+      bump_count INTEGER NOT NULL DEFAULT 0,
+      force_top INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   ensureIndexes();
@@ -645,6 +873,7 @@ function ensureIndexes() {
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_words_priority ON words(priority DESC, created_at ASC);
     CREATE INDEX IF NOT EXISTS idx_review_items_due ON review_items(next_due_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_user_word_priority_force_top ON user_word_priority(force_top DESC, updated_at DESC);
   `);
 }
 
@@ -673,6 +902,12 @@ function validateSchema() {
     'last_reviewed_at',
     'next_due_at',
     'ease_factor',
+  ]);
+  assertTableColumns('user_word_priority', [
+    'word_id',
+    'bump_count',
+    'force_top',
+    'updated_at',
   ]);
 }
 
@@ -968,6 +1203,38 @@ function mapWordRow(row: WordRow): Word {
   };
 }
 
+function mapPriorityWordRow(row: PriorityWordRow): PriorityWord {
+  return {
+    word: mapWordRow(row),
+    bumpCount: row.bump_count,
+    forceTop: row.force_top !== 0,
+    effectivePriority: row.effective_priority,
+    effectiveRank: row.effective_rank,
+  };
+}
+
+function buildPriorityWordFromParts({
+  row,
+  bumpCount,
+  forceTop,
+  effectivePriority,
+  effectiveRank,
+}: {
+  row: WordRow;
+  bumpCount: number;
+  forceTop: boolean;
+  effectivePriority: number;
+  effectiveRank: number;
+}): PriorityWord {
+  return {
+    word: mapWordRow(row),
+    bumpCount,
+    forceTop,
+    effectivePriority,
+    effectiveRank,
+  };
+}
+
 function mapReviewItemRow(row: ReviewItemRow): ReviewItem {
   return {
     id: row.id,
@@ -1055,8 +1322,30 @@ function getSessionItemsWithWords(): SessionItemWithWord[] {
     `)
     .all(today) as SessionItemWithWordRow[];
 
+  // -- See BACKLOG.md "Unstudied Intake Modeling". We intentionally keep
+  // -- `WITH ranked_unstudied AS (...) ... LIMIT ?` here so limiting happens
+  // -- at the word level before expanding into per-direction review-item rows.
   const unstudiedRows = db
     .prepare(`
+      WITH ranked_unstudied AS (
+        SELECT
+          words.id,
+          words.priority AS base_priority,
+          words.created_at,
+          COALESCE(user_word_priority.bump_count, 0) AS bump_count,
+          COALESCE(user_word_priority.force_top, 0) AS force_top,
+          words.priority
+            + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} AS effective_priority
+        FROM words
+        LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
+        WHERE words.status = 'unstudied'
+        ORDER BY
+          force_top DESC,
+          effective_priority DESC,
+          words.priority DESC,
+          words.created_at ASC
+        LIMIT ?
+      )
       SELECT
         review_items.id,
         review_items.word_id,
@@ -1080,15 +1369,10 @@ function getSessionItemsWithWords(): SessionItemWithWord[] {
         words.last_learning_covered_on AS word_last_learning_covered_on
       FROM review_items
       INNER JOIN words ON words.id = review_items.word_id
-      WHERE words.status = 'unstudied'
-        AND words.id IN (
-          SELECT id
-          FROM words
-          WHERE status = 'unstudied'
-          ORDER BY priority DESC, created_at ASC
-          LIMIT ?
-        )
+      INNER JOIN ranked_unstudied ON ranked_unstudied.id = words.id
       ORDER BY
+        ranked_unstudied.force_top DESC,
+        ranked_unstudied.effective_priority DESC,
         words.priority DESC,
         words.created_at ASC,
         CASE review_items.direction
@@ -1210,6 +1494,85 @@ function parseMeaningsJson(raw: string, fallbackMeaning: string): string[] {
 
 function ceilIntervalHours(hours: number) {
   return Math.max(1, Math.ceil(hours));
+}
+
+function clampInteger(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+// just used on the update path, intentionally fuzzy
+function getUnstudiedPriorityWordById(wordId: string): PriorityWord {
+  const row = db
+    .prepare(`
+      SELECT
+        words.id,
+        words.hanzi,
+        words.traditional,
+        words.pinyin,
+        words.meaning,
+        words.meanings_json,
+        words.personal_notes,
+        words.examples_json,
+        words.status,
+        words.priority,
+        words.created_at,
+        words.learning_streak,
+        words.last_learning_success_on,
+        words.last_learning_covered_on,
+        COALESCE(user_word_priority.bump_count, 0) AS bump_count,
+        COALESCE(user_word_priority.force_top, 0) AS force_top,
+        words.priority
+          + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} AS effective_priority
+      FROM words
+      LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
+      WHERE words.id = ?
+        AND words.status = 'unstudied'
+    `)
+    .get(wordId) as
+    | (WordRow & { bump_count: number; force_top: number; effective_priority: number })
+    | undefined;
+
+  if (!row) {
+    throw new Error('Expected unstudied word');
+  }
+
+  const bumpCount = row.bump_count;
+  const forceTop = row.force_top !== 0;
+  const effectivePriority = row.effective_priority;
+  const effectiveRank = estimateApproximatePriorityRank({
+    priority: row.priority,
+    bumpCount,
+    forceTop,
+  });
+
+  return buildPriorityWordFromParts({
+    row,
+    bumpCount,
+    forceTop,
+    effectivePriority,
+    effectiveRank,
+  });
+}
+
+function estimateApproximatePriorityRank({
+  priority,
+  bumpCount,
+  forceTop,
+}: {
+  priority: number;
+  bumpCount: number;
+  forceTop: boolean;
+}): number {
+  if (forceTop) {
+    return 1;
+  }
+
+  const normalizedPriority = clampInteger(Math.round(priority), 0, PRIORITY_MAX_BASELINE);
+  const priorityRatio = PRIORITY_MAX_BASELINE === 0 ? 0 : normalizedPriority / PRIORITY_MAX_BASELINE;
+  const baseRank = Math.round((1 - priorityRatio) * (UNSTUDIED_COUNT_BASELINE - 1)) + 1;
+  const bumpRankShift = bumpCount * Math.ceil(UNSTUDIED_COUNT_BASELINE * 0.1);
+
+  return clampInteger(baseRank - bumpRankShift, 1, UNSTUDIED_COUNT_BASELINE);
 }
 
 function addDaysToDateKey(dateKey: string, days: number): string {

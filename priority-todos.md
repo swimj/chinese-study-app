@@ -1,25 +1,6 @@
-I've started using the app to do real study. The following is a list of
-small improvements I'd like to quickly ship based on the experience.
-
-1. Edit definition mid-session. Some of the word definitions I do not find satisfactory.
-I want to be able to update definitions mid session. Ideally the flow would be,
-every card has a small "edit" icon (maybe a little pen?),
-clicking this disables the session response inputs and text input box hovers over instead,
-with a save button. upon save, the new definition is written through to the backend database,
-and upon returning to the card view the definition also reflects the user input.
-also provide a cancel button if that has no effect if the user decides to give up on the edit.
-ideally edit pauses the session timer but if that is too much state management
-it doesn't have to in the first cut, in which case note it as an optional BACKLOG.md item.
-possibly some other semantics to work through.
-2. undo (at least 1 step). sometimes i accidentally rate wrong, i'd like to undo.
-in theory indefinite rollback would be best, but my gut tells me that would be a more difficult
-state tracking problem, perhaps ok if we rearchitected session into a log-replay like form (probably desirable actually).
-i'd like to see if we can come up with a small stopgap solution that allows for a single undo, which includes undoing the
-database side change. maybe we can simply delay the commit one round in the frontend, or add a bit of "recent retired updated rows" somewhere for recollection. don't know, wide design space. help me iterate on this.
-3. i'd like to optionally include cloze tests for the english -> hanzi definition, sometimes the context helps
-you properly understand which word to select when multiple hanzi may be appropriate for the pure definition.
-4. since i run the app in both study and dev modes, i'd like to have some more guardrails so i don't accidnetally
-use the study app thinking its in dev mode and do a bunch of stuff i can't rollback. perhaps different ports for the frontend would be enough? or maybe the dev mode is also actually a different temporary end-point? open to ideas
-5. similarly, worried about frontend in dev mode talking to backend in study mode. some minimal compatibility guard should exist.
-6. come up with a ligheweight data backup process for study mode. as you can maybe tell, i'm a bit worried about fat finger risk.
-7. minor UI/auxiliary state tweaks: show count of forgotten recalls (identified by reviewItem id), reinforcement ratings actually can just be binary yes/no like learning (in any case backend will consider it failure and only care about failure count), reinforcement card and show N/3 where N is current yes streak.
+1. Create a pathway for the user to indicate particular unstudied words they want to prioritize.
+I think there is some modeling that needs to be done to make this work smoothly and be extensible/flexible
+to future needs.
+2. The meanings list is the "source of truth" for much of the study session card content. Make it possible to edit the list on an element-by-element basis, including deletion of elements or adding. There is probably some design work of how much of this we want to model into the backend vs. just have frontend perform mapping onto a backend string representation.
+3. I'd like to add a new behavior to the production training (english->hanzi), where the user can select between meaning/cloze-deletion. The initial idea is to just lazily populate cloze deletions on a on-demand basis, as the motivation comes from me encountering certain hanzi production review items where the pure meaning is too vague/broad/context-dependent. For such cases, I will identify this and then click a button that says 'add cloze option', and then additionally be able to configure whether by default the prompt side shows the cloze or the meaning. I think in future review, the user can still have the option to look at either meaning/cloze even though only one shows by default.
+I'd eventually like to more deeply integrate cloze deletions so this is just a first step / POC type thing, so I can get a better handle.
