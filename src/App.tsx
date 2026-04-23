@@ -1144,6 +1144,7 @@ function App() {
           onSearchHanziChange={setPrioritySearchHanzi}
           onSearchSubmit={() => void handleSubmitPrioritySearch()}
           updatingWordId={updatingPriorityWordId}
+          onMoveToTop={(wordId) => void handleUpdateWordPriority(wordId, { forceTop: true })}
           onBumpAgain={(wordId) => void handleUpdateWordPriority(wordId, { bumpDelta: 1 })}
           onRemove={(wordId) => void handleUpdateWordPriority(wordId, { reset: true })}
         />
@@ -1517,6 +1518,7 @@ function PriorityPage({
   onSearchHanziChange,
   onSearchSubmit,
   updatingWordId,
+  onMoveToTop,
   onBumpAgain,
   onRemove,
 }: {
@@ -1529,6 +1531,7 @@ function PriorityPage({
   onSearchHanziChange: (value: string) => void;
   onSearchSubmit: () => void;
   updatingWordId: string | null;
+  onMoveToTop: (wordId: string) => void;
   onBumpAgain: (wordId: string) => void;
   onRemove: (wordId: string) => void;
 }) {
@@ -1624,6 +1627,13 @@ function PriorityPage({
                       <td>{word.bumpCount}</td>
                       <td>
                         <div className="pagination-actions">
+                          <button
+                            type="button"
+                            onClick={() => onMoveToTop(word.word.id)}
+                            disabled={rowUpdating || word.forceTop}
+                          >
+                            {word.forceTop ? 'At top' : 'Move to top'}
+                          </button>
                           <button type="button" onClick={() => onBumpAgain(word.word.id)} disabled={rowUpdating}>
                             Bump again
                           </button>
