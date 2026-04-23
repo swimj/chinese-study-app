@@ -83,6 +83,7 @@ type UserWordPriorityRow = {
   word_id: string;
   bump_count: number;
   force_top: number;
+  priority_tier: number;
   updated_at: string;
 };
 
@@ -144,6 +145,7 @@ type SessionItemWithWordRow = {
 type PriorityWordRow = WordRow & {
   bump_count: number;
   force_top: number;
+  priority_tier: number;
   effective_priority: number;
   effective_rank: number;
 };
@@ -154,6 +156,9 @@ const PRIORITY_BUMP_UNIT = 12248;
 const UNSTUDIED_COUNT_BASELINE = 116000;
 const PRIORITY_MAX_BASELINE = PRIORITY_BUMP_UNIT * 10;
 const INITIAL_REVIEW_EASE_FACTOR = 2.5;
+const PRIORITY_TIER_TOP = 1;
+const PRIORITY_TIER_REGULAR = 0;
+const PRIORITY_TIER_SUNK = -1;
 
 initializeDatabase();
 
@@ -221,11 +226,12 @@ export function getUnstudiedPriorityWords(): PriorityWordsPayload {
         words.last_learning_covered_on,
         COALESCE(user_word_priority.bump_count, 0) AS bump_count,
         COALESCE(user_word_priority.force_top, 0) AS force_top,
+        COALESCE(user_word_priority.priority_tier, 0) AS priority_tier,
         words.priority
           + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} AS effective_priority,
         ROW_NUMBER() OVER (
           ORDER BY
-            COALESCE(user_word_priority.force_top, 0) DESC,
+            COALESCE(user_word_priority.priority_tier, 0) DESC,
             words.priority + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} DESC,
             words.priority DESC,
             words.created_at ASC
@@ -234,7 +240,7 @@ export function getUnstudiedPriorityWords(): PriorityWordsPayload {
       LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
       WHERE words.status = 'unstudied'
       ORDER BY
-        force_top DESC,
+        priority_tier DESC,
         effective_priority DESC,
         priority DESC,
         created_at ASC
@@ -325,6 +331,7 @@ export function updateWordUserPriority(wordId: string, patch: UserWordPriorityPa
         word_id,
         bump_count,
         force_top,
+        priority_tier,
         updated_at
       FROM user_word_priority
       WHERE word_id = ?
@@ -332,12 +339,20 @@ export function updateWordUserPriority(wordId: string, patch: UserWordPriorityPa
     .get(wordId) as UserWordPriorityRow | undefined;
 
   const currentBumpCount = existingPriorityRow?.bump_count ?? 0;
-  const currentForceTop = (existingPriorityRow?.force_top ?? 0) !== 0;
+  const currentPriorityTier = existingPriorityRow?.priority_tier ?? PRIORITY_TIER_REGULAR;
+  const currentForceTop = currentPriorityTier === PRIORITY_TIER_TOP;
   const reset = patch.reset === true;
   const nextBumpCount = reset ? 0 : clampInteger(currentBumpCount + (patch.bumpDelta ?? 0), 0, 10);
-  const nextForceTop = reset ? false : patch.forceTop ?? currentForceTop;
+  const nextPriorityTier = reset
+    ? PRIORITY_TIER_REGULAR
+    : patch.forceTop === undefined
+      ? currentPriorityTier
+      : patch.forceTop
+        ? PRIORITY_TIER_TOP
+        : PRIORITY_TIER_REGULAR;
+  const nextForceTop = nextPriorityTier === PRIORITY_TIER_TOP;
 
-  if (nextBumpCount === 0 && !nextForceTop) {
+  if (nextBumpCount === 0 && nextPriorityTier === PRIORITY_TIER_REGULAR) {
     db.prepare(`
       DELETE FROM user_word_priority
       WHERE word_id = ?
@@ -348,13 +363,15 @@ export function updateWordUserPriority(wordId: string, patch: UserWordPriorityPa
         word_id,
         bump_count,
         force_top,
+        priority_tier,
         updated_at
-      ) VALUES (?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(word_id) DO UPDATE SET
         bump_count = excluded.bump_count,
         force_top = excluded.force_top,
+        priority_tier = excluded.priority_tier,
         updated_at = excluded.updated_at
-    `).run(wordId, nextBumpCount, nextForceTop ? 1 : 0, new Date().toISOString());
+    `).run(wordId, nextBumpCount, nextForceTop ? 1 : 0, nextPriorityTier, new Date().toISOString());
   }
 
   return getUnstudiedPriorityWordById(wordId);
@@ -384,27 +401,31 @@ export function addUnstudiedUserPriorityByHanzi(hanzi: string): PriorityWord[] {
         .prepare(`
           SELECT
             bump_count,
-            force_top
+            force_top,
+            priority_tier
           FROM user_word_priority
           WHERE word_id = ?
         `)
-        .get(match.id) as { bump_count: number; force_top: number } | undefined;
+        .get(match.id) as { bump_count: number; force_top: number; priority_tier: number } | undefined;
 
       const nextBumpCount = Math.max(existingPriorityRow?.bump_count ?? 0, 1);
       const nextForceTop = existingPriorityRow?.force_top ?? 0;
+      const nextPriorityTier = Math.max(existingPriorityRow?.priority_tier ?? PRIORITY_TIER_REGULAR, PRIORITY_TIER_REGULAR);
 
       db.prepare(`
         INSERT INTO user_word_priority (
           word_id,
           bump_count,
           force_top,
+          priority_tier,
           updated_at
-        ) VALUES (?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(word_id) DO UPDATE SET
           bump_count = excluded.bump_count,
           force_top = excluded.force_top,
+          priority_tier = excluded.priority_tier,
           updated_at = excluded.updated_at
-      `).run(match.id, nextBumpCount, nextForceTop, new Date().toISOString());
+      `).run(match.id, nextBumpCount, nextForceTop, nextPriorityTier, new Date().toISOString());
     }
 
     db.exec('COMMIT');
@@ -723,6 +744,57 @@ export function completeLearningWordSession(wordId: string, success: boolean): W
   return mapWordRow(updatedWord);
 }
 
+export function dismissWordFromStudy(wordId: string): void {
+  const existingWord = db
+    .prepare(`
+      SELECT
+        id,
+        status
+      FROM words
+      WHERE id = ?
+    `)
+    .get(wordId) as { id: string; status: WordStatus } | undefined;
+
+  if (!existingWord) {
+    throw new Error('Word not found');
+  }
+
+  db.exec('BEGIN');
+
+  try {
+    db.prepare(`
+      INSERT INTO user_word_priority (
+        word_id,
+        bump_count,
+        force_top,
+        priority_tier,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(word_id) DO UPDATE SET
+        bump_count = excluded.bump_count,
+        force_top = excluded.force_top,
+        priority_tier = excluded.priority_tier,
+        updated_at = excluded.updated_at
+    `).run(wordId, 0, 0, PRIORITY_TIER_SUNK, new Date().toISOString());
+
+    if (existingWord.status !== 'unstudied') {
+      db.prepare(`
+        UPDATE words
+        SET status = 'unstudied',
+            learning_streak = 0,
+            last_learning_success_on = NULL,
+            last_learning_covered_on = NULL
+        WHERE id = ?
+      `).run(wordId);
+    }
+
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 function initializeDatabase() {
   if (!dbExistedOnStartup) {
     createSchema();
@@ -773,8 +845,23 @@ function applyLightweightSchemaMigrations() {
       word_id TEXT PRIMARY KEY REFERENCES words(id) ON DELETE CASCADE,
       bump_count INTEGER NOT NULL DEFAULT 0,
       force_top INTEGER NOT NULL DEFAULT 0,
+      priority_tier INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL
     );
+  `);
+
+  const userPriorityColumns = db.prepare(`PRAGMA table_info(user_word_priority)`).all() as Array<{ name: string }>;
+  const hasPriorityTier = userPriorityColumns.some((column) => column.name === 'priority_tier');
+  if (!hasPriorityTier) {
+    db.exec(`ALTER TABLE user_word_priority ADD COLUMN priority_tier INTEGER NOT NULL DEFAULT 0`);
+    db.exec(`UPDATE user_word_priority SET priority_tier = CASE WHEN force_top != 0 THEN 1 ELSE 0 END`);
+  }
+
+  db.exec(`
+    UPDATE user_word_priority
+    SET priority_tier = 1
+    WHERE force_top != 0
+      AND priority_tier = 0
   `);
 }
 
@@ -862,6 +949,7 @@ function createSchema() {
       word_id TEXT PRIMARY KEY REFERENCES words(id) ON DELETE CASCADE,
       bump_count INTEGER NOT NULL DEFAULT 0,
       force_top INTEGER NOT NULL DEFAULT 0,
+      priority_tier INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL
     );
   `);
@@ -874,6 +962,7 @@ function ensureIndexes() {
     CREATE INDEX IF NOT EXISTS idx_words_priority ON words(priority DESC, created_at ASC);
     CREATE INDEX IF NOT EXISTS idx_review_items_due ON review_items(next_due_at ASC);
     CREATE INDEX IF NOT EXISTS idx_user_word_priority_force_top ON user_word_priority(force_top DESC, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_user_word_priority_tier ON user_word_priority(priority_tier DESC, updated_at DESC);
   `);
 }
 
@@ -907,6 +996,7 @@ function validateSchema() {
     'word_id',
     'bump_count',
     'force_top',
+    'priority_tier',
     'updated_at',
   ]);
 }
@@ -1207,7 +1297,7 @@ function mapPriorityWordRow(row: PriorityWordRow): PriorityWord {
   return {
     word: mapWordRow(row),
     bumpCount: row.bump_count,
-    forceTop: row.force_top !== 0,
+    forceTop: row.priority_tier === PRIORITY_TIER_TOP,
     effectivePriority: row.effective_priority,
     effectiveRank: row.effective_rank,
   };
@@ -1334,13 +1424,14 @@ function getSessionItemsWithWords(): SessionItemWithWord[] {
           words.created_at,
           COALESCE(user_word_priority.bump_count, 0) AS bump_count,
           COALESCE(user_word_priority.force_top, 0) AS force_top,
+          COALESCE(user_word_priority.priority_tier, 0) AS priority_tier,
           words.priority
             + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} AS effective_priority
         FROM words
         LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
         WHERE words.status = 'unstudied'
         ORDER BY
-          force_top DESC,
+          priority_tier DESC,
           effective_priority DESC,
           words.priority DESC,
           words.created_at ASC
@@ -1371,7 +1462,7 @@ function getSessionItemsWithWords(): SessionItemWithWord[] {
       INNER JOIN words ON words.id = review_items.word_id
       INNER JOIN ranked_unstudied ON ranked_unstudied.id = words.id
       ORDER BY
-        ranked_unstudied.force_top DESC,
+        ranked_unstudied.priority_tier DESC,
         ranked_unstudied.effective_priority DESC,
         words.priority DESC,
         words.created_at ASC,
@@ -1521,6 +1612,7 @@ function getUnstudiedPriorityWordById(wordId: string): PriorityWord {
         words.last_learning_covered_on,
         COALESCE(user_word_priority.bump_count, 0) AS bump_count,
         COALESCE(user_word_priority.force_top, 0) AS force_top,
+        COALESCE(user_word_priority.priority_tier, 0) AS priority_tier,
         words.priority
           + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} AS effective_priority
       FROM words
@@ -1529,7 +1621,7 @@ function getUnstudiedPriorityWordById(wordId: string): PriorityWord {
         AND words.status = 'unstudied'
     `)
     .get(wordId) as
-    | (WordRow & { bump_count: number; force_top: number; effective_priority: number })
+    | (WordRow & { bump_count: number; force_top: number; priority_tier: number; effective_priority: number })
     | undefined;
 
   if (!row) {
@@ -1537,12 +1629,12 @@ function getUnstudiedPriorityWordById(wordId: string): PriorityWord {
   }
 
   const bumpCount = row.bump_count;
-  const forceTop = row.force_top !== 0;
+  const forceTop = row.priority_tier === PRIORITY_TIER_TOP;
   const effectivePriority = row.effective_priority;
   const effectiveRank = estimateApproximatePriorityRank({
     priority: row.priority,
     bumpCount,
-    forceTop,
+    priorityTier: row.priority_tier,
   });
 
   return buildPriorityWordFromParts({
@@ -1557,14 +1649,18 @@ function getUnstudiedPriorityWordById(wordId: string): PriorityWord {
 function estimateApproximatePriorityRank({
   priority,
   bumpCount,
-  forceTop,
+  priorityTier,
 }: {
   priority: number;
   bumpCount: number;
-  forceTop: boolean;
+  priorityTier: number;
 }): number {
-  if (forceTop) {
+  if (priorityTier === PRIORITY_TIER_TOP) {
     return 1;
+  }
+
+  if (priorityTier === PRIORITY_TIER_SUNK) {
+    return UNSTUDIED_COUNT_BASELINE;
   }
 
   const normalizedPriority = clampInteger(Math.round(priority), 0, PRIORITY_MAX_BASELINE);

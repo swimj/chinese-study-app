@@ -4,6 +4,7 @@ import {
   beginDrainSession,
   beginUnstudiedDrill,
   createSessionState,
+  dismissCurrentItemFromSession,
   getQueueItems,
   markCurrentItemStarted,
   rateCurrentItem,
@@ -365,6 +366,89 @@ describe('session state', () => {
       () => rateCurrentItem(createSessionState([]), 'good'),
       /cannot rate the current item when the queue is empty/i,
     );
+  });
+
+  test('dismissing the current item prunes every queued direction for that word', () => {
+    const dismissedWord = createWord({ id: 'word-dismiss', status: 'learning' });
+    const survivorWord = createWord({ id: 'word-survivor', status: 'review' });
+    const state = createSessionState([
+      joinItem(createItem({ id: 'word-dismiss-forward', wordId: dismissedWord.id, direction: 'forward' }), dismissedWord),
+      joinItem(createItem({ id: 'word-dismiss-reverse', wordId: dismissedWord.id, direction: 'reverse' }), dismissedWord),
+      joinItem(createItem({ id: 'word-survivor-forward', wordId: survivorWord.id, direction: 'forward' }), survivorWord),
+    ]);
+
+    const result = dismissCurrentItemFromSession(state);
+
+    assert.deepEqual(result.dismiss, {
+      type: 'dismiss-word-from-study',
+      wordId: 'word-dismiss',
+      status: 'learning',
+    });
+    assert.deepEqual(getQueueItems(result.state.queue).map((item) => item.reviewItem.id), ['word-survivor-forward']);
+    assert.deepEqual(result.state.dismissedWordIds, ['word-dismiss']);
+  });
+
+  test('dismissing head keeps the next non-dismissed item as the new head even when a later item also matches', () => {
+    const dismissedWord = createWord({ id: 'word-r1', status: 'review' });
+    const survivorWord = createWord({ id: 'word-r2', status: 'review' });
+    const state = createSessionState([
+      joinItem(createItem({ id: 'r1', wordId: dismissedWord.id, direction: 'forward' }), dismissedWord),
+      joinItem(createItem({ id: 'r2', wordId: survivorWord.id, direction: 'forward' }), survivorWord),
+      joinItem(createItem({ id: 'r3', wordId: dismissedWord.id, direction: 'reverse' }), dismissedWord),
+    ]);
+
+    const result = dismissCurrentItemFromSession(state);
+
+    assert.equal(result.state.queue.head?.item.reviewItem.id, 'r2');
+    assert.deepEqual(getQueueItems(result.state.queue).map((item) => item.reviewItem.id), ['r2']);
+  });
+
+  test('dismissing clears in-flight progress for the dismissed word and related item starts', () => {
+    const dismissedWord = createWord({ id: 'word-dismiss-progress', status: 'unstudied' });
+    const survivorWord = createWord({ id: 'word-survivor-progress', status: 'review' });
+    const dismissedForward = createItem({ id: 'word-dismiss-progress-forward', wordId: dismissedWord.id, direction: 'forward' });
+    const dismissedReverse = createItem({ id: 'word-dismiss-progress-reverse', wordId: dismissedWord.id, direction: 'reverse' });
+    const survivorItem = createItem({ id: 'word-survivor-progress-forward', wordId: survivorWord.id, direction: 'forward' });
+
+    const state = {
+      ...createSessionState([joinItem(dismissedForward, dismissedWord), joinItem(dismissedReverse, dismissedWord), joinItem(survivorItem, survivorWord)]),
+      startedItemIds: [dismissedForward.id, survivorItem.id],
+      learningProgress: {
+        'word-dismiss-progress': {
+          coveredDirections: { forward: true, reverse: false },
+          firstTryGood: { forward: true, reverse: false },
+          attempts: { forward: 1, reverse: 0 },
+        },
+      },
+      unstudiedProgress: {
+        'word-dismiss-progress': {
+          introComplete: true,
+          consecutiveSuccesses: { forward: 2, reverse: 0 },
+        },
+      },
+      reviewProgress: {
+        [dismissedForward.id]: { failureCount: 1, reinforcementStreak: 0 },
+      },
+    };
+
+    const result = dismissCurrentItemFromSession(state);
+
+    assert.equal(result.state.learningProgress['word-dismiss-progress'], undefined);
+    assert.equal(result.state.unstudiedProgress['word-dismiss-progress'], undefined);
+    assert.equal(result.state.reviewProgress[dismissedForward.id], undefined);
+    assert.deepEqual(result.state.startedItemIds, [survivorItem.id]);
+  });
+
+  test('dismissing the last queued word completes the session phase', () => {
+    const dismissedWord = createWord({ id: 'word-dismiss-last', status: 'review' });
+    const state = createSessionState([
+      joinItem(createItem({ id: 'word-dismiss-last-forward', wordId: dismissedWord.id, direction: 'forward' }), dismissedWord),
+    ]);
+
+    const result = dismissCurrentItemFromSession(state);
+
+    assert.equal(result.state.phase, 'completed');
+    assert.deepEqual(getQueueItems(result.state.queue), []);
   });
 });
 

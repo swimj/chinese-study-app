@@ -6,6 +6,7 @@ import {
   completeLearningSession,
   completeReviewSession,
   completeUnstudiedSession,
+  dismissWordFromStudy,
   fetchReviewItems,
   fetchUnstudiedPriorityWords,
   fetchSessionPayload,
@@ -16,6 +17,7 @@ import {
 } from './services/api';
 import {
   beginDrainSession,
+  dismissCurrentItemFromSession,
   beginUnstudiedDrill,
   createSessionQueue,
   createSessionState,
@@ -637,6 +639,36 @@ function App() {
     setSessionState((current) => (current ? beginUnstudiedDrill(current, wordId) : current));
   }
 
+  async function handleDismissCurrentWord() {
+    if (!sessionState) {
+      return;
+    }
+
+    setError(null);
+
+    try {
+      const transition = dismissCurrentItemFromSession(sessionState);
+      if (transition.dismiss.type === 'none') {
+        return;
+      }
+
+      const confirmationMessage =
+        transition.dismiss.status === 'unstudied'
+          ? 'Dismiss this new word? This immediately removes it from this session and cannot be undone.'
+          : 'Dismiss this word? This immediately removes both directions from this session, returns it to unstudied, and cannot be undone.';
+      if (!window.confirm(confirmationMessage)) {
+        return;
+      }
+
+      setSessionState(transition.state);
+      setAnswerRevealed(false);
+      setLastUndoSnapshot(null);
+      await dismissWordFromStudy(transition.dismiss.wordId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  }
+
   function handleOpenPersonalNotesEditor() {
     if (!activeWord) {
       return;
@@ -917,14 +949,24 @@ function App() {
                 <div className="review-card">
                   <div className="review-card-header">
                     <p className="badge">New word introduction</p>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={handleOpenPersonalNotesEditor}
-                      disabled={personalNotesEditorSaving}
-                    >
-                      Edit notes
-                    </button>
+                    <div className="inline-actions">
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => void handleDismissCurrentWord()}
+                        disabled={personalNotesEditorSaving}
+                      >
+                        Dismiss
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={handleOpenPersonalNotesEditor}
+                        disabled={personalNotesEditorSaving}
+                      >
+                        Edit notes
+                      </button>
+                    </div>
                   </div>
                   <div className="prompt-block">
                     <span className="prompt-label">Hanzi</span>
@@ -981,14 +1023,24 @@ function App() {
                       {' · '}
                       {activeItem.reviewItem.direction === 'forward' ? 'Hanzi → Meaning' : 'Meaning → Hanzi'}
                     </p>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={handleOpenPersonalNotesEditor}
-                      disabled={personalNotesEditorSaving}
-                    >
-                      Edit notes
-                    </button>
+                    <div className="inline-actions">
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => void handleDismissCurrentWord()}
+                        disabled={personalNotesEditorSaving}
+                      >
+                        Dismiss
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={handleOpenPersonalNotesEditor}
+                        disabled={personalNotesEditorSaving}
+                      >
+                        Edit notes
+                      </button>
+                    </div>
                   </div>
                   <p className="notes">
                     Answered {reviewedCount} this session · {sessionState?.queue.length ?? 0} still queued ·
@@ -1690,6 +1742,7 @@ function cloneSessionState(state: SessionState): SessionState {
     ...state,
     queue: createSessionQueue(getQueueItems(state.queue).map(cloneSessionItemWithWord)),
     startedItemIds: [...state.startedItemIds],
+    dismissedWordIds: [...state.dismissedWordIds],
     learningProgress: Object.fromEntries(
       Object.entries(state.learningProgress).map(([wordId, progress]) => [
         wordId,

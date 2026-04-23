@@ -248,6 +248,12 @@ button:hover {
   flex-wrap: wrap;
 }
 
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .secondary-button {
   background: rgba(30, 41, 59, 0.92);
   color: #cbd5e1;
