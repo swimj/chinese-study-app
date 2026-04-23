@@ -175,33 +175,40 @@ export function dismissCurrentItemFromSession(state: SessionState): SessionDismi
 
   const dismissedWordId = currentItem.word.id;
   const dismissedReviewItemIds: Record<string, true> = {};
+  let nextHead = state.queue.head;
+  let nextTail = state.queue.tail;
+  let nextLength = state.queue.length;
+  let previousNode: SessionQueueNode | null = null;
   let currentNode = state.queue.head;
-  let nextHead: SessionQueueNode | null = null;
-  let nextTail: SessionQueueNode | null = null;
-  let nextLength = 0;
 
-  // One-pass queue pruning: rewire surviving nodes in order and detach dismissed nodes.
+  // One-pass queue pruning: only unlink nodes that match the dismissed word id.
   while (currentNode) {
     const nextNode = currentNode.next;
     const shouldDismiss = currentNode.item.word.id === dismissedWordId;
 
-    if (shouldDismiss) {
-      dismissedReviewItemIds[currentNode.item.reviewItem.id] = true;
-      currentNode.next = null;
+    if (!shouldDismiss) {
+      previousNode = currentNode;
       currentNode = nextNode;
       continue;
     }
 
-    if (!nextHead) {
-      nextHead = currentNode;
-      nextTail = currentNode;
+    dismissedReviewItemIds[currentNode.item.reviewItem.id] = true;
+    nextLength -= 1;
+
+    // previousNodeNull is the special case when we need to remove the head
+    // which actually is every time given the semantics of dismissing the current item,
+    // that said no need to be overly fancy
+    if (previousNode) {
+      previousNode.next = nextNode;
     } else {
-      nextTail!.next = currentNode;
-      nextTail = currentNode;
+      nextHead = nextNode;
     }
 
-    nextTail.next = null;
-    nextLength += 1;
+    if (currentNode === nextTail) {
+      nextTail = previousNode;
+    }
+
+    currentNode.next = null;
     currentNode = nextNode;
   }
 
