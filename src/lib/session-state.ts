@@ -36,6 +36,7 @@ export type SessionState = {
   queue: SessionQueue;
   answeredCount: number;
   startedItemIds: string[];
+  dismissedWordIds: string[];
   learningProgress: Record<string, LearningWordProgress>;
   unstudiedProgress: Record<string, UnstudiedWordProgress>;
   reviewProgress: Record<string, ReviewItemProgress>;
@@ -64,12 +65,26 @@ export type SessionTransitionResult = {
   commit: SessionCommitIntent;
 };
 
+export type SessionDismissIntent =
+  | { type: 'none' }
+  | {
+      type: 'dismiss-word-from-study';
+      wordId: string;
+      status: Word['status'];
+    };
+
+export type SessionDismissTransitionResult = {
+  state: SessionState;
+  dismiss: SessionDismissIntent;
+};
+
 export function createSessionState(items: SessionItemWithWord[]): SessionState {
   return {
     phase: 'active',
     queue: createSessionQueue(items),
     answeredCount: 0,
     startedItemIds: [],
+    dismissedWordIds: [],
     learningProgress: {},
     unstudiedProgress: {},
     reviewProgress: {},
@@ -144,6 +159,79 @@ export function beginUnstudiedDrill(state: SessionState, wordId: string): Sessio
         ...(state.unstudiedProgress[wordId] ?? createInitialUnstudiedProgress()),
         introComplete: true,
       },
+    },
+  };
+}
+
+export function dismissCurrentItemFromSession(state: SessionState): SessionDismissTransitionResult {
+  const currentItem = getCurrentQueueItem(state.queue);
+
+  if (!currentItem) {
+    return {
+      state,
+      dismiss: { type: 'none' },
+    };
+  }
+
+  const dismissedWordId = currentItem.word.id;
+  const dismissedReviewItemIds: Record<string, true> = {};
+  let currentNode = state.queue.head;
+  let nextHead: SessionQueueNode | null = null;
+  let nextTail: SessionQueueNode | null = null;
+  let nextLength = 0;
+
+  // One-pass queue pruning: rewire surviving nodes in order and detach dismissed nodes.
+  while (currentNode) {
+    const nextNode = currentNode.next;
+    const shouldDismiss = currentNode.item.word.id === dismissedWordId;
+
+    if (shouldDismiss) {
+      dismissedReviewItemIds[currentNode.item.reviewItem.id] = true;
+      currentNode.next = null;
+      currentNode = nextNode;
+      continue;
+    }
+
+    if (!nextHead) {
+      nextHead = currentNode;
+      nextTail = currentNode;
+    } else {
+      nextTail!.next = currentNode;
+      nextTail = currentNode;
+    }
+
+    nextTail.next = null;
+    nextLength += 1;
+    currentNode = nextNode;
+  }
+
+  const nextReviewProgress = Object.fromEntries(
+    Object.entries(state.reviewProgress).filter(([reviewItemId]) => dismissedReviewItemIds[reviewItemId] !== true),
+  );
+
+  const nextState: SessionState = {
+    ...state,
+    phase: nextLength === 0 ? 'completed' : state.phase,
+    queue: {
+      head: nextHead,
+      tail: nextTail,
+      length: nextLength,
+    },
+    startedItemIds: state.startedItemIds.filter((reviewItemId) => dismissedReviewItemIds[reviewItemId] !== true),
+    dismissedWordIds: state.dismissedWordIds.includes(dismissedWordId)
+      ? state.dismissedWordIds
+      : [...state.dismissedWordIds, dismissedWordId],
+    learningProgress: removeKey(state.learningProgress, dismissedWordId),
+    unstudiedProgress: removeKey(state.unstudiedProgress, dismissedWordId),
+    reviewProgress: nextReviewProgress,
+  };
+
+  return {
+    state: nextState,
+    dismiss: {
+      type: 'dismiss-word-from-study',
+      wordId: dismissedWordId,
+      status: currentItem.word.status,
     },
   };
 }

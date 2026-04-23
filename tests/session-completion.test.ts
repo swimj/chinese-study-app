@@ -382,6 +382,59 @@ describe('session completion', { concurrency: false }, () => {
       /Word not found/,
     );
   });
+
+  test('dismissing an unstudied word keeps it unstudied and persists sunk priority tier', () => {
+    insertWord({
+      id: 'dismiss-unstudied-word',
+      hanzi: '略',
+      pinyin: 'lue',
+      meaning: 'omit',
+      examples: ['先略过。'],
+      status: 'unstudied',
+      priority: 45,
+      createdAt: isoHoursAgo(2),
+    });
+
+    dbModule.dismissWordFromStudy('dismiss-unstudied-word');
+
+    const word = fetchWord('dismiss-unstudied-word');
+    assert.equal(word.status, 'unstudied');
+    assert.equal(word.learningStreak, 0);
+    assert.equal(word.lastLearningSuccessOn, null);
+    assert.equal(word.lastLearningCoveredOn, null);
+
+    const priorityRow = fetchUserPriorityRow('dismiss-unstudied-word');
+    assert.equal(priorityRow?.bump_count, 0);
+    assert.equal(priorityRow?.force_top, 0);
+    assert.equal(priorityRow?.priority_tier, -1);
+  });
+
+  test('dismissing a learning word returns it to unstudied and sinks priority', () => {
+    insertLearningWordWithItems({
+      wordId: 'dismiss-learning-word',
+      learningStreak: 2,
+      lastLearningSuccessOn: addDays(today, -1),
+      lastLearningCoveredOn: today,
+      intervalHours: 24,
+      nextDueAt: isoHoursAgo(1),
+    });
+
+    dbModule.dismissWordFromStudy('dismiss-learning-word');
+
+    const word = fetchWord('dismiss-learning-word');
+    assert.equal(word.status, 'unstudied');
+    assert.equal(word.learningStreak, 0);
+    assert.equal(word.lastLearningSuccessOn, null);
+    assert.equal(word.lastLearningCoveredOn, null);
+    assert.equal(fetchUserPriorityRow('dismiss-learning-word')?.priority_tier, -1);
+  });
+
+  test('dismissing rejects unknown words', () => {
+    assert.throws(
+      () => dbModule.dismissWordFromStudy('missing-word'),
+      /Word not found/,
+    );
+  });
 });
 
 function insertReviewWordWithItem(options: {
@@ -463,6 +516,19 @@ function fetchWord(wordId: string) {
 
 function fetchReviewItem(reviewItemId: string) {
   return dbModule.getReviewItems().find((item) => item.id === reviewItemId) ?? fail(`Missing review item ${reviewItemId}`);
+}
+
+function fetchUserPriorityRow(wordId: string) {
+  return sqlite
+    .prepare(`
+      SELECT
+        bump_count,
+        force_top,
+        priority_tier
+      FROM user_word_priority
+      WHERE word_id = ?
+    `)
+    .get(wordId) as { bump_count: number; force_top: number; priority_tier: number } | undefined;
 }
 
 function insertWord(record: WordRecord) {

@@ -5,6 +5,7 @@ import {
   completeLearningWordSession,
   completeReviewItemSession,
   completeUnstudiedWordSession,
+  dismissWordFromStudy,
   addUnstudiedUserPriorityByHanzi,
   dbConfig,
   getUnstudiedCountBaseline,
@@ -152,6 +153,20 @@ export function createApp() {
       }
 
       res.status(500).json({ error: 'Failed to complete unstudied session' });
+    }
+  });
+
+  app.post('/api/words/:id/dismiss', (req, res) => {
+    try {
+      dismissWordFromStudy(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Word not found') {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to dismiss word from study' });
     }
   });
 

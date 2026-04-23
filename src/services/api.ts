@@ -129,6 +129,16 @@ export async function completeUnstudiedSession(wordId: string): Promise<Word> {
   return response.json();
 }
 
+export async function dismissWordFromStudy(wordId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/words/${wordId}/dismiss`, {
+    method: 'POST',
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to dismiss word from study'));
+  }
+}
+
 export async function updateWordPersonalNotes(wordId: string, personalNotes: string): Promise<Word> {
   const response = await fetch(`${API_BASE}/api/words/${wordId}/personal-notes`, {
     method: 'PATCH',
