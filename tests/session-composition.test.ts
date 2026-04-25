@@ -37,6 +37,7 @@ type DbModule = typeof import('../server/db.ts');
 
 const today = new Date().toISOString().slice(0, 10);
 const yesterday = addDays(today, -1);
+const studyDayKey = today;
 
 let dataDir = '';
 let dbPath = '';
@@ -75,6 +76,7 @@ describe('session composition', { concurrency: false }, () => {
 
   beforeEach(() => {
     sqlite.exec(`
+      DELETE FROM daily_new_word_intake;
       DELETE FROM review_items;
       DELETE FROM words;
     `);
@@ -119,7 +121,7 @@ describe('session composition', { concurrency: false }, () => {
   });
 
   test('home overview reports due review, uncovered learning, and limited new-word intake counts', () => {
-    const { dailyNewWordLimit } = dbModule.getLearningPolicy();
+    const { dailyNewWordLimit } = dbModule.getLearningPolicy(studyDayKey);
 
     insertWord({
       id: 'overview-review-word',
@@ -202,7 +204,7 @@ describe('session composition', { concurrency: false }, () => {
     insertUnstudiedWordPair('overview-new-b', 60, '2026-01-02T00:00:00.000Z');
     insertUnstudiedWordPair('overview-new-c', 50, '2026-01-03T00:00:00.000Z');
 
-    assert.deepEqual(dbModule.getHomeOverview(), {
+    assert.deepEqual(dbModule.getHomeOverview(studyDayKey), {
       dueReviewItemCount: 1,
       pendingLearningWordCount: 1,
       newWordIntroCount: Math.min(3, dailyNewWordLimit),
@@ -336,7 +338,7 @@ describe('session composition', { concurrency: false }, () => {
   });
 
   test('caps unstudied intake and orders it by priority then creation time', () => {
-    const { dailyNewWordLimit } = dbModule.getLearningPolicy();
+    const { dailyNewWordLimit } = dbModule.getLearningPolicy(studyDayKey);
     const totalUnstudiedWords = dailyNewWordLimit + 1;
 
     const words = Array.from({ length: totalUnstudiedWords }, (_, index) => {
@@ -388,6 +390,54 @@ describe('session composition', { concurrency: false }, () => {
 
     assert.equal(sessionIds.includes(`unstudied-${totalUnstudiedWords}-forward`), false);
     assert.equal(sessionIds.includes(`unstudied-${totalUnstudiedWords}-reverse`), false);
+  });
+
+  test('completing an unstudied word reduces same-day remaining intake across sessions', () => {
+    const { dailyNewWordLimit } = dbModule.getLearningPolicy(studyDayKey);
+
+    const words = Array.from({ length: dailyNewWordLimit + 1 }, (_, index) => {
+      const day = String(index + 1).padStart(2, '0');
+      return {
+        id: `cross-session-${index + 1}`,
+        hanzi: `跨${index + 1}`,
+        pinyin: `kua ${index + 1}`,
+        meaning: `cross ${index + 1}`,
+        examples: [`cross ${index + 1}`],
+        status: 'unstudied' as const,
+        priority: 100 - index,
+        createdAt: `2026-02-${day}T00:00:00.000Z`,
+      };
+    });
+
+    for (const word of words) {
+      insertWord(word);
+      insertReviewItem({
+        id: `${word.id}-forward`,
+        wordId: word.id,
+        direction: 'forward',
+        intervalHours: 6,
+        nextDueAt: null,
+      });
+      insertReviewItem({
+        id: `${word.id}-reverse`,
+        wordId: word.id,
+        direction: 'reverse',
+        intervalHours: 6,
+        nextDueAt: null,
+      });
+    }
+
+    const beforeCompletionIds = getSessionItemIds(dbModule);
+    assert.equal(beforeCompletionIds.length, dailyNewWordLimit * 2);
+
+    dbModule.completeUnstudiedWordSession(words[0].id, studyDayKey);
+
+    const afterCompletionIds = getSessionItemIds(dbModule);
+    assert.equal(afterCompletionIds.length, (dailyNewWordLimit - 1) * 2);
+    assert.equal(afterCompletionIds.includes(`${words[0].id}-forward`), false);
+    assert.equal(afterCompletionIds.includes(`${words[0].id}-reverse`), false);
+    assert.equal(afterCompletionIds.includes(`${words[dailyNewWordLimit].id}-forward`), false);
+    assert.equal(afterCompletionIds.includes(`${words[dailyNewWordLimit].id}-reverse`), false);
   });
 
   test('session payload bundles only the words referenced by current session items', () => {
@@ -468,7 +518,7 @@ describe('session composition', { concurrency: false }, () => {
       nextDueAt: null,
     });
 
-    const payload = dbModule.getSessionPayload();
+    const payload = dbModule.getSessionPayload(studyDayKey);
 
     const payloadItems = [
       ...payload.buckets.review,
@@ -600,7 +650,7 @@ describe('session composition', { concurrency: false }, () => {
       'new-word-reverse',
     ]);
 
-    const updatedWord = dbModule.completeUnstudiedWordSession('new-word');
+    const updatedWord = dbModule.completeUnstudiedWordSession('new-word', studyDayKey);
     assert.equal(updatedWord.status, 'learning');
     assert.equal(updatedWord.lastLearningCoveredOn, today);
     assert.deepEqual(getSessionItemIds(dbModule), []);
@@ -723,7 +773,7 @@ function addDays(dateKey: string, days: number) {
 }
 
 function getSessionItemIds(db: DbModule): string[] {
-  const payload = db.getSessionPayload();
+  const payload = db.getSessionPayload(studyDayKey);
   return [
     ...payload.buckets.review,
     ...payload.buckets.learning,

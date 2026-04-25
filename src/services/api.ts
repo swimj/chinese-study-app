@@ -57,7 +57,8 @@ export async function fetchReviewItems(): Promise<ReviewItem[]> {
 }
 
 export async function fetchSessionPayload(): Promise<SessionPayload> {
-  const response = await fetch(`${API_BASE}/api/session-payload`);
+  const studyDayKey = getCurrentStudyDayKey();
+  const response = await fetch(`${API_BASE}/api/session-payload?studyDayKey=${encodeURIComponent(studyDayKey)}`);
   if (!response.ok) {
     throw new Error('Failed to load session payload');
   }
@@ -66,7 +67,8 @@ export async function fetchSessionPayload(): Promise<SessionPayload> {
 }
 
 export async function fetchStatus(): Promise<BackendStatus> {
-  const response = await fetch(`${API_BASE}/api/status`);
+  const studyDayKey = getCurrentStudyDayKey();
+  const response = await fetch(`${API_BASE}/api/status?studyDayKey=${encodeURIComponent(studyDayKey)}`);
   if (!response.ok) {
     throw new Error('Failed to load backend status');
   }
@@ -110,8 +112,13 @@ export async function completeLearningSession(wordId: string, success: boolean):
 }
 
 export async function completeUnstudiedSession(wordId: string): Promise<Word> {
+  const studyDayKey = getCurrentStudyDayKey();
   const response = await fetch(`${API_BASE}/api/words/${wordId}/complete-unstudied-session`, {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ studyDayKey }),
   });
 
   if (!response.ok) {
@@ -198,4 +205,28 @@ async function readApiErrorMessage(response: Response, fallbackMessage: string) 
   }
 
   return fallbackMessage;
+}
+
+function getCurrentStudyDayKey(): string {
+  const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC';
+  const now = new Date();
+  // A study day starts at 04:00 local time. Shift the instant back by 4h first,
+  // then derive the local calendar date in the user's configured time zone.
+  const shiftedInstant = new Date(now.getTime() - 4 * 60 * 60 * 1000);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: userTimeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(shiftedInstant);
+
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+
+  if (!year || !month || !day) {
+    throw new Error('Failed to derive study day key');
+  }
+
+  return `${year}-${month}-${day}`;
 }

@@ -38,7 +38,13 @@ export function createApp() {
   });
 
   app.get('/api/session-payload', (req, res) => {
-    res.json(getSessionPayload());
+    const studyDayKey = readStudyDayKeyFromQuery(req.query?.studyDayKey);
+    if (!studyDayKey) {
+      res.status(400).json({ error: 'Expected YYYY-MM-DD studyDayKey query parameter' });
+      return;
+    }
+
+    res.json(getSessionPayload(studyDayKey));
   });
 
   app.get('/api/priority/unstudied', (req, res) => {
@@ -77,6 +83,12 @@ export function createApp() {
   });
 
   app.get('/api/status', (req, res) => {
+    const studyDayKey = readStudyDayKeyFromQuery(req.query?.studyDayKey);
+    if (!studyDayKey) {
+      res.status(400).json({ error: 'Expected YYYY-MM-DD studyDayKey query parameter' });
+      return;
+    }
+
     res.json({
       status: 'ok',
       time: new Date().toISOString(),
@@ -84,8 +96,8 @@ export function createApp() {
       dataDir: dbConfig.dataDir,
       dbPath: dbConfig.dbPath,
       wordStatusCounts: getWordStatusCounts(),
-      ...getHomeOverview(),
-      ...getLearningPolicy(),
+      ...getHomeOverview(studyDayKey),
+      ...getLearningPolicy(studyDayKey),
     });
   });
 
@@ -138,12 +150,23 @@ export function createApp() {
   });
 
   app.post('/api/words/:id/complete-unstudied-session', (req, res) => {
+    const studyDayKey = readStudyDayKeyFromBody(req.body?.studyDayKey);
+    if (!studyDayKey) {
+      res.status(400).json({ error: 'Expected YYYY-MM-DD studyDayKey in request body' });
+      return;
+    }
+
     try {
-      const updatedWord = completeUnstudiedWordSession(req.params.id);
+      const updatedWord = completeUnstudiedWordSession(req.params.id, studyDayKey);
       res.json(updatedWord);
     } catch (error) {
       if (error instanceof Error && error.message === 'Word not found') {
         res.status(404).json({ error: error.message });
+        return;
+      }
+
+      if (error instanceof Error && error.message === 'Invalid study day key') {
+        res.status(400).json({ error: error.message });
         return;
       }
 
@@ -230,6 +253,31 @@ export function createApp() {
   });
 
   return app;
+}
+
+function readStudyDayKeyFromQuery(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  return normalizeStudyDayKey(value);
+}
+
+function readStudyDayKeyFromBody(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  return normalizeStudyDayKey(value);
+}
+
+function normalizeStudyDayKey(value: string): string | null {
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return null;
+  }
+
+  return trimmed;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
