@@ -13,7 +13,6 @@ import {
   getLearningPolicy,
   getPrioritizedUnstudiedWords,
   getReviewItems,
-  getSessionItems,
   getSessionPayload,
   getWords,
   getWordStatusCounts,
@@ -36,10 +35,6 @@ export function createApp() {
 
   app.get('/api/review-items', (req, res) => {
     res.json(getReviewItems());
-  });
-
-  app.get('/api/session-items', (req, res) => {
-    res.json(getSessionItems());
   });
 
   app.get('/api/session-payload', (req, res) => {

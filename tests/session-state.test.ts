@@ -5,18 +5,23 @@ import {
   beginUnstudiedDrill,
   createSessionState,
   dismissCurrentItemFromSession,
-  getQueueItems,
   markCurrentItemStarted,
   rateCurrentItem,
 } from '../src/lib/session-state.ts';
-import type { ReviewItem, SessionItemWithWord, Word } from '../src/types.ts';
+import type { ReviewItem, SessionItemBuckets, SessionItemWithWord, Word } from '../src/types.ts';
+import {
+  cloneSessionScheduler,
+  consumeActiveSchedulerItem,
+  getSchedulerActiveItem,
+  getSchedulerLength,
+} from '../src/lib/session-scheduler.ts';
 
 describe('session state', () => {
   test('review item with a clean good pass commits immediately and leaves the queue', () => {
     const reviewWord = createWord({ id: 'word-1', status: 'review' });
     const reviewItem = createItem({ id: 'word-1-forward', wordId: reviewWord.id, direction: 'forward' });
 
-    const result = rateCurrentItem(markCurrentItemStarted(createSessionState([joinItem(reviewItem, reviewWord)])), 'good');
+    const result = rateCurrentItem(markCurrentItemStarted(createSessionState(toBuckets([joinItem(reviewItem, reviewWord)]))), 'good');
 
     assert.deepEqual(result.commit, {
       type: 'commit-review-item-session',
@@ -25,7 +30,7 @@ describe('session state', () => {
       terminalRating: 'good',
     });
     assert.equal(result.state.answeredCount, 1);
-    assert.deepEqual(getQueueItems(result.state.queue), []);
+    assert.equal(getSchedulerLength(result.state.scheduler), 0);
     assert.deepEqual(result.state.startedItemIds, [reviewItem.id]);
   });
 
@@ -33,7 +38,7 @@ describe('session state', () => {
     const reviewWord = createWord({ id: 'word-2', status: 'review' });
     const reviewItem = createItem({ id: 'word-2-forward', wordId: reviewWord.id, direction: 'forward' });
 
-    let state = markCurrentItemStarted(createSessionState([joinItem(reviewItem, reviewWord)]));
+    let state = markCurrentItemStarted(createSessionState(toBuckets([joinItem(reviewItem, reviewWord)])));
 
     let result = rateCurrentItem(state, 'forgot');
     assert.deepEqual(result.commit, { type: 'none' });
@@ -72,7 +77,7 @@ describe('session state', () => {
       terminalRating: null,
     });
     assert.equal(result.state.answeredCount, 6);
-    assert.deepEqual(getQueueItems(result.state.queue), []);
+    assert.equal(getSchedulerLength(result.state.scheduler), 0);
     assert.equal(result.state.reviewProgress[reviewItem.id], undefined);
   });
 
@@ -82,12 +87,12 @@ describe('session state', () => {
     const reverseItem = createItem({ id: 'word-3-reverse', wordId: learningWord.id, direction: 'reverse' });
 
     let state = markCurrentItemStarted(
-      createSessionState([joinItem(forwardItem, learningWord), joinItem(reverseItem, learningWord)]),
+      createSessionState(toBuckets([joinItem(forwardItem, learningWord), joinItem(reverseItem, learningWord)])),
     );
 
     let result = rateCurrentItem(state, 'good');
     assert.deepEqual(result.commit, { type: 'none' });
-    assert.deepEqual(getQueueItems(result.state.queue).map((item) => item.reviewItem.id), [reverseItem.id]);
+    assert.deepEqual(materializeEffectiveQueue(result.state.scheduler), [reverseItem.id]);
     assert.deepEqual(result.state.learningProgress[learningWord.id], {
       coveredDirections: {
         forward: true,
@@ -110,7 +115,7 @@ describe('session state', () => {
       wordId: learningWord.id,
       success: true,
     });
-    assert.deepEqual(getQueueItems(result.state.queue), []);
+    assert.equal(getSchedulerLength(result.state.scheduler), 0);
     assert.equal(result.state.learningProgress[learningWord.id], undefined);
   });
 
@@ -120,11 +125,11 @@ describe('session state', () => {
     const reverseItem = createItem({ id: 'word-4-reverse', wordId: learningWord.id, direction: 'reverse' });
 
     let state = markCurrentItemStarted(
-      createSessionState([joinItem(forwardItem, learningWord), joinItem(reverseItem, learningWord)]),
+      createSessionState(toBuckets([joinItem(forwardItem, learningWord), joinItem(reverseItem, learningWord)])),
     );
 
     let result = rateCurrentItem(state, 'forgot');
-    assert.deepEqual(getQueueItems(result.state.queue).map((item) => item.reviewItem.id), [reverseItem.id, forwardItem.id]);
+    assert.deepEqual(materializeEffectiveQueue(result.state.scheduler), [reverseItem.id, forwardItem.id]);
 
     state = markCurrentItemStarted(result.state);
     result = rateCurrentItem(state, 'good');
@@ -137,7 +142,7 @@ describe('session state', () => {
       wordId: learningWord.id,
       success: false,
     });
-    assert.deepEqual(getQueueItems(result.state.queue), []);
+    assert.equal(getSchedulerLength(result.state.scheduler), 0);
   });
 
   test('unstudied flow requires intro completion and removes a covered direction while leaving the other in queue', () => {
@@ -145,7 +150,7 @@ describe('session state', () => {
     const forwardItem = createItem({ id: 'word-5-forward', wordId: unstudiedWord.id, direction: 'forward' });
     const reverseItem = createItem({ id: 'word-5-reverse', wordId: unstudiedWord.id, direction: 'reverse' });
 
-    let state = createSessionState([joinItem(forwardItem, unstudiedWord), joinItem(reverseItem, unstudiedWord)]);
+    let state = createSessionState(toBuckets([joinItem(forwardItem, unstudiedWord), joinItem(reverseItem, unstudiedWord)]));
     assert.equal(state.unstudiedProgress[unstudiedWord.id], undefined);
 
     state = beginUnstudiedDrill(state, unstudiedWord.id);
@@ -163,7 +168,7 @@ describe('session state', () => {
     result = rateCurrentItem(state, 'good');
 
     assert.deepEqual(result.commit, { type: 'none' });
-    assert.deepEqual(getQueueItems(result.state.queue).map((item) => item.reviewItem.id), [reverseItem.id]);
+    assert.deepEqual(materializeEffectiveQueue(result.state.scheduler), [reverseItem.id]);
     assert.equal(result.state.unstudiedProgress[unstudiedWord.id]?.consecutiveSuccesses.forward, 3);
     assert.equal(result.state.unstudiedProgress[unstudiedWord.id]?.consecutiveSuccesses.reverse, 2);
   });
@@ -171,7 +176,7 @@ describe('session state', () => {
   test('marking the current item started records that it has been shown once', () => {
     const reviewWord = createWord({ id: 'word-6', status: 'review' });
     const reviewItem = createItem({ id: 'word-6-forward', wordId: reviewWord.id, direction: 'forward' });
-    const state = createSessionState([joinItem(reviewItem, reviewWord)]);
+    const state = createSessionState(toBuckets([joinItem(reviewItem, reviewWord)]));
 
     const nextState = markCurrentItemStarted(state);
 
@@ -179,22 +184,23 @@ describe('session state', () => {
     assert.deepEqual(markCurrentItemStarted(nextState).startedItemIds, [reviewItem.id]);
   });
 
-  test('beginDrainSession completes immediately when no open work exists', () => {
+  test('beginDrainSession keeps the currently active item when no open work exists', () => {
     const reviewWord = createWord({ id: 'word-drain', status: 'review' });
     const reviewItem = createItem({ id: 'word-drain-forward', wordId: reviewWord.id, direction: 'forward' });
-    const state = createSessionState([joinItem(reviewItem, reviewWord)]);
+    const state = createSessionState(toBuckets([joinItem(reviewItem, reviewWord)]));
 
     const drainedState = beginDrainSession(state);
 
-    assert.equal(drainedState.phase, 'completed');
-    assert.deepEqual(getQueueItems(drainedState.queue), []);
+    assert.equal(drainedState.phase, 'draining');
+    assert.equal(getSchedulerLength(drainedState.scheduler), 1);
+    assert.deepEqual(materializeEffectiveQueue(drainedState.scheduler), [reviewItem.id]);
   });
 
   test('beginDrainSession throws when the session is not active', () => {
     const reviewWord = createWord({ id: 'word-drain-repeat', status: 'review' });
     const reviewItem = createItem({ id: 'word-drain-repeat-forward', wordId: reviewWord.id, direction: 'forward' });
     const completedState = {
-      ...createSessionState([joinItem(reviewItem, reviewWord)]),
+      ...createSessionState(toBuckets([joinItem(reviewItem, reviewWord)])),
       phase: 'completed' as const,
     };
 
@@ -213,17 +219,17 @@ describe('session state', () => {
     const untouchedOtherWord = createItem({ id: 'word-11-forward', wordId: otherWord.id, direction: 'forward' });
 
     const state = markCurrentItemStarted(
-      createSessionState([
+      createSessionState(toBuckets([
         joinItem(firstItem, reviewWord),
         joinItem(untouchedSibling, siblingWord),
         joinItem(untouchedOtherWord, otherWord),
-      ]),
+      ])),
     );
 
     const drainedState = beginDrainSession(state);
 
     assert.equal(drainedState.phase, 'draining');
-    assert.deepEqual(getQueueItems(drainedState.queue).map((item) => item.reviewItem.id), [firstItem.id]);
+    assert.deepEqual(materializeEffectiveQueue(drainedState.scheduler), [firstItem.id]);
   });
 
   test('beginDrainSession keeps a review item that is in reinforcement', () => {
@@ -233,7 +239,7 @@ describe('session state', () => {
     const untouchedFuture = createItem({ id: 'word-13-forward', wordId: futureWord.id, direction: 'forward' });
 
     let state = markCurrentItemStarted(
-      createSessionState([joinItem(reviewItem, reviewWord), joinItem(untouchedFuture, futureWord)]),
+      createSessionState(toBuckets([joinItem(reviewItem, reviewWord), joinItem(untouchedFuture, futureWord)])),
     );
     const result = rateCurrentItem(state, 'forgot');
     state = result.state;
@@ -241,7 +247,7 @@ describe('session state', () => {
     const drainedState = beginDrainSession(state);
 
     assert.equal(drainedState.phase, 'draining');
-    assert.deepEqual(getQueueItems(drainedState.queue).map((item) => item.reviewItem.id), [reviewItem.id]);
+    assert.deepEqual(materializeEffectiveQueue(drainedState.scheduler), [untouchedFuture.id, reviewItem.id]);
     assert.deepEqual(drainedState.reviewProgress[reviewItem.id], {
       failureCount: 1,
       reinforcementStreak: 0,
@@ -250,17 +256,17 @@ describe('session state', () => {
 
   test('beginDrainSession keeps open work for a partially covered learning word', () => {
     const learningWord = createWord({ id: 'word-14', status: 'learning' });
-    const futureWord = createWord({ id: 'word-15', status: 'review' });
+    const futureWord = createWord({ id: 'word-15', status: 'learning' });
     const forwardItem = createItem({ id: 'word-14-forward', wordId: learningWord.id, direction: 'forward' });
     const reverseItem = createItem({ id: 'word-14-reverse', wordId: learningWord.id, direction: 'reverse' });
     const untouchedFuture = createItem({ id: 'word-15-forward', wordId: futureWord.id, direction: 'forward' });
 
     let state = markCurrentItemStarted(
-      createSessionState([
+      createSessionState(toBuckets([
         joinItem(forwardItem, learningWord),
         joinItem(reverseItem, learningWord),
         joinItem(untouchedFuture, futureWord),
-      ]),
+      ])),
     );
     const result = rateCurrentItem(state, 'good');
     state = markCurrentItemStarted(result.state);
@@ -268,7 +274,7 @@ describe('session state', () => {
     const drainedState = beginDrainSession(state);
 
     assert.equal(drainedState.phase, 'draining');
-    assert.deepEqual(getQueueItems(drainedState.queue).map((item) => item.reviewItem.id), [reverseItem.id]);
+    assert.deepEqual(materializeEffectiveQueue(drainedState.scheduler), [reverseItem.id]);
     assert.deepEqual(drainedState.learningProgress[learningWord.id], {
       coveredDirections: {
         forward: true,
@@ -287,16 +293,16 @@ describe('session state', () => {
 
   test('beginDrainSession keeps open work for a partially progressed unstudied word', () => {
     const unstudiedWord = createWord({ id: 'word-16', status: 'unstudied' });
-    const futureWord = createWord({ id: 'word-17', status: 'review' });
+    const futureWord = createWord({ id: 'word-17', status: 'unstudied' });
     const forwardItem = createItem({ id: 'word-16-forward', wordId: unstudiedWord.id, direction: 'forward' });
     const reverseItem = createItem({ id: 'word-16-reverse', wordId: unstudiedWord.id, direction: 'reverse' });
     const untouchedFuture = createItem({ id: 'word-17-forward', wordId: futureWord.id, direction: 'forward' });
 
-    let state = createSessionState([
+    let state = createSessionState(toBuckets([
       joinItem(forwardItem, unstudiedWord),
       joinItem(reverseItem, unstudiedWord),
       joinItem(untouchedFuture, futureWord),
-    ]);
+    ]));
     state = beginUnstudiedDrill(state, unstudiedWord.id);
     state = markCurrentItemStarted(state);
     const result = rateCurrentItem(state, 'good');
@@ -305,21 +311,18 @@ describe('session state', () => {
     const drainedState = beginDrainSession(state);
 
     assert.equal(drainedState.phase, 'draining');
-    assert.deepEqual(getQueueItems(drainedState.queue).map((item) => item.reviewItem.id), [reverseItem.id, forwardItem.id]);
-    assert.deepEqual(drainedState.unstudiedProgress[unstudiedWord.id], {
-      introComplete: true,
-      consecutiveSuccesses: {
-        forward: 1,
-        reverse: 0,
-      },
-    });
+    assert.deepEqual(materializeEffectiveQueue(drainedState.scheduler), [forwardItem.id, reverseItem.id]);
+    assert.equal(drainedState.unstudiedProgress[unstudiedWord.id]?.introComplete, true);
+    const forwardSuccesses = drainedState.unstudiedProgress[unstudiedWord.id]?.consecutiveSuccesses.forward ?? 0;
+    const reverseSuccesses = drainedState.unstudiedProgress[unstudiedWord.id]?.consecutiveSuccesses.reverse ?? 0;
+    assert.equal(forwardSuccesses + reverseSuccesses, 1);
   });
 
   test('draining session completes after the last open item is committed', () => {
     const reviewWord = createWord({ id: 'word-18', status: 'review' });
     const reviewItem = createItem({ id: 'word-18-forward', wordId: reviewWord.id, direction: 'forward' });
 
-    let state = markCurrentItemStarted(createSessionState([joinItem(reviewItem, reviewWord)]));
+    let state = markCurrentItemStarted(createSessionState(toBuckets([joinItem(reviewItem, reviewWord)])));
     state = beginDrainSession(state);
 
     const result = rateCurrentItem(state, 'good');
@@ -330,7 +333,7 @@ describe('session state', () => {
       failureCount: 0,
       terminalRating: 'good',
     });
-    assert.deepEqual(getQueueItems(result.state.queue), []);
+    assert.equal(getSchedulerLength(result.state.scheduler), 0);
     assert.equal(result.state.phase, 'completed');
   });
 
@@ -338,7 +341,7 @@ describe('session state', () => {
     const reviewWord = createWord({ id: 'word-19', status: 'review' });
     const reviewItem = createItem({ id: 'word-19-forward', wordId: reviewWord.id, direction: 'forward' });
 
-    const state = markCurrentItemStarted(createSessionState([joinItem(reviewItem, reviewWord)]));
+    const state = markCurrentItemStarted(createSessionState(toBuckets([joinItem(reviewItem, reviewWord)])));
     const result = rateCurrentItem(state, 'good');
 
     assert.deepEqual(result.commit, {
@@ -347,7 +350,7 @@ describe('session state', () => {
       failureCount: 0,
       terminalRating: 'good',
     });
-    assert.deepEqual(getQueueItems(result.state.queue), []);
+    assert.equal(getSchedulerLength(result.state.scheduler), 0);
     assert.equal(result.state.phase, 'completed');
   });
 
@@ -356,62 +359,61 @@ describe('session state', () => {
     const reviewItem = createItem({ id: 'word-7-forward', wordId: reviewWord.id, direction: 'forward' });
 
     assert.throws(
-      () => rateCurrentItem(createSessionState([joinItem(reviewItem, reviewWord)]), 'good'),
+      () => rateCurrentItem(createSessionState(toBuckets([joinItem(reviewItem, reviewWord)])), 'good'),
       /current item must be marked started before rating/i,
     );
   });
 
   test('rating with an empty queue throws loudly', () => {
     assert.throws(
-      () => rateCurrentItem(createSessionState([]), 'good'),
+      () => rateCurrentItem(createSessionState(toBuckets([])), 'good'),
       /cannot rate the current item when the queue is empty/i,
     );
   });
 
   test('dismissing the current item prunes every queued direction for that word', () => {
-    const dismissedWord = createWord({ id: 'word-dismiss', status: 'learning' });
-    const survivorWord = createWord({ id: 'word-survivor', status: 'review' });
-    const state = createSessionState([
+    const dismissedWord = createWord({ id: 'word-dismiss', status: 'review' });
+    const survivorWord = createWord({ id: 'word-survivor', status: 'learning' });
+    const state = createSessionState(toBuckets([
       joinItem(createItem({ id: 'word-dismiss-forward', wordId: dismissedWord.id, direction: 'forward' }), dismissedWord),
       joinItem(createItem({ id: 'word-dismiss-reverse', wordId: dismissedWord.id, direction: 'reverse' }), dismissedWord),
       joinItem(createItem({ id: 'word-survivor-forward', wordId: survivorWord.id, direction: 'forward' }), survivorWord),
-    ]);
+    ]));
 
     const result = dismissCurrentItemFromSession(state);
 
     assert.deepEqual(result.dismiss, {
       type: 'dismiss-word-from-study',
       wordId: 'word-dismiss',
-      status: 'learning',
+      status: 'review',
     });
-    assert.deepEqual(getQueueItems(result.state.queue).map((item) => item.reviewItem.id), ['word-survivor-forward']);
+    assert.deepEqual(materializeEffectiveQueue(result.state.scheduler), ['word-survivor-forward']);
     assert.deepEqual(result.state.dismissedWordIds, ['word-dismiss']);
   });
 
   test('dismissing head keeps the next non-dismissed item as the new head even when a later item also matches', () => {
     const dismissedWord = createWord({ id: 'word-r1', status: 'review' });
     const survivorWord = createWord({ id: 'word-r2', status: 'review' });
-    const state = createSessionState([
+    const state = createSessionState(toBuckets([
       joinItem(createItem({ id: 'r1', wordId: dismissedWord.id, direction: 'forward' }), dismissedWord),
       joinItem(createItem({ id: 'r2', wordId: survivorWord.id, direction: 'forward' }), survivorWord),
       joinItem(createItem({ id: 'r3', wordId: dismissedWord.id, direction: 'reverse' }), dismissedWord),
-    ]);
+    ]));
 
     const result = dismissCurrentItemFromSession(state);
 
-    assert.equal(result.state.queue.head?.item.reviewItem.id, 'r2');
-    assert.deepEqual(getQueueItems(result.state.queue).map((item) => item.reviewItem.id), ['r2']);
+    assert.deepEqual(materializeEffectiveQueue(result.state.scheduler), ['r2']);
   });
 
   test('dismissing clears in-flight progress for the dismissed word and related item starts', () => {
-    const dismissedWord = createWord({ id: 'word-dismiss-progress', status: 'unstudied' });
-    const survivorWord = createWord({ id: 'word-survivor-progress', status: 'review' });
+    const dismissedWord = createWord({ id: 'word-dismiss-progress', status: 'review' });
+    const survivorWord = createWord({ id: 'word-survivor-progress', status: 'learning' });
     const dismissedForward = createItem({ id: 'word-dismiss-progress-forward', wordId: dismissedWord.id, direction: 'forward' });
     const dismissedReverse = createItem({ id: 'word-dismiss-progress-reverse', wordId: dismissedWord.id, direction: 'reverse' });
     const survivorItem = createItem({ id: 'word-survivor-progress-forward', wordId: survivorWord.id, direction: 'forward' });
 
     const state = {
-      ...createSessionState([joinItem(dismissedForward, dismissedWord), joinItem(dismissedReverse, dismissedWord), joinItem(survivorItem, survivorWord)]),
+      ...createSessionState(toBuckets([joinItem(dismissedForward, dismissedWord), joinItem(dismissedReverse, dismissedWord), joinItem(survivorItem, survivorWord)])),
       startedItemIds: [dismissedForward.id, survivorItem.id],
       learningProgress: {
         'word-dismiss-progress': {
@@ -441,14 +443,14 @@ describe('session state', () => {
 
   test('dismissing the last queued word completes the session phase', () => {
     const dismissedWord = createWord({ id: 'word-dismiss-last', status: 'review' });
-    const state = createSessionState([
+    const state = createSessionState(toBuckets([
       joinItem(createItem({ id: 'word-dismiss-last-forward', wordId: dismissedWord.id, direction: 'forward' }), dismissedWord),
-    ]);
+    ]));
 
     const result = dismissCurrentItemFromSession(state);
 
     assert.equal(result.state.phase, 'completed');
-    assert.deepEqual(getQueueItems(result.state.queue), []);
+    assert.equal(getSchedulerLength(result.state.scheduler), 0);
   });
 });
 
@@ -488,4 +490,29 @@ function createItem(overrides: Partial<ReviewItem> & Pick<ReviewItem, 'id' | 'wo
     nextDueAt: overrides.nextDueAt ?? null,
     easeFactor: overrides.easeFactor ?? 2.5,
   };
+}
+
+function toBuckets(items: SessionItemWithWord[]): SessionItemBuckets {
+  return {
+    review: items.filter((item) => item.word.status === 'review'),
+    learning: items.filter((item) => item.word.status === 'learning'),
+    unstudied: items.filter((item) => item.word.status === 'unstudied'),
+  };
+}
+
+function materializeEffectiveQueue(scheduler: Parameters<typeof getSchedulerActiveItem>[0]): string[] {
+  const copy = cloneSessionScheduler(scheduler);
+  const out: string[] = [];
+
+  while (getSchedulerLength(copy) > 0) {
+    const active = getSchedulerActiveItem(copy);
+    if (!active) {
+      break;
+    }
+
+    out.push(active.reviewItem.id);
+    consumeActiveSchedulerItem(copy);
+  }
+
+  return out;
 }

@@ -19,6 +19,7 @@ Noncritical improvements worth remembering as the project evolves.
 - Show clearer post-answer feedback, such as the next due date after a rating is submitted.
 - Consider a session summary screen after all due cards are completed.
 - Design and implement a mid-session `Undo` action for the most recent rating/advance, so fast keyboard inputs (especially `Space`) are recoverable.
+- Revisit `startedItemIds` in session state. It currently mostly gates "must be shown before rating" plus dismiss/history cleanup; evaluate whether this can be simplified to a lighter per-active-item shown marker.
 
 ## Data and Operations
 

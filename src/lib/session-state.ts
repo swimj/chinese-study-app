@@ -1,4 +1,17 @@
-import type { ReviewItem, ReviewRating, SessionItemWithWord, Word } from '../types';
+import type { ReviewItem, ReviewRating, SessionItemBuckets, SessionItemWithWord, Word } from '../types';
+import {
+  consumeActiveSchedulerItem,
+  createSessionScheduler,
+  getSchedulerActiveItem,
+  getSchedulerItems,
+  getSchedulerLength,
+  nextScheduler,
+  pruneSchedulerItems,
+  removeSchedulerWord,
+  removeUnstudiedCandidateByReviewItemId,
+  rotateActiveSchedulerItem,
+  type SessionScheduler,
+} from './session-scheduler';
 
 type Direction = ReviewItem['direction'];
 
@@ -20,20 +33,9 @@ export type ReviewItemProgress = {
 
 export type SessionPhase = 'active' | 'draining' | 'completed';
 
-type SessionQueueNode = {
-  item: SessionItemWithWord;
-  next: SessionQueueNode | null;
-};
-
-export type SessionQueue = {
-  head: SessionQueueNode | null;
-  tail: SessionQueueNode | null;
-  length: number;
-};
-
 export type SessionState = {
   phase: SessionPhase;
-  queue: SessionQueue;
+  scheduler: SessionScheduler;
   answeredCount: number;
   startedItemIds: string[];
   dismissedWordIds: string[];
@@ -78,10 +80,12 @@ export type SessionDismissTransitionResult = {
   dismiss: SessionDismissIntent;
 };
 
-export function createSessionState(items: SessionItemWithWord[]): SessionState {
+export function createSessionState(buckets: SessionItemBuckets): SessionState {
+  const scheduler = createSessionScheduler({ buckets });
+
   return {
     phase: 'active',
-    queue: createSessionQueue(items),
+    scheduler,
     answeredCount: 0,
     startedItemIds: [],
     dismissedWordIds: [],
@@ -91,55 +95,8 @@ export function createSessionState(items: SessionItemWithWord[]): SessionState {
   };
 }
 
-export function createSessionQueue(items: SessionItemWithWord[]): SessionQueue {
-  if (items.length === 0) {
-    return {
-      head: null,
-      tail: null,
-      length: 0,
-    };
-  }
-
-  let head: SessionQueueNode | null = null;
-  let tail: SessionQueueNode | null = null;
-
-  for (const item of items) {
-    const node: SessionQueueNode = { item, next: null };
-    if (!head) {
-      head = node;
-      tail = node;
-      continue;
-    }
-
-    tail!.next = node;
-    tail = node;
-  }
-
-  return {
-    head,
-    tail,
-    length: items.length,
-  };
-}
-
-export function getCurrentQueueItem(queue: SessionQueue): SessionItemWithWord | undefined {
-  return queue.head?.item;
-}
-
-export function getQueueItems(queue: SessionQueue): SessionItemWithWord[] {
-  const items: SessionItemWithWord[] = [];
-  let currentNode = queue.head;
-
-  while (currentNode) {
-    items.push(currentNode.item);
-    currentNode = currentNode.next;
-  }
-
-  return items;
-}
-
 export function markCurrentItemStarted(state: SessionState): SessionState {
-  const currentItem = getCurrentQueueItem(state.queue);
+  const currentItem = getSchedulerActiveItem(state.scheduler);
   if (!currentItem || state.startedItemIds.includes(currentItem.reviewItem.id)) {
     return state;
   }
@@ -164,7 +121,7 @@ export function beginUnstudiedDrill(state: SessionState, wordId: string): Sessio
 }
 
 export function dismissCurrentItemFromSession(state: SessionState): SessionDismissTransitionResult {
-  const currentItem = getCurrentQueueItem(state.queue);
+  const currentItem = getSchedulerActiveItem(state.scheduler);
 
   if (!currentItem) {
     return {
@@ -174,57 +131,19 @@ export function dismissCurrentItemFromSession(state: SessionState): SessionDismi
   }
 
   const dismissedWordId = currentItem.word.id;
-  const dismissedReviewItemIds: Record<string, true> = {};
-  let nextHead = state.queue.head;
-  let nextTail = state.queue.tail;
-  let nextLength = state.queue.length;
-  let previousNode: SessionQueueNode | null = null;
-  let currentNode = state.queue.head;
-
-  // One-pass queue pruning: only unlink nodes that match the dismissed word id.
-  while (currentNode) {
-    const nextNode = currentNode.next;
-    const shouldDismiss = currentNode.item.word.id === dismissedWordId;
-
-    if (!shouldDismiss) {
-      previousNode = currentNode;
-      currentNode = nextNode;
-      continue;
-    }
-
-    dismissedReviewItemIds[currentNode.item.reviewItem.id] = true;
-    nextLength -= 1;
-
-    // previousNodeNull is the special case when we need to remove the head
-    // which actually is every time given the semantics of dismissing the current item,
-    // that said no need to be overly fancy
-    if (previousNode) {
-      previousNode.next = nextNode;
-    } else {
-      nextHead = nextNode;
-    }
-
-    if (currentNode === nextTail) {
-      nextTail = previousNode;
-    }
-
-    currentNode.next = null;
-    currentNode = nextNode;
-  }
+  const dismissRemoval = removeSchedulerWord(state.scheduler, dismissedWordId, currentItem.word.status);
+  const dismissedReviewItemIds = new Set(dismissRemoval.removedReviewItemIds);
+  const nextScheduler = dismissRemoval.scheduler;
 
   const nextReviewProgress = Object.fromEntries(
-    Object.entries(state.reviewProgress).filter(([reviewItemId]) => dismissedReviewItemIds[reviewItemId] !== true),
+    Object.entries(state.reviewProgress).filter(([reviewItemId]) => !dismissedReviewItemIds.has(reviewItemId)),
   );
 
   const nextState: SessionState = {
     ...state,
-    phase: nextLength === 0 ? 'completed' : state.phase,
-    queue: {
-      head: nextHead,
-      tail: nextTail,
-      length: nextLength,
-    },
-    startedItemIds: state.startedItemIds.filter((reviewItemId) => dismissedReviewItemIds[reviewItemId] !== true),
+    phase: getSchedulerLength(nextScheduler) === 0 ? 'completed' : state.phase,
+    scheduler: nextScheduler,
+    startedItemIds: state.startedItemIds.filter((reviewItemId) => !dismissedReviewItemIds.has(reviewItemId)),
     dismissedWordIds: state.dismissedWordIds.includes(dismissedWordId)
       ? state.dismissedWordIds
       : [...state.dismissedWordIds, dismissedWordId],
@@ -251,9 +170,9 @@ export function beginDrainSession(state: SessionState): SessionState {
     ...Object.keys(state.unstudiedProgress),
   ]);
   const openReviewItemIds = new Set<string>(Object.keys(state.reviewProgress));
-  const queueItems = getQueueItems(state.queue);
-  const filteredQueue = queueItems.filter((item, index) => {
-    if (index === 0 && state.startedItemIds.includes(item.reviewItem.id)) {
+  const activeReviewItemId = getSchedulerActiveItem(state.scheduler)?.reviewItem.id ?? null;
+  const nextScheduler = pruneSchedulerItems(state.scheduler, (item, _index) => {
+    if (activeReviewItemId === item.reviewItem.id) {
       return true;
     }
 
@@ -270,8 +189,8 @@ export function beginDrainSession(state: SessionState): SessionState {
 
   return {
     ...state,
-    phase: filteredQueue.length === 0 ? 'completed' : 'draining',
-    queue: createSessionQueue(filteredQueue),
+    phase: getSchedulerLength(nextScheduler) === 0 ? 'completed' : 'draining',
+    scheduler: nextScheduler,
   };
 }
 
@@ -279,7 +198,7 @@ export function rateCurrentItem(
   state: SessionState,
   rating: ReviewRating,
 ): SessionTransitionResult {
-  const currentItem = getCurrentQueueItem(state.queue) ?? assertCurrentItemPresent(state, rating);
+  const currentItem = getSchedulerActiveItem(state.scheduler) ?? assertCurrentItemPresent(state, rating);
 
   assertCurrentItemStarted(state, currentItem, rating);
 
@@ -311,7 +230,7 @@ function handleReviewAttempt(
       state: finalizePostRatingState({
         ...state,
         answeredCount: state.answeredCount + 1,
-        queue: dequeueCurrentItem(state.queue),
+        scheduler: consumeActiveSchedulerItem(state.scheduler),
         reviewProgress: removeKey(state.reviewProgress, reviewItem.id),
       }),
       commit: {
@@ -333,7 +252,7 @@ function handleReviewAttempt(
       state: finalizePostRatingState({
         ...state,
         answeredCount: state.answeredCount + 1,
-        queue: dequeueCurrentItem(state.queue),
+        scheduler: consumeActiveSchedulerItem(state.scheduler),
         reviewProgress: removeKey(state.reviewProgress, reviewItem.id),
       }),
       commit: {
@@ -349,7 +268,7 @@ function handleReviewAttempt(
     state: finalizePostRatingState({
       ...state,
       answeredCount: state.answeredCount + 1,
-      queue: rotateCurrentItem(state.queue),
+      scheduler: rotateActiveSchedulerItem(state.scheduler),
       reviewProgress: {
         ...state.reviewProgress,
         [reviewItem.id]: nextProgress,
@@ -389,7 +308,10 @@ function handleLearningAttempt(
       state: finalizePostRatingState({
         ...state,
         answeredCount: state.answeredCount + 1,
-        queue: rating === 'good' ? dequeueCurrentItem(state.queue) : rotateCurrentItem(state.queue),
+        scheduler:
+          rating === 'good'
+            ? consumeActiveSchedulerItem(state.scheduler)
+            : rotateActiveSchedulerItem(state.scheduler),
         learningProgress: {
           ...state.learningProgress,
           [word.id]: nextProgress,
@@ -403,7 +325,7 @@ function handleLearningAttempt(
     state: finalizePostRatingState({
       ...state,
       answeredCount: state.answeredCount + 1,
-      queue: dequeueCurrentItem(state.queue),
+      scheduler: consumeActiveSchedulerItem(state.scheduler),
       learningProgress: removeKey(state.learningProgress, word.id),
     }),
     commit: {
@@ -439,14 +361,15 @@ function handleUnstudiedAttempt(
 
   if (!done) {
     const directionCovered = nextProgress.consecutiveSuccesses[direction] >= 3;
+    const schedulerAfterCoverage = directionCovered
+      ? removeUnstudiedCandidateByReviewItemId(state.scheduler, item.reviewItem.id)
+      : state.scheduler;
 
     return {
       state: finalizePostRatingState({
         ...state,
         answeredCount: state.answeredCount + 1,
-        queue: directionCovered
-          ? dequeueCurrentItem(state.queue)
-          : rotateCurrentItem(state.queue),
+        scheduler: nextScheduler(schedulerAfterCoverage),
         unstudiedProgress: {
           ...state.unstudiedProgress,
           [word.id]: nextProgress,
@@ -457,12 +380,12 @@ function handleUnstudiedAttempt(
   }
 
   return {
-    state: finalizePostRatingState({
-      ...state,
-      answeredCount: state.answeredCount + 1,
-      queue: dequeueCurrentItem(state.queue),
-      unstudiedProgress: removeKey(state.unstudiedProgress, word.id),
-    }),
+      state: finalizePostRatingState({
+        ...state,
+        answeredCount: state.answeredCount + 1,
+        scheduler: removeSchedulerWord(state.scheduler, word.id, word.status).scheduler,
+        unstudiedProgress: removeKey(state.unstudiedProgress, word.id),
+      }),
     commit: {
       type: 'commit-unstudied-word-session',
       wordId: word.id,
@@ -497,45 +420,6 @@ export function createInitialUnstudiedProgress(): UnstudiedWordProgress {
   };
 }
 
-function dequeueCurrentItem(queue: SessionQueue): SessionQueue {
-  if (queue.length === 0) {
-    return queue;
-  }
-
-  const currentHead = queue.head;
-  if (!currentHead) {
-    return queue;
-  }
-
-  queue.head = currentHead.next;
-  if (queue.head === null) {
-    queue.tail = null;
-  }
-  queue.length -= 1;
-
-  currentHead.next = null;
-  return queue;
-}
-
-function rotateCurrentItem(queue: SessionQueue): SessionQueue {
-  if (queue.length <= 1) {
-    return queue;
-  }
-
-  const currentHead = queue.head;
-  const currentTail = queue.tail;
-  if (!currentHead || !currentTail || !currentHead.next) {
-    return queue;
-  }
-
-  queue.head = currentHead.next;
-  currentHead.next = null;
-  currentTail.next = currentHead;
-  queue.tail = currentHead;
-
-  return queue;
-}
-
 function removeKey<T>(record: Record<string, T>, key: string) {
   const copy = { ...record };
   delete copy[key];
@@ -543,7 +427,7 @@ function removeKey<T>(record: Record<string, T>, key: string) {
 }
 
 function finalizePostRatingState(state: SessionState): SessionState {
-  if ((state.phase === 'active' || state.phase === 'draining') && state.queue.length === 0) {
+  if ((state.phase === 'active' || state.phase === 'draining') && getSchedulerLength(state.scheduler) === 0) {
     return {
       ...state,
       phase: 'completed',
@@ -563,7 +447,7 @@ function assertCurrentItemStarted(state: SessionState, currentItem: SessionItemW
     rating,
     currentItemId: currentItem.reviewItem.id,
     currentWordId: currentItem.word.id,
-    queueIds: getQueueItems(state.queue).map((item) => item.reviewItem.id),
+    queueIds: getSchedulerItems(state.scheduler).map((item) => item.reviewItem.id),
     startedItemIds: state.startedItemIds,
     answeredCount: state.answeredCount,
     phase: state.phase,
@@ -577,7 +461,7 @@ function assertCurrentItemPresent(state: SessionState, rating: ReviewRating): ne
   const debugInfo = {
     message: 'Attempted to rate a session item when the active queue was empty',
     rating,
-    queueIds: getQueueItems(state.queue).map((item) => item.reviewItem.id),
+    queueIds: getSchedulerItems(state.scheduler).map((item) => item.reviewItem.id),
     startedItemIds: state.startedItemIds,
     answeredCount: state.answeredCount,
     phase: state.phase,
@@ -595,7 +479,7 @@ function assertDrainablePhase(state: SessionState) {
   const debugInfo = {
     message: 'Attempted to begin drain mode from a non-active session phase',
     phase: state.phase,
-    queueIds: getQueueItems(state.queue).map((item) => item.reviewItem.id),
+    queueIds: getSchedulerItems(state.scheduler).map((item) => item.reviewItem.id),
     startedItemIds: state.startedItemIds,
     answeredCount: state.answeredCount,
   };
@@ -616,7 +500,7 @@ function assertUnreachableWordStatus(
     currentItemId: currentItem.id,
     currentWordId: currentItem.wordId,
     currentWordStatus: currentWord.status,
-    queueIds: getQueueItems(state.queue).map((item) => item.reviewItem.id),
+    queueIds: getSchedulerItems(state.scheduler).map((item) => item.reviewItem.id),
     startedItemIds: state.startedItemIds,
     answeredCount: state.answeredCount,
     phase: state.phase,

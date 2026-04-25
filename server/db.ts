@@ -116,7 +116,13 @@ type HomeOverview = {
 };
 
 type SessionPayload = {
-  items: SessionItemWithWord[];
+  buckets: SessionItemBuckets;
+};
+
+type SessionItemBuckets = {
+  review: SessionItemWithWord[];
+  learning: SessionItemWithWord[];
+  unstudied: SessionItemWithWord[];
 };
 
 type SessionItemWithWordRow = {
@@ -168,6 +174,7 @@ export type {
   ReviewPassRating,
   ReviewRating,
   SessionItemWithWord,
+  SessionItemBuckets,
   SessionPayload,
   PriorityWord,
   PriorityWordsPayload,
@@ -437,13 +444,9 @@ export function addUnstudiedUserPriorityByHanzi(hanzi: string): PriorityWord[] {
   return matches.map((match) => getUnstudiedPriorityWordById(match.id));
 }
 
-export function getSessionItems(): ReviewItem[] {
-  return getSessionItemsWithWords().map((item) => item.reviewItem);
-}
-
 export function getSessionPayload(): SessionPayload {
   return {
-    items: getSessionItemsWithWords(),
+    buckets: getSessionItemBucketsWithWords(),
   };
 }
 
@@ -1337,10 +1340,10 @@ function mapReviewItemRow(row: ReviewItemRow): ReviewItem {
   };
 }
 
-function getSessionItemsWithWords(): SessionItemWithWord[] {
+function getSessionItemBucketsWithWords(): SessionItemBuckets {
   const now = new Date().toISOString();
   const today = getTodayKey();
-  const dueReviewRows = db
+  const reviewRows = db
     .prepare(`
       SELECT
         review_items.id,
@@ -1473,7 +1476,11 @@ function getSessionItemsWithWords(): SessionItemWithWord[] {
     `)
     .all(DAILY_NEW_WORD_LIMIT) as SessionItemWithWordRow[];
 
-  return [...dueReviewRows, ...learningRows, ...unstudiedRows].map(mapSessionItemWithWordRow);
+  return {
+    review: reviewRows.map(mapSessionItemWithWordRow),
+    learning: learningRows.map(mapSessionItemWithWordRow),
+    unstudied: unstudiedRows.map(mapSessionItemWithWordRow),
+  };
 }
 
 function mapSessionItemWithWordRow(row: SessionItemWithWordRow): SessionItemWithWord {
