@@ -103,6 +103,11 @@ type ReviewItemRow = {
   ease_factor: number;
 };
 
+type DailyNewWordIntakeRow = {
+  day_key: string;
+  new_study_count: number;
+};
+
 type SeedData = {
   words: Word[];
   reviewItems: ReviewItem[];
@@ -444,9 +449,10 @@ export function addUnstudiedUserPriorityByHanzi(hanzi: string): PriorityWord[] {
   return matches.map((match) => getUnstudiedPriorityWordById(match.id));
 }
 
-export function getSessionPayload(): SessionPayload {
+export function getSessionPayload(studyDayKey: string): SessionPayload {
+  assertStudyDayKey(studyDayKey);
   return {
-    buckets: getSessionItemBucketsWithWords(),
+    buckets: getSessionItemBucketsWithWords(studyDayKey),
   };
 }
 
@@ -491,7 +497,8 @@ export function getWordStatusCounts(): Record<WordStatus, number> {
   return counts;
 }
 
-export function getHomeOverview(): HomeOverview {
+export function getHomeOverview(studyDayKey: string): HomeOverview {
+  assertStudyDayKey(studyDayKey);
   const dueReviewItemCount = db
     .prepare(`
       SELECT COUNT(*) as count
@@ -523,7 +530,7 @@ export function getHomeOverview(): HomeOverview {
         LIMIT ?
       )
     `)
-    .get(DAILY_NEW_WORD_LIMIT) as { count: number };
+    .get(getRemainingDailyNewWordSlots(studyDayKey)) as { count: number };
 
   return {
     dueReviewItemCount: dueReviewItemCount.count,
@@ -536,15 +543,16 @@ export function getHomeOverview(): HomeOverview {
   };
 }
 
-// what is this used for / when was it added?
-export function getLearningPolicy() {
+export function getLearningPolicy(studyDayKey: string) {
+  assertStudyDayKey(studyDayKey);
   return {
     dailyNewWordLimit: DAILY_NEW_WORD_LIMIT,
-    learningCoverageDate: getTodayKey(),
+    learningCoverageDate: studyDayKey,
   };
 }
 
-export function completeUnstudiedWordSession(wordId: string): Word {
+export function completeUnstudiedWordSession(wordId: string, studyDayKey: string): Word {
+  assertStudyDayKey(studyDayKey);
   const existingWord = db
     .prepare(`
       SELECT
@@ -585,14 +593,24 @@ export function completeUnstudiedWordSession(wordId: string): Word {
 
   const today = getTodayKey();
 
-  db.prepare(`
-    UPDATE words
-    SET status = 'learning',
-        learning_streak = 0,
-        last_learning_success_on = NULL,
-        last_learning_covered_on = ?
-    WHERE id = ?
-  `).run(today, wordId);
+  db.exec('BEGIN');
+
+  try {
+    db.prepare(`
+      UPDATE words
+      SET status = 'learning',
+          learning_streak = 0,
+          last_learning_success_on = NULL,
+          last_learning_covered_on = ?
+      WHERE id = ?
+    `).run(today, wordId);
+
+    incrementDailyNewStudyCount(studyDayKey);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
 
   const updatedWord = db
     .prepare(`
@@ -853,6 +871,13 @@ function applyLightweightSchemaMigrations() {
     );
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS daily_new_word_intake (
+      day_key TEXT PRIMARY KEY,
+      new_study_count INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+
   const userPriorityColumns = db.prepare(`PRAGMA table_info(user_word_priority)`).all() as Array<{ name: string }>;
   const hasPriorityTier = userPriorityColumns.some((column) => column.name === 'priority_tier');
   if (!hasPriorityTier) {
@@ -955,6 +980,11 @@ function createSchema() {
       priority_tier INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE daily_new_word_intake (
+      day_key TEXT PRIMARY KEY,
+      new_study_count INTEGER NOT NULL DEFAULT 0
+    );
   `);
 
   ensureIndexes();
@@ -1001,6 +1031,10 @@ function validateSchema() {
     'force_top',
     'priority_tier',
     'updated_at',
+  ]);
+  assertTableColumns('daily_new_word_intake', [
+    'day_key',
+    'new_study_count',
   ]);
 }
 
@@ -1340,9 +1374,10 @@ function mapReviewItemRow(row: ReviewItemRow): ReviewItem {
   };
 }
 
-function getSessionItemBucketsWithWords(): SessionItemBuckets {
+function getSessionItemBucketsWithWords(studyDayKey: string): SessionItemBuckets {
   const now = new Date().toISOString();
   const today = getTodayKey();
+  const remainingDailyNewWordSlots = getRemainingDailyNewWordSlots(studyDayKey);
   const reviewRows = db
     .prepare(`
       SELECT
@@ -1474,7 +1509,7 @@ function getSessionItemBucketsWithWords(): SessionItemBuckets {
           ELSE 1
         END ASC
     `)
-    .all(DAILY_NEW_WORD_LIMIT) as SessionItemWithWordRow[];
+    .all(remainingDailyNewWordSlots) as SessionItemWithWordRow[];
 
   return {
     review: reviewRows.map(mapSessionItemWithWordRow),
@@ -1686,4 +1721,40 @@ function addDaysToDateKey(dateKey: string, days: number): string {
 
 function getTodayKey() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function getRemainingDailyNewWordSlots(studyDayKey: string): number {
+  const studiedCount = getDailyNewStudyCount(studyDayKey);
+  return Math.max(0, DAILY_NEW_WORD_LIMIT - studiedCount);
+}
+
+function getDailyNewStudyCount(studyDayKey: string): number {
+  const row = db
+    .prepare(`
+      SELECT
+        day_key,
+        new_study_count
+      FROM daily_new_word_intake
+      WHERE day_key = ?
+    `)
+    .get(studyDayKey) as DailyNewWordIntakeRow | undefined;
+
+  return row?.new_study_count ?? 0;
+}
+
+function incrementDailyNewStudyCount(studyDayKey: string) {
+  db.prepare(`
+    INSERT INTO daily_new_word_intake (
+      day_key,
+      new_study_count
+    ) VALUES (?, 1)
+    ON CONFLICT(day_key) DO UPDATE SET
+      new_study_count = daily_new_word_intake.new_study_count + 1
+  `).run(studyDayKey);
+}
+
+function assertStudyDayKey(studyDayKey: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(studyDayKey)) {
+    throw new Error('Invalid study day key');
+  }
 }

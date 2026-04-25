@@ -36,6 +36,7 @@ type ReviewItemRecord = {
 type DbModule = typeof import('../server/db.ts');
 
 const today = new Date().toISOString().slice(0, 10);
+const studyDayKey = today;
 
 let dataDir = '';
 let dbPath = '';
@@ -74,6 +75,7 @@ describe('session completion', { concurrency: false }, () => {
 
   beforeEach(() => {
     sqlite.exec(`
+      DELETE FROM daily_new_word_intake;
       DELETE FROM review_items;
       DELETE FROM words;
     `);
@@ -334,7 +336,7 @@ describe('session completion', { concurrency: false }, () => {
       nextDueAt: null,
     });
 
-    const updatedWord = dbModule.completeUnstudiedWordSession('unstudied-transition-word');
+    const updatedWord = dbModule.completeUnstudiedWordSession('unstudied-transition-word', studyDayKey);
     assert.equal(updatedWord.status, 'learning');
     assert.equal(updatedWord.learningStreak, 0);
     assert.equal(updatedWord.lastLearningSuccessOn, null);
@@ -371,14 +373,14 @@ describe('session completion', { concurrency: false }, () => {
     });
 
     assert.throws(
-      () => dbModule.completeUnstudiedWordSession('invalid-unstudied-word'),
+      () => dbModule.completeUnstudiedWordSession('invalid-unstudied-word', studyDayKey),
       /Unstudied word has unexpected learning progress/,
     );
   });
 
   test('unstudied completion rejects unknown words', () => {
     assert.throws(
-      () => dbModule.completeUnstudiedWordSession('missing-word'),
+      () => dbModule.completeUnstudiedWordSession('missing-word', studyDayKey),
       /Word not found/,
     );
   });
