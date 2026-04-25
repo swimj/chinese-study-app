@@ -1,4 +1,4 @@
-import type { PriorityWord, Word, ReviewItem, ReviewRating, SessionItemWithWord } from '../types';
+import type { PriorityWord, Word, ReviewItem, ReviewRating, SessionItemBuckets } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:5174';
 
@@ -18,7 +18,7 @@ type BackendStatus = {
 };
 
 export type SessionPayload = {
-  items: SessionItemWithWord[];
+  buckets: SessionItemBuckets;
 };
 
 export type { BackendStatus };
@@ -52,14 +52,6 @@ export async function fetchReviewItems(): Promise<ReviewItem[]> {
   const response = await fetch(`${API_BASE}/api/review-items`);
   if (!response.ok) {
     throw new Error('Failed to load review items');
-  }
-  return response.json();
-}
-
-export async function fetchSessionItems(): Promise<ReviewItem[]> {
-  const response = await fetch(`${API_BASE}/api/session-items`);
-  if (!response.ok) {
-    throw new Error('Failed to load session items');
   }
   return response.json();
 }

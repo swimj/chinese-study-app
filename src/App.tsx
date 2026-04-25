@@ -19,15 +19,13 @@ import {
   beginDrainSession,
   dismissCurrentItemFromSession,
   beginUnstudiedDrill,
-  createSessionQueue,
   createSessionState,
-  getCurrentQueueItem,
-  getQueueItems,
   markCurrentItemStarted,
   rateCurrentItem,
   type SessionCommitIntent,
   type SessionState,
 } from './lib/session-state';
+import { cloneSessionScheduler, getSchedulerActiveItem, getSchedulerLength } from './lib/session-scheduler';
 
 type AppPage = 'home' | 'words' | 'priority';
 
@@ -209,10 +207,12 @@ function App() {
   }, [reviewItems]);
 
   const displayedSessionItemCount = sessionStarted
-    ? sessionState?.queue.length ?? 0
-    : sessionPrefetch.payload?.items.length ?? 0;
+    ? sessionState
+      ? getSchedulerLength(sessionState.scheduler)
+      : 0
+    : getSessionPayloadItemCount(sessionPrefetch.payload) ?? 0;
   const activeItem: SessionItemWithWord | null =
-    sessionStarted && sessionState ? getCurrentQueueItem(sessionState.queue) ?? null : null;
+    sessionStarted && sessionState ? getSchedulerActiveItem(sessionState.scheduler) ?? null : null;
   const activeWord = activeItem?.word ?? null;
   const activeWordPersonalNotesOverride = activeWord ? sessionPersonalNotesOverridesByWordId[activeWord.id] : undefined;
   const activeWordPersonalNotes = activeWordPersonalNotesOverride ?? activeWord?.personalNotes ?? '';
@@ -386,14 +386,15 @@ function App() {
 
     try {
       const sessionPayload = await ensureSessionPrefetch(() => setSessionPrefetch(getSessionPrefetchSnapshot()));
-      if (sessionPayload.items.length === 0) {
+      const sessionItemCount = getSessionPayloadItemCount(sessionPayload) ?? 0;
+      if (sessionItemCount === 0) {
         setError('No session items are currently available.');
         return;
       }
 
       const startedAt = new Date().toISOString();
       setSessionNow(startedAt);
-      setSessionState(createSessionState(sessionPayload.items));
+      setSessionState(createSessionState(sessionPayload.buckets));
       setSessionPersonalNotesOverridesByWordId({});
       setPersonalNotesEditorTargetWordId(null);
       setPersonalNotesEditorDraft('');
@@ -404,7 +405,7 @@ function App() {
       setSessionSummary({
         startedAt,
         completedAt: null,
-        initialQueueLength: sessionPayload.items.length,
+        initialQueueLength: sessionItemCount,
         answeredCount: 0,
         completedReviewItems: 0,
         encounteredReviewItemIds: [],
@@ -1043,7 +1044,7 @@ function App() {
                     </div>
                   </div>
                   <p className="notes">
-                    Answered {reviewedCount} this session · {sessionState?.queue.length ?? 0} still queued ·
+                    Answered {reviewedCount} this session · {sessionState ? getSchedulerLength(sessionState.scheduler) : 0} still queued ·
                     {' '}Unique lapse items {sessionSummary?.lapsedReviewItemIds.length ?? 0} · Elapsed {activeElapsedTime}
                   </p>
                   {lastUndoSnapshot ? (
@@ -1739,7 +1740,7 @@ function formatSessionPrefetchStatus(sessionPrefetch: SessionPrefetchState) {
     case 'pending':
       return 'prefetching session data';
     case 'ready':
-      return `ready (${sessionPrefetch.payload?.items.length ?? 0} items)`;
+      return `ready (${getSessionPayloadItemCount(sessionPrefetch.payload) ?? 0} items)`;
     case 'error':
       return sessionPrefetch.error ? `error: ${sessionPrefetch.error}` : 'error';
     default:
@@ -1750,7 +1751,7 @@ function formatSessionPrefetchStatus(sessionPrefetch: SessionPrefetchState) {
 function cloneSessionState(state: SessionState): SessionState {
   return {
     ...state,
-    queue: createSessionQueue(getQueueItems(state.queue).map(cloneSessionItemWithWord)),
+    scheduler: cloneSessionScheduler(state.scheduler),
     startedItemIds: [...state.startedItemIds],
     dismissedWordIds: [...state.dismissedWordIds],
     learningProgress: Object.fromEntries(
@@ -1784,15 +1785,12 @@ function cloneSessionState(state: SessionState): SessionState {
   };
 }
 
-function cloneSessionItemWithWord(item: SessionItemWithWord): SessionItemWithWord {
-  return {
-    reviewItem: { ...item.reviewItem },
-    word: {
-      ...item.word,
-      meanings: [...item.word.meanings],
-      examples: [...item.word.examples],
-    },
-  };
+function getSessionPayloadItemCount(payload: SessionPayload | null): number | null {
+  if (!payload) {
+    return null;
+  }
+
+  return payload.buckets.review.length + payload.buckets.learning.length + payload.buckets.unstudied.length;
 }
 
 function getStatusSortOrder(status: Word['status']) {

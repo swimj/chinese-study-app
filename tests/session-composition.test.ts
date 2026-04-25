@@ -114,7 +114,7 @@ describe('session composition', { concurrency: false }, () => {
       nextDueAt: isoHoursFromNow(2),
     });
 
-    const sessionIds = dbModule.getSessionItems().map((item) => item.id);
+    const sessionIds = getSessionItemIds(dbModule);
     assert.deepEqual(sessionIds, ['review-word-forward']);
   });
 
@@ -261,7 +261,7 @@ describe('session composition', { concurrency: false }, () => {
       nextDueAt: isoHoursAgo(2),
     });
 
-    const sessionIds = dbModule.getSessionItems().map((item) => item.id);
+    const sessionIds = getSessionItemIds(dbModule);
     assert.deepEqual(sessionIds, [
       'review-word-b-reverse',
       'review-word-a-reverse',
@@ -299,7 +299,7 @@ describe('session composition', { concurrency: false }, () => {
       nextDueAt: null,
     });
 
-    const sessionIds = dbModule.getSessionItems().map((item) => item.id);
+    const sessionIds = getSessionItemIds(dbModule);
     assert.deepEqual(sessionIds, ['learning-word-reverse', 'learning-word-forward']);
   });
 
@@ -331,7 +331,7 @@ describe('session composition', { concurrency: false }, () => {
       nextDueAt: isoHoursAgo(1),
     });
 
-    const sessionIds = dbModule.getSessionItems().map((item) => item.id);
+    const sessionIds = getSessionItemIds(dbModule);
     assert.deepEqual(sessionIds, []);
   });
 
@@ -375,7 +375,7 @@ describe('session composition', { concurrency: false }, () => {
       });
     }
 
-    const sessionIds = dbModule.getSessionItems().map((item) => item.id);
+    const sessionIds = getSessionItemIds(dbModule);
     assert.equal(sessionIds.length, dailyNewWordLimit * 2);
 
     // Highest priorities should come first; ties break by older created_at first.
@@ -470,13 +470,19 @@ describe('session composition', { concurrency: false }, () => {
 
     const payload = dbModule.getSessionPayload();
 
-    assert.deepEqual(payload.items.map((item) => item.reviewItem.id), [
+    const payloadItems = [
+      ...payload.buckets.review,
+      ...payload.buckets.learning,
+      ...payload.buckets.unstudied,
+    ];
+
+    assert.deepEqual(payloadItems.map((item) => item.reviewItem.id), [
       'payload-review-word-forward',
       'payload-learning-word-reverse',
       'payload-learning-word-forward',
     ]);
     assert.deepEqual(
-      [...new Set(payload.items.map((item) => item.word.id))],
+      [...new Set(payloadItems.map((item) => item.word.id))],
       [
       'payload-review-word',
       'payload-learning-word',
@@ -553,7 +559,7 @@ describe('session composition', { concurrency: false }, () => {
       nextDueAt: null,
     });
 
-    const sessionIds = dbModule.getSessionItems().map((item) => item.id);
+    const sessionIds = getSessionItemIds(dbModule);
     assert.deepEqual(sessionIds, [
       'review-word-forward',
       'learning-word-reverse',
@@ -589,7 +595,7 @@ describe('session composition', { concurrency: false }, () => {
       nextDueAt: null,
     });
 
-    assert.deepEqual(dbModule.getSessionItems().map((item) => item.id), [
+    assert.deepEqual(getSessionItemIds(dbModule), [
       'new-word-forward',
       'new-word-reverse',
     ]);
@@ -597,7 +603,7 @@ describe('session composition', { concurrency: false }, () => {
     const updatedWord = dbModule.completeUnstudiedWordSession('new-word');
     assert.equal(updatedWord.status, 'learning');
     assert.equal(updatedWord.lastLearningCoveredOn, today);
-    assert.deepEqual(dbModule.getSessionItems().map((item) => item.id), []);
+    assert.deepEqual(getSessionItemIds(dbModule), []);
 
     // Simulate the next UTC day by moving the persisted coverage marker back one day.
     // This is standing in for clock control until we introduce an explicit backend clock seam.
@@ -607,7 +613,7 @@ describe('session composition', { concurrency: false }, () => {
       WHERE id = 'new-word'
     `).run(yesterday);
 
-    assert.deepEqual(dbModule.getSessionItems().map((item) => item.id), [
+    assert.deepEqual(getSessionItemIds(dbModule), [
       'new-word-reverse',
       'new-word-forward',
     ]);
@@ -714,4 +720,13 @@ function addDays(dateKey: string, days: number) {
   const date = new Date(`${dateKey}T00:00:00.000Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function getSessionItemIds(db: DbModule): string[] {
+  const payload = db.getSessionPayload();
+  return [
+    ...payload.buckets.review,
+    ...payload.buckets.learning,
+    ...payload.buckets.unstudied,
+  ].map((item) => item.reviewItem.id);
 }

@@ -40,6 +40,12 @@ export type SessionItemWithWord = {
   word: Word;
 };
 
+export type SessionItemBuckets = {
+  review: SessionItemWithWord[];
+  learning: SessionItemWithWord[];
+  unstudied: SessionItemWithWord[];
+};
+
 export type WordItem = {
   id: string;
   english: string;
