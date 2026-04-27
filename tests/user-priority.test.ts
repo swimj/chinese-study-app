@@ -1,0 +1,254 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { after, before, beforeEach, describe, test } from 'node:test';
+import { pathToFileURL } from 'node:url';
+
+type WordStatus = 'unstudied' | 'learning' | 'review';
+type DbModule = typeof import('../server/db.ts');
+const studyDayKey = '2026-01-10';
+
+let dataDir = '';
+let dbPath = '';
+let sqlite: DatabaseSync;
+let dbModule: DbModule;
+
+describe('user priority layer', { concurrency: false }, () => {
+  before(async () => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-priority-tests-'));
+    dbPath = path.join(dataDir, 'app.db');
+
+    const previousMode = process.env.APP_MODE;
+    const previousDataDir = process.env.APP_DATA_DIR;
+
+    process.env.APP_MODE = 'study';
+    process.env.APP_DATA_DIR = dataDir;
+
+    const moduleUrl = `${pathToFileURL(path.resolve('server/db.ts')).href}?test=${Date.now()}`;
+    dbModule = await import(moduleUrl);
+
+    if (previousMode === undefined) {
+      delete process.env.APP_MODE;
+    } else {
+      process.env.APP_MODE = previousMode;
+    }
+
+    if (previousDataDir === undefined) {
+      delete process.env.APP_DATA_DIR;
+    } else {
+      process.env.APP_DATA_DIR = previousDataDir;
+    }
+
+    sqlite = new DatabaseSync(dbPath);
+    sqlite.exec('PRAGMA foreign_keys = ON;');
+  });
+
+  beforeEach(() => {
+    sqlite.exec(`
+      DELETE FROM daily_new_word_intake;
+      DELETE FROM user_word_priority;
+      DELETE FROM review_items;
+      DELETE FROM words;
+    `);
+  });
+
+  after(() => {
+    sqlite.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  test('migration/bootstrap creates user_word_priority table', () => {
+    const columns = sqlite.prepare('PRAGMA table_info(user_word_priority)').all() as Array<{ name: string }>;
+    assert.deepEqual(columns.map((column) => column.name), ['word_id', 'bump_count', 'force_top', 'priority_tier', 'updated_at']);
+  });
+
+  test('bump count clamps to [0, 10], force-top toggles, and reset clears overrides', () => {
+    insertWord('priority-word', 73, 'unstudied', '2026-01-01T00:00:00.000Z');
+    insertReviewPair('priority-word');
+
+    const maxed = dbModule.updateWordUserPriority('priority-word', { bumpDelta: 999 });
+    assert.equal(maxed.bumpCount, 10);
+
+    const clampedToZero = dbModule.updateWordUserPriority('priority-word', { bumpDelta: -999 });
+    assert.equal(clampedToZero.bumpCount, 0);
+
+    const forceTopOn = dbModule.updateWordUserPriority('priority-word', { forceTop: true });
+    assert.equal(forceTopOn.forceTop, true);
+
+    const reset = dbModule.updateWordUserPriority('priority-word', { reset: true });
+    assert.equal(reset.bumpCount, 0);
+    assert.equal(reset.forceTop, false);
+
+    const persisted = sqlite
+      .prepare('SELECT word_id FROM user_word_priority WHERE word_id = ?')
+      .get('priority-word') as { word_id: string } | undefined;
+    assert.equal(persisted, undefined);
+  });
+
+  test('boost unit uses the fixed policy constant and affects effective priority', () => {
+    insertWord('top-base', 94, 'unstudied', '2026-01-01T00:00:00.000Z');
+    insertWord('boosted', 50, 'unstudied', '2026-01-02T00:00:00.000Z');
+    insertReviewPair('top-base');
+    insertReviewPair('boosted');
+
+    const updated = dbModule.updateWordUserPriority('boosted', { bumpDelta: 2 });
+
+    // Fixed bump unit is currently 12248.
+    assert.equal(updated.effectivePriority, 50 + 2 * 12248);
+  });
+
+  test('add-by-hanzi adds all matching unstudied words into the prioritized list', () => {
+    insertWord('dup-a', 70, 'unstudied', '2026-01-01T00:00:00.000Z', '学');
+    insertWord('dup-b', 60, 'unstudied', '2026-01-02T00:00:00.000Z', '学');
+    insertWord('dup-c', 50, 'learning', '2026-01-03T00:00:00.000Z', '学');
+    insertReviewPair('dup-a');
+    insertReviewPair('dup-b');
+    insertReviewPair('dup-c');
+
+    const added = dbModule.addUnstudiedUserPriorityByHanzi('学');
+    assert.equal(added.length, 2);
+    assert(added.every((word) => word.bumpCount >= 1));
+
+    const prioritizedIds = dbModule.getPrioritizedUnstudiedWords().words.map((entry) => entry.word.id);
+    assert.deepEqual(prioritizedIds, ['dup-a', 'dup-b']);
+  });
+
+  test('unstudied ordering is forceTop > effective > base > createdAt', () => {
+    insertWord('base-high-older', 100, 'unstudied', '2026-01-01T00:00:00.000Z');
+    insertWord('base-high-newer', 100, 'unstudied', '2026-01-02T00:00:00.000Z');
+    insertWord('boosted', 60, 'unstudied', '2026-01-03T00:00:00.000Z');
+    insertWord('forced', 10, 'unstudied', '2026-01-04T00:00:00.000Z');
+
+    for (const id of ['base-high-older', 'base-high-newer', 'boosted', 'forced']) {
+      insertReviewPair(id);
+    }
+
+    dbModule.updateWordUserPriority('boosted', { bumpDelta: 5 });
+    dbModule.updateWordUserPriority('forced', { forceTop: true });
+
+    const ordered = dbModule.getUnstudiedPriorityWords().words.map((entry) => entry.word.id);
+    assert.deepEqual(ordered, ['forced', 'boosted', 'base-high-older', 'base-high-newer']);
+  });
+
+  test('session unstudied intake respects effective ordering and cap', () => {
+    const { dailyNewWordLimit } = dbModule.getLearningPolicy(studyDayKey);
+
+    insertWord('old-base', 60, 'unstudied', '2026-01-01T00:00:00.000Z');
+    insertWord('boosted', 55, 'unstudied', '2026-01-02T00:00:00.000Z');
+    insertWord('forced', 1, 'unstudied', '2026-01-03T00:00:00.000Z');
+    insertWord('very-low', -100, 'unstudied', '2026-01-04T00:00:00.000Z');
+
+    for (const id of ['old-base', 'boosted', 'forced', 'very-low']) {
+      insertReviewPair(id);
+    }
+
+    dbModule.updateWordUserPriority('boosted', { bumpDelta: 1 });
+    dbModule.updateWordUserPriority('forced', { forceTop: true });
+
+    const sessionIds = getSessionItemIds(dbModule);
+    const expectedIds = [
+      'forced-forward',
+      'forced-reverse',
+      'boosted-forward',
+      'boosted-reverse',
+      'old-base-forward',
+      'old-base-reverse',
+      'very-low-forward',
+      'very-low-reverse',
+    ].slice(0, dailyNewWordLimit * 2);
+
+    assert.deepEqual(sessionIds, expectedIds);
+  });
+
+  test('sunk words rank below regular words in unstudied ordering', () => {
+    insertWord('regular-word', 40, 'unstudied', '2026-01-01T00:00:00.000Z');
+    insertWord('sunk-word', 100, 'unstudied', '2026-01-02T00:00:00.000Z');
+    insertReviewPair('regular-word');
+    insertReviewPair('sunk-word');
+
+    dbModule.dismissWordFromStudy('sunk-word');
+
+    const ordered = dbModule.getUnstudiedPriorityWords().words.map((entry) => entry.word.id);
+    assert.deepEqual(ordered.slice(0, 2), ['regular-word', 'sunk-word']);
+  });
+
+  test('non-unstudied words cannot be updated', () => {
+    insertWord('learning-word', 80, 'learning', '2026-01-01T00:00:00.000Z');
+    insertReviewPair('learning-word');
+
+    assert.throws(() => {
+      dbModule.updateWordUserPriority('learning-word', { bumpDelta: 1 });
+    }, /Expected unstudied word/);
+  });
+});
+
+function insertWord(id: string, priority: number, status: WordStatus, createdAt: string, hanzi = `${id}-hanzi`) {
+  sqlite.prepare(`
+    INSERT INTO words (
+      id,
+      hanzi,
+      pinyin,
+      meaning,
+      meanings_json,
+      personal_notes,
+      examples_json,
+      status,
+      priority,
+      created_at,
+      learning_streak,
+      last_learning_success_on,
+      last_learning_covered_on
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    hanzi,
+    `${id}-pinyin`,
+    `${id}-meaning`,
+    JSON.stringify([`${id}-meaning`]),
+    '',
+    JSON.stringify([`${id}-example`]),
+    status,
+    priority,
+    createdAt,
+    0,
+    null,
+    null,
+  );
+}
+
+function getSessionItemIds(db: DbModule): string[] {
+  const payload = db.getSessionPayload(studyDayKey);
+  return [
+    ...payload.buckets.review,
+    ...payload.buckets.learning,
+    ...payload.buckets.unstudied,
+  ].map((item) => item.reviewItem.id);
+}
+
+function insertReviewPair(wordId: string) {
+  sqlite.prepare(`
+    INSERT INTO review_items (
+      id,
+      word_id,
+      direction,
+      interval_hours,
+      last_reviewed_at,
+      next_due_at,
+      ease_factor
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(`${wordId}-forward`, wordId, 'forward', 6, null, null, 2.5);
+
+  sqlite.prepare(`
+    INSERT INTO review_items (
+      id,
+      word_id,
+      direction,
+      interval_hours,
+      last_reviewed_at,
+      next_due_at,
+      ease_factor
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(`${wordId}-reverse`, wordId, 'reverse', 6, null, null, 2.5);
+}

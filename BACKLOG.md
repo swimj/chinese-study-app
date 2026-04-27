@@ -15,6 +15,7 @@ Noncritical improvements worth remembering as the project evolves.
 
 - Revisit the simple Unit 2 scheduling policy once the basic workflow is stable.
 - Make the initial review-item ease factor user-configurable (currently backend-controlled).
+- Add per-direction dismissal for review words so users can keep one direction active (for example Hanzi → English) while suppressing the opposite direction when production meanings are intentionally hidden.
 - Move example sentences to the revealed answer only, regardless of review direction. The prompt side should stay pure recall: show only `hanzi` for forward cards and only English for reverse cards.
 - Show clearer post-answer feedback, such as the next due date after a rating is submitted.
 - Consider a session summary screen after all due cards are completed.

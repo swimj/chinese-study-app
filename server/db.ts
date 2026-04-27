@@ -31,6 +31,16 @@ type Word = {
   lastLearningCoveredOn: string | null;
 };
 
+type WordMeaning = {
+  id: string;
+  wordId: string;
+  position: number;
+  text: string;
+  showOnProductionPrompt: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type PriorityWord = {
   word: Word;
   bumpCount: number;
@@ -79,6 +89,16 @@ type WordRow = {
   last_learning_covered_on: string | null;
 };
 
+type WordMeaningRow = {
+  id: string;
+  word_id: string;
+  position: number;
+  text: string;
+  show_on_production_prompt: number;
+  created_at: string;
+  updated_at: string;
+};
+
 type UserWordPriorityRow = {
   word_id: string;
   bump_count: number;
@@ -110,6 +130,7 @@ type DailyNewWordIntakeRow = {
 
 type SeedData = {
   words: Word[];
+  wordMeanings: WordMeaning[];
   reviewItems: ReviewItem[];
 };
 
@@ -175,6 +196,7 @@ initializeDatabase();
 
 export type {
   HomeOverview,
+  WordMeaning,
   ReviewItem,
   ReviewPassRating,
   ReviewRating,
@@ -216,6 +238,63 @@ export function getWords(): Word[] {
     .all() as WordRow[];
 
   return rows.map(mapWordRow);
+}
+
+export function getWordMeanings(wordId: string): WordMeaning[] {
+  const existingWord = db
+    .prepare(`
+      SELECT id
+      FROM words
+      WHERE id = ?
+    `)
+    .get(wordId) as { id: string } | undefined;
+
+  if (!existingWord) {
+    throw new Error('Word not found');
+  }
+
+  const rows = db
+    .prepare(`
+      SELECT
+        id,
+        word_id,
+        position,
+        text,
+        show_on_production_prompt,
+        created_at,
+        updated_at
+      FROM word_meanings
+      WHERE word_id = ?
+      ORDER BY position ASC
+    `)
+    .all(wordId) as WordMeaningRow[];
+
+  return rows.map(mapWordMeaningRow);
+}
+
+export function updateWordMeaningVisibility(wordId: string, meaningId: string, showOnProductionPrompt: boolean): WordMeaning[] {
+  const existingMeaning = db
+    .prepare(`
+      SELECT id
+      FROM word_meanings
+      WHERE id = ?
+        AND word_id = ?
+    `)
+    .get(meaningId, wordId) as { id: string } | undefined;
+
+  if (!existingMeaning) {
+    throw new Error('Word meaning not found');
+  }
+
+  db.prepare(`
+    UPDATE word_meanings
+    SET show_on_production_prompt = ?,
+        updated_at = ?
+    WHERE id = ?
+      AND word_id = ?
+  `).run(showOnProductionPrompt ? 1 : 0, new Date().toISOString(), meaningId, wordId);
+
+  return getWordMeanings(wordId);
 }
 
 export function getUnstudiedPriorityWords(): PriorityWordsPayload {
@@ -872,6 +951,19 @@ function applyLightweightSchemaMigrations() {
   `);
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS word_meanings (
+      id TEXT PRIMARY KEY,
+      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      position INTEGER NOT NULL,
+      text TEXT NOT NULL,
+      show_on_production_prompt INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(word_id, position)
+    );
+  `);
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS daily_new_word_intake (
       day_key TEXT PRIMARY KEY,
       new_study_count INTEGER NOT NULL DEFAULT 0
@@ -891,6 +983,67 @@ function applyLightweightSchemaMigrations() {
     WHERE force_top != 0
       AND priority_tier = 0
   `);
+
+  backfillWordMeaningsFromWords();
+}
+
+function backfillWordMeaningsFromWords() {
+  const wordsWithoutMeanings = db
+    .prepare(`
+      SELECT
+        words.id,
+        words.meaning,
+        words.meanings_json,
+        words.created_at
+      FROM words
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM word_meanings
+        WHERE word_meanings.word_id = words.id
+      )
+    `)
+    .all() as Array<{ id: string; meaning: string; meanings_json: string; created_at: string }>;
+
+  if (wordsWithoutMeanings.length === 0) {
+    return;
+  }
+
+  const insertMeaning = db.prepare(`
+    INSERT INTO word_meanings (
+      id,
+      word_id,
+      position,
+      text,
+      show_on_production_prompt,
+      created_at,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, 1, ?, ?)
+  `);
+
+  db.exec('BEGIN');
+
+  try {
+    for (const word of wordsWithoutMeanings) {
+      const meanings = parseMeaningsJson(word.meanings_json, word.meaning);
+      for (const [index, meaningText] of meanings.entries()) {
+        const timestamp = word.created_at || new Date().toISOString();
+        insertMeaning.run(
+          `${word.id}-meaning-${index + 1}`,
+          word.id,
+          index,
+          meaningText,
+          timestamp,
+          timestamp,
+        );
+      }
+    }
+
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
 }
 
 function shouldRebuildDevDatabase(error: unknown) {
@@ -973,6 +1126,17 @@ function createSchema() {
       ease_factor REAL NOT NULL
     );
 
+    CREATE TABLE word_meanings (
+      id TEXT PRIMARY KEY,
+      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      position INTEGER NOT NULL,
+      text TEXT NOT NULL,
+      show_on_production_prompt INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(word_id, position)
+    );
+
     CREATE TABLE user_word_priority (
       word_id TEXT PRIMARY KEY REFERENCES words(id) ON DELETE CASCADE,
       bump_count INTEGER NOT NULL DEFAULT 0,
@@ -994,6 +1158,7 @@ function ensureIndexes() {
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_words_priority ON words(priority DESC, created_at ASC);
     CREATE INDEX IF NOT EXISTS idx_review_items_due ON review_items(next_due_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_word_meanings_word_position ON word_meanings(word_id, position ASC);
     CREATE INDEX IF NOT EXISTS idx_user_word_priority_force_top ON user_word_priority(force_top DESC, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_user_word_priority_tier ON user_word_priority(priority_tier DESC, updated_at DESC);
   `);
@@ -1024,6 +1189,15 @@ function validateSchema() {
     'last_reviewed_at',
     'next_due_at',
     'ease_factor',
+  ]);
+  assertTableColumns('word_meanings', [
+    'id',
+    'word_id',
+    'position',
+    'text',
+    'show_on_production_prompt',
+    'created_at',
+    'updated_at',
   ]);
   assertTableColumns('user_word_priority', [
     'word_id',
@@ -1093,6 +1267,18 @@ function seedDatabase() {
     )
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
+  const insertWordMeaning = db.prepare(`
+    INSERT INTO word_meanings (
+      id,
+      word_id,
+      position,
+      text,
+      show_on_production_prompt,
+      created_at,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
 
   db.exec('BEGIN');
 
@@ -1113,6 +1299,18 @@ function seedDatabase() {
         word.learningStreak,
         word.lastLearningSuccessOn,
         word.lastLearningCoveredOn,
+      );
+    }
+
+    for (const wordMeaning of seedData.wordMeanings) {
+      insertWordMeaning.run(
+        wordMeaning.id,
+        wordMeaning.wordId,
+        wordMeaning.position,
+        wordMeaning.text,
+        wordMeaning.showOnProductionPrompt ? 1 : 0,
+        wordMeaning.createdAt,
+        wordMeaning.updatedAt,
       );
     }
 
@@ -1146,8 +1344,10 @@ function readSeedData(): SeedData | null {
     return null;
   }
 
+  const words = parsed.words.map(normalizeSeedWord);
   return {
-    words: parsed.words.map(normalizeSeedWord),
+    words,
+    wordMeanings: buildWordMeaningsFromWords(words),
     reviewItems: parsed.reviewItems.map(normalizeSeedReviewItem),
   };
 }
@@ -1189,6 +1389,7 @@ function buildSampleSeedData(): SeedData {
   const words = buildSampleWords();
   return {
     words,
+    wordMeanings: buildWordMeaningsFromWords(words),
     reviewItems: buildSampleReviewItems(words),
   };
 }
@@ -1311,6 +1512,21 @@ function buildSampleReviewItems(words: Word[]): ReviewItem[] {
   });
 }
 
+function buildWordMeaningsFromWords(words: Word[]): WordMeaning[] {
+  return words.flatMap((word) => {
+    const sourceMeanings = word.meanings.length > 0 ? word.meanings : word.meaning.trim() ? [word.meaning] : [];
+    return sourceMeanings.map((text, index) => ({
+      id: `${word.id}-meaning-${index + 1}`,
+      wordId: word.id,
+      position: index,
+      text,
+      showOnProductionPrompt: true,
+      createdAt: word.createdAt,
+      updatedAt: word.createdAt,
+    }));
+  });
+}
+
 function mapWordRow(row: WordRow): Word {
   return {
     id: row.id,
@@ -1327,6 +1543,18 @@ function mapWordRow(row: WordRow): Word {
     learningStreak: row.learning_streak,
     lastLearningSuccessOn: row.last_learning_success_on,
     lastLearningCoveredOn: row.last_learning_covered_on,
+  };
+}
+
+function mapWordMeaningRow(row: WordMeaningRow): WordMeaning {
+  return {
+    id: row.id,
+    wordId: row.word_id,
+    position: row.position,
+    text: row.text,
+    showOnProductionPrompt: row.show_on_production_prompt !== 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 

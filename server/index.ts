@@ -14,8 +14,10 @@ import {
   getPrioritizedUnstudiedWords,
   getReviewItems,
   getSessionPayload,
+  getWordMeanings,
   getWords,
   getWordStatusCounts,
+  updateWordMeaningVisibility,
   updateWordPersonalNotes,
   updateWordUserPriority,
 } from './db.ts';
@@ -31,6 +33,20 @@ export function createApp() {
   app.get('/api/words', (req, res) => {
     const words = getWords();
     res.json(words);
+  });
+
+  app.get('/api/words/:id/meanings', (req, res) => {
+    try {
+      const meanings = getWordMeanings(req.params.id);
+      res.json(meanings);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Word not found') {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to load word meanings' });
+    }
   });
 
   app.get('/api/review-items', (req, res) => {
@@ -249,6 +265,31 @@ export function createApp() {
       }
 
       res.status(500).json({ error: 'Failed to update user priority' });
+    }
+  });
+
+  app.patch('/api/words/:wordId/meanings/:meaningId', (req, res) => {
+    const showOnProductionPrompt = req.body?.showOnProductionPrompt;
+
+    if (typeof showOnProductionPrompt !== 'boolean') {
+      res.status(400).json({ error: 'Expected boolean showOnProductionPrompt' });
+      return;
+    }
+
+    try {
+      const updatedMeanings = updateWordMeaningVisibility(
+        req.params.wordId,
+        req.params.meaningId,
+        showOnProductionPrompt,
+      );
+      res.json(updatedMeanings);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Word meaning not found') {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to update word meaning visibility' });
     }
   });
 
