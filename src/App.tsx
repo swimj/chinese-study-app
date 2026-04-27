@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { PriorityWord, ReviewItem, ReviewRating, SessionItemWithWord, Word } from './types';
 import type { BackendStatus, SessionPayload } from './services/api';
 import {
@@ -171,6 +171,7 @@ function App() {
   const [personalNotesEditorDraft, setPersonalNotesEditorDraft] = useState('');
   const [personalNotesEditorSaving, setPersonalNotesEditorSaving] = useState(false);
   const [personalNotesEditorError, setPersonalNotesEditorError] = useState<string | null>(null);
+  const personalNotesEditorInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     function syncSessionPrefetchState() {
@@ -731,6 +732,27 @@ function App() {
   }, [sessionStarted, sessionState?.phase, sessionSummary?.startedAt]);
 
   useEffect(() => {
+    if (!personalNotesEditorOpen) {
+      return;
+    }
+
+    personalNotesEditorInputRef.current?.focus();
+  }, [personalNotesEditorOpen]);
+
+  useEffect(() => {
+    if (!personalNotesEditorOpen) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [personalNotesEditorOpen]);
+
+  useEffect(() => {
     if (!sessionStarted || !sessionState || sessionState.phase === 'completed') {
       return;
     }
@@ -748,6 +770,12 @@ function App() {
           target.tagName === 'SELECT' ||
           target.isContentEditable)
       ) {
+        return;
+      }
+
+      if ((event.key === 'e' || event.key === 'E') && activeWord) {
+        event.preventDefault();
+        handleOpenPersonalNotesEditor();
         return;
       }
 
@@ -800,7 +828,9 @@ function App() {
     activeRatingOptions,
     activeUnstudiedProgress?.introComplete,
     activeWord,
+    activeWordPersonalNotes,
     answerRevealed,
+    handleOpenPersonalNotesEditor,
     lastUndoSnapshot,
     personalNotesEditorOpen,
     sessionStarted,
@@ -996,17 +1026,6 @@ function App() {
                       Undo last rating
                     </button>
                   ) : null}
-                  {personalNotesEditorOpen ? (
-                    <PersonalNotesEditorOverlay
-                      value={personalNotesEditorDraft}
-                      isSaving={personalNotesEditorSaving}
-                      error={personalNotesEditorError}
-                      canSubmit={personalNotesEditorCanSubmit}
-                      onChange={setPersonalNotesEditorDraft}
-                      onCancel={handleCancelPersonalNotesEditor}
-                      onSave={handleSavePersonalNotesEditor}
-                    />
-                  ) : null}
                 </div>
               ) : (
                 <div className="review-card">
@@ -1108,17 +1127,6 @@ function App() {
                       ))}
                     </div>
                   ) : null}
-                  {personalNotesEditorOpen ? (
-                    <PersonalNotesEditorOverlay
-                      value={personalNotesEditorDraft}
-                      isSaving={personalNotesEditorSaving}
-                      error={personalNotesEditorError}
-                      canSubmit={personalNotesEditorCanSubmit}
-                      onChange={setPersonalNotesEditorDraft}
-                      onCancel={handleCancelPersonalNotesEditor}
-                      onSave={handleSavePersonalNotesEditor}
-                    />
-                  ) : null}
                 </div>
               )}
             </div>
@@ -1150,6 +1158,21 @@ function App() {
           onRemove={(wordId) => void handleUpdateWordPriority(wordId, { reset: true })}
         />
       )}
+
+      {personalNotesEditorOpen ? (
+        <div className="definition-editor-modal-backdrop" role="presentation">
+          <PersonalNotesEditorOverlay
+            inputRef={personalNotesEditorInputRef}
+            value={personalNotesEditorDraft}
+            isSaving={personalNotesEditorSaving}
+            error={personalNotesEditorError}
+            canSubmit={personalNotesEditorCanSubmit}
+            onChange={setPersonalNotesEditorDraft}
+            onCancel={handleCancelPersonalNotesEditor}
+            onSave={handleSavePersonalNotesEditor}
+          />
+        </div>
+      ) : null}
 
       <footer className="footer">
         v{APP_VERSION} · Session coverage is now determined entirely in frontend state before durable backend updates are committed.
@@ -1455,6 +1478,7 @@ function SessionSummaryPanel({ summary }: { summary: SessionSummary }) {
 }
 
 function PersonalNotesEditorOverlay({
+  inputRef,
   value,
   isSaving,
   error,
@@ -1463,6 +1487,7 @@ function PersonalNotesEditorOverlay({
   onCancel,
   onSave,
 }: {
+  inputRef: RefObject<HTMLTextAreaElement | null>;
   value: string;
   isSaving: boolean;
   error: string | null;
@@ -1472,12 +1497,13 @@ function PersonalNotesEditorOverlay({
   onSave: () => void;
 }) {
   return (
-    <div className="definition-editor-overlay">
+    <div className="definition-editor-overlay" role="dialog" aria-modal="true" aria-label="Edit personal notes">
       <div className="definition-editor-header">
         <strong>Edit personal notes</strong>
         <span className="notes">Applies immediately and persists to backend.</span>
       </div>
       <textarea
+        ref={inputRef}
         className="definition-editor-input"
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -1494,6 +1520,7 @@ function PersonalNotesEditorOverlay({
           }
         }}
         disabled={isSaving}
+        autoFocus
         rows={4}
       />
       {error ? <p className="notes definition-editor-error">{error}</p> : null}
