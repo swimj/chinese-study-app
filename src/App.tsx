@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import type { PriorityWord, ReviewItem, ReviewRating, SessionItemWithWord, Word } from './types';
+import type { PriorityWord, ReviewItem, ReviewRating, SessionItemWithWord, Word, WordMeaning } from './types';
 import type { BackendStatus, SessionPayload } from './services/api';
 import {
   addUnstudiedPriorityByHanzi,
@@ -7,11 +7,13 @@ import {
   completeReviewSession,
   completeUnstudiedSession,
   dismissWordFromStudy,
+  fetchWordMeanings,
   fetchReviewItems,
   fetchUnstudiedPriorityWords,
   fetchSessionPayload,
   fetchStatus,
   fetchWords,
+  updateWordMeaningVisibility,
   updateWordPersonalNotes,
   updateWordUserPriority,
 } from './services/api';
@@ -167,6 +169,8 @@ function App() {
   const [sessionPersonalNotesOverridesByWordId, setSessionPersonalNotesOverridesByWordId] = useState<
     Record<string, string>
   >({});
+  const [sessionMeaningRowsByWordId, setSessionMeaningRowsByWordId] = useState<Record<string, WordMeaning[]>>({});
+  const [meaningVisibilitySavingKey, setMeaningVisibilitySavingKey] = useState<string | null>(null);
   const [personalNotesEditorTargetWordId, setPersonalNotesEditorTargetWordId] = useState<string | null>(null);
   const [personalNotesEditorDraft, setPersonalNotesEditorDraft] = useState('');
   const [personalNotesEditorSaving, setPersonalNotesEditorSaving] = useState(false);
@@ -217,7 +221,7 @@ function App() {
   const activeWord = activeItem?.word ?? null;
   const activeWordPersonalNotesOverride = activeWord ? sessionPersonalNotesOverridesByWordId[activeWord.id] : undefined;
   const activeWordPersonalNotes = activeWordPersonalNotesOverride ?? activeWord?.personalNotes ?? '';
-  const activeDisplayedMeanings =
+  const activeFallbackMeanings =
     activeWord === null
       ? []
       : activeWord.meanings.length > 0
@@ -225,6 +229,15 @@ function App() {
         : activeWord.meaning.trim().length > 0
           ? [activeWord.meaning]
           : [];
+  const activeMeaningRows =
+    activeWord
+      ? [...(sessionMeaningRowsByWordId[activeWord.id] ?? [])].sort((left, right) => left.position - right.position)
+      : [];
+  const activeAllMeanings = activeMeaningRows.length > 0 ? activeMeaningRows.map((meaning) => meaning.text) : activeFallbackMeanings;
+  const activePromptDisplayedMeanings =
+    activeMeaningRows.length > 0
+      ? activeMeaningRows.filter((meaning) => meaning.showOnProductionPrompt).map((meaning) => meaning.text)
+      : activeFallbackMeanings;
   const activeReviewItem = activeItem?.reviewItem ?? null;
   const activeLearningProgress = activeWord ? sessionState?.learningProgress[activeWord.id] : undefined;
   const activeUnstudiedProgress = activeWord ? sessionState?.unstudiedProgress[activeWord.id] : undefined;
@@ -317,13 +330,13 @@ function App() {
     activeReviewItem && activeWord
       ? activeReviewItem.direction === 'forward'
         ? activeWord.hanzi
-        : activeDisplayedMeanings[0] ?? activeWord.meaning
+        : activePromptDisplayedMeanings[0] ?? activeAllMeanings[0] ?? activeWord.meaning
       : null;
 
   const activeAnswerText =
     activeReviewItem && activeWord
       ? activeReviewItem.direction === 'forward'
-        ? activeDisplayedMeanings[0] ?? activeWord.meaning
+        ? activeAllMeanings[0] ?? activeWord.meaning
         : activeWord.hanzi
       : null;
   const activeAnswerPinyin = activeItem && activeWord ? activeWord.pinyin : null;
@@ -361,6 +374,37 @@ function App() {
   const personalNotesEditorOpen = personalNotesEditorTargetWordId !== null;
   const personalNotesEditorCanSubmit = !personalNotesEditorSaving;
 
+  useEffect(() => {
+    if (!activeWord || sessionMeaningRowsByWordId[activeWord.id]) {
+      return;
+    }
+
+    // Prevent a stale request from mutating state after active word changes or this effect re-runs.
+    let cancelled = false;
+    void fetchWordMeanings(activeWord.id)
+      .then((rows) => {
+        if (cancelled) {
+          return;
+        }
+
+        setSessionMeaningRowsByWordId((current) => ({
+          ...current,
+          [activeWord.id]: rows,
+        }));
+      })
+      .catch((err) => {
+        if (cancelled) {
+          return;
+        }
+
+        setError(err instanceof Error ? err.message : 'Unknown error');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWord, sessionMeaningRowsByWordId]);
+
   async function reloadDashboard() {
     const statusResponse = await fetchStatus();
     setBackendStatus(statusResponse);
@@ -397,6 +441,8 @@ function App() {
       setSessionNow(startedAt);
       setSessionState(createSessionState(sessionPayload.buckets));
       setSessionPersonalNotesOverridesByWordId({});
+      setSessionMeaningRowsByWordId({});
+      setMeaningVisibilitySavingKey(null);
       setPersonalNotesEditorTargetWordId(null);
       setPersonalNotesEditorDraft('');
       setPersonalNotesEditorSaving(false);
@@ -463,6 +509,8 @@ function App() {
     setSessionSummary(null);
     setAnswerRevealed(false);
     setSessionPersonalNotesOverridesByWordId({});
+    setSessionMeaningRowsByWordId({});
+    setMeaningVisibilitySavingKey(null);
     setPersonalNotesEditorTargetWordId(null);
     setPersonalNotesEditorDraft('');
     setPersonalNotesEditorSaving(false);
@@ -679,6 +727,27 @@ function App() {
     setPersonalNotesEditorTargetWordId(activeWord.id);
     setPersonalNotesEditorDraft(activeWordPersonalNotes);
     setPersonalNotesEditorError(null);
+  }
+
+  async function handleToggleMeaningVisibility(meaning: WordMeaning) {
+    if (!activeWord) {
+      throw new Error('Invariant violated: expected active word when toggling meaning visibility');
+    }
+
+    setMeaningVisibilitySavingKey(meaning.id);
+    setError(null);
+
+    try {
+      const updatedRows = await updateWordMeaningVisibility(activeWord.id, meaning.id, !meaning.showOnProductionPrompt);
+      setSessionMeaningRowsByWordId((current) => ({
+        ...current,
+        [activeWord.id]: updatedRows,
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setMeaningVisibilitySavingKey(null);
+    }
   }
 
   function handleCancelPersonalNotesEditor() {
@@ -1003,7 +1072,7 @@ function App() {
                     <span className="prompt-label">Hanzi</span>
                     <strong className="prompt-value">{activeWord.hanzi}</strong>
                     <span className="prompt-meta">{activeWord.pinyin}</span>
-                    <MeaningList meanings={activeDisplayedMeanings} />
+                    <MeaningList meanings={activeAllMeanings} />
                     <span className="prompt-meta">{activeWord.examples[0]}</span>
                     {activeItem.reviewItem.direction === 'forward' && activeWordPersonalNotes.trim().length > 0 ? (
                       <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
@@ -1081,7 +1150,11 @@ function App() {
                     {activeItem.reviewItem.direction === 'forward' ? (
                       <strong className="prompt-value">{activePrompt}</strong>
                     ) : (
-                      <MeaningList meanings={activeDisplayedMeanings} className="meaning-list-prompt" />
+                      activePromptDisplayedMeanings.length > 0 ? (
+                        <MeaningList meanings={activePromptDisplayedMeanings} className="meaning-list-prompt" />
+                      ) : (
+                        <span className="prompt-meta meaning-list-prompt">No production meanings selected</span>
+                      )
                     )}
                     <span className="prompt-meta">
                       {activeWord.status === 'review'
@@ -1096,7 +1169,43 @@ function App() {
                       <span className="prompt-label">Answer</span>
                       <span className="answer-pinyin">{activeAnswerPinyin}</span>
                       <strong className="answer-value">{activeAnswerText}</strong>
-                      <MeaningList meanings={activeDisplayedMeanings} />
+                      {activeMeaningRows.length > 0 ? (
+                        <div className="stack">
+                          <div className="meaning-visibility-grid">
+                            <div className="meaning-visibility-header">
+                              <span className="prompt-label">Definition</span>
+                              <span className="prompt-label">Hide in production prompt</span>
+                            </div>
+                            {activeMeaningRows.map((meaning) => (
+                              <div key={meaning.id} className="meaning-visibility-row">
+                                <span className="prompt-meta">{meaning.text}</span>
+                                <button
+                                  type="button"
+                                  className={`meaning-toggle-icon-button ${meaning.showOnProductionPrompt ? 'is-on' : 'is-off'}`}
+                                  onClick={() => void handleToggleMeaningVisibility(meaning)}
+                                  disabled={meaningVisibilitySavingKey === meaning.id}
+                                  aria-label={
+                                    meaning.showOnProductionPrompt
+                                      ? `Hide "${meaning.text}" from production prompt`
+                                      : `Show "${meaning.text}" on production prompt`
+                                  }
+                                  title={
+                                    meaning.showOnProductionPrompt
+                                      ? 'Currently shown on production prompt'
+                                      : 'Currently hidden from production prompt'
+                                  }
+                                >
+                                  <span className="meaning-toggle-pill" aria-hidden="true">
+                                    <span className="meaning-toggle-thumb" />
+                                  </span>
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <MeaningList meanings={activeAllMeanings} />
+                      )}
                       {activeWordPersonalNotes.trim().length > 0 ? (
                         <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
                       ) : null}
@@ -1487,7 +1596,7 @@ function PersonalNotesEditorOverlay({
   onCancel,
   onSave,
 }: {
-  inputRef: RefObject<HTMLTextAreaElement | null>;
+  inputRef: RefObject<HTMLTextAreaElement>;
   value: string;
   isSaving: boolean;
   error: string | null;

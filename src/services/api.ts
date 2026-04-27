@@ -1,4 +1,4 @@
-import type { PriorityWord, Word, ReviewItem, ReviewRating, SessionItemBuckets } from '../types';
+import type { PriorityWord, Word, WordMeaning, ReviewItem, ReviewRating, SessionItemBuckets } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:5174';
 
@@ -189,6 +189,35 @@ export async function updateWordUserPriority(wordId: string, patch: UserPriority
 
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to update user priority'));
+  }
+
+  return response.json();
+}
+
+export async function fetchWordMeanings(wordId: string): Promise<WordMeaning[]> {
+  const response = await fetch(`${API_BASE}/api/words/${wordId}/meanings`);
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to load word meanings'));
+  }
+
+  return response.json();
+}
+
+export async function updateWordMeaningVisibility(
+  wordId: string,
+  meaningId: string,
+  showOnProductionPrompt: boolean,
+): Promise<WordMeaning[]> {
+  const response = await fetch(`${API_BASE}/api/words/${wordId}/meanings/${meaningId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ showOnProductionPrompt }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to update word meaning visibility'));
   }
 
   return response.json();
