@@ -202,6 +202,7 @@ function App() {
   const [productionUiPhase, setProductionUiPhase] = useState<'idle' | 'await-rating' | 'await-next'>('idle');
   const [frozenProductionCard, setFrozenProductionCard] = useState<FrozenProductionCard | null>(null);
   const personalNotesEditorInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const productionHanziInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     function syncSessionPrefetchState() {
@@ -401,6 +402,12 @@ function App() {
       ? formatElapsedTime(sessionSummary.startedAt, sessionSummary.completedAt ?? sessionNow)
       : '0:00';
   const personalNotesEditorOpen = personalNotesEditorTargetWordId !== null;
+  const productionSubmissionInputActive =
+    sessionStarted &&
+    productionRequiresHanziInput &&
+    !answerRevealed &&
+    !productionAwaitingNext &&
+    !personalNotesEditorOpen;
   const personalNotesEditorCanSubmit = !personalNotesEditorSaving;
 
   useEffect(() => {
@@ -724,7 +731,13 @@ function App() {
   }
 
   async function handleSubmitProductionHanzi() {
-    if (!sessionState || !activeItem || !activeWord || activeItem.reviewItem.direction !== 'reverse') {
+    if (
+      personalNotesEditorOpen ||
+      !sessionState ||
+      !activeItem ||
+      !activeWord ||
+      activeItem.reviewItem.direction !== 'reverse'
+    ) {
       return;
     }
 
@@ -965,6 +978,21 @@ function App() {
   }, [personalNotesEditorOpen]);
 
   useEffect(() => {
+    if (!sessionStarted || !productionRequiresHanziInput || answerRevealed || productionAwaitingNext || personalNotesEditorOpen) {
+      return;
+    }
+
+    productionHanziInputRef.current?.focus();
+  }, [
+    activeReviewItem?.id,
+    answerRevealed,
+    personalNotesEditorOpen,
+    productionAwaitingNext,
+    productionRequiresHanziInput,
+    sessionStarted,
+  ]);
+
+  useEffect(() => {
     if (!personalNotesEditorOpen) {
       return;
     }
@@ -984,6 +1012,16 @@ function App() {
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented || submittingRating !== null || personalNotesEditorOpen) {
+        return;
+      }
+
+      if (event.key === 'Escape' && productionSubmissionInputActive) {
+        event.preventDefault();
+        if (document.activeElement === productionHanziInputRef.current) {
+          productionHanziInputRef.current?.blur();
+        } else {
+          productionHanziInputRef.current?.focus();
+        }
         return;
       }
 
@@ -1070,6 +1108,7 @@ function App() {
     answerRevealed,
     productionAwaitingNext,
     productionRequiresHanziInput,
+    productionSubmissionInputActive,
     handleOpenPersonalNotesEditor,
     lastUndoSnapshot,
     personalNotesEditorOpen,
@@ -1448,6 +1487,7 @@ function App() {
                         Type Hanzi
                       </label>
                       <input
+                        ref={productionHanziInputRef}
                         id="production-hanzi-input"
                         type="text"
                         value={productionHanziInput}
