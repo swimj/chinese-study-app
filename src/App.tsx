@@ -60,9 +60,31 @@ type SessionSummary = {
 type SessionUndoSnapshot = {
   sessionState: SessionState;
   sessionSummary: SessionSummary | null;
+  restoreUi: 'revealed' | 'production-input';
 };
 
 type DeferredSessionCommit = Exclude<SessionCommitIntent, { type: 'none' }>;
+
+// When the user submits the wrong hanzi in production training,
+// the system internally rates it as "forgot", and typically rating
+// is the transition step for session queue manipulation.
+// But in this case, at the UI level we do not want to immediately move
+// to the next card yet, we want to show the card to the user so they can
+// review where they messed up. This object represents that mask over the
+// session's active word concept.
+type FrozenProductionCard = {
+  status: Word['status'];
+  reviewedCount: number;
+  queuedCount: number;
+  promptDisplayedMeanings: string[];
+  fallbackPrompt: string;
+  answerPinyin: string;
+  answerText: string;
+  allMeanings: string[];
+  personalNotes: string;
+  intervalHours: number;
+  example: string;
+};
 
 const WORDS_PAGE_SIZE = 20;
 const APP_VERSION = __APP_VERSION__;
@@ -175,6 +197,10 @@ function App() {
   const [personalNotesEditorDraft, setPersonalNotesEditorDraft] = useState('');
   const [personalNotesEditorSaving, setPersonalNotesEditorSaving] = useState(false);
   const [personalNotesEditorError, setPersonalNotesEditorError] = useState<string | null>(null);
+  const [productionHanziInput, setProductionHanziInput] = useState('');
+  const [productionHanziError, setProductionHanziError] = useState<string | null>(null);
+  const [productionUiPhase, setProductionUiPhase] = useState<'idle' | 'await-rating' | 'await-next'>('idle');
+  const [frozenProductionCard, setFrozenProductionCard] = useState<FrozenProductionCard | null>(null);
   const personalNotesEditorInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
@@ -345,6 +371,9 @@ function App() {
     reviewInReinforcement
       ? `Reinforcement ${activeReviewReinforcementStreak}/3 · Forgotten recalls ${activeReviewFailureCount}`
       : `Initial recall`;
+  const productionRequiresHanziInput = activeReviewItem?.direction === 'reverse';
+  const productionAwaitingRating = productionRequiresHanziInput && productionUiPhase === 'await-rating';
+  const productionAwaitingNext = productionUiPhase === 'await-next' && frozenProductionCard !== null;
 
   const reviewRatingOptions: Array<{ value: ReviewRating; label: string; note: string }> = [
     { value: 'forgot', label: 'Forgot', note: 'Counts as a failure and may trigger same-session reinforcement.' },
@@ -447,6 +476,10 @@ function App() {
       setPersonalNotesEditorDraft('');
       setPersonalNotesEditorSaving(false);
       setPersonalNotesEditorError(null);
+      setProductionHanziInput('');
+      setProductionHanziError(null);
+      setProductionUiPhase('idle');
+      setFrozenProductionCard(null);
       setPendingSessionCommit(null);
       setLastUndoSnapshot(null);
       setSessionSummary({
@@ -490,6 +523,10 @@ function App() {
           : current,
       );
       setAnswerRevealed(false);
+      setProductionHanziInput('');
+      setProductionHanziError(null);
+      setProductionUiPhase('idle');
+      setFrozenProductionCard(null);
       return;
     }
 
@@ -515,6 +552,10 @@ function App() {
     setPersonalNotesEditorDraft('');
     setPersonalNotesEditorSaving(false);
     setPersonalNotesEditorError(null);
+    setProductionHanziInput('');
+    setProductionHanziError(null);
+    setProductionUiPhase('idle');
+    setFrozenProductionCard(null);
     setPendingSessionCommit(null);
     setLastUndoSnapshot(null);
     resetSessionPrefetchCache();
@@ -629,7 +670,12 @@ function App() {
     }
   }
 
-  async function handleRate(rating: ReviewRating) {
+  async function handleRate(
+    rating: ReviewRating,
+    options?: {
+      restoreUi?: SessionUndoSnapshot['restoreUi'];
+    },
+  ) {
     if (!sessionState || !activeItem || !activeWord) {
       return;
     }
@@ -648,6 +694,7 @@ function App() {
       setLastUndoSnapshot({
         sessionState: cloneSessionState(sessionState),
         sessionSummary,
+        restoreUi: options?.restoreUi ?? 'revealed',
       });
 
       const transition = rateCurrentItem(sessionState, rating);
@@ -665,11 +712,100 @@ function App() {
         }),
       );
       setAnswerRevealed(false);
+      setProductionHanziInput('');
+      setProductionHanziError(null);
+      setProductionUiPhase('idle');
+      setFrozenProductionCard(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setSubmittingRating(null);
     }
+  }
+
+  async function handleSubmitProductionHanzi() {
+    if (!sessionState || !activeItem || !activeWord || activeItem.reviewItem.direction !== 'reverse') {
+      return;
+    }
+
+    const submittedHanzi = normalizeHanziRecallInput(productionHanziInput);
+    if (submittedHanzi.length === 0) {
+      setProductionHanziError('Enter Hanzi before submitting.');
+      return;
+    }
+
+    setSubmittingRating('good');
+    setError(null);
+
+    try {
+      if (pendingSessionCommit) {
+        await applyPendingSessionCommit(pendingSessionCommit);
+        setPendingSessionCommit(null);
+      }
+
+      setLastUndoSnapshot({
+        sessionState: cloneSessionState(sessionState),
+        sessionSummary,
+        restoreUi: 'production-input',
+      });
+
+      const expectedHanzi = normalizeHanziRecallInput(activeWord.hanzi);
+      const isCorrect = submittedHanzi === expectedHanzi;
+
+      if (isCorrect) {
+        setProductionHanziError(null);
+        setProductionUiPhase('await-rating');
+        setAnswerRevealed(true);
+        return;
+      }
+
+      const transition = rateCurrentItem(sessionState, 'forgot');
+      setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
+      setSessionState(transition.state);
+      setSessionSummary((current) =>
+        updateSessionSummaryForRating({
+          summary: current,
+          transition,
+          rating: 'forgot',
+          activeWord,
+          activeItem,
+          previousPhase: sessionState.phase,
+        }),
+      );
+      setFrozenProductionCard({
+        status: activeWord.status,
+        reviewedCount,
+        queuedCount: sessionState ? getSchedulerLength(sessionState.scheduler) : 0,
+        promptDisplayedMeanings: [...activePromptDisplayedMeanings],
+        fallbackPrompt: activeWord.meaning,
+        answerPinyin: activeWord.pinyin,
+        answerText: activeWord.hanzi,
+        allMeanings: [...activeAllMeanings],
+        personalNotes: activeWordPersonalNotes,
+        intervalHours: activeItem.reviewItem.intervalHours,
+        example: activeWord.examples[0] ?? '',
+      });
+      setProductionHanziError(`Incorrect Hanzi. Expected "${activeWord.hanzi}".`);
+      setProductionUiPhase('await-next');
+      setAnswerRevealed(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setSubmittingRating(null);
+    }
+  }
+
+  function handleContinueAfterAutoForgot() {
+    setAnswerRevealed(false);
+    setProductionHanziInput('');
+    setProductionHanziError(null);
+    setProductionUiPhase('idle');
+
+    // This will unmask the active card, i.e. presents the user the illusion
+    // that they've advanced the queue, even though internally the queue
+    // already advanced due to their wrong hanzi submission.
+    setFrozenProductionCard(null);
+    // note: undo window still open here, intentionally so!
   }
 
   function handleUndoLastRating() {
@@ -679,7 +815,11 @@ function App() {
 
     setSessionState(cloneSessionState(lastUndoSnapshot.sessionState));
     setSessionSummary(lastUndoSnapshot.sessionSummary);
-    setAnswerRevealed(true);
+    setAnswerRevealed(lastUndoSnapshot.restoreUi === 'revealed');
+    setProductionHanziInput('');
+    setProductionHanziError(null);
+    setProductionUiPhase('idle');
+    setFrozenProductionCard(null);
     setPendingSessionCommit(null);
     setLastUndoSnapshot(null);
     setError(null);
@@ -712,6 +852,10 @@ function App() {
 
       setSessionState(transition.state);
       setAnswerRevealed(false);
+      setProductionHanziInput('');
+      setProductionHanziError(null);
+      setProductionUiPhase('idle');
+      setFrozenProductionCard(null);
       setLastUndoSnapshot(null);
       await dismissWordFromStudy(transition.dismiss.wordId);
     } catch (err) {
@@ -789,6 +933,18 @@ function App() {
   }, [answerRevealed, sessionStarted, sessionState]);
 
   useEffect(() => {
+    if (productionUiPhase === 'await-next') {
+      return;
+    }
+
+    setProductionHanziInput('');
+    setProductionHanziError(null);
+    if (productionUiPhase === 'await-rating' && !productionRequiresHanziInput) {
+      setProductionUiPhase('idle');
+    }
+  }, [activeReviewItem?.id, productionUiPhase, productionRequiresHanziInput]);
+
+  useEffect(() => {
     if (!sessionStarted || sessionState?.phase === 'completed' || !sessionSummary) {
       return;
     }
@@ -851,8 +1007,17 @@ function App() {
       if (event.key === ' ') {
         event.preventDefault();
 
+        if (productionAwaitingNext) {
+          handleContinueAfterAutoForgot();
+          return;
+        }
+
         if (activeWord?.status === 'unstudied' && !activeUnstudiedProgress?.introComplete) {
           handleBeginUnstudiedDrill(activeWord.id);
+          return;
+        }
+
+        if (productionRequiresHanziInput && !answerRevealed) {
           return;
         }
 
@@ -862,7 +1027,9 @@ function App() {
         }
 
         if (activeWord) {
-          void handleRate('good');
+          void handleRate('good', {
+            restoreUi: productionRequiresHanziInput ? 'production-input' : 'revealed',
+          });
         }
         return;
       }
@@ -888,7 +1055,9 @@ function App() {
       }
 
       event.preventDefault();
-      void handleRate(nextRating);
+      void handleRate(nextRating, {
+        restoreUi: productionRequiresHanziInput ? 'production-input' : 'revealed',
+      });
     }
 
     window.addEventListener('keydown', handleKeyDown);
@@ -899,6 +1068,8 @@ function App() {
     activeWord,
     activeWordPersonalNotes,
     answerRevealed,
+    productionAwaitingNext,
+    productionRequiresHanziInput,
     handleOpenPersonalNotesEditor,
     lastUndoSnapshot,
     personalNotesEditorOpen,
@@ -1096,6 +1267,57 @@ function App() {
                     </button>
                   ) : null}
                 </div>
+              ) : productionAwaitingNext && frozenProductionCard ? (
+                <div className="review-card">
+                  <div className="review-card-header">
+                    <p className="badge">
+                      {frozenProductionCard.status === 'review'
+                        ? 'Review'
+                        : frozenProductionCard.status === 'learning'
+                          ? 'Learning'
+                          : 'New word'}
+                      {' · Meaning → Hanzi'}
+                    </p>
+                  </div>
+                  <p className="notes">
+                    Answered {frozenProductionCard.reviewedCount} this session · {frozenProductionCard.queuedCount} still queued
+                  </p>
+                  {lastUndoSnapshot ? (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={handleUndoLastRating}
+                      disabled={submittingRating !== null || personalNotesEditorOpen}
+                    >
+                      Undo last rating
+                    </button>
+                  ) : null}
+                  <div className="prompt-block">
+                    <span className="prompt-label">Prompt</span>
+                    {frozenProductionCard.promptDisplayedMeanings.length > 0 ? (
+                      <MeaningList meanings={frozenProductionCard.promptDisplayedMeanings} className="meaning-list-prompt" />
+                    ) : (
+                      <span className="prompt-meta meaning-list-prompt">{frozenProductionCard.fallbackPrompt}</span>
+                    )}
+                  </div>
+                  <div className="answer-block">
+                    <span className="prompt-label">Answer</span>
+                    <span className="answer-pinyin">{frozenProductionCard.answerPinyin}</span>
+                    <strong className="answer-value">{frozenProductionCard.answerText}</strong>
+                    <MeaningList meanings={frozenProductionCard.allMeanings} />
+                    {frozenProductionCard.personalNotes.trim().length > 0 ? (
+                      <span className="prompt-meta">Notes: {frozenProductionCard.personalNotes}</span>
+                    ) : null}
+                    <span className="prompt-meta">
+                      Interval {frozenProductionCard.intervalHours} hour{frozenProductionCard.intervalHours === 1 ? '' : 's'}
+                    </span>
+                    <span className="prompt-meta">{frozenProductionCard.example}</span>
+                  </div>
+                  <p className="notes">Hanzi recall was incorrect. This item was recorded as Forgot.</p>
+                  <button type="button" onClick={handleContinueAfterAutoForgot} disabled={personalNotesEditorOpen}>
+                    Next
+                  </button>
+                </div>
               ) : (
                 <div className="review-card">
                   <div className="review-card-header">
@@ -1214,20 +1436,55 @@ function App() {
                       </span>
                       <span className="prompt-meta">{activeWord.examples[0]}</span>
                     </div>
+                  ) : productionRequiresHanziInput && !productionAwaitingRating ? (
+                    <form
+                      className="stack"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void handleSubmitProductionHanzi();
+                      }}
+                    >
+                      <label className="prompt-label" htmlFor="production-hanzi-input">
+                        Type Hanzi
+                      </label>
+                      <input
+                        id="production-hanzi-input"
+                        type="text"
+                        value={productionHanziInput}
+                        onChange={(event) => {
+                          setProductionHanziInput(event.target.value);
+                          if (productionHanziError) {
+                            setProductionHanziError(null);
+                          }
+                        }}
+                        autoComplete="off"
+                        autoCapitalize="none"
+                        spellCheck={false}
+                        disabled={submittingRating !== null || personalNotesEditorOpen}
+                      />
+                      {productionHanziError ? <p className="notes">{productionHanziError}</p> : null}
+                      <button type="submit" disabled={submittingRating !== null || personalNotesEditorOpen}>
+                        Submit Hanzi
+                      </button>
+                    </form>
                   ) : (
                     <button type="button" onClick={() => setAnswerRevealed(true)} disabled={personalNotesEditorOpen}>
                       Reveal answer
                     </button>
                   )}
 
-                  {answerRevealed ? (
+                  {answerRevealed && (!productionRequiresHanziInput || productionAwaitingRating) ? (
                     <div className="rating-grid">
                       {activeRatingOptions.map((option) => (
                         <button
                           key={option.value}
                           type="button"
                           className="rating-button"
-                          onClick={() => handleRate(option.value)}
+                          onClick={() =>
+                            void handleRate(option.value, {
+                              restoreUi: productionRequiresHanziInput ? 'production-input' : 'revealed',
+                            })
+                          }
                           disabled={submittingRating !== null || personalNotesEditorOpen}
                         >
                           <strong>{option.label}</strong>
@@ -2030,6 +2287,10 @@ function getRatingForKey(
   };
 
   return ratingByKey[key] ?? null;
+}
+
+function normalizeHanziRecallInput(value: string) {
+  return value.replace(/\s+/g, '').trim();
 }
 
 function formatElapsedTime(startedAt: string, completedAt: string) {
