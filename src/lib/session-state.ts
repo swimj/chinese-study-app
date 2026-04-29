@@ -121,7 +121,6 @@ export function beginUnstudiedDrill(state: SessionState, wordId: string): Sessio
 
   return {
     ...state,
-    scheduler: nextScheduler(state.scheduler),
     unstudiedProgress: {
       ...state.unstudiedProgress,
       [wordId]: {
