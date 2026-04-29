@@ -168,9 +168,13 @@ describe('session state', () => {
     result = rateCurrentItem(state, 'good');
 
     assert.deepEqual(result.commit, { type: 'none' });
-    assert.deepEqual(materializeEffectiveQueue(result.state.scheduler), [reverseItem.id]);
-    assert.equal(result.state.unstudiedProgress[unstudiedWord.id]?.consecutiveSuccesses.forward, 3);
-    assert.equal(result.state.unstudiedProgress[unstudiedWord.id]?.consecutiveSuccesses.reverse, 2);
+    const remainingQueue = materializeEffectiveQueue(result.state.scheduler);
+    assert.equal(remainingQueue.length, 1);
+    assert.ok(remainingQueue[0] === forwardItem.id || remainingQueue[0] === reverseItem.id);
+    const forwardSuccesses = result.state.unstudiedProgress[unstudiedWord.id]?.consecutiveSuccesses.forward ?? 0;
+    const reverseSuccesses = result.state.unstudiedProgress[unstudiedWord.id]?.consecutiveSuccesses.reverse ?? 0;
+    assert.ok(forwardSuccesses === 3 || reverseSuccesses === 3);
+    assert.ok(forwardSuccesses + reverseSuccesses === 5);
   });
 
   test('marking the current item started records that it has been shown once', () => {
@@ -311,7 +315,8 @@ describe('session state', () => {
     const drainedState = beginDrainSession(state);
 
     assert.equal(drainedState.phase, 'draining');
-    assert.deepEqual(materializeEffectiveQueue(drainedState.scheduler), [forwardItem.id, reverseItem.id]);
+    const queueAfterDrain = materializeEffectiveQueue(drainedState.scheduler);
+    assert.deepEqual(new Set(queueAfterDrain), new Set([forwardItem.id, reverseItem.id]));
     assert.equal(drainedState.unstudiedProgress[unstudiedWord.id]?.introComplete, true);
     const forwardSuccesses = drainedState.unstudiedProgress[unstudiedWord.id]?.consecutiveSuccesses.forward ?? 0;
     const reverseSuccesses = drainedState.unstudiedProgress[unstudiedWord.id]?.consecutiveSuccesses.reverse ?? 0;

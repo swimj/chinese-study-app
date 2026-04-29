@@ -108,8 +108,20 @@ export function markCurrentItemStarted(state: SessionState): SessionState {
 }
 
 export function beginUnstudiedDrill(state: SessionState, wordId: string): SessionState {
+  const activeItem = getSchedulerActiveItem(state.scheduler);
+  if (!activeItem) {
+    throw new Error('Session invariant violated: cannot begin unstudied drill without an active scheduler item.');
+  }
+
+  if (activeItem.word.id !== wordId) {
+    throw new Error(
+      `Session invariant violated: unstudied drill word "${wordId}" must match active word "${activeItem.word.id}".`,
+    );
+  }
+
   return {
     ...state,
+    scheduler: nextScheduler(state.scheduler),
     unstudiedProgress: {
       ...state.unstudiedProgress,
       [wordId]: {

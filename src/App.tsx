@@ -1255,57 +1255,6 @@ function App() {
                     Back to overview
                   </button>
                 </div>
-              ) : activeWord.status === 'unstudied' && !activeUnstudiedProgress?.introComplete ? (
-                <div className="review-card">
-                  <div className="review-card-header">
-                    <p className="badge">New word introduction</p>
-                    <div className="inline-actions">
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => void handleDismissCurrentWord()}
-                        disabled={personalNotesEditorSaving}
-                      >
-                        Dismiss
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={handleOpenPersonalNotesEditor}
-                        disabled={personalNotesEditorSaving}
-                      >
-                        Edit notes
-                      </button>
-                    </div>
-                  </div>
-                  <div className="prompt-block">
-                    <span className="prompt-label">Hanzi</span>
-                    <strong className="prompt-value">{activeWord.hanzi}</strong>
-                    <span className="prompt-meta">{activeWord.pinyin}</span>
-                    <MeaningList meanings={activeAllMeanings} />
-                    <span className="prompt-meta">{activeWord.examples[0]}</span>
-                    {activeItem.reviewItem.direction === 'forward' && activeWordPersonalNotes.trim().length > 0 ? (
-                      <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
-                    ) : null}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleBeginUnstudiedDrill(activeWord.id)}
-                    disabled={personalNotesEditorOpen}
-                  >
-                    Begin recall drills
-                  </button>
-                  {lastUndoSnapshot ? (
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={handleUndoLastRating}
-                      disabled={submittingRating !== null || personalNotesEditorOpen}
-                    >
-                      Undo last rating
-                    </button>
-                  ) : null}
-                </div>
               ) : productionAwaitingNext && frozenProductionCard ? (
                 <div className="review-card">
                   <div className="review-card-header">
@@ -1356,6 +1305,57 @@ function App() {
                   <button type="button" onClick={handleContinueAfterAutoForgot} disabled={personalNotesEditorOpen}>
                     Next
                   </button>
+                </div>
+              ) : activeWord.status === 'unstudied' && !activeUnstudiedProgress?.introComplete ? (
+                <div className="review-card">
+                  <div className="review-card-header">
+                    <p className="badge">New word introduction</p>
+                    <div className="inline-actions">
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => void handleDismissCurrentWord()}
+                        disabled={personalNotesEditorSaving}
+                      >
+                        Dismiss
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={handleOpenPersonalNotesEditor}
+                        disabled={personalNotesEditorSaving}
+                      >
+                        Edit notes
+                      </button>
+                    </div>
+                  </div>
+                  <div className="prompt-block">
+                    <span className="prompt-label">Hanzi</span>
+                    <strong className="prompt-value">{activeWord.hanzi}</strong>
+                    <span className="prompt-meta">{activeWord.pinyin}</span>
+                    <MeaningList meanings={activeAllMeanings} />
+                    <span className="prompt-meta">{activeWord.examples[0]}</span>
+                    {activeItem.reviewItem.direction === 'forward' && activeWordPersonalNotes.trim().length > 0 ? (
+                      <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleBeginUnstudiedDrill(activeWord.id)}
+                    disabled={personalNotesEditorOpen}
+                  >
+                    Begin recall drills
+                  </button>
+                  {lastUndoSnapshot ? (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={handleUndoLastRating}
+                      disabled={submittingRating !== null || personalNotesEditorOpen}
+                    >
+                      Undo last rating
+                    </button>
+                  ) : null}
                 </div>
               ) : (
                 <div className="review-card">

@@ -29,6 +29,10 @@ When code and spec conflict, treat the spec as intended behavior and update code
 - Prefer targeted fixes over broad refactors.
 - Do not introduce new dependencies unless necessary.
 - Preserve strict TypeScript quality; avoid `any` unless clearly justified.
+- Prefer strict invariants in state/domain transition functions:
+  - if a caller contract is expected to always hold, fail loudly (`throw`) when violated
+  - avoid silent defensive fallbacks that mask programmer errors
+  - reserve tolerant no-op behavior for explicitly user-driven or externally uncertain inputs
 - Keep backend timestamps and date keys in UTC (`toISOString`, `YYYY-MM-DD` UTC date key) unless explicitly changing product policy.
 - Avoid hard-coding assumptions that only work in single-machine/local-only deployments if a cleaner abstraction can preserve future hosted-service options.
 
