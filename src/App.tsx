@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { PriorityWord, ReviewItem, ReviewRating, SessionItemWithWord, Word, WordMeaning } from './types';
 import type { BackendStatus, SessionPayload } from './services/api';
 import {
@@ -181,6 +181,7 @@ function App() {
   const [prioritySearchHanzi, setPrioritySearchHanzi] = useState('');
   const [prioritySearchSubmitting, setPrioritySearchSubmitting] = useState(false);
   const [prioritySearchNotice, setPrioritySearchNotice] = useState<string | null>(null);
+  const [priorityJumpRequestWordId, setPriorityJumpRequestWordId] = useState<string | null>(null);
   const [updatingPriorityWordId, setUpdatingPriorityWordId] = useState<string | null>(null);
   const [answerRevealed, setAnswerRevealed] = useState(false);
   const [submittingRating, setSubmittingRating] = useState<ReviewRating | null>(null);
@@ -608,6 +609,7 @@ function App() {
       setPriorityWords(sortPriorityWords(priorityWordsResponse.words));
       setPriorityUnstudiedTotalCount(priorityWordsResponse.unstudiedTotalCount);
       setPrioritySearchNotice(null);
+      setPriorityJumpRequestWordId(null);
       setCurrentPage('priority');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -667,11 +669,14 @@ function App() {
 
         return sortPriorityWords([...byId.values()]);
       });
+      const prioritizedAddedWord = sortPriorityWords(response.words)[0];
+      setPriorityJumpRequestWordId(prioritizedAddedWord?.word.id ?? null);
       setPriorityUnstudiedTotalCount(response.unstudiedTotalCount);
       setPrioritySearchNotice(`Added ${response.addedCount} matching word${response.addedCount === 1 ? '' : 's'} for "${normalizedHanzi}".`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       setPrioritySearchNotice(message);
+      setPriorityJumpRequestWordId(null);
     } finally {
       setPrioritySearchSubmitting(false);
     }
@@ -1556,8 +1561,10 @@ function App() {
           searchNotice={prioritySearchNotice}
           searchSubmitting={prioritySearchSubmitting}
           dailyNewWordLimit={backendStatus?.dailyNewWordLimit ?? 2}
+          jumpRequestWordId={priorityJumpRequestWordId}
           onSearchHanziChange={setPrioritySearchHanzi}
           onSearchSubmit={() => void handleSubmitPrioritySearch()}
+          onJumpHandled={() => setPriorityJumpRequestWordId(null)}
           updatingWordId={updatingPriorityWordId}
           onMoveToTop={(wordId) => void handleUpdateWordPriority(wordId, { forceTop: true })}
           onBumpAgain={(wordId) => void handleUpdateWordPriority(wordId, { bumpDelta: 1 })}
@@ -1949,8 +1956,10 @@ function PriorityPage({
   searchNotice,
   searchSubmitting,
   dailyNewWordLimit,
+  jumpRequestWordId,
   onSearchHanziChange,
   onSearchSubmit,
+  onJumpHandled,
   updatingWordId,
   onMoveToTop,
   onBumpAgain,
@@ -1962,14 +1971,105 @@ function PriorityPage({
   searchNotice: string | null;
   searchSubmitting: boolean;
   dailyNewWordLimit: number;
+  jumpRequestWordId: string | null;
   onSearchHanziChange: (value: string) => void;
   onSearchSubmit: () => void;
+  onJumpHandled: () => void;
   updatingWordId: string | null;
   onMoveToTop: (wordId: string) => void;
   onBumpAgain: (wordId: string) => void;
   onRemove: (wordId: string) => void;
 }) {
   const [expandedDefinitionByWordId, setExpandedDefinitionByWordId] = useState<Record<string, boolean>>({});
+  const [showJumpToTopButton, setShowJumpToTopButton] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const tableTopAnchorRef = useRef<HTMLDivElement | null>(null);
+  const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
+  const pendingMoveToTopAnchorRef = useRef<{ wordId: string; top: number } | null>(null);
+  const onJumpHandledRef = useRef(onJumpHandled);
+
+  useEffect(() => {
+    onJumpHandledRef.current = onJumpHandled;
+  }, [onJumpHandled]);
+
+  useEffect(() => {
+    if (!jumpRequestWordId) {
+      return;
+    }
+    const targetRowElement = rowRefs.current[jumpRequestWordId];
+    const tableTopAnchorElement = tableTopAnchorRef.current;
+
+    if (!targetRowElement || !tableTopAnchorElement) {
+      onJumpHandledRef.current();
+      return;
+    }
+
+    const targetRowRect = targetRowElement.getBoundingClientRect();
+    const tableTopRect = tableTopAnchorElement.getBoundingClientRect();
+    const targetRowAbsoluteTop = targetRowRect.top + window.scrollY;
+    const tableTopAbsoluteAtPageTop = tableTopRect.top + window.scrollY;
+    const desiredScrollTop = Math.max(0, targetRowAbsoluteTop - tableTopAbsoluteAtPageTop);
+    const shouldJump = targetRowRect.top > tableTopRect.top + 8;
+
+    if (shouldJump) {
+      window.scrollTo({ top: desiredScrollTop, behavior: 'smooth' });
+      setShowJumpToTopButton(true);
+    }
+
+    onJumpHandledRef.current();
+  }, [jumpRequestWordId]);
+
+  useEffect(() => {
+    if (!showJumpToTopButton) {
+      return;
+    }
+
+    function handleScroll() {
+      if (window.scrollY <= 8) {
+        setShowJumpToTopButton(false);
+      }
+    }
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [showJumpToTopButton]);
+
+  useLayoutEffect(() => {
+    const pendingAnchor = pendingMoveToTopAnchorRef.current;
+    if (!pendingAnchor) {
+      return;
+    }
+
+    const anchorRowElement = rowRefs.current[pendingAnchor.wordId];
+    if (!anchorRowElement) {
+      pendingMoveToTopAnchorRef.current = null;
+      return;
+    }
+
+    const nextTop = anchorRowElement.getBoundingClientRect().top;
+    const delta = nextTop - pendingAnchor.top;
+    if (Math.abs(delta) > 0.5) {
+      window.scrollBy({ top: delta, behavior: 'auto' });
+    }
+
+    pendingMoveToTopAnchorRef.current = null;
+  }, [rows]);
+
+  function handleMoveToTopWithScrollLock(wordId: string) {
+    const clickedIndex = rows.findIndex((entry) => entry.word.id === wordId);
+    const anchorCandidate = clickedIndex > 0 ? rows[clickedIndex - 1] : null;
+    if (anchorCandidate) {
+      const anchorRowElement = rowRefs.current[anchorCandidate.word.id];
+      if (anchorRowElement) {
+        pendingMoveToTopAnchorRef.current = {
+          wordId: anchorCandidate.word.id,
+          top: anchorRowElement.getBoundingClientRect().top,
+        };
+      }
+    }
+
+    onMoveToTop(wordId);
+  }
 
   return (
     <section className="words-page">
@@ -1984,6 +2084,7 @@ function PriorityPage({
         <h2>Add by hanzi</h2>
         <div className="pagination-actions">
           <input
+            ref={searchInputRef}
             type="text"
             value={searchHanzi}
             onChange={(event) => onSearchHanziChange(event.target.value)}
@@ -2002,7 +2103,7 @@ function PriorityPage({
         {rows.length === 0 ? (
           <p className="notes">No prioritized unstudied words yet.</p>
         ) : (
-          <div className="table-shell">
+          <div className="table-shell" ref={tableTopAnchorRef}>
             <table className="words-table">
               <thead>
                 <tr>
@@ -2030,7 +2131,12 @@ function PriorityPage({
                   );
 
                   return (
-                    <tr key={word.word.id}>
+                    <tr
+                      key={word.word.id}
+                      ref={(element) => {
+                        rowRefs.current[word.word.id] = element;
+                      }}
+                    >
                       <td>
                         <div className="table-word-cell">
                           <strong>{word.word.hanzi}</strong>
@@ -2063,7 +2169,7 @@ function PriorityPage({
                         <div className="pagination-actions">
                           <button
                             type="button"
-                            onClick={() => onMoveToTop(word.word.id)}
+                            onClick={() => handleMoveToTopWithScrollLock(word.word.id)}
                             disabled={rowUpdating || word.forceTop}
                           >
                             {word.forceTop ? 'At top' : 'Move to top'}
@@ -2084,6 +2190,22 @@ function PriorityPage({
           </div>
         )}
       </div>
+      {showJumpToTopButton ? (
+        <button
+          type="button"
+          className="priority-jump-top-button"
+          onClick={() => {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            setShowJumpToTopButton(false);
+            window.setTimeout(() => {
+              searchInputRef.current?.focus();
+              searchInputRef.current?.select();
+            }, 250);
+          }}
+        >
+          Jump to top
+        </button>
+      ) : null}
     </section>
   );
 }
