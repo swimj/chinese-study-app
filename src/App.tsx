@@ -987,7 +987,7 @@ function App() {
       return;
     }
 
-    if (!activeUnstudiedProgress?.introComplete) {
+    if (activeWord?.status === 'unstudied' && !activeUnstudiedProgress?.introComplete) {
       return;
     }
 
