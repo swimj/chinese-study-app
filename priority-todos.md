@@ -6,3 +6,7 @@ I'd eventually like to more deeply integrate cloze deletions so this is just a f
 8. undo - is deep clone strictly necessary
 9. getSessionItems() - delete
 10. pronunciation
+11. study time per day
+12. 繁体字 option
+13. final undo page before session summary
+14. focus production text form after new word intro

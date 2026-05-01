@@ -987,8 +987,13 @@ function App() {
       return;
     }
 
+    if (!activeUnstudiedProgress?.introComplete) {
+      return;
+    }
+
     productionHanziInputRef.current?.focus();
   }, [
+    activeUnstudiedProgress?.introComplete,
     activeReviewItem?.id,
     answerRevealed,
     personalNotesEditorOpen,
