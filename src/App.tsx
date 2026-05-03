@@ -848,23 +848,23 @@ function App() {
   }
 
   async function handleDismissCurrentWord() {
-    if (!sessionState) {
+    if (!sessionState || !activeWord) {
       return;
     }
 
     setError(null);
 
     try {
-      const transition = dismissCurrentItemFromSession(sessionState);
-      if (transition.dismiss.type === 'none') {
-        return;
-      }
-
       const confirmationMessage =
-        transition.dismiss.status === 'unstudied'
+        activeWord.status === 'unstudied'
           ? 'Dismiss this new word? This immediately removes it from this session and cannot be undone.'
           : 'Dismiss this word? This immediately removes both directions from this session, returns it to unstudied, and cannot be undone.';
       if (!window.confirm(confirmationMessage)) {
+        return;
+      }
+
+      const transition = dismissCurrentItemFromSession(sessionState);
+      if (transition.dismiss.type === 'none') {
         return;
       }
 
