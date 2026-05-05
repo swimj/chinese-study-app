@@ -55,12 +55,3 @@ export type SessionItemBuckets = {
   learning: SessionItemWithWord[];
   unstudied: SessionItemWithWord[];
 };
-
-export type WordItem = {
-  id: string;
-  english: string;
-  chinese: string;
-  pinyin: string;
-  category: string;
-  example: string;
-};
