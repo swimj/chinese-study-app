@@ -12,6 +12,8 @@ import type { SessionSummary } from './session-summary';
 import { SessionSummaryPanel } from './SessionSummaryPanel';
 
 export type FrozenProductionCard = {
+  targetWordId: string;
+  attemptedHanzi: string;
   status: Word['status'];
   reviewedCount: number;
   queuedCount: number;
@@ -59,10 +61,14 @@ export function StudySessionPanel({
   productionHanziInput,
   productionHanziError,
   productionHanziInputRef,
+  productionContrastCandidateChecked,
+  productionContrastCandidateNote,
   activeRatingOptions,
   onUndoLastRating,
   onEndSession,
   onContinueAfterAutoForgot,
+  onProductionContrastCandidateCheckedChange,
+  onProductionContrastCandidateNoteChange,
   onDismissCurrentWord,
   onOpenPersonalNotesEditor,
   onBeginUnstudiedDrill,
@@ -105,10 +111,14 @@ export function StudySessionPanel({
   productionHanziInput: string;
   productionHanziError: string | null;
   productionHanziInputRef: RefObject<HTMLInputElement>;
+  productionContrastCandidateChecked: boolean;
+  productionContrastCandidateNote: string;
   activeRatingOptions: RatingOption[];
   onUndoLastRating: () => void;
   onEndSession: () => void;
   onContinueAfterAutoForgot: () => void;
+  onProductionContrastCandidateCheckedChange: (checked: boolean) => void;
+  onProductionContrastCandidateNoteChange: (value: string) => void;
   onDismissCurrentWord: () => void;
   onOpenPersonalNotesEditor: () => void;
   onBeginUnstudiedDrill: (wordId: string) => void;
@@ -192,6 +202,24 @@ export function StudySessionPanel({
           <button type="button" onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen}>
             Next
           </button>
+          <div className="contrast-candidate-controls">
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={productionContrastCandidateChecked}
+                onChange={(event) => onProductionContrastCandidateCheckedChange(event.target.checked)}
+                disabled={personalNotesEditorOpen}
+              />
+              <span>Contrast candidate?</span>
+            </label>
+            <textarea
+              value={productionContrastCandidateNote}
+              onChange={(event) => onProductionContrastCandidateNoteChange(event.target.value)}
+              disabled={!productionContrastCandidateChecked || personalNotesEditorOpen}
+              placeholder="Note"
+              rows={3}
+            />
+          </div>
         </div>
       ) : activeWord.status === 'unstudied' && !activeUnstudiedProgress?.introComplete ? (
         <div className="review-card">

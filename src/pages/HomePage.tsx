@@ -53,11 +53,15 @@ export function HomePage({
   productionHanziInput,
   productionHanziError,
   productionHanziInputRef,
+  productionContrastCandidateChecked,
+  productionContrastCandidateNote,
   activeRatingOptions,
   onStartSession,
   onEndSession,
   onUndoLastRating,
   onContinueAfterAutoForgot,
+  onProductionContrastCandidateCheckedChange,
+  onProductionContrastCandidateNoteChange,
   onDismissCurrentWord,
   onOpenPersonalNotesEditor,
   onBeginUnstudiedDrill,
@@ -103,11 +107,15 @@ export function HomePage({
   productionHanziInput: string;
   productionHanziError: string | null;
   productionHanziInputRef: RefObject<HTMLInputElement>;
+  productionContrastCandidateChecked: boolean;
+  productionContrastCandidateNote: string;
   activeRatingOptions: RatingOption[];
   onStartSession: () => void;
   onEndSession: () => void;
   onUndoLastRating: () => void;
   onContinueAfterAutoForgot: () => void;
+  onProductionContrastCandidateCheckedChange: (checked: boolean) => void;
+  onProductionContrastCandidateNoteChange: (value: string) => void;
   onDismissCurrentWord: () => void;
   onOpenPersonalNotesEditor: () => void;
   onBeginUnstudiedDrill: (wordId: string) => void;
@@ -179,10 +187,14 @@ export function HomePage({
           productionHanziInput={productionHanziInput}
           productionHanziError={productionHanziError}
           productionHanziInputRef={productionHanziInputRef}
+          productionContrastCandidateChecked={productionContrastCandidateChecked}
+          productionContrastCandidateNote={productionContrastCandidateNote}
           activeRatingOptions={activeRatingOptions}
           onUndoLastRating={onUndoLastRating}
           onEndSession={onEndSession}
           onContinueAfterAutoForgot={onContinueAfterAutoForgot}
+          onProductionContrastCandidateCheckedChange={onProductionContrastCandidateCheckedChange}
+          onProductionContrastCandidateNoteChange={onProductionContrastCandidateNoteChange}
           onDismissCurrentWord={onDismissCurrentWord}
           onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
           onBeginUnstudiedDrill={onBeginUnstudiedDrill}

@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { getAppConfig } from './config.ts';
 
 const config = getAppConfig();
 const dbPath = config.dbPath;
 const appJsonPath = path.join(config.dataDir, 'app.json');
+const productionMistakeCandidatesPath = path.join(config.dataDir, 'production-mistake-candidates.jsonl');
 const dbExistedOnStartup = fs.existsSync(dbPath);
 
 if (!fs.existsSync(config.dataDir)) {
@@ -62,6 +64,16 @@ type ReviewItem = {
   lastReviewedAt: string | null;
   nextDueAt: string | null;
   easeFactor: number;
+};
+
+type ProductionMistakeCandidate = {
+  id: string;
+  targetWordId: string;
+  targetHanzi: string;
+  attemptedHanzi: string;
+  matchedWordId: string | null;
+  createdAt: string;
+  note: string;
 };
 
 type SessionItemWithWord = {
@@ -197,6 +209,7 @@ initializeDatabase();
 export type {
   HomeOverview,
   WordMeaning,
+  ProductionMistakeCandidate,
   ReviewItem,
   ReviewPassRating,
   ReviewRating,
@@ -552,6 +565,57 @@ export function getReviewItems(): ReviewItem[] {
     .all() as ReviewItemRow[];
 
   return rows.map(mapReviewItemRow);
+}
+
+export function captureProductionMistakeCandidate({
+  targetWordId,
+  attemptedHanzi,
+  note = '',
+}: {
+  targetWordId: string;
+  attemptedHanzi: string;
+  note?: string;
+}): ProductionMistakeCandidate {
+  const targetWord = getWordById(targetWordId);
+  if (!targetWord) {
+    throw new Error('Word not found');
+  }
+
+  const normalizedAttempt = normalizeProductionMistakeHanzi(attemptedHanzi);
+  if (normalizedAttempt.length === 0) {
+    throw new Error('Expected non-empty attempted Hanzi');
+  }
+
+  const targetHanzi = normalizeProductionMistakeHanzi(targetWord.hanzi);
+  if (normalizedAttempt === targetHanzi) {
+    throw new Error('Expected attempted Hanzi to differ from target Hanzi');
+  }
+
+  const matchedWord = findFirstWordByHanzi(normalizedAttempt);
+  const candidate: ProductionMistakeCandidate = {
+    id: randomUUID(),
+    targetWordId: targetWord.id,
+    targetHanzi: targetWord.hanzi,
+    attemptedHanzi: normalizedAttempt,
+    matchedWordId: matchedWord?.id ?? null,
+    createdAt: new Date().toISOString(),
+    note: note.trim(),
+  };
+
+  fs.appendFileSync(productionMistakeCandidatesPath, `${JSON.stringify(candidate)}\n`, 'utf8');
+  return candidate;
+}
+
+export function getProductionMistakeCandidates(): ProductionMistakeCandidate[] {
+  if (!fs.existsSync(productionMistakeCandidatesPath)) {
+    return [];
+  }
+
+  return fs
+    .readFileSync(productionMistakeCandidatesPath, 'utf8')
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .map((line) => parseProductionMistakeCandidateLine(line));
 }
 
 export function getWordStatusCounts(): Record<WordStatus, number> {
@@ -1044,6 +1108,91 @@ function backfillWordMeaningsFromWords() {
     db.exec('ROLLBACK');
     throw error;
   }
+}
+
+function getWordById(wordId: string): Word | null {
+  const row = db
+    .prepare(`
+      SELECT
+        id,
+        hanzi,
+        traditional,
+        pinyin,
+        meaning,
+        meanings_json,
+        personal_notes,
+        examples_json,
+        status,
+        priority,
+        created_at,
+        learning_streak,
+        last_learning_success_on,
+        last_learning_covered_on
+      FROM words
+      WHERE id = ?
+    `)
+    .get(wordId) as WordRow | undefined;
+
+  return row ? mapWordRow(row) : null;
+}
+
+function findFirstWordByHanzi(hanzi: string): Word | null {
+  const row = db
+    .prepare(`
+      SELECT
+        id,
+        hanzi,
+        traditional,
+        pinyin,
+        meaning,
+        meanings_json,
+        personal_notes,
+        examples_json,
+        status,
+        priority,
+        created_at,
+        learning_streak,
+        last_learning_success_on,
+        last_learning_covered_on
+      FROM words
+      WHERE hanzi = ?
+         OR traditional = ?
+      ORDER BY status DESC, priority DESC, created_at ASC
+      LIMIT 1
+    `)
+    .get(hanzi, hanzi) as WordRow | undefined;
+
+  return row ? mapWordRow(row) : null;
+}
+
+function normalizeProductionMistakeHanzi(value: string): string {
+  return value.trim().replace(/\s+/g, '');
+}
+
+function parseProductionMistakeCandidateLine(line: string): ProductionMistakeCandidate {
+  const parsed = JSON.parse(line) as Partial<ProductionMistakeCandidate>;
+
+  if (
+    typeof parsed.id !== 'string' ||
+    typeof parsed.targetWordId !== 'string' ||
+    typeof parsed.targetHanzi !== 'string' ||
+    typeof parsed.attemptedHanzi !== 'string' ||
+    (parsed.matchedWordId !== null && typeof parsed.matchedWordId !== 'string') ||
+    typeof parsed.createdAt !== 'string' ||
+    typeof parsed.note !== 'string'
+  ) {
+    throw new Error(`Invalid production mistake candidate record: ${line}`);
+  }
+
+  return {
+    id: parsed.id,
+    targetWordId: parsed.targetWordId,
+    targetHanzi: parsed.targetHanzi,
+    attemptedHanzi: parsed.attemptedHanzi,
+    matchedWordId: parsed.matchedWordId,
+    createdAt: parsed.createdAt,
+    note: parsed.note,
+  };
 }
 
 function shouldRebuildDevDatabase(error: unknown) {

@@ -1,4 +1,12 @@
-import type { PriorityWord, Word, WordMeaning, ReviewItem, ReviewRating, SessionItemBuckets } from '../types';
+import type {
+  PriorityWord,
+  ProductionMistakeCandidate,
+  Word,
+  WordMeaning,
+  ReviewItem,
+  ReviewRating,
+  SessionItemBuckets,
+} from '../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:5174';
 
@@ -90,6 +98,26 @@ export async function completeReviewSession(
 
   if (!response.ok) {
     throw new Error('Failed to complete review session');
+  }
+
+  return response.json();
+}
+
+export async function captureProductionMistakeCandidate(
+  targetWordId: string,
+  attemptedHanzi: string,
+  note = '',
+): Promise<ProductionMistakeCandidate> {
+  const response = await fetch(`${API_BASE}/api/production-mistake-candidates`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ targetWordId, attemptedHanzi, note }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to capture production mistake candidate'));
   }
 
   return response.json();

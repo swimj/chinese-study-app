@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { ReviewRating, SessionItemWithWord, Word, WordMeaning } from '../../types';
 import {
+  captureProductionMistakeCandidate,
   dismissWordFromStudy,
   fetchWordMeanings,
   updateWordMeaningVisibility,
@@ -60,6 +61,12 @@ type SessionUndoSnapshot = {
   restoreUi: 'revealed' | 'production-input';
 };
 
+type PendingProductionMistakeCapture = {
+  targetWordId: string;
+  attemptedHanzi: string;
+  note: string;
+};
+
 export type StudySessionControllerOptions = {
   setError: (message: string | null) => void;
   onSessionEnded: () => Promise<void>;
@@ -101,11 +108,15 @@ export type StudySessionHomePageProps = {
   productionHanziInput: string;
   productionHanziError: string | null;
   productionHanziInputRef: RefObject<HTMLInputElement>;
+  productionContrastCandidateChecked: boolean;
+  productionContrastCandidateNote: string;
   activeRatingOptions: RatingOption[];
   onStartSession: () => void;
   onEndSession: () => void;
   onUndoLastRating: () => void;
   onContinueAfterAutoForgot: () => void;
+  onProductionContrastCandidateCheckedChange: (checked: boolean) => void;
+  onProductionContrastCandidateNoteChange: (value: string) => void;
   onDismissCurrentWord: () => void;
   onOpenPersonalNotesEditor: () => void;
   onBeginUnstudiedDrill: (wordId: string) => void;
@@ -147,6 +158,8 @@ export function useStudySession({
   const [answerRevealed, setAnswerRevealed] = useState(false);
   const [submittingRating, setSubmittingRating] = useState<ReviewRating | null>(null);
   const [pendingSessionCommit, setPendingSessionCommit] = useState<DeferredSessionCommit | null>(null);
+  const [pendingProductionMistakeCapture, setPendingProductionMistakeCapture] =
+    useState<PendingProductionMistakeCapture | null>(null);
   const [lastUndoSnapshot, setLastUndoSnapshot] = useState<SessionUndoSnapshot | null>(null);
   const [sessionNow, setSessionNow] = useState(() => new Date().toISOString());
   const [sessionPersonalNotesOverridesByWordId, setSessionPersonalNotesOverridesByWordId] = useState<
@@ -160,6 +173,8 @@ export function useStudySession({
   const [personalNotesEditorError, setPersonalNotesEditorError] = useState<string | null>(null);
   const [productionHanziInput, setProductionHanziInput] = useState('');
   const [productionHanziError, setProductionHanziError] = useState<string | null>(null);
+  const [productionContrastCandidateChecked, setProductionContrastCandidateChecked] = useState(false);
+  const [productionContrastCandidateNote, setProductionContrastCandidateNote] = useState('');
   const [productionUiPhase, setProductionUiPhase] = useState<'idle' | 'await-rating' | 'await-next'>('idle');
   const [frozenProductionCard, setFrozenProductionCard] = useState<FrozenProductionCard | null>(null);
   const personalNotesEditorInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -275,6 +290,8 @@ export function useStudySession({
   function resetProductionUi() {
     setProductionHanziInput('');
     setProductionHanziError(null);
+    setProductionContrastCandidateChecked(false);
+    setProductionContrastCandidateNote('');
     setProductionUiPhase('idle');
     setFrozenProductionCard(null);
   }
@@ -300,6 +317,27 @@ export function useStudySession({
     resetProductionUi();
   }
 
+  async function applyPendingUndoClosure() {
+    if (pendingSessionCommit) {
+      await applySessionCommit(pendingSessionCommit);
+      setPendingSessionCommit(null);
+    }
+
+    if (pendingProductionMistakeCapture) {
+      const capture = pendingProductionMistakeCapture;
+      setPendingProductionMistakeCapture(null);
+      void captureProductionMistakeCandidate(
+        capture.targetWordId,
+        capture.attemptedHanzi,
+        capture.note,
+      ).catch((captureError: unknown) => {
+        console.warn('Failed to capture production mistake candidate', captureError);
+      });
+    }
+
+    setLastUndoSnapshot(null);
+  }
+
   async function handleStartSession() {
     setSessionLoading(true);
     setError(null);
@@ -317,6 +355,7 @@ export function useStudySession({
       setSessionState(createSessionState(sessionPayload.buckets));
       resetSessionScopedUi();
       setPendingSessionCommit(null);
+      setPendingProductionMistakeCapture(null);
       setLastUndoSnapshot(null);
       setSessionSummary(createSessionSummary({
         startedAt,
@@ -344,11 +383,9 @@ export function useStudySession({
       return;
     }
 
-    if (pendingSessionCommit) {
+    if (pendingSessionCommit || pendingProductionMistakeCapture) {
       try {
-        await applySessionCommit(pendingSessionCommit);
-        setPendingSessionCommit(null);
-        setLastUndoSnapshot(null);
+        await applyPendingUndoClosure();
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error');
         return;
@@ -360,6 +397,7 @@ export function useStudySession({
     setSessionSummary(null);
     resetSessionScopedUi();
     setPendingSessionCommit(null);
+    setPendingProductionMistakeCapture(null);
     setLastUndoSnapshot(null);
     resetSessionPrefetchCache();
     setSessionPrefetch(getSessionPrefetchSnapshot());
@@ -382,10 +420,7 @@ export function useStudySession({
 
     try {
       // A new rating closes the undo window for the previously deferred commit.
-      if (pendingSessionCommit) {
-        await applySessionCommit(pendingSessionCommit);
-        setPendingSessionCommit(null);
-      }
+      await applyPendingUndoClosure();
 
       setLastUndoSnapshot({
         sessionState: cloneSessionState(sessionState),
@@ -436,10 +471,7 @@ export function useStudySession({
     setError(null);
 
     try {
-      if (pendingSessionCommit) {
-        await applySessionCommit(pendingSessionCommit);
-        setPendingSessionCommit(null);
-      }
+      await applyPendingUndoClosure();
 
       setLastUndoSnapshot({
         sessionState: cloneSessionState(sessionState),
@@ -471,6 +503,8 @@ export function useStudySession({
         }),
       );
       setFrozenProductionCard({
+        targetWordId: activeWord.id,
+        attemptedHanzi: submittedHanzi,
         status: activeWord.status,
         reviewedCount,
         queuedCount: sessionState ? getSchedulerLength(sessionState.scheduler) : 0,
@@ -494,6 +528,14 @@ export function useStudySession({
   }
 
   function handleContinueAfterAutoForgot() {
+    if (productionContrastCandidateChecked && frozenProductionCard) {
+      setPendingProductionMistakeCapture({
+        targetWordId: frozenProductionCard.targetWordId,
+        attemptedHanzi: frozenProductionCard.attemptedHanzi,
+        note: productionContrastCandidateNote,
+      });
+    }
+
     // Unmask the active card after the queue already advanced due to an incorrect hanzi submission.
     resetAnswerAndProductionUi();
   }
@@ -508,6 +550,7 @@ export function useStudySession({
     setAnswerRevealed(lastUndoSnapshot.restoreUi === 'revealed');
     resetProductionUi();
     setPendingSessionCommit(null);
+    setPendingProductionMistakeCapture(null);
     setLastUndoSnapshot(null);
     setError(null);
   }
@@ -540,6 +583,7 @@ export function useStudySession({
       setSessionState(transition.state);
       resetAnswerAndProductionUi();
       setLastUndoSnapshot(null);
+      setPendingProductionMistakeCapture(null);
       await dismissWordFromStudy(transition.dismiss.wordId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -779,8 +823,11 @@ export function useStudySession({
     activeWordPersonalNotes,
     answerRevealed,
     productionAwaitingNext,
+    productionContrastCandidateChecked,
+    productionContrastCandidateNote,
     productionRequiresHanziInput,
     productionSubmissionInputActive,
+    frozenProductionCard,
     lastUndoSnapshot,
     personalNotesEditorOpen,
     sessionStarted,
@@ -827,11 +874,15 @@ export function useStudySession({
       productionHanziInput,
       productionHanziError,
       productionHanziInputRef,
+      productionContrastCandidateChecked,
+      productionContrastCandidateNote,
       activeRatingOptions,
       onStartSession: () => void handleStartSession(),
       onEndSession: () => void handleEndSession(),
       onUndoLastRating: handleUndoLastRating,
       onContinueAfterAutoForgot: handleContinueAfterAutoForgot,
+      onProductionContrastCandidateCheckedChange: setProductionContrastCandidateChecked,
+      onProductionContrastCandidateNoteChange: setProductionContrastCandidateNote,
       onDismissCurrentWord: () => void handleDismissCurrentWord(),
       onOpenPersonalNotesEditor: handleOpenPersonalNotesEditor,
       onBeginUnstudiedDrill: handleBeginUnstudiedDrill,
