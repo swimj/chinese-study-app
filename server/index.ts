@@ -2,6 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import { pathToFileURL } from 'node:url';
 import {
+  captureProductionMistakeCandidate,
   completeLearningWordSession,
   completeReviewItemSession,
   completeUnstudiedWordSession,
@@ -12,6 +13,7 @@ import {
   getHomeOverview,
   getLearningPolicy,
   getPrioritizedUnstudiedWords,
+  getProductionMistakeCandidates,
   getReviewItems,
   getSessionPayload,
   getWordMeanings,
@@ -51,6 +53,14 @@ export function createApp() {
 
   app.get('/api/review-items', (req, res) => {
     res.json(getReviewItems());
+  });
+
+  app.get('/api/production-mistake-candidates', (req, res) => {
+    try {
+      res.json(getProductionMistakeCandidates());
+    } catch {
+      res.status(500).json({ error: 'Failed to load production mistake candidates' });
+    }
   });
 
   app.get('/api/session-payload', (req, res) => {
@@ -141,6 +151,52 @@ export function createApp() {
       }
 
       res.status(500).json({ error: 'Failed to complete review item session' });
+    }
+  });
+
+  app.post('/api/production-mistake-candidates', (req, res) => {
+    const targetWordId = req.body?.targetWordId;
+    const attemptedHanzi = req.body?.attemptedHanzi;
+    const note = req.body?.note ?? '';
+
+    if (typeof targetWordId !== 'string' || targetWordId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty string targetWordId' });
+      return;
+    }
+
+    if (typeof attemptedHanzi !== 'string' || attemptedHanzi.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty string attemptedHanzi' });
+      return;
+    }
+
+    if (typeof note !== 'string') {
+      res.status(400).json({ error: 'Expected string note when provided' });
+      return;
+    }
+
+    try {
+      const candidate = captureProductionMistakeCandidate({
+        targetWordId: targetWordId.trim(),
+        attemptedHanzi,
+        note,
+      });
+      res.status(201).json(candidate);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Word not found') {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+
+      if (
+        error instanceof Error &&
+        (error.message === 'Expected non-empty attempted Hanzi' ||
+          error.message === 'Expected attempted Hanzi to differ from target Hanzi')
+      ) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to capture production mistake candidate' });
     }
   });
 

@@ -656,7 +656,7 @@ Early V0 mistake capture can be crude. It may simply persist:
 - matched word id, if the attempted Hanzi exists in the corpus
 - source event id, once event logging exists
 - timestamp
-- user note or status
+- user note
 
 This can begin producing useful data before full contrast drills are built.
 One-off scripts can later migrate captured mistakes into clusters and contrast
@@ -690,11 +690,15 @@ prompt content.
 
 ### Milestone 2: Early Production Mistake Capture
 
-- add a lightweight persistence table for production mistake candidates
+- add lightweight persistence for production mistake candidates
+  - initial implementation may use append-only JSONL in the active data
+    directory instead of SQLite
+  - each line should keep enough context for later curation/migration rather
+    than only storing a bare Hanzi pair
 - capture wrong production input from the current session flow without requiring
   durable study actions or attempt events
 - store target word id, attempted Hanzi, optional matched word id, timestamp,
-  status, and optional note
+  and optional note
 - expose a minimal dev/admin review surface or script for inspecting captured
   candidates
 - later, add optional source event ids once attempt event logging exists

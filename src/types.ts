@@ -43,6 +43,16 @@ export type ReviewItem = {
   easeFactor: number;
 };
 
+export type ProductionMistakeCandidate = {
+  id: string;
+  targetWordId: string;
+  targetHanzi: string;
+  attemptedHanzi: string;
+  matchedWordId: string | null;
+  createdAt: string;
+  note: string;
+};
+
 export type ReviewRating = 'forgot' | 'hard' | 'good' | 'easy';
 
 export type SessionItemWithWord = {
