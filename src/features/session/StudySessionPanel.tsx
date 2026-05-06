@@ -210,7 +210,7 @@ export function StudySessionPanel({
                 onChange={(event) => onProductionContrastCandidateCheckedChange(event.target.checked)}
                 disabled={personalNotesEditorOpen}
               />
-              <span>Contrast candidate?</span>
+              <span>{frozenProductionCard.attemptedHanzi} contrast candidate?</span>
             </label>
             <textarea
               value={productionContrastCandidateNote}
