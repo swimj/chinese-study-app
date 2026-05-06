@@ -35,6 +35,7 @@ When code and spec conflict, treat the spec as intended behavior and update code
   - reserve tolerant no-op behavior for explicitly user-driven or externally uncertain inputs
 - Keep backend timestamps and date keys in UTC (`toISOString`, `YYYY-MM-DD` UTC date key) unless explicitly changing product policy.
 - Avoid hard-coding assumptions that only work in single-machine/local-only deployments if a cleaner abstraction can preserve future hosted-service options.
+- When the desired goal is vague, only write code roughly up to what is relatively well-defined, limit speculative policy decisions. Even if the prompt explicitly ask to go in one-shot, stop and alert me of the the points of ambiguity instead of proceeding. 
 
 ## 4) Runbook Commands
 

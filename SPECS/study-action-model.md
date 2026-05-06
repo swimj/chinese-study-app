@@ -120,17 +120,33 @@ For the first cut, the skill-to-action mapping can be mostly one-to-one:
 Later, a skill may map to a distribution over possible actions. That
 distribution can initially be global rather than word-specific.
 
-### Events Are Evidence, Not The Whole State Model
+### Actions, Events, And Projections Are Separate
 
-The system should persist attempt events as durable evidence.
+A study action is a live served exercise instance.
 
-However, near-term implementation should not be fully event sourced. The app
-should keep current schedule/progress state in normal tables for simple
-queries and updates.
+An attempt event records one thing the learner did in response to a served
+action.
 
-Long term, attempt events may become the source for rebuilding derived state,
-with schedule/progress tables acting as computation caches. Near term, they
-are a practical audit trail and future data source.
+Scheduler state is the backend's processed view of past evidence. It should
+remain queryable in normal tables rather than requiring event replay for every
+session composition.
+
+The model should not treat a frontend "commit" as a core durable object. The
+current app has commit intents because the frontend owns in-flight session
+state and the backend immediately applies state updates after coverage. In the
+target architecture, that idea should become event processing:
+
+- the frontend owns live coverage, reinforcement, drain mode, and session
+  completion behavior
+- the frontend records granular attempt events as the learner acts
+- the backend projects completed prior-session events into durable word-level
+  and word-skill scheduler state
+- before composing a new session, the backend must have processed all events
+  from earlier sessions according to the current projection rules
+
+The backend may process events immediately during a live session, at session
+end, or in a background step. The live session should not depend on that timing
+after an item has been covered locally.
 
 ### Failure Should Be Local
 
@@ -144,6 +160,10 @@ should not imply that the learner no longer recognizes either word.
 
 The first implementation should acknowledge only a small set of durable skill
 dimensions:
+
+```ts
+type StudySkillId = 'recognition' | 'production' | 'contextual_selection';
+```
 
 ### Recognition
 
@@ -192,21 +212,46 @@ collocation drills, and robustness probes.
 
 A study action is the unit served by a live session.
 
-Conceptually, a study action includes:
+It is not the durable scheduler object. It is an exact exercise instance inside
+one session.
 
-- action instance id, if needed
-- target word id
-- skill dimensions sampled
-- action kind
-- prompt/content reference, if applicable
-- scheduling state reference
-- display payload needed by the frontend
+The action id should therefore be named `sessionActionId`, not simply `id`.
+It should not be expected to recur across sessions. It only needs to be
+persisted where exact traceability is useful, such as attempt events.
 
-Initial action kinds:
+Conceptual V0 shape:
 
-- `recognition`
-- `production`
-- `contrast_selection`
+```ts
+type StudyActionKind =
+  | 'recognition'
+  | 'production'
+  | 'contrast_selection';
+
+type StudyContentRef =
+  | { type: 'contrast_prompt'; id: string }
+  | { type: 'example_sentence'; id: string };
+
+type StudyAction = {
+  sessionActionId: string;
+  kind: StudyActionKind;
+  targetWordId: string;
+  sampledSkillIds: StudySkillId[];
+  contentRef: StudyContentRef | null;
+  legacyReviewItemId?: string;
+};
+```
+
+`contentRef` identifies supporting prompt/content material. It does not mean
+that a study action breaks into smaller action units.
+
+`legacyReviewItemId` is a migration adapter for the current code path. It is
+not part of the long-term model. It allows current frontend session behavior
+and backend completion routes to be bridged while session composition moves
+toward actions and word-skill state.
+
+The core `StudyAction` should not include a scheduling-state reference. Routing
+an action result back into scheduler state is backend projection work, not part
+of the served exercise's product identity.
 
 Future action kinds:
 
@@ -224,19 +269,22 @@ The current model can map into the study action model as follows:
 | --- | --- |
 | `review_items.direction = forward` | recognition skill state/action |
 | `review_items.direction = reverse` | production skill state/action |
-| `review_items.interval_hours` | early schedule interval state |
-| `review_items.next_due_at` | early due time state |
-| `Forgot/Hard/Good/Easy` | action attempt outcome for recognition/production |
-| learning word coverage | session covering policy over recognition/production actions |
-| review item coverage | session covering policy for scheduled action |
+| `review_items.interval_hours` | V0 word-skill `intervalHours` |
+| `review_items.last_reviewed_at` | V0 word-skill `lastStudiedAt` |
+| `review_items.next_due_at` | V0 word-skill `nextDueAt` |
+| `review_items.ease_factor` | V0 word-skill `easeFactor` |
+| `Forgot/Hard/Good/Easy` | attempt event rating for recognition/production |
+| learning word coverage | frontend session covering policy over recognition/production actions |
+| review item coverage | frontend session covering policy for a scheduled action |
+| current frontend commit intent | transitional synchronous projection request |
 
-The first implementation may still read from or migrate from `review_items`,
-but the architectural goal is for session composition to operate on study
-actions rather than review directions.
+The first implementation may still read from or mirror `review_items`, but the
+architectural goal is for session composition to operate on words, skills, and
+study actions rather than review directions.
 
-## 6. Scheduling State
+## 6. Scheduling And Projection State
 
-Near-term scheduling should have two levels:
+Near-term scheduling should have two durable levels:
 
 1. word-level admission state
 2. word-skill state used by the admission and action-selection policies
@@ -252,10 +300,18 @@ Word-level state controls whether the word can appear in a session at all.
 
 For the first pass, this is mainly needed for `review` words.
 
-Likely fields:
+Conceptual V0 shape:
 
-- word id
-- earliest next study at
+```ts
+type WordStudyAdmissionState = {
+  wordId: string;
+  earliestNextStudyAt: string | null;
+};
+```
+
+`earliestNextStudyAt` enforces word-level recency protection. It is not a skill
+due date. It is a gate that can suppress otherwise due skill work for the same
+word.
 
 ### Word-Skill State
 
@@ -264,30 +320,40 @@ Skill-level state contributes to both word admission and action selection.
 It helps determine whether a word is urgent enough to study at all, and it
 controls what kind of attention the word currently needs if it is admitted.
 
-Likely fields:
+Conceptual V0 shape:
 
-- word id
-- skill id
-- strength score, initially equivalent to an interval
-- last studied at
-- enabled / disabled state
-- ease-like scheduler inputs, if still useful
-- last updated timestamp
+```ts
+type WordSkillState = {
+  wordId: string;
+  skillId: StudySkillId;
+  enabled: boolean;
+  intervalHours: number;
+  lastStudiedAt: string | null;
+  nextDueAt: string | null;
+  easeFactor: number;
+};
+```
 
-The first implementation may treat strength as an interval so existing review
-data can migrate directly into the new model. Later versions may move strength
-to a different scale and use a policy function to convert strength into a
-scheduling threshold.
+`lastStudiedAt` is required for urgency calculations because urgency depends on
+elapsed time since this specific skill was sampled for the word.
 
-The exact table names are open, but likely candidates include:
+`intervalHours` is intentionally legacy-shaped. V0 scheduling still uses
+time-based intervals. If future versions move to an abstract strength metric,
+that should be a real migration to a new field such as `strengthScore`, not a
+hidden semantic change under the old field name.
 
-- `word_study_state`
-- `word_skill_state`
+`easeFactor` is scheduler trust elasticity. It is not the learner's skill
+level directly. It represents how aggressively the scheduler should stretch
+the interval after successful evidence for this word-skill pair. Lower ease
+means "successful evidence has been less reliable; lengthen cautiously." Higher
+ease means "successful evidence has been reliable; give this skill more space."
 
-The key architectural goal is to stop treating `review_items` as the root
-scheduler object. Existing review intervals can still inform the first
-recognition/production schedules, but the action selector should speak in
-terms of words, skills, and action kinds.
+The current ease update rules are allowed to remain provisional. A better ease
+policy is a later candidate for analysis from the event log.
+
+No `updatedAt` field is part of the conceptual model. A table may add ordinary
+database bookkeeping columns if useful, but they should not drive scheduling
+policy.
 
 ### Initial Admission Heuristic
 
@@ -298,7 +364,7 @@ The first heuristic can be:
 For each enabled skill, compute an urgency value roughly like:
 
 ```text
-skill urgency = elapsed time since skill study / strength-derived threshold
+skill urgency = elapsed time since skill study / intervalHours
 ```
 
 Then compute word urgency as:
@@ -310,7 +376,7 @@ word urgency = max(enabled skill urgency values)
 A word is eligible when:
 
 ```text
-now >= word.nextEligibleAt
+now >= word.earliestNextStudyAt
 and word urgency >= 1
 ```
 
@@ -370,62 +436,113 @@ level, but the product should avoid steering users toward a demoralizingly low
 success rate. As an initial intuition, sustained success below roughly 80%
 should probably be treated as too stressful for ordinary daily study.
 
-## 8. Attempt Events
+## 8. Attempt Events And Processing
 
 Attempt events record what the learner actually did.
 
 They should preserve evidence that would otherwise be compressed into an
 interval or status update.
 
-Common fields:
+An attempt event is granular: one learner response to one served action
+appearance. It is not a summary of all in-session progress for an item.
 
-- event id
-- occurred at
-- session id or session sequence number, if available
-- action instance id or generated action key, if needed
-- action kind
-- target word id
-- skill ids sampled
-- prompt/content id, if applicable
-- first response
-- first outcome
-- rating, if applicable
-- reflection outcome, if applicable
-- metadata JSON for action-specific details
+Conceptual V0 shape:
 
-Example production event:
+```ts
+type StudyAttemptOutcome = 'correct' | 'incorrect';
 
-```json
-{
-  "actionKind": "production",
-  "targetWordId": "kaocha-2",
-  "firstResponse": "考查",
-  "firstOutcome": "incorrect",
-  "rating": "forgot"
-}
+type StudyAttemptEvent = {
+  id: string;
+  occurredAt: string;
+  sessionId: string;
+  sessionActionId: string;
+  attemptSequence: number;
+  actionKind: StudyActionKind;
+  targetWordId: string;
+  sampledSkillIds: StudySkillId[];
+  response: string | null;
+  outcome: StudyAttemptOutcome;
+  rating: 'forgot' | 'hard' | 'good' | 'easy' | null;
+  contentRef: StudyContentRef | null;
+  metadata: Record<string, unknown>;
+};
 ```
 
-Example contrast event:
+Example production events:
 
 ```json
-{
-  "actionKind": "contrast_selection",
-  "targetWordId": "kaocha-2",
-  "promptId": "kaocha-cluster-prompt-3",
-  "firstResponse": "考查",
-  "firstOutcome": "incorrect",
-  "reflectionOutcome": "shaky"
-}
+[
+  {
+    "sessionActionId": "session-42/action-7",
+    "attemptSequence": 1,
+    "actionKind": "production",
+    "targetWordId": "kaocha-2",
+    "response": "考查",
+    "outcome": "incorrect",
+    "rating": "forgot"
+  },
+  {
+    "sessionActionId": "session-42/action-7",
+    "attemptSequence": 2,
+    "actionKind": "production",
+    "targetWordId": "kaocha-2",
+    "response": "考察",
+    "outcome": "correct",
+    "rating": "good"
+  }
+]
 ```
+
+The event processor can derive whether the first response was correct by
+looking at the first event for a `sessionActionId` or for a specific
+session/action grouping. The event itself should use `response`, not
+`firstResponse`.
+
+Contrast reflection should be a separate event rather than an overloaded field
+on attempt events:
+
+```ts
+type StudyReflectionEvent = {
+  id: string;
+  occurredAt: string;
+  sessionId: string;
+  sessionActionId: string;
+  actionKind: 'contrast_selection';
+  targetWordId: string;
+  reflection: 'clear_now' | 'still_shaky' | 'want_more_practice';
+};
+```
+
+### Sessions And Processing
+
+A durable study session record can track processing state:
+
+```ts
+type StudySessionRecord = {
+  id: string;
+  startedAt: string;
+  endedAt: string | null;
+  processingState: 'open' | 'ready_to_process' | 'processed';
+  processedAt: string | null;
+};
+```
+
+Before the backend composes a new session, all events from earlier sessions
+must be processed into durable scheduler state according to the current rules.
+
+The backend may process events immediately while a session is open, when a
+session ends, or in a background step. The invariant is catch-up before the next
+session starts, not immediate projection after every attempt.
+
+Same-session coverage remains frontend-owned. For example, after a review
+action lapses, the frontend may require three successful recalls in a row and
+then remove the action from the live queue. The backend later reconstructs the
+same covered/lapsed result from granular events and projects it into
+`WordSkillState` and `WordStudyAdmissionState`.
 
 Attempt events are not a substitute for schedule state in the near term. They
-are a durable record that supports future analysis, debugging, migration, and
-adaptive policy changes.
-
-The action instance id does not need to be a durable scheduling identity. It is
-only a way to identify the exact task shown in a session when that is useful.
-The durable learner model should live in word-level state, word-skill state,
-content tables, and attempt events.
+are a durable record that supports projection, analysis, debugging, migration,
+and adaptive policy changes.
 
 ## 9. Lexical Clusters
 
@@ -479,9 +596,9 @@ and then support reflection.
 
 1. The user sees a contrast prompt.
 2. The user chooses an answer.
-3. The app records the first choice as evidence.
+3. The app records the choice as an attempt event.
 4. The app shows the correct answer and explanation.
-5. The user gives a reflection signal.
+5. The user gives a reflection signal recorded as a reflection event.
 
 Possible reflection signals:
 
@@ -521,12 +638,23 @@ Example:
 - user enters: `考查`
 - app records that this pair may deserve contrast training
 
-V0 mistake capture can be crude. It may simply persist:
+There are two useful versions of mistake capture.
+
+The early version is a lightweight evidence capture path for the current app.
+It does not need to wait for word-skill state, study actions, or durable
+attempt events. Its purpose is to let real study sessions start producing seed
+data for future cluster curation as soon as possible.
+
+The long-term version should integrate with study actions and attempt events,
+so each captured mistake can point back to the exact served action and response
+event that produced it.
+
+Early V0 mistake capture can be crude. It may simply persist:
 
 - target word id
 - attempted Hanzi
 - matched word id, if the attempted Hanzi exists in the corpus
-- source action/event id
+- source event id, once event logging exists
 - timestamp
 - user note or status
 
@@ -546,50 +674,76 @@ prompt content.
   until the product/state boundaries are clearer
 - verify the existing app still builds and relevant tests still pass
 
-### Milestone 1: Model Spec And Domain Types
+### Milestone 1: Domain Types And Legacy Adapters
 
-- finalize this model enough to implement
-- add TypeScript domain types for skills, action kinds, study actions, and
-  attempt events
-- decide the first concrete shapes for word-level admission state and
-  word-skill state
+- add TypeScript domain types for `StudySkillId`, `StudyActionKind`,
+  `StudyAction`, `StudyContentRef`, `WordStudyAdmissionState`,
+  `WordSkillState`, `StudyAttemptEvent`, `StudyReflectionEvent`, and
+  `StudySessionRecord`
+- add pure mapping helpers for current review directions:
+  - `forward` -> `recognition`
+  - `reverse` -> `production`
+- add pure adapter helpers that can turn a current `ReviewItem` plus `Word`
+  into a V0 `StudyAction` with a migration-only `legacyReviewItemId`
+- keep API payloads, database schema, and user-visible behavior unchanged
+- add focused tests for mapping and adapter invariants
 
-### Milestone 2: Current Behavior Through Word Admission And Skill State
+### Milestone 2: Early Production Mistake Capture
 
-- introduce explicit word-level admission state and word-skill state
-- migrate or mirror current review item intervals into the new state
-- map forward review behavior to recognition skill state/actions
-- map reverse review behavior to production skill state/actions
-- convert current session composition to select and emit study actions from the
-  new schedule state
-- admit words once, then choose the skill/action to sample
+- add a lightweight persistence table for production mistake candidates
+- capture wrong production input from the current session flow without requiring
+  durable study actions or attempt events
+- store target word id, attempted Hanzi, optional matched word id, timestamp,
+  status, and optional note
+- expose a minimal dev/admin review surface or script for inspecting captured
+  candidates
+- later, add optional source event ids once attempt event logging exists
+
+### Milestone 3: Persist Word Admission And Word-Skill State
+
+- introduce explicit word-level admission and word-skill tables
+- backfill recognition and production skill state from existing `review_items`
+- use `review_items.interval_hours`, `last_reviewed_at`, `next_due_at`, and
+  `ease_factor` as the initial source for V0 skill state
+- keep `review_items` mirrored or validated during the migration
+- add tests that prove new state is created for existing review words and kept
+  consistent with current completion behavior
+
+### Milestone 4: Compose Sessions Through Word Admission And Study Actions
+
+- update session composition so `review` words are admitted at the word level
+  using `WordStudyAdmissionState` and `WordSkillState`
+- choose the most urgent enabled skill after word admission
+- emit study actions as the conceptual session units
+- keep legacy review-item ids only as adapter data needed by the current
+  frontend/backend completion path
+- keep learning and unstudied covering rules intact
 - keep user-facing behavior mostly unchanged
-- keep existing session covering rules intact
 
-### Milestone 3: Rudimentary Mistake Capture
+### Milestone 5: Durable Attempt Events And Projection Checkpoint
 
-- add a lightweight UI affordance after wrong production input
-- persist target/mistake pair evidence
-- expose a dev/admin view or script for reviewing captured candidates
-- allow this to be a simple log before the full study-action scheduler
-  migration is complete
+- add durable study session and attempt event storage
+- log recognition and production attempt events at response granularity
+- add the processing invariant: before composing a new session, all prior
+  session events must be projected into durable scheduler state
+- initially allow projection to happen synchronously in the same backend request
+  path if that is simpler
+- avoid adding a durable "commit" table unless a real audit/debugging need
+  emerges between raw events and projected scheduler state
+- connect existing production mistake candidates to source attempt events where
+  possible
+- add tests that reconstruct current review, learning, and unstudied coverage
+  outcomes from granular events
 
-### Milestone 4: Attempt Event Logging
+### Milestone 6: Retire Or Demote Review Items
 
-- add durable attempt event storage
-- log recognition and production attempts
-- include production mistakes as structured event data
-- add tests that verify events are written alongside schedule updates
-
-### Milestone 5: Retire Or Demote Review Items
-
-- update completion paths to update the new schedule state directly
+- update projection paths to update word-skill state directly
 - decide whether `review_items` still have any durable role
-- remove `review_items` if the new schedule state fully replaces them
+- remove `review_items` if word-skill state fully replaces them
 - otherwise keep them only as a compatibility or diagnostic view, not as the
   session composition root
 
-### Milestone 6: Manual Cluster Content
+### Milestone 7: Manual Cluster Content
 
 - add lexical cluster tables
 - add cluster members
@@ -597,13 +751,15 @@ prompt content.
 - add manual contrast prompt content
 - seed a tiny dev/test cluster set
 
-### Milestone 7: First Contrast Selection Drill
+### Milestone 8: First Contrast Selection Drill
 
+- add contextual-selection word-skill state for manually eligible words
 - add contrast selection actions
 - add reflective feedback UI
-- log first-choice outcome and reflection outcome
+- log choice attempts and reflection events
 - update contextual-selection state only
-- schedule contrast conservatively for manually eligible words
+- schedule contrast conservatively for manually eligible words with available
+  contrast content
 
 ## 13. Non-Goals For The First Pass
 
@@ -615,10 +771,13 @@ prompt content.
 - public multi-user service work
 - polished cluster management UI
 - comprehensive stats dashboards
+- a finalized ease-factor update policy
 
 ## 14. Open Questions
 
-1. What should the first strength update parameter values be for recognition,
-   production, and contextual selection?
+1. What should the first processing policy be for recognition and production
+   event streams once they replace direct completion updates?
 2. What is the smallest useful implementation step toward wall-clock budgeting
    and dynamic session payloads?
+3. Should event projection maintain a separate diagnostic table of derived
+   per-session outcomes, or are raw events plus current scheduler state enough?
