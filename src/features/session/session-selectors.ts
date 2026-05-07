@@ -14,6 +14,36 @@ export function getActiveWordPersonalNotes({
   return overridesByWordId[word.id] ?? word.personalNotes;
 }
 
+export function getPersonalNotesEditorTarget({
+  word,
+  activeWordPersonalNotes,
+  frozenProductionCard,
+  productionAwaitingNext,
+  overridesByWordId,
+}: {
+  word: Word | null;
+  activeWordPersonalNotes: string;
+  frozenProductionCard: { targetWordId: string; personalNotes: string } | null;
+  productionAwaitingNext: boolean;
+  overridesByWordId: Record<string, string>;
+}) {
+  if (productionAwaitingNext && frozenProductionCard) {
+    return {
+      wordId: frozenProductionCard.targetWordId,
+      personalNotes: overridesByWordId[frozenProductionCard.targetWordId] ?? frozenProductionCard.personalNotes,
+    };
+  }
+
+  if (!word) {
+    return null;
+  }
+
+  return {
+    wordId: word.id,
+    personalNotes: activeWordPersonalNotes,
+  };
+}
+
 export function getActiveMeaningSelection({
   word,
   meaningRowsByWordId,

@@ -38,6 +38,7 @@ import {
   getActivePrompt,
   getActiveReviewState,
   getActiveWordPersonalNotes,
+  getPersonalNotesEditorTarget,
   isProductionReviewItem,
   isReviewInReinforcement,
 } from './session-selectors';
@@ -591,12 +592,20 @@ export function useStudySession({
   }
 
   function handleOpenPersonalNotesEditor() {
-    if (!activeWord) {
+    const target = getPersonalNotesEditorTarget({
+      word: activeWord,
+      activeWordPersonalNotes,
+      frozenProductionCard,
+      productionAwaitingNext,
+      overridesByWordId: sessionPersonalNotesOverridesByWordId,
+    });
+
+    if (!target) {
       return;
     }
 
-    setPersonalNotesEditorTargetWordId(activeWord.id);
-    setPersonalNotesEditorDraft(activeWordPersonalNotes);
+    setPersonalNotesEditorTargetWordId(target.wordId);
+    setPersonalNotesEditorDraft(target.personalNotes);
     setPersonalNotesEditorError(null);
   }
 
@@ -641,6 +650,11 @@ export function useStudySession({
         ...current,
         [personalNotesEditorTargetWordId]: nextPersonalNotes,
       }));
+      setFrozenProductionCard((current) =>
+        current?.targetWordId === personalNotesEditorTargetWordId
+          ? { ...current, personalNotes: nextPersonalNotes }
+          : current,
+      );
       handleCancelPersonalNotesEditor();
     } catch (err) {
       setPersonalNotesEditorError(err instanceof Error ? err.message : 'Failed to save personal notes');
