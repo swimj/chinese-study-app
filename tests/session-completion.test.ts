@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 type WordStatus = 'unstudied' | 'learning' | 'review';
 type Direction = 'forward' | 'reverse';
+type StudySkillId = 'recognition' | 'production' | 'contextual_selection';
 
 type WordRecord = {
   id: string;
@@ -76,6 +77,8 @@ describe('session completion', { concurrency: false }, () => {
   beforeEach(() => {
     sqlite.exec(`
       DELETE FROM daily_new_word_intake;
+      DELETE FROM word_skill_state;
+      DELETE FROM word_study_admission_state;
       DELETE FROM review_items;
       DELETE FROM words;
     `);
@@ -107,6 +110,20 @@ describe('session completion', { concurrency: false }, () => {
     );
 
     assert.deepEqual(fetchReviewItem('hard-word-forward'), updatedItem);
+    assert.deepEqual(fetchWordSkillState('hard-word', 'recognition'), {
+      wordId: 'hard-word',
+      skillId: 'recognition',
+      enabled: true,
+      intervalHours: updatedItem.intervalHours,
+      lastStudiedAt: updatedItem.lastReviewedAt,
+      nextDueAt: updatedItem.nextDueAt,
+      easeFactor: updatedItem.easeFactor,
+    });
+    assert.equal(fetchAdmissionState('hard-word')?.earliestNextStudyAt, addHours(
+      updatedItem.lastReviewedAt ?? fail('missing lastReviewedAt'),
+      6,
+    ));
+    assert.deepEqual(dbModule.validateReviewItemStudySchedulerShadow(), []);
   });
 
   test('completing a review item with a clean good pass multiplies by ease and rounds up to the next hour', () => {
@@ -126,6 +143,32 @@ describe('session completion', { concurrency: false }, () => {
       updatedItem.nextDueAt,
       addHours(updatedItem.lastReviewedAt ?? fail('missing lastReviewedAt'), 53),
     );
+  });
+
+  test('completing a reverse review item mirrors production skill state', () => {
+    insertReviewWordWithItem({
+      wordId: 'production-word',
+      reviewItemId: 'production-word-reverse',
+      direction: 'reverse',
+      intervalHours: 12,
+      easeFactor: 2.5,
+      nextDueAt: isoHoursAgo(1),
+    });
+
+    const updatedItem = dbModule.completeReviewItemSession('production-word-reverse', 0, 'good');
+
+    assert.equal(updatedItem.direction, 'reverse');
+    assert.deepEqual(fetchWordSkillState('production-word', 'production'), {
+      wordId: 'production-word',
+      skillId: 'production',
+      enabled: true,
+      intervalHours: updatedItem.intervalHours,
+      lastStudiedAt: updatedItem.lastReviewedAt,
+      nextDueAt: updatedItem.nextDueAt,
+      easeFactor: updatedItem.easeFactor,
+    });
+    assert.equal(fetchWordSkillState('production-word', 'recognition'), undefined);
+    assert.deepEqual(dbModule.validateReviewItemStudySchedulerShadow(), []);
   });
 
   test('completing a review item with a clean easy pass uses ease plus the easy bonus and rounds up to the next hour', () => {
@@ -268,6 +311,17 @@ describe('session completion', { concurrency: false }, () => {
       assert.ok(reviewedAt <= afterCompletion);
       assert.equal(nextDueAt.getTime() - reviewedAt.getTime(), 24 * 60 * 60 * 1000);
     }
+
+    const skillStates = dbModule.getWordSkillStates().filter((state) => state.wordId === 'graduating-word');
+    assert.deepEqual(
+      skillStates.map((state) => [state.skillId, state.intervalHours, state.easeFactor]),
+      [
+        ['production', 24, 2.5],
+        ['recognition', 24, 2.5],
+      ],
+    );
+    assert(skillStates.every((state) => state.lastStudiedAt !== null && state.nextDueAt !== null));
+    assert.deepEqual(dbModule.validateReviewItemStudySchedulerShadow(), []);
   });
 
   test('learning completion rejects unknown words', () => {
@@ -341,6 +395,9 @@ describe('session completion', { concurrency: false }, () => {
     assert.equal(updatedWord.learningStreak, 0);
     assert.equal(updatedWord.lastLearningSuccessOn, null);
     assert.equal(updatedWord.lastLearningCoveredOn, today);
+    assert.deepEqual(dbModule.getWordSkillStates().filter((state) => state.wordId === 'unstudied-transition-word'), []);
+    assert.equal(fetchAdmissionState('unstudied-transition-word'), undefined);
+    assert.deepEqual(dbModule.validateReviewItemStudySchedulerShadow(), []);
   });
 
   test('unstudied completion rejects words with unexpected learning progress already attached', () => {
@@ -420,6 +477,8 @@ describe('session completion', { concurrency: false }, () => {
       intervalHours: 24,
       nextDueAt: isoHoursAgo(1),
     });
+    insertWordStudyAdmissionState('dismiss-learning-word', isoHoursAgo(1));
+    insertWordSkillState('dismiss-learning-word', 'recognition');
 
     dbModule.dismissWordFromStudy('dismiss-learning-word');
 
@@ -429,6 +488,8 @@ describe('session completion', { concurrency: false }, () => {
     assert.equal(word.lastLearningSuccessOn, null);
     assert.equal(word.lastLearningCoveredOn, null);
     assert.equal(fetchUserPriorityRow('dismiss-learning-word')?.priority_tier, -1);
+    assert.equal(fetchAdmissionState('dismiss-learning-word'), undefined);
+    assert.equal(fetchWordSkillState('dismiss-learning-word', 'recognition'), undefined);
   });
 
   test('dismissing rejects unknown words', () => {
@@ -520,6 +581,14 @@ function fetchReviewItem(reviewItemId: string) {
   return dbModule.getReviewItems().find((item) => item.id === reviewItemId) ?? fail(`Missing review item ${reviewItemId}`);
 }
 
+function fetchWordSkillState(wordId: string, skillId: StudySkillId) {
+  return dbModule.getWordSkillStates().find((state) => state.wordId === wordId && state.skillId === skillId);
+}
+
+function fetchAdmissionState(wordId: string) {
+  return dbModule.getWordStudyAdmissionStates().find((state) => state.wordId === wordId);
+}
+
 function fetchUserPriorityRow(wordId: string) {
   return sqlite
     .prepare(`
@@ -583,6 +652,30 @@ function insertReviewItem(record: ReviewItemRecord) {
     record.nextDueAt ?? null,
     record.easeFactor ?? 2.5,
   );
+}
+
+function insertWordStudyAdmissionState(wordId: string, earliestNextStudyAt: string | null) {
+  sqlite.prepare(`
+    INSERT INTO word_study_admission_state (
+      word_id,
+      study_phase,
+      earliest_next_study_at
+    ) VALUES (?, ?, ?)
+  `).run(wordId, 'review', earliestNextStudyAt);
+}
+
+function insertWordSkillState(wordId: string, skillId: StudySkillId) {
+  sqlite.prepare(`
+    INSERT INTO word_skill_state (
+      word_id,
+      skill_id,
+      enabled,
+      interval_hours,
+      last_studied_at,
+      next_due_at,
+      ease_factor
+    ) VALUES (?, ?, 1, 24, ?, ?, 2.5)
+  `).run(wordId, skillId, isoHoursAgo(25), isoHoursAgo(1));
 }
 
 function isoHoursAgo(hours: number) {

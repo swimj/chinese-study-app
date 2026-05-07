@@ -709,6 +709,9 @@ prompt content.
 - backfill recognition and production skill state from existing `review_items`
 - use `review_items.interval_hours`, `last_reviewed_at`, `next_due_at`, and
   `ease_factor` as the initial source for V0 skill state
+- maintain a transitional shadow update path from current completion handlers
+  so newly completed review/learning work keeps word-skill state fresh before
+  milestone 4 switches session composition reads
 - keep `review_items` mirrored or validated during the migration
 - add tests that prove new state is created for existing review words and kept
   consistent with current completion behavior
