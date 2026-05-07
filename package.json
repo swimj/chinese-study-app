@@ -18,6 +18,7 @@
     "backfill:word-meanings": "node --import tsx scripts/backfill-word-meanings.ts",
     "report:canonical-overlap": "node --import tsx scripts/report-canonical-overlap.ts",
     "list:production-mistakes": "node --import tsx scripts/list-production-mistake-candidates.ts",
+    "check:study-scheduler-shadow": "node --import tsx scripts/check-study-scheduler-shadow.ts",
     "fixture:hack-chinese-review": "node --import tsx scripts/load-hack-chinese-review-fixture.ts",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",
     "build": "tsc && vite build",

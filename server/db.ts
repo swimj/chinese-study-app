@@ -135,6 +135,55 @@ type ReviewItemRow = {
   ease_factor: number;
 };
 
+type StudySkillId = 'recognition' | 'production' | 'contextual_selection';
+type WordStudyPhase = 'review';
+
+type WordStudyAdmissionState = {
+  wordId: string;
+  studyPhase: WordStudyPhase;
+  earliestNextStudyAt: string | null;
+};
+
+type WordSkillState = {
+  wordId: string;
+  skillId: StudySkillId;
+  enabled: boolean;
+  intervalHours: number;
+  lastStudiedAt: string | null;
+  nextDueAt: string | null;
+  easeFactor: number;
+};
+
+type WordStudyAdmissionStateRow = {
+  word_id: string;
+  study_phase: WordStudyPhase;
+  earliest_next_study_at: string | null;
+};
+
+type WordSkillStateRow = {
+  word_id: string;
+  skill_id: StudySkillId;
+  enabled: number;
+  interval_hours: number;
+  last_studied_at: string | null;
+  next_due_at: string | null;
+  ease_factor: number;
+};
+
+type StudySchedulerShadowMismatch = {
+  reviewItemId: string;
+  wordId: string;
+  direction: ReviewItem['direction'];
+  skillId: StudySkillId;
+  problem: string;
+};
+
+type AppMetadataRow = {
+  key: string;
+  value: string;
+  updated_at: string;
+};
+
 type DailyNewWordIntakeRow = {
   day_key: string;
   new_study_count: number;
@@ -203,6 +252,8 @@ const INITIAL_REVIEW_EASE_FACTOR = 2.5;
 const PRIORITY_TIER_TOP = 1;
 const PRIORITY_TIER_REGULAR = 0;
 const PRIORITY_TIER_SUNK = -1;
+const REVIEW_PHASE_RECENCY_GUARD_HOURS = 6;
+const STUDY_SCHEDULER_SHADOW_BACKFILL_KEY = 'study_scheduler_shadow_backfill_v1';
 
 initializeDatabase();
 
@@ -218,6 +269,10 @@ export type {
   SessionPayload,
   PriorityWord,
   PriorityWordsPayload,
+  StudySchedulerShadowMismatch,
+  StudySkillId,
+  WordSkillState,
+  WordStudyAdmissionState,
   Word,
   WordStatus,
 };
@@ -552,19 +607,128 @@ export function getReviewItems(): ReviewItem[] {
   const rows = db
     .prepare(`
       SELECT
-        id,
-        word_id,
-        direction,
-        interval_hours,
-        last_reviewed_at,
-        next_due_at,
-        ease_factor
+        review_items.id,
+        review_items.word_id,
+        review_items.direction,
+        review_items.interval_hours,
+        review_items.last_reviewed_at,
+        review_items.next_due_at,
+        review_items.ease_factor
       FROM review_items
       ORDER BY next_due_at ASC
     `)
     .all() as ReviewItemRow[];
 
   return rows.map(mapReviewItemRow);
+}
+
+export function getWordStudyAdmissionStates(): WordStudyAdmissionState[] {
+  const rows = db
+    .prepare(`
+      SELECT
+        word_id,
+        study_phase,
+        earliest_next_study_at
+      FROM word_study_admission_state
+      ORDER BY word_id ASC
+    `)
+    .all() as WordStudyAdmissionStateRow[];
+
+  return rows.map(mapWordStudyAdmissionStateRow);
+}
+
+export function getWordSkillStates(): WordSkillState[] {
+  const rows = db
+    .prepare(`
+      SELECT
+        word_id,
+        skill_id,
+        enabled,
+        interval_hours,
+        last_studied_at,
+        next_due_at,
+        ease_factor
+      FROM word_skill_state
+      ORDER BY word_id ASC, skill_id ASC
+    `)
+    .all() as WordSkillStateRow[];
+
+  return rows.map(mapWordSkillStateRow);
+}
+
+export function validateReviewItemStudySchedulerShadow(): StudySchedulerShadowMismatch[] {
+  const rows = db
+    .prepare(`
+      SELECT
+        review_items.id,
+        review_items.word_id,
+        review_items.direction,
+        review_items.interval_hours,
+        review_items.last_reviewed_at,
+        review_items.next_due_at,
+        review_items.ease_factor,
+        word_skill_state.skill_id,
+        word_skill_state.enabled,
+        word_skill_state.interval_hours AS shadow_interval_hours,
+        word_skill_state.last_studied_at,
+        word_skill_state.next_due_at AS shadow_next_due_at,
+        word_skill_state.ease_factor AS shadow_ease_factor
+      FROM review_items
+      INNER JOIN words ON words.id = review_items.word_id
+      LEFT JOIN word_skill_state
+        ON word_skill_state.word_id = review_items.word_id
+       AND word_skill_state.skill_id = CASE review_items.direction
+          WHEN 'forward' THEN 'recognition'
+          WHEN 'reverse' THEN 'production'
+        END
+      WHERE words.status = 'review'
+      ORDER BY review_items.word_id ASC, review_items.direction ASC
+    `)
+    .all() as Array<ReviewItemRow & {
+      skill_id: StudySkillId | null;
+      enabled: number | null;
+      shadow_interval_hours: number | null;
+      last_studied_at: string | null;
+      shadow_next_due_at: string | null;
+      shadow_ease_factor: number | null;
+    }>;
+
+  const mismatches: StudySchedulerShadowMismatch[] = [];
+
+  for (const row of rows) {
+    const skillId = mapReviewDirectionToStudySkill(row.direction);
+
+    if (row.skill_id === null) {
+      mismatches.push({
+        reviewItemId: row.id,
+        wordId: row.word_id,
+        direction: row.direction,
+        skillId,
+        problem: 'missing word_skill_state row',
+      });
+      continue;
+    }
+
+    const problems = [
+      row.enabled !== 1 ? 'disabled shadow skill' : null,
+      row.shadow_interval_hours !== row.interval_hours ? 'interval_hours mismatch' : null,
+      row.last_studied_at !== row.last_reviewed_at ? 'last_studied_at mismatch' : null,
+      row.shadow_next_due_at !== row.next_due_at ? 'next_due_at mismatch' : null,
+      row.shadow_ease_factor !== row.ease_factor ? 'ease_factor mismatch' : null,
+    ].filter((problem): problem is string => problem !== null);
+
+    for (const problem of problems) {
+      mismatches.push({
+        reviewItemId: row.id,
+        wordId: row.word_id,
+        direction: row.direction,
+        skillId,
+        problem,
+      });
+    }
+  }
+
+  return mismatches;
 }
 
 export function captureProductionMistakeCandidate({
@@ -788,13 +952,13 @@ export function completeReviewItemSession(
   const existingRow = db
     .prepare(`
       SELECT
-        id,
-        word_id,
-        direction,
-        interval_hours,
-        last_reviewed_at,
-        next_due_at,
-        ease_factor
+        review_items.id,
+        review_items.word_id,
+        review_items.direction,
+        review_items.interval_hours,
+        review_items.last_reviewed_at,
+        review_items.next_due_at,
+        review_items.ease_factor
       FROM review_items
       WHERE id = ?
     `)
@@ -807,20 +971,38 @@ export function completeReviewItemSession(
   const currentItem = mapReviewItemRow(existingRow);
   const updatedItem = scheduleReviewItemFromSession(currentItem, failureCount, terminalRating);
 
-  db.prepare(`
-    UPDATE review_items
-    SET interval_hours = ?,
-        last_reviewed_at = ?,
-        next_due_at = ?,
-        ease_factor = ?
-    WHERE id = ?
-  `).run(
-    updatedItem.intervalHours,
-    updatedItem.lastReviewedAt,
-    updatedItem.nextDueAt,
-    updatedItem.easeFactor,
-    updatedItem.id,
-  );
+  db.exec('BEGIN');
+
+  try {
+    db.prepare(`
+      UPDATE review_items
+      SET interval_hours = ?,
+          last_reviewed_at = ?,
+          next_due_at = ?,
+          ease_factor = ?
+      WHERE id = ?
+    `).run(
+      updatedItem.intervalHours,
+      updatedItem.lastReviewedAt,
+      updatedItem.nextDueAt,
+      updatedItem.easeFactor,
+      updatedItem.id,
+    );
+
+    upsertWordSkillStateFromReviewItem(updatedItem);
+    upsertWordStudyAdmissionState(
+      updatedItem.wordId,
+      'review',
+      updatedItem.lastReviewedAt
+        ? addHours(updatedItem.lastReviewedAt, REVIEW_PHASE_RECENCY_GUARD_HOURS)
+        : null,
+    );
+
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
 
   return updatedItem;
 }
@@ -856,31 +1038,44 @@ export function completeLearningWordSession(wordId: string, success: boolean): W
   const nextLearningStreak = success ? existingWord.learning_streak + 1 : 0;
   const nextStatus: WordStatus = nextLearningStreak >= 3 ? 'review' : 'learning';
 
-  db.prepare(`
-    UPDATE words
-    SET status = ?,
-        learning_streak = ?,
-        last_learning_success_on = ?,
-        last_learning_covered_on = ?
-    WHERE id = ?
-  `).run(
-    nextStatus,
-    nextLearningStreak,
-    success ? today : existingWord.last_learning_success_on,
-    today,
-    wordId,
-  );
+  db.exec('BEGIN');
 
-  if (nextStatus === 'review') {
-    const now = new Date().toISOString();
+  try {
     db.prepare(`
-      UPDATE review_items
-      SET interval_hours = 24,
-          last_reviewed_at = ?,
-          next_due_at = ?,
-          ease_factor = ?
-      WHERE word_id = ?
-    `).run(now, addHours(now, 24), INITIAL_REVIEW_EASE_FACTOR, wordId);
+      UPDATE words
+      SET status = ?,
+          learning_streak = ?,
+          last_learning_success_on = ?,
+          last_learning_covered_on = ?
+      WHERE id = ?
+    `).run(
+      nextStatus,
+      nextLearningStreak,
+      success ? today : existingWord.last_learning_success_on,
+      today,
+      wordId,
+    );
+
+    if (nextStatus === 'review') {
+      const now = new Date().toISOString();
+      const nextDueAt = addHours(now, 24);
+      db.prepare(`
+        UPDATE review_items
+        SET interval_hours = 24,
+            last_reviewed_at = ?,
+            next_due_at = ?,
+            ease_factor = ?
+        WHERE word_id = ?
+      `).run(now, nextDueAt, INITIAL_REVIEW_EASE_FACTOR, wordId);
+
+      mirrorWordReviewItemsToWordSkillState(wordId);
+      upsertWordStudyAdmissionState(wordId, 'review', addHours(now, REVIEW_PHASE_RECENCY_GUARD_HOURS));
+    }
+
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
   }
 
   const updatedWord = db
@@ -950,6 +1145,8 @@ export function dismissWordFromStudy(wordId: string): void {
             last_learning_covered_on = NULL
         WHERE id = ?
       `).run(wordId);
+
+      deleteStudySchedulerStateForWord(wordId);
     }
 
     db.exec('COMMIT');
@@ -963,6 +1160,7 @@ function initializeDatabase() {
   if (!dbExistedOnStartup) {
     createSchema();
     seedDatabase();
+    backfillStudySchedulerStateFromReviewItems();
     return;
   }
 
@@ -1005,6 +1203,14 @@ function applyLightweightSchemaMigrations() {
   }
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS app_metadata (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS user_word_priority (
       word_id TEXT PRIMARY KEY REFERENCES words(id) ON DELETE CASCADE,
       bump_count INTEGER NOT NULL DEFAULT 0,
@@ -1034,6 +1240,27 @@ function applyLightweightSchemaMigrations() {
     );
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS word_study_admission_state (
+      word_id TEXT PRIMARY KEY REFERENCES words(id) ON DELETE CASCADE,
+      study_phase TEXT NOT NULL,
+      earliest_next_study_at TEXT
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS word_skill_state (
+      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      skill_id TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      interval_hours INTEGER NOT NULL,
+      last_studied_at TEXT,
+      next_due_at TEXT,
+      ease_factor REAL NOT NULL,
+      PRIMARY KEY (word_id, skill_id)
+    );
+  `);
+
   const userPriorityColumns = db.prepare(`PRAGMA table_info(user_word_priority)`).all() as Array<{ name: string }>;
   const hasPriorityTier = userPriorityColumns.some((column) => column.name === 'priority_tier');
   if (!hasPriorityTier) {
@@ -1049,6 +1276,7 @@ function applyLightweightSchemaMigrations() {
   `);
 
   backfillWordMeaningsFromWords();
+  backfillStudySchedulerStateFromReviewItems();
 }
 
 function backfillWordMeaningsFromWords() {
@@ -1108,6 +1336,168 @@ function backfillWordMeaningsFromWords() {
     db.exec('ROLLBACK');
     throw error;
   }
+}
+
+function backfillStudySchedulerStateFromReviewItems() {
+  if (isAppMetadataComplete(STUDY_SCHEDULER_SHADOW_BACKFILL_KEY)) {
+    return;
+  }
+
+  const reviewItems = db
+    .prepare(`
+      SELECT
+        review_items.id,
+        review_items.word_id,
+        review_items.direction,
+        review_items.interval_hours,
+        review_items.last_reviewed_at,
+        review_items.next_due_at,
+        review_items.ease_factor
+      FROM review_items
+      INNER JOIN words ON words.id = review_items.word_id
+      WHERE words.status = 'review'
+      ORDER BY review_items.word_id ASC, review_items.direction ASC
+    `)
+    .all() as ReviewItemRow[];
+
+  if (reviewItems.length === 0) {
+    markAppMetadataComplete(STUDY_SCHEDULER_SHADOW_BACKFILL_KEY);
+    return;
+  }
+
+  db.exec('BEGIN');
+
+  try {
+    for (const row of reviewItems) {
+      upsertWordSkillStateFromReviewItem(mapReviewItemRow(row));
+    }
+
+    db.prepare(`
+      INSERT OR IGNORE INTO word_study_admission_state (
+        word_id,
+        study_phase,
+        earliest_next_study_at
+      )
+      SELECT DISTINCT
+        review_items.word_id,
+        words.status,
+        NULL
+      FROM review_items
+      INNER JOIN words ON words.id = review_items.word_id
+      WHERE words.status = 'review'
+    `).run();
+
+    db.exec('COMMIT');
+    markAppMetadataComplete(STUDY_SCHEDULER_SHADOW_BACKFILL_KEY);
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+function isAppMetadataComplete(key: string) {
+  const row = db
+    .prepare(`
+      SELECT
+        key,
+        value,
+        updated_at
+      FROM app_metadata
+      WHERE key = ?
+    `)
+    .get(key) as AppMetadataRow | undefined;
+
+  return row?.value === 'completed';
+}
+
+function markAppMetadataComplete(key: string) {
+  db.prepare(`
+    INSERT INTO app_metadata (
+      key,
+      value,
+      updated_at
+    ) VALUES (?, 'completed', ?)
+    ON CONFLICT(key) DO UPDATE SET
+      value = excluded.value,
+      updated_at = excluded.updated_at
+  `).run(key, new Date().toISOString());
+}
+
+function mirrorWordReviewItemsToWordSkillState(wordId: string) {
+  const reviewItems = db
+    .prepare(`
+      SELECT
+        id,
+        word_id,
+        direction,
+        interval_hours,
+        last_reviewed_at,
+        next_due_at,
+        ease_factor
+      FROM review_items
+      WHERE word_id = ?
+    `)
+    .all(wordId) as ReviewItemRow[];
+
+  for (const row of reviewItems) {
+    upsertWordSkillStateFromReviewItem(mapReviewItemRow(row));
+  }
+}
+
+function upsertWordStudyAdmissionState(
+  wordId: string,
+  studyPhase: WordStudyPhase,
+  earliestNextStudyAt: string | null,
+) {
+  db.prepare(`
+    INSERT INTO word_study_admission_state (
+      word_id,
+      study_phase,
+      earliest_next_study_at
+    ) VALUES (?, ?, ?)
+    ON CONFLICT(word_id) DO UPDATE SET
+      study_phase = excluded.study_phase,
+      earliest_next_study_at = excluded.earliest_next_study_at
+  `).run(wordId, studyPhase, earliestNextStudyAt);
+}
+
+function upsertWordSkillStateFromReviewItem(item: ReviewItem) {
+  db.prepare(`
+    INSERT INTO word_skill_state (
+      word_id,
+      skill_id,
+      enabled,
+      interval_hours,
+      last_studied_at,
+      next_due_at,
+      ease_factor
+    ) VALUES (?, ?, 1, ?, ?, ?, ?)
+    ON CONFLICT(word_id, skill_id) DO UPDATE SET
+      enabled = excluded.enabled,
+      interval_hours = excluded.interval_hours,
+      last_studied_at = excluded.last_studied_at,
+      next_due_at = excluded.next_due_at,
+      ease_factor = excluded.ease_factor
+  `).run(
+    item.wordId,
+    mapReviewDirectionToStudySkill(item.direction),
+    item.intervalHours,
+    item.lastReviewedAt,
+    item.nextDueAt,
+    item.easeFactor,
+  );
+}
+
+function deleteStudySchedulerStateForWord(wordId: string) {
+  db.prepare(`
+    DELETE FROM word_skill_state
+    WHERE word_id = ?
+  `).run(wordId);
+
+  db.prepare(`
+    DELETE FROM word_study_admission_state
+    WHERE word_id = ?
+  `).run(wordId);
 }
 
 function getWordById(wordId: string): Word | null {
@@ -1226,6 +1616,7 @@ function rebuildDevDatabase(error: unknown) {
   db = openDatabase(dbPath);
   createSchema();
   seedDatabase();
+  backfillStudySchedulerStateFromReviewItems();
 }
 
 function seedEmptyDevDatabase() {
@@ -1294,6 +1685,29 @@ function createSchema() {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE app_metadata (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE word_study_admission_state (
+      word_id TEXT PRIMARY KEY REFERENCES words(id) ON DELETE CASCADE,
+      study_phase TEXT NOT NULL,
+      earliest_next_study_at TEXT
+    );
+
+    CREATE TABLE word_skill_state (
+      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      skill_id TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      interval_hours INTEGER NOT NULL,
+      last_studied_at TEXT,
+      next_due_at TEXT,
+      ease_factor REAL NOT NULL,
+      PRIMARY KEY (word_id, skill_id)
+    );
+
     CREATE TABLE daily_new_word_intake (
       day_key TEXT PRIMARY KEY,
       new_study_count INTEGER NOT NULL DEFAULT 0
@@ -1310,6 +1724,8 @@ function ensureIndexes() {
     CREATE INDEX IF NOT EXISTS idx_word_meanings_word_position ON word_meanings(word_id, position ASC);
     CREATE INDEX IF NOT EXISTS idx_user_word_priority_force_top ON user_word_priority(force_top DESC, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_user_word_priority_tier ON user_word_priority(priority_tier DESC, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_word_study_admission_next ON word_study_admission_state(earliest_next_study_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_word_skill_state_due ON word_skill_state(next_due_at ASC);
   `);
 }
 
@@ -1358,6 +1774,25 @@ function validateSchema() {
   assertTableColumns('daily_new_word_intake', [
     'day_key',
     'new_study_count',
+  ]);
+  assertTableColumns('app_metadata', [
+    'key',
+    'value',
+    'updated_at',
+  ]);
+  assertTableColumns('word_study_admission_state', [
+    'word_id',
+    'study_phase',
+    'earliest_next_study_at',
+  ]);
+  assertTableColumns('word_skill_state', [
+    'word_id',
+    'skill_id',
+    'enabled',
+    'interval_hours',
+    'last_studied_at',
+    'next_due_at',
+    'ease_factor',
   ]);
 }
 
@@ -1751,6 +2186,37 @@ function mapReviewItemRow(row: ReviewItemRow): ReviewItem {
   };
 }
 
+function mapReviewDirectionToStudySkill(direction: ReviewItem['direction']): StudySkillId {
+  switch (direction) {
+    case 'forward':
+      return 'recognition';
+    case 'reverse':
+      return 'production';
+    default:
+      return assertUnreachableReviewDirection(direction);
+  }
+}
+
+function mapWordStudyAdmissionStateRow(row: WordStudyAdmissionStateRow): WordStudyAdmissionState {
+  return {
+    wordId: row.word_id,
+    studyPhase: row.study_phase,
+    earliestNextStudyAt: row.earliest_next_study_at,
+  };
+}
+
+function mapWordSkillStateRow(row: WordSkillStateRow): WordSkillState {
+  return {
+    wordId: row.word_id,
+    skillId: row.skill_id,
+    enabled: row.enabled !== 0,
+    intervalHours: row.interval_hours,
+    lastStudiedAt: row.last_studied_at,
+    nextDueAt: row.next_due_at,
+    easeFactor: row.ease_factor,
+  };
+}
+
 function getSessionItemBucketsWithWords(studyDayKey: string): SessionItemBuckets {
   const now = new Date().toISOString();
   const today = getTodayKey();
@@ -2004,6 +2470,10 @@ function parseMeaningsJson(raw: string, fallbackMeaning: string): string[] {
 
 function ceilIntervalHours(hours: number) {
   return Math.max(1, Math.ceil(hours));
+}
+
+function assertUnreachableReviewDirection(direction: never): never {
+  throw new Error(`Unsupported review direction "${String(direction)}".`);
 }
 
 function clampInteger(value: number, min: number, max: number): number {
