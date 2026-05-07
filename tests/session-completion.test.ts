@@ -77,6 +77,7 @@ describe('session completion', { concurrency: false }, () => {
   beforeEach(() => {
     sqlite.exec(`
       DELETE FROM daily_new_word_intake;
+      DELETE FROM review_session_summaries;
       DELETE FROM word_skill_state;
       DELETE FROM word_study_admission_state;
       DELETE FROM review_items;
@@ -336,6 +337,38 @@ describe('session completion', { concurrency: false }, () => {
       () => dbModule.completeReviewItemSession('missing-review-item', 0, 'good'),
       /Review item not found/,
     );
+  });
+
+  test('review failure rates aggregate session summaries and expose rolling rates', () => {
+    insertReviewSessionSummary({
+      sessionId: 'old-session',
+      dayKey: addDays(studyDayKey, -2),
+      failed: true,
+    });
+
+    dbModule.recordReviewSessionSummary({
+      sessionId: 'session-a',
+      completedAt: `${studyDayKey}T12:00:00.000Z`,
+      completedReviewItemCount: 2,
+      failedReviewItemCount: 1,
+    });
+    dbModule.recordReviewSessionSummary({
+      sessionId: 'session-b',
+      completedAt: `${studyDayKey}T13:00:00.000Z`,
+      completedReviewItemCount: 1,
+      failedReviewItemCount: 1,
+    });
+
+    const days = dbModule.getReviewFailureRateDays();
+    assert.equal(days.length, 2);
+    assert.deepEqual(days.map((day) => day.dayKey), [addDays(studyDayKey, -2), studyDayKey]);
+
+    const todayRates = days[1];
+    assert.equal(todayRates.completedReviewItemSessions, 3);
+    assert.equal(todayRates.failedReviewItemSessions, 2);
+    assert.equal(todayRates.failureRate, 2 / 3);
+    assert.equal(todayRates.rolling3DayFailureRate, 3 / 4);
+    assert.equal(todayRates.rolling7DayFailureRate, 3 / 4);
   });
 
   test('updating word personal notes persists the new notes and returns the updated word', () => {
@@ -676,6 +709,32 @@ function insertWordSkillState(wordId: string, skillId: StudySkillId) {
       ease_factor
     ) VALUES (?, ?, 1, 24, ?, ?, 2.5)
   `).run(wordId, skillId, isoHoursAgo(25), isoHoursAgo(1));
+}
+
+function insertReviewSessionSummary({
+  sessionId,
+  dayKey,
+  failed,
+}: {
+  sessionId: string;
+  dayKey: string;
+  failed: boolean;
+}) {
+  sqlite.prepare(`
+    INSERT INTO review_session_summaries (
+      session_id,
+      completed_at,
+      day_key,
+      completed_count,
+      failed_count
+    ) VALUES (?, ?, ?, ?, ?)
+  `).run(
+    sessionId,
+    `${dayKey}T12:00:00.000Z`,
+    dayKey,
+    1,
+    failed ? 1 : 0,
+  );
 }
 
 function isoHoursAgo(hours: number) {

@@ -2,6 +2,7 @@ import type { ReviewItem, ReviewRating, SessionItemWithWord, Word } from '../../
 import type { SessionCommitIntent, SessionState } from '../../lib/session-state';
 
 export type SessionSummary = {
+  sessionId: string;
   startedAt: string;
   completedAt: string | null;
   initialQueueLength: number;
@@ -17,13 +18,16 @@ export type SessionSummary = {
 };
 
 export function createSessionSummary({
+  sessionId,
   startedAt,
   initialQueueLength,
 }: {
+  sessionId: string;
   startedAt: string;
   initialQueueLength: number;
 }): SessionSummary {
   return {
+    sessionId,
     startedAt,
     completedAt: null,
     initialQueueLength,

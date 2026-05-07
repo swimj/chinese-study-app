@@ -14,11 +14,13 @@ import {
   getLearningPolicy,
   getPrioritizedUnstudiedWords,
   getProductionMistakeCandidates,
+  getReviewFailureRateDays,
   getReviewItems,
   getSessionPayload,
   getWordMeanings,
   getWords,
   getWordStatusCounts,
+  recordReviewSessionSummary,
   updateWordMeaningVisibility,
   updateWordPersonalNotes,
   updateWordUserPriority,
@@ -122,6 +124,7 @@ export function createApp() {
       dataDir: dbConfig.dataDir,
       dbPath: dbConfig.dbPath,
       wordStatusCounts: getWordStatusCounts(),
+      reviewFailureRateDays: getReviewFailureRateDays(),
       ...getHomeOverview(studyDayKey),
       ...getLearningPolicy(studyDayKey),
     });
@@ -151,6 +154,56 @@ export function createApp() {
       }
 
       res.status(500).json({ error: 'Failed to complete review item session' });
+    }
+  });
+
+  app.post('/api/review-session-summaries', (req, res) => {
+    const sessionId = req.body?.sessionId;
+    const completedAt = req.body?.completedAt;
+    const completedReviewItemCount = req.body?.completedReviewItemCount;
+    const failedReviewItemCount = req.body?.failedReviewItemCount;
+
+    if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty string sessionId' });
+      return;
+    }
+
+    if (typeof completedAt !== 'string' || Number.isNaN(new Date(completedAt).getTime())) {
+      res.status(400).json({ error: 'Expected ISO completedAt timestamp' });
+      return;
+    }
+
+    if (!Number.isInteger(completedReviewItemCount) || completedReviewItemCount < 0) {
+      res.status(400).json({ error: 'Expected non-negative integer completedReviewItemCount' });
+      return;
+    }
+
+    if (!Number.isInteger(failedReviewItemCount) || failedReviewItemCount < 0) {
+      res.status(400).json({ error: 'Expected non-negative integer failedReviewItemCount' });
+      return;
+    }
+
+    try {
+      recordReviewSessionSummary({
+        sessionId,
+        completedAt,
+        completedReviewItemCount,
+        failedReviewItemCount,
+      });
+      res.status(204).end();
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message === 'Expected non-empty session id' ||
+          error.message === 'Expected non-negative integer completedReviewItemCount' ||
+          error.message === 'Expected non-negative integer failedReviewItemCount' ||
+          error.message === 'Expected failedReviewItemCount to be less than or equal to completedReviewItemCount')
+      ) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to record review session summary' });
     }
   });
 

@@ -34,6 +34,7 @@ export type ReviewItemProgress = {
 export type SessionPhase = 'active' | 'draining' | 'completed';
 
 export type SessionState = {
+  sessionId: string;
   phase: SessionPhase;
   scheduler: SessionScheduler;
   answeredCount: number;
@@ -80,10 +81,11 @@ export type SessionDismissTransitionResult = {
   dismiss: SessionDismissIntent;
 };
 
-export function createSessionState(buckets: SessionItemBuckets): SessionState {
+export function createSessionState(buckets: SessionItemBuckets, sessionId: string): SessionState {
   const scheduler = createSessionScheduler({ buckets });
 
   return {
+    sessionId,
     phase: 'active',
     scheduler,
     answeredCount: 0,

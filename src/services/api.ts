@@ -1,6 +1,7 @@
 import type {
   PriorityWord,
   ProductionMistakeCandidate,
+  ReviewFailureRateDay,
   Word,
   WordMeaning,
   ReviewItem,
@@ -17,6 +18,7 @@ type BackendStatus = {
   dataDir: string;
   dbPath: string;
   wordStatusCounts: Record<Word['status'], number>;
+  reviewFailureRateDays: ReviewFailureRateDay[];
   dueReviewItemCount: number;
   pendingLearningWordCount: number;
   newWordIntroCount: number;
@@ -101,6 +103,35 @@ export async function completeReviewSession(
   }
 
   return response.json();
+}
+
+export async function recordReviewSessionSummary({
+  sessionId,
+  completedAt,
+  completedReviewItemCount,
+  failedReviewItemCount,
+}: {
+  sessionId: string;
+  completedAt: string;
+  completedReviewItemCount: number;
+  failedReviewItemCount: number;
+}): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/review-session-summaries`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      sessionId,
+      completedAt,
+      completedReviewItemCount,
+      failedReviewItemCount,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to record review session summary'));
+  }
 }
 
 export async function captureProductionMistakeCandidate(

@@ -235,6 +235,42 @@ button:hover {
   font-size: 2rem;
 }
 
+.failure-rate-section {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1rem 0 1.25rem;
+}
+
+.failure-rate-section h3 {
+  margin: 0;
+}
+
+.failure-rate-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.failure-rate-row {
+  display: grid;
+  grid-template-columns: minmax(6.5rem, 1fr) auto;
+  gap: 0.2rem 0.75rem;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  background: rgba(30, 41, 59, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  font-size: 0.85rem;
+  color: #cbd5e1;
+}
+
+.failure-rate-row strong {
+  color: #f8fafc;
+  text-align: right;
+}
+
+.failure-rate-row span:nth-child(n + 3) {
+  color: #94a3b8;
+}
+
 .review-card {
   display: grid;
   gap: 1rem;

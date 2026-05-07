@@ -43,6 +43,15 @@ export type ReviewItem = {
   easeFactor: number;
 };
 
+export type ReviewFailureRateDay = {
+  dayKey: string;
+  completedReviewItemSessions: number;
+  failedReviewItemSessions: number;
+  failureRate: number | null;
+  rolling3DayFailureRate: number | null;
+  rolling7DayFailureRate: number | null;
+};
+
 export type ProductionMistakeCandidate = {
   id: string;
   targetWordId: string;

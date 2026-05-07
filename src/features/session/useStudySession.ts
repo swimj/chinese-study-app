@@ -4,6 +4,7 @@ import {
   captureProductionMistakeCandidate,
   dismissWordFromStudy,
   fetchWordMeanings,
+  recordReviewSessionSummary,
   updateWordMeaningVisibility,
   updateWordPersonalNotes,
 } from '../../services/api';
@@ -352,13 +353,15 @@ export function useStudySession({
       }
 
       const startedAt = new Date().toISOString();
+      const sessionId = createFrontendSessionId();
       setSessionNow(startedAt);
-      setSessionState(createSessionState(sessionPayload.buckets));
+      setSessionState(createSessionState(sessionPayload.buckets, sessionId));
       resetSessionScopedUi();
       setPendingSessionCommit(null);
       setPendingProductionMistakeCapture(null);
       setLastUndoSnapshot(null);
       setSessionSummary(createSessionSummary({
+        sessionId,
         startedAt,
         initialQueueLength: sessionItemCount,
       }));
@@ -387,6 +390,20 @@ export function useStudySession({
     if (pendingSessionCommit || pendingProductionMistakeCapture) {
       try {
         await applyPendingUndoClosure();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unknown error');
+        return;
+      }
+    }
+
+    if (sessionSummary) {
+      try {
+        await recordReviewSessionSummary({
+          sessionId: sessionSummary.sessionId,
+          completedAt: sessionSummary.completedAt ?? new Date().toISOString(),
+          completedReviewItemCount: sessionSummary.completedReviewItems,
+          failedReviewItemCount: sessionSummary.lapsedReviewItemIds.length,
+        });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error');
         return;
@@ -942,4 +959,12 @@ function formatElapsedTime(startedAt: string, completedAt: string) {
   const hours = Math.floor(minutes / 60);
   const remainingMinutes = minutes % 60;
   return `${hours}:${remainingMinutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function createFrontendSessionId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  return `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }

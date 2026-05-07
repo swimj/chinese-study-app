@@ -60,6 +60,24 @@ export function HomeOverviewPanel({
         Corpus status counts: {statusCounts.learning} learning, {statusCounts.review} review, {statusCounts.unstudied} unstudied.
       </p>
       <p className="notes">Learning coverage day: {backendStatus?.learningCoverageDate ?? 'Unknown'}.</p>
+      <section className="failure-rate-section" aria-label="Review failure rate">
+        <h3>Review failure rate</h3>
+        {backendStatus?.reviewFailureRateDays.length ? (
+          <div className="failure-rate-list">
+            {backendStatus.reviewFailureRateDays.slice(-7).map((day) => (
+              <div key={day.dayKey} className="failure-rate-row">
+                <span>{day.dayKey}</span>
+                <strong>{formatFailureRate(day.failureRate)}</strong>
+                <span>{day.failedReviewItemSessions}/{day.completedReviewItemSessions}</span>
+                <span>3d {formatFailureRate(day.rolling3DayFailureRate)}</span>
+                <span>7d {formatFailureRate(day.rolling7DayFailureRate)}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="notes">No review completions recorded yet.</p>
+        )}
+      </section>
       {!sessionStarted ? (
         <p className="notes">
           Session prefetch: {formatSessionPrefetchStatus(sessionPrefetch)}
@@ -80,4 +98,12 @@ export function HomeOverviewPanel({
       )}
     </div>
   );
+}
+
+function formatFailureRate(rate: number | null) {
+  if (rate === null) {
+    return 'n/a';
+  }
+
+  return `${Math.round(rate * 100)}%`;
 }

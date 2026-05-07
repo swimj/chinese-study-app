@@ -66,6 +66,15 @@ type ReviewItem = {
   easeFactor: number;
 };
 
+type ReviewFailureRateDay = {
+  dayKey: string;
+  completedReviewItemSessions: number;
+  failedReviewItemSessions: number;
+  failureRate: number | null;
+  rolling3DayFailureRate: number | null;
+  rolling7DayFailureRate: number | null;
+};
+
 type ProductionMistakeCandidate = {
   id: string;
   targetWordId: string;
@@ -133,6 +142,12 @@ type ReviewItemRow = {
   last_reviewed_at: string | null;
   next_due_at: string | null;
   ease_factor: number;
+};
+
+type ReviewSessionResultRow = {
+  day_key: string;
+  completed_count: number;
+  failed_count: number;
 };
 
 type StudySkillId = 'recognition' | 'production' | 'contextual_selection';
@@ -262,6 +277,7 @@ export type {
   WordMeaning,
   ProductionMistakeCandidate,
   ReviewItem,
+  ReviewFailureRateDay,
   ReviewPassRating,
   ReviewRating,
   SessionItemWithWord,
@@ -1007,6 +1023,100 @@ export function completeReviewItemSession(
   return updatedItem;
 }
 
+export function getReviewFailureRateDays(limit = 14): ReviewFailureRateDay[] {
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new Error('Expected positive integer limit');
+  }
+
+  const rows = db
+    .prepare(`
+      SELECT
+        day_key,
+        SUM(completed_count) AS completed_count,
+        SUM(failed_count) AS failed_count
+      FROM review_session_summaries
+      GROUP BY day_key
+      ORDER BY day_key DESC
+      LIMIT ?
+    `)
+    .all(limit) as ReviewSessionResultRow[];
+
+  const ascendingRows = [...rows].reverse();
+  const countsByDay = new Map(
+    ascendingRows.map((row) => [
+      row.day_key,
+      {
+        completedCount: row.completed_count,
+        failedCount: row.failed_count,
+      },
+    ]),
+  );
+
+  return ascendingRows.map((row) => {
+    const rolling3 = getRollingReviewFailureCounts(countsByDay, row.day_key, 3);
+    const rolling7 = getRollingReviewFailureCounts(countsByDay, row.day_key, 7);
+
+    return {
+      dayKey: row.day_key,
+      completedReviewItemSessions: row.completed_count,
+      failedReviewItemSessions: row.failed_count,
+      failureRate: calculateFailureRate(row.failed_count, row.completed_count),
+      rolling3DayFailureRate: calculateFailureRate(rolling3.failedCount, rolling3.completedCount),
+      rolling7DayFailureRate: calculateFailureRate(rolling7.failedCount, rolling7.completedCount),
+    };
+  });
+}
+
+export function recordReviewSessionSummary({
+  sessionId,
+  completedAt,
+  completedReviewItemCount,
+  failedReviewItemCount,
+}: {
+  sessionId: string;
+  completedAt: string;
+  completedReviewItemCount: number;
+  failedReviewItemCount: number;
+}) {
+  const normalizedSessionId = sessionId.trim();
+  if (normalizedSessionId.length === 0) {
+    throw new Error('Expected non-empty session id');
+  }
+
+  if (!Number.isInteger(completedReviewItemCount) || completedReviewItemCount < 0) {
+    throw new Error('Expected non-negative integer completedReviewItemCount');
+  }
+
+  if (!Number.isInteger(failedReviewItemCount) || failedReviewItemCount < 0) {
+    throw new Error('Expected non-negative integer failedReviewItemCount');
+  }
+
+  if (failedReviewItemCount > completedReviewItemCount) {
+    throw new Error('Expected failedReviewItemCount to be less than or equal to completedReviewItemCount');
+  }
+
+  db.prepare(`
+    INSERT INTO review_session_summaries (
+      session_id,
+      completed_at,
+      day_key,
+      completed_count,
+      failed_count
+    ) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(session_id) DO UPDATE SET
+      completed_at = excluded.completed_at,
+      day_key = excluded.day_key,
+      completed_count = excluded.completed_count,
+      failed_count = excluded.failed_count
+  `).run(
+    normalizedSessionId,
+    completedAt,
+    completedAt.slice(0, 10),
+    completedReviewItemCount,
+    failedReviewItemCount,
+  );
+}
+
 export function completeLearningWordSession(wordId: string, success: boolean): Word {
   const existingWord = db
     .prepare(`
@@ -1258,6 +1368,16 @@ function applyLightweightSchemaMigrations() {
       next_due_at TEXT,
       ease_factor REAL NOT NULL,
       PRIMARY KEY (word_id, skill_id)
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS review_session_summaries (
+      session_id TEXT PRIMARY KEY,
+      completed_at TEXT NOT NULL,
+      day_key TEXT NOT NULL,
+      completed_count INTEGER NOT NULL,
+      failed_count INTEGER NOT NULL
     );
   `);
 
@@ -1712,6 +1832,14 @@ function createSchema() {
       day_key TEXT PRIMARY KEY,
       new_study_count INTEGER NOT NULL DEFAULT 0
     );
+
+    CREATE TABLE review_session_summaries (
+      session_id TEXT PRIMARY KEY,
+      completed_at TEXT NOT NULL,
+      day_key TEXT NOT NULL,
+      completed_count INTEGER NOT NULL,
+      failed_count INTEGER NOT NULL
+    );
   `);
 
   ensureIndexes();
@@ -1726,6 +1854,7 @@ function ensureIndexes() {
     CREATE INDEX IF NOT EXISTS idx_user_word_priority_tier ON user_word_priority(priority_tier DESC, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_word_study_admission_next ON word_study_admission_state(earliest_next_study_at ASC);
     CREATE INDEX IF NOT EXISTS idx_word_skill_state_due ON word_skill_state(next_due_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_review_session_summaries_day ON review_session_summaries(day_key ASC);
   `);
 }
 
@@ -1793,6 +1922,13 @@ function validateSchema() {
     'last_studied_at',
     'next_due_at',
     'ease_factor',
+  ]);
+  assertTableColumns('review_session_summaries', [
+    'session_id',
+    'completed_at',
+    'day_key',
+    'completed_count',
+    'failed_count',
   ]);
 }
 
@@ -2444,6 +2580,35 @@ function scheduleReviewItemFromSession(
     nextDueAt: addHours(reviewedAt, nextInterval),
     easeFactor: Number((item.easeFactor + 0.15).toFixed(2)),
   };
+}
+
+function getRollingReviewFailureCounts(
+  countsByDay: Map<string, { completedCount: number; failedCount: number }>,
+  dayKey: string,
+  windowDays: number,
+) {
+  let completedCount = 0;
+  let failedCount = 0;
+
+  for (let offset = 0; offset < windowDays; offset += 1) {
+    const counts = countsByDay.get(addDaysToDateKey(dayKey, -offset));
+    if (!counts) {
+      continue;
+    }
+
+    completedCount += counts.completedCount;
+    failedCount += counts.failedCount;
+  }
+
+  return { completedCount, failedCount };
+}
+
+function calculateFailureRate(failedCount: number, completedCount: number) {
+  if (completedCount === 0) {
+    return null;
+  }
+
+  return failedCount / completedCount;
 }
 
 function addHours(isoTimestamp: string, hours: number): string {
