@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 type WordStatus = 'unstudied' | 'learning' | 'review';
 type Direction = 'forward' | 'reverse';
+type StudySkillId = 'recognition' | 'production';
 
 type WordRecord = {
   id: string;
@@ -118,6 +119,279 @@ describe('session composition', { concurrency: false }, () => {
 
     const sessionIds = getSessionItemIds(dbModule);
     assert.deepEqual(sessionIds, ['review-word-forward']);
+  });
+
+  test('admits review words from word skill urgency instead of legacy review item due dates', () => {
+    insertWord({
+      id: 'skill-urgent-word',
+      hanzi: '急',
+      pinyin: 'ji',
+      meaning: 'urgent',
+      examples: ['事情很急。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(96),
+    });
+
+    insertReviewItem({
+      id: 'skill-urgent-word-forward',
+      wordId: 'skill-urgent-word',
+      direction: 'forward',
+      intervalHours: 24,
+      lastReviewedAt: isoHoursAgo(25),
+      nextDueAt: isoHoursFromNow(24),
+    });
+    insertWordStudyAdmissionState('skill-urgent-word', null);
+    insertWordSkillState({
+      wordId: 'skill-urgent-word',
+      skillId: 'recognition',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(25),
+      nextDueAt: isoHoursFromNow(24),
+    });
+
+    assert.deepEqual(getSessionItemIds(dbModule), ['skill-urgent-word-forward']);
+  });
+
+  test('suppresses legacy-due review items when word skill urgency is below threshold', () => {
+    insertWord({
+      id: 'skill-not-urgent-word',
+      hanzi: '缓',
+      pinyin: 'huan',
+      meaning: 'slow',
+      examples: ['动作很缓。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(96),
+    });
+
+    insertReviewItem({
+      id: 'skill-not-urgent-word-forward',
+      wordId: 'skill-not-urgent-word',
+      direction: 'forward',
+      intervalHours: 24,
+      lastReviewedAt: isoHoursAgo(2),
+      nextDueAt: isoHoursAgo(1),
+    });
+    insertWordStudyAdmissionState('skill-not-urgent-word', null);
+    insertWordSkillState({
+      wordId: 'skill-not-urgent-word',
+      skillId: 'recognition',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(2),
+      nextDueAt: isoHoursAgo(1),
+    });
+
+    assert.deepEqual(getSessionItemIds(dbModule), []);
+  });
+
+  test('admits a review word once when both skills are overdue and chooses the most urgent skill', () => {
+    insertWord({
+      id: 'both-skills-overdue-word',
+      hanzi: '选',
+      pinyin: 'xuan',
+      meaning: 'choose',
+      examples: ['请选择一个。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+
+    insertReviewItem({
+      id: 'both-skills-overdue-word-forward',
+      wordId: 'both-skills-overdue-word',
+      direction: 'forward',
+      intervalHours: 24,
+      lastReviewedAt: isoHoursAgo(72),
+      nextDueAt: isoHoursAgo(48),
+    });
+    insertReviewItem({
+      id: 'both-skills-overdue-word-reverse',
+      wordId: 'both-skills-overdue-word',
+      direction: 'reverse',
+      intervalHours: 24,
+      lastReviewedAt: isoHoursAgo(36),
+      nextDueAt: isoHoursAgo(12),
+    });
+    insertWordStudyAdmissionState('both-skills-overdue-word', null);
+    insertWordSkillState({
+      wordId: 'both-skills-overdue-word',
+      skillId: 'recognition',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(72),
+      nextDueAt: isoHoursAgo(48),
+    });
+    insertWordSkillState({
+      wordId: 'both-skills-overdue-word',
+      skillId: 'production',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(36),
+      nextDueAt: isoHoursAgo(12),
+    });
+
+    assert.deepEqual(getSessionItemIds(dbModule), ['both-skills-overdue-word-forward']);
+  });
+
+  test('uses next due time as a deterministic tie-breaker when both overdue skills have equal urgency', () => {
+    insertWord({
+      id: 'equal-urgency-word',
+      hanzi: '平',
+      pinyin: 'ping',
+      meaning: 'level',
+      examples: ['路很平。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+
+    insertReviewItem({
+      id: 'equal-urgency-word-forward',
+      wordId: 'equal-urgency-word',
+      direction: 'forward',
+      intervalHours: 24,
+      lastReviewedAt: isoHoursAgo(48),
+      nextDueAt: isoHoursAgo(6),
+    });
+    insertReviewItem({
+      id: 'equal-urgency-word-reverse',
+      wordId: 'equal-urgency-word',
+      direction: 'reverse',
+      intervalHours: 12,
+      lastReviewedAt: isoHoursAgo(24),
+      nextDueAt: isoHoursAgo(12),
+    });
+    insertWordStudyAdmissionState('equal-urgency-word', null);
+    insertWordSkillState({
+      wordId: 'equal-urgency-word',
+      skillId: 'recognition',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(48),
+      nextDueAt: isoHoursAgo(6),
+    });
+    insertWordSkillState({
+      wordId: 'equal-urgency-word',
+      skillId: 'production',
+      intervalHours: 12,
+      lastStudiedAt: isoHoursAgo(24),
+      nextDueAt: isoHoursAgo(12),
+    });
+
+    assert.deepEqual(getSessionItemIds(dbModule), ['equal-urgency-word-reverse']);
+  });
+
+  test('recency guard suppresses the remaining overdue skill after a word-level review admission is completed', () => {
+    insertWord({
+      id: 'guarded-after-completion-word',
+      hanzi: '隔',
+      pinyin: 'ge',
+      meaning: 'separate',
+      examples: ['隔一段时间再看。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+
+    insertReviewItem({
+      id: 'guarded-after-completion-word-forward',
+      wordId: 'guarded-after-completion-word',
+      direction: 'forward',
+      intervalHours: 24,
+      lastReviewedAt: isoHoursAgo(72),
+      nextDueAt: isoHoursAgo(48),
+    });
+    insertReviewItem({
+      id: 'guarded-after-completion-word-reverse',
+      wordId: 'guarded-after-completion-word',
+      direction: 'reverse',
+      intervalHours: 24,
+      lastReviewedAt: isoHoursAgo(36),
+      nextDueAt: isoHoursAgo(12),
+    });
+    insertWordStudyAdmissionState('guarded-after-completion-word', null);
+    insertWordSkillState({
+      wordId: 'guarded-after-completion-word',
+      skillId: 'recognition',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(72),
+      nextDueAt: isoHoursAgo(48),
+    });
+    insertWordSkillState({
+      wordId: 'guarded-after-completion-word',
+      skillId: 'production',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(36),
+      nextDueAt: isoHoursAgo(12),
+    });
+
+    assert.deepEqual(getSessionItemIds(dbModule), ['guarded-after-completion-word-forward']);
+
+    dbModule.completeReviewItemSession('guarded-after-completion-word-forward', 0, 'good');
+
+    // guarded-after-completion-word-reverse also meets the urgency thershold, but it will be
+    // supressed because the session completion should reset the recency guard for the word and
+    // prevent any further review obligations from showing up until threshold (6hrs) is passed
+    assert.deepEqual(getSessionItemIds(dbModule), []);
+  });
+
+  test('orders admitted review words by selected skill urgency before legacy direction ordering', () => {
+    insertWord({
+      id: 'less-urgent-production-word',
+      hanzi: '低',
+      pinyin: 'di',
+      meaning: 'low',
+      examples: ['声音很低。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+    insertWord({
+      id: 'more-urgent-recognition-word',
+      hanzi: '高',
+      pinyin: 'gao',
+      meaning: 'high',
+      examples: ['山很高。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+
+    insertReviewItem({
+      id: 'less-urgent-production-word-reverse',
+      wordId: 'less-urgent-production-word',
+      direction: 'reverse',
+      intervalHours: 24,
+      lastReviewedAt: isoHoursAgo(36),
+      nextDueAt: isoHoursAgo(12),
+    });
+    insertReviewItem({
+      id: 'more-urgent-recognition-word-forward',
+      wordId: 'more-urgent-recognition-word',
+      direction: 'forward',
+      intervalHours: 24,
+      lastReviewedAt: isoHoursAgo(72),
+      nextDueAt: isoHoursAgo(48),
+    });
+    insertWordStudyAdmissionState('less-urgent-production-word', null);
+    insertWordStudyAdmissionState('more-urgent-recognition-word', null);
+    insertWordSkillState({
+      wordId: 'less-urgent-production-word',
+      skillId: 'production',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(36),
+      nextDueAt: isoHoursAgo(12),
+    });
+    insertWordSkillState({
+      wordId: 'more-urgent-recognition-word',
+      skillId: 'recognition',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(72),
+      nextDueAt: isoHoursAgo(48),
+    });
+
+    assert.deepEqual(getSessionItemIds(dbModule), [
+      'more-urgent-recognition-word-forward',
+      'less-urgent-production-word-reverse',
+    ]);
   });
 
   test('home overview reports due review, uncovered learning, and limited new-word intake counts', () => {
@@ -722,6 +996,46 @@ function insertReviewItem(record: ReviewItemRecord) {
     record.nextDueAt ?? null,
     record.easeFactor ?? 2.5,
   );
+}
+
+function insertWordStudyAdmissionState(wordId: string, earliestNextStudyAt: string | null) {
+  sqlite.prepare(`
+    INSERT INTO word_study_admission_state (
+      word_id,
+      study_phase,
+      earliest_next_study_at
+    ) VALUES (?, ?, ?)
+  `).run(wordId, 'review', earliestNextStudyAt);
+}
+
+function insertWordSkillState({
+  wordId,
+  skillId,
+  intervalHours,
+  lastStudiedAt,
+  nextDueAt,
+  enabled = true,
+  easeFactor = 2.5,
+}: {
+  wordId: string;
+  skillId: StudySkillId;
+  intervalHours: number;
+  lastStudiedAt: string;
+  nextDueAt: string | null;
+  enabled?: boolean;
+  easeFactor?: number;
+}) {
+  sqlite.prepare(`
+    INSERT INTO word_skill_state (
+      word_id,
+      skill_id,
+      enabled,
+      interval_hours,
+      last_studied_at,
+      next_due_at,
+      ease_factor
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(wordId, skillId, enabled ? 1 : 0, intervalHours, lastStudiedAt, nextDueAt, easeFactor);
 }
 
 function insertUnstudiedWordPair(id: string, priority: number, createdAt: string) {
