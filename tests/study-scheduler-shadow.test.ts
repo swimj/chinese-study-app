@@ -110,7 +110,7 @@ describe('study scheduler shadow state', { concurrency: false }, () => {
       'legacy-review-word',
       'reverse',
       24,
-      null,
+      '2026-01-01T00:00:00.000Z',
       '2026-01-02T00:00:00.000Z',
       2.5,
     );
@@ -194,7 +194,7 @@ describe('study scheduler shadow state', { concurrency: false }, () => {
           skillId: 'production',
           enabled: true,
           intervalHours: 24,
-          lastStudiedAt: null,
+          lastStudiedAt: '2026-01-01T00:00:00.000Z',
           nextDueAt: '2026-01-02T00:00:00.000Z',
           easeFactor: 2.5,
         },
@@ -209,6 +209,7 @@ describe('study scheduler shadow state', { concurrency: false }, () => {
         },
       ]);
       assert.deepEqual(legacyModule.validateReviewItemStudySchedulerShadow(), []);
+      assert.equal(readColumnNotNullFlag(legacyDbPath, 'word_skill_state', 'last_studied_at'), 1);
       assert.equal(readBackfillMarker(legacyDbPath), 'completed');
     } finally {
       if (previousMode === undefined) {
@@ -224,6 +225,226 @@ describe('study scheduler shadow state', { concurrency: false }, () => {
       }
 
       fs.rmSync(legacyDir, { recursive: true, force: true });
+    }
+  });
+
+  test('startup migrates existing word skill state to require last studied timestamps', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-study-shadow-not-null-'));
+    const dbPath = path.join(dataDir, 'app.db');
+
+    const sqlite = new DatabaseSync(dbPath);
+    sqlite.exec(`
+      PRAGMA foreign_keys = ON;
+      CREATE TABLE words (
+        id TEXT PRIMARY KEY,
+        hanzi TEXT NOT NULL,
+        traditional TEXT,
+        pinyin TEXT NOT NULL,
+        meaning TEXT NOT NULL,
+        meanings_json TEXT NOT NULL DEFAULT '[]',
+        personal_notes TEXT NOT NULL DEFAULT '',
+        examples_json TEXT NOT NULL,
+        status TEXT NOT NULL,
+        priority INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        learning_streak INTEGER NOT NULL DEFAULT 0,
+        last_learning_success_on TEXT,
+        last_learning_covered_on TEXT
+      );
+      CREATE TABLE review_items (
+        id TEXT PRIMARY KEY,
+        word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+        direction TEXT NOT NULL,
+        interval_hours INTEGER NOT NULL,
+        last_reviewed_at TEXT,
+        next_due_at TEXT,
+        ease_factor REAL NOT NULL
+      );
+      CREATE TABLE app_metadata (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE word_study_admission_state (
+        word_id TEXT PRIMARY KEY REFERENCES words(id) ON DELETE CASCADE,
+        study_phase TEXT NOT NULL,
+        earliest_next_study_at TEXT
+      );
+      CREATE TABLE word_skill_state (
+        word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+        skill_id TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        interval_hours INTEGER NOT NULL,
+        last_studied_at TEXT,
+        next_due_at TEXT,
+        ease_factor REAL NOT NULL,
+        PRIMARY KEY (word_id, skill_id)
+      );
+    `);
+    insertShadowValidationWord(sqlite, 'not-null-shadow-word');
+    insertShadowValidationReviewItem(sqlite, {
+      id: 'not-null-shadow-word-forward',
+      wordId: 'not-null-shadow-word',
+      direction: 'forward',
+    });
+    sqlite.prepare(`
+      INSERT INTO word_study_admission_state (
+        word_id,
+        study_phase,
+        earliest_next_study_at
+      ) VALUES (?, ?, ?)
+    `).run('not-null-shadow-word', 'review', null);
+    sqlite.prepare(`
+      INSERT INTO word_skill_state (
+        word_id,
+        skill_id,
+        enabled,
+        interval_hours,
+        last_studied_at,
+        next_due_at,
+        ease_factor
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'not-null-shadow-word',
+      'recognition',
+      1,
+      24,
+      '2026-01-02T00:00:00.000Z',
+      '2026-01-03T00:00:00.000Z',
+      2.5,
+    );
+    sqlite.prepare(`
+      INSERT INTO app_metadata (
+        key,
+        value,
+        updated_at
+      ) VALUES (?, ?, ?)
+    `).run(
+      'study_scheduler_shadow_backfill_v1',
+      'completed',
+      '2026-01-04T00:00:00.000Z',
+    );
+    sqlite.close();
+
+    const previousMode = process.env.APP_MODE;
+    const previousDataDir = process.env.APP_DATA_DIR;
+
+    process.env.APP_MODE = 'study';
+    process.env.APP_DATA_DIR = dataDir;
+
+    try {
+      const moduleUrl = `${pathToFileURL(path.resolve('server/db.ts')).href}?test=shadow-not-null-${Date.now()}`;
+      await import(moduleUrl);
+
+      assert.equal(readColumnNotNullFlag(dbPath, 'word_skill_state', 'last_studied_at'), 1);
+    } finally {
+      if (previousMode === undefined) {
+        delete process.env.APP_MODE;
+      } else {
+        process.env.APP_MODE = previousMode;
+      }
+
+      if (previousDataDir === undefined) {
+        delete process.env.APP_DATA_DIR;
+      } else {
+        process.env.APP_DATA_DIR = previousDataDir;
+      }
+
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  test('startup rejects existing word skill state with null last studied timestamps', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-study-shadow-null-last-'));
+    const dbPath = path.join(dataDir, 'app.db');
+
+    const sqlite = new DatabaseSync(dbPath);
+    sqlite.exec(`
+      PRAGMA foreign_keys = ON;
+      CREATE TABLE words (
+        id TEXT PRIMARY KEY,
+        hanzi TEXT NOT NULL,
+        traditional TEXT,
+        pinyin TEXT NOT NULL,
+        meaning TEXT NOT NULL,
+        meanings_json TEXT NOT NULL DEFAULT '[]',
+        personal_notes TEXT NOT NULL DEFAULT '',
+        examples_json TEXT NOT NULL,
+        status TEXT NOT NULL,
+        priority INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        learning_streak INTEGER NOT NULL DEFAULT 0,
+        last_learning_success_on TEXT,
+        last_learning_covered_on TEXT
+      );
+      CREATE TABLE review_items (
+        id TEXT PRIMARY KEY,
+        word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+        direction TEXT NOT NULL,
+        interval_hours INTEGER NOT NULL,
+        last_reviewed_at TEXT,
+        next_due_at TEXT,
+        ease_factor REAL NOT NULL
+      );
+      CREATE TABLE word_skill_state (
+        word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+        skill_id TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        interval_hours INTEGER NOT NULL,
+        last_studied_at TEXT,
+        next_due_at TEXT,
+        ease_factor REAL NOT NULL,
+        PRIMARY KEY (word_id, skill_id)
+      );
+    `);
+    insertShadowValidationWord(sqlite, 'null-last-shadow-word');
+    sqlite.prepare(`
+      INSERT INTO word_skill_state (
+        word_id,
+        skill_id,
+        enabled,
+        interval_hours,
+        last_studied_at,
+        next_due_at,
+        ease_factor
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'null-last-shadow-word',
+      'recognition',
+      1,
+      24,
+      null,
+      '2026-01-03T00:00:00.000Z',
+      2.5,
+    );
+    sqlite.close();
+
+    const previousMode = process.env.APP_MODE;
+    const previousDataDir = process.env.APP_DATA_DIR;
+
+    process.env.APP_MODE = 'study';
+    process.env.APP_DATA_DIR = dataDir;
+
+    try {
+      const moduleUrl = `${pathToFileURL(path.resolve('server/db.ts')).href}?test=shadow-null-last-${Date.now()}`;
+      await assert.rejects(
+        import(moduleUrl),
+        /cannot migrate word_skill_state\.last_studied_at to NOT NULL because 1 row\(s\) contain NULL/,
+      );
+    } finally {
+      if (previousMode === undefined) {
+        delete process.env.APP_MODE;
+      } else {
+        process.env.APP_MODE = previousMode;
+      }
+
+      if (previousDataDir === undefined) {
+        delete process.env.APP_DATA_DIR;
+      } else {
+        process.env.APP_DATA_DIR = previousDataDir;
+      }
+
+      fs.rmSync(dataDir, { recursive: true, force: true });
     }
   });
 
@@ -635,6 +856,16 @@ function readBackfillMarker(dbPath: string) {
       .get('study_scheduler_shadow_backfill_v1') as { value: string } | undefined;
 
     return row?.value;
+  } finally {
+    sqlite.close();
+  }
+}
+
+function readColumnNotNullFlag(dbPath: string, tableName: string, columnName: string) {
+  const sqlite = new DatabaseSync(dbPath);
+  try {
+    const rows = sqlite.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string; notnull: number }>;
+    return rows.find((row) => row.name === columnName)?.notnull;
   } finally {
     sqlite.close();
   }
