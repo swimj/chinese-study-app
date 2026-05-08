@@ -250,6 +250,23 @@ type SessionItemWithWordRow = {
   word_last_learning_covered_on: string | null;
 };
 
+type ReviewSessionItemWithSkillRow = SessionItemWithWordRow & {
+  skill_id: StudySkillId;
+  skill_enabled: number;
+  skill_interval_hours: number;
+  skill_last_studied_at: string;
+  skill_next_due_at: string | null;
+  earliest_next_study_at: string | null;
+};
+
+type ReviewSessionItemCandidate = {
+  item: SessionItemWithWord;
+  wordId: string;
+  skillId: StudySkillId;
+  urgency: number;
+  nextDueAt: string | null;
+};
+
 type PriorityWordRow = WordRow & {
   bump_count: number;
   force_top: number;
@@ -268,6 +285,7 @@ const PRIORITY_TIER_TOP = 1;
 const PRIORITY_TIER_REGULAR = 0;
 const PRIORITY_TIER_SUNK = -1;
 const REVIEW_PHASE_RECENCY_GUARD_HOURS = 6;
+const REVIEW_SKILL_URGENCY_TIE_EPSILON = 0.000001;
 const STUDY_SCHEDULER_SHADOW_BACKFILL_KEY = 'study_scheduler_shadow_backfill_v1';
 
 initializeDatabase();
@@ -2455,42 +2473,7 @@ function getSessionItemBucketsWithWords(studyDayKey: string): SessionItemBuckets
   const now = new Date().toISOString();
   const today = getTodayKey();
   const remainingDailyNewWordSlots = getRemainingDailyNewWordSlots(studyDayKey);
-  const reviewRows = db
-    .prepare(`
-      SELECT
-        review_items.id,
-        review_items.word_id,
-        review_items.direction,
-        review_items.interval_hours,
-        review_items.last_reviewed_at,
-        review_items.next_due_at,
-        review_items.ease_factor,
-        words.hanzi AS word_hanzi,
-        words.traditional AS word_traditional,
-        words.pinyin AS word_pinyin,
-        words.meaning AS word_meaning,
-        words.meanings_json AS word_meanings_json,
-        words.personal_notes AS word_personal_notes,
-        words.examples_json AS word_examples_json,
-        words.status AS word_status,
-        words.priority AS word_priority,
-        words.created_at AS word_created_at,
-        words.learning_streak AS word_learning_streak,
-        words.last_learning_success_on AS word_last_learning_success_on,
-        words.last_learning_covered_on AS word_last_learning_covered_on
-      FROM review_items
-      INNER JOIN words ON words.id = review_items.word_id
-      WHERE words.status = 'review'
-        AND review_items.next_due_at IS NOT NULL
-        AND review_items.next_due_at <= ?
-      ORDER BY
-        CASE review_items.direction
-          WHEN 'reverse' THEN 0
-          ELSE 1
-        END ASC,
-        review_items.next_due_at ASC
-    `)
-    .all(now) as SessionItemWithWordRow[];
+  const reviewRows = getReviewSessionItemRows(now);
 
   const learningRows = db
     .prepare(`
@@ -2589,10 +2572,96 @@ function getSessionItemBucketsWithWords(studyDayKey: string): SessionItemBuckets
     .all(remainingDailyNewWordSlots) as SessionItemWithWordRow[];
 
   return {
-    review: reviewRows.map(mapSessionItemWithWordRow),
+    review: reviewRows,
     learning: learningRows.map(mapSessionItemWithWordRow),
     unstudied: unstudiedRows.map(mapSessionItemWithWordRow),
   };
+}
+
+function getReviewSessionItemRows(now: string): SessionItemWithWord[] {
+  const rows = db
+    .prepare(`
+      SELECT
+        review_items.id,
+        review_items.word_id,
+        review_items.direction,
+        review_items.interval_hours,
+        review_items.last_reviewed_at,
+        review_items.next_due_at,
+        review_items.ease_factor,
+        words.hanzi AS word_hanzi,
+        words.traditional AS word_traditional,
+        words.pinyin AS word_pinyin,
+        words.meaning AS word_meaning,
+        words.meanings_json AS word_meanings_json,
+        words.personal_notes AS word_personal_notes,
+        words.examples_json AS word_examples_json,
+        words.status AS word_status,
+        words.priority AS word_priority,
+        words.created_at AS word_created_at,
+        words.learning_streak AS word_learning_streak,
+        words.last_learning_success_on AS word_last_learning_success_on,
+        words.last_learning_covered_on AS word_last_learning_covered_on,
+        word_skill_state.skill_id,
+        word_skill_state.enabled AS skill_enabled,
+        word_skill_state.interval_hours AS skill_interval_hours,
+        word_skill_state.last_studied_at AS skill_last_studied_at,
+        word_skill_state.next_due_at AS skill_next_due_at,
+        word_study_admission_state.earliest_next_study_at
+      FROM word_skill_state
+      INNER JOIN words ON words.id = word_skill_state.word_id
+      INNER JOIN word_study_admission_state
+        ON word_study_admission_state.word_id = word_skill_state.word_id
+       AND word_study_admission_state.study_phase = 'review'
+      INNER JOIN review_items
+        ON review_items.word_id = word_skill_state.word_id
+       AND review_items.direction = CASE word_skill_state.skill_id
+          WHEN 'recognition' THEN 'forward'
+          WHEN 'production' THEN 'reverse'
+        END
+      WHERE words.status = 'review'
+        AND word_skill_state.enabled != 0
+        AND word_skill_state.skill_id IN ('recognition', 'production')
+        AND (
+          word_study_admission_state.earliest_next_study_at IS NULL
+          OR word_study_admission_state.earliest_next_study_at <= ?
+        )
+      ORDER BY words.id ASC, word_skill_state.skill_id ASC
+    `)
+    .all(now) as ReviewSessionItemWithSkillRow[];
+
+  const bestCandidateByWordId = new Map<string, ReviewSessionItemCandidate>();
+
+  for (const row of rows) {
+    if (row.skill_interval_hours <= 0) {
+      throw new Error(
+        `Session composition invariant violated: word "${row.word_id}" skill "${row.skill_id}" has non-positive intervalHours.`,
+      );
+    }
+
+    const elapsedHours = getElapsedHours(row.skill_last_studied_at, now);
+    const urgency = elapsedHours / row.skill_interval_hours;
+    if (urgency < 1) {
+      continue;
+    }
+
+    const candidate: ReviewSessionItemCandidate = {
+      item: mapSessionItemWithWordRow(row),
+      wordId: row.word_id,
+      skillId: row.skill_id,
+      urgency,
+      nextDueAt: row.skill_next_due_at,
+    };
+    const currentBest = bestCandidateByWordId.get(candidate.wordId);
+
+    if (!currentBest || compareReviewSessionItemCandidates(candidate, currentBest) < 0) {
+      bestCandidateByWordId.set(candidate.wordId, candidate);
+    }
+  }
+
+  return [...bestCandidateByWordId.values()]
+    .sort(compareReviewSessionItemCandidates)
+    .map((candidate) => candidate.item);
 }
 
 function mapSessionItemWithWordRow(row: SessionItemWithWordRow): SessionItemWithWord {
@@ -2615,6 +2684,55 @@ function mapSessionItemWithWordRow(row: SessionItemWithWordRow): SessionItemWith
       lastLearningCoveredOn: row.word_last_learning_covered_on,
     },
   };
+}
+
+function compareReviewSessionItemCandidates(
+  left: ReviewSessionItemCandidate,
+  right: ReviewSessionItemCandidate,
+) {
+  const urgencyComparison = right.urgency - left.urgency;
+  if (Math.abs(urgencyComparison) > REVIEW_SKILL_URGENCY_TIE_EPSILON) {
+    return urgencyComparison;
+  }
+
+  const dueComparison = compareNullableIsoTimestamps(left.nextDueAt, right.nextDueAt);
+  if (dueComparison !== 0) {
+    return dueComparison;
+  }
+
+  const wordComparison = left.wordId.localeCompare(right.wordId);
+  if (wordComparison !== 0) {
+    return wordComparison;
+  }
+
+  return left.skillId.localeCompare(right.skillId);
+}
+
+function compareNullableIsoTimestamps(left: string | null, right: string | null) {
+  if (left === right) {
+    return 0;
+  }
+
+  if (left === null) {
+    return 1;
+  }
+
+  if (right === null) {
+    return -1;
+  }
+
+  return left.localeCompare(right);
+}
+
+function getElapsedHours(fromIso: string, toIso: string) {
+  const fromTime = Date.parse(fromIso);
+  const toTime = Date.parse(toIso);
+
+  if (!Number.isFinite(fromTime) || !Number.isFinite(toTime)) {
+    throw new Error(`Session composition invariant violated: expected valid ISO timestamps, got "${fromIso}" and "${toIso}".`);
+  }
+
+  return (toTime - fromTime) / (60 * 60 * 1000);
 }
 
 // Applies the persisted scheduling update for a covered review-item session.
