@@ -327,9 +327,8 @@ describe('session composition', { concurrency: false }, () => {
 
     dbModule.completeReviewItemSession('guarded-after-completion-word-forward', 0, 'good');
 
-    // guarded-after-completion-word-reverse also meets the urgency thershold, but it will be
-    // supressed because the session completion should reset the recency guard for the word and
-    // prevent any further review obligations from showing up until threshold (6hrs) is passed
+    // guarded-after-completion-word-reverse also meets the urgency threshold, but it is
+    // suppressed because completion resets the recency guard for the word.
     assert.deepEqual(getSessionItemIds(dbModule), []);
   });
 
@@ -486,7 +485,7 @@ describe('session composition', { concurrency: false }, () => {
     });
   });
 
-  test('orders due review items with all reverse directions before all forward directions', () => {
+  test('orders due review words by selected skill urgency', () => {
     insertWord({
       id: 'review-word-a',
       hanzi: '说',
@@ -539,8 +538,6 @@ describe('session composition', { concurrency: false }, () => {
 
     const sessionIds = getSessionItemIds(dbModule);
     assert.deepEqual(sessionIds, [
-      'review-word-b-reverse',
-      'review-word-a-reverse',
       'review-word-b-forward',
       'review-word-a-forward',
     ]);
@@ -977,6 +974,7 @@ function insertWord(record: WordRecord) {
 }
 
 function insertReviewItem(record: ReviewItemRecord) {
+  const lastReviewedAt = record.lastReviewedAt ?? inferLastReviewedAt(record.nextDueAt ?? null, record.intervalHours);
   sqlite.prepare(`
     INSERT INTO review_items (
       id,
@@ -992,10 +990,30 @@ function insertReviewItem(record: ReviewItemRecord) {
     record.wordId,
     record.direction,
     record.intervalHours,
-    record.lastReviewedAt ?? null,
+    lastReviewedAt,
     record.nextDueAt ?? null,
     record.easeFactor ?? 2.5,
   );
+
+  const word = sqlite.prepare(`
+    SELECT status
+    FROM words
+    WHERE id = ?
+  `).get(record.wordId) as { status: WordStatus } | undefined;
+
+  if (word?.status !== 'review' || lastReviewedAt === null) {
+    return;
+  }
+
+  insertWordStudyAdmissionState(record.wordId, null);
+  insertWordSkillState({
+    wordId: record.wordId,
+    skillId: record.direction === 'forward' ? 'recognition' : 'production',
+    intervalHours: record.intervalHours,
+    lastStudiedAt: lastReviewedAt,
+    nextDueAt: record.nextDueAt ?? null,
+    easeFactor: record.easeFactor ?? 2.5,
+  });
 }
 
 function insertWordStudyAdmissionState(wordId: string, earliestNextStudyAt: string | null) {
@@ -1005,6 +1023,9 @@ function insertWordStudyAdmissionState(wordId: string, earliestNextStudyAt: stri
       study_phase,
       earliest_next_study_at
     ) VALUES (?, ?, ?)
+    ON CONFLICT(word_id) DO UPDATE SET
+      study_phase = excluded.study_phase,
+      earliest_next_study_at = excluded.earliest_next_study_at
   `).run(wordId, 'review', earliestNextStudyAt);
 }
 
@@ -1035,7 +1056,17 @@ function insertWordSkillState({
       next_due_at,
       ease_factor
     ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(word_id, skill_id) DO UPDATE SET
+      enabled = excluded.enabled,
+      interval_hours = excluded.interval_hours,
+      last_studied_at = excluded.last_studied_at,
+      next_due_at = excluded.next_due_at,
+      ease_factor = excluded.ease_factor
   `).run(wordId, skillId, enabled ? 1 : 0, intervalHours, lastStudiedAt, nextDueAt, easeFactor);
+}
+
+function inferLastReviewedAt(nextDueAt: string | null, intervalHours: number) {
+  return nextDueAt ? shiftHours(nextDueAt, -intervalHours) : null;
 }
 
 function insertUnstudiedWordPair(id: string, priority: number, createdAt: string) {
