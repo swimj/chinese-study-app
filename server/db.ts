@@ -164,7 +164,7 @@ type WordSkillState = {
   skillId: StudySkillId;
   enabled: boolean;
   intervalHours: number;
-  lastStudiedAt: string | null;
+  lastStudiedAt: string;
   nextDueAt: string | null;
   easeFactor: number;
 };
@@ -180,7 +180,7 @@ type WordSkillStateRow = {
   skill_id: StudySkillId;
   enabled: number;
   interval_hours: number;
-  last_studied_at: string | null;
+  last_studied_at: string;
   next_due_at: string | null;
   ease_factor: number;
 };
@@ -1364,12 +1364,14 @@ function applyLightweightSchemaMigrations() {
       skill_id TEXT NOT NULL,
       enabled INTEGER NOT NULL DEFAULT 1,
       interval_hours INTEGER NOT NULL,
-      last_studied_at TEXT,
+      last_studied_at TEXT NOT NULL,
       next_due_at TEXT,
       ease_factor REAL NOT NULL,
       PRIMARY KEY (word_id, skill_id)
     );
   `);
+
+  migrateWordSkillStateLastStudiedAtNotNull();
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS review_session_summaries (
@@ -1397,6 +1399,73 @@ function applyLightweightSchemaMigrations() {
 
   backfillWordMeaningsFromWords();
   backfillStudySchedulerStateFromReviewItems();
+}
+
+function migrateWordSkillStateLastStudiedAtNotNull() {
+  const columns = db.prepare(`PRAGMA table_info(word_skill_state)`).all() as Array<{ name: string; notnull: number; pk: number }>;
+  const lastStudiedAtColumn = columns.find((column) => column.name === 'last_studied_at');
+
+  if (!lastStudiedAtColumn || lastStudiedAtColumn.notnull === 1 || lastStudiedAtColumn.pk !== 0) {
+    return;
+  }
+
+  const nullCount = db
+    .prepare(`
+      SELECT COUNT(*) AS count
+      FROM word_skill_state
+      WHERE last_studied_at IS NULL
+    `)
+    .get() as { count: number };
+
+  if (nullCount.count > 0) {
+    throw new Error(
+      `Database at ${dbPath} cannot migrate word_skill_state.last_studied_at to NOT NULL because ${nullCount.count} row(s) contain NULL.`,
+    );
+  }
+
+  db.exec('BEGIN');
+
+  try {
+    db.exec(`
+      CREATE TABLE word_skill_state_next (
+        word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+        skill_id TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        interval_hours INTEGER NOT NULL,
+        last_studied_at TEXT NOT NULL,
+        next_due_at TEXT,
+        ease_factor REAL NOT NULL,
+        PRIMARY KEY (word_id, skill_id)
+      );
+
+      INSERT INTO word_skill_state_next (
+        word_id,
+        skill_id,
+        enabled,
+        interval_hours,
+        last_studied_at,
+        next_due_at,
+        ease_factor
+      )
+      SELECT
+        word_id,
+        skill_id,
+        enabled,
+        interval_hours,
+        last_studied_at,
+        next_due_at,
+        ease_factor
+      FROM word_skill_state;
+
+      DROP TABLE word_skill_state;
+      ALTER TABLE word_skill_state_next RENAME TO word_skill_state;
+    `);
+
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
 }
 
 function backfillWordMeaningsFromWords() {
@@ -1489,6 +1558,11 @@ function backfillStudySchedulerStateFromReviewItems() {
 
   try {
     for (const row of reviewItems) {
+      if (row.last_reviewed_at === null) {
+        throw new Error(
+          `Database at ${dbPath} cannot backfill word_skill_state: review item "${row.id}" has null last_reviewed_at.`,
+        );
+      }
       upsertWordSkillStateFromReviewItem(mapReviewItemRow(row));
     }
 
@@ -1582,6 +1656,12 @@ function upsertWordStudyAdmissionState(
 }
 
 function upsertWordSkillStateFromReviewItem(item: ReviewItem) {
+  if (item.lastReviewedAt === null) {
+    throw new Error(
+      `Database at ${dbPath} cannot write word_skill_state for review item "${item.id}" with null lastReviewedAt.`,
+    );
+  }
+
   db.prepare(`
     INSERT INTO word_skill_state (
       word_id,
@@ -1822,7 +1902,7 @@ function createSchema() {
       skill_id TEXT NOT NULL,
       enabled INTEGER NOT NULL DEFAULT 1,
       interval_hours INTEGER NOT NULL,
-      last_studied_at TEXT,
+      last_studied_at TEXT NOT NULL,
       next_due_at TEXT,
       ease_factor REAL NOT NULL,
       PRIMARY KEY (word_id, skill_id)
@@ -1923,6 +2003,7 @@ function validateSchema() {
     'next_due_at',
     'ease_factor',
   ]);
+  assertTableColumnNotNull('word_skill_state', 'last_studied_at');
   assertTableColumns('review_session_summaries', [
     'session_id',
     'completed_at',
@@ -1946,6 +2027,21 @@ function assertTableColumns(tableName: string, expectedColumns: string[]) {
         `Database at ${dbPath} has an incompatible "${tableName}" table. Missing column "${column}". Reset the dev database or create a fresh study database under the new schema.`,
       );
     }
+  }
+}
+
+function assertTableColumnNotNull(tableName: string, columnName: string) {
+  const rows = db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string; notnull: number; pk: number }>;
+  const column = rows.find((row) => row.name === columnName);
+
+  if (!column) {
+    throw new Error(`Database at ${dbPath} has an incompatible "${tableName}" table. Missing column "${columnName}".`);
+  }
+
+  if (column.notnull !== 1 && column.pk === 0) {
+    throw new Error(
+      `Database at ${dbPath} has an incompatible "${tableName}" table. Column "${columnName}" must be NOT NULL.`,
+    );
   }
 }
 
@@ -2203,11 +2299,13 @@ function buildSampleWords(): Word[] {
 }
 
 function buildSampleReviewItems(words: Word[]): ReviewItem[] {
-  const overdueAt = addHours(new Date().toISOString(), -24);
+  const now = new Date().toISOString();
+  const overdueAt = addHours(now, -24);
   const learningDueAt = addHours(new Date().toISOString(), -1);
 
   return words.flatMap((word) => {
     const nextDueAt = word.status === 'unstudied' ? null : word.status === 'review' ? overdueAt : learningDueAt;
+    const lastReviewedAt = word.status === 'review' ? addHours(overdueAt, -48) : null;
 
     return [
       {
@@ -2215,7 +2313,7 @@ function buildSampleReviewItems(words: Word[]): ReviewItem[] {
         wordId: word.id,
         direction: 'forward',
         intervalHours: word.status === 'review' ? 48 : 6,
-        lastReviewedAt: null,
+        lastReviewedAt,
         nextDueAt,
         easeFactor: INITIAL_REVIEW_EASE_FACTOR,
       },
@@ -2224,7 +2322,7 @@ function buildSampleReviewItems(words: Word[]): ReviewItem[] {
         wordId: word.id,
         direction: 'reverse',
         intervalHours: word.status === 'review' ? 36 : 6,
-        lastReviewedAt: null,
+        lastReviewedAt,
         nextDueAt,
         easeFactor: INITIAL_REVIEW_EASE_FACTOR,
       },

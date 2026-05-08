@@ -30,7 +30,7 @@ export type WordSkillState = {
   skillId: StudySkillId;
   enabled: boolean;
   intervalHours: number;
-  lastStudiedAt: string | null;
+  lastStudiedAt: string;
   nextDueAt: string | null;
   easeFactor: number;
 };
