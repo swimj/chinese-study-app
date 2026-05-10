@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   buildLegacyReviewStudyAction,
+  deriveReviewCommitFieldsFromAttemptEvents,
   mapReviewDirectionToStudySkill,
   mapStudySkillToDefaultActionKind,
+  type StudyAttemptEvent,
 } from '../src/domain/study-actions.ts';
 import type { ReviewItem, Word } from '../src/types.ts';
 
@@ -104,6 +106,287 @@ describe('study action domain adapters', () => {
   });
 });
 
+describe('review attempt event derivation', () => {
+  test('derives a clean review pass from the first successful attempt', () => {
+    assert.deepEqual(
+      deriveReviewCommitFieldsFromAttemptEvents([
+        createAttemptEvent({
+          id: 'attempt-1',
+          actionAttemptSequence: 1,
+          rating: 'hard',
+          outcome: 'correct',
+        }),
+      ]),
+      {
+        failureCount: 0,
+        terminalRating: 'hard',
+      },
+    );
+  });
+
+  test('derives a lapsed review after three successful reinforcement attempts', () => {
+    assert.deepEqual(
+      deriveReviewCommitFieldsFromAttemptEvents([
+        createAttemptEvent({
+          id: 'attempt-1',
+          actionAttemptSequence: 1,
+          rating: 'forgot',
+          outcome: 'incorrect',
+        }),
+        createAttemptEvent({
+          id: 'attempt-2',
+          actionAttemptSequence: 2,
+          rating: 'good',
+          outcome: 'correct',
+        }),
+        createAttemptEvent({
+          id: 'attempt-3',
+          actionAttemptSequence: 3,
+          rating: 'hard',
+          outcome: 'correct',
+        }),
+        createAttemptEvent({
+          id: 'attempt-4',
+          actionAttemptSequence: 4,
+          rating: 'easy',
+          outcome: 'correct',
+        }),
+      ]),
+      {
+        failureCount: 1,
+        terminalRating: null,
+      },
+    );
+  });
+
+  test('counts repeated failures and requires three successes after the latest failure', () => {
+    assert.deepEqual(
+      deriveReviewCommitFieldsFromAttemptEvents([
+        createAttemptEvent({
+          id: 'attempt-1',
+          actionAttemptSequence: 1,
+          rating: 'forgot',
+          outcome: 'incorrect',
+        }),
+        createAttemptEvent({
+          id: 'attempt-2',
+          actionAttemptSequence: 2,
+          rating: 'good',
+          outcome: 'correct',
+        }),
+        createAttemptEvent({
+          id: 'attempt-3',
+          actionAttemptSequence: 3,
+          rating: 'forgot',
+          outcome: 'incorrect',
+        }),
+        createAttemptEvent({
+          id: 'attempt-4',
+          actionAttemptSequence: 4,
+          rating: 'good',
+          outcome: 'correct',
+        }),
+        createAttemptEvent({
+          id: 'attempt-5',
+          actionAttemptSequence: 5,
+          rating: 'good',
+          outcome: 'correct',
+        }),
+        createAttemptEvent({
+          id: 'attempt-6',
+          actionAttemptSequence: 6,
+          rating: 'good',
+          outcome: 'correct',
+        }),
+      ]),
+      {
+        failureCount: 2,
+        terminalRating: null,
+      },
+    );
+  });
+
+  test('sorts by action attempt sequence before deriving review outcome', () => {
+    assert.deepEqual(
+      deriveReviewCommitFieldsFromAttemptEvents([
+        createAttemptEvent({
+          id: 'attempt-3',
+          actionAttemptSequence: 3,
+          sessionEventSequence: 12,
+          rating: 'good',
+          outcome: 'correct',
+        }),
+        createAttemptEvent({
+          id: 'attempt-1',
+          actionAttemptSequence: 1,
+          sessionEventSequence: 10,
+          rating: 'forgot',
+          outcome: 'incorrect',
+        }),
+        createAttemptEvent({
+          id: 'attempt-4',
+          actionAttemptSequence: 4,
+          sessionEventSequence: 13,
+          rating: 'good',
+          outcome: 'correct',
+        }),
+        createAttemptEvent({
+          id: 'attempt-2',
+          actionAttemptSequence: 2,
+          sessionEventSequence: 11,
+          rating: 'good',
+          outcome: 'correct',
+        }),
+      ]),
+      {
+        failureCount: 1,
+        terminalRating: null,
+      },
+    );
+  });
+
+  test('rejects incomplete review reinforcement batches', () => {
+    assert.throws(
+      () =>
+        deriveReviewCommitFieldsFromAttemptEvents([
+          createAttemptEvent({
+            id: 'attempt-1',
+            actionAttemptSequence: 1,
+            rating: 'forgot',
+            outcome: 'incorrect',
+          }),
+          createAttemptEvent({
+            id: 'attempt-2',
+            actionAttemptSequence: 2,
+            rating: 'good',
+            outcome: 'correct',
+          }),
+        ]),
+      /do not represent a covered review action/,
+    );
+  });
+
+  test('rejects mismatched denormalized outcome and rating', () => {
+    assert.throws(
+      () =>
+        deriveReviewCommitFieldsFromAttemptEvents([
+          createAttemptEvent({
+            id: 'attempt-1',
+            rating: 'forgot',
+            outcome: 'correct',
+          }),
+        ]),
+      /outcome "correct" inconsistent with rating "forgot"/,
+    );
+  });
+
+  test('rejects mixed session actions and action attempt sequence gaps', () => {
+    assert.throws(
+      () =>
+        deriveReviewCommitFieldsFromAttemptEvents([
+          createAttemptEvent({
+            id: 'attempt-1',
+            actionAttemptSequence: 1,
+            rating: 'forgot',
+            outcome: 'incorrect',
+          }),
+          createAttemptEvent({
+            id: 'attempt-2',
+            sessionActionId: 'session-1/action-2',
+            actionAttemptSequence: 2,
+          }),
+        ]),
+      /must belong to one session action/,
+    );
+
+    assert.throws(
+      () =>
+        deriveReviewCommitFieldsFromAttemptEvents([
+          createAttemptEvent({
+            id: 'attempt-1',
+            actionAttemptSequence: 1,
+          }),
+          createAttemptEvent({
+            id: 'attempt-2',
+            actionAttemptSequence: 2,
+          }),
+        ]),
+      /includes events after the review action was covered/,
+    );
+
+    assert.throws(
+      () =>
+        deriveReviewCommitFieldsFromAttemptEvents([
+          createAttemptEvent({
+            id: 'attempt-1',
+            actionAttemptSequence: 1,
+            rating: 'forgot',
+            outcome: 'incorrect',
+          }),
+          createAttemptEvent({
+            id: 'attempt-3',
+            actionAttemptSequence: 3,
+            rating: 'good',
+            outcome: 'correct',
+          }),
+        ]),
+      /expected actionAttemptSequence 2, got 3/,
+    );
+  });
+
+  test('rejects review attempt batches whose accepted event order contradicts attempt order', () => {
+    assert.throws(
+      () =>
+        deriveReviewCommitFieldsFromAttemptEvents([
+          createAttemptEvent({
+            id: 'attempt-1',
+            actionAttemptSequence: 1,
+            sessionEventSequence: 10,
+            rating: 'forgot',
+            outcome: 'incorrect',
+          }),
+          createAttemptEvent({
+            id: 'attempt-2',
+            actionAttemptSequence: 2,
+            sessionEventSequence: 9,
+            rating: 'good',
+            outcome: 'correct',
+          }),
+          createAttemptEvent({
+            id: 'attempt-3',
+            actionAttemptSequence: 3,
+            sessionEventSequence: 11,
+            rating: 'good',
+            outcome: 'correct',
+          }),
+          createAttemptEvent({
+            id: 'attempt-4',
+            actionAttemptSequence: 4,
+            sessionEventSequence: 12,
+            rating: 'good',
+            outcome: 'correct',
+          }),
+        ]),
+      /sessionEventSequence must increase with actionAttemptSequence/,
+    );
+  });
+
+  test('rejects non-review action kinds', () => {
+    assert.throws(
+      () =>
+        deriveReviewCommitFieldsFromAttemptEvents([
+          createAttemptEvent({
+            id: 'attempt-1',
+            actionKind: 'contrast_selection',
+            sampledSkillIds: ['contextual_selection'],
+            rating: null,
+          }),
+        ]),
+      /Expected recognition or production review attempt event/,
+    );
+  });
+});
+
 function createWord(overrides: Partial<Word> & Pick<Word, 'id'>): Word {
   return {
     id: overrides.id,
@@ -134,5 +417,26 @@ function createReviewItem(
     lastReviewedAt: overrides.lastReviewedAt ?? null,
     nextDueAt: overrides.nextDueAt ?? null,
     easeFactor: overrides.easeFactor ?? 2.5,
+  };
+}
+
+function createAttemptEvent(overrides: Partial<StudyAttemptEvent> & Pick<StudyAttemptEvent, 'id'>): StudyAttemptEvent {
+  const actionAttemptSequence = overrides.actionAttemptSequence ?? 1;
+
+  return {
+    id: overrides.id,
+    occurredAt: overrides.occurredAt ?? '2026-05-10T01:00:00.000Z',
+    sessionId: overrides.sessionId ?? 'session-1',
+    sessionActionId: overrides.sessionActionId ?? 'session-1/action-1',
+    sessionEventSequence: overrides.sessionEventSequence ?? actionAttemptSequence,
+    actionAttemptSequence,
+    actionKind: overrides.actionKind ?? 'recognition',
+    targetWordId: overrides.targetWordId ?? 'word-1',
+    sampledSkillIds: overrides.sampledSkillIds ?? ['recognition'],
+    response: overrides.response ?? null,
+    outcome: overrides.outcome ?? 'correct',
+    rating: 'rating' in overrides ? (overrides.rating ?? null) : 'good',
+    contentRef: overrides.contentRef ?? null,
+    metadata: overrides.metadata ?? {},
   };
 }

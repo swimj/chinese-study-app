@@ -1,8 +1,8 @@
 import type { SessionCommitIntent } from '../../lib/session-state';
 import {
   completeLearningSession,
-  completeReviewSession,
   completeUnstudiedSession,
+  recordAcceptedReviewAttemptBatch,
 } from '../../services/api';
 
 export type DeferredSessionCommit = Exclude<SessionCommitIntent, { type: 'none' }>;
@@ -10,7 +10,16 @@ export type DeferredSessionCommit = Exclude<SessionCommitIntent, { type: 'none' 
 export async function applySessionCommit(commit: DeferredSessionCommit) {
   switch (commit.type) {
     case 'commit-review-item-session': {
-      await completeReviewSession(commit.reviewItemId, commit.failureCount, commit.terminalRating);
+      await recordAcceptedReviewAttemptBatch({
+        sessionId: commit.sessionId,
+        events: commit.events,
+        commitIntent: {
+          type: commit.type,
+          reviewItemId: commit.reviewItemId,
+          failureCount: commit.failureCount,
+          terminalRating: commit.terminalRating,
+        },
+      });
       return;
     }
     case 'commit-learning-word-session':

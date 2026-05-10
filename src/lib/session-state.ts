@@ -1,4 +1,5 @@
 import type { ReviewItem, ReviewRating, SessionItemBuckets, SessionItemWithWord, Word } from '../types';
+import type { StudyAttemptEvent } from '../domain/study-actions';
 import {
   consumeActiveSchedulerItem,
   createSessionScheduler,
@@ -29,6 +30,7 @@ export type UnstudiedWordProgress = {
 export type ReviewItemProgress = {
   failureCount: number;
   reinforcementStreak: number;
+  attempts: StudyAttemptEvent[];
 };
 
 export type SessionPhase = 'active' | 'draining' | 'completed';
@@ -49,9 +51,11 @@ export type SessionCommitIntent =
   | { type: 'none' }
   | {
       type: 'commit-review-item-session';
+      sessionId: string;
       reviewItemId: string;
       failureCount: number;
       terminalRating: 'hard' | 'good' | 'easy' | null;
+      events: StudyAttemptEvent[];
     }
   | {
       type: 'commit-learning-word-session';
@@ -236,7 +240,14 @@ function handleReviewAttempt(
   rating: ReviewRating,
 ): SessionTransitionResult {
   const reviewItem = item.reviewItem;
-  const currentProgress = state.reviewProgress[reviewItem.id] ?? { failureCount: 0, reinforcementStreak: 0 };
+  const currentProgress = state.reviewProgress[reviewItem.id] ?? createInitialReviewProgress();
+  const attemptEvent = buildReviewAttemptEvent({
+    state,
+    item,
+    rating,
+    actionAttemptSequence: currentProgress.attempts.length + 1,
+  });
+  const nextAttempts = [...currentProgress.attempts, attemptEvent];
 
   if (currentProgress.failureCount === 0 && rating !== 'forgot') {
     return {
@@ -248,9 +259,11 @@ function handleReviewAttempt(
       }),
       commit: {
         type: 'commit-review-item-session',
+        sessionId: state.sessionId,
         reviewItemId: reviewItem.id,
         failureCount: 0,
         terminalRating: rating,
+        events: nextAttempts,
       },
     };
   }
@@ -258,6 +271,7 @@ function handleReviewAttempt(
   const nextProgress: ReviewItemProgress = {
     failureCount: currentProgress.failureCount + (rating === 'forgot' ? 1 : 0),
     reinforcementStreak: rating === 'forgot' ? 0 : currentProgress.reinforcementStreak + 1,
+    attempts: nextAttempts,
   };
 
   if (nextProgress.reinforcementStreak >= 3) {
@@ -270,9 +284,11 @@ function handleReviewAttempt(
       }),
       commit: {
         type: 'commit-review-item-session',
+        sessionId: state.sessionId,
         reviewItemId: reviewItem.id,
         failureCount: nextProgress.failureCount,
         terminalRating: null, // rating only needed when item recalled without failureCount of 0
+        events: nextAttempts,
       },
     };
   }
@@ -288,6 +304,46 @@ function handleReviewAttempt(
       },
     }),
     commit: { type: 'none' },
+  };
+}
+
+function createInitialReviewProgress(): ReviewItemProgress {
+  return {
+    failureCount: 0,
+    reinforcementStreak: 0,
+    attempts: [],
+  };
+}
+
+function buildReviewAttemptEvent({
+  state,
+  item,
+  rating,
+  actionAttemptSequence,
+}: {
+  state: SessionState;
+  item: SessionItemWithWord;
+  rating: ReviewRating;
+  actionAttemptSequence: number;
+}): StudyAttemptEvent {
+  const actionKind = item.reviewItem.direction === 'forward' ? 'recognition' : 'production';
+  const skillId = item.reviewItem.direction === 'forward' ? 'recognition' : 'production';
+
+  return {
+    id: `${state.sessionId}/${item.reviewItem.id}/attempt-${actionAttemptSequence}`,
+    occurredAt: new Date().toISOString(),
+    sessionId: state.sessionId,
+    sessionActionId: `${state.sessionId}/${item.reviewItem.id}`,
+    sessionEventSequence: state.answeredCount + 1,
+    actionAttemptSequence,
+    actionKind,
+    targetWordId: item.word.id,
+    sampledSkillIds: [skillId],
+    response: null,
+    outcome: rating === 'forgot' ? 'incorrect' : 'correct',
+    rating,
+    contentRef: null,
+    metadata: {},
   };
 }
 

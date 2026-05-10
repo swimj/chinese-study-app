@@ -34,6 +34,11 @@ type ReviewItemRecord = {
   easeFactor?: number;
 };
 
+type ReviewAttemptInput = {
+  rating: 'forgot' | 'hard' | 'good' | 'easy';
+  outcome: 'correct' | 'incorrect';
+};
+
 type DbModule = typeof import('../server/db.ts');
 
 const today = new Date().toISOString().slice(0, 10);
@@ -76,6 +81,8 @@ describe('session completion', { concurrency: false }, () => {
 
   beforeEach(() => {
     sqlite.exec(`
+      DELETE FROM study_attempt_events;
+      DELETE FROM study_sessions;
       DELETE FROM daily_new_word_intake;
       DELETE FROM review_session_summaries;
       DELETE FROM word_skill_state;
@@ -90,7 +97,7 @@ describe('session completion', { concurrency: false }, () => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
-  test('completing a review item with a clean hard pass updates interval, due date, and ease', () => {
+  test('recording an accepted review attempt batch updates review item and scheduler state', () => {
     insertReviewWordWithItem({
       wordId: 'hard-word',
       reviewItemId: 'hard-word-forward',
@@ -99,8 +106,24 @@ describe('session completion', { concurrency: false }, () => {
       easeFactor: 2.5,
       nextDueAt: isoHoursAgo(1),
     });
+    insertWordStudyAdmissionState('hard-word', null);
+    insertWordSkillState('hard-word', 'recognition', {
+      intervalHours: 10,
+      lastStudiedAt: isoHoursAgo(48),
+      nextDueAt: isoHoursAgo(1),
+      easeFactor: 2.5,
+    });
 
-    const updatedItem = dbModule.completeReviewItemSession('hard-word-forward', 0, 'hard');
+    const { reviewItem: updatedItem } = recordAcceptedReviewBatch({
+      reviewItemId: 'hard-word-forward',
+      wordId: 'hard-word',
+      actionKind: 'recognition',
+      skillId: 'recognition',
+      rating: 'hard',
+      outcome: 'correct',
+      failureCount: 0,
+      terminalRating: 'hard',
+    });
     assert.equal(updatedItem.intervalHours, 15); // 15 = 10 * 1.5 (hard pass multiplier)
     assert.equal(updatedItem.easeFactor, 2.35); // 2.35 = 2.5 - 0.15 (hard pass easeFactor penalty)
     // We only care that completion writes a real UTC timestamp, not the exact wall-clock instant.
@@ -124,10 +147,108 @@ describe('session completion', { concurrency: false }, () => {
       updatedItem.lastReviewedAt ?? fail('missing lastReviewedAt'),
       6,
     ));
+    assert.equal(fetchAttemptProjectedAt('hard-word-forward-attempt-1'), updatedItem.lastReviewedAt);
     assert.deepEqual(dbModule.validateReviewItemStudySchedulerShadow(), []);
   });
 
-  test('completing a review item with a clean good pass multiplies by ease and rounds up to the next hour', () => {
+  test('legacy review completion updates review items without shadow-writing scheduler state', () => {
+    insertReviewWordWithItem({
+      wordId: 'legacy-only-word',
+      reviewItemId: 'legacy-only-word-forward',
+      direction: 'forward',
+      intervalHours: 10,
+      easeFactor: 2.5,
+      nextDueAt: isoHoursAgo(1),
+    });
+
+    const updatedItem = dbModule.completeReviewItemSession('legacy-only-word-forward', 0, 'hard');
+
+    assert.deepEqual(fetchReviewItem('legacy-only-word-forward'), updatedItem);
+    assert.equal(fetchWordSkillState('legacy-only-word', 'recognition'), undefined);
+    assert.deepEqual(dbModule.validateReviewItemStudySchedulerShadow(), [
+      {
+        reviewItemId: 'legacy-only-word-forward',
+        wordId: 'legacy-only-word',
+        direction: 'forward',
+        skillId: 'recognition',
+        problem: 'missing word_skill_state row',
+      },
+    ]);
+  });
+
+  test('accepted review attempt batch rejects commit intents that do not match events', () => {
+    insertReviewWordWithItem({
+      wordId: 'mismatch-word',
+      reviewItemId: 'mismatch-word-forward',
+      direction: 'forward',
+      intervalHours: 10,
+      easeFactor: 2.5,
+      nextDueAt: isoHoursAgo(1),
+    });
+    insertWordStudyAdmissionState('mismatch-word', null);
+    insertWordSkillState('mismatch-word', 'recognition', {
+      intervalHours: 10,
+      lastStudiedAt: isoHoursAgo(48),
+      nextDueAt: isoHoursAgo(1),
+      easeFactor: 2.5,
+    });
+
+    assert.throws(
+      () =>
+        recordAcceptedReviewBatch({
+          reviewItemId: 'mismatch-word-forward',
+          wordId: 'mismatch-word',
+          actionKind: 'recognition',
+          skillId: 'recognition',
+          rating: 'good',
+          outcome: 'correct',
+          failureCount: 1, // nonzero failure count cannot be considered a correct outcome
+          terminalRating: null,
+        }),
+      /do not match supplied review commit intent/,
+    );
+
+    assert.equal(dbModule.getStudyAttemptEventsForSession('mismatch-word-forward-session').length, 0);
+    assert.equal(fetchReviewItem('mismatch-word-forward').lastReviewedAt, null);
+  });
+
+  test('accepted review attempt batch rejects review item ids that do not match event target skill', () => {
+    insertReviewWordWithItem({
+      wordId: 'skill-mismatch-word',
+      reviewItemId: 'skill-mismatch-word-reverse',
+      direction: 'reverse',
+      intervalHours: 10,
+      easeFactor: 2.5,
+      nextDueAt: isoHoursAgo(1),
+    });
+    insertWordStudyAdmissionState('skill-mismatch-word', null);
+    insertWordSkillState('skill-mismatch-word', 'recognition', {
+      intervalHours: 10,
+      lastStudiedAt: isoHoursAgo(48),
+      nextDueAt: isoHoursAgo(1),
+      easeFactor: 2.5,
+    });
+
+    assert.throws(
+      () =>
+        recordAcceptedReviewBatch({
+          reviewItemId: 'skill-mismatch-word-reverse',
+          wordId: 'skill-mismatch-word',
+          actionKind: 'recognition',
+          skillId: 'recognition',
+          rating: 'good',
+          outcome: 'correct',
+          failureCount: 0,
+          terminalRating: 'good',
+        }),
+      /Review item does not match accepted attempt event target/,
+    );
+
+    assert.equal(dbModule.getStudyAttemptEventsForSession('skill-mismatch-word-reverse-session').length, 0);
+    assert.equal(fetchReviewItem('skill-mismatch-word-reverse').lastReviewedAt, null);
+  });
+
+  test('recording a clean good review attempt batch multiplies by ease and projects scheduler state', () => {
     insertReviewWordWithItem({
       wordId: 'good-word',
       reviewItemId: 'good-word-forward',
@@ -136,17 +257,35 @@ describe('session completion', { concurrency: false }, () => {
       easeFactor: 2.5,
       nextDueAt: isoHoursAgo(1),
     });
+    insertWordStudyAdmissionState('good-word', null);
+    insertWordSkillState('good-word', 'recognition', {
+      intervalHours: 21,
+      lastStudiedAt: isoHoursAgo(48),
+      nextDueAt: isoHoursAgo(1),
+      easeFactor: 2.5,
+    });
 
-    const updatedItem = dbModule.completeReviewItemSession('good-word-forward', 0, 'good');
+    const { reviewItem: updatedItem } = recordAcceptedReviewBatch({
+      reviewItemId: 'good-word-forward',
+      wordId: 'good-word',
+      actionKind: 'recognition',
+      skillId: 'recognition',
+      rating: 'good',
+      outcome: 'correct',
+      failureCount: 0,
+      terminalRating: 'good',
+    });
+
     assert.equal(updatedItem.intervalHours, 53); // ceil(21 * 2.5) = ceil(52.5) = 53
     assert.equal(updatedItem.easeFactor, 2.5);
     assert.equal(
       updatedItem.nextDueAt,
       addHours(updatedItem.lastReviewedAt ?? fail('missing lastReviewedAt'), 53),
     );
+    assertProjectedReviewState('good-word-forward', 'good-word', 'recognition', updatedItem);
   });
 
-  test('completing a reverse review item mirrors production skill state', () => {
+  test('recording a reverse review attempt batch projects production skill state', () => {
     insertReviewWordWithItem({
       wordId: 'production-word',
       reviewItemId: 'production-word-reverse',
@@ -155,8 +294,24 @@ describe('session completion', { concurrency: false }, () => {
       easeFactor: 2.5,
       nextDueAt: isoHoursAgo(1),
     });
+    insertWordStudyAdmissionState('production-word', null);
+    insertWordSkillState('production-word', 'production', {
+      intervalHours: 12,
+      lastStudiedAt: isoHoursAgo(48),
+      nextDueAt: isoHoursAgo(1),
+      easeFactor: 2.5,
+    });
 
-    const updatedItem = dbModule.completeReviewItemSession('production-word-reverse', 0, 'good');
+    const { reviewItem: updatedItem } = recordAcceptedReviewBatch({
+      reviewItemId: 'production-word-reverse',
+      wordId: 'production-word',
+      actionKind: 'production',
+      skillId: 'production',
+      rating: 'good',
+      outcome: 'correct',
+      failureCount: 0,
+      terminalRating: 'good',
+    });
 
     assert.equal(updatedItem.direction, 'reverse');
     assert.deepEqual(fetchWordSkillState('production-word', 'production'), {
@@ -172,7 +327,7 @@ describe('session completion', { concurrency: false }, () => {
     assert.deepEqual(dbModule.validateReviewItemStudySchedulerShadow(), []);
   });
 
-  test('completing a review item with a clean easy pass uses ease plus the easy bonus and rounds up to the next hour', () => {
+  test('recording a clean easy review attempt batch uses the easy bonus and projects scheduler state', () => {
     insertReviewWordWithItem({
       wordId: 'easy-word',
       reviewItemId: 'easy-word-forward',
@@ -181,17 +336,35 @@ describe('session completion', { concurrency: false }, () => {
       easeFactor: 2.5,
       nextDueAt: isoHoursAgo(1),
     });
+    insertWordStudyAdmissionState('easy-word', null);
+    insertWordSkillState('easy-word', 'recognition', {
+      intervalHours: 20,
+      lastStudiedAt: isoHoursAgo(48),
+      nextDueAt: isoHoursAgo(1),
+      easeFactor: 2.5,
+    });
 
-    const updatedItem = dbModule.completeReviewItemSession('easy-word-forward', 0, 'easy');
+    const { reviewItem: updatedItem } = recordAcceptedReviewBatch({
+      reviewItemId: 'easy-word-forward',
+      wordId: 'easy-word',
+      actionKind: 'recognition',
+      skillId: 'recognition',
+      rating: 'easy',
+      outcome: 'correct',
+      failureCount: 0,
+      terminalRating: 'easy',
+    });
+
     assert.equal(updatedItem.intervalHours, 57); // ceil(20 * (2.5 + 0.35)) = ceil(57) = 57
     assert.equal(updatedItem.easeFactor, 2.65);
     assert.equal(
       updatedItem.nextDueAt,
       addHours(updatedItem.lastReviewedAt ?? fail('missing lastReviewedAt'), 57),
     );
+    assertProjectedReviewState('easy-word-forward', 'easy-word', 'recognition', updatedItem);
   });
 
-  test('completing a lapsed review item resets the interval and penalizes ease', () => {
+  test('recording a lapsed review attempt batch resets the interval, penalizes ease, and projects scheduler state', () => {
     insertReviewWordWithItem({
       wordId: 'lapsed-word',
       reviewItemId: 'lapsed-word-forward',
@@ -200,18 +373,44 @@ describe('session completion', { concurrency: false }, () => {
       easeFactor: 2.5,
       nextDueAt: isoHoursAgo(1),
     });
+    insertWordStudyAdmissionState('lapsed-word', null);
+    insertWordSkillState('lapsed-word', 'recognition', {
+      intervalHours: 40,
+      lastStudiedAt: isoHoursAgo(48),
+      nextDueAt: isoHoursAgo(1),
+      easeFactor: 2.5,
+    });
 
-    const updatedItem = dbModule.completeReviewItemSession('lapsed-word-forward', 2, null);
+    const { reviewItem: updatedItem } = recordAcceptedReviewBatch({
+      reviewItemId: 'lapsed-word-forward',
+      wordId: 'lapsed-word',
+      actionKind: 'recognition',
+      skillId: 'recognition',
+      failureCount: 2,
+      terminalRating: null,
+      attempts: [
+        { rating: 'forgot', outcome: 'incorrect' },
+        { rating: 'good', outcome: 'correct' },
+        { rating: 'forgot', outcome: 'incorrect' },
+        { rating: 'hard', outcome: 'correct' },
+        { rating: 'good', outcome: 'correct' },
+        { rating: 'easy', outcome: 'correct' },
+      ],
+    });
+
     assert.equal(updatedItem.intervalHours, 6);
     assert.equal(updatedItem.easeFactor, 2.2); // 2.2 = 2.5 - (2 * 0.15)
     assert.equal(
       updatedItem.nextDueAt,
       addHours(updatedItem.lastReviewedAt ?? fail('missing lastReviewedAt'), 6),
     );
-    assert.deepEqual(fetchReviewItem('lapsed-word-forward'), updatedItem);
+    assertProjectedReviewState('lapsed-word-forward', 'lapsed-word', 'recognition', updatedItem);
+    for (let index = 1; index <= 6; index += 1) {
+      assert.equal(fetchAttemptProjectedAt(`lapsed-word-forward-attempt-${index}`), updatedItem.lastReviewedAt);
+    }
   });
 
-  test('review lapse penalties respect the minimum ease floor', () => {
+  test('projected review lapse penalties respect the minimum ease floor', () => {
     insertReviewWordWithItem({
       wordId: 'penalty-floor-word',
       reviewItemId: 'penalty-floor-word-forward',
@@ -220,10 +419,36 @@ describe('session completion', { concurrency: false }, () => {
       easeFactor: 1.9,
       nextDueAt: isoHoursAgo(1),
     });
+    insertWordStudyAdmissionState('penalty-floor-word', null);
+    insertWordSkillState('penalty-floor-word', 'recognition', {
+      intervalHours: 40,
+      lastStudiedAt: isoHoursAgo(48),
+      nextDueAt: isoHoursAgo(1),
+      easeFactor: 1.9,
+    });
 
-    const updatedItem = dbModule.completeReviewItemSession('penalty-floor-word-forward', 5, null);
+    const { reviewItem: updatedItem } = recordAcceptedReviewBatch({
+      reviewItemId: 'penalty-floor-word-forward',
+      wordId: 'penalty-floor-word',
+      actionKind: 'recognition',
+      skillId: 'recognition',
+      failureCount: 5,
+      terminalRating: null,
+      attempts: [
+        { rating: 'forgot', outcome: 'incorrect' },
+        { rating: 'forgot', outcome: 'incorrect' },
+        { rating: 'forgot', outcome: 'incorrect' },
+        { rating: 'forgot', outcome: 'incorrect' },
+        { rating: 'forgot', outcome: 'incorrect' },
+        { rating: 'hard', outcome: 'correct' },
+        { rating: 'good', outcome: 'correct' },
+        { rating: 'easy', outcome: 'correct' },
+      ],
+    });
+
     assert.equal(updatedItem.intervalHours, 6);
     assert.equal(updatedItem.easeFactor, 1.8); // without the floor, this would be 1.15 = 1.9 - (5 * 0.15).
+    assertProjectedReviewState('penalty-floor-word-forward', 'penalty-floor-word', 'recognition', updatedItem);
   });
 
   test('review completion rejects a clean pass without a terminal rating', () => {
@@ -622,6 +847,41 @@ function fetchAdmissionState(wordId: string) {
   return dbModule.getWordStudyAdmissionStates().find((state) => state.wordId === wordId);
 }
 
+function fetchAttemptProjectedAt(eventId: string) {
+  const row = sqlite
+    .prepare(`
+      SELECT projected_at
+      FROM study_attempt_events
+      WHERE id = ?
+    `)
+    .get(eventId) as { projected_at: string | null } | undefined;
+
+  return row?.projected_at ?? null;
+}
+
+function assertProjectedReviewState(
+  reviewItemId: string,
+  wordId: string,
+  skillId: StudySkillId,
+  updatedItem: ReturnType<typeof fetchReviewItem>,
+) {
+  assert.deepEqual(fetchReviewItem(reviewItemId), updatedItem);
+  assert.deepEqual(fetchWordSkillState(wordId, skillId), {
+    wordId,
+    skillId,
+    enabled: true,
+    intervalHours: updatedItem.intervalHours,
+    lastStudiedAt: updatedItem.lastReviewedAt,
+    nextDueAt: updatedItem.nextDueAt,
+    easeFactor: updatedItem.easeFactor,
+  });
+  assert.equal(fetchAdmissionState(wordId)?.earliestNextStudyAt, addHours(
+    updatedItem.lastReviewedAt ?? fail('missing lastReviewedAt'),
+    6,
+  ));
+  assert.deepEqual(dbModule.validateReviewItemStudySchedulerShadow(), []);
+}
+
 function fetchUserPriorityRow(wordId: string) {
   return sqlite
     .prepare(`
@@ -633,6 +893,66 @@ function fetchUserPriorityRow(wordId: string) {
       WHERE word_id = ?
     `)
     .get(wordId) as { bump_count: number; force_top: number; priority_tier: number } | undefined;
+}
+
+// recall: batch consists of both list of events along with the v1 commit intent metadata
+function recordAcceptedReviewBatch({
+  reviewItemId,
+  wordId,
+  actionKind,
+  skillId,
+  rating,
+  outcome,
+  failureCount,
+  terminalRating,
+  attempts,
+}: {
+  reviewItemId: string;
+  wordId: string;
+  actionKind: 'recognition' | 'production';
+  skillId: StudySkillId;
+  rating?: 'forgot' | 'hard' | 'good' | 'easy';
+  outcome?: 'correct' | 'incorrect';
+  failureCount: number;
+  terminalRating: 'hard' | 'good' | 'easy' | null;
+  attempts?: ReviewAttemptInput[];
+}) {
+  const attemptInputs = attempts ?? [
+    {
+      rating: rating ?? fail('Expected rating when attempts are omitted'),
+      outcome: outcome ?? fail('Expected outcome when attempts are omitted'),
+    },
+  ];
+
+  return dbModule.recordAcceptedReviewAttemptBatch({
+    sessionId: `${reviewItemId}-session`,
+    events: attemptInputs.map((attempt, index) => {
+      const sequence = index + 1;
+
+      return {
+        id: `${reviewItemId}-attempt-${sequence}`,
+        occurredAt: '2026-05-10T00:00:00.000Z',
+        sessionId: `${reviewItemId}-session`,
+        sessionActionId: `${reviewItemId}-session/action-1`,
+        sessionEventSequence: sequence,
+        actionAttemptSequence: sequence,
+        actionKind,
+        targetWordId: wordId,
+        sampledSkillIds: [skillId],
+        response: null,
+        outcome: attempt.outcome,
+        rating: attempt.rating,
+        contentRef: null,
+        metadata: {},
+      };
+    }),
+    commitIntent: {
+      type: 'commit-review-item-session',
+      reviewItemId,
+      failureCount,
+      terminalRating,
+    },
+  });
 }
 
 function insertWord(record: WordRecord) {
@@ -697,7 +1017,16 @@ function insertWordStudyAdmissionState(wordId: string, earliestNextStudyAt: stri
   `).run(wordId, 'review', earliestNextStudyAt);
 }
 
-function insertWordSkillState(wordId: string, skillId: StudySkillId) {
+function insertWordSkillState(
+  wordId: string,
+  skillId: StudySkillId,
+  options?: {
+    intervalHours?: number;
+    lastStudiedAt?: string;
+    nextDueAt?: string | null;
+    easeFactor?: number;
+  },
+) {
   sqlite.prepare(`
     INSERT INTO word_skill_state (
       word_id,
@@ -707,8 +1036,15 @@ function insertWordSkillState(wordId: string, skillId: StudySkillId) {
       last_studied_at,
       next_due_at,
       ease_factor
-    ) VALUES (?, ?, 1, 24, ?, ?, 2.5)
-  `).run(wordId, skillId, isoHoursAgo(25), isoHoursAgo(1));
+    ) VALUES (?, ?, 1, ?, ?, ?, ?)
+  `).run(
+    wordId,
+    skillId,
+    options?.intervalHours ?? 24,
+    options?.lastStudiedAt ?? isoHoursAgo(25),
+    options?.nextDueAt ?? isoHoursAgo(1),
+    options?.easeFactor ?? 2.5,
+  );
 }
 
 function insertReviewSessionSummary({

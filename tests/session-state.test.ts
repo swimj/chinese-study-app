@@ -7,8 +7,10 @@ import {
   dismissCurrentItemFromSession,
   markCurrentItemStarted,
   rateCurrentItem,
+  type ReviewItemProgress,
+  type SessionCommitIntent,
 } from '../src/lib/session-state.ts';
-import type { ReviewItem, SessionItemBuckets, SessionItemWithWord, Word } from '../src/types.ts';
+import type { ReviewItem, ReviewRating, SessionItemBuckets, SessionItemWithWord, Word } from '../src/types.ts';
 import {
   cloneSessionScheduler,
   consumeActiveSchedulerItem,
@@ -25,11 +27,12 @@ describe('session state', () => {
 
     const result = rateCurrentItem(markCurrentItemStarted(createTestSessionState(toBuckets([joinItem(reviewItem, reviewWord)]))), 'good');
 
-    assert.deepEqual(result.commit, {
-      type: 'commit-review-item-session',
-      reviewItemId: reviewItem.id,
+    assertReviewCommit(result.commit, {
+      reviewItem,
+      word: reviewWord,
       failureCount: 0,
       terminalRating: 'good',
+      ratings: ['good'],
     });
     assert.equal(result.state.answeredCount, 1);
     assert.equal(getSchedulerLength(result.state.scheduler), 0);
@@ -44,26 +47,17 @@ describe('session state', () => {
 
     let result = rateCurrentItem(state, 'forgot');
     assert.deepEqual(result.commit, { type: 'none' });
-    assert.deepEqual(result.state.reviewProgress[reviewItem.id], {
-      failureCount: 1,
-      reinforcementStreak: 0,
-    });
+    assertReviewProgress(result.state.reviewProgress[reviewItem.id], 1, 0, ['forgot']);
 
     state = markCurrentItemStarted(result.state);
     result = rateCurrentItem(state, 'good');
     assert.deepEqual(result.commit, { type: 'none' });
-    assert.deepEqual(result.state.reviewProgress[reviewItem.id], {
-      failureCount: 1,
-      reinforcementStreak: 1,
-    });
+    assertReviewProgress(result.state.reviewProgress[reviewItem.id], 1, 1, ['forgot', 'good']);
 
     state = markCurrentItemStarted(result.state);
     result = rateCurrentItem(state, 'forgot');
     assert.deepEqual(result.commit, { type: 'none' });
-    assert.deepEqual(result.state.reviewProgress[reviewItem.id], {
-      failureCount: 2,
-      reinforcementStreak: 0,
-    });
+    assertReviewProgress(result.state.reviewProgress[reviewItem.id], 2, 0, ['forgot', 'good', 'forgot']);
 
     state = markCurrentItemStarted(result.state);
     result = rateCurrentItem(state, 'good');
@@ -72,11 +66,12 @@ describe('session state', () => {
     state = markCurrentItemStarted(result.state);
     result = rateCurrentItem(state, 'good');
 
-    assert.deepEqual(result.commit, {
-      type: 'commit-review-item-session',
-      reviewItemId: reviewItem.id,
+    assertReviewCommit(result.commit, {
+      reviewItem,
+      word: reviewWord,
       failureCount: 2,
       terminalRating: null,
+      ratings: ['forgot', 'good', 'forgot', 'good', 'good', 'good'],
     });
     assert.equal(result.state.answeredCount, 6);
     assert.equal(getSchedulerLength(result.state.scheduler), 0);
@@ -254,10 +249,7 @@ describe('session state', () => {
 
     assert.equal(drainedState.phase, 'draining');
     assert.deepEqual(materializeEffectiveQueue(drainedState.scheduler), [untouchedFuture.id, reviewItem.id]);
-    assert.deepEqual(drainedState.reviewProgress[reviewItem.id], {
-      failureCount: 1,
-      reinforcementStreak: 0,
-    });
+    assertReviewProgress(drainedState.reviewProgress[reviewItem.id], 1, 0, ['forgot']);
   });
 
   test('beginDrainSession keeps open work for a partially covered learning word', () => {
@@ -334,11 +326,12 @@ describe('session state', () => {
 
     const result = rateCurrentItem(state, 'good');
 
-    assert.deepEqual(result.commit, {
-      type: 'commit-review-item-session',
-      reviewItemId: reviewItem.id,
+    assertReviewCommit(result.commit, {
+      reviewItem,
+      word: reviewWord,
       failureCount: 0,
       terminalRating: 'good',
+      ratings: ['good'],
     });
     assert.equal(getSchedulerLength(result.state.scheduler), 0);
     assert.equal(result.state.phase, 'completed');
@@ -351,11 +344,12 @@ describe('session state', () => {
     const state = markCurrentItemStarted(createTestSessionState(toBuckets([joinItem(reviewItem, reviewWord)])));
     const result = rateCurrentItem(state, 'good');
 
-    assert.deepEqual(result.commit, {
-      type: 'commit-review-item-session',
-      reviewItemId: reviewItem.id,
+    assertReviewCommit(result.commit, {
+      reviewItem,
+      word: reviewWord,
       failureCount: 0,
       terminalRating: 'good',
+      ratings: ['good'],
     });
     assert.equal(getSchedulerLength(result.state.scheduler), 0);
     assert.equal(result.state.phase, 'completed');
@@ -436,7 +430,7 @@ describe('session state', () => {
         },
       },
       reviewProgress: {
-        [dismissedForward.id]: { failureCount: 1, reinforcementStreak: 0 },
+        [dismissedForward.id]: { failureCount: 1, reinforcementStreak: 0, attempts: [] },
       },
     };
 
@@ -509,6 +503,65 @@ function toBuckets(items: SessionItemWithWord[]): SessionItemBuckets {
 
 function createTestSessionState(buckets: SessionItemBuckets) {
   return createSessionState(buckets, testSessionId);
+}
+
+function assertReviewProgress(
+  progress: ReviewItemProgress | undefined,
+  failureCount: number,
+  reinforcementStreak: number,
+  ratings: ReviewRating[],
+) {
+  assert.ok(progress);
+  assert.equal(progress.failureCount, failureCount);
+  assert.equal(progress.reinforcementStreak, reinforcementStreak);
+  assert.deepEqual(progress.attempts.map((attempt) => attempt.rating), ratings);
+}
+
+function assertReviewCommit(
+  commit: SessionCommitIntent,
+  {
+    reviewItem,
+    word,
+    failureCount,
+    terminalRating,
+    ratings,
+  }: {
+    reviewItem: ReviewItem;
+    word: Word;
+    failureCount: number;
+    terminalRating: 'hard' | 'good' | 'easy' | null;
+    ratings: ReviewRating[];
+  },
+) {
+  assert.equal(commit.type, 'commit-review-item-session');
+  if (commit.type !== 'commit-review-item-session') {
+    return;
+  }
+
+  assert.equal(commit.sessionId, testSessionId);
+  assert.equal(commit.reviewItemId, reviewItem.id);
+  assert.equal(commit.failureCount, failureCount);
+  assert.equal(commit.terminalRating, terminalRating);
+  assert.deepEqual(commit.events.map((event) => event.rating), ratings);
+
+  for (const [index, event] of commit.events.entries()) {
+    const sequence = index + 1;
+    const expectedKind = reviewItem.direction === 'forward' ? 'recognition' : 'production';
+
+    assert.equal(event.id, `${testSessionId}/${reviewItem.id}/attempt-${sequence}`);
+    assert.match(event.occurredAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    assert.equal(event.sessionId, testSessionId);
+    assert.equal(event.sessionActionId, `${testSessionId}/${reviewItem.id}`);
+    assert.equal(event.sessionEventSequence, sequence);
+    assert.equal(event.actionAttemptSequence, sequence);
+    assert.equal(event.actionKind, expectedKind);
+    assert.equal(event.targetWordId, word.id);
+    assert.deepEqual(event.sampledSkillIds, [expectedKind]);
+    assert.equal(event.response, null);
+    assert.equal(event.outcome, event.rating === 'forgot' ? 'incorrect' : 'correct');
+    assert.equal(event.contentRef, null);
+    assert.deepEqual(event.metadata, {});
+  }
 }
 
 function materializeEffectiveQueue(scheduler: Parameters<typeof getSchedulerActiveItem>[0]): string[] {

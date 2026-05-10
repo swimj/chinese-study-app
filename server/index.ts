@@ -20,11 +20,14 @@ import {
   getWordMeanings,
   getWords,
   getWordStatusCounts,
+  recordAcceptedReviewAttemptBatch,
   recordReviewSessionSummary,
   updateWordMeaningVisibility,
   updateWordPersonalNotes,
   updateWordUserPriority,
+  type ReviewAttemptCommitIntent,
 } from './db.ts';
+import type { StudyAttemptEvent } from '../src/domain/study-actions.ts';
 
 const port = dbConfig.port;
 
@@ -154,6 +157,58 @@ export function createApp() {
       }
 
       res.status(500).json({ error: 'Failed to complete review item session' });
+    }
+  });
+
+  app.post('/api/study-sessions/:sessionId/accepted-review-attempt-batch', (req, res) => {
+    const sessionId = req.params.sessionId;
+    const events = req.body?.events;
+    const commitIntent = req.body?.commitIntent;
+
+    if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty session id' });
+      return;
+    }
+
+    if (!Array.isArray(events)) {
+      res.status(400).json({ error: 'Expected events array' });
+      return;
+    }
+
+    if (typeof commitIntent !== 'object' || commitIntent === null || Array.isArray(commitIntent)) {
+      res.status(400).json({ error: 'Expected commit intent object' });
+      return;
+    }
+
+    try {
+      const result = recordAcceptedReviewAttemptBatch({
+        sessionId: sessionId.trim(),
+        events: events as StudyAttemptEvent[],
+        commitIntent: commitIntent as ReviewAttemptCommitIntent,
+      });
+      res.status(201).json(result);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Review item not found') {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+
+      if (
+        error instanceof Error &&
+        (error.message.startsWith('Expected ') ||
+          error.message.startsWith('Invalid ') ||
+          error.message.startsWith('Cannot ') ||
+          error.message.startsWith('Accepted attempt') ||
+          error.message.startsWith('Review item') ||
+          error.message.startsWith('Review attempt') ||
+          error.message.startsWith('Study attempt') ||
+          error.message.startsWith('Word skill state not found'))
+      ) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to record accepted review attempt batch' });
     }
   });
 

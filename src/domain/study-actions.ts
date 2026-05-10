@@ -42,7 +42,8 @@ export type StudyAttemptEvent = {
   occurredAt: string;
   sessionId: string;
   sessionActionId: string;
-  attemptSequence: number;
+  sessionEventSequence: number;
+  actionAttemptSequence: number;
   actionKind: StudyActionKind;
   targetWordId: string;
   sampledSkillIds: StudySkillId[];
@@ -51,6 +52,11 @@ export type StudyAttemptEvent = {
   rating: ReviewRating | null;
   contentRef: StudyContentRef | null;
   metadata: Record<string, unknown>;
+};
+
+export type ReviewCommitFields = {
+  failureCount: number;
+  terminalRating: Exclude<ReviewRating, 'forgot'> | null;
 };
 
 export type StudyReflectionEvent = {
@@ -122,6 +128,126 @@ export function buildLegacyReviewStudyAction({
     contentRef,
     legacyReviewItemId: reviewItem.id,
   };
+}
+
+export function deriveReviewCommitFieldsFromAttemptEvents(events: StudyAttemptEvent[]): ReviewCommitFields {
+  if (events.length === 0) {
+    throw new Error('Cannot derive review commit fields from an empty attempt event batch.');
+  }
+
+  const orderedEvents = [...events].sort((left, right) => left.actionAttemptSequence - right.actionAttemptSequence);
+  const firstEvent = orderedEvents[0] ?? assertAttemptEventsPresent();
+
+  assertReviewAttemptEvent(firstEvent);
+
+  let expectedActionAttemptSequence = 1;
+  let previousSessionEventSequence = 0;
+  let failureCount = 0;
+  let reinforcementStreak = 0;
+  let commitFields: ReviewCommitFields | null = null;
+
+  for (const event of orderedEvents) {
+    assertSameReviewActionEvent(firstEvent, event);
+
+    if (commitFields !== null) {
+      throw new Error('Review attempt event batch includes events after the review action was covered.');
+    }
+
+    if (event.actionAttemptSequence !== expectedActionAttemptSequence) {
+      throw new Error(
+        `Review attempt event invariant violated: expected actionAttemptSequence ${expectedActionAttemptSequence}, got ${event.actionAttemptSequence}.`,
+      );
+    }
+    expectedActionAttemptSequence += 1;
+
+    if (event.sessionEventSequence <= previousSessionEventSequence) {
+      throw new Error(
+        `Review attempt event invariant violated: sessionEventSequence must increase with actionAttemptSequence.`,
+      );
+    }
+    previousSessionEventSequence = event.sessionEventSequence;
+
+    const rating = event.rating ?? assertReviewAttemptRating(event);
+    assertReviewAttemptOutcomeMatchesRating(event, rating);
+
+    if (failureCount === 0 && rating !== 'forgot') {
+      commitFields = {
+        failureCount: 0,
+        terminalRating: rating,
+      };
+      continue;
+    }
+
+    if (rating === 'forgot') {
+      failureCount += 1;
+      reinforcementStreak = 0;
+    } else {
+      reinforcementStreak += 1;
+    }
+
+    if (reinforcementStreak >= 3) {
+      commitFields = {
+        failureCount,
+        terminalRating: null,
+      };
+    }
+  }
+
+  if (commitFields === null) {
+    throw new Error('Review attempt events do not represent a covered review action.');
+  }
+
+  return commitFields;
+}
+
+function assertReviewAttemptEvent(event: StudyAttemptEvent) {
+  if (event.actionKind !== 'recognition' && event.actionKind !== 'production') {
+    throw new Error(`Expected recognition or production review attempt event, got "${event.actionKind}".`);
+  }
+
+  const requiredSkill = event.actionKind === 'recognition' ? 'recognition' : 'production';
+  if (!event.sampledSkillIds.includes(requiredSkill)) {
+    throw new Error(
+      `Review attempt event invariant violated: ${event.actionKind} action must sample ${requiredSkill}.`,
+    );
+  }
+}
+
+function assertSameReviewActionEvent(firstEvent: StudyAttemptEvent, event: StudyAttemptEvent) {
+  assertReviewAttemptEvent(event);
+
+  if (event.sessionId !== firstEvent.sessionId) {
+    throw new Error('Review attempt event batch must belong to one session.');
+  }
+
+  if (event.sessionActionId !== firstEvent.sessionActionId) {
+    throw new Error('Review attempt event batch must belong to one session action.');
+  }
+
+  if (event.actionKind !== firstEvent.actionKind) {
+    throw new Error('Review attempt event batch must use one action kind.');
+  }
+
+  if (event.targetWordId !== firstEvent.targetWordId) {
+    throw new Error('Review attempt event batch must target one word.');
+  }
+}
+
+function assertReviewAttemptRating(event: StudyAttemptEvent): never {
+  throw new Error(`Review attempt event "${event.id}" must include a rating.`);
+}
+
+function assertReviewAttemptOutcomeMatchesRating(event: StudyAttemptEvent, rating: ReviewRating) {
+  const expectedOutcome = rating === 'forgot' ? 'incorrect' : 'correct';
+  if (event.outcome !== expectedOutcome) {
+    throw new Error(
+      `Review attempt event "${event.id}" has outcome "${event.outcome}" inconsistent with rating "${rating}".`,
+    );
+  }
+}
+
+function assertAttemptEventsPresent(): never {
+  throw new Error('Cannot derive review commit fields from an empty attempt event batch.');
 }
 
 function assertUnreachableReviewDirection(direction: never): never {
