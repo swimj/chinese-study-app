@@ -77,6 +77,8 @@ describe('session composition', { concurrency: false }, () => {
 
   beforeEach(() => {
     sqlite.exec(`
+      DELETE FROM study_attempt_events;
+      DELETE FROM study_sessions;
       DELETE FROM daily_new_word_intake;
       DELETE FROM review_items;
       DELETE FROM words;
@@ -325,7 +327,33 @@ describe('session composition', { concurrency: false }, () => {
 
     assert.deepEqual(getSessionItemIds(dbModule), ['guarded-after-completion-word-forward']);
 
-    dbModule.completeReviewItemSession('guarded-after-completion-word-forward', 0, 'good');
+    dbModule.recordAcceptedReviewAttemptBatch({
+      sessionId: 'guarded-after-completion-word-session',
+      events: [
+        {
+          id: 'guarded-after-completion-word-attempt-1',
+          occurredAt: '2026-05-10T00:00:00.000Z',
+          sessionId: 'guarded-after-completion-word-session',
+          sessionActionId: 'guarded-after-completion-word-session/action-1',
+          sessionEventSequence: 1,
+          actionAttemptSequence: 1,
+          actionKind: 'recognition',
+          targetWordId: 'guarded-after-completion-word',
+          sampledSkillIds: ['recognition'],
+          response: null,
+          outcome: 'correct',
+          rating: 'good',
+          contentRef: null,
+          metadata: {},
+        },
+      ],
+      commitIntent: {
+        type: 'commit-review-item-session',
+        reviewItemId: 'guarded-after-completion-word-forward',
+        failureCount: 0,
+        terminalRating: 'good',
+      },
+    });
 
     // guarded-after-completion-word-reverse also meets the urgency threshold, but it is
     // suppressed because completion resets the recency guard for the word.
@@ -940,6 +968,39 @@ describe('session composition', { concurrency: false }, () => {
     ]);
   });
 
+  test('refuses to compose a session while accepted attempt events remain unprojected', () => {
+    insertWord({
+      id: 'unprojected-event-word',
+      hanzi: '迟',
+      pinyin: 'chi',
+      meaning: 'late',
+      examples: ['他迟到了。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(96),
+    });
+    insertReviewItem({
+      id: 'unprojected-event-word-forward',
+      wordId: 'unprojected-event-word',
+      direction: 'forward',
+      intervalHours: 24,
+      nextDueAt: isoHoursAgo(1),
+    });
+    insertUnprojectedAttemptEvent({
+      id: 'unprojected-event-word-attempt-1',
+      sessionId: 'unprojected-event-session',
+      sessionActionId: 'unprojected-event-session/action-1',
+      targetWordId: 'unprojected-event-word',
+      actionKind: 'recognition',
+      sampledSkillIds: ['recognition'],
+    });
+
+    assert.throws(
+      () => dbModule.getSessionPayload(studyDayKey),
+      /Session composition invariant violated: accepted attempt event "unprojected-event-word-attempt-1" from session "unprojected-event-session" has not been projected\./,
+    );
+  });
+
   test.todo('keeps UTC date-key and ISO timestamp handling consistent across session composition boundaries');
 });
 
@@ -1063,6 +1124,67 @@ function insertWordSkillState({
       next_due_at = excluded.next_due_at,
       ease_factor = excluded.ease_factor
   `).run(wordId, skillId, enabled ? 1 : 0, intervalHours, lastStudiedAt, nextDueAt, easeFactor);
+}
+
+function insertUnprojectedAttemptEvent({
+  id,
+  sessionId,
+  sessionActionId,
+  targetWordId,
+  actionKind,
+  sampledSkillIds,
+}: {
+  id: string;
+  sessionId: string;
+  sessionActionId: string;
+  targetWordId: string;
+  actionKind: 'recognition' | 'production';
+  sampledSkillIds: StudySkillId[];
+}) {
+  sqlite.prepare(`
+    INSERT INTO study_sessions (
+      id,
+      started_at,
+      ended_at,
+      processing_state,
+      processed_at
+    ) VALUES (?, ?, NULL, 'open', NULL)
+  `).run(sessionId, '2026-05-10T00:00:00.000Z');
+
+  sqlite.prepare(`
+    INSERT INTO study_attempt_events (
+      id,
+      occurred_at,
+      session_id,
+      session_action_id,
+      session_event_sequence,
+      action_attempt_sequence,
+      action_kind,
+      target_word_id,
+      sampled_skill_ids_json,
+      response,
+      outcome,
+      rating,
+      content_ref_json,
+      metadata_json,
+      projected_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+  `).run(
+    id,
+    '2026-05-10T00:05:00.000Z',
+    sessionId,
+    sessionActionId,
+    1,
+    1,
+    actionKind,
+    targetWordId,
+    JSON.stringify(sampledSkillIds),
+    null,
+    'correct',
+    'good',
+    null,
+    JSON.stringify({}),
+  );
 }
 
 function inferLastReviewedAt(nextDueAt: string | null, intervalHours: number) {

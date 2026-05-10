@@ -2,6 +2,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import type {
+  ReviewCommitFields,
+  StudyAttemptEvent,
+  StudyAttemptOutcome,
+  StudyActionKind,
+  StudyContentRef,
+  StudySessionRecord,
+} from '../src/domain/study-actions.ts';
+import { deriveReviewCommitFieldsFromAttemptEvents } from '../src/domain/study-actions.ts';
 import { getAppConfig } from './config.ts';
 
 const config = getAppConfig();
@@ -92,6 +101,14 @@ type SessionItemWithWord = {
 
 type ReviewRating = 'forgot' | 'hard' | 'good' | 'easy';
 type ReviewPassRating = 'hard' | 'good' | 'easy';
+type StudySessionProcessingState = StudySessionRecord['processingState'];
+
+export type ReviewAttemptCommitIntent = {
+  type: 'commit-review-item-session';
+  reviewItemId: string;
+  failureCount: number;
+  terminalRating: ReviewPassRating | null;
+};
 
 type WordRow = {
   id: string;
@@ -150,6 +167,14 @@ type ReviewSessionResultRow = {
   failed_count: number;
 };
 
+type StudySessionRow = {
+  id: string;
+  started_at: string;
+  ended_at: string | null;
+  processing_state: StudySessionProcessingState;
+  processed_at: string | null;
+};
+
 type StudySkillId = 'recognition' | 'production' | 'contextual_selection';
 type WordStudyPhase = 'review';
 
@@ -183,6 +208,24 @@ type WordSkillStateRow = {
   last_studied_at: string;
   next_due_at: string | null;
   ease_factor: number;
+};
+
+type StudyAttemptEventRow = {
+  id: string;
+  occurred_at: string;
+  session_id: string;
+  session_action_id: string;
+  session_event_sequence: number;
+  action_attempt_sequence: number;
+  action_kind: StudyActionKind;
+  target_word_id: string;
+  sampled_skill_ids_json: string;
+  response: string | null;
+  outcome: StudyAttemptOutcome;
+  rating: ReviewRating | null;
+  content_ref_json: string | null;
+  metadata_json: string;
+  projected_at: string | null;
 };
 
 type StudySchedulerShadowMismatch = {
@@ -632,9 +675,31 @@ export function addUnstudiedUserPriorityByHanzi(hanzi: string): PriorityWord[] {
 
 export function getSessionPayload(studyDayKey: string): SessionPayload {
   assertStudyDayKey(studyDayKey);
+  ensureAcceptedReviewAttemptEventsProjectedBeforeSessionComposition();
+
   return {
     buckets: getSessionItemBucketsWithWords(studyDayKey),
   };
+}
+
+export function ensureAcceptedReviewAttemptEventsProjectedBeforeSessionComposition() {
+  const row = db
+    .prepare(`
+      SELECT
+        id,
+        session_id
+      FROM study_attempt_events
+      WHERE projected_at IS NULL
+      ORDER BY occurred_at ASC, session_event_sequence ASC, id ASC
+      LIMIT 1
+    `)
+    .get() as { id: string; session_id: string } | undefined;
+
+  if (row) {
+    throw new Error(
+      `Session composition invariant violated: accepted attempt event "${row.id}" from session "${row.session_id}" has not been projected.`,
+    );
+  }
 }
 
 export function getReviewItems(): ReviewItem[] {
@@ -688,6 +753,261 @@ export function getWordSkillStates(): WordSkillState[] {
     .all() as WordSkillStateRow[];
 
   return rows.map(mapWordSkillStateRow);
+}
+
+export function upsertStudySessionRecord(record: StudySessionRecord): StudySessionRecord {
+  assertStudySessionRecord(record);
+
+  db.prepare(`
+    INSERT INTO study_sessions (
+      id,
+      started_at,
+      ended_at,
+      processing_state,
+      processed_at
+    ) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      started_at = excluded.started_at,
+      ended_at = excluded.ended_at,
+      processing_state = excluded.processing_state,
+      processed_at = excluded.processed_at
+  `).run(
+    record.id,
+    record.startedAt,
+    record.endedAt,
+    record.processingState,
+    record.processedAt,
+  );
+
+  return getStudySessionRecord(record.id) ?? assertPersistedStudySession(record.id);
+}
+
+export function getStudySessionRecord(sessionId: string): StudySessionRecord | null {
+  const row = db
+    .prepare(`
+      SELECT
+        id,
+        started_at,
+        ended_at,
+        processing_state,
+        processed_at
+      FROM study_sessions
+      WHERE id = ?
+    `)
+    .get(sessionId) as StudySessionRow | undefined;
+
+  return row ? mapStudySessionRow(row) : null;
+}
+
+// White-box storage helper for focused attempt-event persistence tests.
+// Runtime review commits should use recordAcceptedReviewAttemptBatch so event
+// insertion, legacy update, and scheduler projection share one transaction.
+export function insertStudyAttemptEvents(events: StudyAttemptEvent[]): StudyAttemptEvent[] {
+  const sessionId = events[0]?.sessionId ?? null;
+  for (const event of events) {
+    assertStudyAttemptEvent(event);
+    if (sessionId !== null && event.sessionId !== sessionId) {
+      throw new Error('Study attempt event batch must belong to one session');
+    }
+  }
+
+  db.exec('BEGIN');
+
+  try {
+    insertStudyAttemptEventsWithoutTransaction(events);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+
+  return getStudyAttemptEventsForSession(sessionId);
+}
+
+export function recordAcceptedReviewAttemptBatch({
+  sessionId,
+  events,
+  commitIntent,
+}: {
+  sessionId: string;
+  events: StudyAttemptEvent[];
+  commitIntent: ReviewAttemptCommitIntent;
+}): { reviewItem: ReviewItem; events: StudyAttemptEvent[] } {
+  assertNonEmptyString(sessionId, 'Expected non-empty study session id');
+  assertReviewAttemptCommitIntent(commitIntent);
+
+  if (events.length === 0) {
+    throw new Error('Expected at least one accepted attempt event');
+  }
+
+  for (const event of events) {
+    assertStudyAttemptEvent(event);
+    if (event.sessionId !== sessionId) {
+      throw new Error('Accepted attempt event sessionId must match route session id');
+    }
+  }
+
+  const derivedCommitFields = deriveReviewCommitFieldsFromAttemptEvents(events);
+  assertDerivedReviewCommitMatchesIntent(derivedCommitFields, commitIntent);
+
+  const reviewedAt = new Date().toISOString();
+  let updatedItem: ReviewItem | null = null;
+
+  db.exec('BEGIN');
+
+  try {
+    ensureStudySessionExistsWithoutTransaction(sessionId, events[0]?.occurredAt ?? reviewedAt);
+    insertStudyAttemptEventsWithoutTransaction(events);
+    updatedItem = updateReviewItemSessionWithoutTransaction({
+      reviewItemId: commitIntent.reviewItemId,
+      failureCount: commitIntent.failureCount,
+      terminalRating: commitIntent.terminalRating,
+      reviewedAt,
+    });
+    assertReviewItemMatchesAttemptEvents(updatedItem, events);
+    projectReviewAttemptEventsWithoutTransaction({
+      events,
+      failureCount: derivedCommitFields.failureCount,
+      terminalRating: derivedCommitFields.terminalRating,
+      reviewedAt,
+    });
+    markStudyAttemptEventsProjectedWithoutTransaction(events.map((event) => event.id), reviewedAt);
+
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+
+  return {
+    reviewItem: updatedItem ?? assertReviewAttemptBatchPersisted(),
+    events: getStudyAttemptEventsForSession(sessionId).filter((event) => events.some((input) => input.id === event.id)),
+  };
+}
+
+export function getStudyAttemptEventsForSession(sessionId: string | null): StudyAttemptEvent[] {
+  if (sessionId === null) {
+    return [];
+  }
+
+  const rows = db
+    .prepare(`
+      SELECT
+        id,
+        occurred_at,
+        session_id,
+        session_action_id,
+        session_event_sequence,
+        action_attempt_sequence,
+        action_kind,
+        target_word_id,
+        sampled_skill_ids_json,
+        response,
+        outcome,
+        rating,
+        content_ref_json,
+        metadata_json,
+        projected_at
+      FROM study_attempt_events
+      WHERE session_id = ?
+      ORDER BY
+        session_event_sequence ASC,
+        occurred_at ASC,
+        id ASC
+    `)
+    .all(sessionId) as StudyAttemptEventRow[];
+
+  return rows.map(mapStudyAttemptEventRow);
+}
+
+function insertStudyAttemptEventsWithoutTransaction(events: StudyAttemptEvent[]) {
+  const insert = db.prepare(`
+    INSERT INTO study_attempt_events (
+      id,
+      occurred_at,
+      session_id,
+      session_action_id,
+      session_event_sequence,
+      action_attempt_sequence,
+      action_kind,
+      target_word_id,
+      sampled_skill_ids_json,
+      response,
+      outcome,
+      rating,
+      content_ref_json,
+      metadata_json,
+      projected_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+  `);
+
+  for (const event of events) {
+    insert.run(
+      event.id,
+      event.occurredAt,
+      event.sessionId,
+      event.sessionActionId,
+      event.sessionEventSequence,
+      event.actionAttemptSequence,
+      event.actionKind,
+      event.targetWordId,
+      JSON.stringify(event.sampledSkillIds),
+      event.response,
+      event.outcome,
+      event.rating,
+      event.contentRef === null ? null : JSON.stringify(event.contentRef),
+      JSON.stringify(event.metadata),
+    );
+  }
+}
+
+function ensureStudySessionExistsWithoutTransaction(sessionId: string, startedAt: string) {
+  db.prepare(`
+    INSERT INTO study_sessions (
+      id,
+      started_at,
+      ended_at,
+      processing_state,
+      processed_at
+    ) VALUES (?, ?, NULL, 'open', NULL)
+    ON CONFLICT(id) DO NOTHING
+  `).run(sessionId, startedAt);
+}
+
+function projectReviewAttemptEventsWithoutTransaction({
+  events,
+  failureCount,
+  terminalRating,
+  reviewedAt,
+}: {
+  events: StudyAttemptEvent[];
+  failureCount: number;
+  terminalRating: ReviewPassRating | null;
+  reviewedAt: string;
+}) {
+  const firstEvent = events[0] ?? assertAttemptEventBatchNotEmpty();
+  const skillId = mapReviewActionKindToStudySkill(firstEvent.actionKind);
+  const currentState = getWordSkillState(firstEvent.targetWordId, skillId);
+  const updatedState = scheduleWordSkillStateFromReviewAttempt(currentState, failureCount, terminalRating, reviewedAt);
+
+  upsertWordSkillState(updatedState);
+  upsertWordStudyAdmissionState(
+    updatedState.wordId,
+    'review',
+    addHours(updatedState.lastStudiedAt, REVIEW_PHASE_RECENCY_GUARD_HOURS),
+  );
+}
+
+function markStudyAttemptEventsProjectedWithoutTransaction(eventIds: string[], projectedAt: string) {
+  const update = db.prepare(`
+    UPDATE study_attempt_events
+    SET projected_at = ?
+    WHERE id = ?
+  `);
+
+  for (const eventId of eventIds) {
+    update.run(projectedAt, eventId);
+  }
 }
 
 export function validateReviewItemStudySchedulerShadow(): StudySchedulerShadowMismatch[] {
@@ -983,6 +1303,34 @@ export function completeReviewItemSession(
   failureCount: number,
   terminalRating: ReviewPassRating | null,
 ): ReviewItem {
+  db.exec('BEGIN');
+
+  try {
+    const updatedItem = updateReviewItemSessionWithoutTransaction({
+      reviewItemId,
+      failureCount,
+      terminalRating,
+      reviewedAt: new Date().toISOString(),
+    });
+    db.exec('COMMIT');
+    return updatedItem;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+function updateReviewItemSessionWithoutTransaction({
+  reviewItemId,
+  failureCount,
+  terminalRating,
+  reviewedAt,
+}: {
+  reviewItemId: string;
+  failureCount: number;
+  terminalRating: ReviewPassRating | null;
+  reviewedAt: string;
+}): ReviewItem {
   const existingRow = db
     .prepare(`
       SELECT
@@ -1003,40 +1351,22 @@ export function completeReviewItemSession(
   }
 
   const currentItem = mapReviewItemRow(existingRow);
-  const updatedItem = scheduleReviewItemFromSession(currentItem, failureCount, terminalRating);
+  const updatedItem = scheduleReviewItemFromSession(currentItem, failureCount, terminalRating, reviewedAt);
 
-  db.exec('BEGIN');
-
-  try {
-    db.prepare(`
-      UPDATE review_items
-      SET interval_hours = ?,
-          last_reviewed_at = ?,
-          next_due_at = ?,
-          ease_factor = ?
-      WHERE id = ?
-    `).run(
-      updatedItem.intervalHours,
-      updatedItem.lastReviewedAt,
-      updatedItem.nextDueAt,
-      updatedItem.easeFactor,
-      updatedItem.id,
-    );
-
-    upsertWordSkillStateFromReviewItem(updatedItem);
-    upsertWordStudyAdmissionState(
-      updatedItem.wordId,
-      'review',
-      updatedItem.lastReviewedAt
-        ? addHours(updatedItem.lastReviewedAt, REVIEW_PHASE_RECENCY_GUARD_HOURS)
-        : null,
-    );
-
-    db.exec('COMMIT');
-  } catch (error) {
-    db.exec('ROLLBACK');
-    throw error;
-  }
+  db.prepare(`
+    UPDATE review_items
+    SET interval_hours = ?,
+        last_reviewed_at = ?,
+        next_due_at = ?,
+        ease_factor = ?
+    WHERE id = ?
+  `).run(
+    updatedItem.intervalHours,
+    updatedItem.lastReviewedAt,
+    updatedItem.nextDueAt,
+    updatedItem.easeFactor,
+    updatedItem.id,
+  );
 
   return updatedItem;
 }
@@ -1398,6 +1728,36 @@ function applyLightweightSchemaMigrations() {
       day_key TEXT NOT NULL,
       completed_count INTEGER NOT NULL,
       failed_count INTEGER NOT NULL
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS study_sessions (
+      id TEXT PRIMARY KEY,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      processing_state TEXT NOT NULL,
+      processed_at TEXT
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS study_attempt_events (
+      id TEXT PRIMARY KEY,
+      occurred_at TEXT NOT NULL,
+      session_id TEXT NOT NULL REFERENCES study_sessions(id) ON DELETE CASCADE,
+      session_action_id TEXT NOT NULL,
+      session_event_sequence INTEGER NOT NULL,
+      action_attempt_sequence INTEGER NOT NULL,
+      action_kind TEXT NOT NULL,
+      target_word_id TEXT NOT NULL REFERENCES words(id),
+      sampled_skill_ids_json TEXT NOT NULL,
+      response TEXT,
+      outcome TEXT NOT NULL,
+      rating TEXT,
+      content_ref_json TEXT,
+      metadata_json TEXT NOT NULL,
+      projected_at TEXT
     );
   `);
 
@@ -1938,6 +2298,32 @@ function createSchema() {
       completed_count INTEGER NOT NULL,
       failed_count INTEGER NOT NULL
     );
+
+    CREATE TABLE study_sessions (
+      id TEXT PRIMARY KEY,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      processing_state TEXT NOT NULL,
+      processed_at TEXT
+    );
+
+    CREATE TABLE study_attempt_events (
+      id TEXT PRIMARY KEY,
+      occurred_at TEXT NOT NULL,
+      session_id TEXT NOT NULL REFERENCES study_sessions(id) ON DELETE CASCADE,
+      session_action_id TEXT NOT NULL,
+      session_event_sequence INTEGER NOT NULL,
+      action_attempt_sequence INTEGER NOT NULL,
+      action_kind TEXT NOT NULL,
+      target_word_id TEXT NOT NULL REFERENCES words(id),
+      sampled_skill_ids_json TEXT NOT NULL,
+      response TEXT,
+      outcome TEXT NOT NULL,
+      rating TEXT,
+      content_ref_json TEXT,
+      metadata_json TEXT NOT NULL,
+      projected_at TEXT
+    );
   `);
 
   ensureIndexes();
@@ -1953,6 +2339,8 @@ function ensureIndexes() {
     CREATE INDEX IF NOT EXISTS idx_word_study_admission_next ON word_study_admission_state(earliest_next_study_at ASC);
     CREATE INDEX IF NOT EXISTS idx_word_skill_state_due ON word_skill_state(next_due_at ASC);
     CREATE INDEX IF NOT EXISTS idx_review_session_summaries_day ON review_session_summaries(day_key ASC);
+    CREATE INDEX IF NOT EXISTS idx_study_attempt_events_session ON study_attempt_events(session_id ASC, session_event_sequence ASC);
+    CREATE INDEX IF NOT EXISTS idx_study_attempt_events_projected ON study_attempt_events(projected_at ASC, session_id ASC);
   `);
 }
 
@@ -2028,6 +2416,30 @@ function validateSchema() {
     'day_key',
     'completed_count',
     'failed_count',
+  ]);
+  assertTableColumns('study_sessions', [
+    'id',
+    'started_at',
+    'ended_at',
+    'processing_state',
+    'processed_at',
+  ]);
+  assertTableColumns('study_attempt_events', [
+    'id',
+    'occurred_at',
+    'session_id',
+    'session_action_id',
+    'session_event_sequence',
+    'action_attempt_sequence',
+    'action_kind',
+    'target_word_id',
+    'sampled_skill_ids_json',
+    'response',
+    'outcome',
+    'rating',
+    'content_ref_json',
+    'metadata_json',
+    'projected_at',
   ]);
 }
 
@@ -2449,6 +2861,19 @@ function mapReviewDirectionToStudySkill(direction: ReviewItem['direction']): Stu
   }
 }
 
+function mapReviewActionKindToStudySkill(actionKind: StudyActionKind): StudySkillId {
+  switch (actionKind) {
+    case 'recognition':
+      return 'recognition';
+    case 'production':
+      return 'production';
+    case 'contrast_selection':
+      throw new Error('Cannot project contrast selection action as review scheduler state.');
+    default:
+      return assertUnreachableStudyActionKind(actionKind);
+  }
+}
+
 function mapWordStudyAdmissionStateRow(row: WordStudyAdmissionStateRow): WordStudyAdmissionState {
   return {
     wordId: row.word_id,
@@ -2467,6 +2892,253 @@ function mapWordSkillStateRow(row: WordSkillStateRow): WordSkillState {
     nextDueAt: row.next_due_at,
     easeFactor: row.ease_factor,
   };
+}
+
+function getWordSkillState(wordId: string, skillId: StudySkillId): WordSkillState {
+  const row = db
+    .prepare(`
+      SELECT
+        word_id,
+        skill_id,
+        enabled,
+        interval_hours,
+        last_studied_at,
+        next_due_at,
+        ease_factor
+      FROM word_skill_state
+      WHERE word_id = ?
+        AND skill_id = ?
+    `)
+    .get(wordId, skillId) as WordSkillStateRow | undefined;
+
+  if (!row) {
+    throw new Error(`Word skill state not found for word "${wordId}" and skill "${skillId}"`);
+  }
+
+  return mapWordSkillStateRow(row);
+}
+
+function upsertWordSkillState(state: WordSkillState) {
+  db.prepare(`
+    INSERT INTO word_skill_state (
+      word_id,
+      skill_id,
+      enabled,
+      interval_hours,
+      last_studied_at,
+      next_due_at,
+      ease_factor
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(word_id, skill_id) DO UPDATE SET
+      enabled = excluded.enabled,
+      interval_hours = excluded.interval_hours,
+      last_studied_at = excluded.last_studied_at,
+      next_due_at = excluded.next_due_at,
+      ease_factor = excluded.ease_factor
+  `).run(
+    state.wordId,
+    state.skillId,
+    state.enabled ? 1 : 0,
+    state.intervalHours,
+    state.lastStudiedAt,
+    state.nextDueAt,
+    state.easeFactor,
+  );
+}
+
+function mapStudySessionRow(row: StudySessionRow): StudySessionRecord {
+  return {
+    id: row.id,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    processingState: row.processing_state,
+    processedAt: row.processed_at,
+  };
+}
+
+function mapStudyAttemptEventRow(row: StudyAttemptEventRow): StudyAttemptEvent {
+  return {
+    id: row.id,
+    occurredAt: row.occurred_at,
+    sessionId: row.session_id,
+    sessionActionId: row.session_action_id,
+    sessionEventSequence: row.session_event_sequence,
+    actionAttemptSequence: row.action_attempt_sequence,
+    actionKind: row.action_kind,
+    targetWordId: row.target_word_id,
+    sampledSkillIds: parseStudySkillIdsJson(row.sampled_skill_ids_json),
+    response: row.response,
+    outcome: row.outcome,
+    rating: row.rating,
+    contentRef: parseNullableContentRefJson(row.content_ref_json),
+    metadata: parseMetadataJson(row.metadata_json),
+  };
+}
+
+function assertStudySessionRecord(record: StudySessionRecord) {
+  assertNonEmptyString(record.id, 'Expected non-empty study session id');
+  assertIsoTimestamp(record.startedAt, 'Expected valid study session startedAt timestamp');
+
+  if (record.endedAt !== null) {
+    assertIsoTimestamp(record.endedAt, 'Expected valid study session endedAt timestamp');
+  }
+
+  if (!isStudySessionProcessingState(record.processingState)) {
+    throw new Error(`Invalid study session processing state "${String(record.processingState)}"`);
+  }
+
+  if (record.processedAt !== null) {
+    assertIsoTimestamp(record.processedAt, 'Expected valid study session processedAt timestamp');
+  }
+}
+
+function assertStudyAttemptEvent(event: StudyAttemptEvent) {
+  assertNonEmptyString(event.id, 'Expected non-empty study attempt event id');
+  assertIsoTimestamp(event.occurredAt, 'Expected valid study attempt event occurredAt timestamp');
+  assertNonEmptyString(event.sessionId, 'Expected non-empty study attempt event sessionId');
+  assertNonEmptyString(event.sessionActionId, 'Expected non-empty study attempt event sessionActionId');
+  assertPositiveInteger(event.sessionEventSequence, 'Expected positive integer sessionEventSequence');
+  assertPositiveInteger(event.actionAttemptSequence, 'Expected positive integer actionAttemptSequence');
+
+  if (!isStudyActionKind(event.actionKind)) {
+    throw new Error(`Invalid study attempt action kind "${String(event.actionKind)}"`);
+  }
+
+  assertNonEmptyString(event.targetWordId, 'Expected non-empty study attempt event targetWordId');
+
+  if (!Array.isArray(event.sampledSkillIds) || event.sampledSkillIds.length === 0) {
+    throw new Error('Expected at least one sampled skill id');
+  }
+
+  for (const skillId of event.sampledSkillIds) {
+    if (!isStudySkillId(skillId)) {
+      throw new Error(`Invalid sampled skill id "${String(skillId)}"`);
+    }
+  }
+
+  if (event.response !== null && typeof event.response !== 'string') {
+    throw new Error('Expected study attempt response to be a string or null');
+  }
+
+  if (event.outcome !== 'correct' && event.outcome !== 'incorrect') {
+    throw new Error(`Invalid study attempt outcome "${String(event.outcome)}"`);
+  }
+
+  if (event.rating !== null && !isReviewRating(event.rating)) {
+    throw new Error(`Invalid study attempt rating "${String(event.rating)}"`);
+  }
+
+  assertContentRef(event.contentRef);
+
+  if (!isPlainRecord(event.metadata)) {
+    throw new Error('Expected study attempt metadata to be an object');
+  }
+}
+
+function assertReviewAttemptCommitIntent(commitIntent: ReviewAttemptCommitIntent) {
+  if (!isPlainRecord(commitIntent)) {
+    throw new Error('Expected review attempt commit intent');
+  }
+
+  if (commitIntent.type !== 'commit-review-item-session') {
+    throw new Error('Expected commit-review-item-session commit intent');
+  }
+
+  assertNonEmptyString(commitIntent.reviewItemId, 'Expected non-empty review item id');
+
+  if (!Number.isInteger(commitIntent.failureCount) || commitIntent.failureCount < 0) {
+    throw new Error('Expected non-negative integer failureCount');
+  }
+
+  if (commitIntent.terminalRating !== null && !isReviewPassRating(commitIntent.terminalRating)) {
+    throw new Error('Invalid terminal rating');
+  }
+}
+
+function assertDerivedReviewCommitMatchesIntent(
+  derivedCommitFields: ReviewCommitFields,
+  commitIntent: ReviewAttemptCommitIntent,
+) {
+  if (
+    derivedCommitFields.failureCount !== commitIntent.failureCount ||
+    derivedCommitFields.terminalRating !== commitIntent.terminalRating
+  ) {
+    throw new Error('Accepted attempt events do not match supplied review commit intent');
+  }
+}
+
+function assertReviewItemMatchesAttemptEvents(reviewItem: ReviewItem, events: StudyAttemptEvent[]) {
+  const firstEvent = events[0] ?? assertAttemptEventBatchNotEmpty();
+  const eventSkillId = mapReviewActionKindToStudySkill(firstEvent.actionKind);
+  const reviewItemSkillId = mapReviewDirectionToStudySkill(reviewItem.direction);
+
+  if (reviewItem.wordId !== firstEvent.targetWordId || reviewItemSkillId !== eventSkillId) {
+    throw new Error('Review item does not match accepted attempt event target.');
+  }
+}
+
+function assertAttemptEventBatchNotEmpty(): never {
+  throw new Error('Expected at least one accepted attempt event');
+}
+
+function assertReviewAttemptBatchPersisted(): never {
+  throw new Error('Failed to persist accepted review attempt batch');
+}
+
+function assertContentRef(contentRef: StudyContentRef | null) {
+  if (contentRef === null) {
+    return;
+  }
+
+  if (contentRef.type !== 'contrast_prompt' && contentRef.type !== 'example_sentence') {
+    throw new Error(`Invalid study content ref type "${String(contentRef.type)}"`);
+  }
+
+  assertNonEmptyString(contentRef.id, 'Expected non-empty study content ref id');
+}
+
+function assertPersistedStudySession(sessionId: string): never {
+  throw new Error(`Failed to persist study session "${sessionId}"`);
+}
+
+function parseStudySkillIdsJson(raw: string): StudySkillId[] {
+  const parsed = JSON.parse(raw) as unknown;
+  if (!Array.isArray(parsed) || parsed.some((value) => !isStudySkillId(value))) {
+    throw new Error(`Invalid study skill id list: ${raw}`);
+  }
+
+  return parsed;
+}
+
+function parseNullableContentRefJson(raw: string | null): StudyContentRef | null {
+  if (raw === null) {
+    return null;
+  }
+
+  const parsed = JSON.parse(raw) as unknown;
+  if (!isContentRef(parsed)) {
+    throw new Error(`Invalid study content ref: ${raw}`);
+  }
+
+  return parsed;
+}
+
+function parseMetadataJson(raw: string): Record<string, unknown> {
+  const parsed = JSON.parse(raw) as unknown;
+  if (!isPlainRecord(parsed)) {
+    throw new Error(`Invalid study attempt metadata: ${raw}`);
+  }
+
+  return parsed;
+}
+
+function isContentRef(value: unknown): value is StudyContentRef {
+  return (
+    isPlainRecord(value) &&
+    (value.type === 'contrast_prompt' || value.type === 'example_sentence') &&
+    typeof value.id === 'string' &&
+    value.id.length > 0
+  );
 }
 
 function getSessionItemBucketsWithWords(studyDayKey: string): SessionItemBuckets {
@@ -2744,9 +3416,8 @@ function scheduleReviewItemFromSession(
   item: ReviewItem,
   failureCount: number,
   terminalRating: ReviewPassRating | null,
+  reviewedAt = new Date().toISOString(),
 ): ReviewItem {
-  const reviewedAt = new Date().toISOString();
-
   if (failureCount > 0) {
     const penaltyEase = Math.max(1.8, Number((item.easeFactor - 0.15 * failureCount).toFixed(2)));
 
@@ -2795,6 +3466,63 @@ function scheduleReviewItemFromSession(
     lastReviewedAt: reviewedAt,
     nextDueAt: addHours(reviewedAt, nextInterval),
     easeFactor: Number((item.easeFactor + 0.15).toFixed(2)),
+  };
+}
+
+function scheduleWordSkillStateFromReviewAttempt(
+  state: WordSkillState,
+  failureCount: number,
+  terminalRating: ReviewPassRating | null,
+  reviewedAt: string,
+): WordSkillState {
+  if (failureCount > 0) {
+    const penaltyEase = Math.max(1.8, Number((state.easeFactor - 0.15 * failureCount).toFixed(2)));
+
+    return {
+      ...state,
+      intervalHours: 6,
+      lastStudiedAt: reviewedAt,
+      nextDueAt: addHours(reviewedAt, 6),
+      easeFactor: penaltyEase,
+    };
+  }
+
+  if (terminalRating === 'hard') {
+    const nextInterval = Math.max(6, ceilIntervalHours(state.intervalHours * 1.5));
+
+    return {
+      ...state,
+      intervalHours: nextInterval,
+      lastStudiedAt: reviewedAt,
+      nextDueAt: addHours(reviewedAt, nextInterval),
+      easeFactor: Math.max(1.8, Number((state.easeFactor - 0.15).toFixed(2))),
+    };
+  }
+
+  if (terminalRating === 'good') {
+    const baseInterval = ceilIntervalHours(state.intervalHours * state.easeFactor);
+
+    return {
+      ...state,
+      intervalHours: baseInterval,
+      lastStudiedAt: reviewedAt,
+      nextDueAt: addHours(reviewedAt, baseInterval),
+      easeFactor: Number(state.easeFactor.toFixed(2)),
+    };
+  }
+
+  if (terminalRating !== 'easy') {
+    throw new Error('Expected terminal review rating');
+  }
+
+  const nextInterval = ceilIntervalHours(state.intervalHours * (state.easeFactor + 0.35));
+
+  return {
+    ...state,
+    intervalHours: nextInterval,
+    lastStudiedAt: reviewedAt,
+    nextDueAt: addHours(reviewedAt, nextInterval),
+    easeFactor: Number((state.easeFactor + 0.15).toFixed(2)),
   };
 }
 
@@ -2855,6 +3583,10 @@ function ceilIntervalHours(hours: number) {
 
 function assertUnreachableReviewDirection(direction: never): never {
   throw new Error(`Unsupported review direction "${String(direction)}".`);
+}
+
+function assertUnreachableStudyActionKind(actionKind: never): never {
+  throw new Error(`Unsupported study action kind "${String(actionKind)}".`);
 }
 
 function clampInteger(value: number, min: number, max: number): number {
@@ -2979,6 +3711,48 @@ function incrementDailyNewStudyCount(studyDayKey: string) {
     ON CONFLICT(day_key) DO UPDATE SET
       new_study_count = daily_new_word_intake.new_study_count + 1
   `).run(studyDayKey);
+}
+
+function assertNonEmptyString(value: string, message: string) {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(message);
+  }
+}
+
+function assertIsoTimestamp(value: string, message: string) {
+  if (typeof value !== 'string' || Number.isNaN(new Date(value).getTime())) {
+    throw new Error(message);
+  }
+}
+
+function assertPositiveInteger(value: number, message: string) {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(message);
+  }
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isReviewRating(value: unknown): value is ReviewRating {
+  return value === 'forgot' || value === 'hard' || value === 'good' || value === 'easy';
+}
+
+function isReviewPassRating(value: unknown): value is ReviewPassRating {
+  return value === 'hard' || value === 'good' || value === 'easy';
+}
+
+function isStudyActionKind(value: unknown): value is StudyActionKind {
+  return value === 'recognition' || value === 'production' || value === 'contrast_selection';
+}
+
+function isStudySessionProcessingState(value: unknown): value is StudySessionProcessingState {
+  return value === 'open' || value === 'ready_to_process' || value === 'processed';
+}
+
+function isStudySkillId(value: unknown): value is StudySkillId {
+  return value === 'recognition' || value === 'production' || value === 'contextual_selection';
 }
 
 function assertStudyDayKey(studyDayKey: string) {

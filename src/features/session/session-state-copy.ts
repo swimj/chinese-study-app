@@ -32,6 +32,7 @@ export function cloneSessionState(state: SessionState): SessionState {
         {
           failureCount: progress.failureCount,
           reinforcementStreak: progress.reinforcementStreak,
+          attempts: progress.attempts.map((attempt) => ({ ...attempt })),
         },
       ]),
     ),

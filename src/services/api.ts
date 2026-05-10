@@ -8,6 +8,7 @@ import type {
   ReviewRating,
   SessionItemBuckets,
 } from '../types';
+import type { StudyAttemptEvent } from '../domain/study-actions';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:5174';
 
@@ -85,24 +86,34 @@ export async function fetchStatus(): Promise<BackendStatus> {
   return response.json();
 }
 
-export async function completeReviewSession(
-  reviewItemId: string,
-  failureCount: number,
-  terminalRating: 'hard' | 'good' | 'easy' | null,
-): Promise<ReviewItem> {
-  const response = await fetch(`${API_BASE}/api/review-items/${reviewItemId}/complete-session`, {
+export async function recordAcceptedReviewAttemptBatch({
+  sessionId,
+  events,
+  commitIntent,
+}: {
+  sessionId: string;
+  events: StudyAttemptEvent[];
+  commitIntent: {
+    type: 'commit-review-item-session';
+    reviewItemId: string;
+    failureCount: number;
+    terminalRating: 'hard' | 'good' | 'easy' | null;
+  };
+}): Promise<ReviewItem> {
+  const response = await fetch(`${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/accepted-review-attempt-batch`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ failureCount, terminalRating }),
+    body: JSON.stringify({ events, commitIntent }),
   });
 
   if (!response.ok) {
-    throw new Error('Failed to complete review session');
+    throw new Error(await readApiErrorMessage(response, 'Failed to record accepted review attempt batch'));
   }
 
-  return response.json();
+  const result = await response.json() as { reviewItem: ReviewItem };
+  return result.reviewItem;
 }
 
 export async function recordReviewSessionSummary({

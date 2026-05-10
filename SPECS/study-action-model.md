@@ -138,15 +138,22 @@ target architecture, that idea should become event processing:
 
 - the frontend owns live coverage, reinforcement, drain mode, and session
   completion behavior
-- the frontend records granular attempt events as the learner acts
-- the backend projects completed prior-session events into durable word-level
-  and word-skill scheduler state
-- before composing a new session, the backend must have processed all events
-  from earlier sessions according to the current projection rules
+- the frontend records or buffers granular attempt events as the learner acts
+- the backend projects accepted attempt events into durable word-level and
+  word-skill scheduler state
+- before composing a new session, the backend must have processed all accepted
+  events from earlier sessions according to the current projection rules
 
 The backend may process events immediately during a live session, at session
 end, or in a background step. The live session should not depend on that timing
 after an item has been covered locally.
+
+During the migration, projection does not need to replace every existing commit
+path at once. The first durable attempt-event pass should focus on review
+actions that already map to `word_skill_state` and `word_study_admission_state`.
+Learning and unstudied word transitions can continue through the existing
+legacy commit paths until those flows are represented in the newer scheduling
+tables.
 
 ### Failure Should Be Local
 
@@ -446,6 +453,13 @@ interval or status update.
 An attempt event is granular: one learner response to one served action
 appearance. It is not a summary of all in-session progress for an item.
 
+For the initial implementation, durable attempt events should represent
+accepted learner evidence after the frontend undo window has closed. The app
+does not need to log every transient frontend action or later record undo events
+for reverted actions. Stable client-generated event ids and a uniqueness
+constraint are enough to keep the storage format future-friendly without adding
+full idempotent retry machinery.
+
 Conceptual V0 shape:
 
 ```ts
@@ -456,7 +470,8 @@ type StudyAttemptEvent = {
   occurredAt: string;
   sessionId: string;
   sessionActionId: string;
-  attemptSequence: number;
+  sessionEventSequence: number;
+  actionAttemptSequence: number;
   actionKind: StudyActionKind;
   targetWordId: string;
   sampledSkillIds: StudySkillId[];
@@ -468,13 +483,18 @@ type StudyAttemptEvent = {
 };
 ```
 
+`sessionEventSequence` is the monotonic accepted-event order within the session.
+`actionAttemptSequence` is scoped to a `sessionActionId` and records repeated
+attempts against the same served action.
+
 Example production events:
 
 ```json
 [
   {
     "sessionActionId": "session-42/action-7",
-    "attemptSequence": 1,
+    "sessionEventSequence": 12,
+    "actionAttemptSequence": 1,
     "actionKind": "production",
     "targetWordId": "kaocha-2",
     "response": "考查",
@@ -483,7 +503,8 @@ Example production events:
   },
   {
     "sessionActionId": "session-42/action-7",
-    "attemptSequence": 2,
+    "sessionEventSequence": 13,
+    "actionAttemptSequence": 2,
     "actionKind": "production",
     "targetWordId": "kaocha-2",
     "response": "考察",
@@ -497,6 +518,13 @@ The event processor can derive whether the first response was correct by
 looking at the first event for a `sessionActionId` or for a specific
 session/action grouping. The event itself should use `response`, not
 `firstResponse`.
+
+The first migration endpoint may accept a batch containing both accepted attempt
+events and the current frontend commit intent. The backend should independently
+derive the commit intent from the event batch and reject, or at least fail
+loudly in tests, when the derived intent does not match the supplied intent.
+This keeps the frontend-owned coverage model in place while proving that the
+event shape is sufficient to reconstruct the commit boundary.
 
 Contrast reflection should be a separate event rather than an overloaded field
 on attempt events:
@@ -527,18 +555,39 @@ type StudySessionRecord = {
 };
 ```
 
-Before the backend composes a new session, all events from earlier sessions
-must be processed into durable scheduler state according to the current rules.
+Before the backend composes a new session, all accepted projectable events from
+earlier sessions must be processed into durable scheduler state according to the
+current rules.
 
 The backend may process events immediately while a session is open, when a
 session ends, or in a background step. The invariant is catch-up before the next
 session starts, not immediate projection after every attempt.
+
+For the first projection checkpoint, processing can run synchronously on the
+same cadence as today's commit-worthy unit: once the undo window closes for a
+covered review action, the frontend sends the accepted event batch and commit
+intent. The legacy commit path can continue updating legacy durable tables such
+as `review_items`, while projection updates `word_skill_state` and
+`word_study_admission_state`. This makes the new scheduler tables a parallel
+projection target rather than a shadow write hidden inside the legacy commit
+handler.
 
 Same-session coverage remains frontend-owned. For example, after a review
 action lapses, the frontend may require three successful recalls in a row and
 then remove the action from the live queue. The backend later reconstructs the
 same covered/lapsed result from granular events and projects it into
 `WordSkillState` and `WordStudyAdmissionState`.
+
+Interrupted sessions should keep the existing semantics under this commit
+cadence. Review units whose accepted event batches have already been processed
+remain durable; still-local frontend progress that has not crossed the undo and
+commit boundary is not projected.
+
+Learning and unstudied words are intentionally outside the first projection
+pass. Their existing commit handlers continue to update `words`,
+`daily_new_word_intake`, and related legacy state. Event reconstruction tests for
+learning and unstudied coverage can wait until those flows move onto the newer
+scheduler-state model.
 
 Attempt events are not a substitute for schedule state in the near term. They
 are a durable record that supports projection, analysis, debugging, migration,
@@ -662,6 +711,12 @@ This can begin producing useful data before full contrast drills are built.
 One-off scripts can later migrate captured mistakes into clusters and contrast
 prompt content.
 
+The first durable attempt-event milestone does not need to backfill or
+heuristically connect existing JSONL mistake candidates to source events. A
+future SQLite-backed candidate model may add an optional source attempt event id
+for newly captured mistakes when that id is naturally available from the
+production attempt flow.
+
 ## 12. Implementation Roadmap
 
 ### Phase 0: Frontend Foundation Cleanup
@@ -730,17 +785,31 @@ prompt content.
 ### Milestone 5: Durable Attempt Events And Projection Checkpoint
 
 - add durable study session and attempt event storage
-- log recognition and production attempt events at response granularity
+- log accepted post-undo recognition and production attempt events for review
+  actions at response granularity
+- give attempt events stable ids and store them with a uniqueness constraint,
+  without building full exactly-once retry or batch-idempotency machinery
+- accept transitional batches that include both accepted attempt events and the
+  frontend commit intent; derive the commit intent from the events and validate
+  that the two agree
 - add the processing invariant: before composing a new session, all prior
-  session events must be projected into durable scheduler state
+  accepted review attempt events must be projected into durable scheduler state
 - initially allow projection to happen synchronously in the same backend request
-  path if that is simpler
+  path and on the same cadence as today's covered-review-item commit
+- keep the legacy commit path responsible for legacy tables such as
+  `review_items`; remove scheduler-state shadow writes from that path so event
+  projection is responsible for `word_skill_state` and
+  `word_study_admission_state`
+- keep learning and unstudied word completion on the existing commit paths for
+  this milestone; do not require durable attempt-event projection for those
+  flows yet
 - avoid adding a durable "commit" table unless a real audit/debugging need
   emerges between raw events and projected scheduler state
-- connect existing production mistake candidates to source attempt events where
-  possible
-- add tests that reconstruct current review, learning, and unstudied coverage
-  outcomes from granular events
+- defer production mistake source-event linking unless it falls out naturally
+  for new candidate rows; do not backfill existing JSONL candidates
+- add tests that derive review commit intents from granular events, reject
+  mismatched supplied commit intents, and verify that projection keeps the new
+  scheduler tables behaviorally parallel to legacy review-item commits
 
 ### Milestone 6: Retire Or Demote Review Items
 
@@ -782,8 +851,8 @@ prompt content.
 
 ## 14. Open Questions
 
-1. What should the first processing policy be for recognition and production
-   event streams once they replace direct completion updates?
+1. When should learning and unstudied flows move from legacy commit handlers
+   into durable attempt-event projection?
 2. What is the smallest useful implementation step toward wall-clock budgeting
    and dynamic session payloads?
 3. Should event projection maintain a separate diagnostic table of derived
