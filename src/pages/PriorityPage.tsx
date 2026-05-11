@@ -56,6 +56,7 @@ export function PriorityPage({
   const onJumpHandledRef = useRef(onJumpHandled);
   const longPressTimerRef = useRef<number | null>(null);
   const longPressActivatedRef = useRef(false);
+  const jumpTopButtonSawScrolledPageRef = useRef(false);
 
   useEffect(() => {
     onJumpHandledRef.current = onJumpHandled;
@@ -77,6 +78,9 @@ export function PriorityPage({
     if (!jumpRequestWordId) {
       return;
     }
+
+    jumpTopButtonSawScrolledPageRef.current = false;
+    setShowJumpToTopButton(true);
     const targetRowElement = rowRefs.current[jumpRequestWordId];
     const tableTopAnchorElement = tableTopAnchorRef.current;
 
@@ -106,7 +110,12 @@ export function PriorityPage({
     }
 
     function handleScroll() {
-      if (window.scrollY <= 8) {
+      if (window.scrollY > 8) {
+        jumpTopButtonSawScrolledPageRef.current = true;
+        return;
+      }
+
+      if (jumpTopButtonSawScrolledPageRef.current) {
         setShowJumpToTopButton(false);
       }
     }
