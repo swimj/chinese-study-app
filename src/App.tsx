@@ -75,6 +75,7 @@ function App() {
       ) : (
         <PriorityPage
           rows={priorityPage.rows}
+          triageRows={priorityPage.triageRows}
           unstudiedTotalCount={priorityPage.unstudiedTotalCount}
           searchHanzi={priorityPage.searchHanzi}
           searchNotice={priorityPage.searchNotice}
@@ -88,6 +89,9 @@ function App() {
           onMoveToTop={(wordId) => void priorityPage.moveToTop(wordId)}
           onBumpAgain={(wordId) => void priorityPage.bumpAgain(wordId)}
           onRemove={(wordId) => void priorityPage.remove(wordId)}
+          bulkDismissSubmitting={priorityPage.bulkDismissSubmitting}
+          onDismissFromTriage={(wordId) => void priorityPage.dismissFromTriage(wordId)}
+          onBulkDismissFromTriage={(wordIds) => void priorityPage.bulkDismissFromTriage(wordIds)}
         />
       )}
 

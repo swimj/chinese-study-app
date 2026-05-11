@@ -497,6 +497,59 @@ export function getPrioritizedUnstudiedWords(): PriorityWordsPayload {
   };
 }
 
+export function getTopUnstudiedPriorityWords(limit: number): PriorityWordsPayload {
+  const boundedLimit = clampInteger(limit, 1, 100);
+  const rows = db
+    .prepare(`
+      SELECT *
+      FROM (
+        SELECT
+          words.id,
+          words.hanzi,
+          words.traditional,
+          words.pinyin,
+          words.meaning,
+          words.meanings_json,
+          words.personal_notes,
+          words.examples_json,
+          words.status,
+          words.priority,
+          words.created_at,
+          words.learning_streak,
+          words.last_learning_success_on,
+          words.last_learning_covered_on,
+          COALESCE(user_word_priority.bump_count, 0) AS bump_count,
+          COALESCE(user_word_priority.force_top, 0) AS force_top,
+          COALESCE(user_word_priority.priority_tier, 0) AS priority_tier,
+          words.priority
+            + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} AS effective_priority,
+          ROW_NUMBER() OVER (
+            ORDER BY
+              COALESCE(user_word_priority.priority_tier, 0) DESC,
+              words.priority + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} DESC,
+              words.priority DESC,
+              words.created_at ASC
+          ) AS effective_rank
+        FROM words
+        LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
+        WHERE words.status = 'unstudied'
+          AND COALESCE(user_word_priority.priority_tier, 0) >= ${PRIORITY_TIER_REGULAR}
+      )
+      ORDER BY
+        priority_tier DESC,
+        effective_priority DESC,
+        priority DESC,
+        created_at ASC
+      LIMIT ?
+    `)
+    .all(boundedLimit) as PriorityWordRow[];
+
+  return {
+    unstudiedTotalCount: UNSTUDIED_COUNT_BASELINE,
+    words: rows.map(mapPriorityWordRow),
+  };
+}
+
 export function updateWordPersonalNotes(wordId: string, personalNotes: string): Word {
   const existingWord = db
     .prepare(`

@@ -17,6 +17,7 @@ import {
   getReviewFailureRateDays,
   getReviewItems,
   getSessionPayload,
+  getTopUnstudiedPriorityWords,
   getWordMeanings,
   getWords,
   getWordStatusCounts,
@@ -80,6 +81,16 @@ export function createApp() {
 
   app.get('/api/priority/unstudied', (req, res) => {
     res.json(getPrioritizedUnstudiedWords());
+  });
+
+  app.get('/api/priority/unstudied/top', (req, res) => {
+    const limit = readPositiveIntegerFromQuery(req.query?.limit, 50);
+    if (limit === null) {
+      res.status(400).json({ error: 'Expected positive integer limit query parameter' });
+      return;
+    }
+
+    res.json(getTopUnstudiedPriorityWords(limit));
   });
 
   app.post('/api/priority/unstudied/add-by-hanzi', (req, res) => {
@@ -474,6 +485,23 @@ function readStudyDayKeyFromBody(value: unknown): string | null {
   }
 
   return normalizeStudyDayKey(value);
+}
+
+function readPositiveIntegerFromQuery(value: unknown, fallback: number): number | null {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return parsed;
 }
 
 function normalizeStudyDayKey(value: string): string | null {
