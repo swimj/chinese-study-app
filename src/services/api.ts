@@ -232,6 +232,14 @@ export async function fetchUnstudiedPriorityWords(): Promise<PriorityWordsRespon
   return response.json();
 }
 
+export async function fetchTopUnstudiedPriorityWords(limit = 50): Promise<PriorityWordsResponse> {
+  const response = await fetch(`${API_BASE}/api/priority/unstudied/top?limit=${encodeURIComponent(limit)}`);
+  if (!response.ok) {
+    throw new Error('Failed to load top unstudied priority words');
+  }
+  return response.json();
+}
+
 export async function addUnstudiedPriorityByHanzi(hanzi: string): Promise<AddPriorityByHanziResponse> {
   const response = await fetch(`${API_BASE}/api/priority/unstudied/add-by-hanzi`, {
     method: 'POST',

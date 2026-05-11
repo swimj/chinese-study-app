@@ -578,6 +578,39 @@ button:hover {
   gap: 0.75rem;
 }
 
+.priority-subtabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.priority-subtab {
+  background: rgba(30, 41, 59, 0.92);
+  color: #cbd5e1;
+}
+
+.priority-subtab.active {
+  background: #2563eb;
+  color: white;
+}
+
+.priority-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.priority-panel-header h2,
+.priority-panel-header .notes {
+  margin: 0;
+}
+
+.priority-panel-header .notes {
+  margin-top: 0.35rem;
+}
+
 .priority-jump-top-button {
   position: fixed;
   right: 1.25rem;
@@ -631,6 +664,24 @@ button:disabled:hover {
   text-transform: uppercase;
   color: #94a3b8;
   background: rgba(15, 23, 42, 0.9);
+}
+
+.priority-triage-row {
+  cursor: pointer;
+  transition: background 150ms ease, opacity 150ms ease;
+}
+
+.priority-triage-row:hover {
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.priority-triage-row.selected {
+  background: rgba(37, 99, 235, 0.18);
+}
+
+.priority-triage-row input[type='checkbox'] {
+  width: 1.1rem;
+  height: 1.1rem;
 }
 
 .table-row {
@@ -776,16 +827,19 @@ textarea {
   .navbar,
   .word-record-header,
   .review-item-topline,
+  .priority-panel-header,
   .pagination-bar {
     align-items: stretch;
   }
 
   .nav-tabs,
+  .priority-subtabs,
   .pagination-actions {
     width: 100%;
   }
 
   .nav-tab,
+  .priority-subtab,
   .pagination-actions button {
     flex: 1;
   }

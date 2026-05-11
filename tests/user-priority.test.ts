@@ -174,6 +174,23 @@ describe('user priority layer', { concurrency: false }, () => {
     assert.deepEqual(ordered.slice(0, 2), ['regular-word', 'sunk-word']);
   });
 
+  test('top unstudied priority list is capped and excludes dismissed sunk words', () => {
+    insertWord('sunk-word', 100, 'unstudied', '2026-01-01T00:00:00.000Z');
+    insertWord('forced-word', 1, 'unstudied', '2026-01-02T00:00:00.000Z');
+    insertWord('regular-high', 80, 'unstudied', '2026-01-03T00:00:00.000Z');
+    insertWord('regular-low', 20, 'unstudied', '2026-01-04T00:00:00.000Z');
+
+    for (const id of ['sunk-word', 'forced-word', 'regular-high', 'regular-low']) {
+      insertReviewPair(id);
+    }
+
+    dbModule.dismissWordFromStudy('sunk-word');
+    dbModule.updateWordUserPriority('forced-word', { forceTop: true });
+
+    const ordered = dbModule.getTopUnstudiedPriorityWords(2).words.map((entry) => entry.word.id);
+    assert.deepEqual(ordered, ['forced-word', 'regular-high']);
+  });
+
   test('non-unstudied words cannot be updated', () => {
     insertWord('learning-word', 80, 'learning', '2026-01-01T00:00:00.000Z');
     insertReviewPair('learning-word');
