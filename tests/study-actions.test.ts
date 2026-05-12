@@ -1,107 +1,163 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
-  buildLegacyReviewStudyAction,
+  buildReviewSessionStudyItem,
+  buildWordLifecycleSessionStudyItems,
   deriveReviewCommitFieldsFromAttemptEvents,
-  mapReviewDirectionToStudySkill,
   mapStudySkillToDefaultActionKind,
   type StudyAttemptEvent,
+  type WordSkillState,
 } from '../src/domain/study-actions.ts';
-import type { ReviewItem, Word } from '../src/types.ts';
+import type { Word } from '../src/types.ts';
 
 describe('study action domain adapters', () => {
-  test('maps legacy review directions to V0 study skills', () => {
-    assert.equal(mapReviewDirectionToStudySkill('forward'), 'recognition');
-    assert.equal(mapReviewDirectionToStudySkill('reverse'), 'production');
-  });
-
   test('maps V0 study skills to their default action kinds', () => {
     assert.equal(mapStudySkillToDefaultActionKind('recognition'), 'recognition');
     assert.equal(mapStudySkillToDefaultActionKind('production'), 'production');
     assert.equal(mapStudySkillToDefaultActionKind('contextual_selection'), 'contrast_selection');
   });
+});
 
-  test('builds a recognition action from a forward review item', () => {
-    const word = createWord({ id: 'word-1' });
-    const reviewItem = createReviewItem({
-      id: 'word-1-forward',
+describe('session study item domain adapters', () => {
+  test('builds a review session study item from word-skill state and joined word data', () => {
+    const word = createWord({ id: 'review-word', status: 'review', hanzi: '复习' });
+    const wordSkillState = createWordSkillState({
       wordId: word.id,
-      direction: 'forward',
+      skillId: 'recognition',
     });
 
     assert.deepEqual(
-      buildLegacyReviewStudyAction({
-        sessionActionId: 'session-1/action-1',
-        reviewItem,
+      buildReviewSessionStudyItem({
+        wordSkillState,
         word,
       }),
       {
-        sessionActionId: 'session-1/action-1',
-        kind: 'recognition',
+        sessionActionId: 'review/review-word/recognition',
+        actionKind: 'recognition',
         targetWordId: word.id,
         sampledSkillIds: ['recognition'],
         contentRef: null,
-        legacyReviewItemId: reviewItem.id,
+        intervalHours: 24,
+        word,
       },
     );
   });
 
-  test('builds a production action from a reverse review item', () => {
-    const word = createWord({ id: 'word-2' });
-    const reviewItem = createReviewItem({
-      id: 'word-2-reverse',
+  test('builds a review production session study item with an explicit content ref and action id', () => {
+    const word = createWord({ id: 'production-review-word', status: 'review' });
+    const wordSkillState = createWordSkillState({
       wordId: word.id,
-      direction: 'reverse',
+      skillId: 'production',
     });
 
     assert.deepEqual(
-      buildLegacyReviewStudyAction({
-        sessionActionId: 'session-1/action-2',
-        reviewItem,
+      buildReviewSessionStudyItem({
+        wordSkillState,
         word,
+        sessionActionId: 'session-1/action-9',
+        contentRef: { type: 'example_sentence', id: 'example-9' },
       }),
       {
-        sessionActionId: 'session-1/action-2',
-        kind: 'production',
+        sessionActionId: 'session-1/action-9',
+        actionKind: 'production',
         targetWordId: word.id,
         sampledSkillIds: ['production'],
-        contentRef: null,
-        legacyReviewItemId: reviewItem.id,
+        contentRef: { type: 'example_sentence', id: 'example-9' },
+        intervalHours: 24,
+        word,
       },
     );
   });
 
-  test('preserves content refs when adapting legacy review items', () => {
-    const word = createWord({ id: 'word-3' });
-    const reviewItem = createReviewItem({
-      id: 'word-3-forward',
-      wordId: word.id,
-      direction: 'forward',
-    });
+  test('builds synthetic learning recognition and production session study items', () => {
+    const word = createWord({ id: 'learning-word', status: 'learning' });
 
-    const action = buildLegacyReviewStudyAction({
-      sessionActionId: 'session-1/action-3',
-      reviewItem,
-      word,
-      contentRef: { type: 'example_sentence', id: 'example-1' },
-    });
-
-    assert.deepEqual(action.contentRef, { type: 'example_sentence', id: 'example-1' });
+    assert.deepEqual(buildWordLifecycleSessionStudyItems({ source: 'learning', word }), [
+      {
+        sessionActionId: 'learning/learning-word/recognition',
+        actionKind: 'recognition',
+        targetWordId: word.id,
+        sampledSkillIds: ['recognition'],
+        contentRef: null,
+        intervalHours: 0,
+        word,
+      },
+      {
+        sessionActionId: 'learning/learning-word/production',
+        actionKind: 'production',
+        targetWordId: word.id,
+        sampledSkillIds: ['production'],
+        contentRef: null,
+        intervalHours: 0,
+        word,
+      },
+    ]);
   });
 
-  test('rejects a review item and word mismatch', () => {
+  test('builds synthetic unstudied recognition and production session study items', () => {
+    const word = createWord({ id: 'unstudied-word', status: 'unstudied' });
+
+    assert.deepEqual(
+      buildWordLifecycleSessionStudyItems({
+        source: 'unstudied',
+        word,
+      }).map((item) => ({
+        sessionActionId: item.sessionActionId,
+        actionKind: item.actionKind,
+        sampledSkillIds: item.sampledSkillIds,
+        word: item.word,
+      })),
+      [
+        {
+          sessionActionId: 'unstudied/unstudied-word/recognition',
+          actionKind: 'recognition',
+          sampledSkillIds: ['recognition'],
+          word,
+        },
+        {
+          sessionActionId: 'unstudied/unstudied-word/production',
+          actionKind: 'production',
+          sampledSkillIds: ['production'],
+          word,
+        },
+      ],
+    );
+  });
+
+  test('rejects review session study item word-skill mismatches', () => {
     assert.throws(
       () =>
-        buildLegacyReviewStudyAction({
-          sessionActionId: 'session-1/action-4',
-          reviewItem: createReviewItem({
-            id: 'word-4-forward',
-            wordId: 'word-4',
-            direction: 'forward',
+        buildReviewSessionStudyItem({
+          wordSkillState: createWordSkillState({
+            wordId: 'review-word',
+            skillId: 'recognition',
           }),
-          word: createWord({ id: 'other-word' }),
+          word: createWord({ id: 'other-word', status: 'review' }),
         }),
-      /review item word "word-4" must match word "other-word"/,
+      /word skill state word "review-word" must match word "other-word"/,
+    );
+  });
+
+  test('rejects source and word status mismatches', () => {
+    assert.throws(
+      () =>
+        buildReviewSessionStudyItem({
+          wordSkillState: createWordSkillState({
+            wordId: 'learning-word',
+            skillId: 'recognition',
+          }),
+          word: createWord({ id: 'learning-word', status: 'learning' }),
+        }),
+      /review session item word "learning-word" must have review status/,
+    );
+
+    assert.throws(
+      () =>
+        buildWordLifecycleSessionStudyItems({
+          source: 'learning',
+          word: createWord({ id: 'review-word', status: 'review' }),
+        }),
+      /learning session item word "review-word" must have learning status/,
     );
   });
 });
@@ -406,16 +462,16 @@ function createWord(overrides: Partial<Word> & Pick<Word, 'id'>): Word {
   };
 }
 
-function createReviewItem(
-  overrides: Partial<ReviewItem> & Pick<ReviewItem, 'id' | 'wordId' | 'direction'>,
-): ReviewItem {
+function createWordSkillState(
+  overrides: Partial<WordSkillState> & Pick<WordSkillState, 'wordId' | 'skillId'>,
+): WordSkillState {
   return {
-    id: overrides.id,
     wordId: overrides.wordId,
-    direction: overrides.direction,
+    skillId: overrides.skillId,
+    enabled: overrides.enabled ?? true,
     intervalHours: overrides.intervalHours ?? 24,
-    lastReviewedAt: overrides.lastReviewedAt ?? null,
-    nextDueAt: overrides.nextDueAt ?? null,
+    lastStudiedAt: overrides.lastStudiedAt ?? '2026-05-10T00:00:00.000Z',
+    nextDueAt: overrides.nextDueAt ?? '2026-05-11T00:00:00.000Z',
     easeFactor: overrides.easeFactor ?? 2.5,
   };
 }

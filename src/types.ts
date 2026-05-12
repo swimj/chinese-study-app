@@ -34,20 +34,10 @@ export type PriorityWord = {
   effectiveRank: number;
 };
 
-export type ReviewItem = {
-  id: string;
-  wordId: string;
-  direction: 'forward' | 'reverse';
-  intervalHours: number;
-  lastReviewedAt: string | null;
-  nextDueAt: string | null;
-  easeFactor: number;
-};
-
 export type ReviewFailureRateDay = {
   dayKey: string;
-  completedReviewItemSessions: number;
-  failedReviewItemSessions: number;
+  completedReviewActionSessions: number;
+  failedReviewActionSessions: number;
   failureRate: number | null;
   rolling3DayFailureRate: number | null;
   rolling7DayFailureRate: number | null;
@@ -64,14 +54,3 @@ export type ProductionMistakeCandidate = {
 };
 
 export type ReviewRating = 'forgot' | 'hard' | 'good' | 'easy';
-
-export type SessionItemWithWord = {
-  reviewItem: ReviewItem;
-  word: Word;
-};
-
-export type SessionItemBuckets = {
-  review: SessionItemWithWord[];
-  learning: SessionItemWithWord[];
-  unstudied: SessionItemWithWord[];
-};

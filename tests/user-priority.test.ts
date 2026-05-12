@@ -49,7 +49,6 @@ describe('user priority layer', { concurrency: false }, () => {
     sqlite.exec(`
       DELETE FROM daily_new_word_intake;
       DELETE FROM user_word_priority;
-      DELETE FROM review_items;
       DELETE FROM words;
     `);
   });
@@ -73,7 +72,6 @@ describe('user priority layer', { concurrency: false }, () => {
 
   test('bump count clamps to [0, 10], force-top toggles, required toggles, and reset clears overrides', () => {
     insertWord('priority-word', 73, 'unstudied', '2026-01-01T00:00:00.000Z');
-    insertReviewPair('priority-word');
 
     const maxed = dbModule.updateWordUserPriority('priority-word', { bumpDelta: 999 });
     assert.equal(maxed.bumpCount, 10);
@@ -104,8 +102,6 @@ describe('user priority layer', { concurrency: false }, () => {
   test('boost unit uses the fixed policy constant and affects effective priority', () => {
     insertWord('top-base', 94, 'unstudied', '2026-01-01T00:00:00.000Z');
     insertWord('boosted', 50, 'unstudied', '2026-01-02T00:00:00.000Z');
-    insertReviewPair('top-base');
-    insertReviewPair('boosted');
 
     const updated = dbModule.updateWordUserPriority('boosted', { bumpDelta: 2 });
 
@@ -117,9 +113,6 @@ describe('user priority layer', { concurrency: false }, () => {
     insertWord('dup-a', 70, 'unstudied', '2026-01-01T00:00:00.000Z', '学');
     insertWord('dup-b', 60, 'unstudied', '2026-01-02T00:00:00.000Z', '学');
     insertWord('dup-c', 50, 'learning', '2026-01-03T00:00:00.000Z', '学');
-    insertReviewPair('dup-a');
-    insertReviewPair('dup-b');
-    insertReviewPair('dup-c');
 
     const added = dbModule.addUnstudiedUserPriorityByHanzi('学');
     assert.equal(added.length, 2);
@@ -132,8 +125,6 @@ describe('user priority layer', { concurrency: false }, () => {
   test('add-by-hanzi can require all matching unstudied words', () => {
     insertWord('required-dup-a', 70, 'unstudied', '2026-01-01T00:00:00.000Z', '要');
     insertWord('required-dup-b', 60, 'unstudied', '2026-01-02T00:00:00.000Z', '要');
-    insertReviewPair('required-dup-a');
-    insertReviewPair('required-dup-b');
 
     const added = dbModule.addUnstudiedUserPriorityByHanzi('要', true);
     assert.equal(added.length, 2);
@@ -146,7 +137,6 @@ describe('user priority layer', { concurrency: false }, () => {
 
   test('dismiss clears required state while sinking the word', () => {
     insertWord('required-dismissed', 50, 'unstudied', '2026-01-01T00:00:00.000Z');
-    insertReviewPair('required-dismissed');
 
     dbModule.updateWordUserPriority('required-dismissed', { requiredForNextSession: true });
     dbModule.dismissWordFromStudy('required-dismissed');
@@ -164,10 +154,6 @@ describe('user priority layer', { concurrency: false }, () => {
     insertWord('boosted', 60, 'unstudied', '2026-01-03T00:00:00.000Z');
     insertWord('forced', 10, 'unstudied', '2026-01-04T00:00:00.000Z');
 
-    for (const id of ['base-high-older', 'base-high-newer', 'boosted', 'forced']) {
-      insertReviewPair(id);
-    }
-
     dbModule.updateWordUserPriority('boosted', { bumpDelta: 5 });
     dbModule.updateWordUserPriority('forced', { forceTop: true });
 
@@ -183,25 +169,17 @@ describe('user priority layer', { concurrency: false }, () => {
     insertWord('forced', 1, 'unstudied', '2026-01-03T00:00:00.000Z');
     insertWord('very-low', -100, 'unstudied', '2026-01-04T00:00:00.000Z');
 
-    for (const id of ['old-base', 'boosted', 'forced', 'very-low']) {
-      insertReviewPair(id);
-    }
-
     dbModule.updateWordUserPriority('boosted', { bumpDelta: 1 });
     dbModule.updateWordUserPriority('forced', { forceTop: true });
 
     const sessionIds = getSessionItemIds(dbModule);
     const sessionIdSet = new Set(sessionIds);
     const expectedIdSet = new Set([
-      'forced-forward',
-      'forced-reverse',
-      'boosted-forward',
-      'boosted-reverse',
-      'old-base-forward',
-      'old-base-reverse',
-      'very-low-forward',
-      'very-low-reverse',
-    ].slice(0, dailyNewWordLimit * 2));
+      'unstudied/forced',
+      'unstudied/boosted',
+      'unstudied/old-base',
+      'unstudied/very-low',
+    ].slice(0, dailyNewWordLimit));
 
     assert.equal(sessionIds.length, expectedIdSet.size);
     assert.deepEqual(sessionIdSet, expectedIdSet);
@@ -210,8 +188,6 @@ describe('user priority layer', { concurrency: false }, () => {
   test('sunk words rank below regular words in unstudied ordering', () => {
     insertWord('regular-word', 40, 'unstudied', '2026-01-01T00:00:00.000Z');
     insertWord('sunk-word', 100, 'unstudied', '2026-01-02T00:00:00.000Z');
-    insertReviewPair('regular-word');
-    insertReviewPair('sunk-word');
 
     dbModule.dismissWordFromStudy('sunk-word');
 
@@ -225,10 +201,6 @@ describe('user priority layer', { concurrency: false }, () => {
     insertWord('regular-high', 80, 'unstudied', '2026-01-03T00:00:00.000Z');
     insertWord('regular-low', 20, 'unstudied', '2026-01-04T00:00:00.000Z');
 
-    for (const id of ['sunk-word', 'forced-word', 'regular-high', 'regular-low']) {
-      insertReviewPair(id);
-    }
-
     dbModule.dismissWordFromStudy('sunk-word');
     dbModule.updateWordUserPriority('forced-word', { forceTop: true });
 
@@ -238,7 +210,6 @@ describe('user priority layer', { concurrency: false }, () => {
 
   test('non-unstudied words cannot be updated', () => {
     insertWord('learning-word', 80, 'learning', '2026-01-01T00:00:00.000Z');
-    insertReviewPair('learning-word');
 
     assert.throws(() => {
       dbModule.updateWordUserPriority('learning-word', { bumpDelta: 1 });
@@ -283,34 +254,8 @@ function insertWord(id: string, priority: number, status: WordStatus, createdAt:
 function getSessionItemIds(db: DbModule): string[] {
   const payload = db.getSessionPayload(studyDayKey);
   return [
-    ...payload.buckets.review,
-    ...payload.buckets.learning,
-    ...payload.buckets.unstudied,
-  ].map((item) => item.reviewItem.id);
-}
-
-function insertReviewPair(wordId: string) {
-  sqlite.prepare(`
-    INSERT INTO review_items (
-      id,
-      word_id,
-      direction,
-      interval_hours,
-      last_reviewed_at,
-      next_due_at,
-      ease_factor
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(`${wordId}-forward`, wordId, 'forward', 6, null, null, 2.5);
-
-  sqlite.prepare(`
-    INSERT INTO review_items (
-      id,
-      word_id,
-      direction,
-      interval_hours,
-      last_reviewed_at,
-      next_due_at,
-      ease_factor
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(`${wordId}-reverse`, wordId, 'reverse', 6, null, null, 2.5);
+    ...payload.buckets.review.map((item) => item.sessionActionId),
+    ...payload.buckets.learning.map((word) => `learning/${word.id}`),
+    ...payload.buckets.unstudied.map((word) => `unstudied/${word.id}`),
+  ];
 }

@@ -1,5 +1,16 @@
-import type { ReviewItem, ReviewRating, SessionItemWithWord, Word } from '../../types';
-import type { SessionCommitIntent, SessionState } from '../../lib/session-state';
+import type { SessionStudyItem } from '../../domain/study-actions';
+import type { ReviewRating, Word } from '../../types';
+import type { BucketSessionCommitIntent, SessionPhase } from '../../lib/session-state';
+
+type SessionSummaryState = {
+  answeredCount: number;
+  phase: SessionPhase;
+};
+
+type SessionSummaryTransition = {
+  state: SessionSummaryState;
+  commit: BucketSessionCommitIntent;
+};
 
 export type SessionSummary = {
   sessionId: string;
@@ -7,11 +18,10 @@ export type SessionSummary = {
   completedAt: string | null;
   initialQueueLength: number;
   answeredCount: number;
-  completedReviewItems: number;
-  encounteredReviewItemIds: string[];
-  lapsedReviewItems: number;
+  completedReviewActions: number;
+  lapsedReviewActions: number;
   lapsedReviewLabels: string[];
-  lapsedReviewItemIds: string[];
+  lapsedReviewActionIds: string[];
   completedLearningWords: number;
   completedUnstudiedWords: number;
   completionMode: 'natural' | 'drain';
@@ -32,11 +42,10 @@ export function createSessionSummary({
     completedAt: null,
     initialQueueLength,
     answeredCount: 0,
-    completedReviewItems: 0,
-    encounteredReviewItemIds: [],
-    lapsedReviewItems: 0,
+    completedReviewActions: 0,
+    lapsedReviewActions: 0,
     lapsedReviewLabels: [],
-    lapsedReviewItemIds: [],
+    lapsedReviewActionIds: [],
     completedLearningWords: 0,
     completedUnstudiedWords: 0,
     completionMode: 'natural',
@@ -48,7 +57,7 @@ export function beginDrainSessionSummary({
   drainedState,
 }: {
   summary: SessionSummary | null;
-  drainedState: SessionState;
+  drainedState: SessionSummaryState;
 }): SessionSummary | null {
   if (!summary) {
     return summary;
@@ -74,11 +83,11 @@ export function updateSessionSummaryForRating({
   previousPhase,
 }: {
   summary: SessionSummary | null;
-  transition: { state: SessionState; commit: SessionCommitIntent };
+  transition: SessionSummaryTransition;
   rating: ReviewRating;
   activeWord: Word;
-  activeItem: SessionItemWithWord;
-  previousPhase: SessionState['phase'];
+  activeItem: SessionStudyItem;
+  previousPhase: SessionPhase;
 }): SessionSummary | null {
   if (!summary) {
     return summary;
@@ -102,25 +111,19 @@ export function updateSessionSummaryForRating({
   if (
     activeWord.status === 'review' &&
     rating === 'forgot' &&
-    !nextSummary.lapsedReviewItemIds.includes(activeItem.reviewItem.id)
+    !nextSummary.lapsedReviewActionIds.includes(activeItem.sessionActionId)
   ) {
-    nextSummary.lapsedReviewItemIds = [...nextSummary.lapsedReviewItemIds, activeItem.reviewItem.id];
+    nextSummary.lapsedReviewActionIds = [...nextSummary.lapsedReviewActionIds, activeItem.sessionActionId];
   }
 
   switch (transition.commit.type) {
-    case 'commit-review-item-session':
-      nextSummary.completedReviewItems += 1;
-      if (!nextSummary.encounteredReviewItemIds.includes(transition.commit.reviewItemId)) {
-        nextSummary.encounteredReviewItemIds = [
-          ...nextSummary.encounteredReviewItemIds,
-          transition.commit.reviewItemId,
-        ];
-      }
+    case 'commit-review-action-session':
+      nextSummary.completedReviewActions += 1;
       if (transition.commit.terminalRating === null) {
-        nextSummary.lapsedReviewItems += 1;
+        nextSummary.lapsedReviewActions += 1;
         nextSummary.lapsedReviewLabels = [
           ...nextSummary.lapsedReviewLabels,
-          formatReviewEncounterLabel(activeItem.reviewItem, activeWord),
+          formatReviewEncounterLabel(activeItem, activeWord),
         ];
       }
       break;
@@ -137,8 +140,8 @@ export function updateSessionSummaryForRating({
   return nextSummary;
 }
 
-function formatReviewEncounterLabel(item: ReviewItem, word: Word) {
-  return item.direction === 'forward'
+function formatReviewEncounterLabel(item: SessionStudyItem, word: Word) {
+  return item.actionKind === 'recognition'
     ? `${word.hanzi} -> ${word.meaning}`
     : `${word.meaning} -> ${word.hanzi}`;
 }

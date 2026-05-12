@@ -5,10 +5,8 @@ import { AppChrome, type AppPageKey } from './components/AppChrome';
 import { PersonalNotesEditorOverlay } from './features/session/PersonalNotesEditorOverlay';
 import { useStudySession } from './features/session/useStudySession';
 import { usePriorityPageController } from './features/priority/usePriorityPageController';
-import { useWordsPageController } from './features/words/useWordsPageController';
 import { HomePage } from './pages/HomePage';
 import { PriorityPage } from './pages/PriorityPage';
-import { WordsPage } from './pages/WordsPage';
 
 const APP_VERSION = __APP_VERSION__;
 
@@ -19,11 +17,6 @@ function App() {
   const studySession = useStudySession({
     setError,
     onSessionEnded: reloadDashboard,
-  });
-  const wordsPage = useWordsPageController({
-    currentPage,
-    setCurrentPage,
-    setError,
   });
   const priorityPage = usePriorityPageController({
     currentPage,
@@ -54,24 +47,12 @@ function App() {
       currentPage={currentPage}
       error={error}
       version={APP_VERSION}
-      wordsPageLoading={wordsPage.isLoading}
       priorityPageLoading={priorityPage.isLoading}
       onOpenHomePage={() => setCurrentPage('home')}
-      onOpenWordsPage={() => void wordsPage.openPage()}
       onOpenPriorityPage={() => void priorityPage.openPage()}
     >
       {currentPage === 'home' ? (
         <HomePage backendStatus={backendStatus} {...studySession.homePageProps} />
-      ) : currentPage === 'words' ? (
-        <WordsPage
-          rows={wordsPage.rows}
-          currentPage={wordsPage.pageNumber}
-          totalPages={wordsPage.totalPages}
-          totalItems={wordsPage.totalItems}
-          pageSize={wordsPage.pageSize}
-          onPreviousPage={wordsPage.previousPage}
-          onNextPage={wordsPage.nextPage}
-        />
       ) : (
         <PriorityPage
           rows={priorityPage.rows}

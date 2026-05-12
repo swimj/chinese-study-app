@@ -4,11 +4,9 @@ import type {
   ReviewFailureRateDay,
   Word,
   WordMeaning,
-  ReviewItem,
   ReviewRating,
-  SessionItemBuckets,
 } from '../types';
-import type { StudyAttemptEvent } from '../domain/study-actions';
+import type { SessionStudyItemBuckets, StudyAttemptEvent } from '../domain/study-actions';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:5174';
 
@@ -20,16 +18,12 @@ type BackendStatus = {
   dbPath: string;
   wordStatusCounts: Record<Word['status'], number>;
   reviewFailureRateDays: ReviewFailureRateDay[];
-  dueReviewItemCount: number;
-  pendingLearningWordCount: number;
-  newWordIntroCount: number;
-  hasSessionWork: boolean;
   dailyNewWordLimit: number;
   learningCoverageDate: string;
 };
 
 export type SessionPayload = {
-  buckets: SessionItemBuckets;
+  buckets: SessionStudyItemBuckets;
 };
 
 export type { BackendStatus };
@@ -51,22 +45,6 @@ type PriorityWordsResponse = {
   unstudiedTotalCount: number;
   words: PriorityWord[];
 };
-
-export async function fetchWords(): Promise<Word[]> {
-  const response = await fetch(`${API_BASE}/api/words`);
-  if (!response.ok) {
-    throw new Error('Failed to load words');
-  }
-  return response.json();
-}
-
-export async function fetchReviewItems(): Promise<ReviewItem[]> {
-  const response = await fetch(`${API_BASE}/api/review-items`);
-  if (!response.ok) {
-    throw new Error('Failed to load review items');
-  }
-  return response.json();
-}
 
 export async function fetchSessionPayload(): Promise<SessionPayload> {
   const studyDayKey = getCurrentStudyDayKey();
@@ -95,12 +73,15 @@ export async function recordAcceptedReviewAttemptBatch({
   sessionId: string;
   events: StudyAttemptEvent[];
   commitIntent: {
-    type: 'commit-review-item-session';
-    reviewItemId: string;
+    type: 'commit-review-action-session';
+    sessionActionId: string;
+    targetWordId: string;
+    actionKind: 'recognition' | 'production';
+    sampledSkillIds: Array<'recognition' | 'production'>;
     failureCount: number;
     terminalRating: 'hard' | 'good' | 'easy' | null;
   };
-}): Promise<ReviewItem> {
+}): Promise<void> {
   const response = await fetch(`${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/accepted-review-attempt-batch`, {
     method: 'POST',
     headers: {
@@ -112,21 +93,18 @@ export async function recordAcceptedReviewAttemptBatch({
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to record accepted review attempt batch'));
   }
-
-  const result = await response.json() as { reviewItem: ReviewItem };
-  return result.reviewItem;
 }
 
 export async function recordReviewSessionSummary({
   sessionId,
   completedAt,
-  completedReviewItemCount,
-  failedReviewItemCount,
+  completedReviewActionCount,
+  failedReviewActionCount,
 }: {
   sessionId: string;
   completedAt: string;
-  completedReviewItemCount: number;
-  failedReviewItemCount: number;
+  completedReviewActionCount: number;
+  failedReviewActionCount: number;
 }): Promise<void> {
   const response = await fetch(`${API_BASE}/api/review-session-summaries`, {
     method: 'POST',
@@ -136,8 +114,8 @@ export async function recordReviewSessionSummary({
     body: JSON.stringify({
       sessionId,
       completedAt,
-      completedReviewItemCount,
-      failedReviewItemCount,
+      completedReviewActionCount,
+      failedReviewActionCount,
     }),
   });
 

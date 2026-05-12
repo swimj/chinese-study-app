@@ -31,29 +31,33 @@ export function HomeOverviewPanel({
     learning: 0,
     review: 0,
   };
+  const prefetchedSessionItemCount = !sessionStarted && sessionPrefetch.status === 'ready'
+    ? displayedSessionItemCount
+    : null;
+  const canStartSession = sessionStarted || (prefetchedSessionItemCount ?? 0) > 0;
 
   return (
     <div className="panel">
       <h2>Overview</h2>
-      <p className="notes">Home loads lightweight counts first, then prefetches the session payload in the background.</p>
+      <p className="notes">Home loads corpus counts first, then prefetches the session payload in the background.</p>
       <div className="stack">
         <div className="stat-card">
-          <span className="stat-label">Due review items</span>
-          <strong className="stat-value">{backendStatus?.dueReviewItemCount ?? 0}</strong>
+          <span className="stat-label">Review words</span>
+          <strong className="stat-value">{statusCounts.review}</strong>
         </div>
         <div className="stat-card">
-          <span className="stat-label">Learning words due</span>
-          <strong className="stat-value">{backendStatus?.pendingLearningWordCount ?? 0}</strong>
+          <span className="stat-label">Learning words</span>
+          <strong className="stat-value">{statusCounts.learning}</strong>
         </div>
         <div className="stat-card">
-          <span className="stat-label">{sessionStarted ? 'Items left in session' : 'New words to introduce'}</span>
+          <span className="stat-label">Unstudied words</span>
+          <strong className="stat-value">{statusCounts.unstudied}</strong>
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">{sessionStarted ? 'Items left in session' : 'Session words'}</span>
           <strong className="stat-value">
-            {sessionStarted ? displayedSessionItemCount : backendStatus?.newWordIntroCount ?? 0}
+            {sessionStarted ? displayedSessionItemCount : prefetchedSessionItemCount ?? '...'}
           </strong>
-        </div>
-        <div className="stat-card">
-          <span className="stat-label">{sessionStarted ? 'Answered this session' : 'Prefetched session items'}</span>
-          <strong className="stat-value">{sessionStarted ? reviewedCount : displayedSessionItemCount}</strong>
         </div>
       </div>
       <p className="notes">
@@ -68,7 +72,7 @@ export function HomeOverviewPanel({
               <div key={day.dayKey} className="failure-rate-row">
                 <span>{day.dayKey}</span>
                 <strong>{formatFailureRate(day.failureRate)}</strong>
-                <span>{day.failedReviewItemSessions}/{day.completedReviewItemSessions}</span>
+                <span>{day.failedReviewActionSessions}/{day.completedReviewActionSessions}</span>
                 <span>3d {formatFailureRate(day.rolling3DayFailureRate)}</span>
                 <span>7d {formatFailureRate(day.rolling7DayFailureRate)}</span>
               </div>
@@ -84,7 +88,7 @@ export function HomeOverviewPanel({
         </p>
       ) : null}
       {!sessionStarted ? (
-        <button type="button" onClick={onStartSession} disabled={sessionLoading || !backendStatus?.hasSessionWork}>
+        <button type="button" onClick={onStartSession} disabled={sessionLoading || !canStartSession}>
           {sessionLoading ? 'Preparing session...' : 'Start session'}
         </button>
       ) : (

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
-import type { ReviewRating, SessionItemWithWord, Word, WordMeaning } from '../../types';
+import type { ReviewRating, Word, WordMeaning } from '../../types';
+import type { SessionStudyItem } from '../../domain/study-actions';
 import {
   captureProductionMistakeCandidate,
   dismissWordFromStudy,
@@ -9,18 +10,20 @@ import {
   updateWordPersonalNotes,
 } from '../../services/api';
 import {
-  beginDrainSession,
-  beginUnstudiedDrill,
-  createSessionState,
-  dismissCurrentItemFromSession,
-  markCurrentItemStarted,
-  rateCurrentItem,
+  beginBucketDrainSession,
+  completeActiveUnstudiedIntro,
+  createBucketSessionState,
+  dismissActiveBucketSessionUnit,
+  getActiveSessionUnit,
+  getBucketSessionTotalCount,
+  markActiveSessionUnitStarted,
+  rateActiveSessionUnit,
+  type BucketSessionState,
   type LearningWordProgress,
-  type ReviewItemProgress,
-  type SessionState,
+  type ReviewActionProgress,
   type UnstudiedWordProgress,
 } from '../../lib/session-state';
-import { getSchedulerActiveItem, getSchedulerLength } from '../../lib/session-scheduler';
+import type { ActiveBucketSchedulerUnit } from '../../lib/session-scheduler';
 import {
   beginDrainSessionSummary,
   createSessionSummary,
@@ -40,7 +43,7 @@ import {
   getActiveReviewState,
   getActiveWordPersonalNotes,
   getPersonalNotesEditorTarget,
-  isProductionReviewItem,
+  isProductionSessionItem,
   isReviewInReinforcement,
 } from './session-selectors';
 import {
@@ -50,7 +53,7 @@ import {
   resetSessionPrefetchCache,
   type SessionPrefetchState,
 } from './session-prefetch';
-import { cloneSessionState } from './session-state-copy';
+import { cloneBucketSessionState } from './session-state-copy';
 import {
   applySessionCommit,
   type DeferredSessionCommit,
@@ -58,7 +61,7 @@ import {
 import type { FrozenProductionCard } from './StudySessionPanel';
 
 type SessionUndoSnapshot = {
-  sessionState: SessionState;
+  sessionState: BucketSessionState;
   sessionSummary: SessionSummary | null;
   restoreUi: 'revealed' | 'production-input';
 };
@@ -77,16 +80,16 @@ export type StudySessionControllerOptions = {
 export type StudySessionHomePageProps = {
   sessionPrefetch: SessionPrefetchState;
   sessionStarted: boolean;
-  sessionPhase: SessionState['phase'] | null;
+  sessionPhase: BucketSessionState['phase'] | null;
   sessionLoading: boolean;
   displayedSessionItemCount: number;
   reviewedCount: number;
   sessionSummary: SessionSummary | null;
-  activeItem: SessionItemWithWord | null;
+  activeItem: SessionStudyItem | null;
   activeWord: Word | null;
   activeLearningProgress: LearningWordProgress | undefined;
   activeUnstudiedProgress: UnstudiedWordProgress | undefined;
-  activeReviewProgress: ReviewItemProgress | undefined;
+  activeReviewProgress: ReviewActionProgress | undefined;
   hasUndo: boolean;
   submittingRating: ReviewRating | null;
   personalNotesEditorOpen: boolean;
@@ -154,7 +157,7 @@ export function useStudySession({
 }: StudySessionControllerOptions): StudySessionController {
   const [sessionPrefetch, setSessionPrefetch] = useState<SessionPrefetchState>(() => getSessionPrefetchSnapshot());
   const [sessionStarted, setSessionStarted] = useState(false);
-  const [sessionState, setSessionState] = useState<SessionState | null>(null);
+  const [sessionState, setSessionState] = useState<BucketSessionState | null>(null);
   const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
   const [answerRevealed, setAnswerRevealed] = useState(false);
@@ -193,12 +196,12 @@ export function useStudySession({
 
   const displayedSessionItemCount = sessionStarted
     ? sessionState
-      ? getSchedulerLength(sessionState.scheduler)
+      ? getBucketSessionTotalCount(sessionState)
       : 0
     : getSessionPayloadItemCount(sessionPrefetch.payload) ?? 0;
-  const activeItem: SessionItemWithWord | null =
-    sessionStarted && sessionState ? getSchedulerActiveItem(sessionState.scheduler) ?? null : null;
-  const activeWord = activeItem?.word ?? null;
+  const activeUnit = sessionStarted && sessionState ? getOptionalActiveSessionUnit(sessionState) : null;
+  const activeItem: SessionStudyItem | null = activeUnit?.type === 'study' ? activeUnit.item : null;
+  const activeWord = activeUnit?.type === 'unstudied_intro' ? activeUnit.word : activeItem?.word ?? null;
   const activeWordPersonalNotes = getActiveWordPersonalNotes({
     word: activeWord,
     overridesByWordId: sessionPersonalNotesOverridesByWordId,
@@ -211,10 +214,12 @@ export function useStudySession({
     word: activeWord,
     meaningRowsByWordId: sessionMeaningRowsByWordId,
   });
-  const activeReviewItem = activeItem?.reviewItem ?? null;
-  const activeLearningProgress = activeWord ? sessionState?.learningProgress[activeWord.id] : undefined;
-  const activeUnstudiedProgress = activeWord ? sessionState?.unstudiedProgress[activeWord.id] : undefined;
-  const activeReviewProgress = activeReviewItem ? sessionState?.reviewProgress[activeReviewItem.id] : undefined;
+  const activeLearningProgress = activeWord ? adaptLearningProgress(sessionState?.progress.learning[activeWord.id]) : undefined;
+  const activeUnstudiedProgress = activeWord ? adaptUnstudiedProgress(sessionState?.progress.unstudied[activeWord.id]) : undefined;
+  const activeReviewProgress =
+    activeUnit?.type === 'study' && activeUnit.bucket === 'review'
+      ? sessionState?.reviewProgress[activeUnit.item.sessionActionId]
+      : undefined;
   const reviewedCount = sessionStarted ? sessionState?.answeredCount ?? 0 : 0;
   const activeReviewFailureCount = activeReviewProgress?.failureCount ?? 0;
   const activeReviewReinforcementStreak = activeReviewProgress?.reinforcementStreak ?? 0;
@@ -223,23 +228,23 @@ export function useStudySession({
     failureCount: activeReviewFailureCount,
   });
   const activePrompt = getActivePrompt({
-    reviewItem: activeReviewItem,
+    item: activeItem,
     word: activeWord,
     promptDisplayedMeanings: activePromptDisplayedMeanings,
     allMeanings: activeAllMeanings,
   });
   const activeAnswerText = getActiveAnswerText({
-    reviewItem: activeReviewItem,
+    item: activeItem,
     word: activeWord,
     allMeanings: activeAllMeanings,
   });
-  const activeAnswerPinyin = getActiveAnswerPinyin(activeItem);
+  const activeAnswerPinyin = getActiveAnswerPinyin(activeWord);
   const activeReviewState = getActiveReviewState({
     reviewInReinforcement,
     reinforcementStreak: activeReviewReinforcementStreak,
     failureCount: activeReviewFailureCount,
   });
-  const productionRequiresHanziInput = isProductionReviewItem(activeReviewItem);
+  const productionRequiresHanziInput = isProductionSessionItem(activeItem);
   const productionAwaitingRating = productionRequiresHanziInput && productionUiPhase === 'await-rating';
   const productionAwaitingNext = productionUiPhase === 'await-next' && frozenProductionCard !== null;
   const activeRatingOptions = getActiveRatingOptions({
@@ -355,7 +360,7 @@ export function useStudySession({
       const startedAt = new Date().toISOString();
       const sessionId = createFrontendSessionId();
       setSessionNow(startedAt);
-      setSessionState(createSessionState(sessionPayload.buckets, sessionId));
+      setSessionState(createBucketSessionState({ buckets: sessionPayload.buckets, sessionId }));
       resetSessionScopedUi();
       setPendingSessionCommit(null);
       setPendingProductionMistakeCapture(null);
@@ -375,7 +380,7 @@ export function useStudySession({
 
   async function handleEndSession() {
     if (sessionStarted && sessionState && sessionState.phase === 'active') {
-      const drainedState = beginDrainSession(sessionState);
+      const drainedState = beginBucketDrainSession(sessionState);
       setSessionState(drainedState);
       setSessionSummary((current) =>
         beginDrainSessionSummary({
@@ -401,8 +406,8 @@ export function useStudySession({
         await recordReviewSessionSummary({
           sessionId: sessionSummary.sessionId,
           completedAt: sessionSummary.completedAt ?? new Date().toISOString(),
-          completedReviewItemCount: sessionSummary.completedReviewItems,
-          failedReviewItemCount: sessionSummary.lapsedReviewItemIds.length,
+          completedReviewActionCount: sessionSummary.completedReviewActions,
+          failedReviewActionCount: sessionSummary.lapsedReviewActionIds.length,
         });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error');
@@ -441,12 +446,12 @@ export function useStudySession({
       await applyPendingUndoClosure();
 
       setLastUndoSnapshot({
-        sessionState: cloneSessionState(sessionState),
+        sessionState: cloneBucketSessionState(sessionState),
         sessionSummary,
         restoreUi: options?.restoreUi ?? 'revealed',
       });
 
-      const transition = rateCurrentItem(sessionState, rating);
+      const transition = rateActiveSessionUnit(sessionState, rating);
       setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
 
       setSessionState(transition.state);
@@ -474,7 +479,7 @@ export function useStudySession({
       !sessionState ||
       !activeItem ||
       !activeWord ||
-      activeItem.reviewItem.direction !== 'reverse'
+      activeItem.actionKind !== 'production'
     ) {
       return;
     }
@@ -492,7 +497,7 @@ export function useStudySession({
       await applyPendingUndoClosure();
 
       setLastUndoSnapshot({
-        sessionState: cloneSessionState(sessionState),
+        sessionState: cloneBucketSessionState(sessionState),
         sessionSummary,
         restoreUi: 'production-input',
       });
@@ -507,7 +512,7 @@ export function useStudySession({
         return;
       }
 
-      const transition = rateCurrentItem(sessionState, 'forgot');
+      const transition = rateActiveSessionUnit(sessionState, 'forgot');
       setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
       setSessionState(transition.state);
       setSessionSummary((current) =>
@@ -525,14 +530,14 @@ export function useStudySession({
         attemptedHanzi: submittedHanzi,
         status: activeWord.status,
         reviewedCount,
-        queuedCount: sessionState ? getSchedulerLength(sessionState.scheduler) : 0,
+        queuedCount: sessionState ? getBucketSessionTotalCount(sessionState) : 0,
         promptDisplayedMeanings: [...activePromptDisplayedMeanings],
         fallbackPrompt: activeWord.meaning,
         answerPinyin: activeWord.pinyin,
         answerText: activeWord.hanzi,
         allMeanings: [...activeAllMeanings],
         personalNotes: activeWordPersonalNotes,
-        intervalHours: activeItem.reviewItem.intervalHours,
+        intervalHours: activeItem.intervalHours,
         example: activeWord.examples[0] ?? '',
       });
       setProductionHanziError(`Incorrect Hanzi. Expected "${activeWord.hanzi}".`);
@@ -563,7 +568,7 @@ export function useStudySession({
       return;
     }
 
-    setSessionState(cloneSessionState(lastUndoSnapshot.sessionState));
+    setSessionState(cloneBucketSessionState(lastUndoSnapshot.sessionState));
     setSessionSummary(lastUndoSnapshot.sessionSummary);
     setAnswerRevealed(lastUndoSnapshot.restoreUi === 'revealed');
     resetProductionUi();
@@ -574,7 +579,7 @@ export function useStudySession({
   }
 
   function handleBeginUnstudiedDrill(wordId: string) {
-    setSessionState((current) => (current ? beginUnstudiedDrill(current, wordId) : current));
+    setSessionState((current) => (current ? completeActiveUnstudiedIntro(current).state : current));
   }
 
   async function handleDismissCurrentWord() {
@@ -593,7 +598,7 @@ export function useStudySession({
         return;
       }
 
-      const transition = dismissCurrentItemFromSession(sessionState);
+      const transition = dismissActiveBucketSessionUnit(sessionState);
       if (transition.dismiss.type === 'none') {
         return;
       }
@@ -680,12 +685,19 @@ export function useStudySession({
   }
 
   useEffect(() => {
-    if (!sessionStarted || !sessionState || answerRevealed) {
+    if (!sessionStarted || !sessionState || answerRevealed || activeUnit?.type !== 'study') {
       return;
     }
 
-    setSessionState((current) => (current ? markCurrentItemStarted(current) : current));
-  }, [answerRevealed, sessionStarted, sessionState]);
+    setSessionState((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const currentActiveUnit = getOptionalActiveSessionUnit(current);
+      return currentActiveUnit?.type === 'study' ? markActiveSessionUnitStarted(current) : current;
+    });
+  }, [activeUnit?.type, activeUnit?.type === 'study' ? activeUnit.item.sessionActionId : null, answerRevealed, sessionStarted, sessionState]);
 
   useEffect(() => {
     if (productionUiPhase === 'await-next') {
@@ -697,7 +709,7 @@ export function useStudySession({
     if (productionUiPhase === 'await-rating' && !productionRequiresHanziInput) {
       setProductionUiPhase('idle');
     }
-  }, [activeReviewItem?.id, productionUiPhase, productionRequiresHanziInput]);
+  }, [activeItem?.sessionActionId, productionUiPhase, productionRequiresHanziInput]);
 
   useEffect(() => {
     if (!sessionStarted || sessionState?.phase === 'completed' || !sessionSummary) {
@@ -731,7 +743,7 @@ export function useStudySession({
     productionHanziInputRef.current?.focus();
   }, [
     activeUnstudiedProgress?.introComplete,
-    activeReviewItem?.id,
+    activeItem?.sessionActionId,
     answerRevealed,
     personalNotesEditorOpen,
     productionAwaitingNext,
@@ -959,6 +971,51 @@ function formatElapsedTime(startedAt: string, completedAt: string) {
   const hours = Math.floor(minutes / 60);
   const remainingMinutes = minutes % 60;
   return `${hours}:${remainingMinutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function getOptionalActiveSessionUnit(state: BucketSessionState): ActiveBucketSchedulerUnit | null {
+  if (getBucketSessionTotalCount(state) === 0) {
+    return null;
+  }
+
+  return getActiveSessionUnit(state);
+}
+
+function adaptLearningProgress(progress: BucketSessionState['progress']['learning'][string] | undefined): LearningWordProgress | undefined {
+  if (!progress) {
+    return undefined;
+  }
+
+  return {
+    coveredDirections: {
+      forward: progress.coveredSkills.recognition,
+      reverse: progress.coveredSkills.production,
+    },
+    firstTryGood: {
+      forward: progress.firstTryGood.recognition,
+      reverse: progress.firstTryGood.production,
+    },
+    attempts: {
+      forward: progress.attempts.recognition,
+      reverse: progress.attempts.production,
+    },
+  };
+}
+
+function adaptUnstudiedProgress(
+  progress: BucketSessionState['progress']['unstudied'][string] | undefined,
+): UnstudiedWordProgress | undefined {
+  if (!progress) {
+    return undefined;
+  }
+
+  return {
+    introComplete: progress.introComplete,
+    consecutiveSuccesses: {
+      forward: progress.successStreaks.recognition,
+      reverse: progress.successStreaks.production,
+    },
+  };
 }
 
 function createFrontendSessionId() {

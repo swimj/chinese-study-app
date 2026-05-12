@@ -110,5 +110,9 @@ export function getSessionPayloadItemCount(payload: SessionPayload | null): numb
     return null;
   }
 
-  return payload.buckets.review.length + payload.buckets.learning.length + payload.buckets.unstudied.length;
+  return (
+    payload.buckets.review.length +
+    payload.buckets.learning.length +
+    payload.buckets.unstudied.length
+  );
 }

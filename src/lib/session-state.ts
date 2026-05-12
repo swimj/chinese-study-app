@@ -1,20 +1,24 @@
-import type { ReviewItem, ReviewRating, SessionItemBuckets, SessionItemWithWord, Word } from '../types';
-import type { StudyAttemptEvent } from '../domain/study-actions';
+import type { ReviewRating, Word } from '../types';
+import type { SessionStudyItemBuckets, StudyAttemptEvent, StudySkillId } from '../domain/study-actions';
 import {
-  consumeActiveSchedulerItem,
-  createSessionScheduler,
-  getSchedulerActiveItem,
-  getSchedulerItems,
-  getSchedulerLength,
-  nextScheduler,
-  pruneSchedulerItems,
-  removeSchedulerWord,
-  removeUnstudiedCandidateByReviewItemId,
-  rotateActiveSchedulerItem,
-  type SessionScheduler,
+  createBucketSessionScheduler,
+  createInitialBucketLearningProgress,
+  createInitialBucketUnstudiedProgress,
+  getBucketSchedulerActiveUnit,
+  getBucketSchedulerBucketCounts,
+  getBucketSchedulerCandidateWordIds,
+  pruneBucketSchedulerWords,
+  removeBucketSchedulerWord,
+  syncBucketScheduler,
+  type ActiveBucketSchedulerUnit,
+  type BucketSchedulerLearningProgress,
+  type BucketSchedulerProgress,
+  type BucketSchedulerUnstudiedProgress,
+  type BucketSessionScheduler,
+  type BucketSessionSchedulerPolicy,
 } from './session-scheduler';
 
-type Direction = ReviewItem['direction'];
+type Direction = 'forward' | 'reverse';
 
 export type LearningWordProgress = {
   coveredDirections: Record<Direction, boolean>;
@@ -27,7 +31,7 @@ export type UnstudiedWordProgress = {
   consecutiveSuccesses: Record<Direction, number>;
 };
 
-export type ReviewItemProgress = {
+export type ReviewActionProgress = {
   failureCount: number;
   reinforcementStreak: number;
   attempts: StudyAttemptEvent[];
@@ -35,41 +39,37 @@ export type ReviewItemProgress = {
 
 export type SessionPhase = 'active' | 'draining' | 'completed';
 
-export type SessionState = {
+type ReviewStudySkillId = Extract<StudySkillId, 'recognition' | 'production'>;
+
+export type BucketSessionState = {
   sessionId: string;
   phase: SessionPhase;
-  scheduler: SessionScheduler;
+  scheduler: BucketSessionScheduler;
   answeredCount: number;
-  startedItemIds: string[];
-  dismissedWordIds: string[];
-  learningProgress: Record<string, LearningWordProgress>;
-  unstudiedProgress: Record<string, UnstudiedWordProgress>;
-  reviewProgress: Record<string, ReviewItemProgress>;
+  startedActionIds: string[];
+  progress: BucketSchedulerProgress;
+  reviewProgress: Record<string, ReviewActionProgress>;
 };
 
-export type SessionCommitIntent =
+export type BucketSessionCommitIntent =
   | { type: 'none' }
   | {
-      type: 'commit-review-item-session';
+      type: 'commit-review-action-session';
       sessionId: string;
-      reviewItemId: string;
+      sessionActionId: string;
+      targetWordId: string;
+      actionKind: Extract<StudyAttemptEvent['actionKind'], 'recognition' | 'production'>;
+      sampledSkillIds: ReviewStudySkillId[];
       failureCount: number;
       terminalRating: 'hard' | 'good' | 'easy' | null;
       events: StudyAttemptEvent[];
     }
-  | {
-      type: 'commit-learning-word-session';
-      wordId: string;
-      success: boolean;
-    }
-  | {
-      type: 'commit-unstudied-word-session';
-      wordId: string;
-    };
+  | { type: 'commit-learning-word-session'; wordId: string; success: boolean }
+  | { type: 'commit-unstudied-word-session'; wordId: string };
 
-export type SessionTransitionResult = {
-  state: SessionState;
-  commit: SessionCommitIntent;
+export type BucketSessionTransitionResult = {
+  state: BucketSessionState;
+  commit: BucketSessionCommitIntent;
 };
 
 export type SessionDismissIntent =
@@ -81,167 +81,277 @@ export type SessionDismissIntent =
     };
 
 export type SessionDismissTransitionResult = {
-  state: SessionState;
+  state: BucketSessionState;
   dismiss: SessionDismissIntent;
 };
 
-export function createSessionState(buckets: SessionItemBuckets, sessionId: string): SessionState {
-  const scheduler = createSessionScheduler({ buckets });
+export type BucketSessionDismissTransitionResult = SessionDismissTransitionResult;
+
+export function createBucketSessionState({
+  buckets,
+  sessionId,
+  schedulerPolicy,
+  seed,
+}: {
+  buckets: SessionStudyItemBuckets;
+  sessionId: string;
+  schedulerPolicy?: Partial<BucketSessionSchedulerPolicy>;
+  seed?: number;
+}): BucketSessionState {
+  const progress: BucketSchedulerProgress = {
+    learning: {},
+    unstudied: {},
+  };
 
   return {
     sessionId,
     phase: 'active',
-    scheduler,
+    scheduler: createBucketSessionScheduler({
+      buckets,
+      policy: schedulerPolicy,
+      progress,
+      seed,
+    }),
     answeredCount: 0,
-    startedItemIds: [],
-    dismissedWordIds: [],
-    learningProgress: {},
-    unstudiedProgress: {},
+    startedActionIds: [],
+    progress,
     reviewProgress: {},
   };
 }
 
-export function markCurrentItemStarted(state: SessionState): SessionState {
-  const currentItem = getSchedulerActiveItem(state.scheduler);
-  if (!currentItem || state.startedItemIds.includes(currentItem.reviewItem.id)) {
+export function getActiveSessionUnit(state: BucketSessionState): ActiveBucketSchedulerUnit {
+  return getBucketSchedulerActiveUnit(state.scheduler);
+}
+
+export function getBucketSessionProgress(state: BucketSessionState): BucketSchedulerProgress {
+  return state.progress;
+}
+
+export function getBucketSessionUnitCounts(state: BucketSessionState) {
+  return getBucketSchedulerBucketCounts(state.scheduler, state.progress);
+}
+
+export function getBucketSessionCandidateWordIds(
+  state: BucketSessionState,
+  bucket: 'learning' | 'unstudied',
+): string[] {
+  return getBucketSchedulerCandidateWordIds(state.scheduler, bucket, state.progress);
+}
+
+export function markActiveSessionUnitStarted(state: BucketSessionState): BucketSessionState {
+  const active = getActiveSessionUnit(state);
+  if (active.type !== 'study') {
+    return state;
+  }
+
+  if (state.startedActionIds.includes(active.item.sessionActionId)) {
     return state;
   }
 
   return {
     ...state,
-    startedItemIds: [...state.startedItemIds, currentItem.reviewItem.id],
+    startedActionIds: [...state.startedActionIds, active.item.sessionActionId],
   };
 }
 
-export function beginUnstudiedDrill(state: SessionState, wordId: string): SessionState {
-  const activeItem = getSchedulerActiveItem(state.scheduler);
-  if (!activeItem) {
-    throw new Error('Session invariant violated: cannot begin unstudied drill without an active scheduler item.');
+export function completeActiveUnstudiedIntro(state: BucketSessionState): BucketSessionTransitionResult {
+  const active = getActiveSessionUnit(state);
+
+  if (active.type !== 'unstudied_intro') {
+    throw new Error('Session invariant violated: cannot complete an unstudied intro when the active unit is not an intro.');
   }
 
-  if (activeItem.word.id !== wordId) {
-    throw new Error(
-      `Session invariant violated: unstudied drill word "${wordId}" must match active word "${activeItem.word.id}".`,
-    );
-  }
-
-  return {
-    ...state,
-    unstudiedProgress: {
-      ...state.unstudiedProgress,
+  const wordId = active.word.id;
+  const currentProgress = state.progress.unstudied[wordId] ?? createInitialBucketUnstudiedProgress();
+  const progress = {
+    ...state.progress,
+    unstudied: {
+      ...state.progress.unstudied,
       [wordId]: {
-        ...(state.unstudiedProgress[wordId] ?? createInitialUnstudiedProgress()),
+        ...currentProgress,
         introComplete: true,
       },
     },
   };
-}
-
-export function dismissCurrentItemFromSession(state: SessionState): SessionDismissTransitionResult {
-  const currentItem = getSchedulerActiveItem(state.scheduler);
-
-  if (!currentItem) {
-    return {
-      state,
-      dismiss: { type: 'none' },
-    };
-  }
-
-  const dismissedWordId = currentItem.word.id;
-  const dismissRemoval = removeSchedulerWord(state.scheduler, dismissedWordId, currentItem.word.status);
-  const dismissedReviewItemIds = new Set(dismissRemoval.removedReviewItemIds);
-  const nextScheduler = dismissRemoval.scheduler;
-
-  const nextReviewProgress = Object.fromEntries(
-    Object.entries(state.reviewProgress).filter(([reviewItemId]) => !dismissedReviewItemIds.has(reviewItemId)),
-  );
-
-  const nextState: SessionState = {
-    ...state,
-    phase: getSchedulerLength(nextScheduler) === 0 ? 'completed' : state.phase,
-    scheduler: nextScheduler,
-    startedItemIds: state.startedItemIds.filter((reviewItemId) => !dismissedReviewItemIds.has(reviewItemId)),
-    dismissedWordIds: state.dismissedWordIds.includes(dismissedWordId)
-      ? state.dismissedWordIds
-      : [...state.dismissedWordIds, dismissedWordId],
-    learningProgress: removeKey(state.learningProgress, dismissedWordId),
-    unstudiedProgress: removeKey(state.unstudiedProgress, dismissedWordId),
-    reviewProgress: nextReviewProgress,
-  };
 
   return {
-    state: nextState,
+    state: refreshBucketSessionScheduler({
+      ...state,
+      progress,
+    }),
+    commit: { type: 'none' },
+  };
+}
+
+export function rateActiveSessionUnit(
+  state: BucketSessionState,
+  rating: ReviewRating,
+): BucketSessionTransitionResult {
+  const active = getActiveSessionUnit(state);
+  if (active.type !== 'study') {
+    throw new Error('Session invariant violated: cannot rate an unstudied intro unit.');
+  }
+
+  assertActiveSessionUnitStarted(state, active, rating);
+
+  switch (active.bucket) {
+    case 'learning':
+      return handleBucketLearningAttempt(state, active, rating);
+    case 'unstudied':
+      return handleBucketUnstudiedAttempt(state, active, rating);
+    case 'review':
+      return handleBucketReviewAttempt(state, active, rating);
+    default:
+      return assertUnreachableBucket(active.bucket);
+  }
+}
+
+export function beginBucketDrainSession(state: BucketSessionState): BucketSessionState {
+  assertBucketDrainablePhase(state);
+
+  const openLearningWordIds = new Set(Object.keys(state.progress.learning));
+  const openUnstudiedWordIds = new Set(Object.keys(state.progress.unstudied));
+  const openReviewActionIds = new Set(Object.keys(state.reviewProgress));
+  const scheduler = pruneBucketSchedulerWords(state.scheduler, (unit) => {
+    if (unit.type === 'study' && unit.bucket === 'review') {
+      return openReviewActionIds.has(unit.item.sessionActionId);
+    }
+
+    if (unit.type !== 'candidate_word') {
+      return false;
+    }
+
+    if (unit.bucket === 'learning') {
+      return openLearningWordIds.has(unit.word.id);
+    }
+
+    return openUnstudiedWordIds.has(unit.word.id);
+  });
+
+  return refreshBucketSessionScheduler({
+    ...state,
+    phase: 'draining',
+    scheduler,
+  });
+}
+
+export function dismissActiveBucketSessionUnit(state: BucketSessionState): BucketSessionDismissTransitionResult {
+  const active = getActiveSessionUnit(state);
+  const word = active.type === 'unstudied_intro' ? active.word : active.item.word;
+  const scheduler =
+    word.status === 'review'
+      ? removeCompletedReviewAction(state.scheduler)
+      : removeBucketSchedulerWord(state.scheduler, word.status, word.id);
+  const nextState = refreshBucketSessionScheduler({
+    ...state,
+    scheduler,
+    progress: {
+      learning: removeKey(state.progress.learning, word.id),
+      unstudied: removeKey(state.progress.unstudied, word.id),
+    },
+    reviewProgress: removeReviewProgressForWord(state.reviewProgress, word.id, state.scheduler.reviewQueue),
+  });
+
+  return {
+    state: {
+      ...nextState,
+      phase: getBucketSessionTotalCount(nextState) === 0 ? 'completed' : nextState.phase,
+    },
     dismiss: {
       type: 'dismiss-word-from-study',
-      wordId: dismissedWordId,
-      status: currentItem.word.status,
+      wordId: word.id,
+      status: word.status,
     },
   };
 }
 
-export function beginDrainSession(state: SessionState): SessionState {
-  assertDrainablePhase(state);
+function removeReviewProgressForWord(
+  reviewProgress: Record<string, ReviewActionProgress>,
+  wordId: string,
+  reviewQueue: BucketSessionScheduler['reviewQueue'],
+) {
+  const actionIdsForWord = new Set(
+    reviewQueue
+      .filter((item) => item.targetWordId === wordId)
+      .map((item) => item.sessionActionId),
+  );
 
-  const openWordIds = new Set<string>([
-    ...Object.keys(state.learningProgress),
-    ...Object.keys(state.unstudiedProgress),
-  ]);
-  const openReviewItemIds = new Set<string>(Object.keys(state.reviewProgress));
-  const activeReviewItemId = getSchedulerActiveItem(state.scheduler)?.reviewItem.id ?? null;
-  const nextScheduler = pruneSchedulerItems(state.scheduler, (item, _index) => {
-    if (activeReviewItemId === item.reviewItem.id) {
-      return true;
+  return Object.fromEntries(
+    Object.entries(reviewProgress).filter(([sessionActionId]) => !actionIdsForWord.has(sessionActionId)),
+  );
+}
+
+function handleBucketLearningAttempt(
+  state: BucketSessionState,
+  active: Extract<ActiveBucketSchedulerUnit, { type: 'study' }>,
+  rating: ReviewRating,
+): BucketSessionTransitionResult {
+  const wordId = active.item.targetWordId;
+  const skillId = onlyReviewStudySkill(active.item.sampledSkillIds[0]);
+  const currentProgress = state.progress.learning[wordId] ?? createInitialBucketLearningProgress();
+  const nextProgress: BucketSchedulerLearningProgress = {
+    coveredSkills: { ...currentProgress.coveredSkills },
+    firstTryGood: { ...currentProgress.firstTryGood },
+    attempts: { ...currentProgress.attempts },
+  };
+
+  nextProgress.attempts[skillId] += 1;
+
+  if (rating === 'good') {
+    nextProgress.coveredSkills[skillId] = true;
+    if (nextProgress.attempts[skillId] === 1) {
+      nextProgress.firstTryGood[skillId] = true;
     }
+  }
 
-    if (openReviewItemIds.has(item.reviewItem.id)) {
-      return true;
-    }
+  const bothCovered = nextProgress.coveredSkills.recognition && nextProgress.coveredSkills.production;
 
-    if (openWordIds.has(item.word.id)) {
-      return true;
-    }
+  if (bothCovered) {
+    const progress = {
+      ...state.progress,
+      learning: removeKey(state.progress.learning, wordId),
+    };
+    return {
+      state: refreshBucketSessionScheduler({
+        ...state,
+        answeredCount: state.answeredCount + 1,
+        progress,
+        scheduler: removeBucketSchedulerWord(state.scheduler, 'learning', wordId),
+      }),
+      commit: {
+        type: 'commit-learning-word-session',
+        wordId,
+        success: nextProgress.firstTryGood.recognition && nextProgress.firstTryGood.production,
+      },
+    };
+  }
 
-    return false;
-  });
+  const progress = {
+    ...state.progress,
+    learning: {
+      ...state.progress.learning,
+      [wordId]: nextProgress,
+    },
+  };
 
   return {
-    ...state,
-    phase: getSchedulerLength(nextScheduler) === 0 ? 'completed' : 'draining',
-    scheduler: nextScheduler,
+    state: refreshBucketSessionScheduler({
+      ...state,
+      answeredCount: state.answeredCount + 1,
+      progress,
+    }),
+    commit: { type: 'none' },
   };
 }
 
-export function rateCurrentItem(
-  state: SessionState,
+function handleBucketReviewAttempt(
+  state: BucketSessionState,
+  active: Extract<ActiveBucketSchedulerUnit, { type: 'study' }>,
   rating: ReviewRating,
-): SessionTransitionResult {
-  const currentItem = getSchedulerActiveItem(state.scheduler) ?? assertCurrentItemPresent(state, rating);
-
-  assertCurrentItemStarted(state, currentItem, rating);
-
-  const currentWord = currentItem.word;
-  const currentReviewItem = currentItem.reviewItem;
-
-  switch (currentWord.status) {
-    case 'review':
-      return handleReviewAttempt(state, currentItem, rating);
-    case 'learning':
-      return handleLearningAttempt(state, currentItem, currentWord, rating);
-    case 'unstudied':
-      return handleUnstudiedAttempt(state, currentItem, currentWord, rating);
-    default:
-      return assertUnreachableWordStatus(state, currentReviewItem, currentWord, rating);
-  }
-}
-
-function handleReviewAttempt(
-  state: SessionState,
-  item: SessionItemWithWord,
-  rating: ReviewRating,
-): SessionTransitionResult {
-  const reviewItem = item.reviewItem;
-  const currentProgress = state.reviewProgress[reviewItem.id] ?? createInitialReviewProgress();
-  const attemptEvent = buildReviewAttemptEvent({
+): BucketSessionTransitionResult {
+  const item = active.item;
+  const currentProgress = state.reviewProgress[item.sessionActionId] ?? createInitialReviewProgress();
+  const attemptEvent = buildBucketReviewAttemptEvent({
     state,
     item,
     rating,
@@ -251,16 +361,19 @@ function handleReviewAttempt(
 
   if (currentProgress.failureCount === 0 && rating !== 'forgot') {
     return {
-      state: finalizePostRatingState({
+      state: refreshBucketSessionScheduler({
         ...state,
         answeredCount: state.answeredCount + 1,
-        scheduler: consumeActiveSchedulerItem(state.scheduler),
-        reviewProgress: removeKey(state.reviewProgress, reviewItem.id),
+        scheduler: removeCompletedReviewAction(state.scheduler),
+        reviewProgress: removeKey(state.reviewProgress, item.sessionActionId),
       }),
       commit: {
-        type: 'commit-review-item-session',
+        type: 'commit-review-action-session',
         sessionId: state.sessionId,
-        reviewItemId: reviewItem.id,
+        sessionActionId: item.sessionActionId,
+        targetWordId: item.targetWordId,
+        actionKind: item.actionKind as Extract<StudyAttemptEvent['actionKind'], 'recognition' | 'production'>,
+        sampledSkillIds: item.sampledSkillIds.map(onlyReviewStudySkill),
         failureCount: 0,
         terminalRating: rating,
         events: nextAttempts,
@@ -268,7 +381,7 @@ function handleReviewAttempt(
     };
   }
 
-  const nextProgress: ReviewItemProgress = {
+  const nextProgress: ReviewActionProgress = {
     failureCount: currentProgress.failureCount + (rating === 'forgot' ? 1 : 0),
     reinforcementStreak: rating === 'forgot' ? 0 : currentProgress.reinforcementStreak + 1,
     attempts: nextAttempts,
@@ -276,38 +389,229 @@ function handleReviewAttempt(
 
   if (nextProgress.reinforcementStreak >= 3) {
     return {
-      state: finalizePostRatingState({
+      state: refreshBucketSessionScheduler({
         ...state,
         answeredCount: state.answeredCount + 1,
-        scheduler: consumeActiveSchedulerItem(state.scheduler),
-        reviewProgress: removeKey(state.reviewProgress, reviewItem.id),
+        scheduler: removeCompletedReviewAction(state.scheduler),
+        reviewProgress: removeKey(state.reviewProgress, item.sessionActionId),
       }),
       commit: {
-        type: 'commit-review-item-session',
+        type: 'commit-review-action-session',
         sessionId: state.sessionId,
-        reviewItemId: reviewItem.id,
+        sessionActionId: item.sessionActionId,
+        targetWordId: item.targetWordId,
+        actionKind: item.actionKind as Extract<StudyAttemptEvent['actionKind'], 'recognition' | 'production'>,
+        sampledSkillIds: item.sampledSkillIds.map(onlyReviewStudySkill),
         failureCount: nextProgress.failureCount,
-        terminalRating: null, // rating only needed when item recalled without failureCount of 0
+        terminalRating: null,
         events: nextAttempts,
       },
     };
   }
 
   return {
-    state: finalizePostRatingState({
+    state: refreshBucketSessionScheduler({
       ...state,
       answeredCount: state.answeredCount + 1,
-      scheduler: rotateActiveSchedulerItem(state.scheduler),
+      scheduler: rotateActiveReviewAction(state.scheduler),
       reviewProgress: {
         ...state.reviewProgress,
-        [reviewItem.id]: nextProgress,
+        [item.sessionActionId]: nextProgress,
       },
     }),
     commit: { type: 'none' },
   };
 }
 
-function createInitialReviewProgress(): ReviewItemProgress {
+function buildBucketReviewAttemptEvent({
+  state,
+  item,
+  rating,
+  actionAttemptSequence,
+}: {
+  state: BucketSessionState;
+  item: Extract<ActiveBucketSchedulerUnit, { type: 'study' }>['item'];
+  rating: ReviewRating;
+  actionAttemptSequence: number;
+}): StudyAttemptEvent {
+  return {
+    id: `${state.sessionId}/${item.sessionActionId}/attempt-${actionAttemptSequence}`,
+    occurredAt: new Date().toISOString(),
+    sessionId: state.sessionId,
+    sessionActionId: item.sessionActionId,
+    sessionEventSequence: state.answeredCount + 1,
+    actionAttemptSequence,
+    actionKind: item.actionKind,
+    targetWordId: item.targetWordId,
+    sampledSkillIds: [...item.sampledSkillIds],
+    response: null,
+    outcome: rating === 'forgot' ? 'incorrect' : 'correct',
+    rating,
+    contentRef: item.contentRef,
+    metadata: {},
+  };
+}
+
+function handleBucketUnstudiedAttempt(
+  state: BucketSessionState,
+  active: Extract<ActiveBucketSchedulerUnit, { type: 'study' }>,
+  rating: ReviewRating,
+): BucketSessionTransitionResult {
+  const wordId = active.item.targetWordId;
+  const skillId = onlyReviewStudySkill(active.item.sampledSkillIds[0]);
+  const currentProgress = state.progress.unstudied[wordId] ?? createInitialBucketUnstudiedProgress();
+  const nextProgress: BucketSchedulerUnstudiedProgress = {
+    introComplete: currentProgress.introComplete,
+    successStreaks: { ...currentProgress.successStreaks },
+  };
+
+  if (rating === 'good') {
+    nextProgress.successStreaks[skillId] += 1;
+  } else {
+    nextProgress.successStreaks[skillId] = 0;
+  }
+
+  const done = nextProgress.successStreaks.recognition >= 3 && nextProgress.successStreaks.production >= 3;
+
+  if (done) {
+    const progress = {
+      ...state.progress,
+      unstudied: removeKey(state.progress.unstudied, wordId),
+    };
+    return {
+      state: refreshBucketSessionScheduler({
+        ...state,
+        answeredCount: state.answeredCount + 1,
+        progress,
+        scheduler: removeBucketSchedulerWord(state.scheduler, 'unstudied', wordId),
+      }),
+      commit: {
+        type: 'commit-unstudied-word-session',
+        wordId,
+      },
+    };
+  }
+
+  const progress = {
+    ...state.progress,
+    unstudied: {
+      ...state.progress.unstudied,
+      [wordId]: nextProgress,
+    },
+  };
+
+  return {
+    state: refreshBucketSessionScheduler({
+      ...state,
+      answeredCount: state.answeredCount + 1,
+      progress,
+    }),
+    commit: { type: 'none' },
+  };
+}
+
+function refreshBucketSessionScheduler(state: BucketSessionState): BucketSessionState {
+  const scheduler = syncBucketScheduler(state.scheduler, state.progress);
+
+  return {
+    ...state,
+    phase: (state.phase === 'active' || state.phase === 'draining') && getBucketSessionTotalCount({ ...state, scheduler }) === 0
+      ? 'completed'
+      : state.phase,
+    scheduler,
+  };
+}
+
+function removeCompletedReviewAction(scheduler: BucketSessionScheduler): BucketSessionScheduler {
+  const active = getBucketSchedulerActiveUnit(scheduler);
+
+  if (active.type !== 'study' || active.bucket !== 'review') {
+    throw new Error('Session invariant violated: cannot remove a completed review action when the active unit is not review.');
+  }
+
+  return {
+    ...scheduler,
+    reviewQueue: scheduler.reviewQueue.slice(1),
+  };
+}
+
+function rotateActiveReviewAction(scheduler: BucketSessionScheduler): BucketSessionScheduler {
+  const active = getBucketSchedulerActiveUnit(scheduler);
+
+  if (active.type !== 'study' || active.bucket !== 'review') {
+    throw new Error('Session invariant violated: cannot rotate a lapsed review action when the active unit is not review.');
+  }
+
+  const [head, ...tail] = scheduler.reviewQueue;
+  if (!head) {
+    throw new Error('Session invariant violated: cannot rotate a lapsed review action when the review queue is empty.');
+  }
+
+  if (head.sessionActionId !== active.item.sessionActionId) {
+    throw new Error(
+      `Session invariant violated: active review action is not the review bucket head (${active.item.sessionActionId} !== ${head.sessionActionId}).`,
+    );
+  }
+
+  if (tail.length === 0) {
+    return scheduler;
+  }
+
+  return {
+    ...scheduler,
+    reviewQueue: [...tail, head],
+  };
+}
+
+export function getBucketSessionTotalCount(state: BucketSessionState) {
+  const counts = getBucketSchedulerBucketCounts(state.scheduler, state.progress);
+  return counts.review + counts.learning + counts.unstudied;
+}
+
+function assertActiveSessionUnitStarted(
+  state: BucketSessionState,
+  active: Extract<ActiveBucketSchedulerUnit, { type: 'study' }>,
+  rating: ReviewRating,
+) {
+  if (state.startedActionIds.includes(active.item.sessionActionId)) {
+    return;
+  }
+
+  const debugInfo = {
+    message: 'Attempted to rate a bucket session unit before it was marked started',
+    rating,
+    currentActionId: active.item.sessionActionId,
+    currentWordId: active.item.targetWordId,
+    startedActionIds: state.startedActionIds,
+    answeredCount: state.answeredCount,
+    phase: state.phase,
+  };
+
+  console.error('[session-state] invariant failed', debugInfo);
+  throw new Error('Session invariant violated: current bucket unit must be marked started before rating.');
+}
+
+function assertBucketDrainablePhase(state: BucketSessionState) {
+  if (state.phase === 'active') {
+    return;
+  }
+
+  throw new Error(`Session invariant violated: cannot begin bucket drain mode from phase "${state.phase}".`);
+}
+
+function onlyReviewStudySkill(skillId: StudySkillId | undefined): ReviewStudySkillId {
+  if (skillId === 'recognition' || skillId === 'production') {
+    return skillId;
+  }
+
+  throw new Error(`Session invariant violated: expected a recognition or production skill, got "${String(skillId)}".`);
+}
+
+function assertUnreachableBucket(bucket: never): never {
+  throw new Error(`Unsupported bucket "${String(bucket)}".`);
+}
+
+function createInitialReviewProgress(): ReviewActionProgress {
   return {
     failureCount: 0,
     reinforcementStreak: 0,
@@ -315,266 +619,8 @@ function createInitialReviewProgress(): ReviewItemProgress {
   };
 }
 
-function buildReviewAttemptEvent({
-  state,
-  item,
-  rating,
-  actionAttemptSequence,
-}: {
-  state: SessionState;
-  item: SessionItemWithWord;
-  rating: ReviewRating;
-  actionAttemptSequence: number;
-}): StudyAttemptEvent {
-  const actionKind = item.reviewItem.direction === 'forward' ? 'recognition' : 'production';
-  const skillId = item.reviewItem.direction === 'forward' ? 'recognition' : 'production';
-
-  return {
-    id: `${state.sessionId}/${item.reviewItem.id}/attempt-${actionAttemptSequence}`,
-    occurredAt: new Date().toISOString(),
-    sessionId: state.sessionId,
-    sessionActionId: `${state.sessionId}/${item.reviewItem.id}`,
-    sessionEventSequence: state.answeredCount + 1,
-    actionAttemptSequence,
-    actionKind,
-    targetWordId: item.word.id,
-    sampledSkillIds: [skillId],
-    response: null,
-    outcome: rating === 'forgot' ? 'incorrect' : 'correct',
-    rating,
-    contentRef: null,
-    metadata: {},
-  };
-}
-
-function handleLearningAttempt(
-  state: SessionState,
-  item: SessionItemWithWord,
-  word: Word,
-  rating: ReviewRating,
-): SessionTransitionResult {
-  const currentProgress = state.learningProgress[word.id] ?? createInitialLearningProgress();
-  const direction = item.reviewItem.direction;
-  const nextProgress: LearningWordProgress = {
-    coveredDirections: { ...currentProgress.coveredDirections },
-    firstTryGood: { ...currentProgress.firstTryGood },
-    attempts: { ...currentProgress.attempts },
-  };
-
-  nextProgress.attempts[direction] += 1;
-
-  if (rating === 'good') {
-    nextProgress.coveredDirections[direction] = true;
-    if (nextProgress.attempts[direction] === 1) {
-      nextProgress.firstTryGood[direction] = true;
-    }
-  }
-
-  const bothCovered = nextProgress.coveredDirections.forward && nextProgress.coveredDirections.reverse;
-
-  if (!bothCovered) {
-    return {
-      state: finalizePostRatingState({
-        ...state,
-        answeredCount: state.answeredCount + 1,
-        scheduler:
-          rating === 'good'
-            ? consumeActiveSchedulerItem(state.scheduler)
-            : rotateActiveSchedulerItem(state.scheduler),
-        learningProgress: {
-          ...state.learningProgress,
-          [word.id]: nextProgress,
-        },
-      }),
-      commit: { type: 'none' },
-    };
-  }
-
-  return {
-    state: finalizePostRatingState({
-      ...state,
-      answeredCount: state.answeredCount + 1,
-      scheduler: consumeActiveSchedulerItem(state.scheduler),
-      learningProgress: removeKey(state.learningProgress, word.id),
-    }),
-    commit: {
-      type: 'commit-learning-word-session',
-      wordId: word.id,
-      success: nextProgress.firstTryGood.forward && nextProgress.firstTryGood.reverse,
-    },
-  };
-}
-
-function handleUnstudiedAttempt(
-  state: SessionState,
-  item: SessionItemWithWord,
-  word: Word,
-  rating: ReviewRating,
-): SessionTransitionResult {
-  const currentProgress = state.unstudiedProgress[word.id] ?? createInitialUnstudiedProgress();
-  const direction = item.reviewItem.direction;
-  const nextProgress: UnstudiedWordProgress = {
-    introComplete: currentProgress.introComplete,
-    consecutiveSuccesses: { ...currentProgress.consecutiveSuccesses },
-  };
-
-  if (rating === 'good') {
-    nextProgress.consecutiveSuccesses[direction] += 1;
-  } else {
-    nextProgress.consecutiveSuccesses[direction] = 0;
-  }
-
-  const done =
-    nextProgress.consecutiveSuccesses.forward >= 3 &&
-    nextProgress.consecutiveSuccesses.reverse >= 3;
-
-  if (!done) {
-    const directionCovered = nextProgress.consecutiveSuccesses[direction] >= 3;
-    const schedulerAfterCoverage = directionCovered
-      ? removeUnstudiedCandidateByReviewItemId(state.scheduler, item.reviewItem.id)
-      : state.scheduler;
-
-    return {
-      state: finalizePostRatingState({
-        ...state,
-        answeredCount: state.answeredCount + 1,
-        scheduler: nextScheduler(schedulerAfterCoverage),
-        unstudiedProgress: {
-          ...state.unstudiedProgress,
-          [word.id]: nextProgress,
-        },
-      }),
-      commit: { type: 'none' },
-    };
-  }
-
-  return {
-      state: finalizePostRatingState({
-        ...state,
-        answeredCount: state.answeredCount + 1,
-        scheduler: removeSchedulerWord(state.scheduler, word.id, word.status).scheduler,
-        unstudiedProgress: removeKey(state.unstudiedProgress, word.id),
-      }),
-    commit: {
-      type: 'commit-unstudied-word-session',
-      wordId: word.id,
-    },
-  };
-}
-
-export function createInitialLearningProgress(): LearningWordProgress {
-  return {
-    coveredDirections: {
-      forward: false,
-      reverse: false,
-    },
-    firstTryGood: {
-      forward: false,
-      reverse: false,
-    },
-    attempts: {
-      forward: 0,
-      reverse: 0,
-    },
-  };
-}
-
-export function createInitialUnstudiedProgress(): UnstudiedWordProgress {
-  return {
-    introComplete: false,
-    consecutiveSuccesses: {
-      forward: 0,
-      reverse: 0,
-    },
-  };
-}
-
 function removeKey<T>(record: Record<string, T>, key: string) {
   const copy = { ...record };
   delete copy[key];
   return copy;
-}
-
-function finalizePostRatingState(state: SessionState): SessionState {
-  if ((state.phase === 'active' || state.phase === 'draining') && getSchedulerLength(state.scheduler) === 0) {
-    return {
-      ...state,
-      phase: 'completed',
-    };
-  }
-
-  return state;
-}
-
-function assertCurrentItemStarted(state: SessionState, currentItem: SessionItemWithWord, rating: ReviewRating) {
-  if (state.startedItemIds.includes(currentItem.reviewItem.id)) {
-    return;
-  }
-
-  const debugInfo = {
-    message: 'Attempted to rate a session item before it was marked started',
-    rating,
-    currentItemId: currentItem.reviewItem.id,
-    currentWordId: currentItem.word.id,
-    queueIds: getSchedulerItems(state.scheduler).map((item) => item.reviewItem.id),
-    startedItemIds: state.startedItemIds,
-    answeredCount: state.answeredCount,
-    phase: state.phase,
-  };
-
-  console.error('[session-state] invariant failed', debugInfo);
-  throw new Error('Session invariant violated: current item must be marked started before rating.');
-}
-
-function assertCurrentItemPresent(state: SessionState, rating: ReviewRating): never {
-  const debugInfo = {
-    message: 'Attempted to rate a session item when the active queue was empty',
-    rating,
-    queueIds: getSchedulerItems(state.scheduler).map((item) => item.reviewItem.id),
-    startedItemIds: state.startedItemIds,
-    answeredCount: state.answeredCount,
-    phase: state.phase,
-  };
-
-  console.error('[session-state] invariant failed', debugInfo);
-  throw new Error('Session invariant violated: cannot rate the current item when the queue is empty.');
-}
-
-function assertDrainablePhase(state: SessionState) {
-  if (state.phase === 'active') {
-    return;
-  }
-
-  const debugInfo = {
-    message: 'Attempted to begin drain mode from a non-active session phase',
-    phase: state.phase,
-    queueIds: getSchedulerItems(state.scheduler).map((item) => item.reviewItem.id),
-    startedItemIds: state.startedItemIds,
-    answeredCount: state.answeredCount,
-  };
-
-  console.error('[session-state] invariant failed', debugInfo);
-  throw new Error(`Session invariant violated: cannot begin drain mode from phase "${state.phase}".`);
-}
-
-function assertUnreachableWordStatus(
-  state: SessionState,
-  currentItem: ReviewItem,
-  currentWord: Word,
-  rating: ReviewRating,
-): never {
-  const debugInfo = {
-    message: 'Attempted to rate a session item whose word had an unsupported status',
-    rating,
-    currentItemId: currentItem.id,
-    currentWordId: currentItem.wordId,
-    currentWordStatus: currentWord.status,
-    queueIds: getSchedulerItems(state.scheduler).map((item) => item.reviewItem.id),
-    startedItemIds: state.startedItemIds,
-    answeredCount: state.answeredCount,
-    phase: state.phase,
-  };
-
-  console.error('[session-state] invariant failed', debugInfo);
-  throw new Error(`Session invariant violated: unsupported current word status "${currentWord.status}".`);
 }

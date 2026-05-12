@@ -1,4 +1,5 @@
-import type { ReviewItem, SessionItemWithWord, Word, WordMeaning } from '../../types';
+import type { SessionStudyItem } from '../../domain/study-actions';
+import type { Word, WordMeaning } from '../../types';
 
 export function getActiveWordPersonalNotes({
   word,
@@ -78,45 +79,45 @@ export function getActiveMeaningSelection({
 }
 
 export function getActivePrompt({
-  reviewItem,
+  item,
   word,
   promptDisplayedMeanings,
   allMeanings,
 }: {
-  reviewItem: ReviewItem | null;
+  item: SessionStudyItem | null;
   word: Word | null;
   promptDisplayedMeanings: string[];
   allMeanings: string[];
 }) {
-  if (!reviewItem || !word) {
+  if (!item || !word) {
     return null;
   }
 
-  return reviewItem.direction === 'forward'
+  return item.actionKind === 'recognition'
     ? word.hanzi
     : promptDisplayedMeanings[0] ?? allMeanings[0] ?? word.meaning;
 }
 
 export function getActiveAnswerText({
-  reviewItem,
+  item,
   word,
   allMeanings,
 }: {
-  reviewItem: ReviewItem | null;
+  item: SessionStudyItem | null;
   word: Word | null;
   allMeanings: string[];
 }) {
-  if (!reviewItem || !word) {
+  if (!item || !word) {
     return null;
   }
 
-  return reviewItem.direction === 'forward'
+  return item.actionKind === 'recognition'
     ? allMeanings[0] ?? word.meaning
     : word.hanzi;
 }
 
-export function getActiveAnswerPinyin(item: SessionItemWithWord | null) {
-  return item ? item.word.pinyin : null;
+export function getActiveAnswerPinyin(word: Word | null) {
+  return word ? word.pinyin : null;
 }
 
 export function isReviewInReinforcement({
@@ -143,6 +144,6 @@ export function getActiveReviewState({
     : 'Initial recall';
 }
 
-export function isProductionReviewItem(reviewItem: ReviewItem | null) {
-  return reviewItem?.direction === 'reverse';
+export function isProductionSessionItem(item: SessionStudyItem | null) {
+  return item?.actionKind === 'production';
 }

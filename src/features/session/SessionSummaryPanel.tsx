@@ -15,12 +15,12 @@ export function SessionSummaryPanel({ summary }: { summary: SessionSummary }) {
           : 'You naturally exhausted the session queue.'}
       </p>
       <div className="summary-topline">
-        <span className="badge">Unique review items encountered {summary.encounteredReviewItemIds.length}</span>
-        <span className="badge">Lapses {summary.lapsedReviewItems}</span>
+        <span className="badge">Review actions completed {summary.completedReviewActions}</span>
+        <span className="badge">Lapses {summary.lapsedReviewActions}</span>
       </div>
       {summary.lapsedReviewLabels.length > 0 ? (
         <div className="summary-lapses">
-          <p className="notes">Lapsed review items</p>
+          <p className="notes">Lapsed review actions</p>
           <ul className="word-list">
             {summary.lapsedReviewLabels.map((label, index) => (
               <li key={`${label}-${index}`} className="word-item">
@@ -46,8 +46,8 @@ export function SessionSummaryPanel({ summary }: { summary: SessionSummary }) {
           <strong className="stat-value">{summary.initialQueueLength}</strong>
         </div>
         <div className="stat-card">
-          <span className="stat-label">Review items completed</span>
-          <strong className="stat-value">{summary.completedReviewItems}</strong>
+          <span className="stat-label">Review actions completed</span>
+          <strong className="stat-value">{summary.completedReviewActions}</strong>
         </div>
         <div className="stat-card">
           <span className="stat-label">Learning words covered</span>

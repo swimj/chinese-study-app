@@ -47,7 +47,6 @@ describe('word meanings', { concurrency: false }, () => {
     sqlite.exec(`
       DELETE FROM daily_new_word_intake;
       DELETE FROM user_word_priority;
-      DELETE FROM review_items;
       DELETE FROM words;
     `);
   });
@@ -120,15 +119,6 @@ describe('word meanings', { concurrency: false }, () => {
         learning_streak INTEGER NOT NULL DEFAULT 0,
         last_learning_success_on TEXT,
         last_learning_covered_on TEXT
-      );
-      CREATE TABLE review_items (
-        id TEXT PRIMARY KEY,
-        word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
-        direction TEXT NOT NULL,
-        interval_hours INTEGER NOT NULL,
-        last_reviewed_at TEXT,
-        next_due_at TEXT,
-        ease_factor REAL NOT NULL
       );
     `);
     legacyDb.prepare(`

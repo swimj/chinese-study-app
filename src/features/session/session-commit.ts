@@ -1,21 +1,24 @@
-import type { SessionCommitIntent } from '../../lib/session-state';
+import type { BucketSessionCommitIntent } from '../../lib/session-state';
 import {
   completeLearningSession,
   completeUnstudiedSession,
   recordAcceptedReviewAttemptBatch,
 } from '../../services/api';
 
-export type DeferredSessionCommit = Exclude<SessionCommitIntent, { type: 'none' }>;
+export type DeferredSessionCommit = Exclude<BucketSessionCommitIntent, { type: 'none' }>;
 
 export async function applySessionCommit(commit: DeferredSessionCommit) {
   switch (commit.type) {
-    case 'commit-review-item-session': {
+    case 'commit-review-action-session': {
       await recordAcceptedReviewAttemptBatch({
         sessionId: commit.sessionId,
         events: commit.events,
         commitIntent: {
           type: commit.type,
-          reviewItemId: commit.reviewItemId,
+          sessionActionId: commit.sessionActionId,
+          targetWordId: commit.targetWordId,
+          actionKind: commit.actionKind,
+          sampledSkillIds: commit.sampledSkillIds,
           failureCount: commit.failureCount,
           terminalRating: commit.terminalRating,
         },

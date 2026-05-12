@@ -24,7 +24,7 @@ type WordRecord = {
   lastLearningCoveredOn?: string | null;
 };
 
-type ReviewItemRecord = {
+type ReviewSkillStateRecord = {
   id: string;
   wordId: string;
   direction: Direction;
@@ -80,7 +80,8 @@ describe('session composition', { concurrency: false }, () => {
       DELETE FROM study_attempt_events;
       DELETE FROM study_sessions;
       DELETE FROM daily_new_word_intake;
-      DELETE FROM review_items;
+      DELETE FROM word_skill_state;
+      DELETE FROM word_study_admission_state;
       DELETE FROM words;
     `);
   });
@@ -102,7 +103,7 @@ describe('session composition', { concurrency: false }, () => {
       createdAt: isoHoursAgo(48),
     });
 
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'review-word-forward',
       wordId: 'review-word',
       direction: 'forward',
@@ -110,7 +111,7 @@ describe('session composition', { concurrency: false }, () => {
       // Make only one direction due so the session includes just that review obligation.
       nextDueAt: isoHoursAgo(2),
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'review-word-reverse',
       wordId: 'review-word',
       direction: 'reverse',
@@ -120,10 +121,10 @@ describe('session composition', { concurrency: false }, () => {
     });
 
     const sessionIds = getSessionItemIds(dbModule);
-    assert.deepEqual(sessionIds, ['review-word-forward']);
+    assert.deepEqual(sessionIds, ['review/review-word/recognition']);
   });
 
-  test('admits review words from word skill urgency instead of legacy review item due dates', () => {
+  test('admits review words from word skill urgency', () => {
     insertWord({
       id: 'skill-urgent-word',
       hanzi: '急',
@@ -135,7 +136,7 @@ describe('session composition', { concurrency: false }, () => {
       createdAt: isoHoursAgo(96),
     });
 
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'skill-urgent-word-forward',
       wordId: 'skill-urgent-word',
       direction: 'forward',
@@ -152,10 +153,49 @@ describe('session composition', { concurrency: false }, () => {
       nextDueAt: isoHoursFromNow(24),
     });
 
-    assert.deepEqual(getSessionItemIds(dbModule), ['skill-urgent-word-forward']);
+    assert.deepEqual(getSessionItemIds(dbModule), ['review/skill-urgent-word/recognition']);
   });
 
-  test('suppresses legacy-due review items when word skill urgency is below threshold', () => {
+  test('composes review actions without a backing review action row', () => {
+    insertWord({
+      id: 'skill-only-review-word',
+      hanzi: '技',
+      pinyin: 'ji',
+      meaning: 'skill',
+      examples: ['技能很重要。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(96),
+    });
+    insertWordStudyAdmissionState('skill-only-review-word', null);
+    insertWordSkillState({
+      wordId: 'skill-only-review-word',
+      skillId: 'production',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(48),
+      nextDueAt: isoHoursAgo(24),
+    });
+
+    const payload = dbModule.getSessionPayload(studyDayKey);
+
+    assert.deepEqual(payload.buckets.review.map((item) => ({
+      sessionActionId: item.sessionActionId,
+      actionKind: item.actionKind,
+      targetWordId: item.targetWordId,
+      sampledSkillIds: item.sampledSkillIds,
+      wordId: item.word.id,
+    })), [
+      {
+        sessionActionId: 'review/skill-only-review-word/production',
+        actionKind: 'production',
+        targetWordId: 'skill-only-review-word',
+        sampledSkillIds: ['production'],
+        wordId: 'skill-only-review-word',
+      },
+    ]);
+  });
+
+  test('suppresses review skills when urgency is below threshold', () => {
     insertWord({
       id: 'skill-not-urgent-word',
       hanzi: '缓',
@@ -167,7 +207,7 @@ describe('session composition', { concurrency: false }, () => {
       createdAt: isoHoursAgo(96),
     });
 
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'skill-not-urgent-word-forward',
       wordId: 'skill-not-urgent-word',
       direction: 'forward',
@@ -199,7 +239,7 @@ describe('session composition', { concurrency: false }, () => {
       createdAt: isoHoursAgo(120),
     });
 
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'both-skills-overdue-word-forward',
       wordId: 'both-skills-overdue-word',
       direction: 'forward',
@@ -207,7 +247,7 @@ describe('session composition', { concurrency: false }, () => {
       lastReviewedAt: isoHoursAgo(72),
       nextDueAt: isoHoursAgo(48),
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'both-skills-overdue-word-reverse',
       wordId: 'both-skills-overdue-word',
       direction: 'reverse',
@@ -231,7 +271,7 @@ describe('session composition', { concurrency: false }, () => {
       nextDueAt: isoHoursAgo(12),
     });
 
-    assert.deepEqual(getSessionItemIds(dbModule), ['both-skills-overdue-word-forward']);
+    assert.deepEqual(getSessionItemIds(dbModule), ['review/both-skills-overdue-word/recognition']);
   });
 
   test('uses next due time as a deterministic tie-breaker when both overdue skills have equal urgency', () => {
@@ -246,7 +286,7 @@ describe('session composition', { concurrency: false }, () => {
       createdAt: isoHoursAgo(120),
     });
 
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'equal-urgency-word-forward',
       wordId: 'equal-urgency-word',
       direction: 'forward',
@@ -254,7 +294,7 @@ describe('session composition', { concurrency: false }, () => {
       lastReviewedAt: isoHoursAgo(48),
       nextDueAt: isoHoursAgo(6),
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'equal-urgency-word-reverse',
       wordId: 'equal-urgency-word',
       direction: 'reverse',
@@ -278,7 +318,7 @@ describe('session composition', { concurrency: false }, () => {
       nextDueAt: isoHoursAgo(12),
     });
 
-    assert.deepEqual(getSessionItemIds(dbModule), ['equal-urgency-word-reverse']);
+    assert.deepEqual(getSessionItemIds(dbModule), ['review/equal-urgency-word/production']);
   });
 
   test('recency guard suppresses the remaining overdue skill after a word-level review admission is completed', () => {
@@ -293,7 +333,7 @@ describe('session composition', { concurrency: false }, () => {
       createdAt: isoHoursAgo(120),
     });
 
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'guarded-after-completion-word-forward',
       wordId: 'guarded-after-completion-word',
       direction: 'forward',
@@ -301,7 +341,7 @@ describe('session composition', { concurrency: false }, () => {
       lastReviewedAt: isoHoursAgo(72),
       nextDueAt: isoHoursAgo(48),
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'guarded-after-completion-word-reverse',
       wordId: 'guarded-after-completion-word',
       direction: 'reverse',
@@ -325,7 +365,7 @@ describe('session composition', { concurrency: false }, () => {
       nextDueAt: isoHoursAgo(12),
     });
 
-    assert.deepEqual(getSessionItemIds(dbModule), ['guarded-after-completion-word-forward']);
+    assert.deepEqual(getSessionItemIds(dbModule), ['review/guarded-after-completion-word/recognition']);
 
     dbModule.recordAcceptedReviewAttemptBatch({
       sessionId: 'guarded-after-completion-word-session',
@@ -334,7 +374,7 @@ describe('session composition', { concurrency: false }, () => {
           id: 'guarded-after-completion-word-attempt-1',
           occurredAt: '2026-05-10T00:00:00.000Z',
           sessionId: 'guarded-after-completion-word-session',
-          sessionActionId: 'guarded-after-completion-word-session/action-1',
+          sessionActionId: 'review/guarded-after-completion-word/recognition',
           sessionEventSequence: 1,
           actionAttemptSequence: 1,
           actionKind: 'recognition',
@@ -348,8 +388,11 @@ describe('session composition', { concurrency: false }, () => {
         },
       ],
       commitIntent: {
-        type: 'commit-review-item-session',
-        reviewItemId: 'guarded-after-completion-word-forward',
+        type: 'commit-review-action-session',
+        sessionActionId: 'review/guarded-after-completion-word/recognition',
+        targetWordId: 'guarded-after-completion-word',
+        actionKind: 'recognition',
+        sampledSkillIds: ['recognition'],
         failureCount: 0,
         terminalRating: 'good',
       },
@@ -360,7 +403,7 @@ describe('session composition', { concurrency: false }, () => {
     assert.deepEqual(getSessionItemIds(dbModule), []);
   });
 
-  test('orders admitted review words by selected skill urgency before legacy direction ordering', () => {
+  test('orders admitted review words by selected skill urgency before skill id ordering', () => {
     insertWord({
       id: 'less-urgent-production-word',
       hanzi: '低',
@@ -382,7 +425,7 @@ describe('session composition', { concurrency: false }, () => {
       createdAt: isoHoursAgo(120),
     });
 
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'less-urgent-production-word-reverse',
       wordId: 'less-urgent-production-word',
       direction: 'reverse',
@@ -390,7 +433,7 @@ describe('session composition', { concurrency: false }, () => {
       lastReviewedAt: isoHoursAgo(36),
       nextDueAt: isoHoursAgo(12),
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'more-urgent-recognition-word-forward',
       wordId: 'more-urgent-recognition-word',
       direction: 'forward',
@@ -416,101 +459,9 @@ describe('session composition', { concurrency: false }, () => {
     });
 
     assert.deepEqual(getSessionItemIds(dbModule), [
-      'more-urgent-recognition-word-forward',
-      'less-urgent-production-word-reverse',
+      'review/more-urgent-recognition-word/recognition',
+      'review/less-urgent-production-word/production',
     ]);
-  });
-
-  test('home overview reports due review, uncovered learning, and limited new-word intake counts', () => {
-    const { dailyNewWordLimit } = dbModule.getLearningPolicy(studyDayKey);
-
-    insertWord({
-      id: 'overview-review-word',
-      hanzi: '听',
-      pinyin: 'ting',
-      meaning: 'listen',
-      examples: ['我听音乐。'],
-      status: 'review',
-      priority: 100,
-      createdAt: isoHoursAgo(48),
-    });
-    insertReviewItem({
-      id: 'overview-review-word-forward',
-      wordId: 'overview-review-word',
-      direction: 'forward',
-      intervalHours: 24,
-      nextDueAt: isoHoursAgo(2),
-    });
-    insertReviewItem({
-      id: 'overview-review-word-reverse',
-      wordId: 'overview-review-word',
-      direction: 'reverse',
-      intervalHours: 24,
-      nextDueAt: isoHoursFromNow(4),
-    });
-
-    insertWord({
-      id: 'overview-learning-open',
-      hanzi: '写',
-      pinyin: 'xie',
-      meaning: 'write',
-      examples: ['我写汉字。'],
-      status: 'learning',
-      priority: 90,
-      createdAt: isoHoursAgo(24),
-      lastLearningCoveredOn: yesterday,
-    });
-    insertReviewItem({
-      id: 'overview-learning-open-forward',
-      wordId: 'overview-learning-open',
-      direction: 'forward',
-      intervalHours: 6,
-      nextDueAt: null,
-    });
-    insertReviewItem({
-      id: 'overview-learning-open-reverse',
-      wordId: 'overview-learning-open',
-      direction: 'reverse',
-      intervalHours: 6,
-      nextDueAt: null,
-    });
-
-    insertWord({
-      id: 'overview-learning-covered',
-      hanzi: '读',
-      pinyin: 'du',
-      meaning: 'read',
-      examples: ['我读书。'],
-      status: 'learning',
-      priority: 80,
-      createdAt: isoHoursAgo(24),
-      lastLearningCoveredOn: today,
-    });
-    insertReviewItem({
-      id: 'overview-learning-covered-forward',
-      wordId: 'overview-learning-covered',
-      direction: 'forward',
-      intervalHours: 6,
-      nextDueAt: null,
-    });
-    insertReviewItem({
-      id: 'overview-learning-covered-reverse',
-      wordId: 'overview-learning-covered',
-      direction: 'reverse',
-      intervalHours: 6,
-      nextDueAt: null,
-    });
-
-    insertUnstudiedWordPair('overview-new-a', 70, '2026-01-01T00:00:00.000Z');
-    insertUnstudiedWordPair('overview-new-b', 60, '2026-01-02T00:00:00.000Z');
-    insertUnstudiedWordPair('overview-new-c', 50, '2026-01-03T00:00:00.000Z');
-
-    assert.deepEqual(dbModule.getHomeOverview(studyDayKey), {
-      dueReviewItemCount: 1,
-      pendingLearningWordCount: 1,
-      newWordIntroCount: Math.min(3, dailyNewWordLimit),
-      hasSessionWork: true,
-    });
   });
 
   test('orders due review words by selected skill urgency', () => {
@@ -535,28 +486,28 @@ describe('session composition', { concurrency: false }, () => {
       createdAt: isoHoursAgo(48),
     });
 
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'review-word-a-forward',
       wordId: 'review-word-a',
       direction: 'forward',
       intervalHours: 24,
       nextDueAt: isoHoursAgo(3),
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'review-word-a-reverse',
       wordId: 'review-word-a',
       direction: 'reverse',
       intervalHours: 24,
       nextDueAt: isoHoursAgo(1),
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'review-word-b-forward',
       wordId: 'review-word-b',
       direction: 'forward',
       intervalHours: 24,
       nextDueAt: isoHoursAgo(4),
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'review-word-b-reverse',
       wordId: 'review-word-b',
       direction: 'reverse',
@@ -566,8 +517,8 @@ describe('session composition', { concurrency: false }, () => {
 
     const sessionIds = getSessionItemIds(dbModule);
     assert.deepEqual(sessionIds, [
-      'review-word-b-forward',
-      'review-word-a-forward',
+      'review/review-word-b/recognition',
+      'review/review-word-a/recognition',
     ]);
   });
 
@@ -584,7 +535,7 @@ describe('session composition', { concurrency: false }, () => {
       lastLearningCoveredOn: null,
     });
 
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'learning-word-forward',
       wordId: 'learning-word',
       direction: 'forward',
@@ -592,7 +543,7 @@ describe('session composition', { concurrency: false }, () => {
       // Learning inclusion should ignore review scheduling metadata entirely.
       nextDueAt: isoHoursFromNow(48),
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'learning-word-reverse',
       wordId: 'learning-word',
       direction: 'reverse',
@@ -601,7 +552,7 @@ describe('session composition', { concurrency: false }, () => {
     });
 
     const sessionIds = getSessionItemIds(dbModule);
-    assert.deepEqual(sessionIds, ['learning-word-reverse', 'learning-word-forward']);
+    assert.deepEqual(sessionIds, ['learning/learning-word']);
   });
 
   test('excludes learning words already covered on the current UTC day', () => {
@@ -617,14 +568,14 @@ describe('session composition', { concurrency: false }, () => {
       lastLearningCoveredOn: today,
     });
 
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'covered-learning-word-forward',
       wordId: 'covered-learning-word',
       direction: 'forward',
       intervalHours: 6,
       nextDueAt: isoHoursAgo(1),
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'covered-learning-word-reverse',
       wordId: 'covered-learning-word',
       direction: 'reverse',
@@ -660,14 +611,14 @@ describe('session composition', { concurrency: false }, () => {
     }
 
     for (const { id: wordId } of words) {
-      insertReviewItem({
+      insertReviewSkillState({
         id: `${wordId}-forward`,
         wordId,
         direction: 'forward',
         intervalHours: 6,
         nextDueAt: null,
       });
-      insertReviewItem({
+      insertReviewSkillState({
         id: `${wordId}-reverse`,
         wordId,
         direction: 'reverse',
@@ -677,16 +628,13 @@ describe('session composition', { concurrency: false }, () => {
     }
 
     const sessionIds = getSessionItemIds(dbModule);
-    assert.equal(sessionIds.length, dailyNewWordLimit * 2);
+    assert.equal(sessionIds.length, dailyNewWordLimit);
 
     const sessionIdSet = new Set(sessionIds);
-    assert.equal(sessionIdSet.has('unstudied-1-forward'), true);
-    assert.equal(sessionIdSet.has('unstudied-1-reverse'), true);
-    assert.equal(sessionIdSet.has('unstudied-2-forward'), true);
-    assert.equal(sessionIdSet.has('unstudied-2-reverse'), true);
+    assert.equal(sessionIdSet.has('unstudied/unstudied-1'), true);
+    assert.equal(sessionIdSet.has('unstudied/unstudied-2'), true);
 
-    assert.equal(sessionIds.includes(`unstudied-${totalUnstudiedWords}-forward`), false);
-    assert.equal(sessionIds.includes(`unstudied-${totalUnstudiedWords}-reverse`), false);
+    assert.equal(sessionIds.includes(`unstudied/unstudied-${totalUnstudiedWords}`), false);
   });
 
   test('includes required unstudied words beyond the normal daily cap', () => {
@@ -702,10 +650,9 @@ describe('session composition', { concurrency: false }, () => {
     dbModule.updateWordUserPriority(requiredOverflowId, { requiredForNextSession: true });
 
     const sessionIds = getSessionItemIds(dbModule);
-    assert.equal(sessionIds.length, (dailyNewWordLimit + 1) * 2);
+    assert.equal(sessionIds.length, dailyNewWordLimit + 1);
     const sessionIdSet = new Set(sessionIds);
-    assert.equal(sessionIdSet.has(`${requiredOverflowId}-forward`), true);
-    assert.equal(sessionIdSet.has(`${requiredOverflowId}-reverse`), true);
+    assert.equal(sessionIdSet.has(`unstudied/${requiredOverflowId}`), true);
   });
 
   test('does not duplicate required words that are already inside the normal cap', () => {
@@ -719,9 +666,9 @@ describe('session composition', { concurrency: false }, () => {
     dbModule.updateWordUserPriority('required-no-dupe-1', { requiredForNextSession: true });
 
     const sessionIds = getSessionItemIds(dbModule);
-    assert.equal(sessionIds.length, dailyNewWordLimit * 2);
-    assert.equal(sessionIds.filter((id) => id.startsWith('required-no-dupe-1-')).length, 2);
-    assert.equal(sessionIds.includes('required-no-dupe-11-forward'), false);
+    assert.equal(sessionIds.length, dailyNewWordLimit);
+    assert.equal(sessionIds.filter((id) => id === 'unstudied/required-no-dupe-1').length, 1);
+    assert.equal(sessionIds.includes('unstudied/required-no-dupe-11'), false);
   });
 
   test('does not admit dismissed required words as overflow', () => {
@@ -737,9 +684,8 @@ describe('session composition', { concurrency: false }, () => {
     dbModule.dismissWordFromStudy(dismissedRequiredId);
 
     const sessionIds = getSessionItemIds(dbModule);
-    assert.equal(sessionIds.length, dailyNewWordLimit * 2);
-    assert.equal(sessionIds.includes(`${dismissedRequiredId}-forward`), false);
-    assert.equal(sessionIds.includes(`${dismissedRequiredId}-reverse`), false);
+    assert.equal(sessionIds.length, dailyNewWordLimit);
+    assert.equal(sessionIds.includes(`unstudied/${dismissedRequiredId}`), false);
   });
 
   test('unstudied completion clears required state', () => {
@@ -773,14 +719,14 @@ describe('session composition', { concurrency: false }, () => {
 
     for (const word of words) {
       insertWord(word);
-      insertReviewItem({
+      insertReviewSkillState({
         id: `${word.id}-forward`,
         wordId: word.id,
         direction: 'forward',
         intervalHours: 6,
         nextDueAt: null,
       });
-      insertReviewItem({
+      insertReviewSkillState({
         id: `${word.id}-reverse`,
         wordId: word.id,
         direction: 'reverse',
@@ -790,16 +736,14 @@ describe('session composition', { concurrency: false }, () => {
     }
 
     const beforeCompletionIds = getSessionItemIds(dbModule);
-    assert.equal(beforeCompletionIds.length, dailyNewWordLimit * 2);
+    assert.equal(beforeCompletionIds.length, dailyNewWordLimit);
 
     dbModule.completeUnstudiedWordSession(words[0].id, studyDayKey);
 
     const afterCompletionIds = getSessionItemIds(dbModule);
-    assert.equal(afterCompletionIds.length, (dailyNewWordLimit - 1) * 2);
-    assert.equal(afterCompletionIds.includes(`${words[0].id}-forward`), false);
-    assert.equal(afterCompletionIds.includes(`${words[0].id}-reverse`), false);
-    assert.equal(afterCompletionIds.includes(`${words[dailyNewWordLimit].id}-forward`), false);
-    assert.equal(afterCompletionIds.includes(`${words[dailyNewWordLimit].id}-reverse`), false);
+    assert.equal(afterCompletionIds.length, dailyNewWordLimit - 1);
+    assert.equal(afterCompletionIds.includes(`unstudied/${words[0].id}`), false);
+    assert.equal(afterCompletionIds.includes(`unstudied/${words[dailyNewWordLimit].id}`), false);
   });
 
   test('session payload bundles only the words referenced by current session items', () => {
@@ -813,14 +757,14 @@ describe('session composition', { concurrency: false }, () => {
       priority: 100,
       createdAt: isoHoursAgo(48),
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'payload-review-word-forward',
       wordId: 'payload-review-word',
       direction: 'forward',
       intervalHours: 24,
       nextDueAt: isoHoursAgo(3),
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'payload-review-word-reverse',
       wordId: 'payload-review-word',
       direction: 'reverse',
@@ -839,14 +783,14 @@ describe('session composition', { concurrency: false }, () => {
       createdAt: isoHoursAgo(24),
       lastLearningCoveredOn: yesterday,
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'payload-learning-word-forward',
       wordId: 'payload-learning-word',
       direction: 'forward',
       intervalHours: 6,
       nextDueAt: null,
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'payload-learning-word-reverse',
       wordId: 'payload-learning-word',
       direction: 'reverse',
@@ -865,14 +809,14 @@ describe('session composition', { concurrency: false }, () => {
       createdAt: isoHoursAgo(24),
       lastLearningCoveredOn: today,
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'payload-excluded-word-forward',
       wordId: 'payload-excluded-word',
       direction: 'forward',
       intervalHours: 6,
       nextDueAt: null,
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'payload-excluded-word-reverse',
       wordId: 'payload-excluded-word',
       direction: 'reverse',
@@ -882,27 +826,14 @@ describe('session composition', { concurrency: false }, () => {
 
     const payload = dbModule.getSessionPayload(studyDayKey);
 
-    const payloadItems = [
-      ...payload.buckets.review,
-      ...payload.buckets.learning,
-      ...payload.buckets.unstudied,
-    ];
-
-    assert.deepEqual(payloadItems.map((item) => item.reviewItem.id), [
-      'payload-review-word-forward',
-      'payload-learning-word-reverse',
-      'payload-learning-word-forward',
+    assert.deepEqual(payload.buckets.review.map((item) => item.sessionActionId), [
+      'review/payload-review-word/recognition',
     ]);
-    assert.deepEqual(
-      [...new Set(payloadItems.map((item) => item.word.id))],
-      [
-      'payload-review-word',
-      'payload-learning-word',
-      ],
-    );
+    assert.deepEqual(payload.buckets.learning.map((word) => word.id), ['payload-learning-word']);
+    assert.deepEqual(payload.buckets.unstudied.map((word) => word.id), []);
   });
 
-  test('merges session categories as review items first, then learning words, then unstudied intake', () => {
+  test('merges session categories as review actions first, then learning words, then unstudied intake', () => {
     insertWord({
       id: 'review-word',
       hanzi: '说',
@@ -935,35 +866,35 @@ describe('session composition', { concurrency: false }, () => {
       createdAt: isoHoursAgo(24),
     });
 
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'review-word-forward',
       wordId: 'review-word',
       direction: 'forward',
       intervalHours: 24,
       nextDueAt: isoHoursAgo(2),
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'learning-word-forward',
       wordId: 'learning-word',
       direction: 'forward',
       intervalHours: 6,
       nextDueAt: isoHoursFromNow(12),
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'learning-word-reverse',
       wordId: 'learning-word',
       direction: 'reverse',
       intervalHours: 6,
       nextDueAt: isoHoursAgo(12),
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'unstudied-word-forward',
       wordId: 'unstudied-word',
       direction: 'forward',
       intervalHours: 6,
       nextDueAt: null,
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'unstudied-word-reverse',
       wordId: 'unstudied-word',
       direction: 'reverse',
@@ -973,14 +904,10 @@ describe('session composition', { concurrency: false }, () => {
 
     const sessionIds = getSessionItemIds(dbModule);
     assert.deepEqual(sessionIds.slice(0, 3), [
-       'review-word-forward',
-       'learning-word-reverse',
-       'learning-word-forward',
+       'review/review-word/recognition',
+       'learning/learning-word',
+       'unstudied/unstudied-word',
     ]);
-    assert.deepEqual(new Set(sessionIds.slice(3)), new Set([
-      'unstudied-word-forward',
-      'unstudied-word-reverse',
-    ]));
   });
 
   test('an unstudied word becomes a same-day non-obligation and a next-day learning obligation after completion', () => {
@@ -994,14 +921,14 @@ describe('session composition', { concurrency: false }, () => {
       priority: 70,
       createdAt: isoHoursAgo(12),
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'new-word-forward',
       wordId: 'new-word',
       direction: 'forward',
       intervalHours: 6,
       nextDueAt: null,
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'new-word-reverse',
       wordId: 'new-word',
       direction: 'reverse',
@@ -1010,8 +937,7 @@ describe('session composition', { concurrency: false }, () => {
     });
 
     assert.deepEqual(new Set(getSessionItemIds(dbModule)), new Set([
-      'new-word-forward',
-      'new-word-reverse',
+      'unstudied/new-word',
     ]));
 
     const updatedWord = dbModule.completeUnstudiedWordSession('new-word', studyDayKey);
@@ -1028,8 +954,7 @@ describe('session composition', { concurrency: false }, () => {
     `).run(yesterday);
 
     assert.deepEqual(new Set(getSessionItemIds(dbModule)), new Set([
-      'new-word-reverse',
-      'new-word-forward',
+      'learning/new-word',
     ]));
   });
 
@@ -1044,7 +969,7 @@ describe('session composition', { concurrency: false }, () => {
       priority: 100,
       createdAt: isoHoursAgo(96),
     });
-    insertReviewItem({
+    insertReviewSkillState({
       id: 'unprojected-event-word-forward',
       wordId: 'unprojected-event-word',
       direction: 'forward',
@@ -1099,27 +1024,8 @@ function insertWord(record: WordRecord) {
   );
 }
 
-function insertReviewItem(record: ReviewItemRecord) {
+function insertReviewSkillState(record: ReviewSkillStateRecord) {
   const lastReviewedAt = record.lastReviewedAt ?? inferLastReviewedAt(record.nextDueAt ?? null, record.intervalHours);
-  sqlite.prepare(`
-    INSERT INTO review_items (
-      id,
-      word_id,
-      direction,
-      interval_hours,
-      last_reviewed_at,
-      next_due_at,
-      ease_factor
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    record.id,
-    record.wordId,
-    record.direction,
-    record.intervalHours,
-    lastReviewedAt,
-    record.nextDueAt ?? null,
-    record.easeFactor ?? 2.5,
-  );
 
   const word = sqlite.prepare(`
     SELECT status
@@ -1268,14 +1174,14 @@ function insertUnstudiedWordPair(id: string, priority: number, createdAt: string
     createdAt,
   });
 
-  insertReviewItem({
+  insertReviewSkillState({
     id: `${id}-forward`,
     wordId: id,
     direction: 'forward',
     intervalHours: 6,
     nextDueAt: null,
   });
-  insertReviewItem({
+  insertReviewSkillState({
     id: `${id}-reverse`,
     wordId: id,
     direction: 'reverse',
@@ -1307,8 +1213,8 @@ function addDays(dateKey: string, days: number) {
 function getSessionItemIds(db: DbModule): string[] {
   const payload = db.getSessionPayload(studyDayKey);
   return [
-    ...payload.buckets.review,
-    ...payload.buckets.learning,
-    ...payload.buckets.unstudied,
-  ].map((item) => item.reviewItem.id);
+    ...payload.buckets.review.map((item) => item.sessionActionId),
+    ...payload.buckets.learning.map((word) => `learning/${word.id}`),
+    ...payload.buckets.unstudied.map((word) => `unstudied/${word.id}`),
+  ];
 }
