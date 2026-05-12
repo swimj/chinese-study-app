@@ -95,9 +95,15 @@ export function createApp() {
 
   app.post('/api/priority/unstudied/add-by-hanzi', (req, res) => {
     const hanzi = req.body?.hanzi;
+    const requiredForNextSession = req.body?.requiredForNextSession;
 
     if (typeof hanzi !== 'string') {
       res.status(400).json({ error: 'Expected string hanzi' });
+      return;
+    }
+
+    if (requiredForNextSession !== undefined && typeof requiredForNextSession !== 'boolean') {
+      res.status(400).json({ error: 'Expected boolean requiredForNextSession when provided' });
       return;
     }
 
@@ -108,7 +114,7 @@ export function createApp() {
     }
 
     try {
-      const addedWords = addUnstudiedUserPriorityByHanzi(normalizedHanzi);
+      const addedWords = addUnstudiedUserPriorityByHanzi(normalizedHanzi, requiredForNextSession === true);
       res.json({
         addedCount: addedWords.length,
         words: addedWords,
@@ -404,6 +410,7 @@ export function createApp() {
     const bumpDelta = req.body?.bumpDelta;
     const forceTop = req.body?.forceTop;
     const reset = req.body?.reset;
+    const requiredForNextSession = req.body?.requiredForNextSession;
 
     if (bumpDelta !== undefined && !Number.isInteger(bumpDelta)) {
       res.status(400).json({ error: 'Expected integer bumpDelta when provided' });
@@ -420,13 +427,23 @@ export function createApp() {
       return;
     }
 
-    if (bumpDelta === undefined && forceTop === undefined && reset === undefined) {
+    if (requiredForNextSession !== undefined && typeof requiredForNextSession !== 'boolean') {
+      res.status(400).json({ error: 'Expected boolean requiredForNextSession when provided' });
+      return;
+    }
+
+    if (
+      bumpDelta === undefined &&
+      forceTop === undefined &&
+      reset === undefined &&
+      requiredForNextSession === undefined
+    ) {
       res.status(400).json({ error: 'Expected at least one user-priority field to update' });
       return;
     }
 
     try {
-      const updatedWord = updateWordUserPriority(req.params.id, { bumpDelta, forceTop, reset });
+      const updatedWord = updateWordUserPriority(req.params.id, { bumpDelta, forceTop, reset, requiredForNextSession });
       res.json(updatedWord);
     } catch (error) {
       if (error instanceof Error && error.message === 'Word not found') {

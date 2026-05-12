@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type React from 'react';
 import type { PriorityWord } from '../types';
 import { MeaningList } from '../components/MeaningList';
@@ -10,18 +10,22 @@ export function PriorityPage({
   triageRows,
   unstudiedTotalCount,
   searchHanzi,
+  requireAddedMatches,
   searchNotice,
   searchSubmitting,
   dailyNewWordLimit,
   jumpRequestWordId,
   onSearchHanziChange,
+  onRequireAddedMatchesChange,
   onSearchSubmit,
   onJumpHandled,
   updatingWordId,
+  priorityBatchSubmitting,
   bulkDismissSubmitting,
-  onMoveToTop,
-  onBumpAgain,
-  onRemove,
+  onRequireForNextSession,
+  onMoveSelectedToTop,
+  onBumpSelectedAgain,
+  onRemoveSelected,
   onDismissFromTriage,
   onBulkDismissFromTriage,
 }: {
@@ -29,30 +33,34 @@ export function PriorityPage({
   triageRows: PriorityWord[];
   unstudiedTotalCount: number;
   searchHanzi: string;
+  requireAddedMatches: boolean;
   searchNotice: string | null;
   searchSubmitting: boolean;
   dailyNewWordLimit: number;
   jumpRequestWordId: string | null;
   onSearchHanziChange: (value: string) => void;
+  onRequireAddedMatchesChange: (value: boolean) => void;
   onSearchSubmit: () => void;
   onJumpHandled: () => void;
   updatingWordId: string | null;
+  priorityBatchSubmitting: boolean;
   bulkDismissSubmitting: boolean;
-  onMoveToTop: (wordId: string) => void;
-  onBumpAgain: (wordId: string) => void;
-  onRemove: (wordId: string) => void;
+  onRequireForNextSession: (wordIds: string[], requiredForNextSession: boolean) => Promise<void>;
+  onMoveSelectedToTop: (wordIds: string[]) => Promise<void>;
+  onBumpSelectedAgain: (wordIds: string[]) => Promise<void>;
+  onRemoveSelected: (wordIds: string[]) => Promise<void>;
   onDismissFromTriage: (wordId: string) => void;
   onBulkDismissFromTriage: (wordIds: string[]) => void;
 }) {
   const [activeSubtab, setActiveSubtab] = useState<PrioritySubtab>('manage');
   const [expandedDefinitionByWordId, setExpandedDefinitionByWordId] = useState<Record<string, boolean>>({});
   const [showJumpToTopButton, setShowJumpToTopButton] = useState(false);
+  const [selectedManageWordIds, setSelectedManageWordIds] = useState<string[]>([]);
   const [bulkSelectActive, setBulkSelectActive] = useState(false);
   const [selectedTriageWordIds, setSelectedTriageWordIds] = useState<string[]>([]);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const tableTopAnchorRef = useRef<HTMLDivElement | null>(null);
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
-  const pendingMoveToTopAnchorRef = useRef<{ wordId: string; top: number } | null>(null);
   const onJumpHandledRef = useRef(onJumpHandled);
   const longPressTimerRef = useRef<number | null>(null);
   const longPressActivatedRef = useRef(false);
@@ -61,6 +69,16 @@ export function PriorityPage({
   useEffect(() => {
     onJumpHandledRef.current = onJumpHandled;
   }, [onJumpHandled]);
+
+  // primarily for the case when a selected entry is removed, the update goes to the rows state,
+  // and this effect is triggered to then clear the corresponding id from the selectedManageWordIds state.
+  // when there's a new row, this update also runs, which is weird because the new row's wordId
+  // cannot be in the current selectedManagerWordIds state, but that's ok...
+  useEffect(() => {
+    setSelectedManageWordIds((current) =>
+      current.filter((wordId) => rows.some((entry) => entry.word.id === wordId)),
+    );
+  }, [rows]);
 
   useEffect(() => {
     setSelectedTriageWordIds((current) =>
@@ -124,41 +142,10 @@ export function PriorityPage({
     return () => window.removeEventListener('scroll', handleScroll);
   }, [showJumpToTopButton]);
 
-  useLayoutEffect(() => {
-    const pendingAnchor = pendingMoveToTopAnchorRef.current;
-    if (!pendingAnchor) {
-      return;
-    }
-
-    const anchorRowElement = rowRefs.current[pendingAnchor.wordId];
-    if (!anchorRowElement) {
-      pendingMoveToTopAnchorRef.current = null;
-      return;
-    }
-
-    const nextTop = anchorRowElement.getBoundingClientRect().top;
-    const delta = nextTop - pendingAnchor.top;
-    if (Math.abs(delta) > 0.5) {
-      window.scrollBy({ top: delta, behavior: 'auto' });
-    }
-
-    pendingMoveToTopAnchorRef.current = null;
-  }, [rows]);
-
-  function handleMoveToTopWithScrollLock(wordId: string) {
-    const clickedIndex = rows.findIndex((entry) => entry.word.id === wordId);
-    const anchorCandidate = clickedIndex > 0 ? rows[clickedIndex - 1] : null;
-    if (anchorCandidate) {
-      const anchorRowElement = rowRefs.current[anchorCandidate.word.id];
-      if (anchorRowElement) {
-        pendingMoveToTopAnchorRef.current = {
-          wordId: anchorCandidate.word.id,
-          top: anchorRowElement.getBoundingClientRect().top,
-        };
-      }
-    }
-
-    onMoveToTop(wordId);
+  function toggleManageSelection(wordId: string) {
+    setSelectedManageWordIds((current) =>
+      current.includes(wordId) ? current.filter((selectedId) => selectedId !== wordId) : [...current, wordId],
+    );
   }
 
   function toggleTriageSelection(wordId: string) {
@@ -218,6 +205,26 @@ export function PriorityPage({
     setBulkSelectActive(false);
   }
 
+  async function handleSelectedManageAction(action: (wordIds: string[]) => Promise<void>) {
+    const selectedIds = selectedManageWordIds;
+    if (selectedIds.length === 0) {
+      return;
+    }
+
+    try {
+      await action(selectedIds);
+      setSelectedManageWordIds([]);
+    } catch {
+      // The controller owns the visible error state; keep the selection intact.
+    }
+  }
+
+  const selectedManageRows = rows.filter((entry) => selectedManageWordIds.includes(entry.word.id));
+  const allSelectedRequired =
+    selectedManageRows.length > 0 && selectedManageRows.every((entry) => entry.requiredForNextSession);
+  const manageSelectionActive = selectedManageWordIds.length > 0;
+  const searchDisabled = searchSubmitting || manageSelectionActive;
+
   return (
     <section className="words-page">
       <header className="header">
@@ -255,9 +262,18 @@ export function PriorityPage({
                 value={searchHanzi}
                 onChange={(event) => onSearchHanziChange(event.target.value)}
                 placeholder="Enter hanzi and submit"
-                disabled={searchSubmitting}
+                disabled={searchDisabled}
               />
-              <button type="button" onClick={onSearchSubmit} disabled={searchSubmitting}>
+              <label className="inline-checkbox">
+                <input
+                  type="checkbox"
+                  checked={requireAddedMatches}
+                  disabled={searchDisabled}
+                  onChange={(event) => onRequireAddedMatchesChange(event.target.checked)}
+                />
+                Require added matches
+              </label>
+              <button type="button" onClick={onSearchSubmit} disabled={searchDisabled}>
                 {searchSubmitting ? 'Adding...' : 'Add matches'}
               </button>
             </div>
@@ -277,27 +293,12 @@ export function PriorityPage({
                 setExpandedDefinitionByWordId={setExpandedDefinitionByWordId}
                 unstudiedTotalCount={unstudiedTotalCount}
                 dailyNewWordLimit={dailyNewWordLimit}
-                actionHeader="Actions"
-                renderActionCell={(word) => {
-                  const rowUpdating = updatingWordId === word.word.id;
-                  return (
-                    <div className="pagination-actions">
-                      <button
-                        type="button"
-                        onClick={() => handleMoveToTopWithScrollLock(word.word.id)}
-                        disabled={rowUpdating || word.forceTop}
-                      >
-                        {word.forceTop ? 'At top' : 'Move to top'}
-                      </button>
-                      <button type="button" onClick={() => onBumpAgain(word.word.id)} disabled={rowUpdating}>
-                        Bump again
-                      </button>
-                      <button type="button" onClick={() => onRemove(word.word.id)} disabled={rowUpdating}>
-                        Remove
-                      </button>
-                    </div>
-                  );
-                }}
+                getRowClassName={(word) =>
+                  selectedManageWordIds.includes(word.word.id) ? 'priority-manage-row selected' : 'priority-manage-row'
+                }
+                getRowHandlers={(word) => ({
+                  onClick: () => toggleManageSelection(word.word.id),
+                })}
               />
             )}
           </div>
@@ -396,6 +397,50 @@ export function PriorityPage({
           Jump to top
         </button>
       ) : null}
+
+      {manageSelectionActive ? (
+        <div className="priority-floating-actions" role="group" aria-label="Selected priority word actions">
+          <span className="priority-selection-count">{selectedManageWordIds.length} selected</span>
+          <button
+            type="button"
+            onClick={() => void handleSelectedManageAction(onBumpSelectedAgain)}
+            disabled={priorityBatchSubmitting}
+          >
+            Bump
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleSelectedManageAction(onMoveSelectedToTop)}
+            disabled={priorityBatchSubmitting || selectedManageRows.every((entry) => entry.forceTop)}
+          >
+            Move to top
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              void handleSelectedManageAction((wordIds) => onRequireForNextSession(wordIds, !allSelectedRequired))
+            }
+            disabled={priorityBatchSubmitting}
+          >
+            {allSelectedRequired ? 'Unrequire' : 'Require'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleSelectedManageAction(onRemoveSelected)}
+            disabled={priorityBatchSubmitting}
+          >
+            Remove
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => setSelectedManageWordIds([])}
+            disabled={priorityBatchSubmitting}
+          >
+            Clear selected
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -422,10 +467,10 @@ function PriorityWordTable({
   setExpandedDefinitionByWordId: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   unstudiedTotalCount: number;
   dailyNewWordLimit: number;
-  actionHeader: string;
+  actionHeader?: string;
   extraHeader?: React.ReactNode;
   renderExtraCell?: (word: PriorityWord) => React.ReactNode;
-  renderActionCell: (word: PriorityWord) => React.ReactNode;
+  renderActionCell?: (word: PriorityWord) => React.ReactNode;
   getRowClassName?: (word: PriorityWord) => string;
   getRowHandlers?: (word: PriorityWord) => React.HTMLAttributes<HTMLTableRowElement>;
 }) {
@@ -440,7 +485,7 @@ function PriorityWordTable({
             <th>Priority</th>
             <th>Approx days</th>
             <th>Bumps</th>
-            <th>{actionHeader}</th>
+            {renderActionCell ? <th>{actionHeader}</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -471,6 +516,7 @@ function PriorityWordTable({
                   <div className="table-word-cell">
                     <strong>{word.word.hanzi}</strong>
                     <span>{word.word.pinyin}</span>
+                    {word.requiredForNextSession ? <span className="priority-required-pill">Required</span> : null}
                   </div>
                 </td>
                 <td>
@@ -497,7 +543,7 @@ function PriorityWordTable({
                 <td>{priorityPercentile ?? <span className="notes">N/A</span>}</td>
                 <td>{approxDaysToStudy}</td>
                 <td>{word.bumpCount}</td>
-                <td>{renderActionCell(word)}</td>
+                {renderActionCell ? <td>{renderActionCell(word)}</td> : null}
               </tr>
             );
           })}

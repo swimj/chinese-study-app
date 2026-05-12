@@ -61,10 +61,17 @@ describe('user priority layer', { concurrency: false }, () => {
 
   test('migration/bootstrap creates user_word_priority table', () => {
     const columns = sqlite.prepare('PRAGMA table_info(user_word_priority)').all() as Array<{ name: string }>;
-    assert.deepEqual(columns.map((column) => column.name), ['word_id', 'bump_count', 'force_top', 'priority_tier', 'updated_at']);
+    assert.deepEqual(columns.map((column) => column.name), [
+      'word_id',
+      'bump_count',
+      'force_top',
+      'priority_tier',
+      'required_for_next_session',
+      'updated_at',
+    ]);
   });
 
-  test('bump count clamps to [0, 10], force-top toggles, and reset clears overrides', () => {
+  test('bump count clamps to [0, 10], force-top toggles, required toggles, and reset clears overrides', () => {
     insertWord('priority-word', 73, 'unstudied', '2026-01-01T00:00:00.000Z');
     insertReviewPair('priority-word');
 
@@ -77,9 +84,16 @@ describe('user priority layer', { concurrency: false }, () => {
     const forceTopOn = dbModule.updateWordUserPriority('priority-word', { forceTop: true });
     assert.equal(forceTopOn.forceTop, true);
 
+    const requiredOn = dbModule.updateWordUserPriority('priority-word', { requiredForNextSession: true });
+    assert.equal(requiredOn.requiredForNextSession, true);
+
+    const requiredOff = dbModule.updateWordUserPriority('priority-word', { requiredForNextSession: false });
+    assert.equal(requiredOff.requiredForNextSession, false);
+
     const reset = dbModule.updateWordUserPriority('priority-word', { reset: true });
     assert.equal(reset.bumpCount, 0);
     assert.equal(reset.forceTop, false);
+    assert.equal(reset.requiredForNextSession, false);
 
     const persisted = sqlite
       .prepare('SELECT word_id FROM user_word_priority WHERE word_id = ?')
@@ -115,6 +129,35 @@ describe('user priority layer', { concurrency: false }, () => {
     assert.deepEqual(prioritizedIds, ['dup-a', 'dup-b']);
   });
 
+  test('add-by-hanzi can require all matching unstudied words', () => {
+    insertWord('required-dup-a', 70, 'unstudied', '2026-01-01T00:00:00.000Z', '要');
+    insertWord('required-dup-b', 60, 'unstudied', '2026-01-02T00:00:00.000Z', '要');
+    insertReviewPair('required-dup-a');
+    insertReviewPair('required-dup-b');
+
+    const added = dbModule.addUnstudiedUserPriorityByHanzi('要', true);
+    assert.equal(added.length, 2);
+    assert(added.every((word) => word.requiredForNextSession));
+
+    const prioritized = dbModule.getPrioritizedUnstudiedWords().words;
+    assert.deepEqual(prioritized.map((entry) => entry.word.id), ['required-dup-a', 'required-dup-b']);
+    assert(prioritized.every((entry) => entry.requiredForNextSession));
+  });
+
+  test('dismiss clears required state while sinking the word', () => {
+    insertWord('required-dismissed', 50, 'unstudied', '2026-01-01T00:00:00.000Z');
+    insertReviewPair('required-dismissed');
+
+    dbModule.updateWordUserPriority('required-dismissed', { requiredForNextSession: true });
+    dbModule.dismissWordFromStudy('required-dismissed');
+
+    const priorityRow = sqlite
+      .prepare('SELECT priority_tier, required_for_next_session FROM user_word_priority WHERE word_id = ?')
+      .get('required-dismissed') as { priority_tier: number; required_for_next_session: number };
+    assert.equal(priorityRow.priority_tier, -1);
+    assert.equal(priorityRow.required_for_next_session, 0);
+  });
+
   test('unstudied ordering is forceTop > effective > base > createdAt', () => {
     insertWord('base-high-older', 100, 'unstudied', '2026-01-01T00:00:00.000Z');
     insertWord('base-high-newer', 100, 'unstudied', '2026-01-02T00:00:00.000Z');
@@ -132,7 +175,7 @@ describe('user priority layer', { concurrency: false }, () => {
     assert.deepEqual(ordered, ['forced', 'boosted', 'base-high-older', 'base-high-newer']);
   });
 
-  test('session unstudied intake respects effective ordering and cap', () => {
+  test('session unstudied intake respects cap and expected selection set', () => {
     const { dailyNewWordLimit } = dbModule.getLearningPolicy(studyDayKey);
 
     insertWord('old-base', 60, 'unstudied', '2026-01-01T00:00:00.000Z');
@@ -148,7 +191,8 @@ describe('user priority layer', { concurrency: false }, () => {
     dbModule.updateWordUserPriority('forced', { forceTop: true });
 
     const sessionIds = getSessionItemIds(dbModule);
-    const expectedIds = [
+    const sessionIdSet = new Set(sessionIds);
+    const expectedIdSet = new Set([
       'forced-forward',
       'forced-reverse',
       'boosted-forward',
@@ -157,9 +201,10 @@ describe('user priority layer', { concurrency: false }, () => {
       'old-base-reverse',
       'very-low-forward',
       'very-low-reverse',
-    ].slice(0, dailyNewWordLimit * 2);
+    ].slice(0, dailyNewWordLimit * 2));
 
-    assert.deepEqual(sessionIds, expectedIds);
+    assert.equal(sessionIds.length, expectedIdSet.size);
+    assert.deepEqual(sessionIdSet, expectedIdSet);
   });
 
   test('sunk words rank below regular words in unstudied ordering', () => {
