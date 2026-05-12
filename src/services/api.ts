@@ -38,6 +38,7 @@ type UserPriorityPatch = {
   bumpDelta?: number;
   forceTop?: boolean;
   reset?: boolean;
+  requiredForNextSession?: boolean;
 };
 
 type AddPriorityByHanziResponse = {
@@ -240,13 +241,16 @@ export async function fetchTopUnstudiedPriorityWords(limit = 50): Promise<Priori
   return response.json();
 }
 
-export async function addUnstudiedPriorityByHanzi(hanzi: string): Promise<AddPriorityByHanziResponse> {
+export async function addUnstudiedPriorityByHanzi(
+  hanzi: string,
+  requiredForNextSession = false,
+): Promise<AddPriorityByHanziResponse> {
   const response = await fetch(`${API_BASE}/api/priority/unstudied/add-by-hanzi`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ hanzi }),
+    body: JSON.stringify({ hanzi, requiredForNextSession }),
   });
 
   if (!response.ok) {

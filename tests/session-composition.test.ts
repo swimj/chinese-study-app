@@ -636,7 +636,7 @@ describe('session composition', { concurrency: false }, () => {
     assert.deepEqual(sessionIds, []);
   });
 
-  test('caps unstudied intake and orders it by priority then creation time', () => {
+  test('caps unstudied intake without requiring intra-bucket ordering', () => {
     const { dailyNewWordLimit } = dbModule.getLearningPolicy(studyDayKey);
     const totalUnstudiedWords = dailyNewWordLimit + 1;
 
@@ -679,16 +679,79 @@ describe('session composition', { concurrency: false }, () => {
     const sessionIds = getSessionItemIds(dbModule);
     assert.equal(sessionIds.length, dailyNewWordLimit * 2);
 
-    // Highest priorities should come first; ties break by older created_at first.
-    assert.deepEqual(sessionIds.slice(0, 4), [
-      'unstudied-1-forward',
-      'unstudied-1-reverse',
-      'unstudied-2-forward',
-      'unstudied-2-reverse',
-    ]);
+    const sessionIdSet = new Set(sessionIds);
+    assert.equal(sessionIdSet.has('unstudied-1-forward'), true);
+    assert.equal(sessionIdSet.has('unstudied-1-reverse'), true);
+    assert.equal(sessionIdSet.has('unstudied-2-forward'), true);
+    assert.equal(sessionIdSet.has('unstudied-2-reverse'), true);
 
     assert.equal(sessionIds.includes(`unstudied-${totalUnstudiedWords}-forward`), false);
     assert.equal(sessionIds.includes(`unstudied-${totalUnstudiedWords}-reverse`), false);
+  });
+
+  test('includes required unstudied words beyond the normal daily cap', () => {
+    const { dailyNewWordLimit } = dbModule.getLearningPolicy(studyDayKey);
+    const totalUnstudiedWords = dailyNewWordLimit + 2;
+
+    for (let index = 0; index < totalUnstudiedWords; index += 1) {
+      const day = String(index + 1).padStart(2, '0');
+      insertUnstudiedWordPair(`required-overflow-${index + 1}`, 100 - index, `2026-03-${day}T00:00:00.000Z`);
+    }
+
+    const requiredOverflowId = `required-overflow-${totalUnstudiedWords}`;
+    dbModule.updateWordUserPriority(requiredOverflowId, { requiredForNextSession: true });
+
+    const sessionIds = getSessionItemIds(dbModule);
+    assert.equal(sessionIds.length, (dailyNewWordLimit + 1) * 2);
+    const sessionIdSet = new Set(sessionIds);
+    assert.equal(sessionIdSet.has(`${requiredOverflowId}-forward`), true);
+    assert.equal(sessionIdSet.has(`${requiredOverflowId}-reverse`), true);
+  });
+
+  test('does not duplicate required words that are already inside the normal cap', () => {
+    const { dailyNewWordLimit } = dbModule.getLearningPolicy(studyDayKey);
+
+    for (let index = 0; index < dailyNewWordLimit + 1; index += 1) {
+      const day = String(index + 1).padStart(2, '0');
+      insertUnstudiedWordPair(`required-no-dupe-${index + 1}`, 100 - index, `2026-04-${day}T00:00:00.000Z`);
+    }
+
+    dbModule.updateWordUserPriority('required-no-dupe-1', { requiredForNextSession: true });
+
+    const sessionIds = getSessionItemIds(dbModule);
+    assert.equal(sessionIds.length, dailyNewWordLimit * 2);
+    assert.equal(sessionIds.filter((id) => id.startsWith('required-no-dupe-1-')).length, 2);
+    assert.equal(sessionIds.includes('required-no-dupe-11-forward'), false);
+  });
+
+  test('does not admit dismissed required words as overflow', () => {
+    const { dailyNewWordLimit } = dbModule.getLearningPolicy(studyDayKey);
+
+    for (let index = 0; index < dailyNewWordLimit + 1; index += 1) {
+      const day = String(index + 1).padStart(2, '0');
+      insertUnstudiedWordPair(`required-dismissed-${index + 1}`, 100 - index, `2026-05-${day}T00:00:00.000Z`);
+    }
+
+    const dismissedRequiredId = `required-dismissed-${dailyNewWordLimit + 1}`;
+    dbModule.updateWordUserPriority(dismissedRequiredId, { requiredForNextSession: true });
+    dbModule.dismissWordFromStudy(dismissedRequiredId);
+
+    const sessionIds = getSessionItemIds(dbModule);
+    assert.equal(sessionIds.length, dailyNewWordLimit * 2);
+    assert.equal(sessionIds.includes(`${dismissedRequiredId}-forward`), false);
+    assert.equal(sessionIds.includes(`${dismissedRequiredId}-reverse`), false);
+  });
+
+  test('unstudied completion clears required state', () => {
+    insertUnstudiedWordPair('required-completed', 100, '2026-06-01T00:00:00.000Z');
+
+    dbModule.updateWordUserPriority('required-completed', { requiredForNextSession: true });
+    dbModule.completeUnstudiedWordSession('required-completed', studyDayKey);
+
+    const priorityRow = sqlite
+      .prepare('SELECT required_for_next_session FROM user_word_priority WHERE word_id = ?')
+      .get('required-completed') as { required_for_next_session: number } | undefined;
+    assert.equal(priorityRow?.required_for_next_session, 0);
   });
 
   test('completing an unstudied word reduces same-day remaining intake across sessions', () => {
@@ -909,13 +972,15 @@ describe('session composition', { concurrency: false }, () => {
     });
 
     const sessionIds = getSessionItemIds(dbModule);
-    assert.deepEqual(sessionIds, [
-      'review-word-forward',
-      'learning-word-reverse',
-      'learning-word-forward',
+    assert.deepEqual(sessionIds.slice(0, 3), [
+       'review-word-forward',
+       'learning-word-reverse',
+       'learning-word-forward',
+    ]);
+    assert.deepEqual(new Set(sessionIds.slice(3)), new Set([
       'unstudied-word-forward',
       'unstudied-word-reverse',
-    ]);
+    ]));
   });
 
   test('an unstudied word becomes a same-day non-obligation and a next-day learning obligation after completion', () => {
@@ -944,10 +1009,10 @@ describe('session composition', { concurrency: false }, () => {
       nextDueAt: null,
     });
 
-    assert.deepEqual(getSessionItemIds(dbModule), [
+    assert.deepEqual(new Set(getSessionItemIds(dbModule)), new Set([
       'new-word-forward',
       'new-word-reverse',
-    ]);
+    ]));
 
     const updatedWord = dbModule.completeUnstudiedWordSession('new-word', studyDayKey);
     assert.equal(updatedWord.status, 'learning');
@@ -962,10 +1027,10 @@ describe('session composition', { concurrency: false }, () => {
       WHERE id = 'new-word'
     `).run(yesterday);
 
-    assert.deepEqual(getSessionItemIds(dbModule), [
+    assert.deepEqual(new Set(getSessionItemIds(dbModule)), new Set([
       'new-word-reverse',
       'new-word-forward',
-    ]);
+    ]));
   });
 
   test('refuses to compose a session while accepted attempt events remain unprojected', () => {

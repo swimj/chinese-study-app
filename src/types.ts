@@ -29,6 +29,7 @@ export type PriorityWord = {
   word: Word;
   bumpCount: number;
   forceTop: boolean;
+  requiredForNextSession: boolean;
   effectivePriority: number;
   effectiveRank: number;
 };

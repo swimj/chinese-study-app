@@ -78,17 +78,23 @@ function App() {
           triageRows={priorityPage.triageRows}
           unstudiedTotalCount={priorityPage.unstudiedTotalCount}
           searchHanzi={priorityPage.searchHanzi}
+          requireAddedMatches={priorityPage.requireAddedMatches}
           searchNotice={priorityPage.searchNotice}
           searchSubmitting={priorityPage.searchSubmitting}
           dailyNewWordLimit={backendStatus?.dailyNewWordLimit ?? 2}
           jumpRequestWordId={priorityPage.jumpRequestWordId}
           onSearchHanziChange={priorityPage.setSearchHanzi}
+          onRequireAddedMatchesChange={priorityPage.setRequireAddedMatches}
           onSearchSubmit={() => void priorityPage.submitSearch()}
           onJumpHandled={priorityPage.clearJumpRequest}
           updatingWordId={priorityPage.updatingWordId}
-          onMoveToTop={(wordId) => void priorityPage.moveToTop(wordId)}
-          onBumpAgain={(wordId) => void priorityPage.bumpAgain(wordId)}
-          onRemove={(wordId) => void priorityPage.remove(wordId)}
+          priorityBatchSubmitting={priorityPage.priorityBatchSubmitting}
+          onRequireForNextSession={(wordIds, requiredForNextSession) =>
+            priorityPage.requireForNextSession(wordIds, requiredForNextSession)
+          }
+          onMoveSelectedToTop={priorityPage.moveSelectedToTop}
+          onBumpSelectedAgain={priorityPage.bumpSelectedAgain}
+          onRemoveSelected={priorityPage.removeSelected}
           bulkDismissSubmitting={priorityPage.bulkDismissSubmitting}
           onDismissFromTriage={(wordId) => void priorityPage.dismissFromTriage(wordId)}
           onBulkDismissFromTriage={(wordIds) => void priorityPage.bulkDismissFromTriage(wordIds)}

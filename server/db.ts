@@ -56,6 +56,7 @@ type PriorityWord = {
   word: Word;
   bumpCount: number;
   forceTop: boolean;
+  requiredForNextSession: boolean;
   effectivePriority: number;
   effectiveRank: number;
 };
@@ -142,6 +143,7 @@ type UserWordPriorityRow = {
   bump_count: number;
   force_top: number;
   priority_tier: number;
+  required_for_next_session: number;
   updated_at: string;
 };
 
@@ -149,6 +151,7 @@ type UserWordPriorityPatch = {
   bumpDelta?: number;
   forceTop?: boolean;
   reset?: boolean;
+  requiredForNextSession?: boolean;
 };
 
 type ReviewItemRow = {
@@ -314,6 +317,7 @@ type PriorityWordRow = WordRow & {
   bump_count: number;
   force_top: number;
   priority_tier: number;
+  required_for_next_session: number;
   effective_priority: number;
   effective_rank: number;
 };
@@ -463,6 +467,7 @@ export function getUnstudiedPriorityWords(): PriorityWordsPayload {
         COALESCE(user_word_priority.bump_count, 0) AS bump_count,
         COALESCE(user_word_priority.force_top, 0) AS force_top,
         COALESCE(user_word_priority.priority_tier, 0) AS priority_tier,
+        COALESCE(user_word_priority.required_for_next_session, 0) AS required_for_next_session,
         words.priority
           + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} AS effective_priority,
         ROW_NUMBER() OVER (
@@ -493,7 +498,7 @@ export function getPrioritizedUnstudiedWords(): PriorityWordsPayload {
   const allUnstudied = getUnstudiedPriorityWords();
   return {
     unstudiedTotalCount: allUnstudied.unstudiedTotalCount,
-    words: allUnstudied.words.filter((entry) => entry.forceTop || entry.bumpCount > 0),
+    words: allUnstudied.words.filter((entry) => entry.forceTop || entry.bumpCount > 0 || entry.requiredForNextSession),
   };
 }
 
@@ -521,6 +526,7 @@ export function getTopUnstudiedPriorityWords(limit: number): PriorityWordsPayloa
           COALESCE(user_word_priority.bump_count, 0) AS bump_count,
           COALESCE(user_word_priority.force_top, 0) AS force_top,
           COALESCE(user_word_priority.priority_tier, 0) AS priority_tier,
+          COALESCE(user_word_priority.required_for_next_session, 0) AS required_for_next_session,
           words.priority
             + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} AS effective_priority,
           ROW_NUMBER() OVER (
@@ -621,6 +627,7 @@ export function updateWordUserPriority(wordId: string, patch: UserWordPriorityPa
         bump_count,
         force_top,
         priority_tier,
+        required_for_next_session,
         updated_at
       FROM user_word_priority
       WHERE word_id = ?
@@ -629,6 +636,7 @@ export function updateWordUserPriority(wordId: string, patch: UserWordPriorityPa
 
   const currentBumpCount = existingPriorityRow?.bump_count ?? 0;
   const currentPriorityTier = existingPriorityRow?.priority_tier ?? PRIORITY_TIER_REGULAR;
+  const currentRequiredForNextSession = existingPriorityRow?.required_for_next_session ?? 0;
   const currentForceTop = currentPriorityTier === PRIORITY_TIER_TOP;
   const reset = patch.reset === true;
   const nextBumpCount = reset ? 0 : clampInteger(currentBumpCount + (patch.bumpDelta ?? 0), 0, 10);
@@ -640,8 +648,11 @@ export function updateWordUserPriority(wordId: string, patch: UserWordPriorityPa
         ? PRIORITY_TIER_TOP
         : PRIORITY_TIER_REGULAR;
   const nextForceTop = nextPriorityTier === PRIORITY_TIER_TOP;
+  const nextRequiredForNextSession = reset
+    ? false
+    : patch.requiredForNextSession ?? (currentRequiredForNextSession !== 0);
 
-  if (nextBumpCount === 0 && nextPriorityTier === PRIORITY_TIER_REGULAR) {
+  if (nextBumpCount === 0 && nextPriorityTier === PRIORITY_TIER_REGULAR && !nextRequiredForNextSession) {
     db.prepare(`
       DELETE FROM user_word_priority
       WHERE word_id = ?
@@ -653,20 +664,29 @@ export function updateWordUserPriority(wordId: string, patch: UserWordPriorityPa
         bump_count,
         force_top,
         priority_tier,
+        required_for_next_session,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(word_id) DO UPDATE SET
         bump_count = excluded.bump_count,
         force_top = excluded.force_top,
         priority_tier = excluded.priority_tier,
+        required_for_next_session = excluded.required_for_next_session,
         updated_at = excluded.updated_at
-    `).run(wordId, nextBumpCount, nextForceTop ? 1 : 0, nextPriorityTier, new Date().toISOString());
+    `).run(
+      wordId,
+      nextBumpCount,
+      nextForceTop ? 1 : 0,
+      nextPriorityTier,
+      nextRequiredForNextSession ? 1 : 0,
+      new Date().toISOString(),
+    );
   }
 
   return getUnstudiedPriorityWordById(wordId);
 }
 
-export function addUnstudiedUserPriorityByHanzi(hanzi: string): PriorityWord[] {
+export function addUnstudiedUserPriorityByHanzi(hanzi: string, requiredForNextSession = false): PriorityWord[] {
   const matches = db
     .prepare(`
       SELECT
@@ -691,15 +711,19 @@ export function addUnstudiedUserPriorityByHanzi(hanzi: string): PriorityWord[] {
           SELECT
             bump_count,
             force_top,
-            priority_tier
+            priority_tier,
+            required_for_next_session
           FROM user_word_priority
           WHERE word_id = ?
         `)
-        .get(match.id) as { bump_count: number; force_top: number; priority_tier: number } | undefined;
+        .get(match.id) as
+        | { bump_count: number; force_top: number; priority_tier: number; required_for_next_session: number }
+        | undefined;
 
       const nextBumpCount = Math.max(existingPriorityRow?.bump_count ?? 0, 1);
       const nextForceTop = existingPriorityRow?.force_top ?? 0;
       const nextPriorityTier = Math.max(existingPriorityRow?.priority_tier ?? PRIORITY_TIER_REGULAR, PRIORITY_TIER_REGULAR);
+      const nextRequiredForNextSession = requiredForNextSession ? 1 : (existingPriorityRow?.required_for_next_session ?? 0);
 
       db.prepare(`
         INSERT INTO user_word_priority (
@@ -707,14 +731,16 @@ export function addUnstudiedUserPriorityByHanzi(hanzi: string): PriorityWord[] {
           bump_count,
           force_top,
           priority_tier,
+          required_for_next_session,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(word_id) DO UPDATE SET
           bump_count = excluded.bump_count,
           force_top = excluded.force_top,
           priority_tier = excluded.priority_tier,
+          required_for_next_session = excluded.required_for_next_session,
           updated_at = excluded.updated_at
-      `).run(match.id, nextBumpCount, nextForceTop, nextPriorityTier, new Date().toISOString());
+      `).run(match.id, nextBumpCount, nextForceTop, nextPriorityTier, nextRequiredForNextSession, new Date().toISOString());
     }
 
     db.exec('COMMIT');
@@ -1233,28 +1259,63 @@ export function getHomeOverview(studyDayKey: string): HomeOverview {
     `)
     .get(getTodayKey()) as { count: number };
 
-  const newWordIntroCount = db
-    .prepare(`
-      SELECT COUNT(*) as count
-      FROM (
-        SELECT id
-        FROM words
-        WHERE status = 'unstudied'
-        ORDER BY priority DESC, created_at ASC
-        LIMIT ?
-      )
-    `)
-    .get(getRemainingDailyNewWordSlots(studyDayKey)) as { count: number };
+  const newWordIntroCount = countSelectedUnstudiedWords(studyDayKey);
 
   return {
     dueReviewItemCount: dueReviewItemCount.count,
     pendingLearningWordCount: pendingLearningWordCount.count,
-    newWordIntroCount: newWordIntroCount.count,
+    newWordIntroCount,
     hasSessionWork:
       dueReviewItemCount.count > 0 ||
       pendingLearningWordCount.count > 0 ||
-      newWordIntroCount.count > 0,
+      newWordIntroCount > 0,
   };
+}
+
+function countSelectedUnstudiedWords(studyDayKey: string): number {
+  const remainingDailyNewWordSlots = getRemainingDailyNewWordSlots(studyDayKey);
+  const row = db
+    .prepare(`
+      WITH ranked_unstudied AS (
+        SELECT
+          words.id,
+          words.priority AS base_priority,
+          words.created_at,
+          COALESCE(user_word_priority.bump_count, 0) AS bump_count,
+          COALESCE(user_word_priority.priority_tier, 0) AS priority_tier,
+          COALESCE(user_word_priority.required_for_next_session, 0) AS required_for_next_session,
+          words.priority
+            + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} AS effective_priority
+        FROM words
+        LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
+        WHERE words.status = 'unstudied'
+      ),
+      normal_selected AS (
+        SELECT id
+        FROM ranked_unstudied
+        ORDER BY
+          priority_tier DESC,
+          effective_priority DESC,
+          base_priority DESC,
+          created_at ASC
+        LIMIT ?
+      ),
+      required_overflow AS (
+        SELECT id
+        FROM ranked_unstudied
+        WHERE required_for_next_session != 0
+          AND priority_tier >= ${PRIORITY_TIER_REGULAR}
+      )
+      SELECT COUNT(*) AS count
+      FROM (
+        SELECT id FROM normal_selected
+        UNION
+        SELECT id FROM required_overflow
+      )
+    `)
+    .get(remainingDailyNewWordSlots) as { count: number };
+
+  return row.count;
 }
 
 export function getLearningPolicy(studyDayKey: string) {
@@ -1318,6 +1379,13 @@ export function completeUnstudiedWordSession(wordId: string, studyDayKey: string
           last_learning_covered_on = ?
       WHERE id = ?
     `).run(today, wordId);
+
+    db.prepare(`
+      UPDATE user_word_priority
+      SET required_for_next_session = 0,
+          updated_at = ?
+      WHERE word_id = ?
+    `).run(new Date().toISOString(), wordId);
 
     incrementDailyNewStudyCount(studyDayKey);
     db.exec('COMMIT');
@@ -1638,14 +1706,16 @@ export function dismissWordFromStudy(wordId: string): void {
         bump_count,
         force_top,
         priority_tier,
+        required_for_next_session,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(word_id) DO UPDATE SET
         bump_count = excluded.bump_count,
         force_top = excluded.force_top,
         priority_tier = excluded.priority_tier,
+        required_for_next_session = excluded.required_for_next_session,
         updated_at = excluded.updated_at
-    `).run(wordId, 0, 0, PRIORITY_TIER_SUNK, new Date().toISOString());
+    `).run(wordId, 0, 0, PRIORITY_TIER_SUNK, 0, new Date().toISOString());
 
     if (existingWord.status !== 'unstudied') {
       db.prepare(`
@@ -1727,6 +1797,7 @@ function applyLightweightSchemaMigrations() {
       bump_count INTEGER NOT NULL DEFAULT 0,
       force_top INTEGER NOT NULL DEFAULT 0,
       priority_tier INTEGER NOT NULL DEFAULT 0,
+      required_for_next_session INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL
     );
   `);
@@ -1819,6 +1890,11 @@ function applyLightweightSchemaMigrations() {
   if (!hasPriorityTier) {
     db.exec(`ALTER TABLE user_word_priority ADD COLUMN priority_tier INTEGER NOT NULL DEFAULT 0`);
     db.exec(`UPDATE user_word_priority SET priority_tier = CASE WHEN force_top != 0 THEN 1 ELSE 0 END`);
+  }
+
+  const hasRequiredForNextSession = userPriorityColumns.some((column) => column.name === 'required_for_next_session');
+  if (!hasRequiredForNextSession) {
+    db.exec(`ALTER TABLE user_word_priority ADD COLUMN required_for_next_session INTEGER NOT NULL DEFAULT 0`);
   }
 
   db.exec(`
@@ -2313,6 +2389,7 @@ function createSchema() {
       bump_count INTEGER NOT NULL DEFAULT 0,
       force_top INTEGER NOT NULL DEFAULT 0,
       priority_tier INTEGER NOT NULL DEFAULT 0,
+      required_for_next_session INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL
     );
 
@@ -2437,6 +2514,7 @@ function validateSchema() {
     'bump_count',
     'force_top',
     'priority_tier',
+    'required_for_next_session',
     'updated_at',
   ]);
   assertTableColumns('daily_new_word_intake', [
@@ -2864,6 +2942,7 @@ function mapPriorityWordRow(row: PriorityWordRow): PriorityWord {
     word: mapWordRow(row),
     bumpCount: row.bump_count,
     forceTop: row.priority_tier === PRIORITY_TIER_TOP,
+    requiredForNextSession: row.required_for_next_session !== 0,
     effectivePriority: row.effective_priority,
     effectiveRank: row.effective_rank,
   };
@@ -2873,12 +2952,14 @@ function buildPriorityWordFromParts({
   row,
   bumpCount,
   forceTop,
+  requiredForNextSession,
   effectivePriority,
   effectiveRank,
 }: {
   row: WordRow;
   bumpCount: number;
   forceTop: boolean;
+  requiredForNextSession: boolean;
   effectivePriority: number;
   effectiveRank: number;
 }): PriorityWord {
@@ -2886,6 +2967,7 @@ function buildPriorityWordFromParts({
     word: mapWordRow(row),
     bumpCount,
     forceTop,
+    requiredForNextSession,
     effectivePriority,
     effectiveRank,
   };
@@ -3248,17 +3330,43 @@ function getSessionItemBucketsWithWords(studyDayKey: string): SessionItemBuckets
           COALESCE(user_word_priority.bump_count, 0) AS bump_count,
           COALESCE(user_word_priority.force_top, 0) AS force_top,
           COALESCE(user_word_priority.priority_tier, 0) AS priority_tier,
+          COALESCE(user_word_priority.required_for_next_session, 0) AS required_for_next_session,
           words.priority
             + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} AS effective_priority
         FROM words
         LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
         WHERE words.status = 'unstudied'
+      ),
+      normal_selected AS (
+        SELECT
+          id,
+          base_priority,
+          created_at,
+          priority_tier,
+          effective_priority
+        FROM ranked_unstudied
         ORDER BY
           priority_tier DESC,
           effective_priority DESC,
-          words.priority DESC,
-          words.created_at ASC
+          base_priority DESC,
+          created_at ASC
         LIMIT ?
+      ),
+      required_overflow AS (
+        SELECT
+          id,
+          base_priority,
+          created_at,
+          priority_tier,
+          effective_priority
+        FROM ranked_unstudied
+        WHERE required_for_next_session != 0
+          AND priority_tier >= ${PRIORITY_TIER_REGULAR}
+      ),
+      selected_unstudied AS (
+        SELECT * FROM normal_selected
+        UNION
+        SELECT * FROM required_overflow
       )
       SELECT
         review_items.id,
@@ -3283,10 +3391,10 @@ function getSessionItemBucketsWithWords(studyDayKey: string): SessionItemBuckets
         words.last_learning_covered_on AS word_last_learning_covered_on
       FROM review_items
       INNER JOIN words ON words.id = review_items.word_id
-      INNER JOIN ranked_unstudied ON ranked_unstudied.id = words.id
+      INNER JOIN selected_unstudied ON selected_unstudied.id = words.id
       ORDER BY
-        ranked_unstudied.priority_tier DESC,
-        ranked_unstudied.effective_priority DESC,
+        selected_unstudied.priority_tier DESC,
+        selected_unstudied.effective_priority DESC,
         words.priority DESC,
         words.created_at ASC,
         CASE review_items.direction
@@ -3668,6 +3776,7 @@ function getUnstudiedPriorityWordById(wordId: string): PriorityWord {
         COALESCE(user_word_priority.bump_count, 0) AS bump_count,
         COALESCE(user_word_priority.force_top, 0) AS force_top,
         COALESCE(user_word_priority.priority_tier, 0) AS priority_tier,
+        COALESCE(user_word_priority.required_for_next_session, 0) AS required_for_next_session,
         words.priority
           + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} AS effective_priority
       FROM words
@@ -3676,7 +3785,13 @@ function getUnstudiedPriorityWordById(wordId: string): PriorityWord {
         AND words.status = 'unstudied'
     `)
     .get(wordId) as
-    | (WordRow & { bump_count: number; force_top: number; priority_tier: number; effective_priority: number })
+    | (WordRow & {
+      bump_count: number;
+      force_top: number;
+      priority_tier: number;
+      required_for_next_session: number;
+      effective_priority: number;
+    })
     | undefined;
 
   if (!row) {
@@ -3685,6 +3800,7 @@ function getUnstudiedPriorityWordById(wordId: string): PriorityWord {
 
   const bumpCount = row.bump_count;
   const forceTop = row.priority_tier === PRIORITY_TIER_TOP;
+  const requiredForNextSession = row.required_for_next_session !== 0;
   const effectivePriority = row.effective_priority;
   const effectiveRank = estimateApproximatePriorityRank({
     priority: row.priority,
@@ -3696,6 +3812,7 @@ function getUnstudiedPriorityWordById(wordId: string): PriorityWord {
     row,
     bumpCount,
     forceTop,
+    requiredForNextSession,
     effectivePriority,
     effectiveRank,
   });
