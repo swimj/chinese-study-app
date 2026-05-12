@@ -1,4 +1,4 @@
-import type { ReviewItem, ReviewRating, Word } from '../types';
+import type { ReviewRating, Word } from '../types';
 
 export type StudySkillId = 'recognition' | 'production' | 'contextual_selection';
 
@@ -17,7 +17,25 @@ export type StudyAction = {
   targetWordId: string;
   sampledSkillIds: StudySkillId[];
   contentRef: StudyContentRef | null;
-  legacyReviewItemId?: string;
+};
+
+export type SessionStudyItemSource = 'unstudied' | 'learning' | 'review';
+export type WordLifecycleSessionStudyItemSource = Exclude<SessionStudyItemSource, 'review'>;
+
+export type SessionStudyItem = {
+  sessionActionId: string;
+  actionKind: StudyActionKind;
+  targetWordId: string;
+  sampledSkillIds: StudySkillId[];
+  contentRef: StudyContentRef | null;
+  intervalHours: number;
+  word: Word;
+};
+
+export type SessionStudyItemBuckets = {
+  review: SessionStudyItem[];
+  learning: Word[];
+  unstudied: Word[];
 };
 
 export type WordStudyAdmissionState = {
@@ -77,17 +95,6 @@ export type StudySessionRecord = {
   processedAt: string | null;
 };
 
-export function mapReviewDirectionToStudySkill(direction: ReviewItem['direction']): StudySkillId {
-  switch (direction) {
-    case 'forward':
-      return 'recognition';
-    case 'reverse':
-      return 'production';
-    default:
-      return assertUnreachableReviewDirection(direction);
-  }
-}
-
 export function mapStudySkillToDefaultActionKind(skillId: StudySkillId): StudyActionKind {
   switch (skillId) {
     case 'recognition':
@@ -101,33 +108,57 @@ export function mapStudySkillToDefaultActionKind(skillId: StudySkillId): StudyAc
   }
 }
 
-export function buildLegacyReviewStudyAction({
-  sessionActionId,
-  reviewItem,
+export function buildReviewSessionStudyItem({
+  wordSkillState,
   word,
+  sessionActionId = buildSessionActionId('review', word.id, wordSkillState.skillId),
   contentRef = null,
 }: {
-  sessionActionId: string;
-  reviewItem: ReviewItem;
+  wordSkillState: WordSkillState;
   word: Word;
+  sessionActionId?: string;
   contentRef?: StudyContentRef | null;
-}): StudyAction {
-  if (reviewItem.wordId !== word.id) {
+}): SessionStudyItem {
+  if (wordSkillState.wordId !== word.id) {
     throw new Error(
-      `Study action invariant violated: review item word "${reviewItem.wordId}" must match word "${word.id}".`,
+      `Session study item invariant violated: word skill state word "${wordSkillState.wordId}" must match word "${word.id}".`,
     );
   }
 
-  const skillId = mapReviewDirectionToStudySkill(reviewItem.direction);
+  if (word.status !== 'review') {
+    throw new Error(
+      `Session study item invariant violated: review session item word "${word.id}" must have review status.`,
+    );
+  }
 
   return {
     sessionActionId,
-    kind: mapStudySkillToDefaultActionKind(skillId),
+    actionKind: mapStudySkillToDefaultActionKind(wordSkillState.skillId),
     targetWordId: word.id,
-    sampledSkillIds: [skillId],
+    sampledSkillIds: [wordSkillState.skillId],
     contentRef,
-    legacyReviewItemId: reviewItem.id,
+    intervalHours: wordSkillState.intervalHours,
+    word,
   };
+}
+
+export function buildWordLifecycleSessionStudyItems({
+  source,
+  word,
+}: {
+  source: WordLifecycleSessionStudyItemSource;
+  word: Word;
+}): SessionStudyItem[] {
+  if (word.status !== source) {
+    throw new Error(
+      `Session study item invariant violated: ${source} session item word "${word.id}" must have ${source} status.`,
+    );
+  }
+
+  return [
+    buildWordLifecycleSessionStudyItem({ source, word, skillId: 'recognition' }),
+    buildWordLifecycleSessionStudyItem({ source, word, skillId: 'production' }),
+  ];
 }
 
 export function deriveReviewCommitFieldsFromAttemptEvents(events: StudyAttemptEvent[]): ReviewCommitFields {
@@ -246,12 +277,32 @@ function assertReviewAttemptOutcomeMatchesRating(event: StudyAttemptEvent, ratin
   }
 }
 
-function assertAttemptEventsPresent(): never {
-  throw new Error('Cannot derive review commit fields from an empty attempt event batch.');
+function buildWordLifecycleSessionStudyItem({
+  source,
+  word,
+  skillId,
+}: {
+  source: WordLifecycleSessionStudyItemSource;
+  word: Word;
+  skillId: Extract<StudySkillId, 'recognition' | 'production'>;
+}): SessionStudyItem {
+  return {
+    sessionActionId: buildSessionActionId(source, word.id, skillId),
+    actionKind: mapStudySkillToDefaultActionKind(skillId),
+    targetWordId: word.id,
+    sampledSkillIds: [skillId],
+    contentRef: null,
+    intervalHours: 0,
+    word,
+  };
 }
 
-function assertUnreachableReviewDirection(direction: never): never {
-  throw new Error(`Unsupported review direction "${String(direction)}".`);
+function buildSessionActionId(source: SessionStudyItemSource, wordId: string, skillId: StudySkillId) {
+  return `${source}/${wordId}/${skillId}`;
+}
+
+function assertAttemptEventsPresent(): never {
+  throw new Error('Cannot derive review commit fields from an empty attempt event batch.');
 }
 
 function assertUnreachableStudySkill(skillId: never): never {

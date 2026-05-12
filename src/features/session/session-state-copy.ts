@@ -1,34 +1,35 @@
-import type { SessionState } from '../../lib/session-state';
-import { cloneSessionScheduler } from '../../lib/session-scheduler';
+import type { BucketSessionState } from '../../lib/session-state';
+import { cloneBucketSessionScheduler } from '../../lib/session-scheduler';
 
-export function cloneSessionState(state: SessionState): SessionState {
+export function cloneBucketSessionState(state: BucketSessionState): BucketSessionState {
   return {
     ...state,
-    scheduler: cloneSessionScheduler(state.scheduler),
-    startedItemIds: [...state.startedItemIds],
-    dismissedWordIds: [...state.dismissedWordIds],
-    learningProgress: Object.fromEntries(
-      Object.entries(state.learningProgress).map(([wordId, progress]) => [
-        wordId,
-        {
-          coveredDirections: { ...progress.coveredDirections },
-          firstTryGood: { ...progress.firstTryGood },
-          attempts: { ...progress.attempts },
-        },
-      ]),
-    ),
-    unstudiedProgress: Object.fromEntries(
-      Object.entries(state.unstudiedProgress).map(([wordId, progress]) => [
-        wordId,
-        {
-          introComplete: progress.introComplete,
-          consecutiveSuccesses: { ...progress.consecutiveSuccesses },
-        },
-      ]),
-    ),
+    scheduler: cloneBucketSessionScheduler(state.scheduler),
+    startedActionIds: [...state.startedActionIds],
+    progress: {
+      learning: Object.fromEntries(
+        Object.entries(state.progress.learning).map(([wordId, progress]) => [
+          wordId,
+          {
+            coveredSkills: { ...progress.coveredSkills },
+            firstTryGood: { ...progress.firstTryGood },
+            attempts: { ...progress.attempts },
+          },
+        ]),
+      ),
+      unstudied: Object.fromEntries(
+        Object.entries(state.progress.unstudied).map(([wordId, progress]) => [
+          wordId,
+          {
+            introComplete: progress.introComplete,
+            successStreaks: { ...progress.successStreaks },
+          },
+        ]),
+      ),
+    },
     reviewProgress: Object.fromEntries(
-      Object.entries(state.reviewProgress).map(([reviewItemId, progress]) => [
-        reviewItemId,
+      Object.entries(state.reviewProgress).map(([actionId, progress]) => [
+        actionId,
         {
           failureCount: progress.failureCount,
           reinforcementStreak: progress.reinforcementStreak,

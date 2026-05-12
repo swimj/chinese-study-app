@@ -14,8 +14,8 @@ describe('dev database bootstrap', { concurrency: false }, () => {
     const sourceSeedPath = path.resolve('data/app.json');
     const seedData = JSON.parse(fs.readFileSync(sourceSeedPath, 'utf8')) as {
       words: Array<{ id: string }>;
-      reviewItems: Array<{ id: string }>;
     };
+    const reviewWordCount = seedData.words.length;
 
     fs.writeFileSync(dbPath, '');
     fs.copyFileSync(sourceSeedPath, appJsonPath);
@@ -32,18 +32,19 @@ describe('dev database bootstrap', { concurrency: false }, () => {
 
       assert.equal(seedData.words.length, 10);
       assert.equal(dbModule.getWords().length, seedData.words.length);
-      assert.equal(dbModule.getReviewItems().length, seedData.reviewItems.length);
+      assert.equal(dbModule.getWordStudyAdmissionStates().length, reviewWordCount);
+      assert.equal(dbModule.getWordSkillStates().length, reviewWordCount * 2);
 
       const sqlite = new DatabaseSync(dbPath);
 
       try {
         const wordCount = sqlite.prepare('SELECT COUNT(*) AS count FROM words').get() as { count: number };
-        const reviewItemCount = sqlite.prepare('SELECT COUNT(*) AS count FROM review_items').get() as {
+        const wordSkillStateCount = sqlite.prepare('SELECT COUNT(*) AS count FROM word_skill_state').get() as {
           count: number;
         };
 
         assert.equal(wordCount.count, seedData.words.length);
-        assert.equal(reviewItemCount.count, seedData.reviewItems.length);
+        assert.equal(wordSkillStateCount.count, reviewWordCount * 2);
       } finally {
         sqlite.close();
       }
@@ -76,8 +77,8 @@ describe('dev database bootstrap', { concurrency: false }, () => {
     const sourceSeedPath = path.resolve('data/app.json');
     const seedData = JSON.parse(fs.readFileSync(sourceSeedPath, 'utf8')) as {
       words: Array<{ id: string }>;
-      reviewItems: Array<{ id: string }>;
     };
+    const reviewWordCount = seedData.words.length;
 
     fs.copyFileSync(sourceSeedPath, appJsonPath);
 
@@ -99,16 +100,6 @@ describe('dev database bootstrap', { concurrency: false }, () => {
         last_learning_success_on TEXT,
         last_learning_covered_on TEXT
       );
-
-      CREATE TABLE review_items (
-        id TEXT PRIMARY KEY,
-        word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
-        direction TEXT NOT NULL,
-        interval_hours INTEGER NOT NULL,
-        last_reviewed_at TEXT,
-        next_due_at TEXT,
-        ease_factor REAL NOT NULL
-      );
     `);
     sqlite.close();
 
@@ -123,7 +114,8 @@ describe('dev database bootstrap', { concurrency: false }, () => {
       const dbModule = await import(moduleUrl);
 
       assert.equal(dbModule.getWords().length, seedData.words.length);
-      assert.equal(dbModule.getReviewItems().length, seedData.reviewItems.length);
+      assert.equal(dbModule.getWordStudyAdmissionStates().length, reviewWordCount);
+      assert.equal(dbModule.getWordSkillStates().length, reviewWordCount * 2);
     } finally {
       if (previousMode === undefined) {
         delete process.env.APP_MODE;

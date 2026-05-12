@@ -1,435 +1,494 @@
-import type { SessionItemWithWord } from '../types';
-
-export type SessionBuckets = {
-  review: SessionItemWithWord[];
-  learning: SessionItemWithWord[];
-  unstudied: SessionItemWithWord[];
-};
-
-type QueueNode = {
-  item: SessionItemWithWord;
-  next: QueueNode | null;
-};
-
-export type LinkedQueue = {
-  head: QueueNode | null;
-  tail: QueueNode | null;
-  length: number;
-};
-
-export type SessionSchedulerPolicy = {
-  unstudiedInterleaveInterval: number;
-};
-
-export type SessionScheduler = {
-  reviewQueue: LinkedQueue;
-  learningQueue: LinkedQueue;
-  unstudiedPool: SessionItemWithWord[];
-  policy: SessionSchedulerPolicy;
-  interleaveCursor: number;
-  activeItem: SessionItemWithWord | null;
-  rngState: number;
-};
-
-export type RemoveSchedulerWordResult = {
-  scheduler: SessionScheduler;
-  removedReviewItemIds: string[];
-};
-
-const DEFAULT_POLICY: SessionSchedulerPolicy = {
-  unstudiedInterleaveInterval: 5,
-};
+import type {
+  SessionStudyItem,
+  SessionStudyItemBuckets,
+  StudySkillId,
+} from '../domain/study-actions';
+import { buildWordLifecycleSessionStudyItems } from '../domain/study-actions';
+import type { Word } from '../types';
 
 const DEFAULT_SEED = 0x9e3779b9;
 
-export function createSessionScheduler({
+export type BucketSchedulerBucket = 'review' | 'learning' | 'unstudied';
+
+export type BucketSchedulerWeights = Record<BucketSchedulerBucket, number>;
+
+export type BucketSessionSchedulerPolicy = {
+  bucketWeights: BucketSchedulerWeights;
+};
+
+export type BucketSchedulerLearningProgress = {
+  coveredSkills: Record<ReviewStudySkillId, boolean>;
+  firstTryGood: Record<ReviewStudySkillId, boolean>;
+  attempts: Record<ReviewStudySkillId, number>;
+};
+
+export type BucketSchedulerUnstudiedProgress = {
+  introComplete: boolean;
+  successStreaks: Record<ReviewStudySkillId, number>;
+};
+
+export type BucketSchedulerProgress = {
+  learning: Record<string, BucketSchedulerLearningProgress>;
+  unstudied: Record<string, BucketSchedulerUnstudiedProgress>;
+};
+
+export type ActiveBucketSchedulerUnit =
+  | {
+      type: 'study';
+      bucket: BucketSchedulerBucket;
+      item: SessionStudyItem;
+    }
+  | {
+      type: 'unstudied_intro';
+      word: Word;
+    };
+
+export type BucketSessionScheduler = {
+  reviewQueue: SessionStudyItem[];
+  learningPool: Word[];
+  unstudiedPool: Word[];
+  policy: BucketSessionSchedulerPolicy;
+  rngState: number;
+  activeUnit: ActiveBucketSchedulerUnit | null;
+};
+
+type ReviewStudySkillId = Extract<StudySkillId, 'recognition' | 'production'>;
+
+const DEFAULT_BUCKET_POLICY: BucketSessionSchedulerPolicy = {
+  bucketWeights: {
+    review: 50,
+    learning: 30,
+    unstudied: 20,
+  },
+};
+
+const REVIEW_STUDY_SKILLS: ReviewStudySkillId[] = ['recognition', 'production'];
+
+export function createBucketSessionScheduler({
   buckets,
   policy,
+  progress,
   seed,
 }: {
-  buckets: SessionBuckets;
-  policy?: Partial<SessionSchedulerPolicy>;
+  buckets: SessionStudyItemBuckets;
+  policy?: Partial<BucketSessionSchedulerPolicy>;
+  progress?: Partial<BucketSchedulerProgress>;
   seed?: number;
-}): SessionScheduler {
-  const scheduler: SessionScheduler = {
-    reviewQueue: createQueue(buckets.review),
-    learningQueue: createQueue(buckets.learning),
+}): BucketSessionScheduler {
+  const scheduler: BucketSessionScheduler = {
+    reviewQueue: [...buckets.review],
+    learningPool: [...buckets.learning],
     unstudiedPool: [...buckets.unstudied],
     policy: {
-      ...DEFAULT_POLICY,
+      ...DEFAULT_BUCKET_POLICY,
       ...policy,
+      bucketWeights: {
+        ...DEFAULT_BUCKET_POLICY.bucketWeights,
+        ...policy?.bucketWeights,
+      },
     },
-    interleaveCursor: 0,
-    activeItem: null,
     rngState: normalizeSeed(seed ?? DEFAULT_SEED),
+    activeUnit: null,
   };
 
-  return nextScheduler(scheduler);
+  return syncBucketScheduler(scheduler, normalizeBucketSchedulerProgress(progress));
 }
 
-export function nextScheduler(scheduler: SessionScheduler): SessionScheduler {
-  const selection = recomputeActiveItem(scheduler);
-  if (!selection) {
-    return scheduler;
+export function getBucketSchedulerActiveUnit(scheduler: BucketSessionScheduler): ActiveBucketSchedulerUnit {
+  return scheduler.activeUnit ?? assertActiveBucketUnitPresent();
+}
+
+export function getBucketSchedulerBucketCounts(
+  scheduler: BucketSessionScheduler,
+  progress: BucketSchedulerProgress = createEmptyBucketSchedulerProgress(),
+) {
+  return getBucketSchedulerBucketCountsForProgress(scheduler, progress);
+}
+
+function getBucketSchedulerBucketCountsForProgress(
+  scheduler: BucketSessionScheduler,
+  progress: BucketSchedulerProgress,
+) {
+  return {
+    review: scheduler.reviewQueue.length,
+    learning: getBucketSchedulerCandidateWordIds(scheduler, 'learning', progress).length,
+    unstudied: getBucketSchedulerCandidateWordIds(scheduler, 'unstudied', progress).length,
+  };
+}
+
+export function getBucketSchedulerCandidateWordIds(
+  scheduler: BucketSessionScheduler,
+  bucket: 'learning' | 'unstudied',
+  progress: BucketSchedulerProgress = createEmptyBucketSchedulerProgress(),
+): string[] {
+  return getBucketSchedulerCandidateWords(scheduler, bucket, progress).map((word) => word.id);
+}
+
+// test only, I think
+export function completeActiveBucketSchedulerUnit(scheduler: BucketSessionScheduler): BucketSessionScheduler {
+  const active = getBucketSchedulerActiveUnit(scheduler);
+
+  switch (active.type) {
+    case 'study':
+      if (active.bucket === 'review') {
+        assertActiveReviewHeadMatches(scheduler, active.item);
+        return syncBucketScheduler({
+          ...scheduler,
+          reviewQueue: scheduler.reviewQueue.slice(1),
+        });
+      }
+
+      return syncBucketScheduler(removeBucketSchedulerWord(scheduler, active.bucket, active.item.targetWordId));
+    case 'unstudied_intro':
+      return syncBucketScheduler(scheduler);
+    default:
+      return assertUnreachableActiveBucketUnit(active);
   }
-
-  if (selection.source === 'unstudied') {
-    scheduler.interleaveCursor = 0;
-    scheduler.rngState = lcg(scheduler.rngState);
-  } else {
-    scheduler.interleaveCursor += 1;
-  }
-
-  return scheduler;
 }
 
-export function getSchedulerActiveItem(scheduler: SessionScheduler): SessionItemWithWord | undefined {
-  return scheduler.activeItem ?? undefined;
+export function syncBucketScheduler(
+  scheduler: BucketSessionScheduler,
+  progress: BucketSchedulerProgress = createEmptyBucketSchedulerProgress(),
+): BucketSessionScheduler {
+  return recomputeActiveBucketSchedulerUnit(scheduler, progress);
 }
 
-export function getSchedulerItems(scheduler: SessionScheduler): SessionItemWithWord[] {
-  return [...queueToArray(scheduler.reviewQueue), ...queueToArray(scheduler.learningQueue), ...scheduler.unstudiedPool];
-}
-
-export function getSchedulerLength(scheduler: SessionScheduler): number {
-  return scheduler.reviewQueue.length + scheduler.learningQueue.length + scheduler.unstudiedPool.length;
-}
-
-export function consumeActiveSchedulerItem(scheduler: SessionScheduler): SessionScheduler {
-  const active = getSchedulerActiveItem(scheduler);
-  if (!active) {
-    throw new Error('Invariant violated: attempted to consume active scheduler item when no active item is set');
-  }
-
-  if (active.word.status === 'review') {
-    assertHeadMatchesActive(scheduler.reviewQueue, active, 'review');
-    dequeue(scheduler.reviewQueue);
-  } else if (active.word.status === 'learning') {
-    assertHeadMatchesActive(scheduler.learningQueue, active, 'learning');
-    dequeue(scheduler.learningQueue);
-  } else {
-    removeFromPoolById(scheduler.unstudiedPool, active.reviewItem.id);
-  }
-
-  return nextScheduler(scheduler);
-}
-
-export function rotateActiveSchedulerItem(scheduler: SessionScheduler): SessionScheduler {
-  const active = getSchedulerActiveItem(scheduler);
-  if (!active) {
-    throw new Error('Invariant violated: attempted to rotate active scheduler item when no active item is set');
-  }
-
-  if (active.word.status === 'review') {
-    assertHeadMatchesActive(scheduler.reviewQueue, active, 'review');
-    rotateHeadToTail(scheduler.reviewQueue);
-  } else if (active.word.status === 'learning') {
-    assertHeadMatchesActive(scheduler.learningQueue, active, 'learning');
-    rotateHeadToTail(scheduler.learningQueue);
-  }
-
-  return nextScheduler(scheduler);
-}
-
-export function removeSchedulerWord(
-  scheduler: SessionScheduler,
+export function removeBucketSchedulerWord(
+  scheduler: BucketSessionScheduler,
+  bucket: 'learning' | 'unstudied',
   wordId: string,
-  status: 'review' | 'learning' | 'unstudied',
-): RemoveSchedulerWordResult {
-  let removedReviewItemIds: string[] = [];
-
-  switch (status) {
-    case 'review':
-      removedReviewItemIds = removeWordFromQueueById(scheduler.reviewQueue, wordId);
-      break;
-    case 'learning':
-      removedReviewItemIds = removeWordFromQueueById(scheduler.learningQueue, wordId);
-      break;
-    case 'unstudied':
-      removedReviewItemIds = removeWordFromArrayPoolById(scheduler.unstudiedPool, wordId);
-      break;
+): BucketSessionScheduler {
+  if (bucket === 'learning') {
+    return {
+      ...scheduler,
+      learningPool: scheduler.learningPool.filter((word) => word.id !== wordId),
+    };
   }
 
   return {
-    scheduler: nextScheduler(scheduler),
-    removedReviewItemIds,
+    ...scheduler,
+    unstudiedPool: scheduler.unstudiedPool.filter((word) => word.id !== wordId),
   };
 }
 
-export function removeUnstudiedCandidateByReviewItemId(
-  scheduler: SessionScheduler,
-  reviewItemId: string,
-): SessionScheduler {
-  removeFromPoolById(scheduler.unstudiedPool, reviewItemId);
-
-  const active = getSchedulerActiveItem(scheduler);
-  if (active && active.reviewItem.id === reviewItemId) {
-    return nextScheduler(scheduler);
-  }
-
-  return scheduler;
-}
-
-export function pruneSchedulerItems(
-  scheduler: SessionScheduler,
-  keep: (item: SessionItemWithWord, index: number) => boolean,
-): SessionScheduler {
-  let index = 0;
-  const keepWithIndex = (item: SessionItemWithWord) => {
-    const shouldKeep = keep(item, index);
-    index += 1;
-    return shouldKeep;
+export function pruneBucketSchedulerWords(
+  scheduler: BucketSessionScheduler,
+  keep: (unit: ActiveBucketSchedulerUnit | { type: 'candidate_word'; bucket: 'learning' | 'unstudied'; word: Word }) => boolean,
+): BucketSessionScheduler {
+  const active = scheduler.activeUnit;
+  const nextScheduler: BucketSessionScheduler = {
+    ...scheduler,
+    reviewQueue: scheduler.reviewQueue.filter((item) => {
+      const unit: ActiveBucketSchedulerUnit = { type: 'study', bucket: 'review', item };
+      return (active?.type === 'study' && active.bucket === 'review' && active.item.sessionActionId === item.sessionActionId) ||
+        keep(unit);
+    }),
+    learningPool: scheduler.learningPool.filter((word) => {
+      const unit = { type: 'candidate_word' as const, bucket: 'learning' as const, word };
+      return isActiveBucketWord(active, 'learning', word.id) || keep(unit);
+    }),
+    unstudiedPool: scheduler.unstudiedPool.filter((word) => {
+      const unit = { type: 'candidate_word' as const, bucket: 'unstudied' as const, word };
+      return isActiveBucketWord(active, 'unstudied', word.id) || keep(unit);
+    }),
   };
 
-  filterQueueInPlace(scheduler.reviewQueue, keepWithIndex);
-  filterQueueInPlace(scheduler.learningQueue, keepWithIndex);
-  scheduler.unstudiedPool = scheduler.unstudiedPool.filter(keepWithIndex);
-  recomputeActiveItem(scheduler);
-  return scheduler;
+  return nextScheduler;
 }
 
-export function cloneSessionScheduler(scheduler: SessionScheduler): SessionScheduler {
+export function cloneBucketSessionScheduler(scheduler: BucketSessionScheduler): BucketSessionScheduler {
   return {
-    reviewQueue: cloneQueue(scheduler.reviewQueue),
-    learningQueue: cloneQueue(scheduler.learningQueue),
-    unstudiedPool: scheduler.unstudiedPool.map(cloneSessionItemWithWord),
+    reviewQueue: scheduler.reviewQueue.map(cloneSessionStudyItem),
+    learningPool: scheduler.learningPool.map(cloneWord),
+    unstudiedPool: scheduler.unstudiedPool.map(cloneWord),
     policy: {
-      ...scheduler.policy,
+      bucketWeights: { ...scheduler.policy.bucketWeights },
     },
-    interleaveCursor: scheduler.interleaveCursor,
-    activeItem: scheduler.activeItem ? cloneSessionItemWithWord(scheduler.activeItem) : null,
     rngState: scheduler.rngState,
+    activeUnit: scheduler.activeUnit ? cloneActiveBucketSchedulerUnit(scheduler.activeUnit) : null,
   };
-}
-
-function pickNextSource(scheduler: SessionScheduler): 'review' | 'learning' | 'unstudied' {
-  const hasReview = scheduler.reviewQueue.length > 0;
-  const hasLearning = scheduler.learningQueue.length > 0;
-  const hasUnstudied = scheduler.unstudiedPool.length > 0;
-
-  if ((hasReview || hasLearning) && hasUnstudied) {
-    if (scheduler.interleaveCursor >= scheduler.policy.unstudiedInterleaveInterval) {
-      return 'unstudied';
-    }
-  }
-
-  if (hasReview) {
-    return 'review';
-  }
-
-  if (hasLearning) {
-    return 'learning';
-  }
-
-  return 'unstudied';
-}
-
-function pickActiveForSource(
-  scheduler: SessionScheduler,
-  source: 'review' | 'learning' | 'unstudied',
-): SessionItemWithWord {
-  if (source === 'review') {
-    if (!scheduler.reviewQueue.head) {
-      throw new Error('Invariant violated: review source selected with an empty review queue');
-    }
-    return scheduler.reviewQueue.head.item;
-  }
-
-  if (source === 'learning') {
-    if (!scheduler.learningQueue.head) {
-      throw new Error('Invariant violated: learning source selected with an empty learning queue');
-    }
-    return scheduler.learningQueue.head.item;
-  }
-
-  if (scheduler.unstudiedPool.length === 0) {
-    throw new Error('Invariant violated: unstudied source selected with an empty unstudied pool');
-  }
-
-  const index = lcg(scheduler.rngState) % scheduler.unstudiedPool.length;
-  return scheduler.unstudiedPool[index];
 }
 
 function lcg(value: number): number {
   return (Math.imul(value, 1664525) + 1013904223) >>> 0;
 }
 
+function randomIndex(rngState: number, length: number): number {
+  return Math.floor((rngState / 0x100000000) * length);
+}
+
 function normalizeSeed(seed: number): number {
   return (seed >>> 0) || 1;
 }
 
-function removeFromPoolById(pool: SessionItemWithWord[], reviewItemId: string) {
-  const index = pool.findIndex((item) => item.reviewItem.id === reviewItemId);
-  if (index >= 0) {
-    pool.splice(index, 1);
-  }
-}
-
-function createQueue(items: SessionItemWithWord[]): LinkedQueue {
-  const queue: LinkedQueue = {
-    head: null,
-    tail: null,
-    length: 0,
-  };
-
-  for (const item of items) {
-    enqueue(queue, item);
+function cloneActiveBucketSchedulerUnit(unit: ActiveBucketSchedulerUnit): ActiveBucketSchedulerUnit {
+  if (unit.type === 'unstudied_intro') {
+    return {
+      type: 'unstudied_intro',
+      word: cloneWord(unit.word),
+    };
   }
 
-  return queue;
-}
-
-function cloneQueue(queue: LinkedQueue): LinkedQueue {
-  return createQueue(queueToArray(queue).map(cloneSessionItemWithWord));
-}
-
-function queueToArray(queue: LinkedQueue): SessionItemWithWord[] {
-  const out: SessionItemWithWord[] = [];
-  let node = queue.head;
-
-  while (node) {
-    out.push(node.item);
-    node = node.next;
-  }
-
-  return out;
-}
-
-function dequeue(queue: LinkedQueue): void {
-  if (!queue.head) {
-    throw new Error('Invariant violated: attempted to dequeue an empty scheduler queue');
-  }
-
-  const headNode = queue.head;
-  queue.head = headNode.next;
-  queue.length -= 1;
-
-  if (!queue.head) {
-    queue.tail = null;
-  }
-}
-
-function enqueue(queue: LinkedQueue, item: SessionItemWithWord): void {
-  const node: QueueNode = { item, next: null };
-
-  if (!queue.head) {
-    queue.head = node;
-    queue.tail = node;
-    queue.length = 1;
-    return;
-  }
-
-  queue.tail!.next = node;
-  queue.tail = node;
-  queue.length += 1;
-}
-
-function rotateHeadToTail(queue: LinkedQueue) {
-  if (queue.length <= 1 || !queue.head || !queue.tail) {
-    return;
-  }
-
-  const headNode = queue.head;
-  queue.head = headNode.next;
-  headNode.next = null;
-  queue.tail.next = headNode;
-  queue.tail = headNode;
-}
-
-function assertHeadMatchesActive(
-  queue: LinkedQueue,
-  activeItem: SessionItemWithWord,
-  source: 'review' | 'learning',
-): void {
-  if (!queue.head) {
-    throw new Error(`Invariant violated: ${source} queue is empty while active ${source} item exists`);
-  }
-
-  if (queue.head.item.reviewItem.id !== activeItem.reviewItem.id) {
-    throw new Error(
-      `Invariant violated: active ${source} item is not the queue head (${activeItem.reviewItem.id} !== ${queue.head.item.reviewItem.id})`,
-    );
-  }
-}
-
-function filterQueueInPlace(queue: LinkedQueue, keep: (item: SessionItemWithWord) => boolean): void {
-  let prev: QueueNode | null = null;
-  let node = queue.head;
-
-  while (node) {
-    const next = node.next;
-
-    if (!keep(node.item)) {
-      if (prev) {
-        prev.next = next;
-      } else {
-        queue.head = next;
-      }
-
-      if (queue.tail === node) {
-        queue.tail = prev;
-      }
-
-      queue.length -= 1;
-      node.next = null;
-    } else {
-      prev = node;
-    }
-
-    node = next;
-  }
-}
-
-function removeWordFromQueueById(queue: LinkedQueue, wordId: string): string[] {
-  const removedReviewItemIds: string[] = [];
-  filterQueueInPlace(queue, (item) => {
-    if (item.word.id !== wordId) {
-      return true;
-    }
-
-    removedReviewItemIds.push(item.reviewItem.id);
-    return false;
-  });
-
-  return removedReviewItemIds;
-}
-
-function removeWordFromArrayPoolById(pool: SessionItemWithWord[], wordId: string): string[] {
-  const removedReviewItemIds: string[] = [];
-
-  for (let index = pool.length - 1; index >= 0; index -= 1) {
-    if (pool[index].word.id !== wordId) {
-      continue;
-    }
-
-    removedReviewItemIds.push(pool[index].reviewItem.id);
-    pool.splice(index, 1);
-  }
-
-  return removedReviewItemIds;
-}
-
-function cloneSessionItemWithWord(item: SessionItemWithWord): SessionItemWithWord {
   return {
-    reviewItem: { ...item.reviewItem },
-    word: {
-      ...item.word,
-      meanings: [...item.word.meanings],
-      examples: [...item.word.examples],
+    type: 'study',
+    bucket: unit.bucket,
+    item: cloneSessionStudyItem(unit.item),
+  };
+}
+
+function cloneSessionStudyItem(item: SessionStudyItem): SessionStudyItem {
+  return {
+    ...item,
+    sampledSkillIds: [...item.sampledSkillIds],
+    contentRef: item.contentRef ? { ...item.contentRef } : null,
+    word: cloneWord(item.word),
+  };
+}
+
+function cloneWord(word: Word): Word {
+  return {
+    ...word,
+    meanings: [...word.meanings],
+    examples: [...word.examples],
+  };
+}
+
+function recomputeActiveBucketSchedulerUnit(
+  scheduler: BucketSessionScheduler,
+  progress: BucketSchedulerProgress,
+): BucketSessionScheduler {
+  const counts = getBucketSchedulerBucketCountsForProgress(scheduler, progress);
+  if (counts.review === 0 && counts.learning === 0 && counts.unstudied === 0) {
+    return {
+      ...scheduler,
+      activeUnit: null,
+    };
+  }
+
+  const bucket = pickBucketSchedulerBucket(scheduler, progress, scheduler.rngState);
+  const activeUnit = pickActiveBucketSchedulerUnit(scheduler, bucket, progress, lcg(scheduler.rngState));
+
+  return {
+    ...scheduler,
+    rngState: lcg(lcg(scheduler.rngState)),
+    activeUnit,
+  };
+}
+
+function pickBucketSchedulerBucket(
+  scheduler: BucketSessionScheduler,
+  progress: BucketSchedulerProgress,
+  rngState: number,
+): BucketSchedulerBucket {
+  const nonemptyBuckets = getNonemptyBucketSchedulerBuckets(scheduler, progress);
+  const totalWeight = nonemptyBuckets.reduce((sum, bucket) => sum + Math.max(0, scheduler.policy.bucketWeights[bucket]), 0);
+
+  if (totalWeight <= 0) {
+    return nonemptyBuckets[0] ?? assertNonemptyBucketPresent();
+  }
+
+  let cursor = randomIndex(rngState, totalWeight);
+  for (const bucket of nonemptyBuckets) {
+    cursor -= Math.max(0, scheduler.policy.bucketWeights[bucket]);
+    if (cursor < 0) {
+      return bucket;
+    }
+  }
+
+  return nonemptyBuckets[nonemptyBuckets.length - 1] ?? assertNonemptyBucketPresent();
+}
+
+function getNonemptyBucketSchedulerBuckets(
+  scheduler: BucketSessionScheduler,
+  progress: BucketSchedulerProgress,
+): BucketSchedulerBucket[] {
+  const counts = getBucketSchedulerBucketCountsForProgress(scheduler, progress);
+  return REVIEW_BUCKETS.filter((bucket) => counts[bucket] > 0);
+}
+
+const REVIEW_BUCKETS: BucketSchedulerBucket[] = ['review', 'learning', 'unstudied'];
+
+function pickActiveBucketSchedulerUnit(
+  scheduler: BucketSessionScheduler,
+  bucket: BucketSchedulerBucket,
+  progress: BucketSchedulerProgress,
+  rngState: number,
+): ActiveBucketSchedulerUnit {
+  if (bucket === 'review') {
+    const item = scheduler.reviewQueue[0] ?? assertBucketSchedulerReviewActionPresent();
+    return { type: 'study', bucket, item };
+  }
+
+  const candidates = getBucketSchedulerCandidateWords(scheduler, bucket, progress);
+  const word = candidates[randomIndex(rngState, candidates.length)] ?? assertBucketSchedulerCandidateWordPresent(bucket);
+
+  if (bucket === 'unstudied') {
+    const wordProgress = progress.unstudied[word.id] ?? createInitialBucketUnstudiedProgress();
+    if (!wordProgress.introComplete) {
+      return { type: 'unstudied_intro', word };
+    }
+  }
+
+  return {
+    type: 'study',
+    bucket,
+    item: buildBucketWordStudyItem({
+      bucket,
+      word,
+      skillId: pickOpenBucketWordSkill(progress, bucket, word.id),
+    }),
+  };
+}
+
+function getBucketSchedulerCandidateWords(
+  scheduler: BucketSessionScheduler,
+  bucket: 'learning' | 'unstudied',
+  progress: BucketSchedulerProgress,
+): Word[] {
+  const pool = bucket === 'learning' ? scheduler.learningPool : scheduler.unstudiedPool;
+
+  return pool.filter((word) => hasOpenBucketWordWork(progress, bucket, word.id));
+}
+
+function hasOpenBucketWordWork(
+  progress: BucketSchedulerProgress,
+  bucket: 'learning' | 'unstudied',
+  wordId: string,
+): boolean {
+  if (bucket === 'learning') {
+    const wordProgress = progress.learning[wordId] ?? createInitialBucketLearningProgress();
+    return REVIEW_STUDY_SKILLS.some((skillId) => !wordProgress.coveredSkills[skillId]);
+  }
+
+  const wordProgress = progress.unstudied[wordId] ?? createInitialBucketUnstudiedProgress();
+  return !wordProgress.introComplete || REVIEW_STUDY_SKILLS.some((skillId) => wordProgress.successStreaks[skillId] < 3);
+}
+
+function pickOpenBucketWordSkill(
+  progress: BucketSchedulerProgress,
+  bucket: 'learning' | 'unstudied',
+  wordId: string,
+): ReviewStudySkillId {
+  if (bucket === 'learning') {
+    const wordProgress = progress.learning[wordId] ?? createInitialBucketLearningProgress();
+    return REVIEW_STUDY_SKILLS.find((skillId) => !wordProgress.coveredSkills[skillId]) ?? assertOpenBucketWordSkillPresent(bucket, wordId);
+  }
+
+  const wordProgress = progress.unstudied[wordId] ?? createInitialBucketUnstudiedProgress();
+  return REVIEW_STUDY_SKILLS.find((skillId) => wordProgress.successStreaks[skillId] < 3) ?? assertOpenBucketWordSkillPresent(bucket, wordId);
+}
+
+function buildBucketWordStudyItem({
+  bucket,
+  word,
+  skillId,
+}: {
+  bucket: 'learning' | 'unstudied';
+  word: Word;
+  skillId: ReviewStudySkillId;
+}): SessionStudyItem {
+  const item = buildWordLifecycleSessionStudyItems({ source: bucket, word })
+    .find((candidate) => candidate.sampledSkillIds.length === 1 && candidate.sampledSkillIds[0] === skillId);
+
+  return item ?? assertLifecycleSessionStudyItemPresent(bucket, word.id, skillId);
+}
+
+export function createInitialBucketLearningProgress(): BucketSchedulerLearningProgress {
+  return {
+    coveredSkills: {
+      recognition: false,
+      production: false,
+    },
+    firstTryGood: {
+      recognition: false,
+      production: false,
+    },
+    attempts: {
+      recognition: 0,
+      production: 0,
     },
   };
 }
 
-function recomputeActiveItem(
-  scheduler: SessionScheduler,
-): { source: 'review' | 'learning' | 'unstudied'; item: SessionItemWithWord } | null {
-  if (getSchedulerLength(scheduler) === 0) {
-    scheduler.activeItem = null;
-    return null;
+export function createInitialBucketUnstudiedProgress(): BucketSchedulerUnstudiedProgress {
+  return {
+    introComplete: false,
+    successStreaks: {
+      recognition: 0,
+      production: 0,
+    },
+  };
+}
+
+function createEmptyBucketSchedulerProgress(): BucketSchedulerProgress {
+  return {
+    learning: {},
+    unstudied: {},
+  };
+}
+
+function normalizeBucketSchedulerProgress(
+  progress: Partial<BucketSchedulerProgress> | undefined,
+): BucketSchedulerProgress {
+  return {
+    learning: { ...progress?.learning },
+    unstudied: { ...progress?.unstudied },
+  };
+}
+
+function isActiveBucketWord(
+  active: ActiveBucketSchedulerUnit | null,
+  bucket: 'learning' | 'unstudied',
+  wordId: string,
+) {
+  if (!active) {
+    return false;
   }
 
-  const source = pickNextSource(scheduler);
-  const item = pickActiveForSource(scheduler, source);
-  scheduler.activeItem = item;
-  return { source, item };
+  if (active.type === 'unstudied_intro') {
+    return bucket === 'unstudied' && active.word.id === wordId;
+  }
+
+  return active.bucket === bucket && active.item.targetWordId === wordId;
+}
+
+function assertActiveReviewHeadMatches(scheduler: BucketSessionScheduler, item: SessionStudyItem) {
+  const head = scheduler.reviewQueue[0] ?? assertBucketSchedulerReviewActionPresent();
+  if (head.sessionActionId !== item.sessionActionId) {
+    throw new Error(
+      `Invariant violated: active review action is not the review bucket head (${item.sessionActionId} !== ${head.sessionActionId}).`,
+    );
+  }
+}
+
+function assertActiveBucketUnitPresent(): never {
+  throw new Error('Invariant violated: attempted to read an active bucket scheduler unit when none is set.');
+}
+
+function assertNonemptyBucketPresent(): never {
+  throw new Error('Invariant violated: bucket scheduler has no nonempty bucket.');
+}
+
+function assertBucketSchedulerReviewActionPresent(): never {
+  throw new Error('Invariant violated: review bucket selected with no review action.');
+}
+
+function assertBucketSchedulerCandidateWordPresent(bucket: 'learning' | 'unstudied'): never {
+  throw new Error(`Invariant violated: ${bucket} bucket selected with no candidate word.`);
+}
+
+function assertOpenBucketWordSkillPresent(bucket: 'learning' | 'unstudied', wordId: string): never {
+  throw new Error(`Invariant violated: ${bucket} word "${wordId}" has no open skill.`);
+}
+
+function assertLifecycleSessionStudyItemPresent(
+  bucket: 'learning' | 'unstudied',
+  wordId: string,
+  skillId: ReviewStudySkillId,
+): never {
+  throw new Error(`Invariant violated: failed to build ${bucket} ${skillId} study action for word "${wordId}".`);
+}
+
+function assertUnreachableActiveBucketUnit(unit: never): never {
+  throw new Error(`Unsupported active bucket unit "${JSON.stringify(unit)}".`);
 }

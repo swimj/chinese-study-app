@@ -1,12 +1,13 @@
 import type { RefObject } from 'react';
 import type { BackendStatus } from '../services/api';
 import type {
+  BucketSessionState,
   LearningWordProgress,
-  ReviewItemProgress,
-  SessionState,
+  ReviewActionProgress,
   UnstudiedWordProgress,
 } from '../lib/session-state';
-import type { ReviewRating, SessionItemWithWord, Word, WordMeaning } from '../types';
+import type { SessionStudyItem } from '../domain/study-actions';
+import type { ReviewRating, Word, WordMeaning } from '../types';
 import type { SessionPrefetchState } from '../features/session/session-prefetch';
 import type { RatingOption } from '../features/session/session-rating';
 import type { SessionSummary } from '../features/session/session-summary';
@@ -74,16 +75,16 @@ export function HomePage({
   backendStatus: BackendStatus | null;
   sessionPrefetch: SessionPrefetchState;
   sessionStarted: boolean;
-  sessionPhase: SessionState['phase'] | null;
+  sessionPhase: BucketSessionState['phase'] | null;
   sessionLoading: boolean;
   displayedSessionItemCount: number;
   reviewedCount: number;
   sessionSummary: SessionSummary | null;
-  activeItem: SessionItemWithWord | null;
+  activeItem: SessionStudyItem | null;
   activeWord: Word | null;
   activeLearningProgress: LearningWordProgress | undefined;
   activeUnstudiedProgress: UnstudiedWordProgress | undefined;
-  activeReviewProgress: ReviewItemProgress | undefined;
+  activeReviewProgress: ReviewActionProgress | undefined;
   hasUndo: boolean;
   submittingRating: ReviewRating | null;
   personalNotesEditorOpen: boolean;

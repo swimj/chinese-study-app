@@ -2,11 +2,12 @@ import type { RefObject } from 'react';
 import { MeaningList } from '../../components/MeaningList';
 import type {
   LearningWordProgress,
-  ReviewItemProgress,
-  SessionState,
+  ReviewActionProgress,
+  BucketSessionState,
   UnstudiedWordProgress,
 } from '../../lib/session-state';
-import type { ReviewRating, SessionItemWithWord, Word, WordMeaning } from '../../types';
+import type { SessionStudyItem } from '../../domain/study-actions';
+import type { ReviewRating, Word, WordMeaning } from '../../types';
 import type { RatingOption } from './session-rating';
 import type { SessionSummary } from './session-summary';
 import { SessionSummaryPanel } from './SessionSummaryPanel';
@@ -79,13 +80,13 @@ export function StudySessionPanel({
   onRate,
 }: {
   sessionStarted: boolean;
-  sessionPhase: SessionState['phase'] | null;
+  sessionPhase: BucketSessionState['phase'] | null;
   sessionSummary: SessionSummary | null;
-  activeItem: SessionItemWithWord | null;
+  activeItem: SessionStudyItem | null;
   activeWord: Word | null;
   activeLearningProgress: LearningWordProgress | undefined;
   activeUnstudiedProgress: UnstudiedWordProgress | undefined;
-  activeReviewProgress: ReviewItemProgress | undefined;
+  activeReviewProgress: ReviewActionProgress | undefined;
   reviewedCount: number;
   queuedCount: number;
   hasUndo: boolean;
@@ -136,6 +137,40 @@ export function StudySessionPanel({
       ) : sessionPhase === 'completed' && sessionSummary ? (
         <div className="stack">
           <SessionSummaryPanel summary={sessionSummary} />
+          <UndoButton
+            hasUndo={hasUndo}
+            submittingRating={submittingRating}
+            personalNotesEditorOpen={personalNotesEditorOpen}
+            onUndoLastRating={onUndoLastRating}
+          />
+        </div>
+      ) : activeWord?.status === 'unstudied' && !activeUnstudiedProgress?.introComplete ? (
+        <div className="review-card">
+          <div className="review-card-header">
+            <p className="badge">New word introduction</p>
+            <CardActions
+              personalNotesEditorSaving={personalNotesEditorSaving}
+              onDismissCurrentWord={onDismissCurrentWord}
+              onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
+            />
+          </div>
+          <div className="prompt-block">
+            <span className="prompt-label">Hanzi</span>
+            <strong className="prompt-value">{activeWord.hanzi}</strong>
+            <span className="prompt-meta">{activeWord.pinyin}</span>
+            <MeaningList meanings={activeAllMeanings} />
+            <span className="prompt-meta">{activeWord.examples[0]}</span>
+            {activeWordPersonalNotes.trim().length > 0 ? (
+              <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => onBeginUnstudiedDrill(activeWord.id)}
+            disabled={personalNotesEditorOpen}
+          >
+            Begin recall drills
+          </button>
           <UndoButton
             hasUndo={hasUndo}
             submittingRating={submittingRating}
@@ -221,40 +256,6 @@ export function StudySessionPanel({
             />
           </div>
         </div>
-      ) : activeWord.status === 'unstudied' && !activeUnstudiedProgress?.introComplete ? (
-        <div className="review-card">
-          <div className="review-card-header">
-            <p className="badge">New word introduction</p>
-            <CardActions
-              personalNotesEditorSaving={personalNotesEditorSaving}
-              onDismissCurrentWord={onDismissCurrentWord}
-              onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
-            />
-          </div>
-          <div className="prompt-block">
-            <span className="prompt-label">Hanzi</span>
-            <strong className="prompt-value">{activeWord.hanzi}</strong>
-            <span className="prompt-meta">{activeWord.pinyin}</span>
-            <MeaningList meanings={activeAllMeanings} />
-            <span className="prompt-meta">{activeWord.examples[0]}</span>
-            {activeItem.reviewItem.direction === 'forward' && activeWordPersonalNotes.trim().length > 0 ? (
-              <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            onClick={() => onBeginUnstudiedDrill(activeWord.id)}
-            disabled={personalNotesEditorOpen}
-          >
-            Begin recall drills
-          </button>
-          <UndoButton
-            hasUndo={hasUndo}
-            submittingRating={submittingRating}
-            personalNotesEditorOpen={personalNotesEditorOpen}
-            onUndoLastRating={onUndoLastRating}
-          />
-        </div>
       ) : (
         <div className="review-card">
           <div className="review-card-header">
@@ -269,7 +270,7 @@ export function StudySessionPanel({
                     ? 'Learning'
                     : 'New word'}
               {' · '}
-              {activeItem.reviewItem.direction === 'forward' ? 'Hanzi → Meaning' : 'Meaning → Hanzi'}
+              {activeItem.actionKind === 'recognition' ? 'Hanzi → Meaning' : 'Meaning → Hanzi'}
             </p>
             <CardActions
               personalNotesEditorSaving={personalNotesEditorSaving}
@@ -279,7 +280,7 @@ export function StudySessionPanel({
           </div>
           <p className="notes">
             Answered {reviewedCount} this session · {queuedCount} still queued · Unique lapse items{' '}
-            {sessionSummary?.lapsedReviewItemIds.length ?? 0} · Elapsed {activeElapsedTime}
+            {sessionSummary?.lapsedReviewActionIds.length ?? 0} · Elapsed {activeElapsedTime}
           </p>
           <UndoButton
             hasUndo={hasUndo}
@@ -289,7 +290,7 @@ export function StudySessionPanel({
           />
           <div className="prompt-block">
             <span className="prompt-label">Prompt</span>
-            {activeItem.reviewItem.direction === 'forward' ? (
+            {activeItem.actionKind === 'recognition' ? (
               <strong className="prompt-value">{activePrompt}</strong>
             ) : activePromptDisplayedMeanings.length > 0 ? (
               <MeaningList meanings={activePromptDisplayedMeanings} className="meaning-list-prompt" />
@@ -300,8 +301,8 @@ export function StudySessionPanel({
               {activeWord.status === 'review'
                 ? `${activeReviewState} · Failures ${activeReviewProgress?.failureCount ?? 0}`
                 : activeWord.status === 'learning'
-                  ? `Binary recall · Covered ${Number(activeLearningProgress?.coveredDirections.forward ?? false) + Number(activeLearningProgress?.coveredDirections.reverse ?? false)}/2 directions`
-                  : `Binary recall · Consecutive successes ${activeUnstudiedProgress?.consecutiveSuccesses.forward ?? 0}/3 forward · ${activeUnstudiedProgress?.consecutiveSuccesses.reverse ?? 0}/3 reverse`}
+                  ? `Binary recall · Covered ${Number(activeLearningProgress?.coveredDirections.forward ?? false) + Number(activeLearningProgress?.coveredDirections.reverse ?? false)}/2 skills`
+                  : `Binary recall · Consecutive successes ${activeUnstudiedProgress?.consecutiveSuccesses.forward ?? 0}/3 recognition · ${activeUnstudiedProgress?.consecutiveSuccesses.reverse ?? 0}/3 production`}
             </span>
           </div>
           {answerRevealed ? (
@@ -350,7 +351,7 @@ export function StudySessionPanel({
                 <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
               ) : null}
               <span className="prompt-meta">
-                Interval {activeItem.reviewItem.intervalHours} hour{activeItem.reviewItem.intervalHours === 1 ? '' : 's'}
+                Interval {activeItem.intervalHours} hour{activeItem.intervalHours === 1 ? '' : 's'}
               </span>
               <span className="prompt-meta">{activeWord.examples[0]}</span>
             </div>

@@ -48,7 +48,6 @@ describe('study attempt event storage', { concurrency: false }, () => {
     sqlite.exec(`
       DELETE FROM study_attempt_events;
       DELETE FROM study_sessions;
-      DELETE FROM review_items;
       DELETE FROM words;
     `);
   });

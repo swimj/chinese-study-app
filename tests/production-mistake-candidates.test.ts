@@ -46,7 +46,6 @@ describe('production mistake candidates', { concurrency: false }, () => {
   beforeEach(() => {
     sqlite.exec(`
       DELETE FROM daily_new_word_intake;
-      DELETE FROM review_items;
       DELETE FROM words;
     `);
     fs.rmSync(path.join(dataDir, 'production-mistake-candidates.jsonl'), { force: true });

@@ -1,26 +1,22 @@
 import type { ReactNode } from 'react';
 
-export type AppPageKey = 'home' | 'words' | 'priority';
+export type AppPageKey = 'home' | 'priority';
 
 export function AppChrome({
   currentPage,
   error,
   version,
-  wordsPageLoading,
   priorityPageLoading,
   children,
   onOpenHomePage,
-  onOpenWordsPage,
   onOpenPriorityPage,
 }: {
   currentPage: AppPageKey;
   error: string | null;
   version: string;
-  wordsPageLoading: boolean;
   priorityPageLoading: boolean;
   children: ReactNode;
   onOpenHomePage: () => void;
-  onOpenWordsPage: () => void;
   onOpenPriorityPage: () => void;
 }) {
   return (
@@ -35,23 +31,15 @@ export function AppChrome({
             type="button"
             className={`nav-tab ${currentPage === 'home' ? 'active' : ''}`}
             onClick={onOpenHomePage}
-            disabled={wordsPageLoading}
+            disabled={priorityPageLoading}
           >
             Home
           </button>
           <button
             type="button"
-            className={`nav-tab ${currentPage === 'words' ? 'active' : ''}`}
-            onClick={onOpenWordsPage}
-            disabled={wordsPageLoading || priorityPageLoading}
-          >
-            {wordsPageLoading ? 'Loading words...' : 'Words'}
-          </button>
-          <button
-            type="button"
             className={`nav-tab ${currentPage === 'priority' ? 'active' : ''}`}
             onClick={onOpenPriorityPage}
-            disabled={wordsPageLoading || priorityPageLoading}
+            disabled={priorityPageLoading}
           >
             {priorityPageLoading ? 'Loading priority...' : 'Priority'}
           </button>

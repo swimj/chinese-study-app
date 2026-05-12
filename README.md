@@ -21,12 +21,12 @@ The current milestone includes:
 - SQLite persistence
 - revised word/review schema aligned to the learning-review spec
 - separate `dev` and `study` backend modes
-- sample `Word` and `ReviewItem` records in `dev` mode
+- sample `Word` records and word-skill scheduler state in `dev` mode
 - persisted word states: `unstudied`, `learning`, `review`
 - direction-specific review intervals tracked in hours
-- mixed study sessions containing due review items, active learning words, and top-priority unstudied words
+- mixed study sessions containing due review actions, active learning words, and top-priority unstudied words
 - active session snapshot owned by the frontend after session start
-- frontend dashboard that loads words and due review items from the backend API
+- frontend dashboard that loads words and due review actions from the backend API
 
 ## Release Versioning
 

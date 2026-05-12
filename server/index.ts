@@ -4,22 +4,18 @@ import { pathToFileURL } from 'node:url';
 import {
   captureProductionMistakeCandidate,
   completeLearningWordSession,
-  completeReviewItemSession,
   completeUnstudiedWordSession,
   dismissWordFromStudy,
   addUnstudiedUserPriorityByHanzi,
   dbConfig,
   getUnstudiedCountBaseline,
-  getHomeOverview,
   getLearningPolicy,
   getPrioritizedUnstudiedWords,
   getProductionMistakeCandidates,
   getReviewFailureRateDays,
-  getReviewItems,
   getSessionPayload,
   getTopUnstudiedPriorityWords,
   getWordMeanings,
-  getWords,
   getWordStatusCounts,
   recordAcceptedReviewAttemptBatch,
   recordReviewSessionSummary,
@@ -38,11 +34,6 @@ export function createApp() {
   app.use(cors());
   app.use(express.json());
 
-  app.get('/api/words', (req, res) => {
-    const words = getWords();
-    res.json(words);
-  });
-
   app.get('/api/words/:id/meanings', (req, res) => {
     try {
       const meanings = getWordMeanings(req.params.id);
@@ -55,10 +46,6 @@ export function createApp() {
 
       res.status(500).json({ error: 'Failed to load word meanings' });
     }
-  });
-
-  app.get('/api/review-items', (req, res) => {
-    res.json(getReviewItems());
   });
 
   app.get('/api/production-mistake-candidates', (req, res) => {
@@ -145,36 +132,8 @@ export function createApp() {
       dbPath: dbConfig.dbPath,
       wordStatusCounts: getWordStatusCounts(),
       reviewFailureRateDays: getReviewFailureRateDays(),
-      ...getHomeOverview(studyDayKey),
       ...getLearningPolicy(studyDayKey),
     });
-  });
-
-  app.post('/api/review-items/:id/complete-session', (req, res) => {
-    const failureCount = req.body?.failureCount;
-    const terminalRating = req.body?.terminalRating ?? null;
-
-    if (!Number.isInteger(failureCount) || failureCount < 0) {
-      res.status(400).json({ error: 'Expected non-negative integer failureCount' });
-      return;
-    }
-
-    if (terminalRating !== null && terminalRating !== 'hard' && terminalRating !== 'good' && terminalRating !== 'easy') {
-      res.status(400).json({ error: 'Invalid terminal rating' });
-      return;
-    }
-
-    try {
-      const updatedItem = completeReviewItemSession(req.params.id, failureCount, terminalRating);
-      res.json(updatedItem);
-    } catch (error) {
-      if (error instanceof Error && error.message === 'Review item not found') {
-        res.status(404).json({ error: error.message });
-        return;
-      }
-
-      res.status(500).json({ error: 'Failed to complete review item session' });
-    }
   });
 
   app.post('/api/study-sessions/:sessionId/accepted-review-attempt-batch', (req, res) => {
@@ -198,25 +157,19 @@ export function createApp() {
     }
 
     try {
-      const result = recordAcceptedReviewAttemptBatch({
+      recordAcceptedReviewAttemptBatch({
         sessionId: sessionId.trim(),
         events: events as StudyAttemptEvent[],
         commitIntent: commitIntent as ReviewAttemptCommitIntent,
       });
-      res.status(201).json(result);
+      res.status(204).send();
     } catch (error) {
-      if (error instanceof Error && error.message === 'Review item not found') {
-        res.status(404).json({ error: error.message });
-        return;
-      }
-
       if (
         error instanceof Error &&
         (error.message.startsWith('Expected ') ||
           error.message.startsWith('Invalid ') ||
           error.message.startsWith('Cannot ') ||
           error.message.startsWith('Accepted attempt') ||
-          error.message.startsWith('Review item') ||
           error.message.startsWith('Review attempt') ||
           error.message.startsWith('Study attempt') ||
           error.message.startsWith('Word skill state not found'))
@@ -232,8 +185,8 @@ export function createApp() {
   app.post('/api/review-session-summaries', (req, res) => {
     const sessionId = req.body?.sessionId;
     const completedAt = req.body?.completedAt;
-    const completedReviewItemCount = req.body?.completedReviewItemCount;
-    const failedReviewItemCount = req.body?.failedReviewItemCount;
+    const completedReviewActionCount = req.body?.completedReviewActionCount;
+    const failedReviewActionCount = req.body?.failedReviewActionCount;
 
     if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
       res.status(400).json({ error: 'Expected non-empty string sessionId' });
@@ -245,13 +198,13 @@ export function createApp() {
       return;
     }
 
-    if (!Number.isInteger(completedReviewItemCount) || completedReviewItemCount < 0) {
-      res.status(400).json({ error: 'Expected non-negative integer completedReviewItemCount' });
+    if (!Number.isInteger(completedReviewActionCount) || completedReviewActionCount < 0) {
+      res.status(400).json({ error: 'Expected non-negative integer completedReviewActionCount' });
       return;
     }
 
-    if (!Number.isInteger(failedReviewItemCount) || failedReviewItemCount < 0) {
-      res.status(400).json({ error: 'Expected non-negative integer failedReviewItemCount' });
+    if (!Number.isInteger(failedReviewActionCount) || failedReviewActionCount < 0) {
+      res.status(400).json({ error: 'Expected non-negative integer failedReviewActionCount' });
       return;
     }
 
@@ -259,17 +212,17 @@ export function createApp() {
       recordReviewSessionSummary({
         sessionId,
         completedAt,
-        completedReviewItemCount,
-        failedReviewItemCount,
+        completedReviewActionCount,
+        failedReviewActionCount,
       });
       res.status(204).end();
     } catch (error) {
       if (
         error instanceof Error &&
         (error.message === 'Expected non-empty session id' ||
-          error.message === 'Expected non-negative integer completedReviewItemCount' ||
-          error.message === 'Expected non-negative integer failedReviewItemCount' ||
-          error.message === 'Expected failedReviewItemCount to be less than or equal to completedReviewItemCount')
+          error.message === 'Expected non-negative integer completedReviewActionCount' ||
+          error.message === 'Expected non-negative integer failedReviewActionCount' ||
+          error.message === 'Expected failedReviewActionCount to be less than or equal to completedReviewActionCount')
       ) {
         res.status(400).json({ error: error.message });
         return;
