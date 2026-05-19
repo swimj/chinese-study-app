@@ -41,7 +41,19 @@ export function HomeOverviewPanel({
           </strong>
         </div>
       </div>
-      <p className="notes">Learning coverage day: {backendStatus?.learningCoverageDate ?? 'Unknown'}.</p>
+      {!sessionStarted ? (
+        <button type="button" onClick={onStartSession} disabled={sessionLoading || !canStartSession}>
+          {sessionLoading ? 'Preparing session...' : 'Start session'}
+        </button>
+      ) : (
+        <button type="button" onClick={onEndSession}>
+          {sessionPhase === 'active'
+            ? 'End session'
+            : sessionPhase === 'completed'
+              ? 'Close summary'
+              : 'Back to overview'}
+        </button>
+      )}
       <section className="failure-rate-section" aria-label="Review failure rate">
         <h3>Review failure rate</h3>
         {backendStatus?.reviewFailureRateDays.length ? (
@@ -65,19 +77,6 @@ export function HomeOverviewPanel({
           Session prefetch: {formatSessionPrefetchStatus(sessionPrefetch)}
         </p>
       ) : null}
-      {!sessionStarted ? (
-        <button type="button" onClick={onStartSession} disabled={sessionLoading || !canStartSession}>
-          {sessionLoading ? 'Preparing session...' : 'Start session'}
-        </button>
-      ) : (
-        <button type="button" onClick={onEndSession}>
-          {sessionPhase === 'active'
-            ? 'End session'
-            : sessionPhase === 'completed'
-              ? 'Close summary'
-              : 'Back to overview'}
-        </button>
-      )}
     </div>
   );
 }
