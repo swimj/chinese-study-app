@@ -12,7 +12,6 @@ export function HomeOverviewPanel({
   sessionPhase,
   sessionLoading,
   displayedSessionItemCount,
-  reviewedCount,
   onStartSession,
   onEndSession,
 }: {
@@ -22,15 +21,9 @@ export function HomeOverviewPanel({
   sessionPhase: SessionPhase | null;
   sessionLoading: boolean;
   displayedSessionItemCount: number;
-  reviewedCount: number;
   onStartSession: () => void;
   onEndSession: () => void;
 }) {
-  const statusCounts = backendStatus?.wordStatusCounts ?? {
-    unstudied: 0,
-    learning: 0,
-    review: 0,
-  };
   const prefetchedSessionItemCount = !sessionStarted && sessionPrefetch.status === 'ready'
     ? displayedSessionItemCount
     : null;
@@ -39,20 +32,8 @@ export function HomeOverviewPanel({
   return (
     <div className="panel">
       <h2>Overview</h2>
-      <p className="notes">Home loads corpus counts first, then prefetches the session payload in the background.</p>
+      <p className="notes">Home checks backend status, then prefetches the session payload in the background.</p>
       <div className="stack">
-        <div className="stat-card">
-          <span className="stat-label">Review words</span>
-          <strong className="stat-value">{statusCounts.review}</strong>
-        </div>
-        <div className="stat-card">
-          <span className="stat-label">Learning words</span>
-          <strong className="stat-value">{statusCounts.learning}</strong>
-        </div>
-        <div className="stat-card">
-          <span className="stat-label">Unstudied words</span>
-          <strong className="stat-value">{statusCounts.unstudied}</strong>
-        </div>
         <div className="stat-card">
           <span className="stat-label">{sessionStarted ? 'Items left in session' : 'Session words'}</span>
           <strong className="stat-value">
@@ -60,9 +41,6 @@ export function HomeOverviewPanel({
           </strong>
         </div>
       </div>
-      <p className="notes">
-        Corpus status counts: {statusCounts.learning} learning, {statusCounts.review} review, {statusCounts.unstudied} unstudied.
-      </p>
       <p className="notes">Learning coverage day: {backendStatus?.learningCoverageDate ?? 'Unknown'}.</p>
       <section className="failure-rate-section" aria-label="Review failure rate">
         <h3>Review failure rate</h3>

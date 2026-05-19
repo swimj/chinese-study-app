@@ -149,7 +149,6 @@ export function HomePage({
           sessionPhase={sessionPhase}
           sessionLoading={sessionLoading}
           displayedSessionItemCount={displayedSessionItemCount}
-          reviewedCount={reviewedCount}
           onStartSession={onStartSession}
           onEndSession={onEndSession}
         />
