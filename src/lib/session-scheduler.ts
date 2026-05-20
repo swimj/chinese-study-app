@@ -335,7 +335,7 @@ function pickActiveBucketSchedulerUnit(
     item: buildBucketWordStudyItem({
       bucket,
       word,
-      skillId: pickOpenBucketWordSkill(progress, bucket, word.id),
+      skillId: pickOpenBucketWordSkill(progress, bucket, word.id, lcg(rngState)),
     }),
   };
 }
@@ -368,14 +368,24 @@ function pickOpenBucketWordSkill(
   progress: BucketSchedulerProgress,
   bucket: 'learning' | 'unstudied',
   wordId: string,
+  rngState: number,
 ): ReviewStudySkillId {
+  const openSkills = getOpenBucketWordSkills(progress, bucket, wordId);
+  return openSkills[randomIndex(rngState, openSkills.length)] ?? assertOpenBucketWordSkillPresent(bucket, wordId);
+}
+
+function getOpenBucketWordSkills(
+  progress: BucketSchedulerProgress,
+  bucket: 'learning' | 'unstudied',
+  wordId: string,
+): ReviewStudySkillId[] {
   if (bucket === 'learning') {
     const wordProgress = progress.learning[wordId] ?? createInitialBucketLearningProgress();
-    return REVIEW_STUDY_SKILLS.find((skillId) => !wordProgress.coveredSkills[skillId]) ?? assertOpenBucketWordSkillPresent(bucket, wordId);
+    return REVIEW_STUDY_SKILLS.filter((skillId) => !wordProgress.coveredSkills[skillId]);
   }
 
   const wordProgress = progress.unstudied[wordId] ?? createInitialBucketUnstudiedProgress();
-  return REVIEW_STUDY_SKILLS.find((skillId) => wordProgress.successStreaks[skillId] < 3) ?? assertOpenBucketWordSkillPresent(bucket, wordId);
+  return REVIEW_STUDY_SKILLS.filter((skillId) => wordProgress.successStreaks[skillId] < 3);
 }
 
 function buildBucketWordStudyItem({

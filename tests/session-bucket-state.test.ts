@@ -61,6 +61,82 @@ describe('bucket session state covering contract', () => {
     assert.equal(getBucketSessionUnitCounts(result.state).learning, 0);
   });
 
+  test('open lifecycle directions are selected randomly instead of always recognition first', async () => {
+    const {
+      completeActiveUnstudiedIntro,
+      createBucketSessionState,
+      getActiveSessionUnit,
+    } = await loadBucketSessionStateApi();
+    const learningWord = createWord({ id: 'random-learning-word', status: 'learning' });
+    const unstudiedWord = createWord({ id: 'random-unstudied-word', status: 'unstudied' });
+
+    const learningRecognitionFirst = createBucketSessionState({
+      buckets: {
+        review: [],
+        learning: [learningWord],
+        unstudied: [],
+      },
+      sessionId: testSessionId,
+      schedulerPolicy: {
+        bucketWeights: { review: 0, learning: 1, unstudied: 0 },
+      },
+      seed: 1,
+    });
+    const learningProductionFirst = createBucketSessionState({
+      buckets: {
+        review: [],
+        learning: [learningWord],
+        unstudied: [],
+      },
+      sessionId: testSessionId,
+      schedulerPolicy: {
+        bucketWeights: { review: 0, learning: 1, unstudied: 0 },
+      },
+      seed: 3,
+    });
+
+    let active = getActiveSessionUnit(learningRecognitionFirst);
+    assert.equal(active.type, 'study');
+    assert.equal(onlySampledSkill(active.item.sampledSkillIds), 'recognition');
+
+    active = getActiveSessionUnit(learningProductionFirst);
+    assert.equal(active.type, 'study');
+    assert.equal(onlySampledSkill(active.item.sampledSkillIds), 'production');
+
+    const unstudiedProductionFirst = completeActiveUnstudiedIntro(createBucketSessionState({
+      buckets: {
+        review: [],
+        learning: [],
+        unstudied: [unstudiedWord],
+      },
+      sessionId: testSessionId,
+      schedulerPolicy: {
+        bucketWeights: { review: 0, learning: 0, unstudied: 1 },
+      },
+      seed: 1,
+    })).state;
+    const unstudiedRecognitionFirst = completeActiveUnstudiedIntro(createBucketSessionState({
+      buckets: {
+        review: [],
+        learning: [],
+        unstudied: [unstudiedWord],
+      },
+      sessionId: testSessionId,
+      schedulerPolicy: {
+        bucketWeights: { review: 0, learning: 0, unstudied: 1 },
+      },
+      seed: 9,
+    })).state;
+
+    active = getActiveSessionUnit(unstudiedProductionFirst);
+    assert.equal(active.type, 'study');
+    assert.equal(onlySampledSkill(active.item.sampledSkillIds), 'production');
+
+    active = getActiveSessionUnit(unstudiedRecognitionFirst);
+    assert.equal(active.type, 'study');
+    assert.equal(onlySampledSkill(active.item.sampledSkillIds), 'recognition');
+  });
+
   test('learning word success is false when any covered skill was not first-try good', async () => {
     const {
       createBucketSessionState,
@@ -91,22 +167,15 @@ describe('bucket session state covering contract', () => {
     assert.deepEqual(result.commit, { type: 'none' });
 
     state = result.state;
-    active = getActiveSessionUnit(state);
-    assert.equal(active.type, 'study');
-    assert.equal(active.item.targetWordId, learningWord.id);
-    assert.equal(onlySampledSkill(active.item.sampledSkillIds), firstSkill);
+    for (let attempts = 0; result.commit.type === 'none' && attempts < 4; attempts += 1) {
+      active = getActiveSessionUnit(state);
+      assert.equal(active.type, 'study');
+      assert.equal(active.item.targetWordId, learningWord.id);
 
-    state = markActiveSessionUnitStarted(state);
-    result = rateActiveSessionUnit(state, 'good');
-    assert.deepEqual(result.commit, { type: 'none' });
-
-    state = result.state;
-    active = getActiveSessionUnit(state);
-    assert.equal(active.type, 'study');
-    assert.notEqual(onlySampledSkill(active.item.sampledSkillIds), firstSkill);
-
-    state = markActiveSessionUnitStarted(state);
-    result = rateActiveSessionUnit(state, 'good');
+      state = markActiveSessionUnitStarted(state);
+      result = rateActiveSessionUnit(state, 'good');
+      state = result.state;
+    }
 
     assert.deepEqual(result.commit, {
       type: 'commit-learning-word-session',
@@ -150,33 +219,24 @@ describe('bucket session state covering contract', () => {
     assert.equal(getBucketSessionProgress(introResult.state).unstudied[unstudiedWord.id].introComplete, true);
 
     state = introResult.state;
-    active = getActiveSessionUnit(state);
-    assert.equal(active.type, 'study');
-    assert.equal(active.bucket, 'unstudied');
-    assert.equal(active.item.targetWordId, unstudiedWord.id);
-    const firstSkill = onlySampledSkill(active.item.sampledSkillIds);
-
-    for (let i = 1; i <= 3; i += 1) {
-      state = markActiveSessionUnitStarted(state);
-      const result = rateActiveSessionUnit(state, 'good');
-      state = result.state;
-      if (i < 3) {
-        assert.deepEqual(result.commit, { type: 'none' });
-      }
-    }
-
-    assert.equal(getBucketSessionProgress(state).unstudied[unstudiedWord.id].successStreaks[firstSkill], 3);
-    assert.equal(getBucketSessionUnitCounts(state).unstudied, 1);
-
-    active = getActiveSessionUnit(state);
-    assert.equal(active.type, 'study');
-    assert.notEqual(onlySampledSkill(active.item.sampledSkillIds), firstSkill);
-
     let finalResult: BucketSessionTransitionResult | null = null;
-    for (let i = 1; i <= 3; i += 1) {
+    for (let attempts = 0; attempts < 20; attempts += 1) {
+      active = getActiveSessionUnit(state);
+      assert.equal(active.type, 'study');
+      assert.equal(active.bucket, 'unstudied');
+      assert.equal(active.item.targetWordId, unstudiedWord.id);
+
       state = markActiveSessionUnitStarted(state);
       finalResult = rateActiveSessionUnit(state, 'good');
       state = finalResult.state;
+
+      if (finalResult.commit.type !== 'none') {
+        break;
+      }
+
+      const progress = getBucketSessionProgress(state).unstudied[unstudiedWord.id];
+      assert.ok(progress.successStreaks.recognition < 3 || progress.successStreaks.production < 3);
+      assert.equal(getBucketSessionUnitCounts(state).unstudied, 1);
     }
 
     assert.deepEqual(finalResult?.commit, {

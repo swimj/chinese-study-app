@@ -60,6 +60,10 @@ After the introduction, the user must successfully recall:
 
 within the same session.
 
+When both directions still need recall work, the session scheduler should choose
+randomly between the open directions on each appearance. Once only one
+direction remains open, the scheduler should serve that direction.
+
 Only after both directions satisfy that criterion is the `unstudied` word considered covered for the session.
 
 ## Learning Word Covering
@@ -69,6 +73,10 @@ A `learning` word is covered in a session when:
 - each direction has received `Good` at least once in that session
 
 There is no requirement for repeated consecutive success within the same session.
+
+When both directions are still uncovered, the session scheduler should choose
+randomly between the open directions on each appearance. Once only one
+direction remains uncovered, the scheduler should serve that direction.
 
 This is intentionally looser than `unstudied` and `review` reinforcement behavior.
 

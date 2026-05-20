@@ -15,6 +15,7 @@ Related documents:
 - [`learning-review-model.md`](/Users/jw/dev/chinese-study-app/SPECS/learning-review-model.md)
 - [`session-covering-criteria.md`](/Users/jw/dev/chinese-study-app/SPECS/session-covering-criteria.md)
 - [`adaptive_vocabulary_training_product_notes.md`](/Users/jw/dev/chinese-study-app/SPECS/adaptive_vocabulary_training_product_notes.md)
+- [`milestone-7-8-relevance-aware-contrast-plan.md`](/Users/jw/dev/chinese-study-app/SPECS/milestone-7-8-relevance-aware-contrast-plan.md)
 
 ## 1. Product Direction
 
@@ -820,6 +821,17 @@ production attempt flow.
   session composition root
 
 ### Milestone 7: Manual Cluster Content
+
+Milestones 7 and 8 should also introduce relevance-aware action feedback.
+`production` remains the skill name, but the current reverse-card production
+action is more precisely `definition_based_production`. Contextual selection is
+the first richer skill dimension, while suppressing low-value or ambiguous
+definition-based production prompts is independently useful even when no
+contrast content exists.
+
+See
+[`milestone-7-8-relevance-aware-contrast-plan.md`](/Users/jw/dev/chinese-study-app/SPECS/milestone-7-8-relevance-aware-contrast-plan.md)
+for the implementation plan.
 
 - add lexical cluster tables
 - add cluster members
