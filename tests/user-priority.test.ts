@@ -135,6 +135,21 @@ describe('user priority layer', { concurrency: false }, () => {
     assert(prioritized.every((entry) => entry.requiredForNextSession));
   });
 
+  test('prioritized list includes required-only rows and excludes sunk rows', () => {
+    insertWord('required-only', 70, 'unstudied', '2026-01-01T00:00:00.000Z');
+    insertWord('sunk-boosted', 100, 'unstudied', '2026-01-02T00:00:00.000Z');
+
+    dbModule.updateWordUserPriority('required-only', { requiredForNextSession: true });
+    dbModule.updateWordUserPriority('sunk-boosted', { bumpDelta: 1 });
+    dbModule.dismissWordFromStudy('sunk-boosted');
+
+    const prioritized = dbModule.getPrioritizedUnstudiedWords().words;
+
+    assert.deepEqual(prioritized.map((entry) => entry.word.id), ['required-only']);
+    assert.equal(prioritized[0]?.bumpCount, 0);
+    assert.equal(prioritized[0]?.requiredForNextSession, true);
+  });
+
   test('dismiss clears required state while sinking the word', () => {
     insertWord('required-dismissed', 50, 'unstudied', '2026-01-01T00:00:00.000Z');
 

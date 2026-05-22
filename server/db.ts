@@ -445,10 +445,54 @@ export function getUnstudiedPriorityWords(): PriorityWordsPayload {
 }
 
 export function getPrioritizedUnstudiedWords(): PriorityWordsPayload {
-  const allUnstudied = getUnstudiedPriorityWords();
+  const rows = db
+    .prepare(`
+      SELECT
+        words.id,
+        words.hanzi,
+        words.traditional,
+        words.pinyin,
+        words.meaning,
+        words.meanings_json,
+        words.personal_notes,
+        words.examples_json,
+        words.status,
+        words.priority,
+        words.created_at,
+        words.learning_streak,
+        words.last_learning_success_on,
+        words.last_learning_covered_on,
+        user_word_priority.bump_count,
+        user_word_priority.force_top,
+        user_word_priority.priority_tier,
+        user_word_priority.required_for_next_session,
+        words.priority + user_word_priority.bump_count * ${PRIORITY_BUMP_UNIT} AS effective_priority
+      FROM user_word_priority
+      JOIN words ON words.id = user_word_priority.word_id
+      WHERE words.status = 'unstudied'
+        AND user_word_priority.priority_tier >= ${PRIORITY_TIER_REGULAR}
+        AND (
+          user_word_priority.bump_count > 0
+          OR user_word_priority.priority_tier = ${PRIORITY_TIER_TOP}
+          OR user_word_priority.required_for_next_session != 0
+        )
+      ORDER BY
+        user_word_priority.priority_tier DESC,
+        effective_priority DESC,
+        words.priority DESC,
+        words.created_at ASC
+    `)
+    .all() as Array<WordRow & {
+      bump_count: number;
+      force_top: number;
+      priority_tier: number;
+      required_for_next_session: number;
+      effective_priority: number;
+    }>;
+
   return {
-    unstudiedTotalCount: allUnstudied.unstudiedTotalCount,
-    words: allUnstudied.words.filter((entry) => entry.forceTop || entry.bumpCount > 0 || entry.requiredForNextSession),
+    unstudiedTotalCount: UNSTUDIED_COUNT_BASELINE,
+    words: rows.map(mapPrioritizedWordRowWithApproximateRank),
   };
 }
 
@@ -2754,6 +2798,35 @@ function mapPriorityWordRow(row: PriorityWordRow): PriorityWord {
     effectivePriority: row.effective_priority,
     effectiveRank: row.effective_rank,
   };
+}
+
+function mapPrioritizedWordRowWithApproximateRank(
+  row: WordRow & {
+    bump_count: number;
+    force_top: number;
+    priority_tier: number;
+    required_for_next_session: number;
+    effective_priority: number;
+  },
+): PriorityWord {
+  const bumpCount = row.bump_count;
+  const forceTop = row.priority_tier === PRIORITY_TIER_TOP;
+  const requiredForNextSession = row.required_for_next_session !== 0;
+  const effectivePriority = row.effective_priority;
+  const effectiveRank = estimateApproximatePriorityRank({
+    priority: row.priority,
+    bumpCount,
+    priorityTier: row.priority_tier,
+  });
+
+  return buildPriorityWordFromParts({
+    row,
+    bumpCount,
+    forceTop,
+    requiredForNextSession,
+    effectivePriority,
+    effectiveRank,
+  });
 }
 
 function buildPriorityWordFromParts({
