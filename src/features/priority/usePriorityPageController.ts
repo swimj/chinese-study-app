@@ -7,6 +7,7 @@ import {
   fetchUnstudiedPriorityWords,
   updateWordUserPriority,
 } from '../../services/api';
+import { studyProfile } from '../../study-profile';
 import type { PriorityWord } from '../../types';
 import { sortPriorityWords } from './priority-page-model';
 
@@ -122,7 +123,7 @@ export function usePriorityPageController({
   async function submitSearch(): Promise<void> {
     const normalizedHanzi = searchHanzi.trim();
     if (normalizedHanzi.length === 0) {
-      setSearchNotice('Enter hanzi before submitting.');
+      setSearchNotice(`${studyProfile.labels.targetSearchPlaceholder}.`);
       return;
     }
 

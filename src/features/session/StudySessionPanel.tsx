@@ -8,6 +8,7 @@ import type {
 } from '../../lib/session-state';
 import type { SessionStudyItem } from '../../domain/study-actions';
 import type { ReviewRating, Word, WordMeaning } from '../../types';
+import { studyProfile } from '../../study-profile';
 import type { RatingOption } from './session-rating';
 import type { SessionSummary } from './session-summary';
 import { SessionSummaryPanel } from './SessionSummaryPanel';
@@ -155,7 +156,7 @@ export function StudySessionPanel({
             />
           </div>
           <div className="prompt-block">
-            <span className="prompt-label">Hanzi</span>
+            <span className="prompt-label">{studyProfile.labels.target}</span>
             <strong className="prompt-value">{activeWord.hanzi}</strong>
             <span className="prompt-meta">{activeWord.pinyin}</span>
             <MeaningList meanings={activeAllMeanings} />
@@ -200,7 +201,7 @@ export function StudySessionPanel({
                 : frozenProductionCard.status === 'learning'
                   ? 'Learning'
                   : 'New word'}
-              {' · Meaning → Hanzi'}
+              {` · ${studyProfile.labels.productionDirection}`}
             </p>
           </div>
           <p className="notes">
@@ -233,7 +234,7 @@ export function StudySessionPanel({
             </span>
             <span className="prompt-meta">{frozenProductionCard.example}</span>
           </div>
-          <p className="notes">Hanzi recall was incorrect. This item was recorded as Forgot.</p>
+          <p className="notes">{studyProfile.labels.targetRecallIncorrect} This item was recorded as Forgot.</p>
           <button type="button" onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen}>
             Next
           </button>
@@ -245,7 +246,9 @@ export function StudySessionPanel({
                 onChange={(event) => onProductionContrastCandidateCheckedChange(event.target.checked)}
                 disabled={personalNotesEditorOpen}
               />
-              <span>{frozenProductionCard.attemptedHanzi} contrast candidate?</span>
+              <span>
+                {frozenProductionCard.attemptedHanzi} {studyProfile.labels.targetContrastCandidate}
+              </span>
             </label>
             <textarea
               value={productionContrastCandidateNote}
@@ -270,7 +273,9 @@ export function StudySessionPanel({
                     ? 'Learning'
                     : 'New word'}
               {' · '}
-              {activeItem.actionKind === 'recognition' ? 'Hanzi → Meaning' : 'Meaning → Hanzi'}
+              {activeItem.actionKind === 'recognition'
+                ? studyProfile.labels.recognitionDirection
+                : studyProfile.labels.productionDirection}
             </p>
             <CardActions
               personalNotesEditorSaving={personalNotesEditorSaving}
@@ -364,7 +369,7 @@ export function StudySessionPanel({
               }}
             >
               <label className="prompt-label" htmlFor="production-hanzi-input">
-                Type Hanzi
+                {studyProfile.labels.productionInput}
               </label>
               <input
                 ref={productionHanziInputRef}
@@ -379,7 +384,7 @@ export function StudySessionPanel({
               />
               {productionHanziError ? <p className="notes">{productionHanziError}</p> : null}
               <button type="submit" disabled={submittingRating !== null || personalNotesEditorOpen}>
-                Submit Hanzi
+                {studyProfile.labels.submitProductionInput}
               </button>
             </form>
           ) : (

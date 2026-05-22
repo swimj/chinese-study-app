@@ -10,6 +10,14 @@ import {
   updateWordPersonalNotes,
 } from '../../services/api';
 import {
+  normalizeProductionAnswer,
+  readStoredProductionMatchOptions,
+  resetStoredProductionMatchOptions,
+  studyProfile,
+  type ProductionMatchOptions,
+  writeStoredProductionMatchOptions,
+} from '../../study-profile';
+import {
   beginBucketDrainSession,
   completeActiveUnstudiedIntro,
   createBucketSessionState,
@@ -116,6 +124,7 @@ export type StudySessionHomePageProps = {
   productionContrastCandidateChecked: boolean;
   productionContrastCandidateNote: string;
   activeRatingOptions: RatingOption[];
+  productionMatchOptions: ProductionMatchOptions;
   onStartSession: () => void;
   onEndSession: () => void;
   onUndoLastRating: () => void;
@@ -128,6 +137,8 @@ export type StudySessionHomePageProps = {
   onToggleMeaningVisibility: (meaning: WordMeaning) => void;
   onSubmitProductionHanzi: () => void;
   onProductionHanziInputChange: (value: string) => void;
+  onProductionMatchOptionChange: (option: keyof ProductionMatchOptions, value: boolean) => void;
+  onResetProductionMatchOptions: () => void;
   onRevealAnswer: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
 };
@@ -182,6 +193,8 @@ export function useStudySession({
   const [productionContrastCandidateNote, setProductionContrastCandidateNote] = useState('');
   const [productionUiPhase, setProductionUiPhase] = useState<'idle' | 'await-rating' | 'await-next'>('idle');
   const [frozenProductionCard, setFrozenProductionCard] = useState<FrozenProductionCard | null>(null);
+  const [productionMatchOptions, setProductionMatchOptions] =
+    useState<ProductionMatchOptions>(() => readStoredProductionMatchOptions());
   const personalNotesEditorInputRef = useRef<HTMLTextAreaElement | null>(null);
   const productionHanziInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -484,9 +497,9 @@ export function useStudySession({
       return;
     }
 
-    const submittedHanzi = normalizeHanziRecallInput(productionHanziInput);
+    const submittedHanzi = normalizeProductionAnswer(productionHanziInput, productionMatchOptions);
     if (submittedHanzi.length === 0) {
-      setProductionHanziError('Enter Hanzi before submitting.');
+      setProductionHanziError(`Enter ${studyProfile.labels.target} before submitting.`);
       return;
     }
 
@@ -502,7 +515,7 @@ export function useStudySession({
         restoreUi: 'production-input',
       });
 
-      const expectedHanzi = normalizeHanziRecallInput(activeWord.hanzi);
+      const expectedHanzi = normalizeProductionAnswer(activeWord.hanzi, productionMatchOptions);
       const isCorrect = submittedHanzi === expectedHanzi;
 
       if (isCorrect) {
@@ -540,7 +553,7 @@ export function useStudySession({
         intervalHours: activeItem.intervalHours,
         example: activeWord.examples[0] ?? '',
       });
-      setProductionHanziError(`Incorrect Hanzi. Expected "${activeWord.hanzi}".`);
+      setProductionHanziError(`Incorrect ${studyProfile.labels.target}. Expected "${activeWord.hanzi}".`);
       setProductionUiPhase('await-next');
       setAnswerRevealed(true);
     } catch (err) {
@@ -561,6 +574,21 @@ export function useStudySession({
 
     // Unmask the active card after the queue already advanced due to an incorrect hanzi submission.
     resetAnswerAndProductionUi();
+  }
+
+  function handleProductionMatchOptionChange(option: keyof ProductionMatchOptions, value: boolean) {
+    setProductionMatchOptions((current) => {
+      const nextOptions = {
+        ...current,
+        [option]: value,
+      };
+      writeStoredProductionMatchOptions(nextOptions);
+      return nextOptions;
+    });
+  }
+
+  function handleResetProductionMatchOptions() {
+    setProductionMatchOptions(resetStoredProductionMatchOptions());
   }
 
   function handleUndoLastRating() {
@@ -920,6 +948,7 @@ export function useStudySession({
       productionContrastCandidateChecked,
       productionContrastCandidateNote,
       activeRatingOptions,
+      productionMatchOptions,
       onStartSession: () => void handleStartSession(),
       onEndSession: () => void handleEndSession(),
       onUndoLastRating: handleUndoLastRating,
@@ -937,6 +966,8 @@ export function useStudySession({
           setProductionHanziError(null);
         }
       },
+      onProductionMatchOptionChange: handleProductionMatchOptionChange,
+      onResetProductionMatchOptions: handleResetProductionMatchOptions,
       onRevealAnswer: () => setAnswerRevealed(true),
       onRate: (rating, options) => void handleRate(rating, options),
     },
@@ -952,10 +983,6 @@ export function useStudySession({
       onSave: () => void handleSavePersonalNotesEditor(),
     },
   };
-}
-
-function normalizeHanziRecallInput(value: string) {
-  return value.replace(/\s+/g, '').trim();
 }
 
 function formatElapsedTime(startedAt: string, completedAt: string) {
