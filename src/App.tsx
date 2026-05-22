@@ -62,7 +62,6 @@ function App() {
           requireAddedMatches={priorityPage.requireAddedMatches}
           searchNotice={priorityPage.searchNotice}
           searchSubmitting={priorityPage.searchSubmitting}
-          dailyNewWordLimit={backendStatus?.dailyNewWordLimit ?? 2}
           jumpRequestWordId={priorityPage.jumpRequestWordId}
           onSearchHanziChange={priorityPage.setSearchHanzi}
           onRequireAddedMatchesChange={priorityPage.setRequireAddedMatches}

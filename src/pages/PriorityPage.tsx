@@ -14,7 +14,6 @@ export function PriorityPage({
   requireAddedMatches,
   searchNotice,
   searchSubmitting,
-  dailyNewWordLimit,
   jumpRequestWordId,
   onSearchHanziChange,
   onRequireAddedMatchesChange,
@@ -37,7 +36,6 @@ export function PriorityPage({
   requireAddedMatches: boolean;
   searchNotice: string | null;
   searchSubmitting: boolean;
-  dailyNewWordLimit: number;
   jumpRequestWordId: string | null;
   onSearchHanziChange: (value: string) => void;
   onRequireAddedMatchesChange: (value: boolean) => void;
@@ -293,7 +291,6 @@ export function PriorityPage({
                 expandedDefinitionByWordId={expandedDefinitionByWordId}
                 setExpandedDefinitionByWordId={setExpandedDefinitionByWordId}
                 unstudiedTotalCount={unstudiedTotalCount}
-                dailyNewWordLimit={dailyNewWordLimit}
                 getRowClassName={(word) =>
                   selectedManageWordIds.includes(word.word.id) ? 'priority-manage-row selected' : 'priority-manage-row'
                 }
@@ -334,7 +331,6 @@ export function PriorityPage({
               expandedDefinitionByWordId={expandedDefinitionByWordId}
               setExpandedDefinitionByWordId={setExpandedDefinitionByWordId}
               unstudiedTotalCount={unstudiedTotalCount}
-              dailyNewWordLimit={dailyNewWordLimit}
               actionHeader={bulkSelectActive ? 'Select' : 'Dismiss'}
               extraHeader={bulkSelectActive ? <th aria-label="Selected" /> : null}
               renderExtraCell={(word) =>
@@ -453,7 +449,6 @@ function PriorityWordTable({
   expandedDefinitionByWordId,
   setExpandedDefinitionByWordId,
   unstudiedTotalCount,
-  dailyNewWordLimit,
   actionHeader,
   extraHeader = null,
   renderExtraCell,
@@ -467,7 +462,6 @@ function PriorityWordTable({
   expandedDefinitionByWordId: Record<string, boolean>;
   setExpandedDefinitionByWordId: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   unstudiedTotalCount: number;
-  dailyNewWordLimit: number;
   actionHeader?: string;
   extraHeader?: React.ReactNode;
   renderExtraCell?: (word: PriorityWord) => React.ReactNode;
@@ -484,7 +478,6 @@ function PriorityWordTable({
             <th>Word</th>
             <th>Definition</th>
             <th>Priority</th>
-            <th>Approx days</th>
             <th>Bumps</th>
             {renderActionCell ? <th>{actionHeader}</th> : null}
           </tr>
@@ -498,7 +491,6 @@ function PriorityWordTable({
             const priorityPercentile = word.forceTop
               ? null
               : getPriorityPercentileText(word.effectiveRank, unstudiedTotalCount);
-            const approxDaysToStudy = getApproxDaysToStudyText(word.effectiveRank, dailyNewWordLimit);
             const rowHandlers = getRowHandlers?.(word) ?? {};
 
             return (
@@ -542,7 +534,6 @@ function PriorityWordTable({
                   </div>
                 </td>
                 <td>{priorityPercentile ?? <span className="notes">N/A</span>}</td>
-                <td>{approxDaysToStudy}</td>
                 <td>{word.bumpCount}</td>
                 {renderActionCell ? <td>{renderActionCell(word)}</td> : null}
               </tr>
@@ -561,12 +552,4 @@ function getPriorityPercentileText(effectiveRank: number | null, unstudiedTotalC
 
   const higherThanPercent = Math.max(0, Math.round(((unstudiedTotalCount - effectiveRank) / unstudiedTotalCount) * 100));
   return `Higher than ${higherThanPercent}%`;
-}
-
-function getApproxDaysToStudyText(effectiveRank: number | null, dailyNewWordLimit: number) {
-  if (!effectiveRank || dailyNewWordLimit <= 0) {
-    return 'N/A';
-  }
-
-  return (effectiveRank / dailyNewWordLimit).toFixed(1);
 }
