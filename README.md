@@ -84,7 +84,7 @@ If your current dev database was created before the latest schema rewrite, reset
 
 ### French profile try-out mode
 
-The French try-out path keeps the backend generic. It uses a different dev data directory and seed file, while the frontend selects the French study profile at boot.
+The French try-out path uses a different dev data directory and seed file. The backend is started with the narrow French study profile so add-priority lookup can consult French aliases, while the frontend selects the French study profile at boot.
 
 Start the backend:
 
@@ -111,6 +111,7 @@ The frontend exposes a small Answer matching panel on the home page. Those optio
   ```
 
 - Requires an explicit data directory
+- For French alias lookup, pass `--study-profile=french` or set `APP_STUDY_PROFILE=french`
 - Uses `app.db` inside that directory
 - Does not seed sample data on first run
 - Intended for real study history that you care about preserving

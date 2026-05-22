@@ -1,9 +1,11 @@
 import path from 'node:path';
 
 type AppMode = 'dev' | 'study';
+type StudyProfile = 'mandarin' | 'french';
 
 type AppConfig = {
   mode: AppMode;
+  studyProfile: StudyProfile;
   dataDir: string;
   dbPath: string;
   port: number;
@@ -15,12 +17,13 @@ type AppConfigOptions = {
   modeOverride?: AppMode;
 };
 
-export type { AppConfig, AppMode };
+export type { AppConfig, AppMode, StudyProfile };
 
 export function getAppConfig(options: AppConfigOptions = {}): AppConfig {
   const args = new Map(process.argv.slice(2).map(parseArg).filter((entry): entry is [string, string] => entry !== null));
 
   const mode = options.modeOverride ?? parseMode(args.get('mode') ?? process.env.APP_MODE ?? 'dev');
+  const studyProfile = parseStudyProfile(args.get('study-profile') ?? process.env.APP_STUDY_PROFILE ?? 'mandarin');
   const rawDataDir = args.get('data-dir') ?? process.env.APP_DATA_DIR;
   const rawSeedDataPath = args.get('seed-data') ?? process.env.APP_SEED_DATA_PATH;
   const rawPort = args.get('port') ?? process.env.PORT ?? '5174';
@@ -40,6 +43,7 @@ export function getAppConfig(options: AppConfigOptions = {}): AppConfig {
 
   return {
     mode,
+    studyProfile,
     dataDir,
     dbPath: path.join(dataDir, 'app.db'),
     port,
@@ -54,6 +58,14 @@ function parseMode(value: string): AppMode {
   }
 
   throw new Error(`Invalid mode: ${value}. Expected "dev" or "study".`);
+}
+
+function parseStudyProfile(value: string): StudyProfile {
+  if (value === 'mandarin' || value === 'french') {
+    return value;
+  }
+
+  throw new Error(`Invalid study profile: ${value}. Expected "mandarin" or "french".`);
 }
 
 function parseArg(argument: string): [string, string] | null {

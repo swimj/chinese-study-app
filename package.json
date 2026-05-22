@@ -7,7 +7,7 @@
     "dev:frontend": "vite",
     "dev:backend": "node --import tsx server/index.ts --mode=dev",
     "dev:french:frontend": "VITE_STUDY_PROFILE=french vite",
-    "dev:french:backend": "node --import tsx server/index.ts --mode=dev --data-dir=data/french-dev --seed-data=server/seeds/french-dev.json",
+    "dev:french:backend": "node --import tsx server/index.ts --mode=dev --study-profile=french --data-dir=data/french-dev --seed-data=server/seeds/french-dev.json",
     "study:backend": "node --import tsx server/index.ts --mode=study",
     "reset:dev-data": "node --import tsx server/reset-dev-db.ts",
     "export:hack-chinese": "node --import tsx scripts/export-hack-chinese-migration.ts",
