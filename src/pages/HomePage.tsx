@@ -137,8 +137,7 @@ export function HomePage({
     <>
       <header className="header">
         <div>
-          <h1 className="title">Mandarin SRS App</h1>
-          <p className="subtitle">Covering criteria now run fully in frontend session state before commit.</p>
+          <h1 className="title">法华挣路</h1>
         </div>
         <div>
           <p className="badge">

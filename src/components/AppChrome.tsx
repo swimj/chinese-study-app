@@ -23,8 +23,8 @@ export function AppChrome({
     <div className="container">
       <nav className="navbar" aria-label="Primary">
         <div className="nav-brand">
-          <strong>Mandarin SRS App</strong>
-          <span>Study workflow and inspection tools · v{version}</span>
+          <strong>法华挣路</strong>
+          <span>add french support, flexible skill architecture· v{version}</span>
         </div>
         <div className="nav-tabs">
           <button
@@ -56,7 +56,7 @@ export function AppChrome({
       {children}
 
       <footer className="footer">
-        v{version} · Session coverage is now determined entirely in frontend state before durable backend updates are committed.
+        v{version} ·  if you are reading this then you are a top learner &#59;&#41;
       </footer>
     </div>
   );
