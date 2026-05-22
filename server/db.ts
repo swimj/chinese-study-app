@@ -637,16 +637,7 @@ export function updateWordUserPriority(wordId: string, patch: UserWordPriorityPa
 }
 
 export function addUnstudiedUserPriorityByHanzi(hanzi: string, requiredForNextSession = false): PriorityWord[] {
-  const matches = db
-    .prepare(`
-      SELECT
-        id
-      FROM words
-      WHERE status = 'unstudied'
-        AND hanzi = ?
-      ORDER BY created_at ASC
-    `)
-    .all(hanzi) as Array<{ id: string }>;
+  const matches = resolveUnstudiedPriorityWordIdsByTarget(hanzi);
 
   if (matches.length === 0) {
     throw new Error('No matching unstudied words found');
@@ -700,6 +691,51 @@ export function addUnstudiedUserPriorityByHanzi(hanzi: string, requiredForNextSe
   }
 
   return matches.map((match) => getUnstudiedPriorityWordById(match.id));
+}
+
+function resolveUnstudiedPriorityWordIdsByTarget(targetText: string): Array<{ id: string }> {
+  const submittedText = targetText.trim();
+  const exactMatches = db
+    .prepare(`
+      SELECT
+        id
+      FROM words
+      WHERE status = 'unstudied'
+        AND hanzi = ?
+      ORDER BY priority DESC, created_at ASC
+    `)
+    .all(submittedText) as Array<{ id: string }>;
+
+  const candidateMatches = [...exactMatches];
+
+  if (config.studyProfile === 'french') {
+    const normalizedAlias = normalizeLookupText(submittedText);
+    const aliasMatches = db
+      .prepare(`
+        SELECT DISTINCT
+          words.id,
+          words.priority,
+          words.created_at
+        FROM word_lookup_aliases
+        JOIN words ON words.id = word_lookup_aliases.word_id
+        WHERE words.status = 'unstudied'
+          AND word_lookup_aliases.normalized_alias = ?
+        ORDER BY words.priority DESC, words.created_at ASC
+      `)
+      .all(normalizedAlias) as Array<{ id: string; priority: number; created_at: string }>;
+
+    candidateMatches.push(...aliasMatches.map((match) => ({ id: match.id })));
+  }
+
+  const seenWordIds = new Set<string>();
+  return candidateMatches.filter((match) => {
+    if (seenWordIds.has(match.id)) {
+      return false;
+    }
+
+    seenWordIds.add(match.id);
+    return true;
+  });
 }
 
 export function getSessionPayload(studyDayKey: string): SessionPayload {
@@ -1585,6 +1621,8 @@ function applyLightweightSchemaMigrations() {
     );
   `);
 
+  ensureWordLookupAliasesSchema();
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS word_meanings (
       id TEXT PRIMARY KEY,
@@ -1680,6 +1718,8 @@ function applyLightweightSchemaMigrations() {
     db.exec(`ALTER TABLE user_word_priority ADD COLUMN required_for_next_session INTEGER NOT NULL DEFAULT 0`);
   }
 
+  ensureWordLookupAliasesSchema();
+
   db.exec(`
     UPDATE user_word_priority
     SET priority_tier = 1
@@ -1688,6 +1728,89 @@ function applyLightweightSchemaMigrations() {
   `);
 
   backfillWordMeaningsFromWords();
+}
+
+function ensureWordLookupAliasesSchema() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS word_lookup_aliases (
+      alias_text TEXT NOT NULL,
+      normalized_alias TEXT NOT NULL,
+      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      relation TEXT NOT NULL,
+      source TEXT NOT NULL,
+      tags_json TEXT NOT NULL DEFAULT '[]',
+      confidence REAL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (normalized_alias, word_id, source)
+    );
+  `);
+
+  const columns = db.prepare(`PRAGMA table_info(word_lookup_aliases)`).all() as Array<{ name: string }>;
+  const hasTagsJson = columns.some((column) => column.name === 'tags_json');
+  if (!hasTagsJson) {
+    db.exec(`ALTER TABLE word_lookup_aliases ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'`);
+  }
+
+  migrateWordLookupAliasesPrimaryKey();
+}
+
+function migrateWordLookupAliasesPrimaryKey() {
+  const columns = db.prepare(`PRAGMA table_info(word_lookup_aliases)`).all() as Array<{ name: string; pk: number }>;
+  const primaryKeyColumns = columns
+    .filter((column) => column.pk > 0)
+    .sort((left, right) => left.pk - right.pk)
+    .map((column) => column.name);
+
+  if (primaryKeyColumns.join('\t') === 'normalized_alias\tword_id\tsource') {
+    return;
+  }
+
+  db.exec('BEGIN');
+
+  try {
+    db.exec(`
+      CREATE TABLE word_lookup_aliases_next (
+        alias_text TEXT NOT NULL,
+        normalized_alias TEXT NOT NULL,
+        word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+        relation TEXT NOT NULL,
+        source TEXT NOT NULL,
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        confidence REAL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (normalized_alias, word_id, source)
+      );
+
+      INSERT OR IGNORE INTO word_lookup_aliases_next (
+        alias_text,
+        normalized_alias,
+        word_id,
+        relation,
+        source,
+        tags_json,
+        confidence,
+        created_at
+      )
+      SELECT
+        alias_text,
+        normalized_alias,
+        word_id,
+        relation,
+        source,
+        tags_json,
+        confidence,
+        created_at
+      FROM word_lookup_aliases
+      ORDER BY rowid ASC;
+
+      DROP TABLE word_lookup_aliases;
+      ALTER TABLE word_lookup_aliases_next RENAME TO word_lookup_aliases;
+    `);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
 }
 
 function migrateWordSkillStateLastStudiedAtNotNull() {
@@ -2033,6 +2156,18 @@ function createSchema() {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE word_lookup_aliases (
+      alias_text TEXT NOT NULL,
+      normalized_alias TEXT NOT NULL,
+      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      relation TEXT NOT NULL,
+      source TEXT NOT NULL,
+      tags_json TEXT NOT NULL DEFAULT '[]',
+      confidence REAL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (normalized_alias, word_id, source)
+    );
+
     CREATE TABLE app_metadata (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
@@ -2102,6 +2237,7 @@ function createSchema() {
 function ensureIndexes() {
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_words_priority ON words(priority DESC, created_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_word_lookup_aliases_normalized_alias ON word_lookup_aliases(normalized_alias);
     CREATE INDEX IF NOT EXISTS idx_word_meanings_word_position ON word_meanings(word_id, position ASC);
     CREATE INDEX IF NOT EXISTS idx_user_word_priority_force_top ON user_word_priority(force_top DESC, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_user_word_priority_tier ON user_word_priority(priority_tier DESC, updated_at DESC);
@@ -2146,6 +2282,16 @@ function validateSchema() {
     'priority_tier',
     'required_for_next_session',
     'updated_at',
+  ]);
+  assertTableColumns('word_lookup_aliases', [
+    'alias_text',
+    'normalized_alias',
+    'word_id',
+    'relation',
+    'source',
+    'tags_json',
+    'confidence',
+    'created_at',
   ]);
   assertTableColumns('daily_new_word_intake', [
     'day_key',
@@ -3310,6 +3456,15 @@ function assertUnreachableStudyActionKind(actionKind: never): never {
 
 function clampInteger(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function normalizeLookupText(value: string): string {
+  return value
+    .normalize('NFC')
+    .trim()
+    .toLowerCase()
+    .replace(/[’‘`´]/g, "'")
+    .replace(/\s+/g, ' ');
 }
 
 // just used on the update path, intentionally fuzzy

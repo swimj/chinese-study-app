@@ -128,6 +128,7 @@ export function createApp() {
       status: 'ok',
       time: new Date().toISOString(),
       mode: dbConfig.mode,
+      studyProfile: dbConfig.studyProfile,
       dataDir: dbConfig.dataDir,
       dbPath: dbConfig.dbPath,
       wordStatusCounts: getWordStatusCounts(),

@@ -14,6 +14,7 @@ type BackendStatus = {
   status: string;
   time: string;
   mode: 'dev' | 'study';
+  studyProfile: 'mandarin' | 'french';
   dataDir: string;
   dbPath: string;
   wordStatusCounts: Record<Word['status'], number>;
