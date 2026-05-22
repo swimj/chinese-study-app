@@ -43,15 +43,15 @@ If you already cloned the app before and are updating it later, run this from in
 git pull
 ```
 
-Install the app packages:
+Install the app packages exactly as specified by the project:
 
 ```bash
-npm install
+npm ci
 ```
 
 Download the pristine French words database from Google Drive. It should be named `app.db`, but it can live anywhere on your computer, such as Downloads.
 
-Set up the repo-local user data directory by giving the command the path to that downloaded database:
+One-time database bootstrap: set up the repo-local user data directory by giving the command the path to that downloaded database:
 
 ```bash
 npm run setup:local-user-data -- /path/to/downloaded/app.db
@@ -64,6 +64,12 @@ npm run setup:local-user-data -- ~/Downloads/app.db
 ```
 
 This copies the database into `data/local-user-data/app.db`. If that file already exists, the command makes a backup first.
+
+You should only need to run `setup:local-user-data` once, when first setting up the app. Running it again replaces the current local database with the downloaded one, which may overwrite your study progress.
+
+## Typical Lifecycle
+
+### Start the app
 
 Start the backend server in one terminal window:
 
@@ -82,3 +88,50 @@ Open the app in your browser:
 ```text
 http://localhost:4173
 ```
+
+### Stop the app
+
+When you are done studying, stop both running servers:
+
+1. Click each terminal window.
+2. Press `Control` + `C`.
+3. Close the terminal windows if you want.
+
+### Start it again later
+
+Open two terminal windows and go into the app project directory in each one:
+
+```bash
+cd chinese-study-app
+```
+
+Then run the backend in one terminal:
+
+```bash
+npm run study:local:backend
+```
+
+And run the frontend in the other terminal:
+
+```bash
+npm run study:local:frontend
+```
+
+Then open:
+
+```text
+http://localhost:4173
+```
+
+Do not run `setup:local-user-data` again during normal use.
+
+### Update the app
+
+When there are new app updates, stop both servers first with `Control` + `C`. Then, from inside the `chinese-study-app` directory, run:
+
+```bash
+git pull
+npm ci
+```
+
+After the update finishes, start the backend and frontend again using the same two terminal commands above.
