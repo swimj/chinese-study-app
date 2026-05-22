@@ -82,6 +82,26 @@ npm run reset:dev-data
 
 If your current dev database was created before the latest schema rewrite, reset it once before starting the backend again.
 
+### French profile try-out mode
+
+The French try-out path keeps the backend generic. It uses a different dev data directory and seed file, while the frontend selects the French study profile at boot.
+
+Start the backend:
+
+```bash
+npm run dev:french:backend
+```
+
+Start the frontend:
+
+```bash
+npm run dev:french:frontend
+```
+
+The backend still stores the same `words` shape. In the French seed data, `hanzi` is the French target term, `pinyin` is pronunciation or a compact grammar note, and `meaning` / `meanings` are English glosses.
+
+The frontend exposes a small Answer matching panel on the home page. Those options are stored in browser `localStorage` and only affect typed production answers.
+
 ### Study mode
 
 - Command:

@@ -17,7 +17,7 @@ import { getAppConfig } from './config.ts';
 
 const config = getAppConfig();
 const dbPath = config.dbPath;
-const appJsonPath = path.join(config.dataDir, 'app.json');
+const seedDataPath = config.seedDataPath;
 const productionMistakeCandidatesPath = path.join(config.dataDir, 'production-mistake-candidates.jsonl');
 const dbExistedOnStartup = fs.existsSync(dbPath);
 
@@ -2357,11 +2357,11 @@ function seedDatabase() {
 }
 
 function readSeedData(): SeedData | null {
-  if (!fs.existsSync(appJsonPath)) {
+  if (!fs.existsSync(seedDataPath)) {
     return null;
   }
 
-  const parsed = JSON.parse(fs.readFileSync(appJsonPath, 'utf8')) as Partial<SeedData>;
+  const parsed = JSON.parse(fs.readFileSync(seedDataPath, 'utf8')) as Partial<SeedData>;
 
   if (!Array.isArray(parsed.words)) {
     return null;

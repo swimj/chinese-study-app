@@ -8,6 +8,7 @@ type AppConfig = {
   dbPath: string;
   port: number;
   seedSampleData: boolean;
+  seedDataPath: string;
 };
 
 type AppConfigOptions = {
@@ -21,6 +22,7 @@ export function getAppConfig(options: AppConfigOptions = {}): AppConfig {
 
   const mode = options.modeOverride ?? parseMode(args.get('mode') ?? process.env.APP_MODE ?? 'dev');
   const rawDataDir = args.get('data-dir') ?? process.env.APP_DATA_DIR;
+  const rawSeedDataPath = args.get('seed-data') ?? process.env.APP_SEED_DATA_PATH;
   const rawPort = args.get('port') ?? process.env.PORT ?? '5174';
   const port = Number(rawPort);
 
@@ -42,6 +44,7 @@ export function getAppConfig(options: AppConfigOptions = {}): AppConfig {
     dbPath: path.join(dataDir, 'app.db'),
     port,
     seedSampleData: mode === 'dev',
+    seedDataPath: path.resolve(rawSeedDataPath ?? path.join(dataDir, 'app.json')),
   };
 }
 

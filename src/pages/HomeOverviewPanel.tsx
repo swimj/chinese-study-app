@@ -4,6 +4,7 @@ import {
   type SessionPrefetchState,
 } from '../features/session/session-prefetch';
 import type { SessionPhase } from '../lib/session-state';
+import { studyProfile, type ProductionMatchOptions } from '../study-profile';
 
 export function HomeOverviewPanel({
   backendStatus,
@@ -12,8 +13,11 @@ export function HomeOverviewPanel({
   sessionPhase,
   sessionLoading,
   displayedSessionItemCount,
+  productionMatchOptions,
   onStartSession,
   onEndSession,
+  onProductionMatchOptionChange,
+  onResetProductionMatchOptions,
 }: {
   backendStatus: BackendStatus | null;
   sessionPrefetch: SessionPrefetchState;
@@ -21,8 +25,11 @@ export function HomeOverviewPanel({
   sessionPhase: SessionPhase | null;
   sessionLoading: boolean;
   displayedSessionItemCount: number;
+  productionMatchOptions: ProductionMatchOptions;
   onStartSession: () => void;
   onEndSession: () => void;
+  onProductionMatchOptionChange: (option: keyof ProductionMatchOptions, value: boolean) => void;
+  onResetProductionMatchOptions: () => void;
 }) {
   const prefetchedSessionItemCount = !sessionStarted && sessionPrefetch.status === 'ready'
     ? displayedSessionItemCount
@@ -77,7 +84,72 @@ export function HomeOverviewPanel({
           Session prefetch: {formatSessionPrefetchStatus(sessionPrefetch)}
         </p>
       ) : null}
+      <section className="answer-matching-section" aria-label="Production answer matching">
+        <h3>Answer matching</h3>
+        <p className="notes">{studyProfile.labels.source} → {studyProfile.labels.target} typed answers</p>
+        <div className="match-options-grid">
+          <MatchOption
+            label="Ignore case"
+            checked={productionMatchOptions.ignoreCase}
+            onChange={(value) => onProductionMatchOptionChange('ignoreCase', value)}
+          />
+          <MatchOption
+            label="Ignore accents"
+            checked={productionMatchOptions.ignoreAccents}
+            onChange={(value) => onProductionMatchOptionChange('ignoreAccents', value)}
+          />
+          <MatchOption
+            label="Normalize apostrophes"
+            checked={productionMatchOptions.normalizeApostrophes}
+            onChange={(value) => onProductionMatchOptionChange('normalizeApostrophes', value)}
+          />
+          <MatchOption
+            label="Trim edge punctuation"
+            checked={productionMatchOptions.trimEdgePunctuation}
+            onChange={(value) => onProductionMatchOptionChange('trimEdgePunctuation', value)}
+          />
+          <MatchOption
+            label="Collapse spaces"
+            checked={productionMatchOptions.collapseWhitespace}
+            onChange={(value) => onProductionMatchOptionChange('collapseWhitespace', value)}
+          />
+          <MatchOption
+            label="Remove spaces"
+            checked={productionMatchOptions.removeWhitespace}
+            onChange={(value) => onProductionMatchOptionChange('removeWhitespace', value)}
+          />
+          <MatchOption
+            label="Ignore hyphen spacing"
+            checked={productionMatchOptions.ignoreHyphenSpacing}
+            onChange={(value) => onProductionMatchOptionChange('ignoreHyphenSpacing', value)}
+          />
+        </div>
+        <button type="button" className="secondary-button" onClick={onResetProductionMatchOptions}>
+          Reset matching
+        </button>
+      </section>
     </div>
+  );
+}
+
+function MatchOption({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <label className="checkbox-row match-option-row">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span>{label}</span>
+    </label>
   );
 }
 

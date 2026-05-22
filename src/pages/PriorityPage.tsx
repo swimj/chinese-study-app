@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type React from 'react';
 import type { PriorityWord } from '../types';
 import { MeaningList } from '../components/MeaningList';
+import { studyProfile } from '../study-profile';
 
 type PrioritySubtab = 'manage' | 'triage';
 
@@ -230,7 +231,7 @@ export function PriorityPage({
       <header className="header">
         <div>
           <h1 className="title">Priority</h1>
-          <p className="subtitle">Search by hanzi to add matching unstudied words to the priority list.</p>
+          <p className="subtitle">{studyProfile.labels.targetSearchPrompt}</p>
         </div>
       </header>
 
@@ -254,14 +255,14 @@ export function PriorityPage({
       {activeSubtab === 'manage' ? (
         <>
           <div className="panel">
-            <h2>Add by hanzi</h2>
+            <h2>{studyProfile.labels.addByTarget}</h2>
             <div className="pagination-actions">
               <input
                 ref={searchInputRef}
                 type="text"
                 value={searchHanzi}
                 onChange={(event) => onSearchHanziChange(event.target.value)}
-                placeholder="Enter hanzi and submit"
+                placeholder={studyProfile.labels.targetSearchPlaceholder}
                 disabled={searchDisabled}
               />
               <label className="inline-checkbox">
