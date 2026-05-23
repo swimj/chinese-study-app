@@ -371,6 +371,45 @@ describe('bucket session state covering contract', () => {
 
     assert.deepEqual(result.state.reviewProgress, {});
   });
+
+  test('canceling a rated review action removes queued reinforcement and decrements answered count', async () => {
+    const {
+      cancelRatedReviewSessionAction,
+      createBucketSessionState,
+      getActiveSessionUnit,
+      getBucketSessionUnitCounts,
+      markActiveSessionUnitStarted,
+      rateActiveSessionUnit,
+    } = await loadBucketSessionStateApi();
+    const lapsedReview = createReviewStudyItem('lapsed-review');
+    const laterReview = createReviewStudyItem('later-review');
+    let state = createBucketSessionState({
+      buckets: {
+        review: [lapsedReview, laterReview],
+        learning: [],
+        unstudied: [],
+      },
+      sessionId: testSessionId,
+      schedulerPolicy: {
+        bucketWeights: { review: 1, learning: 0, unstudied: 0 },
+      },
+      seed: 1,
+    });
+
+    state = markActiveSessionUnitStarted(state);
+    const lapsed = rateActiveSessionUnit(state, 'forgot').state as TestBucketSessionState;
+    assert.equal(lapsed.answeredCount, 1);
+    assert.equal(lapsed.reviewProgress[lapsedReview.sessionActionId]?.failureCount, 1);
+
+    const activeAfterLapse = getActiveSessionUnit(lapsed);
+    assert.equal(activeAfterLapse.type, 'study');
+    assert.equal(activeAfterLapse.type === 'study' ? activeAfterLapse.item.sessionActionId : null, laterReview.sessionActionId);
+
+    const canceled = cancelRatedReviewSessionAction(lapsed, lapsedReview.sessionActionId);
+    assert.equal(canceled.answeredCount, 0);
+    assert.equal(canceled.reviewProgress[lapsedReview.sessionActionId], undefined);
+    assert.equal(getBucketSessionUnitCounts(canceled).review, 1);
+  });
 });
 
 type BucketSessionActiveUnit =
@@ -378,6 +417,7 @@ type BucketSessionActiveUnit =
       type: 'study';
       bucket: 'review' | 'learning' | 'unstudied';
       item: {
+        sessionActionId: string;
         targetWordId: string;
         sampledSkillIds: StudySkillId[];
       };
@@ -410,6 +450,10 @@ type BucketSessionStateApi = {
     seed?: number;
     sessionId: string;
   }) => unknown;
+  cancelRatedReviewSessionAction: (state: unknown, sessionActionId: string) => {
+    answeredCount: number;
+    reviewProgress: Record<string, { failureCount: number } | undefined>;
+  };
   dismissActiveBucketSessionUnit: (state: unknown) => { state: { reviewProgress: Record<string, unknown> } };
   getActiveSessionUnit: (state: unknown) => BucketSessionActiveUnit;
   getBucketSessionCandidateWordIds: (
@@ -434,10 +478,16 @@ type BucketSessionStateApi = {
   rateActiveSessionUnit: (state: unknown, rating: ReviewRating) => BucketSessionTransitionResult;
 };
 
+type TestBucketSessionState = {
+  answeredCount: number;
+  reviewProgress: Record<string, { failureCount: number } | undefined>;
+};
+
 async function loadBucketSessionStateApi(): Promise<BucketSessionStateApi> {
   const api = await import('../src/lib/session-state.ts') as Record<string, unknown>;
   const requiredExports = [
     'beginBucketDrainSession',
+    'cancelRatedReviewSessionAction',
     'completeActiveUnstudiedIntro',
     'createBucketSessionState',
     'dismissActiveBucketSessionUnit',

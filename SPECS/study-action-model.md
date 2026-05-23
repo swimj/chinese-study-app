@@ -606,14 +606,21 @@ Examples:
 
 Clusters are content/context objects, not scheduler objects.
 
-A cluster may include:
+A V0 cluster content model should stay deliberately small:
 
-- title
-- cluster-level learner note
-- member words
-- member-level nuance notes
-- optional tags describing the relation type
-- contrast prompts
+- cluster: `id`, title, optional learner note
+- member: `clusterId`, `wordId`, optional nuance note, optional display order
+- prompt: `id`, `clusterId`, `targetWordId`, prompt text, explanation
+
+The prompt's `targetWordId` is the correct answer. V0 does not need durable
+prompt-choice rows; the action selector can choose one or more sibling words
+from the prompt's cluster at serve time.
+
+Cluster membership gives `wordId -> contrast siblings` by taking the other
+members of the same cluster or clusters. A prompt plus runtime-selected sibling
+choices gives the specific pair, trio, or set used by one exercise. V0 should
+not add a separate reusable sibling-set or prompt-choice table unless authored
+content later proves that reuse is needed.
 
 Possible relation types:
 
@@ -628,7 +635,23 @@ should not attempt to infer a full semantic graph yet.
 
 Contrast eligibility lives on the word or word-skill state, not on the cluster.
 When a member word schedules contextual-selection practice, clusters provide
-candidate content for the action selector.
+candidate content for the action selector. The selector may use a prompt whose
+`targetWordId` is the scheduled word, or a prompt whose `targetWordId` is a
+sibling while the scheduled word appears as a distractor; the cluster itself
+does not become due.
+
+A served contrast action should separate the scheduling anchor from the prompt's
+correct answer:
+
+- `scheduledWordId`: the word admitted by session composition
+- `promptTargetWordId`: the prompt's correct answer
+- `choiceWordIds`: the runtime choices
+- `selectedWordId`: the learner's first choice
+
+This allows a contrast attempt to represent either "use this word here" or "do
+not use this word here". Projection may update multiple contextual-selection
+word-skill states from one attempt. V0 can start with binary pair updates and
+weaken both words in the pair after an incorrect choice.
 
 ## 10. Contrast Selection
 

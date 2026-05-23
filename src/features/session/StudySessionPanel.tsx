@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import { useState, type RefObject } from 'react';
 import { MeaningList } from '../../components/MeaningList';
 import type {
   LearningWordProgress,
@@ -6,7 +6,7 @@ import type {
   BucketSessionState,
   UnstudiedWordProgress,
 } from '../../lib/session-state';
-import type { SessionStudyItem } from '../../domain/study-actions';
+import type { SessionStudyItem, StudyManagementActionKind } from '../../domain/study-actions';
 import type { ReviewRating, Word, WordMeaning } from '../../types';
 import { studyProfile } from '../../study-profile';
 import type { RatingOption } from './session-rating';
@@ -14,7 +14,11 @@ import type { SessionSummary } from './session-summary';
 import { SessionSummaryPanel } from './SessionSummaryPanel';
 
 export type FrozenProductionCard = {
+  sessionActionId: string;
   targetWordId: string;
+  actionKind: 'production';
+  sampledSkillIds: SessionStudyItem['sampledSkillIds'];
+  contentRef: SessionStudyItem['contentRef'];
   attemptedHanzi: string;
   status: Word['status'];
   reviewedCount: number;
@@ -44,6 +48,7 @@ export function StudySessionPanel({
   submittingRating,
   personalNotesEditorOpen,
   personalNotesEditorSaving,
+  studyManagementSubmitting,
   productionAwaitingNext,
   frozenProductionCard,
   activeAllMeanings,
@@ -72,6 +77,9 @@ export function StudySessionPanel({
   onProductionContrastCandidateCheckedChange,
   onProductionContrastCandidateNoteChange,
   onDismissCurrentWord,
+  onManageStudyAction,
+  onDismissFrozenProductionWord,
+  onManageFrozenProductionAction,
   onOpenPersonalNotesEditor,
   onBeginUnstudiedDrill,
   onToggleMeaningVisibility,
@@ -94,6 +102,7 @@ export function StudySessionPanel({
   submittingRating: ReviewRating | null;
   personalNotesEditorOpen: boolean;
   personalNotesEditorSaving: boolean;
+  studyManagementSubmitting: boolean;
   productionAwaitingNext: boolean;
   frozenProductionCard: FrozenProductionCard | null;
   activeAllMeanings: string[];
@@ -122,6 +131,9 @@ export function StudySessionPanel({
   onProductionContrastCandidateCheckedChange: (checked: boolean) => void;
   onProductionContrastCandidateNoteChange: (value: string) => void;
   onDismissCurrentWord: () => void;
+  onManageStudyAction: (action: StudyManagementActionKind, note: string) => void;
+  onDismissFrozenProductionWord: () => void;
+  onManageFrozenProductionAction: (action: StudyManagementActionKind, note: string) => void;
   onOpenPersonalNotesEditor: () => void;
   onBeginUnstudiedDrill: (wordId: string) => void;
   onToggleMeaningVisibility: (meaning: WordMeaning) => void;
@@ -150,8 +162,12 @@ export function StudySessionPanel({
           <div className="review-card-header">
             <p className="badge">New word introduction</p>
             <CardActions
+              activeItem={null}
+              activeWord={activeWord}
               personalNotesEditorSaving={personalNotesEditorSaving}
+              studyManagementSubmitting={studyManagementSubmitting}
               onDismissCurrentWord={onDismissCurrentWord}
+              onManageStudyAction={onManageStudyAction}
               onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
             />
           </div>
@@ -203,6 +219,13 @@ export function StudySessionPanel({
                   : 'New word'}
               {` · ${studyProfile.labels.productionDirection}`}
             </p>
+            {frozenProductionCard.status === 'review' ? (
+              <FrozenProductionCardActions
+                isSubmitting={studyManagementSubmitting}
+                onDismissFrozenProductionWord={onDismissFrozenProductionWord}
+                onManageFrozenProductionAction={onManageFrozenProductionAction}
+              />
+            ) : null}
           </div>
           <p className="notes">
             Answered {frozenProductionCard.reviewedCount} this session · {frozenProductionCard.queuedCount} still queued
@@ -278,8 +301,12 @@ export function StudySessionPanel({
                 : studyProfile.labels.productionDirection}
             </p>
             <CardActions
+              activeItem={activeItem}
+              activeWord={activeWord}
               personalNotesEditorSaving={personalNotesEditorSaving}
+              studyManagementSubmitting={studyManagementSubmitting}
               onDismissCurrentWord={onDismissCurrentWord}
+              onManageStudyAction={onManageStudyAction}
               onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
             />
           </div>
@@ -447,23 +474,33 @@ function UndoButton({
 }
 
 function CardActions({
+  activeItem,
+  activeWord,
   personalNotesEditorSaving,
+  studyManagementSubmitting,
   onDismissCurrentWord,
+  onManageStudyAction,
   onOpenPersonalNotesEditor,
 }: {
+  activeItem: SessionStudyItem | null;
+  activeWord: Word;
   personalNotesEditorSaving: boolean;
+  studyManagementSubmitting: boolean;
   onDismissCurrentWord: () => void;
+  onManageStudyAction: (action: StudyManagementActionKind, note: string) => void;
   onOpenPersonalNotesEditor: () => void;
 }) {
+  const [manageOpen, setManageOpen] = useState(false);
+
   return (
     <div className="inline-actions">
       <button
         type="button"
         className="secondary-button"
-        onClick={onDismissCurrentWord}
-        disabled={personalNotesEditorSaving}
+        onClick={() => setManageOpen(true)}
+        disabled={personalNotesEditorSaving || studyManagementSubmitting}
       >
-        Dismiss
+        Manage Study
       </button>
       <button
         type="button"
@@ -473,6 +510,166 @@ function CardActions({
       >
         Edit notes
       </button>
+      {manageOpen ? (
+        <ManageStudyPanel
+          actionKind={activeItem?.actionKind ?? null}
+          status={activeWord.status}
+          isSubmitting={studyManagementSubmitting}
+          onClose={() => setManageOpen(false)}
+          onDismissWord={() => {
+            setManageOpen(false);
+            onDismissCurrentWord();
+          }}
+          onManageStudyAction={(action, note) => {
+            setManageOpen(false);
+            onManageStudyAction(action, note);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function FrozenProductionCardActions({
+  isSubmitting,
+  onDismissFrozenProductionWord,
+  onManageFrozenProductionAction,
+}: {
+  isSubmitting: boolean;
+  onDismissFrozenProductionWord: () => void;
+  onManageFrozenProductionAction: (action: StudyManagementActionKind, note: string) => void;
+}) {
+  const [manageOpen, setManageOpen] = useState(false);
+
+  return (
+    <div className="inline-actions">
+      <button
+        type="button"
+        className="secondary-button"
+        onClick={() => setManageOpen(true)}
+        disabled={isSubmitting}
+      >
+        Manage Study
+      </button>
+      {manageOpen ? (
+        <ManageStudyPanel
+          actionKind="production"
+          status="review"
+          isSubmitting={isSubmitting}
+          onClose={() => setManageOpen(false)}
+          onDismissWord={() => {
+            setManageOpen(false);
+            onDismissFrozenProductionWord();
+          }}
+          onManageStudyAction={(action, note) => {
+            setManageOpen(false);
+            onManageFrozenProductionAction(action, note);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function ManageStudyPanel({
+  actionKind,
+  status,
+  isSubmitting,
+  onClose,
+  onDismissWord,
+  onManageStudyAction,
+}: {
+  actionKind: SessionStudyItem['actionKind'] | null;
+  status: Word['status'];
+  isSubmitting: boolean;
+  onClose: () => void;
+  onDismissWord: () => void;
+  onManageStudyAction: (action: StudyManagementActionKind, note: string) => void;
+}) {
+  const [note, setNote] = useState('');
+  const productionReview = status === 'review' && actionKind === 'production';
+  const contrastReview = status === 'review' && actionKind === 'contrast_selection';
+
+  return (
+    <div className="manage-study-popover">
+      <div className="manage-study-heading">
+        <strong>Manage Study</strong>
+        <button type="button" className="secondary-button" onClick={onClose} disabled={isSubmitting}>
+          Close
+        </button>
+      </div>
+      <div className="manage-study-actions">
+        <button type="button" className="secondary-button" onClick={onDismissWord} disabled={isSubmitting}>
+          Dismiss word
+        </button>
+        {productionReview ? (
+          <>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => onManageStudyAction('suppress_skill', note)}
+              disabled={isSubmitting}
+            >
+              Suppress production
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => onManageStudyAction('add_contrast_candidate', note)}
+              disabled={isSubmitting}
+            >
+              Add contrast candidate
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => onManageStudyAction('suppress_skill_and_add_contrast_candidate', note)}
+              disabled={isSubmitting}
+            >
+              Suppress + add contrast
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => onManageStudyAction('bad_prompt', note)}
+              disabled={isSubmitting}
+            >
+              Bad prompt
+            </button>
+          </>
+        ) : null}
+        {contrastReview ? (
+          <>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => onManageStudyAction('suppress_skill', note)}
+              disabled={isSubmitting}
+            >
+              Suppress contrast
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => onManageStudyAction('bad_prompt', note)}
+              disabled={isSubmitting}
+            >
+              Bad prompt
+            </button>
+          </>
+        ) : null}
+      </div>
+      {productionReview || contrastReview ? (
+        <label className="manage-study-note">
+          <span>Note</span>
+          <textarea
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            disabled={isSubmitting}
+            rows={3}
+          />
+        </label>
+      ) : null}
     </div>
   );
 }

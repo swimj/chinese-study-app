@@ -11,6 +11,27 @@ export type StudyContentRef =
   | { type: 'contrast_prompt'; id: string }
   | { type: 'example_sentence'; id: string };
 
+export type ContrastCluster = {
+  id: string;
+  title: string;
+  note: string;
+};
+
+export type ContrastClusterMember = {
+  clusterId: string;
+  wordId: string;
+  nuanceNote: string;
+  displayOrder: number | null;
+};
+
+export type ContrastPrompt = {
+  id: string;
+  clusterId: string;
+  targetWordId: string;
+  promptText: string;
+  explanation: string;
+};
+
 export type StudyAction = {
   sessionActionId: string;
   kind: StudyActionKind;
@@ -54,6 +75,36 @@ export type WordSkillState = {
 };
 
 export type StudyAttemptOutcome = 'correct' | 'incorrect';
+
+export type StudyEventType =
+  | 'skill_relevance_changed'
+  | 'contrast_candidate_requested'
+  | 'skill_relevance_changed_with_contrast_candidate'
+  | 'bad_prompt_reported';
+
+// 'deprioritized' unused currently, saved for future enrichment
+export type WordSkillRelevanceState = 'normal' | 'deprioritized' | 'suppressed';
+
+export type StudyManagementActionKind =
+  | 'suppress_skill'
+  | 'add_contrast_candidate'
+  | 'suppress_skill_and_add_contrast_candidate'
+  | 'bad_prompt';
+
+export type StudyEvent = {
+  id: string;
+  occurredAt: string;
+  sessionId: string | null;
+  sessionActionId: string | null;
+  sessionEventSequence: number | null;
+  eventType: StudyEventType;
+  targetWordId: string | null;
+  actionKind: StudyActionKind | null;
+  sampledSkillIds: StudySkillId[];
+  contentRef: StudyContentRef | null;
+  payload: Record<string, unknown>;
+  projectedAt: string | null;
+};
 
 export type StudyAttemptEvent = {
   id: string;

@@ -1,24 +1,30 @@
 import type { ReactNode } from 'react';
 
-export type AppPageKey = 'home' | 'priority';
+export type AppPageKey = 'home' | 'priority' | 'clusters';
 
 export function AppChrome({
   currentPage,
   error,
   version,
   priorityPageLoading,
+  clusterPageLoading,
   children,
   onOpenHomePage,
   onOpenPriorityPage,
+  onOpenClusterPage,
 }: {
   currentPage: AppPageKey;
   error: string | null;
   version: string;
   priorityPageLoading: boolean;
+  clusterPageLoading: boolean;
   children: ReactNode;
   onOpenHomePage: () => void;
   onOpenPriorityPage: () => void;
+  onOpenClusterPage: () => void;
 }) {
+  const navigationLoading = priorityPageLoading || clusterPageLoading;
+
   return (
     <div className="container">
       <nav className="navbar" aria-label="Primary">
@@ -31,7 +37,7 @@ export function AppChrome({
             type="button"
             className={`nav-tab ${currentPage === 'home' ? 'active' : ''}`}
             onClick={onOpenHomePage}
-            disabled={priorityPageLoading}
+            disabled={navigationLoading}
           >
             Home
           </button>
@@ -39,9 +45,17 @@ export function AppChrome({
             type="button"
             className={`nav-tab ${currentPage === 'priority' ? 'active' : ''}`}
             onClick={onOpenPriorityPage}
-            disabled={priorityPageLoading}
+            disabled={navigationLoading}
           >
             {priorityPageLoading ? 'Loading priority...' : 'Priority'}
+          </button>
+          <button
+            type="button"
+            className={`nav-tab ${currentPage === 'clusters' ? 'active' : ''}`}
+            onClick={onOpenClusterPage}
+            disabled={navigationLoading}
+          >
+            {clusterPageLoading ? 'Loading clusters...' : 'Clusters'}
           </button>
         </div>
       </nav>

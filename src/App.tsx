@@ -5,8 +5,10 @@ import { AppChrome, type AppPageKey } from './components/AppChrome';
 import { PersonalNotesEditorOverlay } from './features/session/PersonalNotesEditorOverlay';
 import { useStudySession } from './features/session/useStudySession';
 import { usePriorityPageController } from './features/priority/usePriorityPageController';
+import { useClusterPageController } from './features/contrast/useClusterPageController';
 import { HomePage } from './pages/HomePage';
 import { PriorityPage } from './pages/PriorityPage';
+import { ClusterManagementPage } from './pages/ClusterManagementPage';
 
 const APP_VERSION = __APP_VERSION__;
 
@@ -19,6 +21,11 @@ function App() {
     onSessionEnded: reloadDashboard,
   });
   const priorityPage = usePriorityPageController({
+    currentPage,
+    setCurrentPage,
+    setError,
+  });
+  const clusterPage = useClusterPageController({
     currentPage,
     setCurrentPage,
     setError,
@@ -48,12 +55,14 @@ function App() {
       error={error}
       version={APP_VERSION}
       priorityPageLoading={priorityPage.isLoading}
+      clusterPageLoading={clusterPage.isLoading}
       onOpenHomePage={() => setCurrentPage('home')}
       onOpenPriorityPage={() => void priorityPage.openPage()}
+      onOpenClusterPage={() => void clusterPage.openPage()}
     >
       {currentPage === 'home' ? (
         <HomePage backendStatus={backendStatus} {...studySession.homePageProps} />
-      ) : (
+      ) : currentPage === 'priority' ? (
         <PriorityPage
           rows={priorityPage.rows}
           triageRows={priorityPage.triageRows}
@@ -78,6 +87,15 @@ function App() {
           bulkDismissSubmitting={priorityPage.bulkDismissSubmitting}
           onDismissFromTriage={(wordId) => void priorityPage.dismissFromTriage(wordId)}
           onBulkDismissFromTriage={(wordIds) => void priorityPage.bulkDismissFromTriage(wordIds)}
+        />
+      ) : (
+        <ClusterManagementPage
+          clusters={clusterPage.clusters}
+          selectedClusterId={clusterPage.selectedClusterId}
+          isSavingPrompt={clusterPage.isSavingPrompt}
+          onSelectCluster={clusterPage.selectCluster}
+          onCreatePrompt={clusterPage.createPrompt}
+          onUpdatePrompt={clusterPage.updatePrompt}
         />
       )}
 

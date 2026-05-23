@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { ReviewRating, Word, WordMeaning } from '../../types';
-import type { SessionStudyItem } from '../../domain/study-actions';
+import type { SessionStudyItem, StudyManagementActionKind } from '../../domain/study-actions';
 import {
   captureProductionMistakeCandidate,
   dismissWordFromStudy,
   fetchWordMeanings,
+  recordStudyManagementAction,
   recordReviewSessionSummary,
   updateWordMeaningVisibility,
   updateWordPersonalNotes,
@@ -19,9 +20,12 @@ import {
 } from '../../study-profile';
 import {
   beginBucketDrainSession,
+  cancelRatedReviewSessionAction,
   completeActiveUnstudiedIntro,
   createBucketSessionState,
   dismissActiveBucketSessionUnit,
+  dismissBucketSessionWordFromSnapshot,
+  dropActiveReviewSessionAction,
   getActiveSessionUnit,
   getBucketSessionTotalCount,
   markActiveSessionUnitStarted,
@@ -102,6 +106,7 @@ export type StudySessionHomePageProps = {
   submittingRating: ReviewRating | null;
   personalNotesEditorOpen: boolean;
   personalNotesEditorSaving: boolean;
+  studyManagementSubmitting: boolean;
   productionAwaitingNext: boolean;
   frozenProductionCard: FrozenProductionCard | null;
   activeAllMeanings: string[];
@@ -132,6 +137,9 @@ export type StudySessionHomePageProps = {
   onProductionContrastCandidateCheckedChange: (checked: boolean) => void;
   onProductionContrastCandidateNoteChange: (value: string) => void;
   onDismissCurrentWord: () => void;
+  onManageStudyAction: (action: StudyManagementActionKind, note: string) => void;
+  onDismissFrozenProductionWord: () => void;
+  onManageFrozenProductionAction: (action: StudyManagementActionKind, note: string) => void;
   onOpenPersonalNotesEditor: () => void;
   onBeginUnstudiedDrill: (wordId: string) => void;
   onToggleMeaningVisibility: (meaning: WordMeaning) => void;
@@ -186,6 +194,7 @@ export function useStudySession({
   const [personalNotesEditorTargetWordId, setPersonalNotesEditorTargetWordId] = useState<string | null>(null);
   const [personalNotesEditorDraft, setPersonalNotesEditorDraft] = useState('');
   const [personalNotesEditorSaving, setPersonalNotesEditorSaving] = useState(false);
+  const [studyManagementSubmitting, setStudyManagementSubmitting] = useState(false);
   const [personalNotesEditorError, setPersonalNotesEditorError] = useState<string | null>(null);
   const [productionHanziInput, setProductionHanziInput] = useState('');
   const [productionHanziError, setProductionHanziError] = useState<string | null>(null);
@@ -539,7 +548,11 @@ export function useStudySession({
         }),
       );
       setFrozenProductionCard({
+        sessionActionId: activeItem.sessionActionId,
         targetWordId: activeWord.id,
+        actionKind: 'production',
+        sampledSkillIds: [...activeItem.sampledSkillIds],
+        contentRef: activeItem.contentRef,
         attemptedHanzi: submittedHanzi,
         status: activeWord.status,
         reviewedCount,
@@ -638,6 +651,137 @@ export function useStudySession({
       await dismissWordFromStudy(transition.dismiss.wordId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  }
+
+  async function handleManageStudyAction(managementAction: StudyManagementActionKind, note: string) {
+    if (!sessionState || !activeItem || !activeWord) {
+      return;
+    }
+
+    if (activeWord.status !== 'review') {
+      setError('Study management actions are currently limited to review cards.');
+      return;
+    }
+
+    if (activeItem.actionKind !== 'production' && activeItem.actionKind !== 'contrast_selection') {
+      setError('This card only supports dismiss from Manage Study right now.');
+      return;
+    }
+
+    setStudyManagementSubmitting(true);
+    setError(null);
+
+    try {
+      await recordStudyManagementAction({
+        sessionId: sessionState.sessionId,
+        sessionActionId: activeItem.sessionActionId,
+        targetWordId: activeItem.targetWordId,
+        actionKind: activeItem.actionKind,
+        sampledSkillIds: activeItem.sampledSkillIds,
+        contentRef: activeItem.contentRef,
+        managementAction,
+        note,
+      });
+
+      setSessionState(dropActiveReviewSessionAction(sessionState));
+      resetAnswerAndProductionUi();
+      setLastUndoSnapshot(null);
+      setPendingProductionMistakeCapture(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setStudyManagementSubmitting(false);
+    }
+  }
+
+  async function handleManageFrozenProductionAction(managementAction: StudyManagementActionKind, note: string) {
+    if (!sessionState || !frozenProductionCard) {
+      return;
+    }
+
+    if (frozenProductionCard.status !== 'review') {
+      setError('Study management actions are currently limited to review cards.');
+      return;
+    }
+
+    setStudyManagementSubmitting(true);
+    setError(null);
+
+    try {
+      await recordStudyManagementAction({
+        sessionId: sessionState.sessionId,
+        sessionActionId: frozenProductionCard.sessionActionId,
+        targetWordId: frozenProductionCard.targetWordId,
+        actionKind: frozenProductionCard.actionKind,
+        sampledSkillIds: frozenProductionCard.sampledSkillIds,
+        contentRef: frozenProductionCard.contentRef,
+        managementAction,
+        note,
+        candidateText:
+          managementAction === 'add_contrast_candidate' ||
+          managementAction === 'suppress_skill_and_add_contrast_candidate'
+            ? frozenProductionCard.attemptedHanzi
+            : null,
+      });
+
+      const nextState = cancelRatedReviewSessionAction(sessionState, frozenProductionCard.sessionActionId);
+      setSessionState(nextState);
+      setSessionSummary((current) =>
+        cancelFrozenProductionRatingInSummary({
+          summary: current,
+          nextState,
+          sessionActionId: frozenProductionCard.sessionActionId,
+        }),
+      );
+      setPendingSessionCommit(null);
+      resetAnswerAndProductionUi();
+      setLastUndoSnapshot(null);
+      setPendingProductionMistakeCapture(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setStudyManagementSubmitting(false);
+    }
+  }
+
+  async function handleDismissFrozenProductionWord() {
+    if (!sessionState || !frozenProductionCard) {
+      return;
+    }
+
+    setStudyManagementSubmitting(true);
+    setError(null);
+
+    try {
+      const confirmed = window.confirm(
+        'Dismiss this word? This removes it from this session, returns it to unstudied, and cannot be undone.',
+      );
+      if (!confirmed) {
+        return;
+      }
+
+      await dismissWordFromStudy(frozenProductionCard.targetWordId);
+      const nextState = dismissBucketSessionWordFromSnapshot(
+        cancelRatedReviewSessionAction(sessionState, frozenProductionCard.sessionActionId),
+        frozenProductionCard.targetWordId,
+      );
+      setSessionState(nextState);
+      setSessionSummary((current) =>
+        cancelFrozenProductionRatingInSummary({
+          summary: current,
+          nextState,
+          sessionActionId: frozenProductionCard.sessionActionId,
+        }),
+      );
+      setPendingSessionCommit(null);
+      resetAnswerAndProductionUi();
+      setLastUndoSnapshot(null);
+      setPendingProductionMistakeCapture(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setStudyManagementSubmitting(false);
     }
   }
 
@@ -926,6 +1070,7 @@ export function useStudySession({
       submittingRating,
       personalNotesEditorOpen,
       personalNotesEditorSaving,
+      studyManagementSubmitting,
       productionAwaitingNext,
       frozenProductionCard,
       activeAllMeanings,
@@ -956,6 +1101,9 @@ export function useStudySession({
       onProductionContrastCandidateCheckedChange: setProductionContrastCandidateChecked,
       onProductionContrastCandidateNoteChange: setProductionContrastCandidateNote,
       onDismissCurrentWord: () => void handleDismissCurrentWord(),
+      onManageStudyAction: (action, note) => void handleManageStudyAction(action, note),
+      onDismissFrozenProductionWord: () => void handleDismissFrozenProductionWord(),
+      onManageFrozenProductionAction: (action, note) => void handleManageFrozenProductionAction(action, note),
       onOpenPersonalNotesEditor: handleOpenPersonalNotesEditor,
       onBeginUnstudiedDrill: handleBeginUnstudiedDrill,
       onToggleMeaningVisibility: (meaning) => void handleToggleMeaningVisibility(meaning),
@@ -998,6 +1146,30 @@ function formatElapsedTime(startedAt: string, completedAt: string) {
   const hours = Math.floor(minutes / 60);
   const remainingMinutes = minutes % 60;
   return `${hours}:${remainingMinutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function cancelFrozenProductionRatingInSummary({
+  summary,
+  nextState,
+  sessionActionId,
+}: {
+  summary: SessionSummary | null;
+  nextState: BucketSessionState;
+  sessionActionId: string;
+}): SessionSummary | null {
+  if (!summary) {
+    return summary;
+  }
+
+  return {
+    ...summary,
+    answeredCount: nextState.answeredCount,
+    completedAt:
+      nextState.phase === 'completed'
+        ? summary.completedAt ?? new Date().toISOString()
+        : null,
+    lapsedReviewActionIds: summary.lapsedReviewActionIds.filter((id) => id !== sessionActionId),
+  };
 }
 
 function getOptionalActiveSessionUnit(state: BucketSessionState): ActiveBucketSchedulerUnit | null {

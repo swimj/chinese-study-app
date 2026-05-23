@@ -3,6 +3,9 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import type {
+  ContrastCluster,
+  ContrastClusterMember,
+  ContrastPrompt,
   ReviewCommitFields,
   SessionStudyItem,
   SessionStudyItemBuckets,
@@ -10,7 +13,11 @@ import type {
   StudyAttemptOutcome,
   StudyActionKind,
   StudyContentRef,
+  StudyEvent,
+  StudyEventType,
+  StudyManagementActionKind,
   StudySessionRecord,
+  WordSkillRelevanceState,
 } from '../src/domain/study-actions.ts';
 import { buildReviewSessionStudyItem, deriveReviewCommitFieldsFromAttemptEvents } from '../src/domain/study-actions.ts';
 import { getAppConfig } from './config.ts';
@@ -85,6 +92,11 @@ type ProductionMistakeCandidate = {
   matchedWordId: string | null;
   createdAt: string;
   note: string;
+};
+
+type ContrastClusterContent = ContrastCluster & {
+  members: Array<ContrastClusterMember & { word: Word }>;
+  prompts: ContrastPrompt[];
 };
 
 type ReviewRating = 'forgot' | 'hard' | 'good' | 'easy';
@@ -211,6 +223,120 @@ type StudyAttemptEventRow = {
   projected_at: string | null;
 };
 
+type StudyEventRow = {
+  id: string;
+  occurred_at: string;
+  session_id: string | null;
+  session_action_id: string | null;
+  session_event_sequence: number | null;
+  event_type: StudyEventType;
+  target_word_id: string | null;
+  action_kind: StudyActionKind | null;
+  sampled_skill_ids_json: string;
+  content_ref_json: string | null;
+  payload_json: string;
+  projected_at: string | null;
+};
+
+type WordSkillRelevance = {
+  wordId: string;
+  skillId: StudySkillId;
+  relevanceState: WordSkillRelevanceState;
+  updatedAt: string;
+  sourceEventId: string | null;
+};
+
+type WordSkillRelevanceRow = {
+  word_id: string;
+  skill_id: StudySkillId;
+  relevance_state: WordSkillRelevanceState;
+  updated_at: string;
+  source_event_id: string | null;
+};
+
+type ContrastCandidateIntake = {
+  id: string;
+  createdAt: string;
+  targetWordId: string;
+  sourceEventId: string | null;
+  sourceActionKind: StudyActionKind | null;
+  sourceContentRef: StudyContentRef | null;
+  candidateText: string | null;
+  matchedWordId: string | null;
+  note: string;
+  status: 'open' | 'accepted' | 'dismissed';
+};
+
+type ContrastCandidateIntakeRow = {
+  id: string;
+  created_at: string;
+  target_word_id: string;
+  source_event_id: string | null;
+  source_action_kind: StudyActionKind | null;
+  source_content_ref_json: string | null;
+  candidate_text: string | null;
+  matched_word_id: string | null;
+  note: string;
+  status: 'open' | 'accepted' | 'dismissed';
+};
+
+type StudyContentFeedback = {
+  id: string;
+  createdAt: string;
+  targetType: 'generated_prompt' | 'contrast_prompt';
+  targetId: string;
+  targetWordId: string;
+  actionKind: StudyActionKind;
+  feedbackType: 'bad_prompt';
+  sourceEventId: string | null;
+  note: string;
+};
+
+type StudyContentFeedbackRow = {
+  id: string;
+  created_at: string;
+  target_type: 'generated_prompt' | 'contrast_prompt';
+  target_id: string;
+  target_word_id: string;
+  action_kind: StudyActionKind;
+  feedback_type: 'bad_prompt';
+  source_event_id: string | null;
+  note: string;
+};
+
+type RecordStudyManagementActionInput = {
+  sessionId: string;
+  sessionActionId: string;
+  targetWordId: string;
+  actionKind: Extract<StudyActionKind, 'production' | 'contrast_selection'>;
+  sampledSkillIds: StudySkillId[];
+  contentRef: StudyContentRef | null;
+  managementAction: StudyManagementActionKind;
+  note?: string;
+  candidateText?: string | null;
+};
+
+type ContrastClusterRow = {
+  id: string;
+  title: string;
+  note: string;
+};
+
+type ContrastClusterMemberRow = {
+  cluster_id: string;
+  word_id: string;
+  nuance_note: string;
+  display_order: number | null;
+};
+
+type ContrastPromptRow = {
+  id: string;
+  cluster_id: string;
+  target_word_id: string;
+  prompt_text: string;
+  explanation: string;
+};
+
 type StudySchedulerStateInvariantViolation = {
   wordId: string;
   skillId: StudySkillId | null;
@@ -227,6 +353,9 @@ type SeedData = {
   wordMeanings: WordMeaning[];
   wordStudyAdmissionStates: WordStudyAdmissionState[];
   wordSkillStates: WordSkillState[];
+  contrastClusters: ContrastCluster[];
+  contrastClusterMembers: ContrastClusterMember[];
+  contrastPrompts: ContrastPrompt[];
 };
 
 type SessionPayload = {
@@ -298,10 +427,20 @@ export type {
   ReviewPassRating,
   ReviewRating,
   SessionPayload,
+  ContrastCluster,
+  ContrastClusterContent,
+  ContrastClusterMember,
+  ContrastPrompt,
+  ContrastCandidateIntake,
   PriorityWord,
   PriorityWordsPayload,
+  StudyContentFeedback,
+  StudyEvent,
+  StudyManagementActionKind,
   StudySchedulerStateInvariantViolation,
   StudySkillId,
+  WordSkillRelevance,
+  WordSkillRelevanceState,
   WordSkillState,
   WordStudyAdmissionState,
   Word,
@@ -845,6 +984,272 @@ export function getWordSkillStates(): WordSkillState[] {
   return rows.map(mapWordSkillStateRow);
 }
 
+export function createContrastCluster({
+  id = randomUUID(),
+  title,
+  note = '',
+}: {
+  id?: string;
+  title: string;
+  note?: string;
+}): ContrastCluster {
+  const normalizedId = id.trim();
+  const normalizedTitle = title.trim();
+  const normalizedNote = note.trim();
+
+  assertNonEmptyString(normalizedId, 'Expected non-empty contrast cluster id');
+  assertNonEmptyString(normalizedTitle, 'Expected non-empty contrast cluster title');
+
+  db.prepare(`
+    INSERT INTO contrast_clusters (
+      id,
+      title,
+      note
+    ) VALUES (?, ?, ?)
+  `).run(normalizedId, normalizedTitle, normalizedNote);
+
+  return {
+    id: normalizedId,
+    title: normalizedTitle,
+    note: normalizedNote,
+  };
+}
+
+export function getContrastClusters(): ContrastCluster[] {
+  const rows = db
+    .prepare(`
+      SELECT
+        id,
+        title,
+        note
+      FROM contrast_clusters
+      ORDER BY title ASC, id ASC
+    `)
+    .all() as ContrastClusterRow[];
+
+  return rows.map(mapContrastClusterRow);
+}
+
+export function addContrastClusterMember({
+  clusterId,
+  wordId,
+  nuanceNote = '',
+  displayOrder = null,
+}: {
+  clusterId: string;
+  wordId: string;
+  nuanceNote?: string;
+  displayOrder?: number | null;
+}): ContrastClusterMember {
+  const normalizedClusterId = clusterId.trim();
+  const normalizedWordId = wordId.trim();
+  const normalizedNuanceNote = nuanceNote.trim();
+  const normalizedDisplayOrder = normalizeNullableDisplayOrder(displayOrder);
+
+  ensureContrastClusterExists(normalizedClusterId);
+  ensureWordExists(normalizedWordId);
+
+  db.prepare(`
+    INSERT INTO contrast_cluster_members (
+      cluster_id,
+      word_id,
+      nuance_note,
+      display_order
+    ) VALUES (?, ?, ?, ?)
+  `).run(normalizedClusterId, normalizedWordId, normalizedNuanceNote, normalizedDisplayOrder);
+
+  return {
+    clusterId: normalizedClusterId,
+    wordId: normalizedWordId,
+    nuanceNote: normalizedNuanceNote,
+    displayOrder: normalizedDisplayOrder,
+  };
+}
+
+export function getContrastClusterMembers(clusterId: string): ContrastClusterMember[] {
+  const normalizedClusterId = clusterId.trim();
+  ensureContrastClusterExists(normalizedClusterId);
+
+  const rows = db
+    .prepare(`
+      SELECT
+        cluster_id,
+        word_id,
+        nuance_note,
+        display_order
+      FROM contrast_cluster_members
+      WHERE cluster_id = ?
+      ORDER BY
+        display_order IS NULL ASC,
+        display_order ASC,
+        word_id ASC
+    `)
+    .all(normalizedClusterId) as ContrastClusterMemberRow[];
+
+  return rows.map(mapContrastClusterMemberRow);
+}
+
+export function getContrastSiblingsForWord(wordId: string): ContrastClusterMember[] {
+  const normalizedWordId = wordId.trim();
+  ensureWordExists(normalizedWordId);
+
+  const rows = db
+    .prepare(`
+      SELECT DISTINCT
+        sibling.cluster_id,
+        sibling.word_id,
+        sibling.nuance_note,
+        sibling.display_order
+      FROM contrast_cluster_members AS source
+      JOIN contrast_cluster_members AS sibling
+        ON sibling.cluster_id = source.cluster_id
+       AND sibling.word_id != source.word_id
+      WHERE source.word_id = ?
+      ORDER BY
+        sibling.cluster_id ASC,
+        sibling.display_order IS NULL ASC,
+        sibling.display_order ASC,
+        sibling.word_id ASC
+    `)
+    .all(normalizedWordId) as ContrastClusterMemberRow[];
+
+  return rows.map(mapContrastClusterMemberRow);
+}
+
+export function createContrastPrompt({
+  id = randomUUID(),
+  clusterId,
+  targetWordId,
+  promptText,
+  explanation = '',
+}: {
+  id?: string;
+  clusterId: string;
+  targetWordId: string;
+  promptText: string;
+  explanation?: string;
+}): ContrastPrompt {
+  const normalizedId = id.trim();
+  const normalizedClusterId = clusterId.trim();
+  const normalizedTargetWordId = targetWordId.trim();
+  const normalizedPromptText = promptText.trim();
+  const normalizedExplanation = explanation.trim();
+
+  assertNonEmptyString(normalizedId, 'Expected non-empty contrast prompt id');
+  assertNonEmptyString(normalizedPromptText, 'Expected non-empty contrast prompt text');
+  ensureContrastClusterMemberExists(normalizedClusterId, normalizedTargetWordId);
+
+  db.prepare(`
+    INSERT INTO contrast_prompts (
+      id,
+      cluster_id,
+      target_word_id,
+      prompt_text,
+      explanation
+    ) VALUES (?, ?, ?, ?, ?)
+  `).run(
+    normalizedId,
+    normalizedClusterId,
+    normalizedTargetWordId,
+    normalizedPromptText,
+    normalizedExplanation,
+  );
+
+  return {
+    id: normalizedId,
+    clusterId: normalizedClusterId,
+    targetWordId: normalizedTargetWordId,
+    promptText: normalizedPromptText,
+    explanation: normalizedExplanation,
+  };
+}
+
+export function getContrastPromptsForCluster(clusterId: string): ContrastPrompt[] {
+  const normalizedClusterId = clusterId.trim();
+  ensureContrastClusterExists(normalizedClusterId);
+
+  const rows = db
+    .prepare(`
+      SELECT
+        id,
+        cluster_id,
+        target_word_id,
+        prompt_text,
+        explanation
+      FROM contrast_prompts
+      WHERE cluster_id = ?
+      ORDER BY id ASC
+    `)
+    .all(normalizedClusterId) as ContrastPromptRow[];
+
+  return rows.map(mapContrastPromptRow);
+}
+
+export function getContrastClusterContent(): ContrastClusterContent[] {
+  const wordsById = new Map(getWords().map((word) => [word.id, word]));
+  return getContrastClusters().map((cluster) => ({
+    ...cluster,
+    members: getContrastClusterMembers(cluster.id).map((member) => {
+      const word = wordsById.get(member.wordId);
+      if (!word) {
+        throw new Error(`Contrast cluster member references missing word "${member.wordId}"`);
+      }
+
+      return {
+        ...member,
+        word,
+      };
+    }),
+    prompts: getContrastPromptsForCluster(cluster.id),
+  }));
+}
+
+export function updateContrastPrompt({
+  id,
+  targetWordId,
+  promptText,
+  explanation = '',
+}: {
+  id: string;
+  targetWordId: string;
+  promptText: string;
+  explanation?: string;
+}): ContrastPrompt {
+  const normalizedId = id.trim();
+  const existingPrompt = getContrastPromptById(normalizedId);
+  if (!existingPrompt) {
+    throw new Error('Contrast prompt not found');
+  }
+
+  const normalizedTargetWordId = targetWordId.trim();
+  const normalizedPromptText = promptText.trim();
+  const normalizedExplanation = explanation.trim();
+
+  assertNonEmptyString(normalizedPromptText, 'Expected non-empty contrast prompt text');
+  ensureContrastClusterMemberExists(existingPrompt.clusterId, normalizedTargetWordId);
+
+  db.prepare(`
+    UPDATE contrast_prompts
+    SET
+      target_word_id = ?,
+      prompt_text = ?,
+      explanation = ?
+    WHERE id = ?
+  `).run(
+    normalizedTargetWordId,
+    normalizedPromptText,
+    normalizedExplanation,
+    normalizedId,
+  );
+
+  return {
+    ...existingPrompt,
+    targetWordId: normalizedTargetWordId,
+    promptText: normalizedPromptText,
+    explanation: normalizedExplanation,
+  };
+}
+
 export function upsertStudySessionRecord(record: StudySessionRecord): StudySessionRecord {
   assertStudySessionRecord(record);
 
@@ -887,6 +1292,181 @@ export function getStudySessionRecord(sessionId: string): StudySessionRecord | n
     .get(sessionId) as StudySessionRow | undefined;
 
   return row ? mapStudySessionRow(row) : null;
+}
+
+export function getStudyEventsForSession(sessionId: string): StudyEvent[] {
+  assertNonEmptyString(sessionId, 'Expected non-empty study session id');
+
+  const rows = db
+    .prepare(`
+      SELECT
+        id,
+        occurred_at,
+        session_id,
+        session_action_id,
+        session_event_sequence,
+        event_type,
+        target_word_id,
+        action_kind,
+        sampled_skill_ids_json,
+        content_ref_json,
+        payload_json,
+        projected_at
+      FROM study_events
+      WHERE session_id = ?
+      ORDER BY session_event_sequence ASC, occurred_at ASC, id ASC
+    `)
+    .all(sessionId) as StudyEventRow[];
+
+  return rows.map(mapStudyEventRow);
+}
+
+export function getWordSkillRelevance(wordId: string, skillId: StudySkillId): WordSkillRelevance | null {
+  assertNonEmptyString(wordId, 'Expected non-empty word id');
+  if (!isStudySkillId(skillId)) {
+    throw new Error(`Invalid study skill id "${String(skillId)}"`);
+  }
+
+  const row = db
+    .prepare(`
+      SELECT
+        word_id,
+        skill_id,
+        relevance_state,
+        updated_at,
+        source_event_id
+      FROM word_skill_relevance
+      WHERE word_id = ?
+        AND skill_id = ?
+    `)
+    .get(wordId, skillId) as WordSkillRelevanceRow | undefined;
+
+  return row ? mapWordSkillRelevanceRow(row) : null;
+}
+
+export function getWordSkillRelevanceRows(): WordSkillRelevance[] {
+  const rows = db
+    .prepare(`
+      SELECT
+        word_id,
+        skill_id,
+        relevance_state,
+        updated_at,
+        source_event_id
+      FROM word_skill_relevance
+      ORDER BY updated_at ASC, word_id ASC, skill_id ASC
+    `)
+    .all() as WordSkillRelevanceRow[];
+
+  return rows.map(mapWordSkillRelevanceRow);
+}
+
+export function getContrastCandidateIntake(): ContrastCandidateIntake[] {
+  const rows = db
+    .prepare(`
+      SELECT
+        id,
+        created_at,
+        target_word_id,
+        source_event_id,
+        source_action_kind,
+        source_content_ref_json,
+        candidate_text,
+        matched_word_id,
+        note,
+        status
+      FROM contrast_candidate_intake
+      ORDER BY created_at ASC, id ASC
+    `)
+    .all() as ContrastCandidateIntakeRow[];
+
+  return rows.map(mapContrastCandidateIntakeRow);
+}
+
+export function getStudyContentFeedback(): StudyContentFeedback[] {
+  const rows = db
+    .prepare(`
+      SELECT
+        id,
+        created_at,
+        target_type,
+        target_id,
+        target_word_id,
+        action_kind,
+        feedback_type,
+        source_event_id,
+        note
+      FROM study_content_feedback
+      ORDER BY created_at ASC, id ASC
+    `)
+    .all() as StudyContentFeedbackRow[];
+
+  return rows.map(mapStudyContentFeedbackRow);
+}
+
+export function recordStudyManagementAction(input: RecordStudyManagementActionInput): StudyEvent {
+  assertStudyManagementActionInput(input);
+
+  const targetWord = getWordById(input.targetWordId);
+  if (!targetWord) {
+    throw new Error('Word not found');
+  }
+
+  if (targetWord.status !== 'review') {
+    throw new Error('Study management actions are currently limited to review words');
+  }
+
+  const now = new Date().toISOString();
+  const eventId = randomUUID();
+  const note = input.note?.trim() ?? '';
+  const candidateText = input.candidateText?.trim() ? input.candidateText.trim() : null;
+  const eventType = mapStudyManagementActionToEventType(input.managementAction);
+
+  db.exec('BEGIN');
+
+  try {
+    ensureStudySessionExistsWithoutTransaction(input.sessionId, now);
+    const sessionEventSequence = getNextStudyEventSequenceWithoutTransaction(input.sessionId);
+
+    const event: StudyEvent = {
+      id: eventId,
+      occurredAt: now,
+      sessionId: input.sessionId,
+      sessionActionId: input.sessionActionId,
+      sessionEventSequence,
+      eventType,
+      targetWordId: input.targetWordId,
+      actionKind: input.actionKind,
+      sampledSkillIds: input.sampledSkillIds,
+      contentRef: input.contentRef,
+      payload: {
+        managementAction: input.managementAction,
+        note,
+        candidateText,
+      },
+      projectedAt: null,
+    };
+
+    insertStudyEventWithoutTransaction(event);
+    projectStudyManagementActionWithoutTransaction({
+      input,
+      eventId,
+      projectedAt: now,
+      note,
+      candidateText,
+    });
+    markStudyEventProjectedWithoutTransaction(eventId, now);
+
+    db.exec('COMMIT');
+
+    return {
+      ...event,
+      projectedAt: now,
+    };
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
 }
 
 // White-box storage helper for focused attempt-event persistence tests.
@@ -1054,6 +1634,261 @@ function ensureStudySessionExistsWithoutTransaction(sessionId: string, startedAt
     ) VALUES (?, ?, NULL, 'open', NULL)
     ON CONFLICT(id) DO NOTHING
   `).run(sessionId, startedAt);
+}
+
+function getNextStudyEventSequenceWithoutTransaction(sessionId: string) {
+  const row = db
+    .prepare(`
+      SELECT COALESCE(MAX(session_event_sequence), 0) + 1 AS next_sequence
+      FROM (
+        SELECT session_event_sequence
+        FROM study_events
+        WHERE session_id = ?
+          AND session_event_sequence IS NOT NULL
+        UNION ALL
+        SELECT session_event_sequence
+        FROM study_attempt_events
+        WHERE session_id = ?
+      )
+    `)
+    .get(sessionId, sessionId) as { next_sequence: number };
+
+  return row.next_sequence;
+}
+
+function insertStudyEventWithoutTransaction(event: StudyEvent) {
+  db.prepare(`
+    INSERT INTO study_events (
+      id,
+      occurred_at,
+      session_id,
+      session_action_id,
+      session_event_sequence,
+      event_type,
+      target_word_id,
+      action_kind,
+      sampled_skill_ids_json,
+      content_ref_json,
+      payload_json,
+      projected_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    event.id,
+    event.occurredAt,
+    event.sessionId,
+    event.sessionActionId,
+    event.sessionEventSequence,
+    event.eventType,
+    event.targetWordId,
+    event.actionKind,
+    JSON.stringify(event.sampledSkillIds),
+    event.contentRef === null ? null : JSON.stringify(event.contentRef),
+    JSON.stringify(event.payload),
+    event.projectedAt,
+  );
+}
+
+function projectStudyManagementActionWithoutTransaction({
+  input,
+  eventId,
+  projectedAt,
+  note,
+  candidateText,
+}: {
+  input: RecordStudyManagementActionInput;
+  eventId: string;
+  projectedAt: string;
+  note: string;
+  candidateText: string | null;
+}) {
+  if (input.managementAction === 'suppress_skill') {
+    upsertWordSkillRelevanceWithoutTransaction({
+      wordId: input.targetWordId,
+      skillId: getManagedSkillId(input.actionKind),
+      relevanceState: 'suppressed',
+      updatedAt: projectedAt,
+      sourceEventId: eventId,
+    });
+    return;
+  }
+
+  if (input.managementAction === 'add_contrast_candidate') {
+    upsertWordSkillRelevanceWithoutTransaction({
+      wordId: input.targetWordId,
+      skillId: 'contextual_selection',
+      relevanceState: 'normal',
+      updatedAt: projectedAt,
+      sourceEventId: eventId,
+    });
+    insertContrastCandidateIntakeWithoutTransaction({
+      input,
+      eventId,
+      createdAt: projectedAt,
+      note,
+      candidateText,
+    });
+    return;
+  }
+
+  if (input.managementAction === 'suppress_skill_and_add_contrast_candidate') {
+    upsertWordSkillRelevanceWithoutTransaction({
+      wordId: input.targetWordId,
+      skillId: 'production',
+      relevanceState: 'suppressed',
+      updatedAt: projectedAt,
+      sourceEventId: eventId,
+    });
+    upsertWordSkillRelevanceWithoutTransaction({
+      wordId: input.targetWordId,
+      skillId: 'contextual_selection',
+      relevanceState: 'normal',
+      updatedAt: projectedAt,
+      sourceEventId: eventId,
+    });
+    insertContrastCandidateIntakeWithoutTransaction({
+      input,
+      eventId,
+      createdAt: projectedAt,
+      note,
+      candidateText,
+    });
+    return;
+  }
+
+  if (input.managementAction === 'bad_prompt') {
+    insertStudyContentFeedbackWithoutTransaction({
+      input,
+      eventId,
+      createdAt: projectedAt,
+      note,
+    });
+  }
+}
+
+function upsertWordSkillRelevanceWithoutTransaction(relevance: WordSkillRelevance) {
+  db.prepare(`
+    INSERT INTO word_skill_relevance (
+      word_id,
+      skill_id,
+      relevance_state,
+      updated_at,
+      source_event_id
+    ) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(word_id, skill_id) DO UPDATE SET
+      relevance_state = excluded.relevance_state,
+      updated_at = excluded.updated_at,
+      source_event_id = excluded.source_event_id
+  `).run(
+    relevance.wordId,
+    relevance.skillId,
+    relevance.relevanceState,
+    relevance.updatedAt,
+    relevance.sourceEventId,
+  );
+}
+
+function insertContrastCandidateIntakeWithoutTransaction({
+  input,
+  eventId,
+  createdAt,
+  note,
+  candidateText,
+}: {
+  input: RecordStudyManagementActionInput;
+  eventId: string;
+  createdAt: string;
+  note: string;
+  candidateText: string | null;
+}) {
+  const matchedWord = candidateText ? findFirstWordByHanzi(candidateText) : null;
+
+  db.prepare(`
+    INSERT INTO contrast_candidate_intake (
+      id,
+      created_at,
+      target_word_id,
+      source_event_id,
+      source_action_kind,
+      source_content_ref_json,
+      candidate_text,
+      matched_word_id,
+      note,
+      status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')
+  `).run(
+    randomUUID(),
+    createdAt,
+    input.targetWordId,
+    eventId,
+    input.actionKind,
+    input.contentRef === null ? null : JSON.stringify(input.contentRef),
+    candidateText,
+    matchedWord?.id ?? null,
+    note,
+  );
+}
+
+function insertStudyContentFeedbackWithoutTransaction({
+  input,
+  eventId,
+  createdAt,
+  note,
+}: {
+  input: RecordStudyManagementActionInput;
+  eventId: string;
+  createdAt: string;
+  note: string;
+}) {
+  const feedbackTarget = getStudyContentFeedbackTarget(input);
+
+  db.prepare(`
+    INSERT INTO study_content_feedback (
+      id,
+      created_at,
+      target_type,
+      target_id,
+      target_word_id,
+      action_kind,
+      feedback_type,
+      source_event_id,
+      note
+    ) VALUES (?, ?, ?, ?, ?, ?, 'bad_prompt', ?, ?)
+  `).run(
+    randomUUID(),
+    createdAt,
+    feedbackTarget.targetType,
+    feedbackTarget.targetId,
+    input.targetWordId,
+    input.actionKind,
+    eventId,
+    note,
+  );
+}
+
+function getStudyContentFeedbackTarget(input: RecordStudyManagementActionInput): Pick<StudyContentFeedback, 'targetType' | 'targetId'> {
+  if (input.contentRef?.type === 'contrast_prompt') {
+    return {
+      targetType: 'contrast_prompt',
+      targetId: input.contentRef.id,
+    };
+  }
+
+  if (input.actionKind === 'production') {
+    return {
+      targetType: 'generated_prompt',
+      targetId: 'definition_based_production',
+    };
+  }
+
+  throw new Error('Expected contrast prompt content reference for contrast prompt feedback');
+}
+
+function markStudyEventProjectedWithoutTransaction(eventId: string, projectedAt: string) {
+  db.prepare(`
+    UPDATE study_events
+    SET projected_at = ?
+    WHERE id = ?
+  `).run(projectedAt, eventId);
 }
 
 function projectReviewAttemptEventsWithoutTransaction({
@@ -1750,6 +2585,90 @@ function applyLightweightSchemaMigrations() {
     );
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS study_events (
+      id TEXT PRIMARY KEY,
+      occurred_at TEXT NOT NULL,
+      session_id TEXT REFERENCES study_sessions(id) ON DELETE CASCADE,
+      session_action_id TEXT,
+      session_event_sequence INTEGER,
+      event_type TEXT NOT NULL,
+      target_word_id TEXT REFERENCES words(id),
+      action_kind TEXT,
+      sampled_skill_ids_json TEXT NOT NULL DEFAULT '[]',
+      content_ref_json TEXT,
+      payload_json TEXT NOT NULL,
+      projected_at TEXT
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS word_skill_relevance (
+      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      skill_id TEXT NOT NULL,
+      relevance_state TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      source_event_id TEXT REFERENCES study_events(id) ON DELETE SET NULL,
+      PRIMARY KEY (word_id, skill_id)
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS contrast_candidate_intake (
+      id TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL,
+      target_word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      source_event_id TEXT REFERENCES study_events(id) ON DELETE SET NULL,
+      source_action_kind TEXT,
+      source_content_ref_json TEXT,
+      candidate_text TEXT,
+      matched_word_id TEXT REFERENCES words(id) ON DELETE SET NULL,
+      note TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'open'
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS study_content_feedback (
+      id TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL,
+      target_type TEXT NOT NULL,
+      target_id TEXT NOT NULL,
+      target_word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      action_kind TEXT NOT NULL,
+      feedback_type TEXT NOT NULL,
+      source_event_id TEXT REFERENCES study_events(id) ON DELETE SET NULL,
+      note TEXT NOT NULL DEFAULT ''
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS contrast_clusters (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      note TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE TABLE IF NOT EXISTS contrast_cluster_members (
+      cluster_id TEXT NOT NULL REFERENCES contrast_clusters(id) ON DELETE CASCADE,
+      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      nuance_note TEXT NOT NULL DEFAULT '',
+      display_order INTEGER,
+      PRIMARY KEY (cluster_id, word_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS contrast_prompts (
+      id TEXT PRIMARY KEY,
+      cluster_id TEXT NOT NULL REFERENCES contrast_clusters(id) ON DELETE CASCADE,
+      target_word_id TEXT NOT NULL,
+      prompt_text TEXT NOT NULL,
+      explanation TEXT NOT NULL DEFAULT '',
+      FOREIGN KEY (cluster_id, target_word_id)
+        REFERENCES contrast_cluster_members(cluster_id, word_id)
+        ON DELETE CASCADE
+    );
+  `);
+
   const userPriorityColumns = db.prepare(`PRAGMA table_info(user_word_priority)`).all() as Array<{ name: string }>;
   const hasPriorityTier = userPriorityColumns.some((column) => column.name === 'priority_tier');
   if (!hasPriorityTier) {
@@ -2052,6 +2971,67 @@ function getWordById(wordId: string): Word | null {
   return row ? mapWordRow(row) : null;
 }
 
+function ensureWordExists(wordId: string) {
+  assertNonEmptyString(wordId, 'Expected non-empty word id');
+
+  if (!getWordById(wordId)) {
+    throw new Error('Word not found');
+  }
+}
+
+function ensureContrastClusterExists(clusterId: string) {
+  assertNonEmptyString(clusterId, 'Expected non-empty contrast cluster id');
+
+  const row = db
+    .prepare(`
+      SELECT id
+      FROM contrast_clusters
+      WHERE id = ?
+    `)
+    .get(clusterId) as { id: string } | undefined;
+
+  if (!row) {
+    throw new Error('Contrast cluster not found');
+  }
+}
+
+function ensureContrastClusterMemberExists(clusterId: string, wordId: string) {
+  assertNonEmptyString(clusterId, 'Expected non-empty contrast cluster id');
+  assertNonEmptyString(wordId, 'Expected non-empty word id');
+
+  const row = db
+    .prepare(`
+      SELECT cluster_id
+      FROM contrast_cluster_members
+      WHERE cluster_id = ?
+        AND word_id = ?
+    `)
+    .get(clusterId, wordId) as { cluster_id: string } | undefined;
+
+  if (!row) {
+    throw new Error('Contrast prompt target must be a cluster member');
+  }
+}
+
+function getContrastPromptById(id: string): ContrastPrompt | null {
+  assertNonEmptyString(id, 'Expected non-empty contrast prompt id');
+
+  const row = db
+    .prepare(`
+      SELECT
+        id,
+        cluster_id,
+        target_word_id,
+        prompt_text,
+        explanation
+      FROM contrast_prompts
+      WHERE id = ?
+    `)
+    .get(id) as ContrastPromptRow | undefined;
+
+  return row ? mapContrastPromptRow(row) : null;
+}
+
 function findFirstWordByHanzi(hanzi: string): Word | null {
   const row = db
     .prepare(`
@@ -2273,6 +3253,80 @@ function createSchema() {
       metadata_json TEXT NOT NULL,
       projected_at TEXT
     );
+
+    CREATE TABLE study_events (
+      id TEXT PRIMARY KEY,
+      occurred_at TEXT NOT NULL,
+      session_id TEXT REFERENCES study_sessions(id) ON DELETE CASCADE,
+      session_action_id TEXT,
+      session_event_sequence INTEGER,
+      event_type TEXT NOT NULL,
+      target_word_id TEXT REFERENCES words(id),
+      action_kind TEXT,
+      sampled_skill_ids_json TEXT NOT NULL DEFAULT '[]',
+      content_ref_json TEXT,
+      payload_json TEXT NOT NULL,
+      projected_at TEXT
+    );
+
+    CREATE TABLE word_skill_relevance (
+      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      skill_id TEXT NOT NULL,
+      relevance_state TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      source_event_id TEXT REFERENCES study_events(id) ON DELETE SET NULL,
+      PRIMARY KEY (word_id, skill_id)
+    );
+
+    CREATE TABLE contrast_candidate_intake (
+      id TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL,
+      target_word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      source_event_id TEXT REFERENCES study_events(id) ON DELETE SET NULL,
+      source_action_kind TEXT,
+      source_content_ref_json TEXT,
+      candidate_text TEXT,
+      matched_word_id TEXT REFERENCES words(id) ON DELETE SET NULL,
+      note TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'open'
+    );
+
+    CREATE TABLE study_content_feedback (
+      id TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL,
+      target_type TEXT NOT NULL,
+      target_id TEXT NOT NULL,
+      target_word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      action_kind TEXT NOT NULL,
+      feedback_type TEXT NOT NULL,
+      source_event_id TEXT REFERENCES study_events(id) ON DELETE SET NULL,
+      note TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE TABLE contrast_clusters (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      note TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE TABLE contrast_cluster_members (
+      cluster_id TEXT NOT NULL REFERENCES contrast_clusters(id) ON DELETE CASCADE,
+      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      nuance_note TEXT NOT NULL DEFAULT '',
+      display_order INTEGER,
+      PRIMARY KEY (cluster_id, word_id)
+    );
+
+    CREATE TABLE contrast_prompts (
+      id TEXT PRIMARY KEY,
+      cluster_id TEXT NOT NULL REFERENCES contrast_clusters(id) ON DELETE CASCADE,
+      target_word_id TEXT NOT NULL,
+      prompt_text TEXT NOT NULL,
+      explanation TEXT NOT NULL DEFAULT '',
+      FOREIGN KEY (cluster_id, target_word_id)
+        REFERENCES contrast_cluster_members(cluster_id, word_id)
+        ON DELETE CASCADE
+    );
   `);
 
   ensureIndexes();
@@ -2290,6 +3344,16 @@ function ensureIndexes() {
     CREATE INDEX IF NOT EXISTS idx_review_session_summaries_day ON review_session_summaries(day_key ASC);
     CREATE INDEX IF NOT EXISTS idx_study_attempt_events_session ON study_attempt_events(session_id ASC, session_event_sequence ASC);
     CREATE INDEX IF NOT EXISTS idx_study_attempt_events_projected ON study_attempt_events(projected_at ASC, session_id ASC);
+    CREATE INDEX IF NOT EXISTS idx_study_events_session ON study_events(session_id ASC, session_event_sequence ASC);
+    CREATE INDEX IF NOT EXISTS idx_study_events_projected ON study_events(projected_at ASC, occurred_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_word_skill_relevance_state ON word_skill_relevance(skill_id ASC, relevance_state ASC);
+    CREATE INDEX IF NOT EXISTS idx_contrast_candidate_intake_status ON contrast_candidate_intake(status ASC, created_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_contrast_candidate_intake_target ON contrast_candidate_intake(target_word_id ASC, created_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_study_content_feedback_target ON study_content_feedback(target_type ASC, target_id ASC, created_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_study_content_feedback_word ON study_content_feedback(target_word_id ASC, created_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_contrast_cluster_members_word ON contrast_cluster_members(word_id ASC, cluster_id ASC);
+    CREATE INDEX IF NOT EXISTS idx_contrast_prompts_cluster_target ON contrast_prompts(cluster_id ASC, target_word_id ASC);
+    CREATE INDEX IF NOT EXISTS idx_contrast_prompts_target ON contrast_prompts(target_word_id ASC);
   `);
 }
 
@@ -2392,6 +3456,68 @@ function validateSchema() {
     'metadata_json',
     'projected_at',
   ]);
+  assertTableColumns('study_events', [
+    'id',
+    'occurred_at',
+    'session_id',
+    'session_action_id',
+    'session_event_sequence',
+    'event_type',
+    'target_word_id',
+    'action_kind',
+    'sampled_skill_ids_json',
+    'content_ref_json',
+    'payload_json',
+    'projected_at',
+  ]);
+  assertTableColumns('word_skill_relevance', [
+    'word_id',
+    'skill_id',
+    'relevance_state',
+    'updated_at',
+    'source_event_id',
+  ]);
+  assertTableColumns('contrast_candidate_intake', [
+    'id',
+    'created_at',
+    'target_word_id',
+    'source_event_id',
+    'source_action_kind',
+    'source_content_ref_json',
+    'candidate_text',
+    'matched_word_id',
+    'note',
+    'status',
+  ]);
+  assertTableColumns('study_content_feedback', [
+    'id',
+    'created_at',
+    'target_type',
+    'target_id',
+    'target_word_id',
+    'action_kind',
+    'feedback_type',
+    'source_event_id',
+    'note',
+  ]);
+  assertTableColumns('contrast_clusters', [
+    'id',
+    'title',
+    'note',
+  ]);
+  assertTableColumns('contrast_cluster_members', [
+    'cluster_id',
+    'word_id',
+    'nuance_note',
+    'display_order',
+  ]);
+  assertTableColumns('contrast_prompts', [
+    'id',
+    'cluster_id',
+    'target_word_id',
+    'prompt_text',
+    'explanation',
+  ]);
 }
 
 function assertTableColumns(tableName: string, expectedColumns: string[]) {
@@ -2431,7 +3557,7 @@ function seedDatabase() {
     return;
   }
 
-  const seedData = readSeedData() ?? buildSampleSeedData();
+  const seedData = withDevContrastSeedData(readSeedData() ?? buildSampleSeedData());
 
   const insertWord = db.prepare(`
     INSERT INTO words (
@@ -2483,6 +3609,33 @@ function seedDatabase() {
       ease_factor
     )
     VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  const insertContrastCluster = db.prepare(`
+    INSERT INTO contrast_clusters (
+      id,
+      title,
+      note
+    )
+    VALUES (?, ?, ?)
+  `);
+  const insertContrastClusterMember = db.prepare(`
+    INSERT INTO contrast_cluster_members (
+      cluster_id,
+      word_id,
+      nuance_note,
+      display_order
+    )
+    VALUES (?, ?, ?, ?)
+  `);
+  const insertContrastPrompt = db.prepare(`
+    INSERT INTO contrast_prompts (
+      id,
+      cluster_id,
+      target_word_id,
+      prompt_text,
+      explanation
+    )
+    VALUES (?, ?, ?, ?, ?)
   `);
 
   db.exec('BEGIN');
@@ -2539,6 +3692,33 @@ function seedDatabase() {
       );
     }
 
+    for (const cluster of seedData.contrastClusters) {
+      insertContrastCluster.run(
+        cluster.id,
+        cluster.title,
+        cluster.note,
+      );
+    }
+
+    for (const member of seedData.contrastClusterMembers) {
+      insertContrastClusterMember.run(
+        member.clusterId,
+        member.wordId,
+        member.nuanceNote,
+        member.displayOrder,
+      );
+    }
+
+    for (const prompt of seedData.contrastPrompts) {
+      insertContrastPrompt.run(
+        prompt.id,
+        prompt.clusterId,
+        prompt.targetWordId,
+        prompt.promptText,
+        prompt.explanation,
+      );
+    }
+
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');
@@ -2567,6 +3747,15 @@ function readSeedData(): SeedData | null {
     wordMeanings: buildWordMeaningsFromWords(words),
     wordStudyAdmissionStates: parsed.wordStudyAdmissionStates.map(normalizeSeedWordStudyAdmissionState),
     wordSkillStates: parsed.wordSkillStates.map(normalizeSeedWordSkillState),
+    contrastClusters: Array.isArray(parsed.contrastClusters)
+      ? parsed.contrastClusters.map(normalizeSeedContrastCluster)
+      : [],
+    contrastClusterMembers: Array.isArray(parsed.contrastClusterMembers)
+      ? parsed.contrastClusterMembers.map(normalizeSeedContrastClusterMember)
+      : [],
+    contrastPrompts: Array.isArray(parsed.contrastPrompts)
+      ? parsed.contrastPrompts.map(normalizeSeedContrastPrompt)
+      : [],
   };
 }
 
@@ -2611,12 +3800,355 @@ function normalizeSeedWordSkillState(state: Partial<WordSkillState>): WordSkillS
   };
 }
 
+function normalizeSeedContrastCluster(cluster: Partial<ContrastCluster>): ContrastCluster {
+  return {
+    id: cluster.id ?? '',
+    title: cluster.title ?? '',
+    note: cluster.note ?? '',
+  };
+}
+
+function normalizeSeedContrastClusterMember(member: Partial<ContrastClusterMember>): ContrastClusterMember {
+  return {
+    clusterId: member.clusterId ?? '',
+    wordId: member.wordId ?? '',
+    nuanceNote: member.nuanceNote ?? '',
+    displayOrder: member.displayOrder ?? null,
+  };
+}
+
+function normalizeSeedContrastPrompt(prompt: Partial<ContrastPrompt>): ContrastPrompt {
+  return {
+    id: prompt.id ?? '',
+    clusterId: prompt.clusterId ?? '',
+    targetWordId: prompt.targetWordId ?? '',
+    promptText: prompt.promptText ?? '',
+    explanation: prompt.explanation ?? '',
+  };
+}
+
+function withDevContrastSeedData(seedData: SeedData): SeedData {
+  if (!config.seedSampleData || config.studyProfile !== 'mandarin') {
+    return seedData;
+  }
+
+  const devContrastSeedData = buildMandarinDevContrastSeedData();
+  return mergeSeedData(seedData, devContrastSeedData);
+}
+
+function mergeSeedData(seedData: SeedData, addition: SeedData): SeedData {
+  return {
+    words: mergeBy(seedData.words, addition.words, (word) => word.id),
+    wordMeanings: mergeBy(seedData.wordMeanings, addition.wordMeanings, (meaning) => meaning.id),
+    wordStudyAdmissionStates: mergeBy(
+      seedData.wordStudyAdmissionStates,
+      addition.wordStudyAdmissionStates,
+      (state) => state.wordId,
+    ),
+    wordSkillStates: mergeBy(
+      seedData.wordSkillStates,
+      addition.wordSkillStates,
+      (state) => `${state.wordId}/${state.skillId}`,
+    ),
+    contrastClusters: mergeBy(seedData.contrastClusters, addition.contrastClusters, (cluster) => cluster.id),
+    contrastClusterMembers: mergeBy(
+      seedData.contrastClusterMembers,
+      addition.contrastClusterMembers,
+      (member) => `${member.clusterId}/${member.wordId}`,
+    ),
+    contrastPrompts: mergeBy(seedData.contrastPrompts, addition.contrastPrompts, (prompt) => prompt.id),
+  };
+}
+
+function mergeBy<T>(base: T[], addition: T[], getKey: (item: T) => string): T[] {
+  const seen = new Set(base.map(getKey));
+  const merged = [...base];
+
+  for (const item of addition) {
+    const key = getKey(item);
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    merged.push(item);
+  }
+
+  return merged;
+}
+
+function buildMandarinDevContrastSeedData(): SeedData {
+  const createdAt = '2026-05-23T00:00:00.000Z';
+  const lastStudiedAt = '2026-05-20T00:00:00.000Z';
+  const nextDueAt = '2026-05-22T00:00:00.000Z';
+  const words: Word[] = [
+    buildDevContrastWord({
+      id: 'dev-contrast-qiadang',
+      hanzi: '恰当',
+      traditional: '恰當',
+      pinyin: 'qià dàng',
+      meaning: 'appropriate; fitting; exactly right for the situation',
+      examples: ['这个词用在这里很恰当。'],
+      priority: 90,
+      createdAt,
+    }),
+    buildDevContrastWord({
+      id: 'dev-contrast-shidang',
+      hanzi: '适当',
+      traditional: '適當',
+      pinyin: 'shì dàng',
+      meaning: 'suitable; proper; moderate in degree',
+      examples: ['运动后要适当休息。'],
+      priority: 89,
+      createdAt,
+    }),
+    buildDevContrastWord({
+      id: 'dev-contrast-kaojin',
+      hanzi: '靠近',
+      traditional: '靠近',
+      pinyin: 'kào jìn',
+      meaning: 'to approach; to move close to',
+      examples: ['请不要靠近施工区域。'],
+      priority: 88,
+      createdAt,
+    }),
+    buildDevContrastWord({
+      id: 'dev-contrast-linjin',
+      hanzi: '临近',
+      traditional: '臨近',
+      pinyin: 'lín jìn',
+      meaning: 'to be near; to approach in time or location',
+      examples: ['春节临近，车票越来越难买。'],
+      priority: 87,
+      createdAt,
+    }),
+    buildDevContrastWord({
+      id: 'dev-contrast-yanjun',
+      hanzi: '严峻',
+      traditional: '嚴峻',
+      pinyin: 'yán jùn',
+      meaning: 'severe; grim; serious, usually for situations or tests',
+      examples: ['公司正面临严峻的挑战。'],
+      priority: 86,
+      createdAt,
+    }),
+    buildDevContrastWord({
+      id: 'dev-contrast-yanli',
+      hanzi: '严厉',
+      traditional: '嚴厲',
+      pinyin: 'yán lì',
+      meaning: 'stern; severe, usually for criticism or punishment',
+      examples: ['老师严厉地批评了迟到的学生。'],
+      priority: 85,
+      createdAt,
+    }),
+    buildDevContrastWord({
+      id: 'dev-contrast-yansu',
+      hanzi: '严肃',
+      traditional: '嚴肅',
+      pinyin: 'yán sù',
+      meaning: 'serious; solemn; earnest',
+      examples: ['会议的气氛很严肃。'],
+      priority: 84,
+      createdAt,
+    }),
+    buildDevContrastWord({
+      id: 'dev-contrast-zhuangzhong',
+      hanzi: '庄重',
+      traditional: '莊重',
+      pinyin: 'zhuāng zhòng',
+      meaning: 'dignified; stately; solemn in manner or appearance',
+      examples: ['她穿得很庄重，适合参加典礼。'],
+      priority: 83,
+      createdAt,
+    }),
+    buildDevContrastWord({
+      id: 'dev-contrast-zhengzhong',
+      hanzi: '郑重',
+      traditional: '鄭重',
+      pinyin: 'zhèng zhòng',
+      meaning: 'solemn; earnest; serious in statement or promise',
+      examples: ['他郑重地向大家道歉。'],
+      priority: 82,
+      createdAt,
+    }),
+    buildDevContrastWord({
+      id: 'dev-contrast-shanyu',
+      hanzi: '善于',
+      traditional: '善於',
+      pinyin: 'shàn yú',
+      meaning: 'to be good at; to be adept at doing something',
+      examples: ['她善于和孩子沟通。'],
+      priority: 81,
+      createdAt,
+    }),
+    buildDevContrastWord({
+      id: 'dev-contrast-shanchang',
+      hanzi: '擅长',
+      traditional: '擅長',
+      pinyin: 'shàn cháng',
+      meaning: 'to specialize in; to be skilled at a particular thing',
+      examples: ['他擅长数据分析。'],
+      priority: 80,
+      createdAt,
+    }),
+  ];
+
+  return {
+    words,
+    wordMeanings: buildWordMeaningsFromWords(words),
+    wordStudyAdmissionStates: words.map((word) => ({
+      wordId: word.id,
+      studyPhase: 'review',
+      earliestNextStudyAt: null,
+    })),
+    wordSkillStates: words.flatMap((word) => [
+      {
+        wordId: word.id,
+        skillId: 'recognition' as const,
+        enabled: true,
+        intervalHours: 48,
+        lastStudiedAt,
+        nextDueAt,
+        easeFactor: INITIAL_REVIEW_EASE_FACTOR,
+      },
+      {
+        wordId: word.id,
+        skillId: 'production' as const,
+        enabled: true,
+        intervalHours: 48,
+        lastStudiedAt,
+        nextDueAt,
+        easeFactor: INITIAL_REVIEW_EASE_FACTOR,
+      },
+    ]),
+    contrastClusters: [
+      {
+        id: 'dev-contrast-cluster-qiadang-shidang',
+        title: '恰当 / 适当',
+        note: 'Both can mean appropriate. 恰当 emphasizes exact fit; 适当 often allows a suitable or moderate degree.',
+      },
+      {
+        id: 'dev-contrast-cluster-kaojin-linjin',
+        title: '靠近 / 临近',
+        note: '靠近 often describes physically moving or being close; 临近 often describes something approaching in time or location.',
+      },
+      {
+        id: 'dev-contrast-cluster-yan-family',
+        title: '严峻 / 严厉 / 严肃 / 庄重 / 郑重',
+        note: 'A seriousness cluster: situations, criticism, atmosphere, dignified bearing, and solemn statements.',
+      },
+      {
+        id: 'dev-contrast-cluster-shanyu-shanchang',
+        title: '善于 / 擅长',
+        note: 'Both describe ability. 善于 often emphasizes being adept at handling an activity; 擅长 emphasizes a particular skill or specialty.',
+      },
+    ],
+    contrastClusterMembers: [
+      buildDevContrastMember('dev-contrast-cluster-qiadang-shidang', 'dev-contrast-qiadang', 'Exact fit for the context or wording.', 1),
+      buildDevContrastMember('dev-contrast-cluster-qiadang-shidang', 'dev-contrast-shidang', 'Suitable, proper, or moderate in amount.', 2),
+      buildDevContrastMember('dev-contrast-cluster-kaojin-linjin', 'dev-contrast-kaojin', 'Move close to or be physically near something.', 1),
+      buildDevContrastMember('dev-contrast-cluster-kaojin-linjin', 'dev-contrast-linjin', 'Be near in time, deadline, season, or sometimes location.', 2),
+      buildDevContrastMember('dev-contrast-cluster-yan-family', 'dev-contrast-yanjun', 'For severe situations, challenges, tests, or conditions.', 1),
+      buildDevContrastMember('dev-contrast-cluster-yan-family', 'dev-contrast-yanli', 'For stern criticism, punishment, measures, or tone.', 2),
+      buildDevContrastMember('dev-contrast-cluster-yan-family', 'dev-contrast-yansu', 'For serious mood, attitude, expression, or matter.', 3),
+      buildDevContrastMember('dev-contrast-cluster-yan-family', 'dev-contrast-zhuangzhong', 'For dignified behavior, appearance, ceremony, or setting.', 4),
+      buildDevContrastMember('dev-contrast-cluster-yan-family', 'dev-contrast-zhengzhong', 'For solemn promises, statements, apologies, or declarations.', 5),
+      buildDevContrastMember('dev-contrast-cluster-shanyu-shanchang', 'dev-contrast-shanyu', 'Good at doing or handling an activity.', 1),
+      buildDevContrastMember('dev-contrast-cluster-shanyu-shanchang', 'dev-contrast-shanchang', 'Skilled in a specific field, technique, or specialty.', 2),
+    ],
+    contrastPrompts: [
+      buildDevContrastPrompt('dev-contrast-prompt-qiadang-1', 'dev-contrast-cluster-qiadang-shidang', 'dev-contrast-qiadang', '这个例子放在这里很____，正好说明了作者的观点。', 'The example is exactly fitting for the argument, so 恰当 is the sharper choice.'),
+      buildDevContrastPrompt('dev-contrast-prompt-shidang-1', 'dev-contrast-cluster-qiadang-shidang', 'dev-contrast-shidang', '医生建议他每天做____的运动，不要过量。', 'The sentence is about a suitable or moderate amount, so 适当 fits.'),
+      buildDevContrastPrompt('dev-contrast-prompt-kaojin-1', 'dev-contrast-cluster-kaojin-linjin', 'dev-contrast-kaojin', '游客不要____栏杆，以免发生危险。', 'The warning is about moving physically close to the railing, so 靠近 fits.'),
+      buildDevContrastPrompt('dev-contrast-prompt-linjin-1', 'dev-contrast-cluster-kaojin-linjin', 'dev-contrast-linjin', '考试____，他每天复习到很晚。', 'The exam is approaching in time, so 临近 fits.'),
+      buildDevContrastPrompt('dev-contrast-prompt-yanjun-1', 'dev-contrast-cluster-yan-family', 'dev-contrast-yanjun', '这家公司正面临____的财务危机。', 'A crisis or challenge can be 严峻: severe and serious.'),
+      buildDevContrastPrompt('dev-contrast-prompt-yanli-1', 'dev-contrast-cluster-yan-family', 'dev-contrast-yanli', '校方对作弊行为作出了____的处罚。', 'Punishment or criticism can be 严厉: stern or severe.'),
+      buildDevContrastPrompt('dev-contrast-prompt-yansu-1', 'dev-contrast-cluster-yan-family', 'dev-contrast-yansu', '听到这个消息后，他的表情变得很____。', 'An expression, mood, or attitude can be 严肃: serious.'),
+      buildDevContrastPrompt('dev-contrast-prompt-zhuangzhong-1', 'dev-contrast-cluster-yan-family', 'dev-contrast-zhuangzhong', '参加典礼时，她选择了一套____的衣服。', 'Dress or bearing for a ceremony can be 庄重: dignified and solemn.'),
+      buildDevContrastPrompt('dev-contrast-prompt-zhengzhong-1', 'dev-contrast-cluster-yan-family', 'dev-contrast-zhengzhong', '他在会上____承诺会按时完成任务。', 'A promise or statement can be 郑重: solemn and earnest.'),
+      buildDevContrastPrompt('dev-contrast-prompt-shanyu-1', 'dev-contrast-cluster-shanyu-shanchang', 'dev-contrast-shanyu', '她____倾听别人的想法，所以大家都愿意找她商量。', 'This describes being adept at an activity, so 善于 fits.'),
+      buildDevContrastPrompt('dev-contrast-prompt-shanchang-1', 'dev-contrast-cluster-shanyu-shanchang', 'dev-contrast-shanchang', '在团队里，他最____数据分析。', 'This names a specific skill area, so 擅长 fits.'),
+    ],
+  };
+}
+
+function buildDevContrastWord({
+  id,
+  hanzi,
+  traditional,
+  pinyin,
+  meaning,
+  examples,
+  priority,
+  createdAt,
+}: {
+  id: string;
+  hanzi: string;
+  traditional: string;
+  pinyin: string;
+  meaning: string;
+  examples: string[];
+  priority: number;
+  createdAt: string;
+}): Word {
+  return {
+    id,
+    hanzi,
+    traditional,
+    pinyin,
+    meaning,
+    meanings: [meaning],
+    personalNotes: '',
+    examples,
+    status: 'review',
+    priority,
+    createdAt,
+    learningStreak: 0,
+    lastLearningSuccessOn: null,
+    lastLearningCoveredOn: null,
+  };
+}
+
+function buildDevContrastMember(
+  clusterId: string,
+  wordId: string,
+  nuanceNote: string,
+  displayOrder: number,
+): ContrastClusterMember {
+  return {
+    clusterId,
+    wordId,
+    nuanceNote,
+    displayOrder,
+  };
+}
+
+function buildDevContrastPrompt(
+  id: string,
+  clusterId: string,
+  targetWordId: string,
+  promptText: string,
+  explanation: string,
+): ContrastPrompt {
+  return {
+    id,
+    clusterId,
+    targetWordId,
+    promptText,
+    explanation,
+  };
+}
+
 function buildSampleSeedData(): SeedData {
   const words = buildSampleWords();
   return {
     words,
     wordMeanings: buildWordMeaningsFromWords(words),
     ...buildSampleReviewSchedulerState(words),
+    contrastClusters: [],
+    contrastClusterMembers: [],
+    contrastPrompts: [],
   };
 }
 
@@ -2968,6 +4500,89 @@ function mapStudyAttemptEventRow(row: StudyAttemptEventRow): StudyAttemptEvent {
   };
 }
 
+function mapStudyEventRow(row: StudyEventRow): StudyEvent {
+  return {
+    id: row.id,
+    occurredAt: row.occurred_at,
+    sessionId: row.session_id,
+    sessionActionId: row.session_action_id,
+    sessionEventSequence: row.session_event_sequence,
+    eventType: row.event_type,
+    targetWordId: row.target_word_id,
+    actionKind: row.action_kind,
+    sampledSkillIds: parseStudySkillIdsJson(row.sampled_skill_ids_json),
+    contentRef: parseNullableContentRefJson(row.content_ref_json),
+    payload: parsePayloadJson(row.payload_json),
+    projectedAt: row.projected_at,
+  };
+}
+
+function mapWordSkillRelevanceRow(row: WordSkillRelevanceRow): WordSkillRelevance {
+  return {
+    wordId: row.word_id,
+    skillId: row.skill_id,
+    relevanceState: row.relevance_state,
+    updatedAt: row.updated_at,
+    sourceEventId: row.source_event_id,
+  };
+}
+
+function mapContrastCandidateIntakeRow(row: ContrastCandidateIntakeRow): ContrastCandidateIntake {
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    targetWordId: row.target_word_id,
+    sourceEventId: row.source_event_id,
+    sourceActionKind: row.source_action_kind,
+    sourceContentRef: parseNullableContentRefJson(row.source_content_ref_json),
+    candidateText: row.candidate_text,
+    matchedWordId: row.matched_word_id,
+    note: row.note,
+    status: row.status,
+  };
+}
+
+function mapStudyContentFeedbackRow(row: StudyContentFeedbackRow): StudyContentFeedback {
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    targetType: row.target_type,
+    targetId: row.target_id,
+    targetWordId: row.target_word_id,
+    actionKind: row.action_kind,
+    feedbackType: row.feedback_type,
+    sourceEventId: row.source_event_id,
+    note: row.note,
+  };
+}
+
+function mapContrastClusterRow(row: ContrastClusterRow): ContrastCluster {
+  return {
+    id: row.id,
+    title: row.title,
+    note: row.note,
+  };
+}
+
+function mapContrastClusterMemberRow(row: ContrastClusterMemberRow): ContrastClusterMember {
+  return {
+    clusterId: row.cluster_id,
+    wordId: row.word_id,
+    nuanceNote: row.nuance_note,
+    displayOrder: row.display_order,
+  };
+}
+
+function mapContrastPromptRow(row: ContrastPromptRow): ContrastPrompt {
+  return {
+    id: row.id,
+    clusterId: row.cluster_id,
+    targetWordId: row.target_word_id,
+    promptText: row.prompt_text,
+    explanation: row.explanation,
+  };
+}
+
 function assertStudySessionRecord(record: StudySessionRecord) {
   assertNonEmptyString(record.id, 'Expected non-empty study session id');
   assertIsoTimestamp(record.startedAt, 'Expected valid study session startedAt timestamp');
@@ -3025,6 +4640,73 @@ function assertStudyAttemptEvent(event: StudyAttemptEvent) {
 
   if (!isPlainRecord(event.metadata)) {
     throw new Error('Expected study attempt metadata to be an object');
+  }
+}
+
+function assertStudyManagementActionInput(input: RecordStudyManagementActionInput) {
+  if (!isPlainRecord(input)) {
+    throw new Error('Expected study management action input');
+  }
+
+  assertNonEmptyString(input.sessionId, 'Expected non-empty session id');
+  assertNonEmptyString(input.sessionActionId, 'Expected non-empty session action id');
+  assertNonEmptyString(input.targetWordId, 'Expected non-empty target word id');
+
+  if (input.actionKind !== 'production' && input.actionKind !== 'contrast_selection') {
+    throw new Error('Expected production or contrast selection action kind');
+  }
+
+  if (!Array.isArray(input.sampledSkillIds) || input.sampledSkillIds.length === 0) {
+    throw new Error('Expected at least one sampled skill id');
+  }
+
+  for (const skillId of input.sampledSkillIds) {
+    if (!isStudySkillId(skillId)) {
+      throw new Error(`Invalid sampled skill id "${String(skillId)}"`);
+    }
+  }
+
+  assertContentRef(input.contentRef);
+
+  if (!isStudyManagementActionKind(input.managementAction)) {
+    throw new Error(`Invalid study management action "${String(input.managementAction)}"`);
+  }
+
+  if (input.note !== undefined && typeof input.note !== 'string') {
+    throw new Error('Expected note to be a string when provided');
+  }
+
+  if (input.candidateText !== undefined && input.candidateText !== null && typeof input.candidateText !== 'string') {
+    throw new Error('Expected candidateText to be a string or null when provided');
+  }
+
+  assertStudyManagementActionMatchesActionKind(input);
+}
+
+function assertStudyManagementActionMatchesActionKind(input: RecordStudyManagementActionInput) {
+  if (input.actionKind === 'production') {
+    if (!input.sampledSkillIds.includes('production')) {
+      throw new Error('Expected production management action to sample production');
+    }
+
+    if (
+      input.managementAction !== 'suppress_skill' &&
+      input.managementAction !== 'add_contrast_candidate' &&
+      input.managementAction !== 'suppress_skill_and_add_contrast_candidate' &&
+      input.managementAction !== 'bad_prompt'
+    ) {
+      throw new Error('Invalid production management action');
+    }
+
+    return;
+  }
+
+  if (!input.sampledSkillIds.includes('contextual_selection')) {
+    throw new Error('Expected contrast management action to sample contextual selection');
+  }
+
+  if (input.managementAction !== 'suppress_skill' && input.managementAction !== 'bad_prompt') {
+    throw new Error('Invalid contrast management action');
   }
 }
 
@@ -3149,6 +4831,41 @@ function parseMetadataJson(raw: string): Record<string, unknown> {
   }
 
   return parsed;
+}
+
+function parsePayloadJson(raw: string): Record<string, unknown> {
+  const parsed = JSON.parse(raw) as unknown;
+  if (!isPlainRecord(parsed)) {
+    throw new Error(`Invalid study event payload: ${raw}`);
+  }
+
+  return parsed;
+}
+
+function mapStudyManagementActionToEventType(action: StudyManagementActionKind): StudyEventType {
+  switch (action) {
+    case 'suppress_skill':
+      return 'skill_relevance_changed';
+    case 'add_contrast_candidate':
+      return 'contrast_candidate_requested';
+    case 'suppress_skill_and_add_contrast_candidate':
+      return 'skill_relevance_changed_with_contrast_candidate';
+    case 'bad_prompt':
+      return 'bad_prompt_reported';
+    default:
+      return assertUnreachableStudyManagementAction(action);
+  }
+}
+
+function getManagedSkillId(actionKind: Extract<StudyActionKind, 'production' | 'contrast_selection'>): StudySkillId {
+  switch (actionKind) {
+    case 'production':
+      return 'production';
+    case 'contrast_selection':
+      return 'contextual_selection';
+    default:
+      return assertUnreachableStudyActionKind(actionKind);
+  }
 }
 
 function isContentRef(value: unknown): value is StudyContentRef {
@@ -3527,6 +5244,10 @@ function assertUnreachableStudyActionKind(actionKind: never): never {
   throw new Error(`Unsupported study action kind "${String(actionKind)}".`);
 }
 
+function assertUnreachableStudyManagementAction(action: never): never {
+  throw new Error(`Unsupported study management action "${String(action)}".`);
+}
+
 function clampInteger(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -3687,6 +5408,18 @@ function assertPositiveInteger(value: number, message: string) {
   }
 }
 
+function normalizeNullableDisplayOrder(value: number | null): number | null {
+  if (value === null) {
+    return null;
+  }
+
+  if (!Number.isInteger(value)) {
+    throw new Error('Expected integer display order');
+  }
+
+  return value;
+}
+
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -3701,6 +5434,15 @@ function isReviewPassRating(value: unknown): value is ReviewPassRating {
 
 function isStudyActionKind(value: unknown): value is StudyActionKind {
   return value === 'recognition' || value === 'production' || value === 'contrast_selection';
+}
+
+function isStudyManagementActionKind(value: unknown): value is StudyManagementActionKind {
+  return (
+    value === 'suppress_skill' ||
+    value === 'add_contrast_candidate' ||
+    value === 'suppress_skill_and_add_contrast_candidate' ||
+    value === 'bad_prompt'
+  );
 }
 
 function isStudySessionProcessingState(value: unknown): value is StudySessionProcessingState {
