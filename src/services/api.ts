@@ -6,7 +6,17 @@ import type {
   WordMeaning,
   ReviewRating,
 } from '../types';
-import type { SessionStudyItemBuckets, StudyAttemptEvent } from '../domain/study-actions';
+import type {
+  ContrastCluster,
+  ContrastClusterMember,
+  ContrastPrompt,
+  SessionStudyItemBuckets,
+  StudyAttemptEvent,
+  StudyContentRef,
+  StudyManagementActionKind,
+  StudySkillId,
+  StudyEvent,
+} from '../domain/study-actions';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:5174';
 
@@ -47,6 +57,15 @@ type PriorityWordsResponse = {
   words: PriorityWord[];
 };
 
+export type ContrastClusterContent = ContrastCluster & {
+  members: Array<ContrastClusterMember & { word: Word }>;
+  prompts: ContrastPrompt[];
+};
+
+type ContrastClustersResponse = {
+  clusters: ContrastClusterContent[];
+};
+
 export async function fetchSessionPayload(): Promise<SessionPayload> {
   const studyDayKey = getCurrentStudyDayKey();
   const response = await fetch(`${API_BASE}/api/session-payload?studyDayKey=${encodeURIComponent(studyDayKey)}`);
@@ -63,6 +82,67 @@ export async function fetchStatus(): Promise<BackendStatus> {
   if (!response.ok) {
     throw new Error('Failed to load backend status');
   }
+  return response.json();
+}
+
+export async function fetchContrastClusters(): Promise<ContrastClustersResponse> {
+  const response = await fetch(`${API_BASE}/api/contrast-clusters`);
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to load contrast clusters'));
+  }
+
+  return response.json();
+}
+
+export async function createContrastPrompt({
+  clusterId,
+  targetWordId,
+  promptText,
+  explanation,
+}: {
+  clusterId: string;
+  targetWordId: string;
+  promptText: string;
+  explanation: string;
+}): Promise<ContrastPrompt> {
+  const response = await fetch(`${API_BASE}/api/contrast-clusters/${encodeURIComponent(clusterId)}/prompts`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ targetWordId, promptText, explanation }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to create contrast prompt'));
+  }
+
+  return response.json();
+}
+
+export async function updateContrastPrompt({
+  id,
+  targetWordId,
+  promptText,
+  explanation,
+}: {
+  id: string;
+  targetWordId: string;
+  promptText: string;
+  explanation: string;
+}): Promise<ContrastPrompt> {
+  const response = await fetch(`${API_BASE}/api/contrast-prompts/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ targetWordId, promptText, explanation }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to update contrast prompt'));
+  }
+
   return response.json();
 }
 
@@ -94,6 +174,51 @@ export async function recordAcceptedReviewAttemptBatch({
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to record accepted review attempt batch'));
   }
+}
+
+export async function recordStudyManagementAction({
+  sessionId,
+  sessionActionId,
+  targetWordId,
+  actionKind,
+  sampledSkillIds,
+  contentRef,
+  managementAction,
+  note = '',
+  candidateText = null,
+}: {
+  sessionId: string;
+  sessionActionId: string;
+  targetWordId: string;
+  actionKind: 'production' | 'contrast_selection';
+  sampledSkillIds: StudySkillId[];
+  contentRef: StudyContentRef | null;
+  managementAction: StudyManagementActionKind;
+  note?: string;
+  candidateText?: string | null;
+}): Promise<StudyEvent> {
+  const response = await fetch(`${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/manage-study-action`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      sessionActionId,
+      targetWordId,
+      actionKind,
+      sampledSkillIds,
+      contentRef,
+      managementAction,
+      note,
+      candidateText,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to record study management action'));
+  }
+
+  return response.json();
 }
 
 export async function recordReviewSessionSummary({

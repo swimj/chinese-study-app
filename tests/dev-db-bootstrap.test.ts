@@ -6,6 +6,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 
+const mandarinDevContrastWordCount = 11;
+const mandarinDevContrastClusterCount = 4;
+const mandarinDevContrastPromptCount = 11;
+
 describe('dev database bootstrap', { concurrency: false }, () => {
   test('rebuilds an invalid dev database from the checked-in app.json fixture', async () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-dev-bootstrap-'));
@@ -31,9 +35,10 @@ describe('dev database bootstrap', { concurrency: false }, () => {
       const dbModule = await import(moduleUrl);
 
       assert.equal(seedData.words.length, 10);
-      assert.equal(dbModule.getWords().length, seedData.words.length);
-      assert.equal(dbModule.getWordStudyAdmissionStates().length, reviewWordCount);
-      assert.equal(dbModule.getWordSkillStates().length, reviewWordCount * 2);
+      assert.equal(dbModule.getWords().length, seedData.words.length + mandarinDevContrastWordCount);
+      assert.equal(dbModule.getWordStudyAdmissionStates().length, reviewWordCount + mandarinDevContrastWordCount);
+      assert.equal(dbModule.getWordSkillStates().length, (reviewWordCount + mandarinDevContrastWordCount) * 2);
+      assert.equal(dbModule.getContrastClusters().length, mandarinDevContrastClusterCount);
 
       const sqlite = new DatabaseSync(dbPath);
 
@@ -42,9 +47,13 @@ describe('dev database bootstrap', { concurrency: false }, () => {
         const wordSkillStateCount = sqlite.prepare('SELECT COUNT(*) AS count FROM word_skill_state').get() as {
           count: number;
         };
+        const contrastPromptCount = sqlite.prepare('SELECT COUNT(*) AS count FROM contrast_prompts').get() as {
+          count: number;
+        };
 
-        assert.equal(wordCount.count, seedData.words.length);
-        assert.equal(wordSkillStateCount.count, reviewWordCount * 2);
+        assert.equal(wordCount.count, seedData.words.length + mandarinDevContrastWordCount);
+        assert.equal(wordSkillStateCount.count, (reviewWordCount + mandarinDevContrastWordCount) * 2);
+        assert.equal(contrastPromptCount.count, mandarinDevContrastPromptCount);
       } finally {
         sqlite.close();
       }
@@ -113,9 +122,10 @@ describe('dev database bootstrap', { concurrency: false }, () => {
       const moduleUrl = `${pathToFileURL(path.resolve('server/db.ts')).href}?test=${Date.now()}`;
       const dbModule = await import(moduleUrl);
 
-      assert.equal(dbModule.getWords().length, seedData.words.length);
-      assert.equal(dbModule.getWordStudyAdmissionStates().length, reviewWordCount);
-      assert.equal(dbModule.getWordSkillStates().length, reviewWordCount * 2);
+      assert.equal(dbModule.getWords().length, seedData.words.length + mandarinDevContrastWordCount);
+      assert.equal(dbModule.getWordStudyAdmissionStates().length, reviewWordCount + mandarinDevContrastWordCount);
+      assert.equal(dbModule.getWordSkillStates().length, (reviewWordCount + mandarinDevContrastWordCount) * 2);
+      assert.equal(dbModule.getContrastClusters().length, mandarinDevContrastClusterCount);
     } finally {
       if (previousMode === undefined) {
         delete process.env.APP_MODE;

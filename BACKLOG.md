@@ -13,6 +13,7 @@ Noncritical improvements worth remembering as the project evolves.
 - Make the initial review-item ease factor user-configurable (currently backend-controlled).
 - Add per-direction dismissal for review words so users can keep one direction active (for example Hanzi → English) while suppressing the opposite direction when production meanings are intentionally hidden.
 - Revisit `startedItemIds` in session state. It currently mostly gates "must be shown before rating" plus dismiss/history cleanup; evaluate whether this can be simplified to a lighter per-active-item shown marker.
+- Revisit Manage Study cleanup for reinforcement review actions. Managing a reinforcement removes the action/progress as intended, but session summary and answered-count cleanup are uneven between active unrated actions and frozen just-rated production actions.
 
 ## Data and Operations
 

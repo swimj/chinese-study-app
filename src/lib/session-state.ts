@@ -265,6 +265,74 @@ export function dismissActiveBucketSessionUnit(state: BucketSessionState): Bucke
   };
 }
 
+export function dropActiveReviewSessionAction(state: BucketSessionState): BucketSessionState {
+  const active = getActiveSessionUnit(state);
+  if (active.type !== 'study' || active.bucket !== 'review') {
+    throw new Error('Session invariant violated: cannot drop active review action when the active unit is not review.');
+  }
+
+  const nextState = refreshBucketSessionScheduler({
+    ...state,
+    scheduler: removeCompletedReviewAction(state.scheduler),
+    reviewProgress: removeReviewProgressForWord(state.reviewProgress, active.item.word.id, state.scheduler.reviewQueue),
+  });
+
+  return {
+    ...nextState,
+    phase: getBucketSessionTotalCount(nextState) === 0 ? 'completed' : nextState.phase,
+  };
+}
+
+export function cancelRatedReviewSessionAction(state: BucketSessionState, sessionActionId: string): BucketSessionState {
+  const actionExists =
+    state.scheduler.reviewQueue.some((item) => item.sessionActionId === sessionActionId) ||
+    state.reviewProgress[sessionActionId] !== undefined;
+
+  if (!actionExists) {
+    throw new Error(`Session invariant violated: review action "${sessionActionId}" is not in the active session.`);
+  }
+
+  const nextState = refreshBucketSessionScheduler({
+    ...state,
+    answeredCount: Math.max(0, state.answeredCount - 1),
+    scheduler: {
+      ...state.scheduler,
+      reviewQueue: state.scheduler.reviewQueue.filter((item) => item.sessionActionId !== sessionActionId),
+    },
+    reviewProgress: removeKey(state.reviewProgress, sessionActionId),
+  });
+
+  return {
+    ...nextState,
+    phase: getBucketSessionTotalCount(nextState) === 0 ? 'completed' : nextState.phase,
+  };
+}
+
+export function dismissBucketSessionWordFromSnapshot(state: BucketSessionState, wordId: string): BucketSessionState {
+  const nextReviewProgress = Object.fromEntries(
+    Object.entries(state.reviewProgress).filter(([, progress]) => progress.attempts[0]?.targetWordId !== wordId),
+  );
+  const nextState = refreshBucketSessionScheduler({
+    ...state,
+    scheduler: {
+      ...state.scheduler,
+      reviewQueue: state.scheduler.reviewQueue.filter((item) => item.targetWordId !== wordId),
+      learningPool: state.scheduler.learningPool.filter((word) => word.id !== wordId),
+      unstudiedPool: state.scheduler.unstudiedPool.filter((word) => word.id !== wordId),
+    },
+    progress: {
+      learning: removeKey(state.progress.learning, wordId),
+      unstudied: removeKey(state.progress.unstudied, wordId),
+    },
+    reviewProgress: nextReviewProgress,
+  });
+
+  return {
+    ...nextState,
+    phase: getBucketSessionTotalCount(nextState) === 0 ? 'completed' : nextState.phase,
+  };
+}
+
 function removeReviewProgressForWord(
   reviewProgress: Record<string, ReviewActionProgress>,
   wordId: string,

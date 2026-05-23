@@ -10,6 +10,8 @@ import {
   dbConfig,
   getUnstudiedCountBaseline,
   getLearningPolicy,
+  createContrastPrompt,
+  getContrastClusterContent,
   getPrioritizedUnstudiedWords,
   getProductionMistakeCandidates,
   getReviewFailureRateDays,
@@ -19,12 +21,19 @@ import {
   getWordStatusCounts,
   recordAcceptedReviewAttemptBatch,
   recordReviewSessionSummary,
+  recordStudyManagementAction,
   updateWordMeaningVisibility,
+  updateContrastPrompt,
   updateWordPersonalNotes,
   updateWordUserPriority,
   type ReviewAttemptCommitIntent,
 } from './db.ts';
-import type { StudyAttemptEvent } from '../src/domain/study-actions.ts';
+import type {
+  StudyAttemptEvent,
+  StudyContentRef,
+  StudyManagementActionKind,
+  StudySkillId,
+} from '../src/domain/study-actions.ts';
 
 const port = dbConfig.port;
 
@@ -53,6 +62,120 @@ export function createApp() {
       res.json(getProductionMistakeCandidates());
     } catch {
       res.status(500).json({ error: 'Failed to load production mistake candidates' });
+    }
+  });
+
+  app.get('/api/contrast-clusters', (_req, res) => {
+    try {
+      res.json({
+        clusters: getContrastClusterContent(),
+      });
+    } catch {
+      res.status(500).json({ error: 'Failed to load contrast clusters' });
+    }
+  });
+
+  app.post('/api/contrast-clusters/:clusterId/prompts', (req, res) => {
+    const clusterId = req.params.clusterId;
+    const targetWordId = req.body?.targetWordId;
+    const promptText = req.body?.promptText;
+    const explanation = req.body?.explanation ?? '';
+
+    if (typeof clusterId !== 'string' || clusterId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty contrast cluster id' });
+      return;
+    }
+
+    if (typeof targetWordId !== 'string' || targetWordId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty targetWordId' });
+      return;
+    }
+
+    if (typeof promptText !== 'string' || promptText.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty promptText' });
+      return;
+    }
+
+    if (typeof explanation !== 'string') {
+      res.status(400).json({ error: 'Expected string explanation when provided' });
+      return;
+    }
+
+    try {
+      const prompt = createContrastPrompt({
+        clusterId: clusterId.trim(),
+        targetWordId: targetWordId.trim(),
+        promptText,
+        explanation,
+      });
+      res.status(201).json(prompt);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message === 'Contrast prompt target must be a cluster member' ||
+          error.message === 'Expected non-empty contrast prompt text' ||
+          error.message === 'Expected non-empty contrast cluster id' ||
+          error.message === 'Expected non-empty word id')
+      ) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to create contrast prompt' });
+    }
+  });
+
+  app.patch('/api/contrast-prompts/:promptId', (req, res) => {
+    const promptId = req.params.promptId;
+    const targetWordId = req.body?.targetWordId;
+    const promptText = req.body?.promptText;
+    const explanation = req.body?.explanation ?? '';
+
+    if (typeof promptId !== 'string' || promptId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty contrast prompt id' });
+      return;
+    }
+
+    if (typeof targetWordId !== 'string' || targetWordId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty targetWordId' });
+      return;
+    }
+
+    if (typeof promptText !== 'string' || promptText.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty promptText' });
+      return;
+    }
+
+    if (typeof explanation !== 'string') {
+      res.status(400).json({ error: 'Expected string explanation when provided' });
+      return;
+    }
+
+    try {
+      res.json(updateContrastPrompt({
+        id: promptId.trim(),
+        targetWordId: targetWordId.trim(),
+        promptText,
+        explanation,
+      }));
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Contrast prompt not found') {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+
+      if (
+        error instanceof Error &&
+        (error.message === 'Contrast prompt target must be a cluster member' ||
+          error.message === 'Expected non-empty contrast prompt text' ||
+          error.message === 'Expected non-empty contrast prompt id' ||
+          error.message === 'Expected non-empty word id')
+      ) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to update contrast prompt' });
     }
   });
 
@@ -180,6 +303,95 @@ export function createApp() {
       }
 
       res.status(500).json({ error: 'Failed to record accepted review attempt batch' });
+    }
+  });
+
+  app.post('/api/study-sessions/:sessionId/manage-study-action', (req, res) => {
+    const sessionId = req.params.sessionId;
+    const sessionActionId = req.body?.sessionActionId;
+    const targetWordId = req.body?.targetWordId;
+    const actionKind = req.body?.actionKind;
+    const sampledSkillIds = req.body?.sampledSkillIds;
+    const contentRef = req.body?.contentRef ?? null;
+    const managementAction = req.body?.managementAction;
+    const note = req.body?.note ?? '';
+    const candidateText = req.body?.candidateText ?? null;
+
+    if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty session id' });
+      return;
+    }
+
+    if (typeof sessionActionId !== 'string' || sessionActionId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty sessionActionId' });
+      return;
+    }
+
+    if (typeof targetWordId !== 'string' || targetWordId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty targetWordId' });
+      return;
+    }
+
+    if (actionKind !== 'production' && actionKind !== 'contrast_selection') {
+      res.status(400).json({ error: 'Expected production or contrast_selection actionKind' });
+      return;
+    }
+
+    if (!Array.isArray(sampledSkillIds)) {
+      res.status(400).json({ error: 'Expected sampledSkillIds array' });
+      return;
+    }
+
+    if (
+      managementAction !== 'suppress_skill' &&
+      managementAction !== 'add_contrast_candidate' &&
+      managementAction !== 'suppress_skill_and_add_contrast_candidate' &&
+      managementAction !== 'bad_prompt'
+    ) {
+      res.status(400).json({ error: 'Expected valid managementAction' });
+      return;
+    }
+
+    if (typeof note !== 'string') {
+      res.status(400).json({ error: 'Expected string note when provided' });
+      return;
+    }
+
+    if (candidateText !== null && typeof candidateText !== 'string') {
+      res.status(400).json({ error: 'Expected string candidateText when provided' });
+      return;
+    }
+
+    try {
+      const event = recordStudyManagementAction({
+        sessionId: sessionId.trim(),
+        sessionActionId: sessionActionId.trim(),
+        targetWordId: targetWordId.trim(),
+        actionKind,
+        sampledSkillIds: sampledSkillIds as StudySkillId[],
+        contentRef: contentRef as StudyContentRef | null,
+        managementAction: managementAction as StudyManagementActionKind,
+        note,
+        candidateText,
+      });
+      res.status(201).json(event);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Word not found') {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+
+      if (
+        error instanceof Error &&
+        (error.message.startsWith('Expected ') ||
+          error.message.startsWith('Invalid ') ||
+          error.message === 'Study management actions are currently limited to review words')
+      ) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to record study management action' });
     }
   });
 

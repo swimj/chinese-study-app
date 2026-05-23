@@ -6,7 +6,7 @@ import type {
   ReviewActionProgress,
   UnstudiedWordProgress,
 } from '../lib/session-state';
-import type { SessionStudyItem } from '../domain/study-actions';
+import type { SessionStudyItem, StudyManagementActionKind } from '../domain/study-actions';
 import type { ReviewRating, Word, WordMeaning } from '../types';
 import type { SessionPrefetchState } from '../features/session/session-prefetch';
 import type { RatingOption } from '../features/session/session-rating';
@@ -36,6 +36,7 @@ export function HomePage({
   submittingRating,
   personalNotesEditorOpen,
   personalNotesEditorSaving,
+  studyManagementSubmitting,
   productionAwaitingNext,
   frozenProductionCard,
   activeAllMeanings,
@@ -66,6 +67,9 @@ export function HomePage({
   onProductionContrastCandidateCheckedChange,
   onProductionContrastCandidateNoteChange,
   onDismissCurrentWord,
+  onManageStudyAction,
+  onDismissFrozenProductionWord,
+  onManageFrozenProductionAction,
   onOpenPersonalNotesEditor,
   onBeginUnstudiedDrill,
   onToggleMeaningVisibility,
@@ -93,6 +97,7 @@ export function HomePage({
   submittingRating: ReviewRating | null;
   personalNotesEditorOpen: boolean;
   personalNotesEditorSaving: boolean;
+  studyManagementSubmitting: boolean;
   productionAwaitingNext: boolean;
   frozenProductionCard: FrozenProductionCard | null;
   activeAllMeanings: string[];
@@ -123,6 +128,9 @@ export function HomePage({
   onProductionContrastCandidateCheckedChange: (checked: boolean) => void;
   onProductionContrastCandidateNoteChange: (value: string) => void;
   onDismissCurrentWord: () => void;
+  onManageStudyAction: (action: StudyManagementActionKind, note: string) => void;
+  onDismissFrozenProductionWord: () => void;
+  onManageFrozenProductionAction: (action: StudyManagementActionKind, note: string) => void;
   onOpenPersonalNotesEditor: () => void;
   onBeginUnstudiedDrill: (wordId: string) => void;
   onToggleMeaningVisibility: (meaning: WordMeaning) => void;
@@ -177,6 +185,7 @@ export function HomePage({
           submittingRating={submittingRating}
           personalNotesEditorOpen={personalNotesEditorOpen}
           personalNotesEditorSaving={personalNotesEditorSaving}
+          studyManagementSubmitting={studyManagementSubmitting}
           productionAwaitingNext={productionAwaitingNext}
           frozenProductionCard={frozenProductionCard}
           activeAllMeanings={activeAllMeanings}
@@ -205,6 +214,9 @@ export function HomePage({
           onProductionContrastCandidateCheckedChange={onProductionContrastCandidateCheckedChange}
           onProductionContrastCandidateNoteChange={onProductionContrastCandidateNoteChange}
           onDismissCurrentWord={onDismissCurrentWord}
+          onManageStudyAction={onManageStudyAction}
+          onDismissFrozenProductionWord={onDismissFrozenProductionWord}
+          onManageFrozenProductionAction={onManageFrozenProductionAction}
           onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
           onBeginUnstudiedDrill={onBeginUnstudiedDrill}
           onToggleMeaningVisibility={onToggleMeaningVisibility}
