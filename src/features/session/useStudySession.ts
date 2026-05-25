@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { ReviewRating, Word, WordMeaning } from '../../types';
 import type { SessionStudyItem, StudyManagementActionKind } from '../../domain/study-actions';
+import { studyManagementActionRemovesCurrentReviewAction } from '../../domain/study-actions';
 import {
   captureProductionMistakeCandidate,
   dismissWordFromStudy,
@@ -684,10 +685,12 @@ export function useStudySession({
         note,
       });
 
-      setSessionState(dropActiveReviewSessionAction(sessionState));
-      resetAnswerAndProductionUi();
-      setLastUndoSnapshot(null);
-      setPendingProductionMistakeCapture(null);
+      if (studyManagementActionRemovesCurrentReviewAction(managementAction)) {
+        setSessionState(dropActiveReviewSessionAction(sessionState));
+        resetAnswerAndProductionUi();
+        setLastUndoSnapshot(null);
+        setPendingProductionMistakeCapture(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -724,6 +727,10 @@ export function useStudySession({
             ? frozenProductionCard.attemptedHanzi
             : null,
       });
+
+      if (!studyManagementActionRemovesCurrentReviewAction(managementAction)) {
+        return;
+      }
 
       const nextState = cancelRatedReviewSessionAction(sessionState, frozenProductionCard.sessionActionId);
       setSessionState(nextState);
