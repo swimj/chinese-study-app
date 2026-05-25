@@ -5,6 +5,7 @@ import {
   buildWordLifecycleSessionStudyItems,
   deriveReviewCommitFieldsFromAttemptEvents,
   mapStudySkillToDefaultActionKind,
+  studyManagementActionRemovesCurrentReviewAction,
   type StudyAttemptEvent,
   type WordSkillState,
 } from '../src/domain/study-actions.ts';
@@ -15,6 +16,13 @@ describe('study action domain adapters', () => {
     assert.equal(mapStudySkillToDefaultActionKind('recognition'), 'recognition');
     assert.equal(mapStudySkillToDefaultActionKind('production'), 'production');
     assert.equal(mapStudySkillToDefaultActionKind('contextual_selection'), 'contrast_selection');
+  });
+
+  test('keeps plain contrast candidate requests additive to the current review action', () => {
+    assert.equal(studyManagementActionRemovesCurrentReviewAction('add_contrast_candidate'), false);
+    assert.equal(studyManagementActionRemovesCurrentReviewAction('suppress_skill'), true);
+    assert.equal(studyManagementActionRemovesCurrentReviewAction('suppress_skill_and_add_contrast_candidate'), true);
+    assert.equal(studyManagementActionRemovesCurrentReviewAction('bad_prompt'), true);
   });
 });
 

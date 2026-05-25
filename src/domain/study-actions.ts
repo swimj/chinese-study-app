@@ -159,6 +159,19 @@ export function mapStudySkillToDefaultActionKind(skillId: StudySkillId): StudyAc
   }
 }
 
+export function studyManagementActionRemovesCurrentReviewAction(action: StudyManagementActionKind): boolean {
+  switch (action) {
+    case 'add_contrast_candidate':
+      return false;
+    case 'suppress_skill':
+    case 'suppress_skill_and_add_contrast_candidate':
+    case 'bad_prompt':
+      return true;
+    default:
+      return assertUnreachableStudyManagementAction(action);
+  }
+}
+
 export function buildReviewSessionStudyItem({
   wordSkillState,
   word,
@@ -358,4 +371,8 @@ function assertAttemptEventsPresent(): never {
 
 function assertUnreachableStudySkill(skillId: never): never {
   throw new Error(`Unsupported study skill "${String(skillId)}".`);
+}
+
+function assertUnreachableStudyManagementAction(action: never): never {
+  throw new Error(`Unsupported study management action "${String(action)}".`);
 }
