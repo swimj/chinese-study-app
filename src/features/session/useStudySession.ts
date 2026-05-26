@@ -31,6 +31,7 @@ import {
   getBucketSessionTotalCount,
   markActiveSessionUnitStarted,
   rateActiveSessionUnit,
+  rateActiveContrastSelectionUnit,
   type BucketSessionState,
   type LearningWordProgress,
   type ReviewActionProgress,
@@ -129,6 +130,9 @@ export type StudySessionHomePageProps = {
   productionHanziInputRef: RefObject<HTMLInputElement>;
   productionContrastCandidateChecked: boolean;
   productionContrastCandidateNote: string;
+  contrastSelectedWordId: string | null;
+  contrastPracticeMore: boolean;
+  contrastAwaitingRating: boolean;
   activeRatingOptions: RatingOption[];
   productionMatchOptions: ProductionMatchOptions;
   onStartSession: () => void;
@@ -148,6 +152,8 @@ export type StudySessionHomePageProps = {
   onProductionHanziInputChange: (value: string) => void;
   onProductionMatchOptionChange: (option: keyof ProductionMatchOptions, value: boolean) => void;
   onResetProductionMatchOptions: () => void;
+  onSelectContrastChoice: (wordId: string) => void;
+  onContrastPracticeMoreChange: (checked: boolean) => void;
   onRevealAnswer: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
 };
@@ -202,6 +208,8 @@ export function useStudySession({
   const [productionContrastCandidateChecked, setProductionContrastCandidateChecked] = useState(false);
   const [productionContrastCandidateNote, setProductionContrastCandidateNote] = useState('');
   const [productionUiPhase, setProductionUiPhase] = useState<'idle' | 'await-rating' | 'await-next'>('idle');
+  const [contrastSelectedWordId, setContrastSelectedWordId] = useState<string | null>(null);
+  const [contrastPracticeMore, setContrastPracticeMore] = useState(false);
   const [frozenProductionCard, setFrozenProductionCard] = useState<FrozenProductionCard | null>(null);
   const [productionMatchOptions, setProductionMatchOptions] =
     useState<ProductionMatchOptions>(() => readStoredProductionMatchOptions());
@@ -261,16 +269,22 @@ export function useStudySession({
     word: activeWord,
     allMeanings: activeAllMeanings,
   });
-  const activeAnswerPinyin = getActiveAnswerPinyin(activeWord);
+  const activeAnswerPinyin = getActiveAnswerPinyin({
+    item: activeItem,
+    word: activeWord,
+  });
   const activeReviewState = getActiveReviewState({
     reviewInReinforcement,
     reinforcementStreak: activeReviewReinforcementStreak,
     failureCount: activeReviewFailureCount,
   });
   const productionRequiresHanziInput = isProductionSessionItem(activeItem);
+  const contrastSelectionActive = activeItem?.actionKind === 'contrast_selection';
+  const contrastAwaitingRating = contrastSelectionActive && contrastSelectedWordId !== null;
   const productionAwaitingRating = productionRequiresHanziInput && productionUiPhase === 'await-rating';
   const productionAwaitingNext = productionUiPhase === 'await-next' && frozenProductionCard !== null;
   const activeRatingOptions = getActiveRatingOptions({
+    actionKind: activeItem?.actionKind,
     wordStatus: activeWord?.status,
     reviewInReinforcement,
   });
@@ -326,9 +340,15 @@ export function useStudySession({
     setFrozenProductionCard(null);
   }
 
+  function resetContrastUi() {
+    setContrastSelectedWordId(null);
+    setContrastPracticeMore(false);
+  }
+
   function resetAnswerAndProductionUi() {
     setAnswerRevealed(false);
     resetProductionUi();
+    resetContrastUi();
   }
 
   function resetPersonalNotesEditorUi() {
@@ -345,6 +365,7 @@ export function useStudySession({
     setMeaningVisibilitySavingKey(null);
     resetPersonalNotesEditorUi();
     resetProductionUi();
+    resetContrastUi();
   }
 
   async function applyPendingUndoClosure() {
@@ -461,6 +482,11 @@ export function useStudySession({
       return;
     }
 
+    if (activeItem.actionKind === 'contrast_selection' && contrastSelectedWordId === null) {
+      setError('Choose an answer before rating this contrast prompt.');
+      return;
+    }
+
     setSubmittingRating(rating);
     setError(null);
 
@@ -474,7 +500,15 @@ export function useStudySession({
         restoreUi: options?.restoreUi ?? 'revealed',
       });
 
-      const transition = rateActiveSessionUnit(sessionState, rating);
+      const transition =
+        activeItem.actionKind === 'contrast_selection'
+          ? rateActiveContrastSelectionUnit({
+              state: sessionState,
+              selectedWordId: contrastSelectedWordId ?? '',
+              rating: rating === 'forgot' ? 'hard' : rating,
+              practiceMore: contrastPracticeMore,
+            })
+          : rateActiveSessionUnit(sessionState, rating);
       setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
 
       setSessionState(transition.state);
@@ -603,6 +637,15 @@ export function useStudySession({
 
   function handleResetProductionMatchOptions() {
     setProductionMatchOptions(resetStoredProductionMatchOptions());
+  }
+
+  function handleSelectContrastChoice(wordId: string) {
+    if (!activeItem || activeItem.actionKind !== 'contrast_selection' || answerRevealed || personalNotesEditorOpen) {
+      return;
+    }
+
+    setContrastSelectedWordId(wordId);
+    setAnswerRevealed(true);
   }
 
   function handleUndoLastRating() {
@@ -997,6 +1040,10 @@ export function useStudySession({
           return;
         }
 
+        if (contrastSelectionActive && !answerRevealed) {
+          return;
+        }
+
         if (!answerRevealed) {
           setAnswerRevealed(true);
           return;
@@ -1044,6 +1091,7 @@ export function useStudySession({
     activeWord,
     activeWordPersonalNotes,
     answerRevealed,
+    contrastSelectionActive,
     productionAwaitingNext,
     productionContrastCandidateChecked,
     productionContrastCandidateNote,
@@ -1099,6 +1147,9 @@ export function useStudySession({
       productionHanziInputRef,
       productionContrastCandidateChecked,
       productionContrastCandidateNote,
+      contrastSelectedWordId,
+      contrastPracticeMore,
+      contrastAwaitingRating,
       activeRatingOptions,
       productionMatchOptions,
       onStartSession: () => void handleStartSession(),
@@ -1123,6 +1174,8 @@ export function useStudySession({
       },
       onProductionMatchOptionChange: handleProductionMatchOptionChange,
       onResetProductionMatchOptions: handleResetProductionMatchOptions,
+      onSelectContrastChoice: handleSelectContrastChoice,
+      onContrastPracticeMoreChange: setContrastPracticeMore,
       onRevealAnswer: () => setAnswerRevealed(true),
       onRate: (rating, options) => void handleRate(rating, options),
     },

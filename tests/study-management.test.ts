@@ -52,6 +52,8 @@ describe('study management relevance events', { concurrency: false }, () => {
       DELETE FROM study_events;
       DELETE FROM study_attempt_events;
       DELETE FROM study_sessions;
+      DELETE FROM word_skill_state;
+      DELETE FROM word_study_admission_state;
       DELETE FROM words;
     `);
   });
@@ -201,6 +203,7 @@ describe('study management relevance events', { concurrency: false }, () => {
     assert.equal(feedbackRows[0]?.feedbackType, 'bad_prompt');
     assert.equal(feedbackRows[0]?.sourceEventId, event.id);
     assert.equal(feedbackRows[0]?.note, 'Definition is too broad.');
+    assert.equal(fetchAdmissionState('target-word')?.earliest_next_study_at, addHours(event.occurredAt, 6));
   });
 
   test('projects bad contrast prompt feedback to a contrast prompt feedback target', () => {
@@ -225,6 +228,32 @@ describe('study management relevance events', { concurrency: false }, () => {
     assert.equal(feedbackRows[0]?.actionKind, 'contrast_selection');
     assert.equal(feedbackRows[0]?.sourceEventId, event.id);
     assert.equal(feedbackRows[0]?.note, 'The context admits both answers.');
+    assert.equal(fetchAdmissionState('target-word')?.earliest_next_study_at, addHours(event.occurredAt, 6));
+  });
+
+  test('initializes contextual selection scheduler state when contrast is enabled', () => {
+    insertWord({ id: 'target-word', hanzi: '考察', status: 'review' });
+    insertWord({ id: 'matched-word', hanzi: '考查', status: 'review' });
+
+    const event = dbModule.recordStudyManagementAction({
+      sessionId: 'session-1',
+      sessionActionId: 'review/target-word/production',
+      targetWordId: 'target-word',
+      actionKind: 'production',
+      sampledSkillIds: ['production'],
+      contentRef: null,
+      managementAction: 'add_contrast_candidate',
+      candidateText: '考查',
+    });
+
+    const state = fetchWordSkillState('target-word', 'contextual_selection');
+    assert.equal(state?.word_id, 'target-word');
+    assert.equal(state?.skill_id, 'contextual_selection');
+    assert.equal(state?.enabled, 1);
+    assert.equal(state?.interval_hours, 6);
+    assert.equal(state?.last_studied_at, addHours(event.occurredAt, -6));
+    assert.equal(state?.next_due_at, event.occurredAt);
+    assert.equal(state?.ease_factor, 2.5);
   });
 
   test('keeps skill management limited to review words initially', () => {
@@ -281,6 +310,51 @@ function insertWord({
     status,
     '2026-05-10T00:00:00.000Z',
   );
+}
+
+function fetchAdmissionState(wordId: string) {
+  return sqlite
+    .prepare(`
+      SELECT
+        word_id,
+        study_phase,
+        earliest_next_study_at
+      FROM word_study_admission_state
+      WHERE word_id = ?
+    `)
+    .get(wordId) as { word_id: string; study_phase: string; earliest_next_study_at: string | null } | undefined;
+}
+
+function fetchWordSkillState(wordId: string, skillId: string) {
+  return sqlite
+    .prepare(`
+      SELECT
+        word_id,
+        skill_id,
+        enabled,
+        interval_hours,
+        last_studied_at,
+        next_due_at,
+        ease_factor
+      FROM word_skill_state
+      WHERE word_id = ?
+        AND skill_id = ?
+    `)
+    .get(wordId, skillId) as {
+      word_id: string;
+      skill_id: string;
+      enabled: number;
+      interval_hours: number;
+      last_studied_at: string;
+      next_due_at: string | null;
+      ease_factor: number;
+    } | undefined;
+}
+
+function addHours(isoTimestamp: string, hours: number) {
+  const date = new Date(isoTimestamp);
+  date.setUTCHours(date.getUTCHours() + hours);
+  return date.toISOString();
 }
 
 function assertTableHasColumns(tableName: string, expectedColumns: string[]) {

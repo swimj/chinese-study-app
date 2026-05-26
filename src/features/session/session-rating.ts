@@ -1,4 +1,5 @@
 import type { ReviewRating, Word } from '../../types';
+import type { SessionStudyItem } from '../../domain/study-actions';
 
 export type RatingOption = {
   value: ReviewRating;
@@ -18,18 +19,30 @@ const REVIEW_REINFORCEMENT_OPTIONS: RatingOption[] = [
   { value: 'good', label: 'Yes', note: 'Correct recall. Advances reinforcement streak.' },
 ];
 
+const CONTRAST_SELECTION_OPTIONS: RatingOption[] = [
+  { value: 'hard', label: 'Hard', note: 'I had to work for the distinction.' },
+  { value: 'good', label: 'Good', note: 'The distinction felt usable.' },
+  { value: 'easy', label: 'Easy', note: 'The right choice felt obvious.' },
+];
+
 const BINARY_RECALL_OPTIONS: RatingOption[] = [
   { value: 'forgot', label: 'Forgot', note: 'Did not recall it correctly.' },
   { value: 'good', label: 'Good', note: 'Correct recall.' },
 ];
 
 export function getActiveRatingOptions({
+  actionKind,
   wordStatus,
   reviewInReinforcement,
 }: {
+  actionKind?: SessionStudyItem['actionKind'] | null;
   wordStatus: Word['status'] | undefined;
   reviewInReinforcement: boolean;
 }): RatingOption[] {
+  if (actionKind === 'contrast_selection') {
+    return CONTRAST_SELECTION_OPTIONS;
+  }
+
   if (wordStatus !== 'review') {
     return BINARY_RECALL_OPTIONS;
   }

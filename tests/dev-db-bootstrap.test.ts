@@ -9,6 +9,8 @@ import { pathToFileURL } from 'node:url';
 const mandarinDevContrastWordCount = 11;
 const mandarinDevContrastClusterCount = 4;
 const mandarinDevContrastPromptCount = 11;
+const mandarinDevContextualSelectionCount = 4;
+const mandarinDevBinaryContrastChoiceSetCount = 2;
 
 describe('dev database bootstrap', { concurrency: false }, () => {
   test('rebuilds an invalid dev database from the checked-in app.json fixture', async () => {
@@ -37,8 +39,24 @@ describe('dev database bootstrap', { concurrency: false }, () => {
       assert.equal(seedData.words.length, 10);
       assert.equal(dbModule.getWords().length, seedData.words.length + mandarinDevContrastWordCount);
       assert.equal(dbModule.getWordStudyAdmissionStates().length, reviewWordCount + mandarinDevContrastWordCount);
-      assert.equal(dbModule.getWordSkillStates().length, (reviewWordCount + mandarinDevContrastWordCount) * 2);
+      assert.equal(
+        dbModule.getWordSkillStates().length,
+        (reviewWordCount + mandarinDevContrastWordCount) * 2 + mandarinDevContextualSelectionCount,
+      );
       assert.equal(dbModule.getContrastClusters().length, mandarinDevContrastClusterCount);
+
+      const studyDayKey = new Date().toISOString().slice(0, 10);
+      const contrastSelectionItems = dbModule
+        .getSessionPayload(studyDayKey)
+        .buckets.review.filter((item) => item.actionKind === 'contrast_selection');
+      assert.equal(contrastSelectionItems.length, mandarinDevBinaryContrastChoiceSetCount);
+      assert.deepEqual(
+        contrastSelectionItems.map((item) => item.targetWordId).sort(),
+        [
+          'dev-contrast-kaojin',
+          'dev-contrast-qiadang',
+        ],
+      );
 
       const sqlite = new DatabaseSync(dbPath);
 
@@ -50,9 +68,19 @@ describe('dev database bootstrap', { concurrency: false }, () => {
         const contrastPromptCount = sqlite.prepare('SELECT COUNT(*) AS count FROM contrast_prompts').get() as {
           count: number;
         };
+        const contextualSelectionRelevanceCount = sqlite.prepare(`
+          SELECT COUNT(*) AS count
+          FROM word_skill_relevance
+          WHERE skill_id = 'contextual_selection'
+            AND relevance_state = 'normal'
+        `).get() as { count: number };
 
         assert.equal(wordCount.count, seedData.words.length + mandarinDevContrastWordCount);
-        assert.equal(wordSkillStateCount.count, (reviewWordCount + mandarinDevContrastWordCount) * 2);
+        assert.equal(
+          wordSkillStateCount.count,
+          (reviewWordCount + mandarinDevContrastWordCount) * 2 + mandarinDevContextualSelectionCount,
+        );
+        assert.equal(contextualSelectionRelevanceCount.count, mandarinDevContextualSelectionCount);
         assert.equal(contrastPromptCount.count, mandarinDevContrastPromptCount);
       } finally {
         sqlite.close();
@@ -124,7 +152,10 @@ describe('dev database bootstrap', { concurrency: false }, () => {
 
       assert.equal(dbModule.getWords().length, seedData.words.length + mandarinDevContrastWordCount);
       assert.equal(dbModule.getWordStudyAdmissionStates().length, reviewWordCount + mandarinDevContrastWordCount);
-      assert.equal(dbModule.getWordSkillStates().length, (reviewWordCount + mandarinDevContrastWordCount) * 2);
+      assert.equal(
+        dbModule.getWordSkillStates().length,
+        (reviewWordCount + mandarinDevContrastWordCount) * 2 + mandarinDevContextualSelectionCount,
+      );
       assert.equal(dbModule.getContrastClusters().length, mandarinDevContrastClusterCount);
     } finally {
       if (previousMode === undefined) {
