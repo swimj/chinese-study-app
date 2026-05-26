@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 type WordStatus = 'unstudied' | 'learning' | 'review';
 type Direction = 'forward' | 'reverse';
-type StudySkillId = 'recognition' | 'production';
+type StudySkillId = 'recognition' | 'production' | 'contextual_selection';
 
 type WordRecord = {
   id: string;
@@ -77,11 +77,18 @@ describe('session composition', { concurrency: false }, () => {
 
   beforeEach(() => {
     sqlite.exec(`
+      DELETE FROM study_content_feedback;
+      DELETE FROM contrast_candidate_intake;
+      DELETE FROM word_skill_relevance;
+      DELETE FROM study_events;
       DELETE FROM study_attempt_events;
       DELETE FROM study_sessions;
       DELETE FROM daily_new_word_intake;
       DELETE FROM word_skill_state;
       DELETE FROM word_study_admission_state;
+      DELETE FROM contrast_prompts;
+      DELETE FROM contrast_cluster_members;
+      DELETE FROM contrast_clusters;
       DELETE FROM words;
     `);
   });
@@ -193,6 +200,211 @@ describe('session composition', { concurrency: false }, () => {
         wordId: 'skill-only-review-word',
       },
     ]);
+  });
+
+  test('does not schedule suppressed production even when its scheduler state is urgent', () => {
+    insertWord({
+      id: 'suppressed-production-word',
+      hanzi: '免',
+      pinyin: 'mian',
+      meaning: 'exempt',
+      examples: ['可以免除。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(96),
+    });
+    insertWordStudyAdmissionState('suppressed-production-word', null);
+    insertWordSkillState({
+      wordId: 'suppressed-production-word',
+      skillId: 'production',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(72),
+      nextDueAt: isoHoursAgo(48),
+    });
+    insertWordSkillRelevance('suppressed-production-word', 'production', 'suppressed');
+
+    assert.deepEqual(getSessionItemIds(dbModule), []);
+  });
+
+  test('does not schedule bad definition-based production prompts as replacement busywork', () => {
+    insertWord({
+      id: 'bad-production-prompt-word',
+      hanzi: '泛',
+      pinyin: 'fan',
+      meaning: 'broad',
+      examples: ['这个说法很泛。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(96),
+    });
+    insertWordStudyAdmissionState('bad-production-prompt-word', null);
+    insertWordSkillState({
+      wordId: 'bad-production-prompt-word',
+      skillId: 'production',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(72),
+      nextDueAt: isoHoursAgo(48),
+    });
+    insertBadProductionPromptFeedback('bad-production-prompt-word');
+
+    assert.deepEqual(getSessionItemIds(dbModule), []);
+  });
+
+  test('allows recognition-only review words when production is suppressed', () => {
+    insertWord({
+      id: 'recognition-only-word',
+      hanzi: '姓',
+      pinyin: 'xing',
+      meaning: 'surname',
+      examples: ['他姓王。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+    insertWordStudyAdmissionState('recognition-only-word', null);
+    insertWordSkillState({
+      wordId: 'recognition-only-word',
+      skillId: 'recognition',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(30),
+      nextDueAt: isoHoursAgo(6),
+    });
+    insertWordSkillState({
+      wordId: 'recognition-only-word',
+      skillId: 'production',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(96),
+      nextDueAt: isoHoursAgo(72),
+    });
+    insertWordSkillRelevance('recognition-only-word', 'production', 'suppressed');
+
+    assert.deepEqual(getSessionItemIds(dbModule), ['review/recognition-only-word/recognition']);
+  });
+
+  test('schedules contextual selection only when enabled and contrast prompt content exists', () => {
+    insertWord({
+      id: 'context-target-word',
+      hanzi: '严格',
+      pinyin: 'yan ge',
+      meaning: 'strict',
+      examples: ['标准很严格。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+    insertWord({
+      id: 'context-sibling-word',
+      hanzi: '严肃',
+      pinyin: 'yan su',
+      meaning: 'serious',
+      examples: ['态度很严肃。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+    insertWordStudyAdmissionState('context-target-word', null);
+    insertWordSkillState({
+      wordId: 'context-target-word',
+      skillId: 'contextual_selection',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(72),
+      nextDueAt: isoHoursAgo(48),
+    });
+    insertWordSkillRelevance('context-target-word', 'contextual_selection', 'normal');
+    insertContrastContent({
+      clusterId: 'cluster-yan',
+      scheduledWordId: 'context-target-word',
+      siblingWordId: 'context-sibling-word',
+      promptId: 'prompt-yan-sibling',
+      promptTargetWordId: 'context-sibling-word',
+    });
+
+    const payload = dbModule.getSessionPayload(studyDayKey);
+
+    assert.deepEqual(payload.buckets.review.map((item) => ({
+      sessionActionId: item.sessionActionId,
+      actionKind: item.actionKind,
+      targetWordId: item.targetWordId,
+      sampledSkillIds: item.sampledSkillIds,
+      contentRef: item.contentRef,
+    })), [
+      {
+        sessionActionId: 'review/context-target-word/contextual_selection',
+        actionKind: 'contrast_selection',
+        targetWordId: 'context-target-word',
+        sampledSkillIds: ['contextual_selection'],
+        contentRef: { type: 'contrast_prompt', id: 'prompt-yan-sibling' },
+      },
+    ]);
+  });
+
+  test('does not schedule contextual selection without usable contrast prompt content', () => {
+    insertWord({
+      id: 'context-no-content-word',
+      hanzi: '恰当',
+      pinyin: 'qia dang',
+      meaning: 'appropriate',
+      examples: ['用词很恰当。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+    insertWordStudyAdmissionState('context-no-content-word', null);
+    insertWordSkillState({
+      wordId: 'context-no-content-word',
+      skillId: 'contextual_selection',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(72),
+      nextDueAt: isoHoursAgo(48),
+    });
+    insertWordSkillRelevance('context-no-content-word', 'contextual_selection', 'normal');
+
+    assert.deepEqual(getSessionItemIds(dbModule), []);
+  });
+
+  test('does not schedule contextual selection when all usable contrast prompts are suppressed', () => {
+    insertWord({
+      id: 'context-suppressed-prompt-word',
+      hanzi: '适当',
+      pinyin: 'shi dang',
+      meaning: 'suitable',
+      examples: ['要适当休息。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+    insertWord({
+      id: 'context-suppressed-sibling-word',
+      hanzi: '恰当',
+      pinyin: 'qia dang',
+      meaning: 'appropriate',
+      examples: ['表达很恰当。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+    insertWordStudyAdmissionState('context-suppressed-prompt-word', null);
+    insertWordSkillState({
+      wordId: 'context-suppressed-prompt-word',
+      skillId: 'contextual_selection',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(72),
+      nextDueAt: isoHoursAgo(48),
+    });
+    insertWordSkillRelevance('context-suppressed-prompt-word', 'contextual_selection', 'normal');
+    insertContrastContent({
+      clusterId: 'cluster-appropriate',
+      scheduledWordId: 'context-suppressed-prompt-word',
+      siblingWordId: 'context-suppressed-sibling-word',
+      promptId: 'prompt-suppressed-contrast',
+      promptTargetWordId: 'context-suppressed-prompt-word',
+    });
+    insertBadContrastPromptFeedback({
+      promptId: 'prompt-suppressed-contrast',
+      targetWordId: 'context-suppressed-prompt-word',
+    });
+
+    assert.deepEqual(getSessionItemIds(dbModule), []);
   });
 
   test('suppresses review skills when urgency is below threshold', () => {
@@ -1095,6 +1307,109 @@ function insertWordSkillState({
       next_due_at = excluded.next_due_at,
       ease_factor = excluded.ease_factor
   `).run(wordId, skillId, enabled ? 1 : 0, intervalHours, lastStudiedAt, nextDueAt, easeFactor);
+}
+
+function insertWordSkillRelevance(
+  wordId: string,
+  skillId: StudySkillId,
+  relevanceState: 'normal' | 'deprioritized' | 'suppressed',
+) {
+  sqlite.prepare(`
+    INSERT INTO word_skill_relevance (
+      word_id,
+      skill_id,
+      relevance_state,
+      updated_at,
+      source_event_id
+    ) VALUES (?, ?, ?, ?, NULL)
+    ON CONFLICT(word_id, skill_id) DO UPDATE SET
+      relevance_state = excluded.relevance_state,
+      updated_at = excluded.updated_at,
+      source_event_id = excluded.source_event_id
+  `).run(wordId, skillId, relevanceState, '2026-05-10T00:00:00.000Z');
+}
+
+function insertBadProductionPromptFeedback(wordId: string) {
+  sqlite.prepare(`
+    INSERT INTO study_content_feedback (
+      id,
+      created_at,
+      target_type,
+      target_id,
+      target_word_id,
+      action_kind,
+      feedback_type,
+      source_event_id,
+      note
+    ) VALUES (?, ?, 'generated_prompt', 'definition_based_production', ?, 'production', 'bad_prompt', NULL, ?)
+  `).run(
+    `bad-production-prompt-${wordId}`,
+    '2026-05-10T00:00:00.000Z',
+    wordId,
+    'Definition-based production prompt was marked bad.',
+  );
+}
+
+function insertBadContrastPromptFeedback({
+  promptId,
+  targetWordId,
+}: {
+  promptId: string;
+  targetWordId: string;
+}) {
+  sqlite.prepare(`
+    INSERT INTO study_content_feedback (
+      id,
+      created_at,
+      target_type,
+      target_id,
+      target_word_id,
+      action_kind,
+      feedback_type,
+      source_event_id,
+      note
+    ) VALUES (?, ?, 'contrast_prompt', ?, ?, 'contrast_selection', 'bad_prompt', NULL, ?)
+  `).run(
+    `bad-contrast-prompt-${promptId}`,
+    '2026-05-10T00:00:00.000Z',
+    promptId,
+    targetWordId,
+    'Contrast prompt was marked bad.',
+  );
+}
+
+function insertContrastContent({
+  clusterId,
+  scheduledWordId,
+  siblingWordId,
+  promptId,
+  promptTargetWordId,
+}: {
+  clusterId: string;
+  scheduledWordId: string;
+  siblingWordId: string;
+  promptId: string;
+  promptTargetWordId: string;
+}) {
+  dbModule.createContrastCluster({
+    id: clusterId,
+    title: clusterId,
+  });
+  dbModule.addContrastClusterMember({
+    clusterId,
+    wordId: scheduledWordId,
+  });
+  dbModule.addContrastClusterMember({
+    clusterId,
+    wordId: siblingWordId,
+  });
+  dbModule.createContrastPrompt({
+    id: promptId,
+    clusterId,
+    targetWordId: promptTargetWordId,
+    promptText: `${promptId} prompt`,
+    explanation: `${promptId} explanation`,
+  });
 }
 
 function insertUnprojectedAttemptEvent({
