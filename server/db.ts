@@ -5,6 +5,8 @@ import { DatabaseSync } from 'node:sqlite';
 import type {
   ContrastCluster,
   ContrastClusterMember,
+  ContrastSelectionContent,
+  ContrastSelectionCommitIntent,
   ContrastPrompt,
   ReviewCommitFields,
   SessionStudyItem,
@@ -353,6 +355,7 @@ type SeedData = {
   wordMeanings: WordMeaning[];
   wordStudyAdmissionStates: WordStudyAdmissionState[];
   wordSkillStates: WordSkillState[];
+  wordSkillRelevances: WordSkillRelevance[];
   contrastClusters: ContrastCluster[];
   contrastClusterMembers: ContrastClusterMember[];
   contrastPrompts: ContrastPrompt[];
@@ -413,6 +416,7 @@ const PRIORITY_BUMP_UNIT = 12248;
 const UNSTUDIED_COUNT_BASELINE = 116000;
 const PRIORITY_MAX_BASELINE = PRIORITY_BUMP_UNIT * 10;
 const INITIAL_REVIEW_EASE_FACTOR = 2.5;
+const INITIAL_CONTEXTUAL_SELECTION_INTERVAL_HOURS = 6;
 const PRIORITY_TIER_TOP = 1;
 const PRIORITY_TIER_REGULAR = 0;
 const PRIORITY_TIER_SUNK = -1;
@@ -1548,6 +1552,50 @@ export function recordAcceptedReviewAttemptBatch({
   };
 }
 
+export function recordAcceptedContrastSelectionAttempt({
+  sessionId,
+  event,
+  commitIntent,
+}: {
+  sessionId: string;
+  event: StudyAttemptEvent;
+  commitIntent: ContrastSelectionCommitIntent;
+}): { event: StudyAttemptEvent } {
+  assertNonEmptyString(sessionId, 'Expected non-empty study session id');
+  assertStudyAttemptEvent(event);
+  assertContrastSelectionCommitIntent(commitIntent);
+
+  if (event.sessionId !== sessionId) {
+    throw new Error('Accepted contrast attempt event sessionId must match route session id');
+  }
+
+  assertContrastSelectionAttemptMatchesCommitIntent(event, commitIntent);
+
+  const reviewedAt = new Date().toISOString();
+
+  db.exec('BEGIN');
+
+  try {
+    ensureStudySessionExistsWithoutTransaction(sessionId, event.occurredAt);
+    insertStudyAttemptEventsWithoutTransaction([event]);
+    projectContrastSelectionAttemptEventWithoutTransaction({
+      event,
+      reviewedAt,
+    });
+    markStudyAttemptEventsProjectedWithoutTransaction([event.id], reviewedAt);
+
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+
+  const persistedEvent = getStudyAttemptEventsForSession(sessionId).find((candidate) => candidate.id === event.id);
+  return {
+    event: persistedEvent ?? event,
+  };
+}
+
 export function getStudyAttemptEventsForSession(sessionId: string | null): StudyAttemptEvent[] {
   if (sessionId === null) {
     return [];
@@ -1721,6 +1769,7 @@ function projectStudyManagementActionWithoutTransaction({
       updatedAt: projectedAt,
       sourceEventId: eventId,
     });
+    ensureContextualSelectionStateWithoutTransaction(input.targetWordId, projectedAt);
     insertContrastCandidateIntakeWithoutTransaction({
       input,
       eventId,
@@ -1746,6 +1795,7 @@ function projectStudyManagementActionWithoutTransaction({
       updatedAt: projectedAt,
       sourceEventId: eventId,
     });
+    ensureContextualSelectionStateWithoutTransaction(input.targetWordId, projectedAt);
     insertContrastCandidateIntakeWithoutTransaction({
       input,
       eventId,
@@ -1763,7 +1813,38 @@ function projectStudyManagementActionWithoutTransaction({
       createdAt: projectedAt,
       note,
     });
+    upsertWordStudyAdmissionState(
+      input.targetWordId,
+      'review',
+      addHours(projectedAt, REVIEW_PHASE_RECENCY_GUARD_HOURS),
+    );
   }
+}
+
+function ensureContextualSelectionStateWithoutTransaction(wordId: string, now: string) {
+  const existing = db
+    .prepare(`
+      SELECT 1
+      FROM word_skill_state
+      WHERE word_id = ?
+        AND skill_id = 'contextual_selection'
+      LIMIT 1
+    `)
+    .get(wordId) as { '1': number } | undefined;
+
+  if (existing) {
+    return;
+  }
+
+  upsertWordSkillState({
+    wordId,
+    skillId: 'contextual_selection',
+    enabled: true,
+    intervalHours: INITIAL_CONTEXTUAL_SELECTION_INTERVAL_HOURS,
+    lastStudiedAt: addHours(now, -INITIAL_CONTEXTUAL_SELECTION_INTERVAL_HOURS),
+    nextDueAt: now,
+    easeFactor: INITIAL_REVIEW_EASE_FACTOR,
+  });
 }
 
 function upsertWordSkillRelevanceWithoutTransaction(relevance: WordSkillRelevance) {
@@ -1907,6 +1988,27 @@ function projectReviewAttemptEventsWithoutTransaction({
   const skillId = mapReviewActionKindToStudySkill(firstEvent.actionKind);
   const currentState = getWordSkillState(firstEvent.targetWordId, skillId);
   const updatedState = scheduleWordSkillStateFromReviewAttempt(currentState, failureCount, terminalRating, reviewedAt);
+
+  upsertWordSkillState(updatedState);
+  upsertWordStudyAdmissionState(
+    updatedState.wordId,
+    'review',
+    addHours(updatedState.lastStudiedAt, REVIEW_PHASE_RECENCY_GUARD_HOURS),
+  );
+}
+
+function projectContrastSelectionAttemptEventWithoutTransaction({
+  event,
+  reviewedAt,
+}: {
+  event: StudyAttemptEvent;
+  reviewedAt: string;
+}) {
+  const currentState = getWordSkillState(event.targetWordId, 'contextual_selection');
+  const updatedState =
+    event.outcome === 'incorrect'
+      ? scheduleWordSkillStateFromReviewAttempt(currentState, 1, null, reviewedAt)
+      : scheduleWordSkillStateFromReviewAttempt(currentState, 0, event.rating as ReviewPassRating, reviewedAt);
 
   upsertWordSkillState(updatedState);
   upsertWordStudyAdmissionState(
@@ -3611,6 +3713,16 @@ function seedDatabase() {
     )
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
+  const insertWordSkillRelevance = db.prepare(`
+    INSERT INTO word_skill_relevance (
+      word_id,
+      skill_id,
+      relevance_state,
+      updated_at,
+      source_event_id
+    )
+    VALUES (?, ?, ?, ?, ?)
+  `);
   const insertContrastCluster = db.prepare(`
     INSERT INTO contrast_clusters (
       id,
@@ -3693,6 +3805,16 @@ function seedDatabase() {
       );
     }
 
+    for (const relevance of seedData.wordSkillRelevances) {
+      insertWordSkillRelevance.run(
+        relevance.wordId,
+        relevance.skillId,
+        relevance.relevanceState,
+        relevance.updatedAt,
+        relevance.sourceEventId,
+      );
+    }
+
     for (const cluster of seedData.contrastClusters) {
       insertContrastCluster.run(
         cluster.id,
@@ -3748,6 +3870,9 @@ function readSeedData(): SeedData | null {
     wordMeanings: buildWordMeaningsFromWords(words),
     wordStudyAdmissionStates: parsed.wordStudyAdmissionStates.map(normalizeSeedWordStudyAdmissionState),
     wordSkillStates: parsed.wordSkillStates.map(normalizeSeedWordSkillState),
+    wordSkillRelevances: Array.isArray(parsed.wordSkillRelevances)
+      ? parsed.wordSkillRelevances.map(normalizeSeedWordSkillRelevance)
+      : [],
     contrastClusters: Array.isArray(parsed.contrastClusters)
       ? parsed.contrastClusters.map(normalizeSeedContrastCluster)
       : [],
@@ -3801,6 +3926,16 @@ function normalizeSeedWordSkillState(state: Partial<WordSkillState>): WordSkillS
   };
 }
 
+function normalizeSeedWordSkillRelevance(relevance: Partial<WordSkillRelevance>): WordSkillRelevance {
+  return {
+    wordId: relevance.wordId ?? '',
+    skillId: isStudySkillId(relevance.skillId) ? relevance.skillId : 'recognition',
+    relevanceState: isWordSkillRelevanceState(relevance.relevanceState) ? relevance.relevanceState : 'normal',
+    updatedAt: relevance.updatedAt ?? new Date().toISOString(),
+    sourceEventId: relevance.sourceEventId ?? null,
+  };
+}
+
 function normalizeSeedContrastCluster(cluster: Partial<ContrastCluster>): ContrastCluster {
   return {
     id: cluster.id ?? '',
@@ -3851,6 +3986,11 @@ function mergeSeedData(seedData: SeedData, addition: SeedData): SeedData {
       addition.wordSkillStates,
       (state) => `${state.wordId}/${state.skillId}`,
     ),
+    wordSkillRelevances: mergeBy(
+      seedData.wordSkillRelevances,
+      addition.wordSkillRelevances,
+      (relevance) => `${relevance.wordId}/${relevance.skillId}`,
+    ),
     contrastClusters: mergeBy(seedData.contrastClusters, addition.contrastClusters, (cluster) => cluster.id),
     contrastClusterMembers: mergeBy(
       seedData.contrastClusterMembers,
@@ -3882,6 +4022,12 @@ function buildMandarinDevContrastSeedData(): SeedData {
   const createdAt = '2026-05-23T00:00:00.000Z';
   const lastStudiedAt = '2026-05-20T00:00:00.000Z';
   const nextDueAt = '2026-05-22T00:00:00.000Z';
+  const contextualSelectionWordIds = new Set([
+    'dev-contrast-qiadang',
+    'dev-contrast-shidang',
+    'dev-contrast-kaojin',
+    'dev-contrast-linjin',
+  ]);
   const words: Word[] = [
     buildDevContrastWord({
       id: 'dev-contrast-qiadang',
@@ -4003,26 +4149,49 @@ function buildMandarinDevContrastSeedData(): SeedData {
       studyPhase: 'review',
       earliestNextStudyAt: null,
     })),
-    wordSkillStates: words.flatMap((word) => [
-      {
-        wordId: word.id,
-        skillId: 'recognition' as const,
-        enabled: true,
-        intervalHours: 48,
-        lastStudiedAt,
-        nextDueAt,
-        easeFactor: INITIAL_REVIEW_EASE_FACTOR,
-      },
-      {
-        wordId: word.id,
-        skillId: 'production' as const,
-        enabled: true,
-        intervalHours: 48,
-        lastStudiedAt,
-        nextDueAt,
-        easeFactor: INITIAL_REVIEW_EASE_FACTOR,
-      },
-    ]),
+    wordSkillStates: words.flatMap((word) => {
+      const baseStates: WordSkillState[] = [
+        {
+          wordId: word.id,
+          skillId: 'recognition',
+          enabled: true,
+          intervalHours: 48,
+          lastStudiedAt,
+          nextDueAt,
+          easeFactor: INITIAL_REVIEW_EASE_FACTOR,
+        },
+        {
+          wordId: word.id,
+          skillId: 'production',
+          enabled: true,
+          intervalHours: 48,
+          lastStudiedAt,
+          nextDueAt,
+          easeFactor: INITIAL_REVIEW_EASE_FACTOR,
+        },
+      ];
+
+      if (contextualSelectionWordIds.has(word.id)) {
+        baseStates.push({
+          wordId: word.id,
+          skillId: 'contextual_selection',
+          enabled: true,
+          intervalHours: INITIAL_CONTEXTUAL_SELECTION_INTERVAL_HOURS,
+          lastStudiedAt,
+          nextDueAt,
+          easeFactor: INITIAL_REVIEW_EASE_FACTOR,
+        });
+      }
+
+      return baseStates;
+    }),
+    wordSkillRelevances: [...contextualSelectionWordIds].map((wordId) => ({
+      wordId,
+      skillId: 'contextual_selection',
+      relevanceState: 'normal',
+      updatedAt: createdAt,
+      sourceEventId: null,
+    })),
     contrastClusters: [
       {
         id: 'dev-contrast-cluster-qiadang-shidang',
@@ -4147,6 +4316,7 @@ function buildSampleSeedData(): SeedData {
     words,
     wordMeanings: buildWordMeaningsFromWords(words),
     ...buildSampleReviewSchedulerState(words),
+    wordSkillRelevances: [],
     contrastClusters: [],
     contrastClusterMembers: [],
     contrastPrompts: [],
@@ -4746,6 +4916,54 @@ function assertReviewAttemptCommitIntent(commitIntent: ReviewAttemptCommitIntent
   }
 }
 
+function assertContrastSelectionCommitIntent(commitIntent: ContrastSelectionCommitIntent) {
+  if (!isPlainRecord(commitIntent)) {
+    throw new Error('Expected contrast selection commit intent');
+  }
+
+  if (commitIntent.type !== 'commit-contrast-selection-action-session') {
+    throw new Error('Expected commit-contrast-selection-action-session commit intent');
+  }
+
+  assertNonEmptyString(commitIntent.sessionActionId, 'Expected non-empty session action id');
+  assertNonEmptyString(commitIntent.targetWordId, 'Expected non-empty target word id');
+
+  if (commitIntent.actionKind !== 'contrast_selection') {
+    throw new Error('Expected contrast_selection action kind');
+  }
+
+  if (!stringArraysEqual(commitIntent.sampledSkillIds, ['contextual_selection'])) {
+    throw new Error('Expected contrast selection commit to sample contextual_selection');
+  }
+
+  assertNonEmptyString(commitIntent.selectedWordId, 'Expected non-empty selectedWordId');
+  assertNonEmptyString(commitIntent.promptTargetWordId, 'Expected non-empty promptTargetWordId');
+
+  if (!Array.isArray(commitIntent.choiceWordIds) || commitIntent.choiceWordIds.length < 2) {
+    throw new Error('Expected at least two contrast choice word ids');
+  }
+
+  for (const choiceWordId of commitIntent.choiceWordIds) {
+    assertNonEmptyString(choiceWordId, 'Expected non-empty contrast choice word id');
+  }
+
+  if (!commitIntent.choiceWordIds.includes(commitIntent.selectedWordId)) {
+    throw new Error('Expected selectedWordId to be one of the contrast choices');
+  }
+
+  if (!commitIntent.choiceWordIds.includes(commitIntent.promptTargetWordId)) {
+    throw new Error('Expected promptTargetWordId to be one of the contrast choices');
+  }
+
+  if (!isReviewPassRating(commitIntent.rating)) {
+    throw new Error('Invalid contrast selection rating');
+  }
+
+  if (typeof commitIntent.practiceMore !== 'boolean') {
+    throw new Error('Expected boolean practiceMore');
+  }
+}
+
 function assertReviewAttemptBatchMatchesCommitIntent(
   events: StudyAttemptEvent[],
   commitIntent: ReviewAttemptCommitIntent,
@@ -4767,6 +4985,43 @@ function assertReviewAttemptBatchMatchesCommitIntent(
   }
 }
 
+function assertContrastSelectionAttemptMatchesCommitIntent(
+  event: StudyAttemptEvent,
+  commitIntent: ContrastSelectionCommitIntent,
+) {
+  if (
+    event.sessionActionId !== commitIntent.sessionActionId ||
+    event.targetWordId !== commitIntent.targetWordId ||
+    event.actionKind !== 'contrast_selection'
+  ) {
+    throw new Error('Accepted contrast attempt event does not match supplied contrast action intent');
+  }
+
+  if (!stringArraysEqual(event.sampledSkillIds, commitIntent.sampledSkillIds)) {
+    throw new Error('Accepted contrast attempt event does not match supplied contrast action intent');
+  }
+
+  if (event.contentRef?.type !== 'contrast_prompt') {
+    throw new Error('Expected contrast attempt event to reference a contrast prompt');
+  }
+
+  if (
+    event.response !== commitIntent.selectedWordId ||
+    event.rating !== commitIntent.rating ||
+    event.outcome !== (commitIntent.selectedWordId === commitIntent.promptTargetWordId ? 'correct' : 'incorrect')
+  ) {
+    throw new Error('Accepted contrast attempt event does not match supplied contrast action intent');
+  }
+
+  if (
+    event.metadata.promptTargetWordId !== commitIntent.promptTargetWordId ||
+    event.metadata.practiceMore !== commitIntent.practiceMore ||
+    !unknownStringArraysEqual(event.metadata.choiceWordIds, commitIntent.choiceWordIds)
+  ) {
+    throw new Error('Accepted contrast attempt event does not match supplied contrast action intent');
+  }
+}
+
 function assertDerivedReviewCommitMatchesIntent(
   derivedCommitFields: ReviewCommitFields,
   commitIntent: ReviewAttemptCommitIntent,
@@ -4785,6 +5040,12 @@ function assertAttemptEventBatchNotEmpty(): never {
 
 function stringArraysEqual(left: string[], right: string[]) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function unknownStringArraysEqual(left: unknown, right: string[]) {
+  return Array.isArray(left) &&
+    left.length === right.length &&
+    left.every((value, index) => typeof value === 'string' && value === right[index]);
 }
 
 function assertContentRef(contentRef: StudyContentRef | null) {
@@ -5041,8 +5302,8 @@ function getReviewSessionStudyItems(now: string): SessionStudyItem[] {
       continue;
     }
 
-    const contentRef = getReviewSkillContentRefIfAvailable(row);
-    if (contentRef === undefined) {
+    const content = getReviewSkillContentIfAvailable(row);
+    if (content === undefined) {
       continue;
     }
 
@@ -5059,7 +5320,7 @@ function getReviewSessionStudyItems(now: string): SessionStudyItem[] {
     }
 
     const candidate: ReviewSessionItemCandidate = {
-      item: mapReviewSessionItemWithSkillRow(row, contentRef),
+      item: mapReviewSessionItemWithSkillRow(row, content),
       wordId: row.id,
       skillId: row.skill_id,
       urgency,
@@ -5072,9 +5333,34 @@ function getReviewSessionStudyItems(now: string): SessionStudyItem[] {
     }
   }
 
-  return [...bestCandidateByWordId.values()]
-    .sort(compareReviewSessionItemCandidates)
+  return dedupeContrastChoiceSets([...bestCandidateByWordId.values()]
+    .sort(compareReviewSessionItemCandidates))
     .map((candidate) => candidate.item);
+}
+
+function dedupeContrastChoiceSets(candidates: ReviewSessionItemCandidate[]): ReviewSessionItemCandidate[] {
+  const seenContrastChoiceSetKeys = new Set<string>();
+  const selected: ReviewSessionItemCandidate[] = [];
+
+  for (const candidate of candidates) {
+    const contrastSelection = candidate.item.contrastSelection;
+    if (candidate.item.actionKind === 'contrast_selection' && contrastSelection) {
+      const choiceSetKey = [
+        contrastSelection.clusterId,
+        ...contrastSelection.choices.map((choice) => choice.word.id).sort(),
+      ].join('/');
+
+      if (seenContrastChoiceSetKeys.has(choiceSetKey)) {
+        continue;
+      }
+
+      seenContrastChoiceSetKeys.add(choiceSetKey);
+    }
+
+    selected.push(candidate);
+  }
+
+  return selected;
 }
 
 function isReviewSkillCandidateAllowedByRelevancePolicy(row: ReviewSessionItemWithSkillRow) {
@@ -5089,16 +5375,26 @@ function isReviewSkillCandidateAllowedByRelevancePolicy(row: ReviewSessionItemWi
   return true;
 }
 
-function getReviewSkillContentRefIfAvailable(row: ReviewSessionItemWithSkillRow): StudyContentRef | null | undefined {
+function getReviewSkillContentIfAvailable(
+  row: ReviewSessionItemWithSkillRow,
+): { contentRef: StudyContentRef | null; contrastSelection: ContrastSelectionContent | null } | undefined {
   if (row.skill_id === 'contextual_selection') {
     if (row.skill_relevance_state !== 'normal') {
       return undefined;
     }
-    const promptId = getEligibleContrastPromptIdForScheduledWord(row.id);
-    return promptId === null ? undefined : { type: 'contrast_prompt', id: promptId };
+    const contrastSelection = getEligibleContrastSelectionContentForScheduledWord(row.id);
+    return contrastSelection === null
+      ? undefined
+      : {
+          contentRef: { type: 'contrast_prompt', id: contrastSelection.prompt.id },
+          contrastSelection,
+        };
   }
 
-  return null;
+  return {
+    contentRef: null,
+    contrastSelection: null,
+  };
 }
 
 function hasBadDefinitionBasedProductionPromptFeedback(wordId: string) {
@@ -5118,40 +5414,180 @@ function hasBadDefinitionBasedProductionPromptFeedback(wordId: string) {
   return row !== undefined;
 }
 
-function getEligibleContrastPromptIdForScheduledWord(wordId: string): string | null {
-  const row = db
+function getEligibleContrastSelectionContentForScheduledWord(wordId: string): ContrastSelectionContent | null {
+  const candidates = getEligibleContrastDistractorPromptCandidatesForScheduledWord(wordId);
+  const selectedCandidate = randomArrayElement(candidates);
+
+  if (!selectedCandidate) {
+    return null;
+  }
+
+  const scheduledPromptRows = selectedCandidate.candidatePrompts.filter((prompt) => prompt.targetWordId === wordId);
+  const distractorPromptRows = selectedCandidate.candidatePrompts.filter((prompt) => prompt.targetWordId === selectedCandidate.distractorWordId);
+  const preferScheduledWordAsDistractor = Math.random() < 0.5;
+  const selectedPrompt =
+    (preferScheduledWordAsDistractor ? randomArrayElement(distractorPromptRows) : randomArrayElement(scheduledPromptRows)) ??
+    (preferScheduledWordAsDistractor ? randomArrayElement(scheduledPromptRows) : randomArrayElement(distractorPromptRows));
+
+  if (!selectedPrompt) {
+    return null;
+  }
+
+  const scheduledChoice = getContrastChoice(selectedCandidate.clusterId, wordId);
+  const distractorChoice = getContrastChoice(selectedCandidate.clusterId, selectedCandidate.distractorWordId);
+
+  if (!scheduledChoice || !distractorChoice) {
+    return null;
+  }
+
+  const choices = [scheduledChoice, distractorChoice]
+    .sort((left, right) => left.word.hanzi.localeCompare(right.word.hanzi, 'zh-Hans-CN'));
+
+  if (choices.length < 2) {
+    return null;
+  }
+
+  return {
+    clusterId: selectedCandidate.clusterId,
+    clusterTitle: selectedCandidate.clusterTitle,
+    clusterNote: selectedCandidate.clusterNote,
+    scheduledWordId: wordId,
+    promptTargetWordId: selectedPrompt.targetWordId,
+    prompt: {
+      id: selectedPrompt.id,
+      clusterId: selectedCandidate.clusterId,
+      targetWordId: selectedPrompt.targetWordId,
+      promptText: selectedPrompt.promptText,
+      explanation: selectedPrompt.explanation,
+    },
+    choices,
+  };
+}
+
+function randomArrayElement<T>(values: T[]): T | undefined {
+  if (values.length === 0) {
+    return undefined;
+  }
+
+  return values[Math.floor(Math.random() * values.length)];
+}
+
+type ContrastPromptCandidate = {
+  id: string;
+  targetWordId: string;
+  promptText: string;
+  explanation: string;
+};
+
+type ContrastDistractorPromptCandidate = {
+  clusterId: string;
+  clusterTitle: string;
+  clusterNote: string;
+  distractorWordId: string;
+  candidatePrompts: ContrastPromptCandidate[];
+};
+
+function getEligibleContrastDistractorPromptCandidatesForScheduledWord(wordId: string): ContrastDistractorPromptCandidate[] {
+  const rows = db
     .prepare(`
-      SELECT contrast_prompts.id
-      FROM contrast_prompts
-      INNER JOIN contrast_cluster_members AS scheduled_member
-        ON scheduled_member.cluster_id = contrast_prompts.cluster_id
-       AND scheduled_member.word_id = ?
-      WHERE EXISTS (
-          SELECT 1
-          FROM contrast_cluster_members AS sibling_member
-          WHERE sibling_member.cluster_id = contrast_prompts.cluster_id
-            AND sibling_member.word_id != ?
-        )
-        AND NOT EXISTS (
+      SELECT
+        contrast_clusters.id AS cluster_id,
+        contrast_clusters.title AS cluster_title,
+        contrast_clusters.note AS cluster_note,
+        sibling_member.word_id AS distractor_word_id,
+        contrast_prompts.id AS prompt_id,
+        contrast_prompts.target_word_id AS prompt_target_word_id,
+        contrast_prompts.prompt_text,
+        contrast_prompts.explanation
+      FROM contrast_cluster_members AS scheduled_member
+      INNER JOIN contrast_clusters
+        ON contrast_clusters.id = scheduled_member.cluster_id
+      INNER JOIN contrast_cluster_members AS sibling_member
+        ON sibling_member.cluster_id = scheduled_member.cluster_id
+       AND sibling_member.word_id != scheduled_member.word_id
+      LEFT JOIN contrast_prompts
+        ON contrast_prompts.cluster_id = scheduled_member.cluster_id
+       AND contrast_prompts.target_word_id IN (scheduled_member.word_id, sibling_member.word_id)
+       AND NOT EXISTS (
           SELECT 1
           FROM study_content_feedback
           WHERE study_content_feedback.target_type = 'contrast_prompt'
             AND study_content_feedback.target_id = contrast_prompts.id
             AND study_content_feedback.feedback_type = 'bad_prompt'
         )
+      WHERE scheduled_member.word_id = ?
       ORDER BY
-        CASE WHEN contrast_prompts.target_word_id = ? THEN 0 ELSE 1 END,
+        contrast_clusters.id ASC,
+        sibling_member.display_order IS NULL ASC,
+        sibling_member.display_order ASC,
+        sibling_member.word_id ASC,
+        CASE WHEN contrast_prompts.target_word_id = scheduled_member.word_id THEN 0 ELSE 1 END,
         contrast_prompts.id ASC
-      LIMIT 1
     `)
-    .get(wordId, wordId, wordId) as { id: string } | undefined;
+    .all(wordId) as Array<{
+      cluster_id: string;
+      cluster_title: string;
+      cluster_note: string;
+      distractor_word_id: string;
+      prompt_id: string | null;
+      prompt_target_word_id: string | null;
+      prompt_text: string | null;
+      explanation: string | null;
+    }>;
 
-  return row?.id ?? null;
+  const candidatesByKey = new Map<string, ContrastDistractorPromptCandidate>();
+
+  for (const row of rows) {
+    const key = `${row.cluster_id}/${row.distractor_word_id}`;
+    const candidate = candidatesByKey.get(key) ?? {
+      clusterId: row.cluster_id,
+      clusterTitle: row.cluster_title,
+      clusterNote: row.cluster_note,
+      distractorWordId: row.distractor_word_id,
+      candidatePrompts: [],
+    };
+
+    if (row.prompt_id && row.prompt_target_word_id && row.prompt_text !== null && row.explanation !== null) {
+      candidate.candidatePrompts.push({
+        id: row.prompt_id,
+        targetWordId: row.prompt_target_word_id,
+        promptText: row.prompt_text,
+        explanation: row.explanation,
+      });
+    }
+
+    candidatesByKey.set(key, candidate);
+  }
+
+  return [...candidatesByKey.values()].filter((candidate) => candidate.candidatePrompts.length > 0);
+}
+
+function getContrastChoice(clusterId: string, wordId: string): ContrastSelectionContent['choices'][number] | null {
+  const member = db
+    .prepare(`
+      SELECT
+        cluster_id,
+        word_id,
+        nuance_note,
+        display_order
+      FROM contrast_cluster_members
+      WHERE cluster_id = ?
+        AND word_id = ?
+    `)
+    .get(clusterId, wordId) as ContrastClusterMemberRow | undefined;
+  const word = getWordById(wordId);
+
+  return member && word
+    ? {
+        word,
+        nuanceNote: member.nuance_note,
+      }
+    : null;
 }
 
 function mapReviewSessionItemWithSkillRow(
   row: ReviewSessionItemWithSkillRow,
-  contentRef: StudyContentRef | null,
+  content: { contentRef: StudyContentRef | null; contrastSelection: ContrastSelectionContent | null },
 ): SessionStudyItem {
   const word = mapWordRow(row);
   return buildReviewSessionStudyItem({
@@ -5165,7 +5601,8 @@ function mapReviewSessionItemWithSkillRow(
       easeFactor: row.skill_ease_factor,
     },
     word,
-    contentRef,
+    contentRef: content.contentRef,
+    contrastSelection: content.contrastSelection,
   });
 }
 
@@ -5541,6 +5978,10 @@ function isStudySessionProcessingState(value: unknown): value is StudySessionPro
 
 function isStudySkillId(value: unknown): value is StudySkillId {
   return value === 'recognition' || value === 'production' || value === 'contextual_selection';
+}
+
+function isWordSkillRelevanceState(value: unknown): value is WordSkillRelevanceState {
+  return value === 'normal' || value === 'suppressed';
 }
 
 function assertStudyDayKey(studyDayKey: string) {

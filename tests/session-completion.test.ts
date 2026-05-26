@@ -71,6 +71,9 @@ describe('session completion', { concurrency: false }, () => {
 
   beforeEach(() => {
     sqlite.exec(`
+      DELETE FROM study_content_feedback;
+      DELETE FROM contrast_candidate_intake;
+      DELETE FROM word_skill_relevance;
       DELETE FROM study_attempt_events;
       DELETE FROM study_sessions;
       DELETE FROM daily_new_word_intake;
@@ -136,6 +139,85 @@ describe('session completion', { concurrency: false }, () => {
       6,
     ));
     assert.equal(fetchAttemptProjectedAt('review/hard-word/recognition-attempt-1'), updatedState.lastStudiedAt);
+  });
+
+  test('recording a correct contrast attempt projects only scheduled word contextual state', () => {
+    insertWord({
+      id: 'contrast-scheduled-word',
+      hanzi: '恰当',
+      pinyin: 'qia dang',
+      meaning: 'appropriate exactly',
+      examples: ['很恰当。'],
+      status: 'review',
+      priority: 100,
+      createdAt: '2026-05-01T00:00:00.000Z',
+    });
+    insertWord({
+      id: 'contrast-target-word',
+      hanzi: '适当',
+      pinyin: 'shi dang',
+      meaning: 'suitable',
+      examples: ['适当休息。'],
+      status: 'review',
+      priority: 100,
+      createdAt: '2026-05-01T00:00:00.000Z',
+    });
+    insertWordStudyAdmissionState('contrast-scheduled-word', null);
+    insertWordSkillState('contrast-scheduled-word', 'contextual_selection', {
+      intervalHours: 6,
+      lastStudiedAt: isoHoursAgo(12),
+      nextDueAt: isoHoursAgo(6),
+      easeFactor: 2.5,
+    });
+
+    const { state } = recordAcceptedContrastSelectionAttempt({
+      wordId: 'contrast-scheduled-word',
+      selectedWordId: 'contrast-target-word',
+      promptTargetWordId: 'contrast-target-word',
+      choiceWordIds: ['contrast-scheduled-word', 'contrast-target-word'],
+      rating: 'good',
+      practiceMore: true,
+    });
+
+    assert.equal(state.wordId, 'contrast-scheduled-word');
+    assert.equal(state.skillId, 'contextual_selection');
+    assert.equal(state.intervalHours, 15);
+    assert.equal(state.easeFactor, 2.5);
+    assert.equal(fetchWordSkillState('contrast-target-word', 'contextual_selection'), undefined);
+    assert.equal(fetchAttemptProjectedAt('review/contrast-scheduled-word/contextual_selection-attempt-1'), state.lastStudiedAt);
+  });
+
+  test('recording an incorrect contrast attempt resets scheduled word interval to six hours', () => {
+    insertWord({
+      id: 'contrast-wrong-word',
+      hanzi: '严肃',
+      pinyin: 'yan su',
+      meaning: 'serious',
+      examples: ['表情严肃。'],
+      status: 'review',
+      priority: 100,
+      createdAt: '2026-05-01T00:00:00.000Z',
+    });
+    insertWordStudyAdmissionState('contrast-wrong-word', null);
+    insertWordSkillState('contrast-wrong-word', 'contextual_selection', {
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(36),
+      nextDueAt: isoHoursAgo(12),
+      easeFactor: 2.5,
+    });
+
+    const { state } = recordAcceptedContrastSelectionAttempt({
+      wordId: 'contrast-wrong-word',
+      selectedWordId: 'contrast-distractor-word',
+      promptTargetWordId: 'contrast-wrong-word',
+      choiceWordIds: ['contrast-wrong-word', 'contrast-distractor-word'],
+      rating: 'easy',
+      practiceMore: false,
+    });
+
+    assert.equal(state.intervalHours, 6);
+    assert.equal(state.easeFactor, 2.35);
+    assert.equal(state.nextDueAt, addHours(state.lastStudiedAt, 6));
   });
 
   test('recording an accepted review attempt batch does not require a backing review action row', () => {
@@ -910,6 +992,67 @@ function recordAcceptedReviewBatch({
   return {
     ...result,
     state: fetchWordSkillState(wordId, skillId) ?? fail(`Missing projected skill state ${wordId}/${skillId}`),
+  };
+}
+
+function recordAcceptedContrastSelectionAttempt({
+  wordId,
+  selectedWordId,
+  promptTargetWordId,
+  choiceWordIds,
+  rating,
+  practiceMore,
+}: {
+  wordId: string;
+  selectedWordId: string;
+  promptTargetWordId: string;
+  choiceWordIds: string[];
+  rating: 'hard' | 'good' | 'easy';
+  practiceMore: boolean;
+}) {
+  const sessionActionId = `review/${wordId}/contextual_selection`;
+  const sessionId = `${sessionActionId}-session`;
+  const outcome = selectedWordId === promptTargetWordId ? 'correct' : 'incorrect';
+  const eventId = `${sessionActionId}-attempt-1`;
+
+  dbModule.recordAcceptedContrastSelectionAttempt({
+    sessionId,
+    event: {
+      id: eventId,
+      occurredAt: '2026-05-10T00:00:00.000Z',
+      sessionId,
+      sessionActionId,
+      sessionEventSequence: 1,
+      actionAttemptSequence: 1,
+      actionKind: 'contrast_selection',
+      targetWordId: wordId,
+      sampledSkillIds: ['contextual_selection'],
+      response: selectedWordId,
+      outcome,
+      rating,
+      contentRef: { type: 'contrast_prompt', id: 'contrast-prompt-1' },
+      metadata: {
+        promptTargetWordId,
+        choiceWordIds,
+        practiceMore,
+      },
+    },
+    commitIntent: {
+      type: 'commit-contrast-selection-action-session',
+      sessionActionId,
+      targetWordId: wordId,
+      actionKind: 'contrast_selection',
+      sampledSkillIds: ['contextual_selection'],
+      selectedWordId,
+      promptTargetWordId,
+      choiceWordIds,
+      rating,
+      practiceMore,
+    },
+  });
+
+  return {
+    state: fetchWordSkillState(wordId, 'contextual_selection') ?? fail(`Missing projected skill state ${wordId}/contextual_selection`),
   };
 }
 

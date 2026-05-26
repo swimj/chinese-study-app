@@ -58,6 +58,9 @@ export function HomePage({
   productionHanziInputRef,
   productionContrastCandidateChecked,
   productionContrastCandidateNote,
+  contrastSelectedWordId,
+  contrastPracticeMore,
+  contrastAwaitingRating,
   activeRatingOptions,
   productionMatchOptions,
   onStartSession,
@@ -77,6 +80,8 @@ export function HomePage({
   onProductionHanziInputChange,
   onProductionMatchOptionChange,
   onResetProductionMatchOptions,
+  onSelectContrastChoice,
+  onContrastPracticeMoreChange,
   onRevealAnswer,
   onRate,
 }: {
@@ -119,6 +124,9 @@ export function HomePage({
   productionHanziInputRef: RefObject<HTMLInputElement>;
   productionContrastCandidateChecked: boolean;
   productionContrastCandidateNote: string;
+  contrastSelectedWordId: string | null;
+  contrastPracticeMore: boolean;
+  contrastAwaitingRating: boolean;
   activeRatingOptions: RatingOption[];
   productionMatchOptions: ProductionMatchOptions;
   onStartSession: () => void;
@@ -138,6 +146,8 @@ export function HomePage({
   onProductionHanziInputChange: (value: string) => void;
   onProductionMatchOptionChange: (option: keyof ProductionMatchOptions, value: boolean) => void;
   onResetProductionMatchOptions: () => void;
+  onSelectContrastChoice: (wordId: string) => void;
+  onContrastPracticeMoreChange: (checked: boolean) => void;
   onRevealAnswer: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
 }) {
@@ -207,6 +217,9 @@ export function HomePage({
           productionHanziInputRef={productionHanziInputRef}
           productionContrastCandidateChecked={productionContrastCandidateChecked}
           productionContrastCandidateNote={productionContrastCandidateNote}
+          contrastSelectedWordId={contrastSelectedWordId}
+          contrastPracticeMore={contrastPracticeMore}
+          contrastAwaitingRating={contrastAwaitingRating}
           activeRatingOptions={activeRatingOptions}
           onUndoLastRating={onUndoLastRating}
           onEndSession={onEndSession}
@@ -222,6 +235,8 @@ export function HomePage({
           onToggleMeaningVisibility={onToggleMeaningVisibility}
           onSubmitProductionHanzi={onSubmitProductionHanzi}
           onProductionHanziInputChange={onProductionHanziInputChange}
+          onSelectContrastChoice={onSelectContrastChoice}
+          onContrastPracticeMoreChange={onContrastPracticeMoreChange}
           onRevealAnswer={onRevealAnswer}
           onRate={onRate}
         />

@@ -71,6 +71,9 @@ export function StudySessionPanel({
   productionHanziInputRef,
   productionContrastCandidateChecked,
   productionContrastCandidateNote,
+  contrastSelectedWordId,
+  contrastPracticeMore,
+  contrastAwaitingRating,
   activeRatingOptions,
   onUndoLastRating,
   onEndSession,
@@ -86,6 +89,8 @@ export function StudySessionPanel({
   onToggleMeaningVisibility,
   onSubmitProductionHanzi,
   onProductionHanziInputChange,
+  onSelectContrastChoice,
+  onContrastPracticeMoreChange,
   onRevealAnswer,
   onRate,
 }: {
@@ -125,6 +130,9 @@ export function StudySessionPanel({
   productionHanziInputRef: RefObject<HTMLInputElement>;
   productionContrastCandidateChecked: boolean;
   productionContrastCandidateNote: string;
+  contrastSelectedWordId: string | null;
+  contrastPracticeMore: boolean;
+  contrastAwaitingRating: boolean;
   activeRatingOptions: RatingOption[];
   onUndoLastRating: () => void;
   onEndSession: () => void;
@@ -140,6 +148,8 @@ export function StudySessionPanel({
   onToggleMeaningVisibility: (meaning: WordMeaning) => void;
   onSubmitProductionHanzi: () => void;
   onProductionHanziInputChange: (value: string) => void;
+  onSelectContrastChoice: (wordId: string) => void;
+  onContrastPracticeMoreChange: (checked: boolean) => void;
   onRevealAnswer: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
 }) {
@@ -309,7 +319,9 @@ export function StudySessionPanel({
               {' · '}
               {activeItem.actionKind === 'recognition'
                 ? studyProfile.labels.recognitionDirection
-                : studyProfile.labels.productionDirection}
+                : activeItem.actionKind === 'contrast_selection'
+                  ? 'Contrast selection'
+                  : studyProfile.labels.productionDirection}
             </p>
             <CardActions
               activeItem={activeItem}
@@ -333,7 +345,11 @@ export function StudySessionPanel({
           />
           <div className="prompt-block">
             <span className="prompt-label">Prompt</span>
-            {activeItem.actionKind === 'recognition' ? (
+            {activeItem.actionKind === 'contrast_selection' ? (
+              <>
+                <strong className="contrast-prompt-text">{activePrompt}</strong>
+              </>
+            ) : activeItem.actionKind === 'recognition' ? (
               <strong className="prompt-value">{activePrompt}</strong>
             ) : activePromptDisplayedMeanings.length > 0 ? (
               <MeaningList meanings={activePromptDisplayedMeanings} className="meaning-list-prompt" />
@@ -348,7 +364,17 @@ export function StudySessionPanel({
                   : `Binary recall · Consecutive successes ${activeUnstudiedProgress?.consecutiveSuccesses.forward ?? 0}/3 recognition · ${activeUnstudiedProgress?.consecutiveSuccesses.reverse ?? 0}/3 production`}
             </span>
           </div>
-          {answerRevealed ? (
+          {activeItem.actionKind === 'contrast_selection' ? (
+            <ContrastSelectionDrill
+              item={activeItem}
+              selectedWordId={contrastSelectedWordId}
+              answerRevealed={answerRevealed}
+              practiceMore={contrastPracticeMore}
+              disabled={submittingRating !== null || personalNotesEditorOpen}
+              onSelectChoice={onSelectContrastChoice}
+              onPracticeMoreChange={onContrastPracticeMoreChange}
+            />
+          ) : answerRevealed ? (
             <div className="answer-block">
               <span className="prompt-label">Answer</span>
               <span className="answer-pinyin">{activeAnswerPinyin}</span>
@@ -431,7 +457,10 @@ export function StudySessionPanel({
             </button>
           )}
 
-          {answerRevealed && (!productionRequiresHanziInput || productionAwaitingRating) ? (
+          {answerRevealed && (
+            (!productionRequiresHanziInput || productionAwaitingRating) &&
+            (!activeItem || activeItem.actionKind !== 'contrast_selection' || contrastAwaitingRating)
+          ) ? (
             <div className="rating-grid">
               {activeRatingOptions.map((option) => (
                 <button
@@ -451,6 +480,97 @@ export function StudySessionPanel({
               ))}
             </div>
           ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ContrastSelectionDrill({
+  item,
+  selectedWordId,
+  answerRevealed,
+  practiceMore,
+  disabled,
+  onSelectChoice,
+  onPracticeMoreChange,
+}: {
+  item: SessionStudyItem;
+  selectedWordId: string | null;
+  answerRevealed: boolean;
+  practiceMore: boolean;
+  disabled: boolean;
+  onSelectChoice: (wordId: string) => void;
+  onPracticeMoreChange: (checked: boolean) => void;
+}) {
+  const contrastSelection = item.contrastSelection;
+  if (!contrastSelection) {
+    return <p className="notes">Contrast content is unavailable for this item.</p>;
+  }
+
+  const selectedChoice = contrastSelection.choices.find((choice) => choice.word.id === selectedWordId);
+  const targetChoice = contrastSelection.choices.find((choice) => choice.word.id === contrastSelection.promptTargetWordId);
+  const selectedCorrect = selectedWordId === contrastSelection.promptTargetWordId;
+
+  return (
+    <div className="stack">
+      <div className="contrast-choice-grid">
+        {contrastSelection.choices.map((choice) => {
+          const isSelected = choice.word.id === selectedWordId;
+          const isTarget = choice.word.id === contrastSelection.promptTargetWordId;
+          const className = [
+            'contrast-choice-button',
+            isSelected ? 'selected' : '',
+            answerRevealed && isTarget ? 'correct' : '',
+            answerRevealed && isSelected && !isTarget ? 'incorrect' : '',
+          ].filter(Boolean).join(' ');
+
+          return (
+            <button
+              key={choice.word.id}
+              type="button"
+              className={className}
+              onClick={() => onSelectChoice(choice.word.id)}
+              disabled={disabled || answerRevealed}
+            >
+              <strong>{choice.word.hanzi}</strong>
+            </button>
+          );
+        })}
+      </div>
+      {answerRevealed ? (
+        <div className="answer-block">
+          <span className="prompt-label">{selectedCorrect ? 'Correct' : 'Answer'}</span>
+          {selectedChoice ? (
+            <span className="prompt-meta">
+              You chose {selectedChoice.word.hanzi}.
+            </span>
+          ) : null}
+          {targetChoice ? (
+            <>
+              <span className="answer-pinyin">{targetChoice.word.pinyin}</span>
+              <strong className="answer-value">{targetChoice.word.hanzi}</strong>
+              <MeaningList meanings={targetChoice.word.meanings.length > 0 ? targetChoice.word.meanings : [targetChoice.word.meaning]} />
+              {targetChoice.nuanceNote.trim().length > 0 ? (
+                <span className="prompt-meta">Nuance: {targetChoice.nuanceNote}</span>
+              ) : null}
+            </>
+          ) : null}
+          {contrastSelection.prompt.explanation.trim().length > 0 ? (
+            <span className="prompt-meta">{contrastSelection.prompt.explanation}</span>
+          ) : null}
+          {contrastSelection.clusterNote.trim().length > 0 ? (
+            <span className="prompt-meta">{contrastSelection.clusterNote}</span>
+          ) : null}
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={practiceMore}
+              onChange={(event) => onPracticeMoreChange(event.target.checked)}
+              disabled={disabled}
+            />
+            <span>Practice this contrast more</span>
+          </label>
         </div>
       ) : null}
     </div>

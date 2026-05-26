@@ -40,6 +40,7 @@ export type ReviewActionProgress = {
 export type SessionPhase = 'active' | 'draining' | 'completed';
 
 type ReviewStudySkillId = Extract<StudySkillId, 'recognition' | 'production'>;
+type ContrastSelectionRating = Exclude<ReviewRating, 'forgot'>;
 
 export type BucketSessionState = {
   sessionId: string;
@@ -63,6 +64,20 @@ export type BucketSessionCommitIntent =
       failureCount: number;
       terminalRating: 'hard' | 'good' | 'easy' | null;
       events: StudyAttemptEvent[];
+    }
+  | {
+      type: 'commit-contrast-selection-action-session';
+      sessionId: string;
+      sessionActionId: string;
+      targetWordId: string;
+      actionKind: 'contrast_selection';
+      sampledSkillIds: ['contextual_selection'];
+      selectedWordId: string;
+      promptTargetWordId: string;
+      choiceWordIds: string[];
+      rating: ContrastSelectionRating;
+      practiceMore: boolean;
+      event: StudyAttemptEvent;
     }
   | { type: 'commit-learning-word-session'; wordId: string; success: boolean }
   | { type: 'commit-unstudied-word-session'; wordId: string };
@@ -200,10 +215,74 @@ export function rateActiveSessionUnit(
     case 'unstudied':
       return handleBucketUnstudiedAttempt(state, active, rating);
     case 'review':
+      if (active.item.actionKind === 'contrast_selection') {
+        throw new Error('Session invariant violated: contrast selection must be completed with a selected choice.');
+      }
       return handleBucketReviewAttempt(state, active, rating);
     default:
       return assertUnreachableBucket(active.bucket);
   }
+}
+
+export function rateActiveContrastSelectionUnit({
+  state,
+  selectedWordId,
+  rating,
+  practiceMore,
+}: {
+  state: BucketSessionState;
+  selectedWordId: string;
+  rating: ContrastSelectionRating;
+  practiceMore: boolean;
+}): BucketSessionTransitionResult {
+  const active = getActiveSessionUnit(state);
+  if (active.type !== 'study' || active.bucket !== 'review' || active.item.actionKind !== 'contrast_selection') {
+    throw new Error('Session invariant violated: cannot complete contrast selection when the active unit is not contrast review.');
+  }
+
+  assertActiveSessionUnitStarted(state, active, rating);
+
+  const item = active.item;
+  const contrastSelection = item.contrastSelection;
+  if (!contrastSelection) {
+    throw new Error('Session invariant violated: contrast selection review item is missing contrast content.');
+  }
+
+  const choiceWordIds = contrastSelection.choices.map((choice) => choice.word.id);
+  if (!choiceWordIds.includes(selectedWordId)) {
+    throw new Error('Session invariant violated: selected contrast choice is not part of the active contrast item.');
+  }
+
+  const event = buildContrastSelectionAttemptEvent({
+    state,
+    item,
+    selectedWordId,
+    rating,
+    practiceMore,
+  });
+
+  return {
+    state: refreshBucketSessionScheduler({
+      ...state,
+      answeredCount: state.answeredCount + 1,
+      scheduler: removeCompletedReviewAction(state.scheduler),
+      reviewProgress: removeKey(state.reviewProgress, item.sessionActionId),
+    }),
+    commit: {
+      type: 'commit-contrast-selection-action-session',
+      sessionId: state.sessionId,
+      sessionActionId: item.sessionActionId,
+      targetWordId: item.targetWordId,
+      actionKind: 'contrast_selection',
+      sampledSkillIds: ['contextual_selection'],
+      selectedWordId,
+      promptTargetWordId: contrastSelection.promptTargetWordId,
+      choiceWordIds,
+      rating,
+      practiceMore,
+      event,
+    },
+  };
 }
 
 export function beginBucketDrainSession(state: BucketSessionState): BucketSessionState {
@@ -520,6 +599,45 @@ function buildBucketReviewAttemptEvent({
   };
 }
 
+function buildContrastSelectionAttemptEvent({
+  state,
+  item,
+  selectedWordId,
+  rating,
+  practiceMore,
+}: {
+  state: BucketSessionState;
+  item: Extract<ActiveBucketSchedulerUnit, { type: 'study' }>['item'];
+  selectedWordId: string;
+  rating: ContrastSelectionRating;
+  practiceMore: boolean;
+}): StudyAttemptEvent {
+  const contrastSelection = item.contrastSelection ?? assertContrastSelectionContentPresent();
+  const choiceWordIds = contrastSelection.choices.map((choice) => choice.word.id);
+  const outcome = selectedWordId === contrastSelection.promptTargetWordId ? 'correct' : 'incorrect';
+
+  return {
+    id: `${state.sessionId}/${item.sessionActionId}/attempt-1`,
+    occurredAt: new Date().toISOString(),
+    sessionId: state.sessionId,
+    sessionActionId: item.sessionActionId,
+    sessionEventSequence: state.answeredCount + 1,
+    actionAttemptSequence: 1,
+    actionKind: 'contrast_selection',
+    targetWordId: item.targetWordId,
+    sampledSkillIds: ['contextual_selection'],
+    response: selectedWordId,
+    outcome,
+    rating,
+    contentRef: item.contentRef,
+    metadata: {
+      promptTargetWordId: contrastSelection.promptTargetWordId,
+      choiceWordIds,
+      practiceMore,
+    },
+  };
+}
+
 function handleBucketUnstudiedAttempt(
   state: BucketSessionState,
   active: Extract<ActiveBucketSchedulerUnit, { type: 'study' }>,
@@ -677,6 +795,10 @@ function onlyReviewStudySkill(skillId: StudySkillId | undefined): ReviewStudySki
 
 function assertUnreachableBucket(bucket: never): never {
   throw new Error(`Unsupported bucket "${String(bucket)}".`);
+}
+
+function assertContrastSelectionContentPresent(): never {
+  throw new Error('Session invariant violated: contrast selection content is missing.');
 }
 
 function createInitialReviewProgress(): ReviewActionProgress {

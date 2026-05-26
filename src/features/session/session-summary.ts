@@ -127,6 +127,17 @@ export function updateSessionSummaryForRating({
         ];
       }
       break;
+    case 'commit-contrast-selection-action-session':
+      nextSummary.completedReviewActions += 1;
+      if (transition.commit.event.outcome === 'incorrect') {
+        nextSummary.lapsedReviewActions += 1;
+        nextSummary.lapsedReviewLabels = [
+          ...nextSummary.lapsedReviewLabels,
+          formatReviewEncounterLabel(activeItem, activeWord),
+        ];
+        nextSummary.lapsedReviewActionIds = [...nextSummary.lapsedReviewActionIds, activeItem.sessionActionId];
+      }
+      break;
     case 'commit-learning-word-session':
       nextSummary.completedLearningWords += 1;
       break;
@@ -141,6 +152,11 @@ export function updateSessionSummaryForRating({
 }
 
 function formatReviewEncounterLabel(item: SessionStudyItem, word: Word) {
+  if (item.actionKind === 'contrast_selection') {
+    const target = item.contrastSelection?.choices.find((choice) => choice.word.id === item.contrastSelection?.promptTargetWordId);
+    return target ? `${item.contrastSelection?.prompt.promptText} -> ${target.word.hanzi}` : `${word.hanzi} contrast`;
+  }
+
   return item.actionKind === 'recognition'
     ? `${word.hanzi} -> ${word.meaning}`
     : `${word.meaning} -> ${word.hanzi}`;

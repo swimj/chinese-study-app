@@ -32,6 +32,21 @@ export type ContrastPrompt = {
   explanation: string;
 };
 
+export type ContrastSelectionChoice = {
+  word: Word;
+  nuanceNote: string;
+};
+
+export type ContrastSelectionContent = {
+  clusterId: string;
+  clusterTitle: string;
+  clusterNote: string;
+  scheduledWordId: string;
+  promptTargetWordId: string;
+  prompt: ContrastPrompt;
+  choices: ContrastSelectionChoice[];
+};
+
 export type StudyAction = {
   sessionActionId: string;
   kind: StudyActionKind;
@@ -51,6 +66,7 @@ export type SessionStudyItem = {
   contentRef: StudyContentRef | null;
   intervalHours: number;
   word: Word;
+  contrastSelection: ContrastSelectionContent | null;
 };
 
 export type SessionStudyItemBuckets = {
@@ -128,14 +144,17 @@ export type ReviewCommitFields = {
   terminalRating: Exclude<ReviewRating, 'forgot'> | null;
 };
 
-export type StudyReflectionEvent = {
-  id: string;
-  occurredAt: string;
-  sessionId: string;
+export type ContrastSelectionCommitIntent = {
+  type: 'commit-contrast-selection-action-session';
   sessionActionId: string;
-  actionKind: 'contrast_selection';
   targetWordId: string;
-  reflection: 'clear_now' | 'still_shaky' | 'want_more_practice';
+  actionKind: 'contrast_selection';
+  sampledSkillIds: ['contextual_selection'];
+  selectedWordId: string;
+  promptTargetWordId: string;
+  choiceWordIds: string[];
+  rating: Exclude<ReviewRating, 'forgot'>;
+  practiceMore: boolean;
 };
 
 export type StudySessionRecord = {
@@ -177,11 +196,13 @@ export function buildReviewSessionStudyItem({
   word,
   sessionActionId = buildSessionActionId('review', word.id, wordSkillState.skillId),
   contentRef = null,
+  contrastSelection = null,
 }: {
   wordSkillState: WordSkillState;
   word: Word;
   sessionActionId?: string;
   contentRef?: StudyContentRef | null;
+  contrastSelection?: ContrastSelectionContent | null;
 }): SessionStudyItem {
   if (wordSkillState.wordId !== word.id) {
     throw new Error(
@@ -203,6 +224,7 @@ export function buildReviewSessionStudyItem({
     contentRef,
     intervalHours: wordSkillState.intervalHours,
     word,
+    contrastSelection,
   };
 }
 
@@ -358,6 +380,7 @@ function buildWordLifecycleSessionStudyItem({
     contentRef: null,
     intervalHours: 0,
     word,
+    contrastSelection: null,
   };
 }
 

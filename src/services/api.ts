@@ -7,6 +7,7 @@ import type {
   ReviewRating,
 } from '../types';
 import type {
+  ContrastSelectionCommitIntent,
   ContrastCluster,
   ContrastClusterMember,
   ContrastPrompt,
@@ -173,6 +174,28 @@ export async function recordAcceptedReviewAttemptBatch({
 
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to record accepted review attempt batch'));
+  }
+}
+
+export async function recordAcceptedContrastSelectionAttempt({
+  sessionId,
+  event,
+  commitIntent,
+}: {
+  sessionId: string;
+  event: StudyAttemptEvent;
+  commitIntent: ContrastSelectionCommitIntent;
+}): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/accepted-contrast-selection-attempt`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ event, commitIntent }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to record accepted contrast selection attempt'));
   }
 }
 

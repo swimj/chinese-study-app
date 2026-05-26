@@ -338,6 +338,229 @@ describe('session composition', { concurrency: false }, () => {
     ]);
   });
 
+  test('builds binary contrast payloads for scheduled-word and sibling-target prompts', () => {
+    insertWord({
+      id: 'contrast-scheduled-word',
+      hanzi: '恰当',
+      pinyin: 'qia dang',
+      meaning: 'appropriate exactly',
+      examples: ['这个词很恰当。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+    insertWord({
+      id: 'contrast-sibling-word',
+      hanzi: '适当',
+      pinyin: 'shi dang',
+      meaning: 'suitable or moderate',
+      examples: ['适当休息。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+    insertWordStudyAdmissionState('contrast-scheduled-word', null);
+    insertWordSkillState({
+      wordId: 'contrast-scheduled-word',
+      skillId: 'contextual_selection',
+      intervalHours: 6,
+      lastStudiedAt: isoHoursAgo(12),
+      nextDueAt: isoHoursAgo(6),
+    });
+    insertWordSkillRelevance('contrast-scheduled-word', 'contextual_selection', 'normal');
+    insertContrastContent({
+      clusterId: 'cluster-binary-contrast',
+      scheduledWordId: 'contrast-scheduled-word',
+      siblingWordId: 'contrast-sibling-word',
+      promptId: 'prompt-scheduled-target',
+      promptTargetWordId: 'contrast-scheduled-word',
+    });
+    dbModule.createContrastPrompt({
+      id: 'prompt-sibling-target',
+      clusterId: 'cluster-binary-contrast',
+      targetWordId: 'contrast-sibling-word',
+      promptText: 'sibling target prompt',
+      explanation: 'sibling target explanation',
+    });
+
+    const originalRandom = Math.random;
+    const sampleWithRandomValues = (values: number[]) => {
+      let index = 0;
+      Math.random = () => values[index++] ?? 0;
+      return dbModule.getSessionPayload(studyDayKey).buckets.review[0];
+    };
+
+    try {
+      const scheduledTargetItem = sampleWithRandomValues([0, 0.75, 0]);
+      assert.equal(scheduledTargetItem?.contrastSelection?.promptTargetWordId, 'contrast-scheduled-word');
+      assert.deepEqual(
+        scheduledTargetItem?.contrastSelection?.choices.map((choice) => choice.word.id).sort(),
+        ['contrast-scheduled-word', 'contrast-sibling-word'].sort(),
+      );
+
+      const siblingTargetItem = sampleWithRandomValues([0, 0.25, 0]);
+      assert.equal(siblingTargetItem?.contrastSelection?.promptTargetWordId, 'contrast-sibling-word');
+      assert.deepEqual(
+        siblingTargetItem?.contrastSelection?.choices.map((choice) => choice.word.id).sort(),
+        ['contrast-scheduled-word', 'contrast-sibling-word'].sort(),
+      );
+    } finally {
+      Math.random = originalRandom;
+    }
+  });
+
+  test('samples sibling targets and distractor choices for larger contrast clusters', () => {
+    insertWord({
+      id: 'contrast-large-scheduled-word',
+      hanzi: '严肃',
+      pinyin: 'yan su',
+      meaning: 'serious',
+      examples: ['态度很严肃。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+    insertWord({
+      id: 'contrast-large-first-sibling',
+      hanzi: '严厉',
+      pinyin: 'yan li',
+      meaning: 'stern',
+      examples: ['批评很严厉。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+    insertWord({
+      id: 'contrast-large-second-sibling',
+      hanzi: '严峻',
+      pinyin: 'yan jun',
+      meaning: 'severe',
+      examples: ['形势严峻。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+    insertWordStudyAdmissionState('contrast-large-scheduled-word', null);
+    insertWordSkillState({
+      wordId: 'contrast-large-scheduled-word',
+      skillId: 'contextual_selection',
+      intervalHours: 6,
+      lastStudiedAt: isoHoursAgo(12),
+      nextDueAt: isoHoursAgo(6),
+    });
+    insertWordSkillRelevance('contrast-large-scheduled-word', 'contextual_selection', 'normal');
+    insertContrastContent({
+      clusterId: 'cluster-large-contrast',
+      scheduledWordId: 'contrast-large-scheduled-word',
+      siblingWordId: 'contrast-large-first-sibling',
+      promptId: 'prompt-large-scheduled-target',
+      promptTargetWordId: 'contrast-large-scheduled-word',
+    });
+    dbModule.addContrastClusterMember({
+      clusterId: 'cluster-large-contrast',
+      wordId: 'contrast-large-second-sibling',
+    });
+    dbModule.createContrastPrompt({
+      id: 'prompt-large-first-sibling-target',
+      clusterId: 'cluster-large-contrast',
+      targetWordId: 'contrast-large-first-sibling',
+      promptText: 'first sibling target prompt',
+      explanation: 'first sibling target explanation',
+    });
+    dbModule.createContrastPrompt({
+      id: 'prompt-large-second-sibling-target',
+      clusterId: 'cluster-large-contrast',
+      targetWordId: 'contrast-large-second-sibling',
+      promptText: 'second sibling target prompt',
+      explanation: 'second sibling target explanation',
+    });
+
+    const originalRandom = Math.random;
+    const sampleWithRandomValues = (values: number[]) => {
+      let index = 0;
+      Math.random = () => values[index++] ?? 0;
+      return dbModule.getSessionPayload(studyDayKey).buckets.review[0];
+    };
+
+    try {
+      const siblingTargetItem = sampleWithRandomValues([0.75, 0.25, 0]);
+      assert.equal(siblingTargetItem?.contrastSelection?.promptTargetWordId, 'contrast-large-second-sibling');
+      assert.deepEqual(
+        siblingTargetItem?.contrastSelection?.choices.map((choice) => choice.word.id).sort(),
+        ['contrast-large-scheduled-word', 'contrast-large-second-sibling'].sort(),
+      );
+
+      const scheduledTargetItem = sampleWithRandomValues([0.75, 0.75, 0]);
+      assert.equal(scheduledTargetItem?.contrastSelection?.promptTargetWordId, 'contrast-large-scheduled-word');
+      assert.deepEqual(
+        scheduledTargetItem?.contrastSelection?.choices.map((choice) => choice.word.id).sort(),
+        ['contrast-large-scheduled-word', 'contrast-large-second-sibling'].sort(),
+      );
+    } finally {
+      Math.random = originalRandom;
+    }
+  });
+
+  test('serves only one contrast action for the same binary choice set in a session', () => {
+    insertWord({
+      id: 'contrast-first-word',
+      hanzi: '恰当',
+      pinyin: 'qia dang',
+      meaning: 'appropriate exactly',
+      examples: ['这个词很恰当。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+    insertWord({
+      id: 'contrast-second-word',
+      hanzi: '适当',
+      pinyin: 'shi dang',
+      meaning: 'suitable or moderate',
+      examples: ['适当休息。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+    insertWordStudyAdmissionState('contrast-first-word', null);
+    insertWordStudyAdmissionState('contrast-second-word', null);
+    insertWordSkillState({
+      wordId: 'contrast-first-word',
+      skillId: 'contextual_selection',
+      intervalHours: 6,
+      lastStudiedAt: isoHoursAgo(18),
+      nextDueAt: isoHoursAgo(12),
+    });
+    insertWordSkillState({
+      wordId: 'contrast-second-word',
+      skillId: 'contextual_selection',
+      intervalHours: 6,
+      lastStudiedAt: isoHoursAgo(12),
+      nextDueAt: isoHoursAgo(6),
+    });
+    insertWordSkillRelevance('contrast-first-word', 'contextual_selection', 'normal');
+    insertWordSkillRelevance('contrast-second-word', 'contextual_selection', 'normal');
+    insertContrastContent({
+      clusterId: 'cluster-deduped-binary-contrast',
+      scheduledWordId: 'contrast-first-word',
+      siblingWordId: 'contrast-second-word',
+      promptId: 'prompt-first-target',
+      promptTargetWordId: 'contrast-first-word',
+    });
+    dbModule.createContrastPrompt({
+      id: 'prompt-second-target',
+      clusterId: 'cluster-deduped-binary-contrast',
+      targetWordId: 'contrast-second-word',
+      promptText: 'second target prompt',
+      explanation: 'second target explanation',
+    });
+
+    const contrastItems = dbModule.getSessionPayload(studyDayKey).buckets.review
+      .filter((item) => item.actionKind === 'contrast_selection');
+
+    assert.deepEqual(contrastItems.map((item) => item.targetWordId), ['contrast-first-word']);
+  });
+
   test('does not schedule contextual selection without usable contrast prompt content', () => {
     insertWord({
       id: 'context-no-content-word',

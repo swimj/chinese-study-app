@@ -2,6 +2,7 @@ import type { BucketSessionCommitIntent } from '../../lib/session-state';
 import {
   completeLearningSession,
   completeUnstudiedSession,
+  recordAcceptedContrastSelectionAttempt,
   recordAcceptedReviewAttemptBatch,
 } from '../../services/api';
 
@@ -25,6 +26,24 @@ export async function applySessionCommit(commit: DeferredSessionCommit) {
       });
       return;
     }
+    case 'commit-contrast-selection-action-session':
+      await recordAcceptedContrastSelectionAttempt({
+        sessionId: commit.sessionId,
+        event: commit.event,
+        commitIntent: {
+          type: commit.type,
+          sessionActionId: commit.sessionActionId,
+          targetWordId: commit.targetWordId,
+          actionKind: commit.actionKind,
+          sampledSkillIds: commit.sampledSkillIds,
+          selectedWordId: commit.selectedWordId,
+          promptTargetWordId: commit.promptTargetWordId,
+          choiceWordIds: commit.choiceWordIds,
+          rating: commit.rating,
+          practiceMore: commit.practiceMore,
+        },
+      });
+      return;
     case 'commit-learning-word-session':
       await completeLearningSession(commit.wordId, commit.success);
       return;

@@ -141,6 +141,10 @@ export function getActivePrompt({
     return null;
   }
 
+  if (item.actionKind === 'contrast_selection') {
+    return item.contrastSelection?.prompt.promptText ?? null;
+  }
+
   return item.actionKind === 'recognition'
     ? word.hanzi
     : promptDisplayedMeanings[0] ?? allMeanings[0] ?? word.meaning;
@@ -159,13 +163,33 @@ export function getActiveAnswerText({
     return null;
   }
 
+  if (item.actionKind === 'contrast_selection') {
+    return item.contrastSelection?.choices.find((choice) => choice.word.id === item.contrastSelection?.promptTargetWordId)
+      ?.word.hanzi ?? null;
+  }
+
   return item.actionKind === 'recognition'
     ? allMeanings[0] ?? word.meaning
     : word.hanzi;
 }
 
-export function getActiveAnswerPinyin(word: Word | null) {
-  return word ? word.pinyin : null;
+export function getActiveAnswerPinyin({
+  item,
+  word,
+}: {
+  item: SessionStudyItem | null;
+  word: Word | null;
+}) {
+  if (!item || !word) {
+    return null;
+  }
+
+  if (item.actionKind === 'contrast_selection') {
+    return item.contrastSelection?.choices.find((choice) => choice.word.id === item.contrastSelection?.promptTargetWordId)
+      ?.word.pinyin ?? null;
+  }
+
+  return word.pinyin;
 }
 
 export function isReviewInReinforcement({

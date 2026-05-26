@@ -47,6 +47,7 @@ describe('session study item domain adapters', () => {
         contentRef: null,
         intervalHours: 24,
         word,
+        contrastSelection: null,
       },
     );
   });
@@ -73,6 +74,7 @@ describe('session study item domain adapters', () => {
         contentRef: { type: 'example_sentence', id: 'example-9' },
         intervalHours: 24,
         word,
+        contrastSelection: null,
       },
     );
   });
@@ -89,6 +91,7 @@ describe('session study item domain adapters', () => {
         contentRef: null,
         intervalHours: 0,
         word,
+        contrastSelection: null,
       },
       {
         sessionActionId: 'learning/learning-word/production',
@@ -98,6 +101,7 @@ describe('session study item domain adapters', () => {
         contentRef: null,
         intervalHours: 0,
         word,
+        contrastSelection: null,
       },
     ]);
   });

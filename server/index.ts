@@ -19,6 +19,7 @@ import {
   getTopUnstudiedPriorityWords,
   getWordMeanings,
   getWordStatusCounts,
+  recordAcceptedContrastSelectionAttempt,
   recordAcceptedReviewAttemptBatch,
   recordReviewSessionSummary,
   recordStudyManagementAction,
@@ -29,6 +30,7 @@ import {
   type ReviewAttemptCommitIntent,
 } from './db.ts';
 import type {
+  ContrastSelectionCommitIntent,
   StudyAttemptEvent,
   StudyContentRef,
   StudyManagementActionKind,
@@ -303,6 +305,50 @@ export function createApp() {
       }
 
       res.status(500).json({ error: 'Failed to record accepted review attempt batch' });
+    }
+  });
+
+  app.post('/api/study-sessions/:sessionId/accepted-contrast-selection-attempt', (req, res) => {
+    const sessionId = req.params.sessionId;
+    const event = req.body?.event;
+    const commitIntent = req.body?.commitIntent;
+
+    if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty session id' });
+      return;
+    }
+
+    if (typeof event !== 'object' || event === null || Array.isArray(event)) {
+      res.status(400).json({ error: 'Expected event object' });
+      return;
+    }
+
+    if (typeof commitIntent !== 'object' || commitIntent === null || Array.isArray(commitIntent)) {
+      res.status(400).json({ error: 'Expected commit intent object' });
+      return;
+    }
+
+    try {
+      recordAcceptedContrastSelectionAttempt({
+        sessionId: sessionId.trim(),
+        event: event as StudyAttemptEvent,
+        commitIntent: commitIntent as ContrastSelectionCommitIntent,
+      });
+      res.status(204).send();
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message.startsWith('Expected ') ||
+          error.message.startsWith('Invalid ') ||
+          error.message.startsWith('Accepted contrast') ||
+          error.message.startsWith('Study attempt') ||
+          error.message.startsWith('Word skill state not found'))
+      ) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to record accepted contrast selection attempt' });
     }
   });
 
