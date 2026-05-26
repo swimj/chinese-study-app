@@ -9,3 +9,11 @@ if (fs.existsSync(config.dbPath)) {
 } else {
   console.log(`No dev database found at ${config.dbPath}`);
 }
+
+const { applyProductionContrastExerciseSeed } = await import('./db.ts');
+applyProductionContrastExerciseSeed();
+console.log(`Rebuilt dev database at ${config.dbPath}`);
+
+if (config.studyProfile === 'mandarin') {
+  console.log('Applied production contrast exercise seed data.');
+}

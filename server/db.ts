@@ -453,6 +453,19 @@ export type {
 };
 export { config as dbConfig };
 
+export function applyProductionContrastExerciseSeed() {
+  if (!config.seedSampleData || config.studyProfile !== 'mandarin') {
+    return;
+  }
+
+  const sqlPath = path.resolve(process.cwd(), 'data/seed-production-contrast-exercises.sql');
+  if (!fs.existsSync(sqlPath)) {
+    throw new Error(`Production contrast exercise seed SQL not found at ${sqlPath}`);
+  }
+
+  db.exec(fs.readFileSync(sqlPath, 'utf8'));
+}
+
 export function getUnstudiedCountBaseline(): number {
   return UNSTUDIED_COUNT_BASELINE;
 }
