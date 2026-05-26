@@ -11,6 +11,7 @@ import type { ReviewRating, Word, WordMeaning } from '../../types';
 import { studyProfile } from '../../study-profile';
 import type { RatingOption } from './session-rating';
 import type { SessionSummary } from './session-summary';
+import { getStudySessionPanelView } from './session-selectors';
 import { SessionSummaryPanel } from './SessionSummaryPanel';
 
 export type FrozenProductionCard = {
@@ -142,73 +143,22 @@ export function StudySessionPanel({
   onRevealAnswer: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
 }) {
+  const panelView = getStudySessionPanelView({
+    sessionStarted,
+    sessionCompletedWithSummary: sessionPhase === 'completed' && sessionSummary !== null,
+    productionAwaitingNext,
+    frozenProductionCardPresent: frozenProductionCard !== null,
+    activeItemPresent: activeItem !== null,
+    activeWordStatus: activeWord?.status ?? null,
+    activeUnstudiedIntroComplete: activeUnstudiedProgress?.introComplete ?? false,
+  });
+
   return (
     <div className="panel">
       <h2>Study session</h2>
-      {!sessionStarted ? (
+      {panelView === 'not_started' ? (
         <p className="notes">Start the session to freeze the current session snapshot into frontend state.</p>
-      ) : sessionPhase === 'completed' && sessionSummary ? (
-        <div className="stack">
-          <SessionSummaryPanel summary={sessionSummary} />
-          <UndoButton
-            hasUndo={hasUndo}
-            submittingRating={submittingRating}
-            personalNotesEditorOpen={personalNotesEditorOpen}
-            onUndoLastRating={onUndoLastRating}
-          />
-        </div>
-      ) : activeWord?.status === 'unstudied' && !activeUnstudiedProgress?.introComplete ? (
-        <div className="review-card">
-          <div className="review-card-header">
-            <p className="badge">New word introduction</p>
-            <CardActions
-              activeItem={null}
-              activeWord={activeWord}
-              personalNotesEditorSaving={personalNotesEditorSaving}
-              studyManagementSubmitting={studyManagementSubmitting}
-              onDismissCurrentWord={onDismissCurrentWord}
-              onManageStudyAction={onManageStudyAction}
-              onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
-            />
-          </div>
-          <div className="prompt-block">
-            <span className="prompt-label">{studyProfile.labels.target}</span>
-            <strong className="prompt-value">{activeWord.hanzi}</strong>
-            <span className="prompt-meta">{activeWord.pinyin}</span>
-            <MeaningList meanings={activeAllMeanings} />
-            <span className="prompt-meta">{activeWord.examples[0]}</span>
-            {activeWordPersonalNotes.trim().length > 0 ? (
-              <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            onClick={() => onBeginUnstudiedDrill(activeWord.id)}
-            disabled={personalNotesEditorOpen}
-          >
-            Begin recall drills
-          </button>
-          <UndoButton
-            hasUndo={hasUndo}
-            submittingRating={submittingRating}
-            personalNotesEditorOpen={personalNotesEditorOpen}
-            onUndoLastRating={onUndoLastRating}
-          />
-        </div>
-      ) : !activeItem || !activeWord ? (
-        <div className="stack">
-          <p className="notes">No session items remain in the active snapshot.</p>
-          <UndoButton
-            hasUndo={hasUndo}
-            submittingRating={submittingRating}
-            personalNotesEditorOpen={personalNotesEditorOpen}
-            onUndoLastRating={onUndoLastRating}
-          />
-          <button type="button" onClick={onEndSession}>
-            Back to overview
-          </button>
-        </div>
-      ) : productionAwaitingNext && frozenProductionCard ? (
+      ) : panelView === 'frozen_production' && frozenProductionCard ? (
         <div className="review-card">
           <div className="review-card-header">
             <p className="badge">
@@ -282,7 +232,68 @@ export function StudySessionPanel({
             />
           </div>
         </div>
-      ) : (
+      ) : panelView === 'completed' && sessionSummary ? (
+        <div className="stack">
+          <SessionSummaryPanel summary={sessionSummary} />
+          <UndoButton
+            hasUndo={hasUndo}
+            submittingRating={submittingRating}
+            personalNotesEditorOpen={personalNotesEditorOpen}
+            onUndoLastRating={onUndoLastRating}
+          />
+        </div>
+      ) : panelView === 'unstudied_intro' && activeWord ? (
+        <div className="review-card">
+          <div className="review-card-header">
+            <p className="badge">New word introduction</p>
+            <CardActions
+              activeItem={null}
+              activeWord={activeWord}
+              personalNotesEditorSaving={personalNotesEditorSaving}
+              studyManagementSubmitting={studyManagementSubmitting}
+              onDismissCurrentWord={onDismissCurrentWord}
+              onManageStudyAction={onManageStudyAction}
+              onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
+            />
+          </div>
+          <div className="prompt-block">
+            <span className="prompt-label">{studyProfile.labels.target}</span>
+            <strong className="prompt-value">{activeWord.hanzi}</strong>
+            <span className="prompt-meta">{activeWord.pinyin}</span>
+            <MeaningList meanings={activeAllMeanings} />
+            <span className="prompt-meta">{activeWord.examples[0]}</span>
+            {activeWordPersonalNotes.trim().length > 0 ? (
+              <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => onBeginUnstudiedDrill(activeWord.id)}
+            disabled={personalNotesEditorOpen}
+          >
+            Begin recall drills
+          </button>
+          <UndoButton
+            hasUndo={hasUndo}
+            submittingRating={submittingRating}
+            personalNotesEditorOpen={personalNotesEditorOpen}
+            onUndoLastRating={onUndoLastRating}
+          />
+        </div>
+      ) : panelView === 'empty' ? (
+        <div className="stack">
+          <p className="notes">No session items remain in the active snapshot.</p>
+          <UndoButton
+            hasUndo={hasUndo}
+            submittingRating={submittingRating}
+            personalNotesEditorOpen={personalNotesEditorOpen}
+            onUndoLastRating={onUndoLastRating}
+          />
+          <button type="button" onClick={onEndSession}>
+            Back to overview
+          </button>
+        </div>
+      ) : activeItem && activeWord ? (
         <div className="review-card">
           <div className="review-card-header">
             <p className="badge">
@@ -441,7 +452,7 @@ export function StudySessionPanel({
             </div>
           ) : null}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

@@ -45,6 +45,54 @@ export function getPersonalNotesEditorTarget({
   };
 }
 
+export type StudySessionPanelView =
+  | 'not_started'
+  | 'completed'
+  | 'frozen_production'
+  | 'unstudied_intro'
+  | 'empty'
+  | 'active_card';
+
+export function getStudySessionPanelView({
+  sessionStarted,
+  sessionCompletedWithSummary,
+  productionAwaitingNext,
+  frozenProductionCardPresent,
+  activeItemPresent,
+  activeWordStatus,
+  activeUnstudiedIntroComplete,
+}: {
+  sessionStarted: boolean;
+  sessionCompletedWithSummary: boolean;
+  productionAwaitingNext: boolean;
+  frozenProductionCardPresent: boolean;
+  activeItemPresent: boolean;
+  activeWordStatus: Word['status'] | null;
+  activeUnstudiedIntroComplete: boolean;
+}): StudySessionPanelView {
+  if (!sessionStarted) {
+    return 'not_started';
+  }
+
+  if (productionAwaitingNext && frozenProductionCardPresent) {
+    return 'frozen_production';
+  }
+
+  if (sessionCompletedWithSummary) {
+    return 'completed';
+  }
+
+  if (activeWordStatus === 'unstudied' && !activeUnstudiedIntroComplete) {
+    return 'unstudied_intro';
+  }
+
+  if (!activeItemPresent || activeWordStatus === null) {
+    return 'empty';
+  }
+
+  return 'active_card';
+}
+
 export function getActiveMeaningSelection({
   word,
   meaningRowsByWordId,

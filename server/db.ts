@@ -387,6 +387,7 @@ type ReviewSessionItemWithSkillRow = WordSessionRow & {
   skill_next_due_at: string | null;
   skill_ease_factor: number;
   earliest_next_study_at: string | null;
+  skill_relevance_state: WordSkillRelevanceState | null;
 };
 
 type ReviewSessionItemCandidate = {
@@ -5012,15 +5013,19 @@ function getReviewSessionStudyItems(now: string): SessionStudyItem[] {
         word_skill_state.last_studied_at AS skill_last_studied_at,
         word_skill_state.next_due_at AS skill_next_due_at,
         word_skill_state.ease_factor AS skill_ease_factor,
-        word_study_admission_state.earliest_next_study_at
+        word_study_admission_state.earliest_next_study_at,
+        word_skill_relevance.relevance_state AS skill_relevance_state
       FROM word_skill_state
       INNER JOIN words ON words.id = word_skill_state.word_id
       INNER JOIN word_study_admission_state
         ON word_study_admission_state.word_id = word_skill_state.word_id
        AND word_study_admission_state.study_phase = 'review'
+      LEFT JOIN word_skill_relevance
+        ON word_skill_relevance.word_id = word_skill_state.word_id
+       AND word_skill_relevance.skill_id = word_skill_state.skill_id
       WHERE words.status = 'review'
         AND word_skill_state.enabled != 0
-        AND word_skill_state.skill_id IN ('recognition', 'production')
+        AND word_skill_state.skill_id IN ('recognition', 'production', 'contextual_selection')
         AND (
           word_study_admission_state.earliest_next_study_at IS NULL
           OR word_study_admission_state.earliest_next_study_at <= ?
@@ -5032,6 +5037,15 @@ function getReviewSessionStudyItems(now: string): SessionStudyItem[] {
   const bestCandidateByWordId = new Map<string, ReviewSessionItemCandidate>();
 
   for (const row of rows) {
+    if (!isReviewSkillCandidateAllowedByRelevancePolicy(row)) {
+      continue;
+    }
+
+    const contentRef = getReviewSkillContentRefIfAvailable(row);
+    if (contentRef === undefined) {
+      continue;
+    }
+
     if (row.skill_interval_hours <= 0) {
       throw new Error(
         `Session composition invariant violated: word "${row.id}" skill "${row.skill_id}" has non-positive intervalHours.`,
@@ -5045,7 +5059,7 @@ function getReviewSessionStudyItems(now: string): SessionStudyItem[] {
     }
 
     const candidate: ReviewSessionItemCandidate = {
-      item: mapReviewSessionItemWithSkillRow(row),
+      item: mapReviewSessionItemWithSkillRow(row, contentRef),
       wordId: row.id,
       skillId: row.skill_id,
       urgency,
@@ -5063,7 +5077,82 @@ function getReviewSessionStudyItems(now: string): SessionStudyItem[] {
     .map((candidate) => candidate.item);
 }
 
-function mapReviewSessionItemWithSkillRow(row: ReviewSessionItemWithSkillRow): SessionStudyItem {
+function isReviewSkillCandidateAllowedByRelevancePolicy(row: ReviewSessionItemWithSkillRow) {
+  if (row.skill_relevance_state === 'suppressed') {
+    return false;
+  }
+
+  if (row.skill_id === 'production' && hasBadDefinitionBasedProductionPromptFeedback(row.id)) {
+    return false;
+  }
+
+  return true;
+}
+
+function getReviewSkillContentRefIfAvailable(row: ReviewSessionItemWithSkillRow): StudyContentRef | null | undefined {
+  if (row.skill_id === 'contextual_selection') {
+    if (row.skill_relevance_state !== 'normal') {
+      return undefined;
+    }
+    const promptId = getEligibleContrastPromptIdForScheduledWord(row.id);
+    return promptId === null ? undefined : { type: 'contrast_prompt', id: promptId };
+  }
+
+  return null;
+}
+
+function hasBadDefinitionBasedProductionPromptFeedback(wordId: string) {
+  const row = db
+    .prepare(`
+      SELECT 1
+      FROM study_content_feedback
+      WHERE target_type = 'generated_prompt'
+        AND target_id = 'definition_based_production'
+        AND target_word_id = ?
+        AND action_kind = 'production'
+        AND feedback_type = 'bad_prompt'
+      LIMIT 1
+    `)
+    .get(wordId) as { '1': number } | undefined;
+
+  return row !== undefined;
+}
+
+function getEligibleContrastPromptIdForScheduledWord(wordId: string): string | null {
+  const row = db
+    .prepare(`
+      SELECT contrast_prompts.id
+      FROM contrast_prompts
+      INNER JOIN contrast_cluster_members AS scheduled_member
+        ON scheduled_member.cluster_id = contrast_prompts.cluster_id
+       AND scheduled_member.word_id = ?
+      WHERE EXISTS (
+          SELECT 1
+          FROM contrast_cluster_members AS sibling_member
+          WHERE sibling_member.cluster_id = contrast_prompts.cluster_id
+            AND sibling_member.word_id != ?
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM study_content_feedback
+          WHERE study_content_feedback.target_type = 'contrast_prompt'
+            AND study_content_feedback.target_id = contrast_prompts.id
+            AND study_content_feedback.feedback_type = 'bad_prompt'
+        )
+      ORDER BY
+        CASE WHEN contrast_prompts.target_word_id = ? THEN 0 ELSE 1 END,
+        contrast_prompts.id ASC
+      LIMIT 1
+    `)
+    .get(wordId, wordId, wordId) as { id: string } | undefined;
+
+  return row?.id ?? null;
+}
+
+function mapReviewSessionItemWithSkillRow(
+  row: ReviewSessionItemWithSkillRow,
+  contentRef: StudyContentRef | null,
+): SessionStudyItem {
   const word = mapWordRow(row);
   return buildReviewSessionStudyItem({
     wordSkillState: {
@@ -5076,6 +5165,7 @@ function mapReviewSessionItemWithSkillRow(row: ReviewSessionItemWithSkillRow): S
       easeFactor: row.skill_ease_factor,
     },
     word,
+    contentRef,
   });
 }
 
