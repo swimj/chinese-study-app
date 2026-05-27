@@ -1387,9 +1387,11 @@ export function getContrastIntakeGroups(): ContrastIntakeGroupsPayload {
     const relevantClusters = clusters.filter((cluster) =>
       cluster.members.some((member) => relevantWordIds.has(member.wordId)),
     );
+    const intakeWordIds = matchedWord ? [targetWord.id, matchedWord.id] : [targetWord.id];
     const coverage = summarizeContrastIntakeCoverage({
       targetWordId: targetWord.id,
       candidateWordId: matchedWord?.id ?? null,
+      intakeWordIds,
       clusters: relevantClusters,
     });
     const sortedRows = [...rows].sort((left, right) => {
@@ -3617,18 +3619,18 @@ function normalizeContrastIntakeCandidateText(value: string): string {
 function summarizeContrastIntakeCoverage({
   targetWordId,
   candidateWordId,
+  intakeWordIds,
   clusters,
 }: {
   targetWordId: string;
   candidateWordId: string | null;
+  intakeWordIds: string[];
   clusters: ContrastClusterContent[];
 }): ContrastIntakeCoverage {
-  const sharedClusters = candidateWordId
-    ? clusters.filter((cluster) => {
-        const memberIds = new Set(cluster.members.map((member) => member.wordId));
-        return memberIds.has(targetWordId) && memberIds.has(candidateWordId);
-      })
-    : [];
+  const sharedClusters = clusters.filter((cluster) => {
+    const memberIds = new Set(cluster.members.map((member) => member.wordId));
+    return intakeWordIds.every((wordId) => memberIds.has(wordId));
+  });
   const sharedClusterIds = sharedClusters.map((cluster) => cluster.id);
   const sharedClusterIdSet = new Set(sharedClusterIds);
   const sharedPrompts = clusters

@@ -88,7 +88,7 @@ export function IntakePage({
                   onClick={() => onSelectGroupIndex(index)}
                   disabled={isSaving}
                 >
-                  <span>{group.targetWord.hanzi} / {group.matchedWord?.hanzi ?? group.candidateText ?? 'unresolved'}</span>
+                  <span>{formatGroupTitle(group)}</span>
                   <small>{group.count} seen · latest {formatTimestamp(group.latestCreatedAt)}</small>
                 </button>
               ))}
@@ -171,6 +171,7 @@ function IntakeGroupDetail({
   }) => Promise<void>;
 }) {
   const initialResolvedWord = group.matchedWord;
+  const singleWordIntake = !group.matchedWordId && !group.candidateText;
   const [resolvedWord, setResolvedWord] = useState<Word | null>(initialResolvedWord);
   const [candidateQuery, setCandidateQuery] = useState(group.candidateText ?? '');
   const [mode, setMode] = useState<IntakeActionMode>('create');
@@ -192,16 +193,23 @@ function IntakeGroupDetail({
   const expandableClusters = resolvedWord
     ? group.relevantClusters.filter((cluster) => getMissingExpansionWord(group, resolvedWord, cluster) !== null)
     : [];
+  const canCreateSet = !singleWordIntake;
+  const canExpandSet = expandableClusters.length > 0;
+  const canAddPrompt = sharedClusters.length > 0;
   const selectedClusterMemberIds = new Set(selectedCluster?.members.map((member) => member.wordId) ?? []);
   const expansionWord = selectedCluster && resolvedWord ? getMissingExpansionWord(group, resolvedWord, selectedCluster) : null;
-  const canSubmitContent = Boolean(resolvedWord && promptForm.targetWordId && promptForm.promptText.trim().length > 0);
+  const canSubmitContent = Boolean((singleWordIntake || resolvedWord) && promptForm.targetWordId && promptForm.promptText.trim().length > 0);
   const canAcceptCovered = group.coverage.usablePromptCount > 0;
 
   useEffect(() => {
     setResolvedWord(group.matchedWord);
     setCandidateQuery(group.candidateText ?? '');
-    setMode(group.coverage.hasSharedCluster ? 'prompt' : 'create');
-    setClusterTitle(`${group.targetWord.hanzi} / ${group.matchedWord?.hanzi ?? group.candidateText ?? ''}`.trim());
+    setMode(group.coverage.hasSharedCluster ? 'prompt' : singleWordIntake ? 'prompt' : 'create');
+    setClusterTitle(
+      group.matchedWord || group.candidateText
+        ? `${group.targetWord.hanzi} / ${group.matchedWord?.hanzi ?? group.candidateText ?? ''}`.trim()
+        : group.targetWord.hanzi,
+    );
     setClusterNote('');
     setTargetNuanceNote('');
     setCandidateNuanceNote('');
@@ -214,6 +222,15 @@ function IntakeGroupDetail({
   }, [group]);
 
   useEffect(() => {
+    if (singleWordIntake) {
+      if (mode === 'prompt') {
+        setSelectedClusterId((current) =>
+          sharedClusters.some((cluster) => cluster.id === current) ? current : sharedClusters[0]?.id ?? '',
+        );
+      }
+      return;
+    }
+
     if (!resolvedWord) {
       return;
     }
@@ -236,7 +253,7 @@ function IntakeGroupDetail({
         nextExpandableClusters.some((cluster) => cluster.id === current) ? current : nextExpandableClusters[0]?.id ?? '',
       );
     }
-  }, [group, mode, resolvedWord]);
+  }, [group, mode, resolvedWord, sharedClusters, singleWordIntake]);
 
   useEffect(() => {
     if (mode === 'existing' && expansionWord && promptForm.targetWordId !== expansionWord.id) {
@@ -316,12 +333,14 @@ function IntakeGroupDetail({
           </div>
         </div>
 
-        <div className="intake-word-pair">
+        <div className={singleWordIntake ? 'intake-word-single' : 'intake-word-pair'}>
           <WordCard title="Target" word={group.targetWord} />
-          <WordCard title="Candidate" word={resolvedWord} fallback={group.candidateText ?? 'Unresolved'} />
+          {!singleWordIntake ? (
+            <WordCard title="Candidate" word={resolvedWord} fallback={group.candidateText ?? 'Unresolved'} />
+          ) : null}
         </div>
 
-        {!group.matchedWord ? (
+        {!group.matchedWord && !singleWordIntake ? (
           <form className="intake-search-form" onSubmit={(event) => void handleCandidateSearch(event)}>
             <label>
               <span>Resolve candidate</span>
@@ -406,30 +425,36 @@ function IntakeGroupDetail({
 
       <section className="panel cluster-detail-panel">
         <div className="priority-subtabs" role="tablist" aria-label="Intake actions">
-          <button type="button" className={mode === 'create' ? 'priority-subtab active' : 'priority-subtab'} onClick={() => setMode('create')}>
-            New set
-          </button>
-          {expandableClusters.length > 0 ? (
+          {canCreateSet ? (
+            <button type="button" className={mode === 'create' ? 'priority-subtab active' : 'priority-subtab'} onClick={() => setMode('create')}>
+              New set
+            </button>
+          ) : null}
+          {canExpandSet ? (
             <button type="button" className={mode === 'existing' ? 'priority-subtab active' : 'priority-subtab'} onClick={() => setMode('existing')}>
               Expand set
             </button>
           ) : null}
-          {sharedClusters.length > 0 ? (
+          {canAddPrompt ? (
             <button type="button" className={mode === 'prompt' ? 'priority-subtab active' : 'priority-subtab'} onClick={() => setMode('prompt')}>
               Add prompt
             </button>
           ) : null}
         </div>
 
-        {mode === 'create' ? (
+        {!canCreateSet && !canExpandSet && !canAddPrompt ? (
+          <p className="notes">No existing cluster contains this intake word yet.</p>
+        ) : mode === 'create' && canCreateSet ? (
           <form className="cluster-prompt-form" onSubmit={(event) => void handleCreateCluster(event)}>
             <TextInput label="Title" value={clusterTitle} disabled={isSaving} onChange={setClusterTitle} />
             <TextareaInput label="Set note" value={clusterNote} disabled={isSaving} rows={2} onChange={setClusterNote} />
             <TextareaInput label={`${group.targetWord.hanzi} nuance`} value={targetNuanceNote} disabled={isSaving} rows={2} onChange={setTargetNuanceNote} />
-            <TextareaInput label={`${resolvedWord?.hanzi ?? 'Candidate'} nuance`} value={candidateNuanceNote} disabled={isSaving} rows={2} onChange={setCandidateNuanceNote} />
+            {!singleWordIntake ? (
+              <TextareaInput label={`${resolvedWord?.hanzi ?? 'Candidate'} nuance`} value={candidateNuanceNote} disabled={isSaving} rows={2} onChange={setCandidateNuanceNote} />
+            ) : null}
             <PromptFields
               group={group}
-              resolvedWord={resolvedWord}
+              resolvedWord={singleWordIntake ? null : resolvedWord}
               selectedCluster={null}
               promptForm={promptForm}
               disabled={isSaving}
@@ -439,7 +464,7 @@ function IntakeGroupDetail({
               {isSaving ? 'Saving...' : 'Create set'}
             </button>
           </form>
-        ) : mode === 'existing' ? (
+        ) : mode === 'existing' && canExpandSet ? (
           <form className="cluster-prompt-form" onSubmit={(event) => void handleAddToCluster(event)}>
             <ClusterSelect
               clusters={expandableClusters}
@@ -458,7 +483,7 @@ function IntakeGroupDetail({
             ) : null}
             <PromptFields
               group={group}
-              resolvedWord={resolvedWord}
+              resolvedWord={singleWordIntake ? null : resolvedWord}
               selectedCluster={null}
               targetOverride={expansionWord}
               promptForm={promptForm}
@@ -469,7 +494,7 @@ function IntakeGroupDetail({
               {isSaving ? 'Saving...' : 'Expand set'}
             </button>
           </form>
-        ) : (
+        ) : canAddPrompt ? (
           <form className="cluster-prompt-form" onSubmit={(event) => void handleAddPrompt(event)}>
             <ClusterSelect
               clusters={sharedClusters}
@@ -479,7 +504,7 @@ function IntakeGroupDetail({
             />
             <PromptFields
               group={group}
-              resolvedWord={resolvedWord}
+              resolvedWord={singleWordIntake ? null : resolvedWord}
               selectedCluster={selectedCluster}
               promptForm={promptForm}
               disabled={isSaving}
@@ -489,6 +514,8 @@ function IntakeGroupDetail({
               {isSaving ? 'Saving...' : 'Add prompt'}
             </button>
           </form>
+        ) : (
+          <p className="notes">No action is available for the current selection.</p>
         )}
 
         <div className="intake-terminal-actions">
@@ -523,6 +550,11 @@ function WordCard({ title, word, fallback }: { title: string; word: Word | null;
       )}
     </article>
   );
+}
+
+function formatGroupTitle(group: ContrastIntakeGroup): string {
+  const candidateLabel = group.matchedWord?.hanzi ?? group.candidateText;
+  return candidateLabel ? `${group.targetWord.hanzi} / ${candidateLabel}` : group.targetWord.hanzi;
 }
 
 function ExistingClusterCard({ cluster, shared }: { cluster: ContrastClusterContent; shared: boolean }) {

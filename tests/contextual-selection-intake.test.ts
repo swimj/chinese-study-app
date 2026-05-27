@@ -137,6 +137,68 @@ describe('contextual selection intake', { concurrency: false }, () => {
     assert.equal(group?.relevantClusters[0]?.id, 'cluster-kaocha');
   });
 
+  test('treats single-word intake as covered by clusters containing that word', () => {
+    insertWord({ id: 'target-zhuangzhong', hanzi: '庄重' });
+    insertWord({ id: 'sibling-zhengzhong', hanzi: '郑重' });
+    insertIntake({
+      id: 'single-zhuangzhong',
+      createdAt: '2026-05-27T00:00:00.000Z',
+      targetWordId: 'target-zhuangzhong',
+      candidateText: null,
+      matchedWordId: null,
+    });
+    dbModule.createContrastCluster({
+      id: 'cluster-zhuangzhong',
+      title: '庄重 / 郑重',
+    });
+    dbModule.addContrastClusterMember({ clusterId: 'cluster-zhuangzhong', wordId: 'target-zhuangzhong' });
+    dbModule.addContrastClusterMember({ clusterId: 'cluster-zhuangzhong', wordId: 'sibling-zhengzhong' });
+
+    const group = dbModule.getContrastIntakeGroups().groups[0];
+
+    assert.equal(group?.candidateText, null);
+    assert.equal(group?.matchedWordId, null);
+    assert.equal(group?.matchedWord, null);
+    assert.equal(group?.coverage.hasSharedCluster, true);
+    assert.deepEqual(group?.coverage.sharedClusterIds, ['cluster-zhuangzhong']);
+    assert.equal(group?.coverage.usablePromptCount, 0);
+  });
+
+  test('adds a prompt from single-word intake and accepts the group', () => {
+    insertWord({ id: 'target-zhuangzhong', hanzi: '庄重' });
+    insertWord({ id: 'sibling-zhengzhong', hanzi: '郑重' });
+    insertIntake({
+      id: 'single-zhuangzhong',
+      createdAt: '2026-05-27T00:00:00.000Z',
+      targetWordId: 'target-zhuangzhong',
+      candidateText: null,
+      matchedWordId: null,
+    });
+    dbModule.createContrastCluster({
+      id: 'cluster-zhuangzhong',
+      title: '庄重 / 郑重',
+    });
+    dbModule.addContrastClusterMember({ clusterId: 'cluster-zhuangzhong', wordId: 'target-zhuangzhong' });
+    dbModule.addContrastClusterMember({ clusterId: 'cluster-zhuangzhong', wordId: 'sibling-zhengzhong' });
+
+    const cluster = dbModule.addContrastPromptFromIntake({
+      targetWordId: 'target-zhuangzhong',
+      candidateText: null,
+      matchedWordId: null,
+      clusterId: 'cluster-zhuangzhong',
+      prompt: {
+        targetWordId: 'target-zhuangzhong',
+        promptText: '参加典礼时，她选择了一套____的衣服。',
+        explanation: 'Ceremonial dress can be 庄重.',
+      },
+    });
+
+    assert.equal(cluster.prompts.length, 1);
+    assert.equal(cluster.prompts[0]?.targetWordId, 'target-zhuangzhong');
+    assert.deepEqual(dbModule.getContrastIntakeGroups(), { groups: [] });
+    assert.equal(dbModule.getContrastCandidateIntake()[0]?.status, 'accepted');
+  });
+
   test('creates cluster content from intake and accepts all grouped rows', () => {
     insertWord({ id: 'target-kaocha', hanzi: '考察' });
     insertWord({ id: 'candidate-kaocha', hanzi: '考查' });
