@@ -15,5 +15,5 @@ applyProductionContrastExerciseSeed();
 console.log(`Rebuilt dev database at ${config.dbPath}`);
 
 if (config.studyProfile === 'mandarin') {
-  console.log('Applied production contrast exercise seed data.');
+  console.log('Applied production contrast content and dev scheduling seed data.');
 }

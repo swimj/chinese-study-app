@@ -19,41 +19,31 @@ INSERT OR IGNORE INTO words (
   priority,
   created_at
 ) VALUES
-  ('cw:靠近:kào_jìn', '靠近', '靠近', 'kào jìn', 'to be close to; to approach; to draw near', '["to be close to","to approach; to draw near"]', '', '[]', 'review', 120556, '2026-04-11T10:56:13.185Z'),
-  ('cw:临近:lín_jìn', '临近', '臨近', 'lín jìn', 'to approach; to draw near; to be close to (in space or time)', '["to approach; to draw near; to be close to (in space or time)"]', '', '[]', 'review', 110225, '2026-04-11T10:56:13.185Z'),
-  ('cw:寻觅:xún_mì', '寻觅', '尋覓', 'xún mì', 'to look for', '["to look for"]', '', '[]', 'review', 110062, '2026-04-11T10:56:13.185Z'),
-  ('cw:寻找:xún_zhǎo', '寻找', '尋找', 'xún zhǎo', 'to seek; to look for', '["to seek; to look for"]', '', '[]', 'review', 121208, '2026-04-11T10:56:13.185Z'),
-  ('cw:寻求:xún_qiú', '寻求', '尋求', 'xún qiú', 'to seek; to look for', '["to seek; to look for"]', '', '[]', 'review', 118785, '2026-04-11T10:56:13.185Z'),
-  ('cw:严峻:yán_jùn', '严峻', '嚴峻', 'yán jùn', 'grim; severe; rigorous', '["grim","severe","rigorous"]', '', '[]', 'review', 110505, '2026-04-11T10:56:13.185Z'),
-  ('cw:庄重:zhuāng_zhòng', '庄重', '莊重', 'zhuāng zhòng', 'grave; solemn; dignified', '["grave","solemn","dignified"]', '', '[]', 'review', 107751, '2026-04-11T10:56:13.185Z'),
-  ('cw:郑重:zhèng_zhòng', '郑重', '鄭重', 'zhèng zhòng', 'serious; solemn; earnest; conscientious', '["serious","solemn","earnest","conscientious"]', '', '[]', 'review', 110155, '2026-04-11T10:56:13.185Z'),
-  ('cw:坚定:jiān_dìng', '坚定', '堅定', 'jiān dìng', 'firm; steady; staunch; resolute', '["firm","steady","staunch","resolute"]', '', '[]', 'review', 116623, '2026-04-11T10:56:13.185Z'),
-  ('cw:坚固:jiān_gù', '坚固', '堅固', 'jiān gù', 'firm; firmly; hard; stable', '["firm","firmly","hard","stable"]', '', '[]', 'review', 112049, '2026-04-11T10:56:13.185Z'),
-  ('cw:固执:gù_zhí', '固执', '固執', 'gù zhí', 'obstinate; stubborn; to fixate on; to cling to', '["obstinate","stubborn","to fixate on","to cling to"]', '', '[]', 'review', 116129, '2026-04-11T10:56:13.185Z'),
-  ('cw:处分:chǔ_fèn', '处分', '處分', 'chǔ fèn', 'to discipline sb; to punish; disciplinary action; to deal with (a matter); CL:個|个[ge4]', '["to discipline sb","to punish","disciplinary action","to deal with (a matter)","CL:個|个[ge4]"]', '', '[]', 'review', 104204, '2026-04-11T10:56:13.185Z'),
-  ('cw:处置:chǔ_zhì', '处置', '處置', 'chǔ zhì', 'to handle; to take care of; to punish', '["to handle","to take care of","to punish"]', '', '[]', 'review', 116243, '2026-04-11T10:56:13.185Z'),
-  ('cw:惩罚:chéng_fá', '惩罚', '懲罰', 'chéng fá', 'penalty; punishment; to punish', '["penalty","punishment","to punish"]', '', '[]', 'review', 120308, '2026-04-11T10:56:13.185Z'),
-  ('cw:不妨:bù_fáng', '不妨', '不妨', 'bù fáng', 'there is no harm in; might as well', '["there is no harm in; might as well"]', '', '[]', 'review', 112838, '2026-04-11T10:56:13.185Z'),
-  ('cw:无妨:wú_fáng', '无妨', '無妨', 'wú fáng', 'no harm (in doing it); One might as well.; It won''t hurt.; no matter; it''s no bother', '["no harm (in doing it)","One might as well.","It won''t hurt.","no matter","it''s no bother"]', '', '[]', 'review', 108939, '2026-04-11T10:56:13.185Z'),
-  ('cw:不由得:bù_yóu_de', '不由得', '不由得', 'bù yóu de', 'can''t help; cannot but', '["can''t help","cannot but"]', '', '[]', 'review', 94676, '2026-04-11T10:56:13.185Z'),
-  ('cw:不禁:bù_jīn', '不禁', '不禁', 'bù jīn', 'can''t help (doing sth); can''t refrain from', '["can''t help (doing sth)","can''t refrain from"]', '', '[]', 'review', 110578, '2026-04-11T10:56:13.185Z'),
-  ('cw:顾虑:gù_lǜ', '顾虑', '顧慮', 'gù lǜ', 'misgivings; apprehensions; to worry about; to be concerned about', '["misgivings; apprehensions","to worry about; to be concerned about"]', '', '[]', 'review', 112333, '2026-04-11T10:56:13.185Z'),
-  ('cw:担忧:dān_yōu', '担忧', '擔憂', 'dān yōu', 'to worry; to be concerned', '["to worry","to be concerned"]', '', '[]', 'review', 115287, '2026-04-11T10:56:13.185Z'),
-  ('cw:忧虑:yōu_lǜ', '忧虑', '憂慮', 'yōu lǜ', 'to worry; anxiety (about)', '["to worry","anxiety (about)"]', '', '[]', 'review', 110481, '2026-04-11T10:56:13.185Z'),
-  ('cw:支援:zhī_yuán', '支援', '支援', 'zhī yuán', 'to provide assistance; to support; to back', '["to provide assistance","to support","to back"]', '', '[]', 'review', 118908, '2026-04-11T10:56:13.185Z'),
-  ('cw:补助:bǔ_zhù', '补助', '補助', 'bǔ zhù', 'to subsidize; subsidy; allowance', '["to subsidize","subsidy","allowance"]', '', '[]', 'review', 108038, '2026-04-11T10:56:13.185Z'),
-  ('cw:陈述:chén_shù', '陈述', '陳述', 'chén shù', 'to state; to declare', '["to state; to declare"]', '', '[]', 'review', 117569, '2026-04-11T10:56:13.185Z'),
-  ('cw:声明:shēng_míng', '声明', '聲明', 'shēng míng', 'to state; to declare; statement; declaration; CL:項|项[xiang4],份[fen4]', '["to state","to declare","statement","declaration","CL:項|项[xiang4],份[fen4]"]', '', '[]', 'review', 118825, '2026-04-11T10:56:13.185Z');
-
-UPDATE words
-SET status = 'review'
-WHERE id IN (
-  'cw:靠近:kào_jìn', 'cw:临近:lín_jìn', 'cw:寻觅:xún_mì', 'cw:寻找:xún_zhǎo', 'cw:寻求:xún_qiú',
-  'cw:严峻:yán_jùn', 'cw:庄重:zhuāng_zhòng', 'cw:郑重:zhèng_zhòng', 'cw:坚定:jiān_dìng', 'cw:坚固:jiān_gù',
-  'cw:固执:gù_zhí', 'cw:处分:chǔ_fèn', 'cw:处置:chǔ_zhì', 'cw:惩罚:chéng_fá', 'cw:不妨:bù_fáng',
-  'cw:无妨:wú_fáng', 'cw:不由得:bù_yóu_de', 'cw:不禁:bù_jīn', 'cw:顾虑:gù_lǜ', 'cw:担忧:dān_yōu',
-  'cw:忧虑:yōu_lǜ', 'cw:支援:zhī_yuán', 'cw:补助:bǔ_zhù', 'cw:陈述:chén_shù', 'cw:声明:shēng_míng'
-);
+  ('cw:靠近:kào_jìn', '靠近', '靠近', 'kào jìn', 'to be close to; to approach; to draw near', '["to be close to","to approach; to draw near"]', '', '[]', 'unstudied', 120556, '2026-04-11T10:56:13.185Z'),
+  ('cw:临近:lín_jìn', '临近', '臨近', 'lín jìn', 'to approach; to draw near; to be close to (in space or time)', '["to approach; to draw near; to be close to (in space or time)"]', '', '[]', 'unstudied', 110225, '2026-04-11T10:56:13.185Z'),
+  ('cw:寻觅:xún_mì', '寻觅', '尋覓', 'xún mì', 'to look for', '["to look for"]', '', '[]', 'unstudied', 110062, '2026-04-11T10:56:13.185Z'),
+  ('cw:寻找:xún_zhǎo', '寻找', '尋找', 'xún zhǎo', 'to seek; to look for', '["to seek; to look for"]', '', '[]', 'unstudied', 121208, '2026-04-11T10:56:13.185Z'),
+  ('cw:寻求:xún_qiú', '寻求', '尋求', 'xún qiú', 'to seek; to look for', '["to seek; to look for"]', '', '[]', 'unstudied', 118785, '2026-04-11T10:56:13.185Z'),
+  ('cw:严峻:yán_jùn', '严峻', '嚴峻', 'yán jùn', 'grim; severe; rigorous', '["grim","severe","rigorous"]', '', '[]', 'unstudied', 110505, '2026-04-11T10:56:13.185Z'),
+  ('cw:庄重:zhuāng_zhòng', '庄重', '莊重', 'zhuāng zhòng', 'grave; solemn; dignified', '["grave","solemn","dignified"]', '', '[]', 'unstudied', 107751, '2026-04-11T10:56:13.185Z'),
+  ('cw:郑重:zhèng_zhòng', '郑重', '鄭重', 'zhèng zhòng', 'serious; solemn; earnest; conscientious', '["serious","solemn","earnest","conscientious"]', '', '[]', 'unstudied', 110155, '2026-04-11T10:56:13.185Z'),
+  ('cw:坚定:jiān_dìng', '坚定', '堅定', 'jiān dìng', 'firm; steady; staunch; resolute', '["firm","steady","staunch","resolute"]', '', '[]', 'unstudied', 116623, '2026-04-11T10:56:13.185Z'),
+  ('cw:坚固:jiān_gù', '坚固', '堅固', 'jiān gù', 'firm; firmly; hard; stable', '["firm","firmly","hard","stable"]', '', '[]', 'unstudied', 112049, '2026-04-11T10:56:13.185Z'),
+  ('cw:固执:gù_zhí', '固执', '固執', 'gù zhí', 'obstinate; stubborn; to fixate on; to cling to', '["obstinate","stubborn","to fixate on","to cling to"]', '', '[]', 'unstudied', 116129, '2026-04-11T10:56:13.185Z'),
+  ('cw:处分:chǔ_fèn', '处分', '處分', 'chǔ fèn', 'to discipline sb; to punish; disciplinary action; to deal with (a matter); CL:個|个[ge4]', '["to discipline sb","to punish","disciplinary action","to deal with (a matter)","CL:個|个[ge4]"]', '', '[]', 'unstudied', 104204, '2026-04-11T10:56:13.185Z'),
+  ('cw:处置:chǔ_zhì', '处置', '處置', 'chǔ zhì', 'to handle; to take care of; to punish', '["to handle","to take care of","to punish"]', '', '[]', 'unstudied', 116243, '2026-04-11T10:56:13.185Z'),
+  ('cw:惩罚:chéng_fá', '惩罚', '懲罰', 'chéng fá', 'penalty; punishment; to punish', '["penalty","punishment","to punish"]', '', '[]', 'unstudied', 120308, '2026-04-11T10:56:13.185Z'),
+  ('cw:不妨:bù_fáng', '不妨', '不妨', 'bù fáng', 'there is no harm in; might as well', '["there is no harm in; might as well"]', '', '[]', 'unstudied', 112838, '2026-04-11T10:56:13.185Z'),
+  ('cw:无妨:wú_fáng', '无妨', '無妨', 'wú fáng', 'no harm (in doing it); One might as well.; It won''t hurt.; no matter; it''s no bother', '["no harm (in doing it)","One might as well.","It won''t hurt.","no matter","it''s no bother"]', '', '[]', 'unstudied', 108939, '2026-04-11T10:56:13.185Z'),
+  ('cw:不由得:bù_yóu_de', '不由得', '不由得', 'bù yóu de', 'can''t help; cannot but', '["can''t help","cannot but"]', '', '[]', 'unstudied', 94676, '2026-04-11T10:56:13.185Z'),
+  ('cw:不禁:bù_jīn', '不禁', '不禁', 'bù jīn', 'can''t help (doing sth); can''t refrain from', '["can''t help (doing sth)","can''t refrain from"]', '', '[]', 'unstudied', 110578, '2026-04-11T10:56:13.185Z'),
+  ('cw:顾虑:gù_lǜ', '顾虑', '顧慮', 'gù lǜ', 'misgivings; apprehensions; to worry about; to be concerned about', '["misgivings; apprehensions","to worry about; to be concerned about"]', '', '[]', 'unstudied', 112333, '2026-04-11T10:56:13.185Z'),
+  ('cw:担忧:dān_yōu', '担忧', '擔憂', 'dān yōu', 'to worry; to be concerned', '["to worry","to be concerned"]', '', '[]', 'unstudied', 115287, '2026-04-11T10:56:13.185Z'),
+  ('cw:忧虑:yōu_lǜ', '忧虑', '憂慮', 'yōu lǜ', 'to worry; anxiety (about)', '["to worry","anxiety (about)"]', '', '[]', 'unstudied', 110481, '2026-04-11T10:56:13.185Z'),
+  ('cw:支援:zhī_yuán', '支援', '支援', 'zhī yuán', 'to provide assistance; to support; to back', '["to provide assistance","to support","to back"]', '', '[]', 'unstudied', 118908, '2026-04-11T10:56:13.185Z'),
+  ('cw:补助:bǔ_zhù', '补助', '補助', 'bǔ zhù', 'to subsidize; subsidy; allowance', '["to subsidize","subsidy","allowance"]', '', '[]', 'unstudied', 108038, '2026-04-11T10:56:13.185Z'),
+  ('cw:陈述:chén_shù', '陈述', '陳述', 'chén shù', 'to state; to declare', '["to state; to declare"]', '', '[]', 'unstudied', 117569, '2026-04-11T10:56:13.185Z'),
+  ('cw:声明:shēng_míng', '声明', '聲明', 'shēng míng', 'to state; to declare; statement; declaration; CL:項|项[xiang4],份[fen4]', '["to state","to declare","statement","declaration","CL:項|项[xiang4],份[fen4]"]', '', '[]', 'unstudied', 118825, '2026-04-11T10:56:13.185Z');
 
 INSERT OR IGNORE INTO word_meanings (
   id,
@@ -89,118 +79,6 @@ INSERT OR IGNORE INTO word_meanings (
   ('seed-meaning-buzhu', 'cw:补助:bǔ_zhù', 1, 'to subsidize; subsidy; allowance', 1, '2026-05-27T00:00:00.000Z', '2026-05-27T00:00:00.000Z'),
   ('seed-meaning-chenshu', 'cw:陈述:chén_shù', 1, 'to state; to set out facts', 1, '2026-05-27T00:00:00.000Z', '2026-05-27T00:00:00.000Z'),
   ('seed-meaning-shengming', 'cw:声明:shēng_míng', 1, 'to declare; statement; declaration', 1, '2026-05-27T00:00:00.000Z', '2026-05-27T00:00:00.000Z');
-
-INSERT INTO word_study_admission_state (
-  word_id,
-  study_phase,
-  earliest_next_study_at
-) VALUES
-  ('cw:靠近:kào_jìn', 'review', NULL),
-  ('cw:临近:lín_jìn', 'review', NULL),
-  ('cw:寻觅:xún_mì', 'review', NULL),
-  ('cw:寻找:xún_zhǎo', 'review', NULL),
-  ('cw:寻求:xún_qiú', 'review', NULL),
-  ('cw:严峻:yán_jùn', 'review', NULL),
-  ('cw:庄重:zhuāng_zhòng', 'review', NULL),
-  ('cw:郑重:zhèng_zhòng', 'review', NULL),
-  ('cw:坚定:jiān_dìng', 'review', NULL),
-  ('cw:坚固:jiān_gù', 'review', NULL),
-  ('cw:固执:gù_zhí', 'review', NULL),
-  ('cw:处分:chǔ_fèn', 'review', NULL),
-  ('cw:处置:chǔ_zhì', 'review', NULL),
-  ('cw:惩罚:chéng_fá', 'review', NULL),
-  ('cw:不妨:bù_fáng', 'review', NULL),
-  ('cw:无妨:wú_fáng', 'review', NULL),
-  ('cw:不由得:bù_yóu_de', 'review', NULL),
-  ('cw:不禁:bù_jīn', 'review', NULL),
-  ('cw:顾虑:gù_lǜ', 'review', NULL),
-  ('cw:担忧:dān_yōu', 'review', NULL),
-  ('cw:忧虑:yōu_lǜ', 'review', NULL),
-  ('cw:支援:zhī_yuán', 'review', NULL),
-  ('cw:补助:bǔ_zhù', 'review', NULL),
-  ('cw:陈述:chén_shù', 'review', NULL),
-  ('cw:声明:shēng_míng', 'review', NULL)
-ON CONFLICT(word_id) DO UPDATE SET
-  study_phase = excluded.study_phase,
-  earliest_next_study_at = excluded.earliest_next_study_at;
-
-INSERT INTO word_skill_state (
-  word_id,
-  skill_id,
-  enabled,
-  interval_hours,
-  last_studied_at,
-  next_due_at,
-  ease_factor
-) VALUES
-  ('cw:靠近:kào_jìn', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:临近:lín_jìn', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:寻觅:xún_mì', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:寻找:xún_zhǎo', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:寻求:xún_qiú', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:严峻:yán_jùn', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:庄重:zhuāng_zhòng', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:郑重:zhèng_zhòng', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:坚定:jiān_dìng', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:坚固:jiān_gù', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:固执:gù_zhí', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:处分:chǔ_fèn', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:处置:chǔ_zhì', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:惩罚:chéng_fá', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:不妨:bù_fáng', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:无妨:wú_fáng', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:不由得:bù_yóu_de', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:不禁:bù_jīn', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:顾虑:gù_lǜ', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:担忧:dān_yōu', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:忧虑:yōu_lǜ', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:支援:zhī_yuán', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:补助:bǔ_zhù', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:陈述:chén_shù', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5),
-  ('cw:声明:shēng_míng', 'contextual_selection', 1, 24, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2.5)
-ON CONFLICT(word_id, skill_id) DO UPDATE SET
-  enabled = excluded.enabled,
-  interval_hours = excluded.interval_hours,
-  last_studied_at = excluded.last_studied_at,
-  next_due_at = excluded.next_due_at,
-  ease_factor = excluded.ease_factor;
-
-INSERT INTO word_skill_relevance (
-  word_id,
-  skill_id,
-  relevance_state,
-  updated_at,
-  source_event_id
-) VALUES
-  ('cw:靠近:kào_jìn', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:临近:lín_jìn', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:寻觅:xún_mì', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:寻找:xún_zhǎo', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:寻求:xún_qiú', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:严峻:yán_jùn', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:庄重:zhuāng_zhòng', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:郑重:zhèng_zhòng', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:坚定:jiān_dìng', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:坚固:jiān_gù', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:固执:gù_zhí', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:处分:chǔ_fèn', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:处置:chǔ_zhì', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:惩罚:chéng_fá', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:不妨:bù_fáng', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:无妨:wú_fáng', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:不由得:bù_yóu_de', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:不禁:bù_jīn', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:顾虑:gù_lǜ', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:担忧:dān_yōu', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:忧虑:yōu_lǜ', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:支援:zhī_yuán', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:补助:bǔ_zhù', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:陈述:chén_shù', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL),
-  ('cw:声明:shēng_míng', 'contextual_selection', 'normal', '2026-05-27T00:00:00.000Z', NULL)
-ON CONFLICT(word_id, skill_id) DO UPDATE SET
-  relevance_state = excluded.relevance_state,
-  updated_at = excluded.updated_at,
-  source_event_id = excluded.source_event_id;
 
 INSERT OR IGNORE INTO contrast_clusters (
   id,
