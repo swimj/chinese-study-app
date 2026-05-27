@@ -458,12 +458,18 @@ export function applyProductionContrastExerciseSeed() {
     return;
   }
 
-  const sqlPath = path.resolve(process.cwd(), 'data/seed-production-contrast-exercises.sql');
-  if (!fs.existsSync(sqlPath)) {
-    throw new Error(`Production contrast exercise seed SQL not found at ${sqlPath}`);
-  }
+  const sqlPaths = [
+    path.resolve(process.cwd(), 'data/seed-production-contrast-exercises.sql'),
+    path.resolve(process.cwd(), 'data/seed-production-contrast-dev-scheduling.sql'),
+  ];
 
-  db.exec(fs.readFileSync(sqlPath, 'utf8'));
+  for (const sqlPath of sqlPaths) {
+    if (!fs.existsSync(sqlPath)) {
+      throw new Error(`Production contrast exercise seed SQL not found at ${sqlPath}`);
+    }
+
+    db.exec(fs.readFileSync(sqlPath, 'utf8'));
+  }
 }
 
 export function getUnstudiedCountBaseline(): number {
