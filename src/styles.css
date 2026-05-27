@@ -734,7 +734,8 @@ button:hover {
 }
 
 .cluster-member-grid,
-.intake-word-pair {
+.intake-word-pair,
+.intake-word-single {
   display: grid;
   gap: 0.75rem;
 }
