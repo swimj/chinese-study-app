@@ -664,18 +664,21 @@ button:hover {
   gap: 1.5rem;
 }
 
-.clusters-page {
+.clusters-page,
+.intake-page {
   display: grid;
   gap: 1.5rem;
 }
 
-.cluster-layout {
+.cluster-layout,
+.intake-layout {
   display: grid;
   gap: 1.5rem;
 }
 
 @media (min-width: 920px) {
-  .cluster-layout {
+  .cluster-layout,
+  .intake-layout {
     grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
     align-items: start;
   }
@@ -730,13 +733,15 @@ button:hover {
   margin-top: 0.35rem;
 }
 
-.cluster-member-grid {
+.cluster-member-grid,
+.intake-word-pair {
   display: grid;
   gap: 0.75rem;
 }
 
 @media (min-width: 780px) {
-  .cluster-member-grid {
+  .cluster-member-grid,
+  .intake-word-pair {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -789,8 +794,10 @@ button:hover {
   color: #cbd5e1;
 }
 
+.cluster-prompt-form input,
 .cluster-prompt-form select,
 .cluster-prompt-form textarea,
+.intake-search-form input,
 .pagination-actions input {
   width: 100%;
   border-radius: 0.75rem;
@@ -800,11 +807,68 @@ button:hover {
   padding: 0.75rem;
 }
 
+.cluster-prompt-form input:focus,
 .cluster-prompt-form select:focus,
 .cluster-prompt-form textarea:focus,
+.intake-search-form input:focus,
 .pagination-actions input:focus {
   outline: 2px solid rgba(37, 99, 235, 0.5);
   outline-offset: 1px;
+}
+
+.intake-search-form {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.intake-search-form label {
+  display: grid;
+  gap: 0.4rem;
+  color: #cbd5e1;
+}
+
+.intake-search-results,
+.intake-cluster-list,
+.intake-note-list,
+.intake-source-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.intake-note-list p {
+  margin: 0;
+  padding: 0.8rem 1rem;
+  border-radius: 0.75rem;
+  background: rgba(30, 41, 59, 0.72);
+  color: #cbd5e1;
+}
+
+.intake-source-row {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.8fr) minmax(7rem, 0.5fr) minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  background: rgba(30, 41, 59, 0.52);
+  color: #cbd5e1;
+}
+
+.intake-source-row span:first-child,
+.intake-source-row span:nth-child(2) {
+  color: #94a3b8;
+}
+
+.intake-shared-cluster {
+  border-color: rgba(37, 99, 235, 0.55);
+  background: rgba(37, 99, 235, 0.18);
+}
+
+.intake-terminal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
 }
 
 .pagination-summary {
@@ -1158,6 +1222,10 @@ textarea {
   .cluster-prompt-card {
     grid-template-columns: 1fr;
     align-items: stretch;
+  }
+
+  .intake-source-row {
+    grid-template-columns: 1fr;
   }
 
   .priority-floating-actions {

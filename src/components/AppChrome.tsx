@@ -1,29 +1,33 @@
 import type { ReactNode } from 'react';
 
-export type AppPageKey = 'home' | 'priority' | 'clusters';
+export type AppPageKey = 'home' | 'priority' | 'intake' | 'clusters';
 
 export function AppChrome({
   currentPage,
   error,
   version,
   priorityPageLoading,
+  intakePageLoading,
   clusterPageLoading,
   children,
   onOpenHomePage,
   onOpenPriorityPage,
+  onOpenIntakePage,
   onOpenClusterPage,
 }: {
   currentPage: AppPageKey;
   error: string | null;
   version: string;
   priorityPageLoading: boolean;
+  intakePageLoading: boolean;
   clusterPageLoading: boolean;
   children: ReactNode;
   onOpenHomePage: () => void;
   onOpenPriorityPage: () => void;
+  onOpenIntakePage: () => void;
   onOpenClusterPage: () => void;
 }) {
-  const navigationLoading = priorityPageLoading || clusterPageLoading;
+  const navigationLoading = priorityPageLoading || intakePageLoading || clusterPageLoading;
 
   return (
     <div className="container">
@@ -48,6 +52,14 @@ export function AppChrome({
             disabled={navigationLoading}
           >
             {priorityPageLoading ? 'Loading priority...' : 'Priority'}
+          </button>
+          <button
+            type="button"
+            className={`nav-tab ${currentPage === 'intake' ? 'active' : ''}`}
+            onClick={onOpenIntakePage}
+            disabled={navigationLoading}
+          >
+            {intakePageLoading ? 'Loading intake...' : 'Intake'}
           </button>
           <button
             type="button"
