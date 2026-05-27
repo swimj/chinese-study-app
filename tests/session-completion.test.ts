@@ -211,13 +211,46 @@ describe('session completion', { concurrency: false }, () => {
       selectedWordId: 'contrast-distractor-word',
       promptTargetWordId: 'contrast-wrong-word',
       choiceWordIds: ['contrast-wrong-word', 'contrast-distractor-word'],
-      rating: 'easy',
+      rating: 'forgot',
       practiceMore: false,
     });
 
     assert.equal(state.intervalHours, 6);
     assert.equal(state.easeFactor, 2.35);
     assert.equal(state.nextDueAt, addHours(state.lastStudiedAt, 6));
+  });
+
+  test('incorrect contrast attempts must be recorded as forgot', () => {
+    insertWord({
+      id: 'contrast-rating-contract-word',
+      hanzi: '严肃',
+      pinyin: 'yan su',
+      meaning: 'serious',
+      examples: ['表情严肃。'],
+      status: 'review',
+      priority: 100,
+      createdAt: '2026-05-01T00:00:00.000Z',
+    });
+    insertWordStudyAdmissionState('contrast-rating-contract-word', null);
+    insertWordSkillState('contrast-rating-contract-word', 'contextual_selection', {
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(36),
+      nextDueAt: isoHoursAgo(12),
+      easeFactor: 2.5,
+    });
+
+    assert.throws(
+      () =>
+        recordAcceptedContrastSelectionAttempt({
+          wordId: 'contrast-rating-contract-word',
+          selectedWordId: 'contrast-distractor-word',
+          promptTargetWordId: 'contrast-rating-contract-word',
+          choiceWordIds: ['contrast-rating-contract-word', 'contrast-distractor-word'],
+          rating: 'easy',
+          practiceMore: false,
+        }),
+      /Expected incorrect contrast selection rating to be forgot/,
+    );
   });
 
   test('recording an accepted review attempt batch does not require a backing review action row', () => {
@@ -1007,7 +1040,7 @@ function recordAcceptedContrastSelectionAttempt({
   selectedWordId: string;
   promptTargetWordId: string;
   choiceWordIds: string[];
-  rating: 'hard' | 'good' | 'easy';
+  rating: 'forgot' | 'hard' | 'good' | 'easy';
   practiceMore: boolean;
 }) {
   const sessionActionId = `review/${wordId}/contextual_selection`;

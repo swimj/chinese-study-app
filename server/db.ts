@@ -4968,8 +4968,17 @@ function assertContrastSelectionCommitIntent(commitIntent: ContrastSelectionComm
     throw new Error('Expected promptTargetWordId to be one of the contrast choices');
   }
 
-  if (!isReviewPassRating(commitIntent.rating)) {
+  if (!isReviewRating(commitIntent.rating)) {
     throw new Error('Invalid contrast selection rating');
+  }
+
+  const selectedCorrect = commitIntent.selectedWordId === commitIntent.promptTargetWordId;
+  if (selectedCorrect && !isReviewPassRating(commitIntent.rating)) {
+    throw new Error('Expected correct contrast selection rating to be hard, good, or easy');
+  }
+
+  if (!selectedCorrect && commitIntent.rating !== 'forgot') {
+    throw new Error('Expected incorrect contrast selection rating to be forgot');
   }
 
   if (typeof commitIntent.practiceMore !== 'boolean') {

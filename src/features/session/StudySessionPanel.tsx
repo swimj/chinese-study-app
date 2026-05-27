@@ -34,6 +34,13 @@ export type FrozenProductionCard = {
   example: string;
 };
 
+export type FrozenContrastCard = {
+  item: SessionStudyItem;
+  selectedWordId: string;
+  reviewedCount: number;
+  queuedCount: number;
+};
+
 export function StudySessionPanel({
   sessionStarted,
   sessionPhase,
@@ -52,6 +59,8 @@ export function StudySessionPanel({
   studyManagementSubmitting,
   productionAwaitingNext,
   frozenProductionCard,
+  contrastAwaitingNext,
+  frozenContrastCard,
   activeAllMeanings,
   activeWordPersonalNotes,
   reviewInReinforcement,
@@ -78,6 +87,7 @@ export function StudySessionPanel({
   onUndoLastRating,
   onEndSession,
   onContinueAfterAutoForgot,
+  onContinueAfterAutoContrastForgot,
   onProductionContrastCandidateCheckedChange,
   onProductionContrastCandidateNoteChange,
   onDismissCurrentWord,
@@ -111,6 +121,8 @@ export function StudySessionPanel({
   studyManagementSubmitting: boolean;
   productionAwaitingNext: boolean;
   frozenProductionCard: FrozenProductionCard | null;
+  contrastAwaitingNext: boolean;
+  frozenContrastCard: FrozenContrastCard | null;
   activeAllMeanings: string[];
   activeWordPersonalNotes: string;
   reviewInReinforcement: boolean;
@@ -137,6 +149,7 @@ export function StudySessionPanel({
   onUndoLastRating: () => void;
   onEndSession: () => void;
   onContinueAfterAutoForgot: () => void;
+  onContinueAfterAutoContrastForgot: () => void;
   onProductionContrastCandidateCheckedChange: (checked: boolean) => void;
   onProductionContrastCandidateNoteChange: (value: string) => void;
   onDismissCurrentWord: () => void;
@@ -158,6 +171,8 @@ export function StudySessionPanel({
     sessionCompletedWithSummary: sessionPhase === 'completed' && sessionSummary !== null,
     productionAwaitingNext,
     frozenProductionCardPresent: frozenProductionCard !== null,
+    contrastAwaitingNext,
+    frozenContrastCardPresent: frozenContrastCard !== null,
     activeItemPresent: activeItem !== null,
     activeWordStatus: activeWord?.status ?? null,
     activeUnstudiedIntroComplete: activeUnstudiedProgress?.introComplete ?? false,
@@ -241,6 +256,38 @@ export function StudySessionPanel({
               rows={3}
             />
           </div>
+        </div>
+      ) : panelView === 'frozen_contrast' && frozenContrastCard ? (
+        <div className="review-card">
+          <div className="review-card-header">
+            <p className="badge">Review · Contrast selection</p>
+          </div>
+          <p className="notes">
+            Answered {frozenContrastCard.reviewedCount} this session · {frozenContrastCard.queuedCount} still queued
+          </p>
+          <UndoButton
+            hasUndo={hasUndo}
+            submittingRating={submittingRating}
+            personalNotesEditorOpen={personalNotesEditorOpen}
+            onUndoLastRating={onUndoLastRating}
+          />
+          <div className="prompt-block">
+            <span className="prompt-label">Prompt</span>
+            <strong className="contrast-prompt-text">{frozenContrastCard.item.contrastSelection?.prompt.promptText}</strong>
+          </div>
+          <ContrastSelectionDrill
+            item={frozenContrastCard.item}
+            selectedWordId={frozenContrastCard.selectedWordId}
+            answerRevealed={true}
+            practiceMore={false}
+            disabled={true}
+            onSelectChoice={() => undefined}
+            onPracticeMoreChange={() => undefined}
+          />
+          <p className="notes">Incorrect contrast choice. This item was recorded as Forgot.</p>
+          <button type="button" onClick={onContinueAfterAutoContrastForgot} disabled={personalNotesEditorOpen}>
+            Next
+          </button>
         </div>
       ) : panelView === 'completed' && sessionSummary ? (
         <div className="stack">

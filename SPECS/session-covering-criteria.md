@@ -114,6 +114,81 @@ The user must then successfully recall that same review item 3 times in a row be
 
 Any additional failures during this reinforcement count toward the item's session failure count.
 
+## Contrast Selection Review Covering
+
+A contrast-selection review item is evaluated as one contextual-choice action.
+
+The user selects one choice from the presented contrast set.
+
+### Correct choice
+
+If the selected choice matches the prompt target:
+
+- the answer is revealed
+- the user rates the distinction as `Hard`, `Good`, or `Easy`
+- the item is immediately covered for the session
+
+`Forgot` is not a valid rating for a correct contrast selection.
+
+### Incorrect choice
+
+If the selected choice does not match the prompt target:
+
+- the answer is revealed immediately
+- the item is automatically rated `Forgot`
+- the item is immediately covered for the session
+- the backend receives the selected wrong choice and the correct prompt target
+
+`Hard`, `Good`, and `Easy` are not valid ratings for an incorrect contrast selection.
+
+Unlike a normal review lapse, contrast selection does not enter same-session
+reinforcement in this version. Its failure is reflected in the contextual
+selection scheduler state.
+
+## Undo Semantics
+
+Undo is a frontend-only escape hatch for the most recent session-affecting
+transition that has not yet been durably committed to the backend.
+
+The frontend may hold at most one undoable transition.
+
+An undoable transition begins when user action changes session progress:
+
+- rating a recognition or production review card
+- submitting an incorrect production answer, which is automatically rated `Forgot`
+- selecting an incorrect contrast choice, which is automatically rated `Forgot`
+- rating a correct contrast choice as `Hard`, `Good`, or `Easy`
+- completing a learning or unstudied word unit
+
+The transition is applied to frontend session state immediately, but its backend
+commit remains deferred while the undo window is open.
+
+The undo window closes when:
+
+- the user rates or auto-rates another item
+- the user ends the session
+- the user performs a destructive management action on the pending item
+- the pending commit is successfully sent to the backend
+
+When undo is performed, the frontend must restore atomically:
+
+- bucket session state
+- session summary
+- answer reveal state
+- production input and frozen production UI state
+- selected contrast choice and frozen contrast UI state
+- pending backend commit, cleared
+- pending production mistake capture, cleared if it came from the undone transition
+
+Undo must not call the backend.
+
+After undo, the user should see the card state from immediately before the
+undone session-affecting transition.
+
+For an incorrect contrast selection, undo from either the frozen correction card
+or the next active card restores the original contrast prompt to an unanswered
+state: no selected choice, no revealed answer, and no pending contrast commit.
+
 ## Commit Payload Intent
 
 This spec does not lock down the wire format, but it does define the conceptual payload content that the backend will need once a unit is covered.
@@ -153,6 +228,17 @@ This allows the backend to distinguish:
 - clean normal success
 - clean easy success
 - lapse followed by recovery
+
+### Contrast selection commit
+
+Conceptually:
+
+- the contrast prompt was answered
+- the backend knows the selected choice
+- the backend knows the correct prompt target
+- the backend knows whether the selected choice was correct
+- correct selections include a terminal rating of `Hard`, `Good`, or `Easy`
+- incorrect selections are committed as `Forgot`
 
 ## Deferred Questions
 

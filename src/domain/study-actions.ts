@@ -153,7 +153,7 @@ export type ContrastSelectionCommitIntent = {
   selectedWordId: string;
   promptTargetWordId: string;
   choiceWordIds: string[];
-  rating: Exclude<ReviewRating, 'forgot'>;
+  rating: ReviewRating;
   practiceMore: boolean;
 };
 
