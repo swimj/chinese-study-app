@@ -689,9 +689,28 @@ export function useStudySession({
     setProductionMatchOptions(resetStoredProductionMatchOptions());
   }
 
+  function handlePreviewContrastChoice(wordId: string) {
+    if (!activeItem || activeItem.actionKind !== 'contrast_selection' || answerRevealed || personalNotesEditorOpen) {
+      return;
+    }
+
+    const contrastSelection = activeItem.contrastSelection;
+    if (!contrastSelection?.choices.some((choice) => choice.word.id === wordId)) {
+      throw new Error('Session invariant violated: selected contrast choice is not part of the active contrast item.');
+    }
+
+    setContrastSelectedWordId(wordId);
+    setError(null);
+  }
+
   async function handleSelectContrastChoice(wordId: string) {
     if (!activeItem || activeItem.actionKind !== 'contrast_selection' || answerRevealed || personalNotesEditorOpen) {
       return;
+    }
+
+    const contrastSelection = activeItem.contrastSelection;
+    if (!contrastSelection?.choices.some((choice) => choice.word.id === wordId)) {
+      throw new Error('Session invariant violated: selected contrast choice is not part of the active contrast item.');
     }
 
     setContrastSelectedWordId(wordId);
@@ -700,8 +719,7 @@ export function useStudySession({
     if (
       !sessionState ||
       !activeWord ||
-      !activeItem.contrastSelection ||
-      wordId === activeItem.contrastSelection.promptTargetWordId
+      wordId === contrastSelection.promptTargetWordId
     ) {
       return;
     }
@@ -1166,6 +1184,30 @@ export function useStudySession({
         return;
       }
 
+      if (contrastSelectionActive && !answerRevealed) {
+        if (event.key === '1' || event.key === '2') {
+          const choiceIndex = Number(event.key) - 1;
+          const choiceWordId = activeItem?.contrastSelection?.choices[choiceIndex]?.word.id;
+          if (!choiceWordId) {
+            return;
+          }
+
+          event.preventDefault();
+          handlePreviewContrastChoice(choiceWordId);
+          return;
+        }
+
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          if (!contrastSelectedWordId) {
+            return;
+          }
+
+          void handleSelectContrastChoice(contrastSelectedWordId);
+          return;
+        }
+      }
+
       if ((event.key === 'z' || event.key === 'Z') && lastUndoSnapshot) {
         event.preventDefault();
         handleUndoLastRating();
@@ -1200,12 +1242,14 @@ export function useStudySession({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     activeRatingOptions,
+    activeItem,
     activeUnstudiedProgress?.introComplete,
     activeWord,
     activeWordPersonalNotes,
     answerRevealed,
     contrastAwaitingNext,
     contrastSelectionActive,
+    contrastSelectedWordId,
     productionAwaitingNext,
     productionContrastCandidateChecked,
     productionContrastCandidateNote,
