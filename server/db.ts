@@ -269,6 +269,70 @@ type ContrastCandidateIntake = {
   status: 'open' | 'accepted' | 'dismissed';
 };
 
+type ContrastCandidateIntakeSource = ContrastCandidateIntake;
+
+type ContrastIntakeCoverage = {
+  hasSharedCluster: boolean;
+  sharedClusterIds: string[];
+  promptCountForTarget: number;
+  promptCountForCandidate: number;
+  usablePromptCount: number;
+};
+
+type ContrastIntakeGroup = {
+  groupKey: string;
+  targetWordId: string;
+  candidateText: string | null;
+  matchedWordId: string | null;
+  targetWord: Word;
+  matchedWord: Word | null;
+  count: number;
+  firstCreatedAt: string;
+  latestCreatedAt: string;
+  notes: string[];
+  sources: ContrastCandidateIntakeSource[];
+  relevantClusters: ContrastClusterContent[];
+  coverage: ContrastIntakeCoverage;
+};
+
+type ContrastIntakeGroupsPayload = {
+  groups: ContrastIntakeGroup[];
+};
+
+type ContrastIntakeGroupSelector = {
+  targetWordId: string;
+  candidateText?: string | null;
+  matchedWordId?: string | null;
+};
+
+type ContrastIntakePromptInput = {
+  targetWordId: string;
+  promptText: string;
+  explanation?: string;
+};
+
+type CreateContrastIntakeClusterInput = ContrastIntakeGroupSelector & {
+  resolvedCandidateWordId: string;
+  title: string;
+  note?: string;
+  targetNuanceNote?: string;
+  candidateNuanceNote?: string;
+  prompt: ContrastIntakePromptInput;
+};
+
+type AddContrastIntakeToClusterInput = ContrastIntakeGroupSelector & {
+  clusterId: string;
+  resolvedCandidateWordId: string;
+  targetNuanceNote?: string;
+  candidateNuanceNote?: string;
+  prompt: ContrastIntakePromptInput;
+};
+
+type AddContrastIntakePromptInput = ContrastIntakeGroupSelector & {
+  clusterId: string;
+  prompt: ContrastIntakePromptInput;
+};
+
 type ContrastCandidateIntakeRow = {
   id: string;
   created_at: string;
@@ -437,6 +501,11 @@ export type {
   ContrastClusterMember,
   ContrastPrompt,
   ContrastCandidateIntake,
+  ContrastIntakeCoverage,
+  ContrastIntakeGroup,
+  ContrastIntakeGroupsPayload,
+  ContrastIntakeGroupSelector,
+  ContrastIntakePromptInput,
   PriorityWord,
   PriorityWordsPayload,
   StudyContentFeedback,
@@ -498,6 +567,62 @@ export function getWords(): Word[] {
       ORDER BY priority DESC, created_at ASC
     `)
     .all() as WordRow[];
+
+  return rows.map(mapWordRow);
+}
+
+export function searchWords(query: string, limit = 20): Word[] {
+  const normalizedQuery = query.trim();
+  if (normalizedQuery.length === 0) {
+    return [];
+  }
+
+  const boundedLimit = clampInteger(limit, 1, 50);
+  const likeQuery = `%${normalizedQuery}%`;
+  const rows = db
+    .prepare(`
+      SELECT
+        id,
+        hanzi,
+        traditional,
+        pinyin,
+        meaning,
+        meanings_json,
+        personal_notes,
+        examples_json,
+        status,
+        priority,
+        created_at,
+        learning_streak,
+        last_learning_success_on,
+        last_learning_covered_on
+      FROM words
+      WHERE hanzi LIKE ?
+         OR traditional LIKE ?
+         OR pinyin LIKE ?
+         OR meaning LIKE ?
+      ORDER BY
+        CASE
+          WHEN hanzi = ? OR traditional = ? THEN 0
+          WHEN hanzi LIKE ? OR traditional LIKE ? THEN 1
+          ELSE 2
+        END ASC,
+        status DESC,
+        priority DESC,
+        created_at ASC
+      LIMIT ?
+    `)
+    .all(
+      likeQuery,
+      likeQuery,
+      likeQuery,
+      likeQuery,
+      normalizedQuery,
+      normalizedQuery,
+      `${normalizedQuery}%`,
+      `${normalizedQuery}%`,
+      boundedLimit,
+    ) as WordRow[];
 
   return rows.map(mapWordRow);
 }
@@ -1226,6 +1351,201 @@ export function getContrastClusterContent(): ContrastClusterContent[] {
     }),
     prompts: getContrastPromptsForCluster(cluster.id),
   }));
+}
+
+export function getContrastIntakeGroups(): ContrastIntakeGroupsPayload {
+  const openRows = getContrastCandidateIntake().filter((row) => row.status === 'open');
+  const wordsById = new Map(getWords().map((word) => [word.id, word]));
+  const clusters = getContrastClusterContent();
+  const groupedRows = new Map<string, ContrastCandidateIntake[]>();
+
+  for (const row of openRows) {
+    const groupKey = buildContrastIntakeGroupKey({
+      targetWordId: row.targetWordId,
+      candidateText: row.candidateText,
+      matchedWordId: row.matchedWordId,
+    });
+    const currentRows = groupedRows.get(groupKey) ?? [];
+    currentRows.push(row);
+    groupedRows.set(groupKey, currentRows);
+  }
+
+  const groups = [...groupedRows.entries()].map(([groupKey, rows]) => {
+    const firstRow = rows[0] ?? assertContrastIntakeRowsPresent();
+    const targetWord = wordsById.get(firstRow.targetWordId);
+    if (!targetWord) {
+      throw new Error(`Contrast intake references missing target word "${firstRow.targetWordId}"`);
+    }
+
+    const matchedWordId = firstRow.matchedWordId;
+    const matchedWord = matchedWordId ? wordsById.get(matchedWordId) ?? null : null;
+    const relevantWordIds = new Set([targetWord.id]);
+    if (matchedWord) {
+      relevantWordIds.add(matchedWord.id);
+    }
+
+    const relevantClusters = clusters.filter((cluster) =>
+      cluster.members.some((member) => relevantWordIds.has(member.wordId)),
+    );
+    const coverage = summarizeContrastIntakeCoverage({
+      targetWordId: targetWord.id,
+      candidateWordId: matchedWord?.id ?? null,
+      clusters: relevantClusters,
+    });
+    const sortedRows = [...rows].sort((left, right) => {
+      const createdComparison = left.createdAt.localeCompare(right.createdAt);
+      return createdComparison === 0 ? left.id.localeCompare(right.id) : createdComparison;
+    });
+    const notes = [...new Set(sortedRows.map((row) => row.note.trim()).filter((note) => note.length > 0))];
+
+    return {
+      groupKey,
+      targetWordId: targetWord.id,
+      candidateText: firstRow.candidateText,
+      matchedWordId,
+      targetWord,
+      matchedWord,
+      count: rows.length,
+      firstCreatedAt: sortedRows[0]?.createdAt ?? firstRow.createdAt,
+      latestCreatedAt: sortedRows[sortedRows.length - 1]?.createdAt ?? firstRow.createdAt,
+      notes,
+      sources: sortedRows,
+      relevantClusters,
+      coverage,
+    };
+  });
+
+  groups.sort((left, right) => {
+    if (right.count !== left.count) {
+      return right.count - left.count;
+    }
+
+    const latestComparison = right.latestCreatedAt.localeCompare(left.latestCreatedAt);
+    return latestComparison === 0 ? left.groupKey.localeCompare(right.groupKey) : latestComparison;
+  });
+
+  return { groups };
+}
+
+export function createContrastClusterFromIntake(input: CreateContrastIntakeClusterInput): ContrastClusterContent {
+  const normalizedInput = normalizeCreateContrastIntakeClusterInput(input);
+
+  db.exec('BEGIN');
+
+  try {
+    const cluster = createContrastCluster({
+      title: normalizedInput.title,
+      note: normalizedInput.note,
+    });
+    addContrastClusterMember({
+      clusterId: cluster.id,
+      wordId: normalizedInput.targetWordId,
+      nuanceNote: normalizedInput.targetNuanceNote,
+      displayOrder: 1,
+    });
+    addContrastClusterMember({
+      clusterId: cluster.id,
+      wordId: normalizedInput.resolvedCandidateWordId,
+      nuanceNote: normalizedInput.candidateNuanceNote,
+      displayOrder: 2,
+    });
+    createContrastPrompt({
+      clusterId: cluster.id,
+      targetWordId: normalizedInput.prompt.targetWordId,
+      promptText: normalizedInput.prompt.promptText,
+      explanation: normalizedInput.prompt.explanation,
+    });
+    updateContrastIntakeGroupStatusWithoutTransaction(normalizedInput, 'accepted');
+
+    db.exec('COMMIT');
+    return getContrastClusterContentById(cluster.id);
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+export function addContrastIntakeToCluster(input: AddContrastIntakeToClusterInput): ContrastClusterContent {
+  const normalizedInput = normalizeAddContrastIntakeToClusterInput(input);
+
+  db.exec('BEGIN');
+
+  try {
+    ensureContrastClusterMemberForIntakeWithoutTransaction({
+      clusterId: normalizedInput.clusterId,
+      wordId: normalizedInput.targetWordId,
+      nuanceNote: normalizedInput.targetNuanceNote,
+    });
+    ensureContrastClusterMemberForIntakeWithoutTransaction({
+      clusterId: normalizedInput.clusterId,
+      wordId: normalizedInput.resolvedCandidateWordId,
+      nuanceNote: normalizedInput.candidateNuanceNote,
+    });
+    createContrastPrompt({
+      clusterId: normalizedInput.clusterId,
+      targetWordId: normalizedInput.prompt.targetWordId,
+      promptText: normalizedInput.prompt.promptText,
+      explanation: normalizedInput.prompt.explanation,
+    });
+
+    db.exec('COMMIT');
+    return getContrastClusterContentById(normalizedInput.clusterId);
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+export function addContrastPromptFromIntake(input: AddContrastIntakePromptInput): ContrastClusterContent {
+  const normalizedInput = normalizeAddContrastIntakePromptInput(input);
+
+  db.exec('BEGIN');
+
+  try {
+    createContrastPrompt({
+      clusterId: normalizedInput.clusterId,
+      targetWordId: normalizedInput.prompt.targetWordId,
+      promptText: normalizedInput.prompt.promptText,
+      explanation: normalizedInput.prompt.explanation,
+    });
+    updateContrastIntakeGroupStatusWithoutTransaction(normalizedInput, 'accepted');
+
+    db.exec('COMMIT');
+    return getContrastClusterContentById(normalizedInput.clusterId);
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+export function acceptContrastIntakeGroup(input: ContrastIntakeGroupSelector): ContrastIntakeGroupsPayload {
+  const normalizedInput = normalizeContrastIntakeGroupSelector(input);
+
+  db.exec('BEGIN');
+
+  try {
+    updateContrastIntakeGroupStatusWithoutTransaction(normalizedInput, 'accepted');
+    db.exec('COMMIT');
+    return getContrastIntakeGroups();
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+export function dismissContrastIntakeGroup(input: ContrastIntakeGroupSelector): ContrastIntakeGroupsPayload {
+  const normalizedInput = normalizeContrastIntakeGroupSelector(input);
+
+  db.exec('BEGIN');
+
+  try {
+    updateContrastIntakeGroupStatusWithoutTransaction(normalizedInput, 'dismissed');
+    db.exec('COMMIT');
+    return getContrastIntakeGroups();
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
 }
 
 export function updateContrastPrompt({
@@ -3091,6 +3411,245 @@ function getWordById(wordId: string): Word | null {
     .get(wordId) as WordRow | undefined;
 
   return row ? mapWordRow(row) : null;
+}
+
+function getContrastClusterContentById(clusterId: string): ContrastClusterContent {
+  const cluster = getContrastClusterContent().find((candidate) => candidate.id === clusterId);
+  if (!cluster) {
+    throw new Error('Contrast cluster not found');
+  }
+
+  return cluster;
+}
+
+function normalizeContrastIntakeGroupSelector(input: ContrastIntakeGroupSelector): ContrastIntakeGroupSelector {
+  const targetWordId = input.targetWordId.trim();
+  assertNonEmptyString(targetWordId, 'Expected non-empty target word id');
+  ensureWordExists(targetWordId);
+
+  const matchedWordId = input.matchedWordId?.trim() ? input.matchedWordId.trim() : null;
+  if (matchedWordId) {
+    ensureWordExists(matchedWordId);
+  }
+
+  const candidateText = input.candidateText?.trim() ? normalizeContrastIntakeCandidateText(input.candidateText) : null;
+  return {
+    targetWordId,
+    matchedWordId,
+    candidateText,
+  };
+}
+
+function normalizeCreateContrastIntakeClusterInput(input: CreateContrastIntakeClusterInput): CreateContrastIntakeClusterInput {
+  const selector = normalizeContrastIntakeGroupSelector(input);
+  const resolvedCandidateWordId = input.resolvedCandidateWordId.trim();
+  assertNonEmptyString(resolvedCandidateWordId, 'Expected non-empty resolved candidate word id');
+  ensureWordExists(resolvedCandidateWordId);
+
+  if (resolvedCandidateWordId === selector.targetWordId) {
+    throw new Error('Expected resolved candidate word to differ from target word');
+  }
+
+  const title = input.title.trim();
+  assertNonEmptyString(title, 'Expected non-empty contrast cluster title');
+
+  return {
+    ...selector,
+    resolvedCandidateWordId,
+    title,
+    note: input.note?.trim() ?? '',
+    targetNuanceNote: input.targetNuanceNote?.trim() ?? '',
+    candidateNuanceNote: input.candidateNuanceNote?.trim() ?? '',
+    prompt: normalizeContrastIntakePromptInput(input.prompt),
+  };
+}
+
+function normalizeAddContrastIntakeToClusterInput(input: AddContrastIntakeToClusterInput): AddContrastIntakeToClusterInput {
+  const selector = normalizeContrastIntakeGroupSelector(input);
+  const clusterId = input.clusterId.trim();
+  assertNonEmptyString(clusterId, 'Expected non-empty contrast cluster id');
+  ensureContrastClusterExists(clusterId);
+
+  const resolvedCandidateWordId = input.resolvedCandidateWordId.trim();
+  assertNonEmptyString(resolvedCandidateWordId, 'Expected non-empty resolved candidate word id');
+  ensureWordExists(resolvedCandidateWordId);
+
+  if (resolvedCandidateWordId === selector.targetWordId) {
+    throw new Error('Expected resolved candidate word to differ from target word');
+  }
+
+  return {
+    ...selector,
+    clusterId,
+    resolvedCandidateWordId,
+    targetNuanceNote: input.targetNuanceNote?.trim() ?? '',
+    candidateNuanceNote: input.candidateNuanceNote?.trim() ?? '',
+    prompt: normalizeContrastIntakePromptInput(input.prompt),
+  };
+}
+
+function normalizeAddContrastIntakePromptInput(input: AddContrastIntakePromptInput): AddContrastIntakePromptInput {
+  const selector = normalizeContrastIntakeGroupSelector(input);
+  const clusterId = input.clusterId.trim();
+  assertNonEmptyString(clusterId, 'Expected non-empty contrast cluster id');
+  ensureContrastClusterExists(clusterId);
+
+  return {
+    ...selector,
+    clusterId,
+    prompt: normalizeContrastIntakePromptInput(input.prompt),
+  };
+}
+
+function normalizeContrastIntakePromptInput(input: ContrastIntakePromptInput): ContrastIntakePromptInput {
+  const targetWordId = input.targetWordId.trim();
+  const promptText = input.promptText.trim();
+  assertNonEmptyString(targetWordId, 'Expected non-empty prompt target word id');
+  assertNonEmptyString(promptText, 'Expected non-empty prompt text');
+
+  return {
+    targetWordId,
+    promptText,
+    explanation: input.explanation?.trim() ?? '',
+  };
+}
+
+function updateContrastIntakeGroupStatusWithoutTransaction(
+  selector: ContrastIntakeGroupSelector,
+  status: ContrastCandidateIntake['status'],
+) {
+  const matchingRows = selectOpenContrastIntakeRowsForGroup(selector);
+  if (matchingRows.length === 0) {
+    throw new Error('Contrast intake group not found');
+  }
+
+  const update = db.prepare(`
+    UPDATE contrast_candidate_intake
+    SET status = ?
+    WHERE id = ?
+  `);
+
+  for (const row of matchingRows) {
+    update.run(status, row.id);
+  }
+}
+
+function selectOpenContrastIntakeRowsForGroup(selector: ContrastIntakeGroupSelector): ContrastCandidateIntake[] {
+  const normalizedSelector = normalizeContrastIntakeGroupSelector(selector);
+  const rows = getContrastCandidateIntake().filter((row) => {
+    if (row.status !== 'open' || row.targetWordId !== normalizedSelector.targetWordId) {
+      return false;
+    }
+
+    if (normalizedSelector.matchedWordId) {
+      return row.matchedWordId === normalizedSelector.matchedWordId;
+    }
+
+    return (
+      row.matchedWordId === null &&
+      normalizeContrastIntakeCandidateText(row.candidateText ?? '') === (normalizedSelector.candidateText ?? '')
+    );
+  });
+
+  return rows;
+}
+
+function ensureContrastClusterMemberForIntakeWithoutTransaction({
+  clusterId,
+  wordId,
+  nuanceNote,
+}: {
+  clusterId: string;
+  wordId: string;
+  nuanceNote: string;
+}) {
+  if (contrastClusterMemberExists(clusterId, wordId)) {
+    return;
+  }
+
+  addContrastClusterMember({
+    clusterId,
+    wordId,
+    nuanceNote,
+    displayOrder: getNextContrastClusterMemberDisplayOrder(clusterId),
+  });
+}
+
+function contrastClusterMemberExists(clusterId: string, wordId: string): boolean {
+  const row = db
+    .prepare(`
+      SELECT 1
+      FROM contrast_cluster_members
+      WHERE cluster_id = ?
+        AND word_id = ?
+      LIMIT 1
+    `)
+    .get(clusterId, wordId) as { '1': number } | undefined;
+
+  return Boolean(row);
+}
+
+function getNextContrastClusterMemberDisplayOrder(clusterId: string): number {
+  const row = db
+    .prepare(`
+      SELECT MAX(display_order) AS max_display_order
+      FROM contrast_cluster_members
+      WHERE cluster_id = ?
+    `)
+    .get(clusterId) as { max_display_order: number | null } | undefined;
+
+  return (row?.max_display_order ?? 0) + 1;
+}
+
+function buildContrastIntakeGroupKey(selector: ContrastIntakeGroupSelector): string {
+  const normalizedSelector = normalizeContrastIntakeGroupSelector(selector);
+  if (normalizedSelector.matchedWordId) {
+    return `${normalizedSelector.targetWordId}::word:${normalizedSelector.matchedWordId}`;
+  }
+
+  return `${normalizedSelector.targetWordId}::text:${normalizedSelector.candidateText ?? ''}`;
+}
+
+function normalizeContrastIntakeCandidateText(value: string): string {
+  return value.trim().replace(/\s+/g, '');
+}
+
+function summarizeContrastIntakeCoverage({
+  targetWordId,
+  candidateWordId,
+  clusters,
+}: {
+  targetWordId: string;
+  candidateWordId: string | null;
+  clusters: ContrastClusterContent[];
+}): ContrastIntakeCoverage {
+  const sharedClusters = candidateWordId
+    ? clusters.filter((cluster) => {
+        const memberIds = new Set(cluster.members.map((member) => member.wordId));
+        return memberIds.has(targetWordId) && memberIds.has(candidateWordId);
+      })
+    : [];
+  const sharedClusterIds = sharedClusters.map((cluster) => cluster.id);
+  const sharedClusterIdSet = new Set(sharedClusterIds);
+  const sharedPrompts = clusters
+    .filter((cluster) => sharedClusterIdSet.has(cluster.id))
+    .flatMap((cluster) => cluster.prompts);
+  const promptCountForTarget = sharedPrompts.filter((prompt) => prompt.targetWordId === targetWordId).length;
+  const promptCountForCandidate = candidateWordId
+    ? sharedPrompts.filter((prompt) => prompt.targetWordId === candidateWordId).length
+    : 0;
+
+  return {
+    hasSharedCluster: sharedClusterIds.length > 0,
+    sharedClusterIds,
+    promptCountForTarget,
+    promptCountForCandidate,
+    usablePromptCount: promptCountForTarget + promptCountForCandidate,
+  };
+}
+
+function assertContrastIntakeRowsPresent(): never {
+  throw new Error('Expected contrast intake rows');
 }
 
 function ensureWordExists(wordId: string) {

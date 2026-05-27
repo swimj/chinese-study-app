@@ -5,13 +5,19 @@ import {
   captureProductionMistakeCandidate,
   completeLearningWordSession,
   completeUnstudiedWordSession,
+  acceptContrastIntakeGroup,
+  addContrastIntakeToCluster,
+  addContrastPromptFromIntake,
+  createContrastClusterFromIntake,
   dismissWordFromStudy,
+  dismissContrastIntakeGroup,
   addUnstudiedUserPriorityByHanzi,
   dbConfig,
   getUnstudiedCountBaseline,
   getLearningPolicy,
   createContrastPrompt,
   getContrastClusterContent,
+  getContrastIntakeGroups,
   getPrioritizedUnstudiedWords,
   getProductionMistakeCandidates,
   getReviewFailureRateDays,
@@ -23,6 +29,7 @@ import {
   recordAcceptedReviewAttemptBatch,
   recordReviewSessionSummary,
   recordStudyManagementAction,
+  searchWords,
   updateWordMeaningVisibility,
   updateContrastPrompt,
   updateWordPersonalNotes,
@@ -45,6 +52,27 @@ export function createApp() {
   app.use(cors());
   app.use(express.json());
 
+  app.get('/api/words/search', (req, res) => {
+    const query = req.query?.q;
+    const limit = readPositiveIntegerFromQuery(req.query?.limit, 20);
+
+    if (typeof query !== 'string') {
+      res.status(400).json({ error: 'Expected string q query parameter' });
+      return;
+    }
+
+    if (limit === null) {
+      res.status(400).json({ error: 'Expected positive integer limit query parameter' });
+      return;
+    }
+
+    try {
+      res.json({ words: searchWords(query, limit) });
+    } catch {
+      res.status(500).json({ error: 'Failed to search words' });
+    }
+  });
+
   app.get('/api/words/:id/meanings', (req, res) => {
     try {
       const meanings = getWordMeanings(req.params.id);
@@ -64,6 +92,114 @@ export function createApp() {
       res.json(getProductionMistakeCandidates());
     } catch {
       res.status(500).json({ error: 'Failed to load production mistake candidates' });
+    }
+  });
+
+  app.get('/api/contrast-intake/groups', (_req, res) => {
+    try {
+      res.json(getContrastIntakeGroups());
+    } catch {
+      res.status(500).json({ error: 'Failed to load contrast intake groups' });
+    }
+  });
+
+  app.post('/api/contrast-intake/groups/accept', (req, res) => {
+    const selector = readContrastIntakeGroupSelector(req.body);
+    if (!selector) {
+      res.status(400).json({ error: 'Expected valid contrast intake group selector' });
+      return;
+    }
+
+    try {
+      res.json(acceptContrastIntakeGroup(selector));
+    } catch (error) {
+      if (isContrastIntakeClientError(error)) {
+        res.status(error.message === 'Contrast intake group not found' ? 404 : 400).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to accept contrast intake group' });
+    }
+  });
+
+  app.post('/api/contrast-intake/groups/dismiss', (req, res) => {
+    const selector = readContrastIntakeGroupSelector(req.body);
+    if (!selector) {
+      res.status(400).json({ error: 'Expected valid contrast intake group selector' });
+      return;
+    }
+
+    try {
+      res.json(dismissContrastIntakeGroup(selector));
+    } catch (error) {
+      if (isContrastIntakeClientError(error)) {
+        res.status(error.message === 'Contrast intake group not found' ? 404 : 400).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to dismiss contrast intake group' });
+    }
+  });
+
+  app.post('/api/contrast-intake/groups/create-cluster', (req, res) => {
+    if (!isPlainObject(req.body)) {
+      res.status(400).json({ error: 'Expected request body object' });
+      return;
+    }
+
+    try {
+      res.status(201).json(createContrastClusterFromIntake(req.body));
+    } catch (error) {
+      if (isContrastIntakeClientError(error)) {
+        res.status(error.message === 'Contrast intake group not found' ? 404 : 400).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to create contrast cluster from intake' });
+    }
+  });
+
+  app.post('/api/contrast-intake/groups/add-to-cluster', (req, res) => {
+    if (!isPlainObject(req.body)) {
+      res.status(400).json({ error: 'Expected request body object' });
+      return;
+    }
+
+    try {
+      res.json(addContrastIntakeToCluster(req.body));
+    } catch (error) {
+      if (isContrastIntakeClientError(error)) {
+        const statusCode =
+          error.message === 'Contrast intake group not found' || error.message === 'Contrast cluster not found'
+            ? 404
+            : 400;
+        res.status(statusCode).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to add contrast intake to cluster' });
+    }
+  });
+
+  app.post('/api/contrast-intake/groups/add-prompt', (req, res) => {
+    if (!isPlainObject(req.body)) {
+      res.status(400).json({ error: 'Expected request body object' });
+      return;
+    }
+
+    try {
+      res.json(addContrastPromptFromIntake(req.body));
+    } catch (error) {
+      if (isContrastIntakeClientError(error)) {
+        const statusCode =
+          error.message === 'Contrast intake group not found' || error.message === 'Contrast cluster not found'
+            ? 404
+            : 400;
+        res.status(statusCode).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to add contrast prompt from intake' });
     }
   });
 
@@ -731,6 +867,56 @@ function readPositiveIntegerFromQuery(value: unknown, fallback: number): number 
   }
 
   return parsed;
+}
+
+function readContrastIntakeGroupSelector(value: unknown): {
+  targetWordId: string;
+  candidateText?: string | null;
+  matchedWordId?: string | null;
+} | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const targetWordId = value.targetWordId;
+  const candidateText = value.candidateText;
+  const matchedWordId = value.matchedWordId;
+
+  if (typeof targetWordId !== 'string' || targetWordId.trim().length === 0) {
+    return null;
+  }
+
+  if (candidateText !== undefined && candidateText !== null && typeof candidateText !== 'string') {
+    return null;
+  }
+
+  if (matchedWordId !== undefined && matchedWordId !== null && typeof matchedWordId !== 'string') {
+    return null;
+  }
+
+  return {
+    targetWordId: targetWordId.trim(),
+    candidateText: candidateText ?? null,
+    matchedWordId: matchedWordId ?? null,
+  };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isContrastIntakeClientError(error: unknown): error is Error {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error.message.startsWith('Expected ') ||
+    error.message === 'Word not found' ||
+    error.message === 'Contrast cluster not found' ||
+    error.message === 'Contrast intake group not found' ||
+    error.message === 'Contrast prompt target must be a cluster member'
+  );
 }
 
 function normalizeStudyDayKey(value: string): string | null {

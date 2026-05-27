@@ -63,8 +63,65 @@ export type ContrastClusterContent = ContrastCluster & {
   prompts: ContrastPrompt[];
 };
 
+export type ContrastIntakeCoverage = {
+  hasSharedCluster: boolean;
+  sharedClusterIds: string[];
+  promptCountForTarget: number;
+  promptCountForCandidate: number;
+  usablePromptCount: number;
+};
+
+export type ContrastCandidateIntakeSource = {
+  id: string;
+  createdAt: string;
+  targetWordId: string;
+  sourceEventId: string | null;
+  sourceActionKind: 'recognition' | 'production' | 'contrast_selection' | null;
+  sourceContentRef: StudyContentRef | null;
+  candidateText: string | null;
+  matchedWordId: string | null;
+  note: string;
+  status: 'open' | 'accepted' | 'dismissed';
+};
+
+export type ContrastIntakeGroup = {
+  groupKey: string;
+  targetWordId: string;
+  candidateText: string | null;
+  matchedWordId: string | null;
+  targetWord: Word;
+  matchedWord: Word | null;
+  count: number;
+  firstCreatedAt: string;
+  latestCreatedAt: string;
+  notes: string[];
+  sources: ContrastCandidateIntakeSource[];
+  relevantClusters: ContrastClusterContent[];
+  coverage: ContrastIntakeCoverage;
+};
+
 type ContrastClustersResponse = {
   clusters: ContrastClusterContent[];
+};
+
+type ContrastIntakeGroupsResponse = {
+  groups: ContrastIntakeGroup[];
+};
+
+type WordSearchResponse = {
+  words: Word[];
+};
+
+type ContrastIntakeGroupSelector = {
+  targetWordId: string;
+  candidateText?: string | null;
+  matchedWordId?: string | null;
+};
+
+type ContrastIntakePromptInput = {
+  targetWordId: string;
+  promptText: string;
+  explanation: string;
 };
 
 export async function fetchSessionPayload(): Promise<SessionPayload> {
@@ -72,6 +129,120 @@ export async function fetchSessionPayload(): Promise<SessionPayload> {
   const response = await fetch(`${API_BASE}/api/session-payload?studyDayKey=${encodeURIComponent(studyDayKey)}`);
   if (!response.ok) {
     throw new Error('Failed to load session payload');
+  }
+
+  return response.json();
+}
+
+export async function searchWords(query: string, limit = 20): Promise<WordSearchResponse> {
+  const response = await fetch(`${API_BASE}/api/words/search?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`);
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to search words'));
+  }
+
+  return response.json();
+}
+
+export async function fetchContrastIntakeGroups(): Promise<ContrastIntakeGroupsResponse> {
+  const response = await fetch(`${API_BASE}/api/contrast-intake/groups`);
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to load contrast intake groups'));
+  }
+
+  return response.json();
+}
+
+export async function acceptContrastIntakeGroup(selector: ContrastIntakeGroupSelector): Promise<ContrastIntakeGroupsResponse> {
+  const response = await fetch(`${API_BASE}/api/contrast-intake/groups/accept`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(selector),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to accept contrast intake group'));
+  }
+
+  return response.json();
+}
+
+export async function dismissContrastIntakeGroup(selector: ContrastIntakeGroupSelector): Promise<ContrastIntakeGroupsResponse> {
+  const response = await fetch(`${API_BASE}/api/contrast-intake/groups/dismiss`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(selector),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to dismiss contrast intake group'));
+  }
+
+  return response.json();
+}
+
+export async function createContrastClusterFromIntake(input: ContrastIntakeGroupSelector & {
+  resolvedCandidateWordId: string;
+  title: string;
+  note: string;
+  targetNuanceNote: string;
+  candidateNuanceNote: string;
+  prompt: ContrastIntakePromptInput;
+}): Promise<ContrastClusterContent> {
+  const response = await fetch(`${API_BASE}/api/contrast-intake/groups/create-cluster`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to create contrast cluster from intake'));
+  }
+
+  return response.json();
+}
+
+export async function addContrastIntakeToCluster(input: ContrastIntakeGroupSelector & {
+  clusterId: string;
+  resolvedCandidateWordId: string;
+  targetNuanceNote: string;
+  candidateNuanceNote: string;
+  prompt: ContrastIntakePromptInput;
+}): Promise<ContrastClusterContent> {
+  const response = await fetch(`${API_BASE}/api/contrast-intake/groups/add-to-cluster`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to add contrast intake to cluster'));
+  }
+
+  return response.json();
+}
+
+export async function addContrastPromptFromIntake(input: ContrastIntakeGroupSelector & {
+  clusterId: string;
+  prompt: ContrastIntakePromptInput;
+}): Promise<ContrastClusterContent> {
+  const response = await fetch(`${API_BASE}/api/contrast-intake/groups/add-prompt`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to add contrast prompt from intake'));
   }
 
   return response.json();

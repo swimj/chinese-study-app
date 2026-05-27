@@ -6,9 +6,11 @@ import { PersonalNotesEditorOverlay } from './features/session/PersonalNotesEdit
 import { useStudySession } from './features/session/useStudySession';
 import { usePriorityPageController } from './features/priority/usePriorityPageController';
 import { useClusterPageController } from './features/contrast/useClusterPageController';
+import { useIntakePageController } from './features/contrast/useIntakePageController';
 import { HomePage } from './pages/HomePage';
 import { PriorityPage } from './pages/PriorityPage';
 import { ClusterManagementPage } from './pages/ClusterManagementPage';
+import { IntakePage } from './pages/IntakePage';
 
 const APP_VERSION = __APP_VERSION__;
 
@@ -26,6 +28,11 @@ function App() {
     setError,
   });
   const clusterPage = useClusterPageController({
+    currentPage,
+    setCurrentPage,
+    setError,
+  });
+  const intakePage = useIntakePageController({
     currentPage,
     setCurrentPage,
     setError,
@@ -55,9 +62,11 @@ function App() {
       error={error}
       version={APP_VERSION}
       priorityPageLoading={priorityPage.isLoading}
+      intakePageLoading={intakePage.isLoading}
       clusterPageLoading={clusterPage.isLoading}
       onOpenHomePage={() => setCurrentPage('home')}
       onOpenPriorityPage={() => void priorityPage.openPage()}
+      onOpenIntakePage={() => void intakePage.openPage()}
       onOpenClusterPage={() => void clusterPage.openPage()}
     >
       {currentPage === 'home' ? (
@@ -87,6 +96,21 @@ function App() {
           bulkDismissSubmitting={priorityPage.bulkDismissSubmitting}
           onDismissFromTriage={(wordId) => void priorityPage.dismissFromTriage(wordId)}
           onBulkDismissFromTriage={(wordIds) => void priorityPage.bulkDismissFromTriage(wordIds)}
+        />
+      ) : currentPage === 'intake' ? (
+        <IntakePage
+          groups={intakePage.groups}
+          activeGroupIndex={intakePage.activeGroupIndex}
+          isSaving={intakePage.isSaving}
+          wordSearchResults={intakePage.wordSearchResults}
+          wordSearchLoading={intakePage.wordSearchLoading}
+          onSelectGroupIndex={intakePage.selectGroupIndex}
+          onSearchCandidateWords={intakePage.searchCandidateWords}
+          onAcceptGroup={intakePage.acceptGroup}
+          onDismissGroup={intakePage.dismissGroup}
+          onCreateCluster={intakePage.createCluster}
+          onAddToCluster={intakePage.addToCluster}
+          onAddPrompt={intakePage.addPrompt}
         />
       ) : (
         <ClusterManagementPage
