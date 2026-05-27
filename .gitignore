@@ -1,8 +1,10 @@
 node_modules
 /dist
+friend-bundles/
 .env
 .DS_Store
 data/*.db
 data/*.json
 data/french-dev/
 data/local-user-data/
+data/friend-mandarin-user-data/
