@@ -49,6 +49,7 @@ export type StudySessionPanelView =
   | 'not_started'
   | 'completed'
   | 'frozen_production'
+  | 'frozen_contrast'
   | 'unstudied_intro'
   | 'empty'
   | 'active_card';
@@ -58,6 +59,8 @@ export function getStudySessionPanelView({
   sessionCompletedWithSummary,
   productionAwaitingNext,
   frozenProductionCardPresent,
+  contrastAwaitingNext,
+  frozenContrastCardPresent,
   activeItemPresent,
   activeWordStatus,
   activeUnstudiedIntroComplete,
@@ -66,6 +69,8 @@ export function getStudySessionPanelView({
   sessionCompletedWithSummary: boolean;
   productionAwaitingNext: boolean;
   frozenProductionCardPresent: boolean;
+  contrastAwaitingNext: boolean;
+  frozenContrastCardPresent: boolean;
   activeItemPresent: boolean;
   activeWordStatus: Word['status'] | null;
   activeUnstudiedIntroComplete: boolean;
@@ -76,6 +81,10 @@ export function getStudySessionPanelView({
 
   if (productionAwaitingNext && frozenProductionCardPresent) {
     return 'frozen_production';
+  }
+
+  if (contrastAwaitingNext && frozenContrastCardPresent) {
+    return 'frozen_contrast';
   }
 
   if (sessionCompletedWithSummary) {

@@ -14,6 +14,7 @@ import type { SessionSummary } from '../features/session/session-summary';
 import type { ProductionMatchOptions } from '../study-profile';
 import {
   StudySessionPanel,
+  type FrozenContrastCard,
   type FrozenProductionCard,
 } from '../features/session/StudySessionPanel';
 import { HomeOverviewPanel } from './HomeOverviewPanel';
@@ -39,6 +40,8 @@ export function HomePage({
   studyManagementSubmitting,
   productionAwaitingNext,
   frozenProductionCard,
+  contrastAwaitingNext,
+  frozenContrastCard,
   activeAllMeanings,
   activeWordPersonalNotes,
   reviewInReinforcement,
@@ -67,6 +70,7 @@ export function HomePage({
   onEndSession,
   onUndoLastRating,
   onContinueAfterAutoForgot,
+  onContinueAfterAutoContrastForgot,
   onProductionContrastCandidateCheckedChange,
   onProductionContrastCandidateNoteChange,
   onDismissCurrentWord,
@@ -105,6 +109,8 @@ export function HomePage({
   studyManagementSubmitting: boolean;
   productionAwaitingNext: boolean;
   frozenProductionCard: FrozenProductionCard | null;
+  contrastAwaitingNext: boolean;
+  frozenContrastCard: FrozenContrastCard | null;
   activeAllMeanings: string[];
   activeWordPersonalNotes: string;
   reviewInReinforcement: boolean;
@@ -133,6 +139,7 @@ export function HomePage({
   onEndSession: () => void;
   onUndoLastRating: () => void;
   onContinueAfterAutoForgot: () => void;
+  onContinueAfterAutoContrastForgot: () => void;
   onProductionContrastCandidateCheckedChange: (checked: boolean) => void;
   onProductionContrastCandidateNoteChange: (value: string) => void;
   onDismissCurrentWord: () => void;
@@ -198,6 +205,8 @@ export function HomePage({
           studyManagementSubmitting={studyManagementSubmitting}
           productionAwaitingNext={productionAwaitingNext}
           frozenProductionCard={frozenProductionCard}
+          contrastAwaitingNext={contrastAwaitingNext}
+          frozenContrastCard={frozenContrastCard}
           activeAllMeanings={activeAllMeanings}
           activeWordPersonalNotes={activeWordPersonalNotes}
           reviewInReinforcement={reviewInReinforcement}
@@ -224,6 +233,7 @@ export function HomePage({
           onUndoLastRating={onUndoLastRating}
           onEndSession={onEndSession}
           onContinueAfterAutoForgot={onContinueAfterAutoForgot}
+          onContinueAfterAutoContrastForgot={onContinueAfterAutoContrastForgot}
           onProductionContrastCandidateCheckedChange={onProductionContrastCandidateCheckedChange}
           onProductionContrastCandidateNoteChange={onProductionContrastCandidateNoteChange}
           onDismissCurrentWord={onDismissCurrentWord}

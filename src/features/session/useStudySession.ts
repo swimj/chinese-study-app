@@ -72,12 +72,25 @@ import {
   applySessionCommit,
   type DeferredSessionCommit,
 } from './session-commit';
-import type { FrozenProductionCard } from './StudySessionPanel';
+import type { FrozenContrastCard, FrozenProductionCard } from './StudySessionPanel';
 
 type SessionUndoSnapshot = {
   sessionState: BucketSessionState;
   sessionSummary: SessionSummary | null;
-  restoreUi: 'revealed' | 'production-input';
+  ui: SessionUiSnapshot;
+};
+
+type SessionUiSnapshot = {
+  answerRevealed: boolean;
+  productionHanziInput: string;
+  productionHanziError: string | null;
+  productionContrastCandidateChecked: boolean;
+  productionContrastCandidateNote: string;
+  productionUiPhase: 'idle' | 'await-rating' | 'await-next';
+  frozenProductionCard: FrozenProductionCard | null;
+  contrastSelectedWordId: string | null;
+  contrastPracticeMore: boolean;
+  frozenContrastCard: FrozenContrastCard | null;
 };
 
 type PendingProductionMistakeCapture = {
@@ -111,6 +124,8 @@ export type StudySessionHomePageProps = {
   studyManagementSubmitting: boolean;
   productionAwaitingNext: boolean;
   frozenProductionCard: FrozenProductionCard | null;
+  contrastAwaitingNext: boolean;
+  frozenContrastCard: FrozenContrastCard | null;
   activeAllMeanings: string[];
   activeWordPersonalNotes: string;
   reviewInReinforcement: boolean;
@@ -139,6 +154,7 @@ export type StudySessionHomePageProps = {
   onEndSession: () => void;
   onUndoLastRating: () => void;
   onContinueAfterAutoForgot: () => void;
+  onContinueAfterAutoContrastForgot: () => void;
   onProductionContrastCandidateCheckedChange: (checked: boolean) => void;
   onProductionContrastCandidateNoteChange: (value: string) => void;
   onDismissCurrentWord: () => void;
@@ -211,6 +227,7 @@ export function useStudySession({
   const [contrastSelectedWordId, setContrastSelectedWordId] = useState<string | null>(null);
   const [contrastPracticeMore, setContrastPracticeMore] = useState(false);
   const [frozenProductionCard, setFrozenProductionCard] = useState<FrozenProductionCard | null>(null);
+  const [frozenContrastCard, setFrozenContrastCard] = useState<FrozenContrastCard | null>(null);
   const [productionMatchOptions, setProductionMatchOptions] =
     useState<ProductionMatchOptions>(() => readStoredProductionMatchOptions());
   const personalNotesEditorInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -280,9 +297,13 @@ export function useStudySession({
   });
   const productionRequiresHanziInput = isProductionSessionItem(activeItem);
   const contrastSelectionActive = activeItem?.actionKind === 'contrast_selection';
-  const contrastAwaitingRating = contrastSelectionActive && contrastSelectedWordId !== null;
+  const contrastAwaitingRating =
+    contrastSelectionActive &&
+    contrastSelectedWordId !== null &&
+    contrastSelectedWordId === activeItem?.contrastSelection?.promptTargetWordId;
   const productionAwaitingRating = productionRequiresHanziInput && productionUiPhase === 'await-rating';
   const productionAwaitingNext = productionUiPhase === 'await-next' && frozenProductionCard !== null;
+  const contrastAwaitingNext = frozenContrastCard !== null;
   const activeRatingOptions = getActiveRatingOptions({
     actionKind: activeItem?.actionKind,
     wordStatus: activeWord?.status,
@@ -343,6 +364,7 @@ export function useStudySession({
   function resetContrastUi() {
     setContrastSelectedWordId(null);
     setContrastPracticeMore(false);
+    setFrozenContrastCard(null);
   }
 
   function resetAnswerAndProductionUi() {
@@ -366,6 +388,34 @@ export function useStudySession({
     resetPersonalNotesEditorUi();
     resetProductionUi();
     resetContrastUi();
+  }
+
+  function createSessionUiSnapshot(): SessionUiSnapshot {
+    return {
+      answerRevealed,
+      productionHanziInput,
+      productionHanziError,
+      productionContrastCandidateChecked,
+      productionContrastCandidateNote,
+      productionUiPhase,
+      frozenProductionCard,
+      contrastSelectedWordId,
+      contrastPracticeMore,
+      frozenContrastCard,
+    };
+  }
+
+  function restoreSessionUiSnapshot(snapshot: SessionUiSnapshot) {
+    setAnswerRevealed(snapshot.answerRevealed);
+    setProductionHanziInput(snapshot.productionHanziInput);
+    setProductionHanziError(snapshot.productionHanziError);
+    setProductionContrastCandidateChecked(snapshot.productionContrastCandidateChecked);
+    setProductionContrastCandidateNote(snapshot.productionContrastCandidateNote);
+    setProductionUiPhase(snapshot.productionUiPhase);
+    setFrozenProductionCard(snapshot.frozenProductionCard);
+    setContrastSelectedWordId(snapshot.contrastSelectedWordId);
+    setContrastPracticeMore(snapshot.contrastPracticeMore);
+    setFrozenContrastCard(snapshot.frozenContrastCard);
   }
 
   async function applyPendingUndoClosure() {
@@ -474,8 +524,8 @@ export function useStudySession({
 
   async function handleRate(
     rating: ReviewRating,
-    options?: {
-      restoreUi?: SessionUndoSnapshot['restoreUi'];
+    _options?: {
+      restoreUi?: 'revealed' | 'production-input';
     },
   ) {
     if (!sessionState || !activeItem || !activeWord) {
@@ -497,7 +547,7 @@ export function useStudySession({
       setLastUndoSnapshot({
         sessionState: cloneBucketSessionState(sessionState),
         sessionSummary,
-        restoreUi: options?.restoreUi ?? 'revealed',
+        ui: createSessionUiSnapshot(),
       });
 
       const transition =
@@ -505,7 +555,7 @@ export function useStudySession({
           ? rateActiveContrastSelectionUnit({
               state: sessionState,
               selectedWordId: contrastSelectedWordId ?? '',
-              rating: rating === 'forgot' ? 'hard' : rating,
+              rating,
               practiceMore: contrastPracticeMore,
             })
           : rateActiveSessionUnit(sessionState, rating);
@@ -556,7 +606,7 @@ export function useStudySession({
       setLastUndoSnapshot({
         sessionState: cloneBucketSessionState(sessionState),
         sessionSummary,
-        restoreUi: 'production-input',
+        ui: createSessionUiSnapshot(),
       });
 
       const expectedHanzi = normalizeProductionAnswer(activeWord.hanzi, productionMatchOptions);
@@ -639,13 +689,68 @@ export function useStudySession({
     setProductionMatchOptions(resetStoredProductionMatchOptions());
   }
 
-  function handleSelectContrastChoice(wordId: string) {
+  async function handleSelectContrastChoice(wordId: string) {
     if (!activeItem || activeItem.actionKind !== 'contrast_selection' || answerRevealed || personalNotesEditorOpen) {
       return;
     }
 
     setContrastSelectedWordId(wordId);
     setAnswerRevealed(true);
+
+    if (
+      !sessionState ||
+      !activeWord ||
+      !activeItem.contrastSelection ||
+      wordId === activeItem.contrastSelection.promptTargetWordId
+    ) {
+      return;
+    }
+
+    setSubmittingRating('forgot');
+    setError(null);
+
+    try {
+      await applyPendingUndoClosure();
+
+      setLastUndoSnapshot({
+        sessionState: cloneBucketSessionState(sessionState),
+        sessionSummary,
+        ui: createSessionUiSnapshot(),
+      });
+
+      const transition = rateActiveContrastSelectionUnit({
+        state: sessionState,
+        selectedWordId: wordId,
+        rating: 'forgot',
+        practiceMore: false,
+      });
+      setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
+      setSessionState(transition.state);
+      setSessionSummary((current) =>
+        updateSessionSummaryForRating({
+          summary: current,
+          transition,
+          rating: 'forgot',
+          activeWord,
+          activeItem,
+          previousPhase: sessionState.phase,
+        }),
+      );
+      setFrozenContrastCard({
+        item: activeItem,
+        selectedWordId: wordId,
+        reviewedCount,
+        queuedCount: getBucketSessionTotalCount(sessionState),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setSubmittingRating(null);
+    }
+  }
+
+  function handleContinueAfterAutoContrastForgot() {
+    resetAnswerAndProductionUi();
   }
 
   function handleUndoLastRating() {
@@ -655,8 +760,7 @@ export function useStudySession({
 
     setSessionState(cloneBucketSessionState(lastUndoSnapshot.sessionState));
     setSessionSummary(lastUndoSnapshot.sessionSummary);
-    setAnswerRevealed(lastUndoSnapshot.restoreUi === 'revealed');
-    resetProductionUi();
+    restoreSessionUiSnapshot(lastUndoSnapshot.ui);
     setPendingSessionCommit(null);
     setPendingProductionMistakeCapture(null);
     setLastUndoSnapshot(null);
@@ -1031,6 +1135,11 @@ export function useStudySession({
           return;
         }
 
+        if (contrastAwaitingNext) {
+          handleContinueAfterAutoContrastForgot();
+          return;
+        }
+
         if (activeWord?.status === 'unstudied' && !activeUnstudiedProgress?.introComplete) {
           handleBeginUnstudiedDrill(activeWord.id);
           return;
@@ -1063,6 +1172,10 @@ export function useStudySession({
         return;
       }
 
+      if (productionAwaitingNext || contrastAwaitingNext) {
+        return;
+      }
+
       if (!answerRevealed) {
         return;
       }
@@ -1091,6 +1204,7 @@ export function useStudySession({
     activeWord,
     activeWordPersonalNotes,
     answerRevealed,
+    contrastAwaitingNext,
     contrastSelectionActive,
     productionAwaitingNext,
     productionContrastCandidateChecked,
@@ -1128,6 +1242,8 @@ export function useStudySession({
       studyManagementSubmitting,
       productionAwaitingNext,
       frozenProductionCard,
+      contrastAwaitingNext,
+      frozenContrastCard,
       activeAllMeanings,
       activeWordPersonalNotes,
       reviewInReinforcement,
@@ -1156,6 +1272,7 @@ export function useStudySession({
       onEndSession: () => void handleEndSession(),
       onUndoLastRating: handleUndoLastRating,
       onContinueAfterAutoForgot: handleContinueAfterAutoForgot,
+      onContinueAfterAutoContrastForgot: handleContinueAfterAutoContrastForgot,
       onProductionContrastCandidateCheckedChange: setProductionContrastCandidateChecked,
       onProductionContrastCandidateNoteChange: setProductionContrastCandidateNote,
       onDismissCurrentWord: () => void handleDismissCurrentWord(),

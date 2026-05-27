@@ -410,6 +410,62 @@ describe('bucket session state covering contract', () => {
     assert.equal(canceled.reviewProgress[lapsedReview.sessionActionId], undefined);
     assert.equal(getBucketSessionUnitCounts(canceled).review, 1);
   });
+
+  test('contrast selection requires forgot for wrong choices and pass ratings for correct choices', async () => {
+    const {
+      createBucketSessionState,
+      markActiveSessionUnitStarted,
+      rateActiveContrastSelectionUnit,
+    } = await loadBucketSessionStateApi();
+    const item = createContrastStudyItem();
+    const started = markActiveSessionUnitStarted(createBucketSessionState({
+      buckets: {
+        review: [item],
+        learning: [],
+        unstudied: [],
+      },
+      sessionId: testSessionId,
+      schedulerPolicy: {
+        bucketWeights: { review: 1, learning: 0, unstudied: 0 },
+      },
+      seed: 1,
+    }));
+
+    assert.throws(
+      () => rateActiveContrastSelectionUnit({
+        state: started,
+        selectedWordId: 'contrast-distractor',
+        rating: 'good',
+        practiceMore: false,
+      }),
+      /incorrect contrast selection must be rated forgot/,
+    );
+    assert.throws(
+      () => rateActiveContrastSelectionUnit({
+        state: started,
+        selectedWordId: 'contrast-target',
+        rating: 'forgot',
+        practiceMore: false,
+      }),
+      /correct contrast selection must use a passing rating/,
+    );
+
+    const result = rateActiveContrastSelectionUnit({
+      state: started,
+      selectedWordId: 'contrast-distractor',
+      rating: 'forgot',
+      practiceMore: false,
+    });
+
+    assert.equal(result.commit.type, 'commit-contrast-selection-action-session');
+    if (result.commit.type !== 'commit-contrast-selection-action-session') {
+      throw new Error('Expected contrast selection commit');
+    }
+    assert.equal(result.commit.rating, 'forgot');
+    assert.equal(result.commit.event.outcome, 'incorrect');
+    assert.equal(result.commit.event.response, 'contrast-distractor');
+    assert.equal(result.commit.promptTargetWordId, 'contrast-target');
+  });
 });
 
 type BucketSessionActiveUnit =
@@ -432,7 +488,13 @@ type BucketSessionTransitionResult = {
   commit:
     | { type: 'none' }
     | { type: 'commit-learning-word-session'; wordId: string; success: boolean }
-    | { type: 'commit-unstudied-word-session'; wordId: string };
+    | { type: 'commit-unstudied-word-session'; wordId: string }
+    | {
+        type: 'commit-contrast-selection-action-session';
+        rating: ReviewRating;
+        event: { outcome: 'correct' | 'incorrect'; response: string | null };
+        promptTargetWordId: string;
+      };
 };
 
 type BucketSessionStateApi = {
@@ -475,6 +537,12 @@ type BucketSessionStateApi = {
     unstudied: number;
   };
   markActiveSessionUnitStarted: (state: unknown) => unknown;
+  rateActiveContrastSelectionUnit: (input: {
+    state: unknown;
+    selectedWordId: string;
+    rating: ReviewRating;
+    practiceMore: boolean;
+  }) => BucketSessionTransitionResult;
   rateActiveSessionUnit: (state: unknown, rating: ReviewRating) => BucketSessionTransitionResult;
 };
 
@@ -496,6 +564,7 @@ async function loadBucketSessionStateApi(): Promise<BucketSessionStateApi> {
     'getBucketSessionProgress',
     'getBucketSessionUnitCounts',
     'markActiveSessionUnitStarted',
+    'rateActiveContrastSelectionUnit',
     'rateActiveSessionUnit',
   ];
 
@@ -522,7 +591,43 @@ function createReviewStudyItem(wordId: string): SessionStudyItem {
     targetWordId: wordId,
     sampledSkillIds: ['recognition'],
     contentRef: null,
+    intervalHours: 24,
     word,
+    contrastSelection: null,
+  };
+}
+
+function createContrastStudyItem(): SessionStudyItem {
+  const scheduledWord = createWord({ id: 'contrast-scheduled', status: 'review', hanzi: '靠近' });
+  const targetWord = createWord({ id: 'contrast-target', status: 'review', hanzi: '临近' });
+  const distractorWord = createWord({ id: 'contrast-distractor', status: 'review', hanzi: '靠近' });
+
+  return {
+    sessionActionId: 'review/contrast-scheduled/contextual_selection',
+    actionKind: 'contrast_selection',
+    targetWordId: scheduledWord.id,
+    sampledSkillIds: ['contextual_selection'],
+    contentRef: { type: 'contrast_prompt', id: 'contrast-prompt' },
+    intervalHours: 24,
+    word: scheduledWord,
+    contrastSelection: {
+      clusterId: 'contrast-cluster',
+      clusterTitle: '靠近 / 临近',
+      clusterNote: '',
+      scheduledWordId: scheduledWord.id,
+      promptTargetWordId: targetWord.id,
+      prompt: {
+        id: 'contrast-prompt',
+        clusterId: 'contrast-cluster',
+        targetWordId: targetWord.id,
+        promptText: '春节____，火车票开始紧张。',
+        explanation: '',
+      },
+      choices: [
+        { word: distractorWord, nuanceNote: 'Physical nearness.' },
+        { word: targetWord, nuanceNote: 'Approaching in time.' },
+      ],
+    },
   };
 }
 

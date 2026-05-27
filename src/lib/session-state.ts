@@ -40,7 +40,7 @@ export type ReviewActionProgress = {
 export type SessionPhase = 'active' | 'draining' | 'completed';
 
 type ReviewStudySkillId = Extract<StudySkillId, 'recognition' | 'production'>;
-type ContrastSelectionRating = Exclude<ReviewRating, 'forgot'>;
+type ContrastSelectionRating = ReviewRating;
 
 export type BucketSessionState = {
   sessionId: string;
@@ -251,6 +251,14 @@ export function rateActiveContrastSelectionUnit({
   const choiceWordIds = contrastSelection.choices.map((choice) => choice.word.id);
   if (!choiceWordIds.includes(selectedWordId)) {
     throw new Error('Session invariant violated: selected contrast choice is not part of the active contrast item.');
+  }
+
+  const selectedCorrect = selectedWordId === contrastSelection.promptTargetWordId;
+  if (selectedCorrect && rating === 'forgot') {
+    throw new Error('Session invariant violated: correct contrast selection must use a passing rating.');
+  }
+  if (!selectedCorrect && rating !== 'forgot') {
+    throw new Error('Session invariant violated: incorrect contrast selection must be rated forgot.');
   }
 
   const event = buildContrastSelectionAttemptEvent({
