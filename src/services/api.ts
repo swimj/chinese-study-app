@@ -194,6 +194,7 @@ export async function dismissContrastIntakeGroup(selector: ContrastIntakeGroupSe
 
 export async function createContrastClusterFromIntake(input: ContrastIntakeGroupSelector & {
   resolvedCandidateWordId: string;
+  extraMemberWordIds?: string[];
   title: string;
   note: string;
   targetNuanceNote: string;
@@ -218,6 +219,7 @@ export async function createContrastClusterFromIntake(input: ContrastIntakeGroup
 export async function addContrastIntakeToCluster(input: ContrastIntakeGroupSelector & {
   clusterId: string;
   resolvedCandidateWordId: string;
+  extraMemberWordIds?: string[];
   targetNuanceNote: string;
   candidateNuanceNote: string;
   prompt: ContrastIntakePromptInput;

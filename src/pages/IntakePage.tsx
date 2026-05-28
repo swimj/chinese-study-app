@@ -41,6 +41,7 @@ export function IntakePage({
   onDismissGroup: (selector: IntakeGroupSelector) => Promise<void>;
   onCreateCluster: (input: IntakeGroupSelector & {
     resolvedCandidateWordId: string;
+    extraMemberWordIds?: string[];
     title: string;
     note: string;
     targetNuanceNote: string;
@@ -50,6 +51,7 @@ export function IntakePage({
   onAddToCluster: (input: IntakeGroupSelector & {
     clusterId: string;
     resolvedCandidateWordId: string;
+    extraMemberWordIds?: string[];
     targetNuanceNote: string;
     candidateNuanceNote: string;
     prompt: PromptFormState;
@@ -152,6 +154,7 @@ function IntakeGroupDetail({
   onDismissGroup: (selector: IntakeGroupSelector) => Promise<void>;
   onCreateCluster: (input: IntakeGroupSelector & {
     resolvedCandidateWordId: string;
+    extraMemberWordIds?: string[];
     title: string;
     note: string;
     targetNuanceNote: string;
@@ -161,6 +164,7 @@ function IntakeGroupDetail({
   onAddToCluster: (input: IntakeGroupSelector & {
     clusterId: string;
     resolvedCandidateWordId: string;
+    extraMemberWordIds?: string[];
     targetNuanceNote: string;
     candidateNuanceNote: string;
     prompt: PromptFormState;
@@ -182,6 +186,7 @@ function IntakeGroupDetail({
   const [selectedClusterId, setSelectedClusterId] = useState('');
   const [promptForm, setPromptForm] = useState<PromptFormState>(emptyPromptForm);
   const [searchAttempted, setSearchAttempted] = useState(false);
+  const [extraMemberWords, setExtraMemberWords] = useState<Word[]>([]);
 
   const selector = useMemo(() => ({
     targetWordId: group.targetWordId,
@@ -193,18 +198,27 @@ function IntakeGroupDetail({
   const expandableClusters = resolvedWord
     ? group.relevantClusters.filter((cluster) => getMissingExpansionWord(group, resolvedWord, cluster) !== null)
     : [];
-  const canCreateSet = !singleWordIntake;
+  const canCreateSet = true;
   const canExpandSet = expandableClusters.length > 0;
   const canAddPrompt = sharedClusters.length > 0;
-  const selectedClusterMemberIds = new Set(selectedCluster?.members.map((member) => member.wordId) ?? []);
   const expansionWord = selectedCluster && resolvedWord ? getMissingExpansionWord(group, resolvedWord, selectedCluster) : null;
-  const canSubmitContent = Boolean((singleWordIntake || resolvedWord) && promptForm.targetWordId && promptForm.promptText.trim().length > 0);
+  const candidateRequired = mode === 'create' || mode === 'existing';
+  const canSubmitContent = Boolean((!candidateRequired || resolvedWord) && promptForm.targetWordId && promptForm.promptText.trim().length > 0);
   const canAcceptCovered = group.coverage.usablePromptCount > 0;
+  const selectedWordIds = new Set([
+    group.targetWordId,
+    resolvedWord?.id,
+    ...extraMemberWords.map((word) => word.id),
+  ].filter((wordId): wordId is string => Boolean(wordId)));
+  const candidateSearchResults = wordSearchResults.filter((word) =>
+    word.id === resolvedWord?.id || (!extraMemberWords.some((member) => member.id === word.id) && word.id !== group.targetWordId),
+  );
+  const extraMemberSearchResults = wordSearchResults.filter((word) => !selectedWordIds.has(word.id));
 
   useEffect(() => {
     setResolvedWord(group.matchedWord);
-    setCandidateQuery(group.candidateText ?? '');
-    setMode(group.coverage.hasSharedCluster ? 'prompt' : singleWordIntake ? 'prompt' : 'create');
+    setCandidateQuery(group.matchedWord ? '' : group.candidateText ?? '');
+    setMode(group.coverage.hasSharedCluster ? 'prompt' : 'create');
     setClusterTitle(
       group.matchedWord || group.candidateText
         ? `${group.targetWord.hanzi} / ${group.matchedWord?.hanzi ?? group.candidateText ?? ''}`.trim()
@@ -219,6 +233,7 @@ function IntakeGroupDetail({
       targetWordId: group.targetWordId,
     });
     setSearchAttempted(false);
+    setExtraMemberWords([]);
   }, [group]);
 
   useEffect(() => {
@@ -283,6 +298,7 @@ function IntakeGroupDetail({
       note: clusterNote,
       targetNuanceNote,
       candidateNuanceNote,
+      extraMemberWordIds: extraMemberWords.map((word) => word.id),
       prompt: promptForm,
     });
   }
@@ -299,6 +315,7 @@ function IntakeGroupDetail({
       resolvedCandidateWordId: resolvedWord.id,
       targetNuanceNote,
       candidateNuanceNote,
+      extraMemberWordIds: extraMemberWords.map((word) => word.id),
       prompt: promptForm,
     });
   }
@@ -314,6 +331,16 @@ function IntakeGroupDetail({
       clusterId: selectedClusterId,
       prompt: promptForm,
     });
+  }
+
+  function removeExtraMemberWord(wordId: string) {
+    setExtraMemberWords((current) => current.filter((word) => word.id !== wordId));
+    if (promptForm.targetWordId === wordId) {
+      setPromptForm((current) => ({
+        ...current,
+        targetWordId: group.targetWordId,
+      }));
+    }
   }
 
   return (
@@ -335,48 +362,44 @@ function IntakeGroupDetail({
 
         <div className={singleWordIntake ? 'intake-word-single' : 'intake-word-pair'}>
           <WordCard title="Target" word={group.targetWord} />
-          {!singleWordIntake ? (
-            <WordCard title="Candidate" word={resolvedWord} fallback={group.candidateText ?? 'Unresolved'} />
-          ) : null}
+          <WordCard title={singleWordIntake ? 'First sibling' : 'Candidate'} word={resolvedWord} fallback={group.candidateText ?? 'Unresolved'} />
         </div>
 
-        {!group.matchedWord && !singleWordIntake ? (
-          <form className="intake-search-form" onSubmit={(event) => void handleCandidateSearch(event)}>
-            <label>
-              <span>Resolve candidate</span>
-              <input
-                type="text"
-                value={candidateQuery}
-                onChange={(event) => setCandidateQuery(event.target.value)}
-                disabled={isSaving || wordSearchLoading}
-              />
-            </label>
-            <button type="submit" disabled={isSaving || wordSearchLoading || candidateQuery.trim().length === 0}>
-              {wordSearchLoading ? 'Searching...' : 'Search'}
-            </button>
-            {wordSearchResults.length > 0 ? (
-              <div className="intake-search-results">
-                {wordSearchResults.map((word) => (
-                  <button
-                    key={word.id}
-                    type="button"
-                    className={resolvedWord?.id === word.id ? 'cluster-list-item active' : 'cluster-list-item'}
-                    onClick={() => {
-                      setResolvedWord(word);
-                      setClusterTitle(`${group.targetWord.hanzi} / ${word.hanzi}`);
-                    }}
-                    disabled={isSaving}
-                  >
-                    <span>{word.hanzi}</span>
-                    <small>{word.pinyin} · {word.meaning}</small>
-                  </button>
-                ))}
-              </div>
-            ) : searchAttempted && !wordSearchLoading ? (
-              <p className="notes">No matching words found.</p>
-            ) : null}
-          </form>
-        ) : null}
+        <form className="intake-search-form" onSubmit={(event) => void handleCandidateSearch(event)}>
+          <label>
+            <span>{resolvedWord ? 'Find additional word' : singleWordIntake ? 'Find first sibling' : 'Resolve candidate'}</span>
+            <input
+              type="text"
+              value={candidateQuery}
+              onChange={(event) => setCandidateQuery(event.target.value)}
+              disabled={isSaving || wordSearchLoading}
+            />
+          </label>
+          <button type="submit" disabled={isSaving || wordSearchLoading || candidateQuery.trim().length === 0}>
+            {wordSearchLoading ? 'Searching...' : 'Search'}
+          </button>
+          {!resolvedWord && candidateSearchResults.length > 0 ? (
+            <div className="intake-search-results">
+              {candidateSearchResults.map((word) => (
+                <button
+                  key={word.id}
+                  type="button"
+                  className="cluster-list-item"
+                  onClick={() => {
+                    setResolvedWord(word);
+                    setClusterTitle(`${group.targetWord.hanzi} / ${word.hanzi}`);
+                  }}
+                  disabled={isSaving}
+                >
+                  <span>{word.hanzi}</span>
+                  <small>{word.pinyin} · {word.meaning}</small>
+                </button>
+              ))}
+            </div>
+          ) : searchAttempted && !wordSearchLoading && !resolvedWord ? (
+            <p className="notes">No matching words found.</p>
+          ) : null}
+        </form>
       </section>
 
       <section className="panel cluster-detail-panel">
@@ -449,17 +472,29 @@ function IntakeGroupDetail({
             <TextInput label="Title" value={clusterTitle} disabled={isSaving} onChange={setClusterTitle} />
             <TextareaInput label="Set note" value={clusterNote} disabled={isSaving} rows={2} onChange={setClusterNote} />
             <TextareaInput label={`${group.targetWord.hanzi} nuance`} value={targetNuanceNote} disabled={isSaving} rows={2} onChange={setTargetNuanceNote} />
-            {!singleWordIntake ? (
-              <TextareaInput label={`${resolvedWord?.hanzi ?? 'Candidate'} nuance`} value={candidateNuanceNote} disabled={isSaving} rows={2} onChange={setCandidateNuanceNote} />
-            ) : null}
-            <PromptFields
-              group={group}
-              resolvedWord={singleWordIntake ? null : resolvedWord}
-              selectedCluster={null}
-              promptForm={promptForm}
-              disabled={isSaving}
-              onChange={setPromptForm}
-            />
+            {resolvedWord ? (
+              <>
+                <TextareaInput label={`${resolvedWord.hanzi} nuance`} value={candidateNuanceNote} disabled={isSaving} rows={2} onChange={setCandidateNuanceNote} />
+                <AdditionalMembersControl
+                  words={extraMemberWords}
+                  searchResults={extraMemberSearchResults}
+                  disabled={isSaving}
+                  onAdd={(word) => setExtraMemberWords((current) => current.some((member) => member.id === word.id) ? current : [...current, word])}
+                  onRemove={removeExtraMemberWord}
+                />
+                <PromptFields
+                  group={group}
+                  resolvedWord={resolvedWord}
+                  extraMemberWords={extraMemberWords}
+                  selectedCluster={null}
+                  promptForm={promptForm}
+                  disabled={isSaving}
+                  onChange={setPromptForm}
+                />
+              </>
+            ) : (
+              <p className="notes">Search and select a sibling to start the set.</p>
+            )}
             <button type="submit" disabled={isSaving || !resolvedWord || clusterTitle.trim().length === 0 || !canSubmitContent}>
               {isSaving ? 'Saving...' : 'Create set'}
             </button>
@@ -481,9 +516,17 @@ function IntakeGroupDetail({
                 onChange={expansionWord.id === group.targetWordId ? setTargetNuanceNote : setCandidateNuanceNote}
               />
             ) : null}
+            <AdditionalMembersControl
+              words={extraMemberWords}
+              searchResults={extraMemberSearchResults}
+              disabled={isSaving}
+              onAdd={(word) => setExtraMemberWords((current) => current.some((member) => member.id === word.id) ? current : [...current, word])}
+              onRemove={removeExtraMemberWord}
+            />
             <PromptFields
               group={group}
-              resolvedWord={singleWordIntake ? null : resolvedWord}
+              resolvedWord={resolvedWord}
+              extraMemberWords={extraMemberWords}
               selectedCluster={null}
               targetOverride={expansionWord}
               promptForm={promptForm}
@@ -505,6 +548,7 @@ function IntakeGroupDetail({
             <PromptFields
               group={group}
               resolvedWord={singleWordIntake ? null : resolvedWord}
+              extraMemberWords={[]}
               selectedCluster={selectedCluster}
               promptForm={promptForm}
               disabled={isSaving}
@@ -611,9 +655,52 @@ function ClusterSelect({
   );
 }
 
+function AdditionalMembersControl({
+  words,
+  searchResults,
+  disabled,
+  onAdd,
+  onRemove,
+}: {
+  words: Word[];
+  searchResults: Word[];
+  disabled: boolean;
+  onAdd: (word: Word) => void;
+  onRemove: (wordId: string) => void;
+}) {
+  return (
+    <div className="cluster-prompt-form">
+      <span className="prompt-label">Additional words</span>
+      {words.length > 0 ? (
+        <div className="intake-search-results">
+          {words.map((word) => (
+            <button key={word.id} type="button" className="cluster-list-item active" disabled={disabled} onClick={() => onRemove(word.id)}>
+              <span>{word.hanzi}</span>
+              <small>{word.pinyin} · {word.meaning}</small>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="notes">Use the search results above to add optional cluster alternatives.</p>
+      )}
+      {searchResults.length > 0 ? (
+        <div className="intake-search-results">
+          {searchResults.map((word) => (
+            <button key={word.id} type="button" className="cluster-list-item" disabled={disabled} onClick={() => onAdd(word)}>
+              <span>Add {word.hanzi}</span>
+              <small>{word.pinyin} · {word.meaning}</small>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function PromptFields({
   group,
   resolvedWord,
+  extraMemberWords,
   selectedCluster,
   targetOverride,
   promptForm,
@@ -622,6 +709,7 @@ function PromptFields({
 }: {
   group: ContrastIntakeGroup;
   resolvedWord: Word | null;
+  extraMemberWords: Word[];
   selectedCluster: ContrastClusterContent | null;
   targetOverride?: Word | null;
   promptForm: PromptFormState;
@@ -634,6 +722,7 @@ function PromptFields({
         ...(selectedCluster?.members.map((member) => member.word) ?? []),
         group.targetWord,
         resolvedWord,
+        ...extraMemberWords,
       ].filter((word): word is Word => Boolean(word));
   const uniqueTargetOptions = [...new Map(targetOptions.map((word) => [word.id, word])).values()];
 

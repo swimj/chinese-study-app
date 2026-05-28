@@ -44,6 +44,7 @@ export type IntakePageController = {
   dismissGroup: (selector: IntakeGroupSelector) => Promise<void>;
   createCluster: (input: IntakeGroupSelector & {
     resolvedCandidateWordId: string;
+    extraMemberWordIds?: string[];
     title: string;
     note: string;
     targetNuanceNote: string;
@@ -53,6 +54,7 @@ export type IntakePageController = {
   addToCluster: (input: IntakeGroupSelector & {
     clusterId: string;
     resolvedCandidateWordId: string;
+    extraMemberWordIds?: string[];
     targetNuanceNote: string;
     candidateNuanceNote: string;
     prompt: IntakePromptInput;

@@ -240,6 +240,42 @@ describe('contextual selection intake', { concurrency: false }, () => {
     assert.deepEqual(dbModule.getContrastCandidateIntake().map((row) => row.status), ['open', 'open']);
   });
 
+  test('creates cluster content from single-word intake with selected siblings', () => {
+    insertWord({ id: 'target-zhuangzhong', hanzi: '庄重' });
+    insertWord({ id: 'sibling-zhengzhong', hanzi: '郑重' });
+    insertWord({ id: 'sibling-yansu', hanzi: '严肃' });
+    insertIntake({
+      id: 'single-zhuangzhong',
+      createdAt: '2026-05-27T00:00:00.000Z',
+      targetWordId: 'target-zhuangzhong',
+      candidateText: null,
+      matchedWordId: null,
+    });
+
+    const cluster = dbModule.createContrastClusterFromIntake({
+      targetWordId: 'target-zhuangzhong',
+      candidateText: null,
+      matchedWordId: null,
+      resolvedCandidateWordId: 'sibling-zhengzhong',
+      extraMemberWordIds: ['sibling-yansu'],
+      title: '庄重 / 郑重 / 严肃',
+      prompt: {
+        targetWordId: 'target-zhuangzhong',
+        promptText: '参加典礼时，她选择了一套____的衣服。',
+        explanation: 'Ceremonial dress can be 庄重.',
+      },
+    });
+
+    assert.deepEqual(cluster.members.map((member) => member.wordId), [
+      'target-zhuangzhong',
+      'sibling-zhengzhong',
+      'sibling-yansu',
+    ]);
+    assert.equal(cluster.prompts.length, 1);
+    assert.deepEqual(dbModule.getContrastIntakeGroups().groups[0]?.coverage.sharedClusterIds, [cluster.id]);
+    assert.equal(dbModule.getContrastCandidateIntake()[0]?.status, 'open');
+  });
+
   test('adds missing members and prompt to an existing cluster without accepting intake', () => {
     insertWord({ id: 'target-kaocha', hanzi: '考察' });
     insertWord({ id: 'candidate-kaocha', hanzi: '考查' });
@@ -275,6 +311,44 @@ describe('contextual selection intake', { concurrency: false }, () => {
     assert.equal(cluster.prompts[0]?.targetWordId, 'candidate-kaocha');
     assert.equal(dbModule.getContrastIntakeGroups().groups.length, 1);
     assert.equal(dbModule.getContrastCandidateIntake()[0]?.status, 'open');
+  });
+
+  test('adds extra selected members when resolving intake into an existing cluster', () => {
+    insertWord({ id: 'target-kaocha', hanzi: '考察' });
+    insertWord({ id: 'candidate-kaocha', hanzi: '考查' });
+    insertWord({ id: 'extra-kaoshi', hanzi: '考试' });
+    insertWord({ id: 'anchor-kaohe', hanzi: '考核' });
+    insertIntake({
+      id: 'intake-kaocha',
+      createdAt: '2026-05-27T00:00:00.000Z',
+      targetWordId: 'target-kaocha',
+      candidateText: '考查',
+      matchedWordId: 'candidate-kaocha',
+    });
+    dbModule.createContrastCluster({ id: 'cluster-existing', title: '考 group' });
+    dbModule.addContrastClusterMember({ clusterId: 'cluster-existing', wordId: 'anchor-kaohe' });
+
+    const cluster = dbModule.addContrastIntakeToCluster({
+      targetWordId: 'target-kaocha',
+      candidateText: '考查',
+      matchedWordId: 'candidate-kaocha',
+      clusterId: 'cluster-existing',
+      resolvedCandidateWordId: 'candidate-kaocha',
+      extraMemberWordIds: ['extra-kaoshi'],
+      prompt: {
+        targetWordId: 'extra-kaoshi',
+        promptText: '期末____快到了。',
+        explanation: '',
+      },
+    });
+
+    assert.deepEqual(cluster.members.map((member) => member.wordId), [
+      'target-kaocha',
+      'candidate-kaocha',
+      'extra-kaoshi',
+      'anchor-kaohe',
+    ]);
+    assert.equal(cluster.prompts[0]?.targetWordId, 'extra-kaoshi');
   });
 
   test('rejects prompt-only resolution when target is not a cluster member', () => {

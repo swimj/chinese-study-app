@@ -311,6 +311,7 @@ type ContrastIntakePromptInput = {
 
 type CreateContrastIntakeClusterInput = ContrastIntakeGroupSelector & {
   resolvedCandidateWordId: string;
+  extraMemberWordIds?: string[];
   title: string;
   note?: string;
   targetNuanceNote?: string;
@@ -321,6 +322,7 @@ type CreateContrastIntakeClusterInput = ContrastIntakeGroupSelector & {
 type AddContrastIntakeToClusterInput = ContrastIntakeGroupSelector & {
   clusterId: string;
   resolvedCandidateWordId: string;
+  extraMemberWordIds?: string[];
   targetNuanceNote?: string;
   candidateNuanceNote?: string;
   prompt: ContrastIntakePromptInput;
@@ -1581,6 +1583,13 @@ export function createContrastClusterFromIntake(input: CreateContrastIntakeClust
       nuanceNote: normalizedInput.candidateNuanceNote,
       displayOrder: 2,
     });
+    normalizedInput.extraMemberWordIds?.forEach((wordId, index) => {
+      addContrastClusterMember({
+        clusterId: cluster.id,
+        wordId,
+        displayOrder: index + 3,
+      });
+    });
     createContrastPrompt({
       clusterId: cluster.id,
       targetWordId: normalizedInput.prompt.targetWordId,
@@ -1611,6 +1620,13 @@ export function addContrastIntakeToCluster(input: AddContrastIntakeToClusterInpu
       clusterId: normalizedInput.clusterId,
       wordId: normalizedInput.resolvedCandidateWordId,
       nuanceNote: normalizedInput.candidateNuanceNote,
+    });
+    normalizedInput.extraMemberWordIds?.forEach((wordId) => {
+      ensureContrastClusterMemberForIntakeWithoutTransaction({
+        clusterId: normalizedInput.clusterId,
+        wordId,
+        nuanceNote: '',
+      });
     });
     createContrastPrompt({
       clusterId: normalizedInput.clusterId,
@@ -3587,6 +3603,10 @@ function normalizeCreateContrastIntakeClusterInput(input: CreateContrastIntakeCl
   return {
     ...selector,
     resolvedCandidateWordId,
+    extraMemberWordIds: normalizeExtraContrastIntakeMemberWordIds(input.extraMemberWordIds, [
+      selector.targetWordId,
+      resolvedCandidateWordId,
+    ]),
     title,
     note: input.note?.trim() ?? '',
     targetNuanceNote: input.targetNuanceNote?.trim() ?? '',
@@ -3613,10 +3633,48 @@ function normalizeAddContrastIntakeToClusterInput(input: AddContrastIntakeToClus
     ...selector,
     clusterId,
     resolvedCandidateWordId,
+    extraMemberWordIds: normalizeExtraContrastIntakeMemberWordIds(input.extraMemberWordIds, [
+      selector.targetWordId,
+      resolvedCandidateWordId,
+    ]),
     targetNuanceNote: input.targetNuanceNote?.trim() ?? '',
     candidateNuanceNote: input.candidateNuanceNote?.trim() ?? '',
     prompt: normalizeContrastIntakePromptInput(input.prompt),
   };
+}
+
+function normalizeExtraContrastIntakeMemberWordIds(
+  wordIds: string[] | undefined,
+  reservedWordIds: string[],
+): string[] {
+  if (!wordIds) {
+    return [];
+  }
+
+  if (!Array.isArray(wordIds)) {
+    throw new Error('Expected extra contrast member word ids array');
+  }
+
+  const reserved = new Set(reservedWordIds);
+  const normalizedWordIds: string[] = [];
+  const seen = new Set<string>();
+
+  for (const wordId of wordIds) {
+    const normalizedWordId = wordId.trim();
+    assertNonEmptyString(normalizedWordId, 'Expected non-empty extra contrast member word id');
+    ensureWordExists(normalizedWordId);
+
+    if (reserved.has(normalizedWordId)) {
+      throw new Error('Expected extra contrast member to differ from intake words');
+    }
+
+    if (!seen.has(normalizedWordId)) {
+      normalizedWordIds.push(normalizedWordId);
+      seen.add(normalizedWordId);
+    }
+  }
+
+  return normalizedWordIds;
 }
 
 function normalizeAddContrastIntakePromptInput(input: AddContrastIntakePromptInput): AddContrastIntakePromptInput {
