@@ -59,8 +59,8 @@ export function HomePage({
   productionHanziInput,
   productionHanziError,
   productionHanziInputRef,
-  productionContrastCandidateChecked,
-  productionContrastCandidateNote,
+  productionContrastIntakeNote,
+  productionContrastIntakeMarked,
   contrastSelectedWordId,
   contrastPracticeMore,
   contrastAwaitingRating,
@@ -71,8 +71,7 @@ export function HomePage({
   onUndoLastRating,
   onContinueAfterAutoForgot,
   onContinueAfterAutoContrastForgot,
-  onProductionContrastCandidateCheckedChange,
-  onProductionContrastCandidateNoteChange,
+  onProductionContrastIntakeNoteChange,
   onDismissCurrentWord,
   onManageStudyAction,
   onDismissFrozenProductionWord,
@@ -128,8 +127,8 @@ export function HomePage({
   productionHanziInput: string;
   productionHanziError: string | null;
   productionHanziInputRef: RefObject<HTMLInputElement>;
-  productionContrastCandidateChecked: boolean;
-  productionContrastCandidateNote: string;
+  productionContrastIntakeNote: string;
+  productionContrastIntakeMarked: boolean;
   contrastSelectedWordId: string | null;
   contrastPracticeMore: boolean;
   contrastAwaitingRating: boolean;
@@ -140,8 +139,7 @@ export function HomePage({
   onUndoLastRating: () => void;
   onContinueAfterAutoForgot: () => void;
   onContinueAfterAutoContrastForgot: () => void;
-  onProductionContrastCandidateCheckedChange: (checked: boolean) => void;
-  onProductionContrastCandidateNoteChange: (value: string) => void;
+  onProductionContrastIntakeNoteChange: (value: string) => void;
   onDismissCurrentWord: () => void;
   onManageStudyAction: (action: StudyManagementActionKind, note: string) => void;
   onDismissFrozenProductionWord: () => void;
@@ -224,8 +222,8 @@ export function HomePage({
           productionHanziInput={productionHanziInput}
           productionHanziError={productionHanziError}
           productionHanziInputRef={productionHanziInputRef}
-          productionContrastCandidateChecked={productionContrastCandidateChecked}
-          productionContrastCandidateNote={productionContrastCandidateNote}
+          productionContrastIntakeNote={productionContrastIntakeNote}
+          productionContrastIntakeMarked={productionContrastIntakeMarked}
           contrastSelectedWordId={contrastSelectedWordId}
           contrastPracticeMore={contrastPracticeMore}
           contrastAwaitingRating={contrastAwaitingRating}
@@ -234,8 +232,7 @@ export function HomePage({
           onEndSession={onEndSession}
           onContinueAfterAutoForgot={onContinueAfterAutoForgot}
           onContinueAfterAutoContrastForgot={onContinueAfterAutoContrastForgot}
-          onProductionContrastCandidateCheckedChange={onProductionContrastCandidateCheckedChange}
-          onProductionContrastCandidateNoteChange={onProductionContrastCandidateNoteChange}
+          onProductionContrastIntakeNoteChange={onProductionContrastIntakeNoteChange}
           onDismissCurrentWord={onDismissCurrentWord}
           onManageStudyAction={onManageStudyAction}
           onDismissFrozenProductionWord={onDismissFrozenProductionWord}

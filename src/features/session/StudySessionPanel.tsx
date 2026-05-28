@@ -78,8 +78,8 @@ export function StudySessionPanel({
   productionHanziInput,
   productionHanziError,
   productionHanziInputRef,
-  productionContrastCandidateChecked,
-  productionContrastCandidateNote,
+  productionContrastIntakeNote,
+  productionContrastIntakeMarked,
   contrastSelectedWordId,
   contrastPracticeMore,
   contrastAwaitingRating,
@@ -88,8 +88,7 @@ export function StudySessionPanel({
   onEndSession,
   onContinueAfterAutoForgot,
   onContinueAfterAutoContrastForgot,
-  onProductionContrastCandidateCheckedChange,
-  onProductionContrastCandidateNoteChange,
+  onProductionContrastIntakeNoteChange,
   onDismissCurrentWord,
   onManageStudyAction,
   onDismissFrozenProductionWord,
@@ -140,8 +139,8 @@ export function StudySessionPanel({
   productionHanziInput: string;
   productionHanziError: string | null;
   productionHanziInputRef: RefObject<HTMLInputElement>;
-  productionContrastCandidateChecked: boolean;
-  productionContrastCandidateNote: string;
+  productionContrastIntakeNote: string;
+  productionContrastIntakeMarked: boolean;
   contrastSelectedWordId: string | null;
   contrastPracticeMore: boolean;
   contrastAwaitingRating: boolean;
@@ -150,8 +149,7 @@ export function StudySessionPanel({
   onEndSession: () => void;
   onContinueAfterAutoForgot: () => void;
   onContinueAfterAutoContrastForgot: () => void;
-  onProductionContrastCandidateCheckedChange: (checked: boolean) => void;
-  onProductionContrastCandidateNoteChange: (value: string) => void;
+  onProductionContrastIntakeNoteChange: (value: string) => void;
   onDismissCurrentWord: () => void;
   onManageStudyAction: (action: StudyManagementActionKind, note: string) => void;
   onDismissFrozenProductionWord: () => void;
@@ -237,24 +235,25 @@ export function StudySessionPanel({
             Next
           </button>
           <div className="contrast-candidate-controls">
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={productionContrastCandidateChecked}
-                onChange={(event) => onProductionContrastCandidateCheckedChange(event.target.checked)}
-                disabled={personalNotesEditorOpen}
-              />
-              <span>
-                {frozenProductionCard.attemptedHanzi} {studyProfile.labels.targetContrastCandidate}
-              </span>
-            </label>
+            <span className="prompt-label">Contrast intake</span>
+            <span className="prompt-meta">
+              {frozenProductionCard.attemptedHanzi} {studyProfile.labels.targetContrastCandidate}
+            </span>
             <textarea
-              value={productionContrastCandidateNote}
-              onChange={(event) => onProductionContrastCandidateNoteChange(event.target.value)}
-              disabled={!productionContrastCandidateChecked || personalNotesEditorOpen}
+              value={productionContrastIntakeNote}
+              onChange={(event) => onProductionContrastIntakeNoteChange(event.target.value)}
+              disabled={personalNotesEditorOpen || studyManagementSubmitting || productionContrastIntakeMarked}
               placeholder="Note"
               rows={3}
             />
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => onManageFrozenProductionAction('add_contrast_candidate', productionContrastIntakeNote)}
+              disabled={personalNotesEditorOpen || studyManagementSubmitting || productionContrastIntakeMarked}
+            >
+              {productionContrastIntakeMarked ? 'Marked for intake' : 'Mark for intake'}
+            </button>
           </div>
         </div>
       ) : panelView === 'frozen_contrast' && frozenContrastCard ? (

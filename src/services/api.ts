@@ -1,6 +1,5 @@
 import type {
   PriorityWord,
-  ProductionMistakeCandidate,
   ReviewFailureRateDay,
   Word,
   WordMeaning,
@@ -442,26 +441,6 @@ export async function recordReviewSessionSummary({
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to record review session summary'));
   }
-}
-
-export async function captureProductionMistakeCandidate(
-  targetWordId: string,
-  attemptedHanzi: string,
-  note = '',
-): Promise<ProductionMistakeCandidate> {
-  const response = await fetch(`${API_BASE}/api/production-mistake-candidates`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ targetWordId, attemptedHanzi, note }),
-  });
-
-  if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to capture production mistake candidate'));
-  }
-
-  return response.json();
 }
 
 export async function completeLearningSession(wordId: string, success: boolean): Promise<Word> {

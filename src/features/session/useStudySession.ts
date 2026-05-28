@@ -3,7 +3,6 @@ import type { ReviewRating, Word, WordMeaning } from '../../types';
 import type { SessionStudyItem, StudyManagementActionKind } from '../../domain/study-actions';
 import { studyManagementActionRemovesCurrentReviewAction } from '../../domain/study-actions';
 import {
-  captureProductionMistakeCandidate,
   dismissWordFromStudy,
   fetchWordMeanings,
   recordStudyManagementAction,
@@ -84,19 +83,13 @@ type SessionUiSnapshot = {
   answerRevealed: boolean;
   productionHanziInput: string;
   productionHanziError: string | null;
-  productionContrastCandidateChecked: boolean;
-  productionContrastCandidateNote: string;
+  productionContrastIntakeNote: string;
+  productionContrastIntakeMarked: boolean;
   productionUiPhase: 'idle' | 'await-rating' | 'await-next';
   frozenProductionCard: FrozenProductionCard | null;
   contrastSelectedWordId: string | null;
   contrastPracticeMore: boolean;
   frozenContrastCard: FrozenContrastCard | null;
-};
-
-type PendingProductionMistakeCapture = {
-  targetWordId: string;
-  attemptedHanzi: string;
-  note: string;
 };
 
 export type StudySessionControllerOptions = {
@@ -143,8 +136,8 @@ export type StudySessionHomePageProps = {
   productionHanziInput: string;
   productionHanziError: string | null;
   productionHanziInputRef: RefObject<HTMLInputElement>;
-  productionContrastCandidateChecked: boolean;
-  productionContrastCandidateNote: string;
+  productionContrastIntakeNote: string;
+  productionContrastIntakeMarked: boolean;
   contrastSelectedWordId: string | null;
   contrastPracticeMore: boolean;
   contrastAwaitingRating: boolean;
@@ -155,8 +148,7 @@ export type StudySessionHomePageProps = {
   onUndoLastRating: () => void;
   onContinueAfterAutoForgot: () => void;
   onContinueAfterAutoContrastForgot: () => void;
-  onProductionContrastCandidateCheckedChange: (checked: boolean) => void;
-  onProductionContrastCandidateNoteChange: (value: string) => void;
+  onProductionContrastIntakeNoteChange: (value: string) => void;
   onDismissCurrentWord: () => void;
   onManageStudyAction: (action: StudyManagementActionKind, note: string) => void;
   onDismissFrozenProductionWord: () => void;
@@ -205,8 +197,6 @@ export function useStudySession({
   const [answerRevealed, setAnswerRevealed] = useState(false);
   const [submittingRating, setSubmittingRating] = useState<ReviewRating | null>(null);
   const [pendingSessionCommit, setPendingSessionCommit] = useState<DeferredSessionCommit | null>(null);
-  const [pendingProductionMistakeCapture, setPendingProductionMistakeCapture] =
-    useState<PendingProductionMistakeCapture | null>(null);
   const [lastUndoSnapshot, setLastUndoSnapshot] = useState<SessionUndoSnapshot | null>(null);
   const [sessionNow, setSessionNow] = useState(() => new Date().toISOString());
   const [sessionPersonalNotesOverridesByWordId, setSessionPersonalNotesOverridesByWordId] = useState<
@@ -221,8 +211,8 @@ export function useStudySession({
   const [personalNotesEditorError, setPersonalNotesEditorError] = useState<string | null>(null);
   const [productionHanziInput, setProductionHanziInput] = useState('');
   const [productionHanziError, setProductionHanziError] = useState<string | null>(null);
-  const [productionContrastCandidateChecked, setProductionContrastCandidateChecked] = useState(false);
-  const [productionContrastCandidateNote, setProductionContrastCandidateNote] = useState('');
+  const [productionContrastIntakeNote, setProductionContrastIntakeNote] = useState('');
+  const [productionContrastIntakeMarked, setProductionContrastIntakeMarked] = useState(false);
   const [productionUiPhase, setProductionUiPhase] = useState<'idle' | 'await-rating' | 'await-next'>('idle');
   const [contrastSelectedWordId, setContrastSelectedWordId] = useState<string | null>(null);
   const [contrastPracticeMore, setContrastPracticeMore] = useState(false);
@@ -355,8 +345,8 @@ export function useStudySession({
   function resetProductionUi() {
     setProductionHanziInput('');
     setProductionHanziError(null);
-    setProductionContrastCandidateChecked(false);
-    setProductionContrastCandidateNote('');
+    setProductionContrastIntakeNote('');
+    setProductionContrastIntakeMarked(false);
     setProductionUiPhase('idle');
     setFrozenProductionCard(null);
   }
@@ -395,8 +385,8 @@ export function useStudySession({
       answerRevealed,
       productionHanziInput,
       productionHanziError,
-      productionContrastCandidateChecked,
-      productionContrastCandidateNote,
+      productionContrastIntakeNote,
+      productionContrastIntakeMarked,
       productionUiPhase,
       frozenProductionCard,
       contrastSelectedWordId,
@@ -409,8 +399,8 @@ export function useStudySession({
     setAnswerRevealed(snapshot.answerRevealed);
     setProductionHanziInput(snapshot.productionHanziInput);
     setProductionHanziError(snapshot.productionHanziError);
-    setProductionContrastCandidateChecked(snapshot.productionContrastCandidateChecked);
-    setProductionContrastCandidateNote(snapshot.productionContrastCandidateNote);
+    setProductionContrastIntakeNote(snapshot.productionContrastIntakeNote);
+    setProductionContrastIntakeMarked(snapshot.productionContrastIntakeMarked);
     setProductionUiPhase(snapshot.productionUiPhase);
     setFrozenProductionCard(snapshot.frozenProductionCard);
     setContrastSelectedWordId(snapshot.contrastSelectedWordId);
@@ -422,18 +412,6 @@ export function useStudySession({
     if (pendingSessionCommit) {
       await applySessionCommit(pendingSessionCommit);
       setPendingSessionCommit(null);
-    }
-
-    if (pendingProductionMistakeCapture) {
-      const capture = pendingProductionMistakeCapture;
-      setPendingProductionMistakeCapture(null);
-      void captureProductionMistakeCandidate(
-        capture.targetWordId,
-        capture.attemptedHanzi,
-        capture.note,
-      ).catch((captureError: unknown) => {
-        console.warn('Failed to capture production mistake candidate', captureError);
-      });
     }
 
     setLastUndoSnapshot(null);
@@ -457,7 +435,6 @@ export function useStudySession({
       setSessionState(createBucketSessionState({ buckets: sessionPayload.buckets, sessionId }));
       resetSessionScopedUi();
       setPendingSessionCommit(null);
-      setPendingProductionMistakeCapture(null);
       setLastUndoSnapshot(null);
       setSessionSummary(createSessionSummary({
         sessionId,
@@ -486,7 +463,7 @@ export function useStudySession({
       return;
     }
 
-    if (pendingSessionCommit || pendingProductionMistakeCapture) {
+    if (pendingSessionCommit) {
       try {
         await applyPendingUndoClosure();
       } catch (err) {
@@ -514,7 +491,6 @@ export function useStudySession({
     setSessionSummary(null);
     resetSessionScopedUi();
     setPendingSessionCommit(null);
-    setPendingProductionMistakeCapture(null);
     setLastUndoSnapshot(null);
     resetSessionPrefetchCache();
     setSessionPrefetch(getSessionPrefetchSnapshot());
@@ -662,14 +638,6 @@ export function useStudySession({
   }
 
   function handleContinueAfterAutoForgot() {
-    if (productionContrastCandidateChecked && frozenProductionCard) {
-      setPendingProductionMistakeCapture({
-        targetWordId: frozenProductionCard.targetWordId,
-        attemptedHanzi: frozenProductionCard.attemptedHanzi,
-        note: productionContrastCandidateNote,
-      });
-    }
-
     // Unmask the active card after the queue already advanced due to an incorrect hanzi submission.
     resetAnswerAndProductionUi();
   }
@@ -780,7 +748,6 @@ export function useStudySession({
     setSessionSummary(lastUndoSnapshot.sessionSummary);
     restoreSessionUiSnapshot(lastUndoSnapshot.ui);
     setPendingSessionCommit(null);
-    setPendingProductionMistakeCapture(null);
     setLastUndoSnapshot(null);
     setError(null);
   }
@@ -813,7 +780,6 @@ export function useStudySession({
       setSessionState(transition.state);
       resetAnswerAndProductionUi();
       setLastUndoSnapshot(null);
-      setPendingProductionMistakeCapture(null);
       await dismissWordFromStudy(transition.dismiss.wordId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -854,7 +820,6 @@ export function useStudySession({
         setSessionState(dropActiveReviewSessionAction(sessionState));
         resetAnswerAndProductionUi();
         setLastUndoSnapshot(null);
-        setPendingProductionMistakeCapture(null);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -894,6 +859,9 @@ export function useStudySession({
       });
 
       if (!studyManagementActionRemovesCurrentReviewAction(managementAction)) {
+        if (managementAction === 'add_contrast_candidate') {
+          setProductionContrastIntakeMarked(true);
+        }
         return;
       }
 
@@ -909,7 +877,6 @@ export function useStudySession({
       setPendingSessionCommit(null);
       resetAnswerAndProductionUi();
       setLastUndoSnapshot(null);
-      setPendingProductionMistakeCapture(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -949,7 +916,6 @@ export function useStudySession({
       setPendingSessionCommit(null);
       resetAnswerAndProductionUi();
       setLastUndoSnapshot(null);
-      setPendingProductionMistakeCapture(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -1251,8 +1217,6 @@ export function useStudySession({
     contrastSelectionActive,
     contrastSelectedWordId,
     productionAwaitingNext,
-    productionContrastCandidateChecked,
-    productionContrastCandidateNote,
     productionRequiresHanziInput,
     productionSubmissionInputActive,
     frozenProductionCard,
@@ -1305,8 +1269,8 @@ export function useStudySession({
       productionHanziInput,
       productionHanziError,
       productionHanziInputRef,
-      productionContrastCandidateChecked,
-      productionContrastCandidateNote,
+      productionContrastIntakeNote,
+      productionContrastIntakeMarked,
       contrastSelectedWordId,
       contrastPracticeMore,
       contrastAwaitingRating,
@@ -1317,8 +1281,7 @@ export function useStudySession({
       onUndoLastRating: handleUndoLastRating,
       onContinueAfterAutoForgot: handleContinueAfterAutoForgot,
       onContinueAfterAutoContrastForgot: handleContinueAfterAutoContrastForgot,
-      onProductionContrastCandidateCheckedChange: setProductionContrastCandidateChecked,
-      onProductionContrastCandidateNoteChange: setProductionContrastCandidateNote,
+      onProductionContrastIntakeNoteChange: setProductionContrastIntakeNote,
       onDismissCurrentWord: () => void handleDismissCurrentWord(),
       onManageStudyAction: (action, note) => void handleManageStudyAction(action, note),
       onDismissFrozenProductionWord: () => void handleDismissFrozenProductionWord(),
