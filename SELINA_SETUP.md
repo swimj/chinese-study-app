@@ -67,6 +67,30 @@ This copies the database into `data/local-user-data/app.db`. If that file alread
 
 You should only need to run `setup:local-user-data` once, when first setting up the app. Running it again replaces the current local database with the downloaded one, which may overwrite your study progress.
 
+## Move From A Downloaded Zip To The Git Repo
+
+If you started by downloading the app as a GitHub zip file and now want to use the real git repo, first follow the clone and install steps above:
+
+```bash
+git clone https://github.com/swimj/chinese-study-app.git
+cd chinese-study-app
+npm ci
+```
+
+Then copy your existing study database from the old zip-based app folder into this new git clone:
+
+```bash
+npm run import:local-user-data -- /path/to/old/chinese-study-app-folder
+```
+
+For example, if the old downloaded folder is in Downloads on a Mac:
+
+```bash
+npm run import:local-user-data -- ~/Downloads/chinese-study-app-main
+```
+
+The command expects the old database at `data/local-user-data/app.db`, which is where `setup:local-user-data` put it.
+
 ## Quick User Guide
 
 This app is currently a practical local study tool, so it is useful to think of it as two pieces:
@@ -219,3 +243,5 @@ npm ci
 ```
 
 After the update finishes, start the backend and frontend again using the same two terminal commands above.
+
+For a quick summary of what changed since the last shared version, see [`CHANGELOG.md`](/Users/jw/dev/chinese-study-app/CHANGELOG.md).

@@ -13,6 +13,7 @@
     "friend:mandarin:backend": "node --import tsx server/index.ts --mode=study --study-profile=mandarin --data-dir=data/friend-mandarin-user-data",
     "friend:mandarin:frontend": "vite",
     "setup:local-user-data": "node --import tsx scripts/setup-local-user-data.ts",
+    "import:local-user-data": "node --import tsx scripts/import-local-user-data-from-instance.ts",
     "study:local:backend": "node --import tsx server/index.ts --mode=study --study-profile=french --data-dir=data/local-user-data",
     "study:local:frontend": "VITE_STUDY_PROFILE=french vite",
     "study:backend": "node --import tsx server/index.ts --mode=study",
