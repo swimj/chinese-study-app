@@ -8,6 +8,7 @@ import {
   addContrastIntakeToCluster,
   addContrastPromptFromIntake,
   createContrastClusterFromIntake,
+  deleteContrastPrompt,
   dismissWordFromStudy,
   dismissContrastIntakeGroup,
   addUnstudiedUserPriorityByHanzi,
@@ -27,6 +28,7 @@ import {
   recordAcceptedReviewAttemptBatch,
   recordReviewSessionSummary,
   recordStudyManagementAction,
+  resolveContrastPromptBadFeedback,
   searchWords,
   updateWordMeaningVisibility,
   updateContrastPrompt,
@@ -304,6 +306,66 @@ export function createApp() {
       }
 
       res.status(500).json({ error: 'Failed to update contrast prompt' });
+    }
+  });
+
+  app.post('/api/contrast-prompts/:promptId/resolve-bad-feedback', (req, res) => {
+    const promptId = req.params.promptId;
+    const note = req.body?.note ?? '';
+
+    if (typeof promptId !== 'string' || promptId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty contrast prompt id' });
+      return;
+    }
+
+    if (typeof note !== 'string') {
+      res.status(400).json({ error: 'Expected string note when provided' });
+      return;
+    }
+
+    try {
+      res.json(resolveContrastPromptBadFeedback({
+        promptId: promptId.trim(),
+        note,
+      }));
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Contrast prompt not found') {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+
+      if (error instanceof Error && error.message.startsWith('Expected ')) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to resolve contrast prompt feedback' });
+    }
+  });
+
+  app.delete('/api/contrast-prompts/:promptId', (req, res) => {
+    const promptId = req.params.promptId;
+
+    if (typeof promptId !== 'string' || promptId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty contrast prompt id' });
+      return;
+    }
+
+    try {
+      deleteContrastPrompt(promptId);
+      res.status(204).end();
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Contrast prompt not found') {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+
+      if (error instanceof Error && error.message.startsWith('Expected ')) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to delete contrast prompt' });
     }
   });
 

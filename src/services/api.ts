@@ -59,7 +59,16 @@ type PriorityWordsResponse = {
 
 export type ContrastClusterContent = ContrastCluster & {
   members: Array<ContrastClusterMember & { word: Word }>;
-  prompts: ContrastPrompt[];
+  prompts: ContrastPromptContent[];
+};
+
+export type ContrastPromptContent = ContrastPrompt & {
+  feedback: {
+    flagged: boolean;
+    badPromptCount: number;
+    latestBadPromptAt: string | null;
+    notes: string[];
+  };
 };
 
 export type ContrastIntakeCoverage = {
@@ -315,6 +324,38 @@ export async function updateContrastPrompt({
   }
 
   return response.json();
+}
+
+export async function resolveContrastPromptBadFeedback({
+  id,
+  note = '',
+}: {
+  id: string;
+  note?: string;
+}): Promise<ContrastPromptContent> {
+  const response = await fetch(`${API_BASE}/api/contrast-prompts/${encodeURIComponent(id)}/resolve-bad-feedback`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ note }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to resolve contrast prompt feedback'));
+  }
+
+  return response.json();
+}
+
+export async function deleteContrastPrompt(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/contrast-prompts/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to delete contrast prompt'));
+  }
 }
 
 export async function recordAcceptedReviewAttemptBatch({

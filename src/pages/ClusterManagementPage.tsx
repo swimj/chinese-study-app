@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { ContrastPrompt } from '../domain/study-actions';
-import type { ContrastClusterContent } from '../services/api';
+import type { ContrastClusterContent, ContrastPromptContent } from '../services/api';
 
 type PromptFormState = {
   mode: 'create' | 'edit';
@@ -25,6 +25,8 @@ export function ClusterManagementPage({
   onSelectCluster,
   onCreatePrompt,
   onUpdatePrompt,
+  onResolvePromptFeedback,
+  onDeletePrompt,
 }: {
   clusters: ContrastClusterContent[];
   selectedClusterId: string | null;
@@ -42,6 +44,8 @@ export function ClusterManagementPage({
     promptText: string;
     explanation: string;
   }) => Promise<void>;
+  onResolvePromptFeedback: (input: { id: string; note?: string }) => Promise<void>;
+  onDeletePrompt: (id: string) => Promise<void>;
 }) {
   const selectedCluster = useMemo(
     () => clusters.find((cluster) => cluster.id === selectedClusterId) ?? clusters[0] ?? null,
@@ -100,6 +104,22 @@ export function ClusterManagementPage({
       ...emptyPromptForm,
       targetWordId: selectedCluster?.members[0]?.wordId ?? '',
     });
+  }
+
+  async function handleResolvePromptFeedback(prompt: ContrastPromptContent) {
+    await onResolvePromptFeedback({ id: prompt.id });
+  }
+
+  async function handleDeletePrompt(prompt: ContrastPromptContent) {
+    const confirmed = window.confirm('Delete this contrast prompt? This removes it from circulation and cannot be undone.');
+    if (!confirmed) {
+      return;
+    }
+
+    await onDeletePrompt(prompt.id);
+    if (promptForm.promptId === prompt.id) {
+      resetPromptForm();
+    }
   }
 
   return (
@@ -176,15 +196,51 @@ export function ClusterManagementPage({
                       const target = selectedCluster.members.find((member) => member.wordId === prompt.targetWordId);
                       return (
                         <article key={prompt.id} className="cluster-prompt-card">
-                          <div>
-                            <span className="prompt-label">Target</span>
-                            <strong>{target?.word.hanzi ?? prompt.targetWordId}</strong>
+                          <div className="cluster-prompt-heading">
+                            <div>
+                              <span className="prompt-label">Target</span>
+                              <strong>{target?.word.hanzi ?? prompt.targetWordId}</strong>
+                            </div>
+                            <PromptQualityBadge prompt={prompt} />
                           </div>
                           <p>{prompt.promptText}</p>
                           {prompt.explanation.length > 0 ? <small>{prompt.explanation}</small> : null}
+                          {prompt.feedback.flagged ? (
+                            <div className="cluster-prompt-feedback">
+                              <span className="prompt-meta">
+                                Marked bad {prompt.feedback.badPromptCount} time{prompt.feedback.badPromptCount === 1 ? '' : 's'}
+                                {prompt.feedback.latestBadPromptAt
+                                  ? ` · latest ${new Date(prompt.feedback.latestBadPromptAt).toLocaleString()}`
+                                  : ''}
+                              </span>
+                              {prompt.feedback.notes.length > 0 ? (
+                                <small>{prompt.feedback.notes.join(' / ')}</small>
+                              ) : null}
+                            </div>
+                          ) : null}
                           <button type="button" className="secondary-button" onClick={() => startEditingPrompt(prompt)}>
                             Edit
                           </button>
+                          <div className="cluster-prompt-actions">
+                            {prompt.feedback.flagged ? (
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() => void handleResolvePromptFeedback(prompt)}
+                                disabled={isSavingPrompt}
+                              >
+                                Resolve
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => void handleDeletePrompt(prompt)}
+                              disabled={isSavingPrompt}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </article>
                       );
                     })}
@@ -256,4 +312,12 @@ export function ClusterManagementPage({
       )}
     </section>
   );
+}
+
+function PromptQualityBadge({ prompt }: { prompt: ContrastPromptContent }) {
+  if (!prompt.feedback.flagged) {
+    return null;
+  }
+
+  return <span className="badge warning-badge">Bad prompt</span>;
 }

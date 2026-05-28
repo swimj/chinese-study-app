@@ -2,8 +2,11 @@ import { useState } from 'react';
 import type { AppPageKey } from '../../components/AppChrome';
 import {
   createContrastPrompt,
+  deleteContrastPrompt,
   fetchContrastClusters,
+  resolveContrastPromptBadFeedback,
   type ContrastClusterContent,
+  type ContrastPromptContent,
   updateContrastPrompt,
 } from '../../services/api';
 import type { ContrastPrompt } from '../../domain/study-actions';
@@ -33,6 +36,8 @@ export type ClusterPageController = {
     promptText: string;
     explanation: string;
   }) => Promise<void>;
+  resolvePromptFeedback: (input: { id: string; note?: string }) => Promise<void>;
+  deletePrompt: (id: string) => Promise<void>;
 };
 
 export function useClusterPageController({
@@ -82,6 +87,27 @@ export function useClusterPageController({
     await savePrompt(() => updateContrastPrompt(input));
   }
 
+  async function resolvePromptFeedback(input: { id: string; note?: string }): Promise<void> {
+    await savePrompt(() => resolveContrastPromptBadFeedback(input));
+  }
+
+  async function removePrompt(id: string): Promise<void> {
+    setIsSavingPrompt(true);
+    setError(null);
+    try {
+      await deleteContrastPrompt(id);
+      setClusters((current) => current.map((cluster) => ({
+        ...cluster,
+        prompts: cluster.prompts.filter((prompt) => prompt.id !== id),
+      })));
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to delete contrast prompt');
+      throw error;
+    } finally {
+      setIsSavingPrompt(false);
+    }
+  }
+
   async function savePrompt(operation: () => Promise<ContrastPrompt>) {
     setIsSavingPrompt(true);
     setError(null);
@@ -106,6 +132,8 @@ export function useClusterPageController({
     selectCluster: setSelectedClusterId,
     createPrompt,
     updatePrompt,
+    resolvePromptFeedback,
+    deletePrompt: removePrompt,
   };
 }
 
@@ -116,9 +144,16 @@ function upsertPrompt(clusters: ContrastClusterContent[], prompt: ContrastPrompt
     }
 
     const existingIndex = cluster.prompts.findIndex((current) => current.id === prompt.id);
+    const existingFeedback = existingIndex === -1
+      ? { flagged: false, badPromptCount: 0, latestBadPromptAt: null, notes: [] }
+      : cluster.prompts[existingIndex].feedback;
+    const promptWithFeedback: ContrastPromptContent = {
+      ...prompt,
+      feedback: existingFeedback,
+    };
     const prompts = existingIndex === -1
-      ? [...cluster.prompts, prompt]
-      : cluster.prompts.map((current) => (current.id === prompt.id ? prompt : current));
+      ? [...cluster.prompts, promptWithFeedback]
+      : cluster.prompts.map((current) => (current.id === prompt.id ? promptWithFeedback : current));
 
     return {
       ...cluster,

@@ -87,7 +87,16 @@ type ReviewFailureRateDay = {
 
 type ContrastClusterContent = ContrastCluster & {
   members: Array<ContrastClusterMember & { word: Word }>;
-  prompts: ContrastPrompt[];
+  prompts: ContrastPromptContent[];
+};
+
+type ContrastPromptContent = ContrastPrompt & {
+  feedback: {
+    flagged: boolean;
+    badPromptCount: number;
+    latestBadPromptAt: string | null;
+    notes: string[];
+  };
 };
 
 type ReviewRating = 'forgot' | 'hard' | 'good' | 'easy';
@@ -343,6 +352,7 @@ type StudyContentFeedback = {
   targetWordId: string;
   actionKind: StudyActionKind;
   feedbackType: 'bad_prompt';
+  feedbackAction: 'reported' | 'resolved';
   sourceEventId: string | null;
   note: string;
 };
@@ -355,6 +365,7 @@ type StudyContentFeedbackRow = {
   target_word_id: string;
   action_kind: StudyActionKind;
   feedback_type: 'bad_prompt';
+  feedback_action: 'reported' | 'resolved';
   source_event_id: string | null;
   note: string;
 };
@@ -488,6 +499,7 @@ export type {
   ContrastClusterContent,
   ContrastClusterMember,
   ContrastPrompt,
+  ContrastPromptContent,
   ContrastCandidateIntake,
   ContrastIntakeCoverage,
   ContrastIntakeGroup,
@@ -1322,6 +1334,22 @@ export function getContrastPromptsForCluster(clusterId: string): ContrastPrompt[
   return rows.map(mapContrastPromptRow);
 }
 
+export function deleteContrastPrompt(id: string): void {
+  const normalizedId = id.trim();
+  assertNonEmptyString(normalizedId, 'Expected non-empty contrast prompt id');
+
+  const result = db
+    .prepare(`
+      DELETE FROM contrast_prompts
+      WHERE id = ?
+    `)
+    .run(normalizedId);
+
+  if (result.changes === 0) {
+    throw new Error('Contrast prompt not found');
+  }
+}
+
 export function getContrastClusterContent(): ContrastClusterContent[] {
   const wordsById = new Map(getWords().map((word) => [word.id, word]));
   return getContrastClusters().map((cluster) => ({
@@ -1337,8 +1365,122 @@ export function getContrastClusterContent(): ContrastClusterContent[] {
         word,
       };
     }),
-    prompts: getContrastPromptsForCluster(cluster.id),
+    prompts: getContrastPromptContentForCluster(cluster.id),
   }));
+}
+
+function getContrastPromptContentForCluster(clusterId: string): ContrastPromptContent[] {
+  const feedbackByPromptId = getContrastPromptFeedbackSummariesByPromptId();
+
+  return getContrastPromptsForCluster(clusterId).map((prompt) => {
+    const feedback = feedbackByPromptId.get(prompt.id) ?? createEmptyContrastPromptFeedbackSummary();
+    return {
+      ...prompt,
+      feedback,
+    };
+  });
+}
+
+function getContrastPromptContentById(id: string): ContrastPromptContent {
+  const normalizedId = id.trim();
+  assertNonEmptyString(normalizedId, 'Expected non-empty contrast prompt id');
+
+  const row = db
+    .prepare(`
+      SELECT
+        id,
+        cluster_id,
+        target_word_id,
+        prompt_text,
+        explanation
+      FROM contrast_prompts
+      WHERE id = ?
+    `)
+    .get(normalizedId) as ContrastPromptRow | undefined;
+
+  if (!row) {
+    throw new Error('Contrast prompt not found');
+  }
+
+  return {
+    ...mapContrastPromptRow(row),
+    feedback: getContrastPromptFeedbackSummariesByPromptId().get(normalizedId) ?? createEmptyContrastPromptFeedbackSummary(),
+  };
+}
+
+export function resolveContrastPromptBadFeedback({
+  promptId,
+  note = '',
+}: {
+  promptId: string;
+  note?: string;
+}): ContrastPromptContent {
+  const normalizedPromptId = promptId.trim();
+  const normalizedNote = note.trim();
+  assertNonEmptyString(normalizedPromptId, 'Expected non-empty contrast prompt id');
+  const prompt = getContrastPromptContentById(normalizedPromptId);
+  ensureWordExists(prompt.targetWordId);
+
+  insertStudyContentFeedbackLogRow({
+    targetType: 'contrast_prompt',
+    targetId: prompt.id,
+    targetWordId: prompt.targetWordId,
+    actionKind: 'contrast_selection',
+    feedbackType: 'bad_prompt',
+    feedbackAction: 'resolved',
+    sourceEventId: null,
+    note: normalizedNote,
+  });
+
+  return getContrastPromptContentById(normalizedPromptId);
+}
+
+type ContrastPromptFeedbackSummary = ContrastPromptContent['feedback'];
+
+function createEmptyContrastPromptFeedbackSummary(): ContrastPromptFeedbackSummary {
+  return {
+    flagged: false,
+    badPromptCount: 0,
+    latestBadPromptAt: null,
+    notes: [],
+  };
+}
+
+function getContrastPromptFeedbackSummariesByPromptId(): Map<string, ContrastPromptFeedbackSummary> {
+  const feedbackByPromptId = new Map<string, ContrastPromptFeedbackSummary>();
+
+  for (const feedback of getStudyContentFeedback()) {
+    if (feedback.targetType !== 'contrast_prompt' || feedback.feedbackType !== 'bad_prompt') {
+      continue;
+    }
+
+    if (feedback.feedbackAction === 'resolved') {
+      feedbackByPromptId.set(feedback.targetId, createEmptyContrastPromptFeedbackSummary());
+      continue;
+    }
+
+    const summary = feedbackByPromptId.get(feedback.targetId) ?? createEmptyContrastPromptFeedbackSummary();
+    feedbackByPromptId.set(feedback.targetId, {
+      flagged: true,
+      badPromptCount: summary.badPromptCount + 1,
+      latestBadPromptAt: feedback.createdAt,
+      notes: feedback.note.length > 0 ? [...summary.notes, feedback.note] : summary.notes,
+    });
+  }
+
+  return feedbackByPromptId;
+}
+
+function getBlockedContrastPromptIds(): Set<string> {
+  const blockedPromptIds = new Set<string>();
+
+  for (const [promptId, feedback] of getContrastPromptFeedbackSummariesByPromptId()) {
+    if (feedback.flagged) {
+      blockedPromptIds.add(promptId);
+    }
+  }
+
+  return blockedPromptIds;
 }
 
 export function getContrastIntakeGroups(): ContrastIntakeGroupsPayload {
@@ -1728,10 +1870,11 @@ export function getStudyContentFeedback(): StudyContentFeedback[] {
         target_word_id,
         action_kind,
         feedback_type,
+        feedback_action,
         source_event_id,
         note
       FROM study_content_feedback
-      ORDER BY created_at ASC, id ASC
+      ORDER BY created_at ASC, rowid ASC
     `)
     .all() as StudyContentFeedbackRow[];
 
@@ -2252,6 +2395,40 @@ function insertStudyContentFeedbackWithoutTransaction({
 }) {
   const feedbackTarget = getStudyContentFeedbackTarget(input);
 
+  insertStudyContentFeedbackLogRow({
+    targetType: feedbackTarget.targetType,
+    targetId: feedbackTarget.targetId,
+    targetWordId: input.targetWordId,
+    actionKind: input.actionKind,
+    feedbackType: 'bad_prompt',
+    feedbackAction: 'reported',
+    sourceEventId: eventId,
+    note,
+    createdAt,
+  });
+}
+
+function insertStudyContentFeedbackLogRow({
+  targetType,
+  targetId,
+  targetWordId,
+  actionKind,
+  feedbackType,
+  feedbackAction,
+  sourceEventId,
+  note,
+  createdAt = new Date().toISOString(),
+}: {
+  targetType: StudyContentFeedback['targetType'];
+  targetId: string;
+  targetWordId: string;
+  actionKind: StudyContentFeedback['actionKind'];
+  feedbackType: StudyContentFeedback['feedbackType'];
+  feedbackAction: StudyContentFeedback['feedbackAction'];
+  sourceEventId: string | null;
+  note: string;
+  createdAt?: string;
+}) {
   db.prepare(`
     INSERT INTO study_content_feedback (
       id,
@@ -2261,17 +2438,20 @@ function insertStudyContentFeedbackWithoutTransaction({
       target_word_id,
       action_kind,
       feedback_type,
+      feedback_action,
       source_event_id,
       note
-    ) VALUES (?, ?, ?, ?, ?, ?, 'bad_prompt', ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     randomUUID(),
     createdAt,
-    feedbackTarget.targetType,
-    feedbackTarget.targetId,
-    input.targetWordId,
-    input.actionKind,
-    eventId,
+    targetType,
+    targetId,
+    targetWordId,
+    actionKind,
+    feedbackType,
+    feedbackAction,
+    sourceEventId,
     note,
   );
 }
@@ -3018,10 +3198,12 @@ function applyLightweightSchemaMigrations() {
       target_word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
       action_kind TEXT NOT NULL,
       feedback_type TEXT NOT NULL,
+      feedback_action TEXT NOT NULL DEFAULT 'reported',
       source_event_id TEXT REFERENCES study_events(id) ON DELETE SET NULL,
       note TEXT NOT NULL DEFAULT ''
     );
   `);
+  ensureStudyContentFeedbackSchema();
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS contrast_clusters (
@@ -3072,6 +3254,18 @@ function applyLightweightSchemaMigrations() {
   `);
 
   backfillWordMeaningsFromWords();
+}
+
+function ensureStudyContentFeedbackSchema() {
+  const columns = db.prepare(`PRAGMA table_info(study_content_feedback)`).all() as Array<{ name: string }>;
+  if (columns.length === 0) {
+    return;
+  }
+
+  const hasFeedbackAction = columns.some((column) => column.name === 'feedback_action');
+  if (!hasFeedbackAction) {
+    db.exec(`ALTER TABLE study_content_feedback ADD COLUMN feedback_action TEXT NOT NULL DEFAULT 'reported'`);
+  }
 }
 
 function ensureWordLookupAliasesSchema() {
@@ -3889,6 +4083,7 @@ function createSchema() {
       target_word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
       action_kind TEXT NOT NULL,
       feedback_type TEXT NOT NULL,
+      feedback_action TEXT NOT NULL DEFAULT 'reported',
       source_event_id TEXT REFERENCES study_events(id) ON DELETE SET NULL,
       note TEXT NOT NULL DEFAULT ''
     );
@@ -4087,6 +4282,7 @@ function validateSchema() {
     'target_word_id',
     'action_kind',
     'feedback_type',
+    'feedback_action',
     'source_event_id',
     'note',
   ]);
@@ -5209,6 +5405,7 @@ function mapStudyContentFeedbackRow(row: StudyContentFeedbackRow): StudyContentF
     targetWordId: row.target_word_id,
     actionKind: row.action_kind,
     feedbackType: row.feedback_type,
+    feedbackAction: row.feedback_action,
     sourceEventId: row.source_event_id,
     note: row.note,
   };
@@ -5792,13 +5989,15 @@ function getReviewSessionStudyItems(now: string): SessionStudyItem[] {
     .all(now) as ReviewSessionItemWithSkillRow[];
 
   const bestCandidateByWordId = new Map<string, ReviewSessionItemCandidate>();
+  const generatedPromptFeedback = getGeneratedPromptFeedbackState();
+  const blockedContrastPromptIds = getBlockedContrastPromptIds();
 
   for (const row of rows) {
-    if (!isReviewSkillCandidateAllowedByRelevancePolicy(row)) {
+    if (!isReviewSkillCandidateAllowedByRelevancePolicy(row, generatedPromptFeedback)) {
       continue;
     }
 
-    const content = getReviewSkillContentIfAvailable(row);
+    const content = getReviewSkillContentIfAvailable(row, blockedContrastPromptIds);
     if (content === undefined) {
       continue;
     }
@@ -5859,12 +6058,15 @@ function dedupeContrastChoiceSets(candidates: ReviewSessionItemCandidate[]): Rev
   return selected;
 }
 
-function isReviewSkillCandidateAllowedByRelevancePolicy(row: ReviewSessionItemWithSkillRow) {
+function isReviewSkillCandidateAllowedByRelevancePolicy(
+  row: ReviewSessionItemWithSkillRow,
+  generatedPromptFeedback: GeneratedPromptFeedbackState,
+) {
   if (row.skill_relevance_state === 'suppressed') {
     return false;
   }
 
-  if (row.skill_id === 'production' && hasBadDefinitionBasedProductionPromptFeedback(row.id)) {
+  if (row.skill_id === 'production' && generatedPromptFeedback.badDefinitionBasedProductionPromptWordIds.has(row.id)) {
     return false;
   }
 
@@ -5873,12 +6075,13 @@ function isReviewSkillCandidateAllowedByRelevancePolicy(row: ReviewSessionItemWi
 
 function getReviewSkillContentIfAvailable(
   row: ReviewSessionItemWithSkillRow,
+  blockedContrastPromptIds: Set<string>,
 ): { contentRef: StudyContentRef | null; contrastSelection: ContrastSelectionContent | null } | undefined {
   if (row.skill_id === 'contextual_selection') {
     if (row.skill_relevance_state !== 'normal') {
       return undefined;
     }
-    const contrastSelection = getEligibleContrastSelectionContentForScheduledWord(row.id);
+    const contrastSelection = getEligibleContrastSelectionContentForScheduledWord(row.id, blockedContrastPromptIds);
     return contrastSelection === null
       ? undefined
       : {
@@ -5893,25 +6096,40 @@ function getReviewSkillContentIfAvailable(
   };
 }
 
-function hasBadDefinitionBasedProductionPromptFeedback(wordId: string) {
-  const row = db
-    .prepare(`
-      SELECT 1
-      FROM study_content_feedback
-      WHERE target_type = 'generated_prompt'
-        AND target_id = 'definition_based_production'
-        AND target_word_id = ?
-        AND action_kind = 'production'
-        AND feedback_type = 'bad_prompt'
-      LIMIT 1
-    `)
-    .get(wordId) as { '1': number } | undefined;
+type GeneratedPromptFeedbackState = {
+  badDefinitionBasedProductionPromptWordIds: Set<string>;
+};
 
-  return row !== undefined;
+function getGeneratedPromptFeedbackState(): GeneratedPromptFeedbackState {
+  const badDefinitionBasedProductionPromptWordIds = new Set<string>();
+
+  for (const feedback of getStudyContentFeedback()) {
+    if (
+      feedback.targetType !== 'generated_prompt' ||
+      feedback.targetId !== 'definition_based_production' ||
+      feedback.actionKind !== 'production' ||
+      feedback.feedbackType !== 'bad_prompt'
+    ) {
+      continue;
+    }
+
+    if (feedback.feedbackAction === 'reported') {
+      badDefinitionBasedProductionPromptWordIds.add(feedback.targetWordId);
+    } else {
+      badDefinitionBasedProductionPromptWordIds.delete(feedback.targetWordId);
+    }
+  }
+
+  return {
+    badDefinitionBasedProductionPromptWordIds,
+  };
 }
 
-function getEligibleContrastSelectionContentForScheduledWord(wordId: string): ContrastSelectionContent | null {
-  const candidates = getEligibleContrastDistractorPromptCandidatesForScheduledWord(wordId);
+function getEligibleContrastSelectionContentForScheduledWord(
+  wordId: string,
+  blockedContrastPromptIds: Set<string>,
+): ContrastSelectionContent | null {
+  const candidates = getEligibleContrastDistractorPromptCandidatesForScheduledWord(wordId, blockedContrastPromptIds);
   const selectedCandidate = randomArrayElement(candidates);
 
   if (!selectedCandidate) {
@@ -5983,7 +6201,10 @@ type ContrastDistractorPromptCandidate = {
   candidatePrompts: ContrastPromptCandidate[];
 };
 
-function getEligibleContrastDistractorPromptCandidatesForScheduledWord(wordId: string): ContrastDistractorPromptCandidate[] {
+function getEligibleContrastDistractorPromptCandidatesForScheduledWord(
+  wordId: string,
+  blockedPromptIds: Set<string>,
+): ContrastDistractorPromptCandidate[] {
   const rows = db
     .prepare(`
       SELECT
@@ -6004,13 +6225,6 @@ function getEligibleContrastDistractorPromptCandidatesForScheduledWord(wordId: s
       LEFT JOIN contrast_prompts
         ON contrast_prompts.cluster_id = scheduled_member.cluster_id
        AND contrast_prompts.target_word_id IN (scheduled_member.word_id, sibling_member.word_id)
-       AND NOT EXISTS (
-          SELECT 1
-          FROM study_content_feedback
-          WHERE study_content_feedback.target_type = 'contrast_prompt'
-            AND study_content_feedback.target_id = contrast_prompts.id
-            AND study_content_feedback.feedback_type = 'bad_prompt'
-        )
       WHERE scheduled_member.word_id = ?
       ORDER BY
         contrast_clusters.id ASC,
@@ -6043,7 +6257,13 @@ function getEligibleContrastDistractorPromptCandidatesForScheduledWord(wordId: s
       candidatePrompts: [],
     };
 
-    if (row.prompt_id && row.prompt_target_word_id && row.prompt_text !== null && row.explanation !== null) {
+    if (
+      row.prompt_id &&
+      row.prompt_target_word_id &&
+      row.prompt_text !== null &&
+      row.explanation !== null &&
+      !blockedPromptIds.has(row.prompt_id)
+    ) {
       candidate.candidatePrompts.push({
         id: row.prompt_id,
         targetWordId: row.prompt_target_word_id,

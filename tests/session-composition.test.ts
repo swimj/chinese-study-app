@@ -630,6 +630,53 @@ describe('session composition', { concurrency: false }, () => {
     assert.deepEqual(getSessionItemIds(dbModule), []);
   });
 
+  test('schedules contextual selection again after bad contrast prompt feedback is resolved', () => {
+    insertWord({
+      id: 'context-resolved-prompt-word',
+      hanzi: '适当',
+      pinyin: 'shi dang',
+      meaning: 'suitable',
+      examples: ['要适当休息。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+    insertWord({
+      id: 'context-resolved-sibling-word',
+      hanzi: '恰当',
+      pinyin: 'qia dang',
+      meaning: 'appropriate',
+      examples: ['表达很恰当。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+    insertWordStudyAdmissionState('context-resolved-prompt-word', null);
+    insertWordSkillState({
+      wordId: 'context-resolved-prompt-word',
+      skillId: 'contextual_selection',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(72),
+      nextDueAt: isoHoursAgo(48),
+    });
+    insertWordSkillRelevance('context-resolved-prompt-word', 'contextual_selection', 'normal');
+    insertContrastContent({
+      clusterId: 'cluster-resolved-appropriate',
+      scheduledWordId: 'context-resolved-prompt-word',
+      siblingWordId: 'context-resolved-sibling-word',
+      promptId: 'prompt-resolved-contrast',
+      promptTargetWordId: 'context-resolved-prompt-word',
+    });
+    insertBadContrastPromptFeedback({
+      promptId: 'prompt-resolved-contrast',
+      targetWordId: 'context-resolved-prompt-word',
+    });
+
+    dbModule.resolveContrastPromptBadFeedback({ promptId: 'prompt-resolved-contrast' });
+
+    assert.deepEqual(getSessionItemIds(dbModule), ['review/context-resolved-prompt-word/contextual_selection']);
+  });
+
   test('suppresses review skills when urgency is below threshold', () => {
     insertWord({
       id: 'skill-not-urgent-word',

@@ -120,6 +120,8 @@ function App() {
           onSelectCluster={clusterPage.selectCluster}
           onCreatePrompt={clusterPage.createPrompt}
           onUpdatePrompt={clusterPage.updatePrompt}
+          onResolvePromptFeedback={clusterPage.resolvePromptFeedback}
+          onDeletePrompt={clusterPage.deletePrompt}
         />
       )}
 
