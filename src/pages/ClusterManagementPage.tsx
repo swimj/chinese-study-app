@@ -47,11 +47,31 @@ export function ClusterManagementPage({
   onResolvePromptFeedback: (input: { id: string; note?: string }) => Promise<void>;
   onDeletePrompt: (id: string) => Promise<void>;
 }) {
-  const selectedCluster = useMemo(
-    () => clusters.find((cluster) => cluster.id === selectedClusterId) ?? clusters[0] ?? null,
-    [clusters, selectedClusterId],
-  );
   const [promptForm, setPromptForm] = useState<PromptFormState>(emptyPromptForm);
+  const [memberSearchInput, setMemberSearchInput] = useState('');
+  const [showOnlyFlaggedClusters, setShowOnlyFlaggedClusters] = useState(false);
+  const filteredClusters = useMemo(
+    () => filterClusters({
+      clusters,
+      memberSearchInput,
+      showOnlyFlaggedClusters,
+    }),
+    [clusters, memberSearchInput, showOnlyFlaggedClusters],
+  );
+  const selectedCluster = useMemo(
+    () =>
+      filteredClusters.find((cluster) => cluster.id === selectedClusterId) ??
+      filteredClusters[0] ??
+      null,
+    [filteredClusters, selectedClusterId],
+  );
+  const flaggedClusterCount = clusters.filter(clusterHasFlaggedPrompts).length;
+
+  useEffect(() => {
+    if (selectedCluster && selectedCluster.id !== selectedClusterId) {
+      onSelectCluster(selectedCluster.id);
+    }
+  }, [onSelectCluster, selectedCluster, selectedClusterId]);
 
   useEffect(() => {
     setPromptForm({
@@ -139,18 +159,56 @@ export function ClusterManagementPage({
         <div className="cluster-layout">
           <aside className="panel cluster-list-panel">
             <h2>Clusters</h2>
+            <div className="cluster-filter-controls">
+              <label>
+                <span className="prompt-label">Member search</span>
+                <input
+                  type="search"
+                  value={memberSearchInput}
+                  onChange={(event) => setMemberSearchInput(event.target.value)}
+                  placeholder="汉字"
+                />
+              </label>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={showOnlyFlaggedClusters}
+                  onChange={(event) => setShowOnlyFlaggedClusters(event.target.checked)}
+                />
+                <span>Unresolved prompts only ({flaggedClusterCount})</span>
+              </label>
+            </div>
             <div className="cluster-list">
-              {clusters.map((cluster) => (
-                <button
-                  type="button"
-                  key={cluster.id}
-                  className={cluster.id === selectedCluster?.id ? 'cluster-list-item active' : 'cluster-list-item'}
-                  onClick={() => onSelectCluster(cluster.id)}
-                >
-                  <span>{cluster.title}</span>
-                  <small>{cluster.members.length} words · {cluster.prompts.length} prompts</small>
-                </button>
-              ))}
+              {filteredClusters.length === 0 ? (
+                <p className="notes">No clusters match the current filters.</p>
+              ) : (
+                filteredClusters.map((cluster) => {
+                  const flaggedPromptCount = getFlaggedPromptCount(cluster);
+                  return (
+                    <button
+                      type="button"
+                      key={cluster.id}
+                      className={cluster.id === selectedCluster?.id ? 'cluster-list-item active' : 'cluster-list-item'}
+                      onClick={() => onSelectCluster(cluster.id)}
+                    >
+                      <span className="cluster-list-item-title">
+                        <span>{cluster.title}</span>
+                        {flaggedPromptCount > 0 ? (
+                          <span className="cluster-alert-dot" title={`${flaggedPromptCount} unresolved prompt${flaggedPromptCount === 1 ? '' : 's'}`}>
+                            !
+                          </span>
+                        ) : null}
+                      </span>
+                      <small>
+                        {cluster.members.length} words · {cluster.prompts.length} prompts
+                        {flaggedPromptCount > 0
+                          ? ` · ${flaggedPromptCount} unresolved`
+                          : ''}
+                      </small>
+                    </button>
+                  );
+                })
+              )}
             </div>
           </aside>
 
@@ -320,4 +378,36 @@ function PromptQualityBadge({ prompt }: { prompt: ContrastPromptContent }) {
   }
 
   return <span className="badge warning-badge">Bad prompt</span>;
+}
+
+function filterClusters({
+  clusters,
+  memberSearchInput,
+  showOnlyFlaggedClusters,
+}: {
+  clusters: ContrastClusterContent[];
+  memberSearchInput: string;
+  showOnlyFlaggedClusters: boolean;
+}) {
+  const normalizedSearch = memberSearchInput.trim();
+
+  return clusters.filter((cluster) => {
+    if (showOnlyFlaggedClusters && !clusterHasFlaggedPrompts(cluster)) {
+      return false;
+    }
+
+    if (normalizedSearch.length === 0) {
+      return true;
+    }
+
+    return cluster.members.some((member) => member.word.hanzi.includes(normalizedSearch));
+  });
+}
+
+function clusterHasFlaggedPrompts(cluster: ContrastClusterContent) {
+  return cluster.prompts.some((prompt) => prompt.feedback.flagged);
+}
+
+function getFlaggedPromptCount(cluster: ContrastClusterContent) {
+  return cluster.prompts.filter((prompt) => prompt.feedback.flagged).length;
 }
