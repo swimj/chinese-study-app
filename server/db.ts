@@ -1587,7 +1587,6 @@ export function createContrastClusterFromIntake(input: CreateContrastIntakeClust
       promptText: normalizedInput.prompt.promptText,
       explanation: normalizedInput.prompt.explanation,
     });
-    updateContrastIntakeGroupStatusWithoutTransaction(normalizedInput, 'accepted');
 
     db.exec('COMMIT');
     return getContrastClusterContentById(cluster.id);
@@ -1640,7 +1639,6 @@ export function addContrastPromptFromIntake(input: AddContrastIntakePromptInput)
       promptText: normalizedInput.prompt.promptText,
       explanation: normalizedInput.prompt.explanation,
     });
-    updateContrastIntakeGroupStatusWithoutTransaction(normalizedInput, 'accepted');
 
     db.exec('COMMIT');
     return getContrastClusterContentById(normalizedInput.clusterId);

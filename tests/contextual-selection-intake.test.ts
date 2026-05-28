@@ -164,7 +164,7 @@ describe('contextual selection intake', { concurrency: false }, () => {
     assert.equal(group?.coverage.usablePromptCount, 0);
   });
 
-  test('adds a prompt from single-word intake and accepts the group', () => {
+  test('adds a prompt from single-word intake without accepting the group', () => {
     insertWord({ id: 'target-zhuangzhong', hanzi: '庄重' });
     insertWord({ id: 'sibling-zhengzhong', hanzi: '郑重' });
     insertIntake({
@@ -195,11 +195,12 @@ describe('contextual selection intake', { concurrency: false }, () => {
 
     assert.equal(cluster.prompts.length, 1);
     assert.equal(cluster.prompts[0]?.targetWordId, 'target-zhuangzhong');
-    assert.deepEqual(dbModule.getContrastIntakeGroups(), { groups: [] });
-    assert.equal(dbModule.getContrastCandidateIntake()[0]?.status, 'accepted');
+    assert.equal(dbModule.getContrastIntakeGroups().groups.length, 1);
+    assert.equal(dbModule.getContrastIntakeGroups().groups[0]?.coverage.usablePromptCount, 1);
+    assert.equal(dbModule.getContrastCandidateIntake()[0]?.status, 'open');
   });
 
-  test('creates cluster content from intake and accepts all grouped rows', () => {
+  test('creates cluster content from intake without accepting grouped rows', () => {
     insertWord({ id: 'target-kaocha', hanzi: '考察' });
     insertWord({ id: 'candidate-kaocha', hanzi: '考查' });
     insertIntake({
@@ -233,8 +234,10 @@ describe('contextual selection intake', { concurrency: false }, () => {
     assert.equal(cluster.title, '考察 / 考查');
     assert.deepEqual(cluster.members.map((member) => member.wordId), ['target-kaocha', 'candidate-kaocha']);
     assert.equal(cluster.prompts.length, 1);
-    assert.deepEqual(dbModule.getContrastIntakeGroups(), { groups: [] });
-    assert.deepEqual(dbModule.getContrastCandidateIntake().map((row) => row.status), ['accepted', 'accepted']);
+    assert.equal(dbModule.getContrastIntakeGroups().groups.length, 1);
+    assert.deepEqual(dbModule.getContrastIntakeGroups().groups[0]?.coverage.sharedClusterIds, [cluster.id]);
+    assert.equal(dbModule.getContrastIntakeGroups().groups[0]?.coverage.usablePromptCount, 1);
+    assert.deepEqual(dbModule.getContrastCandidateIntake().map((row) => row.status), ['open', 'open']);
   });
 
   test('adds missing members and prompt to an existing cluster without accepting intake', () => {
