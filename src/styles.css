@@ -141,6 +141,86 @@ button:hover {
   margin: 1.5rem 0 0.75rem;
 }
 
+.home-session-active .header,
+.home-session-active .home-grid > .panel:first-child {
+  display: none;
+}
+
+.home-session-active .home-grid {
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 0.75rem;
+}
+
+.session-panel-active {
+  position: sticky;
+  top: 1rem;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: min(760px, calc(100vh - 8.5rem));
+  min-height: 480px;
+  overflow: hidden;
+  padding: 1rem;
+}
+
+.study-session-panel h2 {
+  margin-bottom: 1rem;
+}
+
+.session-card-shell {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0;
+  overflow: hidden;
+}
+
+.session-card-scroll {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+  overflow: auto;
+  padding-right: 0.35rem;
+}
+
+.session-card-scroll > .notes {
+  margin: 0;
+}
+
+.session-action-bar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: stretch;
+  gap: 0.75rem;
+  min-height: 4.25rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.96);
+}
+
+.session-action-bar:empty {
+  display: none;
+}
+
+.session-action-bar > button {
+  min-width: min(14rem, 100%);
+}
+
+.session-action-bar .rating-grid {
+  width: 100%;
+}
+
+.session-action-bar .rating-button {
+  min-height: 82px;
+}
+
+.session-action-hint {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
 .sidebar-stack {
   display: grid;
   gap: 1.5rem;

@@ -157,7 +157,7 @@ export function HomePage({
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
 }) {
   return (
-    <>
+    <div className={sessionStarted ? 'home-page home-session-active' : 'home-page'}>
       <header className="header">
         <div>
           <h1 className="title">法华挣路</h1>
@@ -170,7 +170,7 @@ export function HomePage({
         </div>
       </header>
 
-      <div className="grid">
+      <div className="grid home-grid">
         <HomeOverviewPanel
           backendStatus={backendStatus}
           sessionPrefetch={sessionPrefetch}
@@ -248,6 +248,6 @@ export function HomePage({
           onRate={onRate}
         />
       </div>
-    </>
+    </div>
   );
 }
