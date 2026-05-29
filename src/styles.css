@@ -191,6 +191,21 @@ button:hover {
   overflow: hidden;
 }
 
+.session-interaction-surface {
+  min-height: 0;
+  display: grid;
+}
+
+.session-interaction-surface.is-paused {
+  pointer-events: none;
+  user-select: none;
+}
+
+.session-interaction-surface.is-paused .session-card-shell {
+  opacity: 0.34;
+  filter: blur(1px);
+}
+
 .session-card-scroll {
   min-height: 0;
   display: grid;
@@ -253,6 +268,26 @@ button:hover {
   border-radius: 0.55rem;
 }
 
+.session-action-bar button[aria-expanded] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
+
+.disclosure-caret {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translateY(-0.1rem);
+  transition: transform 120ms ease;
+}
+
+.session-action-bar button[aria-expanded='true'] .disclosure-caret {
+  transform: rotate(225deg) translateY(-0.1rem);
+}
+
 .session-action-bar .manage-study-popover {
   position: static;
   width: 100%;
@@ -263,9 +298,7 @@ button:hover {
 }
 
 .session-action-bar .manage-study-heading {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
+  display: block;
 }
 
 .session-action-bar .manage-study-heading button {
@@ -289,6 +322,72 @@ button:hover {
 }
 
 .session-action-hint {
+  line-height: 1.45;
+}
+
+.keyboard-guide-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.keyboard-shortcuts-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(2, 6, 23, 0.5);
+}
+
+.keyboard-shortcuts-card {
+  width: min(520px, calc(100vw - 2rem));
+  max-height: min(640px, calc(100vh - 2rem));
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  overflow: auto;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 0.75rem;
+  background: #111827;
+  box-shadow: 0 24px 64px rgba(2, 6, 23, 0.5);
+}
+
+.keyboard-shortcuts-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.keyboard-shortcuts-heading h3 {
+  margin: 0;
+}
+
+.keyboard-shortcuts-list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.keyboard-shortcuts-list div {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.keyboard-shortcuts-list dt {
+  color: #f8fafc;
+  font-weight: 700;
+}
+
+.keyboard-shortcuts-list dd {
+  margin: 0;
+  color: #cbd5e1;
   line-height: 1.45;
 }
 

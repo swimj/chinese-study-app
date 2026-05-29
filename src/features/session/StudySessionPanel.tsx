@@ -1,4 +1,4 @@
-import { useState, type ReactNode, type RefObject } from 'react';
+import { useEffect, useState, type ReactNode, type RefObject } from 'react';
 import { MeaningList } from '../../components/MeaningList';
 import type {
   LearningWordProgress,
@@ -165,6 +165,7 @@ export function StudySessionPanel({
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
 }) {
   const productionFormId = 'production-hanzi-input-form';
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const panelView = getStudySessionPanelView({
     sessionStarted,
     sessionCompletedWithSummary: sessionPhase === 'completed' && sessionSummary !== null,
@@ -180,13 +181,33 @@ export function StudySessionPanel({
     (!productionRequiresHanziInput || productionAwaitingRating) &&
     (!activeItem || activeItem.actionKind !== 'contrast_selection' || contrastAwaitingRating)
   );
+  const sessionEndDisabled = sessionPhase === 'draining' || personalNotesEditorOpen;
+  const sessionEndLabel = sessionPhase === 'draining' ? 'Session draining' : 'End session';
+
+  useEffect(() => {
+    if (!shortcutsOpen) {
+      return;
+    }
+
+    function blockSessionKeys(event: KeyboardEvent) {
+      if (event.key === 'Escape' || event.key.toLowerCase() === 'k') {
+        setShortcutsOpen(false);
+      }
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+
+    window.addEventListener('keydown', blockSessionKeys, { capture: true });
+    return () => window.removeEventListener('keydown', blockSessionKeys, { capture: true });
+  }, [shortcutsOpen]);
 
   return (
     <div className={sessionStarted ? 'panel study-session-panel session-panel-active' : 'panel study-session-panel'}>
       <h2>Study session</h2>
-      {panelView === 'not_started' ? (
-        <p className="notes">Start the session to freeze the current session snapshot into frontend state.</p>
-      ) : panelView === 'frozen_production' && frozenProductionCard ? (
+      <div className={shortcutsOpen ? 'session-interaction-surface is-paused' : 'session-interaction-surface'}>
+        {panelView === 'not_started' ? (
+          <p className="notes">Start the session to freeze the current session snapshot into frontend state.</p>
+        ) : panelView === 'frozen_production' && frozenProductionCard ? (
         <div className="review-card session-card-shell">
           <div className="session-card-scroll">
             <div className="review-card-header">
@@ -268,9 +289,10 @@ export function StudySessionPanel({
               </SessionActionSection>
             ) : null}
             <SessionActionSection>
-              <button type="button" className="secondary-button" onClick={onEndSession}>
-                End session
+              <button type="button" className="secondary-button" onClick={onEndSession} disabled={sessionEndDisabled}>
+                {sessionEndLabel}
               </button>
+              <KeyboardGuideButton onClick={() => setShortcutsOpen(true)} />
             </SessionActionSection>
           </div>
         </div>
@@ -311,9 +333,10 @@ export function StudySessionPanel({
               />
             </SessionActionSection>
             <SessionActionSection>
-              <button type="button" className="secondary-button" onClick={onEndSession}>
-                End session
+              <button type="button" className="secondary-button" onClick={onEndSession} disabled={sessionEndDisabled}>
+                {sessionEndLabel}
               </button>
+              <KeyboardGuideButton onClick={() => setShortcutsOpen(true)} />
             </SessionActionSection>
           </div>
         </div>
@@ -327,6 +350,7 @@ export function StudySessionPanel({
               <button type="button" onClick={onEndSession}>
                 Close summary
               </button>
+              <KeyboardGuideButton onClick={() => setShortcutsOpen(true)} />
               <UndoButton
                 hasUndo={hasUndo}
                 submittingRating={submittingRating}
@@ -381,9 +405,10 @@ export function StudySessionPanel({
               />
             </SessionActionSection>
             <SessionActionSection>
-              <button type="button" className="secondary-button" onClick={onEndSession}>
-                End session
+              <button type="button" className="secondary-button" onClick={onEndSession} disabled={sessionEndDisabled}>
+                {sessionEndLabel}
               </button>
+              <KeyboardGuideButton onClick={() => setShortcutsOpen(true)} />
             </SessionActionSection>
           </div>
         </div>
@@ -403,6 +428,7 @@ export function StudySessionPanel({
               <button type="button" onClick={onEndSession}>
                 Back to overview
               </button>
+              <KeyboardGuideButton onClick={() => setShortcutsOpen(true)} />
             </SessionActionSection>
           </div>
         </div>
@@ -596,19 +622,96 @@ export function StudySessionPanel({
               />
             </SessionActionSection>
             <SessionActionSection>
-              <button type="button" className="secondary-button" onClick={onEndSession}>
-                End session
+              <button type="button" className="secondary-button" onClick={onEndSession} disabled={sessionEndDisabled}>
+                {sessionEndLabel}
               </button>
+              <KeyboardGuideButton onClick={() => setShortcutsOpen(true)} />
             </SessionActionSection>
           </div>
         </div>
-      ) : null}
+        ) : null}
+      </div>
+      {shortcutsOpen ? <KeyboardShortcutsOverlay onClose={() => setShortcutsOpen(false)} /> : null}
     </div>
   );
 }
 
 function SessionActionSection({ children }: { children: ReactNode }) {
   return <div className="session-action-section">{children}</div>;
+}
+
+function KeyboardGuideButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="secondary-button keyboard-guide-button"
+      onClick={onClick}
+      aria-label="Show keyboard shortcuts"
+      title="Show keyboard shortcuts"
+    >
+      <span aria-hidden="true">⌨</span>
+      <span>Shortcuts</span>
+    </button>
+  );
+}
+
+function KeyboardShortcutsOverlay({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="keyboard-shortcuts-backdrop" role="presentation" onClick={onClose}>
+      <section
+        className="keyboard-shortcuts-card"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Keyboard shortcuts"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="keyboard-shortcuts-heading">
+          <h3>Keyboard shortcuts</h3>
+          <button type="button" className="secondary-button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+        <dl className="keyboard-shortcuts-list">
+          <div>
+            <dt>Space</dt>
+            <dd>Default advance (reveal answer, rate &#39;Good&#39;, or advance)</dd>
+          </div>
+          <div>
+            <dt>1</dt>
+            <dd>Rate &#39;Forgot&#39;</dd>
+          </div>
+          <div>
+            <dt>2</dt>
+            <dd>Rate &#39;Hard&#39;</dd>
+          </div>
+          <div>
+            <dt>3</dt>
+            <dd>Rate &#39;Good&#39;</dd>
+          </div>
+          <div>
+            <dt>4</dt>
+            <dd>Rate &#39;Easy&#39;</dd>
+          </div>
+          <div>
+            <dt>u</dt>
+            <dd>Undo the last rating (unavailable in some cases)</dd>
+          </div>
+          <div>
+            <dt>e</dt>
+            <dd>Open personal notes editor</dd>
+          </div>
+          <div>
+            <dt>Control-Enter</dt>
+            <dd>Save personal notes</dd>
+          </div>
+          <div>
+            <dt>Escape / K</dt>
+            <dd>Close overlay guide.</dd>
+          </div>
+        </dl>
+      </section>
+    </div>
+  );
 }
 
 function ContrastSelectionDrill({
@@ -753,25 +856,18 @@ function CardActions({
       <button
         type="button"
         className="secondary-button"
-        onClick={() => setManageOpen(true)}
+        onClick={() => setManageOpen((open) => !open)}
         disabled={personalNotesEditorSaving || studyManagementSubmitting}
+        aria-expanded={manageOpen}
       >
-        Manage Study
-      </button>
-      <button
-        type="button"
-        className="secondary-button"
-        onClick={onOpenPersonalNotesEditor}
-        disabled={personalNotesEditorSaving}
-      >
-        Edit notes
+        <span>Manage Study</span>
+        <span className="disclosure-caret" aria-hidden="true" />
       </button>
       {manageOpen ? (
         <ManageStudyPanel
           actionKind={activeItem?.actionKind ?? null}
           status={activeWord.status}
           isSubmitting={studyManagementSubmitting}
-          onClose={() => setManageOpen(false)}
           onDismissWord={() => {
             setManageOpen(false);
             onDismissCurrentWord();
@@ -782,6 +878,14 @@ function CardActions({
           }}
         />
       ) : null}
+      <button
+        type="button"
+        className="secondary-button"
+        onClick={onOpenPersonalNotesEditor}
+        disabled={personalNotesEditorSaving}
+      >
+        Edit notes
+      </button>
     </div>
   );
 }
@@ -802,17 +906,18 @@ function FrozenProductionCardActions({
       <button
         type="button"
         className="secondary-button"
-        onClick={() => setManageOpen(true)}
+        onClick={() => setManageOpen((open) => !open)}
         disabled={isSubmitting}
+        aria-expanded={manageOpen}
       >
-        Manage Study
+        <span>Manage Study</span>
+        <span className="disclosure-caret" aria-hidden="true" />
       </button>
       {manageOpen ? (
         <ManageStudyPanel
           actionKind="production"
           status="review"
           isSubmitting={isSubmitting}
-          onClose={() => setManageOpen(false)}
           onDismissWord={() => {
             setManageOpen(false);
             onDismissFrozenProductionWord();
@@ -831,14 +936,12 @@ function ManageStudyPanel({
   actionKind,
   status,
   isSubmitting,
-  onClose,
   onDismissWord,
   onManageStudyAction,
 }: {
   actionKind: SessionStudyItem['actionKind'] | null;
   status: Word['status'];
   isSubmitting: boolean;
-  onClose: () => void;
   onDismissWord: () => void;
   onManageStudyAction: (action: StudyManagementActionKind, note: string) => void;
 }) {
@@ -850,9 +953,6 @@ function ManageStudyPanel({
     <div className="manage-study-popover">
       <div className="manage-study-heading">
         <strong>Manage Study</strong>
-        <button type="button" className="secondary-button" onClick={onClose} disabled={isSubmitting}>
-          Close
-        </button>
       </div>
       <div className="manage-study-actions">
         <button type="button" className="secondary-button" onClick={onDismissWord} disabled={isSubmitting}>
