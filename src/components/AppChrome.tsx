@@ -6,6 +6,7 @@ export function AppChrome({
   currentPage,
   error,
   version,
+  sessionActive,
   priorityPageLoading,
   intakePageLoading,
   clusterPageLoading,
@@ -18,6 +19,7 @@ export function AppChrome({
   currentPage: AppPageKey;
   error: string | null;
   version: string;
+  sessionActive: boolean;
   priorityPageLoading: boolean;
   intakePageLoading: boolean;
   clusterPageLoading: boolean;
@@ -30,7 +32,7 @@ export function AppChrome({
   const navigationLoading = priorityPageLoading || intakePageLoading || clusterPageLoading;
 
   return (
-    <div className="container">
+    <div className={sessionActive ? 'container app-session-active' : 'container'}>
       <nav className="navbar" aria-label="Primary">
         <div className="nav-brand">
           <strong>法华挣路</strong>

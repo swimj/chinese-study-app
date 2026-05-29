@@ -1,4 +1,4 @@
-import { useState, type RefObject } from 'react';
+import { useState, type ReactNode, type RefObject } from 'react';
 import { MeaningList } from '../../components/MeaningList';
 import type {
   LearningWordProgress,
@@ -198,23 +198,10 @@ export function StudySessionPanel({
                     : 'New word'}
                 {` · ${studyProfile.labels.productionDirection}`}
               </p>
-              {frozenProductionCard.status === 'review' ? (
-                <FrozenProductionCardActions
-                  isSubmitting={studyManagementSubmitting}
-                  onDismissFrozenProductionWord={onDismissFrozenProductionWord}
-                  onManageFrozenProductionAction={onManageFrozenProductionAction}
-                />
-              ) : null}
             </div>
             <p className="notes">
               Answered {frozenProductionCard.reviewedCount} this session · {frozenProductionCard.queuedCount} still queued
             </p>
-            <UndoButton
-              hasUndo={hasUndo}
-              submittingRating={submittingRating}
-              personalNotesEditorOpen={personalNotesEditorOpen}
-              onUndoLastRating={onUndoLastRating}
-            />
             <div className="prompt-block">
               <span className="prompt-label">Prompt</span>
               {frozenProductionCard.promptDisplayedMeanings.length > 0 ? (
@@ -260,9 +247,31 @@ export function StudySessionPanel({
             </div>
           </div>
           <div className="session-action-bar">
-            <button type="button" onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen}>
-              Next
-            </button>
+            <SessionActionSection>
+              <button type="button" onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen}>
+                Next
+              </button>
+              <UndoButton
+                hasUndo={hasUndo}
+                submittingRating={submittingRating}
+                personalNotesEditorOpen={personalNotesEditorOpen}
+                onUndoLastRating={onUndoLastRating}
+              />
+            </SessionActionSection>
+            {frozenProductionCard.status === 'review' ? (
+              <SessionActionSection>
+                <FrozenProductionCardActions
+                  isSubmitting={studyManagementSubmitting}
+                  onDismissFrozenProductionWord={onDismissFrozenProductionWord}
+                  onManageFrozenProductionAction={onManageFrozenProductionAction}
+                />
+              </SessionActionSection>
+            ) : null}
+            <SessionActionSection>
+              <button type="button" className="secondary-button" onClick={onEndSession}>
+                End session
+              </button>
+            </SessionActionSection>
           </div>
         </div>
       ) : panelView === 'frozen_contrast' && frozenContrastCard ? (
@@ -274,12 +283,6 @@ export function StudySessionPanel({
             <p className="notes">
               Answered {frozenContrastCard.reviewedCount} this session · {frozenContrastCard.queuedCount} still queued
             </p>
-            <UndoButton
-              hasUndo={hasUndo}
-              submittingRating={submittingRating}
-              personalNotesEditorOpen={personalNotesEditorOpen}
-              onUndoLastRating={onUndoLastRating}
-            />
             <div className="prompt-block">
               <span className="prompt-label">Prompt</span>
               <strong className="contrast-prompt-text">{frozenContrastCard.item.contrastSelection?.prompt.promptText}</strong>
@@ -296,9 +299,22 @@ export function StudySessionPanel({
             <p className="notes">Incorrect contrast choice. This item was recorded as Forgot.</p>
           </div>
           <div className="session-action-bar">
-            <button type="button" onClick={onContinueAfterAutoContrastForgot} disabled={personalNotesEditorOpen}>
-              Next
-            </button>
+            <SessionActionSection>
+              <button type="button" onClick={onContinueAfterAutoContrastForgot} disabled={personalNotesEditorOpen}>
+                Next
+              </button>
+              <UndoButton
+                hasUndo={hasUndo}
+                submittingRating={submittingRating}
+                personalNotesEditorOpen={personalNotesEditorOpen}
+                onUndoLastRating={onUndoLastRating}
+              />
+            </SessionActionSection>
+            <SessionActionSection>
+              <button type="button" className="secondary-button" onClick={onEndSession}>
+                End session
+              </button>
+            </SessionActionSection>
           </div>
         </div>
       ) : panelView === 'completed' && sessionSummary ? (
@@ -307,12 +323,17 @@ export function StudySessionPanel({
             <SessionSummaryPanel summary={sessionSummary} />
           </div>
           <div className="session-action-bar">
-            <UndoButton
-              hasUndo={hasUndo}
-              submittingRating={submittingRating}
-              personalNotesEditorOpen={personalNotesEditorOpen}
-              onUndoLastRating={onUndoLastRating}
-            />
+            <SessionActionSection>
+              <button type="button" onClick={onEndSession}>
+                Close summary
+              </button>
+              <UndoButton
+                hasUndo={hasUndo}
+                submittingRating={submittingRating}
+                personalNotesEditorOpen={personalNotesEditorOpen}
+                onUndoLastRating={onUndoLastRating}
+              />
+            </SessionActionSection>
           </div>
         </div>
       ) : panelView === 'unstudied_intro' && activeWord ? (
@@ -320,15 +341,6 @@ export function StudySessionPanel({
           <div className="session-card-scroll">
             <div className="review-card-header">
               <p className="badge">New word introduction</p>
-              <CardActions
-                activeItem={null}
-                activeWord={activeWord}
-                personalNotesEditorSaving={personalNotesEditorSaving}
-                studyManagementSubmitting={studyManagementSubmitting}
-                onDismissCurrentWord={onDismissCurrentWord}
-                onManageStudyAction={onManageStudyAction}
-                onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
-              />
             </div>
             <div className="prompt-block">
               <span className="prompt-label">{studyProfile.labels.target}</span>
@@ -342,19 +354,37 @@ export function StudySessionPanel({
             </div>
           </div>
           <div className="session-action-bar">
-            <button
-              type="button"
-              onClick={() => onBeginUnstudiedDrill(activeWord.id)}
-              disabled={personalNotesEditorOpen}
-            >
-              Begin recall drills
-            </button>
-            <UndoButton
-              hasUndo={hasUndo}
-              submittingRating={submittingRating}
-              personalNotesEditorOpen={personalNotesEditorOpen}
-              onUndoLastRating={onUndoLastRating}
-            />
+            <SessionActionSection>
+              <button
+                type="button"
+                onClick={() => onBeginUnstudiedDrill(activeWord.id)}
+                disabled={personalNotesEditorOpen}
+              >
+                Begin recall drills
+              </button>
+              <UndoButton
+                hasUndo={hasUndo}
+                submittingRating={submittingRating}
+                personalNotesEditorOpen={personalNotesEditorOpen}
+                onUndoLastRating={onUndoLastRating}
+              />
+            </SessionActionSection>
+            <SessionActionSection>
+              <CardActions
+                activeItem={null}
+                activeWord={activeWord}
+                personalNotesEditorSaving={personalNotesEditorSaving}
+                studyManagementSubmitting={studyManagementSubmitting}
+                onDismissCurrentWord={onDismissCurrentWord}
+                onManageStudyAction={onManageStudyAction}
+                onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
+              />
+            </SessionActionSection>
+            <SessionActionSection>
+              <button type="button" className="secondary-button" onClick={onEndSession}>
+                End session
+              </button>
+            </SessionActionSection>
           </div>
         </div>
       ) : panelView === 'empty' ? (
@@ -363,15 +393,17 @@ export function StudySessionPanel({
             <p className="notes">No session items remain in the active snapshot.</p>
           </div>
           <div className="session-action-bar">
-            <UndoButton
-              hasUndo={hasUndo}
-              submittingRating={submittingRating}
-              personalNotesEditorOpen={personalNotesEditorOpen}
-              onUndoLastRating={onUndoLastRating}
-            />
-            <button type="button" onClick={onEndSession}>
-              Back to overview
-            </button>
+            <SessionActionSection>
+              <UndoButton
+                hasUndo={hasUndo}
+                submittingRating={submittingRating}
+                personalNotesEditorOpen={personalNotesEditorOpen}
+                onUndoLastRating={onUndoLastRating}
+              />
+              <button type="button" onClick={onEndSession}>
+                Back to overview
+              </button>
+            </SessionActionSection>
           </div>
         </div>
       ) : activeItem && activeWord ? (
@@ -393,28 +425,13 @@ export function StudySessionPanel({
                   ? studyProfile.labels.recognitionDirection
                   : activeItem.actionKind === 'contrast_selection'
                     ? 'Contrast selection'
-                    : studyProfile.labels.productionDirection}
+                  : studyProfile.labels.productionDirection}
               </p>
-              <CardActions
-                activeItem={activeItem}
-                activeWord={activeWord}
-                personalNotesEditorSaving={personalNotesEditorSaving}
-                studyManagementSubmitting={studyManagementSubmitting}
-                onDismissCurrentWord={onDismissCurrentWord}
-                onManageStudyAction={onManageStudyAction}
-                onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
-              />
             </div>
             <p className="notes">
               Answered {reviewedCount} this session · {queuedCount} still queued · Unique lapse items{' '}
               {sessionSummary?.lapsedReviewActionIds.length ?? 0} · Elapsed {activeElapsedTime}
             </p>
-            <UndoButton
-              hasUndo={hasUndo}
-              submittingRating={submittingRating}
-              personalNotesEditorOpen={personalNotesEditorOpen}
-              onUndoLastRating={onUndoLastRating}
-            />
             <div className="prompt-block">
               <span className="prompt-label">Prompt</span>
               {activeItem.actionKind === 'contrast_selection' ? (
@@ -524,45 +541,74 @@ export function StudySessionPanel({
             ) : null}
           </div>
           <div className="session-action-bar">
-            {activeItem.actionKind === 'contrast_selection' && !showRatingButtons ? (
-              <span className="prompt-meta session-action-hint">Choose an option to continue.</span>
-            ) : showRatingButtons ? (
-              <div className="rating-grid">
-                {activeRatingOptions.map((option) => (
-                  <button
+            <SessionActionSection>
+              {activeItem.actionKind === 'contrast_selection' && !showRatingButtons ? (
+                <span className="prompt-meta session-action-hint">Choose an option to continue.</span>
+              ) : showRatingButtons ? (
+                <div className="rating-grid">
+                  {activeRatingOptions.map((option) => (
+                    <button
                     key={option.value}
                     type="button"
                     className="rating-button"
+                    title={option.note}
                     onClick={() =>
-                      onRate(option.value, {
-                        restoreUi: productionRequiresHanziInput ? 'production-input' : 'revealed',
-                      })
-                    }
-                    disabled={submittingRating !== null || personalNotesEditorOpen}
-                  >
-                    <strong>{option.label}</strong>
-                    <span>{option.note}</span>
-                  </button>
-                ))}
-              </div>
-            ) : productionRequiresHanziInput && !productionAwaitingRating ? (
-              <button
-                type="submit"
-                form={productionFormId}
-                disabled={submittingRating !== null || personalNotesEditorOpen}
-              >
-                {studyProfile.labels.submitProductionInput}
+                        onRate(option.value, {
+                          restoreUi: productionRequiresHanziInput ? 'production-input' : 'revealed',
+                        })
+                      }
+                      disabled={submittingRating !== null || personalNotesEditorOpen}
+                    >
+                      <strong>{option.label}</strong>
+                      <span>{option.note}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : productionRequiresHanziInput && !productionAwaitingRating ? (
+                <button
+                  type="submit"
+                  form={productionFormId}
+                  disabled={submittingRating !== null || personalNotesEditorOpen}
+                >
+                  {studyProfile.labels.submitProductionInput}
+                </button>
+              ) : (
+                <button type="button" onClick={onRevealAnswer} disabled={personalNotesEditorOpen}>
+                  Reveal answer
+                </button>
+              )}
+              <UndoButton
+                hasUndo={hasUndo}
+                submittingRating={submittingRating}
+                personalNotesEditorOpen={personalNotesEditorOpen}
+                onUndoLastRating={onUndoLastRating}
+              />
+            </SessionActionSection>
+            <SessionActionSection>
+              <CardActions
+                activeItem={activeItem}
+                activeWord={activeWord}
+                personalNotesEditorSaving={personalNotesEditorSaving}
+                studyManagementSubmitting={studyManagementSubmitting}
+                onDismissCurrentWord={onDismissCurrentWord}
+                onManageStudyAction={onManageStudyAction}
+                onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
+              />
+            </SessionActionSection>
+            <SessionActionSection>
+              <button type="button" className="secondary-button" onClick={onEndSession}>
+                End session
               </button>
-            ) : (
-              <button type="button" onClick={onRevealAnswer} disabled={personalNotesEditorOpen}>
-                Reveal answer
-              </button>
-            )}
+            </SessionActionSection>
           </div>
         </div>
       ) : null}
     </div>
   );
+}
+
+function SessionActionSection({ children }: { children: ReactNode }) {
+  return <div className="session-action-section">{children}</div>;
 }
 
 function ContrastSelectionDrill({

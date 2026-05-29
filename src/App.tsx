@@ -56,11 +56,14 @@ function App() {
     setBackendStatus(statusResponse);
   }
 
+  const sessionActive = currentPage === 'home' && studySession.homePageProps.sessionStarted;
+
   return (
     <AppChrome
       currentPage={currentPage}
       error={error}
       version={APP_VERSION}
+      sessionActive={sessionActive}
       priorityPageLoading={priorityPage.isLoading}
       intakePageLoading={intakePage.isLoading}
       clusterPageLoading={clusterPage.isLoading}
