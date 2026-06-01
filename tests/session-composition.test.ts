@@ -391,14 +391,14 @@ describe('session composition', { concurrency: false }, () => {
     };
 
     try {
-      const scheduledTargetItem = sampleWithRandomValues([0, 0.75, 0]);
+      const scheduledTargetItem = sampleWithRandomValues([0, 0.25]);
       assert.equal(scheduledTargetItem?.contrastSelection?.promptTargetWordId, 'contrast-scheduled-word');
       assert.deepEqual(
         scheduledTargetItem?.contrastSelection?.choices.map((choice) => choice.word.id).sort(),
         ['contrast-scheduled-word', 'contrast-sibling-word'].sort(),
       );
 
-      const siblingTargetItem = sampleWithRandomValues([0, 0.25, 0]);
+      const siblingTargetItem = sampleWithRandomValues([0, 0.75]);
       assert.equal(siblingTargetItem?.contrastSelection?.promptTargetWordId, 'contrast-sibling-word');
       assert.deepEqual(
         siblingTargetItem?.contrastSelection?.choices.map((choice) => choice.word.id).sort(),
@@ -483,14 +483,14 @@ describe('session composition', { concurrency: false }, () => {
     };
 
     try {
-      const siblingTargetItem = sampleWithRandomValues([0.75, 0.25, 0]);
+      const siblingTargetItem = sampleWithRandomValues([0.75, 0.75]);
       assert.equal(siblingTargetItem?.contrastSelection?.promptTargetWordId, 'contrast-large-second-sibling');
       assert.deepEqual(
         siblingTargetItem?.contrastSelection?.choices.map((choice) => choice.word.id).sort(),
         ['contrast-large-scheduled-word', 'contrast-large-second-sibling'].sort(),
       );
 
-      const scheduledTargetItem = sampleWithRandomValues([0.75, 0.75, 0]);
+      const scheduledTargetItem = sampleWithRandomValues([0.75, 0.25]);
       assert.equal(scheduledTargetItem?.contrastSelection?.promptTargetWordId, 'contrast-large-scheduled-word');
       assert.deepEqual(
         scheduledTargetItem?.contrastSelection?.choices.map((choice) => choice.word.id).sort(),
@@ -559,6 +559,71 @@ describe('session composition', { concurrency: false }, () => {
       .filter((item) => item.actionKind === 'contrast_selection');
 
     assert.deepEqual(contrastItems.map((item) => item.targetWordId), ['contrast-first-word']);
+  });
+
+  test('samples among multiple prompts for the same contrast target word', () => {
+    insertWord({
+      id: 'contrast-multi-scheduled-word',
+      hanzi: '严格',
+      pinyin: 'yan ge',
+      meaning: 'strict',
+      examples: ['标准很严格。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+    insertWord({
+      id: 'contrast-multi-sibling-word',
+      hanzi: '严肃',
+      pinyin: 'yan su',
+      meaning: 'serious',
+      examples: ['态度很严肃。'],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(120),
+    });
+    insertWordStudyAdmissionState('contrast-multi-scheduled-word', null);
+    insertWordSkillState({
+      wordId: 'contrast-multi-scheduled-word',
+      skillId: 'contextual_selection',
+      intervalHours: 6,
+      lastStudiedAt: isoHoursAgo(12),
+      nextDueAt: isoHoursAgo(6),
+    });
+    insertWordSkillRelevance('contrast-multi-scheduled-word', 'contextual_selection', 'normal');
+    insertContrastContent({
+      clusterId: 'cluster-multi-prompt-target',
+      scheduledWordId: 'contrast-multi-scheduled-word',
+      siblingWordId: 'contrast-multi-sibling-word',
+      promptId: 'prompt-multi-target-a',
+      promptTargetWordId: 'contrast-multi-scheduled-word',
+    });
+    dbModule.createContrastPrompt({
+      id: 'prompt-multi-target-b',
+      clusterId: 'cluster-multi-prompt-target',
+      targetWordId: 'contrast-multi-scheduled-word',
+      promptText: 'multi target prompt b',
+      explanation: 'b',
+    });
+
+    const originalRandom = Math.random;
+    const sampleWithRandomValues = (values: number[]) => {
+      let index = 0;
+      Math.random = () => values[index++] ?? 0;
+      return dbModule.getSessionPayload(studyDayKey).buckets.review[0];
+    };
+
+    try {
+      const firstPromptItem = sampleWithRandomValues([0, 0.25]);
+      const secondPromptItem = sampleWithRandomValues([0, 0.75]);
+
+      assert.equal(firstPromptItem?.contrastSelection?.promptTargetWordId, 'contrast-multi-scheduled-word');
+      assert.equal(secondPromptItem?.contrastSelection?.promptTargetWordId, 'contrast-multi-scheduled-word');
+      assert.equal(firstPromptItem?.contrastSelection?.prompt.id, 'prompt-multi-target-a');
+      assert.equal(secondPromptItem?.contrastSelection?.prompt.id, 'prompt-multi-target-b');
+    } finally {
+      Math.random = originalRandom;
+    }
   });
 
   test('does not schedule contextual selection without usable contrast prompt content', () => {
