@@ -9,7 +9,6 @@ import { useClusterPageController } from './features/contrast/useClusterPageCont
 import { useIntakePageController } from './features/contrast/useIntakePageController';
 import { HomePage } from './pages/HomePage';
 import { PriorityPage } from './pages/PriorityPage';
-import { ClusterManagementPage } from './pages/ClusterManagementPage';
 import { IntakePage } from './pages/IntakePage';
 
 const APP_VERSION = __APP_VERSION__;
@@ -28,8 +27,6 @@ function App() {
     setError,
   });
   const clusterPage = useClusterPageController({
-    currentPage,
-    setCurrentPage,
     setError,
   });
   const intakePage = useIntakePageController({
@@ -56,6 +53,10 @@ function App() {
     setBackendStatus(statusResponse);
   }
 
+  async function refreshContrastManagementState() {
+    await clusterPage.loadData();
+  }
+
   const sessionActive = currentPage === 'home' && studySession.homePageProps.sessionStarted;
 
   return (
@@ -66,11 +67,12 @@ function App() {
       sessionActive={sessionActive}
       priorityPageLoading={priorityPage.isLoading}
       intakePageLoading={intakePage.isLoading}
-      clusterPageLoading={clusterPage.isLoading}
       onOpenHomePage={() => setCurrentPage('home')}
       onOpenPriorityPage={() => void priorityPage.openPage()}
-      onOpenIntakePage={() => void intakePage.openPage()}
-      onOpenClusterPage={() => void clusterPage.openPage()}
+      onOpenIntakePage={() => void (async () => {
+        await clusterPage.loadData();
+        await intakePage.openPage();
+      })()}
     >
       {currentPage === 'home' ? (
         <HomePage backendStatus={backendStatus} {...studySession.homePageProps} />
@@ -102,31 +104,43 @@ function App() {
         />
       ) : currentPage === 'intake' ? (
         <IntakePage
-          groups={intakePage.groups}
-          activeGroupIndex={intakePage.activeGroupIndex}
+          words={intakePage.words}
+          activeWordIndex={intakePage.activeWordIndex}
           isSaving={intakePage.isSaving}
-          wordSearchResults={intakePage.wordSearchResults}
-          wordSearchLoading={intakePage.wordSearchLoading}
-          onSelectGroupIndex={intakePage.selectGroupIndex}
-          onSearchCandidateWords={intakePage.searchCandidateWords}
-          onAcceptGroup={intakePage.acceptGroup}
-          onDismissGroup={intakePage.dismissGroup}
-          onCreateCluster={intakePage.createCluster}
-          onAddToCluster={intakePage.addToCluster}
-          onAddPrompt={intakePage.addPrompt}
-        />
-      ) : (
-        <ClusterManagementPage
+          onSelectWordIndex={intakePage.selectWordIndex}
+          onResolveWord={async (targetWordId) => {
+            await intakePage.resolveWord(targetWordId);
+            await refreshContrastManagementState();
+          }}
+          onSuppressProduction={async (targetWordId) => {
+            await intakePage.suppressProduction(targetWordId);
+            await refreshContrastManagementState();
+          }}
+          onReportBadPrompt={async (input) => {
+            await intakePage.reportBadPrompt(input);
+            await refreshContrastManagementState();
+          }}
+          onCreateClusterForWord={async (input) => {
+            await intakePage.createClusterForWord(input);
+            await refreshContrastManagementState();
+          }}
           clusters={clusterPage.clusters}
           selectedClusterId={clusterPage.selectedClusterId}
-          isSavingPrompt={clusterPage.isSavingPrompt}
+          wordSearchResults={clusterPage.wordSearchResults}
+          isSavingCluster={clusterPage.isSavingPrompt}
           onSelectCluster={clusterPage.selectCluster}
+          onSearchWords={clusterPage.searchWords}
+          onCreateCluster={clusterPage.createCluster}
+          onUpdateCluster={clusterPage.updateCluster}
+          onAddMember={clusterPage.addMember}
+          onUpdateMember={clusterPage.updateMember}
+          onRemoveMember={clusterPage.removeMember}
           onCreatePrompt={clusterPage.createPrompt}
           onUpdatePrompt={clusterPage.updatePrompt}
           onResolvePromptFeedback={clusterPage.resolvePromptFeedback}
           onDeletePrompt={clusterPage.deletePrompt}
         />
-      )}
+      ) : null}
 
       {studySession.personalNotesEditor.open ? (
         <div className="definition-editor-modal-backdrop" role="presentation">

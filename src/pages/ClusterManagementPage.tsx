@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { ContrastPrompt } from '../domain/study-actions';
-import type { ContrastClusterContent, ContrastPromptContent } from '../services/api';
+import type { ContrastClusterContent, ContrastIntakeWord, ContrastPromptContent } from '../services/api';
 
 type PromptFormState = {
   mode: 'create' | 'edit';
@@ -20,18 +20,34 @@ const emptyPromptForm: PromptFormState = {
 
 export function ClusterManagementPage({
   clusters,
+  intakeWords,
+  wordSearchResults,
   selectedClusterId,
   isSavingPrompt,
   onSelectCluster,
+  onSearchWords,
+  onCreateCluster,
+  onUpdateCluster,
+  onAddMember,
+  onUpdateMember,
+  onRemoveMember,
   onCreatePrompt,
   onUpdatePrompt,
   onResolvePromptFeedback,
   onDeletePrompt,
 }: {
   clusters: ContrastClusterContent[];
+  intakeWords: ContrastIntakeWord[];
+  wordSearchResults: Array<{ id: string; hanzi: string; pinyin: string; meaning: string }>;
   selectedClusterId: string | null;
   isSavingPrompt: boolean;
   onSelectCluster: (clusterId: string) => void;
+  onSearchWords: (query: string) => Promise<void>;
+  onCreateCluster: (input: { title: string; note?: string }) => Promise<void>;
+  onUpdateCluster: (input: { id: string; title: string; note: string }) => Promise<void>;
+  onAddMember: (input: { clusterId: string; wordId: string; nuanceNote?: string }) => Promise<void>;
+  onUpdateMember: (input: { clusterId: string; wordId: string; nuanceNote?: string; displayOrder?: number | null }) => Promise<void>;
+  onRemoveMember: (input: { clusterId: string; wordId: string }) => Promise<void>;
   onCreatePrompt: (input: {
     clusterId: string;
     targetWordId: string;
@@ -50,13 +66,21 @@ export function ClusterManagementPage({
   const [promptForm, setPromptForm] = useState<PromptFormState>(emptyPromptForm);
   const [memberSearchInput, setMemberSearchInput] = useState('');
   const [showOnlyFlaggedClusters, setShowOnlyFlaggedClusters] = useState(false);
+  const [showOnlyIncompleteClusters, setShowOnlyIncompleteClusters] = useState(false);
+  const [showOnlyOpenIntakeClusters, setShowOnlyOpenIntakeClusters] = useState(false);
+  const [newClusterTitle, setNewClusterTitle] = useState('');
+  const [newClusterNote, setNewClusterNote] = useState('');
+  const [memberAddQuery, setMemberAddQuery] = useState('');
   const filteredClusters = useMemo(
     () => filterClusters({
       clusters,
+      intakeWords,
       memberSearchInput,
       showOnlyFlaggedClusters,
+      showOnlyIncompleteClusters,
+      showOnlyOpenIntakeClusters,
     }),
-    [clusters, memberSearchInput, showOnlyFlaggedClusters],
+    [clusters, intakeWords, memberSearchInput, showOnlyFlaggedClusters, showOnlyIncompleteClusters, showOnlyOpenIntakeClusters],
   );
   const selectedCluster = useMemo(
     () =>
@@ -66,6 +90,7 @@ export function ClusterManagementPage({
     [filteredClusters, selectedClusterId],
   );
   const flaggedClusterCount = clusters.filter(clusterHasFlaggedPrompts).length;
+  const intakeTargetWordIdSet = useMemo(() => new Set(intakeWords.map((word) => word.targetWordId)), [intakeWords]);
 
   useEffect(() => {
     if (selectedCluster && selectedCluster.id !== selectedClusterId) {
@@ -142,6 +167,24 @@ export function ClusterManagementPage({
     }
   }
 
+  async function handleCreateCluster(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (newClusterTitle.trim().length === 0) {
+      return;
+    }
+    await onCreateCluster({ title: newClusterTitle, note: newClusterNote });
+    setNewClusterTitle('');
+    setNewClusterNote('');
+  }
+
+  async function handleAddMember(wordId: string) {
+    if (!selectedCluster) {
+      return;
+    }
+    await onAddMember({ clusterId: selectedCluster.id, wordId });
+    setMemberAddQuery('');
+  }
+
   return (
     <section className="clusters-page">
       <header className="header">
@@ -160,6 +203,17 @@ export function ClusterManagementPage({
           <aside className="panel cluster-list-panel">
             <h2>Clusters</h2>
             <div className="cluster-filter-controls">
+              <form className="cluster-prompt-form" onSubmit={(event) => void handleCreateCluster(event)}>
+                <label>
+                  <span className="prompt-label">New cluster title</span>
+                  <input value={newClusterTitle} onChange={(event) => setNewClusterTitle(event.target.value)} />
+                </label>
+                <label>
+                  <span className="prompt-label">Note</span>
+                  <input value={newClusterNote} onChange={(event) => setNewClusterNote(event.target.value)} />
+                </label>
+                <button type="submit" disabled={isSavingPrompt || newClusterTitle.trim().length === 0}>Create cluster</button>
+              </form>
               <label>
                 <span className="prompt-label">Member search</span>
                 <input
@@ -176,6 +230,22 @@ export function ClusterManagementPage({
                   onChange={(event) => setShowOnlyFlaggedClusters(event.target.checked)}
                 />
                 <span>Unresolved prompts only ({flaggedClusterCount})</span>
+              </label>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={showOnlyIncompleteClusters}
+                  onChange={(event) => setShowOnlyIncompleteClusters(event.target.checked)}
+                />
+                <span>Incomplete clusters only</span>
+              </label>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={showOnlyOpenIntakeClusters}
+                  onChange={(event) => setShowOnlyOpenIntakeClusters(event.target.checked)}
+                />
+                <span>Open-intake overlap only</span>
               </label>
             </div>
             <div className="cluster-list">
@@ -222,6 +292,34 @@ export function ClusterManagementPage({
                   </div>
                   <span className="badge">{selectedCluster.id}</span>
                 </div>
+                <form className="cluster-prompt-form" onSubmit={(event) => {
+                  event.preventDefault();
+                  void onUpdateCluster({ id: selectedCluster.id, title: selectedCluster.title, note: selectedCluster.note });
+                }}>
+                  <label>
+                    <span>Find word to add</span>
+                    <input
+                      value={memberAddQuery}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setMemberAddQuery(value);
+                        void onSearchWords(value);
+                      }}
+                      placeholder="汉字"
+                    />
+                  </label>
+                  {memberAddQuery.trim().length > 0 ? (
+                    <div className="cluster-prompt-list">
+                      {wordSearchResults
+                        .filter((word) => !selectedCluster.members.some((member) => member.wordId === word.id))
+                        .map((word) => (
+                          <button key={word.id} type="button" className="secondary-button" onClick={() => void handleAddMember(word.id)}>
+                            Add {word.hanzi}
+                          </button>
+                        ))}
+                    </div>
+                  ) : null}
+                </form>
 
                 <h3>Members</h3>
                 <div className="cluster-member-grid">
@@ -231,6 +329,30 @@ export function ClusterManagementPage({
                       <span>{member.word.pinyin}</span>
                       <p>{member.word.meaning}</p>
                       {member.nuanceNote.length > 0 ? <small>{member.nuanceNote}</small> : null}
+                      <div className="cluster-prompt-actions">
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => {
+                            const next = window.prompt('Nuance note', member.nuanceNote);
+                            if (next !== null) {
+                              void onUpdateMember({ clusterId: selectedCluster.id, wordId: member.wordId, nuanceNote: next });
+                            }
+                          }}
+                          disabled={isSavingPrompt}
+                        >
+                          Edit nuance
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => void onRemoveMember({ clusterId: selectedCluster.id, wordId: member.wordId })}
+                          disabled={isSavingPrompt || selectedCluster.members.length <= 1}
+                        >
+                          Remove
+                        </button>
+                        {intakeTargetWordIdSet.has(member.wordId) ? <span className="badge warning-badge">Open intake</span> : null}
+                      </div>
                     </article>
                   ))}
                 </div>
@@ -382,17 +504,30 @@ function PromptQualityBadge({ prompt }: { prompt: ContrastPromptContent }) {
 
 function filterClusters({
   clusters,
+  intakeWords,
   memberSearchInput,
   showOnlyFlaggedClusters,
+  showOnlyIncompleteClusters,
+  showOnlyOpenIntakeClusters,
 }: {
   clusters: ContrastClusterContent[];
+  intakeWords: ContrastIntakeWord[];
   memberSearchInput: string;
   showOnlyFlaggedClusters: boolean;
+  showOnlyIncompleteClusters: boolean;
+  showOnlyOpenIntakeClusters: boolean;
 }) {
   const normalizedSearch = memberSearchInput.trim();
+  const intakeWordIds = new Set(intakeWords.map((word) => word.targetWordId));
 
   return clusters.filter((cluster) => {
     if (showOnlyFlaggedClusters && !clusterHasFlaggedPrompts(cluster)) {
+      return false;
+    }
+    if (showOnlyIncompleteClusters && (cluster.members.length >= 2 && cluster.prompts.length > 0)) {
+      return false;
+    }
+    if (showOnlyOpenIntakeClusters && !cluster.members.some((member) => intakeWordIds.has(member.wordId))) {
       return false;
     }
 

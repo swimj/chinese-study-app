@@ -20,6 +20,9 @@ Noncritical improvements worth remembering as the project evolves.
 - Decide when to remove the legacy JSON migration path from the backend once it is no longer useful.
 - Add a safer first-class reset/seed path instead of relying on deleting `data/app.db` manually.
 - Add status precondition checks for completion paths so `unstudied`, `learning`, and `review` commit functions reject invalid lifecycle transitions instead of trusting the frontend.
+- Normalize API parameter placement conventions (path params vs JSON body) for single-word mutation actions.
+- Current state is intentionally mixed for pragmatic implementation reasons (`targetWordId` is in the body for some study-management command endpoints, but in the URL for some resource-style endpoints).
+- There is no known deeper domain semantics behind this split right now; consider a cleanup pass to reduce cognitive overhead and improve discoverability.
 
 ## Project Organization
 
