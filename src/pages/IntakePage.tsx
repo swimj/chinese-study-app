@@ -1,811 +1,934 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import type { ContrastClusterContent, ContrastIntakeGroup } from '../services/api';
+import { Fragment, useEffect, useMemo, useState, type FormEvent } from 'react';
+import type { ContrastClusterContent, ContrastIntakeWord } from '../services/api';
 import type { Word } from '../types';
 
-type IntakeActionMode = 'create' | 'existing' | 'prompt';
+type MemberEditorState = {
+  mode: 'existing' | 'new';
+  wordId: string;
+  wordHanzi: string;
+  nuanceNote: string;
+};
 
-type PromptFormState = {
+type PromptEditorState = {
+  mode: 'existing' | 'new';
+  promptId: string | null;
   targetWordId: string;
   promptText: string;
   explanation: string;
 };
 
-const emptyPromptForm: PromptFormState = {
-  targetWordId: '',
-  promptText: '',
-  explanation: '',
-};
-
 export function IntakePage({
-  groups,
-  activeGroupIndex,
+  words,
+  activeWordIndex,
   isSaving,
+  onSelectWordIndex,
+  onResolveWord,
+  onSuppressProduction,
+  onReportBadPrompt,
+  onCreateClusterForWord,
+  clusters,
+  selectedClusterId,
   wordSearchResults,
-  wordSearchLoading,
-  onSelectGroupIndex,
-  onSearchCandidateWords,
-  onAcceptGroup,
-  onDismissGroup,
+  isSavingCluster,
+  onSelectCluster,
+  onSearchWords,
   onCreateCluster,
-  onAddToCluster,
-  onAddPrompt,
+  onUpdateCluster,
+  onAddMember,
+  onUpdateMember,
+  onRemoveMember,
+  onCreatePrompt,
+  onUpdatePrompt,
+  onResolvePromptFeedback,
+  onDeletePrompt,
 }: {
-  groups: ContrastIntakeGroup[];
-  activeGroupIndex: number;
+  words: ContrastIntakeWord[];
+  activeWordIndex: number;
   isSaving: boolean;
+  onSelectWordIndex: (index: number) => void;
+  onResolveWord: (targetWordId: string) => Promise<void>;
+  onSuppressProduction: (targetWordId: string) => Promise<void>;
+  onReportBadPrompt: (input: { targetWordId: string; note?: string }) => Promise<void>;
+  onCreateClusterForWord: (input: { targetWordId: string; title: string; note?: string }) => Promise<void>;
+  clusters: ContrastClusterContent[];
+  selectedClusterId: string | null;
   wordSearchResults: Word[];
-  wordSearchLoading: boolean;
-  onSelectGroupIndex: (index: number) => void;
-  onSearchCandidateWords: (query: string) => Promise<void>;
-  onAcceptGroup: (selector: IntakeGroupSelector) => Promise<void>;
-  onDismissGroup: (selector: IntakeGroupSelector) => Promise<void>;
-  onCreateCluster: (input: IntakeGroupSelector & {
-    resolvedCandidateWordId: string;
-    extraMemberWordIds?: string[];
-    title: string;
-    note: string;
-    targetNuanceNote: string;
-    candidateNuanceNote: string;
-    prompt: PromptFormState;
-  }) => Promise<void>;
-  onAddToCluster: (input: IntakeGroupSelector & {
-    clusterId: string;
-    resolvedCandidateWordId: string;
-    extraMemberWordIds?: string[];
-    targetNuanceNote: string;
-    candidateNuanceNote: string;
-    prompt: PromptFormState;
-  }) => Promise<void>;
-  onAddPrompt: (input: IntakeGroupSelector & {
-    clusterId: string;
-    prompt: PromptFormState;
-  }) => Promise<void>;
+  isSavingCluster: boolean;
+  onSelectCluster: (clusterId: string) => void;
+  onSearchWords: (query: string) => Promise<void>;
+  onCreateCluster: (input: { title: string; note?: string }) => Promise<void>;
+  onUpdateCluster: (input: { id: string; title: string; note: string }) => Promise<void>;
+  onAddMember: (input: { clusterId: string; wordId: string; nuanceNote?: string }) => Promise<void>;
+  onUpdateMember: (input: { clusterId: string; wordId: string; nuanceNote?: string; displayOrder?: number | null }) => Promise<void>;
+  onRemoveMember: (input: { clusterId: string; wordId: string }) => Promise<void>;
+  onCreatePrompt: (input: { clusterId: string; targetWordId: string; promptText: string; explanation: string }) => Promise<void>;
+  onUpdatePrompt: (input: { id: string; targetWordId: string; promptText: string; explanation: string }) => Promise<void>;
+  onResolvePromptFeedback: (input: { id: string; note?: string }) => Promise<void>;
+  onDeletePrompt: (id: string) => Promise<void>;
 }) {
-  const activeGroup = groups[activeGroupIndex] ?? null;
+  const [focusMode, setFocusMode] = useState<'intake' | 'cluster'>('intake');
+  const [lastIntakeWordId, setLastIntakeWordId] = useState<string | null>(words[0]?.targetWordId ?? null);
+  const [intakeSearch, setIntakeSearch] = useState('');
+  const [intakeWindowStart, setIntakeWindowStart] = useState(0);
+  const [clusterSearch, setClusterSearch] = useState('');
+  const [showOnlyNeedsMoreLoveClusters, setShowOnlyNeedsMoreLoveClusters] = useState(false);
+  const [showOnlyOpenIntakeOverlapClusters, setShowOnlyOpenIntakeOverlapClusters] = useState(false);
+  const [showOnlyFlaggedPromptClusters, setShowOnlyFlaggedPromptClusters] = useState(false);
+  const [clusterWindowStart, setClusterWindowStart] = useState(0);
+  const [newClusterTitle, setNewClusterTitle] = useState('');
+  const [newClusterNote, setNewClusterNote] = useState('');
+  const [memberAddQuery, setMemberAddQuery] = useState('');
+  const [expandedMemberWordId, setExpandedMemberWordId] = useState<string | null>(null);
+  const [expandedPromptId, setExpandedPromptId] = useState<string | null>(null);
+  const [addPromptRowOpen, setAddPromptRowOpen] = useState(false);
+  const [memberEditor, setMemberEditor] = useState<MemberEditorState | null>(null);
+  const [promptEditor, setPromptEditor] = useState<PromptEditorState | null>(null);
+  const [editingClusterTitle, setEditingClusterTitle] = useState(false);
+  const [clusterTitleDraft, setClusterTitleDraft] = useState('');
+
+  const intakeFiltered = useMemo(() => {
+    const q = intakeSearch.trim();
+    if (q.length === 0) {
+      return words;
+    }
+    return words.filter((word) =>
+      word.targetWord.hanzi.includes(q) || word.targetWord.meaning.toLowerCase().includes(q.toLowerCase()),
+    );
+  }, [intakeSearch, words]);
+  const activeIntakeWord = intakeFiltered[activeWordIndex] ?? intakeFiltered[0] ?? null;
+  const intakeVisible = intakeFiltered.slice(intakeWindowStart, intakeWindowStart + 3);
+
+  const intakeTargetWordIdSet = useMemo(() => new Set(words.map((word) => word.targetWordId)), [words]);
+  const clusterFiltered = useMemo(() => {
+    const q = clusterSearch.trim();
+    return clusters.filter((cluster) =>
+      (!showOnlyNeedsMoreLoveClusters || clusterNeedsMoreLove(cluster)) &&
+      (!showOnlyOpenIntakeOverlapClusters || clusterHasOpenIntakeOverlap(cluster, intakeTargetWordIdSet)) &&
+      (!showOnlyFlaggedPromptClusters || clusterHasFlaggedPrompts(cluster)) &&
+      (
+        q.length === 0 ||
+        cluster.title.toLowerCase().includes(q.toLowerCase()) ||
+        cluster.members.some((member) => member.word.hanzi.includes(q))
+      ),
+    );
+  }, [
+    clusterSearch,
+    clusters,
+    intakeTargetWordIdSet,
+    showOnlyNeedsMoreLoveClusters,
+    showOnlyOpenIntakeOverlapClusters,
+    showOnlyFlaggedPromptClusters,
+  ]);
+  const needsMoreLoveClusterCount = useMemo(
+    () => clusters.filter((cluster) => clusterNeedsMoreLove(cluster)).length,
+    [clusters],
+  );
+  const openIntakeOverlapClusterCount = useMemo(
+    () => clusters.filter((cluster) => clusterHasOpenIntakeOverlap(cluster, intakeTargetWordIdSet)).length,
+    [clusters, intakeTargetWordIdSet],
+  );
+  const flaggedPromptClusterCount = useMemo(
+    () => clusters.filter((cluster) => clusterHasFlaggedPrompts(cluster)).length,
+    [clusters],
+  );
+
+  const selectedCluster =
+    clusterFiltered.find((cluster) => cluster.id === selectedClusterId) ??
+    clusters.find((cluster) => cluster.id === selectedClusterId) ??
+    clusterFiltered[0] ??
+    clusters[0] ??
+    null;
+  const clusterVisible = clusterFiltered.slice(clusterWindowStart, clusterWindowStart + 3);
+
+  useEffect(() => {
+    if (words.length > 0 && !activeIntakeWord) {
+      onSelectWordIndex(0);
+    }
+  }, [activeIntakeWord, onSelectWordIndex, words.length]);
+
+  useEffect(() => {
+    if (focusMode === 'intake' && activeIntakeWord) {
+      setLastIntakeWordId(activeIntakeWord.targetWordId);
+    }
+  }, [activeIntakeWord, focusMode]);
+
+  useEffect(() => {
+    if (words.length > 0) {
+      setFocusMode('intake');
+    } else if (clusters.length > 0) {
+      setFocusMode('cluster');
+    }
+  }, [clusters.length, words.length]);
+
+  useEffect(() => {
+    setMemberEditor(null);
+    setPromptEditor(null);
+    setExpandedMemberWordId(null);
+    setExpandedPromptId(null);
+    setAddPromptRowOpen(false);
+    setMemberAddQuery('');
+    setEditingClusterTitle(false);
+    setClusterTitleDraft(selectedCluster?.title ?? '');
+  }, [selectedCluster?.id]);
+
+  async function handleResolve() {
+    if (!activeIntakeWord) {
+      return;
+    }
+    const unresolvedCandidateCount = activeIntakeWord.candidates.filter((candidate) => candidate.unaddressed).length;
+    if (unresolvedCandidateCount > 0) {
+      const confirmed = window.confirm(`${unresolvedCandidateCount} candidate(s) appear unaddressed. Resolve anyway?`);
+      if (!confirmed) {
+        return;
+      }
+    }
+    await onResolveWord(activeIntakeWord.targetWordId);
+  }
+
+  async function handleCreateClusterForWord(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeIntakeWord || newClusterTitle.trim().length === 0) {
+      return;
+    }
+    await onCreateClusterForWord({
+      targetWordId: activeIntakeWord.targetWordId,
+      title: newClusterTitle,
+      note: newClusterNote,
+    });
+    setNewClusterTitle('');
+    setNewClusterNote('');
+  }
+
+  async function handleCreateCluster(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (newClusterTitle.trim().length === 0) {
+      return;
+    }
+    await onCreateCluster({ title: newClusterTitle, note: newClusterNote });
+    setNewClusterTitle('');
+    setNewClusterNote('');
+  }
+
+  function openCluster(clusterId: string) {
+    onSelectCluster(clusterId);
+    setFocusMode('cluster');
+  }
+
+  function backToLastIntake() {
+    if (!lastIntakeWordId) {
+      setFocusMode('intake');
+      return;
+    }
+    const index = intakeFiltered.findIndex((word) => word.targetWordId === lastIntakeWordId);
+    if (index >= 0) {
+      onSelectWordIndex(index);
+    }
+    setFocusMode('intake');
+  }
+
+  async function submitMemberEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedCluster || !memberEditor) {
+      return;
+    }
+    if (memberEditor.mode === 'new') {
+      await onAddMember({
+        clusterId: selectedCluster.id,
+        wordId: memberEditor.wordId,
+        nuanceNote: memberEditor.nuanceNote,
+      });
+    } else {
+      await onUpdateMember({
+        clusterId: selectedCluster.id,
+        wordId: memberEditor.wordId,
+        nuanceNote: memberEditor.nuanceNote,
+      });
+    }
+    setMemberEditor(null);
+    setMemberAddQuery('');
+  }
+
+  async function submitPromptEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedCluster || !promptEditor) {
+      return;
+    }
+    if (promptEditor.mode === 'new') {
+      await onCreatePrompt({
+        clusterId: selectedCluster.id,
+        targetWordId: promptEditor.targetWordId,
+        promptText: promptEditor.promptText,
+        explanation: promptEditor.explanation,
+      });
+    } else if (promptEditor.promptId) {
+      await onUpdatePrompt({
+        id: promptEditor.promptId,
+        targetWordId: promptEditor.targetWordId,
+        promptText: promptEditor.promptText,
+        explanation: promptEditor.explanation,
+      });
+    }
+    setPromptEditor(null);
+  }
+
+  async function handleDeleteMemberFromEditor() {
+    if (!selectedCluster || !memberEditor || memberEditor.mode !== 'existing') {
+      return;
+    }
+    await onRemoveMember({ clusterId: selectedCluster.id, wordId: memberEditor.wordId });
+    setMemberEditor(null);
+    setExpandedMemberWordId(null);
+    setMemberAddQuery('');
+  }
+
+  async function handleDeletePromptFromEditor() {
+    if (!promptEditor || promptEditor.mode !== 'existing' || !promptEditor.promptId) {
+      return;
+    }
+    await onDeletePrompt(promptEditor.promptId);
+    setPromptEditor(null);
+    setExpandedPromptId(null);
+    setAddPromptRowOpen(false);
+  }
 
   return (
     <section className="intake-page">
       <header className="header">
         <div>
-          <h1 className="title">Intake</h1>
-          <p className="subtitle">Contextual selection candidates</p>
+          <h1 className="title">Contrast Management</h1>
+          <p className="subtitle">Intake triage and cluster editing in one workflow</p>
         </div>
-        <span className="badge">{groups.length} open</span>
       </header>
 
-      {groups.length === 0 || !activeGroup ? (
-        <div className="panel">
-          <p className="notes">No open contrast intake groups.</p>
-        </div>
-      ) : (
-        <div className="intake-layout">
-          <aside className="panel cluster-list-panel">
-            <h2>Queue</h2>
+      <div className="intake-layout">
+        <aside className="panel cluster-list-panel" style={{ display: 'grid', gridTemplateRows: '1fr 1fr', gap: '1rem' }}>
+          <section>
+            <div className="cluster-panel-heading">
+              <h2>Intake Queue</h2>
+              <span className="badge">{intakeFiltered.length}</span>
+            </div>
+            <input type="search" placeholder="Search intake word" value={intakeSearch} onChange={(event) => setIntakeSearch(event.target.value)} />
             <div className="cluster-list">
-              {groups.map((group, index) => (
+              {intakeVisible.map((word) => (
                 <button
-                  key={group.groupKey}
+                  key={word.targetWordId}
                   type="button"
-                  className={index === activeGroupIndex ? 'cluster-list-item active' : 'cluster-list-item'}
-                  onClick={() => onSelectGroupIndex(index)}
-                  disabled={isSaving}
+                  className={activeIntakeWord?.targetWordId === word.targetWordId && focusMode === 'intake' ? 'cluster-list-item active' : 'cluster-list-item'}
+                  onClick={() => {
+                    const index = intakeFiltered.findIndex((entry) => entry.targetWordId === word.targetWordId);
+                    if (index >= 0) {
+                      onSelectWordIndex(index);
+                    }
+                    setFocusMode('intake');
+                  }}
                 >
-                  <span>{formatGroupTitle(group)}</span>
-                  <small>{group.count} seen · latest {formatTimestamp(group.latestCreatedAt)}</small>
+                  <span>{word.targetWord.hanzi}</span>
+                  <small>{word.openRowCount} mentions</small>
                 </button>
               ))}
             </div>
-          </aside>
+            <div className="pagination-actions">
+              <button type="button" className="secondary-button" onClick={() => setIntakeWindowStart((current) => Math.max(0, current - 1))} disabled={intakeWindowStart === 0}>Prev</button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setIntakeWindowStart((current) => Math.min(Math.max(intakeFiltered.length - 3, 0), current + 1))}
+                disabled={intakeWindowStart >= Math.max(intakeFiltered.length - 3, 0)}
+              >
+                Next
+              </button>
+            </div>
+          </section>
+          <section>
+            <div className="cluster-panel-heading">
+              <h2>Clusters</h2>
+              <span className="badge">{clusterFiltered.length}</span>
+            </div>
+            <input type="search" placeholder="Search cluster" value={clusterSearch} onChange={(event) => setClusterSearch(event.target.value)} />
+            <div className="cluster-filter-controls">
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={showOnlyNeedsMoreLoveClusters}
+                  onChange={(event) => setShowOnlyNeedsMoreLoveClusters(event.target.checked)}
+                />
+                <span>Needs more love / partial ({needsMoreLoveClusterCount})</span>
+              </label>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={showOnlyOpenIntakeOverlapClusters}
+                  onChange={(event) => setShowOnlyOpenIntakeOverlapClusters(event.target.checked)}
+                />
+                <span>Open-intake overlap ({openIntakeOverlapClusterCount})</span>
+              </label>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={showOnlyFlaggedPromptClusters}
+                  onChange={(event) => setShowOnlyFlaggedPromptClusters(event.target.checked)}
+                />
+                <span>Unresolved bad prompts ({flaggedPromptClusterCount})</span>
+              </label>
+            </div>
+            <div className="cluster-list">
+              {clusterVisible.map((cluster) => (
+                <ClusterListItem
+                  key={cluster.id}
+                  cluster={cluster}
+                  isActive={selectedCluster?.id === cluster.id && focusMode === 'cluster'}
+                  onClick={() => openCluster(cluster.id)}
+                />
+              ))}
+            </div>
+            <div className="pagination-actions">
+              <button type="button" className="secondary-button" onClick={() => setClusterWindowStart((current) => Math.max(0, current - 1))} disabled={clusterWindowStart === 0}>Prev</button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setClusterWindowStart((current) => Math.min(Math.max(clusterFiltered.length - 3, 0), current + 1))}
+                disabled={clusterWindowStart >= Math.max(clusterFiltered.length - 3, 0)}
+              >
+                Next
+              </button>
+            </div>
+          </section>
+        </aside>
 
-          <IntakeGroupDetail
-            group={activeGroup}
-            groupIndex={activeGroupIndex}
-            groupCount={groups.length}
-            isSaving={isSaving}
-            wordSearchResults={wordSearchResults}
-            wordSearchLoading={wordSearchLoading}
-            onPrevious={() => onSelectGroupIndex(activeGroupIndex - 1)}
-            onNext={() => onSelectGroupIndex(activeGroupIndex + 1)}
-            onSearchCandidateWords={onSearchCandidateWords}
-            onAcceptGroup={onAcceptGroup}
-            onDismissGroup={onDismissGroup}
-            onCreateCluster={onCreateCluster}
-            onAddToCluster={onAddToCluster}
-            onAddPrompt={onAddPrompt}
-          />
-        </div>
-      )}
+        <section className="panel cluster-detail-panel">
+          {focusMode === 'intake' && activeIntakeWord ? (
+            <div>
+              <div className="cluster-panel-heading">
+                <div>
+                  <h2>{activeIntakeWord.targetWord.hanzi}</h2>
+                  <p className="notes">{activeIntakeWord.targetWord.pinyin} · {activeIntakeWord.targetWord.meaning}</p>
+                </div>
+                <span className="badge">{activeIntakeWord.openRowCount} open</span>
+              </div>
+
+              <div className="pagination-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={isSaving || activeIntakeWord.productionSuppressed}
+                  onClick={() => void onSuppressProduction(activeIntakeWord.targetWordId)}
+                >
+                  {activeIntakeWord.productionSuppressed ? 'Production suppressed' : 'Suppress production'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={isSaving || activeIntakeWord.badProductionPromptReported}
+                  onClick={() => void onReportBadPrompt({ targetWordId: activeIntakeWord.targetWordId })}
+                >
+                  {activeIntakeWord.badProductionPromptReported ? 'Bad prompt reported' : 'Bad production prompt'}
+                </button>
+                <button type="button" onClick={() => void handleResolve()} disabled={isSaving}>
+                  {isSaving ? 'Saving...' : 'Mark resolved'}
+                </button>
+              </div>
+
+              <h3>Create Cluster</h3>
+              <form className="cluster-prompt-form" onSubmit={(event) => void handleCreateClusterForWord(event)}>
+                <label>
+                  <span>Title</span>
+                  <input value={newClusterTitle} onChange={(event) => setNewClusterTitle(event.target.value)} />
+                </label>
+                <label>
+                  <span>Note</span>
+                  <input value={newClusterNote} onChange={(event) => setNewClusterNote(event.target.value)} />
+                </label>
+                <button type="submit" disabled={isSaving || newClusterTitle.trim().length === 0}>Create one-word cluster</button>
+              </form>
+
+              <h3>Candidates</h3>
+              <div className="cluster-prompt-list">
+                {activeIntakeWord.candidates.map((candidate) => (
+                  <article key={candidate.key} className="cluster-prompt-card">
+                    <div className="cluster-prompt-heading">
+                      <strong>{candidate.matchedWord?.hanzi ?? candidate.candidateText ?? 'Unresolved candidate'}</strong>
+                      {candidate.unaddressed ? <span className="badge warning-badge">Needs triage</span> : null}
+                    </div>
+                    <p>{candidate.count} mention(s)</p>
+                    {candidate.notes.length > 0 ? <small>{candidate.notes.join(' / ')}</small> : null}
+                  </article>
+                ))}
+              </div>
+
+              <h3>Related Clusters</h3>
+              <div className="cluster-prompt-list">
+                {activeIntakeWord.relevantClusters.length === 0 ? (
+                  <p className="notes">No clusters yet.</p>
+                ) : (
+                  activeIntakeWord.relevantClusters.map((cluster) => (
+                    <article key={cluster.id} className="cluster-prompt-card">
+                      <strong>{cluster.title}</strong>
+                      <p>{cluster.members.map((member) => member.word.hanzi).join(' / ')}</p>
+                      <ClusterMemberStateSummary cluster={cluster} />
+                      <button type="button" className="secondary-button" onClick={() => openCluster(cluster.id)}>
+                        Open cluster editor
+                      </button>
+                    </article>
+                  ))
+                )}
+              </div>
+            </div>
+          ) : focusMode === 'cluster' && selectedCluster ? (
+            <div>
+              <div className="cluster-panel-heading">
+                <div>
+                  {editingClusterTitle ? (
+                    <div className="pagination-actions">
+                      <input
+                        value={clusterTitleDraft}
+                        onChange={(event) => setClusterTitleDraft(event.target.value)}
+                        aria-label="Cluster title"
+                      />
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        disabled={isSavingCluster || clusterTitleDraft.trim().length === 0}
+                        onClick={() => {
+                          void onUpdateCluster({
+                            id: selectedCluster.id,
+                            title: clusterTitleDraft.trim(),
+                            note: selectedCluster.note,
+                          }).then(() => {
+                            setEditingClusterTitle(false);
+                          });
+                        }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => {
+                          setClusterTitleDraft(selectedCluster.title);
+                          setEditingClusterTitle(false);
+                        }}
+                        disabled={isSavingCluster}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <h2>
+                      {selectedCluster.title}
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        style={{ marginLeft: '0.5rem', fontSize: '0.8rem', padding: '0.1rem 0.35rem' }}
+                        title="Edit cluster title"
+                        onClick={() => {
+                          setClusterTitleDraft(selectedCluster.title);
+                          setEditingClusterTitle(true);
+                        }}
+                      >
+                        ✎
+                      </button>
+                    </h2>
+                  )}
+                  {selectedCluster.note.length > 0 ? <p className="notes">{selectedCluster.note}</p> : null}
+                </div>
+                <div className="pagination-actions">
+                  <button type="button" className="secondary-button" onClick={backToLastIntake} disabled={!lastIntakeWordId}>
+                    Back to intake
+                  </button>
+                </div>
+              </div>
+
+              <h3>Members</h3>
+
+              {memberEditor ? (
+                <form className="cluster-prompt-form" onSubmit={(event) => void submitMemberEdit(event)}>
+                  <h4>{memberEditor.mode === 'new' ? `Add ${memberEditor.wordHanzi}` : `Edit ${memberEditor.wordHanzi}`}</h4>
+                  <label>
+                    <span>Nuance note</span>
+                    <textarea
+                      value={memberEditor.nuanceNote}
+                      onChange={(event) => setMemberEditor((current) => current ? { ...current, nuanceNote: event.target.value } : null)}
+                      rows={2}
+                    />
+                  </label>
+                  <div className="pagination-actions">
+                    <button type="submit" disabled={isSavingCluster}>{memberEditor.mode === 'new' ? 'Add member' : 'Save member'}</button>
+                    {memberEditor.mode === 'existing' ? (
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        disabled={isSavingCluster || selectedCluster.members.length <= 1}
+                        onClick={() => void handleDeleteMemberFromEditor()}
+                      >
+                        Delete member
+                      </button>
+                    ) : null}
+                    <button type="button" className="secondary-button" onClick={() => setMemberEditor(null)} disabled={isSavingCluster}>Cancel</button>
+                  </div>
+                </form>
+              ) : (
+                <table style={{ width: '100%', fontSize: '0.84rem', borderCollapse: 'collapse', border: '1px solid rgba(255,255,255,0.14)' }}>
+                  <tbody>
+                    {selectedCluster.members.map((member) => (
+                      <tr key={`${member.wordId}-group`}>
+                        <td colSpan={2} style={{ padding: 0 }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <tbody>
+                              <tr
+                                style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer' }}
+                                onClick={() => setExpandedMemberWordId((current) => current === member.wordId ? null : member.wordId)}
+                              >
+                                <td style={{ padding: '0.4rem 0.55rem', width: '38%' }}>
+                                  {member.word.hanzi}
+                                </td>
+                                <td style={{ padding: '0.4rem 0.55rem', color: 'rgba(255,255,255,0.78)' }}>
+                                  {truncate(member.nuanceNote, 40)}
+                                </td>
+                              </tr>
+                              {expandedMemberWordId === member.wordId ? (
+                                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                                  <td colSpan={2} style={{ padding: '0.5rem 0.6rem' }}>
+                                    <div style={{ display: 'grid', gap: '0.3rem' }}>
+                                  <small>{member.word.meaning}</small>
+                                  {member.productionSuppressed ? <small className="badge warning-badge">Production suppressed</small> : null}
+                                  {member.badProductionPromptReported ? <small className="badge warning-badge">Bad production prompt</small> : null}
+                                  {member.nuanceNote.length > 0 ? <small>{member.nuanceNote}</small> : <small className="notes">No nuance note yet.</small>}
+                                  <div>
+                                    <button
+                                          type="button"
+                                          className="secondary-button"
+                                          onClick={() => setMemberEditor({
+                                            mode: 'existing',
+                                            wordId: member.wordId,
+                                            wordHanzi: member.word.hanzi,
+                                            nuanceNote: member.nuanceNote,
+                                          })}
+                                        >
+                                          Edit member
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ) : null}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+                    ))}
+                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                      <td style={{ padding: '0.4rem 0.55rem', width: '38%' }}>
+                        <form
+                          onSubmit={(event) => event.preventDefault()}
+                          style={{ margin: 0 }}
+                        >
+                          <input
+                            type="search"
+                            value={memberAddQuery}
+                            placeholder="Add member +"
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              setMemberAddQuery(value);
+                              void onSearchWords(value);
+                            }}
+                            style={{
+                              width: '100%',
+                              background: 'transparent',
+                              border: 'none',
+                              padding: 0,
+                              color: 'rgba(255,255,255,0.9)',
+                            }}
+                          />
+                        </form>
+                      </td>
+                      <td style={{ padding: '0.4rem 0.55rem', color: 'rgba(255,255,255,0.62)' }}>
+                        {memberAddQuery.trim().length > 0 ? 'Search results below' : ''}
+                      </td>
+                    </tr>
+                    {memberAddQuery.trim().length > 0 ? (
+                      wordSearchResults
+                        .filter((word) => !selectedCluster.members.some((member) => member.wordId === word.id))
+                        .slice(0, 6)
+                        .map((word) => (
+                          <tr
+                            key={word.id}
+                            style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer' }}
+                            onClick={() => {
+                              setMemberEditor({
+                                mode: 'new',
+                                wordId: word.id,
+                                wordHanzi: word.hanzi,
+                                nuanceNote: '',
+                              });
+                              setMemberAddQuery('');
+                            }}
+                          >
+                            <td style={{ padding: '0.4rem 0.55rem', width: '38%' }}>{word.hanzi}</td>
+                            <td style={{ padding: '0.4rem 0.55rem', color: 'rgba(255,255,255,0.78)' }}>
+                              {truncate(word.meaning, 40)}
+                            </td>
+                          </tr>
+                        ))
+                    ) : null}
+                    {memberAddQuery.trim().length > 0 &&
+                    wordSearchResults.filter((word) => !selectedCluster.members.some((member) => member.wordId === word.id)).length === 0 ? (
+                      <tr>
+                        <td colSpan={2} style={{ padding: '0.4rem 0.55rem' }}>
+                          <small className="notes">No matching words.</small>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              )}
+
+              <h3>Prompts</h3>
+              {promptEditor ? (
+                <form className="cluster-prompt-form" onSubmit={(event) => void submitPromptEdit(event)}>
+                  <h4>{promptEditor.mode === 'new' ? 'Add prompt' : 'Edit prompt'}</h4>
+                  <label>
+                    <span>Target</span>
+                    <select
+                      value={promptEditor.targetWordId}
+                      onChange={(event) => setPromptEditor((current) => current ? { ...current, targetWordId: event.target.value } : null)}
+                    >
+                      {selectedCluster.members.map((member) => (
+                        <option key={member.wordId} value={member.wordId}>{member.word.hanzi}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Prompt</span>
+                    <textarea
+                      value={promptEditor.promptText}
+                      onChange={(event) => setPromptEditor((current) => current ? { ...current, promptText: event.target.value } : null)}
+                      rows={3}
+                      required
+                    />
+                  </label>
+                  <label>
+                    <span>Explanation</span>
+                    <textarea
+                      value={promptEditor.explanation}
+                      onChange={(event) => setPromptEditor((current) => current ? { ...current, explanation: event.target.value } : null)}
+                      rows={2}
+                    />
+                  </label>
+                  <div className="pagination-actions">
+                    <button type="submit" disabled={isSavingCluster || promptEditor.promptText.trim().length === 0}>
+                      {promptEditor.mode === 'new' ? 'Add prompt' : 'Save prompt'}
+                    </button>
+                    {promptEditor.mode === 'existing' && promptEditor.promptId ? (
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => void handleDeletePromptFromEditor()}
+                        disabled={isSavingCluster}
+                      >
+                        Delete prompt
+                      </button>
+                    ) : null}
+                    <button type="button" className="secondary-button" onClick={() => setPromptEditor(null)} disabled={isSavingCluster}>Cancel</button>
+                  </div>
+                </form>
+              ) : (
+                <table style={{ width: '100%', fontSize: '0.84rem', borderCollapse: 'collapse', border: '1px solid rgba(255,255,255,0.14)' }}>
+                  <tbody>
+                    {selectedCluster.prompts.map((prompt) => {
+                      const targetHanzi = selectedCluster.members.find((member) => member.wordId === prompt.targetWordId)?.word.hanzi ?? prompt.targetWordId;
+                      return (
+                        <Fragment key={prompt.id}>
+                          <tr
+                            style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer' }}
+                            onClick={() => setExpandedPromptId((current) => current === prompt.id ? null : prompt.id)}
+                          >
+                            <td style={{ padding: '0.4rem 0.55rem', width: '38%' }}>{targetHanzi}</td>
+                            <td style={{ padding: '0.4rem 0.55rem', color: 'rgba(255,255,255,0.78)' }}>
+                              {truncate(prompt.promptText, 46)}
+                            </td>
+                          </tr>
+                          {expandedPromptId === prompt.id ? (
+                            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                              <td colSpan={2} style={{ padding: '0.5rem 0.6rem' }}>
+                                <div style={{ display: 'grid', gap: '0.35rem' }}>
+                                  <small>{prompt.promptText}</small>
+                                  {prompt.explanation.trim().length > 0
+                                    ? <small>{prompt.explanation}</small>
+                                    : <small className="notes">No explanation yet.</small>}
+                                  <div className="pagination-actions">
+                                    <button
+                                      type="button"
+                                      className="secondary-button"
+                                      onClick={() => setPromptEditor({
+                                        mode: 'existing',
+                                        promptId: prompt.id,
+                                        targetWordId: prompt.targetWordId,
+                                        promptText: prompt.promptText,
+                                        explanation: prompt.explanation,
+                                      })}
+                                    >
+                                      Edit prompt
+                                    </button>
+                                    {prompt.feedback.flagged ? (
+                                      <button
+                                        type="button"
+                                        className="secondary-button"
+                                        onClick={() => void onResolvePromptFeedback({ id: prompt.id })}
+                                        disabled={isSavingCluster}
+                                      >
+                                        Resolve bad prompt
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
+                    <tr
+                      style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer' }}
+                      onClick={() => setAddPromptRowOpen(true)}
+                    >
+                      <td style={{ padding: '0.4rem 0.55rem', width: '38%', color: 'rgba(255,255,255,0.75)' }}>
+                        Add prompt +
+                      </td>
+                      <td style={{ padding: '0.4rem 0.55rem' }} />
+                    </tr>
+                    {addPromptRowOpen ? (
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                        <td style={{ padding: '0.4rem 0.55rem', width: '38%' }}>
+                          <select
+                            value=""
+                            onChange={(event) => {
+                              const targetWordId = event.target.value;
+                              if (targetWordId.trim().length === 0) {
+                                return;
+                              }
+                              setPromptEditor({
+                                mode: 'new',
+                                promptId: null,
+                                targetWordId,
+                                promptText: '',
+                                explanation: '',
+                              });
+                              setAddPromptRowOpen(false);
+                            }}
+                            disabled={isSavingCluster || selectedCluster.members.length === 0}
+                            autoFocus
+                          >
+                            <option value="">Select member</option>
+                            {selectedCluster.members.map((member) => (
+                              <option key={member.wordId} value={member.wordId}>
+                                {member.word.hanzi}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={{ padding: '0.4rem 0.55rem', color: 'rgba(255,255,255,0.62)' }}>
+                          Choose target word
+                        </td>
+                      </tr>
+                    ) : null}
+                    {selectedCluster.prompts.length === 0 ? (
+                      <tr>
+                        <td colSpan={2} style={{ padding: '0.4rem 0.55rem' }}>
+                          <small className="notes">No prompts yet.</small>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          ) : (
+            <div>
+              <h2>No selection</h2>
+              <p className="notes">Create a cluster or choose an intake word.</p>
+              <form className="cluster-prompt-form" onSubmit={(event) => void handleCreateCluster(event)}>
+                <label>
+                  <span>Title</span>
+                  <input value={newClusterTitle} onChange={(event) => setNewClusterTitle(event.target.value)} />
+                </label>
+                <label>
+                  <span>Note</span>
+                  <input value={newClusterNote} onChange={(event) => setNewClusterNote(event.target.value)} />
+                </label>
+                <button type="submit" disabled={newClusterTitle.trim().length === 0}>Create cluster</button>
+              </form>
+            </div>
+          )}
+        </section>
+      </div>
     </section>
   );
 }
 
-type IntakeGroupSelector = {
-  targetWordId: string;
-  candidateText?: string | null;
-  matchedWordId?: string | null;
-};
-
-function IntakeGroupDetail({
-  group,
-  groupIndex,
-  groupCount,
-  isSaving,
-  wordSearchResults,
-  wordSearchLoading,
-  onPrevious,
-  onNext,
-  onSearchCandidateWords,
-  onAcceptGroup,
-  onDismissGroup,
-  onCreateCluster,
-  onAddToCluster,
-  onAddPrompt,
-}: {
-  group: ContrastIntakeGroup;
-  groupIndex: number;
-  groupCount: number;
-  isSaving: boolean;
-  wordSearchResults: Word[];
-  wordSearchLoading: boolean;
-  onPrevious: () => void;
-  onNext: () => void;
-  onSearchCandidateWords: (query: string) => Promise<void>;
-  onAcceptGroup: (selector: IntakeGroupSelector) => Promise<void>;
-  onDismissGroup: (selector: IntakeGroupSelector) => Promise<void>;
-  onCreateCluster: (input: IntakeGroupSelector & {
-    resolvedCandidateWordId: string;
-    extraMemberWordIds?: string[];
-    title: string;
-    note: string;
-    targetNuanceNote: string;
-    candidateNuanceNote: string;
-    prompt: PromptFormState;
-  }) => Promise<void>;
-  onAddToCluster: (input: IntakeGroupSelector & {
-    clusterId: string;
-    resolvedCandidateWordId: string;
-    extraMemberWordIds?: string[];
-    targetNuanceNote: string;
-    candidateNuanceNote: string;
-    prompt: PromptFormState;
-  }) => Promise<void>;
-  onAddPrompt: (input: IntakeGroupSelector & {
-    clusterId: string;
-    prompt: PromptFormState;
-  }) => Promise<void>;
-}) {
-  const initialResolvedWord = group.matchedWord;
-  const singleWordIntake = !group.matchedWordId && !group.candidateText;
-  const [resolvedWord, setResolvedWord] = useState<Word | null>(initialResolvedWord);
-  const [candidateQuery, setCandidateQuery] = useState(group.candidateText ?? '');
-  const [mode, setMode] = useState<IntakeActionMode>('create');
-  const [clusterTitle, setClusterTitle] = useState('');
-  const [clusterNote, setClusterNote] = useState('');
-  const [targetNuanceNote, setTargetNuanceNote] = useState('');
-  const [candidateNuanceNote, setCandidateNuanceNote] = useState('');
-  const [selectedClusterId, setSelectedClusterId] = useState('');
-  const [promptForm, setPromptForm] = useState<PromptFormState>(emptyPromptForm);
-  const [searchAttempted, setSearchAttempted] = useState(false);
-  const [extraMemberWords, setExtraMemberWords] = useState<Word[]>([]);
-
-  const selector = useMemo(() => ({
-    targetWordId: group.targetWordId,
-    candidateText: group.candidateText,
-    matchedWordId: group.matchedWordId,
-  }), [group.candidateText, group.matchedWordId, group.targetWordId]);
-  const selectedCluster = group.relevantClusters.find((cluster) => cluster.id === selectedClusterId) ?? null;
-  const sharedClusters = group.relevantClusters.filter((cluster) => group.coverage.sharedClusterIds.includes(cluster.id));
-  const expandableClusters = resolvedWord
-    ? group.relevantClusters.filter((cluster) => getMissingExpansionWord(group, resolvedWord, cluster) !== null)
-    : [];
-  const canCreateSet = true;
-  const canExpandSet = expandableClusters.length > 0;
-  const canAddPrompt = sharedClusters.length > 0;
-  const expansionWord = selectedCluster && resolvedWord ? getMissingExpansionWord(group, resolvedWord, selectedCluster) : null;
-  const candidateRequired = mode === 'create' || mode === 'existing';
-  const canSubmitContent = Boolean((!candidateRequired || resolvedWord) && promptForm.targetWordId && promptForm.promptText.trim().length > 0);
-  const canAcceptCovered = group.coverage.usablePromptCount > 0;
-  const selectedWordIds = new Set([
-    group.targetWordId,
-    resolvedWord?.id,
-    ...extraMemberWords.map((word) => word.id),
-  ].filter((wordId): wordId is string => Boolean(wordId)));
-  const candidateSearchResults = wordSearchResults.filter((word) =>
-    word.id === resolvedWord?.id || (!extraMemberWords.some((member) => member.id === word.id) && word.id !== group.targetWordId),
-  );
-  const extraMemberSearchResults = wordSearchResults.filter((word) => !selectedWordIds.has(word.id));
-
-  useEffect(() => {
-    setResolvedWord(group.matchedWord);
-    setCandidateQuery(group.matchedWord ? '' : group.candidateText ?? '');
-    setMode(group.coverage.hasSharedCluster ? 'prompt' : 'create');
-    setClusterTitle(
-      group.matchedWord || group.candidateText
-        ? `${group.targetWord.hanzi} / ${group.matchedWord?.hanzi ?? group.candidateText ?? ''}`.trim()
-        : group.targetWord.hanzi,
-    );
-    setClusterNote('');
-    setTargetNuanceNote('');
-    setCandidateNuanceNote('');
-    setSelectedClusterId(group.coverage.sharedClusterIds[0] ?? group.relevantClusters[0]?.id ?? '');
-    setPromptForm({
-      ...emptyPromptForm,
-      targetWordId: group.targetWordId,
-    });
-    setSearchAttempted(false);
-    setExtraMemberWords([]);
-  }, [group]);
-
-  useEffect(() => {
-    if (singleWordIntake) {
-      if (mode === 'prompt') {
-        setSelectedClusterId((current) =>
-          sharedClusters.some((cluster) => cluster.id === current) ? current : sharedClusters[0]?.id ?? '',
-        );
-      }
-      return;
-    }
-
-    if (!resolvedWord) {
-      return;
-    }
-
-    const nextSharedClusters = group.relevantClusters.filter((cluster) => {
-      const memberIds = new Set(cluster.members.map((member) => member.wordId));
-      return memberIds.has(group.targetWordId) && memberIds.has(resolvedWord.id);
-    });
-    const nextExpandableClusters = group.relevantClusters.filter((cluster) => getMissingExpansionWord(group, resolvedWord, cluster) !== null);
-
-    if (mode === 'prompt') {
-      setSelectedClusterId((current) =>
-        nextSharedClusters.some((cluster) => cluster.id === current) ? current : nextSharedClusters[0]?.id ?? '',
-      );
-      return;
-    }
-
-    if (mode === 'existing') {
-      setSelectedClusterId((current) =>
-        nextExpandableClusters.some((cluster) => cluster.id === current) ? current : nextExpandableClusters[0]?.id ?? '',
-      );
-    }
-  }, [group, mode, resolvedWord, sharedClusters, singleWordIntake]);
-
-  useEffect(() => {
-    if (mode === 'existing' && expansionWord && promptForm.targetWordId !== expansionWord.id) {
-      setPromptForm((current) => ({
-        ...current,
-        targetWordId: expansionWord.id,
-      }));
-    }
-  }, [expansionWord, mode, promptForm.targetWordId]);
-
-  async function handleCandidateSearch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSearchAttempted(true);
-    await onSearchCandidateWords(candidateQuery);
+function truncate(value: string, max: number): string {
+  if (value.length <= max) {
+    return value;
   }
-
-  async function handleCreateCluster(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!resolvedWord || !canSubmitContent) {
-      return;
-    }
-
-    await onCreateCluster({
-      ...selector,
-      resolvedCandidateWordId: resolvedWord.id,
-      title: clusterTitle,
-      note: clusterNote,
-      targetNuanceNote,
-      candidateNuanceNote,
-      extraMemberWordIds: extraMemberWords.map((word) => word.id),
-      prompt: promptForm,
-    });
-  }
-
-  async function handleAddToCluster(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!resolvedWord || !selectedClusterId || !expansionWord || !canSubmitContent) {
-      return;
-    }
-
-    await onAddToCluster({
-      ...selector,
-      clusterId: selectedClusterId,
-      resolvedCandidateWordId: resolvedWord.id,
-      targetNuanceNote,
-      candidateNuanceNote,
-      extraMemberWordIds: extraMemberWords.map((word) => word.id),
-      prompt: promptForm,
-    });
-  }
-
-  async function handleAddPrompt(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selectedClusterId || !canSubmitContent) {
-      return;
-    }
-
-    await onAddPrompt({
-      ...selector,
-      clusterId: selectedClusterId,
-      prompt: promptForm,
-    });
-  }
-
-  function removeExtraMemberWord(wordId: string) {
-    setExtraMemberWords((current) => current.filter((word) => word.id !== wordId));
-    if (promptForm.targetWordId === wordId) {
-      setPromptForm((current) => ({
-        ...current,
-        targetWordId: group.targetWordId,
-      }));
-    }
-  }
-
-  return (
-    <div className="cluster-detail-stack">
-      <section className="panel cluster-detail-panel">
-        <div className="pagination-bar">
-          <div className="pagination-summary">
-            <span className="badge">{groupIndex + 1} / {groupCount}</span>
-          </div>
-          <div className="pagination-actions">
-            <button type="button" className="secondary-button" onClick={onPrevious} disabled={isSaving || groupIndex === 0}>
-              Previous
-            </button>
-            <button type="button" className="secondary-button" onClick={onNext} disabled={isSaving || groupIndex >= groupCount - 1}>
-              Next
-            </button>
-          </div>
-        </div>
-
-        <div className={singleWordIntake ? 'intake-word-single' : 'intake-word-pair'}>
-          <WordCard title="Target" word={group.targetWord} />
-          <WordCard title={singleWordIntake ? 'First sibling' : 'Candidate'} word={resolvedWord} fallback={group.candidateText ?? 'Unresolved'} />
-        </div>
-
-        <form className="intake-search-form" onSubmit={(event) => void handleCandidateSearch(event)}>
-          <label>
-            <span>{resolvedWord ? 'Find additional word' : singleWordIntake ? 'Find first sibling' : 'Resolve candidate'}</span>
-            <input
-              type="text"
-              value={candidateQuery}
-              onChange={(event) => setCandidateQuery(event.target.value)}
-              disabled={isSaving || wordSearchLoading}
-            />
-          </label>
-          <button type="submit" disabled={isSaving || wordSearchLoading || candidateQuery.trim().length === 0}>
-            {wordSearchLoading ? 'Searching...' : 'Search'}
-          </button>
-          {!resolvedWord && candidateSearchResults.length > 0 ? (
-            <div className="intake-search-results">
-              {candidateSearchResults.map((word) => (
-                <button
-                  key={word.id}
-                  type="button"
-                  className="cluster-list-item"
-                  onClick={() => {
-                    setResolvedWord(word);
-                    setClusterTitle(`${group.targetWord.hanzi} / ${word.hanzi}`);
-                  }}
-                  disabled={isSaving}
-                >
-                  <span>{word.hanzi}</span>
-                  <small>{word.pinyin} · {word.meaning}</small>
-                </button>
-              ))}
-            </div>
-          ) : searchAttempted && !wordSearchLoading && !resolvedWord ? (
-            <p className="notes">No matching words found.</p>
-          ) : null}
-        </form>
-      </section>
-
-      <section className="panel cluster-detail-panel">
-        <div className="cluster-panel-heading">
-          <div>
-            <h2>Evidence</h2>
-            <p className="notes">{group.count} seen · {formatTimestamp(group.firstCreatedAt)} to {formatTimestamp(group.latestCreatedAt)}</p>
-          </div>
-          {canAcceptCovered ? <span className="badge">covered</span> : <span className="badge">needs content</span>}
-        </div>
-        {group.notes.length > 0 ? (
-          <div className="intake-note-list">
-            {group.notes.map((note) => <p key={note}>{note}</p>)}
-          </div>
-        ) : null}
-        <div className="intake-source-list">
-          {group.sources.map((source) => (
-            <div key={source.id} className="intake-source-row">
-              <span>{formatTimestamp(source.createdAt)}</span>
-              <span>{source.sourceActionKind ?? 'manual'}</span>
-              <span>{source.note || source.candidateText || 'No note'}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="panel cluster-detail-panel">
-        <div className="cluster-panel-heading">
-          <h2>Existing content</h2>
-          <span className="badge">{group.coverage.usablePromptCount} usable prompts</span>
-        </div>
-        {group.relevantClusters.length === 0 ? (
-          <p className="notes">No relevant contrast clusters.</p>
-        ) : (
-          <div className="intake-cluster-list">
-            {group.relevantClusters.map((cluster) => (
-              <ExistingClusterCard
-                key={cluster.id}
-                cluster={cluster}
-                shared={group.coverage.sharedClusterIds.includes(cluster.id)}
-              />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="panel cluster-detail-panel">
-        <div className="priority-subtabs" role="tablist" aria-label="Intake actions">
-          {canCreateSet ? (
-            <button type="button" className={mode === 'create' ? 'priority-subtab active' : 'priority-subtab'} onClick={() => setMode('create')}>
-              New set
-            </button>
-          ) : null}
-          {canExpandSet ? (
-            <button type="button" className={mode === 'existing' ? 'priority-subtab active' : 'priority-subtab'} onClick={() => setMode('existing')}>
-              Expand set
-            </button>
-          ) : null}
-          {canAddPrompt ? (
-            <button type="button" className={mode === 'prompt' ? 'priority-subtab active' : 'priority-subtab'} onClick={() => setMode('prompt')}>
-              Add prompt
-            </button>
-          ) : null}
-        </div>
-
-        {!canCreateSet && !canExpandSet && !canAddPrompt ? (
-          <p className="notes">No existing cluster contains this intake word yet.</p>
-        ) : mode === 'create' && canCreateSet ? (
-          <form className="cluster-prompt-form" onSubmit={(event) => void handleCreateCluster(event)}>
-            <TextInput label="Title" value={clusterTitle} disabled={isSaving} onChange={setClusterTitle} />
-            <TextareaInput label="Set note" value={clusterNote} disabled={isSaving} rows={2} onChange={setClusterNote} />
-            <TextareaInput label={`${group.targetWord.hanzi} nuance`} value={targetNuanceNote} disabled={isSaving} rows={2} onChange={setTargetNuanceNote} />
-            {resolvedWord ? (
-              <>
-                <TextareaInput label={`${resolvedWord.hanzi} nuance`} value={candidateNuanceNote} disabled={isSaving} rows={2} onChange={setCandidateNuanceNote} />
-                <AdditionalMembersControl
-                  words={extraMemberWords}
-                  searchResults={extraMemberSearchResults}
-                  disabled={isSaving}
-                  onAdd={(word) => setExtraMemberWords((current) => current.some((member) => member.id === word.id) ? current : [...current, word])}
-                  onRemove={removeExtraMemberWord}
-                />
-                <PromptFields
-                  group={group}
-                  resolvedWord={resolvedWord}
-                  extraMemberWords={extraMemberWords}
-                  selectedCluster={null}
-                  promptForm={promptForm}
-                  disabled={isSaving}
-                  onChange={setPromptForm}
-                />
-              </>
-            ) : (
-              <p className="notes">Search and select a sibling to start the set.</p>
-            )}
-            <button type="submit" disabled={isSaving || !resolvedWord || clusterTitle.trim().length === 0 || !canSubmitContent}>
-              {isSaving ? 'Saving...' : 'Create set'}
-            </button>
-          </form>
-        ) : mode === 'existing' && canExpandSet ? (
-          <form className="cluster-prompt-form" onSubmit={(event) => void handleAddToCluster(event)}>
-            <ClusterSelect
-              clusters={expandableClusters}
-              selectedClusterId={selectedClusterId}
-              disabled={isSaving}
-              onChange={setSelectedClusterId}
-            />
-            {expansionWord ? (
-              <TextareaInput
-                label={`${expansionWord.hanzi} nuance`}
-                value={expansionWord.id === group.targetWordId ? targetNuanceNote : candidateNuanceNote}
-                disabled={isSaving}
-                rows={2}
-                onChange={expansionWord.id === group.targetWordId ? setTargetNuanceNote : setCandidateNuanceNote}
-              />
-            ) : null}
-            <AdditionalMembersControl
-              words={extraMemberWords}
-              searchResults={extraMemberSearchResults}
-              disabled={isSaving}
-              onAdd={(word) => setExtraMemberWords((current) => current.some((member) => member.id === word.id) ? current : [...current, word])}
-              onRemove={removeExtraMemberWord}
-            />
-            <PromptFields
-              group={group}
-              resolvedWord={resolvedWord}
-              extraMemberWords={extraMemberWords}
-              selectedCluster={null}
-              targetOverride={expansionWord}
-              promptForm={promptForm}
-              disabled={isSaving}
-              onChange={setPromptForm}
-            />
-            <button type="submit" disabled={isSaving || !resolvedWord || !selectedClusterId || !expansionWord || !canSubmitContent}>
-              {isSaving ? 'Saving...' : 'Expand set'}
-            </button>
-          </form>
-        ) : canAddPrompt ? (
-          <form className="cluster-prompt-form" onSubmit={(event) => void handleAddPrompt(event)}>
-            <ClusterSelect
-              clusters={sharedClusters}
-              selectedClusterId={selectedClusterId}
-              disabled={isSaving}
-              onChange={setSelectedClusterId}
-            />
-            <PromptFields
-              group={group}
-              resolvedWord={singleWordIntake ? null : resolvedWord}
-              extraMemberWords={[]}
-              selectedCluster={selectedCluster}
-              promptForm={promptForm}
-              disabled={isSaving}
-              onChange={setPromptForm}
-            />
-            <button type="submit" disabled={isSaving || !selectedClusterId || !canSubmitContent}>
-              {isSaving ? 'Saving...' : 'Add prompt'}
-            </button>
-          </form>
-        ) : (
-          <p className="notes">No action is available for the current selection.</p>
-        )}
-
-        <div className="intake-terminal-actions">
-          <button type="button" className="secondary-button" onClick={() => void onAcceptGroup(selector)} disabled={isSaving || !canAcceptCovered}>
-            Mark covered
-          </button>
-          <button type="button" className="secondary-button" onClick={() => void onDismissGroup(selector)} disabled={isSaving}>
-            Dismiss
-          </button>
-        </div>
-      </section>
-    </div>
-  );
+  return `${value.slice(0, max - 1)}…`;
 }
 
-function WordCard({ title, word, fallback }: { title: string; word: Word | null; fallback?: string }) {
-  return (
-    <article className="cluster-member-card">
-      <span className="prompt-label">{title}</span>
-      {word ? (
-        <>
-          <strong>{word.hanzi}</strong>
-          <span>{word.pinyin}</span>
-          <p>{word.meaning}</p>
-          {word.personalNotes.length > 0 ? <small>{word.personalNotes}</small> : null}
-        </>
-      ) : (
-        <>
-          <strong>{fallback ?? 'Unresolved'}</strong>
-          <p className="notes">No matched word.</p>
-        </>
-      )}
-    </article>
-  );
+function clusterNeedsMoreLove(cluster: ContrastClusterContent): boolean {
+  return cluster.members.length < 2 || cluster.prompts.length === 0;
 }
 
-function formatGroupTitle(group: ContrastIntakeGroup): string {
-  const candidateLabel = group.matchedWord?.hanzi ?? group.candidateText;
-  return candidateLabel ? `${group.targetWord.hanzi} / ${candidateLabel}` : group.targetWord.hanzi;
-}
-
-function ExistingClusterCard({ cluster, shared }: { cluster: ContrastClusterContent; shared: boolean }) {
-  return (
-    <article className={shared ? 'cluster-prompt-card intake-shared-cluster' : 'cluster-prompt-card'}>
-      <div>
-        <span className="prompt-label">{shared ? 'Shared' : 'Related'}</span>
-        <strong>{cluster.title}</strong>
-      </div>
-      <p>{cluster.members.map((member) => member.word.hanzi).join(' / ')}</p>
-      <small>{cluster.prompts.length} prompts</small>
-    </article>
-  );
-}
-
-function getMissingExpansionWord(
-  group: ContrastIntakeGroup,
-  resolvedWord: Word,
+function clusterHasOpenIntakeOverlap(
   cluster: ContrastClusterContent,
-): Word | null {
-  const memberIds = new Set(cluster.members.map((member) => member.wordId));
-  const hasTarget = memberIds.has(group.targetWordId);
-  const hasCandidate = memberIds.has(resolvedWord.id);
+  intakeTargetWordIdSet: Set<string>,
+): boolean {
+  return cluster.members.some((member) => intakeTargetWordIdSet.has(member.wordId));
+}
 
-  if (hasTarget === hasCandidate) {
+function clusterHasFlaggedPrompts(cluster: ContrastClusterContent): boolean {
+  return cluster.prompts.some((prompt) => prompt.feedback.flagged);
+}
+
+function ClusterListItem({
+  cluster,
+  isActive,
+  onClick,
+}: {
+  cluster: ContrastClusterContent;
+  isActive: boolean;
+  onClick: () => void;
+}) {
+  const suppressedCount = cluster.members.filter((member) => member.productionSuppressed).length;
+  const badPromptCount = cluster.members.filter((member) => member.badProductionPromptReported).length;
+  const flaggedPromptCount = cluster.prompts.filter((prompt) => prompt.feedback.flagged).length;
+
+  return (
+    <button
+      type="button"
+      className={isActive ? 'cluster-list-item active' : 'cluster-list-item'}
+      onClick={onClick}
+    >
+      <span>{cluster.title}</span>
+      <small>
+        {cluster.members.length} words · {cluster.prompts.length} prompts
+        {flaggedPromptCount > 0 ? ` · ${flaggedPromptCount} unresolved` : ''}
+        {suppressedCount > 0 ? ` · ${suppressedCount} suppressed` : ''}
+        {badPromptCount > 0 ? ` · ${badPromptCount} bad-prompt` : ''}
+      </small>
+    </button>
+  );
+}
+
+function ClusterMemberStateSummary({ cluster }: { cluster: ContrastClusterContent }) {
+  const suppressedCount = cluster.members.filter((member) => member.productionSuppressed).length;
+  const badPromptCount = cluster.members.filter((member) => member.badProductionPromptReported).length;
+  if (suppressedCount === 0 && badPromptCount === 0) {
     return null;
   }
 
-  return hasTarget ? resolvedWord : group.targetWord;
-}
-
-function ClusterSelect({
-  clusters,
-  selectedClusterId,
-  disabled,
-  onChange,
-}: {
-  clusters: ContrastClusterContent[];
-  selectedClusterId: string;
-  disabled: boolean;
-  onChange: (value: string) => void;
-}) {
   return (
-    <label>
-      <span>Set</span>
-      <select value={selectedClusterId} disabled={disabled || clusters.length === 0} required onChange={(event) => onChange(event.target.value)}>
-        {clusters.map((cluster) => (
-          <option key={cluster.id} value={cluster.id}>
-            {cluster.title}
-          </option>
-        ))}
-      </select>
-    </label>
+    <small>
+      {suppressedCount > 0 ? `${suppressedCount} production suppressed` : ''}
+      {suppressedCount > 0 && badPromptCount > 0 ? ' · ' : ''}
+      {badPromptCount > 0 ? `${badPromptCount} bad production prompt` : ''}
+    </small>
   );
-}
-
-function AdditionalMembersControl({
-  words,
-  searchResults,
-  disabled,
-  onAdd,
-  onRemove,
-}: {
-  words: Word[];
-  searchResults: Word[];
-  disabled: boolean;
-  onAdd: (word: Word) => void;
-  onRemove: (wordId: string) => void;
-}) {
-  return (
-    <div className="cluster-prompt-form">
-      <span className="prompt-label">Additional words</span>
-      {words.length > 0 ? (
-        <div className="intake-search-results">
-          {words.map((word) => (
-            <button key={word.id} type="button" className="cluster-list-item active" disabled={disabled} onClick={() => onRemove(word.id)}>
-              <span>{word.hanzi}</span>
-              <small>{word.pinyin} · {word.meaning}</small>
-            </button>
-          ))}
-        </div>
-      ) : (
-        <p className="notes">Use the search results above to add optional cluster alternatives.</p>
-      )}
-      {searchResults.length > 0 ? (
-        <div className="intake-search-results">
-          {searchResults.map((word) => (
-            <button key={word.id} type="button" className="cluster-list-item" disabled={disabled} onClick={() => onAdd(word)}>
-              <span>Add {word.hanzi}</span>
-              <small>{word.pinyin} · {word.meaning}</small>
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function PromptFields({
-  group,
-  resolvedWord,
-  extraMemberWords,
-  selectedCluster,
-  targetOverride,
-  promptForm,
-  disabled,
-  onChange,
-}: {
-  group: ContrastIntakeGroup;
-  resolvedWord: Word | null;
-  extraMemberWords: Word[];
-  selectedCluster: ContrastClusterContent | null;
-  targetOverride?: Word | null;
-  promptForm: PromptFormState;
-  disabled: boolean;
-  onChange: (value: PromptFormState) => void;
-}) {
-  const targetOptions = targetOverride
-    ? [targetOverride]
-    : [
-        ...(selectedCluster?.members.map((member) => member.word) ?? []),
-        group.targetWord,
-        resolvedWord,
-        ...extraMemberWords,
-      ].filter((word): word is Word => Boolean(word));
-  const uniqueTargetOptions = [...new Map(targetOptions.map((word) => [word.id, word])).values()];
-
-  return (
-    <>
-      <label>
-        <span>Prompt target</span>
-        <select
-          value={promptForm.targetWordId}
-          disabled={disabled}
-          required
-          onChange={(event) => onChange({ ...promptForm, targetWordId: event.target.value })}
-        >
-          {uniqueTargetOptions.map((word) => (
-            <option key={word.id} value={word.id}>
-              {word.hanzi}
-            </option>
-          ))}
-        </select>
-      </label>
-      <TextareaInput
-        label="Prompt"
-        value={promptForm.promptText}
-        disabled={disabled}
-        rows={3}
-        onChange={(promptText) => onChange({ ...promptForm, promptText })}
-      />
-      <TextareaInput
-        label="Explanation"
-        value={promptForm.explanation}
-        disabled={disabled}
-        rows={3}
-        onChange={(explanation) => onChange({ ...promptForm, explanation })}
-      />
-    </>
-  );
-}
-
-function TextInput({
-  label,
-  value,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  disabled: boolean;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label>
-      <span>{label}</span>
-      <input type="text" value={value} disabled={disabled} required onChange={(event) => onChange(event.target.value)} />
-    </label>
-  );
-}
-
-function TextareaInput({
-  label,
-  value,
-  disabled,
-  rows,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  disabled: boolean;
-  rows: number;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label>
-      <span>{label}</span>
-      <textarea value={value} disabled={disabled} rows={rows} onChange={(event) => onChange(event.target.value)} />
-    </label>
-  );
-}
-
-function formatTimestamp(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value));
 }

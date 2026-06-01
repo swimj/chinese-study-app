@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-export type AppPageKey = 'home' | 'priority' | 'intake' | 'clusters';
+export type AppPageKey = 'home' | 'priority' | 'intake';
 
 export function AppChrome({
   currentPage,
@@ -9,12 +9,10 @@ export function AppChrome({
   sessionActive,
   priorityPageLoading,
   intakePageLoading,
-  clusterPageLoading,
   children,
   onOpenHomePage,
   onOpenPriorityPage,
   onOpenIntakePage,
-  onOpenClusterPage,
 }: {
   currentPage: AppPageKey;
   error: string | null;
@@ -22,14 +20,12 @@ export function AppChrome({
   sessionActive: boolean;
   priorityPageLoading: boolean;
   intakePageLoading: boolean;
-  clusterPageLoading: boolean;
   children: ReactNode;
   onOpenHomePage: () => void;
   onOpenPriorityPage: () => void;
   onOpenIntakePage: () => void;
-  onOpenClusterPage: () => void;
 }) {
-  const navigationLoading = priorityPageLoading || intakePageLoading || clusterPageLoading;
+  const navigationLoading = priorityPageLoading || intakePageLoading;
 
   return (
     <div className={sessionActive ? 'container app-session-active' : 'container'}>
@@ -62,14 +58,6 @@ export function AppChrome({
             disabled={navigationLoading}
           >
             {intakePageLoading ? 'Loading intake...' : 'Intake'}
-          </button>
-          <button
-            type="button"
-            className={`nav-tab ${currentPage === 'clusters' ? 'active' : ''}`}
-            onClick={onOpenClusterPage}
-            disabled={navigationLoading}
-          >
-            {clusterPageLoading ? 'Loading clusters...' : 'Clusters'}
           </button>
         </div>
       </nav>

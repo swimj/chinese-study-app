@@ -1,29 +1,43 @@
 import { useState } from 'react';
-import type { AppPageKey } from '../../components/AppChrome';
 import {
+  addContrastClusterMember,
+  createContrastCluster,
   createContrastPrompt,
   deleteContrastPrompt,
   fetchContrastClusters,
+  fetchContrastIntakeWords,
+  type ContrastIntakeWord,
+  searchWords,
+  updateContrastCluster,
+  updateContrastClusterMember,
+  removeContrastClusterMember,
   resolveContrastPromptBadFeedback,
   type ContrastClusterContent,
   type ContrastPromptContent,
   updateContrastPrompt,
 } from '../../services/api';
 import type { ContrastPrompt } from '../../domain/study-actions';
+import type { Word } from '../../types';
 
 export type ClusterPageControllerOptions = {
-  currentPage: AppPageKey;
-  setCurrentPage: (page: AppPageKey) => void;
   setError: (message: string | null) => void;
 };
 
 export type ClusterPageController = {
   clusters: ContrastClusterContent[];
+  intakeWords: ContrastIntakeWord[];
+  wordSearchResults: Word[];
   selectedClusterId: string | null;
   isLoading: boolean;
   isSavingPrompt: boolean;
-  openPage: () => Promise<void>;
+  loadData: () => Promise<void>;
   selectCluster: (clusterId: string) => void;
+  searchWords: (query: string) => Promise<void>;
+  createCluster: (input: { title: string; note?: string }) => Promise<void>;
+  updateCluster: (input: { id: string; title: string; note: string }) => Promise<void>;
+  addMember: (input: { clusterId: string; wordId: string; nuanceNote?: string }) => Promise<void>;
+  updateMember: (input: { clusterId: string; wordId: string; nuanceNote?: string; displayOrder?: number | null }) => Promise<void>;
+  removeMember: (input: { clusterId: string; wordId: string }) => Promise<void>;
   createPrompt: (input: {
     clusterId: string;
     targetWordId: string;
@@ -41,31 +55,109 @@ export type ClusterPageController = {
 };
 
 export function useClusterPageController({
-  currentPage,
-  setCurrentPage,
   setError,
 }: ClusterPageControllerOptions): ClusterPageController {
   const [clusters, setClusters] = useState<ContrastClusterContent[]>([]);
+  const [intakeWords, setIntakeWords] = useState<ContrastIntakeWord[]>([]);
+  const [wordSearchResults, setWordSearchResults] = useState<Word[]>([]);
   const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSavingPrompt, setIsSavingPrompt] = useState(false);
 
-  async function openPage(): Promise<void> {
-    if (currentPage === 'clusters') {
+  async function refreshClustersAndIntake() {
+    const [clusterResponse, intakeResponse] = await Promise.all([
+      fetchContrastClusters(),
+      fetchContrastIntakeWords(),
+    ]);
+    setClusters(clusterResponse.clusters);
+    setIntakeWords(intakeResponse.words);
+    setSelectedClusterId((current) => current ?? clusterResponse.clusters[0]?.id ?? null);
+  }
+
+  async function refreshClustersOnly() {
+    const response = await fetchContrastClusters();
+    setClusters(response.clusters);
+    setSelectedClusterId((current) => current ?? response.clusters[0]?.id ?? null);
+  }
+
+  async function searchClusterWords(query: string): Promise<void> {
+    if (query.trim().length === 0) {
+      setWordSearchResults([]);
       return;
     }
+    const response = await searchWords(query, 12);
+    setWordSearchResults(response.words);
+  }
 
-    setIsLoading(true);
+  async function createClusterAndRefresh(input: { title: string; note?: string }) {
+    setIsSavingPrompt(true);
     setError(null);
     try {
-      const response = await fetchContrastClusters();
-      setClusters(response.clusters);
-      setSelectedClusterId((current) => current ?? response.clusters[0]?.id ?? null);
-      setCurrentPage('clusters');
+      const cluster = await createContrastCluster(input);
+      await refreshClustersOnly();
+      setSelectedClusterId(cluster.id);
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to load contrast clusters');
+      setError(error instanceof Error ? error.message : 'Failed to create contrast cluster');
+      throw error;
     } finally {
-      setIsLoading(false);
+      setIsSavingPrompt(false);
+    }
+  }
+
+  async function updateClusterAndRefresh(input: { id: string; title: string; note: string }) {
+    setIsSavingPrompt(true);
+    setError(null);
+    try {
+      await updateContrastCluster(input);
+      await refreshClustersOnly();
+      setSelectedClusterId(input.id);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to update contrast cluster');
+      throw error;
+    } finally {
+      setIsSavingPrompt(false);
+    }
+  }
+
+  async function addMemberAndRefresh(input: { clusterId: string; wordId: string; nuanceNote?: string }) {
+    setIsSavingPrompt(true);
+    setError(null);
+    try {
+      await addContrastClusterMember(input);
+      await refreshClustersOnly();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to add cluster member');
+      throw error;
+    } finally {
+      setIsSavingPrompt(false);
+    }
+  }
+
+  async function updateMemberAndRefresh(input: { clusterId: string; wordId: string; nuanceNote?: string; displayOrder?: number | null }) {
+    setIsSavingPrompt(true);
+    setError(null);
+    try {
+      await updateContrastClusterMember(input);
+      await refreshClustersOnly();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to update cluster member');
+      throw error;
+    } finally {
+      setIsSavingPrompt(false);
+    }
+  }
+
+  async function removeMemberAndRefresh(input: { clusterId: string; wordId: string }) {
+    setIsSavingPrompt(true);
+    setError(null);
+    try {
+      await removeContrastClusterMember(input);
+      await refreshClustersOnly();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to remove cluster member');
+      throw error;
+    } finally {
+      setIsSavingPrompt(false);
     }
   }
 
@@ -125,11 +217,19 @@ export function useClusterPageController({
 
   return {
     clusters,
+    intakeWords,
+    wordSearchResults,
     selectedClusterId,
     isLoading,
     isSavingPrompt,
-    openPage,
+    loadData: refreshClustersAndIntake,
     selectCluster: setSelectedClusterId,
+    searchWords: searchClusterWords,
+    createCluster: createClusterAndRefresh,
+    updateCluster: updateClusterAndRefresh,
+    addMember: addMemberAndRefresh,
+    updateMember: updateMemberAndRefresh,
+    removeMember: removeMemberAndRefresh,
     createPrompt,
     updatePrompt,
     resolvePromptFeedback,

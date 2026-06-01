@@ -58,7 +58,11 @@ type PriorityWordsResponse = {
 };
 
 export type ContrastClusterContent = ContrastCluster & {
-  members: Array<ContrastClusterMember & { word: Word }>;
+  members: Array<ContrastClusterMember & {
+    word: Word;
+    productionSuppressed: boolean;
+    badProductionPromptReported: boolean;
+  }>;
   prompts: ContrastPromptContent[];
 };
 
@@ -89,7 +93,7 @@ export type ContrastCandidateIntakeSource = {
   candidateText: string | null;
   matchedWordId: string | null;
   note: string;
-  status: 'open' | 'accepted' | 'dismissed';
+  status: 'open' | 'accepted' | 'dismissed' | 'resolved';
 };
 
 export type ContrastIntakeGroup = {
@@ -108,12 +112,51 @@ export type ContrastIntakeGroup = {
   coverage: ContrastIntakeCoverage;
 };
 
+export type ContrastIntakeCandidateSummary = {
+  key: string;
+  candidateText: string | null;
+  matchedWordId: string | null;
+  matchedWord: Word | null;
+  count: number;
+  firstCreatedAt: string;
+  latestCreatedAt: string;
+  notes: string[];
+  sources: ContrastCandidateIntakeSource[];
+  relevantClusters: ContrastClusterContent[];
+  coverage: ContrastIntakeCoverage;
+  unaddressed: boolean;
+};
+
+export type ContrastClusterCompletenessFlags = {
+  hasAtLeastTwoMembers: boolean;
+  hasUsablePrompts: boolean;
+  incomplete: boolean;
+};
+
+export type ContrastIntakeWord = {
+  targetWordId: string;
+  targetWord: Word;
+  openRowCount: number;
+  firstCreatedAt: string;
+  latestCreatedAt: string;
+  notes: string[];
+  sources: ContrastCandidateIntakeSource[];
+  candidates: ContrastIntakeCandidateSummary[];
+  relevantClusters: Array<ContrastClusterContent & { completeness: ContrastClusterCompletenessFlags }>;
+  productionSuppressed: boolean;
+  badProductionPromptReported: boolean;
+};
+
 type ContrastClustersResponse = {
   clusters: ContrastClusterContent[];
 };
 
 type ContrastIntakeGroupsResponse = {
   groups: ContrastIntakeGroup[];
+};
+
+type ContrastIntakeWordsResponse = {
+  words: ContrastIntakeWord[];
 };
 
 type WordSearchResponse = {
@@ -155,6 +198,29 @@ export async function fetchContrastIntakeGroups(): Promise<ContrastIntakeGroupsR
   const response = await fetch(`${API_BASE}/api/contrast-intake/groups`);
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to load contrast intake groups'));
+  }
+
+  return response.json();
+}
+
+export async function fetchContrastIntakeWords(): Promise<ContrastIntakeWordsResponse> {
+  const response = await fetch(`${API_BASE}/api/contrast-intake/words`, {
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to load contrast intake words'));
+  }
+
+  return response.json();
+}
+
+export async function resolveContrastIntakeWord(targetWordId: string): Promise<ContrastIntakeWordsResponse> {
+  const response = await fetch(`${API_BASE}/api/contrast-intake/words/${encodeURIComponent(targetWordId)}/resolve`, {
+    method: 'POST',
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to resolve contrast intake word'));
   }
 
   return response.json();
@@ -268,12 +334,131 @@ export async function fetchStatus(): Promise<BackendStatus> {
 }
 
 export async function fetchContrastClusters(): Promise<ContrastClustersResponse> {
-  const response = await fetch(`${API_BASE}/api/contrast-clusters`);
+  const response = await fetch(`${API_BASE}/api/contrast-clusters`, {
+    cache: 'no-store',
+  });
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to load contrast clusters'));
   }
 
   return response.json();
+}
+
+export async function createContrastCluster(input: {
+  title: string;
+  note?: string;
+}): Promise<ContrastCluster> {
+  const response = await fetch(`${API_BASE}/api/contrast-clusters`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to create contrast cluster'));
+  }
+  return response.json();
+}
+
+export async function updateContrastCluster(input: {
+  id: string;
+  title: string;
+  note: string;
+}): Promise<ContrastCluster> {
+  const response = await fetch(`${API_BASE}/api/contrast-clusters/${encodeURIComponent(input.id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: input.title,
+      note: input.note,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to update contrast cluster'));
+  }
+  return response.json();
+}
+
+export async function updateContrastClusterMember(input: {
+  clusterId: string;
+  wordId: string;
+  nuanceNote?: string;
+  displayOrder?: number | null;
+}): Promise<ContrastClusterMember> {
+  const response = await fetch(
+    `${API_BASE}/api/contrast-clusters/${encodeURIComponent(input.clusterId)}/members/${encodeURIComponent(input.wordId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nuanceNote: input.nuanceNote,
+        displayOrder: input.displayOrder,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to update contrast cluster member'));
+  }
+  return response.json();
+}
+
+export async function addContrastClusterMember(input: {
+  clusterId: string;
+  wordId: string;
+  nuanceNote?: string;
+  displayOrder?: number | null;
+}): Promise<ContrastClusterMember> {
+  const response = await fetch(
+    `${API_BASE}/api/contrast-clusters/${encodeURIComponent(input.clusterId)}/members`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        wordId: input.wordId,
+        nuanceNote: input.nuanceNote,
+        displayOrder: input.displayOrder,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to add contrast cluster member'));
+  }
+  return response.json();
+}
+
+export async function removeContrastClusterMember(input: {
+  clusterId: string;
+  wordId: string;
+}): Promise<ContrastClusterContent> {
+  const response = await fetch(
+    `${API_BASE}/api/contrast-clusters/${encodeURIComponent(input.clusterId)}/members/${encodeURIComponent(input.wordId)}`,
+    { method: 'DELETE' },
+  );
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to remove contrast cluster member'));
+  }
+  return response.json();
+}
+
+export async function suppressProductionForWord(targetWordId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/study-management/production/suppress`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetWordId }),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to suppress production for word'));
+  }
+}
+
+export async function reportBadProductionPrompt(input: { targetWordId: string; note?: string }): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/study-management/production/bad-prompt`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to report bad production prompt'));
+  }
 }
 
 export async function createContrastPrompt({
