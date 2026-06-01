@@ -6606,10 +6606,7 @@ function getEligibleContrastSelectionContentForScheduledWord(
 
   const scheduledPromptRows = selectedCandidate.candidatePrompts.filter((prompt) => prompt.targetWordId === wordId);
   const distractorPromptRows = selectedCandidate.candidatePrompts.filter((prompt) => prompt.targetWordId === selectedCandidate.distractorWordId);
-  const preferScheduledWordAsDistractor = Math.random() < 0.5;
-  const selectedPrompt =
-    (preferScheduledWordAsDistractor ? randomArrayElement(distractorPromptRows) : randomArrayElement(scheduledPromptRows)) ??
-    (preferScheduledWordAsDistractor ? randomArrayElement(scheduledPromptRows) : randomArrayElement(distractorPromptRows));
+  const selectedPrompt = randomArrayElement(selectedCandidate.candidatePrompts);
 
   if (!selectedPrompt) {
     return null;
