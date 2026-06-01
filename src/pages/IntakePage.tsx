@@ -444,13 +444,15 @@ export function IntakePage({
               <h3>Candidates</h3>
               <div className="cluster-prompt-list">
                 {activeIntakeWord.candidates.map((candidate) => (
-                  <article key={candidate.key} className="cluster-prompt-card">
+                  <article key={candidate.key} className="cluster-prompt-card intake-candidate-row">
                     <div className="cluster-prompt-heading">
-                      <strong>{candidate.matchedWord?.hanzi ?? candidate.candidateText ?? 'Unresolved candidate'}</strong>
-                      {candidate.unaddressed ? <span className="badge warning-badge">Needs triage</span> : null}
+                      <strong className="intake-candidate-row-hanzi">
+                        {candidate.matchedWord?.hanzi ?? candidate.candidateText ?? 'Unresolved candidate'}
+                      </strong>
                     </div>
-                    <p>{candidate.count} mention(s)</p>
-                    {candidate.notes.length > 0 ? <small>{candidate.notes.join(' / ')}</small> : null}
+                    <small className="intake-candidate-row-meaning">
+                      {truncate(candidate.matchedWord?.meaning ?? 'No matched meaning yet.', 70)}
+                    </small>
                   </article>
                 ))}
               </div>
