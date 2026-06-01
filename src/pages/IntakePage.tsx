@@ -455,6 +455,9 @@ export function IntakePage({
                     </small>
                   </article>
                 ))}
+                {activeIntakeWord.candidates.length === 0 ? (
+                  <p className="notes">No candidate rows to review for this word.</p>
+                ) : null}
               </div>
 
               <h3>Related Clusters</h3>

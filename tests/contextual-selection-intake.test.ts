@@ -443,6 +443,7 @@ describe('contextual selection intake', { concurrency: false }, () => {
     assert.equal(payload.words[0]?.candidates.length, 1);
     assert.equal(payload.words[0]?.candidates[0]?.unaddressed, true);
     assert.equal(payload.words[1]?.targetWordId, 'target-yan');
+    assert.equal(payload.words[1]?.candidates.length, 0);
   });
 });
 
