@@ -1748,6 +1748,10 @@ export function getContrastIntakeWords(): ContrastIntakeWordsPayload {
 
     const groupedCandidates = new Map<string, ContrastCandidateIntake[]>();
     for (const row of rows) {
+      // Single-word intake rows intentionally have no candidate; keep them at word-level only.
+      if (!row.candidateText && !row.matchedWordId) {
+        continue;
+      }
       const key = buildContrastIntakeGroupKey({
         targetWordId: row.targetWordId,
         candidateText: row.candidateText,
