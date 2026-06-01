@@ -406,7 +406,43 @@ describe('contextual selection intake', { concurrency: false }, () => {
     });
 
     assert.deepEqual(dbModule.getContrastIntakeGroups(), { groups: [] });
-    assert.deepEqual(dbModule.getContrastCandidateIntake().map((row) => row.status), ['dismissed', 'dismissed']);
+    assert.deepEqual(dbModule.getContrastCandidateIntake().map((row) => row.status), ['resolved', 'resolved']);
+  });
+
+  test('returns word-first intake rows sorted by open-row count then recency', () => {
+    insertWord({ id: 'target-kaocha', hanzi: '考察', priority: 50 });
+    insertWord({ id: 'candidate-kaocha', hanzi: '考查', priority: 40 });
+    insertWord({ id: 'target-yan', hanzi: '严肃', priority: 30 });
+
+    insertIntake({
+      id: 'kaocha-1',
+      createdAt: '2026-05-25T00:00:00.000Z',
+      targetWordId: 'target-kaocha',
+      candidateText: '考查',
+      matchedWordId: 'candidate-kaocha',
+    });
+    insertIntake({
+      id: 'kaocha-2',
+      createdAt: '2026-05-28T00:00:00.000Z',
+      targetWordId: 'target-kaocha',
+      candidateText: '考查',
+      matchedWordId: 'candidate-kaocha',
+    });
+    insertIntake({
+      id: 'yan-1',
+      createdAt: '2026-05-29T00:00:00.000Z',
+      targetWordId: 'target-yan',
+      candidateText: null,
+      matchedWordId: null,
+    });
+
+    const payload = dbModule.getContrastIntakeWords();
+    assert.equal(payload.words.length, 2);
+    assert.equal(payload.words[0]?.targetWordId, 'target-kaocha');
+    assert.equal(payload.words[0]?.openRowCount, 2);
+    assert.equal(payload.words[0]?.candidates.length, 1);
+    assert.equal(payload.words[0]?.candidates[0]?.unaddressed, true);
+    assert.equal(payload.words[1]?.targetWordId, 'target-yan');
   });
 });
 

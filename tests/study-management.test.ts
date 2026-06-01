@@ -211,6 +211,28 @@ describe('study management relevance events', { concurrency: false }, () => {
     assert.equal(fetchAdmissionState('target-word')?.earliest_next_study_at, addHours(event.occurredAt, 6));
   });
 
+  test('suppresses production outside session without creating study events', () => {
+    insertWord({ id: 'target-word', hanzi: '恰当', status: 'review' });
+    const relevance = dbModule.suppressProductionForWordOutsideSession({ targetWordId: 'target-word' });
+
+    assert.equal(relevance.wordId, 'target-word');
+    assert.equal(relevance.skillId, 'production');
+    assert.equal(relevance.relevanceState, 'suppressed');
+    assert.equal(relevance.sourceEventId, null);
+    assert.equal(dbModule.getWordSkillRelevance('target-word', 'production')?.relevanceState, 'suppressed');
+  });
+
+  test('reports bad production prompt outside session without creating study events', () => {
+    insertWord({ id: 'target-word', hanzi: '恰当', status: 'review' });
+    const feedback = dbModule.reportBadProductionPromptOutsideSession({ targetWordId: 'target-word', note: 'Too broad.' });
+
+    assert.equal(feedback.targetType, 'generated_prompt');
+    assert.equal(feedback.targetId, 'definition_based_production');
+    assert.equal(feedback.targetWordId, 'target-word');
+    assert.equal(feedback.sourceEventId, null);
+    assert.equal(dbModule.getStudyContentFeedback().at(-1)?.targetWordId, 'target-word');
+  });
+
   test('projects bad contrast prompt feedback to a contrast prompt feedback target', () => {
     insertWord({ id: 'target-word', hanzi: '恰当', status: 'review' });
 

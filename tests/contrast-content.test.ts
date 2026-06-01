@@ -58,6 +58,9 @@ describe('contrast content model', { concurrency: false }, () => {
 
   beforeEach(() => {
     sqlite.exec(`
+      DELETE FROM study_content_feedback;
+      DELETE FROM word_skill_relevance;
+      DELETE FROM study_events;
       DELETE FROM contrast_prompts;
       DELETE FROM contrast_cluster_members;
       DELETE FROM contrast_clusters;
@@ -226,6 +229,24 @@ describe('contrast content model', { concurrency: false }, () => {
     );
   });
 
+  test('updates member nuance without requiring display order input', () => {
+    insertWord(createWord({ id: 'target', hanzi: '恰当' }));
+    insertWord(createWord({ id: 'sibling', hanzi: '适当' }));
+    dbModule.createContrastCluster({ id: 'cluster-1', title: '恰当 / 适当' });
+    dbModule.addContrastClusterMember({ clusterId: 'cluster-1', wordId: 'target', displayOrder: 1 });
+    dbModule.addContrastClusterMember({ clusterId: 'cluster-1', wordId: 'sibling', displayOrder: 2 });
+
+    const updated = dbModule.updateContrastClusterMember({
+      clusterId: 'cluster-1',
+      wordId: 'target',
+      nuanceNote: 'Usually implies exact suitability.',
+    });
+
+    assert.equal(updated.nuanceNote, 'Usually implies exact suitability.');
+    const members = dbModule.getContrastClusterMembers('cluster-1');
+    assert.equal(members.find((member) => member.wordId === 'target')?.nuanceNote, 'Usually implies exact suitability.');
+  });
+
   test('removing a target membership cascades to prompts for that target', () => {
     insertWord(createWord({ id: 'target-word', hanzi: '严格' }));
     insertWord(createWord({ id: 'sibling-word', hanzi: '严肃' }));
@@ -256,6 +277,38 @@ describe('contrast content model', { concurrency: false }, () => {
     `).run('cluster-cascade', 'target-word');
 
     assert.deepEqual(dbModule.getContrastPromptsForCluster('cluster-cascade'), []);
+  });
+
+  test('projects production suppression and bad production prompt flags onto cluster members', () => {
+    insertWord(createWord({ id: 'suppressed-word', hanzi: '严肃' }));
+    insertWord(createWord({ id: 'bad-prompt-word', hanzi: '严格' }));
+    insertWord(createWord({ id: 'normal-word', hanzi: '庄重' }));
+
+    dbModule.createContrastCluster({
+      id: 'cluster-flags',
+      title: '严肃 / 严格 / 庄重',
+    });
+    dbModule.addContrastClusterMember({ clusterId: 'cluster-flags', wordId: 'suppressed-word', displayOrder: 1 });
+    dbModule.addContrastClusterMember({ clusterId: 'cluster-flags', wordId: 'bad-prompt-word', displayOrder: 2 });
+    dbModule.addContrastClusterMember({ clusterId: 'cluster-flags', wordId: 'normal-word', displayOrder: 3 });
+
+    dbModule.suppressProductionForWordOutsideSession({ targetWordId: 'suppressed-word' });
+    dbModule.reportBadProductionPromptOutsideSession({ targetWordId: 'bad-prompt-word', note: 'Definition too broad.' });
+
+    const cluster = dbModule.getContrastClusterContent().find((candidate) => candidate.id === 'cluster-flags');
+    assert.ok(cluster);
+
+    const suppressedMember = cluster.members.find((member) => member.wordId === 'suppressed-word');
+    assert.equal(suppressedMember?.productionSuppressed, true);
+    assert.equal(suppressedMember?.badProductionPromptReported, false);
+
+    const badPromptMember = cluster.members.find((member) => member.wordId === 'bad-prompt-word');
+    assert.equal(badPromptMember?.productionSuppressed, false);
+    assert.equal(badPromptMember?.badProductionPromptReported, true);
+
+    const normalMember = cluster.members.find((member) => member.wordId === 'normal-word');
+    assert.equal(normalMember?.productionSuppressed, false);
+    assert.equal(normalMember?.badProductionPromptReported, false);
   });
 });
 

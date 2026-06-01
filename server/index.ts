@@ -6,8 +6,10 @@ import {
   completeUnstudiedWordSession,
   acceptContrastIntakeGroup,
   addContrastIntakeToCluster,
+  addContrastClusterMember,
   addContrastPromptFromIntake,
   createContrastClusterFromIntake,
+  createContrastCluster,
   deleteContrastPrompt,
   dismissWordFromStudy,
   dismissContrastIntakeGroup,
@@ -18,6 +20,7 @@ import {
   createContrastPrompt,
   getContrastClusterContent,
   getContrastIntakeGroups,
+  getContrastIntakeWords,
   getPrioritizedUnstudiedWords,
   getReviewFailureRateDays,
   getSessionPayload,
@@ -28,8 +31,14 @@ import {
   recordAcceptedReviewAttemptBatch,
   recordReviewSessionSummary,
   recordStudyManagementAction,
+  removeContrastClusterMember,
   resolveContrastPromptBadFeedback,
+  resolveContrastIntakeWord,
   searchWords,
+  suppressProductionForWordOutsideSession,
+  reportBadProductionPromptOutsideSession,
+  updateContrastCluster,
+  updateContrastClusterMember,
   updateWordMeaningVisibility,
   updateContrastPrompt,
   updateWordPersonalNotes,
@@ -92,6 +101,36 @@ export function createApp() {
       res.json(getContrastIntakeGroups());
     } catch {
       res.status(500).json({ error: 'Failed to load contrast intake groups' });
+    }
+  });
+
+  app.get('/api/contrast-intake/words', (_req, res) => {
+    try {
+      res.json(getContrastIntakeWords());
+    } catch {
+      res.status(500).json({ error: 'Failed to load contrast intake words' });
+    }
+  });
+
+  app.post('/api/contrast-intake/words/:targetWordId/resolve', (req, res) => {
+    const targetWordId = req.params.targetWordId;
+    if (typeof targetWordId !== 'string' || targetWordId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty targetWordId' });
+      return;
+    }
+
+    try {
+      res.json(resolveContrastIntakeWord({ targetWordId: targetWordId.trim() }));
+    } catch (error) {
+      if (error instanceof Error && (error.message === 'Word not found' || error.message === 'Contrast intake word not found')) {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+      if (error instanceof Error && error.message.startsWith('Expected ')) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to resolve contrast intake word' });
     }
   });
 
@@ -202,6 +241,158 @@ export function createApp() {
       });
     } catch {
       res.status(500).json({ error: 'Failed to load contrast clusters' });
+    }
+  });
+
+  app.post('/api/contrast-clusters', (req, res) => {
+    const title = req.body?.title;
+    const note = req.body?.note ?? '';
+    if (typeof title !== 'string' || title.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty cluster title' });
+      return;
+    }
+    if (typeof note !== 'string') {
+      res.status(400).json({ error: 'Expected string note when provided' });
+      return;
+    }
+    try {
+      res.status(201).json(createContrastCluster({ title, note }));
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Expected ')) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to create contrast cluster' });
+    }
+  });
+
+  app.patch('/api/contrast-clusters/:clusterId', (req, res) => {
+    const clusterId = req.params.clusterId;
+    const title = req.body?.title;
+    const note = req.body?.note ?? '';
+    if (typeof clusterId !== 'string' || clusterId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty contrast cluster id' });
+      return;
+    }
+    if (typeof title !== 'string' || title.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty cluster title' });
+      return;
+    }
+    if (typeof note !== 'string') {
+      res.status(400).json({ error: 'Expected string note when provided' });
+      return;
+    }
+    try {
+      res.json(updateContrastCluster({ id: clusterId.trim(), title, note }));
+    } catch (error) {
+      if (error instanceof Error && (error.message === 'Contrast cluster not found')) {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+      if (error instanceof Error && error.message.startsWith('Expected ')) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to update contrast cluster' });
+    }
+  });
+
+  app.patch('/api/contrast-clusters/:clusterId/members/:wordId', (req, res) => {
+    const clusterId = req.params.clusterId;
+    const wordId = req.params.wordId;
+    const nuanceNote = req.body?.nuanceNote;
+    const displayOrder = req.body?.displayOrder;
+    if (typeof clusterId !== 'string' || clusterId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty contrast cluster id' });
+      return;
+    }
+    if (typeof wordId !== 'string' || wordId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty word id' });
+      return;
+    }
+    if (nuanceNote !== undefined && typeof nuanceNote !== 'string') {
+      res.status(400).json({ error: 'Expected string nuanceNote when provided' });
+      return;
+    }
+    if (displayOrder !== undefined && displayOrder !== null && (!Number.isInteger(displayOrder) || displayOrder <= 0)) {
+      res.status(400).json({ error: 'Expected positive integer displayOrder when provided' });
+      return;
+    }
+
+    try {
+      res.json(updateContrastClusterMember({ clusterId, wordId, nuanceNote, displayOrder }));
+    } catch (error) {
+      if (error instanceof Error && (error.message === 'Contrast cluster member not found' || error.message === 'Contrast prompt target must be a cluster member')) {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+      if (error instanceof Error && error.message.startsWith('Expected ')) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to update contrast cluster member' });
+    }
+  });
+
+  app.post('/api/contrast-clusters/:clusterId/members', (req, res) => {
+    const clusterId = req.params.clusterId;
+    const wordId = req.body?.wordId;
+    const nuanceNote = req.body?.nuanceNote ?? '';
+    const displayOrder = req.body?.displayOrder ?? null;
+    if (typeof clusterId !== 'string' || clusterId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty contrast cluster id' });
+      return;
+    }
+    if (typeof wordId !== 'string' || wordId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty word id' });
+      return;
+    }
+    if (typeof nuanceNote !== 'string') {
+      res.status(400).json({ error: 'Expected string nuanceNote when provided' });
+      return;
+    }
+    if (displayOrder !== null && (!Number.isInteger(displayOrder) || displayOrder <= 0)) {
+      res.status(400).json({ error: 'Expected positive integer displayOrder when provided' });
+      return;
+    }
+    try {
+      res.status(201).json(addContrastClusterMember({ clusterId, wordId, nuanceNote, displayOrder }));
+    } catch (error) {
+      if (error instanceof Error && (error.message === 'Word not found' || error.message === 'Contrast cluster not found')) {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+      if (error instanceof Error && (error.message.startsWith('Expected ') || error.message.includes('UNIQUE constraint failed'))) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to add cluster member' });
+    }
+  });
+
+  app.delete('/api/contrast-clusters/:clusterId/members/:wordId', (req, res) => {
+    const clusterId = req.params.clusterId;
+    const wordId = req.params.wordId;
+    if (typeof clusterId !== 'string' || clusterId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty contrast cluster id' });
+      return;
+    }
+    if (typeof wordId !== 'string' || wordId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty word id' });
+      return;
+    }
+    try {
+      res.json(removeContrastClusterMember({ clusterId, wordId }));
+    } catch (error) {
+      if (error instanceof Error && (error.message === 'Contrast cluster member not found' || error.message === 'Contrast prompt target must be a cluster member')) {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+      if (error instanceof Error && error.message.startsWith('Expected ')) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to remove contrast cluster member' });
     }
   });
 
@@ -626,6 +817,53 @@ export function createApp() {
       }
 
       res.status(500).json({ error: 'Failed to record study management action' });
+    }
+  });
+
+  app.post('/api/study-management/production/suppress', (req, res) => {
+    const targetWordId = req.body?.targetWordId;
+    if (typeof targetWordId !== 'string' || targetWordId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty targetWordId' });
+      return;
+    }
+    try {
+      res.status(201).json(suppressProductionForWordOutsideSession({ targetWordId: targetWordId.trim() }));
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Word not found') {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+      if (error instanceof Error && error.message.startsWith('Expected ')) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to suppress production for word' });
+    }
+  });
+
+  app.post('/api/study-management/production/bad-prompt', (req, res) => {
+    const targetWordId = req.body?.targetWordId;
+    const note = req.body?.note ?? '';
+    if (typeof targetWordId !== 'string' || targetWordId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty targetWordId' });
+      return;
+    }
+    if (typeof note !== 'string') {
+      res.status(400).json({ error: 'Expected string note when provided' });
+      return;
+    }
+    try {
+      res.status(201).json(reportBadProductionPromptOutsideSession({ targetWordId: targetWordId.trim(), note }));
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Word not found') {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+      if (error instanceof Error && error.message.startsWith('Expected ')) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to report bad production prompt' });
     }
   });
 

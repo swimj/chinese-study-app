@@ -1,28 +1,14 @@
 import { useState } from 'react';
 import type { AppPageKey } from '../../components/AppChrome';
 import {
-  acceptContrastIntakeGroup,
-  addContrastIntakeToCluster,
-  addContrastPromptFromIntake,
-  createContrastClusterFromIntake,
-  dismissContrastIntakeGroup,
-  fetchContrastIntakeGroups,
-  searchWords,
-  type ContrastIntakeGroup,
+  addContrastClusterMember,
+  createContrastCluster,
+  fetchContrastIntakeWords,
+  reportBadProductionPrompt,
+  resolveContrastIntakeWord,
+  suppressProductionForWord,
+  type ContrastIntakeWord,
 } from '../../services/api';
-import type { Word } from '../../types';
-
-type IntakeGroupSelector = {
-  targetWordId: string;
-  candidateText?: string | null;
-  matchedWordId?: string | null;
-};
-
-type IntakePromptInput = {
-  targetWordId: string;
-  promptText: string;
-  explanation: string;
-};
 
 export type IntakePageControllerOptions = {
   currentPage: AppPageKey;
@@ -31,38 +17,16 @@ export type IntakePageControllerOptions = {
 };
 
 export type IntakePageController = {
-  groups: ContrastIntakeGroup[];
-  activeGroupIndex: number;
+  words: ContrastIntakeWord[];
+  activeWordIndex: number;
   isLoading: boolean;
   isSaving: boolean;
-  wordSearchResults: Word[];
-  wordSearchLoading: boolean;
   openPage: () => Promise<void>;
-  selectGroupIndex: (index: number) => void;
-  searchCandidateWords: (query: string) => Promise<void>;
-  acceptGroup: (selector: IntakeGroupSelector) => Promise<void>;
-  dismissGroup: (selector: IntakeGroupSelector) => Promise<void>;
-  createCluster: (input: IntakeGroupSelector & {
-    resolvedCandidateWordId: string;
-    extraMemberWordIds?: string[];
-    title: string;
-    note: string;
-    targetNuanceNote: string;
-    candidateNuanceNote: string;
-    prompt: IntakePromptInput;
-  }) => Promise<void>;
-  addToCluster: (input: IntakeGroupSelector & {
-    clusterId: string;
-    resolvedCandidateWordId: string;
-    extraMemberWordIds?: string[];
-    targetNuanceNote: string;
-    candidateNuanceNote: string;
-    prompt: IntakePromptInput;
-  }) => Promise<void>;
-  addPrompt: (input: IntakeGroupSelector & {
-    clusterId: string;
-    prompt: IntakePromptInput;
-  }) => Promise<void>;
+  selectWordIndex: (index: number) => void;
+  resolveWord: (targetWordId: string) => Promise<void>;
+  suppressProduction: (targetWordId: string) => Promise<void>;
+  reportBadPrompt: (input: { targetWordId: string; note?: string }) => Promise<void>;
+  createClusterForWord: (input: { targetWordId: string; title: string; note?: string }) => Promise<void>;
 };
 
 export function useIntakePageController({
@@ -70,12 +34,10 @@ export function useIntakePageController({
   setCurrentPage,
   setError,
 }: IntakePageControllerOptions): IntakePageController {
-  const [groups, setGroups] = useState<ContrastIntakeGroup[]>([]);
-  const [activeGroupIndex, setActiveGroupIndex] = useState(0);
+  const [words, setWords] = useState<ContrastIntakeWord[]>([]);
+  const [activeWordIndex, setActiveWordIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [wordSearchResults, setWordSearchResults] = useState<Word[]>([]);
-  const [wordSearchLoading, setWordSearchLoading] = useState(false);
 
   async function openPage(): Promise<void> {
     if (currentPage === 'intake') {
@@ -85,33 +47,21 @@ export function useIntakePageController({
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetchContrastIntakeGroups();
-      setGroups(response.groups);
-      setActiveGroupIndex(0);
+      const response = await fetchContrastIntakeWords();
+      setWords(response.words);
+      setActiveWordIndex(0);
       setCurrentPage('intake');
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to load contrast intake groups');
+      setError(error instanceof Error ? error.message : 'Failed to load contrast intake words');
     } finally {
       setIsLoading(false);
     }
   }
 
-  async function searchCandidateWords(query: string): Promise<void> {
-    if (query.trim().length === 0) {
-      setWordSearchResults([]);
-      return;
-    }
-
-    setWordSearchLoading(true);
-    setError(null);
-    try {
-      const response = await searchWords(query, 12);
-      setWordSearchResults(response.words);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to search words');
-    } finally {
-      setWordSearchLoading(false);
-    }
+  async function refresh() {
+    const response = await fetchContrastIntakeWords();
+    setWords(response.words);
+    setActiveWordIndex((current) => Math.min(current, Math.max(response.words.length - 1, 0)));
   }
 
   async function saveAndRefresh(operation: () => Promise<unknown>) {
@@ -119,10 +69,7 @@ export function useIntakePageController({
     setError(null);
     try {
       await operation();
-      const response = await fetchContrastIntakeGroups();
-      setGroups(response.groups);
-      setActiveGroupIndex((current) => Math.min(current, Math.max(response.groups.length - 1, 0)));
-      setWordSearchResults([]);
+      await refresh();
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to update contrast intake');
       throw error;
@@ -132,20 +79,23 @@ export function useIntakePageController({
   }
 
   return {
-    groups,
-    activeGroupIndex,
+    words,
+    activeWordIndex,
     isLoading,
     isSaving,
-    wordSearchResults,
-    wordSearchLoading,
     openPage,
-    selectGroupIndex: (index) => setActiveGroupIndex(clampIndex(index, groups.length)),
-    searchCandidateWords,
-    acceptGroup: (selector) => saveAndRefresh(() => acceptContrastIntakeGroup(selector)),
-    dismissGroup: (selector) => saveAndRefresh(() => dismissContrastIntakeGroup(selector)),
-    createCluster: (input) => saveAndRefresh(() => createContrastClusterFromIntake(input)),
-    addToCluster: (input) => saveAndRefresh(() => addContrastIntakeToCluster(input)),
-    addPrompt: (input) => saveAndRefresh(() => addContrastPromptFromIntake(input)),
+    selectWordIndex: (index) => setActiveWordIndex(clampIndex(index, words.length)),
+    resolveWord: (targetWordId) => saveAndRefresh(() => resolveContrastIntakeWord(targetWordId)),
+    suppressProduction: (targetWordId) => saveAndRefresh(() => suppressProductionForWord(targetWordId)),
+    reportBadPrompt: (input) => saveAndRefresh(() => reportBadProductionPrompt(input)),
+    createClusterForWord: (input) =>
+      saveAndRefresh(async () => {
+        const cluster = await createContrastCluster({ title: input.title, note: input.note ?? '' });
+        await addContrastClusterMember({
+          clusterId: cluster.id,
+          wordId: input.targetWordId,
+        });
+      }),
   };
 }
 
