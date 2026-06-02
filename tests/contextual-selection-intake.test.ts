@@ -477,7 +477,7 @@ describe('contextual selection intake', { concurrency: false }, () => {
     assert.deepEqual(payload.words[0]?.resolvedCandidateWordIds, ['candidate-kaocha']);
   });
 
-  test('suggests clusters that contain any matched candidate words, not only the target word', () => {
+  test('suggests the union of target-word and matched-candidate clusters', () => {
     insertWord({ id: 'target-kaocha', hanzi: '考察', priority: 50 });
     insertWord({ id: 'candidate-kaocha', hanzi: '考查', priority: 40 });
     insertWord({ id: 'candidate-kaoshi', hanzi: '考试', priority: 30 });
@@ -515,7 +515,7 @@ describe('contextual selection intake', { concurrency: false }, () => {
 
     assert.deepEqual(
       payload.words[0]?.suggestedClusters.map((cluster) => cluster.id),
-      ['double-candidate-cluster', 'candidate-only-cluster'],
+      ['double-candidate-cluster', 'candidate-only-cluster', 'target-only-cluster'],
     );
   });
 

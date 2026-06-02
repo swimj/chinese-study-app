@@ -1816,12 +1816,12 @@ export function getContrastIntakeWords(): ContrastIntakeWordsPayload {
         .map((candidate) => candidate.matchedWordId)
         .filter((wordId): wordId is string => typeof wordId === 'string' && wordId.length > 0),
     )];
-    const candidateWordIdSet = new Set(resolvedCandidateWordIds);
+    const suggestedWordIdSet = new Set([targetWordId, ...resolvedCandidateWordIds]);
     const suggestedClusters = clusters
-      .filter((cluster) => cluster.members.some((member) => candidateWordIdSet.has(member.wordId)))
+      .filter((cluster) => cluster.members.some((member) => suggestedWordIdSet.has(member.wordId)))
       .sort((left, right) => {
-        const leftOverlapCount = countClusterCandidateOverlap(left, candidateWordIdSet);
-        const rightOverlapCount = countClusterCandidateOverlap(right, candidateWordIdSet);
+        const leftOverlapCount = countClusterSuggestedOverlap(left, suggestedWordIdSet);
+        const rightOverlapCount = countClusterSuggestedOverlap(right, suggestedWordIdSet);
         if (rightOverlapCount !== leftOverlapCount) {
           return rightOverlapCount - leftOverlapCount;
         }
@@ -4279,8 +4279,8 @@ function summarizeClusterCompleteness(cluster: ContrastClusterContent): Contrast
   };
 }
 
-function countClusterCandidateOverlap(cluster: ContrastClusterContent, candidateWordIdSet: Set<string>): number {
-  return cluster.members.filter((member) => candidateWordIdSet.has(member.wordId)).length;
+function countClusterSuggestedOverlap(cluster: ContrastClusterContent, suggestedWordIdSet: Set<string>): number {
+  return cluster.members.filter((member) => suggestedWordIdSet.has(member.wordId)).length;
 }
 
 function assertContrastIntakeRowsPresent(): never {
