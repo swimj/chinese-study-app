@@ -333,6 +333,10 @@ type ContrastClusterCompletenessFlags = {
   incomplete: boolean;
 };
 
+type ContrastSuggestedCluster = ContrastClusterContent & {
+  completeness: ContrastClusterCompletenessFlags;
+};
+
 type ContrastIntakeWord = {
   targetWordId: string;
   targetWord: Word;
@@ -343,7 +347,7 @@ type ContrastIntakeWord = {
   sources: ContrastCandidateIntakeSource[];
   candidates: ContrastIntakeCandidateSummary[];
   resolvedCandidateWordIds: string[];
-  relevantClusters: Array<ContrastClusterContent & { completeness: ContrastClusterCompletenessFlags }>;
+  suggestedClusters: ContrastSuggestedCluster[];
   productionSuppressed: boolean;
   badProductionPromptReported: boolean;
 };
@@ -1812,6 +1816,22 @@ export function getContrastIntakeWords(): ContrastIntakeWordsPayload {
         .map((candidate) => candidate.matchedWordId)
         .filter((wordId): wordId is string => typeof wordId === 'string' && wordId.length > 0),
     )];
+    const candidateWordIdSet = new Set(resolvedCandidateWordIds);
+    const suggestedClusters = clusters
+      .filter((cluster) => cluster.members.some((member) => candidateWordIdSet.has(member.wordId)))
+      .sort((left, right) => {
+        const leftOverlapCount = countClusterCandidateOverlap(left, candidateWordIdSet);
+        const rightOverlapCount = countClusterCandidateOverlap(right, candidateWordIdSet);
+        if (rightOverlapCount !== leftOverlapCount) {
+          return rightOverlapCount - leftOverlapCount;
+        }
+
+        return left.title.localeCompare(right.title, 'zh-Hans-CN');
+      })
+      .map((cluster) => ({
+        ...cluster,
+        completeness: summarizeClusterCompleteness(cluster),
+      }));
 
     return {
       targetWordId,
@@ -1823,10 +1843,7 @@ export function getContrastIntakeWords(): ContrastIntakeWordsPayload {
       sources: sortedRows,
       candidates: candidateSummaries,
       resolvedCandidateWordIds,
-      relevantClusters: relevantClusters.map((cluster) => ({
-        ...cluster,
-        completeness: summarizeClusterCompleteness(cluster),
-      })),
+      suggestedClusters,
       productionSuppressed,
       badProductionPromptReported,
     } satisfies ContrastIntakeWord;
@@ -4260,6 +4277,10 @@ function summarizeClusterCompleteness(cluster: ContrastClusterContent): Contrast
     hasUsablePrompts,
     incomplete: !hasAtLeastTwoMembers || !hasUsablePrompts,
   };
+}
+
+function countClusterCandidateOverlap(cluster: ContrastClusterContent, candidateWordIdSet: Set<string>): number {
+  return cluster.members.filter((member) => candidateWordIdSet.has(member.wordId)).length;
 }
 
 function assertContrastIntakeRowsPresent(): never {

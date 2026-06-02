@@ -135,6 +135,10 @@ export type ContrastClusterCompletenessFlags = {
   incomplete: boolean;
 };
 
+export type ContrastSuggestedCluster = ContrastClusterContent & {
+  completeness: ContrastClusterCompletenessFlags;
+};
+
 export type ContrastIntakeWord = {
   targetWordId: string;
   targetWord: Word;
@@ -145,7 +149,7 @@ export type ContrastIntakeWord = {
   sources: ContrastCandidateIntakeSource[];
   candidates: ContrastIntakeCandidateSummary[];
   resolvedCandidateWordIds: string[];
-  relevantClusters: Array<ContrastClusterContent & { completeness: ContrastClusterCompletenessFlags }>;
+  suggestedClusters: ContrastSuggestedCluster[];
   productionSuppressed: boolean;
   badProductionPromptReported: boolean;
 };
