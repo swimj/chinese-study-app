@@ -519,6 +519,89 @@ describe('contextual selection intake', { concurrency: false }, () => {
     );
   });
 
+  test('merges all suggested clusters into the selected survivor for one intake word', () => {
+    insertWord({ id: 'target-kaocha', hanzi: '考察', priority: 50 });
+    insertWord({ id: 'candidate-kaocha', hanzi: '考查', priority: 40 });
+    insertWord({ id: 'candidate-kaoshi', hanzi: '考试', priority: 30 });
+    insertWord({ id: 'anchor-kaohe', hanzi: '考核', priority: 20 });
+    insertWord({ id: 'target-only-word', hanzi: '观察', priority: 10 });
+    insertWord({ id: 'outside-word', hanzi: '检查', priority: 5 });
+
+    insertIntake({
+      id: 'kaocha-candidate',
+      createdAt: '2026-05-25T00:00:00.000Z',
+      targetWordId: 'target-kaocha',
+      candidateText: '考查',
+      matchedWordId: 'candidate-kaocha',
+    });
+    insertIntake({
+      id: 'kaoshi-candidate',
+      createdAt: '2026-05-26T00:00:00.000Z',
+      targetWordId: 'target-kaocha',
+      candidateText: '考试',
+      matchedWordId: 'candidate-kaoshi',
+    });
+
+    dbModule.createContrastCluster({ id: 'destination-cluster', title: '考察 / 考查' });
+    dbModule.addContrastClusterMember({ clusterId: 'destination-cluster', wordId: 'target-kaocha', displayOrder: 1 });
+    dbModule.addContrastClusterMember({ clusterId: 'destination-cluster', wordId: 'candidate-kaocha', displayOrder: 2 });
+    dbModule.createContrastPrompt({
+      id: 'destination-prompt',
+      clusterId: 'destination-cluster',
+      targetWordId: 'target-kaocha',
+      promptText: '我们需要____这个现象。',
+      explanation: '',
+    });
+
+    dbModule.createContrastCluster({ id: 'candidate-only-cluster', title: '考试 / 考核' });
+    dbModule.addContrastClusterMember({ clusterId: 'candidate-only-cluster', wordId: 'candidate-kaoshi', displayOrder: 1 });
+    dbModule.addContrastClusterMember({ clusterId: 'candidate-only-cluster', wordId: 'anchor-kaohe', displayOrder: 2 });
+    dbModule.createContrastPrompt({
+      id: 'candidate-only-prompt',
+      clusterId: 'candidate-only-cluster',
+      targetWordId: 'candidate-kaoshi',
+      promptText: '明天有一场____。',
+      explanation: '',
+    });
+
+    dbModule.createContrastCluster({ id: 'target-only-cluster', title: '考察 / 观察' });
+    dbModule.addContrastClusterMember({ clusterId: 'target-only-cluster', wordId: 'target-kaocha', displayOrder: 1 });
+    dbModule.addContrastClusterMember({ clusterId: 'target-only-cluster', wordId: 'target-only-word', displayOrder: 2 });
+    dbModule.createContrastPrompt({
+      id: 'target-only-prompt',
+      clusterId: 'target-only-cluster',
+      targetWordId: 'target-kaocha',
+      promptText: '记者到现场____情况。',
+      explanation: '',
+    });
+
+    dbModule.createContrastCluster({ id: 'outside-cluster', title: '考核 / 检查' });
+    dbModule.addContrastClusterMember({ clusterId: 'outside-cluster', wordId: 'anchor-kaohe', displayOrder: 1 });
+    dbModule.addContrastClusterMember({ clusterId: 'outside-cluster', wordId: 'outside-word', displayOrder: 2 });
+
+    const mergedCluster = dbModule.mergeSuggestedContrastClustersForIntakeWord({
+      targetWordId: 'target-kaocha',
+      destinationClusterId: 'destination-cluster',
+    });
+
+    assert.equal(mergedCluster.id, 'destination-cluster');
+    assert.deepEqual(dbModule.getContrastClusters().map((cluster) => cluster.id), ['destination-cluster', 'outside-cluster']);
+    assert.deepEqual(mergedCluster.members.slice(0, 2).map((member) => member.wordId), ['target-kaocha', 'candidate-kaocha']);
+    assert.deepEqual(
+      [...mergedCluster.members.slice(2).map((member) => member.wordId)].sort(),
+      ['anchor-kaohe', 'candidate-kaoshi', 'target-only-word'],
+    );
+    assert.deepEqual(mergedCluster.prompts.map((prompt) => prompt.id), [
+      'candidate-only-prompt',
+      'destination-prompt',
+      'target-only-prompt',
+    ]);
+    assert.deepEqual(
+      dbModule.getContrastIntakeWords().words[0]?.suggestedClusters.map((cluster) => cluster.id),
+      ['destination-cluster'],
+    );
+  });
+
   test('projects candidate suppression and bad-prompt flags onto word-first intake rows', () => {
     insertWord({ id: 'target-kaocha', hanzi: '考察', priority: 50 });
     insertWord({ id: 'candidate-kaocha', hanzi: '考查', priority: 40 });

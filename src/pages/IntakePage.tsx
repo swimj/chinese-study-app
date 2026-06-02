@@ -23,6 +23,7 @@ export function IntakePage({
   isSaving,
   onSelectWordIndex,
   onResolveWord,
+  onMergeSuggestedClusters,
   onSuppressProduction,
   onReportBadPrompt,
   onCreateClusterForWord,
@@ -47,6 +48,7 @@ export function IntakePage({
   isSaving: boolean;
   onSelectWordIndex: (index: number) => void;
   onResolveWord: (targetWordId: string) => Promise<void>;
+  onMergeSuggestedClusters: (input: { targetWordId: string; destinationClusterId: string }) => Promise<string>;
   onSuppressProduction: (targetWordId: string) => Promise<void>;
   onReportBadPrompt: (input: { targetWordId: string; note?: string }) => Promise<void>;
   onCreateClusterForWord: (input: {
@@ -219,6 +221,33 @@ export function IntakePage({
   function openCluster(clusterId: string) {
     onSelectCluster(clusterId);
     setFocusMode('cluster');
+  }
+
+  async function handleMergeSuggestedCluster(destinationClusterId: string) {
+    if (!selectedIntakeWord || selectedIntakeWord.suggestedClusters.length < 2) {
+      return;
+    }
+
+    const destinationCluster = selectedIntakeWord.suggestedClusters.find((cluster) => cluster.id === destinationClusterId);
+    if (!destinationCluster) {
+      return;
+    }
+
+    const sourceTitles = selectedIntakeWord.suggestedClusters
+      .filter((cluster) => cluster.id !== destinationClusterId)
+      .map((cluster) => cluster.title);
+    const confirmed = window.confirm(
+      `Merge ${sourceTitles.length} other suggested group(s) into "${destinationCluster.title}"?\n\nMerged groups: ${sourceTitles.join(', ')}`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const clusterId = await onMergeSuggestedClusters({
+      targetWordId: selectedIntakeWord.targetWordId,
+      destinationClusterId,
+    });
+    openCluster(clusterId);
   }
 
   function backToLastIntake() {
@@ -461,6 +490,9 @@ export function IntakePage({
               </div>
 
               <h3>Suggested Groups</h3>
+              {selectedIntakeWord.suggestedClusters.length > 1 ? (
+                <p className="notes">Pick the group that should survive. The other suggested groups will merge into it.</p>
+              ) : null}
               <div className="cluster-prompt-list">
                 {selectedIntakeWord.suggestedClusters.length === 0 ? (
                   <p className="notes">No suggested groups yet.</p>
@@ -470,9 +502,21 @@ export function IntakePage({
                       <strong>{cluster.title}</strong>
                       <p>{cluster.members.map((member) => member.word.hanzi).join(' / ')}</p>
                       <ClusterMemberStateSummary cluster={cluster} />
-                      <button type="button" className="secondary-button" onClick={() => openCluster(cluster.id)}>
-                        Open cluster editor
-                      </button>
+                      <div className="pagination-actions">
+                        <button type="button" className="secondary-button" onClick={() => openCluster(cluster.id)}>
+                          Open cluster editor
+                        </button>
+                        {selectedIntakeWord.suggestedClusters.length > 1 ? (
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => void handleMergeSuggestedCluster(cluster.id)}
+                            disabled={isSaving}
+                          >
+                            {isSaving ? 'Merging...' : 'Merge others into this group'}
+                          </button>
+                        ) : null}
+                      </div>
                     </article>
                   ))
                 )}

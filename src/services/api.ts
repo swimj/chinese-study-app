@@ -233,6 +233,30 @@ export async function resolveContrastIntakeWord(targetWordId: string): Promise<C
   return response.json();
 }
 
+export async function mergeSuggestedContrastClusters(input: {
+  targetWordId: string;
+  destinationClusterId: string;
+}): Promise<ContrastClusterContent> {
+  const response = await fetch(
+    `${API_BASE}/api/contrast-intake/words/${encodeURIComponent(input.targetWordId)}/merge-suggested-clusters`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        destinationClusterId: input.destinationClusterId,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to merge suggested contrast clusters'));
+  }
+
+  return response.json();
+}
+
 export async function acceptContrastIntakeGroup(selector: ContrastIntakeGroupSelector): Promise<ContrastIntakeGroupsResponse> {
   const response = await fetch(`${API_BASE}/api/contrast-intake/groups/accept`, {
     method: 'POST',

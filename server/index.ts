@@ -21,6 +21,7 @@ import {
   getContrastClusterContent,
   getContrastIntakeGroups,
   getContrastIntakeWords,
+  mergeSuggestedContrastClustersForIntakeWord,
   getPrioritizedUnstudiedWords,
   getReviewFailureRateDays,
   getSessionPayload,
@@ -131,6 +132,37 @@ export function createApp() {
         return;
       }
       res.status(500).json({ error: 'Failed to resolve contrast intake word' });
+    }
+  });
+
+  app.post('/api/contrast-intake/words/:targetWordId/merge-suggested-clusters', (req, res) => {
+    const targetWordId = req.params.targetWordId;
+    const destinationClusterId = req.body?.destinationClusterId;
+    if (typeof targetWordId !== 'string' || targetWordId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty targetWordId' });
+      return;
+    }
+    if (typeof destinationClusterId !== 'string' || destinationClusterId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty destinationClusterId' });
+      return;
+    }
+
+    try {
+      res.json(mergeSuggestedContrastClustersForIntakeWord({
+        targetWordId: targetWordId.trim(),
+        destinationClusterId: destinationClusterId.trim(),
+      }));
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Contrast intake word not found') {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+      if (isContrastIntakeClientError(error)) {
+        res.status(error.message === 'Contrast cluster not found' ? 404 : 400).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to merge suggested contrast clusters' });
     }
   });
 
@@ -1158,6 +1190,7 @@ function isContrastIntakeClientError(error: unknown): error is Error {
     error.message.startsWith('Expected ') ||
     error.message === 'Word not found' ||
     error.message === 'Contrast cluster not found' ||
+    error.message === 'Contrast intake word not found' ||
     error.message === 'Contrast intake group not found' ||
     error.message === 'Contrast prompt target must be a cluster member'
   );

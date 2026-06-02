@@ -1862,6 +1862,47 @@ export function getContrastIntakeWords(): ContrastIntakeWordsPayload {
   return { words };
 }
 
+export function mergeSuggestedContrastClustersForIntakeWord({
+  targetWordId,
+  destinationClusterId,
+}: {
+  targetWordId: string;
+  destinationClusterId: string;
+}): ContrastClusterContent {
+  const normalizedTargetWordId = targetWordId.trim();
+  const normalizedDestinationClusterId = destinationClusterId.trim();
+  assertNonEmptyString(normalizedTargetWordId, 'Expected non-empty target word id');
+  assertNonEmptyString(normalizedDestinationClusterId, 'Expected non-empty destination cluster id');
+
+  const intakeWord = getContrastIntakeWords().words.find((word) => word.targetWordId === normalizedTargetWordId);
+  if (!intakeWord) {
+    throw new Error('Contrast intake word not found');
+  }
+
+  const suggestedClusterIds = intakeWord.suggestedClusters.map((cluster) => cluster.id);
+  if (suggestedClusterIds.length < 2) {
+    throw new Error('Expected at least two suggested clusters to merge');
+  }
+  if (!suggestedClusterIds.includes(normalizedDestinationClusterId)) {
+    throw new Error('Expected destination cluster to be one of the suggested clusters for this intake word');
+  }
+
+  const sourceClusterIds = suggestedClusterIds.filter((clusterId) => clusterId !== normalizedDestinationClusterId);
+
+  db.exec('BEGIN');
+  try {
+    mergeContrastClustersIntoDestination({
+      destinationClusterId: normalizedDestinationClusterId,
+      sourceClusterIds,
+    });
+    db.exec('COMMIT');
+    return getContrastClusterContentById(normalizedDestinationClusterId);
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 export function createContrastClusterFromIntake(input: CreateContrastIntakeClusterInput): ContrastClusterContent {
   const normalizedInput = normalizeCreateContrastIntakeClusterInput(input);
 
@@ -4281,6 +4322,70 @@ function summarizeClusterCompleteness(cluster: ContrastClusterContent): Contrast
 
 function countClusterSuggestedOverlap(cluster: ContrastClusterContent, suggestedWordIdSet: Set<string>): number {
   return cluster.members.filter((member) => suggestedWordIdSet.has(member.wordId)).length;
+}
+
+function mergeContrastClustersIntoDestination({
+  destinationClusterId,
+  sourceClusterIds,
+}: {
+  destinationClusterId: string;
+  sourceClusterIds: string[];
+}): void {
+  const normalizedDestinationClusterId = destinationClusterId.trim();
+  assertNonEmptyString(normalizedDestinationClusterId, 'Expected non-empty destination cluster id');
+  ensureContrastClusterExists(normalizedDestinationClusterId);
+
+  const normalizedSourceClusterIds = [...new Set(
+    sourceClusterIds
+      .map((clusterId) => clusterId.trim())
+      .filter((clusterId) => clusterId.length > 0 && clusterId !== normalizedDestinationClusterId),
+  )];
+  if (normalizedSourceClusterIds.length === 0) {
+    throw new Error('Expected at least one source cluster to merge');
+  }
+
+  normalizedSourceClusterIds.forEach(ensureContrastClusterExists);
+
+  const destinationMembers = getContrastClusterMembers(normalizedDestinationClusterId);
+  const destinationWordIds = new Set(destinationMembers.map((member) => member.wordId));
+  let nextDisplayOrder = getNextContrastClusterDisplayOrder(destinationMembers);
+
+  for (const sourceClusterId of normalizedSourceClusterIds) {
+    const sourceMembers = getContrastClusterMembers(sourceClusterId);
+    for (const member of sourceMembers) {
+      if (destinationWordIds.has(member.wordId)) {
+        continue;
+      }
+
+      addContrastClusterMember({
+        clusterId: normalizedDestinationClusterId,
+        wordId: member.wordId,
+        nuanceNote: member.nuanceNote,
+        displayOrder: nextDisplayOrder,
+      });
+      destinationWordIds.add(member.wordId);
+      nextDisplayOrder += 1;
+    }
+
+    db.prepare(`
+      UPDATE contrast_prompts
+      SET cluster_id = ?
+      WHERE cluster_id = ?
+    `).run(normalizedDestinationClusterId, sourceClusterId);
+
+    db.prepare(`
+      DELETE FROM contrast_clusters
+      WHERE id = ?
+    `).run(sourceClusterId);
+  }
+}
+
+function getNextContrastClusterDisplayOrder(members: ContrastClusterMember[]): number {
+  const highestDisplayOrder = members.reduce<number>(
+    (highest, member) => (member.displayOrder !== null ? Math.max(highest, member.displayOrder) : highest),
+    0,
+  );
+  return Math.max(highestDisplayOrder, members.length) + 1;
 }
 
 function assertContrastIntakeRowsPresent(): never {

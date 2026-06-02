@@ -4,6 +4,7 @@ import {
   addContrastClusterMember,
   createContrastCluster,
   fetchContrastIntakeWords,
+  mergeSuggestedContrastClusters,
   reportBadProductionPrompt,
   resolveContrastIntakeWord,
   suppressProductionForWord,
@@ -24,6 +25,7 @@ export type IntakePageController = {
   openPage: () => Promise<void>;
   selectWordIndex: (index: number) => void;
   resolveWord: (targetWordId: string) => Promise<void>;
+  mergeSuggestedClusters: (input: { targetWordId: string; destinationClusterId: string }) => Promise<string>;
   suppressProduction: (targetWordId: string) => Promise<void>;
   reportBadPrompt: (input: { targetWordId: string; note?: string }) => Promise<void>;
   createClusterForWord: (input: {
@@ -94,6 +96,11 @@ export function useIntakePageController({
     resolveWord: async (targetWordId) => {
       await saveAndRefresh(() => resolveContrastIntakeWord(targetWordId));
     },
+    mergeSuggestedClusters: (input) =>
+      saveAndRefresh(async () => {
+        const cluster = await mergeSuggestedContrastClusters(input);
+        return cluster.id;
+      }),
     suppressProduction: async (targetWordId) => {
       await saveAndRefresh(() => suppressProductionForWord(targetWordId));
     },
