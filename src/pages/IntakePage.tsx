@@ -460,12 +460,12 @@ export function IntakePage({
                 </button>
               </div>
 
-              <h3>Existing Groups</h3>
+              <h3>Suggested Groups</h3>
               <div className="cluster-prompt-list">
-                {selectedIntakeWord.relevantClusters.length === 0 ? (
-                  <p className="notes">No clusters yet.</p>
+                {selectedIntakeWord.suggestedClusters.length === 0 ? (
+                  <p className="notes">No suggested groups yet.</p>
                 ) : (
-                  selectedIntakeWord.relevantClusters.map((cluster) => (
+                  selectedIntakeWord.suggestedClusters.map((cluster) => (
                     <article key={cluster.id} className="cluster-prompt-card">
                       <strong>{cluster.title}</strong>
                       <p>{cluster.members.map((member) => member.word.hanzi).join(' / ')}</p>

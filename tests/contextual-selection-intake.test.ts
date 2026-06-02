@@ -442,10 +442,12 @@ describe('contextual selection intake', { concurrency: false }, () => {
     assert.equal(payload.words[0]?.openRowCount, 2);
     assert.equal(payload.words[0]?.candidates.length, 1);
     assert.deepEqual(payload.words[0]?.resolvedCandidateWordIds, ['candidate-kaocha']);
+    assert.deepEqual(payload.words[0]?.suggestedClusters, []);
     assert.equal(payload.words[0]?.candidates[0]?.unaddressed, true);
     assert.equal(payload.words[1]?.targetWordId, 'target-yan');
     assert.equal(payload.words[1]?.candidates.length, 0);
     assert.deepEqual(payload.words[1]?.resolvedCandidateWordIds, []);
+    assert.deepEqual(payload.words[1]?.suggestedClusters, []);
   });
 
   test('resolved candidate word ids ignore single-word intake rows while keeping matched candidates', () => {
@@ -473,6 +475,48 @@ describe('contextual selection intake', { concurrency: false }, () => {
     assert.equal(payload.words[0]?.targetWordId, 'target-kaocha');
     assert.equal(payload.words[0]?.openRowCount, 2);
     assert.deepEqual(payload.words[0]?.resolvedCandidateWordIds, ['candidate-kaocha']);
+  });
+
+  test('suggests clusters that contain any matched candidate words, not only the target word', () => {
+    insertWord({ id: 'target-kaocha', hanzi: '考察', priority: 50 });
+    insertWord({ id: 'candidate-kaocha', hanzi: '考查', priority: 40 });
+    insertWord({ id: 'candidate-kaoshi', hanzi: '考试', priority: 30 });
+    insertWord({ id: 'anchor-kaohe', hanzi: '考核', priority: 20 });
+    insertWord({ id: 'target-only-word', hanzi: '观察', priority: 10 });
+
+    insertIntake({
+      id: 'kaocha-candidate',
+      createdAt: '2026-05-25T00:00:00.000Z',
+      targetWordId: 'target-kaocha',
+      candidateText: '考查',
+      matchedWordId: 'candidate-kaocha',
+    });
+    insertIntake({
+      id: 'kaoshi-candidate',
+      createdAt: '2026-05-26T00:00:00.000Z',
+      targetWordId: 'target-kaocha',
+      candidateText: '考试',
+      matchedWordId: 'candidate-kaoshi',
+    });
+
+    dbModule.createContrastCluster({ id: 'candidate-only-cluster', title: '考查 / 考核' });
+    dbModule.addContrastClusterMember({ clusterId: 'candidate-only-cluster', wordId: 'candidate-kaocha' });
+    dbModule.addContrastClusterMember({ clusterId: 'candidate-only-cluster', wordId: 'anchor-kaohe' });
+
+    dbModule.createContrastCluster({ id: 'double-candidate-cluster', title: '考查 / 考试' });
+    dbModule.addContrastClusterMember({ clusterId: 'double-candidate-cluster', wordId: 'candidate-kaocha' });
+    dbModule.addContrastClusterMember({ clusterId: 'double-candidate-cluster', wordId: 'candidate-kaoshi' });
+
+    dbModule.createContrastCluster({ id: 'target-only-cluster', title: '考察 / 观察' });
+    dbModule.addContrastClusterMember({ clusterId: 'target-only-cluster', wordId: 'target-kaocha' });
+    dbModule.addContrastClusterMember({ clusterId: 'target-only-cluster', wordId: 'target-only-word' });
+
+    const payload = dbModule.getContrastIntakeWords();
+
+    assert.deepEqual(
+      payload.words[0]?.suggestedClusters.map((cluster) => cluster.id),
+      ['double-candidate-cluster', 'candidate-only-cluster'],
+    );
   });
 
   test('projects candidate suppression and bad-prompt flags onto word-first intake rows', () => {
