@@ -121,8 +121,10 @@ function App() {
             await refreshContrastManagementState();
           }}
           onCreateClusterForWord={async (input) => {
-            await intakePage.createClusterForWord(input);
+            const clusterId = await intakePage.createClusterForWord(input);
             await refreshContrastManagementState();
+            clusterPage.selectCluster(clusterId);
+            return clusterId;
           }}
           clusters={clusterPage.clusters}
           selectedClusterId={clusterPage.selectedClusterId}

@@ -31,7 +31,7 @@ export type IntakePageController = {
     candidateWordIds?: string[];
     title: string;
     note?: string;
-  }) => Promise<void>;
+  }) => Promise<string>;
 };
 
 export function useIntakePageController({
@@ -69,12 +69,13 @@ export function useIntakePageController({
     setSelectedWordIndex((current) => Math.min(current, Math.max(response.words.length - 1, 0)));
   }
 
-  async function saveAndRefresh(operation: () => Promise<unknown>) {
+  async function saveAndRefresh<T>(operation: () => Promise<T>): Promise<T> {
     setIsSaving(true);
     setError(null);
     try {
-      await operation();
+      const result = await operation();
       await refresh();
+      return result;
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to update contrast intake');
       throw error;
@@ -90,9 +91,15 @@ export function useIntakePageController({
     isSaving,
     openPage,
     selectWordIndex: (index) => setSelectedWordIndex(clampIndex(index, words.length)),
-    resolveWord: (targetWordId) => saveAndRefresh(() => resolveContrastIntakeWord(targetWordId)),
-    suppressProduction: (targetWordId) => saveAndRefresh(() => suppressProductionForWord(targetWordId)),
-    reportBadPrompt: (input) => saveAndRefresh(() => reportBadProductionPrompt(input)),
+    resolveWord: async (targetWordId) => {
+      await saveAndRefresh(() => resolveContrastIntakeWord(targetWordId));
+    },
+    suppressProduction: async (targetWordId) => {
+      await saveAndRefresh(() => suppressProductionForWord(targetWordId));
+    },
+    reportBadPrompt: async (input) => {
+      await saveAndRefresh(() => reportBadProductionPrompt(input));
+    },
     createClusterForWord: (input) =>
       saveAndRefresh(async () => {
         const cluster = await createContrastCluster({ title: input.title, note: input.note ?? '' });
@@ -103,6 +110,7 @@ export function useIntakePageController({
             wordId,
           });
         }
+        return cluster.id;
       }),
   };
 }

@@ -54,7 +54,7 @@ export function IntakePage({
     candidateWordIds?: string[];
     title: string;
     note?: string;
-  }) => Promise<void>;
+  }) => Promise<string>;
   clusters: ContrastClusterContent[];
   selectedClusterId: string | null;
   wordSearchResults: Word[];
@@ -195,7 +195,7 @@ export function IntakePage({
     if (!selectedIntakeWord || newClusterTitle.trim().length === 0) {
       return;
     }
-    await onCreateClusterForWord({
+    const clusterId = await onCreateClusterForWord({
       targetWordId: selectedIntakeWord.targetWordId,
       candidateWordIds: selectedIntakeWord.resolvedCandidateWordIds,
       title: newClusterTitle,
@@ -203,6 +203,7 @@ export function IntakePage({
     });
     setNewClusterTitle('');
     setNewClusterNote('');
+    openCluster(clusterId);
   }
 
   async function handleCreateCluster(event: FormEvent<HTMLFormElement>) {
