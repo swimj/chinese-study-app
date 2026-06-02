@@ -1050,6 +1050,57 @@ button:hover {
   color: #fcd34d;
 }
 
+.intake-word-table-wrapper {
+  overflow-x: auto;
+  margin-bottom: 1rem;
+}
+
+.intake-word-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 0.84rem;
+}
+
+.intake-word-table-row {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.intake-word-table-row-target {
+  background: rgba(37, 99, 235, 0.16);
+}
+
+.intake-word-table-cell {
+  padding: 0.55rem 0.65rem;
+  vertical-align: top;
+}
+
+.intake-word-table-cell strong,
+.intake-word-table-cell small {
+  display: block;
+}
+
+.intake-word-table-cell-label {
+  width: 5.5rem;
+  color: #94a3b8;
+}
+
+.intake-word-table-cell-meta {
+  width: 11rem;
+}
+
+.intake-word-table-cell-meta small + small {
+  margin-top: 0.25rem;
+}
+
+.intake-word-table-cell-actions {
+  width: 12rem;
+}
+
+.intake-word-table-cell-actions button + button {
+  margin-top: 0.4rem;
+}
+
 .cluster-detail-stack {
   display: grid;
   gap: 1.5rem;

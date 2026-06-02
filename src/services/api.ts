@@ -124,6 +124,8 @@ export type ContrastIntakeCandidateSummary = {
   sources: ContrastCandidateIntakeSource[];
   relevantClusters: ContrastClusterContent[];
   coverage: ContrastIntakeCoverage;
+  productionSuppressed: boolean;
+  badProductionPromptReported: boolean;
   unaddressed: boolean;
 };
 
@@ -142,6 +144,7 @@ export type ContrastIntakeWord = {
   notes: string[];
   sources: ContrastCandidateIntakeSource[];
   candidates: ContrastIntakeCandidateSummary[];
+  resolvedCandidateWordIds: string[];
   relevantClusters: Array<ContrastClusterContent & { completeness: ContrastClusterCompletenessFlags }>;
   productionSuppressed: boolean;
   badProductionPromptReported: boolean;
