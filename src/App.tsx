@@ -105,7 +105,7 @@ function App() {
       ) : currentPage === 'intake' ? (
         <IntakePage
           words={intakePage.words}
-          activeWordIndex={intakePage.activeWordIndex}
+          selectedWordIndex={intakePage.selectedWordIndex}
           isSaving={intakePage.isSaving}
           onSelectWordIndex={intakePage.selectWordIndex}
           onResolveWord={async (targetWordId) => {

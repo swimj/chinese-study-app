@@ -441,9 +441,77 @@ describe('contextual selection intake', { concurrency: false }, () => {
     assert.equal(payload.words[0]?.targetWordId, 'target-kaocha');
     assert.equal(payload.words[0]?.openRowCount, 2);
     assert.equal(payload.words[0]?.candidates.length, 1);
+    assert.deepEqual(payload.words[0]?.resolvedCandidateWordIds, ['candidate-kaocha']);
     assert.equal(payload.words[0]?.candidates[0]?.unaddressed, true);
     assert.equal(payload.words[1]?.targetWordId, 'target-yan');
     assert.equal(payload.words[1]?.candidates.length, 0);
+    assert.deepEqual(payload.words[1]?.resolvedCandidateWordIds, []);
+  });
+
+  test('resolved candidate word ids ignore single-word intake rows while keeping matched candidates', () => {
+    insertWord({ id: 'target-kaocha', hanzi: '考察', priority: 50 });
+    insertWord({ id: 'candidate-kaocha', hanzi: '考查', priority: 40 });
+
+    insertIntake({
+      id: 'kaocha-candidate',
+      createdAt: '2026-05-25T00:00:00.000Z',
+      targetWordId: 'target-kaocha',
+      candidateText: '考查',
+      matchedWordId: 'candidate-kaocha',
+    });
+    insertIntake({
+      id: 'kaocha-single',
+      createdAt: '2026-05-26T00:00:00.000Z',
+      targetWordId: 'target-kaocha',
+      candidateText: null,
+      matchedWordId: null,
+    });
+
+    const payload = dbModule.getContrastIntakeWords();
+
+    assert.equal(payload.words.length, 1);
+    assert.equal(payload.words[0]?.targetWordId, 'target-kaocha');
+    assert.equal(payload.words[0]?.openRowCount, 2);
+    assert.deepEqual(payload.words[0]?.resolvedCandidateWordIds, ['candidate-kaocha']);
+  });
+
+  test('projects candidate suppression and bad-prompt flags onto word-first intake rows', () => {
+    insertWord({ id: 'target-kaocha', hanzi: '考察', priority: 50 });
+    insertWord({ id: 'candidate-kaocha', hanzi: '考查', priority: 40 });
+    insertWord({ id: 'candidate-kaoshi', hanzi: '考试', priority: 30 });
+
+    insertIntake({
+      id: 'kaocha-1',
+      createdAt: '2026-05-25T00:00:00.000Z',
+      targetWordId: 'target-kaocha',
+      candidateText: '考查',
+      matchedWordId: 'candidate-kaocha',
+    });
+    insertIntake({
+      id: 'kaoshi-1',
+      createdAt: '2026-05-26T00:00:00.000Z',
+      targetWordId: 'target-kaocha',
+      candidateText: '考试',
+      matchedWordId: 'candidate-kaoshi',
+    });
+
+    dbModule.suppressProductionForWordOutsideSession({ targetWordId: 'candidate-kaocha' });
+    dbModule.reportBadProductionPromptOutsideSession({
+      targetWordId: 'candidate-kaoshi',
+      note: 'Definition too broad.',
+    });
+
+    const payload = dbModule.getContrastIntakeWords();
+    const candidates = payload.words[0]?.candidates ?? [];
+    const suppressedCandidate = candidates.find((candidate) => candidate.matchedWordId === 'candidate-kaocha');
+    const badPromptCandidate = candidates.find((candidate) => candidate.matchedWordId === 'candidate-kaoshi');
+
+    assert.equal(suppressedCandidate?.productionSuppressed, true);
+    assert.equal(suppressedCandidate?.badProductionPromptReported, false);
+    assert.equal(suppressedCandidate?.unaddressed, false);
+    assert.equal(badPromptCandidate?.productionSuppressed, false);
+    assert.equal(badPromptCandidate?.badProductionPromptReported, true);
+    assert.equal(badPromptCandidate?.unaddressed, false);
   });
 });
 

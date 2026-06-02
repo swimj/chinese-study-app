@@ -19,7 +19,7 @@ type PromptEditorState = {
 
 export function IntakePage({
   words,
-  activeWordIndex,
+  selectedWordIndex,
   isSaving,
   onSelectWordIndex,
   onResolveWord,
@@ -43,13 +43,18 @@ export function IntakePage({
   onDeletePrompt,
 }: {
   words: ContrastIntakeWord[];
-  activeWordIndex: number;
+  selectedWordIndex: number;
   isSaving: boolean;
   onSelectWordIndex: (index: number) => void;
   onResolveWord: (targetWordId: string) => Promise<void>;
   onSuppressProduction: (targetWordId: string) => Promise<void>;
   onReportBadPrompt: (input: { targetWordId: string; note?: string }) => Promise<void>;
-  onCreateClusterForWord: (input: { targetWordId: string; title: string; note?: string }) => Promise<void>;
+  onCreateClusterForWord: (input: {
+    targetWordId: string;
+    candidateWordIds?: string[];
+    title: string;
+    note?: string;
+  }) => Promise<void>;
   clusters: ContrastClusterContent[];
   selectedClusterId: string | null;
   wordSearchResults: Word[];
@@ -95,7 +100,7 @@ export function IntakePage({
       word.targetWord.hanzi.includes(q) || word.targetWord.meaning.toLowerCase().includes(q.toLowerCase()),
     );
   }, [intakeSearch, words]);
-  const activeIntakeWord = intakeFiltered[activeWordIndex] ?? intakeFiltered[0] ?? null;
+  const selectedIntakeWord = intakeFiltered[selectedWordIndex] ?? intakeFiltered[0] ?? null;
   const intakeVisible = intakeFiltered.slice(intakeWindowStart, intakeWindowStart + 3);
 
   const intakeTargetWordIdSet = useMemo(() => new Set(words.map((word) => word.targetWordId)), [words]);
@@ -141,16 +146,16 @@ export function IntakePage({
   const clusterVisible = clusterFiltered.slice(clusterWindowStart, clusterWindowStart + 3);
 
   useEffect(() => {
-    if (words.length > 0 && !activeIntakeWord) {
+    if (words.length > 0 && !selectedIntakeWord) {
       onSelectWordIndex(0);
     }
-  }, [activeIntakeWord, onSelectWordIndex, words.length]);
+  }, [selectedIntakeWord, onSelectWordIndex, words.length]);
 
   useEffect(() => {
-    if (focusMode === 'intake' && activeIntakeWord) {
-      setLastIntakeWordId(activeIntakeWord.targetWordId);
+    if (focusMode === 'intake' && selectedIntakeWord) {
+      setLastIntakeWordId(selectedIntakeWord.targetWordId);
     }
-  }, [activeIntakeWord, focusMode]);
+  }, [selectedIntakeWord, focusMode]);
 
   useEffect(() => {
     if (words.length > 0) {
@@ -172,26 +177,27 @@ export function IntakePage({
   }, [selectedCluster?.id]);
 
   async function handleResolve() {
-    if (!activeIntakeWord) {
+    if (!selectedIntakeWord) {
       return;
     }
-    const unresolvedCandidateCount = activeIntakeWord.candidates.filter((candidate) => candidate.unaddressed).length;
+    const unresolvedCandidateCount = selectedIntakeWord.candidates.filter((candidate) => candidate.unaddressed).length;
     if (unresolvedCandidateCount > 0) {
       const confirmed = window.confirm(`${unresolvedCandidateCount} candidate(s) appear unaddressed. Resolve anyway?`);
       if (!confirmed) {
         return;
       }
     }
-    await onResolveWord(activeIntakeWord.targetWordId);
+    await onResolveWord(selectedIntakeWord.targetWordId);
   }
 
   async function handleCreateClusterForWord(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!activeIntakeWord || newClusterTitle.trim().length === 0) {
+    if (!selectedIntakeWord || newClusterTitle.trim().length === 0) {
       return;
     }
     await onCreateClusterForWord({
-      targetWordId: activeIntakeWord.targetWordId,
+      targetWordId: selectedIntakeWord.targetWordId,
+      candidateWordIds: selectedIntakeWord.resolvedCandidateWordIds,
       title: newClusterTitle,
       note: newClusterNote,
     });
@@ -313,7 +319,7 @@ export function IntakePage({
                 <button
                   key={word.targetWordId}
                   type="button"
-                  className={activeIntakeWord?.targetWordId === word.targetWordId && focusMode === 'intake' ? 'cluster-list-item active' : 'cluster-list-item'}
+                  className={selectedIntakeWord?.targetWordId === word.targetWordId && focusMode === 'intake' ? 'cluster-list-item active' : 'cluster-list-item'}
                   onClick={() => {
                     const index = intakeFiltered.findIndex((entry) => entry.targetWordId === word.targetWordId);
                     if (index >= 0) {
@@ -396,76 +402,69 @@ export function IntakePage({
         </aside>
 
         <section className="panel cluster-detail-panel">
-          {focusMode === 'intake' && activeIntakeWord ? (
+          {focusMode === 'intake' && selectedIntakeWord ? (
             <div>
               <div className="cluster-panel-heading">
                 <div>
-                  <h2>{activeIntakeWord.targetWord.hanzi}</h2>
-                  <p className="notes">{activeIntakeWord.targetWord.pinyin} · {activeIntakeWord.targetWord.meaning}</p>
+                  <h2>{selectedIntakeWord.targetWord.hanzi}</h2>
+                  <p className="notes">{selectedIntakeWord.targetWord.pinyin} · {selectedIntakeWord.targetWord.meaning}</p>
                 </div>
-                <span className="badge">{activeIntakeWord.openRowCount} open</span>
+                <span className="badge">{selectedIntakeWord.openRowCount} open</span>
+              </div>
+
+              <div className="intake-word-table-wrapper">
+                <table className="intake-word-table">
+                  <tbody>
+                    <IntakeWordTableRow
+                      label="Target"
+                      hanzi={selectedIntakeWord.targetWord.hanzi}
+                      meaning={selectedIntakeWord.targetWord.meaning}
+                      count={selectedIntakeWord.openRowCount}
+                      isUnaddressed={false}
+                      productionSuppressed={selectedIntakeWord.productionSuppressed}
+                      badProductionPromptReported={selectedIntakeWord.badProductionPromptReported}
+                      disableActions={isSaving}
+                      onSuppressProduction={() => void onSuppressProduction(selectedIntakeWord.targetWordId)}
+                      onReportBadPrompt={() => void onReportBadPrompt({ targetWordId: selectedIntakeWord.targetWordId })}
+                    />
+                    {selectedIntakeWord.candidates.map((candidate) => {
+                      const matchedWordId = candidate.matchedWordId;
+                      return (
+                        <IntakeWordTableRow
+                          key={candidate.key}
+                          label="Candidate"
+                          hanzi={candidate.matchedWord?.hanzi ?? candidate.candidateText ?? 'Unresolved candidate'}
+                          meaning={candidate.matchedWord?.meaning ?? 'No matched meaning yet.'}
+                          count={candidate.count}
+                          isUnaddressed={candidate.unaddressed}
+                          productionSuppressed={candidate.productionSuppressed}
+                          badProductionPromptReported={candidate.badProductionPromptReported}
+                          disableActions={isSaving || !matchedWordId}
+                          onSuppressProduction={matchedWordId
+                            ? () => void onSuppressProduction(matchedWordId)
+                            : undefined}
+                          onReportBadPrompt={matchedWordId
+                            ? () => void onReportBadPrompt({ targetWordId: matchedWordId })
+                            : undefined}
+                        />
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
 
               <div className="pagination-actions">
-                <button
-                  type="button"
-                  className="secondary-button"
-                  disabled={isSaving || activeIntakeWord.productionSuppressed}
-                  onClick={() => void onSuppressProduction(activeIntakeWord.targetWordId)}
-                >
-                  {activeIntakeWord.productionSuppressed ? 'Production suppressed' : 'Suppress production'}
-                </button>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  disabled={isSaving || activeIntakeWord.badProductionPromptReported}
-                  onClick={() => void onReportBadPrompt({ targetWordId: activeIntakeWord.targetWordId })}
-                >
-                  {activeIntakeWord.badProductionPromptReported ? 'Bad prompt reported' : 'Bad production prompt'}
-                </button>
                 <button type="button" onClick={() => void handleResolve()} disabled={isSaving}>
                   {isSaving ? 'Saving...' : 'Mark resolved'}
                 </button>
               </div>
 
-              <h3>Create Cluster</h3>
-              <form className="cluster-prompt-form" onSubmit={(event) => void handleCreateClusterForWord(event)}>
-                <label>
-                  <span>Title</span>
-                  <input value={newClusterTitle} onChange={(event) => setNewClusterTitle(event.target.value)} />
-                </label>
-                <label>
-                  <span>Note</span>
-                  <input value={newClusterNote} onChange={(event) => setNewClusterNote(event.target.value)} />
-                </label>
-                <button type="submit" disabled={isSaving || newClusterTitle.trim().length === 0}>Create one-word cluster</button>
-              </form>
-
-              <h3>Candidates</h3>
+              <h3>Existing Groups</h3>
               <div className="cluster-prompt-list">
-                {activeIntakeWord.candidates.map((candidate) => (
-                  <article key={candidate.key} className="cluster-prompt-card intake-candidate-row">
-                    <div className="cluster-prompt-heading">
-                      <strong className="intake-candidate-row-hanzi">
-                        {candidate.matchedWord?.hanzi ?? candidate.candidateText ?? 'Unresolved candidate'}
-                      </strong>
-                    </div>
-                    <small className="intake-candidate-row-meaning">
-                      {truncate(candidate.matchedWord?.meaning ?? 'No matched meaning yet.', 70)}
-                    </small>
-                  </article>
-                ))}
-                {activeIntakeWord.candidates.length === 0 ? (
-                  <p className="notes">No candidate rows to review for this word.</p>
-                ) : null}
-              </div>
-
-              <h3>Related Clusters</h3>
-              <div className="cluster-prompt-list">
-                {activeIntakeWord.relevantClusters.length === 0 ? (
+                {selectedIntakeWord.relevantClusters.length === 0 ? (
                   <p className="notes">No clusters yet.</p>
                 ) : (
-                  activeIntakeWord.relevantClusters.map((cluster) => (
+                  selectedIntakeWord.relevantClusters.map((cluster) => (
                     <article key={cluster.id} className="cluster-prompt-card">
                       <strong>{cluster.title}</strong>
                       <p>{cluster.members.map((member) => member.word.hanzi).join(' / ')}</p>
@@ -477,6 +476,21 @@ export function IntakePage({
                   ))
                 )}
               </div>
+
+              <h3>Create Group</h3>
+              <form className="cluster-prompt-form" onSubmit={(event) => void handleCreateClusterForWord(event)}>
+                <label>
+                  <span>Title</span>
+                  <input value={newClusterTitle} onChange={(event) => setNewClusterTitle(event.target.value)} />
+                </label>
+                <label>
+                  <span>Note</span>
+                  <input value={newClusterNote} onChange={(event) => setNewClusterNote(event.target.value)} />
+                </label>
+                <button type="submit" disabled={isSaving || newClusterTitle.trim().length === 0}>
+                  Create group with target and candidates
+                </button>
+              </form>
             </div>
           ) : focusMode === 'cluster' && selectedCluster ? (
             <div>
@@ -867,6 +881,66 @@ export function IntakePage({
         </section>
       </div>
     </section>
+  );
+}
+
+function IntakeWordTableRow({
+  label,
+  hanzi,
+  meaning,
+  count,
+  isUnaddressed,
+  productionSuppressed,
+  badProductionPromptReported,
+  disableActions,
+  onSuppressProduction,
+  onReportBadPrompt,
+}: {
+  label: string;
+  hanzi: string;
+  meaning: string;
+  count: number;
+  isUnaddressed: boolean;
+  productionSuppressed: boolean;
+  badProductionPromptReported: boolean;
+  disableActions: boolean;
+  onSuppressProduction?: () => void;
+  onReportBadPrompt?: () => void;
+}) {
+  return (
+    <tr className={label === 'Target' ? 'intake-word-table-row intake-word-table-row-target' : 'intake-word-table-row'}>
+      <td className="intake-word-table-cell intake-word-table-cell-label">
+        <small>{label}</small>
+      </td>
+      <td className="intake-word-table-cell">
+        <strong className="intake-candidate-row-hanzi">{hanzi}</strong>
+        <small className="intake-candidate-row-meaning">{truncate(meaning, 70)}</small>
+      </td>
+      <td className="intake-word-table-cell intake-word-table-cell-meta">
+        <small>{count} row{count === 1 ? '' : 's'}</small>
+        {isUnaddressed ? <small className="badge warning-badge">Unaddressed</small> : null}
+        {productionSuppressed ? <small className="badge warning-badge">Production suppressed</small> : null}
+        {badProductionPromptReported ? <small className="badge warning-badge">Bad production prompt</small> : null}
+      </td>
+      <td className="intake-word-table-cell intake-word-table-cell-actions">
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={disableActions || productionSuppressed || !onSuppressProduction}
+          onClick={onSuppressProduction}
+        >
+          {productionSuppressed ? 'Suppressed' : 'Suppress'}
+        </button>
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={disableActions || badProductionPromptReported || !onReportBadPrompt}
+          onClick={onReportBadPrompt}
+        >
+          {badProductionPromptReported ? 'Bad prompt logged' : 'Bad prompt'}
+        </button>
+      </td>
+    </tr>
   );
 }
 

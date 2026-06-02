@@ -322,6 +322,8 @@ type ContrastIntakeCandidateSummary = {
   sources: ContrastCandidateIntakeSource[];
   relevantClusters: ContrastClusterContent[];
   coverage: ContrastIntakeCoverage;
+  productionSuppressed: boolean;
+  badProductionPromptReported: boolean;
   unaddressed: boolean;
 };
 
@@ -340,6 +342,7 @@ type ContrastIntakeWord = {
   notes: string[];
   sources: ContrastCandidateIntakeSource[];
   candidates: ContrastIntakeCandidateSummary[];
+  resolvedCandidateWordIds: string[];
   relevantClusters: Array<ContrastClusterContent & { completeness: ContrastClusterCompletenessFlags }>;
   productionSuppressed: boolean;
   badProductionPromptReported: boolean;
@@ -1767,6 +1770,8 @@ export function getContrastIntakeWords(): ContrastIntakeWordsPayload {
     const candidateSummaries = [...groupedCandidates.entries()].map(([key, candidateRows]) => {
       const first = candidateRows[0] ?? assertContrastIntakeRowsPresent();
       const matchedWord = first.matchedWordId ? wordsById.get(first.matchedWordId) ?? null : null;
+      const candidateProductionSuppressed = matchedWord ? productionSuppressedWordIds.has(matchedWord.id) : false;
+      const candidateBadProductionPromptReported = matchedWord ? badProductionPromptWordIds.has(matchedWord.id) : false;
       const intakeWordIds = matchedWord ? [targetWordId, matchedWord.id] : [targetWordId];
       const coverage = summarizeContrastIntakeCoverage({
         targetWordId,
@@ -1791,7 +1796,9 @@ export function getContrastIntakeWords(): ContrastIntakeWordsPayload {
         sources: sortedCandidateRows,
         relevantClusters,
         coverage,
-        unaddressed: !productionSuppressed && !badProductionPromptReported && !coverage.hasSharedCluster,
+        productionSuppressed: candidateProductionSuppressed,
+        badProductionPromptReported: candidateBadProductionPromptReported,
+        unaddressed: !candidateProductionSuppressed && !candidateBadProductionPromptReported && !coverage.hasSharedCluster,
       } satisfies ContrastIntakeCandidateSummary;
     }).sort((left, right) => {
       if (right.count !== left.count) {
@@ -1800,6 +1807,11 @@ export function getContrastIntakeWords(): ContrastIntakeWordsPayload {
       const latestComparison = right.latestCreatedAt.localeCompare(left.latestCreatedAt);
       return latestComparison === 0 ? left.key.localeCompare(right.key) : latestComparison;
     });
+    const resolvedCandidateWordIds = [...new Set(
+      candidateSummaries
+        .map((candidate) => candidate.matchedWordId)
+        .filter((wordId): wordId is string => typeof wordId === 'string' && wordId.length > 0),
+    )];
 
     return {
       targetWordId,
@@ -1810,6 +1822,7 @@ export function getContrastIntakeWords(): ContrastIntakeWordsPayload {
       notes,
       sources: sortedRows,
       candidates: candidateSummaries,
+      resolvedCandidateWordIds,
       relevantClusters: relevantClusters.map((cluster) => ({
         ...cluster,
         completeness: summarizeClusterCompleteness(cluster),

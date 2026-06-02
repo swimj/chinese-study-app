@@ -18,7 +18,7 @@ export type IntakePageControllerOptions = {
 
 export type IntakePageController = {
   words: ContrastIntakeWord[];
-  activeWordIndex: number;
+  selectedWordIndex: number;
   isLoading: boolean;
   isSaving: boolean;
   openPage: () => Promise<void>;
@@ -26,7 +26,12 @@ export type IntakePageController = {
   resolveWord: (targetWordId: string) => Promise<void>;
   suppressProduction: (targetWordId: string) => Promise<void>;
   reportBadPrompt: (input: { targetWordId: string; note?: string }) => Promise<void>;
-  createClusterForWord: (input: { targetWordId: string; title: string; note?: string }) => Promise<void>;
+  createClusterForWord: (input: {
+    targetWordId: string;
+    candidateWordIds?: string[];
+    title: string;
+    note?: string;
+  }) => Promise<void>;
 };
 
 export function useIntakePageController({
@@ -35,7 +40,7 @@ export function useIntakePageController({
   setError,
 }: IntakePageControllerOptions): IntakePageController {
   const [words, setWords] = useState<ContrastIntakeWord[]>([]);
-  const [activeWordIndex, setActiveWordIndex] = useState(0);
+  const [selectedWordIndex, setSelectedWordIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -49,7 +54,7 @@ export function useIntakePageController({
     try {
       const response = await fetchContrastIntakeWords();
       setWords(response.words);
-      setActiveWordIndex(0);
+      setSelectedWordIndex(0);
       setCurrentPage('intake');
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to load contrast intake words');
@@ -61,7 +66,7 @@ export function useIntakePageController({
   async function refresh() {
     const response = await fetchContrastIntakeWords();
     setWords(response.words);
-    setActiveWordIndex((current) => Math.min(current, Math.max(response.words.length - 1, 0)));
+    setSelectedWordIndex((current) => Math.min(current, Math.max(response.words.length - 1, 0)));
   }
 
   async function saveAndRefresh(operation: () => Promise<unknown>) {
@@ -80,21 +85,24 @@ export function useIntakePageController({
 
   return {
     words,
-    activeWordIndex,
+    selectedWordIndex,
     isLoading,
     isSaving,
     openPage,
-    selectWordIndex: (index) => setActiveWordIndex(clampIndex(index, words.length)),
+    selectWordIndex: (index) => setSelectedWordIndex(clampIndex(index, words.length)),
     resolveWord: (targetWordId) => saveAndRefresh(() => resolveContrastIntakeWord(targetWordId)),
     suppressProduction: (targetWordId) => saveAndRefresh(() => suppressProductionForWord(targetWordId)),
     reportBadPrompt: (input) => saveAndRefresh(() => reportBadProductionPrompt(input)),
     createClusterForWord: (input) =>
       saveAndRefresh(async () => {
         const cluster = await createContrastCluster({ title: input.title, note: input.note ?? '' });
-        await addContrastClusterMember({
-          clusterId: cluster.id,
-          wordId: input.targetWordId,
-        });
+        const memberWordIds = [input.targetWordId, ...(input.candidateWordIds ?? [])];
+        for (const wordId of new Set(memberWordIds)) {
+          await addContrastClusterMember({
+            clusterId: cluster.id,
+            wordId,
+          });
+        }
       }),
   };
 }
