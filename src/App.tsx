@@ -112,6 +112,12 @@ function App() {
             await intakePage.resolveWord(targetWordId);
             await refreshContrastManagementState();
           }}
+          onMergeSuggestedClusters={async (input) => {
+            const clusterId = await intakePage.mergeSuggestedClusters(input);
+            await refreshContrastManagementState();
+            clusterPage.selectCluster(clusterId);
+            return clusterId;
+          }}
           onSuppressProduction={async (targetWordId) => {
             await intakePage.suppressProduction(targetWordId);
             await refreshContrastManagementState();
