@@ -419,14 +419,14 @@ describe('contextual selection intake', { concurrency: false }, () => {
       createdAt: '2026-05-25T00:00:00.000Z',
       targetWordId: 'target-kaocha',
       candidateText: '考查',
-      matchedWordId: 'candidate-kaocha',
+      matchedWordId: null,
     });
     insertIntake({
       id: 'kaocha-2',
       createdAt: '2026-05-28T00:00:00.000Z',
       targetWordId: 'target-kaocha',
       candidateText: '考查',
-      matchedWordId: 'candidate-kaocha',
+      matchedWordId: null,
     });
     insertIntake({
       id: 'yan-1',
@@ -442,6 +442,7 @@ describe('contextual selection intake', { concurrency: false }, () => {
     assert.equal(payload.words[0]?.openRowCount, 2);
     assert.equal(payload.words[0]?.candidates.length, 1);
     assert.deepEqual(payload.words[0]?.resolvedCandidateWordIds, ['candidate-kaocha']);
+    assert.deepEqual(payload.words[0]?.candidates[0]?.matchedWords.map((word) => word.wordId), ['candidate-kaocha']);
     assert.equal(payload.words[0]?.candidates[0]?.unaddressed, true);
     assert.equal(payload.words[1]?.targetWordId, 'target-yan');
     assert.equal(payload.words[1]?.candidates.length, 0);
@@ -457,7 +458,7 @@ describe('contextual selection intake', { concurrency: false }, () => {
       createdAt: '2026-05-25T00:00:00.000Z',
       targetWordId: 'target-kaocha',
       candidateText: '考查',
-      matchedWordId: 'candidate-kaocha',
+      matchedWordId: null,
     });
     insertIntake({
       id: 'kaocha-single',
@@ -475,6 +476,28 @@ describe('contextual selection intake', { concurrency: false }, () => {
     assert.deepEqual(payload.words[0]?.resolvedCandidateWordIds, ['candidate-kaocha']);
   });
 
+  test('resolves all matching words from candidate text at intake read time', () => {
+    insertWord({ id: 'target-jinggao', hanzi: '警告', priority: 50 });
+    insertWord({ id: 'candidate-jingjie', hanzi: '警戒', priority: 40 });
+    insertWord({ id: 'candidate-jingjie-alt', hanzi: '警戒', priority: 35 });
+
+    insertIntake({
+      id: 'jingjie-candidate',
+      createdAt: '2026-05-25T00:00:00.000Z',
+      targetWordId: 'target-jinggao',
+      candidateText: ' 警 戒 ',
+      matchedWordId: null,
+    });
+
+    const payload = dbModule.getContrastIntakeWords();
+
+    assert.deepEqual(payload.words[0]?.resolvedCandidateWordIds, ['candidate-jingjie', 'candidate-jingjie-alt']);
+    assert.deepEqual(
+      payload.words[0]?.candidates[0]?.matchedWords.map((word) => word.wordId),
+      ['candidate-jingjie', 'candidate-jingjie-alt'],
+    );
+  });
+
   test('projects candidate suppression and bad-prompt flags onto word-first intake rows', () => {
     insertWord({ id: 'target-kaocha', hanzi: '考察', priority: 50 });
     insertWord({ id: 'candidate-kaocha', hanzi: '考查', priority: 40 });
@@ -485,14 +508,14 @@ describe('contextual selection intake', { concurrency: false }, () => {
       createdAt: '2026-05-25T00:00:00.000Z',
       targetWordId: 'target-kaocha',
       candidateText: '考查',
-      matchedWordId: 'candidate-kaocha',
+      matchedWordId: null,
     });
     insertIntake({
       id: 'kaoshi-1',
       createdAt: '2026-05-26T00:00:00.000Z',
       targetWordId: 'target-kaocha',
       candidateText: '考试',
-      matchedWordId: 'candidate-kaoshi',
+      matchedWordId: null,
     });
 
     dbModule.suppressProductionForWordOutsideSession({ targetWordId: 'candidate-kaocha' });
@@ -503,8 +526,12 @@ describe('contextual selection intake', { concurrency: false }, () => {
 
     const payload = dbModule.getContrastIntakeWords();
     const candidates = payload.words[0]?.candidates ?? [];
-    const suppressedCandidate = candidates.find((candidate) => candidate.matchedWordId === 'candidate-kaocha');
-    const badPromptCandidate = candidates.find((candidate) => candidate.matchedWordId === 'candidate-kaoshi');
+    const suppressedCandidate = candidates
+      .flatMap((candidate) => candidate.matchedWords)
+      .find((candidate) => candidate.wordId === 'candidate-kaocha');
+    const badPromptCandidate = candidates
+      .flatMap((candidate) => candidate.matchedWords)
+      .find((candidate) => candidate.wordId === 'candidate-kaoshi');
 
     assert.equal(suppressedCandidate?.productionSuppressed, true);
     assert.equal(suppressedCandidate?.badProductionPromptReported, false);

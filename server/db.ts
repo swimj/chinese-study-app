@@ -310,6 +310,15 @@ type ContrastIntakeGroupSelector = ContrastIntakeWordSelector & {
   matchedWordId?: string | null;
 };
 
+type ContrastIntakeMatchedWord = {
+  wordId: string;
+  word: Word;
+  coverage: ContrastIntakeCoverage;
+  productionSuppressed: boolean;
+  badProductionPromptReported: boolean;
+  unaddressed: boolean;
+};
+
 type ContrastIntakeCandidateSummary = {
   key: string;
   candidateText: string | null;
@@ -322,8 +331,7 @@ type ContrastIntakeCandidateSummary = {
   sources: ContrastCandidateIntakeSource[];
   relevantClusters: ContrastClusterContent[];
   coverage: ContrastIntakeCoverage;
-  productionSuppressed: boolean;
-  badProductionPromptReported: boolean;
+  matchedWords: ContrastIntakeMatchedWord[];
   unaddressed: boolean;
 };
 
@@ -1677,7 +1685,7 @@ export function getContrastIntakeGroups(): ContrastIntakeGroupsPayload {
     const intakeWordIds = matchedWord ? [targetWord.id, matchedWord.id] : [targetWord.id];
     const coverage = summarizeContrastIntakeCoverage({
       targetWordId: targetWord.id,
-      candidateWordId: matchedWord?.id ?? null,
+      candidateWordIds: matchedWord ? [matchedWord.id] : [],
       intakeWordIds,
       clusters: relevantClusters,
     });
@@ -1770,13 +1778,36 @@ export function getContrastIntakeWords(): ContrastIntakeWordsPayload {
     const candidateSummaries = [...groupedCandidates.entries()].map(([key, candidateRows]) => {
       const first = candidateRows[0] ?? assertContrastIntakeRowsPresent();
       const matchedWord = first.matchedWordId ? wordsById.get(first.matchedWordId) ?? null : null;
-      const candidateProductionSuppressed = matchedWord ? productionSuppressedWordIds.has(matchedWord.id) : false;
-      const candidateBadProductionPromptReported = matchedWord ? badProductionPromptWordIds.has(matchedWord.id) : false;
-      const intakeWordIds = matchedWord ? [targetWordId, matchedWord.id] : [targetWordId];
+      // Candidate rows keep the original text and resolve all matching words only when Intake is read.
+      const matchedWords = resolveContrastIntakeMatchedWords({
+        candidateText: first.candidateText,
+        persistedMatchedWordId: first.matchedWordId,
+        wordsById,
+      }).map((word) => {
+        const coverage = summarizeContrastIntakeCoverage({
+          targetWordId,
+          candidateWordIds: [word.id],
+          intakeWordIds: [targetWordId, word.id],
+          clusters: relevantClusters,
+        });
+        const candidateProductionSuppressed = productionSuppressedWordIds.has(word.id);
+        const candidateBadProductionPromptReported = badProductionPromptWordIds.has(word.id);
+
+        return {
+          wordId: word.id,
+          word,
+          coverage,
+          productionSuppressed: candidateProductionSuppressed,
+          badProductionPromptReported: candidateBadProductionPromptReported,
+          unaddressed: !candidateProductionSuppressed && !candidateBadProductionPromptReported && !coverage.hasSharedCluster,
+        } satisfies ContrastIntakeMatchedWord;
+      });
       const coverage = summarizeContrastIntakeCoverage({
         targetWordId,
-        candidateWordId: matchedWord?.id ?? null,
-        intakeWordIds,
+        candidateWordIds: matchedWords.map((word) => word.wordId),
+        intakeWordIds: matchedWords.length > 0
+          ? [targetWordId, ...matchedWords.map((word) => word.wordId)]
+          : [targetWordId],
         clusters: relevantClusters,
       });
       const sortedCandidateRows = [...candidateRows].sort((left, right) => {
@@ -1796,9 +1827,10 @@ export function getContrastIntakeWords(): ContrastIntakeWordsPayload {
         sources: sortedCandidateRows,
         relevantClusters,
         coverage,
-        productionSuppressed: candidateProductionSuppressed,
-        badProductionPromptReported: candidateBadProductionPromptReported,
-        unaddressed: !candidateProductionSuppressed && !candidateBadProductionPromptReported && !coverage.hasSharedCluster,
+        matchedWords,
+        unaddressed: matchedWords.length > 0
+          ? matchedWords.some((word) => word.unaddressed)
+          : !coverage.hasSharedCluster,
       } satisfies ContrastIntakeCandidateSummary;
     }).sort((left, right) => {
       if (right.count !== left.count) {
@@ -1809,8 +1841,7 @@ export function getContrastIntakeWords(): ContrastIntakeWordsPayload {
     });
     const resolvedCandidateWordIds = [...new Set(
       candidateSummaries
-        .map((candidate) => candidate.matchedWordId)
-        .filter((wordId): wordId is string => typeof wordId === 'string' && wordId.length > 0),
+        .flatMap((candidate) => candidate.matchedWords.map((word) => word.wordId)),
     )];
 
     return {
@@ -2776,8 +2807,6 @@ function insertContrastCandidateIntakeWithoutTransaction({
   note: string;
   candidateText: string | null;
 }) {
-  const matchedWord = candidateText ? findFirstWordByHanzi(candidateText) : null;
-
   db.prepare(`
     INSERT INTO contrast_candidate_intake (
       id,
@@ -2799,7 +2828,7 @@ function insertContrastCandidateIntakeWithoutTransaction({
     input.actionKind,
     input.contentRef === null ? null : JSON.stringify(input.contentRef),
     candidateText,
-    matchedWord?.id ?? null,
+    null,
     note,
   );
 }
@@ -4220,12 +4249,12 @@ function normalizeContrastIntakeCandidateText(value: string): string {
 
 function summarizeContrastIntakeCoverage({
   targetWordId,
-  candidateWordId,
+  candidateWordIds,
   intakeWordIds,
   clusters,
 }: {
   targetWordId: string;
-  candidateWordId: string | null;
+  candidateWordIds: string[];
   intakeWordIds: string[];
   clusters: ContrastClusterContent[];
 }): ContrastIntakeCoverage {
@@ -4239,9 +4268,8 @@ function summarizeContrastIntakeCoverage({
     .filter((cluster) => sharedClusterIdSet.has(cluster.id))
     .flatMap((cluster) => cluster.prompts);
   const promptCountForTarget = sharedPrompts.filter((prompt) => prompt.targetWordId === targetWordId).length;
-  const promptCountForCandidate = candidateWordId
-    ? sharedPrompts.filter((prompt) => prompt.targetWordId === candidateWordId).length
-    : 0;
+  const candidateWordIdSet = new Set(candidateWordIds);
+  const promptCountForCandidate = sharedPrompts.filter((prompt) => candidateWordIdSet.has(prompt.targetWordId)).length;
 
   return {
     hasSharedCluster: sharedClusterIds.length > 0,
@@ -4264,6 +4292,23 @@ function summarizeClusterCompleteness(cluster: ContrastClusterContent): Contrast
 
 function assertContrastIntakeRowsPresent(): never {
   throw new Error('Expected contrast intake rows');
+}
+
+function resolveContrastIntakeMatchedWords({
+  candidateText,
+  persistedMatchedWordId,
+  wordsById,
+}: {
+  candidateText: string | null;
+  persistedMatchedWordId: string | null;
+  wordsById: Map<string, Word>;
+}): Word[] {
+  const matches = candidateText ? findWordsByHanzi(normalizeContrastIntakeCandidateText(candidateText)) : [];
+  const persistedMatch = persistedMatchedWordId ? wordsById.get(persistedMatchedWordId) ?? null : null;
+  if (persistedMatch && !matches.some((word) => word.id === persistedMatch.id)) {
+    matches.push(persistedMatch);
+  }
+  return matches;
 }
 
 function ensureWordExists(wordId: string) {
@@ -4327,8 +4372,8 @@ function getContrastPromptById(id: string): ContrastPrompt | null {
   return row ? mapContrastPromptRow(row) : null;
 }
 
-function findFirstWordByHanzi(hanzi: string): Word | null {
-  const row = db
+function findWordsByHanzi(hanzi: string): Word[] {
+  const rows = db
     .prepare(`
       SELECT
         id,
@@ -4349,11 +4394,10 @@ function findFirstWordByHanzi(hanzi: string): Word | null {
       WHERE hanzi = ?
          OR traditional = ?
       ORDER BY status DESC, priority DESC, created_at ASC
-      LIMIT 1
     `)
-    .get(hanzi, hanzi) as WordRow | undefined;
+    .all(hanzi, hanzi) as WordRow[];
 
-  return row ? mapWordRow(row) : null;
+  return rows.map(mapWordRow);
 }
 
 function shouldRebuildDevDatabase(error: unknown) {

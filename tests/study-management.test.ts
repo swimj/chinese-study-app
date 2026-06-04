@@ -176,7 +176,7 @@ describe('study management relevance events', { concurrency: false }, () => {
     assert.equal(intakeRows[0]?.sourceEventId, event.id);
     assert.equal(intakeRows[0]?.sourceActionKind, 'production');
     assert.equal(intakeRows[0]?.candidateText, '考查');
-    assert.equal(intakeRows[0]?.matchedWordId, 'matched-word');
+    assert.equal(intakeRows[0]?.matchedWordId, null);
     assert.equal(intakeRows[0]?.note, 'Confusing production prompt.');
     assert.equal(intakeRows[0]?.status, 'open');
   });
