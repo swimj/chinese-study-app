@@ -112,6 +112,15 @@ export type ContrastIntakeGroup = {
   coverage: ContrastIntakeCoverage;
 };
 
+export type ContrastIntakeMatchedWord = {
+  wordId: string;
+  word: Word;
+  coverage: ContrastIntakeCoverage;
+  productionSuppressed: boolean;
+  badProductionPromptReported: boolean;
+  unaddressed: boolean;
+};
+
 export type ContrastIntakeCandidateSummary = {
   key: string;
   candidateText: string | null;
@@ -124,8 +133,7 @@ export type ContrastIntakeCandidateSummary = {
   sources: ContrastCandidateIntakeSource[];
   relevantClusters: ContrastClusterContent[];
   coverage: ContrastIntakeCoverage;
-  productionSuppressed: boolean;
-  badProductionPromptReported: boolean;
+  matchedWords: ContrastIntakeMatchedWord[];
   unaddressed: boolean;
 };
 

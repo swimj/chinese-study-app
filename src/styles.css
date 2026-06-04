@@ -1101,6 +1101,37 @@ button:hover {
   margin-top: 0.4rem;
 }
 
+.intake-candidate-match-list {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+}
+
+.intake-candidate-match-card {
+  padding: 0.45rem 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  background: rgba(15, 23, 42, 0.32);
+}
+
+.intake-candidate-match-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+}
+
+.intake-candidate-match-actions {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.intake-candidate-match-actions + .intake-candidate-match-actions {
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 .cluster-detail-stack {
   display: grid;
   gap: 1.5rem;

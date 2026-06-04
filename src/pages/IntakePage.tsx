@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState, type FormEvent } from 'react';
-import type { ContrastClusterContent, ContrastIntakeWord } from '../services/api';
+import type { ContrastClusterContent, ContrastIntakeCandidateSummary, ContrastIntakeWord } from '../services/api';
 import type { Word } from '../types';
 
 type MemberEditorState = {
@@ -458,24 +458,13 @@ export function IntakePage({
                       onReportBadPrompt={() => void onReportBadPrompt({ targetWordId: selectedIntakeWord.targetWordId })}
                     />
                     {selectedIntakeWord.candidates.map((candidate) => {
-                      const matchedWordId = candidate.matchedWordId;
                       return (
-                        <IntakeWordTableRow
+                        <IntakeCandidateTableRow
                           key={candidate.key}
-                          label="Candidate"
-                          hanzi={candidate.matchedWord?.hanzi ?? candidate.candidateText ?? 'Unresolved candidate'}
-                          meaning={candidate.matchedWord?.meaning ?? 'No matched meaning yet.'}
-                          count={candidate.count}
-                          isUnaddressed={candidate.unaddressed}
-                          productionSuppressed={candidate.productionSuppressed}
-                          badProductionPromptReported={candidate.badProductionPromptReported}
-                          disableActions={isSaving || !matchedWordId}
-                          onSuppressProduction={matchedWordId
-                            ? () => void onSuppressProduction(matchedWordId)
-                            : undefined}
-                          onReportBadPrompt={matchedWordId
-                            ? () => void onReportBadPrompt({ targetWordId: matchedWordId })
-                            : undefined}
+                          candidate={candidate}
+                          isSaving={isSaving}
+                          onSuppressProduction={onSuppressProduction}
+                          onReportBadPrompt={onReportBadPrompt}
                         />
                       );
                     })}
@@ -984,6 +973,83 @@ function IntakeWordTableRow({
         >
           {badProductionPromptReported ? 'Bad prompt logged' : 'Bad prompt'}
         </button>
+      </td>
+    </tr>
+  );
+}
+
+function IntakeCandidateTableRow({
+  candidate,
+  isSaving,
+  onSuppressProduction,
+  onReportBadPrompt,
+}: {
+  candidate: ContrastIntakeCandidateSummary;
+  isSaving: boolean;
+  onSuppressProduction: (targetWordId: string) => Promise<void>;
+  onReportBadPrompt: (input: { targetWordId: string; note?: string }) => Promise<void>;
+}) {
+  const matchCount = candidate.matchedWords.length;
+
+  return (
+    <tr className="intake-word-table-row">
+      <td className="intake-word-table-cell intake-word-table-cell-label">
+        <small>Candidate</small>
+      </td>
+      <td className="intake-word-table-cell">
+        <strong className="intake-candidate-row-hanzi">{candidate.candidateText ?? 'Unresolved candidate'}</strong>
+        <small className="intake-candidate-row-meaning">
+          {matchCount === 0
+            ? 'No matched meanings yet.'
+            : `${matchCount} lookup match${matchCount === 1 ? '' : 'es'}`}
+        </small>
+        {matchCount > 0 ? (
+          <div className="intake-candidate-match-list">
+            {candidate.matchedWords.map((match) => (
+              <div key={match.wordId} className="intake-candidate-match-card">
+                <strong>{match.word.hanzi}</strong>
+                <small>{truncate(match.word.meaning, 70)}</small>
+                <div className="intake-candidate-match-badges">
+                  {match.unaddressed ? <small className="badge warning-badge">Unaddressed</small> : null}
+                  {match.productionSuppressed ? <small className="badge warning-badge">Production suppressed</small> : null}
+                  {match.badProductionPromptReported ? <small className="badge warning-badge">Bad production prompt</small> : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </td>
+      <td className="intake-word-table-cell intake-word-table-cell-meta">
+        <small>{candidate.count} row{candidate.count === 1 ? '' : 's'}</small>
+        {candidate.unaddressed ? <small className="badge warning-badge">Unaddressed</small> : null}
+        {matchCount === 0 ? <small>No lookup matches</small> : null}
+      </td>
+      <td className="intake-word-table-cell intake-word-table-cell-actions">
+        {matchCount === 0 ? (
+          <small>No candidate actions</small>
+        ) : (
+          candidate.matchedWords.map((match) => (
+            <div key={match.wordId} className="intake-candidate-match-actions">
+              <small>{match.word.hanzi}</small>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={isSaving || match.productionSuppressed}
+                onClick={() => void onSuppressProduction(match.wordId)}
+              >
+                {match.productionSuppressed ? 'Suppressed' : 'Suppress'}
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={isSaving || match.badProductionPromptReported}
+                onClick={() => void onReportBadPrompt({ targetWordId: match.wordId })}
+              >
+                {match.badProductionPromptReported ? 'Bad prompt logged' : 'Bad prompt'}
+              </button>
+            </div>
+          ))
+        )}
       </td>
     </tr>
   );
