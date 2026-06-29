@@ -1,14 +1,10 @@
 # Frontend Architecture Map
 
-This document is a mental map for the current React frontend. Product behavior
-is still defined by the product specs, especially:
+Navigation map for the React frontend. Product behavior is defined by the canonical specs, especially:
 
 - `SPECS/learning-review-model.md`
 - `SPECS/session-covering-criteria.md`
 - `SPECS/study-action-model.md`
-
-Use this map when looking for where UI state, page loading, and session runtime
-logic live.
 
 ## Directory Tree
 
@@ -18,16 +14,17 @@ src/
   main.tsx                        # React entrypoint
   styles.css                      # shared app styles
   types.ts                        # shared frontend API/domain DTO types
+  study-profile.ts                # mandarin vs french client profile
 
   components/
-    AppChrome.tsx                 # nav, version, global error display
+    AppChrome.tsx                 # nav (home, priority, intake), version, errors
     MeaningList.tsx               # shared meaning list rendering
 
   pages/
-    HomePage.tsx                  # home page shell: header + overview/session grid
+    HomePage.tsx                  # home: overview + active session grid
     HomeOverviewPanel.tsx         # backend/session availability overview
-    WordsPage.tsx                 # words inspection page
-    PriorityPage.tsx              # unstudied priority management page
+    PriorityPage.tsx              # unstudied priority queue + triage
+    IntakePage.tsx                # contrast intake (candidates, cluster actions)
 
   features/
     session/
@@ -42,13 +39,16 @@ src/
       session-state-copy.ts       # undo snapshot cloning helper
       session-summary.ts          # session summary type + updates
 
-    words/
-      useWordsPageController.ts   # words page loading + pagination controller
-      words-page-model.ts         # inspectable row derivation
-
     priority/
-      usePriorityPageController.ts # priority loading/search/update controller
+      usePriorityPageController.ts # priority loading, search, batch updates
       priority-page-model.ts       # priority sorting helpers
+
+    contrast/
+      useIntakePageController.ts   # contrast intake page controller
+      useClusterPageController.ts  # cluster list/prompt management (used from Intake)
+
+  domain/
+    study-actions.ts              # shared study-action types/adapters (also used by server)
 
   lib/
     session-state.ts              # frontend in-flight session state machine
@@ -60,25 +60,26 @@ src/
 
 ## Mental Model
 
-`App.tsx` is intentionally thin. It owns only concerns that cross pages:
+`App.tsx` is intentionally thin. It owns only cross-page concerns:
 
-- current page selection
+- current page selection (`home` | `priority` | `intake`)
 - global error message
 - backend status refresh
 - app chrome wiring
-- top-level modal/overlay mounting
+- personal-notes overlay mounting
+- wiring page controllers (`useStudySession`, `usePriorityPageController`, `useIntakePageController`, `useClusterPageController`)
 
-Page-specific state should not drift back into `App.tsx`. Put it behind a page
-controller hook or inside the page component if it is purely local UI state.
+Page-specific state should not drift back into `App.tsx`. Use a page controller hook or keep state inside the page component when it is purely local UI.
 
 ## Page Controllers
 
-`useWordsPageController` owns the words inspection page's loading, row
-derivation, and pagination state.
+`useStudySession` owns the in-flight study session on the home page (see Session Controller below).
 
-`usePriorityPageController` owns the priority page's loading, search, jump, and
-priority update state. It exposes an explicit controller return type so the
-`App.tsx` boundary stays clear.
+`usePriorityPageController` owns the priority page: loading, search, jump-to-word, batch priority updates, triage dismiss.
+
+`useIntakePageController` owns contrast intake: open candidates, resolve/merge/create cluster flows, suppress/report bad prompt from intake.
+
+`useClusterPageController` owns contrast cluster CRUD used from the intake page (cluster list, members, prompts, feedback resolution). `App.tsx` calls `clusterPage.loadData()` when opening intake and after mutating actions.
 
 ## Session Controller
 
@@ -93,29 +94,19 @@ priority update state. It exposes an explicit controller return type so the
 - active word meaning loading and visibility updates
 - keyboard shortcuts and focus effects
 
-The hook returns two main objects:
+The hook returns:
 
-- `homePageProps`, passed through to `HomePage`
-- `personalNotesEditor`, used by `App.tsx` to mount the overlay at the shell
-  level
-
-This hook is intentionally cohesive rather than finely split for now. If an area
-grows independently, good future extraction points are production input,
-personal notes editing, and keyboard/focus effects.
+- `homePageProps` → `HomePage`
+- `personalNotesEditor` → overlay in `App.tsx`
 
 ## Boundaries
 
 - Backend/API contracts stay centralized in `src/services/api.ts`.
 - Durable state changes go through backend API calls.
-- Frontend owns only the active, in-flight session snapshot after a session
-  starts.
-- Core session transitions live in `src/lib/session-state.ts`; UI hooks should
-  orchestrate those transitions, not redefine their rules.
-- Shared display helpers belong in `components/` only when they are genuinely
-  cross-feature.
+- Frontend owns only the active, in-flight session snapshot after a session starts.
+- Core session transitions live in `src/lib/session-state.ts`; UI hooks orchestrate, they do not redefine rules.
+- Shared display helpers belong in `components/` only when genuinely cross-feature.
 
 ## Cleanup Notes
 
-The previous first-prototype frontend files for static sample flashcards and
-browser-side AI practice were removed. The current frontend starts from backend
-data and local session state instead of static sample data.
+Removed first-prototype static flashcard / browser-side AI practice UI. The app loads backend data and local session state instead.

@@ -26,7 +26,8 @@ Noncritical improvements worth remembering as the project evolves.
 
 ## Project Organization
 
-- Consider separating import-time DB initialization from reusable data types/query logic so tests can share types more easily and control setup explicitly.
+- `server/db/` is split into connection, types, persistence, and domain re-export shims (see `docs/server-db.md`). Further split `persistence.ts` by domain if navigation becomes painful again.
+- Consider separating import-time DB initialization from reusable data types/query logic so tests can share types more easily and control setup explicitly (`initDbConnection` already re-reads env per import).
 
 ## Unstudied Intake Modeling
 
