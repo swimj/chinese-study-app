@@ -1,6 +1,6 @@
 # Milestone 7/8 Plan: Relevance-Aware Contrast Practice
 
-Status: product and implementation plan.
+Status: product and implementation plan (largely implemented; see `milestone-7-8-implementation-slices.md` for remaining work).
 
 This plan covers the milestone-7 and milestone-8 expansion from simple
 recognition/production scheduling into relevance-aware contextual

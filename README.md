@@ -129,7 +129,8 @@ We recommend keeping study data outside the cloned repo, even though this versio
 
 - Backend entrypoint: [`server/index.ts`](/Users/jw/dev/chinese-study-app/server/index.ts)
 - Backend config: [`server/config.ts`](/Users/jw/dev/chinese-study-app/server/config.ts)
-- Database setup: [`server/db.ts`](/Users/jw/dev/chinese-study-app/server/db.ts)
+- Database barrel: [`server/db.ts`](/Users/jw/dev/chinese-study-app/server/db.ts) (modules in [`server/db/`](server/db/), map in [`docs/server-db.md`](docs/server-db.md))
+- Agent/docs index: [`docs/README.md`](docs/README.md)
 - Product model spec: [`SPECS/learning-review-model.md`](/Users/jw/dev/chinese-study-app/SPECS/learning-review-model.md)
 - Default dev database: [`data/app.db`](/Users/jw/dev/chinese-study-app/data/app.db)
 

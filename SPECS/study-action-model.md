@@ -1,14 +1,14 @@
 # Study Action Model
 
-Status: draft for roadmap and implementation planning.
+Status: implemented architecture reference (scheduling, attempt events, contrast selection).
 
-This document defines the next architectural direction for the study system.
-It is intended to sit between the current prototype specs and the broader
-adaptive vocabulary training vision.
+This document describes how the study system is structured in code today:
+study actions, word-skill scheduler state, attempt-event projection, and contrast
+selection. It complements the word-lifecycle rules in `learning-review-model.md`
+and the in-session covering rules in `session-covering-criteria.md`.
 
-Until this model is implemented, the existing learning-review and
-session-covering specs remain the source of truth for current behavior. This
-document describes the target architecture for the next phase.
+For long-term product vision beyond the current PoC, see
+`adaptive_vocabulary_training_product_notes.md`.
 
 Related documents:
 

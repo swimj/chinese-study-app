@@ -1,6 +1,6 @@
 # Milestone 7/8 Implementation Slices
 
-Status: development sequencing plan.
+Status: development sequencing plan. Most contrast-selection and intake slices below are implemented; use this as a checklist for any remaining items.
 
 This document breaks the relevance-aware contrast practice work into pared-down
 implementation units. It is intentionally separate from the product plan so the
