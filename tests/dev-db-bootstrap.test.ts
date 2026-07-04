@@ -16,7 +16,6 @@ describe('dev database bootstrap', { concurrency: false }, () => {
   test('rebuilds an invalid dev database from the checked-in mandarin dev seed fixture', async () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-dev-bootstrap-'));
     const dbPath = path.join(dataDir, 'app.db');
-    const appJsonPath = path.join(dataDir, 'app.json');
     const sourceSeedPath = path.resolve('server/seeds/mandarin-dev.json');
     const seedData = JSON.parse(fs.readFileSync(sourceSeedPath, 'utf8')) as {
       words: Array<{ id: string }>;
@@ -24,14 +23,15 @@ describe('dev database bootstrap', { concurrency: false }, () => {
     const reviewWordCount = seedData.words.length;
 
     fs.writeFileSync(dbPath, '');
-    fs.copyFileSync(sourceSeedPath, appJsonPath);
 
     const previousMode = process.env.APP_MODE;
     const previousDataDir = process.env.APP_DATA_DIR;
+    const previousSeedDataPath = process.env.APP_SEED_DATA_PATH;
 
     try {
       process.env.APP_MODE = 'dev';
       process.env.APP_DATA_DIR = dataDir;
+      process.env.APP_SEED_DATA_PATH = sourceSeedPath;
 
       const moduleUrl = `${pathToFileURL(path.resolve('server/db.ts')).href}?test=${Date.now()}`;
       const dbModule = await import(moduleUrl);
@@ -103,6 +103,12 @@ describe('dev database bootstrap', { concurrency: false }, () => {
         process.env.APP_DATA_DIR = previousDataDir;
       }
 
+      if (previousSeedDataPath === undefined) {
+        delete process.env.APP_SEED_DATA_PATH;
+      } else {
+        process.env.APP_SEED_DATA_PATH = previousSeedDataPath;
+      }
+
       fs.rmSync(dataDir, { recursive: true, force: true });
     }
   });
@@ -110,14 +116,11 @@ describe('dev database bootstrap', { concurrency: false }, () => {
   test('reseeds an empty dev database that already has the current schema', async () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-dev-empty-'));
     const dbPath = path.join(dataDir, 'app.db');
-    const appJsonPath = path.join(dataDir, 'app.json');
     const sourceSeedPath = path.resolve('server/seeds/mandarin-dev.json');
     const seedData = JSON.parse(fs.readFileSync(sourceSeedPath, 'utf8')) as {
       words: Array<{ id: string }>;
     };
     const reviewWordCount = seedData.words.length;
-
-    fs.copyFileSync(sourceSeedPath, appJsonPath);
 
     const sqlite = new DatabaseSync(dbPath);
     sqlite.exec(`
@@ -142,10 +145,12 @@ describe('dev database bootstrap', { concurrency: false }, () => {
 
     const previousMode = process.env.APP_MODE;
     const previousDataDir = process.env.APP_DATA_DIR;
+    const previousSeedDataPath = process.env.APP_SEED_DATA_PATH;
 
     try {
       process.env.APP_MODE = 'dev';
       process.env.APP_DATA_DIR = dataDir;
+      process.env.APP_SEED_DATA_PATH = sourceSeedPath;
 
       const moduleUrl = `${pathToFileURL(path.resolve('server/db.ts')).href}?test=${Date.now()}`;
       const dbModule = await import(moduleUrl);
@@ -168,6 +173,12 @@ describe('dev database bootstrap', { concurrency: false }, () => {
         delete process.env.APP_DATA_DIR;
       } else {
         process.env.APP_DATA_DIR = previousDataDir;
+      }
+
+      if (previousSeedDataPath === undefined) {
+        delete process.env.APP_SEED_DATA_PATH;
+      } else {
+        process.env.APP_SEED_DATA_PATH = previousSeedDataPath;
       }
 
       fs.rmSync(dataDir, { recursive: true, force: true });

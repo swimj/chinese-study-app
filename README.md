@@ -133,5 +133,6 @@ We recommend keeping study data outside the cloned repo, even though this versio
 - Agent/docs index: [`docs/README.md`](docs/README.md)
 - Product model spec: [`SPECS/learning-review-model.md`](/Users/jw/dev/chinese-study-app/SPECS/learning-review-model.md)
 - Default dev database: [`data/app.db`](/Users/jw/dev/chinese-study-app/data/app.db)
+- Checked-in dev seed files: [`server/seeds/mandarin-dev.json`](/Users/jw/dev/chinese-study-app/server/seeds/mandarin-dev.json), [`server/seeds/french-dev.json`](/Users/jw/dev/chinese-study-app/server/seeds/french-dev.json)
 
-If a legacy [`data/app.json`](/Users/jw/dev/chinese-study-app/data/app.json) file exists from the earlier prototype, the backend will import that data into SQLite the first time it initializes an empty database.
+Dev mode requires an explicit seed file via `--seed-data` or `APP_SEED_DATA_PATH`. Use `npm run dev:backend`, `npm run dev:french:backend`, or `npm run reset:dev-data` instead of invoking the server manually without a seed path.

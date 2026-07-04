@@ -53,7 +53,7 @@ Detail: [SPECS/frontend-architecture-map.md](../SPECS/frontend-architecture-map.
 | `APP_MODE` | Backend | `dev` (seed) or `study` (explicit data dir) |
 | `APP_DATA_DIR` | Backend | SQLite directory |
 | `APP_STUDY_PROFILE` | Backend | `mandarin` or `french` |
-| `APP_SEED_DATA_PATH` | Backend | Optional seed JSON path (dev) |
+| `APP_SEED_DATA_PATH` | Backend | Required in dev mode; seed JSON path |
 | `VITE_API_BASE` | Frontend | API origin (default `http://localhost:5174`) |
 | `VITE_STUDY_PROFILE` | Frontend | Client study profile |
 

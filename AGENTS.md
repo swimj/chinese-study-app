@@ -45,7 +45,7 @@ When code and spec conflict, treat the spec as intended behavior and update code
 | `APP_MODE` | Backend | `dev` (seed sample data) or `study` (requires explicit data dir) |
 | `APP_DATA_DIR` | Backend | Directory containing `app.db` |
 | `APP_STUDY_PROFILE` | Backend | `mandarin` or `french` |
-| `APP_SEED_DATA_PATH` | Backend | Optional seed JSON path (dev) |
+| `APP_SEED_DATA_PATH` | Backend | Required in dev mode; seed JSON path |
 | `PORT` | Backend | API port (default `5174`) |
 | `VITE_API_BASE` | Frontend | API origin (default `http://localhost:5174`) |
 | `VITE_STUDY_PROFILE` | Frontend | Client study profile (`mandarin` / `french`) |

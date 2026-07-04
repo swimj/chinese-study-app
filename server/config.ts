@@ -39,6 +39,17 @@ export function getAppConfig(options: AppConfigOptions = {}): AppConfig {
     );
   }
 
+  if (mode === 'dev' && !rawSeedDataPath) {
+    throw new Error(
+      [
+        'Dev mode requires an explicit seed data file. Pass --seed-data=/path/to/seed.json or set APP_SEED_DATA_PATH.',
+        'For default mandarin dev behavior use: npm run dev:backend.',
+        'For default french dev behavior use: npm run dev:french:backend.',
+        'To reset the mandarin dev database use: npm run reset:dev-data.',
+      ].join(' '),
+    );
+  }
+
   const dataDir = path.resolve(rawDataDir ?? path.join(process.cwd(), 'data'));
 
   return {
@@ -48,7 +59,7 @@ export function getAppConfig(options: AppConfigOptions = {}): AppConfig {
     dbPath: path.join(dataDir, 'app.db'),
     port,
     seedSampleData: mode === 'dev',
-    seedDataPath: path.resolve(rawSeedDataPath ?? path.join(dataDir, 'app.json')),
+    seedDataPath: rawSeedDataPath ? path.resolve(rawSeedDataPath) : '',
   };
 }
 

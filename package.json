@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev:frontend": "vite",
-    "dev:backend": "node --import tsx server/index.ts --mode=dev",
+    "dev:backend": "node --import tsx server/index.ts --mode=dev --seed-data=server/seeds/mandarin-dev.json",
     "dev:french:frontend": "VITE_STUDY_PROFILE=french vite",
     "dev:french:backend": "node --import tsx server/index.ts --mode=dev --study-profile=french --data-dir=data/french-dev --seed-data=server/seeds/french-dev.json",
     "friend:mandarin:setup-db": "node --import tsx scripts/build-friend-mandarin-db.ts --force",
@@ -17,7 +17,7 @@
     "study:local:backend": "node --import tsx server/index.ts --mode=study --study-profile=french --data-dir=data/local-user-data",
     "study:local:frontend": "VITE_STUDY_PROFILE=french vite",
     "study:backend": "node --import tsx server/index.ts --mode=study",
-    "reset:dev-data": "node --import tsx server/reset-dev-db.ts",
+    "reset:dev-data": "node --import tsx server/reset-dev-db.ts --seed-data=server/seeds/mandarin-dev.json",
     "export:hack-chinese": "node --import tsx scripts/export-hack-chinese-migration.ts",
     "build:canonical-wordlist": "node --import tsx scripts/build-canonical-wordlist.ts",
     "build:study-import": "node --import tsx scripts/build-study-import-artifact.ts",
