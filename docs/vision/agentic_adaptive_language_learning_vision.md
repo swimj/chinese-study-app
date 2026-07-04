@@ -277,6 +277,22 @@ At least initially, this product is not trying to be:
 
 ---
 
-## 15. North-Star Statement
+## 15. LLM Integration Architecture And Cold-Start
+
+The vision above is silent on two structural concerns that should be made explicit because they shape everything downstream.
+
+### LLM Integration Is A First-Class Decision
+
+The agent's quality ceiling, cost profile, latency, offline capability, and data-egress posture all depend on a decision the vision does not make: which LLM provider, run locally or via API, or a hybrid of both.
+
+This is not an implementation detail to defer. It cascades into deployment shape (local model versus hosted API), whether the local-browser-first identity survives, whether learner data leaves the machine, per-session cost, and the realistic quality ceiling for language-aware reflection. It should be resolved through a dedicated spike before the first agentic milestone commits to an architecture.
+
+### Cold-Start As A Structural Challenge
+
+The agent's value scales with accumulated evidence about a specific learner. A new user has none of that evidence, which means the product is weakest exactly when a hosted offering needs it to be strongest.
+
+This is a structural tension, not a bug. It implies that onboarding, placement, and new-user bootstrap are first-class product work, not niceties, and that the system should produce useful behavior from sparse state rather than requiring a warm-up period before it becomes valuable.
+
+## 16. North-Star Statement
 
 > Build an adaptive language-learning system in which an agent uses imperfect but improving evidence to spend a learner's limited attention on interventions most likely to create meaningful, durable, personally relevant language growth.

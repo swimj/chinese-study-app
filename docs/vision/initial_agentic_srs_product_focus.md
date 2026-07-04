@@ -469,6 +469,16 @@ Agentic planning asks: is sampling this now the best use of attention?
 
 The first implementation should preserve existing SRS-derived scheduler state as a baseline and signal source while making room for planner decisions that trade maintenance against relevance, weakness, information value, time cost, and user goals.
 
+### Ordering Clarification (Reflection First)
+
+Subsequent reasoning settled on reflection-first rather than planner-first as the initial ordering.
+
+The planner-first framing below assumed the heuristic planner should ship before the reflection agent so the agent has planner choices to reason about. In practice, reflection on the existing due-queue session trace is sufficient for the first agent surface, and the toil it resolves (manual reflection and intake management) is more acute than the toil resolved by a time-budgeted planner.
+
+More importantly, reflection feeds the planner rather than the reverse. Every handle disposition (suppress production, recognition-only, bad prompt, priority change, next-session focus) is a relevance or quality signal a future planner consumes at session-assembly time. Building the planner on top of accumulated reflection dispositions is a stronger path than building it cold, and it matches the "let deterministic systems emerge from repetition" principle: the planner emerges from stabilized reflection patterns rather than being specified upfront.
+
+The heuristic time-budgeted planner remains a planned deliverable, but it lands after the reflection loop is proven, informed by real reflection data.
+
 ### Heuristic Planner, Agent Reflection
 
 The time-budgeted session planner can initially be heuristic and inspectable.
