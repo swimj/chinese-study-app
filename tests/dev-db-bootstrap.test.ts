@@ -13,11 +13,11 @@ const mandarinDevContextualSelectionCount = 4;
 const mandarinDevBinaryContrastChoiceSetCount = 2;
 
 describe('dev database bootstrap', { concurrency: false }, () => {
-  test('rebuilds an invalid dev database from the checked-in app.json fixture', async () => {
+  test('rebuilds an invalid dev database from the checked-in mandarin dev seed fixture', async () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-dev-bootstrap-'));
     const dbPath = path.join(dataDir, 'app.db');
     const appJsonPath = path.join(dataDir, 'app.json');
-    const sourceSeedPath = path.resolve('data/app.json');
+    const sourceSeedPath = path.resolve('server/seeds/mandarin-dev.json');
     const seedData = JSON.parse(fs.readFileSync(sourceSeedPath, 'utf8')) as {
       words: Array<{ id: string }>;
     };
@@ -111,7 +111,7 @@ describe('dev database bootstrap', { concurrency: false }, () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-dev-empty-'));
     const dbPath = path.join(dataDir, 'app.db');
     const appJsonPath = path.join(dataDir, 'app.json');
-    const sourceSeedPath = path.resolve('data/app.json');
+    const sourceSeedPath = path.resolve('server/seeds/mandarin-dev.json');
     const seedData = JSON.parse(fs.readFileSync(sourceSeedPath, 'utf8')) as {
       words: Array<{ id: string }>;
     };
