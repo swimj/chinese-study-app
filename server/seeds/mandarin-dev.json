@@ -1,0 +1,368 @@
+{
+  "words": [
+    {
+      "id": "hc-鼓舞-gǔu5fwǔ",
+      "hanzi": "鼓舞",
+      "pinyin": "gǔ wǔ",
+      "meaning": "encouraging",
+      "examples": [],
+      "status": "review",
+      "priority": 10,
+      "createdAt": "2026-04-04T15:08:52.778Z",
+      "learningStreak": 0,
+      "lastLearningSuccessOn": null,
+      "lastLearningCoveredOn": null
+    },
+    {
+      "id": "hc-花卉-huāu5fhuì",
+      "hanzi": "花卉",
+      "pinyin": "huā huì",
+      "meaning": "flowers and plants",
+      "examples": [],
+      "status": "review",
+      "priority": 9,
+      "createdAt": "2026-04-04T15:08:52.778Z",
+      "learningStreak": 0,
+      "lastLearningSuccessOn": null,
+      "lastLearningCoveredOn": null
+    },
+    {
+      "id": "hc-神态-shénu5ftài",
+      "hanzi": "神态",
+      "pinyin": "shén tài",
+      "meaning": "appearance",
+      "examples": [],
+      "status": "review",
+      "priority": 8,
+      "createdAt": "2026-04-04T15:08:52.778Z",
+      "learningStreak": 0,
+      "lastLearningSuccessOn": null,
+      "lastLearningCoveredOn": null
+    },
+    {
+      "id": "hc-霸凌-bàu5flíng",
+      "hanzi": "霸凌",
+      "pinyin": "bà líng",
+      "meaning": "bullying (loanword)",
+      "examples": [],
+      "status": "review",
+      "priority": 7,
+      "createdAt": "2026-04-04T15:08:52.778Z",
+      "learningStreak": 0,
+      "lastLearningSuccessOn": null,
+      "lastLearningCoveredOn": null
+    },
+    {
+      "id": "hc-百分点-bǎiu5ffēnu5fdiǎn",
+      "hanzi": "百分点",
+      "pinyin": "bǎi fēn diǎn",
+      "meaning": "percentage point",
+      "examples": [],
+      "status": "review",
+      "priority": 6,
+      "createdAt": "2026-04-04T15:08:52.778Z",
+      "learningStreak": 0,
+      "lastLearningSuccessOn": null,
+      "lastLearningCoveredOn": null
+    },
+    {
+      "id": "hc-编程-biānu5fchéng",
+      "hanzi": "编程",
+      "pinyin": "biān chéng",
+      "meaning": "(computing) to program",
+      "examples": [],
+      "status": "review",
+      "priority": 5,
+      "createdAt": "2026-04-04T15:08:52.778Z",
+      "learningStreak": 0,
+      "lastLearningSuccessOn": null,
+      "lastLearningCoveredOn": null
+    },
+    {
+      "id": "hc-波涛-bōu5ftāo",
+      "hanzi": "波涛",
+      "pinyin": "bō tāo",
+      "meaning": "great waves",
+      "examples": [],
+      "status": "review",
+      "priority": 4,
+      "createdAt": "2026-04-04T15:08:52.778Z",
+      "learningStreak": 0,
+      "lastLearningSuccessOn": null,
+      "lastLearningCoveredOn": null
+    },
+    {
+      "id": "hc-部署-bùu5fshǔ",
+      "hanzi": "部署",
+      "pinyin": "bù shǔ",
+      "meaning": "to dispose",
+      "examples": [],
+      "status": "review",
+      "priority": 3,
+      "createdAt": "2026-04-04T15:08:52.778Z",
+      "learningStreak": 0,
+      "lastLearningSuccessOn": null,
+      "lastLearningCoveredOn": null
+    },
+    {
+      "id": "hc-馋-chán",
+      "hanzi": "馋",
+      "pinyin": "chán",
+      "meaning": "gluttonous",
+      "examples": [],
+      "status": "review",
+      "priority": 2,
+      "createdAt": "2026-04-04T15:08:52.778Z",
+      "learningStreak": 0,
+      "lastLearningSuccessOn": null,
+      "lastLearningCoveredOn": null
+    },
+    {
+      "id": "hc-阐述-chǎnu5fshù",
+      "hanzi": "阐述",
+      "pinyin": "chǎn shù",
+      "meaning": "to expound (a position)",
+      "examples": [],
+      "status": "review",
+      "priority": 1,
+      "createdAt": "2026-04-04T15:08:52.778Z",
+      "learningStreak": 0,
+      "lastLearningSuccessOn": null,
+      "lastLearningCoveredOn": null
+    }
+  ],
+  "wordStudyAdmissionStates": [
+    {
+      "wordId": "hc-鼓舞-gǔu5fwǔ",
+      "studyPhase": "review",
+      "earliestNextStudyAt": null
+    },
+    {
+      "wordId": "hc-花卉-huāu5fhuì",
+      "studyPhase": "review",
+      "earliestNextStudyAt": null
+    },
+    {
+      "wordId": "hc-神态-shénu5ftài",
+      "studyPhase": "review",
+      "earliestNextStudyAt": null
+    },
+    {
+      "wordId": "hc-霸凌-bàu5flíng",
+      "studyPhase": "review",
+      "earliestNextStudyAt": null
+    },
+    {
+      "wordId": "hc-百分点-bǎiu5ffēnu5fdiǎn",
+      "studyPhase": "review",
+      "earliestNextStudyAt": null
+    },
+    {
+      "wordId": "hc-编程-biānu5fchéng",
+      "studyPhase": "review",
+      "earliestNextStudyAt": null
+    },
+    {
+      "wordId": "hc-波涛-bōu5ftāo",
+      "studyPhase": "review",
+      "earliestNextStudyAt": null
+    },
+    {
+      "wordId": "hc-部署-bùu5fshǔ",
+      "studyPhase": "review",
+      "earliestNextStudyAt": null
+    },
+    {
+      "wordId": "hc-馋-chán",
+      "studyPhase": "review",
+      "earliestNextStudyAt": null
+    },
+    {
+      "wordId": "hc-阐述-chǎnu5fshù",
+      "studyPhase": "review",
+      "earliestNextStudyAt": null
+    }
+  ],
+  "wordSkillStates": [
+    {
+      "wordId": "hc-鼓舞-gǔu5fwǔ",
+      "skillId": "recognition",
+      "enabled": true,
+      "intervalHours": 216,
+      "lastStudiedAt": "2026-03-25T15:08:52.778Z",
+      "nextDueAt": "2026-04-03T15:08:52.778Z",
+      "easeFactor": 2.5
+    },
+    {
+      "wordId": "hc-鼓舞-gǔu5fwǔ",
+      "skillId": "production",
+      "enabled": true,
+      "intervalHours": 216,
+      "lastStudiedAt": "2026-03-25T15:08:52.778Z",
+      "nextDueAt": "2026-04-03T15:08:52.778Z",
+      "easeFactor": 2.5
+    },
+    {
+      "wordId": "hc-花卉-huāu5fhuì",
+      "skillId": "recognition",
+      "enabled": true,
+      "intervalHours": 168,
+      "lastStudiedAt": "2026-03-27T15:08:52.778Z",
+      "nextDueAt": "2026-04-03T15:08:52.778Z",
+      "easeFactor": 2.5
+    },
+    {
+      "wordId": "hc-花卉-huāu5fhuì",
+      "skillId": "production",
+      "enabled": true,
+      "intervalHours": 168,
+      "lastStudiedAt": "2026-03-27T15:08:52.778Z",
+      "nextDueAt": "2026-04-03T15:08:52.778Z",
+      "easeFactor": 2.5
+    },
+    {
+      "wordId": "hc-神态-shénu5ftài",
+      "skillId": "recognition",
+      "enabled": true,
+      "intervalHours": 864,
+      "lastStudiedAt": "2026-02-26T15:08:52.778Z",
+      "nextDueAt": "2026-04-03T15:08:52.778Z",
+      "easeFactor": 2.5
+    },
+    {
+      "wordId": "hc-神态-shénu5ftài",
+      "skillId": "production",
+      "enabled": true,
+      "intervalHours": 864,
+      "lastStudiedAt": "2026-02-26T15:08:52.778Z",
+      "nextDueAt": "2026-04-03T15:08:52.778Z",
+      "easeFactor": 2.5
+    },
+    {
+      "wordId": "hc-霸凌-bàu5flíng",
+      "skillId": "recognition",
+      "enabled": true,
+      "intervalHours": 1584,
+      "lastStudiedAt": "2026-01-28T15:08:52.778Z",
+      "nextDueAt": "2026-04-04T15:08:52.778Z",
+      "easeFactor": 2.5
+    },
+    {
+      "wordId": "hc-霸凌-bàu5flíng",
+      "skillId": "production",
+      "enabled": true,
+      "intervalHours": 1584,
+      "lastStudiedAt": "2026-01-28T15:08:52.778Z",
+      "nextDueAt": "2026-04-04T15:08:52.778Z",
+      "easeFactor": 2.5
+    },
+    {
+      "wordId": "hc-百分点-bǎiu5ffēnu5fdiǎn",
+      "skillId": "recognition",
+      "enabled": true,
+      "intervalHours": 1920,
+      "lastStudiedAt": "2026-01-14T15:08:52.778Z",
+      "nextDueAt": "2026-04-04T15:08:52.778Z",
+      "easeFactor": 2.5
+    },
+    {
+      "wordId": "hc-百分点-bǎiu5ffēnu5fdiǎn",
+      "skillId": "production",
+      "enabled": true,
+      "intervalHours": 1920,
+      "lastStudiedAt": "2026-01-14T15:08:52.778Z",
+      "nextDueAt": "2026-04-04T15:08:52.778Z",
+      "easeFactor": 2.5
+    },
+    {
+      "wordId": "hc-编程-biānu5fchéng",
+      "skillId": "recognition",
+      "enabled": true,
+      "intervalHours": 120,
+      "lastStudiedAt": "2026-03-30T15:08:52.778Z",
+      "nextDueAt": "2026-04-04T15:08:52.778Z",
+      "easeFactor": 2.5
+    },
+    {
+      "wordId": "hc-编程-biānu5fchéng",
+      "skillId": "production",
+      "enabled": true,
+      "intervalHours": 120,
+      "lastStudiedAt": "2026-03-30T15:08:52.778Z",
+      "nextDueAt": "2026-04-04T15:08:52.778Z",
+      "easeFactor": 2.5
+    },
+    {
+      "wordId": "hc-波涛-bōu5ftāo",
+      "skillId": "recognition",
+      "enabled": true,
+      "intervalHours": 168,
+      "lastStudiedAt": "2026-03-28T15:08:52.778Z",
+      "nextDueAt": "2026-04-04T15:08:52.778Z",
+      "easeFactor": 2.5
+    },
+    {
+      "wordId": "hc-波涛-bōu5ftāo",
+      "skillId": "production",
+      "enabled": true,
+      "intervalHours": 168,
+      "lastStudiedAt": "2026-03-28T15:08:52.778Z",
+      "nextDueAt": "2026-04-04T15:08:52.778Z",
+      "easeFactor": 2.5
+    },
+    {
+      "wordId": "hc-部署-bùu5fshǔ",
+      "skillId": "recognition",
+      "enabled": true,
+      "intervalHours": 96,
+      "lastStudiedAt": "2026-03-31T15:08:52.778Z",
+      "nextDueAt": "2026-04-04T15:08:52.778Z",
+      "easeFactor": 2.5
+    },
+    {
+      "wordId": "hc-部署-bùu5fshǔ",
+      "skillId": "production",
+      "enabled": true,
+      "intervalHours": 96,
+      "lastStudiedAt": "2026-03-31T15:08:52.778Z",
+      "nextDueAt": "2026-04-04T15:08:52.778Z",
+      "easeFactor": 2.5
+    },
+    {
+      "wordId": "hc-馋-chán",
+      "skillId": "recognition",
+      "enabled": true,
+      "intervalHours": 120,
+      "lastStudiedAt": "2026-03-30T15:08:52.778Z",
+      "nextDueAt": "2026-04-04T15:08:52.778Z",
+      "easeFactor": 2.5
+    },
+    {
+      "wordId": "hc-馋-chán",
+      "skillId": "production",
+      "enabled": true,
+      "intervalHours": 120,
+      "lastStudiedAt": "2026-03-30T15:08:52.778Z",
+      "nextDueAt": "2026-04-04T15:08:52.778Z",
+      "easeFactor": 2.5
+    },
+    {
+      "wordId": "hc-阐述-chǎnu5fshù",
+      "skillId": "recognition",
+      "enabled": true,
+      "intervalHours": 192,
+      "lastStudiedAt": "2026-03-27T15:08:52.778Z",
+      "nextDueAt": "2026-04-04T15:08:52.778Z",
+      "easeFactor": 2.5
+    },
+    {
+      "wordId": "hc-阐述-chǎnu5fshù",
+      "skillId": "production",
+      "enabled": true,
+      "intervalHours": 192,
+      "lastStudiedAt": "2026-03-27T15:08:52.778Z",
+      "nextDueAt": "2026-04-04T15:08:52.778Z",
+      "easeFactor": 2.5
+    }
+  ]
+}
