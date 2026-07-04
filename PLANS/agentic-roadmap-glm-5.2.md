@@ -16,15 +16,29 @@ This document captures the milestone sequencing agreed in roadmap discussion. Vi
 ## Sequencing Decisions Embedded In This Plan
 
 1. **Reflection-first, planner-later.** The first agent surface is post-session reflection on the existing due-queue session trace, not the time-budgeted planner. Rationale and the adjustment to the vision doc's §15 are recorded in `initial_agentic_srs_product_focus.md`. The planner emerges later from accumulated reflection dispositions rather than being specified upfront.
-2. **M0 de-risking before any building.** The LLM provider/cost/quality/offline decision is the single biggest architecture dependency and is unresolved. It lands first as a spike, evaluated through the hosted-multi-user lens (because the hosted beta is folded in, not deferred).
+2. **M0 de-risking before any building.** The LLM provider decision is settled: **API provider** (not local), prioritizing linguistic-judgment quality and avoiding inference-infrastructure ownership while product viability is still the main risk. Egress is accepted for the target user profile (serious learners already using AI in their flow). M0's LLM spike therefore narrows to *which* API provider, structured-output reliability validation, Mandarin reflection quality validation, and a cost estimate for hosted multi-user scale. The decision is revisitable if a material cost or privacy concern arises.
 3. **Reflection artifact store and handle registry before the reflection LLM.** The receiving schema is designed before the producing agent, so the agent's output is validated against a fixed contract rather than retrofit to whatever the model emits. Handle schemas are sticky once reflections exist.
 4. **Tenancy/Postgres after the agentic core is proven on personal data, before inviting anyone.** "Folded" means the agent is the reason to host, not that all beta infra precedes any agent value. Proving the agent on yourself first is the cheapest de-risking before committing to tenancy work.
 5. **Evaluation harness is late.** Tempting to build early because the vision emphasizes it, but you cannot evaluate an agent that has not shipped. The harness lands once the loop exists, at which point it also starts closing the loop (reflection dispositions become planning signals).
 6. **Top-down learning model deferred.** Per discussion, the top-down prototype (analyze real reading/writing → generate drills) is out of scope until the agentic core (reflection + planner) is proven.
 
-## The One Big Conditional
+## Settled: API Provider (With Reconsider Bar)
 
-The roadmap assumes the M0 LLM spike lands on **API provider** or **hybrid**. If it lands on **local-model-only**, the folded-beta sequencing in M3–M4 becomes hard to honor, because you cannot economically run a per-user local model on hosted infrastructure. In that case the roadmap forks: either (a) hosted beta defers and the agent stays a local-first personal feature, or (b) the architecture gets significantly more complex (client-side inference, or hybrid where only cheap draft work runs locally). A local-only spike outcome should trigger a re-decision of the beta sequencing, not be treated as a minor adjustment.
+The LLM integration direction is **API provider**, not local and not hybrid. Rationale, settled in roadmap discussion:
+
+- **Linguistic-judgment quality is the core differentiator** and top-tier API models are materially better at the Mandarin register/collocation/contrast-type judgment that makes reflection feel language-aware rather than shallow.
+- **Avoid inference-infrastructure ownership while product viability is still the main risk.** Running local model servers at hosted multi-user concurrency means capacity planning, GPU autoscaling, and cold-start handling — a different business than running a study app. Deferring that until the product is proven is the cheap path.
+- **Egress is acceptable for the target user** — serious learners who are already using AI in their study flow and elsewhere.
+
+The architecture should still target the OpenAI-compatible chat-completions interface with a configurable `baseURL`/`model`/`auth`, so the call layer stays provider-agnostic. The spike's remaining job is provider selection plus quality and cost validation, not local-vs-API.
+
+**Reconsider bar** — what would trigger re-evaluating the API decision:
+
+- Per-session LLM cost at hosted scale becomes a sustainability problem the M0 cost estimate did not predict.
+- A privacy/data-residency requirement emerges that API egress cannot satisfy.
+- Open-weight model quality on Mandarin linguistic judgment closes the gap enough that the infra cost of local becomes worth bearing.
+
+A hybrid (local for cheap draft work like intake suggestions, API for quality-sensitive reflection) remains a possible later optimization, not a near-term plan.
 
 ## Milestones
 
@@ -34,7 +48,7 @@ No product value yet. Pure de-risking.
 
 Deliverables:
 
-- **LLM spike**, evaluated through the hosted-multi-user lens. Throwaway end-to-end prototype: send one real session-evidence bundle to a model, get a structured reflection back. The sharper spike goal (informed by the user's existing manual chat-window workflow): *can a structured session-evidence bundle plus a stable system prompt replace the user's manual context-gathering and curation well enough that automated reflection approaches the quality of hand-curated chat reflection?* Output: a decision doc plus a working call path.
+- **LLM provider spike.** The local-vs-API decision is settled (API). The spike now selects *which* API provider and validates two things the interface abstraction does not settle: (a) **structured-output reliability** — does the candidate provider emit valid handle payloads reliably enough, via strict `json_schema` or tool calling, that the validation/retry layer stays thin? (b) **Mandarin reflection quality** — does the provider's output on a real session-evidence bundle actually do language-aware judgment, or does it paraphrase what deterministic code already surfaces? Throwaway end-to-end prototype: send one real session-evidence bundle to a model, get a structured reflection back. The sharper spike goal (informed by the user's existing manual chat-window workflow): *can a structured session-evidence bundle plus a stable system prompt replace the user's manual context-gathering and curation well enough that automated reflection approaches the quality of hand-curated chat reflection?* Output: a provider decision doc, a working OpenAI-compatible call path, and a per-session cost estimate projected to hosted multi-user scale.
 - **Session-evidence bundle design spike.** Gap analysis between what is durably reconstructable from current attempt events and what an LLM needs to produce a grounded, evidence-cited Mandarin reflection. Recommended pre-spike exercise: capture what the user actually pastes into the chat window across a few real sessions, and what they wish they had time to paste but do not. That is the cheapest, highest-signal requirements source for the bundle schema. Output: a bundle schema plus a "what is missing" list.
 - **Handle registry V0 spec.** The constrained-operations list, payload schemas, proposal-only versus apply, lifecycle states (`proposed / accepted / applied / dismissed / deferred / superseded`). Output: a spec doc, not code.
 - **Hosted-beta tenancy pre-design.** The shared-vs-user-owned table map for the current schema (Workstream A question 1 from `beta-web-service-plan.md`). Output: a table-ownership map doc.
@@ -165,7 +179,7 @@ These are carried alongside milestones, not as dedicated milestones.
 
 ## Embedded Decision Points Worth Surfacing
 
-1. **The LLM spike outcome reshapes M2–M4.** If local-only, the folded-beta sequencing in M3–M4 needs re-deciding. The single biggest embedded dependency.
+1. **~~The LLM spike outcome reshapes M2–M4.~~** Settled: API provider. The spike now selects *which* API provider and validates quality/cost; it no longer threatens the folded-beta sequencing. Reconsider bar documented above.
 2. **M2 before M3 ordering.** Proving the agent on yourself before committing to tenancy is the cheapest de-risking. If the agent is not worth hosting after M2, M3–M4 do not happen and the roadmap shortens dramatically — a good failure mode.
 3. **M1 before M2 (schema-first).** Designing the receiving schema before building the producing agent protects against "the agent emits whatever the model emits." A defensible alternative is to build M2 throwaway-first and let the schema emerge from real model output; this plan weights schema-first higher because handle schemas are sticky.
 4. **Cold-start as a first-class problem.** Appears in M3 and again in M4. The agentic value scales with accumulated learner state, which is exactly what new beta users lack. Onboarding and placement are on the critical path, folded into M3 explicitly rather than discovered in M4.

@@ -287,6 +287,8 @@ The agent's quality ceiling, cost profile, latency, offline capability, and data
 
 This is not an implementation detail to defer. It cascades into deployment shape (local model versus hosted API), whether the local-browser-first identity survives, whether learner data leaves the machine, per-session cost, and the realistic quality ceiling for language-aware reflection. It should be resolved through a dedicated spike before the first agentic milestone commits to an architecture.
 
+Current direction (settled in roadmap discussion, revisitable): **API provider**, not local. The deciding factors are the linguistic-judgment quality ceiling (the core differentiator for language-aware reflection), avoiding inference-infrastructure ownership while product viability is still the main risk, and egress being acceptable for the target serious-learner user. The call layer should still target the OpenAI-compatible chat-completions interface so provider choice remains swappable.
+
 ### Cold-Start As A Structural Challenge
 
 The agent's value scales with accumulated evidence about a specific learner. A new user has none of that evidence, which means the product is weakest exactly when a hosted offering needs it to be strongest.
