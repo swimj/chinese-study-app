@@ -414,7 +414,236 @@ The agent should return structured outputs that the app can validate and store.
 
 ---
 
-## 15. Explicit Non-Commitments
+## 15. Refined Initial Deliverable Notes
+
+The discussion so far points toward a narrower first deliverable than the original framing may imply.
+
+The initial product should still move toward time-budgeted adaptive study, but the first agentic surface does not need to be the session composer itself. A deterministic heuristic planner may be enough to test whether a time-budgeted session feels more deliberate than the conventional due queue.
+
+The more natural first agent responsibility is post-session reflection: interpreting what happened during study, explaining meaningful patterns, and proposing bounded follow-up actions that the user can inspect and confirm.
+
+### Working Deliverable Shape
+
+The first credible adaptive loop should look roughly like:
+
+```text
+time budget
+-> heuristic session planner
+-> familiar study execution
+-> persisted session evidence
+-> agent reflection
+-> grounded observations and proposed handles
+-> user confirmation, dismissal, or follow-up
+```
+
+This lets the product start learning from sessions without making core study depend on opaque model choices.
+
+### Three-Part Agent Frame
+
+Agent behavior should be described in terms of three broad classes:
+
+- user-facing output: recap text, learning observations, explanations, drill-down answers, study-management suggestions, and content suggestions
+- signals: session events, attempts, ratings, wrong answers, prompt metadata, word metadata, existing contrast/content state, time budget, user priorities, and recent history
+- handles: constrained operations the agent can propose or eventually invoke to manage study state, content state, or user-facing policy
+
+This split keeps the agent from becoming a vague product concept. It forces each agent feature to answer:
+
+- what did the agent observe?
+- what did the agent say?
+- what operation, if any, can the user approve?
+
+### SRS Position In The New System
+
+SRS remains important, but it should no longer be treated as the whole product loop.
+
+Spaced repetition is still a core memory-maintenance principle: evidence after a meaningful delay is different from immediate post-exposure success. Any agent that reasons about urgency, strength, fragility, or retention risk is implicitly using spaced-repetition ideas.
+
+However, due-ness should become one pressure signal rather than an obligation. A broader language-learning agent may decide that letting a marginal item decay is acceptable when the learner's limited attention is better spent on higher-leverage growth, diagnosis, content repair, or goal-aligned new material.
+
+A useful distinction:
+
+```text
+SRS asks: when should this memory or skill be sampled again?
+Agentic planning asks: is sampling this now the best use of attention?
+```
+
+The first implementation should preserve existing SRS-derived scheduler state as a baseline and signal source while making room for planner decisions that trade maintenance against relevance, weakness, information value, time cost, and user goals.
+
+### Heuristic Planner, Agent Reflection
+
+The time-budgeted session planner can initially be heuristic and inspectable.
+
+Its job is to assemble a reasonable session from existing study actions under a time budget. It should provide a stable baseline for comparison against the old due queue.
+
+The agent's first job should be reflection:
+
+- summarize what happened
+- identify likely confusions or content problems
+- explain why a pattern matters
+- propose bounded follow-up actions
+- produce optional conversational explanations when the user wants to drill deeper
+
+A useful working principle:
+
+```text
+The heuristic planner decides today's first pass.
+The reflection agent learns what the planner missed.
+```
+
+Over time, accepted or dismissed reflections can become structured signals for future planning.
+
+### Handles Must Be Constrained
+
+Handles should start as a hard-coded registry of allowed operations. The agent should not mutate durable state through open-ended natural language.
+
+Initial handles may include:
+
+- add a contrast candidate
+- propose or create a contrast cluster after confirmation
+- draft or revise a contrast prompt
+- block or flag a bad prompt
+- mark definition-based production as poor fit
+- suppress production for a word
+- change a word or skill's study priority
+- suggest a maintenance/protection tier
+- recommend a next-session focus
+- ask the user a small clarifying question
+
+Most handles should initially be proposed rather than automatically applied. The durable system should validate all handle payloads before persistence.
+
+Handle proposals should eventually track lifecycle state such as proposed, accepted, applied, dismissed, deferred, or superseded.
+
+### Signals Can Start Relatively Raw
+
+The reflection agent may receive a fairly raw session event log plus nearby context.
+
+Useful context includes:
+
+- the session's study actions
+- target words and attempted answers
+- selected wrong contrast choices
+- ratings
+- prompt text and explanations
+- content references
+- current word and skill state
+- existing contrast clusters and candidates
+- relevant recent history
+
+A thin deterministic summary may still be useful, but it should stay factual rather than interpretive. For example, it can report that the user selected one word when another was the prompt target; the agent can decide whether that pattern looks like semantic confusion, bad prompt design, or ordinary forgetting.
+
+### Language Awareness Is Core
+
+The reflection agent should be allowed to reason about the target language.
+
+Symbolic study-pattern detection is useful, but language learning value depends heavily on semantic, contextual, collocational, register, and prompt-quality judgments. A purely symbolic agent can notice repeated wrong choices, but it cannot explain whether a Chinese contrast is about form similarity, usage domain, collocation, register, or sentence context.
+
+The desired architecture is hybrid:
+
+- deterministic systems record and constrain study behavior
+- symbolic summaries expose factual patterns
+- the language-aware agent interprets those patterns
+- constrained handles define what can actually change
+
+### Reflection Artifacts
+
+Post-session reflection should eventually be stored as structured data, not only as generated prose.
+
+A reflection artifact should likely include:
+
+- session id
+- generated-at timestamp
+- model, prompt, and schema version
+- summary text
+- observations
+- evidence references
+- proposed handles
+- confidence and risk where useful
+- user disposition such as accepted, dismissed, useful, not useful, wrong diagnosis, or deferred
+
+Observations, recommendations, and handle proposals should remain distinct:
+
+- observation: what happened
+- recommendation: what the agent thinks it means
+- handle proposal: the specific bounded operation the user can approve
+
+### Reflection UI Flow
+
+Reflection can use a card-like flow similar to the study session, but the units are reflection items rather than review exercises.
+
+A reflection item is a logical unit of study reflection or management. In the near term, most items will likely concern a word, contrast pair, cluster, prompt, or session-level pattern. Later, the same structure could support grammar patterns, collocations, register issues, recurring writing/speaking themes, or other tutor-like observations.
+
+Each item should be self-contained enough that the user can process it immediately after the session or return to it later without remembering the full session context.
+
+A reflection item may include:
+
+- subject: the word, cluster, prompt, session pattern, or future learning theme being discussed
+- observation: what the agent noticed
+- explanation: why it may matter
+- evidence: expandable references to session behavior
+- suggestion: an optional handle proposal
+- user response: accept, dismiss, defer, mark wrong, ask more, or give feedback
+
+Items may break down into smaller cards or subviews:
+
+1. concise observation
+2. evidence from the session
+3. language-aware explanation
+4. optional suggestion or handle proposal
+5. feedback on whether the reflection was useful or accurate
+
+The user should be able to iterate through the reflection list linearly, jump around via navigation, and stop without losing progress.
+
+The ideal path is immediate post-session reflection, because fresh context may make the observations more useful. However, reflection should not be mandatory. Users should be able to skip it and later re-enter a reflection view or inbox for unprocessed items.
+
+A useful product principle:
+
+```text
+Reflection items should be durable, resumable, and locally intelligible.
+```
+
+Reflection should feel like a helpful continuation of study, not a second homework session or a blocking completion step.
+
+### Learner-Facing And Developer-Facing Reflection
+
+There may eventually be two separate reflection agents.
+
+The learner-facing agent interprets a session for the learner and proposes study/content actions.
+
+The developer-facing reflection agent observes user behavior at a product level and suggests product improvements, backlog items, or experiments. It should not have authority over learner study state.
+
+### Current Goals
+
+- Make the first agentic value appear after real study behavior, where the model has meaningful evidence to interpret.
+- Reduce manual content and study-management fatigue without hiding control from the learner.
+- Keep core study execution deterministic and familiar.
+- Let agent output be conversational while keeping durable operations constrained.
+- Create stored reflection data that can later improve planning and product decisions.
+
+### Current Non-Goals
+
+- The first time-budgeted planner does not need to be an LLM-powered agent.
+- The first reflection agent should not silently apply durable changes.
+- The app should not make broad claims about overall language ability from sparse session evidence.
+- The first implementation should not require a full signal inventory before work can begin.
+- The reflection system should not become an open-ended chat agent that replaces normal study flow.
+
+### Known To-Dos To Scope Later
+
+- Define the V0 handle registry and payload schemas.
+- Decide which handles are proposal-only and which, if any, can be applied immediately.
+- Define the minimal session evidence bundle passed to the reflection agent.
+- Decide how much deterministic factual summarization to provide before agent reflection.
+- Design the reflection output schema.
+- Decide how reflections, observations, evidence references, and proposed handles are stored.
+- Design the user flow for reviewing, accepting, dismissing, deferring, or asking follow-up questions about reflection output.
+- Define how reflection items are grouped, navigated, resumed, and marked processed.
+- Decide where unprocessed or deferred reflection items live outside the immediate post-session flow.
+- Decide how accepted and dismissed reflection outputs become future planning signals.
+- Define the boundary between learner-facing reflection and developer-facing product reflection.
+
+---
+
+## 16. Explicit Non-Commitments
 
 This initial product focus does not commit to:
 
