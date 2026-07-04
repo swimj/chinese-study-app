@@ -27,7 +27,7 @@
     "check:study-management-state": "node --import tsx scripts/check-study-management-state.ts",
     "check:study-scheduler-state": "node --import tsx scripts/check-study-scheduler-state.ts",
     "retire:review-items": "node --import tsx scripts/retire-review-items.ts",
-    "test": "node --import tsx --test \"tests/**/*.test.ts\"",
+    "test": "node --import tsx --test tests/*.test.ts",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
