@@ -21,6 +21,7 @@ This document captures the milestone sequencing agreed in roadmap discussion. Vi
 4. **Tenancy/Postgres after the agentic core is proven on personal data, before inviting anyone.** "Folded" means the agent is the reason to host, not that all beta infra precedes any agent value. Proving the agent on yourself first is the cheapest de-risking before committing to tenancy work.
 5. **Evaluation harness is late.** Tempting to build early because the vision emphasizes it, but you cannot evaluate an agent that has not shipped. The harness lands once the loop exists, at which point it also starts closing the loop (reflection dispositions become planning signals).
 6. **Top-down learning model deferred.** Per discussion, the top-down prototype (analyze real reading/writing → generate drills) is out of scope until the agentic core (reflection + planner) is proven.
+7. **Developer-facing reflection pulled forward into M0.** The developer-facing agent is both a sibling prototype that de-risks the LLM-quality question at lower stakes than learner-facing reflection (no user-trust risk; the developer tolerates imperfect output) and a feeds-forward input to the learner-facing buildout: its handle-gap proposals inform M1's handle-registry design, and its bundle-gap observations inform M0's bundle-schema refinement. Same symmetry as reflection-before-planner — pulling it forward both changes what M0 looks like and feeds the later milestones.
 
 ## Settled: API Provider (With Reconsider Bar)
 
@@ -44,17 +45,17 @@ A hybrid (local for cheap draft work like intake suggestions, API for quality-se
 
 ### M0 — De-risking And Foundations
 
-No product value yet. Pure de-risking.
+De-risking plus the first agent surface (developer-facing). The developer-facing reflection prototype is both the LLM spike's concrete deliverable and a permanent companion from M0 onward.
 
 Deliverables:
 
-- **LLM provider spike.** The local-vs-API decision is settled (API). The spike now selects *which* API provider and validates two things the interface abstraction does not settle: (a) **structured-output reliability** — does the candidate provider emit valid handle payloads reliably enough, via strict `json_schema` or tool calling, that the validation/retry layer stays thin? (b) **Mandarin reflection quality** — does the provider's output on a real session-evidence bundle actually do language-aware judgment, or does it paraphrase what deterministic code already surfaces? Throwaway end-to-end prototype: send one real session-evidence bundle to a model, get a structured reflection back. The sharper spike goal (informed by the user's existing manual chat-window workflow): *can a structured session-evidence bundle plus a stable system prompt replace the user's manual context-gathering and curation well enough that automated reflection approaches the quality of hand-curated chat reflection?* Output: a provider decision doc, a working OpenAI-compatible call path, and a per-session cost estimate projected to hosted multi-user scale.
+- **LLM provider spike, with the developer-facing reflection prototype as its concrete deliverable.** The local-vs-API decision is settled (API). The spike selects *which* API provider and validates two things the interface abstraction does not settle: (a) **structured-output reliability** — does the candidate provider emit valid structured output reliably enough (via strict `json_schema` or tool calling) that the validation/retry layer stays thin? (b) **Mandarin reflection quality** — does the provider's output on a real session-evidence bundle actually do language-aware judgment, or does it paraphrase what deterministic code already surfaces? The concrete output is a working **developer-facing reflection prototype** that runs on real session traces and emits structured development suggestions: backlog items, handle-gap proposals (cases where the learner-facing agent would have no suitable handle), extraction candidates, and bundle-gap observations. This is barely more than the throwaway call path the spike originally promised, but it produces real value (observations about your own sessions) and de-risks the LLM-quality question on the actual workload at lower stakes than learner-facing reflection — the developer tolerates imperfect output, and there is no user-trust risk. The prototype is not throwaway: it becomes a permanent companion from M0 onward, feeding M1's handle-registry design (real handle gaps observed) and the bundle-schema refinement (what the model actually needed). Provider decision, OpenAI-compatible call path, and per-session cost estimate projected to hosted scale are the other spike outputs.
 - **Session-evidence bundle design spike.** Gap analysis between what is durably reconstructable from current attempt events and what an LLM needs to produce a grounded, evidence-cited Mandarin reflection. Recommended pre-spike exercise: capture what the user actually pastes into the chat window across a few real sessions, and what they wish they had time to paste but do not. That is the cheapest, highest-signal requirements source for the bundle schema. Output: a bundle schema plus a "what is missing" list.
 - **Handle registry V0 spec.** The constrained-operations list, payload schemas, proposal-only versus apply, lifecycle states (`proposed / accepted / applied / dismissed / deferred / superseded`). Output: a spec doc, not code.
 - **Hosted-beta tenancy pre-design.** The shared-vs-user-owned table map for the current schema (Workstream A question 1 from `beta-web-service-plan.md`). Output: a table-ownership map doc.
 - **Code-verification pass:** session composition and word-skill admission/action-selection in `server/db/`; attempt-event projection path; `src/features/session/useStudySession.ts` session-end and commit flow; `src/services/api.ts` contract surface. Purpose: size the lift from due-queue composition to time-budgeted planner (later milestone), and confirm the reflection hook-in point.
 
-Product hypothesis tested: none directly. The LLM spike doubles as a check on the scariest product hypothesis — is language-aware reflection on Mandarin contrast actually good enough to ship? — but note this is already partially de-risked by the user's manual chat-window workflow. What is not de-risked is whether *automated* context-gathering replaces manual curation.
+Product hypothesis tested: the developer-facing prototype is the first real check on the scariest product hypothesis — is language-aware reflection on Mandarin contrast actually good enough to ship? — at lower stakes than learner-facing reflection (no user-trust risk). This is already partially de-risked by the user's manual chat-window workflow; what is not de-risked is whether *automated* context-gathering replaces manual curation. The prototype also tests a second hypothesis: can an agent that watches session traces usefully propose handle-registry extensions and surface development avenues the developer would not otherwise notice?
 
 Technical risk surfaced: LLM quality bar, data-plumbing gap, tenancy modeling risk, the real size of the due-queue to time-budgeted-planner lift.
 
@@ -73,7 +74,7 @@ Product hypothesis: none directly. Forces the agent-output contract to be decide
 
 Technical risk surfaced: handle schema design is sticky. Worth getting the V0 registry right even if the set is small.
 
-Dependencies: M0 handle-registry spec.
+Dependencies: M0 handle-registry spec, plus the accumulated handle-gap proposals from the M0 developer-facing reflection prototype — the registry is designed against observed gaps, not just upfront speculation.
 
 ### M2 — First Language-Aware Reflection Agent
 
@@ -85,7 +86,7 @@ Deliverables:
 - Reflection UI: card-like flow per the vision doc (concise observation, evidence, language-aware explanation, optional handle proposal, user response: accept / dismiss / defer / mark wrong / ask more / feedback).
 - All handles proposal-only. No auto-apply.
 - **High-leverage sub-thread: agent-assisted contrast intake.** Let the agent draft contrast cluster and prompt suggestions from captured production mistakes, validated by the existing intake UI. Lower-risk than reflection because the receiving validation surface already exists, and it directly targets the user's highest-toil surface (manual intake management). This is the first concrete instance of "agent absorbs a visible deterministic workflow."
-- **Parallel sub-thread: developer-facing reflection on session traces.** A second reflection agent operating on the same session-evidence bundle, but with a different audience (the developer) and output contract. Its primary early use case: identify conceptual problems in the session trace that the learner-facing agent could not address because no suitable handle exists, and propose that the developer design and implement a new handle. Lower-stakes than learner-facing reflection (no user-trust risk; the developer tolerates imperfect output), so it can run with looser structured-output reliability requirements. Outputs are typed development artifacts (backlog items, handle-extension proposals, extraction candidates), not study-state handles — they do not mutate state and require no runtime validation. Shares the M0 bundle, M1 artifact store, and LLM call path with the learner-facing agent. This is the seed of the assistant-PM direction (see M7+ parallel horizon).
+- **Developer-facing reflection graduates to persisted artifacts.** The developer-facing agent, running since M0 as a prototype, now persists its outputs to the M1 artifact store (backlog items, handle-extension proposals, extraction candidates) instead of emitting ephemerally. It continues as a permanent companion alongside the learner-facing agent, sharing the bundle and call path. This is the seed of the assistant-PM direction (see M7+ parallel horizon).
 
 Product hypothesis: post-session reflection feels like a helpful continuation of study, not second homework. Language-aware reflection is distinguishable from deterministic pattern detection — the LLM's linguistic judgment is doing real work, not paraphrasing what code already surfaced.
 
@@ -151,7 +152,7 @@ Deliverables:
 
 - Held-out probes, controlled exercise variation, bounded exploration (vision doc §11).
 - Accepted and dismissed reflections become planning signals: the "reflection agent learns what the planner missed" loop becomes real code. The planner (M5) starts adjusting from reflection dispositions.
-- First "when does a recurring agent workflow deserve deterministic code?" extraction pass — identify handle proposals or reflection patterns that have stabilized and promote them to deterministic logic. The developer-facing reflection agent (introduced in M2) is the primary mechanism that surfaces these candidates, since it is already reasoning about gaps and recurring patterns.
+- First "when does a recurring agent workflow deserve deterministic code?" extraction pass — identify handle proposals or reflection patterns that have stabilized and promote them to deterministic logic. The developer-facing reflection agent (running since M0) is the primary mechanism that surfaces these candidates, since it is already reasoning about gaps and recurring patterns.
 
 Product hypothesis: the agent's planning actually improves from accumulated reflection data; transfer signals (performance on novel or varied prompts after an intervention) are observable, even if noisy.
 
@@ -173,7 +174,7 @@ Technical risk surfaced: a large new surface area; the risk is opening it before
 
 ### M7+ (Long Horizon, Parallel) — Assistant Product-Manager Agent
 
-The developer-facing reflection agent introduced in M2 starts constrained to single session traces. The long-horizon broadening is an assistant-PM agent that reasons across sessions and user behavior, not just within one session.
+The developer-facing reflection agent, running since M0, starts constrained to single session traces. The long-horizon broadening is an assistant-PM agent that reasons across sessions and user behavior, not just within one session.
 
 Deliverables (eventual):
 
@@ -185,7 +186,7 @@ Product hypothesis: an agent that watches how the product is used and proposes c
 
 Technical risk surfaced: reasoning across users raises privacy and aggregation concerns; the assistant-PM agent must operate on summarized/aggregated signals, not raw learner data, once multi-user. Also risks proposing work the developer does not have capacity for — output volume needs throttling.
 
-Dependencies: M4 (multi-user data is what makes cross-session, cross-user PM analysis meaningful). The single-developer personal-data version is already useful from M2 onward.
+Dependencies: M4 (multi-user data is what makes cross-session, cross-user PM analysis meaningful). The single-developer personal-data version is already useful from M0 onward.
 
 ## Cross-Cutting Threads
 
