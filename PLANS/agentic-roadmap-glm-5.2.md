@@ -67,6 +67,7 @@ Deliverables:
 - Persistence for reflection artifacts: session id, generated-at, model/prompt/schema version, summary, observations, evidence references, proposed handles, disposition. Per the §15 schema in the initial-focus vision doc.
 - Handle registry as a hard-coded list of allowed operations with payload schemas and lifecycle. Initial handle set drawn from the vision doc: add contrast candidate, propose cluster after confirmation, draft or revise contrast prompt, block or flag bad prompt, mark definition-based production poor fit, suppress production, change study priority, suggest maintenance tier, recommend next-session focus, ask clarifying question.
 - Validation layer: all handle payloads validated before persistence; the agent cannot mutate durable state directly.
+- Artifact store also supports developer-facing reflection artifacts (backlog items, handle-extension proposals, extraction candidates). These are typed outputs but not handles: they do not mutate study state and require no runtime validation against a registry. Keeping them distinct from learner-facing handles prevents over-engineering a single registry for two different concerns.
 
 Product hypothesis: none directly. Forces the agent-output contract to be decided before the agent exists.
 
@@ -84,6 +85,7 @@ Deliverables:
 - Reflection UI: card-like flow per the vision doc (concise observation, evidence, language-aware explanation, optional handle proposal, user response: accept / dismiss / defer / mark wrong / ask more / feedback).
 - All handles proposal-only. No auto-apply.
 - **High-leverage sub-thread: agent-assisted contrast intake.** Let the agent draft contrast cluster and prompt suggestions from captured production mistakes, validated by the existing intake UI. Lower-risk than reflection because the receiving validation surface already exists, and it directly targets the user's highest-toil surface (manual intake management). This is the first concrete instance of "agent absorbs a visible deterministic workflow."
+- **Parallel sub-thread: developer-facing reflection on session traces.** A second reflection agent operating on the same session-evidence bundle, but with a different audience (the developer) and output contract. Its primary early use case: identify conceptual problems in the session trace that the learner-facing agent could not address because no suitable handle exists, and propose that the developer design and implement a new handle. Lower-stakes than learner-facing reflection (no user-trust risk; the developer tolerates imperfect output), so it can run with looser structured-output reliability requirements. Outputs are typed development artifacts (backlog items, handle-extension proposals, extraction candidates), not study-state handles — they do not mutate state and require no runtime validation. Shares the M0 bundle, M1 artifact store, and LLM call path with the learner-facing agent. This is the seed of the assistant-PM direction (see M7+ parallel horizon).
 
 Product hypothesis: post-session reflection feels like a helpful continuation of study, not second homework. Language-aware reflection is distinguishable from deterministic pattern detection — the LLM's linguistic judgment is doing real work, not paraphrasing what code already surfaced.
 
@@ -149,7 +151,7 @@ Deliverables:
 
 - Held-out probes, controlled exercise variation, bounded exploration (vision doc §11).
 - Accepted and dismissed reflections become planning signals: the "reflection agent learns what the planner missed" loop becomes real code. The planner (M5) starts adjusting from reflection dispositions.
-- First "when does a recurring agent workflow deserve deterministic code?" extraction pass — identify handle proposals or reflection patterns that have stabilized and promote them to deterministic logic.
+- First "when does a recurring agent workflow deserve deterministic code?" extraction pass — identify handle proposals or reflection patterns that have stabilized and promote them to deterministic logic. The developer-facing reflection agent (introduced in M2) is the primary mechanism that surfaces these candidates, since it is already reasoning about gaps and recurring patterns.
 
 Product hypothesis: the agent's planning actually improves from accumulated reflection data; transfer signals (performance on novel or varied prompts after an intervention) are observable, even if noisy.
 
@@ -168,6 +170,22 @@ Deliverables (eventual):
 Product hypothesis: the bottom-up (SRS plus skills) and top-down (real-language-use analysis) halves reinforce each other through the agent.
 
 Technical risk surfaced: a large new surface area; the risk is opening it before the agentic core (M1–M6) is genuinely stable.
+
+### M7+ (Long Horizon, Parallel) — Assistant Product-Manager Agent
+
+The developer-facing reflection agent introduced in M2 starts constrained to single session traces. The long-horizon broadening is an assistant-PM agent that reasons across sessions and user behavior, not just within one session.
+
+Deliverables (eventual):
+
+- Cross-session pattern analysis: recurring learner difficulties, engagement/retention signals, feature-usage patterns, cold-start friction.
+- Backlog generation and experiment proposals grounded in observed behavior rather than developer intuition alone.
+- Handle-registry evolution suggestions at product scale (which handles are proposed most, which are accepted/dismissed, which recurring gaps still have no handle).
+
+Product hypothesis: an agent that watches how the product is used and proposes concrete development actions produces better prioritization than developer intuition alone, especially once multi-user data exists.
+
+Technical risk surfaced: reasoning across users raises privacy and aggregation concerns; the assistant-PM agent must operate on summarized/aggregated signals, not raw learner data, once multi-user. Also risks proposing work the developer does not have capacity for — output volume needs throttling.
+
+Dependencies: M4 (multi-user data is what makes cross-session, cross-user PM analysis meaningful). The single-developer personal-data version is already useful from M2 onward.
 
 ## Cross-Cutting Threads
 

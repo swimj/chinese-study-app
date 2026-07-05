@@ -615,11 +615,15 @@ Reflection should feel like a helpful continuation of study, not a second homewo
 
 ### Learner-Facing And Developer-Facing Reflection
 
-There may eventually be two separate reflection agents.
+There are two reflection agents with shared infrastructure but different audiences and output contracts.
 
-The learner-facing agent interprets a session for the learner and proposes study/content actions.
+The learner-facing agent interprets a session for the learner and proposes study/content actions via the constrained handle registry.
 
-The developer-facing reflection agent observes user behavior at a product level and suggests product improvements, backlog items, or experiments. It should not have authority over learner study state.
+The developer-facing reflection agent observes user behavior and product-level patterns and suggests product improvements, backlog items, experiments, or — most usefully early on — gaps in the handle registry itself. A primary early use case: given a session trace, identify conceptual problems the learner-facing agent could not address because no suitable handle exists, and propose that the developer design and implement a new handle. It does not have authority over learner study state.
+
+The two agents share the session-evidence bundle, the LLM call path, and the reflection-artifact store, but their output schemas differ: learner-facing outputs are validated against the handle registry; developer-facing outputs are development artifacts (backlog items, handle-extension proposals, extraction candidates) that do not mutate study state and require no runtime validation.
+
+Initially the developer-facing agent is constrained to the same session traces as the learner-facing agent. Over time it can broaden into an assistant product-manager type of agent that reasons across sessions and user behavior, not just within a single session.
 
 ### Current Goals
 
