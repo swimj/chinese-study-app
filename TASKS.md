@@ -1,0 +1,34 @@
+# TASKS
+
+Universal work queue. Frictionless capture in **Inbox**; triage into **Ready**; work moves items to **In Progress**. Anything one-shot-able doesn't belong here — just do it.
+
+Commit cadence: edit freely during work; commit either alongside the code commit that a queue change describes, or as a management commit at a session boundary. Appending to Inbox/Debt is the agent's job; triage and reordering are the human's (or done on explicit ask).
+
+Item format: `- [ ] description #tag #tag (optional context)`. Priority in Ready is list position (top = next).
+
+## Inbox
+
+(raw capture — unsorted)
+
+## Ready
+
+(actionable, priority order — top is next)
+
+- [ ] capture what I actually paste into the chat window across a few real study sessions (and what I wish I had time to paste but don't) — cheapest, highest-signal requirements source for the session-evidence bundle #m0 #spike
+- [ ] code-verification pass: session composition + word-skill admission/action-selection in `server/db/`; attempt-event projection path; `src/features/session/useStudySession.ts` session-end/commit flow; `src/services/api.ts` contract — sizes the due-queue→planner lift and confirms the reflection hook-in point #m0 #infra (parallelizable with the item above)
+- [ ] session-evidence bundle design spike: gap analysis between what's durably reconstructable from attempt events and what an LLM needs for grounded, evidence-cited Mandarin reflection; produce bundle schema + "what's missing" list #m0 #spike (depends on the two items above)
+- [ ] LLM provider spike: select which API provider; validate structured-output reliability and Mandarin reflection quality; build the developer-facing reflection prototype on real session traces; produce provider decision + per-session cost estimate for hosted scale #m0 #spike (interdependent with the bundle spike — needs a rough bundle to send, refines the bundle from what the model needs)
+- [ ] handle registry V0 spec: constrained-operations list, payload schemas, proposal-only vs apply, lifecycle states (`proposed / accepted / applied / dismissed / deferred / superseded`) #m0 #design (design doc, can run in parallel with the spikes)
+- [ ] hosted-beta tenancy pre-design: shared-vs-user-owned table map for the current schema (Workstream A question 1 from `PLANS/beta-web-service-plan.md`) #m0 #design (design doc, can run in parallel)
+
+## In Progress
+
+(active / blocked: reason / waiting: thing — supports parallel items)
+
+## Debt
+
+(workarounds with a trigger condition — "revisit when X")
+
+## Parked
+
+(tangential ideas, nice-to-haves, deferred — review periodically; promote to Ready, move to `BACKLOG.md`, or drop)

@@ -23,7 +23,8 @@ Guidance for AI coding agents working in this repository.
 4. `SPECS/learning-review-model.md`
 5. `SPECS/session-covering-criteria.md`
 6. `SPECS/study-action-model.md`
-7. Relevant tests under `tests/` (see [`docs/testing.md`](docs/testing.md))
+7. `TASKS.md` — current work queue; read at session start to orient on in-progress and next-up work (see §11)
+8. Relevant tests under `tests/` (see [`docs/testing.md`](docs/testing.md))
 
 When code and spec conflict, treat the spec as intended behavior and update code + tests together.
 
@@ -121,3 +122,15 @@ This repo contains real DB artifacts and backups under `data/`.
 - Ask for clarification before making irreversible data changes.
 - Favor explicitness over hidden magic in learning/review logic.
 - Leave concise comments only where logic is non-obvious.
+
+## 11) Working With `TASKS.md`
+
+`TASKS.md` is the universal work queue at repo root. Read it at session start to orient on what's in progress and what's next up.
+
+- **Sections**: Inbox (raw capture, unsorted) → Ready (triaged, priority-ordered, top is next) → In Progress. Debt holds workarounds with trigger conditions; Parked holds tangential/deferred items.
+- **Item format**: `- [ ] description #tag #tag (optional context)`. Tags are inert text but greppable — e.g., `#m0`, `#spike`, `#design`, `#debt`.
+- **One-shot exclusion**: if a task is small enough to one-shot an agent, it doesn't belong in the queue — just do it.
+- **Agent's role**: append to Inbox or Debt proactively when something surfaces mid-task. Triage (moving items between sections), reordering Ready, and marking items done are the human's call, or done on explicit ask. Do not auto-commit queue changes.
+- **Commit cadence**: edit `TASKS.md` freely during work. Commit it either alongside the code commit that a queue change describes (e.g., completing a slice), or as a management commit at a session boundary for planning-only changes. When committing code, stage deliberately so queue edits don't accidentally sweep in unless intentionally bundled.
+- **Queue items vs commits**: not strict 1-1. One item may span several commits; one commit may close multiple items; management commits aren't 1-1 with any work item; some items (research, "drop it" conclusions) produce no code commit. The invariant: every commit is relatable to at least one queue item, and every completed item corresponds to at least one commit or an explicit no-code-change outcome.
+- **Parallel work**: In Progress supports multiple items. Each entry carries a status — `active`, `blocked: <reason>`, or `waiting: <thing>`. The human decides what's parallelizable; the agent maintains status lines but doesn't spin up parallel items on its own.
