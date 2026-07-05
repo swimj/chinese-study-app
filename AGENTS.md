@@ -9,7 +9,7 @@ Guidance for AI coding agents working in this repository.
 - Backend: Express + TypeScript in `server/`.
 - Persistence: SQLite (`app.db`) via Node `DatabaseSync`, modules under `server/db/`.
 - Direction: treat current local setup as an implementation phase, not a permanent architecture. Prefer decisions that keep a future web-service migration feasible.
-- Documentation taxonomy: [`docs/README.md`](docs/README.md) and [`SPECS/README.md`](SPECS/README.md).
+- Documentation taxonomy: [`docs/README.md`](docs/README.md), [`SPECS/README.md`](SPECS/README.md), and [`notes/README.md`](notes/README.md) (medium-lived working memory).
 - Product behavior source of truth:
   - `SPECS/learning-review-model.md` — word lifecycle
   - `SPECS/session-covering-criteria.md` — in-session covering and commits
@@ -24,7 +24,8 @@ Guidance for AI coding agents working in this repository.
 5. `SPECS/session-covering-criteria.md`
 6. `SPECS/study-action-model.md`
 7. `TASKS.md` — current work queue; read at session start to orient on in-progress and next-up work (see §11)
-8. Relevant tests under `tests/` (see [`docs/testing.md`](docs/testing.md))
+8. Active notes in `notes/active/` linked from In Progress items (working memory only; defer to SPECS on conflict — see [`notes/README.md`](notes/README.md))
+9. Relevant tests under `tests/` (see [`docs/testing.md`](docs/testing.md))
 
 When code and spec conflict, treat the spec as intended behavior and update code + tests together.
 

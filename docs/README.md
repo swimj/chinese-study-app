@@ -23,6 +23,7 @@ How documentation in this repo is classified and where to start.
 | **Completed / historical** | `SPECS/archive/` | Context only; not authoritative for current behavior |
 | **Vision / backlog** | `docs/vision/`, `BACKLOG.md`, `SPECS/adaptive_vocabulary_training_product_notes.md` | Long-term ideas; not implementation contracts |
 | **Operations** | `docs/ops/`, `SPECS/study-db-setup.md` | Local setup and data workflows |
+| **Working memory** | `notes/active/` | Cross-thread coordination, research, multi-day work bundles (days–weeks; not authoritative) |
 
 When a map doc and code disagree, fix the map in the same change as the code (or file a follow-up immediately).
 
@@ -39,3 +40,4 @@ When a map doc and code disagree, fix the map in the same change as the code (or
 - [README.md](../README.md) — human getting started, modes, data layout
 - [CHANGELOG.md](../CHANGELOG.md) — casual release notes for users
 - [BACKLOG.md](../BACKLOG.md) — noncritical product/engineering ideas
+- [notes/README.md](../notes/README.md) — medium-lived working memory (cross-thread coordination)
