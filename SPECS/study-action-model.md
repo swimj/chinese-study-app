@@ -15,7 +15,7 @@ Related documents:
 - [`learning-review-model.md`](/Users/jw/dev/chinese-study-app/SPECS/learning-review-model.md)
 - [`session-covering-criteria.md`](/Users/jw/dev/chinese-study-app/SPECS/session-covering-criteria.md)
 - [`adaptive_vocabulary_training_product_notes.md`](/Users/jw/dev/chinese-study-app/SPECS/adaptive_vocabulary_training_product_notes.md)
-- [`milestone-7-8-relevance-aware-contrast-plan.md`](/Users/jw/dev/chinese-study-app/SPECS/milestone-7-8-relevance-aware-contrast-plan.md)
+- [`milestone-7-8-relevance-aware-contrast-plan.md`](./archive/milestone-7-8-relevance-aware-contrast-plan.md)
 
 ## 1. Product Direction
 
@@ -853,7 +853,7 @@ definition-based production prompts is independently useful even when no
 contrast content exists.
 
 See
-[`milestone-7-8-relevance-aware-contrast-plan.md`](/Users/jw/dev/chinese-study-app/SPECS/milestone-7-8-relevance-aware-contrast-plan.md)
+[`milestone-7-8-relevance-aware-contrast-plan.md`](./archive/milestone-7-8-relevance-aware-contrast-plan.md)
 for the implementation plan.
 
 - add lexical cluster tables

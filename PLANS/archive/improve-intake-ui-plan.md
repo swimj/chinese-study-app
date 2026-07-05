@@ -1,6 +1,11 @@
 # Smaller-Step Intake And Cluster Editing
 
+**Shelved (archived).** Superseded by the agent-first roadmap ([`PLANS/agentic-roadmap-glm-5.2.md`](../agentic-roadmap-glm-5.2.md)); manual intake UI rework is indefinitely deferred.
+
+Status: shelved implementation plan (archived).
+
 ## Summary
+
 Rework intake around word-first triage and reusable cluster editing. Intake rows become target words with candidate mentions/notes folded into the detail view. Users can mark intake as `resolved` at any time, create one-word clusters, add/remove members, edit member nuance, add/delete prompts, suppress production, and mark definition-based production prompts as bad from the same intake/cluster context.
 
 ## Key Changes

@@ -34,8 +34,6 @@ Friend/local setup: [docs/ops/FRIEND_WINDOWS_SETUP.md](../docs/ops/FRIEND_WINDOW
 
 | Document | Role |
 | --- | --- |
-| [milestone-7-8-implementation-slices.md](./milestone-7-8-implementation-slices.md) | Sequencing checklist for contrast/relevance work (check off remaining slices) |
-| [milestone-7-8-relevance-aware-contrast-plan.md](./milestone-7-8-relevance-aware-contrast-plan.md) | Product/implementation plan for relevance-aware contrast |
 | [french-compatibility-profile-plan.md](./french-compatibility-profile-plan.md) | French study profile compatibility |
 | [french-priority-alias-first-cut-plan.md](./french-priority-alias-first-cut-plan.md) | Priority alias lookup first cut |
 | [french-reading-corpus-compatibility-plan.md](./french-reading-corpus-compatibility-plan.md) | French corpus ingestion plan |
@@ -47,6 +45,8 @@ Repo-level plans: [PLANS/](../PLANS/).
 | Document | Notes |
 | --- | --- |
 | [archive/milestone-6-retire-review-items-plan.md](./archive/milestone-6-retire-review-items-plan.md) | **Done** — `review_items` removed; scheduling uses word-skill state |
+| [archive/milestone-7-8-relevance-aware-contrast-plan.md](./archive/milestone-7-8-relevance-aware-contrast-plan.md) | **Done** — relevance-aware contrast practice (archived; gaps non-pressing) |
+| [archive/milestone-7-8-implementation-slices.md](./archive/milestone-7-8-implementation-slices.md) | **Done** — contrast/relevance implementation checklist (archived) |
 
 ## Vision (not implementation contracts)
 

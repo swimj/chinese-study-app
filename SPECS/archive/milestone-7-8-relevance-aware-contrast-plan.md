@@ -1,6 +1,8 @@
 # Milestone 7/8 Plan: Relevance-Aware Contrast Practice
 
-Status: product and implementation plan (largely implemented; see `milestone-7-8-implementation-slices.md` for remaining work).
+**DONE (archived).** Contrast/relevance milestone complete as far as product owner is concerned; any remaining gaps in this plan are non-pressing.
+
+Status: completed product and implementation plan (archived).
 
 This plan covers the milestone-7 and milestone-8 expansion from simple
 recognition/production scheduling into relevance-aware contextual
@@ -11,7 +13,7 @@ Related documents:
 - [`study-action-model.md`](/Users/jw/dev/chinese-study-app/SPECS/study-action-model.md)
 - [`learning-review-model.md`](/Users/jw/dev/chinese-study-app/SPECS/learning-review-model.md)
 - [`session-covering-criteria.md`](/Users/jw/dev/chinese-study-app/SPECS/session-covering-criteria.md)
-- [`milestone-7-8-implementation-slices.md`](/Users/jw/dev/chinese-study-app/SPECS/milestone-7-8-implementation-slices.md)
+- [`milestone-7-8-implementation-slices.md`](./milestone-7-8-implementation-slices.md)
 
 ## Goal
 

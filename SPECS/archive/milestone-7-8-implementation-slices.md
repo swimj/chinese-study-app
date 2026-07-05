@@ -1,6 +1,8 @@
 # Milestone 7/8 Implementation Slices
 
-Status: development sequencing plan. Most contrast-selection and intake slices below are implemented; use this as a checklist for any remaining items.
+**DONE (archived).** Contrast/relevance milestone complete as far as product owner is concerned; any remaining gaps in this checklist are non-pressing.
+
+Status: completed development sequencing plan (archived).
 
 This document breaks the relevance-aware contrast practice work into pared-down
 implementation units. It is intentionally separate from the product plan so the
@@ -8,7 +10,7 @@ product spec can remain useful after the initial implementation is complete.
 
 Related documents:
 
-- [`milestone-7-8-relevance-aware-contrast-plan.md`](/Users/jw/dev/chinese-study-app/SPECS/milestone-7-8-relevance-aware-contrast-plan.md)
+- [`milestone-7-8-relevance-aware-contrast-plan.md`](./milestone-7-8-relevance-aware-contrast-plan.md)
 - [`study-action-model.md`](/Users/jw/dev/chinese-study-app/SPECS/study-action-model.md)
 
 ## Development Order
