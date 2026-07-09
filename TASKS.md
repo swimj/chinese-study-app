@@ -14,16 +14,17 @@ Item format: `- [ ] description #tag #tag (optional context)`. Priority in Ready
 
 (actionable, priority order — top is next)
 
-- [ ] capture what I actually paste into the chat window across a few real study sessions (and what I wish I had time to paste but don't) — cheapest, highest-signal requirements source for the session-evidence bundle #m0 #spike
-- [ ] code-verification pass: session composition + word-skill admission/action-selection in `server/db/`; attempt-event projection path; `src/features/session/useStudySession.ts` session-end/commit flow; `src/services/api.ts` contract — sizes the due-queue→planner lift and confirms the reflection hook-in point #m0 #infra (parallelizable with the item above)
-- [ ] session-evidence bundle design spike: gap analysis between what's durably reconstructable from attempt events and what an LLM needs for grounded, evidence-cited Mandarin reflection; produce bundle schema + "what's missing" list #m0 #spike (depends on the two items above)
-- [ ] LLM provider spike: select which API provider; validate structured-output reliability and Mandarin reflection quality; build the developer-facing reflection prototype on real session traces; produce provider decision + per-session cost estimate for hosted scale #m0 #spike (interdependent with the bundle spike — needs a rough bundle to send, refines the bundle from what the model needs)
-- [ ] handle registry V0 spec: constrained-operations list, payload schemas, proposal-only vs apply, lifecycle states (`proposed / accepted / applied / dismissed / deferred / superseded`) #m0 #design (design doc, can run in parallel with the spikes)
-- [ ] hosted-beta tenancy pre-design: shared-vs-user-owned table map for the current schema (Workstream A question 1 from `PLANS/beta-web-service-plan.md`) #m0 #design (design doc, can run in parallel)
+- code-verification pass: session composition + word-skill admission/action-selection in `server/db/`; attempt-event projection path; `src/features/session/useStudySession.ts` session-end/commit flow; `src/services/api.ts` contract — sizes the due-queue→planner lift and confirms the reflection hook-in point #m0 #infra (parallelizable with the item above)
+- session-evidence bundle design spike: gap analysis between what's durably reconstructable from attempt events and what an LLM needs for grounded, evidence-cited Mandarin reflection; produce bundle schema + "what's missing" list #m0 #spike (depends on the two items above)
+- LLM provider spike: select which API provider; validate structured-output reliability and Mandarin reflection quality; build the developer-facing reflection prototype on real session traces; produce provider decision + per-session cost estimate for hosted scale #m0 #spike (interdependent with the bundle spike — needs a rough bundle to send, refines the bundle from what the model needs)
+- handle registry V0 spec: constrained-operations list, payload schemas, proposal-only vs apply, lifecycle states (`proposed / accepted / applied / dismissed / deferred / superseded`) #m0 #design (design doc, can run in parallel with the spikes)
+- hosted-beta tenancy pre-design: shared-vs-user-owned table map for the current schema (Workstream A question 1 from `PLANS/beta-web-service-plan.md`) #m0 #design (design doc, can run in parallel)
+
 
 ## In Progress
 
 (active / blocked: reason / waiting: thing — supports parallel items)
+
 
 ## Debt
 
@@ -32,3 +33,6 @@ Item format: `- [ ] description #tag #tag (optional context)`. Priority in Ready
 ## Parked
 
 (tangential ideas, nice-to-haves, deferred — review periodically; promote to Ready, move to `BACKLOG.md`, or drop)
+
+- production answer classes spike: model many-to-many `gloss/cue -> acceptable words` for definition-based production; compare against aliases, contrast clusters, and bad-prompt handling; sketch reflection handle(s) for creating/extending an answer class #spike #design #reflection (sparked by `notes/active/2026-07-06-session-reflection-workflow.md` examples like 难怪/怪不得)
+- anchor glosses spike: model per-word/per-sense gloss fragments that carry the core usage distinction for production prompts and reflection; explore how anchors interact with long gloss lists, answer classes, contrast suggestions, and prompt-as-shown evidence #spike #design #reflection (sparked by 合成/组合 and 商标/标志 examples in `notes/active/2026-07-06-session-reflection-workflow.md`)

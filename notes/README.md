@@ -66,4 +66,4 @@ Agents may propose archive; triage and confirmation follow the same pattern as `
 
 | Note | Type | Retire by | Linked from |
 | --- | --- | --- | --- |
-| — | — | — | — |
+| [2026-07-06-session-reflection-workflow.md](active/2026-07-06-session-reflection-workflow.md) | research | 2026-07-20 | TASKS.md (In Progress) |
