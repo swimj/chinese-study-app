@@ -9,6 +9,7 @@ Entry points under `scripts/`. Run with `node --import tsx scripts/<name>.ts` un
 | `npm run reset:dev-data` | Reset dev SQLite |
 | `scripts/list-contrast-content.ts` | List contrast clusters/prompts |
 | `scripts/check-study-scheduler-state.ts` | Report scheduler invariant issues |
+| `npm run report:word -- --data-dir=/absolute/path` | Interactive read-only report for exact hanzi matches |
 | `scripts/check-study-management-state.ts` | Report study-management state |
 | `scripts/report-eventual-contrast-selection.ts` | Report eventual contrast-selection coverage |
 | `scripts/report-canonical-overlap.ts` | Canonical wordlist overlap report |
