@@ -26,6 +26,7 @@
     "list:contrast-content": "node --import tsx scripts/list-contrast-content.ts",
     "check:study-management-state": "node --import tsx scripts/check-study-management-state.ts",
     "check:study-scheduler-state": "node --import tsx scripts/check-study-scheduler-state.ts",
+    "report:word": "node --import tsx scripts/report-word.ts",
     "retire:review-items": "node --import tsx scripts/retire-review-items.ts",
     "test": "node --import tsx --test tests/*.test.ts",
     "build": "tsc && vite build",
