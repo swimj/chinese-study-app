@@ -14,7 +14,6 @@ Item format: `- [ ] description #tag #tag (optional context)`. Priority in Ready
 
 (actionable, priority order — top is next)
 
-- code-verification pass: session composition + word-skill admission/action-selection in `server/db/`; attempt-event projection path; `src/features/session/useStudySession.ts` session-end/commit flow; `src/services/api.ts` contract — sizes the due-queue→planner lift and confirms the reflection hook-in point #m0 #infra (parallelizable with the item above)
 - session-evidence bundle design spike: gap analysis between what's durably reconstructable from attempt events and what an LLM needs for grounded, evidence-cited Mandarin reflection; produce bundle schema + "what's missing" list #m0 #spike (depends on the two items above)
 - LLM provider spike: select which API provider; validate structured-output reliability and Mandarin reflection quality; build the developer-facing reflection prototype on real session traces; produce provider decision + per-session cost estimate for hosted scale #m0 #spike (interdependent with the bundle spike — needs a rough bundle to send, refines the bundle from what the model needs)
 - handle registry V0 spec: constrained-operations list, payload schemas, proposal-only vs apply, lifecycle states (`proposed / accepted / applied / dismissed / deferred / superseded`) #m0 #design (design doc, can run in parallel with the spikes)
