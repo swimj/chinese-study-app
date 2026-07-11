@@ -126,6 +126,13 @@ not need to automatically prove that before shipping the first loop.
 
 ### Proposed initial bundle schema
 
+> **Refinement status (2026-07-11):** This is the source schema and product
+> rationale captured from the workflow research. The reconciled implementation
+> design, including M0-now versus later boundaries verified against the code,
+> lives in [2026-07-10-session-evidence-bundle-design.md](2026-07-10-session-evidence-bundle-design.md).
+> Preserve this section as the research baseline; use the later note for the
+> active input contract.
+
 The POC schema should be intentionally boring: a session-level envelope plus a
 list of reflection items. It should carry enough evidence for grounded
 judgment, but avoid modeling every future teaching mode as separate durable
