@@ -37,6 +37,7 @@ Friend/local setup: [docs/ops/FRIEND_WINDOWS_SETUP.md](../docs/ops/FRIEND_WINDOW
 | [french-compatibility-profile-plan.md](./french-compatibility-profile-plan.md) | French study profile compatibility |
 | [french-priority-alias-first-cut-plan.md](./french-priority-alias-first-cut-plan.md) | Priority alias lookup first cut |
 | [french-reading-corpus-compatibility-plan.md](./french-reading-corpus-compatibility-plan.md) | French corpus ingestion plan |
+| [reflection-handle-registry-v0.md](./reflection-handle-registry-v0.md) | Draft constrained-operation and lifecycle contract for the reflection prototype |
 
 Repo-level plans: [PLANS/](../PLANS/).
 
