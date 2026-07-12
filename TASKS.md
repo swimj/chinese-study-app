@@ -14,14 +14,15 @@ Item format: `- [ ] description #tag #tag (optional context)`. Priority in Ready
 
 (actionable, priority order — top is next)
 
-- LLM provider spike: select which API provider; validate structured-output reliability and Mandarin reflection quality; build the developer-facing reflection prototype on real session traces; produce provider decision + per-session cost estimate for hosted scale #m0 #spike (interdependent with the bundle spike — needs a rough bundle to send, refines the bundle from what the model needs)
-- handle registry V0 spec: constrained-operations list, payload schemas, proposal-only vs apply, lifecycle states (`proposed / accepted / applied / dismissed / deferred / superseded`) #m0 #design (design doc, can run in parallel with the spikes)
 - hosted-beta tenancy pre-design: shared-vs-user-owned table map for the current schema (Workstream A question 1 from `PLANS/beta-web-service-plan.md`) #m0 #design (design doc, can run in parallel)
 
 
 ## In Progress
 
 (active / blocked: reason / waiting: thing — supports parallel items)
+
+- handle registry V0 spec: constrained-operations list, payload schemas, proposal-only vs apply, lifecycle states (`proposed / accepted / applied / dismissed / deferred / superseded`) #m0 #design (design doc, can run in parallel with the spikes)
+- LLM provider spike: select which API provider; validate structured-output reliability and Mandarin reflection quality; build the developer-facing reflection prototype on real session traces; produce provider decision + per-session cost estimate for hosted scale #m0 #spike (interdependent with the bundle spike — needs a rough bundle to send, refines the bundle from what the model needs)
 
 
 ## Debt
