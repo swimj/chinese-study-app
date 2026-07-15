@@ -28,6 +28,9 @@
     "check:study-scheduler-state": "node --import tsx scripts/check-study-scheduler-state.ts",
     "report:word": "node --import tsx scripts/report-word.ts",
     "retire:review-items": "node --import tsx scripts/retire-review-items.ts",
+    "spike:llm": "node --import tsx spikes/llm-provider/runner/cli.ts",
+    "spike:llm:env": "node --env-file=.env --import tsx spikes/llm-provider/runner/cli.ts",
+    "spike:llm:view": "node --import tsx spikes/llm-provider/viewer/server.ts",
     "test": "node --import tsx --test tests/*.test.ts",
     "build": "tsc && vite build",
     "preview": "vite preview"
