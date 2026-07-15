@@ -52,8 +52,8 @@ sessions.
 
 ```text
 React session controller
-  - records the initial prompt/cue as shown, raw response, no-clue choice,
-    ordered action attempts, and optional session notes
+  - records the initial prompt/cue as shown, raw response, ordered action
+    attempts, and optional session notes
   - after normal completion or happy-path drain, POSTs the eligible items
 
 Express backend
@@ -234,15 +234,19 @@ type ReflectionExistingContentV0 = {
 - `knownAcceptedAlternates` is correctly shaped but initially empty: accepted
   answer classes do not yet exist. Keeping the field makes that absence legible
   instead of indistinguishable from unqueried data.
+- The `no_clue` variants remain reserved in the item shape, but M0 bundle
+  assembly excludes ordinary no-clue events. They are usually direct forgetting
+  evidence with no clear reflection action. A learner may still elevate a
+  recurring or surprising pattern through an explicit `session_note` item.
 
 ## M0 priority and verified gaps
 
 | Area | M0 decision | Current evidence / required work |
 | --- | --- | --- |
-| Session batch and item inclusion | Implement now. Include production mistakes, explicit no-clue events, session notes, and contrast items only when a user selects `still_shaky` or `want_more_practice`. | Current session completion is a workable hook after deferred commits flush. |
+| Session batch and item inclusion | Implement now. Include production mistakes with a typed response, session notes, and contrast items only when a user selects `still_shaky` or `want_more_practice`. Exclude ordinary no-clue events. | Current session completion is a workable hook after deferred commits flush. |
 | Production raw response and attempts | Implement now. Send typed response plus ordered attempts for the source action. | Current review attempt type/table has `response`, but the standard builder writes `null`; production input is otherwise only in frozen UI state. |
 | Initial prompt/cue as shown | Implement now. Capture one definition-gloss cue in M0. | Current UI has displayed text; it is not durable. |
-| No-clue and session-note controls | Implement now, subject to ordinary dogfooding adjustment. | Neither has a current UI/state model. |
+| Session-note control | Implement now, subject to ordinary dogfooding adjustment. | No session-note UI/state model exists yet. M0 does not need a separate no-clue reflection control. |
 | Word snapshots and current policy/content | Enrich now where cheap: target/submitted word, production suppression, bad-prompt feedback, and existing contrast membership. | These states already live in existing word, study-management, and contrast content surfaces. |
 | Contrast signal | Reserve and implement only with the explicit learner signal above. | Attempt events already retain selected word id and choice ids; UI does not yet collect the reflection signal. |
 | Accepted alternates | Reserve as empty data only. | No answer-class model exists. |
@@ -255,9 +259,9 @@ type ReflectionExistingContentV0 = {
 1. The backend accepts a bundle supplement only for the stated completed
    session and validates every supplied `sessionActionId`/attempt id against
    the session where durable events exist.
-2. Client-supplied prompt text, typed response, no-clue state, and note text
-   are evidence of what the learner saw or entered; they are never used to
-   alter scheduler state.
+2. Client-supplied prompt text, typed response, and note text are evidence of
+   what the learner saw or entered; they are never used to alter scheduler
+   state.
 3. The reflection path starts after the final pending study commit is flushed.
    A failed or abandoned reflection must leave study completion unchanged.
 4. M0 drops an in-progress reflection on navigation or interruption. Later

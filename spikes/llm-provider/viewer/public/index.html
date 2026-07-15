@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reflection Run Explorer</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">LLM provider spike</p>
+        <h1>Reflection Run Explorer</h1>
+        <p class="subtitle">Treat raw runs as a library. Select any compatible records to compare.</p>
+      </div>
+      <div class="index-status" id="index-status">Connecting…</div>
+    </header>
+
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-heading">
+          <div>
+            <p class="eyebrow">Artifact library</p>
+            <h2>Runs <span id="run-count"></span></h2>
+          </div>
+          <button class="quiet-button" id="refresh-button" type="button">Refresh</button>
+        </div>
+
+        <div class="filters">
+          <label>Fixture<select id="fixture-filter"><option value="">All fixtures</option></select></label>
+          <label>Model<select id="model-filter"><option value="">All models</option></select></label>
+          <label>Prompt<select id="prompt-filter"><option value="">All prompt versions</option></select></label>
+          <label>Status<select id="status-filter"><option value="">All statuses</option></select></label>
+          <label class="checkbox-row"><input id="auto-refresh" type="checkbox" checked /> Discover new runs automatically</label>
+        </div>
+
+        <div class="selection-bar">
+          <span id="selection-count">0 selected</span>
+          <button class="text-button" id="clear-selection" type="button">Clear</button>
+        </div>
+        <div id="scan-warnings" class="scan-warnings" hidden></div>
+        <div id="run-list" class="run-list" aria-live="polite"></div>
+      </aside>
+
+      <main class="comparison-pane" id="comparison-pane">
+        <div class="empty-state">
+          <div class="empty-mark">↗</div>
+          <h2>Build a comparison incrementally</h2>
+          <p>Select runs from the library. New artifacts will appear without regenerating a report.</p>
+        </div>
+      </main>
+    </div>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>

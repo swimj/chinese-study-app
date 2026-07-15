@@ -492,13 +492,15 @@ claim that state changed.
 Before persistence, the application validates:
 
 1. the result and operation use known schema versions
-2. every `itemId` and evidence id resolves inside the input bundle or its
+2. every input bundle item appears exactly once in `itemResults`, with no result
+   for an unknown item id
+3. every `itemId` and evidence id resolves inside the input bundle or its
    deterministic enrichment
-3. every referenced word, cluster, prompt, and cue that claims a durable id
+4. every referenced word, cluster, prompt, and cue that claims a durable id
    exists and is visible to the current learner
-4. the payload satisfies its handle-specific cross-field rules
-5. proposal keys are unique within the result
-6. unknown fields and unknown handle kinds are rejected rather than ignored
+5. the payload satisfies its handle-specific cross-field rules
+6. proposal keys are unique within the result
+7. unknown fields and unknown handle kinds are rejected rather than ignored
 
 Before application, the application additionally validates current state. A
 proposal may have become stale after generation. The apply adapter must either:

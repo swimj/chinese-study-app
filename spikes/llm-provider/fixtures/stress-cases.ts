@@ -1,0 +1,217 @@
+import type {
+  ProductionMistakeReflectionItemV0,
+  ReflectionEvidenceCitationV0,
+  ReflectionProviderFixtureV0,
+  ReflectionWordSnapshotV0,
+  SessionReflectionBundleV0,
+} from '../contracts.js';
+
+const FIXTURE_TIME = '2026-07-13T12:00:00.000Z';
+const PREFIX = 'stress-yangtze-naming';
+const ITEM_ID = `${PREFIX}-item`;
+const TARGET_WORD_ID = `${PREFIX}-target`;
+const SUBMITTED_WORD_ID = `${PREFIX}-submitted`;
+const ATTEMPT_ID = `${PREFIX}-attempt-1`;
+const CUE_TEXT = 'Yangtze river, or Chang Jiang';
+
+function word(
+  wordId: string,
+  hanzi: string,
+  pinyin: string,
+  meanings: string[],
+): ReflectionWordSnapshotV0 {
+  return {
+    wordId,
+    hanzi,
+    pinyin,
+    meanings,
+    production: { relevance: 'normal', notes: [] },
+  };
+}
+
+function citation(
+  evidenceType: ReflectionEvidenceCitationV0['evidenceType'],
+  evidenceId: string,
+  claim: string,
+): ReflectionEvidenceCitationV0 {
+  return { evidenceType, evidenceId, claim };
+}
+
+const targetWord = word(
+  TARGET_WORD_ID,
+  '长江',
+  'chángjiāng',
+  ['Yangtze River', 'Chang Jiang'],
+);
+
+const submittedWord = word(
+  SUBMITTED_WORD_ID,
+  '扬子江',
+  'yángzǐjiāng',
+  [
+    'Changjiang 長江|长江 or Yangtze River',
+    'old name for Changjiang, especially the lower reaches around Yangzhou 扬州',
+  ],
+);
+
+const item: ProductionMistakeReflectionItemV0 = {
+  itemId: ITEM_ID,
+  source: 'production_mistake',
+  sourceActionKind: 'production',
+  sessionActionId: `session-${PREFIX}/action-1`,
+  occurredAt: '2026-07-13T11:55:00.000Z',
+  targetWord,
+  sessionNote: null,
+  existingContent: {
+    contrastClusters: [],
+    knownAcceptedAlternates: [],
+  },
+  cuesAsShown: [{
+    cueId: null,
+    cueType: 'definition_gloss',
+    displayOrder: 0,
+    text: CUE_TEXT,
+    displayedMeanings: targetWord.meanings,
+  }],
+  rawResponse: '扬子江',
+  submittedWord,
+  responseKind: 'matched_known_word',
+  attempts: [{
+    attemptId: ATTEMPT_ID,
+    occurredAt: '2026-07-13T11:55:00.000Z',
+    actionAttemptSequence: 1,
+    outcome: 'incorrect',
+    rating: 'forgot',
+    response: '扬子江',
+  }],
+  attemptShape: {
+    firstResponseOutcome: 'incorrect',
+    resolution: 'unknown',
+    terminalRating: 'forgot',
+    attemptCountForAction: 1,
+    managementAction: null,
+  },
+};
+
+const bundle: SessionReflectionBundleV0 = {
+  schemaVersion: 'session_reflection_bundle.v0',
+  generatedAt: FIXTURE_TIME,
+  session: {
+    sessionId: `session-${PREFIX}`,
+    startedAt: '2026-07-13T11:50:00.000Z',
+    endedAt: FIXTURE_TIME,
+    studyProfile: 'mandarin',
+  },
+  items: [item],
+};
+
+const itemEvidence = citation(
+  'reflection_item',
+  `item/${ITEM_ID}`,
+  'The target was 长江 and the submitted known word was 扬子江.',
+);
+const cueEvidence = citation(
+  'cue',
+  `cue/${ITEM_ID}/0`,
+  `The displayed cue was “${CUE_TEXT}”.`,
+);
+const attemptEvidence = citation(
+  'attempt',
+  `attempt/${ATTEMPT_ID}`,
+  '扬子江 was submitted and graded incorrect.',
+);
+const submittedEvidence = citation(
+  'word',
+  `word/${SUBMITTED_WORD_ID}`,
+  'The supplied gloss describes 扬子江 as an old name for the Changjiang/Yangtze, especially its lower reaches.',
+);
+
+export const stressCaseFixtures: ReflectionProviderFixtureV0[] = [{
+  fixtureVersion: 'reflection_provider_fixture.v0',
+  fixtureId: 'stress-yangtze-name-production',
+  source: {
+    kind: 'user_supplied_stress_case',
+    suppliedAt: '2026-07-13',
+    title: '长江 / 扬子江 proper-name production',
+  },
+  readiness: 'ready',
+  readinessNotes: [
+    'Exploratory: score the diagnosis and question more strongly than the exact follow-up handle set.',
+    'The supplied gloss is treated as evidence; the fixture does not require outside geographical claims.',
+  ],
+  inputBundle: bundle,
+  referenceResult: {
+    schemaVersion: 'session_reflection_result.v0',
+    bundleSchemaVersion: 'session_reflection_bundle.v0',
+    summary: 'The cue leaks the target reading while also admitting a historically or regionally valid related name, so the intended production competency is unclear.',
+    itemResults: [{
+      itemId: ITEM_ID,
+      uncertain: true,
+      diagnosisTags: [
+        'valid_or_near_valid_alternate',
+        'production_cue_overloaded',
+        'insufficient_evidence',
+      ],
+      observation: '“Chang Jiang” effectively supplies the target pronunciation, while “Yangtze River” does not say whether the modern standard name or another valid name is required. The submitted gloss makes a simple wrong-answer diagnosis unsafe.',
+      learnerExplanation: '长江 is the intended modern standard target here. The supplied gloss presents 扬子江 as a historically or regionally limited name for the same river, so it is related and potentially creditworthy without being interchangeable in every context. Whether recalling Chinese proper names is worthwhile production knowledge depends on the learner’s real communication goals.',
+      evidence: [itemEvidence, cueEvidence, attemptEvidence, submittedEvidence],
+      proposals: [{
+        proposalKey: `${PREFIX}-flag-cue`,
+        proposalGroupKey: null,
+        handleVersion: 1,
+        rationale: 'Pause this cue until the learner specifies whether the desired competency is modern standard naming, broad answer acceptance, or geographical and cultural name knowledge.',
+        evidence: [cueEvidence, attemptEvidence, submittedEvidence],
+        operation: {
+          kind: 'flag_bad_production_cue',
+          wordId: TARGET_WORD_ID,
+          sourceCue: { cueId: null, textAsShown: CUE_TEXT },
+          issues: ['underdetermined', 'overloaded', 'other'],
+          note: 'The romanized target gives away the reading, and the broad English referent does not define how historically or regionally valid alternate names should be graded.',
+        },
+      }],
+      questions: [{
+        questionKey: `${PREFIX}-intended-competency`,
+        question: 'Should this production item test recall of the modern standard name 长江, accept any valid Chinese name for the river, or test geographical and cultural naming knowledge more broadly?',
+        reason: 'Those goals imply different grading and may make production practice more or less valuable for this learner.',
+      }],
+      unhandledNeeds: [],
+    }],
+  },
+  evaluation: {
+    mode: 'exploratory',
+    requiredDiagnosisTags: ['valid_or_near_valid_alternate', 'production_cue_overloaded', 'insufficient_evidence'],
+    forbiddenDiagnosisTags: ['ordinary_retrieval_noise'],
+    acceptableProposalProfiles: [
+      {
+        requiredKinds: ['flag_bad_production_cue'],
+        allowedKinds: ['flag_bad_production_cue'],
+        description: 'Flag the underdetermined cue and ask what competency is intended before choosing a repair.',
+      },
+      {
+        requiredKinds: ['flag_bad_production_cue', 'accept_production_alternate'],
+        allowedKinds: ['flag_bad_production_cue', 'accept_production_alternate'],
+        description: 'Flag the cue while giving the historically or regionally valid answer scoped credit.',
+      },
+      {
+        requiredKinds: ['flag_bad_production_cue', 'repair_production_cue'],
+        allowedKinds: ['flag_bad_production_cue', 'repair_production_cue'],
+        description: 'Flag the cue and offer a genuinely goal-specific repair without pretending it is the only reasonable policy.',
+      },
+    ],
+    questionPolicy: 'required',
+    unhandledNeedPolicy: 'allowed',
+    requiredJudgments: [
+      'Notice that “Chang Jiang” leaks the target pronunciation rather than serving as an ordinary semantic cue.',
+      'Use the supplied gloss to treat 扬子江 as a valid historical or regional name, not an unrelated wrong answer.',
+      'Distinguish the modern standard target from valid names that are not interchangeable in every context.',
+      'Recognize that the value of producing geographical proper names depends on the learner’s communication goals.',
+      'Ask what competency the production item is intended to test before committing to a policy-heavy repair.',
+    ],
+    forbiddenJudgments: [
+      'Treat the response as an ordinary retrieval lapse.',
+      'Claim that 长江 and 扬子江 are interchangeable in all contexts.',
+      'Suppress proper-name production unconditionally without learner-goal evidence.',
+      'Invent geographical distinctions beyond the supplied gloss and mark them as established evidence.',
+    ],
+  },
+}];
