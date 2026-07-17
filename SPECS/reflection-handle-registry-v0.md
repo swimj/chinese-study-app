@@ -104,8 +104,8 @@ need only be unique within one result; the artifact store can assign durable
 ids after validation.
 
 ```ts
-type SessionReflectionResultV0 = {
-  schemaVersion: 'session_reflection_result.v0';
+type SessionReflectionResultV2 = {
+  schemaVersion: 'session_reflection_result.v2';
   bundleSchemaVersion: 'session_reflection_bundle.v0';
   summary: string;
   itemResults: ReflectionItemResultV0[];
@@ -117,7 +117,6 @@ type ReflectionItemResultV0 = {
   diagnosisTags: ReflectionDiagnosisTagV0[];
   observation: string;
   learnerExplanation: string | null;
-  evidence: ReflectionEvidenceCitationV0[];
   proposals: ReflectionHandleProposalV0[];
   questions: ReflectionClarifyingQuestionV0[];
   unhandledNeeds: ReflectionUnhandledNeedV0[];
@@ -132,19 +131,6 @@ type ReflectionDiagnosisTagV0 =
   | 'ordinary_retrieval_noise'
   | 'persistent_confusion'
   | 'insufficient_evidence';
-
-type ReflectionEvidenceCitationV0 = {
-  evidenceType:
-    | 'reflection_item'
-    | 'attempt'
-    | 'cue'
-    | 'word'
-    | 'contrast_cluster'
-    | 'contrast_prompt'
-    | 'session_note';
-  evidenceId: string;
-  claim: string;
-};
 
 type ReflectionClarifyingQuestionV0 = {
   questionKey: string;
@@ -166,7 +152,7 @@ their own lifecycle without putting them in the operation registry.
 `uncertain` means the model does not have enough evidence to stand confidently
 behind some material part of its interpretation or recommendation. It does not
 mean the learner felt uncertain while answering; learner uncertainty belongs
-in the observation and cited session evidence. An uncertain result may still
+in the observation. An uncertain result may still
 offer a carefully qualified proposal, although a clarifying question or no
 proposal is usually preferable when the missing fact could change the durable
 operation.
@@ -177,20 +163,11 @@ mixture is expressed by the observation, diagnosis tags, and proposals. This
 avoids forcing every reflection item into one mutually exclusive class before
 real prototype output shows that such a class is operationally useful.
 
-Evidence citations must name facts present in the supplied bundle. The model
-may use its language knowledge in the explanation, but it must not fabricate a
-bundle evidence id for that knowledge. Bundle assembly exposes canonical keys
-without requiring every source row to have a durable id:
-
-```text
-item/<itemId>
-attempt/<attemptId>
-cue/<itemId>/<displayOrder>
-word/<wordId>
-contrast_cluster/<clusterId>
-contrast_prompt/<promptId>
-session_note/<itemId>
-```
+V0 does not require model-emitted evidence citations. Each item result is
+already scoped by `itemId`, and proposals are nested inside that result. Items
+are judged independently in this iteration; cross-item observations are
+deferred. Operation references remain strictly validated against the
+corresponding input item because they can drive durable application behavior.
 
 ## 4. Common Proposal Envelope
 
@@ -198,7 +175,6 @@ session_note/<itemId>
 type ReflectionHandleKindV0 =
   | 'flag_bad_production_cue'
   | 'suppress_definition_production'
-  | 'add_contrast_candidate'
   | 'upsert_contrast_content'
   | 'repair_production_cue'
   | 'accept_production_alternate';
@@ -208,14 +184,12 @@ type ReflectionHandleProposalV0 = {
   proposalGroupKey: string | null;
   handleVersion: 1;
   rationale: string;
-  evidence: ReflectionEvidenceCitationV0[];
   operation: ReflectionHandleOperationV0;
 };
 
 type ReflectionHandleOperationV0 =
   | FlagBadProductionCueOperationV0
   | SuppressDefinitionProductionOperationV0
-  | AddContrastCandidateOperationV0
   | UpsertContrastContentOperationV0
   | RepairProductionCueOperationV0
   | AcceptProductionAlternateOperationV0;
@@ -241,13 +215,12 @@ Apply-support labels mean:
 - `schema_first`: needed to evaluate correct reflection judgment, but durable
   application waits for a small product schema decision
 
-All six kinds remain model `proposal-only`, regardless of apply support.
+All five kinds remain model `proposal-only`, regardless of apply support.
 
 | Kind | Durable effect | Apply support |
 | --- | --- | --- |
 | `flag_bad_production_cue` | Flags the shown production cue as problematic | `existing_adapter` |
 | `suppress_definition_production` | Suppresses definition-based production for one word | `existing_adapter` |
-| `add_contrast_candidate` | Adds an unresolved differentiation candidate | `existing_adapter` |
 | `upsert_contrast_content` | Creates or extends a cluster and adds draft prompts | `small_composition_adapter` |
 | `repair_production_cue` | Replaces or layers the cue used for production | `schema_first` |
 | `accept_production_alternate` | Accepts one known alternate for one cue | `schema_first` |
@@ -304,43 +277,10 @@ This is narrower than a generic `suppress_skill`: V0 reflection only has a
 well-understood product reason to suppress definition-based production.
 Recognition and contextual-selection state are unchanged.
 
-### 5.3 `add_contrast_candidate`
-
-Purpose: preserve evidence that two expressions may deserve differentiation,
-without prematurely authoring a cluster or scheduling practice.
-
-Apply support: `existing_adapter`.
-
-```ts
-type AddContrastCandidateOperationV0 = {
-  kind: 'add_contrast_candidate';
-  targetWordId: string;
-  relatedWord:
-    | { wordId: string; text: null }
-    | { wordId: null; text: string };
-  interferenceAxes: Array<
-    | 'semantic_overlap'
-    | 'form_or_character_shape'
-    | 'sound'
-    | 'phrase_shape_or_rhythm'
-    | 'grammar_role'
-    | 'register_or_domain'
-    | 'collocation_or_event_shape'
-    | 'spatial_or_conceptual_frame'
-    | 'other'
-  >;
-  note: string;
-};
-```
-
-Exactly one of `relatedWord.wordId` and `relatedWord.text` must be non-null. A
-known submitted word should use its id; unmatched learner text remains useful
-as a candidate without inventing a word identity.
-
-### 5.4 `upsert_contrast_content`
+### 5.3 `upsert_contrast_content`
 
 Purpose: create a new contrast cluster or extend an existing one, including
-member nuance notes and zero or more draft prompts.
+member nuance notes and one or more draft prompts.
 
 Apply support: `small_composition_adapter`.
 
@@ -366,6 +306,7 @@ type UpsertContrastContentOperationV0 = {
 Validation rules:
 
 - a new cluster must contain at least two distinct member word ids
+- every proposal must contain at least one prompt
 - every prompt target must be one of the resulting cluster's members
 - extending a cluster may add members, revise supplied member nuance notes, and
   add prompts; it must not remove existing content
@@ -377,7 +318,7 @@ V0 does not let the model revise or delete an existing prompt through this
 operation. Destructive or identity-sensitive edits require the exact prompt id
 and deserve a separate handle after real reflection cases demonstrate the need.
 
-### 5.5 `repair_production_cue`
+### 5.4 `repair_production_cue`
 
 Purpose: propose a fairer cue for the learner-relevant production target,
 without bloating the word's broad reference meanings.
@@ -415,7 +356,7 @@ applying it. Before application is implemented, the product must decide whether
 V0 edits meaning visibility, stores a dedicated production cue, or introduces
 a small cue stack.
 
-### 5.6 `accept_production_alternate`
+### 5.5 `accept_production_alternate`
 
 Purpose: declare that a known word should count as an acceptable answer for a
 specific production cue, without claiming the words are interchangeable in all
@@ -494,8 +435,8 @@ Before persistence, the application validates:
 1. the result and operation use known schema versions
 2. every input bundle item appears exactly once in `itemResults`, with no result
    for an unknown item id
-3. every `itemId` and evidence id resolves inside the input bundle or its
-   deterministic enrichment
+3. every operation reference resolves inside its corresponding input bundle
+   item
 4. every referenced word, cluster, prompt, and cue that claims a durable id
    exists and is visible to the current learner
 5. the payload satisfies its handle-specific cross-field rules
@@ -510,8 +451,8 @@ proposal may have become stale after generation. The apply adapter must either:
 - leave durable study/content state unchanged and record an application error
 
 Apply is idempotent by durable proposal id. Retrying an already applied
-proposal returns its recorded effects and does not duplicate candidate rows,
-clusters, members, prompts, or feedback events.
+proposal returns its recorded effects and does not duplicate clusters, members,
+prompts, or feedback events.
 
 ## 8. Initial Evaluation Coverage
 
@@ -567,11 +508,11 @@ The following choices are settled for the first provider-spike iteration:
 2. **Retain `accept_production_alternate`.** Distinguishing a valid or
    creditworthy alternate from a useful contrast is part of the reflection
    quality bar. Application still waits for the answer-class product decision.
-3. **Keep contrast authoring composite.** When the model has judged contrast
-   exercises valuable and can draft a basic explanation, the normal user
-   outcome is to create or extend the cluster and add exercises together.
-   Later contrast-management actions can edit, flag, or otherwise adjust the
-   resulting content.
+3. **Use one prompt-backed contrast handle.** Reflection creates or extends a
+   cluster only when it can also author at least one contextual selection
+   exercise. There is no separate unresolved-candidate handle in this
+   iteration. Later contrast-management actions can edit, flag, or otherwise
+   adjust the resulting content.
 4. **Defer finite distinction-practice bursts.** The product lacks the durable
    episode and scheduling machinery, and introducing it is nontrivial. V0 may
    create contrast content but must not imply a finite scheduling policy.

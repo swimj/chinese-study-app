@@ -1,4 +1,6 @@
+import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import express, { type Express } from 'express';
 import { allProviderFixtures } from '../fixtures/index.js';
@@ -30,6 +32,68 @@ export function findRunArtifact(artifactsDirectory: string, runId: string): unkn
   return scan.artifacts.find((entry) => entry.index.runId === runId)?.artifact ?? null;
 }
 
+export type TrashRunArtifactResult =
+  | { status: 'trashed'; relativePath: string; trashRelativePath: string }
+  | { status: 'not_found' }
+  | { status: 'ambiguous'; relativePaths: string[] };
+
+function isPathInside(parentDirectory: string, candidatePath: string): boolean {
+  const relative = path.relative(parentDirectory, candidatePath);
+  return relative !== ''
+    && relative !== '..'
+    && !relative.startsWith(`..${path.sep}`)
+    && !path.isAbsolute(relative);
+}
+
+function normalizedRelativePath(rootDirectory: string, filePath: string): string {
+  return path.relative(rootDirectory, filePath).split(path.sep).join('/');
+}
+
+export function trashRunArtifact(artifactsDirectory: string, runId: string): TrashRunArtifactResult {
+  const rootDirectory = path.resolve(artifactsDirectory);
+  const scan = scanRunArtifacts(rootDirectory);
+  const duplicate = scan.duplicateRunIds.find((entry) => entry.runId === runId);
+  if (duplicate !== undefined) return { status: 'ambiguous', relativePaths: duplicate.relativePaths };
+
+  const indexed = scan.artifacts.find((entry) => entry.index.runId === runId);
+  if (indexed === undefined) return { status: 'not_found' };
+
+  const sourcePath = path.resolve(indexed.absolutePath);
+  if (!isPathInside(rootDirectory, sourcePath)) {
+    throw new Error(`Refusing to trash artifact outside ${rootDirectory}.`);
+  }
+
+  let sourceStats: fs.Stats;
+  try {
+    sourceStats = fs.lstatSync(sourcePath);
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return { status: 'not_found' };
+    throw error;
+  }
+  if (!sourceStats.isFile()) throw new Error('Refusing to trash an artifact that is no longer a regular file.');
+
+  const trashDirectory = path.join(rootDirectory, '.trash');
+  if (fs.existsSync(trashDirectory)) {
+    if (!fs.lstatSync(trashDirectory).isDirectory()) {
+      throw new Error(`Artifact trash path is not a directory: ${trashDirectory}`);
+    }
+  } else {
+    fs.mkdirSync(trashDirectory, { recursive: false });
+  }
+
+  let trashPath = path.join(trashDirectory, path.basename(sourcePath));
+  if (fs.existsSync(trashPath)) {
+    const extension = path.extname(trashPath);
+    trashPath = path.join(trashDirectory, `${path.basename(trashPath, extension)}__${randomUUID()}${extension}`);
+  }
+  fs.renameSync(sourcePath, trashPath);
+  return {
+    status: 'trashed',
+    relativePath: indexed.index.relativePath,
+    trashRelativePath: normalizedRelativePath(rootDirectory, trashPath),
+  };
+}
+
 export function createViewerApp(options: ViewerServerOptions): Express {
   const app = express();
   app.disable('x-powered-by');
@@ -49,6 +113,26 @@ export function createViewerApp(options: ViewerServerOptions): Express {
       return;
     }
     response.json(artifact);
+  });
+
+  app.delete('/api/runs/:runId', (request, response) => {
+    try {
+      const result = trashRunArtifact(options.artifactsDirectory, request.params.runId);
+      if (result.status === 'not_found') {
+        response.status(404).json({ error: `Unknown run ${request.params.runId}.` });
+        return;
+      }
+      if (result.status === 'ambiguous') {
+        response.status(409).json({
+          error: `Run id ${request.params.runId} appears in more than one artifact.`,
+          relativePaths: result.relativePaths,
+        });
+        return;
+      }
+      response.json({ runId: request.params.runId, ...result });
+    } catch (error) {
+      response.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   app.use(express.static(options.staticDirectory ?? defaultViewerStaticDirectory));

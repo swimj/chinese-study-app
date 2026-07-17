@@ -1,7 +1,6 @@
 import type {
   ProductionMistakeReflectionItemV0,
   ReflectionDiagnosisTagV0,
-  ReflectionEvidenceCitationV0,
   ReflectionHandleOperationV0,
   ReflectionHandleProposalV0,
   ReflectionItemResultV0,
@@ -27,11 +26,6 @@ type FixtureContext = {
   targetWordId: string;
   submittedWordId: string;
   cueText: string;
-  itemEvidence: ReflectionEvidenceCitationV0;
-  attemptEvidence: ReflectionEvidenceCitationV0;
-  cueEvidence: ReflectionEvidenceCitationV0;
-  targetEvidence: ReflectionEvidenceCitationV0;
-  submittedEvidence: ReflectionEvidenceCitationV0;
 };
 
 type ProductionFixtureSeed = {
@@ -64,19 +58,10 @@ function word(wordId: string, seed: WordSeed): ReflectionWordSnapshotV0 {
   };
 }
 
-function citation(
-  evidenceType: ReflectionEvidenceCitationV0['evidenceType'],
-  evidenceId: string,
-  claim: string,
-): ReflectionEvidenceCitationV0 {
-  return { evidenceType, evidenceId, claim };
-}
-
 function proposal(
   proposalKey: string,
   proposalGroupKey: string | null,
   rationale: string,
-  evidence: ReflectionEvidenceCitationV0[],
   operation: ReflectionHandleOperationV0,
 ): ReflectionHandleProposalV0 {
   return {
@@ -84,7 +69,6 @@ function proposal(
     proposalGroupKey,
     handleVersion: 1,
     rationale,
-    evidence,
     operation,
   };
 }
@@ -93,7 +77,6 @@ function baseResult(
   diagnosisTags: ReflectionDiagnosisTagV0[],
   observation: string,
   learnerExplanation: string | null,
-  evidence: ReflectionEvidenceCitationV0[],
   overrides: Partial<
     Pick<ReflectionItemResultV0, 'uncertain' | 'proposals' | 'questions' | 'unhandledNeeds'>
   > = {},
@@ -103,7 +86,6 @@ function baseResult(
     diagnosisTags,
     observation,
     learnerExplanation,
-    evidence,
     proposals: overrides.proposals ?? [],
     questions: overrides.questions ?? [],
     unhandledNeeds: overrides.unhandledNeeds ?? [],
@@ -136,11 +118,6 @@ function productionFixture(seed: ProductionFixtureSeed): ReflectionProviderFixtu
     targetWordId,
     submittedWordId,
     cueText: seed.cueText,
-    itemEvidence: citation('reflection_item', `item/${itemId}`, 'This is the source reflection item.'),
-    attemptEvidence: citation('attempt', `attempt/${attemptId}`, `The first submitted response was ${seed.submitted.hanzi}.`),
-    cueEvidence: citation('cue', `cue/${itemId}/0`, `The displayed production cue was “${seed.cueText}”.`),
-    targetEvidence: citation('word', `word/${targetWordId}`, `The target word was ${seed.target.hanzi}.`),
-    submittedEvidence: citation('word', `word/${submittedWordId}`, `The submitted known word was ${seed.submitted.hanzi}.`),
   };
 
   const item: ProductionMistakeReflectionItemV0 = {
@@ -200,7 +177,7 @@ function productionFixture(seed: ProductionFixtureSeed): ReflectionProviderFixtu
     readinessNotes: seed.readinessNotes ?? [],
     inputBundle: bundleFor(prefix, item),
     referenceResult: {
-      schemaVersion: 'session_reflection_result.v0',
+      schemaVersion: 'session_reflection_result.v2',
       bundleSchemaVersion: 'session_reflection_bundle.v0',
       summary: itemResult.observation,
       itemResults: [{ itemId, ...itemResult }],
@@ -231,7 +208,6 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       ['ordinary_retrieval_noise', 'grammar_or_usage_role_interference'],
       'This looks like a plausible one-off retrieval substitution rather than evidence that the cue is unfair.',
       '概括 is the verb-like summarizing action requested by the cue, while the stored 提要 gloss is strongly noun-like. The recent availability of 提要 can explain the substitution without requiring a content change.',
-      [c.cueEvidence, c.attemptEvidence, c.targetEvidence, c.submittedEvidence],
     ),
     evaluation: {
       requiredDiagnosisTags: ['ordinary_retrieval_noise'],
@@ -253,13 +229,11 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       ['valid_or_near_valid_alternate'],
       'The submitted answer is acceptable for the displayed no-wonder cue; the exact-answer failure is too strict.',
       '难怪 and 怪不得 can both express “no wonder / so that is why” here. Any subtle preference is not encoded by this English cue and does not justify contrast practice by itself.',
-      [c.cueEvidence, c.attemptEvidence, c.targetEvidence, c.submittedEvidence],
       {
         proposals: [proposal(
           `${c.prefix}-accept-alternate`,
           null,
           'Credit the useful production response for this specific cue without creating a global synonym relation.',
-          [c.cueEvidence, c.attemptEvidence],
           {
             kind: 'accept_production_alternate',
             cue: cueRef(c),
@@ -295,13 +269,11 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       ['form_or_sound_interference', 'persistent_confusion'],
       'The evidence points to persistent form and phrase-shape interference between two semantically distinct expressions.',
       '舍不得 expresses reluctance to part with or do something; 恨不得 expresses an intense wish to do something. Their shared 得 phrase shape makes targeted contrast reasonable even though the cue itself is not defective.',
-      [c.cueEvidence, c.attemptEvidence, c.targetEvidence, c.submittedEvidence],
       {
         proposals: [proposal(
           `${c.prefix}-contrast-content`,
           null,
           'A small contextual contrast can target the reluctance-versus-intense-wish frame.',
-          [c.attemptEvidence, c.targetEvidence, c.submittedEvidence],
           {
             kind: 'upsert_contrast_content',
             destination: { mode: 'create_cluster', clusterId: null, title: '舍不得 / 恨不得' },
@@ -323,8 +295,8 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       forbiddenDiagnosisTags: ['valid_or_near_valid_alternate'],
       acceptableProposalProfiles: [{
         requiredKinds: ['upsert_contrast_content'],
-        allowedKinds: ['upsert_contrast_content', 'add_contrast_candidate'],
-        description: 'Author or at minimum preserve a contrast centered on phrase-shape interference.',
+        allowedKinds: ['upsert_contrast_content'],
+        description: 'Author prompt-backed contrast content centered on phrase-shape interference.',
       }],
       questionPolicy: 'none_expected',
       requiredJudgments: ['State that the meanings are distinct.', 'Name form, sound, or phrase shape as the interference axis.', 'Target prompts at reluctance versus intense wishing.'],
@@ -342,14 +314,12 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       ['cue_overlap_hides_usage_difference'],
       'The English gloss overlap makes 震撼 understandable, but it is not generally interchangeable with ordinary 吃惊.',
       '吃惊 is ordinary surprise or being startled. 震撼 carries much stronger impact, often from powerful news, spectacle, art, or history.',
-      [c.cueEvidence, c.attemptEvidence, c.targetEvidence, c.submittedEvidence],
       {
         proposals: [
           proposal(
             `${c.prefix}-repair-cue`,
             `${c.prefix}-repair-and-contrast`,
             'Make the direct-production cue foreground ordinary surprise rather than the shared word “shocked.”',
-            [c.cueEvidence, c.attemptEvidence],
             {
               kind: 'repair_production_cue',
               wordId: c.targetWordId,
@@ -362,7 +332,6 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
             `${c.prefix}-contrast-content`,
             `${c.prefix}-repair-and-contrast`,
             'Contextual choices can reinforce ordinary surprise versus powerful emotional impact.',
-            [c.attemptEvidence, c.targetEvidence, c.submittedEvidence],
             {
               kind: 'upsert_contrast_content',
               destination: { mode: 'create_cluster', clusterId: null, title: '吃惊 / 震撼' },
@@ -404,13 +373,11 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       ['cue_overlap_hides_usage_difference'],
       'The broad English cue hides a useful semantic and interactional boundary between 在意 and 介意.',
       '在意 broadly means caring about, paying attention to, or being emotionally affected. 介意 more narrowly means minding, objecting, being bothered, or taking offense.',
-      [c.cueEvidence, c.attemptEvidence, c.targetEvidence, c.submittedEvidence],
       {
         proposals: [proposal(
           `${c.prefix}-contrast-content`,
           null,
           'The learner explicitly values this natural-usage boundary, and context can express it better than English gloss expansion alone.',
-          [c.itemEvidence, c.targetEvidence, c.submittedEvidence],
           {
             kind: 'upsert_contrast_content',
             destination: { mode: 'create_cluster', clusterId: null, title: '在意 / 介意' },
@@ -453,13 +420,11 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       ['valid_or_near_valid_alternate', 'cue_overlap_hides_usage_difference'],
       '建成 is a valid term for completing construction, so this is not a true lapse; the bare cue fails to expose the substantially more formal tone and register of 落成.',
       '建成 is the ordinary resultative “build to completion.” 落成 is markedly more formal and is common in official or ceremonial announcements that a building, bridge, or public project has been completed or inaugurated.',
-      [c.cueEvidence, c.attemptEvidence, c.targetEvidence, c.submittedEvidence],
       {
         proposals: [proposal(
           `${c.prefix}-repair-cue`,
           null,
           'Add a formal announcement frame so direct production tests the register-specific target instead of generic construction completion.',
-          [c.cueEvidence, c.attemptEvidence, c.targetEvidence, c.submittedEvidence],
           {
             kind: 'repair_production_cue',
             wordId: c.targetWordId,
@@ -484,7 +449,7 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       forbiddenDiagnosisTags: ['ordinary_retrieval_noise', 'persistent_confusion'],
       acceptableProposalProfiles: [{
         requiredKinds: ['repair_production_cue'],
-        allowedKinds: ['repair_production_cue', 'add_contrast_candidate', 'upsert_contrast_content'],
+        allowedKinds: ['repair_production_cue', 'upsert_contrast_content'],
         description: 'Contextually triangulate the formal target; contrast content is optional.',
       }],
       questionPolicy: 'none_expected',
@@ -516,13 +481,11 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       ['valid_or_near_valid_alternate', 'production_cue_overloaded'],
       '供应 is a natural response to the bare supply/provide cue, while isolated production of 给 in the jǐ reading is low value for this learner even at an upper-intermediate or advanced level.',
       'The jǐ reading remains worth recognizing, especially inside common lexical items such as 自给自足 and 供给. Suppressing definition-based production does not weaken recognition or contextual-selection study.',
-      [c.cueEvidence, c.attemptEvidence, c.targetEvidence, c.submittedEvidence],
       {
         proposals: [proposal(
           `${c.prefix}-suppress-production`,
           null,
           'Stop spending direct-production effort on an isolated low-value target while preserving recognition of the character and reading.',
-          [c.cueEvidence, c.attemptEvidence, c.targetEvidence, c.submittedEvidence],
           {
             kind: 'suppress_definition_production',
             wordId: c.targetWordId,
@@ -572,7 +535,6 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       ['ordinary_retrieval_noise'],
       'This is a plausible semantic-neighborhood retrieval error, but one occurrence does not justify changing content.',
       '规范 concerns norms, rules, specifications, and regulating behavior. 指标 concerns measurable indicators, targets, quotas, or indices.',
-      [c.cueEvidence, c.attemptEvidence, c.targetEvidence, c.submittedEvidence],
     ),
     evaluation: {
       requiredDiagnosisTags: ['ordinary_retrieval_noise'],
@@ -596,7 +558,6 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       ['ordinary_retrieval_noise'],
       'This is a plausible one-off substitution between two food-processing methods, not evidence that the cue is unfair.',
       '熏制 means smoking or curing food over smoke or a fire, while 烤制 means roasting. The shared cooking context explains the association, but the processes are distinct enough that 烤制 is not a valid answer to this cue.',
-      [c.cueEvidence, c.attemptEvidence, c.targetEvidence, c.submittedEvidence],
     ),
     evaluation: {
       requiredDiagnosisTags: ['ordinary_retrieval_noise'],
@@ -704,7 +665,6 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       targetPromptExplanation: 'The trees surround the house.',
       submittedPrompt: '我___找了，还是没找到钥匙。',
       submittedPromptExplanation: 'The speaker searched in many places.',
-      interferenceAxes: ['spatial_or_conceptual_frame'],
     }),
     evaluation: cueRepairAndContrastEvaluation('Name the surrounding-reference-point versus dispersed-everywhere distinction.'),
   }),
@@ -746,7 +706,6 @@ type CueRepairAndContrastSeed = {
   targetPromptExplanation: string;
   submittedPrompt: string;
   submittedPromptExplanation: string;
-  interferenceAxes?: Extract<ReflectionHandleOperationV0, { kind: 'add_contrast_candidate' }>['interferenceAxes'];
 };
 
 function cueRepairAndContrastResult(
@@ -757,14 +716,12 @@ function cueRepairAndContrastResult(
     ['cue_overlap_hides_usage_difference'],
     seed.observation,
     seed.explanation,
-    [context.cueEvidence, context.attemptEvidence, context.targetEvidence, context.submittedEvidence],
     {
       proposals: [
         proposal(
           `${context.prefix}-repair-cue`,
           `${context.prefix}-repair-and-contrast`,
           'Make the direct-production cue expose the target’s distinguishing anchor.',
-          [context.cueEvidence, context.attemptEvidence],
           {
             kind: 'repair_production_cue',
             wordId: context.targetWordId,
@@ -777,7 +734,6 @@ function cueRepairAndContrastResult(
           `${context.prefix}-contrast-content`,
           `${context.prefix}-repair-and-contrast`,
           'Use context to reinforce the boundary that the English glosses obscure.',
-          [context.attemptEvidence, context.targetEvidence, context.submittedEvidence],
           {
             kind: 'upsert_contrast_content',
             destination: { mode: 'create_cluster', clusterId: null, title: seed.title },
@@ -846,27 +802,27 @@ function sessionNoteFixture(): ReflectionProviderFixtureV0 {
     relatedWords: [related],
     linkedAttemptId: null,
   };
-  const itemEvidence = citation('reflection_item', `item/${itemId}`, 'The learner explicitly flagged uncertainty after a correct response.');
-  const noteEvidence = citation('session_note', `session_note/${itemId}`, 'The learner does not know how 习以为常 differs from 习惯.');
-  const targetEvidence = citation('word', `word/${targetWordId}`, 'The target word was 习以为常.');
-  const relatedEvidence = citation('word', `word/${relatedWordId}`, 'The related word raised by the learner was 习惯.');
   const result = baseResult(
     ['cue_overlap_hides_usage_difference'],
     'A correct answer still revealed an unresolved, learner-identified boundary between broad accustomedness and treating something as normal.',
     '习惯 broadly describes a habit or being accustomed to something. 习以为常 emphasizes becoming so accustomed that one regards it as normal or unsurprising.',
-    [itemEvidence, noteEvidence, targetEvidence, relatedEvidence],
     {
       proposals: [proposal(
-        `${prefix}-contrast-candidate`,
+        `${prefix}-contrast-content`,
         null,
-        'Preserve the learner-valued distinction without prematurely authoring or scheduling exercises from one uncertainty note.',
-        [noteEvidence, targetEvidence, relatedEvidence],
+        'The learner explicitly values this gloss-overlapping distinction, and natural contextual choices can make it intuitive.',
         {
-          kind: 'add_contrast_candidate',
-          targetWordId,
-          relatedWord: { wordId: relatedWordId, text: null },
-          interferenceAxes: ['semantic_overlap', 'collocation_or_event_shape'],
-          note: '习惯 is broad accustomedness or habit; 习以为常 adds treating the situation as normal and unsurprising.',
+          kind: 'upsert_contrast_content',
+          destination: { mode: 'create_cluster', clusterId: null, title: '习以为常 / 习惯' },
+          clusterNote: 'Broad accustomedness or habit versus becoming so accustomed that something is treated as normal.',
+          members: [
+            { wordId: targetWordId, nuanceNote: 'Become so accustomed to something that it feels normal or unsurprising.' },
+            { wordId: relatedWordId, nuanceNote: 'Broadly be accustomed to something, get used to it, or have a habit.' },
+          ],
+          prompts: [
+            { targetWordId, promptText: '这种现象大家见得太多，早已___。', explanation: 'Repeated exposure has made the phenomenon seem normal and unsurprising.' },
+            { targetWordId: relatedWordId, promptText: '我刚搬到上海，还不___这里的生活节奏。', explanation: 'The speaker has not yet become accustomed to the pace of life.' },
+          ],
         },
       )],
     },
@@ -880,7 +836,7 @@ function sessionNoteFixture(): ReflectionProviderFixtureV0 {
     readinessNotes: ['This is the only appendix fixture sourced from a correct response plus an explicit session note.'],
     inputBundle: bundleFor(prefix, item),
     referenceResult: {
-      schemaVersion: 'session_reflection_result.v0',
+      schemaVersion: 'session_reflection_result.v2',
       bundleSchemaVersion: 'session_reflection_bundle.v0',
       summary: result.observation,
       itemResults: [{ itemId, ...result }],
@@ -888,12 +844,13 @@ function sessionNoteFixture(): ReflectionProviderFixtureV0 {
     evaluation: {
       requiredDiagnosisTags: ['cue_overlap_hides_usage_difference'],
       forbiddenDiagnosisTags: ['ordinary_retrieval_noise', 'valid_or_near_valid_alternate'],
-      acceptableProposalProfiles: [
-        { requiredKinds: ['add_contrast_candidate'], allowedKinds: ['add_contrast_candidate'], description: 'Preserve the unresolved boundary as a candidate.' },
-        noProposalProfile,
-      ],
-      questionPolicy: 'allowed',
-      requiredJudgments: ['Recognize that correct performance can still reveal brittle knowledge.', 'Distinguish broad accustomedness from treating something as normal or unsurprising.', 'Do not frame this as a grading repair.'],
+      acceptableProposalProfiles: [{
+        requiredKinds: ['upsert_contrast_content'],
+        allowedKinds: ['upsert_contrast_content'],
+        description: 'Create prompt-backed contextual contrast for the learner-identified boundary.',
+      }],
+      questionPolicy: 'none_expected',
+      requiredJudgments: ['Recognize that correct performance can still reveal brittle knowledge.', 'Distinguish broad accustomedness from treating something as normal or unsurprising.', 'Create natural prompt-backed contrast content.', 'Do not frame this as a grading repair.'],
       forbiddenJudgments: ['Accept an alternate answer for an answer that was already correct.', 'Flag the cue as bad solely because the learner requested an explanation.', 'Infer persistent confusion from one note.'],
     },
   };

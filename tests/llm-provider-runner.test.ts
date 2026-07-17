@@ -19,10 +19,12 @@ import { renderFixtureUserPrompt, runFixture } from '../spikes/llm-provider/runn
 import { validateJsonSchema } from '../spikes/llm-provider/runner/schema-validator.js';
 import type { JsonValue, ProviderAdapter, ProviderRunRequest } from '../spikes/llm-provider/runner/types.js';
 import { scanRunArtifacts } from '../spikes/llm-provider/viewer/artifact-index.js';
+import { validateRunArtifactAgainstCurrentContract } from '../spikes/llm-provider/viewer/current-validation.js';
 import {
   buildViewerIndex,
   defaultViewerStaticDirectory,
   findRunArtifact,
+  trashRunArtifact,
 } from '../spikes/llm-provider/viewer/server.js';
 
 type CapturedRequest = {
@@ -86,6 +88,69 @@ describe('LLM provider result schema', () => {
       note: '',
     } as never;
     assert.notEqual(validateJsonSchema(malformed, sessionReflectionResultSchema).length, 0);
+  });
+
+  test('restricts contrast content to prompt-backed word ids from its corresponding input item', () => {
+    const fixture = allProviderFixtures.find((item) => item.fixtureId === 'ex08-xiyiweichang-and-xiguan');
+    assert.ok(fixture?.referenceResult);
+    const referenceResult = structuredClone(fixture.referenceResult);
+    const operation = referenceResult.itemResults[0]!.proposals[0]!.operation;
+    assert.equal(operation.kind, 'upsert_contrast_content');
+    if (operation.kind !== 'upsert_contrast_content') throw new Error('Expected contrast content operation');
+
+    const unknownWordResult = structuredClone(referenceResult);
+    const unknownWordOperation = unknownWordResult.itemResults[0]!.proposals[0]!.operation;
+    assert.equal(unknownWordOperation.kind, 'upsert_contrast_content');
+    if (unknownWordOperation.kind !== 'upsert_contrast_content') throw new Error('Expected contrast content operation');
+    unknownWordOperation.members[1]!.wordId = 'invented-word-id';
+    assert.deepEqual(validateJsonSchema(unknownWordResult, sessionReflectionResultSchema), []);
+    assert.match(
+      validateResultAgainstBundle(unknownWordResult, fixture.inputBundle).join('\n'),
+      /word id invented-word-id is not present in item ex08-item/,
+    );
+
+    const duplicateWordResult = structuredClone(referenceResult);
+    const duplicateWordOperation = duplicateWordResult.itemResults[0]!.proposals[0]!.operation;
+    assert.equal(duplicateWordOperation.kind, 'upsert_contrast_content');
+    if (duplicateWordOperation.kind !== 'upsert_contrast_content') throw new Error('Expected contrast content operation');
+    duplicateWordOperation.members[1]!.wordId = duplicateWordOperation.members[0]!.wordId;
+    assert.match(
+      validateResultAgainstBundle(duplicateWordResult, fixture.inputBundle).join('\n'),
+      /at least two distinct words are required/,
+    );
+
+    const emptyPromptsResult = structuredClone(referenceResult);
+    const emptyPromptsOperation = emptyPromptsResult.itemResults[0]!.proposals[0]!.operation;
+    assert.equal(emptyPromptsOperation.kind, 'upsert_contrast_content');
+    if (emptyPromptsOperation.kind !== 'upsert_contrast_content') throw new Error('Expected contrast content operation');
+    emptyPromptsOperation.prompts = [];
+    assert.match(validateJsonSchema(emptyPromptsResult, sessionReflectionResultSchema).join('\n'), /expected at least 1 item/);
+    assert.match(validateResultAgainstBundle(emptyPromptsResult, fixture.inputBundle).join('\n'), /at least one prompt is required/);
+
+    const otherFixture = allProviderFixtures.find((item) => item.fixtureId === 'ex02-to');
+    assert.ok(otherFixture?.referenceResult);
+    const crossItemBundle = structuredClone(fixture.inputBundle);
+    crossItemBundle.items.push(structuredClone(otherFixture.inputBundle.items[0]!));
+    const crossItemResult = structuredClone(referenceResult);
+    crossItemResult.itemResults.push(structuredClone(otherFixture.referenceResult.itemResults[0]!));
+    const crossItemOperation = crossItemResult.itemResults[0]!.proposals[0]!.operation;
+    assert.equal(crossItemOperation.kind, 'upsert_contrast_content');
+    if (crossItemOperation.kind !== 'upsert_contrast_content') throw new Error('Expected contrast content operation');
+    crossItemOperation.members[1]!.wordId = 'ex02-submitted';
+    assert.match(
+      validateResultAgainstBundle(crossItemResult, crossItemBundle).join('\n'),
+      /word id ex02-submitted is not present in item ex08-item/,
+    );
+  });
+
+  test('does not accept model-emitted evidence citation fields in V2 results', () => {
+    const fixture = allProviderFixtures[0];
+    assert.ok(fixture?.referenceResult);
+    const withItemEvidence = structuredClone(fixture.referenceResult) as unknown as {
+      itemResults: Array<Record<string, unknown>>;
+    };
+    withItemEvidence.itemResults[0]!.evidence = [];
+    assert.match(validateJsonSchema(withItemEvidence, sessionReflectionResultSchema).join('\n'), /unknown property/);
   });
 });
 
@@ -227,7 +292,7 @@ describe('LLM provider model batch and viewer', () => {
     }
   });
 
-  test('builds a recursive read-only artifact index with fixture guidance, run details, and viewer assets', async () => {
+  test('builds a recursive artifact index with fixture guidance, safe trashing, run details, and viewer assets', async () => {
     const fixture = allProviderFixtures[0]!;
     assert.ok(fixture.referenceResult);
     const adapter: ProviderAdapter = {
@@ -275,21 +340,70 @@ describe('LLM provider model batch and viewer', () => {
     fs.writeFileSync(path.join(temporaryDirectory, 'broken.json'), '{');
 
     try {
+      const currentValidation = validateRunArtifactAgainstCurrentContract(artifact);
+      assert.equal(artifact.response.status, 'success');
+      assert.equal(currentValidation.status, 'success');
+      assert.deepEqual(currentValidation.validationErrors, []);
+
+      const staleContractArtifact = structuredClone(artifact);
+      staleContractArtifact.response.rawText = staleContractArtifact.response.rawText!.replace(
+        'session_reflection_result.v2',
+        'session_reflection_result.v0',
+      );
+      const staleCurrentValidation = validateRunArtifactAgainstCurrentContract(staleContractArtifact);
+      assert.equal(staleContractArtifact.response.status, 'success');
+      assert.equal(staleCurrentValidation.status, 'schema_invalid');
+      assert.match(staleCurrentValidation.validationErrors.join('\n'), /schemaVersion/);
+
       const index = buildViewerIndex(temporaryDirectory) as {
-        runs: Array<{ runId: string; requestedModel: string; relativePath: string }>;
+        runs: Array<{
+          runId: string;
+          requestedModel: string;
+          relativePath: string;
+          status: string;
+          currentValidation: { status: string; validationErrors: string[] };
+        }>;
         fixtures: Array<{ fixtureId: string; evaluation: { requiredJudgments: string[] } }>;
         warnings: Array<{ relativePath: string }>;
       };
       assert.equal(index.runs.length, 1);
       assert.equal(index.runs[0]?.requestedModel, 'fake-model');
       assert.equal(index.runs[0]?.relativePath, 'old-comparison/runs/run.json');
+      assert.equal(index.runs[0]?.status, 'success');
+      assert.equal(index.runs[0]?.currentValidation.status, 'success');
+      assert.deepEqual(index.runs[0]?.currentValidation.validationErrors, []);
       assert.equal(index.fixtures.find((item) => item.fixtureId === fixture.fixtureId)?.evaluation.requiredJudgments.length, fixture.evaluation.requiredJudgments.length);
       assert.deepEqual(index.warnings.map((warning) => warning.relativePath), ['broken.json']);
 
       assert.equal((findRunArtifact(temporaryDirectory, artifact.runId) as { runId: string }).runId, artifact.runId);
       assert.equal(findRunArtifact(temporaryDirectory, 'missing'), null);
+
+      const duplicatePath = path.join(temporaryDirectory, 'duplicate.json');
+      fs.writeFileSync(duplicatePath, JSON.stringify(artifact));
+      const ambiguousTrash = trashRunArtifact(temporaryDirectory, artifact.runId);
+      assert.equal(ambiguousTrash.status, 'ambiguous');
+      if (ambiguousTrash.status !== 'ambiguous') throw new Error('Expected duplicate run ids to be ambiguous.');
+      assert.deepEqual(
+        [...ambiguousTrash.relativePaths].sort(),
+        ['duplicate.json', 'old-comparison/runs/run.json'],
+      );
+      assert.equal(fs.existsSync(duplicatePath), true);
+      fs.unlinkSync(duplicatePath);
+
+      const trashed = trashRunArtifact(temporaryDirectory, artifact.runId);
+      assert.equal(trashed.status, 'trashed');
+      if (trashed.status !== 'trashed') throw new Error('Expected the artifact to be trashed.');
+      assert.equal(trashed.relativePath, 'old-comparison/runs/run.json');
+      assert.match(trashed.trashRelativePath, /^\.trash\//);
+      assert.equal(fs.existsSync(path.join(temporaryDirectory, trashed.trashRelativePath)), true);
+      assert.equal(findRunArtifact(temporaryDirectory, artifact.runId), null);
+      assert.deepEqual(trashRunArtifact(temporaryDirectory, artifact.runId), { status: 'not_found' });
+      assert.equal(scanRunArtifacts(temporaryDirectory).artifacts.length, 0);
+
       assert.match(fs.readFileSync(path.join(defaultViewerStaticDirectory, 'index.html'), 'utf8'), /Reflection Run Explorer/);
       assert.match(fs.readFileSync(path.join(defaultViewerStaticDirectory, 'app.js'), 'utf8'), /systemPromptSha256/);
+      assert.match(fs.readFileSync(path.join(defaultViewerStaticDirectory, 'app.js'), 'utf8'), /currentValidation/);
+      assert.match(fs.readFileSync(path.join(defaultViewerStaticDirectory, 'app.js'), 'utf8'), /data-delete-run-id/);
     } finally {
       fs.rmSync(temporaryDirectory, { recursive: true, force: true });
     }
@@ -363,7 +477,7 @@ describe('LLM provider adapters', () => {
     const messages = JSON.stringify(captured[0]?.body.messages);
     assert.match(messages, /System instructions that require a JSON response/);
     assert.match(messages, /Return exactly one JSON object matching the following JSON Schema/);
-    assert.match(messages, /session_reflection_result\.v0/);
+    assert.match(messages, /session_reflection_result\.v2/);
     assert.equal(result.structuredOutputMode, 'json_object');
     assert.equal(result.usage.cachedInputTokens, 75);
   });

@@ -1,63 +1,31 @@
 import type {
-  ReflectionEvidenceCitationV0,
   ReflectionHandleOperationV0,
+  ReflectionInputItemV0,
   SessionReflectionBundleV0,
-  SessionReflectionResultV0,
+  SessionReflectionResultV2,
 } from '../contracts.js';
 
-function resolvableEvidence(bundle: SessionReflectionBundleV0): Set<string> {
+function wordIds(item: ReflectionInputItemV0): Set<string> {
   const ids = new Set<string>();
-  for (const item of bundle.items) {
-    ids.add(`item/${item.itemId}`);
-    if (item.sessionNote !== null) ids.add(`session_note/${item.itemId}`);
-    if (item.targetWord !== null) ids.add(`word/${item.targetWord.wordId}`);
-    if (item.source !== 'contrast_selection') {
-      for (const cue of item.cuesAsShown) ids.add(`cue/${item.itemId}/${cue.displayOrder}`);
-    }
-    for (const cluster of item.existingContent.contrastClusters) {
-      ids.add(`contrast_cluster/${cluster.clusterId}`);
-    }
-    if (item.source === 'production_mistake') {
-      if (item.submittedWord !== null) ids.add(`word/${item.submittedWord.wordId}`);
-      for (const attempt of item.attempts) ids.add(`attempt/${attempt.attemptId}`);
-    } else if (item.source === 'session_note') {
-      for (const relatedWord of item.relatedWords) ids.add(`word/${relatedWord.wordId}`);
-    } else {
-      ids.add(`contrast_prompt/${item.promptAsShown.promptId}`);
-      for (const choiceWord of item.promptAsShown.choiceWords) ids.add(`word/${choiceWord.wordId}`);
-      for (const attempt of item.attempts) ids.add(`attempt/${attempt.attemptId}`);
-    }
+  if (item.targetWord !== null) ids.add(item.targetWord.wordId);
+  if (item.source === 'production_mistake' && item.submittedWord !== null) {
+    ids.add(item.submittedWord.wordId);
+  }
+  if (item.source === 'session_note') {
+    for (const relatedWord of item.relatedWords) ids.add(relatedWord.wordId);
+  }
+  if (item.source === 'contrast_selection') {
+    for (const choiceWord of item.promptAsShown.choiceWords) ids.add(choiceWord.wordId);
   }
   return ids;
 }
 
-function wordIds(bundle: SessionReflectionBundleV0): Set<string> {
-  const ids = new Set<string>();
-  for (const item of bundle.items) {
-    if (item.targetWord !== null) ids.add(item.targetWord.wordId);
-    if (item.source === 'production_mistake' && item.submittedWord !== null) {
-      ids.add(item.submittedWord.wordId);
-    }
-    if (item.source === 'session_note') {
-      for (const relatedWord of item.relatedWords) ids.add(relatedWord.wordId);
-    }
-    if (item.source === 'contrast_selection') {
-      for (const choiceWord of item.promptAsShown.choiceWords) ids.add(choiceWord.wordId);
-    }
-  }
-  return ids;
+function clusterIds(item: ReflectionInputItemV0): Set<string> {
+  return new Set(item.existingContent.contrastClusters.map((cluster) => cluster.clusterId));
 }
 
-function clusterIds(bundle: SessionReflectionBundleV0): Set<string> {
-  return new Set(bundle.items.flatMap((item) => (
-    item.existingContent.contrastClusters.map((cluster) => cluster.clusterId)
-  )));
-}
-
-function cueTexts(bundle: SessionReflectionBundleV0): Set<string> {
-  return new Set(bundle.items.flatMap((item) => (
-    item.source === 'contrast_selection' ? [] : item.cuesAsShown.map((cue) => cue.text)
-  )));
+function cueTexts(item: ReflectionInputItemV0): Set<string> {
+  return new Set(item.source === 'contrast_selection' ? [] : item.cuesAsShown.map((cue) => cue.text));
 }
 
 function operationWordReferences(operation: ReflectionHandleOperationV0): string[] {
@@ -66,11 +34,6 @@ function operationWordReferences(operation: ReflectionHandleOperationV0): string
     case 'suppress_definition_production':
     case 'repair_production_cue':
       return [operation.wordId];
-    case 'add_contrast_candidate':
-      return [
-        operation.targetWordId,
-        ...(operation.relatedWord.wordId === null ? [] : [operation.relatedWord.wordId]),
-      ];
     case 'upsert_contrast_content':
       return [
         ...operation.members.map((member) => member.wordId),
@@ -81,25 +44,8 @@ function operationWordReferences(operation: ReflectionHandleOperationV0): string
   }
 }
 
-function validateEvidence(
-  evidence: ReflectionEvidenceCitationV0[],
-  allowedIds: Set<string>,
-  location: string,
-): string[] {
-  return evidence.flatMap((citation, index) => {
-    const errors: string[] = [];
-    if (!allowedIds.has(citation.evidenceId)) {
-      errors.push(`${location}.evidence[${index}]: unresolved evidence id ${citation.evidenceId}`);
-    }
-    if (citation.claim.trim().length === 0) {
-      errors.push(`${location}.evidence[${index}].claim: must not be empty`);
-    }
-    return errors;
-  });
-}
-
 export function validateResultAgainstBundle(
-  result: SessionReflectionResultV0,
+  result: SessionReflectionResultV2,
   bundle: SessionReflectionBundleV0,
 ): string[] {
   const errors: string[] = [];
@@ -120,16 +66,17 @@ export function validateResultAgainstBundle(
     errors.push('$.itemResults: every input item must appear exactly once and no unknown item is allowed');
   }
 
-  const allowedEvidence = resolvableEvidence(bundle);
-  const allowedWords = wordIds(bundle);
-  const allowedClusters = clusterIds(bundle);
-  const allowedCueTexts = cueTexts(bundle);
+  const inputItemsById = new Map(bundle.items.map((item) => [item.itemId, item]));
   const proposalKeys = new Set<string>();
 
   for (const [itemIndex, itemResult] of result.itemResults.entries()) {
     const location = `$.itemResults[${itemIndex}]`;
     if (itemResult.observation.trim().length === 0) errors.push(`${location}.observation: must not be empty`);
-    errors.push(...validateEvidence(itemResult.evidence, allowedEvidence, location));
+    const inputItem = inputItemsById.get(itemResult.itemId);
+    if (inputItem === undefined) continue;
+    const allowedWords = wordIds(inputItem);
+    const allowedClusters = clusterIds(inputItem);
+    const allowedCueTexts = cueTexts(inputItem);
 
     for (const [proposalIndex, proposal] of itemResult.proposals.entries()) {
       const proposalLocation = `${location}.proposals[${proposalIndex}]`;
@@ -139,10 +86,11 @@ export function validateResultAgainstBundle(
       }
       proposalKeys.add(proposal.proposalKey);
       if (proposal.rationale.trim().length === 0) errors.push(`${proposalLocation}.rationale: must not be empty`);
-      errors.push(...validateEvidence(proposal.evidence, allowedEvidence, proposalLocation));
 
       for (const wordId of operationWordReferences(proposal.operation)) {
-        if (!allowedWords.has(wordId)) errors.push(`${proposalLocation}.operation: unknown word id ${wordId}`);
+        if (!allowedWords.has(wordId)) {
+          errors.push(`${proposalLocation}.operation: word id ${wordId} is not present in item ${itemResult.itemId}`);
+        }
       }
 
       const operation = proposal.operation;
@@ -165,17 +113,12 @@ export function validateResultAgainstBundle(
           errors.push(`${proposalLocation}.operation.replacementCues: cue text must not be empty`);
         }
       }
-      if (operation.kind === 'add_contrast_candidate') {
-        if (operation.interferenceAxes.length === 0) {
-          errors.push(`${proposalLocation}.operation.interferenceAxes: at least one axis is required`);
-        }
-        if (operation.relatedWord.wordId === null && operation.relatedWord.text.trim().length === 0) {
-          errors.push(`${proposalLocation}.operation.relatedWord.text: must not be empty`);
-        }
-      }
       if (operation.kind === 'upsert_contrast_content') {
         const memberIds = new Set(operation.members.map((member) => member.wordId));
         if (memberIds.size < 2) errors.push(`${proposalLocation}.operation.members: at least two distinct words are required`);
+        if (operation.prompts.length === 0) {
+          errors.push(`${proposalLocation}.operation.prompts: at least one prompt is required`);
+        }
         if (operation.prompts.some((prompt) => !memberIds.has(prompt.targetWordId))) {
           errors.push(`${proposalLocation}.operation.prompts: every target must be a member`);
         }

@@ -47,8 +47,15 @@ function validateAt(value: unknown, schema: JsonSchema, path: string): string[] 
     return [`${path}: value is not in the allowed enum`];
   }
 
-  if (Array.isArray(value) && schema.items !== undefined) {
-    return value.flatMap((item, index) => validateAt(item, schema.items!, `${path}[${index}]`));
+  if (Array.isArray(value)) {
+    const errors: string[] = [];
+    if (schema.minItems !== undefined && value.length < schema.minItems) {
+      errors.push(`${path}: expected at least ${schema.minItems} item(s)`);
+    }
+    if (schema.items !== undefined) {
+      errors.push(...value.flatMap((item, index) => validateAt(item, schema.items!, `${path}[${index}]`)));
+    }
+    return errors;
   }
 
   if (typeof value === 'object' && value !== null && !Array.isArray(value) && schema.properties !== undefined) {

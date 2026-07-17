@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ReflectionRunArtifactV0 } from '../runner/types.js';
+import {
+  validateRunArtifactAgainstCurrentContract,
+  type CurrentRunValidation,
+} from './current-validation.js';
 
 export type RunIndexEntry = {
   runId: string;
@@ -11,6 +15,7 @@ export type RunIndexEntry = {
   requestedModel: string;
   providerModel: string | null;
   status: ReflectionRunArtifactV0['response']['status'];
+  currentValidation: CurrentRunValidation;
   systemPromptFile: string;
   systemPromptSha256: string;
   usage: ReflectionRunArtifactV0['response']['usage'];
@@ -26,6 +31,7 @@ export type IndexedRunArtifact = {
 export type ArtifactScanResult = {
   artifacts: IndexedRunArtifact[];
   warnings: Array<{ relativePath: string; message: string }>;
+  duplicateRunIds: Array<{ runId: string; relativePaths: string[] }>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -50,7 +56,7 @@ function jsonFilesRecursively(rootDirectory: string): string[] {
   const visit = (directory: string): void => {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const entryPath = path.join(directory, entry.name);
-      if (entry.isDirectory()) visit(entryPath);
+      if (entry.isDirectory() && entry.name !== '.trash') visit(entryPath);
       else if (entry.isFile() && entry.name.endsWith('.json')) files.push(entryPath);
     }
   };
@@ -65,7 +71,8 @@ function relativePath(rootDirectory: string, filePath: string): string {
 export function scanRunArtifacts(rootDirectory: string): ArtifactScanResult {
   const artifacts: IndexedRunArtifact[] = [];
   const warnings: ArtifactScanResult['warnings'] = [];
-  const runIds = new Set<string>();
+  const firstPathByRunId = new Map<string, string>();
+  const duplicatePathsByRunId = new Map<string, string[]>();
 
   for (const filePath of jsonFilesRecursively(rootDirectory)) {
     const relative = relativePath(rootDirectory, filePath);
@@ -80,11 +87,15 @@ export function scanRunArtifacts(rootDirectory: string): ArtifactScanResult {
       continue;
     }
     if (!looksLikeRunArtifact(parsed)) continue;
-    if (runIds.has(parsed.runId)) {
+    const firstPath = firstPathByRunId.get(parsed.runId);
+    if (firstPath !== undefined) {
+      const duplicatePaths = duplicatePathsByRunId.get(parsed.runId) ?? [firstPath];
+      duplicatePaths.push(relative);
+      duplicatePathsByRunId.set(parsed.runId, duplicatePaths);
       warnings.push({ relativePath: relative, message: `Duplicate run id ${parsed.runId}; ignored.` });
       continue;
     }
-    runIds.add(parsed.runId);
+    firstPathByRunId.set(parsed.runId, relative);
     artifacts.push({
       artifact: parsed,
       absolutePath: filePath,
@@ -97,6 +108,7 @@ export function scanRunArtifacts(rootDirectory: string): ArtifactScanResult {
         requestedModel: parsed.request.model,
         providerModel: parsed.response.providerModel,
         status: parsed.response.status,
+        currentValidation: validateRunArtifactAgainstCurrentContract(parsed),
         systemPromptFile: parsed.request.systemPromptFile,
         systemPromptSha256: parsed.request.systemPromptSha256,
         usage: parsed.response.usage,
@@ -106,5 +118,6 @@ export function scanRunArtifacts(rootDirectory: string): ArtifactScanResult {
   }
 
   artifacts.sort((left, right) => right.index.startedAt.localeCompare(left.index.startedAt));
-  return { artifacts, warnings };
+  const duplicateRunIds = [...duplicatePathsByRunId].map(([runId, relativePaths]) => ({ runId, relativePaths }));
+  return { artifacts, warnings, duplicateRunIds };
 }

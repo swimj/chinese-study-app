@@ -7,6 +7,7 @@ export type JsonSchema = {
   additionalProperties?: boolean;
   items?: JsonSchema;
   anyOf?: JsonSchema[];
+  minItems?: number;
 };
 
 const stringSchema: JsonSchema = { type: 'string' };
@@ -32,22 +33,6 @@ function objectSchema(
     ...(description === undefined ? {} : { description }),
   };
 }
-
-const evidenceTypeSchema = enumSchema([
-  'reflection_item',
-  'attempt',
-  'cue',
-  'word',
-  'contrast_cluster',
-  'contrast_prompt',
-  'session_note',
-]);
-
-const evidenceSchema = objectSchema({
-  evidenceType: evidenceTypeSchema,
-  evidenceId: stringSchema,
-  claim: stringSchema,
-});
 
 const cueRefSchema = objectSchema({
   cueId: nullableStringSchema,
@@ -80,29 +65,6 @@ const suppressProductionOperation = objectSchema({
   note: stringSchema,
 });
 
-const addContrastCandidateOperation = objectSchema({
-  kind: enumSchema(['add_contrast_candidate']),
-  targetWordId: stringSchema,
-  relatedWord: {
-    anyOf: [
-      objectSchema({ wordId: stringSchema, text: { type: 'null' } }),
-      objectSchema({ wordId: { type: 'null' }, text: stringSchema }),
-    ],
-  },
-  interferenceAxes: arraySchema(enumSchema([
-    'semantic_overlap',
-    'form_or_character_shape',
-    'sound',
-    'phrase_shape_or_rhythm',
-    'grammar_role',
-    'register_or_domain',
-    'collocation_or_event_shape',
-    'spatial_or_conceptual_frame',
-    'other',
-  ])),
-  note: stringSchema,
-});
-
 const upsertContrastContentOperation = objectSchema({
   kind: enumSchema(['upsert_contrast_content']),
   destination: {
@@ -124,11 +86,14 @@ const upsertContrastContentOperation = objectSchema({
     wordId: stringSchema,
     nuanceNote: nullableStringSchema,
   })),
-  prompts: arraySchema(objectSchema({
-    targetWordId: stringSchema,
-    promptText: stringSchema,
-    explanation: nullableStringSchema,
-  })),
+  prompts: {
+    ...arraySchema(objectSchema({
+      targetWordId: stringSchema,
+      promptText: stringSchema,
+      explanation: nullableStringSchema,
+    })),
+    minItems: 1,
+  },
 });
 
 const repairCueOperation = objectSchema({
@@ -165,7 +130,6 @@ const operationSchema: JsonSchema = {
   anyOf: [
     flagBadCueOperation,
     suppressProductionOperation,
-    addContrastCandidateOperation,
     upsertContrastContentOperation,
     repairCueOperation,
     acceptAlternateOperation,
@@ -177,7 +141,6 @@ const proposalSchema = objectSchema({
   proposalGroupKey: nullableStringSchema,
   handleVersion: { type: 'integer', enum: [1] },
   rationale: stringSchema,
-  evidence: arraySchema(evidenceSchema),
   operation: operationSchema,
 });
 
@@ -196,7 +159,6 @@ const itemResultSchema = objectSchema({
   ])),
   observation: stringSchema,
   learnerExplanation: nullableStringSchema,
-  evidence: arraySchema(evidenceSchema),
   proposals: arraySchema(proposalSchema),
   questions: arraySchema(objectSchema({
     questionKey: stringSchema,
@@ -211,10 +173,10 @@ const itemResultSchema = objectSchema({
 });
 
 export const sessionReflectionResultSchema: JsonSchema = objectSchema({
-  schemaVersion: enumSchema(['session_reflection_result.v0']),
+  schemaVersion: enumSchema(['session_reflection_result.v2']),
   bundleSchemaVersion: enumSchema(['session_reflection_bundle.v0']),
   summary: stringSchema,
   itemResults: arraySchema(itemResultSchema),
 }, 'One structured post-session reflection result.');
 
-export const SESSION_REFLECTION_RESULT_SCHEMA_NAME = 'session_reflection_result_v0';
+export const SESSION_REFLECTION_RESULT_SCHEMA_NAME = 'session_reflection_result_v2';
