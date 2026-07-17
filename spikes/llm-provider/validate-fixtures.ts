@@ -1,8 +1,7 @@
 import type {
-  ReflectionEvidenceCitationV0,
   ReflectionHandleOperationV0,
+  ReflectionInputItemV0,
   ReflectionProviderFixtureV0,
-  SessionReflectionBundleV0,
 } from './contracts.js';
 import { stressCaseFixtures } from './fixtures/stress-cases.js';
 import { workflowAppendixFixtures } from './fixtures/workflow-appendix.js';
@@ -13,71 +12,23 @@ function assert(condition: unknown, message: string): asserts condition {
   }
 }
 
-function resolvableEvidence(bundle: SessionReflectionBundleV0): Set<string> {
+function wordIds(item: ReflectionInputItemV0): Set<string> {
   const ids = new Set<string>();
-
-  for (const item of bundle.items) {
-    ids.add(`item/${item.itemId}`);
-    if (item.sessionNote !== null) ids.add(`session_note/${item.itemId}`);
-    if (item.targetWord !== null) ids.add(`word/${item.targetWord.wordId}`);
-    if (item.source !== 'contrast_selection') {
-      for (const cue of item.cuesAsShown) ids.add(`cue/${item.itemId}/${cue.displayOrder}`);
-    }
-    for (const cluster of item.existingContent.contrastClusters) {
-      ids.add(`contrast_cluster/${cluster.clusterId}`);
-    }
-
-    if (item.source === 'production_mistake') {
-      if (item.submittedWord !== null) ids.add(`word/${item.submittedWord.wordId}`);
-      for (const attempt of item.attempts) ids.add(`attempt/${attempt.attemptId}`);
-    } else if (item.source === 'session_note') {
-      for (const relatedWord of item.relatedWords) ids.add(`word/${relatedWord.wordId}`);
-    } else {
-      ids.add(`contrast_prompt/${item.promptAsShown.promptId}`);
-      for (const choiceWord of item.promptAsShown.choiceWords) ids.add(`word/${choiceWord.wordId}`);
-      for (const attempt of item.attempts) ids.add(`attempt/${attempt.attemptId}`);
-    }
+  if (item.targetWord !== null) ids.add(item.targetWord.wordId);
+  if (item.source === 'production_mistake' && item.submittedWord !== null) {
+    ids.add(item.submittedWord.wordId);
   }
-
-  return ids;
-}
-
-function wordIds(bundle: SessionReflectionBundleV0): Set<string> {
-  const ids = new Set<string>();
-  for (const item of bundle.items) {
-    if (item.targetWord !== null) ids.add(item.targetWord.wordId);
-    if (item.source === 'production_mistake' && item.submittedWord !== null) {
-      ids.add(item.submittedWord.wordId);
-    }
-    if (item.source === 'session_note') {
-      for (const relatedWord of item.relatedWords) ids.add(relatedWord.wordId);
-    }
-    if (item.source === 'contrast_selection') {
-      for (const choiceWord of item.promptAsShown.choiceWords) ids.add(choiceWord.wordId);
-    }
+  if (item.source === 'session_note') {
+    for (const relatedWord of item.relatedWords) ids.add(relatedWord.wordId);
+  }
+  if (item.source === 'contrast_selection') {
+    for (const choiceWord of item.promptAsShown.choiceWords) ids.add(choiceWord.wordId);
   }
   return ids;
 }
 
-function cueTexts(bundle: SessionReflectionBundleV0): Set<string> {
-  return new Set(bundle.items.flatMap((item) => (
-    item.source === 'contrast_selection' ? [] : item.cuesAsShown.map((cue) => cue.text)
-  )));
-}
-
-function assertEvidence(
-  fixture: ReflectionProviderFixtureV0,
-  evidence: ReflectionEvidenceCitationV0[],
-  allowedEvidenceIds: Set<string>,
-  location: string,
-): void {
-  for (const citation of evidence) {
-    assert(
-      allowedEvidenceIds.has(citation.evidenceId),
-      `${fixture.fixtureId}: unresolved evidence ${citation.evidenceId} at ${location}`,
-    );
-    assert(citation.claim.trim().length > 0, `${fixture.fixtureId}: empty evidence claim at ${location}`);
-  }
+function cueTexts(item: ReflectionInputItemV0): Set<string> {
+  return new Set(item.source === 'contrast_selection' ? [] : item.cuesAsShown.map((cue) => cue.text));
 }
 
 function operationWordReferences(operation: ReflectionHandleOperationV0): string[] {
@@ -86,11 +37,6 @@ function operationWordReferences(operation: ReflectionHandleOperationV0): string
     case 'suppress_definition_production':
     case 'repair_production_cue':
       return [operation.wordId];
-    case 'add_contrast_candidate':
-      return [
-        operation.targetWordId,
-        ...(operation.relatedWord.wordId === null ? [] : [operation.relatedWord.wordId]),
-      ];
     case 'upsert_contrast_content':
       return [
         ...operation.members.map((member) => member.wordId),
@@ -116,7 +62,7 @@ function validateFixture(fixture: ReflectionProviderFixtureV0): void {
     return;
   }
 
-  assert(fixture.referenceResult.schemaVersion === 'session_reflection_result.v0', `${fixture.fixtureId}: wrong result version`);
+  assert(fixture.referenceResult.schemaVersion === 'session_reflection_result.v2', `${fixture.fixtureId}: wrong result version`);
   assert(
     fixture.referenceResult.bundleSchemaVersion === fixture.inputBundle.schemaVersion,
     `${fixture.fixtureId}: result and bundle versions disagree`,
@@ -131,14 +77,15 @@ function validateFixture(fixture: ReflectionProviderFixtureV0): void {
     `${fixture.fixtureId}: every input item must have exactly one result and no unknown result item is allowed`,
   );
 
-  const allowedEvidenceIds = resolvableEvidence(fixture.inputBundle);
-  const allowedWordIds = wordIds(fixture.inputBundle);
-  const allowedCueTexts = cueTexts(fixture.inputBundle);
+  const inputItemsById = new Map(fixture.inputBundle.items.map((item) => [item.itemId, item]));
   const proposalKeys = new Set<string>();
   const actualKinds: ReflectionHandleOperationV0['kind'][] = [];
 
   for (const itemResult of fixture.referenceResult.itemResults) {
-    assertEvidence(fixture, itemResult.evidence, allowedEvidenceIds, `item ${itemResult.itemId}`);
+    const inputItem = inputItemsById.get(itemResult.itemId);
+    assert(inputItem !== undefined, `${fixture.fixtureId}: missing input item ${itemResult.itemId}`);
+    const allowedWordIds = wordIds(inputItem);
+    const allowedCueTexts = cueTexts(inputItem);
     for (const requiredTag of fixture.evaluation.requiredDiagnosisTags) {
       assert(
         itemResult.diagnosisTags.includes(requiredTag),
@@ -155,7 +102,6 @@ function validateFixture(fixture: ReflectionProviderFixtureV0): void {
       assert(!proposalKeys.has(proposal.proposalKey), `${fixture.fixtureId}: duplicate proposal key ${proposal.proposalKey}`);
       proposalKeys.add(proposal.proposalKey);
       actualKinds.push(proposal.operation.kind);
-      assertEvidence(fixture, proposal.evidence, allowedEvidenceIds, `proposal ${proposal.proposalKey}`);
 
       for (const referencedWordId of operationWordReferences(proposal.operation)) {
         assert(
@@ -189,6 +135,10 @@ function validateFixture(fixture: ReflectionProviderFixtureV0): void {
         assert(
           proposal.operation.prompts.every((prompt) => memberIds.has(prompt.targetWordId)),
           `${fixture.fixtureId}: every contrast prompt target must be a member`,
+        );
+        assert(
+          proposal.operation.prompts.length > 0,
+          `${fixture.fixtureId}: contrast content must include at least one prompt`,
         );
       }
     }

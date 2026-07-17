@@ -237,26 +237,15 @@ principle is **broad product objective, narrow reflection authority**.
 >   study. Do not use it for an ordinary lapse or for a repairable cue, and do
 >   not infer low value from rarity alone given this learner's broad goals.
 >
-> - **`add_contrast_candidate`** preserves evidence that two expressions may
->   deserve differentiation without claiming that the distinction is ready for
->   authored content or scheduled practice. Use it when there is meaningful
->   evidence of interference or learner interest, but how the expressions
->   differ or interfere in actual Mandarin, whether practicing that is useful
->   for this learner, or the appropriate teaching content remains unresolved.
->   Name the relevant interference axes, which may involve meaning, form, sound,
->   phrase shape, grammar, register, collocation, or conceptual framing.
->
 > - **`upsert_contrast_content`** creates or extends concrete contrast material:
->   a cluster, member-level nuance notes, and optionally contextual selection
->   prompts. Use it only when you can explain how the expressions differ or
->   interfere in actual Mandarin, why practicing that is useful for this
->   learner, and what content would target it. It may add members, revise
->   supplied member nuance notes, and add prompts, but it must not remove
+>   a cluster, member-level nuance notes, and one or more contextual selection
+>   prompts. Use it when two expressions may appear interchangeable from their
+>   glosses, or are otherwise reasonably confused for linguistic reasons, and
+>   choosing between them from context is worth practicing. It may add members,
+>   revise supplied member nuance notes, and add prompts, but it must not remove
 >   existing content or revise or delete existing prompts. Report those
 >   unsupported edits as unhandled needs. Prefer short, natural, context-rich
->   distinctions that support transfer. Do not author contrast content merely
->   because words are related, because a submitted answer is a valid alternate,
->   or to train a dictionary-level distinction with little learner value.
+>   distinctions that support transfer.
 >
 > - **`repair_production_cue`** supplies a concrete replacement or additional
 >   cue that makes production fairer for a learner-relevant target. Use it to

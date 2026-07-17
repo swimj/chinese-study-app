@@ -122,21 +122,6 @@ export type ReflectionDiagnosisTagV0 =
   | 'persistent_confusion'
   | 'insufficient_evidence';
 
-export type ReflectionEvidenceTypeV0 =
-  | 'reflection_item'
-  | 'attempt'
-  | 'cue'
-  | 'word'
-  | 'contrast_cluster'
-  | 'contrast_prompt'
-  | 'session_note';
-
-export type ReflectionEvidenceCitationV0 = {
-  evidenceType: ReflectionEvidenceTypeV0;
-  evidenceId: string;
-  claim: string;
-};
-
 export type ProductionCueRefV0 = {
   cueId: string | null;
   textAsShown: string;
@@ -160,25 +145,6 @@ export type ReflectionHandleOperationV0 =
       kind: 'suppress_definition_production';
       wordId: string;
       reason: 'recognition_only_is_better_fit' | 'answer_space_too_open' | 'low_value_for_learner' | 'other';
-      note: string;
-    }
-  | {
-      kind: 'add_contrast_candidate';
-      targetWordId: string;
-      relatedWord:
-        | { wordId: string; text: null }
-        | { wordId: null; text: string };
-      interferenceAxes: Array<
-        | 'semantic_overlap'
-        | 'form_or_character_shape'
-        | 'sound'
-        | 'phrase_shape_or_rhythm'
-        | 'grammar_role'
-        | 'register_or_domain'
-        | 'collocation_or_event_shape'
-        | 'spatial_or_conceptual_frame'
-        | 'other'
-      >;
       note: string;
     }
   | {
@@ -224,7 +190,6 @@ export type ReflectionHandleProposalV0 = {
   proposalGroupKey: string | null;
   handleVersion: 1;
   rationale: string;
-  evidence: ReflectionEvidenceCitationV0[];
   operation: ReflectionHandleOperationV0;
 };
 
@@ -234,7 +199,6 @@ export type ReflectionItemResultV0 = {
   diagnosisTags: ReflectionDiagnosisTagV0[];
   observation: string;
   learnerExplanation: string | null;
-  evidence: ReflectionEvidenceCitationV0[];
   proposals: ReflectionHandleProposalV0[];
   questions: Array<{ questionKey: string; question: string; reason: string }>;
   unhandledNeeds: Array<{
@@ -244,8 +208,8 @@ export type ReflectionItemResultV0 = {
   }>;
 };
 
-export type SessionReflectionResultV0 = {
-  schemaVersion: 'session_reflection_result.v0';
+export type SessionReflectionResultV2 = {
+  schemaVersion: 'session_reflection_result.v2';
   bundleSchemaVersion: 'session_reflection_bundle.v0';
   summary: string;
   itemResults: ReflectionItemResultV0[];
@@ -277,7 +241,7 @@ export type ReflectionProviderFixtureV0 = {
   readiness: FixtureReadinessV0;
   readinessNotes: string[];
   inputBundle: SessionReflectionBundleV0;
-  referenceResult: SessionReflectionResultV0 | null;
+  referenceResult: SessionReflectionResultV2 | null;
   evaluation: {
     mode?: 'scored' | 'exploratory';
     requiredDiagnosisTags: ReflectionDiagnosisTagV0[];

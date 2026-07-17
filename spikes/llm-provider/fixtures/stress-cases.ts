@@ -1,6 +1,5 @@
 import type {
   ProductionMistakeReflectionItemV0,
-  ReflectionEvidenceCitationV0,
   ReflectionProviderFixtureV0,
   ReflectionWordSnapshotV0,
   SessionReflectionBundleV0,
@@ -27,14 +26,6 @@ function word(
     meanings,
     production: { relevance: 'normal', notes: [] },
   };
-}
-
-function citation(
-  evidenceType: ReflectionEvidenceCitationV0['evidenceType'],
-  evidenceId: string,
-  claim: string,
-): ReflectionEvidenceCitationV0 {
-  return { evidenceType, evidenceId, claim };
 }
 
 const targetWord = word(
@@ -105,27 +96,6 @@ const bundle: SessionReflectionBundleV0 = {
   items: [item],
 };
 
-const itemEvidence = citation(
-  'reflection_item',
-  `item/${ITEM_ID}`,
-  'The target was 长江 and the submitted known word was 扬子江.',
-);
-const cueEvidence = citation(
-  'cue',
-  `cue/${ITEM_ID}/0`,
-  `The displayed cue was “${CUE_TEXT}”.`,
-);
-const attemptEvidence = citation(
-  'attempt',
-  `attempt/${ATTEMPT_ID}`,
-  '扬子江 was submitted and graded incorrect.',
-);
-const submittedEvidence = citation(
-  'word',
-  `word/${SUBMITTED_WORD_ID}`,
-  'The supplied gloss describes 扬子江 as an old name for the Changjiang/Yangtze, especially its lower reaches.',
-);
-
 export const stressCaseFixtures: ReflectionProviderFixtureV0[] = [{
   fixtureVersion: 'reflection_provider_fixture.v0',
   fixtureId: 'stress-yangtze-name-production',
@@ -141,7 +111,7 @@ export const stressCaseFixtures: ReflectionProviderFixtureV0[] = [{
   ],
   inputBundle: bundle,
   referenceResult: {
-    schemaVersion: 'session_reflection_result.v0',
+    schemaVersion: 'session_reflection_result.v2',
     bundleSchemaVersion: 'session_reflection_bundle.v0',
     summary: 'The cue leaks the target reading while also admitting a historically or regionally valid related name, so the intended production competency is unclear.',
     itemResults: [{
@@ -154,13 +124,11 @@ export const stressCaseFixtures: ReflectionProviderFixtureV0[] = [{
       ],
       observation: '“Chang Jiang” effectively supplies the target pronunciation, while “Yangtze River” does not say whether the modern standard name or another valid name is required. The submitted gloss makes a simple wrong-answer diagnosis unsafe.',
       learnerExplanation: '长江 is the intended modern standard target here. The supplied gloss presents 扬子江 as a historically or regionally limited name for the same river, so it is related and potentially creditworthy without being interchangeable in every context. Whether recalling Chinese proper names is worthwhile production knowledge depends on the learner’s real communication goals.',
-      evidence: [itemEvidence, cueEvidence, attemptEvidence, submittedEvidence],
       proposals: [{
         proposalKey: `${PREFIX}-flag-cue`,
         proposalGroupKey: null,
         handleVersion: 1,
         rationale: 'Pause this cue until the learner specifies whether the desired competency is modern standard naming, broad answer acceptance, or geographical and cultural name knowledge.',
-        evidence: [cueEvidence, attemptEvidence, submittedEvidence],
         operation: {
           kind: 'flag_bad_production_cue',
           wordId: TARGET_WORD_ID,

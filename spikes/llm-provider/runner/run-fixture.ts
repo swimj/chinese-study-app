@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ReflectionProviderFixtureV0, SessionReflectionResultV0 } from '../contracts.js';
+import type { ReflectionProviderFixtureV0, SessionReflectionResultV2 } from '../contracts.js';
 import { sessionReflectionResultSchema, SESSION_REFLECTION_RESULT_SCHEMA_NAME } from './result-schema.js';
 import { validateResultAgainstBundle } from './result-validator.js';
 import { validateJsonSchema } from './schema-validator.js';
@@ -48,7 +48,7 @@ export async function runFixture(options: RunFixtureOptions): Promise<Reflection
   let providerModel: string | null = null;
   let finishReason: string | null = null;
   let rawText: string | null = null;
-  let parsedResult: SessionReflectionResultV0 | null = null;
+  let parsedResult: SessionReflectionResultV2 | null = null;
   let usage: ReflectionRunArtifactV0['response']['usage'] = null;
   let validationErrors: string[] = [];
   let providerError: string | null = null;
@@ -91,7 +91,7 @@ export async function runFixture(options: RunFixtureOptions): Promise<Reflection
       if (validationErrors.length > 0) {
         status = 'schema_invalid';
       } else {
-        parsedResult = parsed as SessionReflectionResultV0;
+        parsedResult = parsed as SessionReflectionResultV2;
         validationErrors = validateResultAgainstBundle(parsedResult, options.fixture.inputBundle);
         status = validationErrors.length === 0 ? 'success' : 'contract_invalid';
       }

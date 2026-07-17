@@ -168,13 +168,18 @@ artifacts. It supports:
   questions, and unhandled needs
 - token and latency metadata, raw-artifact inspection, and fixture evaluation
   guidance
+- current validation recalculated from the saved raw model text against the
+  checked-in contract
 - automatic discovery of new artifacts and comparison selections encoded in
   the page URL
+- confirmed deletion of individual runs into an unindexed `.trash/` directory
 
 Fixture evaluation constraints appear only after the outputs in
-the viewer; they are never included in a provider request. The viewer is a
-read-only projection over immutable run artifacts and does not perform automatic
-semantic scoring.
+the viewer; they are never included in a provider request. Apart from explicitly
+moving a deleted run into `.trash/`, the viewer treats run artifacts as immutable
+and does not perform automatic semantic scoring. Current validation is computed
+in memory when the artifact index is read; it does not rewrite or migrate the
+artifact.
 
 The server binds only to `127.0.0.1`. Override its port or artifact root when
 needed:

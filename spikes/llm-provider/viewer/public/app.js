@@ -93,7 +93,7 @@ function refreshFilterOptions() {
   const prompts = new Map();
   for (const run of state.runs) prompts.set(promptKey(run), promptLabel(run));
   setSelectOptions(elements.promptFilter, [...prompts.entries()].map(([value, label]) => ({ value, label })), 'All prompt versions');
-  setSelectOptions(elements.statusFilter, unique(state.runs.map((run) => run.status)).map((value) => ({ value, label: value })), 'All statuses');
+  setSelectOptions(elements.statusFilter, unique(state.runs.map((run) => run.currentValidation.status)).map((value) => ({ value, label: value })), 'All statuses');
 }
 
 function filteredRuns() {
@@ -101,7 +101,7 @@ function filteredRuns() {
     if (elements.fixtureFilter.value && run.fixtureId !== elements.fixtureFilter.value) return false;
     if (elements.modelFilter.value && run.requestedModel !== elements.modelFilter.value) return false;
     if (elements.promptFilter.value && promptKey(run) !== elements.promptFilter.value) return false;
-    if (elements.statusFilter.value && run.status !== elements.statusFilter.value) return false;
+    if (elements.statusFilter.value && run.currentValidation.status !== elements.statusFilter.value) return false;
     return true;
   });
 }
@@ -126,19 +126,22 @@ function renderRunList() {
   elements.runList.innerHTML = runs.map((run) => {
     const selected = state.selectedRunIds.includes(run.runId);
     const total = run.usage?.totalTokens;
-    return `<label class="run-card${selected ? ' selected' : ''}">
-      <input type="checkbox" data-run-id="${escapeHtml(run.runId)}" ${selected ? 'checked' : ''} />
-      <span>
-        <span class="run-model"><span>${escapeHtml(run.requestedModel)}</span><span class="run-provider">${escapeHtml(run.provider)}</span></span>
-        <span class="run-fixture">${escapeHtml(fixtureTitle(run.fixtureId))}</span>
-        <span class="run-meta">
-          <span class="run-prompt">${escapeHtml(promptLabel(run))}</span>
-          <span>${escapeHtml(formatDate(run.startedAt))}</span>
-          ${statusMarkup(run.status)}
-          <span>${escapeHtml(formatTokens(total))} tokens</span>
+    return `<div class="run-card${selected ? ' selected' : ''}">
+      <label class="run-card-selection">
+        <input type="checkbox" data-run-id="${escapeHtml(run.runId)}" ${selected ? 'checked' : ''} />
+        <span>
+          <span class="run-model"><span>${escapeHtml(run.requestedModel)}</span><span class="run-provider">${escapeHtml(run.provider)}</span></span>
+          <span class="run-fixture">${escapeHtml(fixtureTitle(run.fixtureId))}</span>
+          <span class="run-meta">
+            <span class="run-prompt">${escapeHtml(promptLabel(run))}</span>
+            <span>${escapeHtml(formatDate(run.startedAt))}</span>
+            ${statusMarkup(run.currentValidation.status)}
+            <span>${escapeHtml(formatTokens(total))} tokens</span>
+          </span>
         </span>
-      </span>
-    </label>`;
+      </label>
+      <button class="delete-run-button" type="button" data-delete-run-id="${escapeHtml(run.runId)}" aria-label="Delete ${escapeHtml(run.requestedModel)} run ${escapeHtml(run.runId.slice(0, 8))}">Delete</button>
+    </div>`;
   }).join('');
 }
 
@@ -163,9 +166,9 @@ function resultForItem(artifact, itemId) {
 }
 
 function failureMarkup(artifact) {
-  const response = artifact.response;
-  const errors = [response.providerError, ...(response.validationErrors ?? [])].filter(Boolean);
-  return `<div class="error-text">${escapeHtml(response.status)}${errors.length ? `: ${escapeHtml(errors.join(' · '))}` : ''}</div>`;
+  const run = state.runs.find((candidate) => candidate.runId === artifact.runId);
+  const validation = run.currentValidation;
+  return `<div class="error-text">${escapeHtml(validation.status)}${validation.validationErrors.length ? `: ${escapeHtml(validation.validationErrors.join(' · '))}` : ''}</div>`;
 }
 
 function renderRunSummary(artifacts) {
@@ -175,7 +178,7 @@ function renderRunSummary(artifacts) {
     return `<tr>
       <td>${runIdentity(run)}</td>
       <td>${escapeHtml(run.provider)}</td>
-      <td>${statusMarkup(run.status)}</td>
+      <td>${statusMarkup(run.currentValidation.status)}</td>
       <td>${escapeHtml(`${run.durationMs.toLocaleString()} ms`)}</td>
       <td>${escapeHtml(formatTokens(usage?.inputTokens))}</td>
       <td>${escapeHtml(formatTokens(usage?.cachedInputTokens))}</td>
@@ -186,6 +189,27 @@ function renderRunSummary(artifacts) {
   }).join('');
   return `<div class="section"><h3>Run summary</h3><div class="table-wrap"><table>
     <thead><tr><th>Run</th><th>Provider</th><th>Status</th><th>Latency</th><th>Input</th><th>Cached</th><th>Output</th><th>Reasoning</th><th>Total</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div></div>`;
+}
+
+function validationDetailsMarkup(status, errors, schemaHash) {
+  const errorList = Array.isArray(errors) && errors.length > 0
+    ? `<ul>${errors.map((error) => `<li>${escapeHtml(error)}</li>`).join('')}</ul>`
+    : '<p class="muted">No validation errors.</p>';
+  return `${statusMarkup(status)}<div class="muted">schema ${escapeHtml(shortHash(schemaHash))}</div>${errorList}`;
+}
+
+function renderValidationDetails(artifacts) {
+  const rows = artifacts.map((artifact) => {
+    const run = state.runs.find((candidate) => candidate.runId === artifact.runId);
+    return `<tr>
+      <td>${runIdentity(run)}</td>
+      <td>${validationDetailsMarkup(run.currentValidation.status, run.currentValidation.validationErrors, run.currentValidation.outputSchemaSha256)}</td>
+    </tr>`;
+  }).join('');
+  return `<div class="section"><h3>Validation</h3><p class="muted">Validation is recalculated from raw model text against the current contract when the artifact index is read.</p><div class="table-wrap"><table>
+    <thead><tr><th>Run</th><th>Validation</th></tr></thead>
     <tbody>${rows}</tbody>
   </table></div></div>`;
 }
@@ -304,6 +328,7 @@ async function renderComparison() {
       header,
       promptNotice,
       renderRunSummary(artifacts),
+      renderValidationDetails(artifacts),
       renderResponseSummaries(artifacts),
       ...itemIds.map((itemId) => renderItem(itemId, artifacts)),
       renderEvaluation(fixture),
@@ -332,6 +357,35 @@ async function toggleRun(runId, checked) {
   updateSelectionUrl();
   renderRunList();
   await renderComparison();
+}
+
+async function deleteRun(runId, button) {
+  const run = state.runs.find((candidate) => candidate.runId === runId);
+  if (!run) return;
+  const confirmed = window.confirm([
+    'Move this run artifact to .trash?',
+    '',
+    `${run.requestedModel} · ${fixtureTitle(run.fixtureId)}`,
+    `${formatDate(run.startedAt)} · ${run.runId}`,
+    run.relativePath,
+  ].join('\n'));
+  if (!confirmed) return;
+
+  button.disabled = true;
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error ?? `Delete request failed: HTTP ${response.status}`);
+
+    state.selectedRunIds = state.selectedRunIds.filter((id) => id !== runId);
+    state.artifacts.delete(runId);
+    state.comparisonRendered = false;
+    updateSelectionUrl();
+    await refreshIndex();
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : String(error));
+    button.disabled = false;
+  }
 }
 
 async function refreshIndex() {
@@ -378,6 +432,10 @@ elements.clearSelection.addEventListener('click', async () => {
 elements.runList.addEventListener('change', (event) => {
   const checkbox = event.target.closest('input[data-run-id]');
   if (checkbox) void toggleRun(checkbox.dataset.runId, checkbox.checked);
+});
+elements.runList.addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-delete-run-id]');
+  if (button) void deleteRun(button.dataset.deleteRunId, button);
 });
 
 setInterval(() => {
