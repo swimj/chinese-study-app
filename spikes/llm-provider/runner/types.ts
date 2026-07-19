@@ -54,9 +54,26 @@ export type ProviderAdapter = {
 export type ReflectionRunStatus =
   | 'success'
   | 'provider_error'
+  | 'output_truncated'
   | 'invalid_json'
   | 'schema_invalid'
   | 'contract_invalid';
+
+/** Provider finish reasons that indicate the model stopped before completing its output. */
+export function isOutputTruncationFinishReason(finishReason: string | null): boolean {
+  if (finishReason === null) return false;
+  const normalized = finishReason.trim().toLowerCase().replaceAll(/[-\s]+/g, '_');
+  return [
+    'length',
+    'max_tokens',
+    'max_output_tokens',
+    'max_tokens_reached',
+    'max_output_tokens_reached',
+    'max_tokens_limit',
+    'max_output_tokens_limit',
+    'incomplete',
+  ].includes(normalized);
+}
 
 export type ReflectionRunArtifactV0 = {
   schemaVersion: 'llm_provider_run.v0';

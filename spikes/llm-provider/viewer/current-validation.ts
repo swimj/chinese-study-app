@@ -6,7 +6,11 @@ import {
   sessionReflectionResultSchema,
 } from '../runner/result-schema.js';
 import { validateJsonSchema } from '../runner/schema-validator.js';
-import type { ReflectionRunArtifactV0, ReflectionRunStatus } from '../runner/types.js';
+import {
+  isOutputTruncationFinishReason,
+  type ReflectionRunArtifactV0,
+  type ReflectionRunStatus,
+} from '../runner/types.js';
 
 export type CurrentRunValidation = {
   contractName: string;
@@ -36,6 +40,15 @@ export function validateRunArtifactAgainstCurrentContract(
       ...base,
       status: 'provider_error',
       validationErrors: [artifact.response.providerError ?? 'Provider did not return response text.'],
+    };
+  }
+  if (isOutputTruncationFinishReason(artifact.response.finishReason)) {
+    return {
+      ...base,
+      status: 'output_truncated',
+      validationErrors: [
+        `Provider stopped before completing the output (finish reason: ${artifact.response.finishReason}).`,
+      ],
     };
   }
 

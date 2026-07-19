@@ -52,8 +52,6 @@ export function validateResultAgainstBundle(
   if (result.bundleSchemaVersion !== bundle.schemaVersion) {
     errors.push('$.bundleSchemaVersion: does not match the input bundle schema version');
   }
-  if (result.summary.trim().length === 0) errors.push('$.summary: must not be empty');
-
   const inputItemIds = bundle.items.map((item) => item.itemId);
   const resultItemIds = result.itemResults.map((item) => item.itemId);
   if (new Set(resultItemIds).size !== resultItemIds.length) {
@@ -134,12 +132,12 @@ export function validateResultAgainstBundle(
       }
     }
 
-    for (const [questionIndex, question] of itemResult.questions.entries()) {
+    for (const [questionIndex, question] of (itemResult.questions ?? []).entries()) {
       if (question.questionKey.trim().length === 0 || question.question.trim().length === 0 || question.reason.trim().length === 0) {
         errors.push(`${location}.questions[${questionIndex}]: key, question, and reason must not be empty`);
       }
     }
-    for (const [needIndex, need] of itemResult.unhandledNeeds.entries()) {
+    for (const [needIndex, need] of (itemResult.unhandledNeeds ?? []).entries()) {
       if (
         need.needKey.trim().length === 0
         || need.description.trim().length === 0

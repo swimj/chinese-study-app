@@ -121,6 +121,11 @@ Successful and failed live calls both write a JSON run artifact under
 - raw response text and the provider's raw JSON response
 - strict-schema and bundle-reference validation failures
 
+Provider finish reasons that indicate an incomplete output (for example,
+`length` or `max_tokens`) are recorded as `output_truncated` before JSON or
+schema validation. The raw partial response is retained for inspection, but it
+is not exposed as a validated `parsedResult`.
+
 The output directory is gitignored and may contain study evidence. API keys and
 request headers are never written to artifacts.
 

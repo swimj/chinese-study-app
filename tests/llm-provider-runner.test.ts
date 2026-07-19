@@ -90,6 +90,36 @@ describe('LLM provider result schema', () => {
     assert.notEqual(validateJsonSchema(malformed, sessionReflectionResultSchema).length, 0);
   });
 
+  test('allows omitted optional questions and unhandled needs', () => {
+    const fixture = allProviderFixtures.find((item) => item.fixtureId === 'ex02-to');
+    assert.ok(fixture?.referenceResult);
+    const result = structuredClone(fixture.referenceResult);
+    delete (result.itemResults[0] as { questions?: unknown }).questions;
+    delete (result.itemResults[0] as { unhandledNeeds?: unknown }).unhandledNeeds;
+    assert.deepEqual(validateJsonSchema(result, sessionReflectionResultSchema), []);
+    assert.deepEqual(validateResultAgainstBundle(result, fixture.inputBundle), []);
+  });
+
+  test('allows omitting the provisional session summary', () => {
+    const fixture = allProviderFixtures.find((item) => item.fixtureId === 'ex02-to');
+    assert.ok(fixture?.referenceResult);
+    const result = structuredClone(fixture.referenceResult);
+    delete result.summary;
+    assert.deepEqual(validateJsonSchema(result, sessionReflectionResultSchema), []);
+    assert.deepEqual(validateResultAgainstBundle(result, fixture.inputBundle), []);
+  });
+
+  test('allows null, empty, and nonempty provisional session summaries', () => {
+    const fixture = allProviderFixtures.find((item) => item.fixtureId === 'ex02-to');
+    assert.ok(fixture?.referenceResult);
+    for (const summary of [null, '', 'Optional context that viewers may ignore.']) {
+      const result = structuredClone(fixture.referenceResult);
+      result.summary = summary;
+      assert.deepEqual(validateJsonSchema(result, sessionReflectionResultSchema), []);
+      assert.deepEqual(validateResultAgainstBundle(result, fixture.inputBundle), []);
+    }
+  });
+
   test('restricts contrast content to prompt-backed word ids from its corresponding input item', () => {
     const fixture = allProviderFixtures.find((item) => item.fixtureId === 'ex08-xiyiweichang-and-xiguan');
     assert.ok(fixture?.referenceResult);
@@ -208,6 +238,53 @@ describe('LLM provider fixture run', () => {
     assert.equal(artifact.response.status, 'success');
     assert.equal(artifact.response.providerModel, 'fake-snapshot');
     assert.equal(JSON.stringify(artifact).includes('must-not-appear'), false);
+  });
+
+  test('reports provider output truncation before JSON or schema validation', async () => {
+    const fixture = allProviderFixtures[0]!;
+    const adapter: ProviderAdapter = {
+      id: 'fake-provider',
+      defaultBaseUrl: 'https://example.invalid',
+      apiKeyEnvironmentVariable: 'FAKE_KEY',
+      structuredOutputMode: 'json_object',
+      async run() {
+        return {
+          provider: 'fake-provider',
+          model: 'fake-truncated',
+          responseId: 'truncated-response',
+          structuredOutputMode: 'json_object',
+          rawText: '{"schemaVersion":"session_reflection_result.v2"',
+          finishReason: 'length',
+          usage: {
+            inputTokens: 100,
+            cachedInputTokens: 0,
+            cacheWriteInputTokens: null,
+            outputTokens: 4_096,
+            reasoningTokens: null,
+            totalTokens: 4_196,
+          },
+          rawResponse: { id: 'truncated-response' },
+        };
+      },
+    };
+
+    const artifact = await runFixture({
+      adapter,
+      fixture,
+      model: 'fake-truncated',
+      apiKey: 'secret',
+      baseUrl: null,
+      systemPrompt: 'Return a structured reflection.',
+      systemPromptFile: '/tmp/prompt.md',
+      maxOutputTokens: 4_096,
+      temperature: null,
+      timeoutMs: 10_000,
+      cachePrompt: true,
+    });
+
+    assert.equal(artifact.response.status, 'output_truncated');
+    assert.match(artifact.response.validationErrors[0] ?? '', /finish reason: length/);
+    assert.equal(artifact.response.parsedResult, null);
   });
 });
 
