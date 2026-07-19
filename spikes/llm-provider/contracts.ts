@@ -200,8 +200,8 @@ export type ReflectionItemResultV0 = {
   observation: string;
   learnerExplanation: string | null;
   proposals: ReflectionHandleProposalV0[];
-  questions: Array<{ questionKey: string; question: string; reason: string }>;
-  unhandledNeeds: Array<{
+  questions?: Array<{ questionKey: string; question: string; reason: string }>;
+  unhandledNeeds?: Array<{
     needKey: string;
     description: string;
     whyExistingHandlesDoNotFit: string;
@@ -211,7 +211,7 @@ export type ReflectionItemResultV0 = {
 export type SessionReflectionResultV2 = {
   schemaVersion: 'session_reflection_result.v2';
   bundleSchemaVersion: 'session_reflection_bundle.v0';
-  summary: string;
+  summary?: string | null;
   itemResults: ReflectionItemResultV0[];
 };
 

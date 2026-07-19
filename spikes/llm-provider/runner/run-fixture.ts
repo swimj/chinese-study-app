@@ -5,6 +5,7 @@ import type { ReflectionProviderFixtureV0, SessionReflectionResultV2 } from '../
 import { sessionReflectionResultSchema, SESSION_REFLECTION_RESULT_SCHEMA_NAME } from './result-schema.js';
 import { validateResultAgainstBundle } from './result-validator.js';
 import { validateJsonSchema } from './schema-validator.js';
+import { isOutputTruncationFinishReason } from './types.js';
 import type {
   ProviderAdapter,
   ReflectionRunArtifactV0,
@@ -77,23 +78,30 @@ export async function runFixture(options: RunFixtureOptions): Promise<Reflection
     usage = providerResult.usage;
     rawProviderResponse = providerResult.rawResponse;
 
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(providerResult.rawText);
-    } catch (error) {
-      status = 'invalid_json';
-      validationErrors = [`Response is not valid JSON: ${errorMessage(error)}`];
-      parsed = null;
-    }
+    if (isOutputTruncationFinishReason(providerResult.finishReason)) {
+      status = 'output_truncated';
+      validationErrors = [
+        `Provider stopped before completing the output (finish reason: ${providerResult.finishReason}).`,
+      ];
+    } else {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(providerResult.rawText);
+      } catch (error) {
+        status = 'invalid_json';
+        validationErrors = [`Response is not valid JSON: ${errorMessage(error)}`];
+        parsed = null;
+      }
 
-    if (status !== 'invalid_json') {
-      validationErrors = validateJsonSchema(parsed, sessionReflectionResultSchema);
-      if (validationErrors.length > 0) {
-        status = 'schema_invalid';
-      } else {
-        parsedResult = parsed as SessionReflectionResultV2;
-        validationErrors = validateResultAgainstBundle(parsedResult, options.fixture.inputBundle);
-        status = validationErrors.length === 0 ? 'success' : 'contract_invalid';
+      if (status !== 'invalid_json') {
+        validationErrors = validateJsonSchema(parsed, sessionReflectionResultSchema);
+        if (validationErrors.length > 0) {
+          status = 'schema_invalid';
+        } else {
+          parsedResult = parsed as SessionReflectionResultV2;
+          validationErrors = validateResultAgainstBundle(parsedResult, options.fixture.inputBundle);
+          status = validationErrors.length === 0 ? 'success' : 'contract_invalid';
+        }
       }
     }
   } catch (error) {

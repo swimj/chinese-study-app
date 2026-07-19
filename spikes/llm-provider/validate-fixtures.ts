@@ -144,16 +144,16 @@ function validateFixture(fixture: ReflectionProviderFixtureV0): void {
     }
 
     if (fixture.evaluation.questionPolicy === 'required') {
-      assert(itemResult.questions.length > 0, `${fixture.fixtureId}: reference result requires a clarifying question`);
+      assert((itemResult.questions ?? []).length > 0, `${fixture.fixtureId}: reference result requires a clarifying question`);
     }
     if (fixture.evaluation.questionPolicy === 'none_expected') {
-      assert(itemResult.questions.length === 0, `${fixture.fixtureId}: reference result unexpectedly asks a question`);
+      assert((itemResult.questions ?? []).length === 0, `${fixture.fixtureId}: reference result unexpectedly asks a question`);
     }
     if (fixture.evaluation.unhandledNeedPolicy === 'required') {
-      assert(itemResult.unhandledNeeds.length > 0, `${fixture.fixtureId}: reference result requires an unhandled need`);
+      assert((itemResult.unhandledNeeds ?? []).length > 0, `${fixture.fixtureId}: reference result requires an unhandled need`);
     }
     if (fixture.evaluation.unhandledNeedPolicy === 'none_expected') {
-      assert(itemResult.unhandledNeeds.length === 0, `${fixture.fixtureId}: reference result unexpectedly reports an unhandled need`);
+      assert((itemResult.unhandledNeeds ?? []).length === 0, `${fixture.fixtureId}: reference result unexpectedly reports an unhandled need`);
     }
   }
 

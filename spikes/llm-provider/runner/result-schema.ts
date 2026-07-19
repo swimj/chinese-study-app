@@ -24,11 +24,13 @@ function arraySchema(items: JsonSchema, description?: string): JsonSchema {
 function objectSchema(
   properties: Record<string, JsonSchema>,
   description?: string,
+  optionalProperties: string[] = [],
 ): JsonSchema {
+  const optional = new Set(optionalProperties);
   return {
     type: 'object',
     properties,
-    required: Object.keys(properties),
+    required: Object.keys(properties).filter((key) => !optional.has(key)),
     additionalProperties: false,
     ...(description === undefined ? {} : { description }),
   };
@@ -170,13 +172,13 @@ const itemResultSchema = objectSchema({
     description: stringSchema,
     whyExistingHandlesDoNotFit: stringSchema,
   })),
-});
+}, undefined, ['questions', 'unhandledNeeds']);
 
 export const sessionReflectionResultSchema: JsonSchema = objectSchema({
   schemaVersion: enumSchema(['session_reflection_result.v2']),
   bundleSchemaVersion: enumSchema(['session_reflection_bundle.v0']),
-  summary: stringSchema,
+  summary: nullableStringSchema,
   itemResults: arraySchema(itemResultSchema),
-}, 'One structured post-session reflection result.');
+}, 'One structured post-session reflection result.', ['summary']);
 
 export const SESSION_REFLECTION_RESULT_SCHEMA_NAME = 'session_reflection_result_v2';

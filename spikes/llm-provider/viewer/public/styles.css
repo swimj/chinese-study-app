@@ -83,8 +83,8 @@ h4 { margin: 0 0 8px; font-size: 14px; }
 .status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #8c9aa0; }
 .status-success { color: #177366; }
 .status-success::before { background: #20a28f; }
-.status-provider_error, .status-invalid_json, .status-schema_invalid, .status-contract_invalid { color: var(--danger); }
-.status-provider_error::before, .status-invalid_json::before, .status-schema_invalid::before, .status-contract_invalid::before { background: #c85656; }
+.status-provider_error, .status-output_truncated, .status-invalid_json, .status-schema_invalid, .status-contract_invalid { color: var(--danger); }
+.status-provider_error::before, .status-output_truncated::before, .status-invalid_json::before, .status-schema_invalid::before, .status-contract_invalid::before { background: #c85656; }
 .no-runs { padding: 28px 16px; color: var(--muted); text-align: center; font-size: 12px; }
 
 .comparison-pane { min-width: 0; overflow: auto; padding: 30px 34px 70px; }

@@ -161,8 +161,18 @@ async function fetchArtifact(runId) {
   return artifact;
 }
 
+function responseResult(artifact) {
+  if (artifact.response.parsedResult) return artifact.response.parsedResult;
+  if (!artifact.response.rawText) return null;
+  try {
+    return JSON.parse(artifact.response.rawText);
+  } catch {
+    return null;
+  }
+}
+
 function resultForItem(artifact, itemId) {
-  return artifact.response.parsedResult?.itemResults?.find((item) => item.itemId === itemId) ?? null;
+  return responseResult(artifact)?.itemResults?.find((item) => item.itemId === itemId) ?? null;
 }
 
 function failureMarkup(artifact) {
@@ -217,8 +227,8 @@ function renderValidationDetails(artifacts) {
 function renderResponseSummaries(artifacts) {
   const rows = artifacts.map((artifact) => {
     const run = state.runs.find((candidate) => candidate.runId === artifact.runId);
-    const content = artifact.response.parsedResult?.summary;
-    return `<tr><td>${runIdentity(run)}</td><td>${content ? escapeHtml(content) : failureMarkup(artifact)}</td></tr>`;
+    const content = responseResult(artifact)?.summary;
+    return `<tr><td>${runIdentity(run)}</td><td>${content ? escapeHtml(content) : '<span class="muted">No session summary emitted.</span>'}</td></tr>`;
   }).join('');
   return `<div class="section"><h3>Response summaries</h3><table><thead><tr><th>Run</th><th>Summary</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
@@ -261,15 +271,17 @@ function renderItem(itemId, artifacts) {
   const questionRows = artifacts.flatMap((artifact) => {
     const run = state.runs.find((candidate) => candidate.runId === artifact.runId);
     const result = resultForItem(artifact, itemId);
-    if (!result || result.questions.length === 0) return [`<tr><td>${runIdentity(run)}</td><td class="muted">none</td><td>—</td></tr>`];
-    return result.questions.map((question) => `<tr><td>${runIdentity(run)}</td><td>${escapeHtml(question.question)}</td><td>${escapeHtml(question.reason)}</td></tr>`);
+    const questions = result?.questions ?? [];
+    if (questions.length === 0) return [`<tr><td>${runIdentity(run)}</td><td class="muted">none</td><td>—</td></tr>`];
+    return questions.map((question) => `<tr><td>${runIdentity(run)}</td><td>${escapeHtml(question.question)}</td><td>${escapeHtml(question.reason)}</td></tr>`);
   }).join('');
 
   const needRows = artifacts.flatMap((artifact) => {
     const run = state.runs.find((candidate) => candidate.runId === artifact.runId);
     const result = resultForItem(artifact, itemId);
-    if (!result || result.unhandledNeeds.length === 0) return [`<tr><td>${runIdentity(run)}</td><td class="muted">none</td><td>—</td></tr>`];
-    return result.unhandledNeeds.map((need) => `<tr><td>${runIdentity(run)}</td><td>${escapeHtml(need.description)}</td><td>${escapeHtml(need.whyExistingHandlesDoNotFit)}</td></tr>`);
+    const unhandledNeeds = result?.unhandledNeeds ?? [];
+    if (unhandledNeeds.length === 0) return [`<tr><td>${runIdentity(run)}</td><td class="muted">none</td><td>—</td></tr>`];
+    return unhandledNeeds.map((need) => `<tr><td>${runIdentity(run)}</td><td>${escapeHtml(need.description)}</td><td>${escapeHtml(need.whyExistingHandlesDoNotFit)}</td></tr>`);
   }).join('');
 
   return `<div class="section">
