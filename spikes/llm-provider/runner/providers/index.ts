@@ -2,6 +2,7 @@ import type { ProviderAdapter } from '../types.js';
 import { createAnthropicAdapter } from './anthropic.js';
 import { createGeminiAdapter } from './gemini.js';
 import { createOpenAiCompatibleAdapter } from './openai-compatible.js';
+import { proxiedFetch } from './proxy-fetch.js';
 
 export const providerAdapters: ProviderAdapter[] = [
   createOpenAiCompatibleAdapter({
@@ -10,6 +11,7 @@ export const providerAdapters: ProviderAdapter[] = [
     apiKeyEnvironmentVariable: 'OPENAI_API_KEY',
     structuredOutputMode: 'json_schema',
     maxTokensField: 'max_completion_tokens',
+    fetchImplementation: proxiedFetch,
   }),
   createAnthropicAdapter(),
   createGeminiAdapter(),
