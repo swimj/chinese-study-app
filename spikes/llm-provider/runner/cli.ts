@@ -10,6 +10,7 @@ import { SESSION_REFLECTION_RESULT_SCHEMA_NAME, sessionReflectionResultSchema } 
 type CliOptions = {
   provider: string | null;
   model: string | null;
+  reasoningEffort: string | null;
   modelIds: string[];
   fixtureId: string | null;
   systemPromptFile: string | null;
@@ -37,7 +38,8 @@ function usage(): string {
     'Options:',
     '  --provider <id>              Provider for a single-model run',
     '  --model <model>              Exact provider model id for a single-model run',
-    '  --models <id,id,...>         Run one fixture against registered model ids in order',
+    '  --reasoning-effort <level>   Reasoning level for a single-model run',
+    '  --models <id,id,...>         Run one fixture against registered model configuration ids in order',
     '  --fixture <fixture-id>       One ready fixture id',
     '  --system-prompt-file <path>  Versioned prompt text; required for live and dry runs',
     '  --output-dir <path>          Default: artifacts/llm-provider',
@@ -70,6 +72,7 @@ function parseArgs(args: string[]): CliOptions {
   const options: CliOptions = {
     provider: null,
     model: null,
+    reasoningEffort: null,
     modelIds: [],
     fixtureId: null,
     systemPromptFile: null,
@@ -95,6 +98,10 @@ function parseArgs(args: string[]): CliOptions {
         break;
       case '--model':
         options.model = takeValue(args, index, argument);
+        index += 1;
+        break;
+      case '--reasoning-effort':
+        options.reasoningEffort = takeValue(args, index, argument);
         index += 1;
         break;
       case '--models': {
@@ -182,7 +189,7 @@ async function main(): Promise<void> {
   }
   if (options.listModels) {
     for (const target of modelTargets) {
-      console.log(`${target.id}\t${target.provider}\t${target.model}`);
+      console.log(`${target.id}\t${target.provider}\t${target.model}\t${target.reasoningEffort}`);
     }
     return;
   }
@@ -204,7 +211,7 @@ async function main(): Promise<void> {
   const userPrompt = renderFixtureUserPrompt(fixture);
 
   if (options.modelIds.length > 0) {
-    if (options.provider !== null || options.model !== null) {
+    if (options.provider !== null || options.model !== null || options.reasoningEffort !== null) {
       throw new Error('Use either --models for a comparison or --provider and --model for a single run, not both.');
     }
     if (options.baseUrl !== null) {
@@ -225,6 +232,7 @@ async function main(): Promise<void> {
             id: target.id,
             provider: target.provider,
             model: target.model,
+            reasoningEffort: target.reasoningEffort,
             structuredOutputMode: adapter.structuredOutputMode,
             baseUrl: adapter.defaultBaseUrl,
           };
@@ -278,6 +286,7 @@ async function main(): Promise<void> {
     console.log(JSON.stringify({
       provider: adapter.id,
       model,
+      reasoningEffort: options.reasoningEffort,
       fixtureId,
       systemPromptFile,
       structuredOutputMode: adapter.structuredOutputMode,
@@ -303,6 +312,7 @@ async function main(): Promise<void> {
     adapter,
     fixture,
     model,
+    reasoningEffort: options.reasoningEffort,
     apiKey,
     baseUrl: options.baseUrl,
     systemPrompt,

@@ -58,7 +58,19 @@ h4 { margin: 0 0 8px; font-size: 14px; }
 
 .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; padding: 13px; background: #eef1ed; border: 1px solid #dde2dd; border-radius: 11px; }
 .filters label { display: grid; gap: 4px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.model-filter-field { position: relative; display: grid; gap: 4px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
 .filters select { width: 100%; min-width: 0; padding: 7px 24px 7px 8px; color: var(--ink); background: white; border: 1px solid #d8ded9; border-radius: 6px; font-size: 12px; letter-spacing: normal; text-transform: none; }
+.model-filter-control { position: relative; min-width: 0; }
+.model-filter-control summary { display: flex; align-items: center; justify-content: space-between; min-height: 31px; padding: 7px 8px; color: var(--ink); background: white; border: 1px solid #d8ded9; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 400; letter-spacing: normal; list-style: none; text-transform: none; }
+.model-filter-control summary::-webkit-details-marker { display: none; }
+.model-filter-control summary::after { content: "⌄"; color: var(--muted); font-size: 14px; line-height: 1; }
+.model-filter-control[open] summary { border-color: #94bdb6; border-bottom-right-radius: 0; border-bottom-left-radius: 0; }
+.model-filter-control[open] summary::after { transform: rotate(180deg); }
+.model-filter-menu { position: absolute; z-index: 2; top: 100%; right: 0; left: 0; display: grid; max-height: 230px; overflow: auto; padding: 5px; background: white; border: 1px solid #94bdb6; border-top: 0; border-radius: 0 0 6px 6px; box-shadow: 0 8px 18px rgba(24, 52, 74, 0.12); }
+.model-filter-option { display: flex; align-items: center; gap: 7px; padding: 6px 5px; color: var(--ink); cursor: pointer; font-size: 12px; font-weight: 400; letter-spacing: normal; text-transform: none; }
+.model-filter-option:hover { background: #edf5f2; }
+.model-filter-option input { margin: 0; accent-color: var(--accent); }
+.model-filter-option-all { margin-bottom: 3px; padding-bottom: 8px; border-bottom: 1px solid #e3e8e4; font-weight: 650; }
 .filters .checkbox-row { grid-column: 1 / -1; display: flex; align-items: center; gap: 7px; padding-top: 3px; color: var(--muted); font-size: 11px; font-weight: 500; letter-spacing: normal; text-transform: none; }
 .checkbox-row input { accent-color: var(--accent); }
 

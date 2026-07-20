@@ -4,6 +4,7 @@ const state = {
   warnings: [],
   selectedRunIds: [],
   artifacts: new Map(),
+  selectedModelNames: [],
   initializedFromUrl: false,
   comparisonRendered: false,
 };
@@ -11,6 +12,8 @@ const state = {
 const elements = {
   fixtureFilter: document.querySelector('#fixture-filter'),
   modelFilter: document.querySelector('#model-filter'),
+  modelFilterSummary: document.querySelector('#model-filter-summary'),
+  modelFilterOptions: document.querySelector('#model-filter-options'),
   promptFilter: document.querySelector('#prompt-filter'),
   statusFilter: document.querySelector('#status-filter'),
   autoRefresh: document.querySelector('#auto-refresh'),
@@ -53,6 +56,17 @@ function formatTokens(value) {
   return typeof value === 'number' ? value.toLocaleString() : '—';
 }
 
+function formatEstimatedCost(estimatedCost) {
+  if (!estimatedCost) return '—';
+  return `${(estimatedCost.usd * 100).toFixed(1)}¢`;
+}
+
+function formatPricing(estimatedCost) {
+  if (!estimatedCost) return 'Pricing unavailable';
+  const pricing = estimatedCost.pricing;
+  return `$${pricing.inputPerMillionUsd}/$${pricing.cachedInputPerMillionUsd}/$${pricing.outputPerMillionUsd} per 1M (input/cached/output)`;
+}
+
 function promptKey(run) {
   return run.systemPromptSha256;
 }
@@ -86,10 +100,21 @@ function setSelectOptions(select, options, emptyLabel) {
   if (options.some((option) => option.value === current)) select.value = current;
 }
 
+function renderModelFilterOptions(models) {
+  const availableModels = new Set(models);
+  state.selectedModelNames = state.selectedModelNames.filter((model) => availableModels.has(model));
+  const selectedModels = new Set(state.selectedModelNames);
+  elements.modelFilterSummary.textContent = selectedModels.size === 0 ? 'All models' : `${selectedModels.size} selected`;
+  elements.modelFilterOptions.innerHTML = [
+    `<label class="model-filter-option model-filter-option-all"><input type="checkbox" data-model-filter-all ${selectedModels.size === 0 ? 'checked' : ''} /> All models</label>`,
+    ...models.map((model) => `<label class="model-filter-option"><input type="checkbox" data-model-filter="${escapeHtml(model)}" ${selectedModels.has(model) ? 'checked' : ''} /> ${escapeHtml(model)}</label>`),
+  ].join('');
+}
+
 function refreshFilterOptions() {
   const unique = (values) => [...new Set(values)].sort((left, right) => left.localeCompare(right));
   setSelectOptions(elements.fixtureFilter, unique(state.runs.map((run) => run.fixtureId)).map((value) => ({ value, label: fixtureTitle(value) })), 'All fixtures');
-  setSelectOptions(elements.modelFilter, unique(state.runs.map((run) => run.requestedModel)).map((value) => ({ value, label: value })), 'All models');
+  renderModelFilterOptions(unique(state.runs.map((run) => run.requestedModel)));
   const prompts = new Map();
   for (const run of state.runs) prompts.set(promptKey(run), promptLabel(run));
   setSelectOptions(elements.promptFilter, [...prompts.entries()].map(([value, label]) => ({ value, label })), 'All prompt versions');
@@ -97,9 +122,10 @@ function refreshFilterOptions() {
 }
 
 function filteredRuns() {
+  const selectedModels = new Set(state.selectedModelNames);
   return state.runs.filter((run) => {
     if (elements.fixtureFilter.value && run.fixtureId !== elements.fixtureFilter.value) return false;
-    if (elements.modelFilter.value && run.requestedModel !== elements.modelFilter.value) return false;
+    if (selectedModels.size > 0 && !selectedModels.has(run.requestedModel)) return false;
     if (elements.promptFilter.value && promptKey(run) !== elements.promptFilter.value) return false;
     if (elements.statusFilter.value && run.currentValidation.status !== elements.statusFilter.value) return false;
     return true;
@@ -137,6 +163,7 @@ function renderRunList() {
             <span>${escapeHtml(formatDate(run.startedAt))}</span>
             ${statusMarkup(run.currentValidation.status)}
             <span>${escapeHtml(formatTokens(total))} tokens</span>
+            <span title="${escapeHtml(formatPricing(run.estimatedCost))}">Est. ${escapeHtml(formatEstimatedCost(run.estimatedCost))}</span>
           </span>
         </span>
       </label>
@@ -195,10 +222,11 @@ function renderRunSummary(artifacts) {
       <td>${escapeHtml(formatTokens(usage?.outputTokens))}</td>
       <td>${escapeHtml(formatTokens(usage?.reasoningTokens))}</td>
       <td>${escapeHtml(formatTokens(usage?.totalTokens))}</td>
+      <td title="${escapeHtml(formatPricing(run.estimatedCost))}">${escapeHtml(formatEstimatedCost(run.estimatedCost))}</td>
     </tr>`;
   }).join('');
   return `<div class="section"><h3>Run summary</h3><div class="table-wrap"><table>
-    <thead><tr><th>Run</th><th>Provider</th><th>Status</th><th>Latency</th><th>Input</th><th>Cached</th><th>Output</th><th>Reasoning</th><th>Total</th></tr></thead>
+    <thead><tr><th>Run</th><th>Provider</th><th>Status</th><th>Latency</th><th>Input</th><th>Cached</th><th>Output</th><th>Reasoning</th><th>Total</th><th>Est. cost</th></tr></thead>
     <tbody>${rows}</tbody>
   </table></div></div>`;
 }
@@ -431,9 +459,22 @@ async function refreshIndex() {
   }
 }
 
-for (const filter of [elements.fixtureFilter, elements.modelFilter, elements.promptFilter, elements.statusFilter]) {
+for (const filter of [elements.fixtureFilter, elements.promptFilter, elements.statusFilter]) {
   filter.addEventListener('change', renderRunList);
 }
+elements.modelFilterOptions.addEventListener('change', (event) => {
+  const input = event.target.closest('input[data-model-filter], input[data-model-filter-all]');
+  if (!input) return;
+  if (input.hasAttribute('data-model-filter-all')) state.selectedModelNames = [];
+  else {
+    const selectedModels = new Set(state.selectedModelNames);
+    if (input.checked) selectedModels.add(input.dataset.modelFilter);
+    else selectedModels.delete(input.dataset.modelFilter);
+    state.selectedModelNames = [...selectedModels];
+  }
+  renderModelFilterOptions([...new Set(state.runs.map((run) => run.requestedModel))].sort((left, right) => left.localeCompare(right)));
+  renderRunList();
+});
 elements.refreshButton.addEventListener('click', refreshIndex);
 elements.clearSelection.addEventListener('click', async () => {
   state.selectedRunIds = [];

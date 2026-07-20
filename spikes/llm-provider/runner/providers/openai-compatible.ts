@@ -57,6 +57,7 @@ function requestBody(
       : { type: 'json_object' },
   };
   if (request.temperature !== null) body.temperature = request.temperature;
+  if (request.reasoningEffort !== null) body.reasoning_effort = request.reasoningEffort;
   return body;
 }
 

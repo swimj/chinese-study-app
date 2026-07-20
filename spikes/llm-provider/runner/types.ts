@@ -17,6 +17,7 @@ export type StructuredOutputMode = 'json_schema' | 'json_object';
 
 export type ProviderRunRequest = {
   model: string;
+  reasoningEffort: string | null;
   systemPrompt: string;
   userPrompt: string;
   outputSchemaName: string;
@@ -84,7 +85,10 @@ export type ReflectionRunArtifactV0 = {
   durationMs: number;
   request: {
     provider: string;
+    /** Stable runner configuration id, or the raw provider model for an ad-hoc run. */
     model: string;
+    providerModel: string;
+    reasoningEffort: string | null;
     systemPromptFile: string;
     systemPromptSha256: string;
     userPromptSha256: string;
