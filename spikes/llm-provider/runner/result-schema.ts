@@ -24,13 +24,14 @@ function arraySchema(items: JsonSchema, description?: string): JsonSchema {
 function objectSchema(
   properties: Record<string, JsonSchema>,
   description?: string,
-  optionalProperties: string[] = [],
 ): JsonSchema {
-  const optional = new Set(optionalProperties);
   return {
     type: 'object',
     properties,
-    required: Object.keys(properties).filter((key) => !optional.has(key)),
+    // OpenAI strict structured outputs require every declared object property
+    // to be listed in `required`. Represent an absent value as `null` or an
+    // empty collection instead of omitting its key.
+    required: Object.keys(properties),
     additionalProperties: false,
     ...(description === undefined ? {} : { description }),
   };
@@ -172,13 +173,13 @@ const itemResultSchema = objectSchema({
     description: stringSchema,
     whyExistingHandlesDoNotFit: stringSchema,
   })),
-}, undefined, ['questions', 'unhandledNeeds']);
+});
 
 export const sessionReflectionResultSchema: JsonSchema = objectSchema({
   schemaVersion: enumSchema(['session_reflection_result.v2']),
   bundleSchemaVersion: enumSchema(['session_reflection_bundle.v0']),
   summary: nullableStringSchema,
   itemResults: arraySchema(itemResultSchema),
-}, 'One structured post-session reflection result.', ['summary']);
+}, 'One structured post-session reflection result.');
 
 export const SESSION_REFLECTION_RESULT_SCHEMA_NAME = 'session_reflection_result_v2';
