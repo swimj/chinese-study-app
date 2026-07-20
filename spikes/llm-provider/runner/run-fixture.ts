@@ -16,6 +16,8 @@ export type RunFixtureOptions = {
   adapter: ProviderAdapter;
   fixture: ReflectionProviderFixtureV0;
   model: string;
+  modelConfigId?: string;
+  reasoningEffort?: string | null;
   apiKey: string;
   baseUrl: string | null;
   systemPrompt: string;
@@ -58,6 +60,7 @@ export async function runFixture(options: RunFixtureOptions): Promise<Reflection
   try {
     const providerResult = await options.adapter.run({
       model: options.model,
+      reasoningEffort: options.reasoningEffort ?? null,
       systemPrompt: options.systemPrompt,
       userPrompt,
       outputSchemaName: SESSION_REFLECTION_RESULT_SCHEMA_NAME,
@@ -119,7 +122,9 @@ export async function runFixture(options: RunFixtureOptions): Promise<Reflection
     durationMs: completedAt.getTime() - startedAt.getTime(),
     request: {
       provider: options.adapter.id,
-      model: options.model,
+      model: options.modelConfigId ?? options.model,
+      providerModel: options.model,
+      reasoningEffort: options.reasoningEffort ?? null,
       systemPromptFile: options.systemPromptFile,
       systemPromptSha256: sha256(options.systemPrompt),
       userPromptSha256: sha256(userPrompt),

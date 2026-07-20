@@ -112,7 +112,7 @@ For a live run, export the adapter's environment variable and remove
 Successful and failed live calls both write a JSON run artifact under
 `artifacts/llm-provider/runs/` by default. Each artifact records:
 
-- provider and requested model
+- provider, model configuration id, raw provider model, and reasoning level
 - the model id returned by the provider
 - prompt, input, and schema hashes
 - latency and finish status
@@ -141,13 +141,13 @@ JSON, following the supplied system prompt.
 
 ## Incremental runs and dynamic comparison
 
-The checked-in registry currently contains the requested OpenAI and ZAI model
-set. `--models` is a batch convenience: it performs the same independent call
-once per model, in the requested order, and writes one raw artifact per call.
+The checked-in registry contains the shortlisted model configurations. `--models`
+is a batch convenience: it performs the same independent call once per model
+configuration, in the requested order, and writes one raw artifact per call.
 
 ```bash
 npm run spike:llm:env -- \
-  --models gpt-5.6-terra,gpt-5.4-mini,glm-5,glm-4.7-flash \
+  --models gpt-5.6-terra-high,gpt-5.6-terra-xhigh,gpt-5.4-mini-xhigh,glm-5.2-max \
   --fixture ex02-to \
   --system-prompt-file spikes/llm-provider/prompts/PROMPT_FILE
 ```
@@ -166,12 +166,12 @@ Then open `http://127.0.0.1:4180`. The viewer recursively indexes valid run
 artifacts under `artifacts/llm-provider/`, so it also finds older flat or nested
 artifacts. It supports:
 
-- filtering by fixture, model, prompt hash, and run status
+- filtering by fixture, one or more models, prompt hash, and run status
 - selecting any runs for the same fixture, including runs created at different
   times or from different prompt revisions
 - field-oriented comparisons of summaries, diagnoses, explanations, proposals,
   questions, and unhandled needs
-- token and latency metadata, raw-artifact inspection, and fixture evaluation
+- token and latency metadata, per-run estimated token cost at the listed model rates, raw-artifact inspection, and fixture evaluation
   guidance
 - current validation recalculated from the saved raw model text against the
   checked-in contract

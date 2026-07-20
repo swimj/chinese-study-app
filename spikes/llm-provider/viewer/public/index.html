@@ -28,7 +28,13 @@
 
         <div class="filters">
           <label>Fixture<select id="fixture-filter"><option value="">All fixtures</option></select></label>
-          <label>Model<select id="model-filter"><option value="">All models</option></select></label>
+          <div class="model-filter-field">
+            <span class="filter-label">Model</span>
+            <details class="model-filter-control" id="model-filter">
+              <summary id="model-filter-summary">All models</summary>
+              <div class="model-filter-menu" id="model-filter-options"></div>
+            </details>
+          </div>
           <label>Prompt<select id="prompt-filter"><option value="">All prompt versions</option></select></label>
           <label>Status<select id="status-filter"><option value="">All statuses</option></select></label>
           <label class="checkbox-row"><input id="auto-refresh" type="checkbox" checked /> Discover new runs automatically</label>

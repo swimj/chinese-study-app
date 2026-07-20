@@ -2,19 +2,18 @@ export type ModelTarget = {
   id: string;
   provider: string;
   model: string;
+  reasoningEffort: 'high' | 'xhigh' | 'max';
 };
 
 export const modelTargets: ModelTarget[] = [
-  { id: 'gpt-5.6-terra', provider: 'openai', model: 'gpt-5.6-terra' },
-  { id: 'gpt-5.6-luna', provider: 'openai', model: 'gpt-5.6-luna' },
-  { id: 'gpt-5.4', provider: 'openai', model: 'gpt-5.4' },
-  { id: 'gpt-5.4-mini', provider: 'openai', model: 'gpt-5.4-mini' },
-  { id: 'gpt-5.4-nano', provider: 'openai', model: 'gpt-5.4-nano' },
-  { id: 'glm-5.2', provider: 'zai', model: 'glm-5.2' },
-  { id: 'glm-5', provider: 'zai', model: 'glm-5' },
-  { id: 'glm-4.7', provider: 'zai', model: 'glm-4.7' },
-  { id: 'glm-4.7-flashx', provider: 'zai', model: 'glm-4.7-flashx' },
-  { id: 'glm-4.7-flash', provider: 'zai', model: 'glm-4.7-flash' },
+  { id: 'gpt-5.6-terra-high', provider: 'openai', model: 'gpt-5.6-terra', reasoningEffort: 'high' },
+  { id: 'gpt-5.6-terra-xhigh', provider: 'openai', model: 'gpt-5.6-terra', reasoningEffort: 'xhigh' },
+  { id: 'gpt-5.6-luna-high', provider: 'openai', model: 'gpt-5.6-luna', reasoningEffort: 'high' },
+  { id: 'gpt-5.6-luna-xhigh', provider: 'openai', model: 'gpt-5.6-luna', reasoningEffort: 'xhigh' },
+  { id: 'gpt-5.4-mini-high', provider: 'openai', model: 'gpt-5.4-mini', reasoningEffort: 'high' },
+  { id: 'gpt-5.4-mini-xhigh', provider: 'openai', model: 'gpt-5.4-mini', reasoningEffort: 'xhigh' },
+  { id: 'glm-5.2-high', provider: 'zai', model: 'glm-5.2', reasoningEffort: 'high' },
+  { id: 'glm-5.2-max', provider: 'zai', model: 'glm-5.2', reasoningEffort: 'max' },
 ];
 
 const targetsById = new Map<string, ModelTarget>();

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { describe, test } from 'node:test';
 import { allProviderFixtures } from '../spikes/llm-provider/fixtures/index.js';
 import { getModelTarget, modelTargets } from '../spikes/llm-provider/runner/model-registry.js';
+import { estimateRunCost } from '../spikes/llm-provider/pricing.js';
 import { createAnthropicAdapter } from '../spikes/llm-provider/runner/providers/anthropic.js';
 import { createGeminiAdapter } from '../spikes/llm-provider/runner/providers/gemini.js';
 import { getProviderAdapter } from '../spikes/llm-provider/runner/providers/index.js';
@@ -51,6 +52,7 @@ function mockFetch(responseBody: JsonValue, capture: CapturedRequest[]): typeof 
 function providerRequest(): ProviderRunRequest {
   return {
     model: 'test-model',
+    reasoningEffort: null,
     systemPrompt: 'System instructions that require a JSON response.',
     userPrompt: '{"fixture":"input"}',
     outputSchemaName: SESSION_REFLECTION_RESULT_SCHEMA_NAME,
@@ -292,20 +294,33 @@ describe('LLM provider fixture run', () => {
 });
 
 describe('LLM provider model batch and viewer', () => {
-  test('registers the requested OpenAI and ZAI model ids without extra disambiguation', () => {
+  test('estimates registered model cost from normalized input, cached input, and output usage', () => {
+    assert.deepEqual(estimateRunCost('gpt-5.4-mini', {
+      inputTokens: 1_000_000,
+      cachedInputTokens: 400_000,
+      cacheWriteInputTokens: null,
+      outputTokens: 200_000,
+      reasoningTokens: null,
+      totalTokens: 1_200_000,
+    }), {
+      usd: 1.38,
+      pricing: { inputPerMillionUsd: 0.75, cachedInputPerMillionUsd: 0.075, cacheWriteInputPerMillionUsd: 0.9375, outputPerMillionUsd: 4.5 },
+    });
+    assert.equal(estimateRunCost('unknown-model', null), null);
+  });
+
+  test('registers the shortlisted model configurations with their reasoning levels', () => {
     assert.deepEqual(modelTargets.map((target) => target.id), [
-      'gpt-5.6-terra',
-      'gpt-5.6-luna',
-      'gpt-5.4',
-      'gpt-5.4-mini',
-      'gpt-5.4-nano',
-      'glm-5.2',
-      'glm-5',
-      'glm-4.7',
-      'glm-4.7-flashx',
-      'glm-4.7-flash',
+      'gpt-5.6-terra-high',
+      'gpt-5.6-terra-xhigh',
+      'gpt-5.6-luna-high',
+      'gpt-5.6-luna-xhigh',
+      'gpt-5.4-mini-high',
+      'gpt-5.4-mini-xhigh',
+      'glm-5.2-high',
+      'glm-5.2-max',
     ]);
-    assert.deepEqual(getModelTarget('glm-5'), { id: 'glm-5', provider: 'zai', model: 'glm-5' });
+    assert.deepEqual(getModelTarget('glm-5.2-max'), { id: 'glm-5.2-max', provider: 'zai', model: 'glm-5.2', reasoningEffort: 'max' });
     assert.equal(getProviderAdapter('zai').defaultBaseUrl, 'https://api.z.ai/api/paas/v4');
   });
 
@@ -340,8 +355,8 @@ describe('LLM provider model batch and viewer', () => {
       },
     };
     const targets = [
-      { id: 'first-model', provider: 'fake', model: 'first-snapshot' },
-      { id: 'second-model', provider: 'fake', model: 'second-snapshot' },
+      { id: 'first-model', provider: 'fake', model: 'first-snapshot', reasoningEffort: 'high' },
+      { id: 'second-model', provider: 'fake', model: 'second-snapshot', reasoningEffort: 'max' },
     ];
     const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'llm-batch-'));
     try {
@@ -365,8 +380,11 @@ describe('LLM provider model batch and viewer', () => {
       assert.equal(entries.every((entry) => path.dirname(entry.artifactPath) === path.join(temporaryDirectory, 'runs')), true);
       assert.equal(fs.existsSync(path.join(temporaryDirectory, 'comparisons')), false);
       const scan = scanRunArtifacts(temporaryDirectory);
-      assert.deepEqual(scan.artifacts.map((entry) => entry.index.requestedModel).sort(), ['first-snapshot', 'second-snapshot']);
+      assert.deepEqual(scan.artifacts.map((entry) => entry.index.requestedModel).sort(), ['first-model', 'second-model']);
       assert.equal(JSON.stringify(entries).includes('secret'), false);
+      assert.equal(entries[0]?.artifact.request.model, 'first-model');
+      assert.equal(entries[0]?.artifact.request.providerModel, 'first-snapshot');
+      assert.equal(entries[0]?.artifact.request.reasoningEffort, 'high');
     } finally {
       fs.rmSync(temporaryDirectory, { recursive: true, force: true });
     }
@@ -442,6 +460,7 @@ describe('LLM provider model batch and viewer', () => {
           relativePath: string;
           status: string;
           currentValidation: { status: string; validationErrors: string[] };
+          estimatedCost: unknown;
         }>;
         fixtures: Array<{ fixtureId: string; evaluation: { requiredJudgments: string[] } }>;
         warnings: Array<{ relativePath: string }>;
@@ -452,6 +471,7 @@ describe('LLM provider model batch and viewer', () => {
       assert.equal(index.runs[0]?.status, 'success');
       assert.equal(index.runs[0]?.currentValidation.status, 'success');
       assert.deepEqual(index.runs[0]?.currentValidation.validationErrors, []);
+      assert.equal(index.runs[0]?.estimatedCost, null);
       assert.equal(index.fixtures.find((item) => item.fixtureId === fixture.fixtureId)?.evaluation.requiredJudgments.length, fixture.evaluation.requiredJudgments.length);
       assert.deepEqual(index.warnings.map((warning) => warning.relativePath), ['broken.json']);
 
@@ -491,7 +511,7 @@ describe('LLM provider model batch and viewer', () => {
 });
 
 describe('LLM provider adapters', () => {
-  test('OpenAI sends strict JSON Schema and normalizes cached and reasoning usage', async () => {
+  test('OpenAI sends strict JSON Schema, requested reasoning effort, and normalizes usage', async () => {
     const captured: CapturedRequest[] = [];
     const adapter = createOpenAiCompatibleAdapter({
       id: 'openai-test',
@@ -513,10 +533,13 @@ describe('LLM provider adapters', () => {
       }, captured),
     });
 
-    const result = await adapter.run(providerRequest(), { apiKey: 'secret', baseUrl: null });
+    const request = providerRequest();
+    request.reasoningEffort = 'high';
+    const result = await adapter.run(request, { apiKey: 'secret', baseUrl: null });
     assert.equal(captured[0]?.url, 'https://openai.example/v1/chat/completions');
     assert.equal(captured[0]?.headers.get('authorization'), 'Bearer secret');
     assert.equal(captured[0]?.body.max_completion_tokens, 4_096);
+    assert.equal(captured[0]?.body.reasoning_effort, 'high');
     assert.deepEqual(captured[0]?.body.response_format, {
       type: 'json_schema',
       json_schema: {

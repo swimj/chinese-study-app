@@ -41,6 +41,8 @@ export async function runBatch(options: RunBatchOptions): Promise<BatchRunEntry[
       adapter,
       fixture: options.fixture,
       model: target.model,
+      modelConfigId: target.id,
+      reasoningEffort: target.reasoningEffort,
       apiKey,
       baseUrl: null,
       systemPrompt: options.systemPrompt,

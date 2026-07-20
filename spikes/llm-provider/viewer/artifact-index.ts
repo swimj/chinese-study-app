@@ -5,6 +5,7 @@ import {
   validateRunArtifactAgainstCurrentContract,
   type CurrentRunValidation,
 } from './current-validation.js';
+import { estimateRunCost, type EstimatedRunCost } from '../pricing.js';
 
 export type RunIndexEntry = {
   runId: string;
@@ -19,6 +20,7 @@ export type RunIndexEntry = {
   systemPromptFile: string;
   systemPromptSha256: string;
   usage: ReflectionRunArtifactV0['response']['usage'];
+  estimatedCost: EstimatedRunCost | null;
   relativePath: string;
 };
 
@@ -112,6 +114,7 @@ export function scanRunArtifacts(rootDirectory: string): ArtifactScanResult {
         systemPromptFile: parsed.request.systemPromptFile,
         systemPromptSha256: parsed.request.systemPromptSha256,
         usage: parsed.response.usage,
+        estimatedCost: estimateRunCost(parsed.request.model, parsed.response.usage),
         relativePath: relative,
       },
     });
