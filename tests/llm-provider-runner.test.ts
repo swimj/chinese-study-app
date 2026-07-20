@@ -90,23 +90,26 @@ describe('LLM provider result schema', () => {
     assert.notEqual(validateJsonSchema(malformed, sessionReflectionResultSchema).length, 0);
   });
 
-  test('allows omitted optional questions and unhandled needs', () => {
+  test('requires empty collections instead of omitted questions and unhandled needs', () => {
     const fixture = allProviderFixtures.find((item) => item.fixtureId === 'ex02-to');
     assert.ok(fixture?.referenceResult);
     const result = structuredClone(fixture.referenceResult);
     delete (result.itemResults[0] as { questions?: unknown }).questions;
     delete (result.itemResults[0] as { unhandledNeeds?: unknown }).unhandledNeeds;
-    assert.deepEqual(validateJsonSchema(result, sessionReflectionResultSchema), []);
-    assert.deepEqual(validateResultAgainstBundle(result, fixture.inputBundle), []);
+    const errors = validateJsonSchema(result, sessionReflectionResultSchema).join('\n');
+    assert.match(errors, /questions: required property is missing/);
+    assert.match(errors, /unhandledNeeds: required property is missing/);
   });
 
-  test('allows omitting the provisional session summary', () => {
+  test('requires a null summary instead of omitting the provisional session summary', () => {
     const fixture = allProviderFixtures.find((item) => item.fixtureId === 'ex02-to');
     assert.ok(fixture?.referenceResult);
     const result = structuredClone(fixture.referenceResult);
     delete result.summary;
-    assert.deepEqual(validateJsonSchema(result, sessionReflectionResultSchema), []);
-    assert.deepEqual(validateResultAgainstBundle(result, fixture.inputBundle), []);
+    assert.match(
+      validateJsonSchema(result, sessionReflectionResultSchema).join('\n'),
+      /summary: required property is missing/,
+    );
   });
 
   test('allows null, empty, and nonempty provisional session summaries', () => {
