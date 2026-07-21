@@ -10,6 +10,8 @@ Item format: `- [ ] description #tag #tag (optional context)`. Priority in Ready
 
 (raw capture — unsorted)
 
+- M1 artifact store planning: reflection artifact as durable carrier of disposition (not a consumable log); only time-gap bridge + disposition lifecycle are load-bearing for first dogfood, planner/eval/extraction purposes deferred; learner-facing only (developer-facing artifacts dropped from M1); storage shape converged to one DB provenance table + one seeded per-item disposition table, blob kept in a DB column, thin store interface seam; dispositions are the precious/irrecoverable part, not blobs; store design is downstream of the spike's per-item schema contract #m1 #design (memory: notes/active/2026-07-20-m1-artifact-store-planning.md; handle registry is the other half of M1 and a separate conversation)
+
 ## Ready
 
 (actionable, priority order — top is next)
@@ -33,6 +35,7 @@ Item format: `- [ ] description #tag #tag (optional context)`. Priority in Ready
 
 (tangential ideas, nice-to-haves, deferred — review periodically; promote to Ready, move to `BACKLOG.md`, or drop)
 
+- spoken construction habit drills: explore speaking-adjacent practice for proceduralizing reusable Mandarin sentence shapes, prosodic chunks, and conversational moves; test an imitation -> constrained recomposition -> fresh response ladder with a tiny curated set before making architecture or scoring commitments #spike #design #speaking (revisit 2026-08-20; context: notes/active/2026-07-20-spoken-construction-drills.md)
 - reflection adjudication tracking: as part of initial Luna integration, persist the evidence bundle, model proposal, proposal-level accept/reject/edit decision, optional rationale, and final applied operation so real use becomes regression fixtures and prompt-improvement evidence #m0 #reflection #evaluation
 - reflection observability: define and capture operational metrics for reflection runs and proposal handling (volume, latency, token/cost estimates, validation failures, proposal/action mix, and acceptance/edit/rejection rates), separate from prompt-improvement fixture curation #m0 #reflection #observability
 - production answer classes spike: model many-to-many `gloss/cue -> acceptable words` for definition-based production; compare against aliases, contrast clusters, and bad-prompt handling; sketch reflection handle(s) for creating/extending an answer class #spike #design #reflection (sparked by `notes/active/2026-07-06-session-reflection-workflow.md` examples like 难怪/怪不得)
