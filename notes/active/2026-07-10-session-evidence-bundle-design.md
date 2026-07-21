@@ -5,7 +5,7 @@ type: research
 created: 2026-07-10
 retire-by: 2026-07-24
 related:
-  - TASKS.md (Ready — session-evidence bundle design spike)
+  - notes/active/2026-07-21-handle-registry-v0-task-spec.md (bundle/result contract input)
   - PLANS/agentic-roadmap-glm-5.2.md (M0 session-evidence bundle spike)
   - notes/active/2026-07-06-session-reflection-workflow.md
   - notes/active/2026-07-10-session-lifecycle-code-verification.md

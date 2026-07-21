@@ -5,7 +5,7 @@ type: work-bundle
 created: 2026-07-21
 retire-when: Handle Registry V0 is accepted as implementation-ready and the durable decisions are incorporated into `SPECS/reflection-handle-registry-v0.md`
 related:
-  - TASKS.md (In Progress — active focus)
+  - TASKS.md (Focus)
   - SPECS/reflection-handle-registry-v0.md
   - notes/active/2026-07-20-llm-provider-spike-summary.md
   - notes/active/2026-07-20-m1-artifact-store-planning.md

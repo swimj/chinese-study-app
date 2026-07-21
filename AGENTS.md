@@ -23,9 +23,10 @@ Guidance for AI coding agents working in this repository.
 4. `SPECS/learning-review-model.md`
 5. `SPECS/session-covering-criteria.md`
 6. `SPECS/study-action-model.md`
-7. `TASKS.md` — current work queue; read at session start to orient on in-progress and next-up work (see §11)
-8. Active notes in `notes/active/` linked from In Progress items (working memory only; defer to SPECS on conflict — see [`notes/README.md`](notes/README.md))
-9. Relevant tests under `tests/` (see [`docs/testing.md`](docs/testing.md))
+7. `STABILITY_FRONTIER.md` — how to interpret and maintain the current build-wave boundary (see §12)
+8. `TASKS.md` — live stability frontier plus current work queue; read at session start to orient on in-progress and next-up work (see §11)
+9. Active notes in `notes/active/` linked from active queue items (working memory only; defer to SPECS on conflict — see [`notes/README.md`](notes/README.md))
+10. Relevant tests under `tests/` (see [`docs/testing.md`](docs/testing.md))
 
 When code and spec conflict, treat the spec as intended behavior and update code + tests together.
 
@@ -126,12 +127,38 @@ This repo contains real DB artifacts and backups under `data/`.
 
 ## 11) Working With `TASKS.md`
 
-`TASKS.md` is the universal work queue at repo root. Read it at session start to orient on what's in progress and what's next up.
+`TASKS.md` holds the live stability frontier and universal work queue at repo root. Read it at session start to orient on the current build boundary, what's in progress, and what's next up.
 
-- **Sections**: Inbox (raw capture, unsorted) → Ready (triaged, priority-ordered, top is next) → In Progress. Debt holds workarounds with trigger conditions; Parked holds tangential/deferred items.
+- **Sections**: Focus (active human steering) → Async Running (dispatched background work) → Awaiting Review (returned work needing disposition) → Async Ready (fully specified, priority-ordered dispatch shelf) → Inbox (raw capture). Recently Completed keeps short handoffs; Debt holds workarounds with trigger conditions; Parked holds tangential/deferred items.
+- **Queue limits**: Focus maximum 1; Async Running maximum 2; Awaiting Review maximum 2; Async Ready maximum 5. When Awaiting Review is full, review before dispatching more work.
 - **Item format**: `- [ ] description #tag #tag (optional context)`. Tags are inert text but greppable — e.g., `#m0`, `#spike`, `#design`, `#debt`.
 - **One-shot exclusion**: if a task is small enough to one-shot an agent, it doesn't belong in the queue — just do it.
-- **Agent's role**: append to Inbox or Debt proactively when something surfaces mid-task. Triage (moving items between sections), reordering Ready, and marking items done are the human's call, or done on explicit ask. Do not auto-commit queue changes.
+- **Capture is not dispatch**: append to Inbox or Debt proactively when something surfaces mid-task, but do not interrupt Focus merely to dispatch it.
+- **Human control**: selecting Focus, promoting into Async Ready, dispatching, reordering Async Ready, and marking work complete are the human's call, or done on explicit ask. Do not auto-commit queue changes or start parallel queue items autonomously.
+- **Dispatch-ready packet**: an Async Ready item must state its outcome, deliverable, scope, required inputs, done criteria, non-goals, dependencies/overlap, execution constraints, and when to stop for input.
+- **Async transition**: when the human dispatches an item, the control task moves it from Async Ready to Async Running and records the task/thread, start date, and base revision. The worker returns an artifact plus verification evidence; the control task moves it to Awaiting Review. A worker in an isolated worktree should not edit the central queue.
+- **Review disposition**: review results are accepted/merged, returned for revision, discarded, or converted into a new decision/task. Finished agent execution is not completed project work until disposition occurs.
 - **Commit cadence**: edit `TASKS.md` freely during work. Commit it either alongside the code commit that a queue change describes (e.g., completing a slice), or as a management commit at a session boundary for planning-only changes. When committing code, stage deliberately so queue edits don't accidentally sweep in unless intentionally bundled.
 - **Queue items vs commits**: not strict 1-1. One item may span several commits; one commit may close multiple items; management commits aren't 1-1 with any work item; some items (research, "drop it" conclusions) produce no code commit. The invariant: every commit is relatable to at least one queue item, and every completed item corresponds to at least one commit or an explicit no-code-change outcome.
-- **Parallel work**: In Progress supports multiple items. Each entry carries a status — `active`, `blocked: <reason>`, or `waiting: <thing>`. The human decides what's parallelizable; the agent maintains status lines but doesn't spin up parallel items on its own.
+- **Blocked work**: retain the item in its current execution section with `blocked: <reason>` or `waiting: <thing>` unless the human explicitly reclassifies it.
+
+## 12) Working With The Stability Frontier
+
+Read [`STABILITY_FRONTIER.md`](STABILITY_FRONTIER.md) before treating the live
+frontier in `TASKS.md` as an implementation contract.
+
+- The frontier summarizes the current near-term product outcome, settled build
+  assumptions, invariants, blocking decisions, non-goals, and advancement test.
+- Canonical specs remain authoritative for product behavior. If the frontier
+  conflicts with a spec or verified implementation constraint, flag it as stale
+  and request human resolution.
+- A frontier marked draft is not accepted implementation authority.
+- Work within settled blocks and preserve frontier invariants. Do not resolve a
+  named blocking decision speculatively merely to complete a task.
+- Proactively call out a **frontier movement candidate** when evidence shows
+  that a block is stable enough to promote, an assumption is invalid, a
+  non-goal needs reconsideration, or the advancement test appears satisfied.
+- Do not independently change the frontier's product outcome, invariants,
+  settled-vs-blocking classifications, major non-goals, or advancement test.
+  Propose the change and seek human confirmation. After explicit approval,
+  update the frontier and its owning durable docs together.

@@ -5,7 +5,7 @@ type: research
 created: 2026-07-10
 retire-by: 2026-07-24
 related:
-  - TASKS.md (In Progress — code-verification pass)
+  - notes/active/2026-07-21-handle-registry-v0-task-spec.md (invocation compatibility input)
   - PLANS/agentic-roadmap-glm-5.2.md (M0 code-verification)
   - notes/active/2026-07-06-session-reflection-workflow.md
   - SPECS/study-action-model.md
