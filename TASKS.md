@@ -23,8 +23,14 @@ Item format: `- [ ] description #tag #tag (optional context)`. Priority in Ready
 
 (active / blocked: reason / waiting: thing — supports parallel items)
 
-- handle registry V0 spec: constrained-operations list, payload schemas, proposal-only vs apply, lifecycle states (`proposed / accepted / applied / dismissed / deferred / superseded`) #m0 #design (design doc, can run in parallel with the spikes)
-- LLM provider spike: select which API provider; validate structured-output reliability and Mandarin reflection quality; build the developer-facing reflection prototype on real session traces; produce provider decision + per-session cost estimate for hosted scale #m0 #spike (interdependent with the bundle spike — needs a rough bundle to send, refines the bundle from what the model needs; context: notes/active/2026-07-20-llm-provider-spike-summary.md)
+- handle registry V0 post-spike stabilization: confirm the first-prototype handle inventory; finish the handle, lifecycle, provenance/override, and invocation-path contracts; reconcile existing manual suppression, bad-prompt, and contrast-management paths without requiring their implementation or removal #m0 #design (active focus; task spec: `notes/active/2026-07-21-handle-registry-v0-task-spec.md`)
+
+
+## Recently Completed
+
+(completed outcomes kept briefly for handoff; durable conclusions live in the linked artifact)
+
+- [x] LLM provider spike: selected `gpt-5.6-luna-high`, produced a solid first reflection prompt/result draft, and evaluated it through an out-of-band runner over hard-coded fixtures #m0 #spike (closed at its intended risk-reduction boundary; in-product integration, live bundle assembly, and future LLM evaluation work remain separate; outcome: `notes/active/2026-07-20-llm-provider-spike-summary.md`)
 
 
 ## Debt

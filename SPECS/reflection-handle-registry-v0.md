@@ -16,6 +16,7 @@ schema gap.
 
 Related documents:
 
+- [`notes/active/2026-07-21-handle-registry-v0-task-spec.md`](../notes/active/2026-07-21-handle-registry-v0-task-spec.md)
 - [`notes/active/2026-07-06-session-reflection-workflow.md`](../notes/active/2026-07-06-session-reflection-workflow.md)
 - [`notes/active/2026-07-10-session-evidence-bundle-design.md`](../notes/active/2026-07-10-session-evidence-bundle-design.md)
 - [`SPECS/study-action-model.md`](./study-action-model.md)
