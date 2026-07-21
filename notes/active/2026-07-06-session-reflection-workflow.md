@@ -5,7 +5,7 @@ type: research
 created: 2026-07-06
 retire-by: 2026-07-20
 related:
-  - TASKS.md (In Progress — session-reflection workflow capture)
+  - notes/active/2026-07-21-handle-registry-v0-task-spec.md (reflection exemplars and handle inventory input)
   - PLANS/agentic-roadmap-glm-5.2.md (session-evidence bundle pre-spike)
 
 ## Approach
