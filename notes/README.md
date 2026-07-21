@@ -69,5 +69,7 @@ Agents may propose archive; triage and confirmation follow the same pattern as `
 | [2026-07-06-session-reflection-workflow.md](active/2026-07-06-session-reflection-workflow.md) | research | 2026-07-20 | TASKS.md (Parked / related) |
 | [2026-07-10-session-lifecycle-code-verification.md](active/2026-07-10-session-lifecycle-code-verification.md) | research | 2026-07-24 | TASKS.md (In Progress — code-verification) |
 | [2026-07-10-session-evidence-bundle-design.md](active/2026-07-10-session-evidence-bundle-design.md) | research | 2026-07-24 | TASKS.md (Ready — session-evidence bundle design spike) |
-| [2026-07-20-llm-provider-spike-summary.md](active/2026-07-20-llm-provider-spike-summary.md) | research | 2026-09-20 | TASKS.md (In Progress — LLM provider spike) |
+| [2026-07-20-llm-provider-spike-summary.md](active/2026-07-20-llm-provider-spike-summary.md) | research | 2026-09-20 | TASKS.md (Recently Completed — LLM provider spike) |
+| [2026-07-20-m1-artifact-store-planning.md](active/2026-07-20-m1-artifact-store-planning.md) | planning | 2026-09-20 | TASKS.md (Inbox — M1 artifact store planning) |
 | [2026-07-20-spoken-construction-drills.md](active/2026-07-20-spoken-construction-drills.md) | research | 2026-08-20 | TASKS.md (Parked — spoken construction habit drills) |
+| [2026-07-21-handle-registry-v0-task-spec.md](active/2026-07-21-handle-registry-v0-task-spec.md) | work-bundle | when registry V0 stabilizes | TASKS.md (In Progress — active focus) |
