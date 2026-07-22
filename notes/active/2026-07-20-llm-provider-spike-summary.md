@@ -5,7 +5,7 @@ type: research
 created: 2026-07-20
 retire-by: 2026-09-20
 related:
-  - TASKS.md (Recently Completed — LLM provider spike)
+  - TASKS.md
   - PLANS/agentic-roadmap-glm-5.2.md (M0 provider decision and developer-facing reflection prototype)
   - notes/active/2026-07-10-session-evidence-bundle-design.md
   - SPECS/reflection-handle-registry-v0.md

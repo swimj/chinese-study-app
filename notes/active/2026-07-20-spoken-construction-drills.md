@@ -5,7 +5,7 @@ type: research
 created: 2026-07-20
 retire-by: 2026-08-20
 related:
-  - TASKS.md (Parked — spoken construction habit drills)
+  - TASKS.md
 
 ## Product instinct
 
