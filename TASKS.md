@@ -190,10 +190,16 @@ dispatch; top is next)
   - **Execution:** Docs-only in an isolated worktree based on current `HEAD` at dispatch. Do not mutate existing `TASKS.md` entries; new work discovered during execution may be appended to Inbox or Parked under the catalog rules above.
   - **Stop/ask:** Record ordinary ambiguity as alternatives plus a recommended default. Stop for human input only if a missing decision makes a useful complete map impossible, not merely because one row remains unresolved.
 
+- [ ] remove the home-page production answer-matching controls and localStorage overrides; retain profile-default normalization for typed production, and record deferred French configurability as debt #ui #cleanup #french (task spec: `notes/active/2026-07-22-remove-answer-matching-ui-task-spec.md`)
+
+- [ ] persist browser-visible active time for completed sessions and show only today, 3-day average, and 7-day average cumulative session-time metrics on the home page #analytics #session #ui (task spec: `notes/active/2026-07-22-session-active-time-metrics-task-spec.md`)
+
 
 ## Inbox
 
 (raw capture — unsorted; capture does not imply priority or dispatch readiness)
+
+- [ ] make the daily new-word limit configurable while preserving the independent per-day completed-new-word counter and next-session-only effect #session #policy #ui (task spec: `notes/active/2026-07-22-configurable-daily-new-word-limit-task-spec.md`)
 
 - M1 artifact store planning: reflection artifact as durable carrier of disposition (not a consumable log); only time-gap bridge + disposition lifecycle are load-bearing for first dogfood, planner/eval/extraction purposes deferred; the first stored artifacts come from learner-facing reflection (developer-facing artifacts dropped from M1); storage shape converged to one DB provenance table + one seeded per-item disposition table, blob kept in a DB column, thin store interface seam; dispositions are the precious/irrecoverable part, not blobs; store design is downstream of the spike's per-item schema contract #m1 #design (memory: notes/active/2026-07-20-m1-artifact-store-planning.md; handle registry is the other half of M1 and a separate conversation)
 
@@ -208,6 +214,8 @@ dispatch; top is next)
 ## Debt
 
 (workarounds with a trigger condition — "revisit when X")
+
+- Reconsider configurable French production answer matching (including whether the retained profile-default normalizer remains sufficient) when French production becomes an active product direction again; the former home-page panel and localStorage overrides were intentionally removed during French deprioritization #french #production #ui
 
 ## Parked
 
