@@ -88,3 +88,4 @@ Agents may propose archive; triage and confirmation follow the same pattern as `
 | [2026-07-20-m1-artifact-store-planning.md](active/2026-07-20-m1-artifact-store-planning.md) | planning | 2026-09-20 |
 | [2026-07-20-spoken-construction-drills.md](active/2026-07-20-spoken-construction-drills.md) | research | 2026-08-20 |
 | [2026-07-21-handle-registry-v0-task-spec.md](active/2026-07-21-handle-registry-v0-task-spec.md) | work-bundle | when registry V0 stabilizes |
+| [2026-07-22-project-steward-linear-trial-task-spec.md](active/2026-07-22-project-steward-linear-trial-task-spec.md) | work-bundle | when the initial trial launches or is rejected |

@@ -171,6 +171,8 @@ reflection step fails or the reflection is never reviewed.
 (fully specified dispatch candidates; potentially stale, so revalidate before
 dispatch; top is next)
 
+- [ ] orient and prepare a bounded project-steward + Linear trial: define the persistent steward charter, calibrated intake/prioritization behavior, extra-Git source-of-truth boundary, minimal Linear/MCP topology, human-assisted setup, smoke tests, and evaluation/rollback criteria without enabling paid or autonomous coding workflows #workflow #design #spike (task spec: `notes/active/2026-07-22-project-steward-linear-trial-task-spec.md`)
+
 - [ ] **Classify ownership of every current persisted table** #m0 #design
   - **Outcome:** A reviewable shared-vs-user-owned map that exposes the tenancy decisions the hosted beta will eventually need without designing the migration itself.
   - **Deliverable:** `PLANS/hosted-beta-tenancy-table-map.md`, linked back to the relevant immediate question in `PLANS/beta-web-service-plan.md` if a link improves navigation.
