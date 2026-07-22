@@ -24,8 +24,8 @@ Guidance for AI coding agents working in this repository.
 5. `SPECS/session-covering-criteria.md`
 6. `SPECS/study-action-model.md`
 7. `STABILITY_FRONTIER.md` — how to interpret and maintain the current build-wave boundary (see §12)
-8. `TASKS.md` — live stability frontier plus current work queue; read at session start to orient on in-progress and next-up work (see §11)
-9. Active notes in `notes/active/` linked from active queue items (working memory only; defer to SPECS on conflict — see [`notes/README.md`](notes/README.md))
+8. `TASKS.md` — versioned stability-frontier snapshot and work catalog; read at session start for current direction and dispatch candidates, while treating branch copies as potentially stale (see §11)
+9. Task-spec notes linked from relevant catalog items, followed by only the working notes relevant to the task (working memory only; defer to SPECS on conflict — see [`notes/README.md`](notes/README.md))
 10. Relevant tests under `tests/` (see [`docs/testing.md`](docs/testing.md))
 
 When code and spec conflict, treat the spec as intended behavior and update code + tests together.
@@ -127,25 +127,33 @@ This repo contains real DB artifacts and backups under `data/`.
 
 ## 11) Working With `TASKS.md`
 
-`TASKS.md` holds the live stability frontier and universal work queue at repo root. Read it at session start to orient on the current build boundary, what's in progress, and what's next up.
+`TASKS.md` is the versioned work catalog at repo root. It records project intent
+as of the commit containing it; it is not a live scheduler, running-task
+registry, review queue, or communication channel for active agents. Every
+worktree sees a branch-local snapshot that may be stale relative to other work.
 
-- **Sections**: Focus (active human steering) → Async Running (dispatched background work) → Awaiting Review (returned work needing disposition) → Async Ready (fully specified, priority-ordered dispatch shelf) → Inbox (raw capture). Recently Completed keeps short handoffs; Debt holds workarounds with trigger conditions; Parked holds tangential/deferred items.
-- **Queue limits**: Focus maximum 1; Async Running maximum 2; Awaiting Review maximum 2; Async Ready maximum 5. When Awaiting Review is full, review before dispatching more work.
+- **Sections**: Focus is a human-maintained orientation snapshot; Async Ready is a fully specified, priority-ordered dispatch shelf; Inbox is raw capture. Recently Completed keeps short handoffs; Debt holds workarounds with trigger conditions; Parked holds tangential/deferred items.
+- **External execution state**: the human currently tracks running, blocked, and finished execution through the unarchived Codex tasks/threads visible in the app sidebar and tracks review, CI, dependencies, integration, and disposition through GitHub pull requests. This is human-maintained coordination context, not a shared object agents should assume they can read or update. Do not mirror those volatile states into `TASKS.md`.
+- **WIP policy**: Focus maximum 1; async tasks in flight maximum 2; work awaiting review maximum 2; Async Ready maximum 5. The human judges live occupancy from the Codex sidebar, GitHub, and current awareness rather than catalog sections. Agents do not need to discover or enforce global occupancy; they must not dispatch additional work without explicit instruction. When review is full, review before dispatching more work.
 - **Item format**: `- [ ] description #tag #tag (optional context)`. Tags are inert text but greppable — e.g., `#m0`, `#spike`, `#design`, `#debt`.
-- **One-shot exclusion**: if a task is small enough to one-shot an agent, it doesn't belong in the queue — just do it.
-- **Capture is not dispatch**: append to Inbox or Debt proactively when something surfaces mid-task, but do not interrupt Focus merely to dispatch it.
-- **Human control**: selecting Focus, promoting into Async Ready, dispatching, reordering Async Ready, and marking work complete are the human's call, or done on explicit ask. Do not auto-commit queue changes or start parallel queue items autonomously.
-- **Dispatch-ready packet**: an Async Ready item must state its outcome, deliverable, scope, required inputs, done criteria, non-goals, dependencies/overlap, execution constraints, and when to stop for input.
-- **Async transition**: when the human dispatches an item, the control task moves it from Async Ready to Async Running and records the task/thread, start date, and base revision. The worker returns an artifact plus verification evidence; the control task moves it to Awaiting Review. A worker in an isolated worktree should not edit the central queue.
+- **Direct prompts are sufficient**: `TASKS.md` is not an intake or authorization gate. When the human directly requests in-scope work, do it without first creating or promoting a catalog entry unless explicitly asked. The catalog's one-shot exclusion is a human workflow heuristic, not a prerequisite for agent action.
+- **Append-only capture**: any task may append new items to Inbox or Parked. Agents must not edit, move, close, deduplicate, prioritize, or reorder existing entries without explicit instruction. Order in those capture buckets is not meaningful; reconcile concurrent additions as a semantic union during normal PR/branch integration.
+- **Capture is not dispatch**: recording an idea must not interrupt Focus or start more work.
+- **Human control**: selecting Focus, promoting into Async Ready, dispatching, reordering Async Ready, and reconciling or closing catalog entries are the human's call, or done on explicit ask. Do not start parallel catalog items autonomously.
+- **Dispatch-ready packet**: an Async Ready item must state its outcome, deliverable, scope, required inputs, done criteria, non-goals, dependencies/overlap, execution constraints, and when to stop for input. Keep this inline when short; otherwise link to a task-spec note that consolidates the executable context.
+- **Potential staleness**: Async Ready items are candidates, not promises. At dispatch, the human revalidates that the outcome is still wanted, its inputs are stable enough, no active task owns the same decision boundary, likely semantic/merge overlap is acceptable, and review capacity exists. Apply the same judgment when shifting Focus.
+- **Task identity and context**: the first prompt plus subsequent task thread define an agent task's semantic identity and execution contract. A repository task ID is optional, not required. Once dispatched, the worker follows that prompt and the specs/docs at its base revision; later `TASKS.md` edits do not steer it.
+- **Worktree ownership**: each independently dispatched async task runs in its own worktree. Do not place multiple independently dispatched tasks in one worktree. Worktrees prevent simultaneous filesystem interference; they do not prevent logical conflicts, overlapping diffs, stale assumptions, or integration cost.
+- **Working notes vs task specs**: ordinary working notes stay lightweight and do not need a `TASKS.md` backlink. When their content becomes critical to a cataloged task, consolidate the necessary context and references into a task-spec note, then link to it from `TASKS.md`. Do not copy volatile execution or review state into note metadata.
 - **Review disposition**: review results are accepted/merged, returned for revision, discarded, or converted into a new decision/task. Finished agent execution is not completed project work until disposition occurs.
-- **Commit cadence**: edit `TASKS.md` freely during work. Commit it either alongside the code commit that a queue change describes (e.g., completing a slice), or as a management commit at a session boundary for planning-only changes. When committing code, stage deliberately so queue edits don't accidentally sweep in unless intentionally bundled.
-- **Queue items vs commits**: not strict 1-1. One item may span several commits; one commit may close multiple items; management commits aren't 1-1 with any work item; some items (research, "drop it" conclusions) produce no code commit. The invariant: every commit is relatable to at least one queue item, and every completed item corresponds to at least one commit or an explicit no-code-change outcome.
-- **Blocked work**: retain the item in its current execution section with `blocked: <reason>` or `waiting: <thing>` unless the human explicitly reclassifies it.
+- **PR handoff**: reviewable async work should normally return through a GitHub PR. Its title and description should make the originating task recognizable without requiring a repository ID and record the outcome, material deviations, verification, open decisions, dependencies/overlap, and follow-up work. A no-diff conclusion may return through the Codex task instead.
+- **Commit cadence**: commit append-only Inbox/Parked capture with the task output or PR that discovered it. Commit human-directed catalog management either alongside the change it describes or as a management commit at a session boundary. When committing code, stage deliberately so unrelated catalog edits do not get swept in accidentally.
+- **Catalog items vs commits**: not strict 1-1. One item may span several commits; one commit may close multiple items; management commits aren't 1-1 with any work item; some items (research, "drop it" conclusions) produce no code commit. The invariant: every commit is relatable to at least one cataloged or one-shot task, and every completed catalog item corresponds to at least one commit or an explicit no-code-change outcome.
 
 ## 12) Working With The Stability Frontier
 
-Read [`STABILITY_FRONTIER.md`](STABILITY_FRONTIER.md) before treating the live
-frontier in `TASKS.md` as an implementation contract.
+Read [`STABILITY_FRONTIER.md`](STABILITY_FRONTIER.md) before treating the
+frontier snapshot in `TASKS.md` as an implementation contract.
 
 - The frontier summarizes the current near-term product outcome, settled build
   assumptions, invariants, blocking decisions, non-goals, and advancement test.

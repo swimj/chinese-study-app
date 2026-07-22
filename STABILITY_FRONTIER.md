@@ -7,8 +7,10 @@ The stability frontier is the repository's rolling boundary between:
 - questions that still require focused human judgment before independent
   implementation should proceed.
 
-The live frontier is maintained near the top of [`TASKS.md`](TASKS.md). This
-document explains how to interpret, use, and evolve it.
+The current frontier is maintained near the top of [`TASKS.md`](TASKS.md).
+Like every tracked file, each worktree sees the frontier as of its base
+revision; it is not a cross-worktree live update channel. This document
+explains how to interpret, use, and evolve it.
 
 ## Purpose
 
@@ -139,8 +141,10 @@ in a spec, plan, or active note; the frontier should summarize and link it.
 
 ### Before starting work
 
-1. Read the live frontier in `TASKS.md` and determine whether it is accepted or
-   still draft.
+1. Read the frontier snapshot in `TASKS.md` and determine whether it is accepted
+   or still draft. If the dispatch context says a newer frontier materially
+   changed, stop and obtain the relevant updated contract rather than assuming
+   the branch-local copy is current.
 2. Confirm that the task fits the near-term outcome and explicit non-goals.
 3. Identify which settled blocks the task may rely on and which blocking
    decisions it must not resolve speculatively.
@@ -200,11 +204,11 @@ active notes and focused design work
 canonical specs and architecture docs
   -> hold accepted durable decisions
 
-stability frontier in TASKS.md
+stability frontier snapshot in TASKS.md
   -> summarizes what the current wave may safely assume
 
-task queue and task specs
-  -> dispatch concrete work inside that boundary
+work catalog and task specs
+  -> define dispatch candidates inside that boundary
 ```
 
 A healthy frontier changes noticeably at architectural checkpoints, remains

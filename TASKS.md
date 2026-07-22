@@ -1,28 +1,54 @@
 # TASKS
 
-Universal work queue. Capture freely in **Inbox**, but promote and dispatch work
-deliberately. Anything one-shot-able doesn't belong here — just do it.
+Versioned work catalog. Capture freely in **Inbox** or **Parked**, but promote
+and dispatch work deliberately. Anything one-shot-able doesn't belong here —
+just do it.
+
+This file records project intent as of the commit containing it. It is not a
+live scheduler, running-task registry, review queue, or communication channel
+for active agents. Every worktree sees a branch-local snapshot that may be
+stale relative to other work. For now, the human tracks live execution through
+the unarchived Codex tasks/threads visible in the app sidebar and tracks review
+and integration through GitHub pull requests. This is human-maintained external
+context, not a shared object agents should assume they can read or update.
 
 The current build-wave boundary is recorded below. See
 [`STABILITY_FRONTIER.md`](STABILITY_FRONTIER.md) for how to interpret, evolve,
 and request human guidance on the stability frontier.
 
-Commit cadence: edit freely during work; commit either alongside the code commit that a queue change describes, or as a management commit at a session boundary. Appending to Inbox/Debt is the agent's job; triage and reordering are the human's (or done on explicit ask).
+Commit cadence: edit freely during work; commit either alongside the code or
+documentation change that carries the catalog edit, or as a management commit
+at a session boundary. Any task may append a new item to Inbox or Parked.
+Editing, moving, closing, deduplicating, prioritizing, or reordering existing
+items is the human's job, or done on explicit ask. Concurrent additions are
+reconciled as a semantic union at normal PR/branch integration points; a
+mechanical merge conflict is acceptable when that logical merge is clean.
 
 Item format: `- [ ] description #tag #tag (optional context)`. Priority in
 **Async Ready** is list position (top = next).
 
-Queue limits:
+Operating limits:
 
-- **Focus — max 1:** the one workstream receiving active human steering.
-- **Async Running — max 2:** manually dispatched background tasks currently
-  producing artifacts.
-- **Awaiting Review — max 2:** returned work awaiting a human disposition. When
-  full, review before dispatching more work.
+- **Focus — max 1:** the human-maintained orientation snapshot below. The actual
+  focus is the task currently receiving active human steering; this entry may
+  be stale on unrelated branches.
+- **Async in flight — max 2:** the human counts manually dispatched background
+  tasks from the Codex sidebar and current awareness, not from this file.
+- **Awaiting review — max 2:** the human counts returned work from GitHub and
+  current awareness. When full, review before dispatching more work.
 - **Async Ready — max 5:** fully specified tasks that can run without another
-  design conversation.
+  design conversation. These are candidates, not promises: revalidate an item
+  against current focus, dependencies, and product direction at dispatch.
 - Capture is not dispatch. The human selects Focus and promotes work into Async
   Ready.
+
+Each independently dispatched async task runs in its own worktree; do not place
+multiple independently dispatched tasks in one worktree. The task's first
+prompt and subsequent thread define its semantic identity and execution
+contract. No repository task ID is required. Worktrees isolate file edits but
+do not eliminate semantic overlap, merge conflicts, stale assumptions, or
+integration cost; the human judges those risks before dispatching or shifting
+focus.
 
 ## Current Stability Frontier — Draft For Review
 
@@ -140,25 +166,12 @@ reflection step fails or the reflection is never reviewed.
 - [ ] handle registry V0 post-spike stabilization: confirm the first-prototype handle inventory; define the provisional handle, lifecycle, provenance/override, and invocation-path contracts; reconcile existing manual suppression, bad-prompt, and contrast-management paths without requiring their implementation or removal #m0 #design (task spec: `notes/active/2026-07-21-handle-registry-v0-task-spec.md`)
 
 
-## Async Running — Max 2
-
-(manually dispatched background tasks; record task/thread, start date, and base revision)
-
-*(none)*
-
-
-## Awaiting Review — Max 2
-
-(returned artifacts awaiting review, revision, merge, acceptance, or discard)
-
-*(none)*
-
-
 ## Async Ready — Max 5
 
-(fully specified, independent enough to dispatch without another design conversation; top is next)
+(fully specified dispatch candidates; potentially stale, so revalidate before
+dispatch; top is next)
 
-- [ ] **[hosted-beta-tenancy-map] Classify ownership of every current persisted table** #m0 #design
+- [ ] **Classify ownership of every current persisted table** #m0 #design
   - **Outcome:** A reviewable shared-vs-user-owned map that exposes the tenancy decisions the hosted beta will eventually need without designing the migration itself.
   - **Deliverable:** `PLANS/hosted-beta-tenancy-table-map.md`, linked back to the relevant immediate question in `PLANS/beta-web-service-plan.md` if a link improves navigation.
   - **Scope:** Inventory the current schema and classify every persisted table by both its present role and its likely hosted ownership: shared content/reference data, user-owned learner state/history, service-operational/provenance data, or mixed/unresolved. Identify tables that would need an ownership column, split, or explicit policy decision, but do not design those changes.
@@ -172,7 +185,7 @@ reflection step fails or the reflection is never reviewed.
     - no code, schema, migration, auth, deployment, or data changes are made.
   - **Non-goals:** Choose Postgres strategy, design authentication or request context, add `user_id`, design migrations, decide cloud infrastructure, or implement tenancy.
   - **Dependencies:** None. This is intentionally independent of the current Handle Registry focus.
-  - **Execution:** Docs-only in an isolated worktree based on current `HEAD` at dispatch. Do not edit `TASKS.md`; the dispatching/control task owns queue state.
+  - **Execution:** Docs-only in an isolated worktree based on current `HEAD` at dispatch. Do not mutate existing `TASKS.md` entries; new work discovered during execution may be appended to Inbox or Parked under the catalog rules above.
   - **Stop/ask:** Record ordinary ambiguity as alternatives plus a recommended default. Stop for human input only if a missing decision makes a useful complete map impossible, not merely because one row remains unresolved.
 
 
