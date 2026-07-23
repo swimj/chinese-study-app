@@ -4,6 +4,7 @@ import {
   type SessionPrefetchState,
 } from '../features/session/session-prefetch';
 import type { SessionPhase } from '../lib/session-state';
+import { getReviewFailureRatePeriods } from '../lib/review-failure-rates';
 import { studyProfile, type ProductionMatchOptions } from '../study-profile';
 
 export function HomeOverviewPanel({
@@ -63,21 +64,14 @@ export function HomeOverviewPanel({
       )}
       <section className="failure-rate-section" aria-label="Review failure rate">
         <h3>Review failure rate</h3>
-        {backendStatus?.reviewFailureRateDays.length ? (
-          <div className="failure-rate-list">
-            {backendStatus.reviewFailureRateDays.slice(-7).map((day) => (
-              <div key={day.dayKey} className="failure-rate-row">
-                <span>{day.dayKey}</span>
-                <strong>{formatFailureRate(day.failureRate)}</strong>
-                <span>{day.failedReviewActionSessions}/{day.completedReviewActionSessions}</span>
-                <span>3d {formatFailureRate(day.rolling3DayFailureRate)}</span>
-                <span>7d {formatFailureRate(day.rolling7DayFailureRate)}</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="notes">No review completions recorded yet.</p>
-        )}
+        <div className="failure-rate-list">
+          {getReviewFailureRatePeriods(backendStatus?.reviewFailureRateDays ?? []).map((period) => (
+            <div key={period.days} className="failure-rate-period">
+              <span>{period.days}-day</span>
+              <strong>{formatFailureRate(period.failureRate)}</strong>
+            </div>
+          ))}
+        </div>
       </section>
       {!sessionStarted ? (
         <p className="notes">
