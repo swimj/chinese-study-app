@@ -1,54 +1,52 @@
 # TASKS
 
-Versioned work catalog. Capture freely in **Inbox** or **Parked**, but promote
-and dispatch work deliberately. Anything one-shot-able doesn't belong here —
-just do it.
+Versioned current stability frontier plus the frozen pre-Linear task-catalog
+snapshot.
 
-This file records project intent as of the commit containing it. It is not a
-live scheduler, running-task registry, review queue, or communication channel
-for active agents. Every worktree sees a branch-local snapshot that may be
-stale relative to other work. For now, the human tracks live execution through
-the unarchived Codex tasks/threads visible in the app sidebar and tracks review
-and integration through GitHub pull requests. This is human-maintained external
-context, not a shared object agents should assume they can read or update.
+## Portfolio Authority Cutoff — 2026-07-24
 
-The current build-wave boundary is recorded below. See
+Effective from the commit containing this notice, Linear is the trial source of
+truth for current idea intake, classification, portfolio priority, readiness,
+themes, debt, parked work, declared Focus/Async work, and portfolio disposition.
+See
+[`PLANS/project-steward-linear-trial.md`](PLANS/project-steward-linear-trial.md)
+for the approved operating contract.
+
+The Focus, Async Ready, Inbox, Recently Completed, Debt, and Parked sections
+below are frozen launch context. Do not add, move, close, deduplicate,
+prioritize, reorder, or otherwise maintain their entries after the cutoff, and
+do not bulk-migrate them merely for completeness. Reconsider a legacy entry in
+Linear only when it becomes relevant.
+
+The current build-wave boundary remains active below. See
 [`STABILITY_FRONTIER.md`](STABILITY_FRONTIER.md) for how to interpret, evolve,
 and request human guidance on the stability frontier.
 
-Commit cadence: edit freely during work; commit either alongside the code or
-documentation change that carries the catalog edit, or as a management commit
-at a session boundary. Any task may append a new item to Inbox or Parked.
-Editing, moving, closing, deduplicating, prioritizing, or reordering existing
-items is the human's job, or done on explicit ask. Concurrent additions are
-reconciled as a semantic union at normal PR/branch integration points; a
-mechanical merge conflict is acceptable when that logical merge is clean.
+Current coordination is split deliberately:
 
-Item format: `- [ ] description #tag #tag (optional context)`. Priority in
-**Async Ready** is list position (top = next).
+- Linear records the current portfolio and which cataloged tasks the human has
+  declared in flight through `In Progress` plus a Focus/Async execution lane.
+  In-flight work includes execution, review, and revision.
+- The initiating Codex prompt, linked task-spec note when one exists, and task
+  thread own the detailed execution contract and context.
+- GitHub pull requests and Git history own review, CI, integration, and merge
+  truth.
+- Durable product behavior, architecture, vision, and frontier decisions remain
+  in Git.
 
-Operating limits:
+Operating limits remain Focus maximum 1, async in flight maximum 2, work
+awaiting review maximum 2, and Linear `Todo` maximum 5. Capture is not dispatch:
+the human selects and dispatches work and supplies disposition facts.
 
-- **Focus — max 1:** the human-maintained orientation snapshot below. The actual
-  focus is the task currently receiving active human steering; this entry may
-  be stale on unrelated branches.
-- **Async in flight — max 2:** the human counts manually dispatched background
-  tasks from the Codex sidebar and current awareness, not from this file.
-- **Awaiting review — max 2:** the human counts returned work from GitHub and
-  current awareness. When full, review before dispatching more work.
-- **Async Ready — max 5:** fully specified tasks that can run without another
-  design conversation. These are candidates, not promises: revalidate an item
-  against current focus, dependencies, and product direction at dispatch.
-- Capture is not dispatch. The human selects Focus and promotes work into Async
-  Ready.
+Brief directly requested one-offs do not need a Linear item and may remain
+unknown to the steward. If an agent without authorized Linear access surfaces a
+worthwhile new idea, report it for the human or steward to capture; do not
+append it here or create another repository backlog.
 
-Each independently dispatched async task runs in its own worktree; do not place
-multiple independently dispatched tasks in one worktree. The task's first
-prompt and subsequent thread define its semantic identity and execution
-contract. No repository task ID is required. Worktrees isolate file edits but
-do not eliminate semantic overlap, merge conflicts, stale assumptions, or
-integration cost; the human judges those risks before dispatching or shifting
-focus.
+Each independently dispatched async task runs in its own worktree. The task's
+first prompt and subsequent thread define its semantic identity and execution
+contract. Worktrees isolate file edits but do not eliminate semantic overlap,
+merge conflicts, stale assumptions, or integration cost.
 
 ## Current Stability Frontier — Draft For Review
 
