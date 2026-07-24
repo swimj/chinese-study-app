@@ -100,7 +100,7 @@ npm run dev:french:frontend
 
 The backend still stores the same `words` shape. In the French seed data, `hanzi` is the French target term, `pinyin` is pronunciation or a compact grammar note, and `meaning` / `meanings` are English glosses.
 
-The frontend exposes a small Answer matching panel on the home page. Those options are stored in browser `localStorage` and only affect typed production answers.
+Typed production answers use the French profile's forgiving default normalization rules.
 
 ### Study mode
 

@@ -552,27 +552,6 @@ button:hover {
   font-size: 1.25rem;
 }
 
-.answer-matching-section {
-  display: grid;
-  gap: 0.75rem;
-  margin-top: 1.25rem;
-}
-
-.answer-matching-section h3,
-.answer-matching-section .notes {
-  margin: 0;
-}
-
-.match-options-grid {
-  display: grid;
-  gap: 0.55rem;
-}
-
-.match-option-row {
-  align-items: flex-start;
-  font-size: 0.9rem;
-}
-
 .review-card {
   display: grid;
   gap: 1rem;

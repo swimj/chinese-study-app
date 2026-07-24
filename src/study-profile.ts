@@ -90,8 +90,6 @@ export const studyProfiles: Record<StudyProfileId, StudyProfile> = {
 
 export const studyProfile = resolveStudyProfile(getConfiguredStudyProfileId());
 
-export const productionMatchOptionsStorageKey = `productionMatchOptions:${studyProfile.id}`;
-
 export function normalizeProductionAnswer(value: string, options: ProductionMatchOptions): string {
   let normalized = value.trim();
 
@@ -124,39 +122,6 @@ export function normalizeProductionAnswer(value: string, options: ProductionMatc
   return normalized.trim();
 }
 
-export function readStoredProductionMatchOptions(): ProductionMatchOptions {
-  if (typeof window === 'undefined') {
-    return studyProfile.defaultProductionMatchOptions;
-  }
-
-  const rawOptions = window.localStorage.getItem(productionMatchOptionsStorageKey);
-  if (!rawOptions) {
-    return studyProfile.defaultProductionMatchOptions;
-  }
-
-  try {
-    return normalizeProductionMatchOptions(JSON.parse(rawOptions));
-  } catch {
-    return studyProfile.defaultProductionMatchOptions;
-  }
-}
-
-export function writeStoredProductionMatchOptions(options: ProductionMatchOptions): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  window.localStorage.setItem(productionMatchOptionsStorageKey, JSON.stringify(options));
-}
-
-export function resetStoredProductionMatchOptions(): ProductionMatchOptions {
-  if (typeof window !== 'undefined') {
-    window.localStorage.removeItem(productionMatchOptionsStorageKey);
-  }
-
-  return studyProfile.defaultProductionMatchOptions;
-}
-
 function resolveStudyProfile(profileId: string | undefined): StudyProfile {
   if (isStudyProfileId(profileId)) {
     return studyProfiles[profileId];
@@ -171,34 +136,4 @@ function isStudyProfileId(value: string | undefined): value is StudyProfileId {
 
 function getConfiguredStudyProfileId(): string | undefined {
   return typeof import.meta.env === 'object' ? import.meta.env.VITE_STUDY_PROFILE : undefined;
-}
-
-function normalizeProductionMatchOptions(value: unknown): ProductionMatchOptions {
-  const rawOptions = typeof value === 'object' && value !== null
-    ? value as Partial<Record<keyof ProductionMatchOptions, unknown>>
-    : {};
-  const defaults = studyProfile.defaultProductionMatchOptions;
-
-  return {
-    ignoreCase: typeof rawOptions.ignoreCase === 'boolean' ? rawOptions.ignoreCase : defaults.ignoreCase,
-    ignoreAccents: typeof rawOptions.ignoreAccents === 'boolean' ? rawOptions.ignoreAccents : defaults.ignoreAccents,
-    normalizeApostrophes:
-      typeof rawOptions.normalizeApostrophes === 'boolean'
-        ? rawOptions.normalizeApostrophes
-        : defaults.normalizeApostrophes,
-    trimEdgePunctuation:
-      typeof rawOptions.trimEdgePunctuation === 'boolean'
-        ? rawOptions.trimEdgePunctuation
-        : defaults.trimEdgePunctuation,
-    collapseWhitespace:
-      typeof rawOptions.collapseWhitespace === 'boolean'
-        ? rawOptions.collapseWhitespace
-        : defaults.collapseWhitespace,
-    removeWhitespace:
-      typeof rawOptions.removeWhitespace === 'boolean' ? rawOptions.removeWhitespace : defaults.removeWhitespace,
-    ignoreHyphenSpacing:
-      typeof rawOptions.ignoreHyphenSpacing === 'boolean'
-        ? rawOptions.ignoreHyphenSpacing
-        : defaults.ignoreHyphenSpacing,
-  };
 }
