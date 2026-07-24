@@ -1,11 +1,12 @@
 # Project Steward + Linear Trial
 
-Status: approved pilot contract; repository authority cutoff effective
-2026-07-24 from the commit containing the orientation edits; external setup is
-not yet active.
+Status: active pilot; repository authority cutoff, steward, Linear MCP, and
+capture loop activated and smoke-tested 2026-07-24.
 
 Prepared: 2026-07-23
 Approved: 2026-07-24
+Activated: 2026-07-24
+Evaluation due: 2026-08-07 or after 10 real captures, whichever comes first
 
 Related:
 
@@ -44,8 +45,8 @@ execution path.
 
 The human approved the source-of-truth boundary on 2026-07-24. The repository
 orientation becomes effective with the commit containing the corresponding
-`AGENTS.md` and `TASKS.md` cutoff edits. External setup and steward activation
-remain gated by the setup checkpoint below.
+`AGENTS.md` and `TASKS.md` cutoff edits. The human completed the external setup,
+activated the steward, and passed the launch smoke tests on 2026-07-24.
 
 ## Trial Question And Bounds
 
@@ -113,19 +114,22 @@ The approved repository orientation is:
 - state that Linear is the sole current catalog for new idea intake,
   classification, portfolio priority, declared Focus/Async execution lane, and
   current disposition after that cutoff;
-- freeze the existing Focus, Async Ready, Inbox, Debt, Parked, and Recently
-  Completed entries as a launch snapshot rather than duplicating or bulk
-  migrating them;
+- close the existing Focus, Async Ready, Inbox, Debt, Parked, and Recently
+  Completed sections to new intake, promotion, and reprioritization while
+  allowing entries already present at the cutoff to reach their planned
+  terminal disposition under explicit human direction;
 - keep the stability-frontier snapshot in `TASKS.md` authoritative according
   to `STABILITY_FRONTIER.md`; and
 - update the corresponding `AGENTS.md` catalog guidance so agents no longer
   append post-cutoff ideas to `TASKS.md` and instead hand uncaptured ideas to
   the human/steward when Linear access is unavailable.
 
-No existing `TASKS.md` entry should be moved, closed, or copied into Linear as
-part of activation. A legacy entry should enter Linear only when the human
-reconsiders it during real work. The new Linear item should link the legacy
-entry and state that it is now the current portfolio record.
+Activation itself does not bulk move or close legacy `TASKS.md` entries. During
+settling, the human may move or close a pre-cutoff item as its already-planned
+work is accepted, rejected, or otherwise dispositioned. This is historical
+cleanup, not current portfolio management. A legacy entry should enter Linear
+only when the human reconsiders it during real work. The new Linear item should
+link the legacy entry and state that it is now the current portfolio record.
 
 This is reversible: remove the cutoff rule, reconcile the small number of
 active Linear items back into `TASKS.md` as a human-reviewed semantic union,
@@ -227,6 +231,12 @@ initiatives only after multiple real projects need objective-level review.
 Use an existing personal Linear workspace if one is appropriate. Otherwise the
 human may create one workspace and one team named `Chinese Study App` (suggested
 key: `CSA`). Do not create subteams.
+
+The activated pilot uses a personal workspace whose name and URL slug do not
+need to match the repository. Steward operations are scoped to the
+`Chinese Study App` team (`CSA`). Linear's automatically created default team
+and seeded sample issues are outside the pilot and must not be moved, migrated,
+or treated as portfolio input.
 
 Keep Linear's default workflow:
 
@@ -344,7 +354,8 @@ Use the team's default `Backlog` view for intake. Add two saved issue views.
 
 - team is `Chinese Study App`;
 - exclude `Done`, `Canceled`, and `Duplicate`;
-- show status, priority, conviction, execution lane, and theme labels;
+- show status, priority, and the generic `Labels` display property, which
+  contains the applied Conviction, Execution, and theme labels;
 - group by priority; and
 - order within groups by most recently updated.
 
@@ -352,13 +363,17 @@ Use the team's default `Backlog` view for intake. Add two saved issue views.
 
 - team is `Chinese Study App`;
 - status is `In Progress`;
-- show execution lane, priority, assignee, and most recent update;
-- group by execution lane; and
+- show the generic `Labels` display property, priority, assignee, and most
+  recent update;
+- group by the `Execution` label group; and
 - order within each lane by most recently updated.
 
 Linear supports durable filtered issue views and team-scoped views
-([official documentation](https://linear.app/docs/custom-views)). Do not add
-dashboards or subscriptions during the trial.
+([official documentation](https://linear.app/docs/custom-views)). Conviction
+and Execution remain mutually exclusive label groups, not standalone issue
+display properties; Linear exposes their applied members through `Labels` and
+supports the group as a filter/grouping dimension. Do not add dashboards or
+subscriptions during the trial.
 
 ### Execution-state transitions
 
@@ -426,14 +441,23 @@ required.
 
 Linear's hosted MCP server can find, create, and update Linear objects such as
 issues, projects, and comments. Its standard endpoint is read-write; a separate
-read-only endpoint is available. The official Codex setup uses:
+read-only endpoint is available. The activated pilot configured a
+`Streamable HTTP` server named `linear` through Codex
+**Settings > MCP servers** with this URL:
+
+```text
+https://mcp.linear.app/mcp
+```
+
+The equivalent CLI setup is:
 
 ```bash
 codex mcp add linear --url https://mcp.linear.app/mcp
 ```
 
-and then an interactive Linear login
-([official documentation](https://linear.app/docs/mcp)).
+Both paths use an interactive Linear login
+([Codex UI documentation](https://learn.chatgpt.com/docs/extend/mcp#configure-in-the-chatgpt-desktop-app),
+[Linear documentation](https://linear.app/docs/mcp)).
 
 The pilot needs read-write issue access to test low-friction capture. Use the
 interactive OAuth path; do not create an API key. The human must review and
@@ -736,52 +760,38 @@ external object until I say exactly:
 "Pilot boundary approved. Activate steward capture."
 ```
 
-## One Human-Assisted Setup Checkpoint
+## Completed Human-Assisted Setup Checkpoint
 
-Repository-only preparation and official-doc capability research are complete in
-this plan. Before the checkpoint, an agent may continue to review or revise
-this file locally and may prepare the exact `AGENTS.md`/`TASKS.md` patch for
-human review. It may not apply the authority-changing patch, mutate global
-Codex configuration, authenticate, or create any external object.
-
-Complete this as one deliberate setup session. Every step below changes
-external state, global configuration, permissions, or the repository authority
-boundary and therefore requires the human.
+The human completed this checkpoint on 2026-07-24. It is retained as the launch
+record and reproducible setup path; it is no longer an outstanding checklist.
 
 1. **Approve the boundary — completed 2026-07-24.**
    - Post-cutoff Linear, not `TASKS.md`, is authoritative for new idea intake
      and portfolio state.
    - The persistent-Codex-steward topology is approved.
-2. **Orient the repository — prepared 2026-07-24.**
-   - The docs-only `TASKS.md` and `AGENTS.md` edit implements the approved dated
-     cutoff.
-   - Merge/accept that edit before activation so two catalogs are never
-     simultaneously authoritative.
-3. **Prepare Linear.**
-   - Select an appropriate existing workspace or create one.
-   - Select or create one team: `Chinese Study App` (`CSA` suggested).
-   - Keep the default workflow and default Backlog status.
-   - Create the `Conviction` label group with Directive, Leaning, Open, and
-     Observation.
-   - Create the `Execution` label group with Focus and Async.
-   - Create the `Portfolio review` and `Active work` views defined above.
-   - Do not create a project, initiative, cycle, estimates, automation, loop,
-     agent, skill, API key, or GitHub integration.
-4. **Authorize Linear MCP in Codex.**
-   - Review the official Linear MCP setup and presented OAuth permissions.
-   - Run `codex mcp add linear --url https://mcp.linear.app/mcp`.
-   - Complete the interactive Linear login for the selected workspace.
-   - Do not use an API key or add other MCP servers.
-5. **Create the persistent steward task.**
-   - Create one new Codex task, pin it if desired, and paste the launch prompt
-     above.
-   - Let it perform its read-only orientation and identify the selected Linear
-     workspace/team.
-6. **Activate and smoke-test.**
-   - Say `Pilot boundary approved. Activate steward capture.`
-   - Run the MCP capability check and the three prompts below.
-   - Stop on any unexpected permission, paid-feature, AI-credit, browser
-     automation, or source-of-truth request.
+2. **Orient the repository — completed 2026-07-24.**
+   - Commit `52095d2` contains the approved `TASKS.md`, `AGENTS.md`, and pilot
+     contract boundary.
+3. **Prepare Linear — completed 2026-07-24.**
+   - The pilot uses an existing personal workspace and the
+     `Chinese Study App` team (`CSA`).
+   - The default workflow and Backlog remain in use.
+   - Conviction and Execution label groups and the two saved views are present.
+   - The workspace's automatically created default team and seeded issues are
+     explicitly outside the pilot.
+4. **Authorize Linear MCP in Codex — completed 2026-07-24.**
+   - The human reviewed and approved interactive OAuth for the standard
+     read-write endpoint.
+   - Setup used Codex **Settings > MCP servers** because the local Codex CLI was
+     not working; no API key or additional MCP server was added.
+5. **Create the persistent steward task — completed 2026-07-24.**
+   - The persistent steward was created, oriented to the approved personal
+     workspace and `CSA` team, and activated with the launch prompt.
+6. **Activate and smoke-test — passed 2026-07-24.**
+   - The human supplied the exact activation phrase.
+   - The capability preflight and representative smoke tests passed.
+   - No paid feature, AI-credit feature, browser automation, GitHub
+     integration, custom agent, or bulk migration was required.
 
 No GitHub connection is required for launch. If a smoke-test item later becomes
 implementation work, paste the PR URL into Linear manually.
@@ -803,6 +813,10 @@ None is a pilot launch dependency. Do not enable one merely because the current
 Linear plan exposes it.
 
 ## Smoke Tests
+
+Launch result: **passed 2026-07-24**, as confirmed by the human during the
+assisted setup session. The cases below remain the regression check if the
+charter, MCP setup, or Linear shape changes.
 
 ### Capability preflight
 
@@ -883,6 +897,10 @@ claim thematic accumulation before the threshold is met.
 
 ## Evaluation
 
+The pilot is now accumulating real-use evidence. Evaluate at the earlier of
+2026-08-07 or 10 real captures, with a minimum of 5 captures unless the topology
+fails earlier. Smoke-test issues do not count toward the real-capture total.
+
 At the checkpoint, review the issue set together and answer:
 
 | Question | Evidence |
@@ -948,10 +966,11 @@ launch prerequisites:
 3. **Retire the task-tracking role of `TASKS.md`.**
    - Update `AGENTS.md` to point portfolio intake and prioritization to Linear,
      task execution to Codex, and integration state to GitHub.
-   - Mark `TASKS.md` retired for a short settling period; do not maintain it as
-     a second catalog.
+   - Continue terminal disposition of pre-cutoff `TASKS.md` entries during a
+     short settling period; do not accept new work or maintain it as a second
+     catalog.
    - Reconsider legacy entries in Linear only when they become relevant. Do not
-     bulk-migrate the frozen snapshot merely for completeness.
+     bulk-migrate the legacy catalog merely for completeness.
    - After the settling period and an authority audit, archive or remove
      `TASKS.md`; Git history remains the historical record.
 4. **Close the provisional scaffolding.**
@@ -1006,16 +1025,27 @@ Verified against official Linear documentation on 2026-07-23:
 - Linear Agent and installed agents are distinct agent surfaces that the pilot
   deliberately does not enable or depend on.
 
-Re-check only the relevant official page before launch if setup occurs
-materially later, the OAuth prompt differs from this plan, a required MCP write
-is missing, or Linear's product UI no longer matches the documented workflow.
-Do not broaden into a product survey.
+Observed during launch on 2026-07-24:
+
+- label-group members are displayed through Linear's generic `Labels` issue
+  property; Conviction and Execution are not separate display-property columns;
+- a new Linear workspace includes an automatically created default team and
+  seeded issues, which remain outside the `CSA`-scoped pilot;
+- the Codex desktop MCP settings path successfully configured and authenticated
+  Linear when the local Codex CLI was unavailable; and
+- the required read, create, update, execution-lane, retrieval, and cancellation
+  smoke-test flow worked without an API key or extra integration.
+
+Re-check only the relevant official page before changing the setup if the OAuth
+prompt differs from this plan, a required MCP write disappears, or Linear's
+product UI no longer matches the documented workflow. Do not broaden into a
+product survey.
 
 ## Recommendation
 
-**Launch after the single human-assisted setup checkpoint.**
+**Continue the active pilot through its evaluation checkpoint.**
 
-The topology is deliberately reversible and tests a real workflow rather than
-Linear feature adoption. The main launch gate is not technical: the human must
-accept the post-cutoff authority boundary so Linear and `TASKS.md` do not become
-competing idea catalogs.
+The setup and launch gates passed without adding the deferred automation,
+integration, or hierarchy. The topology remains deliberately reversible. The
+next decision should be based on real capture and portfolio-review evidence,
+not additional setup work.
