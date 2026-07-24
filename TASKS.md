@@ -50,7 +50,7 @@ do not eliminate semantic overlap, merge conflicts, stale assumptions, or
 integration cost; the human judges those risks before dispatching or shifting
 focus.
 
-## Current Stability Frontier — Draft For Review
+## Current Stability Frontier
 
 ### Near-term product outcome
 
