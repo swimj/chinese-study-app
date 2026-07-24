@@ -12,11 +12,7 @@ import {
 } from '../../services/api';
 import {
   normalizeProductionAnswer,
-  readStoredProductionMatchOptions,
-  resetStoredProductionMatchOptions,
   studyProfile,
-  type ProductionMatchOptions,
-  writeStoredProductionMatchOptions,
 } from '../../study-profile';
 import {
   beginBucketDrainSession,
@@ -142,7 +138,6 @@ export type StudySessionHomePageProps = {
   contrastPracticeMore: boolean;
   contrastAwaitingRating: boolean;
   activeRatingOptions: RatingOption[];
-  productionMatchOptions: ProductionMatchOptions;
   onStartSession: () => void;
   onEndSession: () => void;
   onUndoLastRating: () => void;
@@ -158,8 +153,6 @@ export type StudySessionHomePageProps = {
   onToggleMeaningVisibility: (meaning: WordMeaning) => void;
   onSubmitProductionHanzi: () => void;
   onProductionHanziInputChange: (value: string) => void;
-  onProductionMatchOptionChange: (option: keyof ProductionMatchOptions, value: boolean) => void;
-  onResetProductionMatchOptions: () => void;
   onSelectContrastChoice: (wordId: string) => void;
   onContrastPracticeMoreChange: (checked: boolean) => void;
   onRevealAnswer: () => void;
@@ -218,8 +211,6 @@ export function useStudySession({
   const [contrastPracticeMore, setContrastPracticeMore] = useState(false);
   const [frozenProductionCard, setFrozenProductionCard] = useState<FrozenProductionCard | null>(null);
   const [frozenContrastCard, setFrozenContrastCard] = useState<FrozenContrastCard | null>(null);
-  const [productionMatchOptions, setProductionMatchOptions] =
-    useState<ProductionMatchOptions>(() => readStoredProductionMatchOptions());
   const personalNotesEditorInputRef = useRef<HTMLTextAreaElement | null>(null);
   const productionHanziInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -567,7 +558,10 @@ export function useStudySession({
       return;
     }
 
-    const submittedHanzi = normalizeProductionAnswer(productionHanziInput, productionMatchOptions);
+    const submittedHanzi = normalizeProductionAnswer(
+      productionHanziInput,
+      studyProfile.defaultProductionMatchOptions,
+    );
     if (submittedHanzi.length === 0) {
       setProductionHanziError(`Enter ${studyProfile.labels.target} before submitting.`);
       return;
@@ -585,7 +579,10 @@ export function useStudySession({
         ui: createSessionUiSnapshot(),
       });
 
-      const expectedHanzi = normalizeProductionAnswer(activeWord.hanzi, productionMatchOptions);
+      const expectedHanzi = normalizeProductionAnswer(
+        activeWord.hanzi,
+        studyProfile.defaultProductionMatchOptions,
+      );
       const isCorrect = submittedHanzi === expectedHanzi;
 
       if (isCorrect) {
@@ -640,21 +637,6 @@ export function useStudySession({
   function handleContinueAfterAutoForgot() {
     // Unmask the active card after the queue already advanced due to an incorrect hanzi submission.
     resetAnswerAndProductionUi();
-  }
-
-  function handleProductionMatchOptionChange(option: keyof ProductionMatchOptions, value: boolean) {
-    setProductionMatchOptions((current) => {
-      const nextOptions = {
-        ...current,
-        [option]: value,
-      };
-      writeStoredProductionMatchOptions(nextOptions);
-      return nextOptions;
-    });
-  }
-
-  function handleResetProductionMatchOptions() {
-    setProductionMatchOptions(resetStoredProductionMatchOptions());
   }
 
   function handlePreviewContrastChoice(wordId: string) {
@@ -1275,7 +1257,6 @@ export function useStudySession({
       contrastPracticeMore,
       contrastAwaitingRating,
       activeRatingOptions,
-      productionMatchOptions,
       onStartSession: () => void handleStartSession(),
       onEndSession: () => void handleEndSession(),
       onUndoLastRating: handleUndoLastRating,
@@ -1296,8 +1277,6 @@ export function useStudySession({
           setProductionHanziError(null);
         }
       },
-      onProductionMatchOptionChange: handleProductionMatchOptionChange,
-      onResetProductionMatchOptions: handleResetProductionMatchOptions,
       onSelectContrastChoice: handleSelectContrastChoice,
       onContrastPracticeMoreChange: setContrastPracticeMore,
       onRevealAnswer: () => setAnswerRevealed(true),

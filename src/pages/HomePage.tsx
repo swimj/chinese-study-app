@@ -11,7 +11,6 @@ import type { ReviewRating, Word, WordMeaning } from '../types';
 import type { SessionPrefetchState } from '../features/session/session-prefetch';
 import type { RatingOption } from '../features/session/session-rating';
 import type { SessionSummary } from '../features/session/session-summary';
-import type { ProductionMatchOptions } from '../study-profile';
 import {
   StudySessionPanel,
   type FrozenContrastCard,
@@ -65,7 +64,6 @@ export function HomePage({
   contrastPracticeMore,
   contrastAwaitingRating,
   activeRatingOptions,
-  productionMatchOptions,
   onStartSession,
   onEndSession,
   onUndoLastRating,
@@ -81,8 +79,6 @@ export function HomePage({
   onToggleMeaningVisibility,
   onSubmitProductionHanzi,
   onProductionHanziInputChange,
-  onProductionMatchOptionChange,
-  onResetProductionMatchOptions,
   onSelectContrastChoice,
   onContrastPracticeMoreChange,
   onRevealAnswer,
@@ -133,7 +129,6 @@ export function HomePage({
   contrastPracticeMore: boolean;
   contrastAwaitingRating: boolean;
   activeRatingOptions: RatingOption[];
-  productionMatchOptions: ProductionMatchOptions;
   onStartSession: () => void;
   onEndSession: () => void;
   onUndoLastRating: () => void;
@@ -149,8 +144,6 @@ export function HomePage({
   onToggleMeaningVisibility: (meaning: WordMeaning) => void;
   onSubmitProductionHanzi: () => void;
   onProductionHanziInputChange: (value: string) => void;
-  onProductionMatchOptionChange: (option: keyof ProductionMatchOptions, value: boolean) => void;
-  onResetProductionMatchOptions: () => void;
   onSelectContrastChoice: (wordId: string) => void;
   onContrastPracticeMoreChange: (checked: boolean) => void;
   onRevealAnswer: () => void;
@@ -178,11 +171,8 @@ export function HomePage({
           sessionPhase={sessionPhase}
           sessionLoading={sessionLoading}
           displayedSessionItemCount={displayedSessionItemCount}
-          productionMatchOptions={productionMatchOptions}
           onStartSession={onStartSession}
           onEndSession={onEndSession}
-          onProductionMatchOptionChange={onProductionMatchOptionChange}
-          onResetProductionMatchOptions={onResetProductionMatchOptions}
         />
 
         <StudySessionPanel
