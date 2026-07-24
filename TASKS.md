@@ -1,7 +1,7 @@
 # TASKS
 
-Versioned current stability frontier plus the frozen pre-Linear task-catalog
-snapshot.
+Versioned current stability frontier plus the winding-down pre-Linear task
+catalog.
 
 ## Portfolio Authority Cutoff — 2026-07-24
 
@@ -13,10 +13,13 @@ See
 for the approved operating contract.
 
 The Focus, Async Ready, Inbox, Recently Completed, Debt, and Parked sections
-below are frozen launch context. Do not add, move, close, deduplicate,
-prioritize, reorder, or otherwise maintain their entries after the cutoff, and
-do not bulk-migrate them merely for completeness. Reconsider a legacy entry in
-Linear only when it becomes relevant.
+below are closed to new intake, promotion, and reprioritization and are not
+current portfolio authority. Entries already present at the cutoff may still
+be moved or closed under explicit human direction to record their planned
+terminal disposition during the settling period. Do not add follow-on work,
+use these sections for post-cutoff capture, or bulk-migrate them merely for
+completeness. Reconsider a legacy entry in Linear only when it becomes
+relevant.
 
 The current build-wave boundary remains active below. See
 [`STABILITY_FRONTIER.md`](STABILITY_FRONTIER.md) for how to interpret, evolve,
@@ -169,8 +172,6 @@ reflection step fails or the reflection is never reviewed.
 (fully specified dispatch candidates; potentially stale, so revalidate before
 dispatch; top is next)
 
-- [ ] orient and prepare a bounded project-steward + Linear trial: define the persistent steward charter, calibrated intake/prioritization behavior, extra-Git source-of-truth boundary, minimal Linear/MCP topology, human-assisted setup, smoke tests, and evaluation/rollback criteria without enabling paid or autonomous coding workflows #workflow #design #spike (task spec: `notes/active/2026-07-22-project-steward-linear-trial-task-spec.md`)
-
 - [ ] **Classify ownership of every current persisted table** #m0 #design
   - **Outcome:** A reviewable shared-vs-user-owned map that exposes the tenancy decisions the hosted beta will eventually need without designing the migration itself.
   - **Deliverable:** `PLANS/hosted-beta-tenancy-table-map.md`, linked back to the relevant immediate question in `PLANS/beta-web-service-plan.md` if a link improves navigation.
@@ -205,6 +206,8 @@ dispatch; top is next)
 ## Recently Completed
 
 (completed outcomes kept briefly for handoff; durable conclusions live in the linked artifact)
+
+- [x] orient and prepare a bounded project-steward + Linear trial: define the persistent steward charter, calibrated intake/prioritization behavior, extra-Git source-of-truth boundary, minimal Linear/MCP topology, human-assisted setup, smoke tests, and evaluation/rollback criteria without enabling paid or autonomous coding workflows #workflow #design #spike (task spec: `notes/active/2026-07-22-project-steward-linear-trial-task-spec.md`)
 
 - [x] LLM provider spike: selected `gpt-5.6-luna-high`, produced a solid first reflection prompt/result draft, and evaluated it through an out-of-band runner over hard-coded fixtures #m0 #spike (closed at its intended risk-reduction boundary; in-product integration, live bundle assembly, and future LLM evaluation work remain separate; outcome: `notes/active/2026-07-20-llm-provider-spike-summary.md`)
 

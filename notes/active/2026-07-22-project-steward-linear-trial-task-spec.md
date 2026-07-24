@@ -1,15 +1,22 @@
 # Project steward + Linear trial orientation
 
-status: active
+status: winding-down
 type: work-bundle
 created: 2026-07-22
-retire-when: The initial project-steward trial is launched or deliberately rejected, and its accepted operating rules have graduated into their durable homes
+retire-when: The pilot is evaluated and its accepted operating rules graduate into durable homes, or the trial is rejected and rolled back
 related:
-  - TASKS.md
-  - AGENTS.md
-  - STABILITY_FRONTIER.md
-  - docs/vision/agentic_adaptive_language_learning_vision.md
-  - docs/vision/initial_agentic_srs_product_focus.md
+
+- TASKS.md
+- AGENTS.md
+- STABILITY_FRONTIER.md
+- docs/vision/agentic_adaptive_language_learning_vision.md
+- docs/vision/initial_agentic_srs_product_focus.md
+
+Launch outcome: the pilot activated and passed its smoke tests on 2026-07-24.
+The active contract and evaluation record now live in
+[`PLANS/project-steward-linear-trial.md`](../../PLANS/project-steward-linear-trial.md).
+This task-spec note is winding down until the pilot is evaluated and either
+graduated or rolled back.
 
 ## Purpose and context
 
@@ -51,33 +58,37 @@ context. The contract must make clear:
 - how the trial is launched, evaluated, revised, or abandoned; and
 - which setup actions require the human rather than browser-heavy agent work.
 
+
+
 ## Working assumptions already accepted
 
 - The steward is a persistent strategic counterpart, not another bounded
-  implementation worker.
+implementation worker.
 - The steward should default to analysis and project-level judgment. It does
-  not modify code, dispatch implementation tasks, or make material strategic
-  changes unless explicitly authorized.
+not modify code, dispatch implementation tasks, or make material strategic
+changes unless explicitly authorized.
 - A long-lived conversation can carry taste and shared vocabulary, but durable
-  product truth still belongs in canonical specs, vision/architecture docs,
-  and the stability frontier.
+product truth still belongs in canonical specs, vision/architecture docs,
+and the stability frontier.
 - `TASKS.md` is a versioned work catalog, not live cross-worktree coordination
-  state.
+state.
 - GitHub pull requests remain the initial integration and code-review record.
 - Extra-Git state is desirable for current issue/idea intake, prioritization,
-  and portfolio awareness if it avoids ambiguous duplicate authority.
+and portfolio awareness if it avoids ambiguous duplicate authority.
 - Human conviction and issue priority are different dimensions. At minimum,
-  the operating model must distinguish directive, leaning, open, and
-  observational input, even if those modes are inferred from natural language
-  rather than entered as required fields.
+the operating model must distinguish directive, leaning, open, and
+observational input, even if those modes are inferred from natural language
+rather than entered as required fields.
 - Prioritization is multidimensional. Do not reduce it to an unexplained scalar
-  score or pretend that precision exists where the evidence is qualitative.
+score or pretend that precision exists where the evidence is qualitative.
 - The steward should preserve strong human decisions, but repeated contrary
-  evidence or thematic accumulation should cause it to advocate explicitly
-  rather than silently comply forever.
+evidence or thematic accumulation should cause it to advocate explicitly
+rather than silently comply forever.
 - Initial use is human-in-the-loop and iterative. Scheduled reviews,
-  automations, custom Linear agents, and coding-session delegation are later
-  options, not prerequisites.
+automations, custom Linear agents, and coding-session delegation are later
+options, not prerequisites.
+
+
 
 ## Required inputs
 
@@ -99,17 +110,19 @@ turn this into a full repository documentation cleanup.
 For current Linear capability checks, prefer the smallest relevant set of
 official references:
 
-- <https://linear.app/docs/mcp>
-- <https://linear.app/docs/linear-agent>
-- <https://linear.app/docs/agents-in-linear>
-- <https://linear.app/docs/github-integration>
-- <https://linear.app/docs/projects>
-- <https://linear.app/docs/initiatives>
+- [https://linear.app/docs/mcp](https://linear.app/docs/mcp)
+- [https://linear.app/docs/linear-agent](https://linear.app/docs/linear-agent)
+- [https://linear.app/docs/agents-in-linear](https://linear.app/docs/agents-in-linear)
+- [https://linear.app/docs/github-integration](https://linear.app/docs/github-integration)
+- [https://linear.app/docs/projects](https://linear.app/docs/projects)
+- [https://linear.app/docs/initiatives](https://linear.app/docs/initiatives)
 
 Do not browse broadly when an official page or a short human-assisted setup
 step is sufficient.
 
 ## Deliverables and scope
+
+
 
 ### 1. Pilot operating contract
 
@@ -129,9 +142,9 @@ without over-researching them, include:
 
 1. a persistent Codex steward that reads/writes Linear through MCP;
 2. Linear Agent acting as the steward with repository context supplied through
-   links, GitHub, guidance, or MCP; or
+  links, GitHub, guidance, or MCP; or
 3. a deliberately small combination in which one surface owns intake and the
-   other owns deeper strategic review.
+  other owns deeper strategic review.
 
 The plan must not leave the user maintaining two authoritative idea catalogs.
 Recommend an explicit pilot boundary for `TASKS.md` versus Linear and identify
@@ -146,13 +159,13 @@ plan. The charter must cover:
 - project-level purpose and default read-only posture;
 - the durable sources it should use to reorient;
 - the fact that it cannot infer unmerged work or other task-thread state unless
-  that context is supplied or exposed through an authorized tool;
+that context is supplied or exposed through an authorized tool;
 - calibrated deference to directive, leaning, open, and observational input;
 - permission to classify, link, synthesize, recommend, and challenge;
 - boundaries around repository changes, implementation ownership, dispatch,
-  external writes, and strategic decisions;
+external writes, and strategic decisions;
 - a concise capture receipt so the human can see how an idea was interpreted
-  without turning every intake into a planning meeting; and
+without turning every intake into a planning meeting; and
 - when to ask, proceed, or raise a strategic challenge.
 
 Keep the first prompt in the pilot plan unless a concrete consumer justifies a
@@ -214,8 +227,8 @@ Separate setup into:
 - actions the agent can safely perform or prepare;
 - exact actions the human should perform in Linear, GitHub, or Codex settings;
 - actions that require explicit approval because they change global config,
-  authorize OAuth, grant repository access, create external objects, enable a
-  paid feature, or consume AI credits; and
+authorize OAuth, grant repository access, create external objects, enable a
+paid feature, or consume AI credits; and
 - optional later enhancements.
 
 The agent should complete all useful repository-only and read-only work before
@@ -227,7 +240,7 @@ Define a lightweight smoke test using representative inputs such as:
 1. a strong directive that should be preserved rather than relitigated;
 2. an uncertain idea for which the steward should recommend placement; and
 3. an observation that should join an emerging theme without being promoted
-   prematurely.
+  prematurely.
 
 The smoke test should verify capture, interpretation, placement, retrieval, and
 at least one portfolio-level question. It should not require production code
@@ -262,15 +275,17 @@ project-management trial.
 ## Execution constraints
 
 - Run this as a documentation/tooling task in an isolated worktree based on the
-  current project revision.
+current project revision.
 - Do not modify production code, application data, dependencies, or the current
-  product stability frontier.
+product stability frontier.
 - Do not change the authority or meaning of existing `TASKS.md` entries unless
-  the human explicitly approves the proposed repo/Linear boundary. New ideas
-  discovered during the task may still be appended under the catalog's normal
-  capture rules.
+the human explicitly approves the proposed repo/Linear boundary. New ideas
+discovered during the task may still be appended under the catalog's normal
+capture rules.
 - Keep all external writes, authentication, integration setup, and paid-feature
-  enablement behind the human-assist gates below.
+enablement behind the human-assist gates below.
+
+
 
 ## Human-assist and external-action gates
 
@@ -278,18 +293,18 @@ Stop and request human assistance before any of the following:
 
 - creating or materially configuring a Linear workspace or team;
 - authenticating Linear or installing its MCP server into global Codex
-  configuration;
+configuration;
 - creating or using an API key, OAuth grant, or external secret;
 - connecting Linear to GitHub or changing GitHub organization/repository
-  permissions;
+permissions;
 - creating a persistent steward task/thread or pinning it in the app;
 - enabling Linear coding sessions, AI-credit usage, a paid plan, webhooks,
-  automations, or a custom agent/application;
+automations, or a custom agent/application;
 - bulk-creating or migrating issues;
 - declaring Linear or another service authoritative over a category of project
-  state; or
+state; or
 - making a material change to the project's durable vision, stability
-  frontier, or product priorities.
+frontier, or product priorities.
 
 Ordinary ambiguity in the pilot design should be handled through alternatives
 plus a recommended default. Stop only when a missing human choice would make
@@ -304,35 +319,55 @@ truth.
 - Enable autonomous coding sessions or automatic issue-to-PR execution.
 - Migrate all existing tasks, notes, plans, or backlog items.
 - Create a comprehensive scoring formula, estimation process, sprint cadence,
-  or reporting bureaucracy.
+or reporting bureaucracy.
 - Replace canonical repository specs or the stability frontier with Linear
-  documents.
+documents.
 - Assume that a persistent conversation alone is durable project memory.
 - Prove that Linear is the permanent choice.
+
+
 
 ## Definition of done
 
 The task is ready for review when:
 
-- [ ] `PLANS/project-steward-linear-trial.md` contains a coherent, bounded pilot
-      contract and one recommended initial topology.
-- [ ] The source-of-truth boundary among Git, Linear, GitHub, Codex threads,
-      and the human is explicit and does not require duplicate authoritative
-      intake.
-- [ ] A copy-ready steward charter and initial prompt are included.
-- [ ] The intake/prioritization policy distinguishes human conviction from
-      strategic priority and supports cross-item thematic advocacy.
-- [ ] Required human setup is consolidated into a small, ordered checklist,
-      with authentication and external-write gates clearly marked.
-- [ ] The Linear/MCP path or selected alternative has been verified against
-      current official documentation without broad browser-driven setup.
-- [ ] Representative smoke-test cases and an early evaluation/rollback test
-      are defined.
-- [ ] Any repository changes made beyond the pilot plan are minimal,
-      reversible, and based on an explicitly approved operating boundary.
-- [ ] No paid feature, AI-credit consumption, bulk migration, global config
-      mutation, OAuth grant, GitHub permission change, persistent task creation,
-      or external workspace mutation occurs without explicit human assistance.
+- [x] `PLANS/project-steward-linear-trial.md` contains a coherent, bounded pilot
+  ```
+  contract and one recommended initial topology.
+  ```
+- [x] The source-of-truth boundary among Git, Linear, GitHub, Codex threads,
+  ```
+  and the human is explicit and does not require duplicate authoritative
+  intake.
+  ```
+- [x] A copy-ready steward charter and initial prompt are included.
+- [x] The intake/prioritization policy distinguishes human conviction from
+  ```
+  strategic priority and supports cross-item thematic advocacy.
+  ```
+- [x] Required human setup is consolidated into a small, ordered checklist,
+  ```
+  with authentication and external-write gates clearly marked.
+  ```
+- [x] The Linear/MCP path or selected alternative has been verified against
+  ```
+  current official documentation without broad browser-driven setup.
+  ```
+- [x] Representative smoke-test cases and an early evaluation/rollback test
+  ```
+  are defined.
+  ```
+- [x] Any repository changes made beyond the pilot plan are minimal,
+  ```
+  reversible, and based on an explicitly approved operating boundary.
+  ```
+- [x] No paid feature, AI-credit consumption, bulk migration, global config
+  ```
+  mutation, OAuth grant, GitHub permission change, persistent task creation,
+  or external workspace mutation occurs without explicit human assistance.
+  ```
+
+
 
 ## Handoff expectations
 

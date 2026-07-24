@@ -24,7 +24,7 @@ Guidance for AI coding agents working in this repository.
 5. `SPECS/session-covering-criteria.md`
 6. `SPECS/study-action-model.md`
 7. `STABILITY_FRONTIER.md` — how to interpret and maintain the current build-wave boundary (see §12)
-8. `TASKS.md` — versioned stability-frontier snapshot plus the frozen pre-Linear task-catalog snapshot; do not treat its task sections as current portfolio state (see §11)
+8. `TASKS.md` — versioned stability-frontier snapshot plus the winding-down pre-Linear task catalog; do not treat its task sections as current portfolio state (see §11)
 9. Task-spec notes linked from the relevant Linear item or supplied dispatch context, followed by only the working notes relevant to the task (working memory only; defer to SPECS on conflict — see [`notes/README.md`](notes/README.md))
 10. Relevant tests under `tests/` (see [`docs/testing.md`](docs/testing.md))
 
@@ -134,12 +134,16 @@ work, and portfolio disposition. See
 [`PLANS/project-steward-linear-trial.md`](PLANS/project-steward-linear-trial.md)
 for the approved pilot contract.
 
-`TASKS.md` now contains the current stability-frontier snapshot plus a frozen
-pre-Linear task-catalog snapshot. Its Focus, Async Ready, Inbox, Recently
-Completed, Debt, and Parked sections are historical launch context. Do not add,
-move, close, deduplicate, prioritize, reorder, or otherwise maintain those task
-sections after the cutoff. Every worktree sees a branch-local snapshot that may
-also be stale relative to current Linear state.
+`TASKS.md` now contains the current stability-frontier snapshot plus the
+winding-down pre-Linear task catalog. Its Focus, Async Ready, Inbox, Recently
+Completed, Debt, and Parked sections are closed to new intake, promotion, and
+reprioritization after the cutoff and are not current portfolio authority.
+Existing entries that were already focused, dispatched, or otherwise planned
+at the cutoff may still be moved or closed under explicit human direction to
+record their intended terminal disposition during settling. Agents must not
+infer those dispositions, add follow-on work, or use this exception to revive
+`TASKS.md` as a current catalog. Every worktree sees a branch-local snapshot
+that may also be stale relative to current Linear state.
 
 - **Authority split**: Linear records the current portfolio and which cataloged tasks the human has declared in flight. A task remains in flight through execution, review, and revision. The initiating Codex prompt, task-spec note when one exists, and subsequent task thread own its detailed execution contract and context. GitHub pull requests and Git history own review, CI, integration, and merge truth. Durable product behavior, architecture, vision, and frontier decisions remain in Git.
 - **WIP policy**: Focus maximum 1; async tasks in flight maximum 2; work awaiting review maximum 2; Linear `Todo` maximum 5. The human selects or dispatches work and supplies disposition facts; agents must not dispatch additional work autonomously. A steward with authorized Linear access may record an explicitly supplied Focus/Async or disposition transition but must not infer unreported execution state.
