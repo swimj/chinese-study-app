@@ -704,12 +704,14 @@ describe('session completion', { concurrency: false }, () => {
       completedAt: `${studyDayKey}T12:00:00.000Z`,
       completedReviewActionCount: 2,
       failedReviewActionCount: 1,
+      activeDurationMs: 90_000,
     });
     dbModule.recordReviewSessionSummary({
       sessionId: 'session-b',
       completedAt: `${studyDayKey}T13:00:00.000Z`,
       completedReviewActionCount: 1,
       failedReviewActionCount: 1,
+      activeDurationMs: 30_000,
     });
 
     const days = dbModule.getReviewFailureRateDays();
@@ -722,6 +724,95 @@ describe('session completion', { concurrency: false }, () => {
     assert.equal(todayRates.failureRate, 2 / 3);
     assert.equal(todayRates.rolling3DayFailureRate, 3 / 4);
     assert.equal(todayRates.rolling7DayFailureRate, 3 / 4);
+  });
+
+  test('active session time metrics use completed-session days and fixed calendar-day divisors', () => {
+    dbModule.recordReviewSessionSummary({
+      sessionId: 'seven-days-ago',
+      completedAt: `${addDays(studyDayKey, -7)}T12:00:00.000Z`,
+      completedReviewActionCount: 0,
+      failedReviewActionCount: 0,
+      activeDurationMs: 999_000,
+    });
+    dbModule.recordReviewSessionSummary({
+      sessionId: 'two-days-ago',
+      completedAt: `${addDays(studyDayKey, -2)}T12:00:00.000Z`,
+      completedReviewActionCount: 0,
+      failedReviewActionCount: 0,
+      activeDurationMs: 60_000,
+    });
+    dbModule.recordReviewSessionSummary({
+      sessionId: 'today',
+      completedAt: `${studyDayKey}T12:00:00.000Z`,
+      completedReviewActionCount: 0,
+      failedReviewActionCount: 0,
+      activeDurationMs: 120_000,
+    });
+
+    assert.deepEqual(dbModule.getSessionActiveTimeMetrics(studyDayKey), {
+      todayActiveDurationMs: 120_000,
+      rolling3DayAverageActiveDurationMs: 60_000,
+      rolling7DayAverageActiveDurationMs: 180_000 / 7,
+    });
+  });
+
+  test('active session time metrics aggregate multiple sessions within each day', () => {
+    const sessionsByDay = [
+      { dayKey: studyDayKey, durations: [30_000, 90_000] },
+      { dayKey: addDays(studyDayKey, -1), durations: [60_000, 120_000] },
+      { dayKey: addDays(studyDayKey, -2), durations: [180_000, 240_000] },
+    ];
+
+    for (const { dayKey, durations } of sessionsByDay) {
+      durations.forEach((activeDurationMs, index) => {
+        dbModule.recordReviewSessionSummary({
+          sessionId: `${dayKey}-session-${index + 1}`,
+          completedAt: `${dayKey}T${String(12 + index).padStart(2, '0')}:00:00.000Z`,
+          completedReviewActionCount: 0,
+          failedReviewActionCount: 0,
+          activeDurationMs,
+        });
+      });
+    }
+
+    assert.deepEqual(dbModule.getSessionActiveTimeMetrics(studyDayKey), {
+      todayActiveDurationMs: 120_000,
+      rolling3DayAverageActiveDurationMs: 240_000,
+      rolling7DayAverageActiveDurationMs: 720_000 / 7,
+    });
+  });
+
+  test('active duration validation rejects negative values and summary upserts replace the duration', () => {
+    assert.throws(
+      () => dbModule.recordReviewSessionSummary({
+        sessionId: 'invalid-duration',
+        completedAt: `${studyDayKey}T12:00:00.000Z`,
+        completedReviewActionCount: 0,
+        failedReviewActionCount: 0,
+        activeDurationMs: -1,
+      }),
+      /Expected non-negative integer activeDurationMs/,
+    );
+
+    dbModule.recordReviewSessionSummary({
+      sessionId: 'upsert-duration',
+      completedAt: `${studyDayKey}T12:00:00.000Z`,
+      completedReviewActionCount: 0,
+      failedReviewActionCount: 0,
+      activeDurationMs: 1_000,
+    });
+    dbModule.recordReviewSessionSummary({
+      sessionId: 'upsert-duration',
+      completedAt: `${studyDayKey}T12:00:00.000Z`,
+      completedReviewActionCount: 0,
+      failedReviewActionCount: 0,
+      activeDurationMs: 2_000,
+    });
+
+    assert.equal(
+      sqlite.prepare('SELECT active_duration_ms FROM review_session_summaries WHERE session_id = ?').get('upsert-duration').active_duration_ms,
+      2_000,
+    );
   });
 
   test('updating word personal notes persists the new notes and returns the updated word', () => {

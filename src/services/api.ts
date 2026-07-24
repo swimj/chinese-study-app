@@ -1,6 +1,7 @@
 import type {
   PriorityWord,
   ReviewFailureRateDay,
+  SessionActiveTimeMetrics,
   Word,
   WordMeaning,
   ReviewRating,
@@ -29,6 +30,7 @@ type BackendStatus = {
   dbPath: string;
   wordStatusCounts: Record<Word['status'], number>;
   reviewFailureRateDays: ReviewFailureRateDay[];
+  sessionActiveTimeMetrics: SessionActiveTimeMetrics;
   dailyNewWordLimit: number;
   learningCoverageDate: string;
 };
@@ -686,11 +688,13 @@ export async function recordReviewSessionSummary({
   completedAt,
   completedReviewActionCount,
   failedReviewActionCount,
+  activeDurationMs,
 }: {
   sessionId: string;
   completedAt: string;
   completedReviewActionCount: number;
   failedReviewActionCount: number;
+  activeDurationMs: number;
 }): Promise<void> {
   const response = await fetch(`${API_BASE}/api/review-session-summaries`, {
     method: 'POST',
@@ -702,6 +706,7 @@ export async function recordReviewSessionSummary({
       completedAt,
       completedReviewActionCount,
       failedReviewActionCount,
+      activeDurationMs,
     }),
   });
 

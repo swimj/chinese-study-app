@@ -16,6 +16,7 @@ export type SessionSummary = {
   sessionId: string;
   startedAt: string;
   completedAt: string | null;
+  activeDurationMs: number;
   initialQueueLength: number;
   answeredCount: number;
   completedReviewActions: number;
@@ -40,6 +41,7 @@ export function createSessionSummary({
     sessionId,
     startedAt,
     completedAt: null,
+    activeDurationMs: 0,
     initialQueueLength,
     answeredCount: 0,
     completedReviewActions: 0,

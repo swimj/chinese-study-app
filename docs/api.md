@@ -10,6 +10,8 @@ Base URL: `http://localhost:5174` (override with `VITE_API_BASE`).
 | --- | --- | --- |
 | GET | `/api/status` | Config / health |
 
+`GET /api/status?studyDayKey=YYYY-MM-DD` also returns `sessionActiveTimeMetrics`: today's completed active-session duration, plus 3-day and 7-day calendar-day averages in milliseconds. Averages include zero-activity days.
+
 ## Words and meanings
 
 | Method | Path | Handler domain |
@@ -45,6 +47,8 @@ Base URL: `http://localhost:5174` (override with `VITE_API_BASE`).
 | POST | `/api/study-sessions/:sessionId/accepted-contrast-selection-attempt` | `study-sessions` |
 | POST | `/api/study-sessions/:sessionId/manage-study-action` | `study-management` |
 | POST | `/api/review-session-summaries` | `analytics` |
+
+`POST /api/review-session-summaries` accepts a non-negative integer `activeDurationMs` alongside the existing completion counts. The `sessionId` upsert replaces all summary fields, including the duration.
 
 ## Study management (outside session)
 

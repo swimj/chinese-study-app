@@ -24,6 +24,7 @@ import {
   mergeSuggestedContrastClustersForIntakeWord,
   getPrioritizedUnstudiedWords,
   getReviewFailureRateDays,
+  getSessionActiveTimeMetrics,
   getSessionPayload,
   getTopUnstudiedPriorityWords,
   getWordMeanings,
@@ -669,6 +670,7 @@ export function createApp() {
       dbPath: dbConfig.dbPath,
       wordStatusCounts: getWordStatusCounts(),
       reviewFailureRateDays: getReviewFailureRateDays(),
+      sessionActiveTimeMetrics: getSessionActiveTimeMetrics(studyDayKey),
       ...getLearningPolicy(studyDayKey),
     });
   });
@@ -904,6 +906,7 @@ export function createApp() {
     const completedAt = req.body?.completedAt;
     const completedReviewActionCount = req.body?.completedReviewActionCount;
     const failedReviewActionCount = req.body?.failedReviewActionCount;
+    const activeDurationMs = req.body?.activeDurationMs;
 
     if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
       res.status(400).json({ error: 'Expected non-empty string sessionId' });
@@ -925,12 +928,18 @@ export function createApp() {
       return;
     }
 
+    if (!Number.isInteger(activeDurationMs) || activeDurationMs < 0) {
+      res.status(400).json({ error: 'Expected non-negative integer activeDurationMs' });
+      return;
+    }
+
     try {
       recordReviewSessionSummary({
         sessionId,
         completedAt,
         completedReviewActionCount,
         failedReviewActionCount,
+        activeDurationMs,
       });
       res.status(204).end();
     } catch (error) {
@@ -939,6 +948,7 @@ export function createApp() {
         (error.message === 'Expected non-empty session id' ||
           error.message === 'Expected non-negative integer completedReviewActionCount' ||
           error.message === 'Expected non-negative integer failedReviewActionCount' ||
+          error.message === 'Expected non-negative integer activeDurationMs' ||
           error.message === 'Expected failedReviewActionCount to be less than or equal to completedReviewActionCount')
       ) {
         res.status(400).json({ error: error.message });

@@ -68,6 +68,13 @@ import {
   type DeferredSessionCommit,
 } from './session-commit';
 import type { FrozenContrastCard, FrozenProductionCard } from './StudySessionPanel';
+import {
+  createActiveSessionClock,
+  finishActiveSessionClock,
+  getActiveSessionDurationMs,
+  updateActiveSessionClockForVisibility,
+  type ActiveSessionClock,
+} from './active-session-time';
 
 type SessionUndoSnapshot = {
   sessionState: BucketSessionState;
@@ -213,6 +220,7 @@ export function useStudySession({
   const [frozenContrastCard, setFrozenContrastCard] = useState<FrozenContrastCard | null>(null);
   const personalNotesEditorInputRef = useRef<HTMLTextAreaElement | null>(null);
   const productionHanziInputRef = useRef<HTMLInputElement | null>(null);
+  const activeSessionClockRef = useRef<ActiveSessionClock | null>(null);
 
   function syncSessionPrefetchState() {
     setSessionPrefetch(getSessionPrefetchSnapshot());
@@ -291,8 +299,8 @@ export function useStudySession({
     reviewInReinforcement,
   });
   const activeElapsedTime =
-    sessionStarted && sessionSummary
-      ? formatElapsedTime(sessionSummary.startedAt, sessionSummary.completedAt ?? sessionNow)
+    sessionStarted && activeSessionClockRef.current
+      ? formatElapsedTime(getActiveSessionDurationMs(activeSessionClockRef.current, new Date(sessionNow).getTime()))
       : '0:00';
   const personalNotesEditorOpen = personalNotesEditorTargetWordId !== null;
   const productionSubmissionInputActive =
@@ -421,8 +429,14 @@ export function useStudySession({
       }
 
       const startedAt = new Date().toISOString();
+      const startedAtMs = new Date(startedAt).getTime();
       const sessionId = createFrontendSessionId();
       setSessionNow(startedAt);
+      activeSessionClockRef.current = createActiveSessionClock({
+        nowMs: startedAtMs,
+        visibilityState: typeof document === 'undefined' ? undefined : document.visibilityState,
+        supportsVisibilityApi: typeof document !== 'undefined' && 'visibilityState' in document,
+      });
       setSessionState(createBucketSessionState({ buckets: sessionPayload.buckets, sessionId }));
       resetSessionScopedUi();
       setPendingSessionCommit(null);
@@ -465,11 +479,15 @@ export function useStudySession({
 
     if (sessionSummary) {
       try {
+        const activeDurationMs = activeSessionClockRef.current
+          ? getActiveSessionDurationMs(activeSessionClockRef.current, Date.now())
+          : 0;
         await recordReviewSessionSummary({
           sessionId: sessionSummary.sessionId,
           completedAt: sessionSummary.completedAt ?? new Date().toISOString(),
           completedReviewActionCount: sessionSummary.completedReviewActions,
           failedReviewActionCount: sessionSummary.lapsedReviewActionIds.length,
+          activeDurationMs,
         });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error');
@@ -480,6 +498,7 @@ export function useStudySession({
     setSessionStarted(false);
     setSessionState(null);
     setSessionSummary(null);
+    activeSessionClockRef.current = null;
     resetSessionScopedUi();
     setPendingSessionCommit(null);
     setLastUndoSnapshot(null);
@@ -1008,12 +1027,42 @@ export function useStudySession({
       return;
     }
 
-    const intervalId = window.setInterval(() => {
+    const updateElapsedTime = () => {
       setSessionNow(new Date().toISOString());
-    }, 1000);
+    };
+    const intervalId = window.setInterval(updateElapsedTime, 1000);
+
+    if (typeof document !== 'undefined' && 'visibilityState' in document) {
+      const handleVisibilityChange = () => {
+        if (activeSessionClockRef.current) {
+          activeSessionClockRef.current = updateActiveSessionClockForVisibility({
+            clock: activeSessionClockRef.current,
+            nowMs: Date.now(),
+            visibilityState: document.visibilityState,
+          });
+        }
+        updateElapsedTime();
+      };
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      return () => {
+        window.clearInterval(intervalId);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      };
+    }
 
     return () => window.clearInterval(intervalId);
   }, [sessionStarted, sessionState?.phase, sessionSummary?.startedAt]);
+
+  useEffect(() => {
+    if (sessionState?.phase !== 'completed' || !activeSessionClockRef.current) {
+      return;
+    }
+
+    const completedAtMs = sessionSummary?.completedAt ? new Date(sessionSummary.completedAt).getTime() : Date.now();
+    activeSessionClockRef.current = finishActiveSessionClock(activeSessionClockRef.current, completedAtMs);
+    const activeDurationMs = getActiveSessionDurationMs(activeSessionClockRef.current, completedAtMs);
+    setSessionSummary((current) => (current ? { ...current, activeDurationMs } : current));
+  }, [sessionState?.phase, sessionSummary?.completedAt]);
 
   useEffect(() => {
     if (!personalNotesEditorOpen) {
@@ -1296,8 +1345,7 @@ export function useStudySession({
   };
 }
 
-function formatElapsedTime(startedAt: string, completedAt: string) {
-  const elapsedMs = Math.max(0, new Date(completedAt).getTime() - new Date(startedAt).getTime());
+function formatElapsedTime(elapsedMs: number) {
   const totalSeconds = Math.floor(elapsedMs / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;

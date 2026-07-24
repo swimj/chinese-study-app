@@ -2763,16 +2763,50 @@ export function getReviewFailureRateDays(limit = 14): ReviewFailureRateDay[] {
   });
 }
 
+export function getSessionActiveTimeMetrics(studyDayKey: string) {
+  assertStudyDayKey(studyDayKey);
+  const rolling3StartDayKey = addDaysToDateKey(studyDayKey, -2);
+  const rolling7StartDayKey = addDaysToDateKey(studyDayKey, -6);
+  const rows = getDb()
+    .prepare(`
+      SELECT day_key, active_duration_ms
+      FROM review_session_summaries
+      WHERE day_key >= ? AND day_key <= ?
+    `)
+    .all(rolling7StartDayKey, studyDayKey) as Array<{ day_key: string; active_duration_ms: number }>;
+
+  let todayActiveDurationMs = 0;
+  let rolling3DayActiveDurationMs = 0;
+  let rolling7DayActiveDurationMs = 0;
+  for (const row of rows) {
+    rolling7DayActiveDurationMs += row.active_duration_ms;
+    if (row.day_key >= rolling3StartDayKey) {
+      rolling3DayActiveDurationMs += row.active_duration_ms;
+    }
+    if (row.day_key === studyDayKey) {
+      todayActiveDurationMs += row.active_duration_ms;
+    }
+  }
+
+  return {
+    todayActiveDurationMs,
+    rolling3DayAverageActiveDurationMs: rolling3DayActiveDurationMs / 3,
+    rolling7DayAverageActiveDurationMs: rolling7DayActiveDurationMs / 7,
+  };
+}
+
 export function recordReviewSessionSummary({
   sessionId,
   completedAt,
   completedReviewActionCount,
   failedReviewActionCount,
+  activeDurationMs,
 }: {
   sessionId: string;
   completedAt: string;
   completedReviewActionCount: number;
   failedReviewActionCount: number;
+  activeDurationMs: number;
 }) {
   const normalizedSessionId = sessionId.trim();
   if (normalizedSessionId.length === 0) {
@@ -2791,25 +2825,32 @@ export function recordReviewSessionSummary({
     throw new Error('Expected failedReviewActionCount to be less than or equal to completedReviewActionCount');
   }
 
+  if (!Number.isInteger(activeDurationMs) || activeDurationMs < 0) {
+    throw new Error('Expected non-negative integer activeDurationMs');
+  }
+
   getDb().prepare(`
     INSERT INTO review_session_summaries (
       session_id,
       completed_at,
       day_key,
       completed_count,
-      failed_count
-    ) VALUES (?, ?, ?, ?, ?)
+      failed_count,
+      active_duration_ms
+    ) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(session_id) DO UPDATE SET
       completed_at = excluded.completed_at,
       day_key = excluded.day_key,
       completed_count = excluded.completed_count,
-      failed_count = excluded.failed_count
+      failed_count = excluded.failed_count,
+      active_duration_ms = excluded.active_duration_ms
   `).run(
     normalizedSessionId,
     completedAt,
     completedAt.slice(0, 10),
     completedReviewActionCount,
     failedReviewActionCount,
+    activeDurationMs,
   );
 }
 
@@ -3065,9 +3106,11 @@ function applyLightweightSchemaMigrations() {
       completed_at TEXT NOT NULL,
       day_key TEXT NOT NULL,
       completed_count INTEGER NOT NULL,
-      failed_count INTEGER NOT NULL
+      failed_count INTEGER NOT NULL,
+      active_duration_ms INTEGER NOT NULL DEFAULT 0
     );
   `);
+  ensureReviewSessionSummariesActiveDurationSchema();
 
   getDb().exec(`
     CREATE TABLE IF NOT EXISTS study_sessions (
@@ -4104,7 +4147,8 @@ function createSchema() {
       completed_at TEXT NOT NULL,
       day_key TEXT NOT NULL,
       completed_count INTEGER NOT NULL,
-      failed_count INTEGER NOT NULL
+      failed_count INTEGER NOT NULL,
+      active_duration_ms INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE study_sessions (
@@ -4311,6 +4355,7 @@ function validateSchema() {
     'day_key',
     'completed_count',
     'failed_count',
+    'active_duration_ms',
   ]);
   assertTableColumns('study_sessions', [
     'id',
@@ -6795,5 +6840,12 @@ function isWordSkillRelevanceState(value: unknown): value is WordSkillRelevanceS
 function assertStudyDayKey(studyDayKey: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(studyDayKey)) {
     throw new Error('Invalid study day key');
+  }
+}
+
+function ensureReviewSessionSummariesActiveDurationSchema() {
+  const columns = getDb().prepare('PRAGMA table_info(review_session_summaries)').all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === 'active_duration_ms')) {
+    getDb().exec('ALTER TABLE review_session_summaries ADD COLUMN active_duration_ms INTEGER NOT NULL DEFAULT 0');
   }
 }
