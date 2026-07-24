@@ -66,11 +66,28 @@ export function HomeOverviewPanel({
           ))}
         </div>
       </section>
+      <section className="failure-rate-section" aria-label="Active study time">
+        <h3>Active study time</h3>
+        <div className="failure-rate-list">
+          <ActiveTimeMetric label="Today" value={backendStatus?.sessionActiveTimeMetrics.todayActiveDurationMs ?? 0} />
+          <ActiveTimeMetric label="3-day average" value={backendStatus?.sessionActiveTimeMetrics.rolling3DayAverageActiveDurationMs ?? 0} />
+          <ActiveTimeMetric label="7-day average" value={backendStatus?.sessionActiveTimeMetrics.rolling7DayAverageActiveDurationMs ?? 0} />
+        </div>
+      </section>
       {!sessionStarted ? (
         <p className="notes">
           Session prefetch: {formatSessionPrefetchStatus(sessionPrefetch)}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+function ActiveTimeMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="failure-rate-period">
+      <span>{label}</span>
+      <strong>{formatActiveTime(value)}</strong>
     </div>
   );
 }
@@ -81,4 +98,11 @@ function formatFailureRate(rate: number | null) {
   }
 
   return `${Math.round(rate * 100)}%`;
+}
+
+function formatActiveTime(durationMs: number) {
+  const totalSeconds = Math.floor(Math.max(0, durationMs) / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }

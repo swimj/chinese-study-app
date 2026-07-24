@@ -1,7 +1,7 @@
 import type { SessionSummary } from './session-summary';
 
 export function SessionSummaryPanel({ summary }: { summary: SessionSummary }) {
-  const elapsedLabel = formatElapsedTime(summary.startedAt, summary.completedAt ?? new Date().toISOString());
+  const elapsedLabel = formatElapsedTime(summary.activeDurationMs);
 
   return (
     <div className="summary-card">
@@ -74,8 +74,7 @@ function formatDateTime(value: string | null) {
   return new Date(value).toLocaleString();
 }
 
-function formatElapsedTime(startedAt: string, completedAt: string) {
-  const elapsedMs = Math.max(0, new Date(completedAt).getTime() - new Date(startedAt).getTime());
+function formatElapsedTime(elapsedMs: number) {
   const totalSeconds = Math.floor(elapsedMs / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;

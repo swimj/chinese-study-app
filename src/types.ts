@@ -43,4 +43,10 @@ export type ReviewFailureRateDay = {
   rolling7DayFailureRate: number | null;
 };
 
+export type SessionActiveTimeMetrics = {
+  todayActiveDurationMs: number;
+  rolling3DayAverageActiveDurationMs: number;
+  rolling7DayAverageActiveDurationMs: number;
+};
+
 export type ReviewRating = 'forgot' | 'hard' | 'good' | 'easy';
