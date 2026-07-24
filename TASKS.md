@@ -108,6 +108,13 @@ application actually changed.
 - The original evidence, model/prompt/schema versions, original proposal,
   user-authorized operation, disposition, and actual effect must remain
   distinguishable wherever they materially differ.
+- Until content ownership and customization policy is settled, operations that
+  customize learner or content state must preserve the distinguishability of
+  base state, user-authorized change, and applied effect. User-visible removal
+  or replacement should remain reversible unless true deletion is explicitly
+  intended. See the
+  [`hosted-beta tenancy table map`](PLANS/hosted-beta-tenancy-table-map.md#near-term-deferral-constraint-preserve-the-layers)
+  for rationale and boundaries.
 - Existing manual management paths must not conflict with the handle lifecycle
   or create effects that reflection application cannot reconcile truthfully.
 - Initial implementation should remain narrow and reversible. Sticky operation

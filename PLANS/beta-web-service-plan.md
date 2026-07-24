@@ -350,6 +350,8 @@ The beta target should stay small:
 ## 6. Immediate Next Questions
 
 1. What is the exact shared-vs-user-owned table map for the current schema?
+   See the reviewable
+   [`hosted-beta tenancy table map`](./hosted-beta-tenancy-table-map.md).
 2. Should the first hosted beta preserve SQLite for local dev, or standardize
    development on Postgres?
 3. What auth approach is best for a small invite-only beta?
