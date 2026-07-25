@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { BackendStatus } from '../services/api';
 import {
   formatSessionPrefetchStatus,
@@ -8,6 +9,7 @@ import { getReviewFailureRatePeriods } from '../lib/review-failure-rates';
 
 export function HomeOverviewPanel({
   backendStatus,
+  onSaveDailyNewWordLimit,
   sessionPrefetch,
   sessionStarted,
   sessionPhase,
@@ -17,6 +19,7 @@ export function HomeOverviewPanel({
   onEndSession,
 }: {
   backendStatus: BackendStatus | null;
+  onSaveDailyNewWordLimit: (dailyNewWordLimit: number) => Promise<void>;
   sessionPrefetch: SessionPrefetchState;
   sessionStarted: boolean;
   sessionPhase: SessionPhase | null;
@@ -25,10 +28,41 @@ export function HomeOverviewPanel({
   onStartSession: () => void;
   onEndSession: () => void;
 }) {
+  const [dailyNewWordLimitDraft, setDailyNewWordLimitDraft] = useState('');
+  const [dailyNewWordLimitSaving, setDailyNewWordLimitSaving] = useState(false);
+  const [dailyNewWordLimitError, setDailyNewWordLimitError] = useState<string | null>(null);
+  const [dailyNewWordLimitSaved, setDailyNewWordLimitSaved] = useState(false);
   const prefetchedSessionItemCount = !sessionStarted && sessionPrefetch.status === 'ready'
     ? displayedSessionItemCount
     : null;
   const canStartSession = sessionStarted || (prefetchedSessionItemCount ?? 0) > 0;
+
+  async function handleDailyNewWordLimitSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setDailyNewWordLimitError(null);
+    setDailyNewWordLimitSaved(false);
+
+    const dailyNewWordLimit = Number(dailyNewWordLimitDraft);
+    if (
+      dailyNewWordLimitDraft.trim().length === 0 ||
+      !Number.isSafeInteger(dailyNewWordLimit) ||
+      dailyNewWordLimit < 0
+    ) {
+      setDailyNewWordLimitError('Enter a non-negative integer.');
+      return;
+    }
+
+    setDailyNewWordLimitSaving(true);
+    try {
+      await onSaveDailyNewWordLimit(dailyNewWordLimit);
+      setDailyNewWordLimitDraft('');
+      setDailyNewWordLimitSaved(true);
+    } catch (error) {
+      setDailyNewWordLimitError(error instanceof Error ? error.message : 'Failed to save daily new-word limit');
+    } finally {
+      setDailyNewWordLimitSaving(false);
+    }
+  }
 
   return (
     <div className="panel">
@@ -42,6 +76,40 @@ export function HomeOverviewPanel({
           </strong>
         </div>
       </div>
+      <section className="daily-new-word-limit-section" aria-labelledby="daily-new-word-limit-heading">
+        <h3 id="daily-new-word-limit-heading">Daily new words</h3>
+        <p className="notes">
+          Limit: {backendStatus?.dailyNewWordLimit ?? '...'}. Changes apply to the next session only.
+        </p>
+        <form className="daily-new-word-limit-form" onSubmit={(event) => void handleDailyNewWordLimitSubmit(event)}>
+          <label htmlFor="daily-new-word-limit">New-word limit</label>
+          <div className="daily-new-word-limit-controls">
+            <input
+              id="daily-new-word-limit"
+              type="number"
+              min="0"
+              step="1"
+              inputMode="numeric"
+              placeholder="Enter new limit"
+              value={dailyNewWordLimitDraft}
+              disabled={!backendStatus || dailyNewWordLimitSaving}
+              onChange={(event) => {
+                setDailyNewWordLimitDraft(event.target.value);
+                setDailyNewWordLimitError(null);
+                setDailyNewWordLimitSaved(false);
+              }}
+            />
+            <button
+              type="submit"
+              disabled={!backendStatus || dailyNewWordLimitSaving || dailyNewWordLimitDraft.trim().length === 0}
+            >
+              {dailyNewWordLimitSaving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+          {dailyNewWordLimitError ? <p className="form-error" role="alert">{dailyNewWordLimitError}</p> : null}
+          {dailyNewWordLimitSaved ? <p className="form-success" role="status">Saved for the next session.</p> : null}
+        </form>
+      </section>
       {!sessionStarted ? (
         <button type="button" onClick={onStartSession} disabled={sessionLoading || !canStartSession}>
           {sessionLoading ? 'Preparing session...' : 'Start session'}

@@ -181,6 +181,7 @@ export type PersonalNotesEditorController = {
 export type StudySessionController = {
   sessionStarted: boolean;
   prefetchSession: () => Promise<void>;
+  refreshSessionPrefetch: () => Promise<void>;
   homePageProps: StudySessionHomePageProps;
   personalNotesEditor: PersonalNotesEditorController;
 };
@@ -227,6 +228,12 @@ export function useStudySession({
   }
 
   async function prefetchSession(): Promise<void> {
+    syncSessionPrefetchState();
+    await ensureSessionPrefetch(syncSessionPrefetchState);
+  }
+
+  async function refreshSessionPrefetch(): Promise<void> {
+    resetSessionPrefetchCache();
     syncSessionPrefetchState();
     await ensureSessionPrefetch(syncSessionPrefetchState);
   }
@@ -1261,6 +1268,7 @@ export function useStudySession({
   return {
     sessionStarted,
     prefetchSession,
+    refreshSessionPrefetch,
     homePageProps: {
       sessionPrefetch,
       sessionStarted,

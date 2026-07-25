@@ -20,6 +20,7 @@ import { HomeOverviewPanel } from './HomeOverviewPanel';
 
 export function HomePage({
   backendStatus,
+  onSaveDailyNewWordLimit,
   sessionPrefetch,
   sessionStarted,
   sessionPhase,
@@ -85,6 +86,7 @@ export function HomePage({
   onRate,
 }: {
   backendStatus: BackendStatus | null;
+  onSaveDailyNewWordLimit: (dailyNewWordLimit: number) => Promise<void>;
   sessionPrefetch: SessionPrefetchState;
   sessionStarted: boolean;
   sessionPhase: BucketSessionState['phase'] | null;
@@ -166,6 +168,7 @@ export function HomePage({
       <div className="grid home-grid">
         <HomeOverviewPanel
           backendStatus={backendStatus}
+          onSaveDailyNewWordLimit={onSaveDailyNewWordLimit}
           sessionPrefetch={sessionPrefetch}
           sessionStarted={sessionStarted}
           sessionPhase={sessionPhase}

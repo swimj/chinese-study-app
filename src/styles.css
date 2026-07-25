@@ -21,6 +21,7 @@ body {
 }
 
 button,
+input,
 select,
 textarea {
   font: inherit;
@@ -550,6 +551,58 @@ button:hover {
 .failure-rate-period strong {
   color: #f8fafc;
   font-size: 1.25rem;
+}
+
+.daily-new-word-limit-section {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1rem 0 1.25rem;
+}
+
+.daily-new-word-limit-section h3,
+.daily-new-word-limit-section .notes,
+.daily-new-word-limit-form p {
+  margin: 0;
+}
+
+.daily-new-word-limit-form {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.daily-new-word-limit-form label {
+  color: #cbd5e1;
+  font-size: 0.9rem;
+}
+
+.daily-new-word-limit-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.6rem;
+}
+
+.daily-new-word-limit-controls input {
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 0.75rem;
+  background: rgba(30, 41, 59, 0.85);
+  color: #f8fafc;
+  padding: 0.7rem 0.8rem;
+}
+
+.daily-new-word-limit-controls input:focus {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+}
+
+.form-error {
+  color: #fca5a5;
+  font-size: 0.9rem;
+}
+
+.form-success {
+  color: #86efac;
+  font-size: 0.9rem;
 }
 
 .review-card {

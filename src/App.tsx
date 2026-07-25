@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { BackendStatus } from './services/api';
-import { fetchStatus } from './services/api';
+import { fetchStatus, updateDailyNewWordLimit } from './services/api';
 import { AppChrome, type AppPageKey } from './components/AppChrome';
 import { PersonalNotesEditorOverlay } from './features/session/PersonalNotesEditorOverlay';
 import { useStudySession } from './features/session/useStudySession';
@@ -53,6 +53,23 @@ function App() {
     setBackendStatus(statusResponse);
   }
 
+  async function saveDailyNewWordLimit(dailyNewWordLimit: number) {
+    try {
+      await studySession.prefetchSession();
+    } catch {
+      // A failed prefetch is settled too, so it can no longer race the refresh below.
+    }
+
+    const policy = await updateDailyNewWordLimit(dailyNewWordLimit);
+    setBackendStatus((currentStatus) => currentStatus
+      ? {
+          ...currentStatus,
+          dailyNewWordLimit: policy.dailyNewWordLimit,
+        }
+      : currentStatus);
+    void studySession.refreshSessionPrefetch().catch(() => undefined);
+  }
+
   async function refreshContrastManagementState() {
     await clusterPage.loadData();
   }
@@ -75,7 +92,11 @@ function App() {
       })()}
     >
       {currentPage === 'home' ? (
-        <HomePage backendStatus={backendStatus} {...studySession.homePageProps} />
+        <HomePage
+          backendStatus={backendStatus}
+          onSaveDailyNewWordLimit={saveDailyNewWordLimit}
+          {...studySession.homePageProps}
+        />
       ) : currentPage === 'priority' ? (
         <PriorityPage
           rows={priorityPage.rows}

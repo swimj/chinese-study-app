@@ -12,6 +12,17 @@ Base URL: `http://localhost:5174` (override with `VITE_API_BASE`).
 
 `GET /api/status?studyDayKey=YYYY-MM-DD` also returns `sessionActiveTimeMetrics`: today's completed active-session duration, plus 3-day and 7-day calendar-day averages in milliseconds. Averages include zero-activity days.
 
+The status payload also returns `dailyNewWordLimit`, the durable configured
+limit used when composing a new session. Update it with a JSON body containing
+`dailyNewWordLimit` as a non-negative integer:
+
+| Method | Path | Handler domain |
+| --- | --- | --- |
+| PATCH | `/api/learning-policy/daily-new-word-limit` | Config / learning policy |
+
+Changing the limit does not rewrite the current UTC day's completed-new-word
+count and does not mutate an already-started frontend session.
+
 ## Words and meanings
 
 | Method | Path | Handler domain |
