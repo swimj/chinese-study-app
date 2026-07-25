@@ -35,6 +35,10 @@ type BackendStatus = {
   learningCoverageDate: string;
 };
 
+type LearningPolicyResponse = {
+  dailyNewWordLimit: number;
+};
+
 export type SessionPayload = {
   buckets: SessionStudyItemBuckets;
 };
@@ -371,6 +375,21 @@ export async function fetchStatus(): Promise<BackendStatus> {
   if (!response.ok) {
     throw new Error('Failed to load backend status');
   }
+  return response.json();
+}
+
+export async function updateDailyNewWordLimit(dailyNewWordLimit: number): Promise<LearningPolicyResponse> {
+  const response = await fetch(`${API_BASE}/api/learning-policy/daily-new-word-limit`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ dailyNewWordLimit }),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to update daily new-word limit'));
+  }
+
   return response.json();
 }
 

@@ -8,7 +8,7 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | --- | --- |
 | [`connection.ts`](../server/db/connection.ts) | Config resolution per `initDbConnection()`, SQLite singleton (`getDb` / `setDb`) |
 | [`types.ts`](../server/db/types.ts) | Row/DTO types, scheduling constants, public type re-exports |
-| [`persistence.ts`](../server/db/persistence.ts) | All query/domain functions (words, priority, sessions, contrast, scheduler, analytics) and `initializeDatabase` |
+| [`persistence.ts`](../server/db/persistence.ts) | All query/domain functions (words, priority, sessions, contrast, scheduler, analytics, durable learning-policy metadata) and `initializeDatabase` |
 | [`schema.ts`](../server/db/schema.ts) | Re-exports `applyProductionContrastExerciseSeed` and `initializeDatabase` for init ordering |
 | [`index.ts`](../server/db/index.ts) | Internal re-export barrel |
 
@@ -33,6 +33,12 @@ Domain-oriented re-export shims (navigation only; implementation stays in `persi
 2. `initializeDatabase()` — schema, migrations, dev seed
 
 Tests that dynamic-import `server/db.ts?test=…` rely on this running once per import URL.
+
+The `app_metadata` key `daily_new_word_limit` stores the learner's configured
+non-negative integer limit. A missing key reads as the current default of `10`,
+which preserves existing databases without rewriting them. This setting is
+independent of `daily_new_word_intake.new_study_count`, the per-UTC-day counter
+incremented only when an unstudied word is completed.
 
 ## Primary tests by area
 

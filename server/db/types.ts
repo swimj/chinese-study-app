@@ -513,7 +513,7 @@ export type PriorityWordRow = WordRow & {
   effective_rank: number;
 };
 
-export const DAILY_NEW_WORD_LIMIT = 10;
+export const DEFAULT_DAILY_NEW_WORD_LIMIT = 10;
 export const PRIORITY_BUMP_UNIT = 12248;
 export const UNSTUDIED_COUNT_BASELINE = 116000;
 export const PRIORITY_MAX_BASELINE = PRIORITY_BUMP_UNIT * 10;

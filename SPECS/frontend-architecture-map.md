@@ -22,7 +22,7 @@ src/
 
   pages/
     HomePage.tsx                  # home: overview + active session grid
-    HomeOverviewPanel.tsx         # backend/session availability overview
+    HomeOverviewPanel.tsx         # backend/session availability overview + daily new-word limit control
     PriorityPage.tsx              # unstudied priority queue + triage
     IntakePage.tsx                # contrast intake (candidates, cluster actions)
 

@@ -24,7 +24,7 @@ import type {
 import { buildReviewSessionStudyItem, deriveReviewCommitFieldsFromAttemptEvents } from '../../src/domain/study-actions.ts';
 import { config, getDb, dbPath, seedDataPath, dbExistedOnStartup, openDatabase, setDb } from './connection.ts';
 import {
-  DAILY_NEW_WORD_LIMIT,
+  DEFAULT_DAILY_NEW_WORD_LIMIT,
   PRIORITY_BUMP_UNIT,
   UNSTUDIED_COUNT_BASELINE,
   PRIORITY_MAX_BASELINE,
@@ -2621,8 +2621,26 @@ export function getWordStatusCounts(): Record<WordStatus, number> {
 export function getLearningPolicy(studyDayKey: string) {
   assertStudyDayKey(studyDayKey);
   return {
-    dailyNewWordLimit: DAILY_NEW_WORD_LIMIT,
+    dailyNewWordLimit: getDailyNewWordLimit(),
     learningCoverageDate: studyDayKey,
+  };
+}
+
+export function setDailyNewWordLimit(dailyNewWordLimit: number) {
+  assertDailyNewWordLimit(dailyNewWordLimit);
+  getDb().prepare(`
+    INSERT INTO app_metadata (
+      key,
+      value,
+      updated_at
+    ) VALUES ('daily_new_word_limit', ?, ?)
+    ON CONFLICT(key) DO UPDATE SET
+      value = excluded.value,
+      updated_at = excluded.updated_at
+  `).run(String(dailyNewWordLimit), new Date().toISOString());
+
+  return {
+    dailyNewWordLimit,
   };
 }
 
@@ -3043,6 +3061,7 @@ function applyLightweightSchemaMigrations() {
       updated_at TEXT NOT NULL
     );
   `);
+  ensureDefaultDailyNewWordLimit();
 
   getDb().exec(`
     CREATE TABLE IF NOT EXISTS user_word_priority (
@@ -4253,7 +4272,18 @@ function createSchema() {
     );
   `);
 
+  ensureDefaultDailyNewWordLimit();
   ensureIndexes();
+}
+
+function ensureDefaultDailyNewWordLimit() {
+  getDb().prepare(`
+    INSERT OR IGNORE INTO app_metadata (
+      key,
+      value,
+      updated_at
+    ) VALUES ('daily_new_word_limit', ?, ?)
+  `).run(String(DEFAULT_DAILY_NEW_WORD_LIMIT), new Date().toISOString());
 }
 
 function ensureIndexes() {
@@ -6742,7 +6772,25 @@ function getTodayKey() {
 
 function getRemainingDailyNewWordSlots(studyDayKey: string): number {
   const studiedCount = getDailyNewStudyCount(studyDayKey);
-  return Math.max(0, DAILY_NEW_WORD_LIMIT - studiedCount);
+  return Math.max(0, getDailyNewWordLimit() - studiedCount);
+}
+
+function getDailyNewWordLimit(): number {
+  const row = getDb()
+    .prepare(`
+      SELECT value
+      FROM app_metadata
+      WHERE key = 'daily_new_word_limit'
+    `)
+    .get() as { value: string } | undefined;
+
+  if (!row) {
+    return DEFAULT_DAILY_NEW_WORD_LIMIT;
+  }
+
+  const dailyNewWordLimit = Number(row.value);
+  assertDailyNewWordLimit(dailyNewWordLimit);
+  return dailyNewWordLimit;
 }
 
 function getDailyNewStudyCount(studyDayKey: string): number {
@@ -6768,6 +6816,12 @@ function incrementDailyNewStudyCount(studyDayKey: string) {
     ON CONFLICT(day_key) DO UPDATE SET
       new_study_count = daily_new_word_intake.new_study_count + 1
   `).run(studyDayKey);
+}
+
+function assertDailyNewWordLimit(value: number) {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error('Expected non-negative integer dailyNewWordLimit');
+  }
 }
 
 function assertNonEmptyString(value: string, message: string) {

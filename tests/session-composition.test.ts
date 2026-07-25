@@ -84,6 +84,11 @@ describe('session composition', { concurrency: false }, () => {
       DELETE FROM study_attempt_events;
       DELETE FROM study_sessions;
       DELETE FROM daily_new_word_intake;
+      INSERT INTO app_metadata (key, value, updated_at)
+      VALUES ('daily_new_word_limit', '10', '2026-01-01T00:00:00.000Z')
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        updated_at = excluded.updated_at;
       DELETE FROM word_skill_state;
       DELETE FROM word_study_admission_state;
       DELETE FROM contrast_prompts;
@@ -1132,6 +1137,74 @@ describe('session composition', { concurrency: false }, () => {
 
     const sessionIds = getSessionItemIds(dbModule);
     assert.deepEqual(sessionIds, []);
+  });
+
+  test('daily new-word limit defaults to 10 and persists independently from the completed count', () => {
+    assert.equal(dbModule.getLearningPolicy(studyDayKey).dailyNewWordLimit, 10);
+    assert.throws(
+      () => dbModule.setDailyNewWordLimit(-1),
+      /Expected non-negative integer dailyNewWordLimit/,
+    );
+    assert.throws(
+      () => dbModule.setDailyNewWordLimit(1.5),
+      /Expected non-negative integer dailyNewWordLimit/,
+    );
+
+    dbModule.setDailyNewWordLimit(3);
+    insertUnstudiedWordPair('independent-limit-counter', 100, '2026-01-01T00:00:00.000Z');
+    dbModule.completeUnstudiedWordSession('independent-limit-counter', studyDayKey);
+    dbModule.setDailyNewWordLimit(5);
+
+    const settingRow = sqlite
+      .prepare(`SELECT value FROM app_metadata WHERE key = 'daily_new_word_limit'`)
+      .get() as { value: string } | undefined;
+    const intakeRow = sqlite
+      .prepare('SELECT new_study_count FROM daily_new_word_intake WHERE day_key = ?')
+      .get(studyDayKey) as { new_study_count: number } | undefined;
+
+    assert.equal(settingRow?.value, '5');
+    assert.equal(intakeRow?.new_study_count, 1);
+    assert.equal(dbModule.getLearningPolicy(studyDayKey).dailyNewWordLimit, 5);
+  });
+
+  test('new sessions use configured limit minus completed count across limit and day changes', () => {
+    for (let index = 0; index < 6; index += 1) {
+      insertUnstudiedWordPair(
+        `configurable-limit-${index + 1}`,
+        100 - index,
+        `2026-01-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`,
+      );
+    }
+
+    dbModule.setDailyNewWordLimit(2);
+    const initialPayload = dbModule.getSessionPayload(studyDayKey);
+    assert.equal(initialPayload.buckets.unstudied.length, 2);
+
+    for (const word of initialPayload.buckets.unstudied) {
+      dbModule.completeUnstudiedWordSession(word.id, studyDayKey);
+    }
+    assert.equal(dbModule.getSessionPayload(studyDayKey).buckets.unstudied.length, 0);
+
+    dbModule.setDailyNewWordLimit(4);
+    assert.equal(dbModule.getSessionPayload(studyDayKey).buckets.unstudied.length, 2);
+
+    dbModule.setDailyNewWordLimit(1);
+    assert.equal(dbModule.getSessionPayload(studyDayKey).buckets.unstudied.length, 0);
+
+    const nextDayKey = addDays(studyDayKey, 1);
+    assert.equal(dbModule.getSessionPayload(nextDayKey).buckets.unstudied.length, 1);
+  });
+
+  test('zero limit blocks normal new words but preserves required overflow', () => {
+    insertUnstudiedWordPair('zero-limit-normal', 100, '2026-01-01T00:00:00.000Z');
+    insertUnstudiedWordPair('zero-limit-required', 10, '2026-01-02T00:00:00.000Z');
+    dbModule.updateWordUserPriority('zero-limit-required', { requiredForNextSession: true });
+    dbModule.setDailyNewWordLimit(0);
+
+    assert.deepEqual(
+      dbModule.getSessionPayload(studyDayKey).buckets.unstudied.map((word) => word.id),
+      ['zero-limit-required'],
+    );
   });
 
   test('caps unstudied intake without requiring intra-bucket ordering', () => {

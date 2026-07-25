@@ -26,6 +26,7 @@ import {
   getReviewFailureRateDays,
   getSessionActiveTimeMetrics,
   getSessionPayload,
+  setDailyNewWordLimit,
   getTopUnstudiedPriorityWords,
   getWordMeanings,
   getWordStatusCounts,
@@ -673,6 +674,21 @@ export function createApp() {
       sessionActiveTimeMetrics: getSessionActiveTimeMetrics(studyDayKey),
       ...getLearningPolicy(studyDayKey),
     });
+  });
+
+  app.patch('/api/learning-policy/daily-new-word-limit', (req, res) => {
+    const dailyNewWordLimit = req.body?.dailyNewWordLimit;
+
+    try {
+      res.json(setDailyNewWordLimit(dailyNewWordLimit));
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Expected non-negative integer dailyNewWordLimit') {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to update daily new-word limit' });
+    }
   });
 
   app.post('/api/study-sessions/:sessionId/accepted-review-attempt-batch', (req, res) => {
