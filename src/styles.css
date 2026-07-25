@@ -521,6 +521,177 @@ button:hover {
   font-size: 2rem;
 }
 
+.session-start-shell {
+  position: relative;
+  margin-bottom: 1.25rem;
+}
+
+.session-start-card {
+  display: grid;
+  justify-items: start;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 1rem 2.4rem 1rem 1.1rem;
+  border-radius: 1rem;
+  text-align: left;
+}
+
+.session-start-card-label {
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.session-start-card-helper {
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: rgba(239, 246, 255, 0.78);
+  line-height: 1.3;
+}
+
+.session-start-shell:has(.session-settings-gear:hover) .session-start-card,
+.session-start-shell.is-settings-open .session-start-card {
+  pointer-events: none;
+  background: #334155;
+  color: rgba(248, 250, 252, 0.72);
+  transform: none;
+}
+
+.session-start-shell:has(.session-settings-gear:hover) .session-start-card-helper,
+.session-start-shell.is-settings-open .session-start-card-helper {
+  color: rgba(226, 232, 240, 0.58);
+}
+
+.session-settings-gear {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.45rem;
+  background: transparent;
+  color: rgba(239, 246, 255, 0.72);
+  cursor: pointer;
+}
+
+.session-settings-gear:hover,
+.session-settings-gear:focus-visible {
+  background: transparent;
+  color: #f8fafc;
+  transform: none;
+}
+
+.session-start-shell:has(.session-settings-gear:hover) .session-settings-gear {
+  color: #f8fafc;
+  animation: session-settings-gear-pulse 1.05s ease-in-out infinite;
+}
+
+.session-start-shell.is-settings-open .session-settings-gear {
+  color: #f8fafc;
+}
+
+.session-settings-gear:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+.session-settings-gear-icon {
+  display: block;
+}
+
+@keyframes session-settings-gear-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.2);
+  }
+}
+
+.session-settings-panel {
+  min-height: 18rem;
+}
+
+.session-settings-body {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
+.session-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #e2e8f0;
+  font-size: 0.95rem;
+}
+
+.session-settings-label {
+  color: #94a3b8;
+}
+
+.session-settings-limit-value {
+  margin: 0;
+  padding: 0.1rem 0.25rem;
+  border: 0;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: #f8fafc;
+  font: inherit;
+  font-weight: 600;
+  cursor: text;
+}
+
+.session-settings-limit-value:hover,
+.session-settings-limit-value:focus-visible {
+  background: rgba(51, 65, 85, 0.85);
+  transform: none;
+}
+
+.session-settings-limit-value:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.session-settings-limit-input {
+  width: 4.5rem;
+  margin: 0;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 0.4rem;
+  background: rgba(30, 41, 59, 0.95);
+  color: #f8fafc;
+  font: inherit;
+  font-weight: 600;
+}
+
+.session-settings-limit-input:focus {
+  outline: 2px solid #60a5fa;
+  outline-offset: 1px;
+}
+
+.session-settings-actions {
+  display: flex;
+  justify-content: flex-start;
+  gap: 0.5rem;
+}
+
+.session-settings-actions button {
+  padding: 0.45rem 0.75rem;
+}
+
+.session-settings-panel .form-error {
+  margin: 0;
+}
+
 .failure-rate-section {
   display: grid;
   gap: 0.75rem;
@@ -551,48 +722,6 @@ button:hover {
 .failure-rate-period strong {
   color: #f8fafc;
   font-size: 1.25rem;
-}
-
-.daily-new-word-limit-section {
-  display: grid;
-  gap: 0.75rem;
-  margin: 1rem 0 1.25rem;
-}
-
-.daily-new-word-limit-section h3,
-.daily-new-word-limit-section .notes,
-.daily-new-word-limit-form p {
-  margin: 0;
-}
-
-.daily-new-word-limit-form {
-  display: grid;
-  gap: 0.5rem;
-}
-
-.daily-new-word-limit-form label {
-  color: #cbd5e1;
-  font-size: 0.9rem;
-}
-
-.daily-new-word-limit-controls {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.6rem;
-}
-
-.daily-new-word-limit-controls input {
-  min-width: 0;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 0.75rem;
-  background: rgba(30, 41, 59, 0.85);
-  color: #f8fafc;
-  padding: 0.7rem 0.8rem;
-}
-
-.daily-new-word-limit-controls input:focus {
-  outline: 2px solid #60a5fa;
-  outline-offset: 2px;
 }
 
 .form-error {
