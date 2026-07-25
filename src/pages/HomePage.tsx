@@ -1,4 +1,5 @@
 import type { RefObject } from 'react';
+import { useEffect, useState } from 'react';
 import type { BackendStatus } from '../services/api';
 import type {
   BucketSessionState,
@@ -16,7 +17,7 @@ import {
   type FrozenContrastCard,
   type FrozenProductionCard,
 } from '../features/session/StudySessionPanel';
-import { HomeOverviewPanel } from './HomeOverviewPanel';
+import { HomeOverviewPanel, SessionSettingsPanel } from './HomeOverviewPanel';
 
 export function HomePage({
   backendStatus,
@@ -151,6 +152,14 @@ export function HomePage({
   onRevealAnswer: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
 }) {
+  const [sessionSettingsOpen, setSessionSettingsOpen] = useState(false);
+
+  useEffect(() => {
+    if (sessionStarted) {
+      setSessionSettingsOpen(false);
+    }
+  }, [sessionStarted]);
+
   return (
     <div className={sessionStarted ? 'home-page home-session-active' : 'home-page'}>
       <header className="header">
@@ -168,78 +177,87 @@ export function HomePage({
       <div className="grid home-grid">
         <HomeOverviewPanel
           backendStatus={backendStatus}
-          onSaveDailyNewWordLimit={onSaveDailyNewWordLimit}
           sessionPrefetch={sessionPrefetch}
           sessionStarted={sessionStarted}
           sessionPhase={sessionPhase}
           sessionLoading={sessionLoading}
           displayedSessionItemCount={displayedSessionItemCount}
+          sessionSettingsOpen={sessionSettingsOpen}
+          onToggleSessionSettings={() => setSessionSettingsOpen((open) => !open)}
           onStartSession={onStartSession}
           onEndSession={onEndSession}
         />
 
-        <StudySessionPanel
-          sessionStarted={sessionStarted}
-          sessionPhase={sessionPhase}
-          sessionSummary={sessionSummary}
-          activeItem={activeItem}
-          activeWord={activeWord}
-          activeLearningProgress={activeLearningProgress}
-          activeUnstudiedProgress={activeUnstudiedProgress}
-          activeReviewProgress={activeReviewProgress}
-          reviewedCount={reviewedCount}
-          queuedCount={displayedSessionItemCount}
-          hasUndo={hasUndo}
-          submittingRating={submittingRating}
-          personalNotesEditorOpen={personalNotesEditorOpen}
-          personalNotesEditorSaving={personalNotesEditorSaving}
-          studyManagementSubmitting={studyManagementSubmitting}
-          productionAwaitingNext={productionAwaitingNext}
-          frozenProductionCard={frozenProductionCard}
-          contrastAwaitingNext={contrastAwaitingNext}
-          frozenContrastCard={frozenContrastCard}
-          activeAllMeanings={activeAllMeanings}
-          activeWordPersonalNotes={activeWordPersonalNotes}
-          reviewInReinforcement={reviewInReinforcement}
-          activeElapsedTime={activeElapsedTime}
-          activePrompt={activePrompt}
-          activePromptDisplayedMeanings={activePromptDisplayedMeanings}
-          activeReviewState={activeReviewState}
-          answerRevealed={answerRevealed}
-          activeAnswerPinyin={activeAnswerPinyin}
-          activeAnswerText={activeAnswerText}
-          activeMeaningRows={activeMeaningRows}
-          meaningVisibilitySavingKey={meaningVisibilitySavingKey}
-          productionRequiresHanziInput={productionRequiresHanziInput}
-          productionAwaitingRating={productionAwaitingRating}
-          productionHanziInput={productionHanziInput}
-          productionHanziError={productionHanziError}
-          productionHanziInputRef={productionHanziInputRef}
-          productionContrastIntakeNote={productionContrastIntakeNote}
-          productionContrastIntakeMarked={productionContrastIntakeMarked}
-          contrastSelectedWordId={contrastSelectedWordId}
-          contrastPracticeMore={contrastPracticeMore}
-          contrastAwaitingRating={contrastAwaitingRating}
-          activeRatingOptions={activeRatingOptions}
-          onUndoLastRating={onUndoLastRating}
-          onEndSession={onEndSession}
-          onContinueAfterAutoForgot={onContinueAfterAutoForgot}
-          onContinueAfterAutoContrastForgot={onContinueAfterAutoContrastForgot}
-          onProductionContrastIntakeNoteChange={onProductionContrastIntakeNoteChange}
-          onDismissCurrentWord={onDismissCurrentWord}
-          onManageStudyAction={onManageStudyAction}
-          onDismissFrozenProductionWord={onDismissFrozenProductionWord}
-          onManageFrozenProductionAction={onManageFrozenProductionAction}
-          onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
-          onBeginUnstudiedDrill={onBeginUnstudiedDrill}
-          onToggleMeaningVisibility={onToggleMeaningVisibility}
-          onSubmitProductionHanzi={onSubmitProductionHanzi}
-          onProductionHanziInputChange={onProductionHanziInputChange}
-          onSelectContrastChoice={onSelectContrastChoice}
-          onContrastPracticeMoreChange={onContrastPracticeMoreChange}
-          onRevealAnswer={onRevealAnswer}
-          onRate={onRate}
-        />
+        {sessionSettingsOpen && !sessionStarted ? (
+          <SessionSettingsPanel
+            backendStatus={backendStatus}
+            onSaveDailyNewWordLimit={onSaveDailyNewWordLimit}
+            onClose={() => setSessionSettingsOpen(false)}
+          />
+        ) : (
+          <StudySessionPanel
+            sessionStarted={sessionStarted}
+            sessionPhase={sessionPhase}
+            sessionSummary={sessionSummary}
+            activeItem={activeItem}
+            activeWord={activeWord}
+            activeLearningProgress={activeLearningProgress}
+            activeUnstudiedProgress={activeUnstudiedProgress}
+            activeReviewProgress={activeReviewProgress}
+            reviewedCount={reviewedCount}
+            queuedCount={displayedSessionItemCount}
+            hasUndo={hasUndo}
+            submittingRating={submittingRating}
+            personalNotesEditorOpen={personalNotesEditorOpen}
+            personalNotesEditorSaving={personalNotesEditorSaving}
+            studyManagementSubmitting={studyManagementSubmitting}
+            productionAwaitingNext={productionAwaitingNext}
+            frozenProductionCard={frozenProductionCard}
+            contrastAwaitingNext={contrastAwaitingNext}
+            frozenContrastCard={frozenContrastCard}
+            activeAllMeanings={activeAllMeanings}
+            activeWordPersonalNotes={activeWordPersonalNotes}
+            reviewInReinforcement={reviewInReinforcement}
+            activeElapsedTime={activeElapsedTime}
+            activePrompt={activePrompt}
+            activePromptDisplayedMeanings={activePromptDisplayedMeanings}
+            activeReviewState={activeReviewState}
+            answerRevealed={answerRevealed}
+            activeAnswerPinyin={activeAnswerPinyin}
+            activeAnswerText={activeAnswerText}
+            activeMeaningRows={activeMeaningRows}
+            meaningVisibilitySavingKey={meaningVisibilitySavingKey}
+            productionRequiresHanziInput={productionRequiresHanziInput}
+            productionAwaitingRating={productionAwaitingRating}
+            productionHanziInput={productionHanziInput}
+            productionHanziError={productionHanziError}
+            productionHanziInputRef={productionHanziInputRef}
+            productionContrastIntakeNote={productionContrastIntakeNote}
+            productionContrastIntakeMarked={productionContrastIntakeMarked}
+            contrastSelectedWordId={contrastSelectedWordId}
+            contrastPracticeMore={contrastPracticeMore}
+            contrastAwaitingRating={contrastAwaitingRating}
+            activeRatingOptions={activeRatingOptions}
+            onUndoLastRating={onUndoLastRating}
+            onEndSession={onEndSession}
+            onContinueAfterAutoForgot={onContinueAfterAutoForgot}
+            onContinueAfterAutoContrastForgot={onContinueAfterAutoContrastForgot}
+            onProductionContrastIntakeNoteChange={onProductionContrastIntakeNoteChange}
+            onDismissCurrentWord={onDismissCurrentWord}
+            onManageStudyAction={onManageStudyAction}
+            onDismissFrozenProductionWord={onDismissFrozenProductionWord}
+            onManageFrozenProductionAction={onManageFrozenProductionAction}
+            onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
+            onBeginUnstudiedDrill={onBeginUnstudiedDrill}
+            onToggleMeaningVisibility={onToggleMeaningVisibility}
+            onSubmitProductionHanzi={onSubmitProductionHanzi}
+            onProductionHanziInputChange={onProductionHanziInputChange}
+            onSelectContrastChoice={onSelectContrastChoice}
+            onContrastPracticeMoreChange={onContrastPracticeMoreChange}
+            onRevealAnswer={onRevealAnswer}
+            onRate={onRate}
+          />
+        )}
       </div>
     </div>
   );
