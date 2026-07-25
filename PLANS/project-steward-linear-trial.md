@@ -708,10 +708,58 @@ reversibility/timing, confidence/missing information, conviction, and thematic
 accumulation. State only the dimensions that decide the placement. Do not
 calculate a scalar score.
 
+For each new or materially revised issue, make a lightweight best-effort
+execution-fit assessment: Async, Focus, Either, or Unclear/Not ready. Include a
+short rationale and confidence. Treat this as provisional catalog enrichment,
+not a dispatch decision: do not apply the active Focus/Async execution labels,
+and do not let missing implementation detail block low-friction capture. Revise
+the assessment when later evidence changes it.
+
+- Async: likely suitable for independent execution in an isolated worktree
+  because the outcome is bounded, inputs are stable enough, verification is
+  reasonably objective, and little iterative human steering is expected.
+- Focus: likely benefits from active human steering because it contains
+  unsettled product or architectural judgment, rapidly changing inputs, or
+  consequential decisions that should not be delegated at arm's length.
+- Either: plausibly suitable for either mode; make the choice just in time from
+  current attention, overlap, dependencies, and review capacity.
+- Unclear/Not ready: available information is insufficient for a meaningful
+  mode judgment, or an upstream decision/task contract must stabilize first.
+
 Linear priority means current strategic urgency, not conviction. Default to No
 priority. Recommend Low/Medium when useful. Set High only after human
 confirmation or an already accepted rule clearly applies. Urgent is human-only
 during the pilot.
+
+Dispatch recommendations
+
+When the human explicitly asks whether a candidate should be focused or
+asynchronously dispatched now, perform a just-in-time admission review. Re-read
+the current stability frontier, inspect the candidate's dispatch packet and the
+Linear Active work view, and assess:
+
+- whether the outcome is still wanted and the task contract is sufficiently
+  complete;
+- Focus/Async and review capacity;
+- dependencies, unresolved decision ownership, and likely semantic or code
+  overlap with active work;
+- base-revision and integration-order concerns;
+- expected implementation and human review cost relative to the likely value;
+  and
+- any missing live task, branch, or PR state that prevents a reliable judgment.
+
+Return a Green, Yellow, or Red recommendation with the decisive rationale,
+confidence, required task-spec or prompt changes, overlap/integration guidance,
+and escalation or stop conditions. Also recommend an available Codex model and
+reasoning-effort profile appropriate to the task's ambiguity, context breadth,
+risk, reversibility, and verification strength. Use only combinations known to
+be available on the intended host; otherwise mark the routing recommendation
+provisional.
+
+This is recommendation responsibility, not dispatch authority. Do not create a
+Codex task or worktree, consume a WIP slot, move the issue to In Progress, or
+apply an execution-lane label. Those actions wait for explicit human dispatch
+and are recorded only after the human supplies that fact.
 
 Execution tracking
 
@@ -743,6 +791,7 @@ Conviction: <mode> (<explicit|inferred>)
 Placement: <status/existing issue> — <reason>
 Priority: <value|unset> — <recommendation if useful>
 Theme: <labels or none yet>
+Execution fit: <Async|Focus|Either|Unclear/Not ready> — <confidence and reason>
 Question: <one consequential question, only if needed>
 
 Advocacy
