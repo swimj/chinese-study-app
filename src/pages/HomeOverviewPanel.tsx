@@ -15,6 +15,7 @@ export function HomeOverviewPanel({
   sessionLoading,
   displayedSessionItemCount,
   sessionSettingsOpen,
+  sessionSettingsSaving,
   onToggleSessionSettings,
   onStartSession,
   onEndSession,
@@ -26,6 +27,7 @@ export function HomeOverviewPanel({
   sessionLoading: boolean;
   displayedSessionItemCount: number;
   sessionSettingsOpen: boolean;
+  sessionSettingsSaving: boolean;
   onToggleSessionSettings: () => void;
   onStartSession: () => void;
   onEndSession: () => void;
@@ -43,7 +45,7 @@ export function HomeOverviewPanel({
             type="button"
             className="session-start-card"
             onClick={onStartSession}
-            disabled={sessionLoading || !canStartSession}
+            disabled={sessionSettingsOpen || sessionLoading || !canStartSession}
           >
             <span className="session-start-card-label">
               {sessionLoading ? 'Preparing session...' : 'Start session'}
@@ -58,6 +60,7 @@ export function HomeOverviewPanel({
             aria-label="Session settings"
             aria-expanded={sessionSettingsOpen}
             aria-controls="session-settings-panel"
+            disabled={sessionSettingsSaving}
             onClick={onToggleSessionSettings}
           >
             <SettingsGearIcon />
@@ -109,10 +112,12 @@ export function HomeOverviewPanel({
 export function SessionSettingsPanel({
   backendStatus,
   onSaveDailyNewWordLimit,
+  onSavingChange,
   onClose,
 }: {
   backendStatus: BackendStatus | null;
   onSaveDailyNewWordLimit: (dailyNewWordLimit: number) => Promise<void>;
+  onSavingChange: (saving: boolean) => void;
   onClose: () => void;
 }) {
   const limitInputRef = useRef<HTMLInputElement | null>(null);
@@ -163,6 +168,7 @@ export function SessionSettingsPanel({
     }
 
     setLimitSaving(true);
+    onSavingChange(true);
     setLimitError(null);
     try {
       await onSaveDailyNewWordLimit(dailyNewWordLimit);
@@ -173,12 +179,16 @@ export function SessionSettingsPanel({
       setLimitError(error instanceof Error ? error.message : 'Failed to save daily new-word limit');
     } finally {
       setLimitSaving(false);
+      onSavingChange(false);
     }
   }
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
+        if (limitSaving) {
+          return;
+        }
         event.preventDefault();
         cancelAndClose();
         return;

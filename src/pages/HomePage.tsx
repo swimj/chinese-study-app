@@ -153,6 +153,7 @@ export function HomePage({
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
 }) {
   const [sessionSettingsOpen, setSessionSettingsOpen] = useState(false);
+  const [sessionSettingsSaving, setSessionSettingsSaving] = useState(false);
 
   useEffect(() => {
     if (sessionStarted) {
@@ -183,7 +184,12 @@ export function HomePage({
           sessionLoading={sessionLoading}
           displayedSessionItemCount={displayedSessionItemCount}
           sessionSettingsOpen={sessionSettingsOpen}
-          onToggleSessionSettings={() => setSessionSettingsOpen((open) => !open)}
+          sessionSettingsSaving={sessionSettingsSaving}
+          onToggleSessionSettings={() => {
+            if (!sessionSettingsSaving) {
+              setSessionSettingsOpen((open) => !open);
+            }
+          }}
           onStartSession={onStartSession}
           onEndSession={onEndSession}
         />
@@ -192,6 +198,7 @@ export function HomePage({
           <SessionSettingsPanel
             backendStatus={backendStatus}
             onSaveDailyNewWordLimit={onSaveDailyNewWordLimit}
+            onSavingChange={setSessionSettingsSaving}
             onClose={() => setSessionSettingsOpen(false)}
           />
         ) : (
