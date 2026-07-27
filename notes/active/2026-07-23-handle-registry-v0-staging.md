@@ -22,16 +22,48 @@ This note is not implementation authority and must not outlive this task.
 `SPECS/reflection-handle-registry-v0.md` remains the current durable design
 record until accepted conclusions are deliberately incorporated there.
 
+## Planning horizons
+
+This work deliberately reasons across two horizons:
+
+1. **First full-prototype alignment.** The handle registry, invocation model,
+   lifecycle, provenance, and manual/editing paths need enough end-to-end
+   coherence that the user can trust the narrower implementation direction.
+   Decisions at this horizon may define eventual durable effects, bounded
+   manual-authoring semantics, or unsupported operations without committing the
+   current build wave to implement every surface or adapter.
+2. **Initial reflection steel thread.** The current stability frontier aims only
+   to dogfood one learner-facing post-session reflection path with durable
+   asynchronous review and truthful application of accepted, supported
+   operations. Its implementation should take the smallest useful slice through
+   the full-prototype contract.
+
+The full-prototype picture constrains the steel thread: the narrow slice must
+not create payload, identity, lifecycle, or provenance choices that the larger
+model already shows to be unsafe. The reverse is not true: describing a coherent
+full-prototype capability here does not make it a steel-thread deliverable,
+promote it into the current build wave, or override the frontier's explicit
+non-goals.
+
+During final synthesis, distinguish:
+
+- contract semantics needed now so the steel thread does not paint itself into
+  a corner;
+- behavior and surfaces the steel thread must actually implement;
+- accepted full-prototype direction whose implementation remains deferred; and
+- genuinely open later-product policy.
+
 ## Working model
 
 - Confident or bounded topics may be worked through directly in the primary
   task thread. The agent should exercise independent judgment, surface risks or
   contradictions, and update this note with the resulting provisional
   conclusion.
-- Meatier topics may be explored in a subagent task when the user explicitly
-  asks for one. The subagent should receive a bounded topic and clear ownership
-  of its staging section, may explore alternatives freely, and should leave a
-  polished conclusion or clearly framed unresolved decision here when ready.
+- Meatier topics may be explored in a forked, user-visible task when the user
+  explicitly asks for one. The fork should receive a bounded topic and clear
+  ownership of its staging section, may explore alternatives freely, and
+  should leave a polished conclusion or clearly framed unresolved decision
+  here when ready.
 - Exploratory discussion is not automatically a decision. Each topic section
   should distinguish evidence, alternatives, the current proposed conclusion,
   and unresolved questions where those distinctions matter.
@@ -166,10 +198,13 @@ their relationship to `superseded` remain part of the provenance topic.
 
 Status: Proposed
 
-The application lifecycle exists only for proposals whose review disposition is
-`accepted`. There is therefore no persisted `not_requested` application status:
-an unaccepted proposal simply has no application lifecycle record. The product
-may derive “not applicable” when presenting all proposals together.
+For proposal-originated operations, the application lifecycle exists only once
+the proposal's review disposition is `accepted` and an exact authorized
+invocation has been recorded. There is therefore no persisted `not_requested`
+application status: an unaccepted proposal simply has no associated application
+record. The product may derive “not applicable” when presenting all proposals
+together. The same invocation and application machinery may also serve
+user-authored operations that have no originating proposal.
 
 Proposed V0 statuses:
 
@@ -258,11 +293,15 @@ and original model proposals exactly as generated. User disposition, edited or
 final authorized operations, application status, and effect attribution do not
 mutate that artifact body.
 
-Those later facts must still be persisted in separate proposal-review and
-application records keyed to durable artifact and proposal identities. Joining
-the immutable artifact to those records provides the complete causal picture:
-what the model proposed, what the user ultimately authorized or rejected, what
-the application attempted, and what effect—if any—actually occurred.
+Those later facts must still be persisted separately. A proposal-review record
+is keyed to durable artifact and proposal identities. Authorization creates an
+immutable invocation containing the exact approved operation, and application
+state and effects are keyed to that invocation. A reflection-originated
+invocation is linked through its proposal review; a fully manual invocation may
+have no artifact or proposal. Joining the immutable artifact to the linked
+review and invocation records provides the complete causal picture: what the
+model proposed, what the user ultimately authorized or rejected, what the
+application attempted, and what effect—if any—actually occurred.
 
 Persisting disposition somewhere is necessary for asynchronous review,
 resuming the review queue, unsupported operations, and outcomes such as
@@ -277,6 +316,105 @@ complete chronology of intermediate transitions such as defer-then-accept would
 instead require append-only review/application events or equivalent history.
 Whether V0 needs that full chronology remains a storage-contract question; it
 does not change the artifact immutability boundary.
+
+### User editing and provenance
+
+Status: Ready for synthesis
+
+The full-prototype direction uses a typed manual handle workbench as its clean
+substrate: the user selects an operation kind and edits its structured fields,
+such as target word or target unit, related content, and any handle-specific
+disambiguators. Reflection is a convenience path into that same model. A
+reflection proposal supplies a prefilled structured operation; accepting or
+editing it ultimately produces the same kind of exact authorized invocation as
+authoring an operation manually. Both paths must converge on the same domain
+validation and apply adapter.
+
+This convergence should not become a universal schema-generated form. Each
+operation kind may need a purpose-built editor, especially for compound
+operations such as contrast-content upserts. The shared contract is the typed,
+versioned operation envelope and the validated command beneath the UI, not a
+requirement that JSON Schema alone determine the interaction. The backend
+remains authoritative: manual entry and proposal editing cannot bypass
+cross-field validation, current-state checks, or application invariants.
+
+The generated reflection artifact and its original proposal remain immutable.
+Editing a proposal does not rewrite what the model proposed. On authorization,
+the system persists an immutable invocation containing the exact operation the
+user approved and links the proposal review to that invocation. Capturing every
+intermediate form edit or keystroke is unnecessary for V0; the durable causal
+record needs the original proposal and the final authorized operation.
+
+The proposal should remain the center of the reflection-review model even
+though application is technically a property of an invocation. The accepted
+variant of the proposal-review discriminated union therefore carries both the
+acceptance mode and the authorized invocation identity:
+
+```ts
+type ProposalReview =
+  | { disposition: 'pending' }
+  | { disposition: 'deferred' }
+  | {
+      disposition: 'accepted';
+      acceptanceMode: 'exact' | 'revised';
+      acceptedInvocationId: string;
+    }
+  | { disposition: 'dismissed' }
+  | {
+      disposition: 'superseded';
+      supersession: ProposalSupersession;
+    };
+```
+
+Acceptance modes are deliberately factual rather than qualitative:
+
+- `exact` means the user authorized the proposed versioned operation and
+  payload unchanged.
+- `revised` means the user retained the same operation kind but authorized an
+  edited payload.
+
+For V0, every same-kind payload edit counts as `revised`, regardless of its
+extent. A “minor” versus “major” distinction would be subjective, would create
+an unstable policy boundary, and is not needed to preserve provenance. If
+empirical use later shows that distinction to be useful, it can be derived or
+classified from the original and authorized payloads without changing their
+identity.
+
+Changing the operation kind is not a revision of the proposal. It creates a
+user-authored replacement invocation and leaves the original proposal
+`superseded`, linked to that invocation. A proposal displaced by another
+proposal is likewise superseded but should retain a distinct reason and link to
+the competing proposal or resulting invocation. Supersession metadata should
+be able to distinguish at least a competing proposal, a user-authored
+replacement, and relevant external state. A fully manual operation unrelated
+to reflection has an invocation without a fabricated proposal.
+
+Application state and effect references belong to the authorized invocation.
+For reflection-originated work, the proposal review's invocation link allows
+the UI and analytics to present the complete proposal-centered story: what the
+model proposed, whether the user accepted it exactly or revised it, what exact
+operation was authorized, and what application outcome followed. For a
+different-kind replacement, the supersession link preserves the corresponding
+causal path without falsely recording acceptance of the original operation.
+
+The full manual workbench is a dogfood or administrative surface, not a required
+steel-thread deliverable. The steel thread needs only the proposal-review and
+operation-specific editing surfaces required by its selected slice; from-scratch
+manual invocation of every registry operation may remain deferred. Neither
+horizon commits the eventual ordinary learner UI to exposing a general handle
+console. A learner-facing flow may remain compact: accept the proposal
+unchanged, or choose edit and expand into the relevant structured editor.
+Dogfood experience can determine which operation-specific controls later
+deserve a more tailored learner-facing presentation. Editor availability and
+apply-adapter support must remain distinguishable so an editor does not imply
+that an unsupported operation can already take effect.
+
+There is no separate generic reversal mechanism in this model. If the user
+later wants to change a past management decision, they make another forward
+edit or operation against current state. The original proposal, authorization,
+application result, and effect attribution remain historical facts rather than
+being mutated or erased. Any handle-specific operation needed to change current
+state must still pass ordinary validation and establish its own provenance.
 
 ### Production alternate
 
@@ -379,6 +517,8 @@ Before retiring this note:
 
 - reconcile conclusions across topics rather than copying sections
   independently;
+- label full-prototype contract direction separately from the behavior and
+  surfaces required by the initial reflection steel thread;
 - update the canonical type contract, handle inventory and entries, lifecycle,
   provenance rules, and invocation compatibility matrix together;
 - reconcile the provider spike's copied contract with the canonical contract;
