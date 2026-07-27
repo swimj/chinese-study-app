@@ -303,6 +303,13 @@ review and invocation records provides the complete causal picture: what the
 model proposed, what the user ultimately authorized or rejected, what the
 application attempted, and what effect—if any—actually occurred.
 
+Lifecycle persistence is therefore proposal-level, not merely item-level. An
+item result groups a diagnosis, explanation, and zero or more proposals around
+the same evidence item, but each proposal receives its own durable identity and
+review record. Proposals nested under one item may be accepted, dismissed,
+deferred, or superseded independently; an item-level status cannot substitute
+for those individual histories.
+
 Persisting disposition somewhere is necessary for asynchronous review,
 resuming the review queue, unsupported operations, and outcomes such as
 `dismissed` or `deferred` that leave no domain effect from which they could be
@@ -316,6 +323,114 @@ complete chronology of intermediate transitions such as defer-then-accept would
 instead require append-only review/application events or equivalent history.
 Whether V0 needs that full chronology remains a storage-contract question; it
 does not change the artifact immutability boundary.
+
+### Validation boundary and cue-model deferral
+
+Status: Ready for synthesis
+
+Cross-field validation does not require another large architectural design
+before the steel thread. V0 should specify the deterministic invariants already
+needed to persist and eventually apply typed operations safely, including:
+
+- known handle kinds and explicit handle versions;
+- rejection of unknown fields;
+- required, well-formed payload fields;
+- known and visible referenced entities;
+- obvious handle-specific relationships such as distinct target and alternate
+  words, prompt targets belonging to the resulting contrast cluster, and
+  references matching the supplied evidence snapshot; and
+- atomicity and idempotency expectations for supported apply adapters.
+
+Apply-time adapters must additionally revalidate current domain state. These
+hard boundaries must not be delegated to the model prompt because they protect
+durable state and effect attribution.
+
+Prompt iteration, evaluation, and user review may own semantic qualities that
+local code cannot reliably prove, such as whether an intervention is genuinely
+useful, generated language is natural, two drafted operations are meaningfully
+redundant, or free text rhetorically contradicts the structured operation.
+Steel-thread dogfooding should expose those failures and drive prompt,
+validator, lint, and review-UI improvements without requiring V0 to pretend
+that every semantic judgment is deterministically enforceable.
+
+The durable production-cue model is explicitly not settled by V0. The current
+bundle can preserve the cue text and other presentation details exactly as
+shown for evidence and provenance, but a nullable or captured cue reference
+must not be mistaken for an accepted long-term cue identity scheme.
+`repair_production_cue` may remain a typed, reviewable draft operation with a
+clear purpose and explicit non-effects, while its apply adapter remains
+unsupported until the cue model receives its own post-steel-thread design.
+
+Handle versioning protects that deferral. A later cue design must not silently
+reinterpret an accepted V0 payload. If the eventual model cannot implement the
+exact accepted operation faithfully, that handle version remains unsupported
+or reaches an honest non-applied outcome; a revised operation or newer handle
+version requires its own authorization.
+
+### Bad-production-prompt stopgap versus durable cue operations
+
+Status: Ready for synthesis
+
+The existing `bad production prompt` behavior is not an apply adapter for the
+draft `flag_bad_production_cue` operation. Today the app records word-scoped
+feedback against the synthetic `definition_based_production` target and excludes
+that word's production action from scheduling while the feedback remains open.
+It does not identify or flag an independently durable cue. The similarity in
+names previously made this look like a harmless generalization, but the two
+contracts are not compatible.
+
+The existing behavior has a useful but deliberately temporary product purpose:
+stop presenting a definition-based production exercise that is likely to make
+the learner spend time overfitting to an unsuitable definition prompt. Its
+intake visibility also leaves a practical backlog of words to revisit, but that
+backlog has intentionally been deferred until there is a desirable cue model
+and a clear content target to optimize toward. It must not accidentally become
+the foundation of that future model.
+
+This remains semantically distinct from `suppress_definition_production`.
+Suppression says definition-based production is not a worthwhile training goal
+for the word even if a good prompt could be written; surnames are the obvious
+example. Bad-prompt deferral says recall may still be valuable, but the current
+set of glosses produces a low-value exercise. The two states may currently have
+the same scheduling consequence, but they carry different product judgments,
+reversibility expectations, and backlog meaning.
+
+`bad_production_prompt` is legacy compatibility state, not a reflection handle,
+and V0 should not add a narrowly renamed operation merely to expose it through
+the registry. The canonical registry also must not retain
+`flag_bad_production_cue: existing_adapter` as currently written: the legacy
+mutation cannot implement that newer generalized contract. Whether a durable
+cue-level flag is useful at all belongs to the later cue-model design; it must
+not be inferred from the existence of the legacy state.
+
+Continued reliance on this manual bad-prompt path is explicit product debt. It
+is a tolerated user-operated escape hatch for avoiding low-value exercises
+until reflection offers more productive handles and the product has a cue model
+worth repairing content toward. Its temporary usefulness does not make it part
+of the V0 registry or a pattern that new reflection behavior should reproduce.
+
+After the cue model is designed, a cue-repair family may supersede the stopgap.
+Repair need not always mean supplying replacement text: deleting a cue or
+disassociating it from a target word may be the correct repair. The exact
+operation shapes and any migration or reconciliation of existing bad-prompt
+feedback belong to that later design. Existing feedback may serve as evidence
+or a review queue, but must not be automatically reinterpreted as a precise
+command against future cue entities.
+
+### Top-level reflection summary
+
+Status: Ready for synthesis
+
+Remove the top-level `summary` field from the V0 reflection result contract.
+It began as a plausible default presentation surface, but the provider spike
+did not establish a clear product job, review action, or persistence need for
+it. Item-level observations, explanations, questions, unhandled needs, and
+proposals already carry the actionable reflection output.
+
+V0 should not ask the model to generate text merely because it might be useful
+somewhere. If dogfooding reveals a concrete cross-item synthesis need, the
+summary can return later with a defined consumer and semantics rather than
+constraining the steel thread now.
 
 ### User editing and provenance
 
@@ -415,6 +530,39 @@ edit or operation against current state. The original proposal, authorization,
 application result, and effect attribution remain historical facts rather than
 being mutated or erased. Any handle-specific operation needed to change current
 state must still pass ordinary validation and establish its own provenance.
+
+### Contrast extension and other unvalidated cases
+
+Status: Deferred
+
+The provider spike did not exercise `extend_cluster`, duplicate or already
+existing contrast content, stale references, externally satisfied operations,
+or history-informed decisions. None currently indicates a registry redesign or
+blocks the steel thread. They should remain visibly unvalidated and be handled
+through targeted prompt, validation, reconciliation, and UI iteration as real
+cases appear.
+
+For the first cut, reflection should propose only new contrast clusters rather
+than choosing an existing cluster to extend. A plausible later application
+layer can compare the proposed cluster with current clusters, surface likely
+overlap, and offer an explicit user-confirmed merge or extension action. It
+must not silently redirect the accepted operation merely because overlap was
+detected.
+
+That reconciliation surface may reasonably be operation-specific rather than a
+pure generic workbench. When extending an existing cluster, the selected
+cluster's top-level information can remain mostly frozen while the proposed
+extension fields—members, notes, and prompts—are presented for review and
+editing. The exact replacement/revision semantics and duplicate-content rules
+should be designed when this path is implemented; they are not part of the
+steel thread.
+
+The other cases already fit the established boundaries at a high level:
+apply-time adapters revalidate current references, and duplicate or externally
+satisfied effects must produce truthful non-attribution outcomes. Their exact
+handle-specific equivalence rules can be learned incrementally. Learner
+history, meanwhile, is evidence-bundle context supplied to reflection rather
+than a concern of the handle registry itself.
 
 ### Production alternate
 
