@@ -6,12 +6,14 @@ import {
 } from '../features/session/session-prefetch';
 import type { SessionPhase } from '../lib/session-state';
 import { getReviewFailureRatePeriods } from '../lib/review-failure-rates';
+import type { SessionFinalizationState } from '../features/session/session-finalization';
 
 export function HomeOverviewPanel({
   backendStatus,
   sessionPrefetch,
   sessionStarted,
   sessionPhase,
+  sessionFinalization,
   sessionLoading,
   displayedSessionItemCount,
   sessionSettingsOpen,
@@ -24,6 +26,7 @@ export function HomeOverviewPanel({
   sessionPrefetch: SessionPrefetchState;
   sessionStarted: boolean;
   sessionPhase: SessionPhase | null;
+  sessionFinalization: SessionFinalizationState;
   sessionLoading: boolean;
   displayedSessionItemCount: number;
   sessionSettingsOpen: boolean;
@@ -72,11 +75,21 @@ export function HomeOverviewPanel({
             <span className="stat-label">Items left in session</span>
             <strong className="stat-value">{displayedSessionItemCount}</strong>
           </div>
-          <button type="button" onClick={onEndSession}>
+          <button
+            type="button"
+            onClick={onEndSession}
+            disabled={sessionPhase === 'draining' || sessionFinalization.kind === 'finalizing'}
+          >
             {sessionPhase === 'active'
               ? 'End session'
+              : sessionPhase === 'draining'
+                ? 'Session draining'
               : sessionPhase === 'completed'
-                ? 'Close summary'
+                ? sessionFinalization.kind === 'finalized'
+                  ? 'Close summary'
+                  : sessionFinalization.kind === 'finalizing'
+                    ? 'Finishing...'
+                    : 'Finish session'
                 : 'Back to overview'}
           </button>
         </div>
