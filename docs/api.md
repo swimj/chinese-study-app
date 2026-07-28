@@ -57,9 +57,127 @@ count and does not mutate an already-started frontend session.
 | POST | `/api/study-sessions/:sessionId/accepted-review-attempt-batch` | `study-sessions` |
 | POST | `/api/study-sessions/:sessionId/accepted-contrast-selection-attempt` | `study-sessions` |
 | POST | `/api/study-sessions/:sessionId/manage-study-action` | `study-management` |
+| POST | `/api/study-sessions/:sessionId/reflections` | `reflection` |
 | POST | `/api/review-session-summaries` | `analytics` |
 
 `POST /api/review-session-summaries` accepts a non-negative integer `activeDurationMs` alongside the existing completion counts. The `sessionId` upsert replaces all summary fields, including the duration.
+
+## Post-session reflection
+
+The durable contract is
+[`SPECS/reflection-proposals-and-handles.md`](../SPECS/reflection-proposals-and-handles.md).
+Request/result types live in
+[`src/domain/reflection-evidence.ts`](../src/domain/reflection-evidence.ts) and
+[`src/domain/reflection.ts`](../src/domain/reflection.ts).
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/api/study-sessions/:sessionId/reflections` | Generate or return the session's initial reflection |
+| GET | `/api/reflection-artifacts?review=open\|all` | Load the unresolved queue or recent history |
+| GET | `/api/reflection-artifacts/:artifactId` | Load immutable evidence/result plus current proposal/application statuses |
+| POST | `/api/reflection-proposals/:proposalId/review` | Defer, dismiss, or authorize one proposal |
+| POST | `/api/reflection-invocations/:invocationId/withdraw-authorization` | Withdraw a pending or unsupported authorization |
+
+### Generate
+
+The request body is the `SessionReflectionEvidenceSupplementV1` object itself,
+not a wrapper. The current milestone accepts one or more qualifying typed
+production-mistake supplement items containing the cue as shown, raw typed
+response, and the complete ordered ids of the accepted attempt batch. The
+backend uses those ids only to validate durable session/action identity, then
+enriches each into a canonical `production_mistake` bundle item without attempt
+rows, attempt summaries, or production-management metadata.
+
+A successful response is exactly:
+
+```ts
+{
+  artifactId: string;
+  proposalCount: number;
+  status: 'created' | 'existing';
+}
+```
+
+`created` returns `201`; an idempotent hit for the same
+`(sessionId, initial_post_session_reflection.v1)` returns `200` and does not
+call the provider again. Evidence validation errors return `400`, missing
+sessions or referenced entities return `404`, missing provider configuration
+returns `503`, provider/structured-output failures return `502`, and
+unexpected persistence failures return `500`. Typed generation failures use
+`{ error, code }`; internal failures expose only a safe `{ error }`.
+
+Generation is best-effort after study commits and the review-session summary
+are durable. It never rewrites study attempts, completion, or scheduling state.
+
+### Queue and detail
+
+`review` is required and must be `open` or `all`. The open query includes
+artifacts having at least one `pending` or `deferred` proposal. The all query
+returns recent history, including informational artifacts with no proposals.
+The response is:
+
+```ts
+{ artifacts: ReflectionArtifactSummaryDto[] }
+```
+
+Each summary includes artifact/session/flow identity, generation and
+provider/model/prompt metadata, bundle/result schema versions, and item,
+proposal, and open-proposal counts.
+
+Detail returns a `ReflectionArtifactDetailDto` directly. It adds the exact
+evidence bundle, validated result, and one joined proposal detail per immutable
+proposal. Each proposal detail contains its item locator, original proposal,
+current review status, and nullable invocation/application status.
+Both reads return `200` on success. Invalid queue filters return `400`, missing
+artifacts return `404`, and unexpected read failures return `500`.
+
+### Proposal review and authorization withdrawal
+
+Proposal review accepts only this strict union; unknown fields are rejected:
+
+```ts
+type ReviewProposalRequest =
+  | { action: 'defer' }
+  | { action: 'dismiss'; reason: string | null }
+  | { action: 'accept'; operation: ReflectionOperation };
+```
+
+Defer and dismiss return:
+
+```ts
+{ review: ProposalReviewStatus; invocation: null; application: null }
+```
+
+Accept revalidates the operation against the proposal evidence and current
+entities, classifies it as exact or revised, stores an immutable invocation,
+and immediately applies supported operations. Successful review returns `200`
+with:
+
+```ts
+{
+  review: ProposalReviewStatus;
+  invocation: OperationInvocation;
+  application: OperationApplicationStatus;
+}
+```
+
+Cue repair and production-alternate acceptance return a truthful
+`unsupported` application without a domain write. Supported application may
+return `applied`, `already_satisfied`, `stale`, or `failed`.
+
+Withdrawal accepts no fields (the client sends `{}`) and is valid only from
+`pending` or `unsupported`. It leaves the accepted proposal historical
+disposition unchanged and returns `200` with:
+
+```ts
+{
+  invocation: OperationInvocation;
+  application: OperationApplicationStatus;
+}
+```
+
+Review/withdraw validation and invalid lifecycle transitions return `400`;
+missing proposal/invocation ids return `404`; unexpected failures return `500`.
 
 ## Study management (outside session)
 

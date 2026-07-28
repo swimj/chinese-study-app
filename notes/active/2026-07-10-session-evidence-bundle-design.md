@@ -11,6 +11,16 @@ related:
   - notes/active/2026-07-10-session-lifecycle-code-verification.md
   - SPECS/study-action-model.md
 
+## 2026-07-30 review supersession
+
+The first integrated dogfood run showed that the session's required closing
+successes attracted unhelpful model attention. The accepted steel-thread
+contract therefore retains attempt ids only in the validation supplement and
+omits attempt rows, `attemptShape`, production relevance, and bad-prompt notes
+from the provider bundle. See `PLANS/initial-reflection-steel-thread.md` and the
+canonical types in `src/domain/reflection.ts`. The older schema excerpts below
+document the design path but are no longer current authority.
+
 ## Decision
 
 This note refines—not replaces—the July 6 workflow capture. The input shape
