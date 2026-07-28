@@ -18,6 +18,16 @@ import type {
   StudySkillId,
   StudyEvent,
 } from '../domain/study-actions';
+import type { SessionReflectionEvidenceSupplementV1 } from '../domain/reflection-evidence';
+import type {
+  OperationApplicationStatus,
+  OperationInvocation,
+  ProposalReviewStatus,
+  ReflectionProposalV1,
+  ReviewProposalRequest,
+  SessionReflectionBundleV1,
+  SessionReflectionResultV4,
+} from '../domain/reflection';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:5174';
 
@@ -41,6 +51,59 @@ type LearningPolicyResponse = {
 
 export type SessionPayload = {
   buckets: SessionStudyItemBuckets;
+};
+
+export type GenerateSessionReflectionResult = {
+  artifactId: string;
+  proposalCount: number;
+  status: 'created' | 'existing';
+};
+
+export type ReflectionArtifactSummaryDto = {
+  artifactId: string;
+  sourceSessionId: string;
+  reflectionFlowVersion: string;
+  generatedAt: string;
+  provider: string;
+  model: string;
+  promptVersion: string;
+  bundleSchemaVersion: SessionReflectionBundleV1['schemaVersion'];
+  resultSchemaVersion: SessionReflectionResultV4['schemaVersion'];
+  itemCount: number;
+  proposalCount: number;
+  openProposalCount: number;
+};
+
+export type OperationInvocationStatusDto = {
+  invocation: OperationInvocation;
+  application: OperationApplicationStatus;
+};
+
+export type ReflectionProposalDetailDto = {
+  itemId: string;
+  proposalIndex: number;
+  proposal: ReflectionProposalV1;
+  review: ProposalReviewStatus;
+  invocation: OperationInvocationStatusDto | null;
+};
+
+export type ReflectionArtifactDetailDto = Omit<
+  ReflectionArtifactSummaryDto,
+  'itemCount' | 'proposalCount' | 'openProposalCount'
+> & {
+  evidenceBundle: SessionReflectionBundleV1;
+  result: SessionReflectionResultV4;
+  proposals: ReflectionProposalDetailDto[];
+};
+
+export type ReflectionReviewApi = {
+  listArtifacts: (review: 'open' | 'all') => Promise<ReflectionArtifactSummaryDto[]>;
+  getArtifact: (artifactId: string) => Promise<ReflectionArtifactDetailDto>;
+  reviewProposal: (
+    proposalId: string,
+    request: ReviewProposalRequest,
+  ) => Promise<unknown>;
+  withdrawAuthorization: (invocationId: string) => Promise<unknown>;
 };
 
 export type { BackendStatus };
@@ -732,6 +795,101 @@ export async function recordReviewSessionSummary({
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to record review session summary'));
   }
+}
+
+export async function generateSessionReflection({
+  sessionId,
+  evidence,
+}: {
+  sessionId: string;
+  evidence: SessionReflectionEvidenceSupplementV1;
+}): Promise<GenerateSessionReflectionResult> {
+  const response = await fetch(
+    `${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/reflections`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(evidence),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to generate session reflection'));
+  }
+
+  return response.json();
+}
+
+export async function fetchReflectionArtifacts(
+  review: 'open' | 'all',
+): Promise<ReflectionArtifactSummaryDto[]> {
+  const response = await fetch(
+    `${API_BASE}/api/reflection-artifacts?review=${encodeURIComponent(review)}`,
+  );
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to load reflection artifacts'));
+  }
+
+  const payload = await response.json() as { artifacts: ReflectionArtifactSummaryDto[] };
+  return payload.artifacts;
+}
+
+export async function fetchReflectionArtifactDetail(
+  artifactId: string,
+): Promise<ReflectionArtifactDetailDto> {
+  const response = await fetch(
+    `${API_BASE}/api/reflection-artifacts/${encodeURIComponent(artifactId)}`,
+  );
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to load reflection artifact'));
+  }
+
+  return response.json();
+}
+
+export async function reviewReflectionProposal(
+  proposalId: string,
+  request: ReviewProposalRequest,
+): Promise<unknown> {
+  const response = await fetch(
+    `${API_BASE}/api/reflection-proposals/${encodeURIComponent(proposalId)}/review`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to review reflection proposal'));
+  }
+
+  return response.json();
+}
+
+export async function withdrawReflectionAuthorization(
+  invocationId: string,
+): Promise<unknown> {
+  const response = await fetch(
+    `${API_BASE}/api/reflection-invocations/${encodeURIComponent(invocationId)}/withdraw-authorization`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(
+      await readApiErrorMessage(response, 'Failed to withdraw reflection authorization'),
+    );
+  }
+
+  return response.json();
 }
 
 export async function completeLearningSession(wordId: string, success: boolean): Promise<Word> {

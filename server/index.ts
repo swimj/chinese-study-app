@@ -2,6 +2,8 @@ import cors from 'cors';
 import express from 'express';
 import { pathToFileURL } from 'node:url';
 import {
+  acceptReflectionProposal,
+  applyReflectionInvocation,
   completeLearningWordSession,
   completeUnstudiedWordSession,
   acceptContrastIntakeGroup,
@@ -11,8 +13,10 @@ import {
   createContrastClusterFromIntake,
   createContrastCluster,
   deleteContrastPrompt,
+  deferReflectionProposal,
   dismissWordFromStudy,
   dismissContrastIntakeGroup,
+  dismissReflectionProposal,
   addUnstudiedUserPriorityByHanzi,
   dbConfig,
   getUnstudiedCountBaseline,
@@ -21,9 +25,12 @@ import {
   getContrastClusterContent,
   getContrastIntakeGroups,
   getContrastIntakeWords,
+  getReflectionArtifactDetail,
   mergeSuggestedContrastClustersForIntakeWord,
   getPrioritizedUnstudiedWords,
   getReviewFailureRateDays,
+  listReflectionArtifacts,
+  recoverPendingReflectionInvocations,
   getSessionActiveTimeMetrics,
   getSessionPayload,
   setDailyNewWordLimit,
@@ -46,6 +53,7 @@ import {
   updateContrastPrompt,
   updateWordPersonalNotes,
   updateWordUserPriority,
+  withdrawReflectionInvocationAuthorization,
   type ReviewAttemptCommitIntent,
 } from './db.ts';
 import type {
@@ -55,11 +63,27 @@ import type {
   StudyManagementActionKind,
   StudySkillId,
 } from '../src/domain/study-actions.ts';
+import type {
+  ReflectionOperation,
+  ReviewProposalRequest,
+} from '../src/domain/reflection.ts';
+import {
+  createInitialReflectionGenerationService,
+  type InitialReflectionGenerationService,
+} from './reflection/generation.ts';
+import { ReflectionEvidenceError } from './reflection/evidence.ts';
+import { LunaReflectionProviderError } from './reflection/luna-provider.ts';
 
 const port = dbConfig.port;
 
-export function createApp() {
+export type CreateAppOptions = {
+  reflectionGenerationService?: InitialReflectionGenerationService;
+};
+
+export function createApp(options: CreateAppOptions = {}) {
   const app = express();
+  const reflectionGenerationService = options.reflectionGenerationService
+    ?? createInitialReflectionGenerationService();
 
   app.use(cors());
   app.use(express.json());
@@ -917,6 +941,155 @@ export function createApp() {
     }
   });
 
+  app.post('/api/study-sessions/:sessionId/reflections', async (req, res) => {
+    const sessionId = req.params.sessionId;
+    if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty session id' });
+      return;
+    }
+
+    try {
+      const result = await reflectionGenerationService.generate(sessionId, req.body);
+      res.status(result.status === 'created' ? 201 : 200).json(result);
+    } catch (error) {
+      if (error instanceof ReflectionEvidenceError) {
+        res.status(error.httpStatus).json({
+          error: error.message,
+          code: error.code,
+        });
+        return;
+      }
+      if (error instanceof LunaReflectionProviderError) {
+        res.status(error.code === 'missing_config' ? 503 : 502).json({
+          error: error.message,
+          code: error.code,
+        });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to generate reflection' });
+    }
+  });
+
+  app.get('/api/reflection-artifacts', (req, res) => {
+    const review = req.query?.review;
+    if (review !== 'open' && review !== 'all') {
+      res.status(400).json({ error: 'Expected review query parameter to be open or all' });
+      return;
+    }
+
+    try {
+      res.json({ artifacts: listReflectionArtifacts(review) });
+    } catch {
+      res.status(500).json({ error: 'Failed to load reflection artifacts' });
+    }
+  });
+
+  app.get('/api/reflection-artifacts/:artifactId', (req, res) => {
+    const artifactId = req.params.artifactId;
+    if (typeof artifactId !== 'string' || artifactId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty reflection artifact id' });
+      return;
+    }
+
+    try {
+      res.json(getReflectionArtifactDetail(artifactId.trim()));
+    } catch (error) {
+      if (isReflectionNotFoundError(error, 'Reflection artifact not found.')) {
+        res.status(404).json({ error: 'Reflection artifact not found' });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to load reflection artifact' });
+    }
+  });
+
+  app.post('/api/reflection-proposals/:proposalId/review', (req, res) => {
+    const proposalId = req.params.proposalId;
+    if (typeof proposalId !== 'string' || proposalId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty reflection proposal id' });
+      return;
+    }
+    const request = readReviewProposalRequest(req.body);
+    if (request === null) {
+      res.status(400).json({ error: 'Expected a valid reflection proposal review action' });
+      return;
+    }
+
+    try {
+      if (request.action === 'defer') {
+        const review = deferReflectionProposal(proposalId.trim());
+        res.json({ review, invocation: null, application: null });
+        return;
+      }
+      if (request.action === 'dismiss') {
+        const review = dismissReflectionProposal(proposalId.trim(), request.reason);
+        res.json({ review, invocation: null, application: null });
+        return;
+      }
+
+      const accepted = acceptReflectionProposal({
+        proposalId: proposalId.trim(),
+        operation: request.operation,
+      });
+      const invocation = accepted.invocation.application.state.kind === 'pending'
+        ? applyReflectionInvocation(accepted.invocation.invocation.invocationId)
+        : accepted.invocation;
+      res.json({
+        review: accepted.review,
+        invocation: invocation.invocation,
+        application: invocation.application,
+      });
+    } catch (error) {
+      if (isReflectionNotFoundError(error, 'Reflection proposal not found.')) {
+        res.status(404).json({ error: 'Reflection proposal not found' });
+        return;
+      }
+      if (isReflectionReviewClientError(error)) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to review reflection proposal' });
+    }
+  });
+
+  app.post(
+    '/api/reflection-invocations/:invocationId/withdraw-authorization',
+    (req, res) => {
+      const invocationId = req.params.invocationId;
+      if (typeof invocationId !== 'string' || invocationId.trim().length === 0) {
+        res.status(400).json({ error: 'Expected non-empty reflection invocation id' });
+        return;
+      }
+      if (
+        req.body !== undefined
+        && (!isPlainObject(req.body) || Object.keys(req.body).length !== 0)
+      ) {
+        res.status(400).json({ error: 'Expected an empty request body' });
+        return;
+      }
+
+      try {
+        const invocation = withdrawReflectionInvocationAuthorization(invocationId.trim());
+        res.json({
+          invocation: invocation.invocation,
+          application: invocation.application,
+        });
+      } catch (error) {
+        if (isReflectionNotFoundError(error, 'Reflection invocation not found.')) {
+          res.status(404).json({ error: 'Reflection invocation not found' });
+          return;
+        }
+        if (
+          error instanceof Error
+          && error.message.startsWith('Invalid operation application transition:')
+        ) {
+          res.status(400).json({ error: error.message });
+          return;
+        }
+        res.status(500).json({ error: 'Failed to withdraw reflection authorization' });
+      }
+    },
+  );
+
   app.post('/api/review-session-summaries', (req, res) => {
     const sessionId = req.body?.sessionId;
     const completedAt = req.body?.completedAt;
@@ -1207,6 +1380,60 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function readReviewProposalRequest(value: unknown): ReviewProposalRequest | null {
+  if (!isPlainObject(value) || typeof value.action !== 'string') {
+    return null;
+  }
+  const keys = Object.keys(value).sort();
+
+  switch (value.action) {
+    case 'defer':
+      return keys.length === 1 && keys[0] === 'action'
+        ? { action: 'defer' }
+        : null;
+    case 'dismiss':
+      if (
+        keys.length !== 2
+        || keys[0] !== 'action'
+        || keys[1] !== 'reason'
+        || (value.reason !== null && typeof value.reason !== 'string')
+      ) {
+        return null;
+      }
+      return { action: 'dismiss', reason: value.reason };
+    case 'accept':
+      if (
+        keys.length !== 2
+        || keys[0] !== 'action'
+        || keys[1] !== 'operation'
+        || !isPlainObject(value.operation)
+      ) {
+        return null;
+      }
+      return {
+        action: 'accept',
+        operation: value.operation as ReflectionOperation,
+      };
+    default:
+      return null;
+  }
+}
+
+function isReflectionNotFoundError(error: unknown, message: string): error is Error {
+  return error instanceof Error && error.message === message;
+}
+
+function isReflectionReviewClientError(error: unknown): error is Error {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message.startsWith('Cannot authorize ')
+    || error.message.startsWith('Invalid proposal review transition:')
+    || error.message.startsWith('Reflection operation references unknown word ')
+    || error.message.startsWith('No reflection operation registration for ')
+    || error.message === 'A revised proposal acceptance must preserve operation kind and version.'
+  );
+}
+
 function isContrastIntakeClientError(error: unknown): error is Error {
   if (!(error instanceof Error)) {
     return false;
@@ -1231,7 +1458,12 @@ function normalizeStudyDayKey(value: string): string | null {
   return trimmed;
 }
 
+export function recoverPendingReflectionApplicationsAtStartup() {
+  return recoverPendingReflectionInvocations();
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  recoverPendingReflectionApplicationsAtStartup();
   const app = createApp();
   app.listen(port, () => {
     console.log(`Backend server running at http://localhost:${port}`);
