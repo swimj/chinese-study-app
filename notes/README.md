@@ -88,3 +88,4 @@ Agents may propose archive; triage and confirmation follow the same pattern as `
 | [2026-07-20-m1-artifact-store-planning.md](active/2026-07-20-m1-artifact-store-planning.md) | planning | 2026-09-20 |
 | [2026-07-20-spoken-construction-drills.md](active/2026-07-20-spoken-construction-drills.md) | research | 2026-08-20 |
 | [2026-07-22-project-steward-linear-trial-task-spec.md](active/2026-07-22-project-steward-linear-trial-task-spec.md) | work-bundle | after pilot evaluation and durable graduation or rollback |
+| [2026-07-29-initial-reflection-graphite-stack-task-spec.md](active/2026-07-29-initial-reflection-graphite-stack-task-spec.md) | work-bundle | after SWI-16 integration and Graphite trial evaluation |
