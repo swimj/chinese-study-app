@@ -51,10 +51,6 @@ function word(wordId: string, seed: WordSeed): ReflectionWordSnapshotV1 {
     hanzi: seed.hanzi,
     pinyin: seed.pinyin,
     meanings: seed.meanings,
-    production: {
-      relevance: 'normal',
-      notes: [],
-    },
   };
 }
 
@@ -108,7 +104,6 @@ function productionFixture(seed: ProductionFixtureSeed): ReflectionProviderFixtu
   const itemId = `${prefix}-item`;
   const targetWordId = `${prefix}-target`;
   const submittedWordId = `${prefix}-submitted`;
-  const attemptId = `${prefix}-attempt-1`;
   const context: FixtureContext = {
     prefix,
     itemId,
@@ -141,23 +136,6 @@ function productionFixture(seed: ProductionFixtureSeed): ReflectionProviderFixtu
     rawResponse: seed.submitted.hanzi,
     submittedWord: word(submittedWordId, seed.submitted),
     responseKind: 'matched_known_word',
-    attempts: [
-      {
-        attemptId,
-        occurredAt: '2026-07-06T11:55:00.000Z',
-        actionAttemptSequence: 1,
-        outcome: 'incorrect',
-        rating: 'forgot',
-        response: seed.submitted.hanzi,
-      },
-    ],
-    attemptShape: {
-      firstResponseOutcome: 'incorrect',
-      resolution: 'unknown',
-      terminalRating: 'forgot',
-      attemptCountForAction: 1,
-      managementAction: null,
-    },
   };
 
   const itemResult = seed.buildResult(context);

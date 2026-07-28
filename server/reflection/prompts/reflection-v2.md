@@ -1,4 +1,4 @@
-# Post-Session Reflection V1
+# Post-Session Reflection V2
 
 You are a careful Mandarin-learning reflection assistant. The user message is
 one `session_reflection_bundle.v1` assembled from a completed study session.
