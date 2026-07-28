@@ -5,6 +5,7 @@ Navigation map for the React frontend. Product behavior is defined by the canoni
 - `SPECS/learning-review-model.md`
 - `SPECS/session-covering-criteria.md`
 - `SPECS/study-action-model.md`
+- `SPECS/reflection-proposals-and-handles.md`
 
 ## Directory Tree
 
@@ -17,7 +18,7 @@ src/
   study-profile.ts                # mandarin vs french client profile
 
   components/
-    AppChrome.tsx                 # nav (home, priority, intake), version, errors
+    AppChrome.tsx                 # nav (home, priority, intake, reflections), version, errors
     MeaningList.tsx               # shared meaning list rendering
 
   pages/
@@ -25,6 +26,7 @@ src/
     HomeOverviewPanel.tsx         # backend/session availability overview + Start session card (gear toggles SessionSettingsPanel)
     PriorityPage.tsx              # unstudied priority queue + triage
     IntakePage.tsx                # contrast intake (candidates, cluster actions)
+    ReflectionsPage.tsx           # artifact history/detail and proposal-level review
 
   features/
     session/
@@ -32,6 +34,8 @@ src/
       StudySessionPanel.tsx       # active/completed session UI
       SessionSummaryPanel.tsx     # completed session summary UI
       PersonalNotesEditorOverlay.tsx
+      session-finalization.ts     # explicit Finish/Close and best-effort reflection states
+      session-reflection-evidence.ts # typed production evidence accumulator + Undo snapshots
       session-commit.ts           # deferred durable commit adapter
       session-prefetch.ts         # session payload prefetch cache
       session-rating.ts           # keyboard/rating option helpers
@@ -47,8 +51,16 @@ src/
       useIntakePageController.ts   # contrast intake page controller
       useClusterPageController.ts  # cluster list/prompt management (used from Intake)
 
+    reflection/
+      useReflectionPageController.ts # open/history/detail loading and review mutations
+      reflection-page-model.ts       # item grouping, typed draft edits, support/validation facts
+      ReflectionOperationEditor.tsx  # purpose-built editors for the four V1 operations
+
   domain/
     study-actions.ts              # shared study-action types/adapters (also used by server)
+    reflection.ts                 # canonical reflection result/operation/lifecycle contract
+    reflection-evidence.ts        # strict supplement and initial-bundle validation
+    reflection-result-schema.ts   # strict provider JSON schema
 
   lib/
     session-state.ts              # frontend in-flight session state machine
@@ -62,12 +74,14 @@ src/
 
 `App.tsx` is intentionally thin. It owns only cross-page concerns:
 
-- current page selection (`home` | `priority` | `intake`)
+- current page selection (`home` | `priority` | `intake` | `reflections`)
 - global error message
 - backend status refresh
 - app chrome wiring
 - personal-notes overlay mounting
-- wiring page controllers (`useStudySession`, `usePriorityPageController`, `useIntakePageController`, `useClusterPageController`)
+- wiring page controllers (`useStudySession`, `usePriorityPageController`,
+  `useIntakePageController`, `useClusterPageController`,
+  `useReflectionPageController`)
 
 Page-specific state should not drift back into `App.tsx`. Use a page controller hook or keep state inside the page component when it is purely local UI.
 
@@ -81,6 +95,10 @@ Page-specific state should not drift back into `App.tsx`. Use a page controller 
 
 `useClusterPageController` owns contrast cluster CRUD used from the intake page (cluster list, members, prompts, feedback resolution). `App.tsx` calls `clusterPage.loadData()` when opening intake and after mutating actions.
 
+`useReflectionPageController` owns the reflection page. See the
+[reflection frontend architecture map](../docs/reflection-frontend-architecture.md)
+for its loading, review, and application-status boundaries.
+
 ## Session Controller
 
 `useStudySession` owns the in-flight study session runtime:
@@ -89,6 +107,8 @@ Page-specific state should not drift back into `App.tsx`. Use a page controller 
 - start/end/rate/undo/dismiss flows
 - deferred durable session commits
 - session summary updates
+- completed-session finalization and non-blocking reflection generation
+- ephemeral reflection-evidence capture and retry supplement retention
 - production Hanzi input flow
 - personal notes editor state
 - active word meaning loading and visibility updates
@@ -98,6 +118,10 @@ The hook returns:
 
 - `homePageProps` → `HomePage`
 - `personalNotesEditor` → overlay in `App.tsx`
+
+The completed-session finalization, evidence accumulator, and reflection review
+workspace are mapped separately in the
+[reflection frontend architecture map](../docs/reflection-frontend-architecture.md).
 
 ## Boundaries
 

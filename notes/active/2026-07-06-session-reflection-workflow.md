@@ -8,6 +8,17 @@ related:
   - notes/archive/2026-07-21-handle-registry-v0-task-spec.md (reflection exemplars and handle inventory input)
   - PLANS/agentic-roadmap-glm-5.2.md (session-evidence bundle pre-spike)
 
+## 2026-07-30 review supersession
+
+The initial integrated dogfood run superseded this research note's field-level
+recommendation to expose attempt shape and production-management metadata to
+the model. The accepted steel-thread contract is now recorded in
+`PLANS/initial-reflection-steel-thread.md`: attempt ids remain validation-only
+supplement references, while the provider bundle omits attempt rows, derived
+attempt summaries, production relevance, and bad-prompt notes. The older schema
+excerpts below remain as research chronology, not current implementation
+authority.
+
 ## Approach
 
 Conversational capture of what the user actually does after a study session (including selective excerpts from manual LLM chat), rather than a raw paste archive. Output: a structured gist feeding the session-evidence bundle design spike.

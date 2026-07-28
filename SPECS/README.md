@@ -21,7 +21,9 @@ Behavior changes must align with these and update tests in the same change.
 | --- | --- |
 | [frontend-architecture-map.md](./frontend-architecture-map.md) | React directory map and controller boundaries |
 
-Also see [docs/architecture.md](../docs/architecture.md), [docs/api.md](../docs/api.md), [docs/server-db.md](../docs/server-db.md).
+Also see [docs/architecture.md](../docs/architecture.md), [docs/api.md](../docs/api.md),
+[docs/server-db.md](../docs/server-db.md), and the feature-specific
+[reflection frontend architecture map](../docs/reflection-frontend-architecture.md).
 
 ## Operations
 
