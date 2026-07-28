@@ -5,6 +5,7 @@ import { studyManagementActionRemovesCurrentReviewAction } from '../../domain/st
 import {
   dismissWordFromStudy,
   fetchWordMeanings,
+  generateSessionReflection,
   recordStudyManagementAction,
   recordReviewSessionSummary,
   updateWordMeaningVisibility,
@@ -75,17 +76,42 @@ import {
   updateActiveSessionClockForVisibility,
   type ActiveSessionClock,
 } from './active-session-time';
+import {
+  appendAcceptedProductionAttemptIds,
+  buildSessionReflectionEvidenceSupplement,
+  createSessionReflectionEvidenceAccumulator,
+  dropSessionReflectionEvidenceForAction,
+  recordProductionMistakeEvidence,
+  restoreSessionReflectionEvidence,
+  snapshotSessionReflectionEvidence,
+  type SessionReflectionEvidenceAccumulator,
+  type SessionReflectionEvidenceSupplementV1,
+} from './session-reflection-evidence';
+import {
+  beginSessionFinalization,
+  completeSessionFinalization,
+  completeSessionReflectionGeneration,
+  createSessionFinalizationState,
+  failSessionReflectionGeneration,
+  finalizeSessionBeforeReflection,
+  isCurrentSessionReflectionRequest,
+  resetFailedSessionFinalization,
+  retrySessionReflectionGeneration,
+  type SessionFinalizationState,
+} from './session-finalization';
 
 type SessionUndoSnapshot = {
   sessionState: BucketSessionState;
   sessionSummary: SessionSummary | null;
   ui: SessionUiSnapshot;
+  reflectionEvidence: SessionReflectionEvidenceAccumulator;
 };
 
 type SessionUiSnapshot = {
   answerRevealed: boolean;
   productionHanziInput: string;
   productionHanziError: string | null;
+  productionSubmittedResponse: string | null;
   productionContrastIntakeNote: string;
   productionContrastIntakeMarked: boolean;
   productionUiPhase: 'idle' | 'await-rating' | 'await-next';
@@ -108,6 +134,7 @@ export type StudySessionHomePageProps = {
   displayedSessionItemCount: number;
   reviewedCount: number;
   sessionSummary: SessionSummary | null;
+  sessionFinalization: SessionFinalizationState;
   activeItem: SessionStudyItem | null;
   activeWord: Word | null;
   activeLearningProgress: LearningWordProgress | undefined;
@@ -147,6 +174,7 @@ export type StudySessionHomePageProps = {
   activeRatingOptions: RatingOption[];
   onStartSession: () => void;
   onEndSession: () => void;
+  onRetrySessionReflection: () => void;
   onUndoLastRating: () => void;
   onContinueAfterAutoForgot: () => void;
   onContinueAfterAutoContrastForgot: () => void;
@@ -212,6 +240,7 @@ export function useStudySession({
   const [personalNotesEditorError, setPersonalNotesEditorError] = useState<string | null>(null);
   const [productionHanziInput, setProductionHanziInput] = useState('');
   const [productionHanziError, setProductionHanziError] = useState<string | null>(null);
+  const [productionSubmittedResponse, setProductionSubmittedResponse] = useState<string | null>(null);
   const [productionContrastIntakeNote, setProductionContrastIntakeNote] = useState('');
   const [productionContrastIntakeMarked, setProductionContrastIntakeMarked] = useState(false);
   const [productionUiPhase, setProductionUiPhase] = useState<'idle' | 'await-rating' | 'await-next'>('idle');
@@ -222,6 +251,23 @@ export function useStudySession({
   const personalNotesEditorInputRef = useRef<HTMLTextAreaElement | null>(null);
   const productionHanziInputRef = useRef<HTMLInputElement | null>(null);
   const activeSessionClockRef = useRef<ActiveSessionClock | null>(null);
+  const reflectionEvidenceRef = useRef<SessionReflectionEvidenceAccumulator>(
+    createSessionReflectionEvidenceAccumulator(),
+  );
+  const pendingReflectionSupplementRef = useRef<SessionReflectionEvidenceSupplementV1 | null>(null);
+  const activeSessionIdRef = useRef<string | null>(null);
+  const [sessionFinalization, setSessionFinalization] = useState<SessionFinalizationState>(
+    createSessionFinalizationState,
+  );
+  const sessionFinalizationRef = useRef<SessionFinalizationState>(sessionFinalization);
+
+  function updateSessionFinalization(
+    updater: (current: SessionFinalizationState) => SessionFinalizationState,
+  ) {
+    const next = updater(sessionFinalizationRef.current);
+    sessionFinalizationRef.current = next;
+    setSessionFinalization(next);
+  }
 
   function syncSessionPrefetchState() {
     setSessionPrefetch(getSessionPrefetchSnapshot());
@@ -351,6 +397,7 @@ export function useStudySession({
   function resetProductionUi() {
     setProductionHanziInput('');
     setProductionHanziError(null);
+    setProductionSubmittedResponse(null);
     setProductionContrastIntakeNote('');
     setProductionContrastIntakeMarked(false);
     setProductionUiPhase('idle');
@@ -391,6 +438,7 @@ export function useStudySession({
       answerRevealed,
       productionHanziInput,
       productionHanziError,
+      productionSubmittedResponse,
       productionContrastIntakeNote,
       productionContrastIntakeMarked,
       productionUiPhase,
@@ -405,6 +453,7 @@ export function useStudySession({
     setAnswerRevealed(snapshot.answerRevealed);
     setProductionHanziInput(snapshot.productionHanziInput);
     setProductionHanziError(snapshot.productionHanziError);
+    setProductionSubmittedResponse(snapshot.productionSubmittedResponse);
     setProductionContrastIntakeNote(snapshot.productionContrastIntakeNote);
     setProductionContrastIntakeMarked(snapshot.productionContrastIntakeMarked);
     setProductionUiPhase(snapshot.productionUiPhase);
@@ -414,13 +463,26 @@ export function useStudySession({
     setFrozenContrastCard(snapshot.frozenContrastCard);
   }
 
-  async function applyPendingUndoClosure() {
+  async function applyPendingUndoClosure(): Promise<SessionReflectionEvidenceAccumulator> {
     if (pendingSessionCommit) {
-      await applySessionCommit(pendingSessionCommit);
+      const commit = pendingSessionCommit;
+      const acceptedEvidence =
+        commit.type === 'commit-review-action-session'
+          ? appendAcceptedProductionAttemptIds(
+              reflectionEvidenceRef.current,
+              {
+                sessionActionId: commit.sessionActionId,
+                acceptedAttempts: commit.events,
+              },
+            )
+          : reflectionEvidenceRef.current;
+      await applySessionCommit(commit);
+      reflectionEvidenceRef.current = acceptedEvidence;
       setPendingSessionCommit(null);
     }
 
     setLastUndoSnapshot(null);
+    return reflectionEvidenceRef.current;
   }
 
   async function handleStartSession() {
@@ -438,6 +500,10 @@ export function useStudySession({
       const startedAt = new Date().toISOString();
       const startedAtMs = new Date(startedAt).getTime();
       const sessionId = createFrontendSessionId();
+      activeSessionIdRef.current = sessionId;
+      reflectionEvidenceRef.current = createSessionReflectionEvidenceAccumulator();
+      pendingReflectionSupplementRef.current = null;
+      updateSessionFinalization(() => createSessionFinalizationState());
       setSessionNow(startedAt);
       activeSessionClockRef.current = createActiveSessionClock({
         nowMs: startedAtMs,
@@ -475,37 +541,133 @@ export function useStudySession({
       return;
     }
 
-    if (pendingSessionCommit) {
-      try {
-        await applyPendingUndoClosure();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
-        return;
+    if (sessionState?.phase === 'completed') {
+      if (sessionFinalizationRef.current.kind === 'finalized') {
+        await closeCompletedSession();
+      } else if (sessionFinalizationRef.current.kind === 'unfinalized') {
+        await finishCompletedSession();
       }
+      return;
     }
 
-    if (sessionSummary) {
-      try {
-        const activeDurationMs = activeSessionClockRef.current
-          ? getActiveSessionDurationMs(activeSessionClockRef.current, Date.now())
-          : 0;
-        await recordReviewSessionSummary({
-          sessionId: sessionSummary.sessionId,
-          completedAt: sessionSummary.completedAt ?? new Date().toISOString(),
-          completedReviewActionCount: sessionSummary.completedReviewActions,
-          failedReviewActionCount: sessionSummary.lapsedReviewActionIds.length,
-          activeDurationMs,
-        });
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
-        return;
-      }
+  }
+
+  async function finishCompletedSession() {
+    if (!sessionSummary || !sessionState || sessionState.phase !== 'completed') {
+      throw new Error('Session finalization invariant violated: expected a completed session summary.');
     }
 
+    updateSessionFinalization(beginSessionFinalization);
+    setError(null);
+    const finalizingSummary = sessionSummary;
+    let evidence: SessionReflectionEvidenceAccumulator;
+
+    try {
+      evidence = await finalizeSessionBeforeReflection({
+        flushPendingCommit: applyPendingUndoClosure,
+        recordSummary: async () => {
+          const activeDurationMs = activeSessionClockRef.current
+            ? getActiveSessionDurationMs(activeSessionClockRef.current, Date.now())
+            : 0;
+          await recordReviewSessionSummary({
+            sessionId: finalizingSummary.sessionId,
+            completedAt: finalizingSummary.completedAt ?? new Date().toISOString(),
+            completedReviewActionCount: finalizingSummary.completedReviewActions,
+            failedReviewActionCount: finalizingSummary.lapsedReviewActionIds.length,
+            activeDurationMs,
+          });
+        },
+      });
+    } catch (err) {
+      updateSessionFinalization(resetFailedSessionFinalization);
+      setError(err instanceof Error ? err.message : 'Unknown error');
+      return;
+    }
+
+    const hasReflectionEvidence = evidence.items.length > 0;
+    updateSessionFinalization((current) =>
+      completeSessionFinalization({
+        state: current,
+        hasReflectionEvidence,
+      }),
+    );
+
+    if (hasReflectionEvidence) {
+      try {
+        const supplement = buildSessionReflectionEvidenceSupplement(evidence);
+        pendingReflectionSupplementRef.current = supplement;
+        void runSessionReflectionGeneration(finalizingSummary.sessionId, supplement);
+      } catch (err) {
+        updateSessionFinalization((current) =>
+          failSessionReflectionGeneration(
+            current,
+            err instanceof Error ? err.message : 'Unknown reflection error',
+            { retryable: false },
+          ),
+        );
+      }
+    }
+  }
+
+  async function runSessionReflectionGeneration(
+    sessionId: string,
+    supplement: SessionReflectionEvidenceSupplementV1,
+  ) {
+    try {
+      const result = await generateSessionReflection({
+        sessionId,
+        evidence: supplement,
+      });
+      if (!isCurrentSessionReflectionRequest({
+        activeSessionId: activeSessionIdRef.current,
+        requestSessionId: sessionId,
+      })) {
+        return;
+      }
+      updateSessionFinalization((current) =>
+        completeSessionReflectionGeneration(current, result),
+      );
+    } catch (err) {
+      if (!isCurrentSessionReflectionRequest({
+        activeSessionId: activeSessionIdRef.current,
+        requestSessionId: sessionId,
+      })) {
+        return;
+      }
+      updateSessionFinalization((current) =>
+        failSessionReflectionGeneration(
+          current,
+          err instanceof Error ? err.message : 'Unknown reflection error',
+        ),
+      );
+    }
+  }
+
+  function handleRetrySessionReflection() {
+    if (
+      sessionFinalizationRef.current.kind !== 'finalized'
+      || sessionFinalizationRef.current.reflection.kind !== 'failed'
+    ) {
+      return;
+    }
+    const sessionId = activeSessionIdRef.current;
+    const supplement = pendingReflectionSupplementRef.current;
+    if (!sessionId || !supplement) {
+      throw new Error('Session finalization invariant violated: reflection retry evidence is unavailable.');
+    }
+    updateSessionFinalization(retrySessionReflectionGeneration);
+    void runSessionReflectionGeneration(sessionId, supplement);
+  }
+
+  async function closeCompletedSession() {
+    activeSessionIdRef.current = null;
     setSessionStarted(false);
     setSessionState(null);
     setSessionSummary(null);
+    updateSessionFinalization(() => createSessionFinalizationState());
     activeSessionClockRef.current = null;
+    reflectionEvidenceRef.current = createSessionReflectionEvidenceAccumulator();
+    pendingReflectionSupplementRef.current = null;
     resetSessionScopedUi();
     setPendingSessionCommit(null);
     setLastUndoSnapshot(null);
@@ -535,13 +697,20 @@ export function useStudySession({
 
     try {
       // A new rating closes the undo window for the previously deferred commit.
+      const submittedProductionUndoSnapshot =
+        productionAwaitingRating ? lastUndoSnapshot : null;
       await applyPendingUndoClosure();
 
-      setLastUndoSnapshot({
-        sessionState: cloneBucketSessionState(sessionState),
-        sessionSummary,
-        ui: createSessionUiSnapshot(),
-      });
+      if (submittedProductionUndoSnapshot) {
+        setLastUndoSnapshot(submittedProductionUndoSnapshot);
+      } else {
+        setLastUndoSnapshot({
+          sessionState: cloneBucketSessionState(sessionState),
+          sessionSummary,
+          ui: createSessionUiSnapshot(),
+          reflectionEvidence: snapshotSessionReflectionEvidence(reflectionEvidenceRef.current),
+        });
+      }
 
       const transition =
         activeItem.actionKind === 'contrast_selection'
@@ -551,7 +720,12 @@ export function useStudySession({
               rating,
               practiceMore: contrastPracticeMore,
             })
-          : rateActiveSessionUnit(sessionState, rating);
+          : rateActiveSessionUnit(sessionState, rating, {
+              response:
+                activeItem.actionKind === 'production'
+                  ? productionSubmittedResponse
+                  : null,
+            });
       setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
 
       setSessionState(transition.state);
@@ -603,6 +777,7 @@ export function useStudySession({
         sessionState: cloneBucketSessionState(sessionState),
         sessionSummary,
         ui: createSessionUiSnapshot(),
+        reflectionEvidence: snapshotSessionReflectionEvidence(reflectionEvidenceRef.current),
       });
 
       const expectedHanzi = normalizeProductionAnswer(
@@ -613,12 +788,32 @@ export function useStudySession({
 
       if (isCorrect) {
         setProductionHanziError(null);
+        setProductionSubmittedResponse(productionHanziInput);
         setProductionUiPhase('await-rating');
         setAnswerRevealed(true);
         return;
       }
 
-      const transition = rateActiveSessionUnit(sessionState, 'forgot');
+      const transition = rateActiveSessionUnit(sessionState, 'forgot', {
+        response: productionHanziInput,
+      });
+      if (activeWord.status === 'review') {
+        const attempts = transition.state.reviewProgress[activeItem.sessionActionId]?.attempts;
+        const incorrectAttempt = attempts?.[attempts.length - 1];
+        if (!incorrectAttempt) {
+          throw new Error(
+            'Session reflection evidence invariant violated: typed production mistake has no attempt event.',
+          );
+        }
+        reflectionEvidenceRef.current = recordProductionMistakeEvidence(
+          reflectionEvidenceRef.current,
+          {
+            item: activeItem,
+            incorrectAttempt,
+            promptDisplayedMeanings: activePromptDisplayedMeanings,
+          },
+        );
+      }
       setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
       setSessionState(transition.state);
       setSessionSummary((current) =>
@@ -710,6 +905,7 @@ export function useStudySession({
         sessionState: cloneBucketSessionState(sessionState),
         sessionSummary,
         ui: createSessionUiSnapshot(),
+        reflectionEvidence: snapshotSessionReflectionEvidence(reflectionEvidenceRef.current),
       });
 
       const transition = rateActiveContrastSelectionUnit({
@@ -755,6 +951,9 @@ export function useStudySession({
     setSessionState(cloneBucketSessionState(lastUndoSnapshot.sessionState));
     setSessionSummary(lastUndoSnapshot.sessionSummary);
     restoreSessionUiSnapshot(lastUndoSnapshot.ui);
+    reflectionEvidenceRef.current = restoreSessionReflectionEvidence(
+      lastUndoSnapshot.reflectionEvidence,
+    );
     setPendingSessionCommit(null);
     setLastUndoSnapshot(null);
     setError(null);
@@ -786,6 +985,12 @@ export function useStudySession({
       }
 
       setSessionState(transition.state);
+      if (activeItem) {
+        reflectionEvidenceRef.current = dropSessionReflectionEvidenceForAction(
+          reflectionEvidenceRef.current,
+          activeItem.sessionActionId,
+        );
+      }
       resetAnswerAndProductionUi();
       setLastUndoSnapshot(null);
       await dismissWordFromStudy(transition.dismiss.wordId);
@@ -825,6 +1030,10 @@ export function useStudySession({
       });
 
       if (studyManagementActionRemovesCurrentReviewAction(managementAction)) {
+        reflectionEvidenceRef.current = dropSessionReflectionEvidenceForAction(
+          reflectionEvidenceRef.current,
+          activeItem.sessionActionId,
+        );
         setSessionState(dropActiveReviewSessionAction(sessionState));
         resetAnswerAndProductionUi();
         setLastUndoSnapshot(null);
@@ -874,6 +1083,10 @@ export function useStudySession({
       }
 
       const nextState = cancelRatedReviewSessionAction(sessionState, frozenProductionCard.sessionActionId);
+      reflectionEvidenceRef.current = dropSessionReflectionEvidenceForAction(
+        reflectionEvidenceRef.current,
+        frozenProductionCard.sessionActionId,
+      );
       setSessionState(nextState);
       setSessionSummary((current) =>
         cancelFrozenProductionRatingInSummary({
@@ -912,6 +1125,10 @@ export function useStudySession({
       const nextState = dismissBucketSessionWordFromSnapshot(
         cancelRatedReviewSessionAction(sessionState, frozenProductionCard.sessionActionId),
         frozenProductionCard.targetWordId,
+      );
+      reflectionEvidenceRef.current = dropSessionReflectionEvidenceForAction(
+        reflectionEvidenceRef.current,
+        frozenProductionCard.sessionActionId,
       );
       setSessionState(nextState);
       setSessionSummary((current) =>
@@ -1277,6 +1494,7 @@ export function useStudySession({
       displayedSessionItemCount,
       reviewedCount,
       sessionSummary,
+      sessionFinalization,
       activeItem,
       activeWord,
       activeLearningProgress,
@@ -1316,6 +1534,7 @@ export function useStudySession({
       activeRatingOptions,
       onStartSession: () => void handleStartSession(),
       onEndSession: () => void handleEndSession(),
+      onRetrySessionReflection: handleRetrySessionReflection,
       onUndoLastRating: handleUndoLastRating,
       onContinueAfterAutoForgot: handleContinueAfterAutoForgot,
       onContinueAfterAutoContrastForgot: handleContinueAfterAutoContrastForgot,

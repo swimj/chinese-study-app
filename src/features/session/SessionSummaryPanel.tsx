@@ -1,6 +1,15 @@
 import type { SessionSummary } from './session-summary';
+import type { SessionFinalizationState } from './session-finalization';
 
-export function SessionSummaryPanel({ summary }: { summary: SessionSummary }) {
+export function SessionSummaryPanel({
+  summary,
+  finalization,
+  onRetryReflection,
+}: {
+  summary: SessionSummary;
+  finalization: SessionFinalizationState;
+  onRetryReflection: () => void;
+}) {
   const elapsedLabel = formatElapsedTime(summary.activeDurationMs);
 
   return (
@@ -62,8 +71,66 @@ export function SessionSummaryPanel({ summary }: { summary: SessionSummary }) {
         Started {formatDateTime(summary.startedAt)}
         {summary.completedAt ? ` · Completed ${formatDateTime(summary.completedAt)}` : ''}
       </p>
+      <SessionReflectionStatus
+        finalization={finalization}
+        onRetryReflection={onRetryReflection}
+      />
     </div>
   );
+}
+
+function SessionReflectionStatus({
+  finalization,
+  onRetryReflection,
+}: {
+  finalization: SessionFinalizationState;
+  onRetryReflection: () => void;
+}) {
+  if (finalization.kind === 'unfinalized') {
+    return (
+      <p className="notes">
+        Finish the session to save the final attempt and start reflection.
+      </p>
+    );
+  }
+  if (finalization.kind === 'finalizing') {
+    return <p className="notes">Saving the completed session...</p>;
+  }
+
+  switch (finalization.reflection.kind) {
+    case 'skipped':
+      return (
+        <p className="notes">
+          Reflection skipped: this session had no qualifying typed production mistakes.
+        </p>
+      );
+    case 'generating':
+      return (
+        <p className="notes">
+          Reflection is generating. You can close this summary while it finishes.
+        </p>
+      );
+    case 'succeeded':
+      return (
+        <p className="notes">
+          Reflection ready with {finalization.reflection.proposalCount} proposal
+          {finalization.reflection.proposalCount === 1 ? '' : 's'}.
+        </p>
+      );
+    case 'failed':
+      return (
+        <div className="stack">
+          <p className="notes">
+            Reflection failed without affecting the completed session: {finalization.reflection.error}
+          </p>
+          {finalization.reflection.retryable ? (
+            <button type="button" className="secondary-button" onClick={onRetryReflection}>
+              Retry reflection
+            </button>
+          ) : null}
+        </div>
+      );
+  }
 }
 
 function formatDateTime(value: string | null) {

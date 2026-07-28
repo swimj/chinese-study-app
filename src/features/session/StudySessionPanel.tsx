@@ -11,6 +11,7 @@ import type { ReviewRating, Word, WordMeaning } from '../../types';
 import { studyProfile } from '../../study-profile';
 import type { RatingOption } from './session-rating';
 import type { SessionSummary } from './session-summary';
+import type { SessionFinalizationState } from './session-finalization';
 import { getStudySessionPanelView } from './session-selectors';
 import { SessionSummaryPanel } from './SessionSummaryPanel';
 
@@ -45,6 +46,7 @@ export function StudySessionPanel({
   sessionStarted,
   sessionPhase,
   sessionSummary,
+  sessionFinalization,
   activeItem,
   activeWord,
   activeLearningProgress,
@@ -86,6 +88,7 @@ export function StudySessionPanel({
   activeRatingOptions,
   onUndoLastRating,
   onEndSession,
+  onRetrySessionReflection,
   onContinueAfterAutoForgot,
   onContinueAfterAutoContrastForgot,
   onProductionContrastIntakeNoteChange,
@@ -106,6 +109,7 @@ export function StudySessionPanel({
   sessionStarted: boolean;
   sessionPhase: BucketSessionState['phase'] | null;
   sessionSummary: SessionSummary | null;
+  sessionFinalization: SessionFinalizationState;
   activeItem: SessionStudyItem | null;
   activeWord: Word | null;
   activeLearningProgress: LearningWordProgress | undefined;
@@ -147,6 +151,7 @@ export function StudySessionPanel({
   activeRatingOptions: RatingOption[];
   onUndoLastRating: () => void;
   onEndSession: () => void;
+  onRetrySessionReflection: () => void;
   onContinueAfterAutoForgot: () => void;
   onContinueAfterAutoContrastForgot: () => void;
   onProductionContrastIntakeNoteChange: (value: string) => void;
@@ -343,16 +348,28 @@ export function StudySessionPanel({
       ) : panelView === 'completed' && sessionSummary ? (
         <div className="review-card session-card-shell">
           <div className="session-card-scroll">
-            <SessionSummaryPanel summary={sessionSummary} />
+            <SessionSummaryPanel
+              summary={sessionSummary}
+              finalization={sessionFinalization}
+              onRetryReflection={onRetrySessionReflection}
+            />
           </div>
           <div className="session-action-bar">
             <SessionActionSection>
-              <button type="button" onClick={onEndSession}>
-                Close summary
+              <button
+                type="button"
+                onClick={onEndSession}
+                disabled={sessionFinalization.kind === 'finalizing'}
+              >
+                {sessionFinalization.kind === 'finalized'
+                  ? 'Close summary'
+                  : sessionFinalization.kind === 'finalizing'
+                    ? 'Finishing...'
+                    : 'Finish session'}
               </button>
               <KeyboardGuideButton onClick={() => setShortcutsOpen(true)} />
               <UndoButton
-                hasUndo={hasUndo}
+                hasUndo={hasUndo && sessionFinalization.kind === 'unfinalized'}
                 submittingRating={submittingRating}
                 personalNotesEditorOpen={personalNotesEditorOpen}
                 onUndoLastRating={onUndoLastRating}

@@ -12,6 +12,7 @@ import type { ReviewRating, Word, WordMeaning } from '../types';
 import type { SessionPrefetchState } from '../features/session/session-prefetch';
 import type { RatingOption } from '../features/session/session-rating';
 import type { SessionSummary } from '../features/session/session-summary';
+import type { SessionFinalizationState } from '../features/session/session-finalization';
 import {
   StudySessionPanel,
   type FrozenContrastCard,
@@ -29,6 +30,7 @@ export function HomePage({
   displayedSessionItemCount,
   reviewedCount,
   sessionSummary,
+  sessionFinalization,
   activeItem,
   activeWord,
   activeLearningProgress,
@@ -68,6 +70,7 @@ export function HomePage({
   activeRatingOptions,
   onStartSession,
   onEndSession,
+  onRetrySessionReflection,
   onUndoLastRating,
   onContinueAfterAutoForgot,
   onContinueAfterAutoContrastForgot,
@@ -95,6 +98,7 @@ export function HomePage({
   displayedSessionItemCount: number;
   reviewedCount: number;
   sessionSummary: SessionSummary | null;
+  sessionFinalization: SessionFinalizationState;
   activeItem: SessionStudyItem | null;
   activeWord: Word | null;
   activeLearningProgress: LearningWordProgress | undefined;
@@ -134,6 +138,7 @@ export function HomePage({
   activeRatingOptions: RatingOption[];
   onStartSession: () => void;
   onEndSession: () => void;
+  onRetrySessionReflection: () => void;
   onUndoLastRating: () => void;
   onContinueAfterAutoForgot: () => void;
   onContinueAfterAutoContrastForgot: () => void;
@@ -181,6 +186,7 @@ export function HomePage({
           sessionPrefetch={sessionPrefetch}
           sessionStarted={sessionStarted}
           sessionPhase={sessionPhase}
+          sessionFinalization={sessionFinalization}
           sessionLoading={sessionLoading}
           displayedSessionItemCount={displayedSessionItemCount}
           sessionSettingsOpen={sessionSettingsOpen}
@@ -206,6 +212,7 @@ export function HomePage({
             sessionStarted={sessionStarted}
             sessionPhase={sessionPhase}
             sessionSummary={sessionSummary}
+            sessionFinalization={sessionFinalization}
             activeItem={activeItem}
             activeWord={activeWord}
             activeLearningProgress={activeLearningProgress}
@@ -247,6 +254,7 @@ export function HomePage({
             activeRatingOptions={activeRatingOptions}
             onUndoLastRating={onUndoLastRating}
             onEndSession={onEndSession}
+            onRetrySessionReflection={onRetrySessionReflection}
             onContinueAfterAutoForgot={onContinueAfterAutoForgot}
             onContinueAfterAutoContrastForgot={onContinueAfterAutoContrastForgot}
             onProductionContrastIntakeNoteChange={onProductionContrastIntakeNoteChange}
