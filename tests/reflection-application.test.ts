@@ -1,0 +1,336 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { after, before, beforeEach, describe, test } from 'node:test';
+import { pathToFileURL } from 'node:url';
+import type { ReflectionOperation } from '../src/domain/reflection.js';
+
+type DbModule = typeof import('../server/db.ts');
+
+const createdAt = '2026-07-29T12:00:00.000Z';
+const appliedAt = '2026-07-29T12:01:00.000Z';
+let dataDir = '';
+let sqlite: DatabaseSync;
+let dbModule: DbModule;
+
+describe('reflection application adapters', { concurrency: false }, () => {
+  before(async () => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-reflection-application-'));
+    const previousMode = process.env.APP_MODE;
+    const previousDataDir = process.env.APP_DATA_DIR;
+    try {
+      process.env.APP_MODE = 'study';
+      process.env.APP_DATA_DIR = dataDir;
+      dbModule = await import(
+        `${pathToFileURL(path.resolve('server/db.ts')).href}?test=${Date.now()}`
+      );
+    } finally {
+      if (previousMode === undefined) delete process.env.APP_MODE;
+      else process.env.APP_MODE = previousMode;
+      if (previousDataDir === undefined) delete process.env.APP_DATA_DIR;
+      else process.env.APP_DATA_DIR = previousDataDir;
+    }
+    sqlite = new DatabaseSync(path.join(dataDir, 'app.db'));
+    sqlite.exec('PRAGMA foreign_keys = ON;');
+  });
+
+  beforeEach(() => {
+    sqlite.exec(`
+      DROP TRIGGER IF EXISTS fail_reflection_prompt_insert;
+      PRAGMA defer_foreign_keys = ON;
+      BEGIN;
+      DELETE FROM reflection_proposal_reviews;
+      DELETE FROM reflection_operation_invocations;
+      DELETE FROM reflection_artifacts;
+      DELETE FROM contrast_candidate_intake;
+      DELETE FROM contrast_prompts;
+      DELETE FROM contrast_cluster_members;
+      DELETE FROM contrast_clusters;
+      DELETE FROM word_skill_relevance;
+      DELETE FROM study_events;
+      DELETE FROM study_sessions;
+      DELETE FROM words;
+      COMMIT;
+    `);
+    insertWord('target', '目标');
+    insertWord('alternate', '替代');
+  });
+
+  after(() => {
+    sqlite.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  test('applies production suppression once and returns its recorded status on later calls', () => {
+    insertInvocation('suppress-new', suppressOperation('target'));
+
+    const first = dbModule.applyReflectionInvocation('suppress-new', appliedAt);
+    assert.deepEqual(first.application.state, {
+      kind: 'applied',
+      appliedAt,
+      effectRefs: [{ type: 'word_skill_relevance', id: 'target/production' }],
+    });
+    assert.deepEqual(dbModule.getWordSkillRelevance('target', 'production'), {
+      wordId: 'target',
+      skillId: 'production',
+      relevanceState: 'suppressed',
+      updatedAt: appliedAt,
+      sourceEventId: null,
+    });
+
+    const repeatedCall = dbModule.applyReflectionInvocation(
+      'suppress-new',
+      '2026-07-29T12:30:00.000Z',
+    );
+    assert.deepEqual(repeatedCall, first);
+  });
+
+  test('preserves existing suppression provenance when recording already_satisfied', () => {
+    sqlite.prepare(`
+      INSERT INTO word_skill_relevance (
+        word_id, skill_id, relevance_state, updated_at, source_event_id
+      ) VALUES ('target', 'production', 'suppressed', ?, NULL)
+    `).run(createdAt);
+    insertInvocation('suppress-existing', suppressOperation('target'));
+
+    const result = dbModule.applyReflectionInvocation('suppress-existing', appliedAt);
+    assert.deepEqual(result.application.state, {
+      kind: 'already_satisfied',
+      satisfyingEffectRefs: [{ type: 'word_skill_relevance', id: 'target/production' }],
+    });
+    assert.equal(
+      dbModule.getWordSkillRelevance('target', 'production')?.updatedAt,
+      createdAt,
+    );
+  });
+
+  test('records a missing suppression target as stale without writing effects', () => {
+    insertInvocation('suppress-stale', suppressOperation('target'));
+    sqlite.prepare(`DELETE FROM words WHERE id = 'target'`).run();
+
+    const result = dbModule.applyReflectionInvocation('suppress-stale', appliedAt);
+    assert.equal(result.application.state.kind, 'stale');
+    assert.match(
+      result.application.state.kind === 'stale' ? result.application.state.reason : '',
+      /no longer exists/,
+    );
+    assert.equal(dbModule.getWordSkillRelevance('target', 'production'), null);
+  });
+
+  test('atomically creates complete contrast content and records every caused effect', () => {
+    insertInvocation('contrast-new', contrastOperation());
+
+    const result = dbModule.applyReflectionInvocation('contrast-new', appliedAt);
+    assert.equal(result.application.state.kind, 'applied');
+    const refs = result.application.state.kind === 'applied'
+      ? result.application.state.effectRefs
+      : [];
+    assert.deepEqual(refs.map((ref) => ref.type), [
+      'contrast_cluster',
+      'contrast_cluster_member',
+      'contrast_cluster_member',
+      'contrast_prompt',
+    ]);
+
+    const clusterId = refs[0]?.id ?? '';
+    const cluster = dbModule.getContrastClusterContent().find(({ id }) => id === clusterId);
+    assert.equal(cluster?.title, '目标 / 替代');
+    assert.equal(cluster?.note, 'Compare intent.');
+    assert.deepEqual(
+      cluster?.members.map(({ wordId, nuanceNote, displayOrder }) => ({
+        wordId,
+        nuanceNote,
+        displayOrder,
+      })),
+      [
+        { wordId: 'target', nuanceNote: 'intended', displayOrder: 1 },
+        { wordId: 'alternate', nuanceNote: 'nearby', displayOrder: 2 },
+      ],
+    );
+    assert.equal(cluster?.prompts[0]?.promptText, 'Choose the intended word.');
+    assert.deepEqual(dbModule.getContrastCandidateIntake(), []);
+    assert.deepEqual(dbModule.applyReflectionInvocation('contrast-new', createdAt), result);
+  });
+
+  test('recovers pending work and recognizes only a complete exact postcondition', () => {
+    insertInvocation('contrast-first', contrastOperation());
+    const first = dbModule.applyReflectionInvocation('contrast-first', appliedAt);
+    insertInvocation('contrast-exact', contrastOperation());
+
+    assert.deepEqual(dbModule.listPendingReflectionInvocationIds(), ['contrast-exact']);
+    const [recovered] = dbModule.recoverPendingReflectionInvocations();
+    assert.equal(recovered?.application.state.kind, 'already_satisfied');
+    assert.deepEqual(
+      recovered?.application.state.kind === 'already_satisfied'
+        ? recovered.application.state.satisfyingEffectRefs
+        : [],
+      first.application.state.kind === 'applied' ? first.application.state.effectRefs : [],
+    );
+    assert.deepEqual(dbModule.listPendingReflectionInvocationIds(), []);
+    assert.equal(dbModule.getContrastClusters().length, 1);
+  });
+
+  test('creates a new cluster when existing content is only a near match', () => {
+    insertInvocation('contrast-original', contrastOperation());
+    dbModule.applyReflectionInvocation('contrast-original', appliedAt);
+    const nearMatch = contrastOperation();
+    if (nearMatch.kind !== 'create_contrast_cluster') {
+      throw new Error('Expected contrast operation.');
+    }
+    nearMatch.prompts[0] = {
+      ...nearMatch.prompts[0],
+      explanation: 'A materially different explanation.',
+    };
+    insertInvocation('contrast-near-match', nearMatch);
+
+    const result = dbModule.applyReflectionInvocation('contrast-near-match', appliedAt);
+    assert.equal(result.application.state.kind, 'applied');
+    assert.equal(dbModule.getContrastClusters().length, 2);
+  });
+
+  test('rolls back all contrast effects before persisting a failed application status', () => {
+    insertInvocation('contrast-failed', contrastOperation());
+    sqlite.exec(`
+      CREATE TRIGGER fail_reflection_prompt_insert
+      BEFORE INSERT ON contrast_prompts
+      BEGIN
+        SELECT RAISE(ABORT, 'injected prompt failure');
+      END;
+    `);
+
+    const result = dbModule.applyReflectionInvocation('contrast-failed', appliedAt);
+    assert.equal(result.application.state.kind, 'failed');
+    assert.match(
+      result.application.state.kind === 'failed' ? result.application.state.error : '',
+      /injected prompt failure/,
+    );
+    assert.equal(dbModule.getContrastClusters().length, 0);
+    assert.equal(countRows('contrast_cluster_members'), 0);
+    assert.equal(countRows('contrast_prompts'), 0);
+    assert.deepEqual(dbModule.applyReflectionInvocation('contrast-failed', createdAt), result);
+  });
+
+  test('leaves unsupported invocations and domain state untouched', () => {
+    insertInvocation(
+      'unsupported',
+      {
+        kind: 'repair_production_cue',
+        version: 1,
+        wordId: 'target',
+        proposedCues: [{ cueType: 'cloze', text: 'Use ____ here.' }],
+        repairIntent: 'add_distinguishing_anchor',
+      },
+      'unsupported',
+    );
+
+    const before = dbModule.getReflectionInvocation('unsupported');
+    assert.deepEqual(dbModule.applyReflectionInvocation('unsupported', appliedAt), before);
+    assert.equal(countRows('word_skill_relevance'), 0);
+    assert.equal(countRows('contrast_clusters'), 0);
+  });
+
+  test('fails loudly on corrupt immutable authorization without fabricating an application outcome', () => {
+    insertInvocation(
+      'corrupt-authorization',
+      { kind: 'suppress_definition_production', version: 1 } as ReflectionOperation,
+    );
+
+    assert.throws(
+      () => dbModule.applyReflectionInvocation('corrupt-authorization', appliedAt),
+      /Reflection store corruption/,
+    );
+    const row = sqlite.prepare(`
+      SELECT application_state
+      FROM reflection_operation_invocations
+      WHERE invocation_id = 'corrupt-authorization'
+    `).get() as { application_state: string };
+    assert.equal(row.application_state, 'pending');
+  });
+});
+
+function suppressOperation(wordId: string): ReflectionOperation {
+  return { kind: 'suppress_definition_production', version: 1, wordId };
+}
+
+function contrastOperation(): ReflectionOperation {
+  return {
+    kind: 'create_contrast_cluster',
+    version: 1,
+    title: ' 目标 / 替代 ',
+    clusterNote: ' Compare intent. ',
+    members: [
+      { wordId: 'target', nuanceNote: ' intended ' },
+      { wordId: 'alternate', nuanceNote: ' nearby ' },
+    ],
+    prompts: [{
+      targetWordId: 'target',
+      promptText: ' Choose the intended word. ',
+      explanation: ' Target fits this context. ',
+    }],
+  };
+}
+
+function insertInvocation(
+  invocationId: string,
+  operation: ReflectionOperation,
+  applicationState: 'pending' | 'unsupported' = 'pending',
+): void {
+  sqlite.prepare(`
+    INSERT INTO reflection_operation_invocations (
+      invocation_id,
+      created_at,
+      origin_kind,
+      origin_proposal_id,
+      origin_superseded_proposal_id,
+      operation_kind,
+      operation_version,
+      operation_json,
+      application_state,
+      application_updated_at,
+      unsupported_reason,
+      applied_at,
+      application_error,
+      stale_reason,
+      effect_refs_json,
+      satisfying_effect_refs_json
+    ) VALUES (?, ?, 'manual', NULL, NULL, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, '[]', '[]')
+  `).run(
+    invocationId,
+    createdAt,
+    operation.kind,
+    operation.version,
+    JSON.stringify(operation),
+    applicationState,
+    createdAt,
+    applicationState === 'unsupported' ? 'No faithful adapter is available.' : null,
+  );
+}
+
+function insertWord(wordId: string, hanzi: string): void {
+  sqlite.prepare(`
+    INSERT INTO words (
+      id,
+      hanzi,
+      pinyin,
+      meaning,
+      meanings_json,
+      personal_notes,
+      examples_json,
+      status,
+      priority,
+      created_at,
+      learning_streak,
+      last_learning_success_on,
+      last_learning_covered_on
+    ) VALUES (?, ?, 'pin1yin1', 'meaning', '["meaning"]', '', '[]', 'review', 1, ?, 0, NULL, NULL)
+  `).run(wordId, hanzi, createdAt);
+}
+
+function countRows(table: string): number {
+  const row = sqlite.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as {
+    count: number;
+  };
+  return row.count;
+}

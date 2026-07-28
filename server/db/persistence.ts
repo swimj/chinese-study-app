@@ -28,6 +28,7 @@ import {
   ensureReflectionSchema,
   validateReflectionSchema,
 } from './reflections.ts';
+import { suppressDefinitionProductionWithoutTransaction } from './domain-commands.ts';
 import {
   DEFAULT_DAILY_NEW_WORD_LIMIT,
   PRIORITY_BUMP_UNIT,
@@ -1823,19 +1824,15 @@ export function suppressProductionForWordOutsideSession({
   }
 
   const now = new Date().toISOString();
-  const relevance: WordSkillRelevance = {
-    wordId: normalizedTargetWordId,
-    skillId: 'production',
-    relevanceState: 'suppressed',
-    updatedAt: now,
-    sourceEventId: null,
-  };
-
   getDb().exec('BEGIN');
   try {
-    upsertWordSkillRelevanceWithoutTransaction(relevance);
+    const result = suppressDefinitionProductionWithoutTransaction({
+      wordId: normalizedTargetWordId,
+      updatedAt: now,
+      sourceEventId: null,
+    });
     getDb().exec('COMMIT');
-    return relevance;
+    return result.relevance;
   } catch (error) {
     getDb().exec('ROLLBACK');
     throw error;
@@ -2188,13 +2185,22 @@ function projectStudyManagementActionWithoutTransaction({
   candidateText: string | null;
 }) {
   if (input.managementAction === 'suppress_skill') {
-    upsertWordSkillRelevanceWithoutTransaction({
-      wordId: input.targetWordId,
-      skillId: getManagedSkillId(input.actionKind),
-      relevanceState: 'suppressed',
-      updatedAt: projectedAt,
-      sourceEventId: eventId,
-    });
+    const skillId = getManagedSkillId(input.actionKind);
+    if (skillId === 'production') {
+      suppressDefinitionProductionWithoutTransaction({
+        wordId: input.targetWordId,
+        updatedAt: projectedAt,
+        sourceEventId: eventId,
+      });
+    } else {
+      upsertWordSkillRelevanceWithoutTransaction({
+        wordId: input.targetWordId,
+        skillId,
+        relevanceState: 'suppressed',
+        updatedAt: projectedAt,
+        sourceEventId: eventId,
+      });
+    }
     return;
   }
 
@@ -2218,10 +2224,8 @@ function projectStudyManagementActionWithoutTransaction({
   }
 
   if (input.managementAction === 'suppress_skill_and_add_contrast_candidate') {
-    upsertWordSkillRelevanceWithoutTransaction({
+    suppressDefinitionProductionWithoutTransaction({
       wordId: input.targetWordId,
-      skillId: 'production',
-      relevanceState: 'suppressed',
       updatedAt: projectedAt,
       sourceEventId: eventId,
     });

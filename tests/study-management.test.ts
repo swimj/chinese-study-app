@@ -222,6 +222,28 @@ describe('study management relevance events', { concurrency: false }, () => {
     assert.equal(dbModule.getWordSkillRelevance('target-word', 'production')?.relevanceState, 'suppressed');
   });
 
+  test('does not overwrite the provenance of production already suppressed elsewhere', () => {
+    insertWord({ id: 'target-word', hanzi: '恰当', status: 'review' });
+    const original = dbModule.suppressProductionForWordOutsideSession({
+      targetWordId: 'target-word',
+    });
+
+    dbModule.recordStudyManagementAction({
+      sessionId: 'session-1',
+      sessionActionId: 'review/target-word/production',
+      targetWordId: 'target-word',
+      actionKind: 'production',
+      sampledSkillIds: ['production'],
+      contentRef: null,
+      managementAction: 'suppress_skill',
+    });
+
+    assert.deepEqual(
+      dbModule.getWordSkillRelevance('target-word', 'production'),
+      original,
+    );
+  });
+
   test('reports bad production prompt outside session without creating study events', () => {
     insertWord({ id: 'target-word', hanzi: '恰当', status: 'review' });
     const feedback = dbModule.reportBadProductionPromptOutsideSession({ targetWordId: 'target-word', note: 'Too broad.' });
