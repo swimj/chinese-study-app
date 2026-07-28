@@ -36,7 +36,7 @@ Registered operations are versioned. Put `version: 1` in every operation.
   credit. Do not propose it merely because an alternate was reasonable for one
   ambiguous cue.
 
-Legacy bad-prompt state is not a reflection operation. If a cue is poor but no
-concrete repair is supported, retain that diagnosis and use no proposal or an
-`unhandledNeed`. Questions and unhandled needs are informational; they do not
-have lifecycle ids. Never invent learner history, word ids, or existing state.
+If a cue is poor but no concrete repair is supported, retain that diagnosis and
+use no proposal or an `unhandledNeed`. Questions and unhandled needs are
+informational; they do not have lifecycle ids. Never invent learner history,
+word ids, or existing state.
