@@ -87,6 +87,14 @@ export type BucketSessionTransitionResult = {
   commit: BucketSessionCommitIntent;
 };
 
+export type RateActiveSessionUnitOptions = {
+  /**
+   * The learner's response exactly as entered. This is currently meaningful
+   * only for typed production actions; other action kinds keep a null response.
+   */
+  response?: string | null;
+};
+
 export type SessionDismissIntent =
   | { type: 'none' }
   | {
@@ -201,6 +209,7 @@ export function completeActiveUnstudiedIntro(state: BucketSessionState): BucketS
 export function rateActiveSessionUnit(
   state: BucketSessionState,
   rating: ReviewRating,
+  options: RateActiveSessionUnitOptions = {},
 ): BucketSessionTransitionResult {
   const active = getActiveSessionUnit(state);
   if (active.type !== 'study') {
@@ -218,7 +227,7 @@ export function rateActiveSessionUnit(
       if (active.item.actionKind === 'contrast_selection') {
         throw new Error('Session invariant violated: contrast selection must be completed with a selected choice.');
       }
-      return handleBucketReviewAttempt(state, active, rating);
+      return handleBucketReviewAttempt(state, active, rating, options.response ?? null);
     default:
       return assertUnreachableBucket(active.bucket);
   }
@@ -503,6 +512,7 @@ function handleBucketReviewAttempt(
   state: BucketSessionState,
   active: Extract<ActiveBucketSchedulerUnit, { type: 'study' }>,
   rating: ReviewRating,
+  response: string | null,
 ): BucketSessionTransitionResult {
   const item = active.item;
   const currentProgress = state.reviewProgress[item.sessionActionId] ?? createInitialReviewProgress();
@@ -511,6 +521,7 @@ function handleBucketReviewAttempt(
     item,
     rating,
     actionAttemptSequence: currentProgress.attempts.length + 1,
+    response,
   });
   const nextAttempts = [...currentProgress.attempts, attemptEvent];
 
@@ -583,11 +594,13 @@ function buildBucketReviewAttemptEvent({
   item,
   rating,
   actionAttemptSequence,
+  response,
 }: {
   state: BucketSessionState;
   item: Extract<ActiveBucketSchedulerUnit, { type: 'study' }>['item'];
   rating: ReviewRating;
   actionAttemptSequence: number;
+  response: string | null;
 }): StudyAttemptEvent {
   return {
     id: `${state.sessionId}/${item.sessionActionId}/attempt-${actionAttemptSequence}`,
@@ -599,7 +612,7 @@ function buildBucketReviewAttemptEvent({
     actionKind: item.actionKind,
     targetWordId: item.targetWordId,
     sampledSkillIds: [...item.sampledSkillIds],
-    response: null,
+    response: item.actionKind === 'production' ? response : null,
     outcome: rating === 'forgot' ? 'incorrect' : 'correct',
     rating,
     contentRef: item.contentRef,
