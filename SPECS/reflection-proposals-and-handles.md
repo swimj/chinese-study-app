@@ -657,10 +657,10 @@ meaningful redundancy, and whether free prose rhetorically contradicts a
 structured operation. Dogfooding should improve prompts, lint, validators, and
 editors without pretending every semantic judgment is deterministic.
 
-Application is idempotent by invocation id. Reprocessing an applied invocation
-returns its recorded result and never duplicates effects. Idempotency by
-proposal id is insufficient because manual and replacement invocations may have
-no accepted proposal.
+Application is idempotent by invocation id. After application reaches a
+terminal state, later calls for the same invocation return its recorded result
+and never duplicate effects. Idempotency by proposal id is insufficient because
+manual and replacement invocations may have no accepted proposal.
 
 `already_satisfied` requires a deterministic domain postcondition. Similar
 content, overlapping cluster membership, or a rhetorically related manual

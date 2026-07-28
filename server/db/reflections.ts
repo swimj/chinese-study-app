@@ -23,6 +23,7 @@ import {
   validateSessionReflectionResult,
 } from '../../src/domain/reflection.ts';
 import { dbPath, getDb } from './connection.ts';
+import { suppressDefinitionProductionWithoutTransaction } from './domain-commands.ts';
 
 export const INITIAL_REFLECTION_FLOW_VERSION = 'initial_post_session_reflection.v1';
 
@@ -1028,6 +1029,77 @@ export function withdrawReflectionInvocationAuthorization(
   );
 }
 
+export function listPendingReflectionInvocationIds(): string[] {
+  const rows = getDb().prepare(`
+    SELECT invocation_id
+    FROM reflection_operation_invocations
+    WHERE application_state = 'pending'
+    ORDER BY application_updated_at ASC, invocation_id ASC
+  `).all() as Array<{ invocation_id: string }>;
+  return rows.map((row) => row.invocation_id);
+}
+
+export function recoverPendingReflectionInvocations(): OperationInvocationStatus[] {
+  return listPendingReflectionInvocationIds().map((invocationId) => (
+    applyReflectionInvocation(invocationId)
+  ));
+}
+
+/**
+ * Applies one durable authorization. The invocation status is the
+ * idempotency boundary: after application is terminal, later calls return its
+ * recorded outcome without running the adapter again.
+ */
+export function applyReflectionInvocation(
+  invocationId: string,
+  appliedAt = new Date().toISOString(),
+): OperationInvocationStatus {
+  assertNonEmpty(invocationId, 'invocation id');
+  assertIsoTimestamp(appliedAt, 'application time');
+  const database = getDb();
+  database.exec('BEGIN IMMEDIATE');
+  let current: OperationInvocationStatus;
+  try {
+    current = getReflectionInvocation(invocationId);
+  } catch (error) {
+    database.exec('ROLLBACK');
+    throw error;
+  }
+  if (current.application.state.kind !== 'pending') {
+    database.exec('COMMIT');
+    return current;
+  }
+
+  try {
+    const nextState = applyPendingOperationWithoutTransaction(
+      current.invocation.operation,
+      appliedAt,
+    );
+    writeApplicationStateWithoutTransaction(invocationId, nextState, appliedAt);
+    database.exec('COMMIT');
+    return getReflectionInvocation(invocationId);
+  } catch (error) {
+    database.exec('ROLLBACK');
+    const failed = database.prepare(`
+      UPDATE reflection_operation_invocations
+      SET application_state = 'failed',
+          application_updated_at = ?,
+          unsupported_reason = NULL,
+          applied_at = NULL,
+          application_error = ?,
+          stale_reason = NULL,
+          effect_refs_json = '[]',
+          satisfying_effect_refs_json = '[]'
+      WHERE invocation_id = ?
+        AND application_state = 'pending'
+    `).run(appliedAt, safeApplicationError(error), invocationId);
+    if (failed.changes === 0) {
+      throw error;
+    }
+    return getReflectionInvocation(invocationId);
+  }
+}
+
 function transitionProposalReview(
   proposalId: string,
   to: ProposalReviewDisposition['kind'],
@@ -1322,6 +1394,280 @@ function applicationStateColumns(state: OperationApplicationState): {
       state.kind === 'already_satisfied' ? state.satisfyingEffectRefs : [],
     ),
   };
+}
+
+function applyPendingOperationWithoutTransaction(
+  operation: ReflectionOperation,
+  appliedAt: string,
+): OperationApplicationState {
+  switch (operation.kind) {
+    case 'suppress_definition_production':
+      return applyProductionSuppressionWithoutTransaction(operation.wordId, appliedAt);
+    case 'create_contrast_cluster':
+      return applyContrastClusterCreationWithoutTransaction(operation, appliedAt);
+    case 'repair_production_cue':
+    case 'accept_production_alternate':
+      throw new Error(
+        `No faithful application adapter is available for ${operation.kind}@${operation.version}.`,
+      );
+  }
+}
+
+function applyProductionSuppressionWithoutTransaction(
+  wordId: string,
+  appliedAt: string,
+): OperationApplicationState {
+  if (!wordExistsWithoutTransaction(wordId)) {
+    return {
+      kind: 'stale',
+      reason: `Word ${wordId} no longer exists.`,
+    };
+  }
+  const result = suppressDefinitionProductionWithoutTransaction({
+    wordId,
+    updatedAt: appliedAt,
+    sourceEventId: null,
+  });
+  const relevanceRef: EffectRef = {
+    type: 'word_skill_relevance',
+    id: `${encodeURIComponent(wordId)}/production`,
+  };
+  return result.kind === 'already_satisfied'
+    ? { kind: 'already_satisfied', satisfyingEffectRefs: [relevanceRef] }
+    : { kind: 'applied', appliedAt, effectRefs: [relevanceRef] };
+}
+
+function applyContrastClusterCreationWithoutTransaction(
+  operation: Extract<ReflectionOperation, { kind: 'create_contrast_cluster' }>,
+  appliedAt: string,
+): OperationApplicationState {
+  const missingWordIds = operation.members
+    .map((member) => member.wordId)
+    .filter((wordId) => !wordExistsWithoutTransaction(wordId));
+  if (missingWordIds.length > 0) {
+    return {
+      kind: 'stale',
+      reason: `Contrast member word ${missingWordIds[0]} no longer exists.`,
+    };
+  }
+
+  const normalized = {
+    title: operation.title.trim(),
+    note: operation.clusterNote?.trim() ?? '',
+    members: operation.members.map((member, index) => ({
+      wordId: member.wordId,
+      nuanceNote: member.nuanceNote?.trim() ?? '',
+      displayOrder: index + 1,
+    })),
+    prompts: operation.prompts.map((prompt) => ({
+      targetWordId: prompt.targetWordId,
+      promptText: prompt.promptText.trim(),
+      explanation: prompt.explanation?.trim() ?? '',
+    })),
+  };
+  const exact = findExactContrastClusterPostcondition(normalized);
+  if (exact !== null) {
+    return {
+      kind: 'already_satisfied',
+      satisfyingEffectRefs: exact,
+    };
+  }
+
+  const clusterId = randomUUID();
+  getDb().prepare(`
+    INSERT INTO contrast_clusters (id, title, note)
+    VALUES (?, ?, ?)
+  `).run(clusterId, normalized.title, normalized.note);
+  const effectRefs: EffectRef[] = [{ type: 'contrast_cluster', id: clusterId }];
+  const insertMember = getDb().prepare(`
+    INSERT INTO contrast_cluster_members (
+      cluster_id,
+      word_id,
+      nuance_note,
+      display_order
+    ) VALUES (?, ?, ?, ?)
+  `);
+  for (const member of normalized.members) {
+    insertMember.run(
+      clusterId,
+      member.wordId,
+      member.nuanceNote,
+      member.displayOrder,
+    );
+    effectRefs.push({
+      type: 'contrast_cluster_member',
+      id: `${encodeURIComponent(clusterId)}/${encodeURIComponent(member.wordId)}`,
+    });
+  }
+
+  const insertPrompt = getDb().prepare(`
+    INSERT INTO contrast_prompts (
+      id,
+      cluster_id,
+      target_word_id,
+      prompt_text,
+      explanation
+    ) VALUES (?, ?, ?, ?, ?)
+  `);
+  for (const prompt of normalized.prompts) {
+    const promptId = randomUUID();
+    insertPrompt.run(
+      promptId,
+      clusterId,
+      prompt.targetWordId,
+      prompt.promptText,
+      prompt.explanation,
+    );
+    effectRefs.push({ type: 'contrast_prompt', id: promptId });
+  }
+  return { kind: 'applied', appliedAt, effectRefs };
+}
+
+type NormalizedContrastCreation = {
+  title: string;
+  note: string;
+  members: Array<{
+    wordId: string;
+    nuanceNote: string;
+    displayOrder: number;
+  }>;
+  prompts: Array<{
+    targetWordId: string;
+    promptText: string;
+    explanation: string;
+  }>;
+};
+
+function findExactContrastClusterPostcondition(
+  expected: NormalizedContrastCreation,
+): EffectRef[] | null {
+  const candidates = getDb().prepare(`
+    SELECT id
+    FROM contrast_clusters
+    WHERE title = ?
+      AND note = ?
+    ORDER BY id ASC
+  `).all(expected.title, expected.note) as Array<{ id: string }>;
+
+  for (const candidate of candidates) {
+    const members = getDb().prepare(`
+      SELECT word_id, nuance_note, display_order
+      FROM contrast_cluster_members
+      WHERE cluster_id = ?
+      ORDER BY display_order ASC, word_id ASC
+    `).all(candidate.id) as Array<{
+      word_id: string;
+      nuance_note: string;
+      display_order: number | null;
+    }>;
+    if (
+      members.length !== expected.members.length
+      || members.some((member, index) => (
+        member.word_id !== expected.members[index]?.wordId
+        || member.nuance_note !== expected.members[index]?.nuanceNote
+        || member.display_order !== expected.members[index]?.displayOrder
+      ))
+    ) {
+      continue;
+    }
+
+    const prompts = getDb().prepare(`
+      SELECT id, target_word_id, prompt_text, explanation
+      FROM contrast_prompts
+      WHERE cluster_id = ?
+      ORDER BY target_word_id ASC, prompt_text ASC, explanation ASC, id ASC
+    `).all(candidate.id) as Array<{
+      id: string;
+      target_word_id: string;
+      prompt_text: string;
+      explanation: string;
+    }>;
+    const expectedPrompts = [...expected.prompts].sort(compareNormalizedPrompts);
+    if (
+      prompts.length !== expectedPrompts.length
+      || prompts.some((prompt, index) => (
+        prompt.target_word_id !== expectedPrompts[index]?.targetWordId
+        || prompt.prompt_text !== expectedPrompts[index]?.promptText
+        || prompt.explanation !== expectedPrompts[index]?.explanation
+      ))
+    ) {
+      continue;
+    }
+
+    return [
+      { type: 'contrast_cluster', id: candidate.id },
+      ...members.map((member) => ({
+        type: 'contrast_cluster_member',
+        id: `${encodeURIComponent(candidate.id)}/${encodeURIComponent(member.word_id)}`,
+      })),
+      ...prompts.map((prompt) => ({ type: 'contrast_prompt', id: prompt.id })),
+    ];
+  }
+  return null;
+}
+
+function compareNormalizedPrompts(
+  left: NormalizedContrastCreation['prompts'][number],
+  right: NormalizedContrastCreation['prompts'][number],
+): number {
+  return compareText(left.targetWordId, right.targetWordId)
+    || compareText(left.promptText, right.promptText)
+    || compareText(left.explanation, right.explanation);
+}
+
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function wordExistsWithoutTransaction(wordId: string): boolean {
+  return getDb().prepare(`
+    SELECT 1
+    FROM words
+    WHERE id = ?
+  `).get(wordId) !== undefined;
+}
+
+function writeApplicationStateWithoutTransaction(
+  invocationId: string,
+  state: OperationApplicationState,
+  updatedAt: string,
+): void {
+  assertApplicationState(state);
+  assertOperationApplicationTransition('pending', state.kind);
+  const columns = applicationStateColumns(state);
+  const result = getDb().prepare(`
+    UPDATE reflection_operation_invocations
+    SET application_state = ?,
+        application_updated_at = ?,
+        unsupported_reason = ?,
+        applied_at = ?,
+        application_error = ?,
+        stale_reason = ?,
+        effect_refs_json = ?,
+        satisfying_effect_refs_json = ?
+    WHERE invocation_id = ?
+      AND application_state = 'pending'
+  `).run(
+    state.kind,
+    updatedAt,
+    columns.unsupportedReason,
+    columns.appliedAt,
+    columns.applicationError,
+    columns.staleReason,
+    columns.effectRefsJson,
+    columns.satisfyingEffectRefsJson,
+    invocationId,
+  );
+  if (result.changes !== 1) {
+    throw new Error('Reflection invocation is no longer pending.');
+  }
+}
+
+function safeApplicationError(error: unknown): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return `Reflection application failed: ${error.message}`;
+  }
+  return 'Reflection application failed.';
 }
 
 function assertApplicationState(state: OperationApplicationState): void {

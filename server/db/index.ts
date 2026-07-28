@@ -3,3 +3,4 @@ export * from './types.ts';
 export * from './schema.ts';
 export * from './persistence.ts';
 export * from './reflections.ts';
+export * from './domain-commands.ts';
