@@ -13,6 +13,7 @@ The runner sends only the fixture's `inputBundle` as compact JSON. It never send
 the fixture `referenceResult`, evaluation constraints, readiness notes, or source
 metadata to a provider.
 
-`reflection-v1.md` is the current prompt for
-`session_reflection_result.v4`. `reflection-v0.md` is retained only for reading
-older V2 run artifacts.
+The production-owned
+[`reflection-v2.md`](../../../server/reflection/prompts/reflection-v2.md) is the
+current prompt for `session_reflection_result.v4`. `reflection-v0.md` is
+retained here only for reading older V2 run artifacts.

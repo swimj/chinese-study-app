@@ -10,7 +10,6 @@ const PREFIX = 'stress-yangtze-naming';
 const ITEM_ID = `${PREFIX}-item`;
 const TARGET_WORD_ID = `${PREFIX}-target`;
 const SUBMITTED_WORD_ID = `${PREFIX}-submitted`;
-const ATTEMPT_ID = `${PREFIX}-attempt-1`;
 const CUE_TEXT = 'Yangtze river, or Chang Jiang';
 
 function word(
@@ -24,7 +23,6 @@ function word(
     hanzi,
     pinyin,
     meanings,
-    production: { relevance: 'normal', notes: [] },
   };
 }
 
@@ -67,21 +65,6 @@ const item: ProductionMistakeReflectionItemV1 = {
   rawResponse: '扬子江',
   submittedWord,
   responseKind: 'matched_known_word',
-  attempts: [{
-    attemptId: ATTEMPT_ID,
-    occurredAt: '2026-07-13T11:55:00.000Z',
-    actionAttemptSequence: 1,
-    outcome: 'incorrect',
-    rating: 'forgot',
-    response: '扬子江',
-  }],
-  attemptShape: {
-    firstResponseOutcome: 'incorrect',
-    resolution: 'unknown',
-    terminalRating: 'forgot',
-    attemptCountForAction: 1,
-    managementAction: null,
-  },
 };
 
 const bundle: SessionReflectionBundleV1 = {
