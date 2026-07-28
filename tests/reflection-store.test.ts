@@ -1,0 +1,539 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { after, before, beforeEach, describe, test } from 'node:test';
+import { pathToFileURL } from 'node:url';
+import type {
+  ReflectionOperation,
+  SessionReflectionBundleV1,
+  SessionReflectionResultV4,
+} from '../src/domain/reflection.js';
+
+type DbModule = typeof import('../server/db.ts');
+
+const generatedAt = '2026-07-29T12:00:00.000Z';
+const updatedAt = '2026-07-29T12:01:00.000Z';
+const appliedAt = '2026-07-29T12:02:00.000Z';
+
+let dataDir = '';
+let sqlite: DatabaseSync;
+let dbModule: DbModule;
+
+describe('reflection durable store', { concurrency: false }, () => {
+  before(async () => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-reflection-store-'));
+    const previousMode = process.env.APP_MODE;
+    const previousDataDir = process.env.APP_DATA_DIR;
+    try {
+      process.env.APP_MODE = 'study';
+      process.env.APP_DATA_DIR = dataDir;
+      const moduleUrl = `${pathToFileURL(path.resolve('server/db.ts')).href}?test=${Date.now()}`;
+      dbModule = await import(moduleUrl);
+    } finally {
+      if (previousMode === undefined) delete process.env.APP_MODE;
+      else process.env.APP_MODE = previousMode;
+      if (previousDataDir === undefined) delete process.env.APP_DATA_DIR;
+      else process.env.APP_DATA_DIR = previousDataDir;
+    }
+
+    sqlite = new DatabaseSync(path.join(dataDir, 'app.db'));
+    sqlite.exec('PRAGMA foreign_keys = ON;');
+  });
+
+  beforeEach(() => {
+    sqlite.exec(`
+      PRAGMA defer_foreign_keys = ON;
+      BEGIN;
+      DELETE FROM reflection_proposal_reviews;
+      DELETE FROM reflection_operation_invocations;
+      DELETE FROM reflection_artifacts;
+      DELETE FROM study_sessions;
+      DELETE FROM words;
+      COMMIT;
+    `);
+    insertWord('target', '目标');
+    insertWord('alternate', '替代');
+  });
+
+  after(() => {
+    sqlite.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  test('initializes and validates the three-table reflection schema', () => {
+    assert.doesNotThrow(() => dbModule.validateReflectionSchema());
+    const tables = sqlite.prepare(`
+      SELECT name
+      FROM sqlite_master
+      WHERE type = 'table'
+        AND name LIKE 'reflection_%'
+      ORDER BY name
+    `).all() as Array<{ name: string }>;
+    assert.deepEqual(tables.map((row) => row.name), [
+      'reflection_artifacts',
+      'reflection_operation_invocations',
+      'reflection_proposal_reviews',
+    ]);
+    const artifactForeignKeys = sqlite.prepare(`
+      PRAGMA foreign_key_list(reflection_artifacts)
+    `).all() as Array<{ table: string; from: string; to: string; on_delete: string }>;
+    assert(artifactForeignKeys.some((foreignKey) => (
+      foreignKey.table === 'study_sessions'
+      && foreignKey.from === 'source_session_id'
+      && foreignKey.to === 'id'
+      && foreignKey.on_delete === 'RESTRICT'
+    )));
+  });
+
+  test('atomically materializes immutable JSON and exactly one pending row per proposal', () => {
+    const input = materializationInput('session-one', suppressOperation('target'));
+    input.result.itemResults.push(informationalResult('info'));
+    input.evidenceBundle.items.push(productionItem('info'));
+
+    const materialized = dbModule.materializeReflectionArtifact(input);
+    assert.equal(materialized.created, true);
+    assert.equal(materialized.artifact.proposals.length, 1);
+    assert.deepEqual(materialized.artifact.proposals[0].review.disposition, { kind: 'pending' });
+    assert.equal(materialized.artifact.result.itemResults[1].proposals.length, 0);
+
+    const artifactRow = sqlite.prepare(`
+      SELECT evidence_bundle_json, result_json
+      FROM reflection_artifacts
+      WHERE artifact_id = ?
+    `).get(materialized.artifact.artifactId) as {
+      evidence_bundle_json: string;
+      result_json: string;
+    };
+    assert.deepEqual(JSON.parse(artifactRow.evidence_bundle_json), input.evidenceBundle);
+    assert.deepEqual(JSON.parse(artifactRow.result_json), input.result);
+    assert.throws(
+      () => sqlite.prepare(`
+        UPDATE reflection_artifacts
+        SET prompt_version = 'mutated'
+        WHERE artifact_id = ?
+      `).run(materialized.artifact.artifactId),
+      /reflection artifacts are immutable/,
+    );
+  });
+
+  test('returns the existing artifact for the session and flow idempotency key', () => {
+    const first = dbModule.materializeReflectionArtifact(
+      materializationInput('idempotent-session', suppressOperation('target')),
+    );
+    const secondInput = materializationInput(
+      'idempotent-session',
+      suppressOperation('alternate'),
+    );
+    secondInput.artifactId = 'must-not-be-inserted';
+    const second = dbModule.materializeReflectionArtifact(secondInput);
+
+    assert.equal(second.created, false);
+    assert.equal(second.artifact.artifactId, first.artifact.artifactId);
+    assert.deepEqual(
+      second.artifact.proposals[0].proposal.operation,
+      suppressOperation('target'),
+    );
+    const count = sqlite.prepare(`
+      SELECT COUNT(*) AS count
+      FROM reflection_artifacts
+    `).get() as { count: number };
+    assert.equal(count.count, 1);
+  });
+
+  test('rolls back materialization when the source session provenance is missing', () => {
+    const input = materializationInput('missing-source-session', suppressOperation('target'));
+    sqlite.prepare('DELETE FROM study_sessions WHERE id = ?').run('missing-source-session');
+
+    assert.throws(
+      () => dbModule.materializeReflectionArtifact(input),
+      /FOREIGN KEY constraint failed/,
+    );
+    const counts = sqlite.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM reflection_artifacts) AS artifact_count,
+        (SELECT COUNT(*) FROM reflection_proposal_reviews) AS review_count
+    `).get() as { artifact_count: number; review_count: number };
+    assert.equal(counts.artifact_count, 0);
+    assert.equal(counts.review_count, 0);
+  });
+
+  test('keeps open proposal queue semantics separate from recent informational history', () => {
+    const openArtifact = dbModule.materializeReflectionArtifact(
+      materializationInput('open-session', suppressOperation('target')),
+    ).artifact;
+    const deferred = dbModule.deferReflectionProposal(
+      openArtifact.proposals[0].review.proposalId,
+      updatedAt,
+    );
+    assert.deepEqual(deferred.disposition, { kind: 'deferred' });
+
+    const informationalInput = materializationInput(
+      'information-session',
+      suppressOperation('target'),
+    );
+    informationalInput.result.itemResults[0] = informationalResult('item');
+    dbModule.materializeReflectionArtifact(informationalInput);
+
+    assert.deepEqual(
+      dbModule.listReflectionArtifacts('open').map((artifact) => artifact.sourceSessionId),
+      ['open-session'],
+    );
+    assert.deepEqual(
+      new Set(dbModule.listReflectionArtifacts('all').map((artifact) => artifact.sourceSessionId)),
+      new Set(['open-session', 'information-session']),
+    );
+
+    const dismissed = dbModule.dismissReflectionProposal(
+      deferred.proposalId,
+      'Not useful for this learner.',
+      appliedAt,
+    );
+    assert.deepEqual(dismissed.disposition, {
+      kind: 'dismissed',
+      reason: 'Not useful for this learner.',
+    });
+    assert.deepEqual(dbModule.listReflectionArtifacts('open'), []);
+    assert.throws(
+      () => dbModule.deferReflectionProposal(deferred.proposalId),
+      /Invalid proposal review transition: dismissed -> deferred/,
+    );
+  });
+
+  test('authorizes exact and revised supported operations as immutable pending invocations', () => {
+    const exactArtifact = dbModule.materializeReflectionArtifact(
+      materializationInput('exact-session', suppressOperation('target')),
+    ).artifact;
+    const exact = dbModule.acceptReflectionProposal({
+      proposalId: exactArtifact.proposals[0].review.proposalId,
+      operation: suppressOperation('target'),
+      invocationId: 'exact-invocation',
+      createdAt: updatedAt,
+    });
+    assert.deepEqual(exact.review.disposition, {
+      kind: 'accepted',
+      acceptanceMode: 'exact',
+      acceptedInvocationId: 'exact-invocation',
+    });
+    assert.deepEqual(exact.invocation.application.state, { kind: 'pending' });
+
+    const revisedArtifact = dbModule.materializeReflectionArtifact(
+      materializationInput('revised-session', suppressOperation('target')),
+    ).artifact;
+    const revised = dbModule.acceptReflectionProposal({
+      proposalId: revisedArtifact.proposals[0].review.proposalId,
+      operation: suppressOperation('alternate'),
+      invocationId: 'revised-invocation',
+      createdAt: updatedAt,
+    });
+    assert.equal(revised.review.disposition.kind, 'accepted');
+    assert.equal(
+      revised.review.disposition.kind === 'accepted'
+        ? revised.review.disposition.acceptanceMode
+        : null,
+      'revised',
+    );
+    assert.deepEqual(revised.invocation.invocation.operation, suppressOperation('alternate'));
+
+    assert.throws(
+      () => sqlite.prepare(`
+        UPDATE reflection_operation_invocations
+        SET operation_json = ?
+        WHERE invocation_id = 'exact-invocation'
+      `).run(JSON.stringify(suppressOperation('alternate'))),
+      /reflection invocation authorization is immutable/,
+    );
+  });
+
+  test('persists application outcomes and rejects non-lifecycle transitions', () => {
+    const artifact = dbModule.materializeReflectionArtifact(
+      materializationInput('application-session', suppressOperation('target')),
+    ).artifact;
+    const accepted = dbModule.acceptReflectionProposal({
+      proposalId: artifact.proposals[0].review.proposalId,
+      operation: suppressOperation('target'),
+      invocationId: 'application-invocation',
+      createdAt: updatedAt,
+    });
+
+    const applied = dbModule.transitionReflectionInvocationApplication(
+      accepted.invocation.invocation.invocationId,
+      {
+        kind: 'applied',
+        appliedAt,
+        effectRefs: [{ type: 'word_skill_relevance', id: 'target:production' }],
+      },
+      appliedAt,
+    );
+    assert.deepEqual(applied.application.state, {
+      kind: 'applied',
+      appliedAt,
+      effectRefs: [{ type: 'word_skill_relevance', id: 'target:production' }],
+    });
+    assert.deepEqual(
+      dbModule.getReflectionArtifactDetail(artifact.artifactId)
+        .proposals[0].invocation?.application.state,
+      applied.application.state,
+    );
+    assert.throws(
+      () => dbModule.transitionReflectionInvocationApplication(
+        accepted.invocation.invocation.invocationId,
+        { kind: 'failed', error: 'too late' },
+      ),
+      /Invalid operation application transition: applied -> failed/,
+    );
+  });
+
+  test('records unsupported standing authorization and withdraws it without rewriting acceptance', () => {
+    const operation: ReflectionOperation = {
+      kind: 'accept_production_alternate',
+      version: 1,
+      targetWordId: 'target',
+      alternateWordId: 'alternate',
+    };
+    const artifact = dbModule.materializeReflectionArtifact(
+      materializationInput('unsupported-session', operation),
+    ).artifact;
+    const accepted = dbModule.acceptReflectionProposal({
+      proposalId: artifact.proposals[0].review.proposalId,
+      operation,
+      invocationId: 'unsupported-invocation',
+      createdAt: updatedAt,
+    });
+    assert.equal(accepted.invocation.application.state.kind, 'unsupported');
+    assert.match(
+      accepted.invocation.application.state.kind === 'unsupported'
+        ? accepted.invocation.application.state.reason
+        : '',
+      /No faithful application adapter/,
+    );
+
+    const withdrawn = dbModule.withdrawReflectionInvocationAuthorization(
+      accepted.invocation.invocation.invocationId,
+      appliedAt,
+    );
+    assert.deepEqual(withdrawn.application.state, { kind: 'authorization_withdrawn' });
+    const detail = dbModule.getReflectionArtifactDetail(artifact.artifactId);
+    assert.equal(detail.proposals[0].review.disposition.kind, 'accepted');
+    assert.deepEqual(
+      detail.proposals[0].invocation?.application.state,
+      { kind: 'authorization_withdrawn' },
+    );
+  });
+
+  test('rejects empty causal application effects and malformed supersession sources', () => {
+    const applicationArtifact = dbModule.materializeReflectionArtifact(
+      materializationInput('effect-invariant-session', suppressOperation('target')),
+    ).artifact;
+    const accepted = dbModule.acceptReflectionProposal({
+      proposalId: applicationArtifact.proposals[0].review.proposalId,
+      operation: suppressOperation('target'),
+      invocationId: 'effect-invariant-invocation',
+      createdAt: updatedAt,
+    });
+    assert.throws(
+      () => dbModule.transitionReflectionInvocationApplication(
+        accepted.invocation.invocation.invocationId,
+        { kind: 'applied', appliedAt, effectRefs: [] },
+        appliedAt,
+      ),
+      /at least one reference/,
+    );
+    assert.throws(
+      () => dbModule.transitionReflectionInvocationApplication(
+        accepted.invocation.invocation.invocationId,
+        { kind: 'already_satisfied', satisfyingEffectRefs: [] },
+        appliedAt,
+      ),
+      /at least one reference/,
+    );
+
+    const supersessionArtifact = dbModule.materializeReflectionArtifact(
+      materializationInput('supersession-invariant-session', suppressOperation('target')),
+    ).artifact;
+    assert.throws(
+      () => dbModule.supersedeReflectionProposal({
+        proposalId: supersessionArtifact.proposals[0].review.proposalId,
+        supersession: {
+          source: 'external_state',
+          actor: 'system',
+          reason: 'Changed elsewhere.',
+          replacementProposalId: null,
+          replacementInvocationId: null,
+          satisfyingEffectRefs: [],
+        },
+        updatedAt,
+      }),
+      /non-empty satisfying effect references/,
+    );
+  });
+
+  test('rejects revised operations that reference words outside the proposal evidence item', () => {
+    insertWord('unseen', '未见');
+    const artifact = dbModule.materializeReflectionArtifact(
+      materializationInput('evidence-visibility-session', suppressOperation('target')),
+    ).artifact;
+    assert.throws(
+      () => dbModule.acceptReflectionProposal({
+        proposalId: artifact.proposals[0].review.proposalId,
+        operation: suppressOperation('unseen'),
+        invocationId: 'unseen-invocation',
+        createdAt: updatedAt,
+      }),
+      /word id unseen is not present in item item/,
+    );
+  });
+
+  test('fails loudly when a review row cannot be traced to immutable proposal content', () => {
+    const artifact = dbModule.materializeReflectionArtifact(
+      materializationInput('corrupt-session', suppressOperation('target')),
+    ).artifact;
+    sqlite.prepare(`
+      INSERT INTO reflection_proposal_reviews (
+        proposal_id,
+        artifact_id,
+        item_id,
+        proposal_index,
+        disposition,
+        updated_at
+      ) VALUES ('rogue-review', ?, 'item', 99, 'pending', ?)
+    `).run(artifact.artifactId, updatedAt);
+
+    assert.throws(
+      () => dbModule.getReflectionArtifactDetail(artifact.artifactId),
+      /review rows that cannot be traced to immutable proposals/,
+    );
+  });
+});
+
+function materializationInput(
+  sessionId: string,
+  operation: ReflectionOperation,
+): Parameters<DbModule['materializeReflectionArtifact']>[0] {
+  sqlite.prepare(`
+    INSERT OR IGNORE INTO study_sessions (
+      id,
+      started_at,
+      ended_at,
+      processing_state,
+      processed_at
+    ) VALUES (?, '2026-07-29T11:30:00.000Z', ?, 'processed', ?)
+  `).run(sessionId, generatedAt, generatedAt);
+  return {
+    sourceSessionId: sessionId,
+    reflectionFlowVersion: 'initial_post_session_reflection.v1',
+    generatedAt,
+    provider: 'openai',
+    model: 'gpt-5.6-luna',
+    promptVersion: 'initial-reflection.v1',
+    evidenceBundle: bundle(sessionId),
+    result: result(operation),
+  };
+}
+
+function bundle(sessionId: string): SessionReflectionBundleV1 {
+  return {
+    schemaVersion: 'session_reflection_bundle.v1',
+    generatedAt,
+    session: {
+      sessionId,
+      startedAt: '2026-07-29T11:30:00.000Z',
+      endedAt: generatedAt,
+      studyProfile: 'mandarin',
+    },
+    items: [productionItem('item')],
+  };
+}
+
+function productionItem(itemId: string): SessionReflectionBundleV1['items'][number] {
+  return {
+    itemId,
+    sessionActionId: `action-${itemId}`,
+    occurredAt: '2026-07-29T11:59:00.000Z',
+    source: 'production_mistake',
+    sourceActionKind: 'production',
+    targetWord: {
+      wordId: 'target',
+      hanzi: '目标',
+      pinyin: 'mùbiāo',
+      meanings: ['target'],
+    },
+    sessionNote: null,
+    existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+    cuesAsShown: [{
+      cueId: null,
+      cueType: 'definition_gloss',
+      displayOrder: 0,
+      text: 'target',
+      displayedMeanings: ['target'],
+    }],
+    rawResponse: '替代',
+    submittedWord: {
+      wordId: 'alternate',
+      hanzi: '替代',
+      pinyin: 'tìdài',
+      meanings: ['alternate'],
+    },
+    responseKind: 'matched_known_word',
+  };
+}
+
+function result(operation: ReflectionOperation): SessionReflectionResultV4 {
+  return {
+    schemaVersion: 'session_reflection_result.v4',
+    itemResults: [{
+      itemId: 'item',
+      diagnosisTags: ['persistent_confusion'],
+      observation: 'The learner supplied a visible alternate.',
+      learnerExplanation: null,
+      proposals: [{
+        proposalGroupKey: null,
+        rationale: 'This operation may make the study state more faithful.',
+        operation,
+      }],
+      questions: [],
+      unhandledNeeds: [],
+    }],
+  };
+}
+
+function informationalResult(itemId: string): SessionReflectionResultV4['itemResults'][number] {
+  return {
+    itemId,
+    diagnosisTags: ['ordinary_retrieval_noise'],
+    observation: 'No durable intervention is warranted.',
+    learnerExplanation: null,
+    proposals: [],
+    questions: [],
+    unhandledNeeds: [],
+  };
+}
+
+function suppressOperation(wordId: string): ReflectionOperation {
+  return {
+    kind: 'suppress_definition_production',
+    version: 1,
+    wordId,
+  };
+}
+
+function insertWord(wordId: string, hanzi: string): void {
+  sqlite.prepare(`
+    INSERT INTO words (
+      id,
+      hanzi,
+      pinyin,
+      meaning,
+      meanings_json,
+      personal_notes,
+      examples_json,
+      status,
+      priority,
+      created_at,
+      learning_streak,
+      last_learning_success_on,
+      last_learning_covered_on
+    ) VALUES (?, ?, 'pin1yin1', 'meaning', '["meaning"]', '', '[]', 'review', 1, ?, 0, NULL, NULL)
+  `).run(wordId, hanzi, generatedAt);
+}

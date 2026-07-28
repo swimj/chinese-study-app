@@ -2,3 +2,4 @@ export { config as dbConfig, dbPath, seedDataPath, dbExistedOnStartup } from './
 export * from './types.ts';
 export * from './schema.ts';
 export * from './persistence.ts';
+export * from './reflections.ts';
