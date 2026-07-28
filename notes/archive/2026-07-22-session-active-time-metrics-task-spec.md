@@ -1,6 +1,6 @@
 # Persist active session time and show today-relative averages
 
-status: active
+status: archived
 type: work-bundle
 created: 2026-07-22
 retire-when: active session-time metrics are implemented or deliberately declined

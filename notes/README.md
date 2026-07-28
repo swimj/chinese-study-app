@@ -87,9 +87,4 @@ Agents may propose archive; triage and confirmation follow the same pattern as `
 | [2026-07-20-llm-provider-spike-summary.md](active/2026-07-20-llm-provider-spike-summary.md) | research | 2026-09-20 |
 | [2026-07-20-m1-artifact-store-planning.md](active/2026-07-20-m1-artifact-store-planning.md) | planning | 2026-09-20 |
 | [2026-07-20-spoken-construction-drills.md](active/2026-07-20-spoken-construction-drills.md) | research | 2026-08-20 |
-| [2026-07-21-handle-registry-v0-task-spec.md](active/2026-07-21-handle-registry-v0-task-spec.md) | work-bundle | when registry V0 stabilizes |
 | [2026-07-22-project-steward-linear-trial-task-spec.md](active/2026-07-22-project-steward-linear-trial-task-spec.md) | work-bundle | after pilot evaluation and durable graduation or rollback |
-| [2026-07-23-handle-registry-v0-staging.md](active/2026-07-23-handle-registry-v0-staging.md) | coordination | when registry V0 stabilizes |
-| [2026-07-22-remove-answer-matching-ui-task-spec.md](active/2026-07-22-remove-answer-matching-ui-task-spec.md) | work-bundle | when the answer-matching cleanup is implemented or deliberately declined |
-| [2026-07-22-session-active-time-metrics-task-spec.md](active/2026-07-22-session-active-time-metrics-task-spec.md) | work-bundle | when active session-time metrics are implemented or deliberately declined |
-| [2026-07-22-configurable-daily-new-word-limit-task-spec.md](active/2026-07-22-configurable-daily-new-word-limit-task-spec.md) | work-bundle | when configurable daily new-word limits are implemented or deliberately declined |

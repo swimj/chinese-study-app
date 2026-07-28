@@ -1,6 +1,6 @@
 # Remove the production answer-matching control surface
 
-status: active
+status: archived
 type: work-bundle
 created: 2026-07-22
 retire-when: the answer-matching cleanup is implemented or deliberately declined

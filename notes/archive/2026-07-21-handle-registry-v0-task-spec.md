@@ -1,6 +1,6 @@
 # Handle Registry V0 post-spike stabilization
 
-status: active
+status: archived
 type: work-bundle
 created: 2026-07-21
 retire-when: the durable proposal/handle spec and initial steel-thread plan are accepted

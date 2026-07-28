@@ -145,7 +145,7 @@ behavior-first implementation contract for the first product prototype.
 and the minimum first review surface.
 
 The active Handle Registry V0 task owns the first four decisions. See
-`notes/active/2026-07-21-handle-registry-v0-task-spec.md`.
+`notes/archive/2026-07-21-handle-registry-v0-task-spec.md`.
 
 ### Explicit non-goals for this wave
 
@@ -179,10 +179,6 @@ reflection step fails or the reflection is never reviewed.
 
 (the one workstream receiving active human steering)
 
-- [ ] handle registry V0 post-spike stabilization: confirm the first-prototype handle inventory; define the provisional handle, lifecycle, provenance/override, and invocation-path contracts; reconcile existing manual suppression, bad-prompt, and contrast-management paths without requiring their implementation or removal #m0 #design (task spec: `notes/active/2026-07-21-handle-registry-v0-task-spec.md`)
-
-
-
 ## Async Ready — Max 5
 
 (fully specified dispatch candidates; potentially stale, so revalidate before
@@ -193,8 +189,6 @@ dispatch; top is next)
 (raw capture — unsorted; capture does not imply priority or dispatch readiness)
 
 - M1 artifact store planning: reflection artifact as durable carrier of disposition (not a consumable log); only time-gap bridge + disposition lifecycle are load-bearing for first dogfood, planner/eval/extraction purposes deferred; the first stored artifacts come from learner-facing reflection (developer-facing artifacts dropped from M1); storage shape converged to one DB provenance table + one seeded per-item disposition table, blob kept in a DB column, thin store interface seam; dispositions are the precious/irrecoverable part, not blobs; store design is downstream of the spike's per-item schema contract #m1 #design (memory: notes/active/2026-07-20-m1-artifact-store-planning.md; handle registry is the other half of M1 and a separate conversation)
-
-
 
 ## Recently Completed
 
@@ -221,13 +215,13 @@ dispatch; top is next)
   - **Execution:** Docs-only in an isolated worktree based on current `HEAD` at dispatch. Do not mutate existing `TASKS.md` entries; new work discovered during execution may be appended to Inbox or Parked under the catalog rules above.
   - **Stop/ask:** Record ordinary ambiguity as alternatives plus a recommended default. Stop for human input only if a missing decision makes a useful complete map impossible, not merely because one row remains unresolved.
 
-- [x] remove the home-page production answer-matching controls and localStorage overrides; retain profile-default normalization for typed production, and record deferred French configurability as debt #ui #cleanup #french (task spec: `notes/active/2026-07-22-remove-answer-matching-ui-task-spec.md`)
+- [x] remove the home-page production answer-matching controls and localStorage overrides; retain profile-default normalization for typed production, and record deferred French configurability as debt #ui #cleanup #french (task spec: `notes/archive/2026-07-22-remove-answer-matching-ui-task-spec.md`)
 
-- [x] persist browser-visible active time for completed sessions and show only today, 3-day average, and 7-day average cumulative session-time metrics on the home page #analytics #session #ui (task spec: `notes/active/2026-07-22-session-active-time-metrics-task-spec.md`)
+- [x] persist browser-visible active time for completed sessions and show only today, 3-day average, and 7-day average cumulative session-time metrics on the home page #analytics #session #ui (task spec: `notes/archive/2026-07-22-session-active-time-metrics-task-spec.md`)
 
-- [x] make the daily new-word limit configurable while preserving the independent per-day completed-new-word counter and next-session-only effect #session #policy #ui (task spec: `notes/active/2026-07-22-configurable-daily-new-word-limit-task-spec.md`)
+- [x] make the daily new-word limit configurable while preserving the independent per-day completed-new-word counter and next-session-only effect #session #policy #ui (task spec: `notes/archive/2026-07-22-configurable-daily-new-word-limit-task-spec.md`)
 
-
+- [ ] handle registry V0 post-spike stabilization: confirm the first-prototype handle inventory; define the provisional handle, lifecycle, provenance/override, and invocation-path contracts; reconcile existing manual suppression, bad-prompt, and contrast-management paths without requiring their implementation or removal #m0 #design (task spec: `notes/archive/2026-07-21-handle-registry-v0-task-spec.md`)
 
 ## Debt
 
@@ -247,4 +241,3 @@ dispatch; top is next)
 - production answer classes spike: model many-to-many `gloss/cue -> acceptable words` for definition-based production; compare against aliases, contrast clusters, and bad-prompt handling; sketch reflection handle(s) for creating/extending an answer class #spike #design #reflection (sparked by `notes/active/2026-07-06-session-reflection-workflow.md` examples like 难怪/怪不得)
 - anchor glosses spike: model per-word/per-sense gloss fragments that carry the core usage distinction for production prompts and reflection; explore how anchors interact with long gloss lists, answer classes, contrast suggestions, and prompt-as-shown evidence #spike #design #reflection (sparked by 合成/组合 and 商标/标志 examples in `notes/active/2026-07-06-session-reflection-workflow.md`)
 - linked suppress-and-substitute-priority handle: explore an atomic or explicitly grouped proposal that suppresses definition-based production for a low-value isolated target while prioritizing a more useful related unstudied lexical item, without weakening recognition of the original hanzi/reading #design #reflection #handle (surfaced by 给 jǐ: prefer recognition through common items such as 自给自足 or 供给)
-

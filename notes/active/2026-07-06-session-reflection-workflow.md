@@ -5,7 +5,7 @@ type: research
 created: 2026-07-06
 retire-by: 2026-07-20
 related:
-  - notes/active/2026-07-21-handle-registry-v0-task-spec.md (reflection exemplars and handle inventory input)
+  - notes/archive/2026-07-21-handle-registry-v0-task-spec.md (reflection exemplars and handle inventory input)
   - PLANS/agentic-roadmap-glm-5.2.md (session-evidence bundle pre-spike)
 
 ## Approach

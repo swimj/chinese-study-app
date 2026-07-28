@@ -1,12 +1,12 @@
 # Handle Registry V0 stabilization staging
 
-status: active
+status: archived
 type: coordination
 created: 2026-07-23
 retire-when: its accepted conclusions are synthesized into the durable proposal/handle spec and steel-thread plan, and the focus task is closed
 related:
   - TASKS.md
-  - notes/active/2026-07-21-handle-registry-v0-task-spec.md
+  - notes/archive/2026-07-21-handle-registry-v0-task-spec.md
   - SPECS/reflection-proposals-and-handles.md
   - PLANS/initial-reflection-steel-thread.md
   - notes/active/2026-07-20-llm-provider-spike-summary.md

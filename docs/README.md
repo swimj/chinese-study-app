@@ -28,6 +28,7 @@ How documentation in this repo is classified and where to start.
 | **Vision / backlog** | `docs/vision/`, `BACKLOG.md`, `SPECS/adaptive_vocabulary_training_product_notes.md` | Long-term ideas; not implementation contracts |
 | **Operations** | `docs/ops/`, `SPECS/study-db-setup.md` | Local setup and data workflows |
 | **Working memory** | `notes/active/` | Cross-thread context, research, multi-day work bundles (days–weeks; not authoritative or live task state) |
+| **Archived working memory** | `notes/archive/` | Retired working notes retained for context only; not part of the default agent reading path |
 
 When a map doc and code disagree, fix the map in the same change as the code (or file a follow-up immediately).
 

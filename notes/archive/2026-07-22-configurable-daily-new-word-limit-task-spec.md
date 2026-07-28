@@ -1,6 +1,6 @@
 # Make the daily new-word limit configurable
 
-status: active
+status: archived
 type: work-bundle
 created: 2026-07-22
 retire-when: configurable daily new-word limits are implemented or deliberately declined
