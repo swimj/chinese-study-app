@@ -131,9 +131,8 @@ const itemResultSchema = objectSchema({
 });
 
 export const sessionReflectionResultSchema: JsonSchema = objectSchema({
-  schemaVersion: enumSchema(['session_reflection_result.v3']),
-  bundleSchemaVersion: enumSchema(['session_reflection_bundle.v0']),
+  schemaVersion: enumSchema(['session_reflection_result.v4']),
   itemResults: arraySchema(itemResultSchema),
 }, 'One structured post-session reflection result.');
 
-export const SESSION_REFLECTION_RESULT_SCHEMA_NAME = 'session_reflection_result_v3';
+export const SESSION_REFLECTION_RESULT_SCHEMA_NAME = 'session_reflection_result_v4';

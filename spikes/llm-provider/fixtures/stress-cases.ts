@@ -1,8 +1,8 @@
 import type {
-  ProductionMistakeReflectionItemV0,
+  ProductionMistakeReflectionItemV1,
   ReflectionProviderFixtureV0,
-  ReflectionWordSnapshotV0,
-  SessionReflectionBundleV0,
+  ReflectionWordSnapshotV1,
+  SessionReflectionBundleV1,
 } from '../contracts.js';
 
 const FIXTURE_TIME = '2026-07-13T12:00:00.000Z';
@@ -18,7 +18,7 @@ function word(
   hanzi: string,
   pinyin: string,
   meanings: string[],
-): ReflectionWordSnapshotV0 {
+): ReflectionWordSnapshotV1 {
   return {
     wordId,
     hanzi,
@@ -45,7 +45,7 @@ const submittedWord = word(
   ],
 );
 
-const item: ProductionMistakeReflectionItemV0 = {
+const item: ProductionMistakeReflectionItemV1 = {
   itemId: ITEM_ID,
   source: 'production_mistake',
   sourceActionKind: 'production',
@@ -84,8 +84,8 @@ const item: ProductionMistakeReflectionItemV0 = {
   },
 };
 
-const bundle: SessionReflectionBundleV0 = {
-  schemaVersion: 'session_reflection_bundle.v0',
+const bundle: SessionReflectionBundleV1 = {
+  schemaVersion: 'session_reflection_bundle.v1',
   generatedAt: FIXTURE_TIME,
   session: {
     sessionId: `session-${PREFIX}`,
@@ -111,8 +111,7 @@ export const stressCaseFixtures: ReflectionProviderFixtureV0[] = [{
   ],
   inputBundle: bundle,
   referenceResult: {
-    schemaVersion: 'session_reflection_result.v3',
-    bundleSchemaVersion: 'session_reflection_bundle.v0',
+    schemaVersion: 'session_reflection_result.v4',
     itemResults: [{
       itemId: ITEM_ID,
       diagnosisTags: [

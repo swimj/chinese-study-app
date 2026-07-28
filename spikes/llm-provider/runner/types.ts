@@ -1,4 +1,4 @@
-import type { SessionReflectionBundleV0, SessionReflectionResultV3 } from '../contracts.js';
+import type { SessionReflectionBundleV1, SessionReflectionResultV4 } from '../contracts.js';
 import type { JsonSchema } from './result-schema.js';
 
 export type JsonPrimitive = string | number | boolean | null;
@@ -98,7 +98,7 @@ export type ReflectionRunArtifactV0 = {
     timeoutMs: number;
     cachePrompt: boolean;
   };
-  inputBundle: SessionReflectionBundleV0;
+  inputBundle: SessionReflectionBundleV1;
   response: {
     status: ReflectionRunStatus;
     responseId: string | null;
@@ -106,7 +106,7 @@ export type ReflectionRunArtifactV0 = {
     structuredOutputMode: StructuredOutputMode;
     finishReason: string | null;
     rawText: string | null;
-    parsedResult: SessionReflectionResultV3 | null;
+    parsedResult: SessionReflectionResultV4 | null;
     usage: NormalizedTokenUsage | null;
     validationErrors: string[];
     providerError: string | null;

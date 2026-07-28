@@ -1,14 +1,14 @@
 import type {
-  ProductionMistakeReflectionItemV0,
+  ProductionMistakeReflectionItemV1,
   ReflectionDiagnosisTagV0,
   ReflectionHandleOperationV0,
   ReflectionHandleProposalV0,
   ReflectionItemResultV0,
   ProposalProfileV0,
   ReflectionProviderFixtureV0,
-  ReflectionWordSnapshotV0,
-  SessionNoteReflectionItemV0,
-  SessionReflectionBundleV0,
+  ReflectionWordSnapshotV1,
+  SessionNoteReflectionItemV1,
+  SessionReflectionBundleV1,
 } from '../contracts.js';
 
 const SOURCE_DOCUMENT = 'notes/active/2026-07-06-session-reflection-workflow.md' as const;
@@ -45,7 +45,7 @@ function prefixFor(example: number): string {
   return `ex${String(example).padStart(2, '0')}`;
 }
 
-function word(wordId: string, seed: WordSeed): ReflectionWordSnapshotV0 {
+function word(wordId: string, seed: WordSeed): ReflectionWordSnapshotV1 {
   return {
     wordId,
     hanzi: seed.hanzi,
@@ -89,9 +89,9 @@ function baseResult(
   };
 }
 
-function bundleFor(prefix: string, item: ProductionMistakeReflectionItemV0 | SessionNoteReflectionItemV0): SessionReflectionBundleV0 {
+function bundleFor(prefix: string, item: ProductionMistakeReflectionItemV1 | SessionNoteReflectionItemV1): SessionReflectionBundleV1 {
   return {
-    schemaVersion: 'session_reflection_bundle.v0',
+    schemaVersion: 'session_reflection_bundle.v1',
     generatedAt: FIXTURE_TIME,
     session: {
       sessionId: `session-${prefix}`,
@@ -117,7 +117,7 @@ function productionFixture(seed: ProductionFixtureSeed): ReflectionProviderFixtu
     cueText: seed.cueText,
   };
 
-  const item: ProductionMistakeReflectionItemV0 = {
+  const item: ProductionMistakeReflectionItemV1 = {
     itemId,
     source: 'production_mistake',
     sourceActionKind: 'production',
@@ -174,8 +174,7 @@ function productionFixture(seed: ProductionFixtureSeed): ReflectionProviderFixtu
     readinessNotes: seed.readinessNotes ?? [],
     inputBundle: bundleFor(prefix, item),
     referenceResult: {
-      schemaVersion: 'session_reflection_result.v3',
-      bundleSchemaVersion: 'session_reflection_bundle.v0',
+      schemaVersion: 'session_reflection_result.v4',
       itemResults: [{ itemId, ...itemResult }],
     },
     evaluation: seed.evaluation,
@@ -775,7 +774,7 @@ function sessionNoteFixture(): ReflectionProviderFixtureV0 {
     pinyin: 'xíguàn',
     meanings: ['to be used to', 'to get accustomed to', 'habit', 'custom'],
   });
-  const item: SessionNoteReflectionItemV0 = {
+  const item: SessionNoteReflectionItemV1 = {
     itemId,
     source: 'session_note',
     sourceActionKind: 'production',
@@ -829,8 +828,7 @@ function sessionNoteFixture(): ReflectionProviderFixtureV0 {
     readinessNotes: ['This is the only appendix fixture sourced from a correct response plus an explicit session note.'],
     inputBundle: bundleFor(prefix, item),
     referenceResult: {
-      schemaVersion: 'session_reflection_result.v3',
-      bundleSchemaVersion: 'session_reflection_bundle.v0',
+      schemaVersion: 'session_reflection_result.v4',
       itemResults: [{ itemId, ...result }],
     },
     evaluation: {

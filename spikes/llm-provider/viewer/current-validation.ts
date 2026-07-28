@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { SessionReflectionResultV3 } from '../contracts.js';
+import type { SessionReflectionResultV4 } from '../contracts.js';
 import { validateResultAgainstBundle } from '../runner/result-validator.js';
 import {
   SESSION_REFLECTION_RESULT_SCHEMA_NAME,
@@ -69,7 +69,7 @@ export function validateRunArtifactAgainstCurrentContract(
   }
 
   const contractErrors = validateResultAgainstBundle(
-    parsed as SessionReflectionResultV3,
+    parsed as SessionReflectionResultV4,
     artifact.inputBundle,
   );
   return {

@@ -60,7 +60,7 @@ bounded evidence
             -> immutable proposal
                  -> mutable proposal review
                       -> immutable authorized invocation
-                           -> mutable application projection
+                           -> mutable application status
                                 -> attributable domain effects
 ```
 
@@ -116,10 +116,10 @@ rejected, or became superfluous. Acceptance points to an immutable invocation
 containing the exact operation the user authorized.
 
 The invocation is the application and idempotency boundary. Its application
-projection records whether that authorized operation is unsupported, pending,
+status records whether that authorized operation is unsupported, pending,
 applied, failed, stale, already satisfied, or withdrawn.
 
-A fully user-authored operation has an invocation and application projection
+A fully user-authored operation has an invocation and application status
 without a fabricated reflection proposal.
 
 ## 3. Reflection Result Contract
@@ -130,9 +130,8 @@ provider spike did not establish a concrete consumer for one, while item-level
 output already carries the actionable content.
 
 ```ts
-type SessionReflectionResultV3 = {
-  schemaVersion: 'session_reflection_result.v3';
-  bundleSchemaVersion: 'session_reflection_bundle.v0';
+type SessionReflectionResultV4 = {
+  schemaVersion: 'session_reflection_result.v4';
   itemResults: ReflectionItemResultV1[];
 };
 
@@ -421,7 +420,7 @@ historical attempt that motivated reflection.
 Review disposition is proposal-level:
 
 ```ts
-type ProposalReviewProjection = {
+type ProposalReviewStatus = {
   proposalId: string;
   updatedAt: string;
   disposition:
@@ -525,7 +524,7 @@ current-state preconditions.
 
 ## 8. Application Lifecycle
 
-Every authorized invocation immediately receives one application projection:
+Every authorized invocation immediately receives one application status:
 
 ```ts
 type EffectRef = {
@@ -533,7 +532,7 @@ type EffectRef = {
   id: string;
 };
 
-type OperationApplicationProjection = {
+type OperationApplicationStatus = {
   invocationId: string;
   updatedAt: string;
   state:
@@ -568,7 +567,7 @@ type OperationApplicationProjection = {
 ```
 
 There is no persisted `not_requested` state. An unaccepted proposal has no
-invocation or application projection.
+invocation or application status.
 
 Transitions:
 
@@ -774,7 +773,7 @@ The following are not defined operations yet:
 
 The following infrastructure and policy questions are also deferred:
 
-- full proposal/application transition history beyond the current projection;
+- full proposal/application transition history beyond the current status;
 - automatic discovery and enqueueing of newly supported operation versions;
 - a complete evaluation harness;
 - broad learner-history context;

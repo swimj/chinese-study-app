@@ -1,6 +1,6 @@
 import type {
   ReflectionHandleOperationV0,
-  ReflectionInputItemV0,
+  ReflectionInputItemV1,
   ReflectionProviderFixtureV0,
 } from './contracts.js';
 import { stressCaseFixtures } from './fixtures/stress-cases.js';
@@ -12,7 +12,7 @@ function assert(condition: unknown, message: string): asserts condition {
   }
 }
 
-function wordIds(item: ReflectionInputItemV0): Set<string> {
+function wordIds(item: ReflectionInputItemV1): Set<string> {
   const ids = new Set<string>();
   if (item.targetWord !== null) ids.add(item.targetWord.wordId);
   if (item.source === 'production_mistake' && item.submittedWord !== null) {
@@ -49,7 +49,7 @@ function validateFixture(fixture: ReflectionProviderFixtureV0): void {
   } else {
     assert(fixture.source.suppliedAt.trim().length > 0, `${fixture.fixtureId}: missing supplied date`);
   }
-  assert(fixture.inputBundle.schemaVersion === 'session_reflection_bundle.v0', `${fixture.fixtureId}: wrong bundle version`);
+  assert(fixture.inputBundle.schemaVersion === 'session_reflection_bundle.v1', `${fixture.fixtureId}: wrong bundle version`);
   assert(fixture.inputBundle.items.length > 0, `${fixture.fixtureId}: empty input bundle`);
 
   if (fixture.referenceResult === null) {
@@ -57,11 +57,7 @@ function validateFixture(fixture: ReflectionProviderFixtureV0): void {
     return;
   }
 
-  assert(fixture.referenceResult.schemaVersion === 'session_reflection_result.v3', `${fixture.fixtureId}: wrong result version`);
-  assert(
-    fixture.referenceResult.bundleSchemaVersion === fixture.inputBundle.schemaVersion,
-    `${fixture.fixtureId}: result and bundle versions disagree`,
-  );
+  assert(fixture.referenceResult.schemaVersion === 'session_reflection_result.v4', `${fixture.fixtureId}: wrong result version`);
 
   const inputItemIds = fixture.inputBundle.items.map((item) => item.itemId);
   const resultItemIds = fixture.referenceResult.itemResults.map((item) => item.itemId);

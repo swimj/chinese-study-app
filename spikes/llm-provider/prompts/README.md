@@ -14,5 +14,5 @@ the fixture `referenceResult`, evaluation constraints, readiness notes, or sourc
 metadata to a provider.
 
 `reflection-v1.md` is the current prompt for
-`session_reflection_result.v3`. `reflection-v0.md` is retained only for reading
+`session_reflection_result.v4`. `reflection-v0.md` is retained only for reading
 older V2 run artifacts.
