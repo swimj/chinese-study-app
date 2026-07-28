@@ -111,12 +111,10 @@ export const stressCaseFixtures: ReflectionProviderFixtureV0[] = [{
   ],
   inputBundle: bundle,
   referenceResult: {
-    schemaVersion: 'session_reflection_result.v2',
+    schemaVersion: 'session_reflection_result.v3',
     bundleSchemaVersion: 'session_reflection_bundle.v0',
-    summary: 'The cue leaks the target reading while also admitting a historically or regionally valid related name, so the intended production competency is unclear.',
     itemResults: [{
       itemId: ITEM_ID,
-      uncertain: true,
       diagnosisTags: [
         'valid_or_near_valid_alternate',
         'production_cue_overloaded',
@@ -124,21 +122,8 @@ export const stressCaseFixtures: ReflectionProviderFixtureV0[] = [{
       ],
       observation: '“Chang Jiang” effectively supplies the target pronunciation, while “Yangtze River” does not say whether the modern standard name or another valid name is required. The submitted gloss makes a simple wrong-answer diagnosis unsafe.',
       learnerExplanation: '长江 is the intended modern standard target here. The supplied gloss presents 扬子江 as a historically or regionally limited name for the same river, so it is related and potentially creditworthy without being interchangeable in every context. Whether recalling Chinese proper names is worthwhile production knowledge depends on the learner’s real communication goals.',
-      proposals: [{
-        proposalKey: `${PREFIX}-flag-cue`,
-        proposalGroupKey: null,
-        handleVersion: 1,
-        rationale: 'Pause this cue until the learner specifies whether the desired competency is modern standard naming, broad answer acceptance, or geographical and cultural name knowledge.',
-        operation: {
-          kind: 'flag_bad_production_cue',
-          wordId: TARGET_WORD_ID,
-          sourceCue: { cueId: null, textAsShown: CUE_TEXT },
-          issues: ['underdetermined', 'overloaded', 'other'],
-          note: 'The romanized target gives away the reading, and the broad English referent does not define how historically or regionally valid alternate names should be graded.',
-        },
-      }],
+      proposals: [],
       questions: [{
-        questionKey: `${PREFIX}-intended-competency`,
         question: 'Should this production item test recall of the modern standard name 长江, accept any valid Chinese name for the river, or test geographical and cultural naming knowledge more broadly?',
         reason: 'Those goals imply different grading and may make production practice more or less valuable for this learner.',
       }],
@@ -151,19 +136,14 @@ export const stressCaseFixtures: ReflectionProviderFixtureV0[] = [{
     forbiddenDiagnosisTags: ['ordinary_retrieval_noise'],
     acceptableProposalProfiles: [
       {
-        requiredKinds: ['flag_bad_production_cue'],
-        allowedKinds: ['flag_bad_production_cue'],
-        description: 'Flag the underdetermined cue and ask what competency is intended before choosing a repair.',
+        requiredKinds: [],
+        allowedKinds: [],
+        description: 'Retain the diagnosis and ask what competency is intended before choosing a concrete repair.',
       },
       {
-        requiredKinds: ['flag_bad_production_cue', 'accept_production_alternate'],
-        allowedKinds: ['flag_bad_production_cue', 'accept_production_alternate'],
-        description: 'Flag the cue while giving the historically or regionally valid answer scoped credit.',
-      },
-      {
-        requiredKinds: ['flag_bad_production_cue', 'repair_production_cue'],
-        allowedKinds: ['flag_bad_production_cue', 'repair_production_cue'],
-        description: 'Flag the cue and offer a genuinely goal-specific repair without pretending it is the only reasonable policy.',
+        requiredKinds: ['repair_production_cue'],
+        allowedKinds: ['repair_production_cue'],
+        description: 'Offer a concrete goal-specific cue repair without pretending it settles the policy question.',
       },
     ],
     questionPolicy: 'required',

@@ -1,7 +1,7 @@
 # Reflection Proposals And Handles
 
-Status: proposed canonical design contract; synthesized for review and not yet
-implemented behavior. The initial implementation subset is defined by
+Status: accepted canonical design contract; not yet implemented behavior. The
+initial implementation subset is defined by
 [`PLANS/initial-reflection-steel-thread.md`](../PLANS/initial-reflection-steel-thread.md).
 
 This specification defines how learner-facing reflection describes bounded

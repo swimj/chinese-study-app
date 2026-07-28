@@ -31,8 +31,8 @@ the captured text as the cue reference. This matches the M0 bundle contract.
 
 The appendix does not state whether any pair already belongs to a contrast
 cluster or has accepted alternates. Fixtures use empty content arrays. As a
-result, the corpus tests `create_cluster`, not `extend_cluster`, and does not test
-whether a model avoids duplicating existing content.
+result, the corpus tests new cluster creation and does not test whether a model
+avoids duplicating existing content.
 
 ### Study-history evidence
 
@@ -62,14 +62,14 @@ These should become small synthetic or newly captured fixtures after the
 appendix-derived corpus is reviewed. They should not be retrofitted onto an
 appendix case whose original judgment did not exercise that category.
 
-The separately sourced 长江 / 扬子江 stress case now covers
-`flag_bad_production_cue` without requiring a concrete repair. It deliberately
-mixes answer leakage, a valid but context-limited alternate name, proper-name
-production policy, and missing learner-goal information. Evaluation requires the
-model to surface those layers and ask what competency is intended, while allowing
-variation in whether it also proposes scoped alternate acceptance or a genuinely
-goal-specific repair. It is exploratory rather than a hard single-answer provider
-bar.
+The separately sourced 长江 / 扬子江 stress case covers diagnosis without a
+registered operation when the cue leaks the target reading and the intended
+competency remains unclear. It deliberately mixes answer leakage, a valid but
+context-limited alternate name, proper-name production policy, and missing
+learner-goal information. Evaluation requires the model to surface those layers
+and ask what competency is intended; it may propose cue repair only with a
+genuinely concrete, goal-specific draft. It is exploratory rather than a hard
+single-answer provider bar.
 
 ## Explicitly deferred integration coverage
 
@@ -77,11 +77,12 @@ The first provider decision will focus on the common initial-production-confusio
 case. The following require history or existing-content enrichment and are
 deliberately deferred rather than treated as missing provider-spike prerequisites:
 
-- `upsert_contrast_content` in `extend_cluster` mode
+- extending an existing contrast cluster (not a V1 operation)
 - avoiding duplicate content when a suitable cluster or prompt already exists
 - stale or invalid durable references
 - history-informed judgments after earlier cue repairs or repeated confusion
-- flag-only bad-cue decisions whose strongest evidence is repair history
+- cue diagnoses without a concrete repair draft when a later cue model could
+  give them a durable target
 
 The current corpus should establish whether a model can make the core linguistic
 diagnosis, select an appropriate handle, and draft useful new content. If that

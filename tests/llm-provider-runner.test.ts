@@ -103,25 +103,24 @@ describe('LLM provider result schema', () => {
     assert.match(errors, /unhandledNeeds: required property is missing/);
   });
 
-  test('requires a null summary instead of omitting the provisional session summary', () => {
+  test('rejects the removed top-level summary field', () => {
     const fixture = allProviderFixtures.find((item) => item.fixtureId === 'ex02-to');
     assert.ok(fixture?.referenceResult);
     const result = structuredClone(fixture.referenceResult);
-    delete result.summary;
+    (result as unknown as Record<string, unknown>).summary = 'Removed in V3.';
     assert.match(
       validateJsonSchema(result, sessionReflectionResultSchema).join('\n'),
-      /summary: required property is missing/,
+      /summary: unknown property/,
     );
   });
 
-  test('allows null, empty, and nonempty provisional session summaries', () => {
+  test('rejects every former top-level summary value', () => {
     const fixture = allProviderFixtures.find((item) => item.fixtureId === 'ex02-to');
     assert.ok(fixture?.referenceResult);
     for (const summary of [null, '', 'Optional context that viewers may ignore.']) {
       const result = structuredClone(fixture.referenceResult);
-      result.summary = summary;
-      assert.deepEqual(validateJsonSchema(result, sessionReflectionResultSchema), []);
-      assert.deepEqual(validateResultAgainstBundle(result, fixture.inputBundle), []);
+      (result as unknown as Record<string, unknown>).summary = summary;
+      assert.match(validateJsonSchema(result, sessionReflectionResultSchema).join('\n'), /summary: unknown property/);
     }
   });
 
@@ -130,13 +129,13 @@ describe('LLM provider result schema', () => {
     assert.ok(fixture?.referenceResult);
     const referenceResult = structuredClone(fixture.referenceResult);
     const operation = referenceResult.itemResults[0]!.proposals[0]!.operation;
-    assert.equal(operation.kind, 'upsert_contrast_content');
-    if (operation.kind !== 'upsert_contrast_content') throw new Error('Expected contrast content operation');
+    assert.equal(operation.kind, 'create_contrast_cluster');
+    if (operation.kind !== 'create_contrast_cluster') throw new Error('Expected contrast content operation');
 
     const unknownWordResult = structuredClone(referenceResult);
     const unknownWordOperation = unknownWordResult.itemResults[0]!.proposals[0]!.operation;
-    assert.equal(unknownWordOperation.kind, 'upsert_contrast_content');
-    if (unknownWordOperation.kind !== 'upsert_contrast_content') throw new Error('Expected contrast content operation');
+    assert.equal(unknownWordOperation.kind, 'create_contrast_cluster');
+    if (unknownWordOperation.kind !== 'create_contrast_cluster') throw new Error('Expected contrast content operation');
     unknownWordOperation.members[1]!.wordId = 'invented-word-id';
     assert.deepEqual(validateJsonSchema(unknownWordResult, sessionReflectionResultSchema), []);
     assert.match(
@@ -146,8 +145,8 @@ describe('LLM provider result schema', () => {
 
     const duplicateWordResult = structuredClone(referenceResult);
     const duplicateWordOperation = duplicateWordResult.itemResults[0]!.proposals[0]!.operation;
-    assert.equal(duplicateWordOperation.kind, 'upsert_contrast_content');
-    if (duplicateWordOperation.kind !== 'upsert_contrast_content') throw new Error('Expected contrast content operation');
+    assert.equal(duplicateWordOperation.kind, 'create_contrast_cluster');
+    if (duplicateWordOperation.kind !== 'create_contrast_cluster') throw new Error('Expected contrast content operation');
     duplicateWordOperation.members[1]!.wordId = duplicateWordOperation.members[0]!.wordId;
     assert.match(
       validateResultAgainstBundle(duplicateWordResult, fixture.inputBundle).join('\n'),
@@ -156,8 +155,8 @@ describe('LLM provider result schema', () => {
 
     const emptyPromptsResult = structuredClone(referenceResult);
     const emptyPromptsOperation = emptyPromptsResult.itemResults[0]!.proposals[0]!.operation;
-    assert.equal(emptyPromptsOperation.kind, 'upsert_contrast_content');
-    if (emptyPromptsOperation.kind !== 'upsert_contrast_content') throw new Error('Expected contrast content operation');
+    assert.equal(emptyPromptsOperation.kind, 'create_contrast_cluster');
+    if (emptyPromptsOperation.kind !== 'create_contrast_cluster') throw new Error('Expected contrast content operation');
     emptyPromptsOperation.prompts = [];
     assert.match(validateJsonSchema(emptyPromptsResult, sessionReflectionResultSchema).join('\n'), /expected at least 1 item/);
     assert.match(validateResultAgainstBundle(emptyPromptsResult, fixture.inputBundle).join('\n'), /at least one prompt is required/);
@@ -169,8 +168,8 @@ describe('LLM provider result schema', () => {
     const crossItemResult = structuredClone(referenceResult);
     crossItemResult.itemResults.push(structuredClone(otherFixture.referenceResult.itemResults[0]!));
     const crossItemOperation = crossItemResult.itemResults[0]!.proposals[0]!.operation;
-    assert.equal(crossItemOperation.kind, 'upsert_contrast_content');
-    if (crossItemOperation.kind !== 'upsert_contrast_content') throw new Error('Expected contrast content operation');
+    assert.equal(crossItemOperation.kind, 'create_contrast_cluster');
+    if (crossItemOperation.kind !== 'create_contrast_cluster') throw new Error('Expected contrast content operation');
     crossItemOperation.members[1]!.wordId = 'ex02-submitted';
     assert.match(
       validateResultAgainstBundle(crossItemResult, crossItemBundle).join('\n'),
@@ -178,7 +177,7 @@ describe('LLM provider result schema', () => {
     );
   });
 
-  test('does not accept model-emitted evidence citation fields in V2 results', () => {
+  test('does not accept model-emitted evidence citation fields in V3 results', () => {
     const fixture = allProviderFixtures[0];
     assert.ok(fixture?.referenceResult);
     const withItemEvidence = structuredClone(fixture.referenceResult) as unknown as {
@@ -445,7 +444,7 @@ describe('LLM provider model batch and viewer', () => {
 
       const staleContractArtifact = structuredClone(artifact);
       staleContractArtifact.response.rawText = staleContractArtifact.response.rawText!.replace(
-        'session_reflection_result.v2',
+        'session_reflection_result.v3',
         'session_reflection_result.v0',
       );
       const staleCurrentValidation = validateRunArtifactAgainstCurrentContract(staleContractArtifact);
@@ -580,7 +579,7 @@ describe('LLM provider adapters', () => {
     const messages = JSON.stringify(captured[0]?.body.messages);
     assert.match(messages, /System instructions that require a JSON response/);
     assert.match(messages, /Return exactly one JSON object matching the following JSON Schema/);
-    assert.match(messages, /session_reflection_result\.v2/);
+    assert.match(messages, /session_reflection_result\.v3/);
     assert.equal(result.structuredOutputMode, 'json_object');
     assert.equal(result.usage.cachedInputTokens, 75);
   });

@@ -64,7 +64,7 @@ completed study session
   -> bounded session-evidence bundle
   -> one server-side Luna reflection call
   -> strict local validation
-  -> durable reflection artifact with per-item disposition
+  -> durable reflection artifact with proposal-level review
   -> minimal asynchronous user review
   -> explicit application only for accepted, supported operations
 ```
@@ -90,10 +90,12 @@ learner or content state.
 first reflection flow.
 - The initial reflection is written for learner consumption. Developer-facing
 reflection and development artifacts are outside this wave.
-- Reflection output and per-item review/disposition state are durable so review
-can resume asynchronously and provenance survives later application. The
-provisionally settled persistence shape is one immutable provenance/blob row
-plus a seeded per-item mutable disposition projection in the database.
+- Reflection output and proposal-level review state are durable so review can
+resume asynchronously and provenance survives later application. The
+provisionally settled persistence shape is one immutable provenance/blob row,
+seeded proposal-review rows, and immutable authorized invocations with mutable
+application projections. See
+[`SPECS/reflection-proposals-and-handles.md`](SPECS/reflection-proposals-and-handles.md).
 - SQLite is sufficient for the first personal dogfood. Hosted tenancy and
 Postgres follow only after the agentic core proves useful on personal data.
 
@@ -128,24 +130,12 @@ payload and identity decisions deserve more care than the storage substrate.
 
 ### Current blocking decisions
 
-- Stabilize the first-prototype handle inventory and the handle-related portions
-of the reflection-result contract, including each handle's payload,
-validation, and explicit non-effects.
-- Define the provisional lifecycle contract among user disposition, application
-status, unsupported operations, staleness, failure, supersession, and
-provenance.
-- Decide the persistence-relevant semantics of editing/overriding model
-proposals and user-authored operations.
-- Assign compatibility decisions to the existing in-session and out-of-session
-suppression, bad-prompt, and contrast-management paths.
-- After the registry stabilizes, synthesize it with the durable
-reflection/review lifecycle and existing persistence planning into a bounded,
-behavior-first implementation contract for the first product prototype.
-- As part of that contract, choose the exact post-session trigger/API boundary
-and the minimum first review surface.
-
-The active Handle Registry V0 task owns the first four decisions. See
-`notes/archive/2026-07-21-handle-registry-v0-task-spec.md`.
+- The accepted V0 operation inventory, proposal/application lifecycle,
+provenance/override semantics, and compatibility boundaries are defined in
+[`SPECS/reflection-proposals-and-handles.md`](SPECS/reflection-proposals-and-handles.md).
+The bounded first implementation contract, post-session trigger/API boundary,
+and minimum review surface are defined in
+[`PLANS/initial-reflection-steel-thread.md`](PLANS/initial-reflection-steel-thread.md).
 
 ### Explicit non-goals for this wave
 

@@ -1,4 +1,9 @@
-# Post-Session Reflection V0
+# Post-Session Reflection V0 (superseded)
+
+This prompt preserves the original provider-comparison contract. It is not
+compatible with `session_reflection_result.v3`; use
+[`reflection-v1.md`](./reflection-v1.md) for the accepted steel-thread
+semantics.
 
 ## 1. Product Objective
 

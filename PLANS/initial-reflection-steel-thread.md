@@ -1,6 +1,6 @@
 # Initial Post-Session Reflection Steel Thread
 
-Status: proposed implementation milestone; ready for review.
+Status: accepted implementation milestone; Slice 0 contract alignment complete.
 
 This plan defines the smallest end-to-end reflection path that exercises the
 durable contract in
@@ -373,13 +373,13 @@ not required by this milestone.
 
 ### Slice 0 — contract and frontier alignment
 
-- [ ] Accept the canonical spec and this milestone boundary.
-- [ ] Update the stability frontier's “per-item disposition” wording to
+- [x] Accept the canonical spec and this milestone boundary.
+- [x] Update the stability frontier's “per-item disposition” wording to
       proposal-level review and link the canonical spec.
-- [ ] Replace the artifact-store planning note's per-item persistence assumption
+- [x] Replace the artifact-store planning note's per-item persistence assumption
       with the accepted proposal-level shape, or retire that note once this plan
       owns the implementation contract.
-- [ ] Update provider-spike copied contracts, schema, prompt, fixtures, and
+- [x] Update provider-spike copied contracts, schema, prompt, fixtures, and
       validators to `session_reflection_result.v3`. Revise and version the
       prompt for the accepted post-spike semantics: emit atomic independently
       reviewable proposals; propose only new contrast clusters; distinguish
@@ -387,7 +387,7 @@ not required by this milestone.
       credit; never treat legacy bad-prompt state as a handle; and propose cue
       repair only with a concrete draft, otherwise retaining diagnosis and
       using no proposal or an unhandled need.
-- [ ] Remove `flag_bad_production_cue`, remove `summary`, rename the contrast
+- [x] Remove `flag_bad_production_cue`, remove `summary`, rename the contrast
       operation, and narrow the alternate payload.
 
 ### Slice 1 — durable artifact and lifecycle store

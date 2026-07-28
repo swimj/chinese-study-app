@@ -59,15 +59,13 @@ function word(wordId: string, seed: WordSeed): ReflectionWordSnapshotV0 {
 }
 
 function proposal(
-  proposalKey: string,
+  _proposalKey: string,
   proposalGroupKey: string | null,
   rationale: string,
   operation: ReflectionHandleOperationV0,
 ): ReflectionHandleProposalV0 {
   return {
-    proposalKey,
     proposalGroupKey,
-    handleVersion: 1,
     rationale,
     operation,
   };
@@ -78,11 +76,10 @@ function baseResult(
   observation: string,
   learnerExplanation: string | null,
   overrides: Partial<
-    Pick<ReflectionItemResultV0, 'uncertain' | 'proposals' | 'questions' | 'unhandledNeeds'>
+    Pick<ReflectionItemResultV0, 'proposals' | 'questions' | 'unhandledNeeds'>
   > = {},
 ): Omit<ReflectionItemResultV0, 'itemId'> {
   return {
-    uncertain: overrides.uncertain ?? false,
     diagnosisTags,
     observation,
     learnerExplanation,
@@ -177,9 +174,8 @@ function productionFixture(seed: ProductionFixtureSeed): ReflectionProviderFixtu
     readinessNotes: seed.readinessNotes ?? [],
     inputBundle: bundleFor(prefix, item),
     referenceResult: {
-      schemaVersion: 'session_reflection_result.v2',
+      schemaVersion: 'session_reflection_result.v3',
       bundleSchemaVersion: 'session_reflection_bundle.v0',
-      summary: itemResult.observation,
       itemResults: [{ itemId, ...itemResult }],
     },
     evaluation: seed.evaluation,
@@ -191,10 +187,6 @@ const noProposalProfile: ProposalProfileV0 = {
   allowedKinds: [],
   description: 'No durable change is justified from this evidence.',
 };
-
-function cueRef(context: FixtureContext) {
-  return { cueId: null, textAsShown: context.cueText };
-}
 
 const productionFixtures: ReflectionProviderFixtureV0[] = [
   productionFixture({
@@ -236,11 +228,9 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
           'Credit the useful production response for this specific cue without creating a global synonym relation.',
           {
             kind: 'accept_production_alternate',
-            cue: cueRef(c),
+            version: 1,
             targetWordId: c.targetWordId,
             alternateWordId: c.submittedWordId,
-            acceptance: 'fully_acceptable_for_cue',
-            subtletyNote: 'Nearly interchangeable in this use; subtle preferences are not recoverable from the cue.',
           },
         )],
       },
@@ -275,8 +265,9 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
           null,
           'A small contextual contrast can target the reluctance-versus-intense-wish frame.',
           {
-            kind: 'upsert_contrast_content',
-            destination: { mode: 'create_cluster', clusterId: null, title: '舍不得 / 恨不得' },
+            kind: 'create_contrast_cluster',
+            version: 1,
+            title: '舍不得 / 恨不得',
             clusterNote: 'Similar phrase shape, but opposite motivational frames: reluctance versus intense wishing.',
             members: [
               { wordId: c.targetWordId, nuanceNote: 'Reluctant to part with something or reluctant to act because of attachment or cost.' },
@@ -294,8 +285,8 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       requiredDiagnosisTags: ['form_or_sound_interference', 'persistent_confusion'],
       forbiddenDiagnosisTags: ['valid_or_near_valid_alternate'],
       acceptableProposalProfiles: [{
-        requiredKinds: ['upsert_contrast_content'],
-        allowedKinds: ['upsert_contrast_content'],
+        requiredKinds: ['create_contrast_cluster'],
+        allowedKinds: ['create_contrast_cluster'],
         description: 'Author prompt-backed contrast content centered on phrase-shape interference.',
       }],
       questionPolicy: 'none_expected',
@@ -322,9 +313,9 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
             'Make the direct-production cue foreground ordinary surprise rather than the shared word “shocked.”',
             {
               kind: 'repair_production_cue',
+              version: 1,
               wordId: c.targetWordId,
-              sourceCue: cueRef(c),
-              replacementCues: [{ cueType: 'definition_gloss', text: 'to be surprised; to be startled' }],
+              proposedCues: [{ cueType: 'definition_gloss', text: 'to be surprised; to be startled' }],
               repairIntent: 'add_distinguishing_anchor',
             },
           ),
@@ -333,8 +324,9 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
             `${c.prefix}-repair-and-contrast`,
             'Contextual choices can reinforce ordinary surprise versus powerful emotional impact.',
             {
-              kind: 'upsert_contrast_content',
-              destination: { mode: 'create_cluster', clusterId: null, title: '吃惊 / 震撼' },
+              kind: 'create_contrast_cluster',
+              version: 1,
+              title: '吃惊 / 震撼',
               clusterNote: 'Ordinary surprise or startlement versus deep, powerful impact.',
               members: [
                 { wordId: c.targetWordId, nuanceNote: 'Ordinary surprise or being startled.' },
@@ -353,8 +345,8 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       requiredDiagnosisTags: ['cue_overlap_hides_usage_difference'],
       forbiddenDiagnosisTags: ['valid_or_near_valid_alternate', 'ordinary_retrieval_noise'],
       acceptableProposalProfiles: [{
-        requiredKinds: ['repair_production_cue', 'upsert_contrast_content'],
-        allowedKinds: ['repair_production_cue', 'upsert_contrast_content'],
+        requiredKinds: ['repair_production_cue', 'create_contrast_cluster'],
+        allowedKinds: ['repair_production_cue', 'create_contrast_cluster'],
         description: 'Repair the cue and independently create contextual contrast content.',
       }],
       questionPolicy: 'none_expected',
@@ -379,8 +371,9 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
           null,
           'The learner explicitly values this natural-usage boundary, and context can express it better than English gloss expansion alone.',
           {
-            kind: 'upsert_contrast_content',
-            destination: { mode: 'create_cluster', clusterId: null, title: '在意 / 介意' },
+            kind: 'create_contrast_cluster',
+            version: 1,
+            title: '在意 / 介意',
             clusterNote: 'General concern or emotional investment versus objection, bother, or offense.',
             members: [
               { wordId: c.targetWordId, nuanceNote: 'Care about, pay attention to, or be emotionally affected by something.' },
@@ -398,8 +391,8 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       requiredDiagnosisTags: ['cue_overlap_hides_usage_difference'],
       forbiddenDiagnosisTags: ['valid_or_near_valid_alternate', 'ordinary_retrieval_noise'],
       acceptableProposalProfiles: [{
-        requiredKinds: ['upsert_contrast_content'],
-        allowedKinds: ['upsert_contrast_content', 'repair_production_cue'],
+        requiredKinds: ['create_contrast_cluster'],
+        allowedKinds: ['create_contrast_cluster', 'repair_production_cue'],
         description: 'Contextual contrast is required; a separate cue repair is acceptable but not required.',
       }],
       questionPolicy: 'none_expected',
@@ -427,9 +420,9 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
           'Add a formal announcement frame so direct production tests the register-specific target instead of generic construction completion.',
           {
             kind: 'repair_production_cue',
+            version: 1,
             wordId: c.targetWordId,
-            sourceCue: cueRef(c),
-            replacementCues: [
+            proposedCues: [
               {
                 cueType: 'definition_gloss',
                 text: 'to be formally completed or inaugurated (of a building or construction project)',
@@ -449,7 +442,7 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       forbiddenDiagnosisTags: ['ordinary_retrieval_noise', 'persistent_confusion'],
       acceptableProposalProfiles: [{
         requiredKinds: ['repair_production_cue'],
-        allowedKinds: ['repair_production_cue', 'upsert_contrast_content'],
+        allowedKinds: ['repair_production_cue', 'create_contrast_cluster'],
         description: 'Contextually triangulate the formal target; contrast content is optional.',
       }],
       questionPolicy: 'none_expected',
@@ -488,15 +481,13 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
           'Stop spending direct-production effort on an isolated low-value target while preserving recognition of the character and reading.',
           {
             kind: 'suppress_definition_production',
+            version: 1,
             wordId: c.targetWordId,
-            reason: 'low_value_for_learner',
-            note: 'Keep recognition enabled; the jǐ reading is more useful inside common expressions such as 自给自足 and 供给 than as isolated definition-based production.',
           },
         )],
         unhandledNeeds: [{
-          needKey: `${c.prefix}-redirect-production-priority`,
           description: 'Preserve recognition of 给 jǐ while redirecting production effort toward a higher-value related lexical item.',
-          whyExistingHandlesDoNotFit: 'suppress_definition_production can disable the low-value isolated target, but no V0 handle can select and prioritize a more useful related unstudied word.',
+          whyRegisteredOperationsDoNotFit: 'suppress_definition_production can disable the low-value isolated target, but no V0 operation can select and prioritize a more useful related unstudied word.',
         }],
       },
     ),
@@ -724,9 +715,9 @@ function cueRepairAndContrastResult(
           'Make the direct-production cue expose the target’s distinguishing anchor.',
           {
             kind: 'repair_production_cue',
+            version: 1,
             wordId: context.targetWordId,
-            sourceCue: cueRef(context),
-            replacementCues: [{ cueType: 'definition_gloss', text: seed.replacement }],
+            proposedCues: [{ cueType: 'definition_gloss', text: seed.replacement }],
             repairIntent: seed.repairIntent,
           },
         ),
@@ -735,8 +726,9 @@ function cueRepairAndContrastResult(
           `${context.prefix}-repair-and-contrast`,
           'Use context to reinforce the boundary that the English glosses obscure.',
           {
-            kind: 'upsert_contrast_content',
-            destination: { mode: 'create_cluster', clusterId: null, title: seed.title },
+            kind: 'create_contrast_cluster',
+            version: 1,
+            title: seed.title,
             clusterNote: seed.clusterNote,
             members: [
               { wordId: context.targetWordId, nuanceNote: seed.targetNuance },
@@ -758,8 +750,8 @@ function cueRepairAndContrastEvaluation(boundaryRequirement: string): Reflection
     requiredDiagnosisTags: ['cue_overlap_hides_usage_difference'],
     forbiddenDiagnosisTags: ['valid_or_near_valid_alternate', 'ordinary_retrieval_noise'],
     acceptableProposalProfiles: [{
-      requiredKinds: ['repair_production_cue', 'upsert_contrast_content'],
-      allowedKinds: ['repair_production_cue', 'upsert_contrast_content'],
+      requiredKinds: ['repair_production_cue', 'create_contrast_cluster'],
+      allowedKinds: ['repair_production_cue', 'create_contrast_cluster'],
       description: 'Repair the direct-production cue and separately author contextual contrast content.',
     }],
     questionPolicy: 'none_expected',
@@ -812,8 +804,9 @@ function sessionNoteFixture(): ReflectionProviderFixtureV0 {
         null,
         'The learner explicitly values this gloss-overlapping distinction, and natural contextual choices can make it intuitive.',
         {
-          kind: 'upsert_contrast_content',
-          destination: { mode: 'create_cluster', clusterId: null, title: '习以为常 / 习惯' },
+          kind: 'create_contrast_cluster',
+          version: 1,
+          title: '习以为常 / 习惯',
           clusterNote: 'Broad accustomedness or habit versus becoming so accustomed that something is treated as normal.',
           members: [
             { wordId: targetWordId, nuanceNote: 'Become so accustomed to something that it feels normal or unsurprising.' },
@@ -836,17 +829,16 @@ function sessionNoteFixture(): ReflectionProviderFixtureV0 {
     readinessNotes: ['This is the only appendix fixture sourced from a correct response plus an explicit session note.'],
     inputBundle: bundleFor(prefix, item),
     referenceResult: {
-      schemaVersion: 'session_reflection_result.v2',
+      schemaVersion: 'session_reflection_result.v3',
       bundleSchemaVersion: 'session_reflection_bundle.v0',
-      summary: result.observation,
       itemResults: [{ itemId, ...result }],
     },
     evaluation: {
       requiredDiagnosisTags: ['cue_overlap_hides_usage_difference'],
       forbiddenDiagnosisTags: ['ordinary_retrieval_noise', 'valid_or_near_valid_alternate'],
       acceptableProposalProfiles: [{
-        requiredKinds: ['upsert_contrast_content'],
-        allowedKinds: ['upsert_contrast_content'],
+        requiredKinds: ['create_contrast_cluster'],
+        allowedKinds: ['create_contrast_cluster'],
         description: 'Create prompt-backed contextual contrast for the learner-identified boundary.',
       }],
       questionPolicy: 'none_expected',

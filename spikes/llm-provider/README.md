@@ -14,7 +14,7 @@ Those judgments are calibration evidence, not immutable gold labels.
 
 ## Layout
 
-- `contracts.ts` mirrors the M0 bundle and result contracts and defines the
+- `contracts.ts` mirrors the accepted V3 bundle and result contracts and defines the
   spike-only fixture/evaluation envelope.
 - `fixtures/workflow-appendix.ts` contains one fixture for each appendix case.
 - `fixtures/stress-cases.ts` contains separately sourced cases that probe
@@ -59,7 +59,7 @@ node --import tsx spikes/llm-provider/validate-fixtures.ts
 ```
 
 This validates fixture ids, bundle/result version pairing, one-to-one item
-coverage, evidence references, proposal-key uniqueness, and basic handle
+coverage, evidence references, proposal grouping, and basic operation
 references. It does not attempt to validate Mandarin judgments.
 
 ## Provider runner

@@ -27,17 +27,12 @@ function wordIds(item: ReflectionInputItemV0): Set<string> {
   return ids;
 }
 
-function cueTexts(item: ReflectionInputItemV0): Set<string> {
-  return new Set(item.source === 'contrast_selection' ? [] : item.cuesAsShown.map((cue) => cue.text));
-}
-
 function operationWordReferences(operation: ReflectionHandleOperationV0): string[] {
   switch (operation.kind) {
-    case 'flag_bad_production_cue':
     case 'suppress_definition_production':
     case 'repair_production_cue':
       return [operation.wordId];
-    case 'upsert_contrast_content':
+    case 'create_contrast_cluster':
       return [
         ...operation.members.map((member) => member.wordId),
         ...operation.prompts.map((prompt) => prompt.targetWordId),
@@ -62,7 +57,7 @@ function validateFixture(fixture: ReflectionProviderFixtureV0): void {
     return;
   }
 
-  assert(fixture.referenceResult.schemaVersion === 'session_reflection_result.v2', `${fixture.fixtureId}: wrong result version`);
+  assert(fixture.referenceResult.schemaVersion === 'session_reflection_result.v3', `${fixture.fixtureId}: wrong result version`);
   assert(
     fixture.referenceResult.bundleSchemaVersion === fixture.inputBundle.schemaVersion,
     `${fixture.fixtureId}: result and bundle versions disagree`,
@@ -78,14 +73,12 @@ function validateFixture(fixture: ReflectionProviderFixtureV0): void {
   );
 
   const inputItemsById = new Map(fixture.inputBundle.items.map((item) => [item.itemId, item]));
-  const proposalKeys = new Set<string>();
   const actualKinds: ReflectionHandleOperationV0['kind'][] = [];
 
   for (const itemResult of fixture.referenceResult.itemResults) {
     const inputItem = inputItemsById.get(itemResult.itemId);
     assert(inputItem !== undefined, `${fixture.fixtureId}: missing input item ${itemResult.itemId}`);
     const allowedWordIds = wordIds(inputItem);
-    const allowedCueTexts = cueTexts(inputItem);
     for (const requiredTag of fixture.evaluation.requiredDiagnosisTags) {
       assert(
         itemResult.diagnosisTags.includes(requiredTag),
@@ -99,34 +92,16 @@ function validateFixture(fixture: ReflectionProviderFixtureV0): void {
       );
     }
     for (const proposal of itemResult.proposals) {
-      assert(!proposalKeys.has(proposal.proposalKey), `${fixture.fixtureId}: duplicate proposal key ${proposal.proposalKey}`);
-      proposalKeys.add(proposal.proposalKey);
       actualKinds.push(proposal.operation.kind);
 
       for (const referencedWordId of operationWordReferences(proposal.operation)) {
         assert(
           allowedWordIds.has(referencedWordId),
-          `${fixture.fixtureId}: operation ${proposal.proposalKey} references unknown word ${referencedWordId}`,
+          `${fixture.fixtureId}: operation references unknown word ${referencedWordId}`,
         );
       }
 
-      if (
-        proposal.operation.kind === 'flag_bad_production_cue'
-        || proposal.operation.kind === 'repair_production_cue'
-      ) {
-        assert(
-          allowedCueTexts.has(proposal.operation.sourceCue.textAsShown),
-          `${fixture.fixtureId}: operation ${proposal.proposalKey} does not preserve the cue text as shown`,
-        );
-      }
-      if (proposal.operation.kind === 'accept_production_alternate') {
-        assert(
-          allowedCueTexts.has(proposal.operation.cue.textAsShown),
-          `${fixture.fixtureId}: operation ${proposal.proposalKey} does not preserve the cue text as shown`,
-        );
-      }
-
-      if (proposal.operation.kind === 'upsert_contrast_content') {
+      if (proposal.operation.kind === 'create_contrast_cluster') {
         const memberIds = new Set(proposal.operation.members.map((member) => member.wordId));
         assert(
           memberIds.size >= 2,

@@ -88,7 +88,25 @@ Side benefit surfaced by the spike: user-facing reflection emphasized the need t
 get the schema right in model evaluation. That schema work is the dependency that
 gates the store design (see below).
 
-## Storage shape — converged
+## Superseded storage shape — retained for planning history
+
+The shape below was superseded by the accepted canonical contract and steel
+thread during Slice 0. It is retained only to preserve the design trail; do not
+implement it. The current shape is:
+
+- one immutable artifact provenance/blob row;
+- one seeded mutable review row per proposal, keyed by artifact, item, and
+  proposal index; and
+- one immutable authorized operation invocation with a mutable application
+  projection for each accepted or user-authored operation.
+
+The artifact body remains the source for original proposal content. Proposal
+reviews do not duplicate operation payloads, and informational item results
+with no proposals receive no lifecycle row. See
+[`SPECS/reflection-proposals-and-handles.md`](../../SPECS/reflection-proposals-and-handles.md)
+and [`PLANS/initial-reflection-steel-thread.md`](../../PLANS/initial-reflection-steel-thread.md).
+
+## Historical storage shape — superseded
 
 - **One DB table for the artifact** (provenance anchor, not lifecycle):
   artifactId, session id (forensics-only, not load-bearing), generated-at,
@@ -139,12 +157,12 @@ intuition make the DB look disposable.
 
 ## Dependency direction
 
-The per-item disposition table depends on **stable item ids** emitted by the
-model. That is exactly the "get the schema right" work the spike surfaced. So
-the store design is **downstream of the spike's output contract**, not
-standalone. The model must emit clean, stable per-item structure (ids, handle
-kind, payload); the per-item table keys on that. Sloppy schema breaks the
-disposition cycle.
+The historical per-item disposition table depended on **stable item ids**
+emitted by the model. The accepted design instead assigns durable proposal ids
+at materialization and locates each original proposal by artifact, item id, and
+proposal index. The store design remains **downstream of the spike's output
+contract**, not standalone, but model-generated proposal keys are no longer a
+durable dependency.
 
 This honors the roadmap's "schema-first before the agent" decision: the store
 is designed against the fixed contract, not retrofitted to whatever the model

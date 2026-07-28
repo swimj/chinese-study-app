@@ -252,23 +252,13 @@ function renderValidationDetails(artifacts) {
   </table></div></div>`;
 }
 
-function renderResponseSummaries(artifacts) {
-  const rows = artifacts.map((artifact) => {
-    const run = state.runs.find((candidate) => candidate.runId === artifact.runId);
-    const content = responseResult(artifact)?.summary;
-    return `<tr><td>${runIdentity(run)}</td><td>${content ? escapeHtml(content) : '<span class="muted">No session summary emitted.</span>'}</td></tr>`;
-  }).join('');
-  return `<div class="section"><h3>Response summaries</h3><table><thead><tr><th>Run</th><th>Summary</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-}
-
 function renderItem(itemId, artifacts) {
   const diagnosisRows = artifacts.map((artifact) => {
     const run = state.runs.find((candidate) => candidate.runId === artifact.runId);
     const result = resultForItem(artifact, itemId);
-    if (!result) return `<tr><td>${runIdentity(run)}</td><td colspan="4">${failureMarkup(artifact)}</td></tr>`;
+    if (!result) return `<tr><td>${runIdentity(run)}</td><td colspan="3">${failureMarkup(artifact)}</td></tr>`;
     return `<tr>
       <td>${runIdentity(run)}</td>
-      <td>${result.uncertain ? 'yes' : 'no'}</td>
       <td>${tagsMarkup(result.diagnosisTags)}</td>
       <td>${escapeHtml(result.observation)}</td>
       <td>${tagsMarkup(result.proposals.map((proposal) => proposal.operation.kind))}</td>
@@ -309,13 +299,13 @@ function renderItem(itemId, artifacts) {
     const result = resultForItem(artifact, itemId);
     const unhandledNeeds = result?.unhandledNeeds ?? [];
     if (unhandledNeeds.length === 0) return [`<tr><td>${runIdentity(run)}</td><td class="muted">none</td><td>—</td></tr>`];
-    return unhandledNeeds.map((need) => `<tr><td>${runIdentity(run)}</td><td>${escapeHtml(need.description)}</td><td>${escapeHtml(need.whyExistingHandlesDoNotFit)}</td></tr>`);
+    return unhandledNeeds.map((need) => `<tr><td>${runIdentity(run)}</td><td>${escapeHtml(need.description)}</td><td>${escapeHtml(need.whyRegisteredOperationsDoNotFit)}</td></tr>`);
   }).join('');
 
   return `<div class="section">
     <h3>Item <span class="tag">${escapeHtml(itemId)}</span></h3>
     <h4>Diagnosis and observation</h4>
-    <div class="table-wrap"><table><thead><tr><th>Run</th><th>Uncertain</th><th>Diagnosis tags</th><th>Observation</th><th>Handles</th></tr></thead><tbody>${diagnosisRows}</tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>Run</th><th>Diagnosis tags</th><th>Observation</th><th>Operations</th></tr></thead><tbody>${diagnosisRows}</tbody></table></div>
     <h3>Learner explanations</h3>
     <table><thead><tr><th>Run</th><th>Explanation</th></tr></thead><tbody>${explanations}</tbody></table>
     <h3>Proposed handles</h3><div class="comparison-grid">${proposals}</div>
@@ -369,7 +359,6 @@ async function renderComparison() {
       promptNotice,
       renderRunSummary(artifacts),
       renderValidationDetails(artifacts),
-      renderResponseSummaries(artifacts),
       ...itemIds.map((itemId) => renderItem(itemId, artifacts)),
       renderEvaluation(fixture),
       renderRawArtifacts(artifacts),

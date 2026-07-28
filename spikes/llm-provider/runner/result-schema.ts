@@ -37,53 +37,16 @@ function objectSchema(
   };
 }
 
-const cueRefSchema = objectSchema({
-  cueId: nullableStringSchema,
-  textAsShown: stringSchema,
-});
-
-const flagBadCueOperation = objectSchema({
-  kind: enumSchema(['flag_bad_production_cue']),
-  wordId: stringSchema,
-  sourceCue: cueRefSchema,
-  issues: arraySchema(enumSchema([
-    'underdetermined',
-    'misleading_gloss_overlap',
-    'overloaded',
-    'wrong_register_or_domain',
-    'other',
-  ])),
-  note: stringSchema,
-});
-
 const suppressProductionOperation = objectSchema({
   kind: enumSchema(['suppress_definition_production']),
+  version: { type: 'integer', enum: [1] },
   wordId: stringSchema,
-  reason: enumSchema([
-    'recognition_only_is_better_fit',
-    'answer_space_too_open',
-    'low_value_for_learner',
-    'other',
-  ]),
-  note: stringSchema,
 });
 
-const upsertContrastContentOperation = objectSchema({
-  kind: enumSchema(['upsert_contrast_content']),
-  destination: {
-    anyOf: [
-      objectSchema({
-        mode: enumSchema(['create_cluster']),
-        clusterId: { type: 'null' },
-        title: stringSchema,
-      }),
-      objectSchema({
-        mode: enumSchema(['extend_cluster']),
-        clusterId: stringSchema,
-        title: { type: 'null' },
-      }),
-    ],
-  },
+const createContrastClusterOperation = objectSchema({
+  kind: enumSchema(['create_contrast_cluster']),
+  version: { type: 'integer', enum: [1] },
+  title: stringSchema,
   clusterNote: nullableStringSchema,
   members: arraySchema(objectSchema({
     wordId: stringSchema,
@@ -101,9 +64,9 @@ const upsertContrastContentOperation = objectSchema({
 
 const repairCueOperation = objectSchema({
   kind: enumSchema(['repair_production_cue']),
+  version: { type: 'integer', enum: [1] },
   wordId: stringSchema,
-  sourceCue: cueRefSchema,
-  replacementCues: arraySchema(objectSchema({
+  proposedCues: arraySchema(objectSchema({
     cueType: enumSchema([
       'definition_gloss',
       'cloze',
@@ -122,34 +85,28 @@ const repairCueOperation = objectSchema({
 
 const acceptAlternateOperation = objectSchema({
   kind: enumSchema(['accept_production_alternate']),
-  cue: cueRefSchema,
+  version: { type: 'integer', enum: [1] },
   targetWordId: stringSchema,
   alternateWordId: stringSchema,
-  acceptance: enumSchema(['fully_acceptable_for_cue', 'near_valid_creditworthy_answer']),
-  subtletyNote: nullableStringSchema,
 });
 
 const operationSchema: JsonSchema = {
   anyOf: [
-    flagBadCueOperation,
     suppressProductionOperation,
-    upsertContrastContentOperation,
+    createContrastClusterOperation,
     repairCueOperation,
     acceptAlternateOperation,
   ],
 };
 
 const proposalSchema = objectSchema({
-  proposalKey: stringSchema,
   proposalGroupKey: nullableStringSchema,
-  handleVersion: { type: 'integer', enum: [1] },
   rationale: stringSchema,
   operation: operationSchema,
 });
 
 const itemResultSchema = objectSchema({
   itemId: stringSchema,
-  uncertain: { type: 'boolean' },
   diagnosisTags: arraySchema(enumSchema([
     'valid_or_near_valid_alternate',
     'cue_overlap_hides_usage_difference',
@@ -164,22 +121,19 @@ const itemResultSchema = objectSchema({
   learnerExplanation: nullableStringSchema,
   proposals: arraySchema(proposalSchema),
   questions: arraySchema(objectSchema({
-    questionKey: stringSchema,
     question: stringSchema,
     reason: stringSchema,
   })),
   unhandledNeeds: arraySchema(objectSchema({
-    needKey: stringSchema,
     description: stringSchema,
-    whyExistingHandlesDoNotFit: stringSchema,
+    whyRegisteredOperationsDoNotFit: stringSchema,
   })),
 });
 
 export const sessionReflectionResultSchema: JsonSchema = objectSchema({
-  schemaVersion: enumSchema(['session_reflection_result.v2']),
+  schemaVersion: enumSchema(['session_reflection_result.v3']),
   bundleSchemaVersion: enumSchema(['session_reflection_bundle.v0']),
-  summary: nullableStringSchema,
   itemResults: arraySchema(itemResultSchema),
 }, 'One structured post-session reflection result.');
 
-export const SESSION_REFLECTION_RESULT_SCHEMA_NAME = 'session_reflection_result_v2';
+export const SESSION_REFLECTION_RESULT_SCHEMA_NAME = 'session_reflection_result_v3';

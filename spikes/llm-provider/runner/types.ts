@@ -1,4 +1,4 @@
-import type { SessionReflectionBundleV0, SessionReflectionResultV2 } from '../contracts.js';
+import type { SessionReflectionBundleV0, SessionReflectionResultV3 } from '../contracts.js';
 import type { JsonSchema } from './result-schema.js';
 
 export type JsonPrimitive = string | number | boolean | null;
@@ -106,7 +106,7 @@ export type ReflectionRunArtifactV0 = {
     structuredOutputMode: StructuredOutputMode;
     finishReason: string | null;
     rawText: string | null;
-    parsedResult: SessionReflectionResultV2 | null;
+    parsedResult: SessionReflectionResultV3 | null;
     usage: NormalizedTokenUsage | null;
     validationErrors: string[];
     providerError: string | null;

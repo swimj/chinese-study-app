@@ -122,36 +122,16 @@ export type ReflectionDiagnosisTagV0 =
   | 'persistent_confusion'
   | 'insufficient_evidence';
 
-export type ProductionCueRefV0 = {
-  cueId: string | null;
-  textAsShown: string;
-};
-
-export type ReflectionHandleOperationV0 =
-  | {
-      kind: 'flag_bad_production_cue';
-      wordId: string;
-      sourceCue: ProductionCueRefV0;
-      issues: Array<
-        | 'underdetermined'
-        | 'misleading_gloss_overlap'
-        | 'overloaded'
-        | 'wrong_register_or_domain'
-        | 'other'
-      >;
-      note: string;
-    }
+export type ReflectionOperationV1 =
   | {
       kind: 'suppress_definition_production';
+      version: 1;
       wordId: string;
-      reason: 'recognition_only_is_better_fit' | 'answer_space_too_open' | 'low_value_for_learner' | 'other';
-      note: string;
     }
   | {
-      kind: 'upsert_contrast_content';
-      destination:
-        | { mode: 'create_cluster'; clusterId: null; title: string }
-        | { mode: 'extend_cluster'; clusterId: string; title: null };
+      kind: 'create_contrast_cluster';
+      version: 1;
+      title: string;
       clusterNote: string | null;
       members: Array<{ wordId: string; nuanceNote: string | null }>;
       prompts: Array<{
@@ -162,9 +142,9 @@ export type ReflectionHandleOperationV0 =
     }
   | {
       kind: 'repair_production_cue';
+      version: 1;
       wordId: string;
-      sourceCue: ProductionCueRefV0;
-      replacementCues: Array<{
+      proposedCues: Array<{
         cueType: 'definition_gloss' | 'cloze' | 'minimal_context' | 'register_or_domain_hint';
         text: string;
       }>;
@@ -176,42 +156,36 @@ export type ReflectionHandleOperationV0 =
     }
   | {
       kind: 'accept_production_alternate';
-      cue: ProductionCueRefV0;
+      version: 1;
       targetWordId: string;
       alternateWordId: string;
-      acceptance: 'fully_acceptable_for_cue' | 'near_valid_creditworthy_answer';
-      subtletyNote: string | null;
     };
 
-export type ReflectionHandleKindV0 = ReflectionHandleOperationV0['kind'];
+export type ReflectionHandleOperationV0 = ReflectionOperationV1;
+export type ReflectionHandleKindV0 = ReflectionOperationV1['kind'];
 
 export type ReflectionHandleProposalV0 = {
-  proposalKey: string;
   proposalGroupKey: string | null;
-  handleVersion: 1;
   rationale: string;
-  operation: ReflectionHandleOperationV0;
+  operation: ReflectionOperationV1;
 };
 
 export type ReflectionItemResultV0 = {
   itemId: string;
-  uncertain: boolean;
   diagnosisTags: ReflectionDiagnosisTagV0[];
   observation: string;
   learnerExplanation: string | null;
   proposals: ReflectionHandleProposalV0[];
-  questions: Array<{ questionKey: string; question: string; reason: string }>;
+  questions: Array<{ question: string; reason: string }>;
   unhandledNeeds: Array<{
-    needKey: string;
     description: string;
-    whyExistingHandlesDoNotFit: string;
+    whyRegisteredOperationsDoNotFit: string;
   }>;
 };
 
-export type SessionReflectionResultV2 = {
-  schemaVersion: 'session_reflection_result.v2';
+export type SessionReflectionResultV3 = {
+  schemaVersion: 'session_reflection_result.v3';
   bundleSchemaVersion: 'session_reflection_bundle.v0';
-  summary: string | null;
   itemResults: ReflectionItemResultV0[];
 };
 
@@ -241,7 +215,7 @@ export type ReflectionProviderFixtureV0 = {
   readiness: FixtureReadinessV0;
   readinessNotes: string[];
   inputBundle: SessionReflectionBundleV0;
-  referenceResult: SessionReflectionResultV2 | null;
+  referenceResult: SessionReflectionResultV3 | null;
   evaluation: {
     mode?: 'scored' | 'exploratory';
     requiredDiagnosisTags: ReflectionDiagnosisTagV0[];
