@@ -45,9 +45,9 @@ The steel thread deliberately chooses:
 - review-phase typed production mistakes as the only initial evidence-item
   source;
 - one monolithic `gpt-5.6-luna-high` call;
-- the existing `session_reflection_bundle.v0` input envelope, populated only
+- the `session_reflection_bundle.v1` input envelope, populated only
   with qualifying `production_mistake` items;
-- the canonical `session_reflection_result.v3` output;
+- the canonical `session_reflection_result.v4` output;
 - synchronous local SQLite persistence;
 - proposal-level review rows rather than item-level lifecycle rows;
 - a small dedicated reflection page rather than a general workbench; and
@@ -64,6 +64,16 @@ shown—before completed-session state is torn down. The backend validates
 session and attempt identity, enriches current word/content context, constructs
 the bounded bundle, calls the provider, validates the result, and persists the
 artifact.
+
+Attempt ids remain in the client supplement only to validate that the typed
+mistake belongs to the complete durable action batch. The model-facing bundle
+does not include attempt rows or a derived attempt-shape summary: the session's
+required closing successes are workflow mechanics, not useful reflection
+evidence. Word snapshots likewise omit production relevance and bad-prompt
+metadata. In-session suppression, bad-prompt reporting, or dismissal removes
+the affected action from reflection evidence instead. Reintroducing managed
+items or multi-attempt interpretation requires a deliberate future bundle
+schema decision.
 
 ## 3. Initial Operation Inventory
 
@@ -192,7 +202,7 @@ for original proposal content.
 
 ### `reflection_operation_invocations`
 
-One immutable authorized operation plus its mutable application projection:
+One immutable authorized operation plus its mutable application status:
 
 - invocation id;
 - origin kind and proposal/replacement reference when present;
@@ -225,7 +235,8 @@ POST /api/study-sessions/:sessionId/reflections
 
 Input: a strictly validated evidence supplement containing the initial
 cue-as-shown, raw typed response, and links to the relevant accepted attempt
-events. The client does not supply enriched word/content truth.
+events. These links are validation-only and are not copied into the provider
+bundle. The client does not supply enriched word/content truth.
 
 Behavior:
 
@@ -250,7 +261,7 @@ The open view includes artifacts with `pending` or `deferred` proposals. The
 all view supplies a recent artifact history so an informational reflection with
 no proposals remains discoverable after the completed-session UI is gone.
 Detail joins immutable item/proposal content to current proposal review,
-invocation, and application projections.
+invocation, and application statuses.
 
 Informational item results with no proposals remain visible in artifact detail
 and history but require no disposition.
@@ -380,7 +391,7 @@ not required by this milestone.
       with the accepted proposal-level shape, or retire that note once this plan
       owns the implementation contract.
 - [x] Update provider-spike copied contracts, schema, prompt, fixtures, and
-      validators to `session_reflection_result.v3`. Revise and version the
+      validators to `session_reflection_result.v4`. Revise and version the
       prompt for the accepted post-spike semantics: emit atomic independently
       reviewable proposals; propose only new contrast clusters; distinguish
       durable directional alternate acceptance from cue-specific retrospective
@@ -393,17 +404,17 @@ not required by this milestone.
 ### Slice 1 — durable artifact and lifecycle store
 
 - [ ] Add schema initialization for artifacts, proposal reviews, and
-      invocations/application projections.
+      invocations/application statuses.
 - [ ] Add persistence functions through a reflection-focused DB module/barrel.
 - [ ] Materialize validated results atomically with one pending review row per
       proposal.
 - [ ] Implement review and application transition invariants.
-- [ ] Add idempotency and join/read projections for queue/detail UI.
+- [ ] Add idempotency and joined read models for queue/detail UI.
 
 ### Slice 2 — completed-session evidence and generation
 
-- [ ] Preserve typed production response, cue as shown, and attempt links in a
-      frontend session-evidence accumulator.
+- [ ] Preserve typed production response, cue as shown, and validation-only
+      attempt links in a frontend session-evidence accumulator.
 - [ ] Trigger reflection only after the final pending study commit flushes.
 - [ ] Add backend bundle enrichment and strict validation.
 - [ ] Integrate the configured server-side Luna call and prompt version.

@@ -14,7 +14,7 @@ Those judgments are calibration evidence, not immutable gold labels.
 
 ## Layout
 
-- `contracts.ts` mirrors the accepted V3 bundle and result contracts and defines the
+- `contracts.ts` mirrors the accepted V1 bundle and V4 result contracts and defines the
   spike-only fixture/evaluation envelope.
 - `fixtures/workflow-appendix.ts` contains one fixture for each appendix case.
 - `fixtures/stress-cases.ts` contains separately sourced cases that probe

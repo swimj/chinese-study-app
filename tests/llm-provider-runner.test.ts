@@ -82,6 +82,13 @@ describe('LLM provider result schema', () => {
     withUnknownProperty.extra = true;
     assert.match(validateJsonSchema(withUnknownProperty, sessionReflectionResultSchema).join('\n'), /unknown property/);
 
+    const withBundleVersion = structuredClone(fixture.referenceResult) as unknown as Record<string, unknown>;
+    withBundleVersion.bundleSchemaVersion = fixture.inputBundle.schemaVersion;
+    assert.match(
+      validateJsonSchema(withBundleVersion, sessionReflectionResultSchema).join('\n'),
+      /bundleSchemaVersion: unknown property/,
+    );
+
     const malformed = structuredClone(fixture.referenceResult);
     malformed.itemResults[0]!.proposals[0]!.operation = {
       kind: 'suppress_definition_production',
@@ -107,7 +114,7 @@ describe('LLM provider result schema', () => {
     const fixture = allProviderFixtures.find((item) => item.fixtureId === 'ex02-to');
     assert.ok(fixture?.referenceResult);
     const result = structuredClone(fixture.referenceResult);
-    (result as unknown as Record<string, unknown>).summary = 'Removed in V3.';
+    (result as unknown as Record<string, unknown>).summary = 'Not part of V4.';
     assert.match(
       validateJsonSchema(result, sessionReflectionResultSchema).join('\n'),
       /summary: unknown property/,
@@ -177,7 +184,7 @@ describe('LLM provider result schema', () => {
     );
   });
 
-  test('does not accept model-emitted evidence citation fields in V3 results', () => {
+  test('does not accept model-emitted evidence citation fields in V4 results', () => {
     const fixture = allProviderFixtures[0];
     assert.ok(fixture?.referenceResult);
     const withItemEvidence = structuredClone(fixture.referenceResult) as unknown as {
@@ -425,7 +432,7 @@ describe('LLM provider model batch and viewer', () => {
       apiKey: 'secret',
       baseUrl: null,
       systemPrompt: 'Return a reflection.',
-      systemPromptFile: '/tmp/reflection-v1.md',
+      systemPromptFile: '/tmp/fixture-prompt.md',
       maxOutputTokens: 4_096,
       temperature: null,
       timeoutMs: 10_000,
@@ -444,7 +451,7 @@ describe('LLM provider model batch and viewer', () => {
 
       const staleContractArtifact = structuredClone(artifact);
       staleContractArtifact.response.rawText = staleContractArtifact.response.rawText!.replace(
-        'session_reflection_result.v3',
+        'session_reflection_result.v4',
         'session_reflection_result.v0',
       );
       const staleCurrentValidation = validateRunArtifactAgainstCurrentContract(staleContractArtifact);
@@ -579,7 +586,7 @@ describe('LLM provider adapters', () => {
     const messages = JSON.stringify(captured[0]?.body.messages);
     assert.match(messages, /System instructions that require a JSON response/);
     assert.match(messages, /Return exactly one JSON object matching the following JSON Schema/);
-    assert.match(messages, /session_reflection_result\.v3/);
+    assert.match(messages, /session_reflection_result\.v4/);
     assert.equal(result.structuredOutputMode, 'json_object');
     assert.equal(result.usage.cachedInputTokens, 75);
   });
