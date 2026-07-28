@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { BackendStatus } from './services/api';
-import { fetchStatus, updateDailyNewWordLimit } from './services/api';
+import {
+  fetchReflectionArtifactDetail,
+  fetchReflectionArtifacts,
+  fetchStatus,
+  reviewReflectionProposal,
+  updateDailyNewWordLimit,
+  withdrawReflectionAuthorization,
+} from './services/api';
 import { AppChrome, type AppPageKey } from './components/AppChrome';
 import { PersonalNotesEditorOverlay } from './features/session/PersonalNotesEditorOverlay';
 import { useStudySession } from './features/session/useStudySession';
@@ -10,6 +17,8 @@ import { useIntakePageController } from './features/contrast/useIntakePageContro
 import { HomePage } from './pages/HomePage';
 import { PriorityPage } from './pages/PriorityPage';
 import { IntakePage } from './pages/IntakePage';
+import { ReflectionsPage } from './pages/ReflectionsPage';
+import { useReflectionPageController } from './features/reflection/useReflectionPageController';
 
 const APP_VERSION = __APP_VERSION__;
 
@@ -33,6 +42,17 @@ function App() {
     currentPage,
     setCurrentPage,
     setError,
+  });
+  const reflectionPage = useReflectionPageController({
+    currentPage,
+    setCurrentPage,
+    setError,
+    api: {
+      listArtifacts: fetchReflectionArtifacts,
+      getArtifact: fetchReflectionArtifactDetail,
+      reviewProposal: reviewReflectionProposal,
+      withdrawAuthorization: withdrawReflectionAuthorization,
+    },
   });
 
   useEffect(() => {
@@ -84,12 +104,14 @@ function App() {
       sessionActive={sessionActive}
       priorityPageLoading={priorityPage.isLoading}
       intakePageLoading={intakePage.isLoading}
+      reflectionPageLoading={reflectionPage.isLoading}
       onOpenHomePage={() => setCurrentPage('home')}
       onOpenPriorityPage={() => void priorityPage.openPage()}
       onOpenIntakePage={() => void (async () => {
         await clusterPage.loadData();
         await intakePage.openPage();
       })()}
+      onOpenReflectionsPage={() => void reflectionPage.openPage()}
     >
       {currentPage === 'home' ? (
         <HomePage
@@ -169,6 +191,8 @@ function App() {
           onResolvePromptFeedback={clusterPage.resolvePromptFeedback}
           onDeletePrompt={clusterPage.deletePrompt}
         />
+      ) : currentPage === 'reflections' ? (
+        <ReflectionsPage controller={reflectionPage} />
       ) : null}
 
       {studySession.personalNotesEditor.open ? (

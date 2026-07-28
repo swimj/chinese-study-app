@@ -180,7 +180,6 @@ function artifactDetail(): ReflectionArtifactDetailDto {
   };
   const result: SessionReflectionResultV4 = {
     schemaVersion: 'session_reflection_result.v4',
-    bundleSchemaVersion: evidenceBundle.schemaVersion,
     itemResults: [
       {
         itemId: 'mistake',

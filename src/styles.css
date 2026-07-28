@@ -1789,6 +1789,294 @@ button:disabled:hover {
   gap: 1rem;
 }
 
+.reflections-page {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.reflection-layout {
+  display: grid;
+  grid-template-columns: minmax(15rem, 18rem) minmax(0, 1fr);
+  gap: 1.5rem;
+}
+
+.reflection-artifact-sidebar {
+  align-self: start;
+  display: grid;
+  gap: 2rem;
+  position: sticky;
+  top: 1rem;
+}
+
+.reflection-artifact-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.reflection-artifact-list h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+}
+
+.reflection-artifact-link {
+  display: grid;
+  gap: 0.25rem;
+  width: 100%;
+  padding: 0.8rem;
+  text-align: left;
+  background: rgba(30, 41, 59, 0.78);
+  color: #cbd5e1;
+}
+
+.reflection-artifact-link span {
+  color: #94a3b8;
+  font-size: 0.82rem;
+}
+
+.reflection-artifact-link.active {
+  background: rgba(37, 99, 235, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.55);
+}
+
+.reflection-detail,
+.reflection-item-card,
+.reflection-proposal-list,
+.reflection-operation-fields,
+.reflection-editor-collection,
+.reflection-analysis,
+.reflection-info-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.reflection-artifact-header,
+.reflection-item-heading,
+.reflection-proposal-heading,
+.reflection-section-heading,
+.reflection-review-actions,
+.reflection-dismiss-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.reflection-artifact-header h2,
+.reflection-item-heading h2,
+.reflection-proposal-heading h4,
+.reflection-section-heading h5,
+.reflection-proposal-card h5 {
+  margin: 0;
+}
+
+.reflection-eyebrow {
+  margin: 0 0 0.25rem;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.reflection-count-pill,
+.reflection-state-pill,
+.reflection-tag {
+  display: inline-flex;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 0.3rem 0.65rem;
+  background: rgba(71, 85, 105, 0.45);
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.reflection-state-pill.state-pending,
+.reflection-state-pill.state-deferred {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+}
+
+.reflection-state-pill.state-accepted {
+  background: rgba(34, 197, 94, 0.18);
+  color: #4ade80;
+}
+
+.reflection-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.reflection-evidence,
+.reflection-proposal-card,
+.reflection-info-card,
+.reflection-editor-row,
+.reflection-outcome,
+.reflection-validation,
+.reflection-support {
+  padding: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 0.9rem;
+  background: rgba(30, 41, 59, 0.42);
+}
+
+.reflection-evidence h3,
+.reflection-analysis h3,
+.reflection-info-list h3,
+.reflection-proposals-section h3 {
+  margin: 0 0 0.6rem;
+}
+
+.reflection-analysis p,
+.reflection-info-card p,
+.reflection-proposal-card > p,
+.reflection-outcome p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.reflection-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.reflection-evidence-grid div {
+  padding: 0.75rem;
+  border-radius: 0.7rem;
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.reflection-evidence-grid dt {
+  margin-bottom: 0.3rem;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.reflection-evidence-grid dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.reflection-evidence-notes {
+  margin-top: 1rem;
+}
+
+.reflection-info-card {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.reflection-proposals-section {
+  margin-top: 1.25rem;
+}
+
+.reflection-proposal-card {
+  display: grid;
+  gap: 1rem;
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.reflection-support.supported {
+  border-color: rgba(34, 197, 94, 0.3);
+  background: rgba(34, 197, 94, 0.1);
+  color: #bbf7d0;
+}
+
+.reflection-support.unsupported {
+  border-color: rgba(245, 158, 11, 0.3);
+  background: rgba(245, 158, 11, 0.1);
+  color: #fde68a;
+}
+
+.reflection-field {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.reflection-field > span {
+  color: #cbd5e1;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.reflection-field input,
+.reflection-field select,
+.reflection-dismiss-row input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 0.75rem;
+  background: rgba(15, 23, 42, 0.95);
+  color: #e2e8f0;
+  padding: 0.75rem;
+}
+
+.reflection-field textarea {
+  min-height: 5rem;
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+}
+
+.reflection-field input:disabled,
+.reflection-field select:disabled,
+.reflection-field textarea:disabled {
+  opacity: 0.78;
+}
+
+.reflection-two-column-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.reflection-editor-row {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.reflection-section-heading {
+  align-items: center;
+}
+
+.reflection-review-actions,
+.reflection-dismiss-row {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.reflection-dismiss-row input {
+  flex: 1 1 16rem;
+}
+
+.reflection-validation {
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(127, 29, 29, 0.16);
+  color: #fecaca;
+}
+
+.reflection-validation ul,
+.reflection-reference-list {
+  margin-bottom: 0;
+}
+
+.danger-button {
+  background: #9f1239;
+}
+
+.danger-button:hover {
+  background: #881337;
+}
+
+.reflection-empty-state {
+  min-height: 15rem;
+}
+
 textarea {
   width: 100%;
   min-height: 112px;
@@ -1835,6 +2123,28 @@ textarea {
     bottom: 0.75rem;
     max-width: calc(100vw - 1.5rem);
     justify-content: stretch;
+  }
+
+  .reflection-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .reflection-artifact-sidebar {
+    position: static;
+  }
+
+  .reflection-artifact-header,
+  .reflection-item-heading,
+  .reflection-proposal-heading,
+  .reflection-section-heading,
+  .reflection-review-actions,
+  .reflection-dismiss-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .reflection-two-column-fields {
+    grid-template-columns: 1fr;
   }
 
   .priority-floating-actions button {
