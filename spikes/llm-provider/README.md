@@ -5,7 +5,7 @@ providers before any provider is integrated into the application.
 
 The source contracts are:
 
-- [`SPECS/reflection-handle-registry-v0.md`](../../SPECS/reflection-handle-registry-v0.md)
+- [`SPECS/reflection-proposals-and-handles.md`](../../SPECS/reflection-proposals-and-handles.md)
 - [`notes/active/2026-07-10-session-evidence-bundle-design.md`](../../notes/active/2026-07-10-session-evidence-bundle-design.md)
 
 The first fixture corpus is derived from the judgment exemplars in

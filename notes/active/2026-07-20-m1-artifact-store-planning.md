@@ -8,7 +8,8 @@ related:
   - PLANS/agentic-roadmap-glm-5.2.md (M1 — Reflection Artifact Store And Handle Registry)
   - notes/active/2026-07-20-llm-provider-spike-summary.md (provider decision, integration posture)
   - notes/active/2026-07-10-session-evidence-bundle-design.md
-  - SPECS/reflection-handle-registry-v0.md (to be created/updated)
+  - SPECS/reflection-proposals-and-handles.md
+  - PLANS/initial-reflection-steel-thread.md
 
 Working memory for M1 planning. Append observations as they surface; collate into
 a work order later. Not a spec. Durable conclusions graduate to `SPECS/` or a

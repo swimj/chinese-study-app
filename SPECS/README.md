@@ -2,7 +2,7 @@
 
 Product and planning documents under `SPECS/`. See [docs/README.md](../docs/README.md) for how these relate to other documentation.
 
-## Canonical product (current behavior)
+## Canonical product and feature contracts
 
 Behavior changes must align with these and update tests in the same change.
 
@@ -11,6 +11,7 @@ Behavior changes must align with these and update tests in the same change.
 | [learning-review-model.md](./learning-review-model.md) | Word lifecycle (`unstudied` / `learning` / `review`), direction-level rules, session inclusion at word level |
 | [session-covering-criteria.md](./session-covering-criteria.md) | In-session covering, undo, commit payload intent (frontend-owned session snapshot) |
 | [study-action-model.md](./study-action-model.md) | Implemented scheduling architecture: study actions, word-skill state, attempt events, contrast selection |
+| [reflection-proposals-and-handles.md](./reflection-proposals-and-handles.md) | Reflection result, proposal review, authorized-operation, application, provenance, and handle contracts |
 
 **Layering:** `learning-review-model` defines word-status semantics; `study-action-model` defines how skills and actions are scheduled and projected; `session-covering-criteria` defines how the frontend treats items inside an active session.
 
@@ -37,7 +38,7 @@ Friend/local setup: [docs/ops/FRIEND_WINDOWS_SETUP.md](../docs/ops/FRIEND_WINDOW
 | [french-compatibility-profile-plan.md](./french-compatibility-profile-plan.md) | French study profile compatibility |
 | [french-priority-alias-first-cut-plan.md](./french-priority-alias-first-cut-plan.md) | Priority alias lookup first cut |
 | [french-reading-corpus-compatibility-plan.md](./french-reading-corpus-compatibility-plan.md) | French corpus ingestion plan |
-| [reflection-handle-registry-v0.md](./reflection-handle-registry-v0.md) | Draft constrained-operation and lifecycle contract for the reflection prototype |
+| [initial-reflection-steel-thread.md](../PLANS/initial-reflection-steel-thread.md) | Initial implementation milestone for durable post-session reflection and proposal review |
 
 Repo-level plans: [PLANS/](../PLANS/).
 
