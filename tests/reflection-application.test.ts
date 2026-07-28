@@ -5,7 +5,11 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
-import type { ReflectionOperation } from '../src/domain/reflection.js';
+import type {
+  ReflectionOperation,
+  SessionReflectionBundleV1,
+  SessionReflectionResultV4,
+} from '../src/domain/reflection.js';
 
 type DbModule = typeof import('../server/db.ts');
 
@@ -119,6 +123,37 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.equal(dbModule.getWordSkillRelevance('target', 'production'), null);
   });
 
+  test('withdraws a safely cancellable pending invocation without applying it', () => {
+    insertInvocation('suppress-withdrawn', suppressOperation('target'));
+
+    const withdrawn = dbModule.withdrawReflectionInvocationAuthorization(
+      'suppress-withdrawn',
+      appliedAt,
+    );
+    assert.deepEqual(withdrawn.application.state, { kind: 'authorization_withdrawn' });
+    assert.deepEqual(dbModule.listPendingReflectionInvocationIds(), []);
+    assert.deepEqual(
+      dbModule.applyReflectionInvocation('suppress-withdrawn', createdAt),
+      withdrawn,
+    );
+    assert.equal(dbModule.getWordSkillRelevance('target', 'production'), null);
+  });
+
+  test('records contrast creation as stale when a member disappears without partial effects', () => {
+    insertInvocation('contrast-stale', contrastOperation());
+    sqlite.prepare(`DELETE FROM words WHERE id = 'alternate'`).run();
+
+    const result = dbModule.applyReflectionInvocation('contrast-stale', appliedAt);
+    assert.equal(result.application.state.kind, 'stale');
+    assert.match(
+      result.application.state.kind === 'stale' ? result.application.state.reason : '',
+      /alternate no longer exists/,
+    );
+    assert.equal(countRows('contrast_clusters'), 0);
+    assert.equal(countRows('contrast_cluster_members'), 0);
+    assert.equal(countRows('contrast_prompts'), 0);
+  });
+
   test('atomically creates complete contrast content and records every caused effect', () => {
     insertInvocation('contrast-new', contrastOperation());
 
@@ -152,6 +187,54 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.equal(cluster?.prompts[0]?.promptText, 'Choose the intended word.');
     assert.deepEqual(dbModule.getContrastCandidateIntake(), []);
     assert.deepEqual(dbModule.applyReflectionInvocation('contrast-new', createdAt), result);
+  });
+
+  test('applies revised contrast content while preserving the immutable original proposal', () => {
+    const original = contrastOperation();
+    const revised = contrastOperation();
+    if (
+      original.kind !== 'create_contrast_cluster'
+      || revised.kind !== 'create_contrast_cluster'
+    ) {
+      throw new Error('Expected contrast operations.');
+    }
+    revised.title = '目标与替代：语境对比';
+    revised.prompts[0] = {
+      ...revised.prompts[0],
+      promptText: 'Choose the word that fits this revised context.',
+      explanation: 'The edited explanation is the authorized content.',
+    };
+    const artifact = materializeProposal('revised-contrast-session', original);
+    const accepted = dbModule.acceptReflectionProposal({
+      proposalId: artifact.proposals[0]!.review.proposalId,
+      operation: revised,
+      invocationId: 'revised-contrast',
+      createdAt,
+    });
+
+    assert.deepEqual(accepted.review.disposition, {
+      kind: 'accepted',
+      acceptanceMode: 'revised',
+      acceptedInvocationId: 'revised-contrast',
+    });
+    assert.deepEqual(
+      dbModule.getReflectionArtifactDetail(artifact.artifactId)
+        .proposals[0]!.proposal.operation,
+      original,
+    );
+    assert.deepEqual(accepted.invocation.invocation.operation, revised);
+
+    const applied = dbModule.applyReflectionInvocation('revised-contrast', appliedAt);
+    assert.equal(applied.application.state.kind, 'applied');
+    const cluster = dbModule.getContrastClusterContent()[0];
+    assert.equal(cluster?.title, revised.title);
+    assert.equal(cluster?.prompts[0]?.promptText, revised.prompts[0]!.promptText);
+    assert.equal(cluster?.prompts[0]?.explanation, revised.prompts[0]!.explanation);
+    assert.deepEqual(
+      dbModule.getReflectionArtifactDetail(artifact.artifactId)
+        .proposals[0]!.proposal.operation,
+      original,
+    );
   });
 
   test('recovers pending work and recognizes only a complete exact postcondition', () => {
@@ -306,6 +389,88 @@ function insertInvocation(
     createdAt,
     applicationState === 'unsupported' ? 'No faithful adapter is available.' : null,
   );
+}
+
+function materializeProposal(
+  sourceSessionId: string,
+  operation: ReflectionOperation,
+): ReturnType<DbModule['materializeReflectionArtifact']>['artifact'] {
+  sqlite.prepare(`
+    INSERT INTO study_sessions (
+      id,
+      started_at,
+      ended_at,
+      processing_state,
+      processed_at
+    ) VALUES (?, '2026-07-29T11:30:00.000Z', ?, 'processed', ?)
+  `).run(sourceSessionId, createdAt, createdAt);
+  const evidenceBundle: SessionReflectionBundleV1 = {
+    schemaVersion: 'session_reflection_bundle.v1',
+    generatedAt: createdAt,
+    session: {
+      sessionId: sourceSessionId,
+      startedAt: '2026-07-29T11:30:00.000Z',
+      endedAt: createdAt,
+      studyProfile: 'mandarin',
+    },
+    items: [{
+      itemId: 'item',
+      sessionActionId: 'action-item',
+      occurredAt: '2026-07-29T11:59:00.000Z',
+      source: 'production_mistake',
+      sourceActionKind: 'production',
+      targetWord: wordSnapshot('target', '目标'),
+      sessionNote: null,
+      existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+      cuesAsShown: [{
+        cueId: null,
+        cueType: 'definition_gloss',
+        displayOrder: 0,
+        text: 'target',
+        displayedMeanings: ['meaning'],
+      }],
+      rawResponse: '替代',
+      submittedWord: wordSnapshot('alternate', '替代'),
+      responseKind: 'matched_known_word',
+    }],
+  };
+  const result: SessionReflectionResultV4 = {
+    schemaVersion: 'session_reflection_result.v4',
+    itemResults: [{
+      itemId: 'item',
+      diagnosisTags: ['persistent_confusion'],
+      observation: 'The two words merit a concrete contrast.',
+      learnerExplanation: null,
+      proposals: [{
+        proposalGroupKey: null,
+        rationale: 'Make the distinction trainable.',
+        operation,
+      }],
+      questions: [],
+      unhandledNeeds: [],
+    }],
+  };
+  return dbModule.materializeReflectionArtifact({
+    sourceSessionId,
+    reflectionFlowVersion: 'initial_post_session_reflection.v1',
+    generatedAt: createdAt,
+    provider: 'openai',
+    model: 'gpt-5.6-luna',
+    promptVersion: 'reflection-v2',
+    evidenceBundle,
+    result,
+  }).artifact;
+}
+
+function wordSnapshot(wordId: string, hanzi: string): SessionReflectionBundleV1[
+  'items'
+][number]['targetWord'] {
+  return {
+    wordId,
+    hanzi,
+    pinyin: 'pin1yin1',
+    meanings: ['meaning'],
+  };
 }
 
 function insertWord(wordId: string, hanzi: string): void {
