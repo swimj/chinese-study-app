@@ -24,6 +24,11 @@ import type {
 import { buildReviewSessionStudyItem, deriveReviewCommitFieldsFromAttemptEvents } from '../../src/domain/study-actions.ts';
 import { config, getDb, dbPath, seedDataPath, dbExistedOnStartup, openDatabase, setDb } from './connection.ts';
 import {
+  ensureReflectionIndexes,
+  ensureReflectionSchema,
+  validateReflectionSchema,
+} from './reflections.ts';
+import {
   DEFAULT_DAILY_NEW_WORD_LIMIT,
   PRIORITY_BUMP_UNIT,
   UNSTUDIED_COUNT_BASELINE,
@@ -3246,6 +3251,7 @@ function applyLightweightSchemaMigrations() {
         ON DELETE CASCADE
     );
   `);
+  ensureReflectionSchema();
 
   const userPriorityColumns = getDb().prepare(`PRAGMA table_info(user_word_priority)`).all() as Array<{ name: string }>;
   const hasPriorityTier = userPriorityColumns.some((column) => column.name === 'priority_tier');
@@ -4272,6 +4278,7 @@ function createSchema() {
     );
   `);
 
+  ensureReflectionSchema();
   ensureDefaultDailyNewWordLimit();
   ensureIndexes();
 }
@@ -4309,6 +4316,7 @@ function ensureIndexes() {
     CREATE INDEX IF NOT EXISTS idx_contrast_prompts_cluster_target ON contrast_prompts(cluster_id ASC, target_word_id ASC);
     CREATE INDEX IF NOT EXISTS idx_contrast_prompts_target ON contrast_prompts(target_word_id ASC);
   `);
+  ensureReflectionIndexes();
 }
 
 function validateSchema() {
@@ -4474,6 +4482,7 @@ function validateSchema() {
     'prompt_text',
     'explanation',
   ]);
+  validateReflectionSchema();
 }
 
 function assertTableColumns(tableName: string, expectedColumns: string[]) {
