@@ -3,11 +3,12 @@
 status: active
 type: coordination
 created: 2026-07-23
-retire-when: its accepted conclusions are synthesized into `SPECS/reflection-handle-registry-v0.md` and the Handle Registry V0 focus task is closed
+retire-when: its accepted conclusions are synthesized into the durable proposal/handle spec and steel-thread plan, and the focus task is closed
 related:
   - TASKS.md
   - notes/active/2026-07-21-handle-registry-v0-task-spec.md
-  - SPECS/reflection-handle-registry-v0.md
+  - SPECS/reflection-proposals-and-handles.md
+  - PLANS/initial-reflection-steel-thread.md
   - notes/active/2026-07-20-llm-provider-spike-summary.md
   - notes/active/2026-07-20-m1-artifact-store-planning.md
 
@@ -19,8 +20,8 @@ polished topic conclusions before they are synthesized into the canonical
 registry specification.
 
 This note is not implementation authority and must not outlive this task.
-`SPECS/reflection-handle-registry-v0.md` remains the current durable design
-record until accepted conclusions are deliberately incorporated there.
+`SPECS/reflection-proposals-and-handles.md` is the durable design record once
+the synthesized documents are accepted.
 
 ## Planning horizons
 
@@ -675,4 +676,4 @@ Before retiring this note:
 - verify that validation and persistence can be implemented without inventing
   handle-related product policy; and
 - retire this note after its durable conclusions have graduated into
-  `SPECS/reflection-handle-registry-v0.md`.
+  `SPECS/reflection-proposals-and-handles.md`.

@@ -3,10 +3,11 @@
 status: active
 type: work-bundle
 created: 2026-07-21
-retire-when: Handle Registry V0 is accepted as implementation-ready and the durable decisions are incorporated into `SPECS/reflection-handle-registry-v0.md`
+retire-when: the durable proposal/handle spec and initial steel-thread plan are accepted
 related:
   - TASKS.md
-  - SPECS/reflection-handle-registry-v0.md
+  - SPECS/reflection-proposals-and-handles.md
+  - PLANS/initial-reflection-steel-thread.md
   - notes/active/2026-07-20-llm-provider-spike-summary.md
   - notes/active/2026-07-20-m1-artifact-store-planning.md
   - notes/active/2026-07-10-session-evidence-bundle-design.md
@@ -198,7 +199,7 @@ The task is done when:
       assigned compatibility decisions.
 - [ ] Remaining questions are classified as non-blocking implementation
       details or later registry versions rather than left implicit.
-- [ ] `SPECS/reflection-handle-registry-v0.md` contains the accepted durable
+- [ ] `SPECS/reflection-proposals-and-handles.md` contains the accepted durable
       decisions and no longer depends on this note to interpret core behavior.
 - [ ] An implementation agent could build validation and persistence without
       inventing handle-related product policy.
@@ -217,7 +218,7 @@ The task is done when:
 
 ## Expected durable output
 
-Update `SPECS/reflection-handle-registry-v0.md` as decisions settle. A useful
+Update `SPECS/reflection-proposals-and-handles.md` as decisions settle. A useful
 final structure should include:
 
 - the canonical type contract;

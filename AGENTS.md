@@ -14,6 +14,8 @@ Guidance for AI coding agents working in this repository.
   - `SPECS/learning-review-model.md` — word lifecycle
   - `SPECS/session-covering-criteria.md` — in-session covering and commits
   - `SPECS/study-action-model.md` — scheduling, study actions, attempt events
+  - `SPECS/reflection-proposals-and-handles.md` — reflection proposals,
+    authorization, application, provenance, and handle operations
 
 ## 2) First Files To Read
 
@@ -40,6 +42,7 @@ When code and spec conflict, treat the spec as intended behavior and update code
 | Word priority / French aliases | `README.md` (French section), `src/study-profile.ts` | `user-priority.test.ts`, `priority-aliases.test.ts` |
 | Persistence / SQL | [`docs/server-db.md`](docs/server-db.md) | matching `tests/*.test.ts` that import `server/db.ts` |
 | HTTP API contract | [`docs/api.md`](docs/api.md), `server/index.ts` | domain tests above + manual smoke if needed |
+| Reflection proposals / handles | `SPECS/reflection-proposals-and-handles.md`, current reflection milestone plan | `llm-provider-runner.test.ts` plus new lifecycle/adapter tests |
 
 ### Environment variables
 

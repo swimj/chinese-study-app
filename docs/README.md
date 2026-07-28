@@ -12,6 +12,7 @@ How documentation in this repo is classified and where to start.
    - [SPECS/learning-review-model.md](../SPECS/learning-review-model.md)
    - [SPECS/session-covering-criteria.md](../SPECS/session-covering-criteria.md)
    - [SPECS/study-action-model.md](../SPECS/study-action-model.md)
+   - [SPECS/reflection-proposals-and-handles.md](../SPECS/reflection-proposals-and-handles.md)
 6. [architecture.md](./architecture.md) — system map (navigation only)
 7. Relevant tests — see [testing.md](./testing.md)
 
