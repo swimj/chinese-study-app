@@ -11,6 +11,7 @@ type AppConfig = {
   port: number;
   seedSampleData: boolean;
   seedDataPath: string;
+  includeDevContrastSeed: boolean;
 };
 
 type AppConfigOptions = {
@@ -26,6 +27,10 @@ export function getAppConfig(options: AppConfigOptions = {}): AppConfig {
   const studyProfile = parseStudyProfile(args.get('study-profile') ?? process.env.APP_STUDY_PROFILE ?? 'mandarin');
   const rawDataDir = args.get('data-dir') ?? process.env.APP_DATA_DIR;
   const rawSeedDataPath = args.get('seed-data') ?? process.env.APP_SEED_DATA_PATH;
+  const includeDevContrastSeed = parseBoolean(
+    args.get('include-dev-contrast-seed') ?? process.env.APP_INCLUDE_DEV_CONTRAST_SEED ?? 'true',
+    'include dev contrast seed',
+  );
   const rawPort = args.get('port') ?? process.env.PORT ?? '5174';
   const port = Number(rawPort);
 
@@ -60,6 +65,7 @@ export function getAppConfig(options: AppConfigOptions = {}): AppConfig {
     port,
     seedSampleData: mode === 'dev',
     seedDataPath: rawSeedDataPath ? path.resolve(rawSeedDataPath) : '',
+    includeDevContrastSeed,
   };
 }
 
@@ -77,6 +83,12 @@ function parseStudyProfile(value: string): StudyProfile {
   }
 
   throw new Error(`Invalid study profile: ${value}. Expected "mandarin" or "french".`);
+}
+
+function parseBoolean(value: string, label: string): boolean {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new Error(`Invalid ${label}: ${value}. Expected "true" or "false".`);
 }
 
 function parseArg(argument: string): [string, string] | null {
