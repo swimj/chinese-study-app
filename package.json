@@ -6,6 +6,7 @@
   "scripts": {
     "dev:frontend": "vite",
     "dev:backend": "node --import tsx server/index.ts --mode=dev --seed-data=server/seeds/mandarin-dev.json",
+    "dev:reflection:backend": "node --import tsx server/index.ts --mode=dev --include-dev-contrast-seed=false --seed-data=server/seeds/reflection-dev.json",
     "dev:french:frontend": "VITE_STUDY_PROFILE=french vite",
     "dev:french:backend": "node --import tsx server/index.ts --mode=dev --study-profile=french --data-dir=data/french-dev --seed-data=server/seeds/french-dev.json",
     "friend:mandarin:setup-db": "node --import tsx scripts/build-friend-mandarin-db.ts --force",
@@ -18,6 +19,7 @@
     "study:local:frontend": "VITE_STUDY_PROFILE=french vite",
     "study:backend": "node --import tsx server/index.ts --mode=study",
     "reset:dev-data": "node --import tsx server/reset-dev-db.ts --seed-data=server/seeds/mandarin-dev.json",
+    "seed:reflection-review-fixture": "node --import tsx scripts/seed-reflection-review-fixture.ts",
     "export:hack-chinese": "node --import tsx scripts/export-hack-chinese-migration.ts",
     "build:canonical-wordlist": "node --import tsx scripts/build-canonical-wordlist.ts",
     "build:study-import": "node --import tsx scripts/build-study-import-artifact.ts",
@@ -27,6 +29,7 @@
     "check:study-management-state": "node --import tsx scripts/check-study-management-state.ts",
     "check:study-scheduler-state": "node --import tsx scripts/check-study-scheduler-state.ts",
     "report:word": "node --import tsx scripts/report-word.ts",
+    "report:reflection-state": "node --import tsx scripts/report-reflection-state.ts",
     "retire:review-items": "node --import tsx scripts/retire-review-items.ts",
     "spike:llm": "node --import tsx spikes/llm-provider/runner/cli.ts",
     "spike:llm:env": "node --env-file=.env --import tsx spikes/llm-provider/runner/cli.ts",

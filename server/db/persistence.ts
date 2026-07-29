@@ -44,7 +44,7 @@ import {
 } from './types.ts';
 
 export function applyProductionContrastExerciseSeed() {
-  if (!config.seedSampleData || config.studyProfile !== 'mandarin') {
+  if (!config.seedSampleData || !config.includeDevContrastSeed || config.studyProfile !== 'mandarin') {
     return;
   }
 
@@ -4830,7 +4830,7 @@ function normalizeSeedContrastPrompt(prompt: Partial<ContrastPrompt>): ContrastP
 }
 
 function withDevContrastSeedData(seedData: SeedData): SeedData {
-  if (!config.seedSampleData || config.studyProfile !== 'mandarin') {
+  if (!config.seedSampleData || !config.includeDevContrastSeed || config.studyProfile !== 'mandarin') {
     return seedData;
   }
 
