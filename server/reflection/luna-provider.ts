@@ -12,6 +12,7 @@ import {
 import type { FetchImplementation } from '../llm/http.js';
 import { validateJsonSchema } from '../llm/json-schema-validator.js';
 import { createOpenAiCompatibleAdapter } from '../llm/openai-compatible.js';
+import { proxiedFetch } from '../llm/proxy-fetch.js';
 import {
   isOutputTruncationFinishReason,
   type NormalizedTokenUsage,
@@ -115,9 +116,9 @@ export function createLunaReflectionProvider(
     apiKeyEnvironmentVariable: 'OPENAI_API_KEY',
     structuredOutputMode: 'json_schema',
     maxTokensField: 'max_completion_tokens',
-    ...(options.fetchImplementation === undefined
-      ? {}
-      : { fetchImplementation: options.fetchImplementation }),
+    // Default through the local HTTP CONNECT proxy (same path as the LLM spike).
+    // Tests and callers may still inject a plain fetch implementation.
+    fetchImplementation: options.fetchImplementation ?? proxiedFetch,
   });
 
   return {
