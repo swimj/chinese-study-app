@@ -19,6 +19,7 @@
     "study:local:frontend": "VITE_STUDY_PROFILE=french vite",
     "study:backend": "node --import tsx server/index.ts --mode=study",
     "reset:dev-data": "node --import tsx server/reset-dev-db.ts --seed-data=server/seeds/mandarin-dev.json",
+    "reset:reflection-verification": "node --import tsx scripts/reset-reflection-verification-db.ts",
     "seed:reflection-review-fixture": "node --import tsx scripts/seed-reflection-review-fixture.ts",
     "export:hack-chinese": "node --import tsx scripts/export-hack-chinese-migration.ts",
     "build:canonical-wordlist": "node --import tsx scripts/build-canonical-wordlist.ts",

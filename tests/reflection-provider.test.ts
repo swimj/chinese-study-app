@@ -15,6 +15,10 @@ import {
   LunaReflectionProviderError,
 } from '../server/reflection/luna-provider.js';
 import type { JsonValue } from '../server/llm/types.js';
+import {
+  describeReflectionProviderFailure,
+  type ReflectionProviderDiagnostic,
+} from '../server/reflection/provider-diagnostics.ts';
 
 type CapturedRequest = {
   url: string;
@@ -105,6 +109,7 @@ function capturingFetch(
   responseBody: JsonValue,
   capture: CapturedRequest[],
   status = 200,
+  responseHeaders: Record<string, string> = {},
 ): typeof globalThis.fetch {
   return (async (input: string | URL | Request, init?: RequestInit) => {
     capture.push({
@@ -115,7 +120,7 @@ function capturingFetch(
     });
     return new Response(JSON.stringify(responseBody), {
       status,
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...responseHeaders },
     });
   }) as typeof globalThis.fetch;
 }
@@ -224,6 +229,7 @@ describe('production Luna reflection provider', () => {
   });
 
   test('sanitizes upstream failures without exposing credentials or response bodies', async () => {
+    const diagnostics: ReflectionProviderDiagnostic[] = [];
     const provider = createLunaReflectionProvider({
       environment: { OPENAI_API_KEY: 'super-secret-value' },
       systemPrompt: 'prompt',
@@ -231,7 +237,9 @@ describe('production Luna reflection provider', () => {
         { error: 'raw-upstream-private-response super-secret-value' },
         [],
         500,
+        { 'x-request-id': 'req_safe_123', 'openai-processing-ms': '42' },
       ),
+      diagnosticSink: { record: (diagnostic) => diagnostics.push(diagnostic) },
     });
 
     const error = await expectProviderError(provider.generate(bundle), 'upstream_failure');
@@ -239,6 +247,51 @@ describe('production Luna reflection provider', () => {
     assert.equal(exposed.includes('super-secret-value'), false);
     assert.equal(exposed.includes('raw-upstream-private-response'), false);
     assert.equal(error.issueCount, 0);
+    assert.ok(error.clientRequestId);
+    assert.deepEqual(diagnostics, [{
+      at: diagnostics[0]?.at,
+      sessionId: 'session-1',
+      clientRequestId: error.clientRequestId,
+      failureKind: 'http',
+      errorName: 'ProviderHttpError',
+      errorCode: null,
+      cause: null,
+      http: {
+        status: 500,
+        requestId: 'req_safe_123',
+        processingMs: '42',
+      },
+    }]);
+    const serializedDiagnostic = JSON.stringify(diagnostics);
+    assert.equal(serializedDiagnostic.includes('super-secret-value'), false);
+    assert.equal(serializedDiagnostic.includes('raw-upstream-private-response'), false);
+  });
+
+  test('records transport error categories and codes without messages or stacks', () => {
+    const cause = Object.assign(new Error('private cause detail'), { code: 'ECONNRESET' });
+    const transportError = Object.assign(new Error('private transport detail', { cause }), {
+      code: 'UND_ERR_SOCKET',
+    });
+    const diagnostic = describeReflectionProviderFailure({
+      sessionId: 'session-1',
+      clientRequestId: 'client-request-1',
+      error: transportError,
+      at: '2026-07-30T10:00:00.000Z',
+    });
+
+    assert.deepEqual(diagnostic, {
+      at: '2026-07-30T10:00:00.000Z',
+      sessionId: 'session-1',
+      clientRequestId: 'client-request-1',
+      failureKind: 'transport',
+      errorName: 'Error',
+      errorCode: 'UND_ERR_SOCKET',
+      cause: { name: 'Error', code: 'ECONNRESET' },
+      http: null,
+    });
+    const serializedDiagnostic = JSON.stringify(diagnostic);
+    assert.equal(serializedDiagnostic.includes('private transport detail'), false);
+    assert.equal(serializedDiagnostic.includes('private cause detail'), false);
   });
 
   test('classifies truncation before attempting to parse the partial body', async () => {

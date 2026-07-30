@@ -80,9 +80,15 @@ Start it against a temporary directory:
 
 ```bash
 verify_dir=$(mktemp -d /private/tmp/reflection-verify.XXXXXX)
+npm run reset:reflection-verification -- --data-dir="$verify_dir"
 npm run dev:reflection:backend -- --data-dir="$verify_dir" --port=5181
 VITE_API_BASE=http://127.0.0.1:5181 npm run dev:frontend -- --port=4181
 ```
+
+Run the reset command again between walkthroughs to discard the prior session,
+artifact, review, and application state before restarting the backend. It
+requires an explicit non-default data directory and refuses the workspace or
+normal `data/` directory.
 
 For a deterministic review-page walkthrough, stop the backend, seed the
 fixture artifact, then restart the same backend command:
@@ -109,3 +115,34 @@ provider output. It shows artifact/provider metadata, proposal disposition and
 application state, effect references, suppressed definition-production words,
 and contrast clusters. Run it before and after a backend restart to confirm the
 same durable state is reconstructed.
+
+### Reflection lifecycle logs
+
+The backend writes one newline-delimited JSON event to its normal stdout for
+each reflection boundary. No prompts, learner responses, provider responses, or
+credentials are logged. The events are:
+
+| Event | Meaning |
+| --- | --- |
+| `reflection.summary_recorded` | Finish saved the completed-review summary. |
+| `reflection.generation_requested` | The reflection endpoint received a request. |
+| `reflection.provider_started` | Durable evidence formed a bundle and the provider request is about to begin. |
+| `reflection.generation_succeeded` | An artifact was materialized. |
+| `reflection.generation_failed` | The endpoint failed; `failure` is `invalid_evidence`, `provider`, or `internal`, and `code` is a safe reflection error code when available. Provider failures also include `clientRequestId`. |
+
+Every event includes `at` and `sessionId`; completion/failure events include
+`elapsedMs`. In a manual run, read the terminal running
+`dev:reflection:backend`. A timeout should produce `provider_started`, followed
+about 180 seconds later by `generation_failed` with `failure: "provider"` and
+`code: "upstream_failure"`.
+
+For provider failures only, the backend also appends an allowlisted local JSON
+record to `reflection-provider-diagnostics.jsonl` beside `app.db` in the active
+data directory. It records correlation and classification data: the session and
+client request IDs, failure kind, safe error and cause names/codes, and, for HTTP
+failures, the status, OpenAI `x-request-id`, and processing-time header. It never
+writes request or response bodies, error or cause messages, stacks, or API keys.
+Treat the file as private because it still contains local session identifiers.
+The `clientRequestId` is sent to OpenAI as `X-Client-Request-Id`, so it can also
+be supplied to OpenAI Support if a transport failure gives no server-generated
+request ID.

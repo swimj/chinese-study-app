@@ -21,7 +21,7 @@ export async function postJson(
     signal: AbortSignal.timeout(timeoutMs),
   });
   const responseText = await response.text();
-  if (!response.ok) throw new ProviderHttpError(provider, response.status, responseText);
+  if (!response.ok) throw new ProviderHttpError(provider, response.status, responseText, response.headers);
 
   let parsed: unknown;
   try {

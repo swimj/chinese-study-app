@@ -54,28 +54,30 @@ describe('reflection verification fixture', { concurrency: false }, () => {
 
   test('seeds the brainstorm cases and exposes their due production work', () => {
     const words = new Map(dbModule.getWords().map((word) => [word.id, word]));
-    assert.equal(words.get('reflection-yu')?.hanzi, '俞');
-    assert.equal(words.get('reflection-nanguai')?.hanzi, '难怪');
-    assert.equal(words.get('reflection-guai-bude')?.hanzi, '怪不得');
-    assert.equal(words.get('reflection-chijing')?.hanzi, '吃惊');
-    assert.equal(words.get('reflection-zhenhan')?.hanzi, '震撼');
-    assert.equal(words.get('reflection-zaiyi')?.hanzi, '在意');
-    assert.equal(words.get('reflection-jieyi')?.hanzi, '介意');
+    assert.equal(words.get('fixture-word-001')?.hanzi, '俞');
+    assert.equal(words.get('fixture-word-002')?.hanzi, '难怪');
+    assert.equal(words.get('fixture-word-003')?.hanzi, '怪不得');
+    assert.equal(words.get('fixture-word-004')?.hanzi, '吃惊');
+    assert.equal(words.get('fixture-word-005')?.hanzi, '震撼');
+    assert.equal(words.get('fixture-word-006')?.hanzi, '在意');
+    assert.equal(words.get('fixture-word-007')?.hanzi, '介意');
 
-    const productionTargets = new Set(
-      dbModule
-        .getSessionPayload('2026-07-29')
-        .buckets.review
-        .filter((item) => item.actionKind === 'production')
-        .map((item) => item.targetWordId),
-    );
+    const productionItems = dbModule
+      .getSessionPayload('2026-07-29')
+      .buckets.review
+      .filter((item) => item.actionKind === 'production');
+    const productionTargets = new Set(productionItems.map((item) => item.targetWordId));
     for (const wordId of [
-      'reflection-yu',
-      'reflection-nanguai',
-      'reflection-chijing',
-      'reflection-zaiyi',
+      'fixture-word-001',
+      'fixture-word-002',
+      'fixture-word-004',
+      'fixture-word-006',
     ]) {
       assert(productionTargets.has(wordId), `Expected due production work for ${wordId}.`);
+    }
+    for (const item of productionItems.filter((item) => item.targetWordId.startsWith('fixture-word-'))) {
+      assert.match(item.targetWordId, /^fixture-word-\d{3}$/);
+      assert.match(item.sessionActionId, /^review\/fixture-word-\d{3}\/production$/);
     }
   });
 
@@ -108,8 +110,8 @@ describe('reflection verification fixture', { concurrency: false }, () => {
     assert.equal(suppressAccepted.review.disposition.kind, 'accepted');
     const suppressApplied = dbModule.applyReflectionInvocation('fixture-suppress', acceptedAt);
     assert.equal(suppressApplied.application.state.kind, 'applied');
-    assert.deepEqual(dbModule.getWordSkillRelevance('reflection-yu', 'production'), {
-      wordId: 'reflection-yu',
+    assert.deepEqual(dbModule.getWordSkillRelevance('fixture-word-001', 'production'), {
+      wordId: 'fixture-word-001',
       skillId: 'production',
       relevanceState: 'suppressed',
       updatedAt: acceptedAt,
@@ -144,8 +146,8 @@ describe('reflection verification fixture', { concurrency: false }, () => {
     const cluster = dbModule.getContrastClusterContent().find(({ id }) => id === clusterRef.id);
     assert.equal(cluster?.title, revisedContrast.title);
     assert.deepEqual(cluster?.members.map((member) => member.wordId), [
-      'reflection-zaiyi',
-      'reflection-jieyi',
+      'fixture-word-006',
+      'fixture-word-007',
     ]);
     assert.equal(cluster?.prompts.length, 2);
 

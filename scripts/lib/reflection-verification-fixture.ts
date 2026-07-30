@@ -13,14 +13,21 @@ export const reflectionVerificationFixture = {
 } as const;
 
 const words = {
-  yu: word('reflection-yu', '俞', 'Yú', ['Yu (surname)']),
-  nanguai: word('reflection-nanguai', '难怪', 'nán guài', ['no wonder', 'not surprising']),
-  guaiBude: word('reflection-guai-bude', '怪不得', 'guài bu dé', ['no wonder', "so that's why"]),
-  chijing: word('reflection-chijing', '吃惊', 'chī jīng', ['to be surprised', 'startled']),
-  zhenhan: word('reflection-zhenhan', '震撼', 'zhèn hàn', ['to deeply shock', 'stun']),
-  zaiyi: word('reflection-zaiyi', '在意', 'zài yì', ['to care about', 'be concerned with']),
-  jieyi: word('reflection-jieyi', '介意', 'jiè yì', ['to mind', 'to object to', 'to take offense']),
+  yu: word('fixture-word-001', '俞', 'Yú', ['Yu (surname)']),
+  nanguai: word('fixture-word-002', '难怪', 'nán guài', ['no wonder', 'not surprising']),
+  guaiBude: word('fixture-word-003', '怪不得', 'guài bu dé', ['no wonder', "so that's why"]),
+  chijing: word('fixture-word-004', '吃惊', 'chī jīng', ['to be surprised', 'startled']),
+  zhenhan: word('fixture-word-005', '震撼', 'zhèn hàn', ['to deeply shock', 'stun']),
+  zaiyi: word('fixture-word-006', '在意', 'zài yì', ['to care about', 'be concerned with']),
+  jieyi: word('fixture-word-007', '介意', 'jiè yì', ['to mind', 'to object to', 'to take offense']),
 };
+
+const itemIds = {
+  surname: 'fixture-item-001',
+  alternate: 'fixture-item-002',
+  cue: 'fixture-item-003',
+  contrast: 'fixture-item-004',
+} as const;
 
 export function buildReflectionVerificationMaterializationInput(
   sourceSessionId = reflectionVerificationFixture.sessionId,
@@ -35,28 +42,28 @@ export function buildReflectionVerificationMaterializationInput(
       studyProfile: 'mandarin',
     },
     items: [
-      productionItem('surname', words.yu, words.zhenhan, 'Yu'),
-      productionItem('alternate', words.nanguai, words.guaiBude, '怪不得'),
-      productionItem('cue', words.chijing, words.zhenhan, '震撼'),
-      productionItem('contrast', words.zaiyi, words.jieyi, '介意'),
+      productionItem(itemIds.surname, words.yu, words.zhenhan, 'Yu'),
+      productionItem(itemIds.alternate, words.nanguai, words.guaiBude, '怪不得'),
+      productionItem(itemIds.cue, words.chijing, words.zhenhan, '震撼'),
+      productionItem(itemIds.contrast, words.zaiyi, words.jieyi, '介意'),
     ],
   };
 
   const result: SessionReflectionResultV4 = {
     schemaVersion: 'session_reflection_result.v4',
     itemResults: [
-      itemResult('surname', 'This surname is useful to recognize but not worth direct English-to-hanzi production.', {
+      itemResult(itemIds.surname, 'This surname is useful to recognize but not worth direct English-to-hanzi production.', {
         kind: 'suppress_definition_production',
         version: 1,
         wordId: words.yu.wordId,
       }),
-      itemResult('alternate', 'The submitted phrase is a reasonable answer to this broad no-wonder cue.', {
+      itemResult(itemIds.alternate, 'The submitted phrase is a reasonable answer to this broad no-wonder cue.', {
         kind: 'accept_production_alternate',
         version: 1,
         targetWordId: words.nanguai.wordId,
         alternateWordId: words.guaiBude.wordId,
       }),
-      itemResult('cue', 'The English cue makes ordinary surprise and strong emotional impact look too similar.', {
+      itemResult(itemIds.cue, 'The English cue makes ordinary surprise and strong emotional impact look too similar.', {
         kind: 'repair_production_cue',
         version: 1,
         wordId: words.chijing.wordId,
@@ -66,7 +73,7 @@ export function buildReflectionVerificationMaterializationInput(
         }],
         repairIntent: 'add_distinguishing_anchor',
       }),
-      itemResult('contrast', 'These words need contextual practice: concern or emotional investment differs from objection or offense.', {
+      itemResult(itemIds.contrast, 'These words need contextual practice: concern or emotional investment differs from objection or offense.', {
         kind: 'create_contrast_cluster',
         version: 1,
         title: '在意 / 介意 — concern and objection',

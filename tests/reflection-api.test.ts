@@ -13,6 +13,7 @@ import type {
 import type { InitialReflectionGenerationService } from '../server/reflection/generation.ts';
 import { ReflectionEvidenceError } from '../server/reflection/evidence.ts';
 import { LunaReflectionProviderError } from '../server/reflection/luna-provider.ts';
+import type { ReflectionLifecycleEvent } from '../server/reflection/lifecycle-log.ts';
 
 type DbModule = typeof import('../server/db.ts');
 type IndexModule = typeof import('../server/index.ts');
@@ -29,6 +30,7 @@ let receivedGenerationRequest: {
   evidenceSupplement: unknown;
 } | null = null;
 let generationImplementation: InitialReflectionGenerationService['generate'];
+let lifecycleEvents: ReflectionLifecycleEvent[];
 
 describe('reflection HTTP API', { concurrency: false }, () => {
   before(async () => {
@@ -55,7 +57,14 @@ describe('reflection HTTP API', { concurrency: false }, () => {
         return generationImplementation(sessionId, evidenceSupplement);
       },
     };
-    app = indexModule.createApp({ reflectionGenerationService: generationService });
+    app = indexModule.createApp({
+      reflectionGenerationService: generationService,
+      reflectionLifecycleLogger: {
+        emit(event) {
+          lifecycleEvents.push(event);
+        },
+      },
+    });
   });
 
   beforeEach(() => {
@@ -81,6 +90,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     insertWord('target', '目标');
     insertWord('alternate', '替代');
     receivedGenerationRequest = null;
+    lifecycleEvents = [];
     generationImplementation = async () => ({
       artifactId: 'generated-artifact',
       proposalCount: 1,
@@ -111,6 +121,20 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     assert.deepEqual(receivedGenerationRequest, {
       sessionId: 'session-1',
       evidenceSupplement: supplement,
+    });
+    assert.equal(lifecycleEvents[0]?.event, 'reflection.generation_requested');
+    assert.deepEqual(lifecycleEvents[0], {
+      event: 'reflection.generation_requested',
+      sessionId: 'session-1',
+    });
+    assert.equal(lifecycleEvents[1]?.event, 'reflection.generation_succeeded');
+    assert.deepEqual(lifecycleEvents[1], {
+      event: 'reflection.generation_succeeded',
+      sessionId: 'session-1',
+      artifactId: 'generated-artifact',
+      proposalCount: 1,
+      status: 'created',
+      elapsedMs: lifecycleEvents[1]?.elapsedMs,
     });
 
     generationImplementation = async () => ({
@@ -182,6 +206,14 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       json: { error: 'Failed to generate reflection' },
     });
     assert.equal(JSON.stringify(internal).includes('private provider output'), false);
+    assert.deepEqual(lifecycleEvents.at(-1), {
+      event: 'reflection.generation_failed',
+      sessionId: 'session-1',
+      failure: 'internal',
+      code: null,
+      clientRequestId: null,
+      elapsedMs: lifecycleEvents.at(-1)?.elapsedMs,
+    });
   });
 
   test('serves open queue, recent history, and reconstructed artifact detail', async () => {

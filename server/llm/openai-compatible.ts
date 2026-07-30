@@ -124,7 +124,10 @@ export function createOpenAiCompatibleAdapter(
         options.id,
         fetchImplementation,
         joinUrl(config.baseUrl ?? options.defaultBaseUrl, '/chat/completions'),
-        { authorization: `Bearer ${config.apiKey}` },
+        {
+          authorization: `Bearer ${config.apiKey}`,
+          ...(request.clientRequestId ? { 'x-client-request-id': request.clientRequestId } : {}),
+        },
         requestBody(request, options.structuredOutputMode, options.maxTokensField),
         request.timeoutMs,
       );
