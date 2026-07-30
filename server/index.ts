@@ -73,17 +73,28 @@ import {
 } from './reflection/generation.ts';
 import { ReflectionEvidenceError } from './reflection/evidence.ts';
 import { LunaReflectionProviderError } from './reflection/luna-provider.ts';
+import {
+  createStdoutReflectionLifecycleLogger,
+  type ReflectionLifecycleLogger,
+} from './reflection/lifecycle-log.ts';
+import { createFileReflectionProviderDiagnosticSink } from './reflection/provider-diagnostics.ts';
 
 const port = dbConfig.port;
 
 export type CreateAppOptions = {
   reflectionGenerationService?: InitialReflectionGenerationService;
+  reflectionLifecycleLogger?: ReflectionLifecycleLogger;
 };
 
 export function createApp(options: CreateAppOptions = {}) {
   const app = express();
+  const reflectionLifecycleLogger = options.reflectionLifecycleLogger
+    ?? createStdoutReflectionLifecycleLogger();
   const reflectionGenerationService = options.reflectionGenerationService
-    ?? createInitialReflectionGenerationService();
+    ?? createInitialReflectionGenerationService({
+      lifecycleLogger: reflectionLifecycleLogger,
+      providerDiagnosticSink: createFileReflectionProviderDiagnosticSink(dbConfig.dataDir),
+    });
 
   app.use(cors());
   app.use(express.json());
@@ -948,11 +959,34 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
 
+    const normalizedSessionId = sessionId.trim();
+    const generationStartedAt = Date.now();
+    reflectionLifecycleLogger.emit({
+      event: 'reflection.generation_requested',
+      sessionId: normalizedSessionId,
+    });
+
     try {
       const result = await reflectionGenerationService.generate(sessionId, req.body);
+      reflectionLifecycleLogger.emit({
+        event: 'reflection.generation_succeeded',
+        sessionId: normalizedSessionId,
+        artifactId: result.artifactId,
+        proposalCount: result.proposalCount,
+        status: result.status,
+        elapsedMs: Date.now() - generationStartedAt,
+      });
       res.status(result.status === 'created' ? 201 : 200).json(result);
     } catch (error) {
       if (error instanceof ReflectionEvidenceError) {
+        reflectionLifecycleLogger.emit({
+          event: 'reflection.generation_failed',
+          sessionId: normalizedSessionId,
+          failure: 'invalid_evidence',
+          code: error.code,
+          clientRequestId: null,
+          elapsedMs: Date.now() - generationStartedAt,
+        });
         res.status(error.httpStatus).json({
           error: error.message,
           code: error.code,
@@ -960,12 +994,28 @@ export function createApp(options: CreateAppOptions = {}) {
         return;
       }
       if (error instanceof LunaReflectionProviderError) {
+        reflectionLifecycleLogger.emit({
+          event: 'reflection.generation_failed',
+          sessionId: normalizedSessionId,
+          failure: 'provider',
+          code: error.code,
+          clientRequestId: error.clientRequestId,
+          elapsedMs: Date.now() - generationStartedAt,
+        });
         res.status(error.code === 'missing_config' ? 503 : 502).json({
           error: error.message,
           code: error.code,
         });
         return;
       }
+      reflectionLifecycleLogger.emit({
+        event: 'reflection.generation_failed',
+        sessionId: normalizedSessionId,
+        failure: 'internal',
+        code: null,
+        clientRequestId: null,
+        elapsedMs: Date.now() - generationStartedAt,
+      });
       res.status(500).json({ error: 'Failed to generate reflection' });
     }
   });
@@ -1129,6 +1179,12 @@ export function createApp(options: CreateAppOptions = {}) {
         completedReviewActionCount,
         failedReviewActionCount,
         activeDurationMs,
+      });
+      reflectionLifecycleLogger.emit({
+        event: 'reflection.summary_recorded',
+        sessionId: sessionId.trim(),
+        completedReviewActionCount,
+        failedReviewActionCount,
       });
       res.status(204).end();
     } catch (error) {

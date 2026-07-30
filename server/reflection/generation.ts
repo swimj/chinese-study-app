@@ -14,6 +14,8 @@ import {
   createLunaReflectionProvider,
   type LunaReflectionProvider,
 } from './luna-provider.ts';
+import type { ReflectionLifecycleLogger } from './lifecycle-log.ts';
+import type { ReflectionProviderDiagnosticSink } from './provider-diagnostics.ts';
 
 export type InitialReflectionGenerationResult = {
   artifactId: string;
@@ -41,6 +43,8 @@ export type InitialReflectionGenerationDependencies = {
     reflectionFlowVersion: string,
   ) => ReflectionArtifactDetail | null;
   materializeArtifact?: typeof materializeReflectionArtifact;
+  lifecycleLogger?: ReflectionLifecycleLogger;
+  providerDiagnosticSink?: ReflectionProviderDiagnosticSink;
 };
 
 /**
@@ -51,13 +55,16 @@ export type InitialReflectionGenerationDependencies = {
 export function createInitialReflectionGenerationService(
   dependencies: InitialReflectionGenerationDependencies = {},
 ): InitialReflectionGenerationService {
-  const provider = dependencies.provider ?? createLunaReflectionProvider();
+  const provider = dependencies.provider ?? createLunaReflectionProvider({
+    diagnosticSink: dependencies.providerDiagnosticSink,
+  });
   const now = dependencies.now ?? (() => new Date().toISOString());
   const buildBundle = dependencies.buildBundle ?? buildInitialReflectionBundle;
   const findExistingArtifact = dependencies.findExistingArtifact
     ?? getReflectionArtifactBySessionAndFlow;
   const materializeArtifact = dependencies.materializeArtifact
     ?? materializeReflectionArtifact;
+  const lifecycleLogger = dependencies.lifecycleLogger;
   const inFlight = new Map<string, Promise<InitialReflectionGenerationResult>>();
 
   return {
@@ -93,6 +100,7 @@ export function createInitialReflectionGenerationService(
         provider,
         buildBundle,
         materializeArtifact,
+        lifecycleLogger,
       });
       inFlight.set(generationKey, generation);
 
@@ -116,12 +124,18 @@ async function generateAndMaterialize(input: {
   materializeArtifact: NonNullable<
     InitialReflectionGenerationDependencies['materializeArtifact']
   >;
+  lifecycleLogger: ReflectionLifecycleLogger | undefined;
 }): Promise<InitialReflectionGenerationResult> {
   const bundle = input.buildBundle(
     input.sessionId,
     input.evidenceSupplement,
     input.generatedAt,
   );
+  input.lifecycleLogger?.emit({
+    event: 'reflection.provider_started',
+    sessionId: input.sessionId,
+    evidenceItemCount: bundle.items.length,
+  });
   const generated = await input.provider.generate(bundle);
   const materialized: MaterializeReflectionArtifactResult = input.materializeArtifact({
     sourceSessionId: input.sessionId,

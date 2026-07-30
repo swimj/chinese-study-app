@@ -25,6 +25,7 @@ export type ProviderRunRequest = {
   temperature: number | null;
   timeoutMs: number;
   cachePrompt: boolean;
+  clientRequestId?: string | null;
 };
 
 export type ProviderRunConfig = {
@@ -74,11 +75,20 @@ export function isOutputTruncationFinishReason(finishReason: string | null): boo
 export class ProviderHttpError extends Error {
   readonly status: number;
   readonly responseBody: string;
+  readonly requestId: string | null;
+  readonly processingMs: string | null;
 
-  constructor(provider: string, status: number, responseBody: string) {
+  constructor(
+    provider: string,
+    status: number,
+    responseBody: string,
+    responseHeaders: Headers,
+  ) {
     super(`${provider} returned HTTP ${status}: ${responseBody.slice(0, 1_000)}`);
     this.name = 'ProviderHttpError';
     this.status = status;
     this.responseBody = responseBody;
+    this.requestId = responseHeaders.get('x-request-id');
+    this.processingMs = responseHeaders.get('openai-processing-ms');
   }
 }

@@ -1,7 +1,7 @@
 {
   "words": [
     {
-      "id": "reflection-yu",
+      "id": "fixture-word-001",
       "hanzi": "俞",
       "pinyin": "Yú",
       "meaning": "Yu (surname)",
@@ -15,7 +15,7 @@
       "lastLearningCoveredOn": null
     },
     {
-      "id": "reflection-nanguai",
+      "id": "fixture-word-002",
       "hanzi": "难怪",
       "pinyin": "nán guài",
       "meaning": "no wonder; not surprising",
@@ -29,7 +29,7 @@
       "lastLearningCoveredOn": null
     },
     {
-      "id": "reflection-guai-bude",
+      "id": "fixture-word-003",
       "hanzi": "怪不得",
       "pinyin": "guài bu dé",
       "meaning": "no wonder; so that's why",
@@ -43,7 +43,7 @@
       "lastLearningCoveredOn": null
     },
     {
-      "id": "reflection-chijing",
+      "id": "fixture-word-004",
       "hanzi": "吃惊",
       "pinyin": "chī jīng",
       "meaning": "to be surprised; startled",
@@ -57,7 +57,7 @@
       "lastLearningCoveredOn": null
     },
     {
-      "id": "reflection-zhenhan",
+      "id": "fixture-word-005",
       "hanzi": "震撼",
       "pinyin": "zhèn hàn",
       "meaning": "to deeply shock; stun",
@@ -71,7 +71,7 @@
       "lastLearningCoveredOn": null
     },
     {
-      "id": "reflection-zaiyi",
+      "id": "fixture-word-006",
       "hanzi": "在意",
       "pinyin": "zài yì",
       "meaning": "to care about; be concerned with",
@@ -85,7 +85,7 @@
       "lastLearningCoveredOn": null
     },
     {
-      "id": "reflection-jieyi",
+      "id": "fixture-word-007",
       "hanzi": "介意",
       "pinyin": "jiè yì",
       "meaning": "to mind; object to; take offense",
@@ -99,7 +99,7 @@
       "lastLearningCoveredOn": null
     },
     {
-      "id": "reflection-gunwu",
+      "id": "fixture-word-008",
       "hanzi": "鼓舞",
       "pinyin": "gǔ wǔ",
       "meaning": "to encourage; inspiring",
@@ -113,7 +113,7 @@
       "lastLearningCoveredOn": null
     },
     {
-      "id": "reflection-huahui",
+      "id": "fixture-word-009",
       "hanzi": "花卉",
       "pinyin": "huā huì",
       "meaning": "flowers and plants",
@@ -128,22 +128,22 @@
     }
   ],
   "wordStudyAdmissionStates": [
-    { "wordId": "reflection-yu", "studyPhase": "review", "earliestNextStudyAt": null },
-    { "wordId": "reflection-nanguai", "studyPhase": "review", "earliestNextStudyAt": null },
-    { "wordId": "reflection-guai-bude", "studyPhase": "review", "earliestNextStudyAt": null },
-    { "wordId": "reflection-chijing", "studyPhase": "review", "earliestNextStudyAt": null },
-    { "wordId": "reflection-zhenhan", "studyPhase": "review", "earliestNextStudyAt": null },
-    { "wordId": "reflection-zaiyi", "studyPhase": "review", "earliestNextStudyAt": null },
-    { "wordId": "reflection-jieyi", "studyPhase": "review", "earliestNextStudyAt": null },
-    { "wordId": "reflection-gunwu", "studyPhase": "review", "earliestNextStudyAt": null },
-    { "wordId": "reflection-huahui", "studyPhase": "review", "earliestNextStudyAt": null }
+    { "wordId": "fixture-word-001", "studyPhase": "review", "earliestNextStudyAt": null },
+    { "wordId": "fixture-word-002", "studyPhase": "review", "earliestNextStudyAt": null },
+    { "wordId": "fixture-word-003", "studyPhase": "review", "earliestNextStudyAt": null },
+    { "wordId": "fixture-word-004", "studyPhase": "review", "earliestNextStudyAt": null },
+    { "wordId": "fixture-word-005", "studyPhase": "review", "earliestNextStudyAt": null },
+    { "wordId": "fixture-word-006", "studyPhase": "review", "earliestNextStudyAt": null },
+    { "wordId": "fixture-word-007", "studyPhase": "review", "earliestNextStudyAt": null },
+    { "wordId": "fixture-word-008", "studyPhase": "review", "earliestNextStudyAt": null },
+    { "wordId": "fixture-word-009", "studyPhase": "review", "earliestNextStudyAt": null }
   ],
   "wordSkillStates": [
-    { "wordId": "reflection-yu", "skillId": "production", "enabled": true, "intervalHours": 168, "lastStudiedAt": "2026-06-01T12:00:00.000Z", "nextDueAt": "2026-06-08T12:00:00.000Z", "easeFactor": 2.5 },
-    { "wordId": "reflection-nanguai", "skillId": "production", "enabled": true, "intervalHours": 168, "lastStudiedAt": "2026-06-01T12:00:00.000Z", "nextDueAt": "2026-06-08T12:00:00.000Z", "easeFactor": 2.5 },
-    { "wordId": "reflection-chijing", "skillId": "production", "enabled": true, "intervalHours": 168, "lastStudiedAt": "2026-06-01T12:00:00.000Z", "nextDueAt": "2026-06-08T12:00:00.000Z", "easeFactor": 2.5 },
-    { "wordId": "reflection-zaiyi", "skillId": "production", "enabled": true, "intervalHours": 168, "lastStudiedAt": "2026-06-01T12:00:00.000Z", "nextDueAt": "2026-06-08T12:00:00.000Z", "easeFactor": 2.5 },
-    { "wordId": "reflection-gunwu", "skillId": "production", "enabled": true, "intervalHours": 168, "lastStudiedAt": "2026-06-01T12:00:00.000Z", "nextDueAt": "2026-06-08T12:00:00.000Z", "easeFactor": 2.5 },
-    { "wordId": "reflection-huahui", "skillId": "recognition", "enabled": true, "intervalHours": 168, "lastStudiedAt": "2026-06-01T12:00:00.000Z", "nextDueAt": "2026-06-08T12:00:00.000Z", "easeFactor": 2.5 }
+    { "wordId": "fixture-word-001", "skillId": "production", "enabled": true, "intervalHours": 168, "lastStudiedAt": "2026-06-01T12:00:00.000Z", "nextDueAt": "2026-06-08T12:00:00.000Z", "easeFactor": 2.5 },
+    { "wordId": "fixture-word-002", "skillId": "production", "enabled": true, "intervalHours": 168, "lastStudiedAt": "2026-06-01T12:00:00.000Z", "nextDueAt": "2026-06-08T12:00:00.000Z", "easeFactor": 2.5 },
+    { "wordId": "fixture-word-004", "skillId": "production", "enabled": true, "intervalHours": 168, "lastStudiedAt": "2026-06-01T12:00:00.000Z", "nextDueAt": "2026-06-08T12:00:00.000Z", "easeFactor": 2.5 },
+    { "wordId": "fixture-word-006", "skillId": "production", "enabled": true, "intervalHours": 168, "lastStudiedAt": "2026-06-01T12:00:00.000Z", "nextDueAt": "2026-06-08T12:00:00.000Z", "easeFactor": 2.5 },
+    { "wordId": "fixture-word-008", "skillId": "production", "enabled": true, "intervalHours": 168, "lastStudiedAt": "2026-06-01T12:00:00.000Z", "nextDueAt": "2026-06-08T12:00:00.000Z", "easeFactor": 2.5 },
+    { "wordId": "fixture-word-009", "skillId": "recognition", "enabled": true, "intervalHours": 168, "lastStudiedAt": "2026-06-01T12:00:00.000Z", "nextDueAt": "2026-06-08T12:00:00.000Z", "easeFactor": 2.5 }
   ]
 }

@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import {
   SESSION_REFLECTION_RESULT_SCHEMA_NAME,
   sessionReflectionResultSchema,
@@ -15,6 +16,10 @@ import {
   isOutputTruncationFinishReason,
   type NormalizedTokenUsage,
 } from '../llm/types.js';
+import {
+  describeReflectionProviderFailure,
+  type ReflectionProviderDiagnosticSink,
+} from './provider-diagnostics.ts';
 
 export const LUNA_REFLECTION_MODEL_CONFIG = {
   id: 'gpt-5.6-luna-high',
@@ -49,12 +54,18 @@ const failureMessages: Record<LunaReflectionFailureCode, string> = {
 export class LunaReflectionProviderError extends Error {
   readonly code: LunaReflectionFailureCode;
   readonly issueCount: number;
+  readonly clientRequestId: string | null;
 
-  constructor(code: LunaReflectionFailureCode, issueCount = 0) {
+  constructor(
+    code: LunaReflectionFailureCode,
+    issueCount = 0,
+    clientRequestId: string | null = null,
+  ) {
     super(failureMessages[code]);
     this.name = 'LunaReflectionProviderError';
     this.code = code;
     this.issueCount = issueCount;
+    this.clientRequestId = clientRequestId;
   }
 }
 
@@ -79,6 +90,7 @@ export type LunaReflectionProviderOptions = {
   fetchImplementation?: FetchImplementation;
   environment?: NodeJS.ProcessEnv;
   systemPrompt?: string;
+  diagnosticSink?: ReflectionProviderDiagnosticSink;
 };
 
 let productionPromptPromise: Promise<string> | null = null;
@@ -116,6 +128,7 @@ export function createLunaReflectionProvider(
       if (apiKey === null) throw new LunaReflectionProviderError('missing_config');
       const baseUrl = configuredValue(environment.OPENAI_BASE_URL);
       const systemPrompt = options.systemPrompt ?? await loadProductionPrompt();
+      const clientRequestId = randomUUID();
 
       let providerResult;
       try {
@@ -130,14 +143,18 @@ export function createLunaReflectionProvider(
           temperature: null,
           timeoutMs: LUNA_REFLECTION_MODEL_CONFIG.timeoutMs,
           cachePrompt: true,
+          clientRequestId,
         }, {
           apiKey,
           baseUrl,
         });
-      } catch {
-        // Deliberately do not retain the transport error: provider response
-        // bodies can contain prompts, output, or deployment-specific details.
-        throw new LunaReflectionProviderError('upstream_failure');
+      } catch (error) {
+        options.diagnosticSink?.record(describeReflectionProviderFailure({
+          sessionId: bundle.session.sessionId,
+          clientRequestId,
+          error,
+        }));
+        throw new LunaReflectionProviderError('upstream_failure', 0, clientRequestId);
       }
 
       if (isOutputTruncationFinishReason(providerResult.finishReason)) {
