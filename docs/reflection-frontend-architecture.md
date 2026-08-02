@@ -95,6 +95,12 @@ persisted estimated cost or an explicit unavailable state. It is observability
 for the initial reflection flow, not a learner correctness signal or a
 replacement for immutable artifact history.
 
+A failed run with a retained bundle and no successful artifact exposes a small
+retry action. Retrying reuses the exact backend-owned bundle, replaces the
+action with a concise generating/result indicator, appends a new concluded run,
+and opens the resulting artifact on success. Older run rows created before
+bundle retention remain visible without a retry action.
+
 The surface intentionally has no generic JSON editor, manual invocation
 workbench, different-kind replacement flow, or top-level reflection summary.
 

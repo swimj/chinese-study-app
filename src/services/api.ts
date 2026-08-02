@@ -89,6 +89,7 @@ export type ReflectionGenerationRunDto = {
   pricingAsOf: string | null;
   pricingBasis: unknown | null;
   estimatedCostUsd: number | null;
+  retryable: boolean;
 };
 
 export type ReflectionArtifactSummaryDto = {
@@ -131,6 +132,7 @@ export type ReflectionArtifactDetailDto = Omit<
 export type ReflectionReviewApi = {
   listArtifacts: (review: 'open' | 'all') => Promise<ReflectionArtifactSummaryDto[]>;
   listGenerationRuns: () => Promise<ReflectionGenerationRunDto[]>;
+  retryGenerationRun: (runId: string) => Promise<GenerateSessionReflectionResult>;
   getArtifact: (artifactId: string) => Promise<ReflectionArtifactDetailDto>;
   reviewProposal: (
     proposalId: string,
@@ -876,6 +878,19 @@ export async function fetchReflectionGenerationRuns(): Promise<ReflectionGenerat
   }
   const payload = await response.json() as { runs: ReflectionGenerationRunDto[] };
   return payload.runs;
+}
+
+export async function retryReflectionGenerationRun(
+  runId: string,
+): Promise<GenerateSessionReflectionResult> {
+  const response = await fetch(
+    `${API_BASE}/api/reflection-generation-runs/${encodeURIComponent(runId)}/retry`,
+    { method: 'POST' },
+  );
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to retry reflection generation'));
+  }
+  return response.json();
 }
 
 export async function fetchReflectionArtifactDetail(

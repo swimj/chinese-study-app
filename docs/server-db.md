@@ -35,7 +35,7 @@ Reflection uses four SQLite tables initialized and validated from
 | Table | Responsibility |
 | --- | --- |
 | `reflection_artifacts` | Generate-once evidence/result provenance, unique by source session and reflection-flow version |
-| `reflection_generation_runs` | Append-only provider-attempt log, including failed or truncated attempts with available normalized usage and a persisted price snapshot |
+| `reflection_generation_runs` | Append-only provider-attempt log, including the exact validated bundle used for retry, failed/truncated attempts, normalized usage, and a persisted price snapshot |
 | `reflection_proposal_reviews` | One mutable review status for each immutable `(artifact, item, proposal index)` locator |
 | `reflection_operation_invocations` | Immutable authorized operation plus its mutable application status, effects, and non-effect reason |
 
@@ -49,7 +49,10 @@ validated successful result, while the run log records each concluded provider
 attempt. A run stores the eligible/included evidence counts, nullable normalized
 token categories, response/finish metadata when available, and a complete
 versioned pricing basis plus estimate when that provider/model is known. This
-makes a historic displayed estimate stable if later pricing tables change.
+makes a historic displayed estimate stable if later pricing tables change. New
+runs also retain the exact validated evidence bundle used for the provider call;
+failed runs can therefore be retried after the originating session UI closes.
+Legacy rows without a saved bundle remain readable but are not retryable.
 
 Materialization and proposal-row seeding are one transaction. The
 `(source_session_id, reflection_flow_version)` unique key implements durable
@@ -86,7 +89,7 @@ Generation is deliberately outside the DB module:
 | Module | Responsibility |
 | --- | --- |
 | [`server/reflection/evidence.ts`](../server/reflection/evidence.ts) | Strict supplement validation; completed-session and accepted-attempt verification; read-only word/content enrichment; canonical bundle construction |
-| [`server/reflection/generation.ts`](../server/reflection/generation.ts) | Prelookup idempotency, in-process session/flow request coalescing, bounded evidence counts, provider orchestration, run logging, and valid-result materialization |
+| [`server/reflection/generation.ts`](../server/reflection/generation.ts) | Prelookup idempotency, in-process session/flow request coalescing, bounded evidence counts, provider orchestration, exact-bundle retry, run logging, and valid-result materialization |
 | [`server/reflection/luna-provider.ts`](../server/reflection/luna-provider.ts) | Lazy credential loading, pinned Luna model configuration, production prompt loading, structured-output and domain validation, sanitized typed failures with available response metadata |
 | [`server/reflection/run-pricing.ts`](../server/reflection/run-pricing.ts) | Versioned hard-coded cost snapshot and estimate math for the initial Luna reflection flow |
 | [`server/reflection/prompts/reflection-v2.md`](../server/reflection/prompts/reflection-v2.md) | Promoted initial reflection prompt |

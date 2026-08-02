@@ -41,6 +41,22 @@ describe('reflection run log presentation', () => {
     assert.match(markup, /Cost estimate unavailable for this run/);
     assert.match(markup, /Estimated cost: \$0\.00003 \(rates as of 2026-07-30; price-v1\)/);
     assert.match(markup, /cached —/);
+    assert.match(markup, /Retry this reflection\?/);
+  });
+
+  test('replaces retry with a concise generation status', () => {
+    const value = controller([run({
+      runId: 'failed',
+      state: 'failed',
+      failureCode: 'upstream_failure',
+      finishReason: null,
+      estimatedCostUsd: null,
+      pricingAsOf: null,
+    })]);
+    value.generationRetryStatus = { runId: 'failed', state: 'generating' };
+    const markup = renderToStaticMarkup(createElement(ReflectionsPage, { controller: value }));
+    assert.match(markup, /Generating…/);
+    assert.doesNotMatch(markup, /Retry this reflection\?/);
   });
 });
 
@@ -57,9 +73,11 @@ function controller(
     selectedArtifactId: null,
     submittingProposalId: null,
     withdrawingInvocationId: null,
+    generationRetryStatus: null,
     openPage: doNothing,
     refresh: doNothing,
     selectArtifact: doNothing,
+    retryGenerationRun: doNothing,
     deferProposal: doNothing,
     dismissProposal: doNothing,
     acceptProposal: doNothing,
@@ -103,5 +121,6 @@ function run(overrides: {
     pricingAsOf: overrides.pricingAsOf,
     pricingBasis: overrides.estimatedCostUsd === null ? null : { id: 'price-v1' },
     estimatedCostUsd: overrides.estimatedCostUsd,
+    retryable: overrides.state === 'failed',
   };
 }

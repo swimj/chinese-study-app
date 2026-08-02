@@ -22,6 +22,7 @@ import {
   validateReflectionOperation,
   validateSessionReflectionResult,
 } from '../../src/domain/reflection.ts';
+import { parseSessionReflectionBundle } from '../../src/domain/reflection-evidence.ts';
 import type { NormalizedTokenUsage } from '../llm/types.ts';
 import { dbPath, getDb } from './connection.ts';
 import { suppressDefinitionProductionWithoutTransaction } from './domain-commands.ts';
@@ -67,10 +68,24 @@ export type ReflectionGenerationRunRecord = {
   pricingAsOf: string | null;
   pricingBasis: unknown | null;
   estimatedCostUsd: number | null;
+  retryable: boolean;
 };
 
-export type RecordReflectionGenerationRunInput = Omit<ReflectionGenerationRunRecord, 'runId'> & {
+export type RecordReflectionGenerationRunInput = Omit<
+  ReflectionGenerationRunRecord,
+  'runId' | 'retryable'
+> & {
   runId?: string;
+  evidenceBundle: SessionReflectionBundleV1;
+};
+
+export type ReflectionGenerationRetrySource = {
+  runId: string;
+  sourceSessionId: string;
+  reflectionFlowVersion: string;
+  eligibleItemCount: number;
+  includedItemCount: number;
+  evidenceBundle: SessionReflectionBundleV1;
 };
 
 /**
@@ -198,6 +213,8 @@ type ReflectionGenerationRunRow = {
   pricing_as_of: string | null;
   pricing_basis_json: string | null;
   estimated_cost_usd: number | null;
+  evidence_bundle_json: string | null;
+  retryable: number;
 };
 
 type ProposalReviewRow = {
@@ -277,6 +294,7 @@ const reflectionGenerationRunColumns = [
   'pricing_as_of',
   'pricing_basis_json',
   'estimated_cost_usd',
+  'evidence_bundle_json',
 ] as const;
 
 const proposalReviewColumns = [
@@ -369,6 +387,7 @@ export function ensureReflectionSchema(): void {
       estimated_cost_usd REAL CHECK (
         estimated_cost_usd IS NULL OR estimated_cost_usd >= 0
       ),
+      evidence_bundle_json TEXT,
       CHECK (
         (state = 'succeeded' AND failure_code IS NULL)
         OR (state = 'failed' AND failure_code IS NOT NULL)
@@ -612,7 +631,17 @@ export function ensureReflectionSchema(): void {
     END;
   `);
 
+  ensureReflectionGenerationRunEvidenceBundleColumn();
   ensureReflectionIndexes();
+}
+
+function ensureReflectionGenerationRunEvidenceBundleColumn(): void {
+  const columns = getDb().prepare('PRAGMA table_info(reflection_generation_runs)').all() as Array<{
+    name: string;
+  }>;
+  if (!columns.some((column) => column.name === 'evidence_bundle_json')) {
+    getDb().exec('ALTER TABLE reflection_generation_runs ADD COLUMN evidence_bundle_json TEXT');
+  }
 }
 
 export function ensureReflectionIndexes(): void {
@@ -976,6 +1005,10 @@ export function recordReflectionGenerationRun(
   if (input.includedItemCount > input.eligibleItemCount) {
     throw new Error('Included reflection evidence item count cannot exceed eligible item count.');
   }
+  if (input.evidenceBundle.session.sessionId !== input.sourceSessionId) {
+    throw new Error('Reflection generation run source session does not match its evidence bundle.');
+  }
+  parseSessionReflectionBundle(input.evidenceBundle);
   assertNormalizedUsage(input.usage);
   if (input.estimatedCostUsd !== null && (!Number.isFinite(input.estimatedCostUsd)
     || input.estimatedCostUsd < 0)) {
@@ -1002,8 +1035,8 @@ export function recordReflectionGenerationRun(
       state, failure_code, eligible_item_count, included_item_count,
       input_tokens, cached_input_tokens, cache_write_input_tokens, output_tokens,
       reasoning_tokens, total_tokens, pricing_snapshot_id, pricing_as_of,
-      pricing_basis_json, estimated_cost_usd
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      pricing_basis_json, estimated_cost_usd, evidence_bundle_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     runId,
     input.sourceSessionId,
@@ -1030,6 +1063,7 @@ export function recordReflectionGenerationRun(
     input.pricingAsOf,
     input.pricingBasis === null ? null : JSON.stringify(input.pricingBasis),
     input.estimatedCostUsd,
+    JSON.stringify(input.evidenceBundle),
   );
   return getReflectionGenerationRun(runId);
 }
@@ -1039,8 +1073,17 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
     throw new Error('Reflection generation run list limit must be an integer from 1 to 200.');
   }
   const rows = getDb().prepare(`
-    SELECT ${reflectionGenerationRunColumns.join(', ')}
-    FROM reflection_generation_runs
+    SELECT ${reflectionGenerationRunColumns.map((column) => `runs.${column}`).join(', ')},
+      CASE
+        WHEN runs.state = 'failed'
+          AND runs.evidence_bundle_json IS NOT NULL
+          AND artifacts.artifact_id IS NULL
+        THEN 1 ELSE 0
+      END AS retryable
+    FROM reflection_generation_runs AS runs
+    LEFT JOIN reflection_artifacts AS artifacts
+      ON artifacts.source_session_id = runs.source_session_id
+      AND artifacts.reflection_flow_version = runs.reflection_flow_version
     ORDER BY completed_at DESC, run_id ASC
     LIMIT ?
   `).all(limit) as unknown as ReflectionGenerationRunRow[];
@@ -1049,12 +1092,71 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
 
 function getReflectionGenerationRun(runId: string): ReflectionGenerationRunRecord {
   const row = getDb().prepare(`
-    SELECT ${reflectionGenerationRunColumns.join(', ')}
-    FROM reflection_generation_runs
-    WHERE run_id = ?
+    SELECT ${reflectionGenerationRunColumns.map((column) => `runs.${column}`).join(', ')},
+      CASE
+        WHEN runs.state = 'failed'
+          AND runs.evidence_bundle_json IS NOT NULL
+          AND artifacts.artifact_id IS NULL
+        THEN 1 ELSE 0
+      END AS retryable
+    FROM reflection_generation_runs AS runs
+    LEFT JOIN reflection_artifacts AS artifacts
+      ON artifacts.source_session_id = runs.source_session_id
+      AND artifacts.reflection_flow_version = runs.reflection_flow_version
+    WHERE runs.run_id = ?
   `).get(runId) as ReflectionGenerationRunRow | undefined;
   if (!row) throw new Error('Reflection generation run not found.');
   return mapReflectionGenerationRunRow(row);
+}
+
+export function getReflectionGenerationRetrySource(
+  runId: string,
+): ReflectionGenerationRetrySource {
+  const normalizedRunId = runId.trim();
+  if (normalizedRunId.length === 0) {
+    throw new Error('Expected non-empty reflection generation run id.');
+  }
+  const row = getDb().prepare(`
+    SELECT ${reflectionGenerationRunColumns.map((column) => `runs.${column}`).join(', ')},
+      CASE
+        WHEN runs.state = 'failed'
+          AND runs.evidence_bundle_json IS NOT NULL
+          AND artifacts.artifact_id IS NULL
+        THEN 1 ELSE 0
+      END AS retryable
+    FROM reflection_generation_runs AS runs
+    LEFT JOIN reflection_artifacts AS artifacts
+      ON artifacts.source_session_id = runs.source_session_id
+      AND artifacts.reflection_flow_version = runs.reflection_flow_version
+    WHERE runs.run_id = ?
+  `).get(normalizedRunId) as ReflectionGenerationRunRow | undefined;
+  if (!row) throw new Error('Reflection generation run not found.');
+  if (row.retryable !== 1 || row.evidence_bundle_json === null) {
+    throw new Error('Reflection generation run is not retryable.');
+  }
+
+  let evidenceBundle: SessionReflectionBundleV1;
+  try {
+    evidenceBundle = parseSessionReflectionBundle(parseJson(
+      row.evidence_bundle_json,
+      `reflection generation run ${row.run_id} evidence bundle`,
+    ));
+  } catch (error) {
+    throw corruptionError(error instanceof Error ? error.message : String(error));
+  }
+  if (evidenceBundle.session.sessionId !== row.source_session_id) {
+    throw corruptionError(
+      `reflection generation run ${row.run_id} source session does not match its evidence`,
+    );
+  }
+  return {
+    runId: row.run_id,
+    sourceSessionId: row.source_session_id,
+    reflectionFlowVersion: row.reflection_flow_version,
+    eligibleItemCount: row.eligible_item_count,
+    includedItemCount: row.included_item_count,
+    evidenceBundle,
+  };
 }
 
 export function deferReflectionProposal(
@@ -1497,6 +1599,7 @@ function mapReflectionGenerationRunRow(
       ? null
       : parseJson(row.pricing_basis_json, 'reflection generation run pricing basis'),
     estimatedCostUsd: row.estimated_cost_usd,
+    retryable: row.retryable === 1,
   };
 }
 

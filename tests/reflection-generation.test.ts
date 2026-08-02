@@ -136,7 +136,52 @@ describe('initial reflection generation orchestration', () => {
         outputPerMillionUsd: 1.2,
       },
       estimatedCostUsd: 0.000008,
+      evidenceBundle,
     });
+  });
+
+  test('retries a failed durable run from its exact saved bundle', async () => {
+    const evidenceBundle = bundle();
+    let providerBundle: SessionReflectionBundleV1 | null = null;
+    let recordedRun: RecordReflectionGenerationRunInput | null = null;
+    const service = createInitialReflectionGenerationService({
+      now: () => generatedAt,
+      findExistingArtifact: () => null,
+      getRetrySource: (runId) => {
+        assert.equal(runId, 'failed-run');
+        return {
+          runId,
+          sourceSessionId: 'session-1',
+          reflectionFlowVersion: 'initial_post_session_reflection.v1',
+          eligibleItemCount: 3,
+          includedItemCount: 1,
+          evidenceBundle,
+        };
+      },
+      provider: {
+        async generate(input) {
+          providerBundle = input;
+          return providerSuccess();
+        },
+      },
+      materializeArtifact: () => ({
+        created: true,
+        artifact: artifactDetail('retried-artifact', 1),
+      }),
+      recordRun: (input) => {
+        recordedRun = input;
+      },
+    });
+
+    assert.deepEqual(await service.retry('failed-run'), {
+      artifactId: 'retried-artifact',
+      proposalCount: 1,
+      status: 'created',
+    });
+    assert.equal(providerBundle, evidenceBundle);
+    assert.equal(recordedRun?.evidenceBundle, evidenceBundle);
+    assert.equal(recordedRun?.eligibleItemCount, 3);
+    assert.equal(recordedRun?.includedItemCount, 1);
   });
 
   test('coalesces concurrent generation by normalized session and flow key', async () => {

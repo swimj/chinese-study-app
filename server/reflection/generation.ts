@@ -1,5 +1,6 @@
 import type { SessionReflectionBundleV1 } from '../../src/domain/reflection.ts';
 import {
+  getReflectionGenerationRetrySource,
   getReflectionArtifactBySessionAndFlow,
   INITIAL_REFLECTION_FLOW_VERSION,
   materializeReflectionArtifact,
@@ -7,6 +8,7 @@ import {
   type MaterializeReflectionArtifactResult,
   type RecordReflectionGenerationRunInput,
   type ReflectionArtifactDetail,
+  type ReflectionGenerationRetrySource,
 } from '../db/reflections.ts';
 import {
   buildInitialReflectionBundleWithMetrics,
@@ -36,6 +38,7 @@ export type InitialReflectionGenerationService = {
     sessionId: string,
     evidenceSupplement: unknown,
   ): Promise<InitialReflectionGenerationResult>;
+  retry(runId: string): Promise<InitialReflectionGenerationResult>;
 };
 
 export type InitialReflectionGenerationDependencies = {
@@ -55,6 +58,7 @@ export type InitialReflectionGenerationDependencies = {
     sessionId: string,
     reflectionFlowVersion: string,
   ) => ReflectionArtifactDetail | null;
+  getRetrySource?: (runId: string) => ReflectionGenerationRetrySource;
   materializeArtifact?: typeof materializeReflectionArtifact;
   recordRun?: (input: RecordReflectionGenerationRunInput) => void;
   lifecycleLogger?: ReflectionLifecycleLogger;
@@ -86,11 +90,31 @@ export function createInitialReflectionGenerationService(
         });
   const findExistingArtifact = dependencies.findExistingArtifact
     ?? getReflectionArtifactBySessionAndFlow;
+  const getRetrySource = dependencies.getRetrySource ?? getReflectionGenerationRetrySource;
   const materializeArtifact = dependencies.materializeArtifact
     ?? materializeReflectionArtifact;
   const recordRun = dependencies.recordRun ?? recordReflectionGenerationRun;
   const lifecycleLogger = dependencies.lifecycleLogger;
   const inFlight = new Map<string, Promise<InitialReflectionGenerationResult>>();
+
+  async function runCoalesced(
+    sessionId: string,
+    startGeneration: () => Promise<InitialReflectionGenerationResult>,
+  ): Promise<InitialReflectionGenerationResult> {
+    const generationKey = `${sessionId}\u0000${INITIAL_REFLECTION_FLOW_VERSION}`;
+    const activeGeneration = inFlight.get(generationKey);
+    if (activeGeneration) return activeGeneration;
+
+    const generation = startGeneration();
+    inFlight.set(generationKey, generation);
+    try {
+      return await generation;
+    } finally {
+      if (inFlight.get(generationKey) === generation) {
+        inFlight.delete(generationKey);
+      }
+    }
+  }
 
   return {
     async generate(
@@ -113,12 +137,8 @@ export function createInitialReflectionGenerationService(
         return generationResult(false, existing);
       }
 
-      const generationKey = `${normalizedSessionId}\u0000${INITIAL_REFLECTION_FLOW_VERSION}`;
-      const activeGeneration = inFlight.get(generationKey);
-      if (activeGeneration) return activeGeneration;
-
       const generatedAt = now();
-      const generation = generateAndMaterialize({
+      return runCoalesced(normalizedSessionId, () => generateAndMaterialize({
         sessionId: normalizedSessionId,
         evidenceSupplement,
         generatedAt,
@@ -128,15 +148,61 @@ export function createInitialReflectionGenerationService(
         recordRun,
         now,
         lifecycleLogger,
-      });
-      inFlight.set(generationKey, generation);
+      }));
+    },
 
+    async retry(runId: string): Promise<InitialReflectionGenerationResult> {
+      const retrySource = getRetrySource(runId);
+      if (retrySource.reflectionFlowVersion !== INITIAL_REFLECTION_FLOW_VERSION) {
+        throw new Error('Reflection generation run is not retryable by the current flow.');
+      }
+      const retryStartedAt = Date.now();
+      lifecycleLogger?.emit({
+        event: 'reflection.generation_requested',
+        sessionId: retrySource.sourceSessionId,
+      });
       try {
-        return await generation;
-      } finally {
-        if (inFlight.get(generationKey) === generation) {
-          inFlight.delete(generationKey);
-        }
+        const existing = findExistingArtifact(
+          retrySource.sourceSessionId,
+          INITIAL_REFLECTION_FLOW_VERSION,
+        );
+        const result = existing === null
+          ? await runCoalesced(retrySource.sourceSessionId, () => generateBundleAndMaterialize({
+              sessionId: retrySource.sourceSessionId,
+              builtBundle: {
+                bundle: retrySource.evidenceBundle,
+                eligibleItemCount: retrySource.eligibleItemCount,
+                includedItemCount: retrySource.includedItemCount,
+              },
+              generatedAt: now(),
+              provider,
+              materializeArtifact,
+              recordRun,
+              now,
+              lifecycleLogger,
+            }))
+          : generationResult(false, existing);
+        lifecycleLogger?.emit({
+          event: 'reflection.generation_succeeded',
+          sessionId: retrySource.sourceSessionId,
+          artifactId: result.artifactId,
+          proposalCount: result.proposalCount,
+          status: result.status,
+          elapsedMs: Date.now() - retryStartedAt,
+        });
+        return result;
+      } catch (error) {
+        lifecycleLogger?.emit({
+          event: 'reflection.generation_failed',
+          sessionId: retrySource.sourceSessionId,
+          failure: error instanceof LunaReflectionProviderError ? 'provider' : 'internal',
+          code: error instanceof LunaReflectionProviderError ? error.code : null,
+          clientRequestId: error instanceof LunaReflectionProviderError
+            ? error.clientRequestId
+            : null,
+          elapsedMs: Date.now() - retryStartedAt,
+        });
+        throw error;
       }
     },
   };
@@ -162,6 +228,31 @@ async function generateAndMaterialize(input: {
     input.evidenceSupplement,
     input.generatedAt,
   );
+  return generateBundleAndMaterialize({
+    sessionId: input.sessionId,
+    builtBundle,
+    generatedAt: input.generatedAt,
+    provider: input.provider,
+    materializeArtifact: input.materializeArtifact,
+    recordRun: input.recordRun,
+    now: input.now,
+    lifecycleLogger: input.lifecycleLogger,
+  });
+}
+
+async function generateBundleAndMaterialize(input: {
+  sessionId: string;
+  builtBundle: InitialReflectionBundleBuild;
+  generatedAt: string;
+  provider: LunaReflectionProvider;
+  materializeArtifact: NonNullable<
+    InitialReflectionGenerationDependencies['materializeArtifact']
+  >;
+  recordRun: NonNullable<InitialReflectionGenerationDependencies['recordRun']>;
+  now: () => string;
+  lifecycleLogger: ReflectionLifecycleLogger | undefined;
+}): Promise<InitialReflectionGenerationResult> {
+  const builtBundle = input.builtBundle;
   const { bundle } = builtBundle;
   input.lifecycleLogger?.emit({
     event: 'reflection.provider_started',
@@ -192,6 +283,7 @@ async function generateAndMaterialize(input: {
         failureCode: null,
         eligibleItemCount: builtBundle.eligibleItemCount,
         includedItemCount: builtBundle.includedItemCount,
+        evidenceBundle: bundle,
       }));
     } catch {
       // A successful immutable artifact remains a success if optional dogfood
@@ -210,6 +302,7 @@ async function generateAndMaterialize(input: {
           failureCode: failureCode(error),
           eligibleItemCount: builtBundle.eligibleItemCount,
           includedItemCount: builtBundle.includedItemCount,
+          evidenceBundle: bundle,
         }));
       } catch {
         // Run logging must not turn a reflection/provider failure into a study failure.
@@ -228,6 +321,7 @@ function runRecordInput(input: {
   failureCode: string | null;
   eligibleItemCount: number;
   includedItemCount: number;
+  evidenceBundle: SessionReflectionBundleV1;
 }): RecordReflectionGenerationRunInput {
   const estimate = estimateInitialReflectionRunCost({
     provider: input.metadata.provider,
@@ -254,6 +348,7 @@ function runRecordInput(input: {
     pricingAsOf: estimate?.pricing.pricingAsOf ?? null,
     pricingBasis: estimate?.pricing ?? null,
     estimatedCostUsd: estimate?.estimatedCostUsd ?? null,
+    evidenceBundle: input.evidenceBundle,
   };
 }
 

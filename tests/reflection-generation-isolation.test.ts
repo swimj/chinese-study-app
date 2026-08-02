@@ -116,6 +116,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       pricingAsOf: null,
       pricingBasis: null,
       estimatedCostUsd: null,
+      retryable: true,
     });
   });
 

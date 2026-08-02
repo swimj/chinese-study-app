@@ -89,6 +89,16 @@ describe('reflection durable store', { concurrency: false }, () => {
     )));
   });
 
+  test('adds nullable retained-bundle storage to an existing generation-run table', () => {
+    sqlite.exec('ALTER TABLE reflection_generation_runs DROP COLUMN evidence_bundle_json');
+    assert.throws(
+      () => dbModule.validateReflectionSchema(),
+      /Missing column "evidence_bundle_json"/,
+    );
+    dbModule.ensureReflectionSchema();
+    assert.doesNotThrow(() => dbModule.validateReflectionSchema());
+  });
+
   test('persists a complete immutable pricing basis with a generation run', () => {
     materializationInput('run-session', suppressOperation('target'));
 
@@ -120,6 +130,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       pricingAsOf: '2026-07-30',
       pricingBasis: { id: 'price-v1', inputPerMillionUsd: 0.2 },
       estimatedCostUsd: 0.00042,
+      evidenceBundle: bundle('run-session'),
     });
 
     assert.deepEqual(recorded, {
@@ -150,8 +161,62 @@ describe('reflection durable store', { concurrency: false }, () => {
       pricingAsOf: '2026-07-30',
       pricingBasis: { id: 'price-v1', inputPerMillionUsd: 0.2 },
       estimatedCostUsd: 0.00042,
+      retryable: false,
     });
     assert.deepEqual(dbModule.listReflectionGenerationRuns(), [recorded]);
+  });
+
+  test('retains failed-run evidence for retry until an artifact exists', () => {
+    materializationInput('retry-session', suppressOperation('target'));
+    const evidenceBundle = bundle('retry-session');
+    const failed = dbModule.recordReflectionGenerationRun({
+      runId: 'failed-run',
+      sourceSessionId: 'retry-session',
+      reflectionFlowVersion: 'initial_post_session_reflection.v1',
+      startedAt: generatedAt,
+      completedAt: updatedAt,
+      provider: 'openai',
+      model: 'gpt-5.6-luna-high',
+      providerModel: 'gpt-5.6-luna',
+      promptVersion: 'reflection-v2',
+      responseId: null,
+      finishReason: null,
+      state: 'failed',
+      failureCode: 'upstream_failure',
+      eligibleItemCount: 1,
+      includedItemCount: 1,
+      usage: {
+        inputTokens: null,
+        cachedInputTokens: null,
+        cacheWriteInputTokens: null,
+        outputTokens: null,
+        reasoningTokens: null,
+        totalTokens: null,
+      },
+      pricingSnapshotId: null,
+      pricingAsOf: null,
+      pricingBasis: null,
+      estimatedCostUsd: null,
+      evidenceBundle,
+    });
+    assert.equal(failed.retryable, true);
+    assert.deepEqual(dbModule.getReflectionGenerationRetrySource('failed-run'), {
+      runId: 'failed-run',
+      sourceSessionId: 'retry-session',
+      reflectionFlowVersion: 'initial_post_session_reflection.v1',
+      eligibleItemCount: 1,
+      includedItemCount: 1,
+      evidenceBundle,
+    });
+
+    dbModule.materializeReflectionArtifact(
+      materializationInput('retry-session', suppressOperation('target')),
+    );
+    assert.equal(dbModule.listReflectionGenerationRuns()[0]?.retryable, false);
+    assert.throws(
+      () => dbModule.getReflectionGenerationRetrySource('failed-run'),
+      /not retryable/,
+    );
   });
 
   test('atomically materializes immutable JSON and exactly one pending row per proposal', () => {

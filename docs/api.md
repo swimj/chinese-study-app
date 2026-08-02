@@ -75,6 +75,7 @@ Request/result types live in
 | POST | `/api/study-sessions/:sessionId/reflections` | Generate or return the session's initial reflection |
 | GET | `/api/reflection-artifacts?review=open\|all` | Load the unresolved queue or recent history |
 | GET | `/api/reflection-generation-runs` | Load the compact dogfood log of concluded provider attempts |
+| POST | `/api/reflection-generation-runs/:runId/retry` | Retry a failed run from its saved bounded evidence bundle |
 | GET | `/api/reflection-artifacts/:artifactId` | Load immutable evidence/result plus current proposal/application statuses |
 | POST | `/api/reflection-proposals/:proposalId/review` | Defer, dismiss, or authorize one proposal |
 | POST | `/api/reflection-invocations/:invocationId/withdraw-authorization` | Withdraw a pending or unsupported authorization |
@@ -131,7 +132,15 @@ included evidence counts, and nullable normalized token categories. Cost is an
 estimate only: known initial Luna runs persist their complete versioned price
 basis, `pricingAsOf`, and USD estimate at write time; unknown or partial usage
 returns those pricing fields as `null` rather than guessing. The endpoint does
-not expose raw prompts, provider responses, or diagnostics.
+not expose saved bundles, raw prompts, provider responses, or diagnostics. Its
+`retryable` flag is true only for a failed run whose bundle is retained and
+whose session/flow does not already have a successful artifact.
+
+`POST /api/reflection-generation-runs/:runId/retry` reuses that run's exact
+saved bundle and returns the same response shape and `201`/`200` semantics as
+initial generation. The retry is a new append-only generation run; it never
+rewrites the failed attempt. Missing runs return `404`, and concluded runs that
+cannot be retried return `409`.
 
 ### Queue and detail
 

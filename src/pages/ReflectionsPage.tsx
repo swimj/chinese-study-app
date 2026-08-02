@@ -62,7 +62,11 @@ export function ReflectionsPage({
             selectedArtifactId={controller.selectedArtifactId}
             onSelect={controller.selectArtifact}
           />
-          <ReflectionRunLog runs={controller.generationRuns} />
+          <ReflectionRunLog
+            runs={controller.generationRuns}
+            retryStatus={controller.generationRetryStatus}
+            onRetry={controller.retryGenerationRun}
+          />
         </aside>
 
         <main className="reflection-detail">
@@ -181,8 +185,12 @@ export function ReflectionsPage({
 
 function ReflectionRunLog({
   runs,
+  retryStatus,
+  onRetry,
 }: {
   runs: ReflectionGenerationRunDto[];
+  retryStatus: ReflectionPageController['generationRetryStatus'];
+  onRetry: (runId: string) => Promise<void>;
 }) {
   return (
     <section className="reflection-artifact-list">
@@ -197,9 +205,33 @@ function ReflectionRunLog({
                 <p className="reflection-eyebrow">{formatDateTime(run.completedAt)}</p>
                 <h4>{run.provider}/{run.model}</h4>
               </div>
-              <span className={`reflection-state-pill state-${run.state}`}>
-                {humanize(run.state)}
-              </span>
+              <div className="reflection-run-actions">
+                <span className={`reflection-state-pill state-${run.state}`}>
+                  {humanize(run.state)}
+                </span>
+                {retryStatus?.runId === run.runId ? (
+                  <span
+                    className={`reflection-state-pill state-${retryStatus.state}`}
+                    role="status"
+                  >
+                    {retryStatus.state === 'generating'
+                      ? 'Generating…'
+                      : retryStatus.state === 'succeeded'
+                        ? 'Ready'
+                        : 'Retry failed'}
+                  </span>
+                ) : run.retryable ? (
+                  <button
+                    type="button"
+                    className="reflection-retry-button"
+                    title="Retry this reflection?"
+                    aria-label="Retry this reflection?"
+                    onClick={() => void onRetry(run.runId)}
+                  >
+                    <span aria-hidden="true">↻</span> Retry?
+                  </button>
+                ) : null}
+              </div>
             </header>
             <p className="notes">
               {run.includedItemCount}/{run.eligibleItemCount} eligible item

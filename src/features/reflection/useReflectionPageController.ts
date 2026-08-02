@@ -17,9 +17,14 @@ export type ReflectionPageController = {
   selectedArtifactId: string | null;
   submittingProposalId: string | null;
   withdrawingInvocationId: string | null;
+  generationRetryStatus: {
+    runId: string;
+    state: 'generating' | 'succeeded' | 'failed';
+  } | null;
   openPage: () => Promise<void>;
   refresh: () => Promise<void>;
   selectArtifact: (artifactId: string) => Promise<void>;
+  retryGenerationRun: (runId: string) => Promise<void>;
   deferProposal: (proposalId: string) => Promise<void>;
   dismissProposal: (proposalId: string, reason: string | null) => Promise<void>;
   acceptProposal: (proposalId: string, operation: ReflectionOperation) => Promise<void>;
@@ -44,6 +49,9 @@ export function useReflectionPageController({
   const [selectedArtifact, setSelectedArtifact] = useState<ReflectionArtifactDetailDto | null>(null);
   const [submittingProposalId, setSubmittingProposalId] = useState<string | null>(null);
   const [withdrawingInvocationId, setWithdrawingInvocationId] = useState<string | null>(null);
+  const [generationRetryStatus, setGenerationRetryStatus] = useState<
+    ReflectionPageController['generationRetryStatus']
+  >(null);
 
   function requireApi(): ReflectionReviewApi {
     if (api === undefined) {
@@ -125,6 +133,25 @@ export function useReflectionPageController({
     }
   }
 
+  async function retryGenerationRun(runId: string): Promise<void> {
+    if (generationRetryStatus?.state === 'generating') return;
+    setGenerationRetryStatus({ runId, state: 'generating' });
+    setError(null);
+    try {
+      const result = await requireApi().retryGenerationRun(runId);
+      await loadListsAndDetail(result.artifactId);
+      setGenerationRetryStatus({ runId, state: 'succeeded' });
+    } catch (error) {
+      setGenerationRetryStatus({ runId, state: 'failed' });
+      setError(error instanceof Error ? error.message : 'Failed to retry reflection generation');
+      try {
+        setGenerationRuns(await requireApi().listGenerationRuns());
+      } catch {
+        // Preserve the retry failure as the actionable error.
+      }
+    }
+  }
+
   async function reviewProposal(
     proposalId: string,
     request: ReviewProposalRequest,
@@ -165,9 +192,11 @@ export function useReflectionPageController({
     selectedArtifactId: selectedArtifact?.artifactId ?? null,
     submittingProposalId,
     withdrawingInvocationId,
+    generationRetryStatus,
     openPage,
     refresh,
     selectArtifact,
+    retryGenerationRun,
     deferProposal: (proposalId) => reviewProposal(proposalId, { action: 'defer' }),
     dismissProposal: (proposalId, reason) => reviewProposal(proposalId, {
       action: 'dismiss',
