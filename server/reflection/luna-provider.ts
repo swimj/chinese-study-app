@@ -56,31 +56,36 @@ export class LunaReflectionProviderError extends Error {
   readonly code: LunaReflectionFailureCode;
   readonly issueCount: number;
   readonly clientRequestId: string | null;
+  readonly metadata: LunaReflectionRunMetadata | null;
 
   constructor(
     code: LunaReflectionFailureCode,
     issueCount = 0,
     clientRequestId: string | null = null,
+    metadata: LunaReflectionRunMetadata | null = null,
   ) {
     super(failureMessages[code]);
     this.name = 'LunaReflectionProviderError';
     this.code = code;
     this.issueCount = issueCount;
     this.clientRequestId = clientRequestId;
+    this.metadata = metadata;
   }
 }
 
+export type LunaReflectionRunMetadata = {
+  provider: 'openai';
+  modelConfig: 'gpt-5.6-luna-high';
+  providerModel: 'gpt-5.6-luna';
+  promptVersion: 'reflection-v2';
+  responseId: string | null;
+  finishReason: string | null;
+  usage: NormalizedTokenUsage;
+};
+
 export type LunaReflectionSuccess = {
   result: SessionReflectionResultV4;
-  metadata: {
-    provider: 'openai';
-    modelConfig: 'gpt-5.6-luna-high';
-    providerModel: 'gpt-5.6-luna';
-    promptVersion: 'reflection-v2';
-    responseId: string | null;
-    finishReason: string | null;
-    usage: NormalizedTokenUsage;
-  };
+  metadata: LunaReflectionRunMetadata;
 };
 
 export type LunaReflectionProvider = {
@@ -158,39 +163,58 @@ export function createLunaReflectionProvider(
         throw new LunaReflectionProviderError('upstream_failure', 0, clientRequestId);
       }
 
+      const metadata = runMetadataFromProviderResult(providerResult);
       if (isOutputTruncationFinishReason(providerResult.finishReason)) {
-        throw new LunaReflectionProviderError('output_truncated');
+        throw new LunaReflectionProviderError('output_truncated', 0, null, metadata);
       }
 
       let parsed: unknown;
       try {
         parsed = JSON.parse(providerResult.rawText);
       } catch {
-        throw new LunaReflectionProviderError('invalid_json');
+        throw new LunaReflectionProviderError('invalid_json', 0, null, metadata);
       }
 
       const schemaErrors = validateJsonSchema(parsed, sessionReflectionResultSchema);
       if (schemaErrors.length > 0) {
-        throw new LunaReflectionProviderError('schema_invalid', schemaErrors.length);
+        throw new LunaReflectionProviderError(
+          'schema_invalid',
+          schemaErrors.length,
+          null,
+          metadata,
+        );
       }
 
       const contractErrors = validateSessionReflectionResult(parsed, bundle);
       if (contractErrors.length > 0) {
-        throw new LunaReflectionProviderError('domain_contract_invalid', contractErrors.length);
+        throw new LunaReflectionProviderError(
+          'domain_contract_invalid',
+          contractErrors.length,
+          null,
+          metadata,
+        );
       }
 
       return {
         result: parsed as SessionReflectionResultV4,
-        metadata: {
-          provider: 'openai',
-          modelConfig: LUNA_REFLECTION_MODEL_CONFIG.id,
-          providerModel: LUNA_REFLECTION_MODEL_CONFIG.providerModel,
-          promptVersion: LUNA_REFLECTION_PROMPT_VERSION,
-          responseId: providerResult.responseId,
-          finishReason: providerResult.finishReason,
-          usage: providerResult.usage,
-        },
+        metadata,
       };
     },
+  };
+}
+
+function runMetadataFromProviderResult(input: {
+  responseId: string | null;
+  finishReason: string | null;
+  usage: NormalizedTokenUsage;
+}): LunaReflectionRunMetadata {
+  return {
+    provider: 'openai',
+    modelConfig: LUNA_REFLECTION_MODEL_CONFIG.id,
+    providerModel: LUNA_REFLECTION_MODEL_CONFIG.providerModel,
+    promptVersion: LUNA_REFLECTION_PROMPT_VERSION,
+    responseId: input.responseId,
+    finishReason: input.finishReason,
+    usage: input.usage,
   };
 }

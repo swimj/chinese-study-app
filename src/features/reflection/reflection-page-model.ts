@@ -9,6 +9,7 @@ import type {
 import type {
   ReflectionArtifactDetailDto,
   ReflectionProposalDetailDto,
+  ReflectionGenerationRunDto,
 } from '../../services/api';
 import {
   classifyProposalAcceptance,
@@ -341,6 +342,7 @@ function assertIndex(values: unknown[], index: number, label: string): void {
 export type {
   ReflectionArtifactDetailDto,
   ReflectionArtifactSummaryDto,
+  ReflectionGenerationRunDto,
   ReflectionProposalDetailDto,
   ReflectionReviewApi,
 } from '../../services/api';

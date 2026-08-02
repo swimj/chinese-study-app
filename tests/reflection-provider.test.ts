@@ -311,6 +311,22 @@ describe('production Luna reflection provider', () => {
 
     const error = await expectProviderError(provider.generate(bundle), 'output_truncated');
     assert.equal(JSON.stringify(error).includes('partial-response'), false);
+    assert.deepEqual(error.metadata, {
+      provider: 'openai',
+      modelConfig: 'gpt-5.6-luna-high',
+      providerModel: 'gpt-5.6-luna',
+      promptVersion: 'reflection-v2',
+      responseId: 'response-1',
+      finishReason: 'length',
+      usage: {
+        inputTokens: 100,
+        cachedInputTokens: null,
+        cacheWriteInputTokens: null,
+        outputTokens: 40,
+        reasoningTokens: 10,
+        totalTokens: 140,
+      },
+    });
   });
 
   test('distinguishes invalid JSON, schema failures, and domain-contract failures', async () => {

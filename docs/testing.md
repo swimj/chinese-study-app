@@ -20,16 +20,18 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `reflection-domain.test.ts` | V3 result/operation validation, registry, exact/revised classification, lifecycle transitions | `src/domain/reflection.ts` |
 | `reflection-evidence-validation.test.ts` | Strict supplement/full-bundle shapes, validation-only attempt links, retired attempt/management metadata rejection, and initial-milestone evidence boundary | `src/domain/reflection-evidence.ts` |
 | `session-reflection-evidence.test.ts` | Raw production response persistence, evidence accumulation, accepted-attempt links, Undo/drop behavior | Session state + `session-reflection-evidence.ts` |
-| `reflection-evidence-enrichment.test.ts` | Completed-session/attempt verification, managed-action exclusion, and read-only durable context enrichment without exposing attempt history | `server/reflection/evidence.ts` with temporary SQLite fixtures |
-| `reflection-provider.test.ts` | Pinned Luna request, lazy credentials, production prompt, strict output validation, sanitized failures | `server/reflection/luna-provider.ts` with injected fetch |
-| `reflection-generation.test.ts` | Prelookup idempotency, provider/materialization metadata, in-process coalescing, failure retry | `server/reflection/generation.ts` with injected dependencies |
-| `reflection-generation-isolation.test.ts` | Real enrichment/provider failure paths preserve completed session, summary, and attempt state without reflection rows | Reflection generation stack + temporary SQLite |
-| `reflection-store.test.ts` | Three-table schema, atomic artifact/review persistence, queue/detail, review/invocation lifecycle | Dynamic `server/db.ts` |
+| `reflection-evidence-enrichment.test.ts` | Completed-session/attempt verification, managed-action exclusion, read-only durable context enrichment, and stable two-item initial cap | `server/reflection/evidence.ts` with temporary SQLite fixtures |
+| `reflection-provider.test.ts` | Pinned Luna request, lazy credentials, production prompt, strict output validation, sanitized failures, and retained truncation metadata | `server/reflection/luna-provider.ts` with injected fetch |
+| `reflection-generation.test.ts` | Prelookup idempotency, provider/materialization/run metadata, included/eligible counts, in-process coalescing, failure retry | `server/reflection/generation.ts` with injected dependencies |
+| `reflection-generation-isolation.test.ts` | Real enrichment/provider failures preserve completed session, summary, and attempt state while recording available run usage | Reflection generation stack + temporary SQLite |
+| `reflection-run-pricing.test.ts` | Pinned token-category pricing math, partial usage handling, and unknown-rate unavailability | `server/reflection/run-pricing.ts` |
+| `reflection-store.test.ts` | Four-table schema, immutable run-price reconstruction, atomic artifact/review persistence, queue/detail, review/invocation lifecycle | Dynamic `server/db.ts` |
 | `reflection-application.test.ts` | Suppression/contrast adapters, effect attribution, already/stale/failed/unsupported outcomes, recovery | Dynamic `server/db.ts` |
 | `reflection-persistence-reload.test.ts` | Queue/detail/review/application/effect reconstruction across fresh Node processes | Shared temporary `APP_DATA_DIR` |
-| `reflection-api.test.ts` | Generation statuses/errors, queue/detail, strict independent proposal review, apply/withdraw, startup recovery | `server/index.ts` registered Express route handlers + temporary SQLite |
+| `reflection-api.test.ts` | Generation statuses/errors, queue/detail, compact generation run log, strict independent proposal review, apply/withdraw, startup recovery | `server/index.ts` registered Express route handlers + temporary SQLite |
 | `session-finalization.test.ts` | Explicit Finish boundary, commit-before-summary ordering, reflection isolation/retry and stale-response guards | `session-finalization.ts` |
 | `reflection-page-model.test.ts` | Item/proposal grouping, deep draft edits for four operations, support and validation presentation | `reflection-page-model.ts` |
+| `reflections-page-run-log.test.ts` | Empty, unavailable-cost, and priced run-log rendering states | `ReflectionsPage.tsx` server render |
 | `reflection-verification-fixture.test.ts` | Reflection-focused dev seed plus direct SQLite assertions for supported effects, unsupported authorization, and withdrawal | Disposable dev database seeded from `server/seeds/reflection-dev.json` |
 | `llm-provider-runner.test.ts` | Spike compatibility shims, provider adapters, fixtures, current V3 validation/viewer behavior | `spikes/llm-provider/` |
 | `user-priority.test.ts` | User priority patches | Dynamic `server/db.ts` |

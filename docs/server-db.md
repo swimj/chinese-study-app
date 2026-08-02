@@ -29,12 +29,13 @@ Domain-oriented re-export shims (navigation only; implementation stays in `persi
 
 ## Reflection persistence
 
-Reflection uses three SQLite tables initialized and validated from
+Reflection uses four SQLite tables initialized and validated from
 [`reflections.ts`](../server/db/reflections.ts):
 
 | Table | Responsibility |
 | --- | --- |
 | `reflection_artifacts` | Generate-once evidence/result provenance, unique by source session and reflection-flow version |
+| `reflection_generation_runs` | Append-only provider-attempt log, including failed or truncated attempts with available normalized usage and a persisted price snapshot |
 | `reflection_proposal_reviews` | One mutable review status for each immutable `(artifact, item, proposal index)` locator |
 | `reflection_operation_invocations` | Immutable authorized operation plus its mutable application status, effects, and non-effect reason |
 
@@ -42,6 +43,13 @@ Artifacts preserve the exact bounded bundle, validated result, generation time,
 provider/model/prompt metadata, and schema versions. A restrictive foreign key
 keeps the source study session available. Triggers prevent artifact updates,
 proposal-identity rewrites, and invocation-authorization rewrites.
+
+Generation runs remain separate from artifacts: an artifact still means a
+validated successful result, while the run log records each concluded provider
+attempt. A run stores the eligible/included evidence counts, nullable normalized
+token categories, response/finish metadata when available, and a complete
+versioned pricing basis plus estimate when that provider/model is known. This
+makes a historic displayed estimate stable if later pricing tables change.
 
 Materialization and proposal-row seeding are one transaction. The
 `(source_session_id, reflection_flow_version)` unique key implements durable
@@ -78,8 +86,9 @@ Generation is deliberately outside the DB module:
 | Module | Responsibility |
 | --- | --- |
 | [`server/reflection/evidence.ts`](../server/reflection/evidence.ts) | Strict supplement validation; completed-session and accepted-attempt verification; read-only word/content enrichment; canonical bundle construction |
-| [`server/reflection/generation.ts`](../server/reflection/generation.ts) | Prelookup idempotency, in-process session/flow request coalescing, provider orchestration, and valid-result materialization |
-| [`server/reflection/luna-provider.ts`](../server/reflection/luna-provider.ts) | Lazy credential loading, pinned Luna model configuration, production prompt loading, structured-output and domain validation, sanitized typed failures |
+| [`server/reflection/generation.ts`](../server/reflection/generation.ts) | Prelookup idempotency, in-process session/flow request coalescing, bounded evidence counts, provider orchestration, run logging, and valid-result materialization |
+| [`server/reflection/luna-provider.ts`](../server/reflection/luna-provider.ts) | Lazy credential loading, pinned Luna model configuration, production prompt loading, structured-output and domain validation, sanitized typed failures with available response metadata |
+| [`server/reflection/run-pricing.ts`](../server/reflection/run-pricing.ts) | Versioned hard-coded cost snapshot and estimate math for the initial Luna reflection flow |
 | [`server/reflection/prompts/reflection-v2.md`](../server/reflection/prompts/reflection-v2.md) | Promoted initial reflection prompt |
 | [`server/llm/`](../server/llm/) | Provider-neutral HTTP, OpenAI-compatible request, token/finish-reason, and JSON-schema validation primitives |
 

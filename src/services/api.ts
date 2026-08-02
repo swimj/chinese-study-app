@@ -59,6 +59,38 @@ export type GenerateSessionReflectionResult = {
   status: 'created' | 'existing';
 };
 
+export type ReflectionTokenUsageDto = {
+  inputTokens: number | null;
+  cachedInputTokens: number | null;
+  cacheWriteInputTokens: number | null;
+  outputTokens: number | null;
+  reasoningTokens: number | null;
+  totalTokens: number | null;
+};
+
+export type ReflectionGenerationRunDto = {
+  runId: string;
+  sourceSessionId: string;
+  reflectionFlowVersion: string;
+  startedAt: string;
+  completedAt: string;
+  provider: string;
+  model: string;
+  providerModel: string;
+  promptVersion: string;
+  responseId: string | null;
+  finishReason: string | null;
+  state: 'succeeded' | 'failed';
+  failureCode: string | null;
+  eligibleItemCount: number;
+  includedItemCount: number;
+  usage: ReflectionTokenUsageDto;
+  pricingSnapshotId: string | null;
+  pricingAsOf: string | null;
+  pricingBasis: unknown | null;
+  estimatedCostUsd: number | null;
+};
+
 export type ReflectionArtifactSummaryDto = {
   artifactId: string;
   sourceSessionId: string;
@@ -98,6 +130,7 @@ export type ReflectionArtifactDetailDto = Omit<
 
 export type ReflectionReviewApi = {
   listArtifacts: (review: 'open' | 'all') => Promise<ReflectionArtifactSummaryDto[]>;
+  listGenerationRuns: () => Promise<ReflectionGenerationRunDto[]>;
   getArtifact: (artifactId: string) => Promise<ReflectionArtifactDetailDto>;
   reviewProposal: (
     proposalId: string,
@@ -834,6 +867,15 @@ export async function fetchReflectionArtifacts(
 
   const payload = await response.json() as { artifacts: ReflectionArtifactSummaryDto[] };
   return payload.artifacts;
+}
+
+export async function fetchReflectionGenerationRuns(): Promise<ReflectionGenerationRunDto[]> {
+  const response = await fetch(`${API_BASE}/api/reflection-generation-runs`);
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to load reflection generation runs'));
+  }
+  const payload = await response.json() as { runs: ReflectionGenerationRunDto[] };
+  return payload.runs;
 }
 
 export async function fetchReflectionArtifactDetail(

@@ -22,6 +22,7 @@ import {
   validateReflectionOperation,
   validateSessionReflectionResult,
 } from '../../src/domain/reflection.ts';
+import type { NormalizedTokenUsage } from '../llm/types.ts';
 import { dbPath, getDb } from './connection.ts';
 import { suppressDefinitionProductionWithoutTransaction } from './domain-commands.ts';
 
@@ -41,6 +42,35 @@ export type MaterializeReflectionArtifactInput = {
   promptVersion: string;
   evidenceBundle: SessionReflectionBundleV1;
   result: SessionReflectionResultV4;
+};
+
+export type ReflectionGenerationRunState = 'succeeded' | 'failed';
+
+export type ReflectionGenerationRunRecord = {
+  runId: string;
+  sourceSessionId: string;
+  reflectionFlowVersion: string;
+  startedAt: string;
+  completedAt: string;
+  provider: string;
+  model: string;
+  providerModel: string;
+  promptVersion: string;
+  responseId: string | null;
+  finishReason: string | null;
+  state: ReflectionGenerationRunState;
+  failureCode: string | null;
+  eligibleItemCount: number;
+  includedItemCount: number;
+  usage: NormalizedTokenUsage;
+  pricingSnapshotId: string | null;
+  pricingAsOf: string | null;
+  pricingBasis: unknown | null;
+  estimatedCostUsd: number | null;
+};
+
+export type RecordReflectionGenerationRunInput = Omit<ReflectionGenerationRunRecord, 'runId'> & {
+  runId?: string;
 };
 
 /**
@@ -142,6 +172,34 @@ type ArtifactRow = {
   result_json: string;
 };
 
+type ReflectionGenerationRunRow = {
+  run_id: string;
+  source_session_id: string;
+  reflection_flow_version: string;
+  started_at: string;
+  completed_at: string;
+  provider: string;
+  model: string;
+  provider_model: string;
+  prompt_version: string;
+  response_id: string | null;
+  finish_reason: string | null;
+  state: ReflectionGenerationRunState;
+  failure_code: string | null;
+  eligible_item_count: number;
+  included_item_count: number;
+  input_tokens: number | null;
+  cached_input_tokens: number | null;
+  cache_write_input_tokens: number | null;
+  output_tokens: number | null;
+  reasoning_tokens: number | null;
+  total_tokens: number | null;
+  pricing_snapshot_id: string | null;
+  pricing_as_of: string | null;
+  pricing_basis_json: string | null;
+  estimated_cost_usd: number | null;
+};
+
 type ProposalReviewRow = {
   proposal_id: string;
   artifact_id: string;
@@ -191,6 +249,34 @@ const artifactColumns = [
   'result_schema_version',
   'evidence_bundle_json',
   'result_json',
+] as const;
+
+const reflectionGenerationRunColumns = [
+  'run_id',
+  'source_session_id',
+  'reflection_flow_version',
+  'started_at',
+  'completed_at',
+  'provider',
+  'model',
+  'provider_model',
+  'prompt_version',
+  'response_id',
+  'finish_reason',
+  'state',
+  'failure_code',
+  'eligible_item_count',
+  'included_item_count',
+  'input_tokens',
+  'cached_input_tokens',
+  'cache_write_input_tokens',
+  'output_tokens',
+  'reasoning_tokens',
+  'total_tokens',
+  'pricing_snapshot_id',
+  'pricing_as_of',
+  'pricing_basis_json',
+  'estimated_cost_usd',
 ] as const;
 
 const proposalReviewColumns = [
@@ -246,6 +332,53 @@ export function ensureReflectionSchema(): void {
       evidence_bundle_json TEXT NOT NULL,
       result_json TEXT NOT NULL,
       UNIQUE (source_session_id, reflection_flow_version)
+    );
+
+    CREATE TABLE IF NOT EXISTS reflection_generation_runs (
+      run_id TEXT PRIMARY KEY,
+      source_session_id TEXT NOT NULL
+        REFERENCES study_sessions(id) ON DELETE RESTRICT,
+      reflection_flow_version TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      completed_at TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      provider_model TEXT NOT NULL,
+      prompt_version TEXT NOT NULL,
+      response_id TEXT,
+      finish_reason TEXT,
+      state TEXT NOT NULL CHECK (state IN ('succeeded', 'failed')),
+      failure_code TEXT,
+      eligible_item_count INTEGER NOT NULL CHECK (eligible_item_count >= 0),
+      included_item_count INTEGER NOT NULL CHECK (
+        included_item_count >= 0 AND included_item_count <= eligible_item_count
+      ),
+      input_tokens INTEGER CHECK (input_tokens IS NULL OR input_tokens >= 0),
+      cached_input_tokens INTEGER CHECK (
+        cached_input_tokens IS NULL OR cached_input_tokens >= 0
+      ),
+      cache_write_input_tokens INTEGER CHECK (
+        cache_write_input_tokens IS NULL OR cache_write_input_tokens >= 0
+      ),
+      output_tokens INTEGER CHECK (output_tokens IS NULL OR output_tokens >= 0),
+      reasoning_tokens INTEGER CHECK (reasoning_tokens IS NULL OR reasoning_tokens >= 0),
+      total_tokens INTEGER CHECK (total_tokens IS NULL OR total_tokens >= 0),
+      pricing_snapshot_id TEXT,
+      pricing_as_of TEXT,
+      pricing_basis_json TEXT,
+      estimated_cost_usd REAL CHECK (
+        estimated_cost_usd IS NULL OR estimated_cost_usd >= 0
+      ),
+      CHECK (
+        (state = 'succeeded' AND failure_code IS NULL)
+        OR (state = 'failed' AND failure_code IS NOT NULL)
+      ),
+      CHECK (
+        (estimated_cost_usd IS NULL AND pricing_snapshot_id IS NULL
+          AND pricing_as_of IS NULL AND pricing_basis_json IS NULL)
+        OR (estimated_cost_usd IS NOT NULL AND pricing_snapshot_id IS NOT NULL
+          AND pricing_as_of IS NOT NULL AND pricing_basis_json IS NOT NULL)
+      )
     );
 
     CREATE TABLE IF NOT EXISTS reflection_proposal_reviews (
@@ -486,6 +619,8 @@ export function ensureReflectionIndexes(): void {
   getDb().exec(`
     CREATE INDEX IF NOT EXISTS idx_reflection_artifacts_generated
       ON reflection_artifacts(generated_at DESC, artifact_id ASC);
+    CREATE INDEX IF NOT EXISTS idx_reflection_generation_runs_completed
+      ON reflection_generation_runs(completed_at DESC, run_id ASC);
     CREATE INDEX IF NOT EXISTS idx_reflection_proposal_reviews_open
       ON reflection_proposal_reviews(disposition, artifact_id);
     CREATE INDEX IF NOT EXISTS idx_reflection_invocations_application
@@ -501,6 +636,7 @@ export function ensureReflectionIndexes(): void {
 
 export function validateReflectionSchema(): void {
   assertTableColumns('reflection_artifacts', artifactColumns);
+  assertTableColumns('reflection_generation_runs', reflectionGenerationRunColumns);
   assertTableColumns('reflection_proposal_reviews', proposalReviewColumns);
   assertTableColumns('reflection_operation_invocations', invocationColumns);
   assertUniqueIndex(
@@ -516,6 +652,12 @@ export function validateReflectionSchema(): void {
     'reflection_artifacts',
     false,
     ['generated_at', 'artifact_id'],
+  );
+  assertNamedIndex(
+    'idx_reflection_generation_runs_completed',
+    'reflection_generation_runs',
+    false,
+    ['completed_at', 'run_id'],
   );
   assertNamedIndex(
     'idx_reflection_proposal_reviews_open',
@@ -545,6 +687,13 @@ export function validateReflectionSchema(): void {
   );
   assertForeignKey(
     'reflection_artifacts',
+    'source_session_id',
+    'study_sessions',
+    'id',
+    'RESTRICT',
+  );
+  assertForeignKey(
+    'reflection_generation_runs',
     'source_session_id',
     'study_sessions',
     'id',
@@ -796,6 +945,116 @@ export function listReflectionArtifacts(
       openProposalCount: counts.open_proposal_count,
     };
   });
+}
+
+/**
+ * Reflection artifacts record only validated successful output. This separate
+ * append-only log records concluded provider attempts, including failures that
+ * never produce an artifact, without adding a new learner-facing lifecycle.
+ */
+export function recordReflectionGenerationRun(
+  input: RecordReflectionGenerationRunInput,
+): ReflectionGenerationRunRecord {
+  const runId = input.runId ?? randomUUID();
+  assertNonEmpty(runId, 'reflection generation run id');
+  assertNonEmpty(input.sourceSessionId, 'reflection generation run source session id');
+  assertNonEmpty(input.reflectionFlowVersion, 'reflection generation run flow version');
+  assertIsoTimestamp(input.startedAt, 'reflection generation run start time');
+  assertIsoTimestamp(input.completedAt, 'reflection generation run completion time');
+  assertNonEmpty(input.provider, 'reflection generation run provider');
+  assertNonEmpty(input.model, 'reflection generation run model');
+  assertNonEmpty(input.providerModel, 'reflection generation run provider model');
+  assertNonEmpty(input.promptVersion, 'reflection generation run prompt version');
+  if (input.state !== 'succeeded' && input.state !== 'failed') {
+    throw new Error('Reflection generation run state must be succeeded or failed.');
+  }
+  if ((input.state === 'succeeded') !== (input.failureCode === null)) {
+    throw new Error('Successful reflection generation runs cannot have a failure code.');
+  }
+  assertCount(input.eligibleItemCount, 'eligible reflection evidence item count');
+  assertCount(input.includedItemCount, 'included reflection evidence item count');
+  if (input.includedItemCount > input.eligibleItemCount) {
+    throw new Error('Included reflection evidence item count cannot exceed eligible item count.');
+  }
+  assertNormalizedUsage(input.usage);
+  if (input.estimatedCostUsd !== null && (!Number.isFinite(input.estimatedCostUsd)
+    || input.estimatedCostUsd < 0)) {
+    throw new Error('Estimated reflection run cost must be a non-negative finite number.');
+  }
+
+  const pricingPresent = input.pricingSnapshotId !== null
+    || input.pricingAsOf !== null
+    || input.pricingBasis !== null
+    || input.estimatedCostUsd !== null;
+  if (pricingPresent && (
+    input.pricingSnapshotId === null
+    || input.pricingAsOf === null
+    || input.pricingBasis === null
+    || input.estimatedCostUsd === null
+  )) {
+    throw new Error('Reflection run pricing fields must be present together.');
+  }
+
+  getDb().prepare(`
+    INSERT INTO reflection_generation_runs (
+      run_id, source_session_id, reflection_flow_version, started_at, completed_at,
+      provider, model, provider_model, prompt_version, response_id, finish_reason,
+      state, failure_code, eligible_item_count, included_item_count,
+      input_tokens, cached_input_tokens, cache_write_input_tokens, output_tokens,
+      reasoning_tokens, total_tokens, pricing_snapshot_id, pricing_as_of,
+      pricing_basis_json, estimated_cost_usd
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    runId,
+    input.sourceSessionId,
+    input.reflectionFlowVersion,
+    input.startedAt,
+    input.completedAt,
+    input.provider,
+    input.model,
+    input.providerModel,
+    input.promptVersion,
+    input.responseId,
+    input.finishReason,
+    input.state,
+    input.failureCode,
+    input.eligibleItemCount,
+    input.includedItemCount,
+    input.usage.inputTokens,
+    input.usage.cachedInputTokens,
+    input.usage.cacheWriteInputTokens,
+    input.usage.outputTokens,
+    input.usage.reasoningTokens,
+    input.usage.totalTokens,
+    input.pricingSnapshotId,
+    input.pricingAsOf,
+    input.pricingBasis === null ? null : JSON.stringify(input.pricingBasis),
+    input.estimatedCostUsd,
+  );
+  return getReflectionGenerationRun(runId);
+}
+
+export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRunRecord[] {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+    throw new Error('Reflection generation run list limit must be an integer from 1 to 200.');
+  }
+  const rows = getDb().prepare(`
+    SELECT ${reflectionGenerationRunColumns.join(', ')}
+    FROM reflection_generation_runs
+    ORDER BY completed_at DESC, run_id ASC
+    LIMIT ?
+  `).all(limit) as unknown as ReflectionGenerationRunRow[];
+  return rows.map(mapReflectionGenerationRunRow);
+}
+
+function getReflectionGenerationRun(runId: string): ReflectionGenerationRunRecord {
+  const row = getDb().prepare(`
+    SELECT ${reflectionGenerationRunColumns.join(', ')}
+    FROM reflection_generation_runs
+    WHERE run_id = ?
+  `).get(runId) as ReflectionGenerationRunRow | undefined;
+  if (!row) throw new Error('Reflection generation run not found.');
+  return mapReflectionGenerationRunRow(row);
 }
 
 export function deferReflectionProposal(
@@ -1173,6 +1432,72 @@ function originalProposalContextForReview(row: ProposalReviewRow): {
     );
   }
   return { proposal, evidenceItem };
+}
+
+function mapReflectionGenerationRunRow(
+  row: ReflectionGenerationRunRow,
+): ReflectionGenerationRunRecord {
+  const usage: NormalizedTokenUsage = {
+    inputTokens: row.input_tokens,
+    cachedInputTokens: row.cached_input_tokens,
+    cacheWriteInputTokens: row.cache_write_input_tokens,
+    outputTokens: row.output_tokens,
+    reasoningTokens: row.reasoning_tokens,
+    totalTokens: row.total_tokens,
+  };
+  assertNormalizedUsage(usage);
+  assertCount(row.eligible_item_count, 'stored eligible reflection evidence item count');
+  assertCount(row.included_item_count, 'stored included reflection evidence item count');
+  if (row.included_item_count > row.eligible_item_count) {
+    throw corruptionError('reflection generation run includes more items than were eligible');
+  }
+  if (row.state !== 'succeeded' && row.state !== 'failed') {
+    throw corruptionError(`reflection generation run has unsupported state ${row.state}`);
+  }
+  if ((row.state === 'succeeded') !== (row.failure_code === null)) {
+    throw corruptionError('reflection generation run has inconsistent failure fields');
+  }
+  const pricingPresent = row.pricing_snapshot_id !== null
+    || row.pricing_as_of !== null
+    || row.pricing_basis_json !== null
+    || row.estimated_cost_usd !== null;
+  if (pricingPresent && (
+    row.pricing_snapshot_id === null
+    || row.pricing_as_of === null
+    || row.pricing_basis_json === null
+    || row.estimated_cost_usd === null
+  )) {
+    throw corruptionError('reflection generation run has incomplete pricing fields');
+  }
+  if (row.estimated_cost_usd !== null && (!Number.isFinite(row.estimated_cost_usd)
+    || row.estimated_cost_usd < 0)) {
+    throw corruptionError('reflection generation run has invalid estimated cost');
+  }
+
+  return {
+    runId: row.run_id,
+    sourceSessionId: row.source_session_id,
+    reflectionFlowVersion: row.reflection_flow_version,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    provider: row.provider,
+    model: row.model,
+    providerModel: row.provider_model,
+    promptVersion: row.prompt_version,
+    responseId: row.response_id,
+    finishReason: row.finish_reason,
+    state: row.state,
+    failureCode: row.failure_code,
+    eligibleItemCount: row.eligible_item_count,
+    includedItemCount: row.included_item_count,
+    usage,
+    pricingSnapshotId: row.pricing_snapshot_id,
+    pricingAsOf: row.pricing_as_of,
+    pricingBasis: row.pricing_basis_json === null
+      ? null
+      : parseJson(row.pricing_basis_json, 'reflection generation run pricing basis'),
+    estimatedCostUsd: row.estimated_cost_usd,
+  };
 }
 
 function mapArtifactRow(row: ArtifactRow): ReflectionArtifactRecord {
@@ -1968,6 +2293,20 @@ function assertIsoTimestamp(value: string, label: string): void {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.valueOf()) || parsed.toISOString() !== value) {
     throw new Error(`Expected ${label} to be an ISO-8601 UTC timestamp.`);
+  }
+}
+
+function assertCount(value: number, label: string): void {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`Expected ${label} to be a non-negative integer.`);
+  }
+}
+
+function assertNormalizedUsage(usage: NormalizedTokenUsage): void {
+  for (const [name, value] of Object.entries(usage)) {
+    if (value !== null && (!Number.isInteger(value) || value < 0)) {
+      throw new Error(`Expected ${name} to be a non-negative integer or null.`);
+    }
   }
 }
 

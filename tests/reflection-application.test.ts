@@ -47,6 +47,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
       BEGIN;
       DELETE FROM reflection_proposal_reviews;
       DELETE FROM reflection_operation_invocations;
+      DELETE FROM reflection_generation_runs;
       DELETE FROM reflection_artifacts;
       DELETE FROM contrast_candidate_intake;
       DELETE FROM contrast_prompts;

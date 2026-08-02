@@ -48,6 +48,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       BEGIN;
       DELETE FROM reflection_proposal_reviews;
       DELETE FROM reflection_operation_invocations;
+      DELETE FROM reflection_generation_runs;
       DELETE FROM reflection_artifacts;
       DELETE FROM study_sessions;
       DELETE FROM words;
@@ -62,7 +63,7 @@ describe('reflection durable store', { concurrency: false }, () => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
-  test('initializes and validates the three-table reflection schema', () => {
+  test('initializes and validates the four-table reflection schema', () => {
     assert.doesNotThrow(() => dbModule.validateReflectionSchema());
     const tables = sqlite.prepare(`
       SELECT name
@@ -73,6 +74,7 @@ describe('reflection durable store', { concurrency: false }, () => {
     `).all() as Array<{ name: string }>;
     assert.deepEqual(tables.map((row) => row.name), [
       'reflection_artifacts',
+      'reflection_generation_runs',
       'reflection_operation_invocations',
       'reflection_proposal_reviews',
     ]);
@@ -85,6 +87,71 @@ describe('reflection durable store', { concurrency: false }, () => {
       && foreignKey.to === 'id'
       && foreignKey.on_delete === 'RESTRICT'
     )));
+  });
+
+  test('persists a complete immutable pricing basis with a generation run', () => {
+    materializationInput('run-session', suppressOperation('target'));
+
+    const recorded = dbModule.recordReflectionGenerationRun({
+      runId: 'run-1',
+      sourceSessionId: 'run-session',
+      reflectionFlowVersion: 'initial_post_session_reflection.v1',
+      startedAt: generatedAt,
+      completedAt: updatedAt,
+      provider: 'openai',
+      model: 'gpt-5.6-luna-high',
+      providerModel: 'gpt-5.6-luna',
+      promptVersion: 'reflection-v2',
+      responseId: 'response-1',
+      finishReason: 'stop',
+      state: 'succeeded',
+      failureCode: null,
+      eligibleItemCount: 3,
+      includedItemCount: 2,
+      usage: {
+        inputTokens: 1_000,
+        cachedInputTokens: 100,
+        cacheWriteInputTokens: null,
+        outputTokens: 200,
+        reasoningTokens: 50,
+        totalTokens: 1_200,
+      },
+      pricingSnapshotId: 'price-v1',
+      pricingAsOf: '2026-07-30',
+      pricingBasis: { id: 'price-v1', inputPerMillionUsd: 0.2 },
+      estimatedCostUsd: 0.00042,
+    });
+
+    assert.deepEqual(recorded, {
+      runId: 'run-1',
+      sourceSessionId: 'run-session',
+      reflectionFlowVersion: 'initial_post_session_reflection.v1',
+      startedAt: generatedAt,
+      completedAt: updatedAt,
+      provider: 'openai',
+      model: 'gpt-5.6-luna-high',
+      providerModel: 'gpt-5.6-luna',
+      promptVersion: 'reflection-v2',
+      responseId: 'response-1',
+      finishReason: 'stop',
+      state: 'succeeded',
+      failureCode: null,
+      eligibleItemCount: 3,
+      includedItemCount: 2,
+      usage: {
+        inputTokens: 1_000,
+        cachedInputTokens: 100,
+        cacheWriteInputTokens: null,
+        outputTokens: 200,
+        reasoningTokens: 50,
+        totalTokens: 1_200,
+      },
+      pricingSnapshotId: 'price-v1',
+      pricingAsOf: '2026-07-30',
+      pricingBasis: { id: 'price-v1', inputPerMillionUsd: 0.2 },
+      estimatedCostUsd: 0.00042,
+    });
+    assert.deepEqual(dbModule.listReflectionGenerationRuns(), [recorded]);
   });
 
   test('atomically materializes immutable JSON and exactly one pending row per proposal', () => {

@@ -64,11 +64,11 @@ session starts.
 
 ## Reflection review workspace
 
-`useReflectionPageController` loads the open queue and recent history in
-parallel, preserves the selected artifact when possible, and loads its joined
-detail. Proposal review and authorization withdrawal reload both lists and
-detail so unresolved queue state and persisted application results remain
-coherent across reloads.
+`useReflectionPageController` loads the open queue, recent history, and the
+compact concluded-generation run log in parallel, preserves the selected
+artifact when possible, and loads its joined detail. Proposal review and
+authorization withdrawal reload both artifact lists and detail so unresolved
+queue state and persisted application results remain coherent across reloads.
 
 `ReflectionsPage` is reachable outside an active session. It shows unresolved
 artifacts separately from recent history, then joins immutable evidence and
@@ -87,6 +87,13 @@ authoritative. It labels exact versus revised acceptance and apply support
 separately, then renders persisted application states, effect/satisfying
 references, and safe reasons or errors. Accepted `unsupported` or `pending`
 authorization may be withdrawn without rewriting the accepted proposal.
+
+The sidebar also shows the dogfood run log. It presents each attempt's
+provider/model, completion or failure state, response/finish metadata when
+available, eligible/included counts, normalized token categories, and the
+persisted estimated cost or an explicit unavailable state. It is observability
+for the initial reflection flow, not a learner correctness signal or a
+replacement for immutable artifact history.
 
 The surface intentionally has no generic JSON editor, manual invocation
 workbench, different-kind replacement flow, or top-level reflection summary.

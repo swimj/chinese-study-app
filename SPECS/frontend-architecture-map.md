@@ -97,7 +97,7 @@ Page-specific state should not drift back into `App.tsx`. Use a page controller 
 
 `useReflectionPageController` owns the reflection page. See the
 [reflection frontend architecture map](../docs/reflection-frontend-architecture.md)
-for its loading, review, and application-status boundaries.
+for its loading, compact dogfood run-log, review, and application-status boundaries.
 
 ## Session Controller
 
