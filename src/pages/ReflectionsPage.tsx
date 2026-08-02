@@ -14,6 +14,7 @@ import {
   getOperationDraftState,
   reflectionOperationLabel,
   type ReflectionArtifactSummaryDto,
+  type ReflectionGenerationRunDto,
   type ReflectionProposalDetailDto,
 } from '../features/reflection/reflection-page-model';
 
@@ -61,6 +62,7 @@ export function ReflectionsPage({
             selectedArtifactId={controller.selectedArtifactId}
             onSelect={controller.selectArtifact}
           />
+          <ReflectionRunLog runs={controller.generationRuns} />
         </aside>
 
         <main className="reflection-detail">
@@ -177,6 +179,55 @@ export function ReflectionsPage({
   );
 }
 
+function ReflectionRunLog({
+  runs,
+}: {
+  runs: ReflectionGenerationRunDto[];
+}) {
+  return (
+    <section className="reflection-artifact-list">
+      <h2>Reflection runs</h2>
+      {runs.length === 0 ? (
+        <p className="notes">No reflection generation attempts yet.</p>
+      ) : (
+        runs.map((run) => (
+          <article className="reflection-proposal-card" key={run.runId}>
+            <header className="reflection-proposal-heading">
+              <div>
+                <p className="reflection-eyebrow">{formatDateTime(run.completedAt)}</p>
+                <h4>{run.provider}/{run.model}</h4>
+              </div>
+              <span className={`reflection-state-pill state-${run.state}`}>
+                {humanize(run.state)}
+              </span>
+            </header>
+            <p className="notes">
+              {run.includedItemCount}/{run.eligibleItemCount} eligible item
+              {run.eligibleItemCount === 1 ? '' : 's'} included
+              {run.finishReason === null ? '' : ` · finish: ${run.finishReason}`}
+              {run.failureCode === null ? '' : ` · ${humanize(run.failureCode)}`}
+            </p>
+            <p className="notes">
+              Input {formatTokenCount(run.usage.inputTokens)}
+              {' · '}cached {formatTokenCount(run.usage.cachedInputTokens)}
+              {' · '}cache write {formatTokenCount(run.usage.cacheWriteInputTokens)}
+              {' · '}output {formatTokenCount(run.usage.outputTokens)}
+              {' · '}reasoning {formatTokenCount(run.usage.reasoningTokens)}
+              {' · '}total {formatTokenCount(run.usage.totalTokens)}
+            </p>
+            <p className="notes">
+              {run.estimatedCostUsd === null
+                ? 'Cost estimate unavailable for this run.'
+                : `Estimated cost: ${formatUsd(run.estimatedCostUsd)} (rates as of ${run.pricingAsOf}; ${run.pricingSnapshotId})`}
+              {run.responseId === null ? '' : ` · response ${run.responseId}`}
+            </p>
+          </article>
+        ))
+      )}
+    </section>
+  );
+}
+
 function ArtifactList({
   title,
   emptyLabel,
@@ -216,6 +267,14 @@ function ArtifactList({
       )}
     </section>
   );
+}
+
+function formatTokenCount(value: number | null): string {
+  return value === null ? '—' : value.toLocaleString();
+}
+
+function formatUsd(value: number): string {
+  return `$${value.toFixed(value < 0.01 ? 5 : 2)}`;
 }
 
 function ProposalCard({

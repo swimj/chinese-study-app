@@ -52,6 +52,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       BEGIN;
       DELETE FROM reflection_proposal_reviews;
       DELETE FROM reflection_operation_invocations;
+      DELETE FROM reflection_generation_runs;
       DELETE FROM reflection_artifacts;
       DELETE FROM review_session_summaries;
       DELETE FROM study_attempt_events;
@@ -69,7 +70,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
-  test('an upstream provider error preserves completed study state and creates no reflection rows', async () => {
+  test('an upstream provider error preserves study state and records an unavailable-usage failure', async () => {
     const before = completedStudyState();
     const provider = createLunaReflectionProvider({
       environment: { OPENAI_API_KEY: 'test-only-key' },
@@ -90,10 +91,35 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
     );
 
     assert.deepEqual(completedStudyState(), before);
-    assertZeroReflectionRows();
+    assertNoArtifactRows();
+    const [run] = dbModule.listReflectionGenerationRuns();
+    assert.ok(run);
+    assert.match(run.runId, /^[0-9a-f-]{36}$/);
+    assert.deepEqual({ ...run, runId: 'generated-run-id' }, {
+      runId: 'generated-run-id',
+      sourceSessionId: 'session-1',
+      reflectionFlowVersion: 'initial_post_session_reflection.v1',
+      startedAt: generatedAt,
+      completedAt: generatedAt,
+      provider: 'openai',
+      model: 'gpt-5.6-luna-high',
+      providerModel: 'gpt-5.6-luna',
+      promptVersion: 'reflection-v2',
+      responseId: null,
+      finishReason: null,
+      state: 'failed',
+      failureCode: 'upstream_failure',
+      eligibleItemCount: 1,
+      includedItemCount: 1,
+      usage: unavailableUsage(),
+      pricingSnapshotId: null,
+      pricingAsOf: null,
+      pricingBasis: null,
+      estimatedCostUsd: null,
+    });
   });
 
-  test('a schema-valid but contract-invalid result preserves completed study state and creates no reflection rows', async () => {
+  test('a contract-invalid result preserves study state and records provider usage', async () => {
     const before = completedStudyState();
     const provider = createLunaReflectionProvider({
       environment: { OPENAI_API_KEY: 'test-only-key' },
@@ -125,7 +151,70 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
     );
 
     assert.deepEqual(completedStudyState(), before);
-    assertZeroReflectionRows();
+    assertNoArtifactRows();
+    const [run] = dbModule.listReflectionGenerationRuns();
+    assert.equal(run?.state, 'failed');
+    assert.equal(run?.failureCode, 'domain_contract_invalid');
+    assert.deepEqual(run?.usage, {
+      inputTokens: 10,
+      cachedInputTokens: null,
+      cacheWriteInputTokens: null,
+      outputTokens: 10,
+      reasoningTokens: null,
+      totalTokens: 20,
+    });
+    assert.equal(run?.estimatedCostUsd, 0.000014);
+    assert.equal(run?.pricingAsOf, '2026-07-30');
+  });
+
+  test('a truncated response preserves study state and records its available usage', async () => {
+    const before = completedStudyState();
+    const provider = createLunaReflectionProvider({
+      environment: { OPENAI_API_KEY: 'test-only-key' },
+      systemPrompt: 'Test reflection prompt.',
+      fetchImplementation: providerFetch({
+        id: 'response-truncated',
+        model: 'gpt-5.6-luna',
+        choices: [{
+          finish_reason: 'length',
+          message: { content: '{"partial":' },
+        }],
+        usage: {
+          prompt_tokens: 20,
+          completion_tokens: 8,
+          total_tokens: 28,
+        },
+      }),
+    });
+    const service = createInitialReflectionGenerationService({
+      provider,
+      now: () => generatedAt,
+    });
+
+    await assert.rejects(
+      service.generate('session-1', supplement()),
+      (error: unknown) => (
+        error instanceof LunaReflectionProviderError
+        && error.code === 'output_truncated'
+      ),
+    );
+
+    assert.deepEqual(completedStudyState(), before);
+    assertNoArtifactRows();
+    const [run] = dbModule.listReflectionGenerationRuns();
+    assert.equal(run?.state, 'failed');
+    assert.equal(run?.failureCode, 'output_truncated');
+    assert.equal(run?.responseId, 'response-truncated');
+    assert.equal(run?.finishReason, 'length');
+    assert.deepEqual(run?.usage, {
+      inputTokens: 20,
+      cachedInputTokens: null,
+      cacheWriteInputTokens: null,
+      outputTokens: 8,
+      reasoningTokens: null,
+      totalTokens: 28,
+    });
+    assert.equal(run?.estimatedCostUsd, 0.0000136);
   });
 });
 
@@ -247,7 +336,7 @@ function completedStudyState() {
   };
 }
 
-function assertZeroReflectionRows() {
+function assertNoArtifactRows() {
   const counts = sqlite.prepare(`
       SELECT
         (SELECT COUNT(*) FROM reflection_artifacts) AS artifact_count,
@@ -261,6 +350,17 @@ function assertZeroReflectionRows() {
   assert.equal(counts.artifact_count, 0);
   assert.equal(counts.review_count, 0);
   assert.equal(counts.invocation_count, 0);
+}
+
+function unavailableUsage() {
+  return {
+    inputTokens: null,
+    cachedInputTokens: null,
+    cacheWriteInputTokens: null,
+    outputTokens: null,
+    reasoningTokens: null,
+    totalTokens: null,
+  };
 }
 
 function providerFetch(body: JsonValue, status = 200): typeof globalThis.fetch {

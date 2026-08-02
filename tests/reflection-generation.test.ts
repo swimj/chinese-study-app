@@ -7,6 +7,7 @@ import type {
 } from '../src/domain/reflection.ts';
 import type {
   MaterializeReflectionArtifactInput,
+  RecordReflectionGenerationRunInput,
   ReflectionArtifactDetail,
 } from '../server/db/reflections.ts';
 import { ReflectionEvidenceError } from '../server/reflection/evidence.ts';
@@ -42,6 +43,7 @@ describe('initial reflection generation orchestration', () => {
           artifact: artifactDetail('unexpected-artifact', 0),
         };
       },
+      recordRun: () => {},
     });
 
     assert.deepEqual(await service.generate(' session-1 ', { ignored: true }), {
@@ -56,6 +58,7 @@ describe('initial reflection generation orchestration', () => {
 
   test('enriches, calls the configured provider, and persists provider metadata once', async () => {
     let persisted: MaterializeReflectionArtifactInput | null = null;
+    let recordedRun: RecordReflectionGenerationRunInput | null = null;
     const evidenceBundle = bundle();
     const service = createInitialReflectionGenerationService({
       now: () => generatedAt,
@@ -74,6 +77,9 @@ describe('initial reflection generation orchestration', () => {
           artifact: artifactDetail('created-artifact', 1),
         };
       },
+      recordRun: (input) => {
+        recordedRun = input;
+      },
     });
 
     assert.deepEqual(await service.generate('session-1', { evidence: true }), {
@@ -90,6 +96,46 @@ describe('initial reflection generation orchestration', () => {
       promptVersion: 'reflection-v2',
       evidenceBundle,
       result: result(),
+    });
+    assert.deepEqual(recordedRun, {
+      sourceSessionId: 'session-1',
+      reflectionFlowVersion: 'initial_post_session_reflection.v1',
+      startedAt: generatedAt,
+      completedAt: generatedAt,
+      provider: 'openai',
+      model: 'gpt-5.6-luna-high',
+      providerModel: 'gpt-5.6-luna',
+      promptVersion: 'reflection-v2',
+      responseId: 'response-1',
+      finishReason: 'stop',
+      state: 'succeeded',
+      failureCode: null,
+      eligibleItemCount: 1,
+      includedItemCount: 1,
+      usage: {
+        inputTokens: 10,
+        cachedInputTokens: null,
+        cacheWriteInputTokens: null,
+        outputTokens: 5,
+        reasoningTokens: 2,
+        totalTokens: 15,
+      },
+      pricingSnapshotId: 'openai-gpt-5.6-luna-standard-short-context-2026-07-30',
+      pricingAsOf: '2026-07-30',
+      pricingBasis: {
+        id: 'openai-gpt-5.6-luna-standard-short-context-2026-07-30',
+        pricingAsOf: '2026-07-30',
+        provider: 'openai',
+        providerModel: 'gpt-5.6-luna',
+        serviceTier: 'standard',
+        contextBand: 'short',
+        currency: 'USD',
+        inputPerMillionUsd: 0.2,
+        cachedInputPerMillionUsd: 0.02,
+        cacheWriteInputPerMillionUsd: 0.25,
+        outputPerMillionUsd: 1.2,
+      },
+      estimatedCostUsd: 0.000008,
     });
   });
 
@@ -119,6 +165,7 @@ describe('initial reflection generation orchestration', () => {
           artifact: artifactDetail('coalesced-artifact', 1),
         };
       },
+      recordRun: () => {},
     });
 
     const first = service.generate('session-1', { first: true });
@@ -162,6 +209,7 @@ describe('initial reflection generation orchestration', () => {
         materializeCalls += 1;
         throw new Error('must not materialize');
       },
+      recordRun: () => {},
     });
     await assert.rejects(
       evidenceFailureService.generate('session-1', {}),
@@ -194,6 +242,7 @@ describe('initial reflection generation orchestration', () => {
           artifact: artifactDetail('retry-artifact', 1),
         };
       },
+      recordRun: () => {},
     });
     await assert.rejects(
       providerFailureService.generate('session-1', {}),

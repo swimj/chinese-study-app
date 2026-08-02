@@ -3,19 +3,27 @@ import {
   getReflectionArtifactBySessionAndFlow,
   INITIAL_REFLECTION_FLOW_VERSION,
   materializeReflectionArtifact,
+  recordReflectionGenerationRun,
   type MaterializeReflectionArtifactResult,
+  type RecordReflectionGenerationRunInput,
   type ReflectionArtifactDetail,
 } from '../db/reflections.ts';
 import {
-  buildInitialReflectionBundle,
+  buildInitialReflectionBundleWithMetrics,
+  type InitialReflectionBundleBuild,
   ReflectionEvidenceError,
 } from './evidence.ts';
 import {
   createLunaReflectionProvider,
+  LUNA_REFLECTION_MODEL_CONFIG,
+  LUNA_REFLECTION_PROMPT_VERSION,
+  LunaReflectionProviderError,
   type LunaReflectionProvider,
+  type LunaReflectionRunMetadata,
 } from './luna-provider.ts';
 import type { ReflectionLifecycleLogger } from './lifecycle-log.ts';
 import type { ReflectionProviderDiagnosticSink } from './provider-diagnostics.ts';
+import { estimateInitialReflectionRunCost } from './run-pricing.ts';
 
 export type InitialReflectionGenerationResult = {
   artifactId: string;
@@ -38,11 +46,17 @@ export type InitialReflectionGenerationDependencies = {
     supplement: unknown,
     generatedAt: string,
   ) => SessionReflectionBundleV1;
+  buildBundleWithMetrics?: (
+    sessionId: string,
+    supplement: unknown,
+    generatedAt: string,
+  ) => InitialReflectionBundleBuild;
   findExistingArtifact?: (
     sessionId: string,
     reflectionFlowVersion: string,
   ) => ReflectionArtifactDetail | null;
   materializeArtifact?: typeof materializeReflectionArtifact;
+  recordRun?: (input: RecordReflectionGenerationRunInput) => void;
   lifecycleLogger?: ReflectionLifecycleLogger;
   providerDiagnosticSink?: ReflectionProviderDiagnosticSink;
 };
@@ -59,11 +73,22 @@ export function createInitialReflectionGenerationService(
     diagnosticSink: dependencies.providerDiagnosticSink,
   });
   const now = dependencies.now ?? (() => new Date().toISOString());
-  const buildBundle = dependencies.buildBundle ?? buildInitialReflectionBundle;
+  const buildBundleWithMetrics = dependencies.buildBundleWithMetrics
+    ?? (dependencies.buildBundle === undefined
+      ? buildInitialReflectionBundleWithMetrics
+      : (sessionId: string, supplement: unknown, generatedAt: string) => {
+          const bundle = dependencies.buildBundle!(sessionId, supplement, generatedAt);
+          return {
+            bundle,
+            eligibleItemCount: bundle.items.length,
+            includedItemCount: bundle.items.length,
+          };
+        });
   const findExistingArtifact = dependencies.findExistingArtifact
     ?? getReflectionArtifactBySessionAndFlow;
   const materializeArtifact = dependencies.materializeArtifact
     ?? materializeReflectionArtifact;
+  const recordRun = dependencies.recordRun ?? recordReflectionGenerationRun;
   const lifecycleLogger = dependencies.lifecycleLogger;
   const inFlight = new Map<string, Promise<InitialReflectionGenerationResult>>();
 
@@ -98,8 +123,10 @@ export function createInitialReflectionGenerationService(
         evidenceSupplement,
         generatedAt,
         provider,
-        buildBundle,
+        buildBundleWithMetrics,
         materializeArtifact,
+        recordRun,
+        now,
         lifecycleLogger,
       });
       inFlight.set(generationKey, generation);
@@ -120,34 +147,140 @@ async function generateAndMaterialize(input: {
   evidenceSupplement: unknown;
   generatedAt: string;
   provider: LunaReflectionProvider;
-  buildBundle: NonNullable<InitialReflectionGenerationDependencies['buildBundle']>;
+  buildBundleWithMetrics: NonNullable<
+    InitialReflectionGenerationDependencies['buildBundleWithMetrics']
+  >;
   materializeArtifact: NonNullable<
     InitialReflectionGenerationDependencies['materializeArtifact']
   >;
+  recordRun: NonNullable<InitialReflectionGenerationDependencies['recordRun']>;
+  now: () => string;
   lifecycleLogger: ReflectionLifecycleLogger | undefined;
 }): Promise<InitialReflectionGenerationResult> {
-  const bundle = input.buildBundle(
+  const builtBundle = input.buildBundleWithMetrics(
     input.sessionId,
     input.evidenceSupplement,
     input.generatedAt,
   );
+  const { bundle } = builtBundle;
   input.lifecycleLogger?.emit({
     event: 'reflection.provider_started',
     sessionId: input.sessionId,
     evidenceItemCount: bundle.items.length,
   });
-  const generated = await input.provider.generate(bundle);
-  const materialized: MaterializeReflectionArtifactResult = input.materializeArtifact({
+  let artifactMaterialized = false;
+  try {
+    const generated = await input.provider.generate(bundle);
+    const materialized: MaterializeReflectionArtifactResult = input.materializeArtifact({
+      sourceSessionId: input.sessionId,
+      reflectionFlowVersion: INITIAL_REFLECTION_FLOW_VERSION,
+      generatedAt: input.generatedAt,
+      provider: generated.metadata.provider,
+      model: generated.metadata.modelConfig,
+      promptVersion: generated.metadata.promptVersion,
+      evidenceBundle: bundle,
+      result: generated.result,
+    });
+    artifactMaterialized = true;
+    try {
+      input.recordRun(runRecordInput({
+        sessionId: input.sessionId,
+        startedAt: input.generatedAt,
+        completedAt: input.now(),
+        metadata: generated.metadata,
+        state: 'succeeded',
+        failureCode: null,
+        eligibleItemCount: builtBundle.eligibleItemCount,
+        includedItemCount: builtBundle.includedItemCount,
+      }));
+    } catch {
+      // A successful immutable artifact remains a success if optional dogfood
+      // observability cannot be recorded.
+    }
+    return generationResult(materialized.created, materialized.artifact);
+  } catch (error) {
+    if (!artifactMaterialized) {
+      try {
+        input.recordRun(runRecordInput({
+          sessionId: input.sessionId,
+          startedAt: input.generatedAt,
+          completedAt: input.now(),
+          metadata: failureMetadata(error),
+          state: 'failed',
+          failureCode: failureCode(error),
+          eligibleItemCount: builtBundle.eligibleItemCount,
+          includedItemCount: builtBundle.includedItemCount,
+        }));
+      } catch {
+        // Run logging must not turn a reflection/provider failure into a study failure.
+      }
+    }
+    throw error;
+  }
+}
+
+function runRecordInput(input: {
+  sessionId: string;
+  startedAt: string;
+  completedAt: string;
+  metadata: LunaReflectionRunMetadata;
+  state: 'succeeded' | 'failed';
+  failureCode: string | null;
+  eligibleItemCount: number;
+  includedItemCount: number;
+}): RecordReflectionGenerationRunInput {
+  const estimate = estimateInitialReflectionRunCost({
+    provider: input.metadata.provider,
+    providerModel: input.metadata.providerModel,
+    usage: input.metadata.usage,
+  });
+  return {
     sourceSessionId: input.sessionId,
     reflectionFlowVersion: INITIAL_REFLECTION_FLOW_VERSION,
-    generatedAt: input.generatedAt,
-    provider: generated.metadata.provider,
-    model: generated.metadata.modelConfig,
-    promptVersion: generated.metadata.promptVersion,
-    evidenceBundle: bundle,
-    result: generated.result,
-  });
-  return generationResult(materialized.created, materialized.artifact);
+    startedAt: input.startedAt,
+    completedAt: input.completedAt,
+    provider: input.metadata.provider,
+    model: input.metadata.modelConfig,
+    providerModel: input.metadata.providerModel,
+    promptVersion: input.metadata.promptVersion,
+    responseId: input.metadata.responseId,
+    finishReason: input.metadata.finishReason,
+    state: input.state,
+    failureCode: input.failureCode,
+    eligibleItemCount: input.eligibleItemCount,
+    includedItemCount: input.includedItemCount,
+    usage: input.metadata.usage,
+    pricingSnapshotId: estimate?.pricing.id ?? null,
+    pricingAsOf: estimate?.pricing.pricingAsOf ?? null,
+    pricingBasis: estimate?.pricing ?? null,
+    estimatedCostUsd: estimate?.estimatedCostUsd ?? null,
+  };
+}
+
+function failureMetadata(error: unknown): LunaReflectionRunMetadata {
+  if (error instanceof LunaReflectionProviderError && error.metadata !== null) {
+    return error.metadata;
+  }
+  return {
+    provider: 'openai',
+    modelConfig: LUNA_REFLECTION_MODEL_CONFIG.id,
+    providerModel: LUNA_REFLECTION_MODEL_CONFIG.providerModel,
+    promptVersion: LUNA_REFLECTION_PROMPT_VERSION,
+    responseId: null,
+    finishReason: null,
+    usage: {
+      inputTokens: null,
+      cachedInputTokens: null,
+      cacheWriteInputTokens: null,
+      outputTokens: null,
+      reasoningTokens: null,
+      totalTokens: null,
+    },
+  };
+}
+
+function failureCode(error: unknown): string {
+  return error instanceof LunaReflectionProviderError ? error.code : 'internal_error';
 }
 
 function generationResult(

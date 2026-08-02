@@ -3,6 +3,7 @@ import type { BackendStatus } from './services/api';
 import {
   fetchReflectionArtifactDetail,
   fetchReflectionArtifacts,
+  fetchReflectionGenerationRuns,
   fetchStatus,
   reviewReflectionProposal,
   updateDailyNewWordLimit,
@@ -49,6 +50,7 @@ function App() {
     setError,
     api: {
       listArtifacts: fetchReflectionArtifacts,
+      listGenerationRuns: fetchReflectionGenerationRuns,
       getArtifact: fetchReflectionArtifactDetail,
       reviewProposal: reviewReflectionProposal,
       withdrawAuthorization: withdrawReflectionAuthorization,

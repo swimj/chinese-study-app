@@ -4,6 +4,7 @@ import type { ReflectionOperation, ReviewProposalRequest } from '../../domain/re
 import type {
   ReflectionArtifactDetailDto,
   ReflectionArtifactSummaryDto,
+  ReflectionGenerationRunDto,
   ReflectionReviewApi,
 } from './reflection-page-model';
 
@@ -11,6 +12,7 @@ export type ReflectionPageController = {
   isLoading: boolean;
   openArtifacts: ReflectionArtifactSummaryDto[];
   recentArtifacts: ReflectionArtifactSummaryDto[];
+  generationRuns: ReflectionGenerationRunDto[];
   selectedArtifact: ReflectionArtifactDetailDto | null;
   selectedArtifactId: string | null;
   submittingProposalId: string | null;
@@ -38,6 +40,7 @@ export function useReflectionPageController({
   const [isLoading, setIsLoading] = useState(false);
   const [openArtifacts, setOpenArtifacts] = useState<ReflectionArtifactSummaryDto[]>([]);
   const [recentArtifacts, setRecentArtifacts] = useState<ReflectionArtifactSummaryDto[]>([]);
+  const [generationRuns, setGenerationRuns] = useState<ReflectionGenerationRunDto[]>([]);
   const [selectedArtifact, setSelectedArtifact] = useState<ReflectionArtifactDetailDto | null>(null);
   const [submittingProposalId, setSubmittingProposalId] = useState<string | null>(null);
   const [withdrawingInvocationId, setWithdrawingInvocationId] = useState<string | null>(null);
@@ -53,9 +56,10 @@ export function useReflectionPageController({
     preferredArtifactId: string | null,
   ): Promise<void> {
     const reviewApi = requireApi();
-    const [nextOpenArtifacts, nextRecentArtifacts] = await Promise.all([
+    const [nextOpenArtifacts, nextRecentArtifacts, nextGenerationRuns] = await Promise.all([
       reviewApi.listArtifacts('open'),
       reviewApi.listArtifacts('all'),
+      reviewApi.listGenerationRuns(),
     ]);
     const availableArtifactIds = new Set([
       ...nextOpenArtifacts.map((artifact) => artifact.artifactId),
@@ -71,6 +75,7 @@ export function useReflectionPageController({
 
     setOpenArtifacts(nextOpenArtifacts);
     setRecentArtifacts(nextRecentArtifacts);
+    setGenerationRuns(nextGenerationRuns);
     setSelectedArtifact(nextSelectedArtifact);
   }
 
@@ -155,6 +160,7 @@ export function useReflectionPageController({
     isLoading,
     openArtifacts,
     recentArtifacts,
+    generationRuns,
     selectedArtifact,
     selectedArtifactId: selectedArtifact?.artifactId ?? null,
     submittingProposalId,

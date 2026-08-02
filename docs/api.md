@@ -74,6 +74,7 @@ Request/result types live in
 | --- | --- | --- |
 | POST | `/api/study-sessions/:sessionId/reflections` | Generate or return the session's initial reflection |
 | GET | `/api/reflection-artifacts?review=open\|all` | Load the unresolved queue or recent history |
+| GET | `/api/reflection-generation-runs` | Load the compact dogfood log of concluded provider attempts |
 | GET | `/api/reflection-artifacts/:artifactId` | Load immutable evidence/result plus current proposal/application statuses |
 | POST | `/api/reflection-proposals/:proposalId/review` | Defer, dismiss, or authorize one proposal |
 | POST | `/api/reflection-invocations/:invocationId/withdraw-authorization` | Withdraw a pending or unsupported authorization |
@@ -87,6 +88,10 @@ response, and the complete ordered ids of the accepted attempt batch. The
 backend uses those ids only to validate durable session/action identity, then
 enriches each into a canonical `production_mistake` bundle item without attempt
 rows, attempt summaries, or production-management metadata.
+For the initial flow, the backend includes only the first two eligible enriched
+items in stable evidence order. The run record retains both eligible and
+included counts; omitted items are intentionally unreflected in this
+provisional flow.
 
 A successful response is exactly:
 
@@ -108,6 +113,25 @@ unexpected persistence failures return `500`. Typed generation failures use
 
 Generation is best-effort after study commits and the review-session summary
 are durable. It never rewrites study attempts, completion, or scheduling state.
+
+### Generation run log
+
+`GET /api/reflection-generation-runs` returns the most recent concluded
+provider attempts, newest first:
+
+```ts
+{ runs: ReflectionGenerationRunDto[] }
+```
+
+Each record is separate from immutable artifacts so failed or truncated provider
+attempts can appear without implying that a usable reflection was created. It
+includes provider/configured model and provider model, `succeeded` or `failed`
+state, failure code, response and finish metadata when available, eligible and
+included evidence counts, and nullable normalized token categories. Cost is an
+estimate only: known initial Luna runs persist their complete versioned price
+basis, `pricingAsOf`, and USD estimate at write time; unknown or partial usage
+returns those pricing fields as `null` rather than guessing. The endpoint does
+not expose raw prompts, provider responses, or diagnostics.
 
 ### Queue and detail
 

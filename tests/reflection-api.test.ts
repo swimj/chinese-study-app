@@ -73,6 +73,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       BEGIN;
       DELETE FROM reflection_proposal_reviews;
       DELETE FROM reflection_operation_invocations;
+      DELETE FROM reflection_generation_runs;
       DELETE FROM reflection_artifacts;
       DELETE FROM contrast_prompts;
       DELETE FROM contrast_cluster_members;
@@ -261,6 +262,45 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     assert.equal((await request('/api/reflection-artifacts')).status, 400);
     assert.equal((await request('/api/reflection-artifacts?review=unknown')).status, 400);
     assert.equal((await request('/api/reflection-artifacts/missing')).status, 404);
+  });
+
+  test('serves the compact reflection generation run log independently of artifacts', async () => {
+    materializationInput('run-session', suppressOperation('target'));
+    dbModule.recordReflectionGenerationRun({
+      runId: 'failed-run',
+      sourceSessionId: 'run-session',
+      reflectionFlowVersion: 'initial_post_session_reflection.v1',
+      startedAt: generatedAt,
+      completedAt: '2026-07-29T12:00:01.000Z',
+      provider: 'openai',
+      model: 'gpt-5.6-luna-high',
+      providerModel: 'gpt-5.6-luna',
+      promptVersion: 'reflection-v2',
+      responseId: 'response-failed',
+      finishReason: 'length',
+      state: 'failed',
+      failureCode: 'output_truncated',
+      eligibleItemCount: 4,
+      includedItemCount: 2,
+      usage: {
+        inputTokens: 100,
+        cachedInputTokens: 40,
+        cacheWriteInputTokens: null,
+        outputTokens: 20,
+        reasoningTokens: 10,
+        totalTokens: 120,
+      },
+      pricingSnapshotId: 'price-v1',
+      pricingAsOf: '2026-07-30',
+      pricingBasis: { id: 'price-v1' },
+      estimatedCostUsd: 0.00005,
+    });
+
+    const response = await request('/api/reflection-generation-runs');
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.json, {
+      runs: [dbModule.listReflectionGenerationRuns()[0]],
+    });
   });
 
   test('strictly reviews proposals and immediately applies supported acceptance', async () => {

@@ -30,6 +30,7 @@ import {
   getPrioritizedUnstudiedWords,
   getReviewFailureRateDays,
   listReflectionArtifacts,
+  listReflectionGenerationRuns,
   recoverPendingReflectionInvocations,
   getSessionActiveTimeMetrics,
   getSessionPayload,
@@ -1031,6 +1032,14 @@ export function createApp(options: CreateAppOptions = {}) {
       res.json({ artifacts: listReflectionArtifacts(review) });
     } catch {
       res.status(500).json({ error: 'Failed to load reflection artifacts' });
+    }
+  });
+
+  app.get('/api/reflection-generation-runs', (_req, res) => {
+    try {
+      res.json({ runs: listReflectionGenerationRuns() });
+    } catch {
+      res.status(500).json({ error: 'Failed to load reflection generation runs' });
     }
   });
 
