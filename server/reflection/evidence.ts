@@ -75,11 +75,41 @@ type ClusterRow = {
   prompt_count: number;
 };
 
+/**
+ * Deliberately small dogfood guardrail. The initial reflection flow should
+ * prefer a complete, useful result for a small number of mistakes over a
+ * potentially truncated result for an entire session.
+ */
+export const INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS = 2;
+
+export type InitialReflectionBundleBuild = {
+  bundle: SessionReflectionBundleV1;
+  eligibleItemCount: number;
+  includedItemCount: number;
+};
+
 export function buildInitialReflectionBundle(
   sessionId: string,
   supplementValue: unknown,
   generatedAt = new Date().toISOString(),
 ): SessionReflectionBundleV1 {
+  return buildInitialReflectionBundleWithMetrics(
+    sessionId,
+    supplementValue,
+    generatedAt,
+  ).bundle;
+}
+
+/**
+ * Builds the canonical provider bundle and exposes only the bounded-selection
+ * facts needed by reflection generation observability. The counts intentionally
+ * do not become part of the model-facing bundle schema or artifact provenance.
+ */
+export function buildInitialReflectionBundleWithMetrics(
+  sessionId: string,
+  supplementValue: unknown,
+  generatedAt = new Date().toISOString(),
+): InitialReflectionBundleBuild {
   const normalizedSessionId = sessionId.trim();
   if (normalizedSessionId.length === 0) {
     throw new ReflectionEvidenceError('invalid_reference', 'A non-empty session id is required.');
@@ -122,16 +152,17 @@ export function buildInitialReflectionBundle(
     );
   }
 
-  const items = supplement.items.flatMap((item) => {
+  const eligibleItems = supplement.items.flatMap((item) => {
     const built = buildProductionMistakeItem(normalizedSessionId, item);
     return built === null ? [] : [built];
   });
-  if (items.length === 0) {
+  if (eligibleItems.length === 0) {
     throw new ReflectionEvidenceError(
       'no_qualifying_evidence',
       'No typed production mistakes remain after excluding managed study actions.',
     );
   }
+  const items = eligibleItems.slice(0, INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS);
 
   const bundle: SessionReflectionBundleV1 = {
     schemaVersion: 'session_reflection_bundle.v1',
@@ -146,7 +177,11 @@ export function buildInitialReflectionBundle(
   };
 
   try {
-    return parseInitialReflectionMilestoneBundle(bundle);
+    return {
+      bundle: parseInitialReflectionMilestoneBundle(bundle),
+      eligibleItemCount: eligibleItems.length,
+      includedItemCount: items.length,
+    };
   } catch {
     throw new ReflectionEvidenceError(
       'invalid_reference',
