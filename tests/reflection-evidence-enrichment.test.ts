@@ -6,6 +6,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import {
   buildInitialReflectionBundle,
+  buildInitialReflectionBundleWithMetrics,
+  INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS,
   ReflectionEvidenceError,
 } from '../server/reflection/evidence.ts';
 import { setDb } from '../server/db/connection.ts';
@@ -117,6 +119,52 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
       }],
       knownAcceptedAlternates: [],
     });
+  });
+
+  test('reports the single eligible item included in an initial bundle', () => {
+    const built = buildInitialReflectionBundleWithMetrics(
+      'session-1',
+      supplement('替代'),
+      generatedAt,
+    );
+
+    assert.equal(built.eligibleItemCount, 1);
+    assert.equal(built.includedItemCount, 1);
+    assert.equal(built.bundle.items.length, 1);
+  });
+
+  test('keeps two eligible items in the submitted stable evidence order', () => {
+    const second = insertEligibleProductionMistake('second');
+    const built = buildInitialReflectionBundleWithMetrics(
+      'session-1',
+      withItems(supplement('替代'), [supplement('替代').items[0]!, second]),
+      generatedAt,
+    );
+
+    assert.equal(INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS, 2);
+    assert.equal(built.eligibleItemCount, 2);
+    assert.equal(built.includedItemCount, 2);
+    assert.deepEqual(built.bundle.items.map((item) => item.itemId), [
+      'production-mistake:action-1',
+      'production-mistake:action-second',
+    ]);
+  });
+
+  test('caps more than two eligible items at the backend bundle boundary', () => {
+    const second = insertEligibleProductionMistake('second');
+    const third = insertEligibleProductionMistake('third');
+    const built = buildInitialReflectionBundleWithMetrics(
+      'session-1',
+      withItems(supplement('替代'), [supplement('替代').items[0]!, second, third]),
+      generatedAt,
+    );
+
+    assert.equal(built.eligibleItemCount, 3);
+    assert.equal(built.includedItemCount, 2);
+    assert.deepEqual(built.bundle.items.map((item) => item.itemId), [
+      'production-mistake:action-1',
+      'production-mistake:action-second',
+    ]);
   });
 
   test('keeps an exact unmatched typed response without inventing a word snapshot', () => {
@@ -460,6 +508,56 @@ function withItem(
   return {
     ...value,
     items: [{ ...value.items[0]!, ...patch }],
+  };
+}
+
+function withItems(
+  value: SessionReflectionEvidenceSupplementV1,
+  items: SessionReflectionEvidenceSupplementV1['items'],
+): SessionReflectionEvidenceSupplementV1 {
+  return { ...value, items };
+}
+
+function insertEligibleProductionMistake(
+  suffix: string,
+): SessionReflectionEvidenceSupplementV1['items'][number] {
+  const wordId = `target-${suffix}`;
+  const actionId = `action-${suffix}`;
+  const response = `wrong-${suffix}`;
+  sqlite.prepare(`
+    INSERT INTO words (id, hanzi, traditional, pinyin, meaning, meanings_json)
+    VALUES (?, ?, NULL, ?, ?, ?)
+  `).run(wordId, `词${suffix}`, `cí${suffix}`, `meaning ${suffix}`, JSON.stringify([`meaning ${suffix}`]));
+  sqlite.prepare(`
+    INSERT INTO word_meanings (id, word_id, position, text)
+    VALUES (?, ?, 0, ?)
+  `).run(`${wordId}-meaning`, wordId, `meaning ${suffix}`);
+  sqlite.prepare(`
+    INSERT INTO study_attempt_events (
+      id, occurred_at, session_id, session_action_id, session_event_sequence,
+      action_attempt_sequence, action_kind, target_word_id,
+      sampled_skill_ids_json, response, outcome, rating, projected_at
+    ) VALUES
+      (?, ?, 'session-1', ?, 1, 1, 'production', ?, '["production"]', ?, 'incorrect', 'forgot', ?),
+      (?, ?, 'session-1', ?, 2, 2, 'production', ?, '["production"]', ?, 'correct', 'good', ?)
+  `).run(
+    `attempt-${suffix}-1`, completedAt, actionId, wordId, response, completedAt,
+    `attempt-${suffix}-2`, completedAt, actionId, wordId, `correct-${suffix}`, completedAt,
+  );
+
+  return {
+    itemId: `production-mistake:${actionId}`,
+    sessionActionId: actionId,
+    targetWordId: wordId,
+    cuesAsShown: [{
+      cueId: null,
+      cueType: 'definition_gloss',
+      displayOrder: 0,
+      text: `meaning ${suffix}`,
+      displayedMeanings: [`meaning ${suffix}`],
+    }],
+    rawResponse: response,
+    attemptIds: [`attempt-${suffix}-1`, `attempt-${suffix}-2`],
   };
 }
 
