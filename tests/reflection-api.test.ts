@@ -30,6 +30,8 @@ let receivedGenerationRequest: {
   evidenceSupplement: unknown;
 } | null = null;
 let generationImplementation: InitialReflectionGenerationService['generate'];
+let retryImplementation: InitialReflectionGenerationService['retry'];
+let receivedRetryRunId: string | null = null;
 let lifecycleEvents: ReflectionLifecycleEvent[];
 
 describe('reflection HTTP API', { concurrency: false }, () => {
@@ -55,6 +57,10 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       generate(sessionId, evidenceSupplement) {
         receivedGenerationRequest = { sessionId, evidenceSupplement };
         return generationImplementation(sessionId, evidenceSupplement);
+      },
+      retry(runId) {
+        receivedRetryRunId = runId;
+        return retryImplementation(runId);
       },
     };
     app = indexModule.createApp({
@@ -91,10 +97,16 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     insertWord('target', '目标');
     insertWord('alternate', '替代');
     receivedGenerationRequest = null;
+    receivedRetryRunId = null;
     lifecycleEvents = [];
     generationImplementation = async () => ({
       artifactId: 'generated-artifact',
       proposalCount: 1,
+      status: 'created',
+    });
+    retryImplementation = async () => ({
+      artifactId: 'retried-artifact',
+      proposalCount: 2,
       status: 'created',
     });
   });
@@ -294,6 +306,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       pricingAsOf: '2026-07-30',
       pricingBasis: { id: 'price-v1' },
       estimatedCostUsd: 0.00005,
+      evidenceBundle: bundle('run-session'),
     });
 
     const response = await request('/api/reflection-generation-runs');
@@ -301,6 +314,28 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     assert.deepEqual(response.json, {
       runs: [dbModule.listReflectionGenerationRuns()[0]],
     });
+  });
+
+  test('retries a failed generation run through the dedicated endpoint', async () => {
+    const response = await request(
+      '/api/reflection-generation-runs/failed-run/retry',
+      { method: 'POST' },
+    );
+    assert.equal(response.status, 201);
+    assert.equal(receivedRetryRunId, 'failed-run');
+    assert.deepEqual(response.json, {
+      artifactId: 'retried-artifact',
+      proposalCount: 2,
+      status: 'created',
+    });
+
+    retryImplementation = async () => {
+      throw new Error('Reflection generation run is not retryable.');
+    };
+    assert.equal((await request(
+      '/api/reflection-generation-runs/succeeded-run/retry',
+      { method: 'POST' },
+    )).status, 409);
   });
 
   test('strictly reviews proposals and immediately applies supported acceptance', async () => {

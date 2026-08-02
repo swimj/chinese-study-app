@@ -6,6 +6,7 @@ import {
   fetchReflectionGenerationRuns,
   fetchStatus,
   reviewReflectionProposal,
+  retryReflectionGenerationRun,
   updateDailyNewWordLimit,
   withdrawReflectionAuthorization,
 } from './services/api';
@@ -51,6 +52,7 @@ function App() {
     api: {
       listArtifacts: fetchReflectionArtifacts,
       listGenerationRuns: fetchReflectionGenerationRuns,
+      retryGenerationRun: retryReflectionGenerationRun,
       getArtifact: fetchReflectionArtifactDetail,
       reviewProposal: reviewReflectionProposal,
       withdrawAuthorization: withdrawReflectionAuthorization,

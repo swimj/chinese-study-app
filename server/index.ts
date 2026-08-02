@@ -1043,6 +1043,39 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
+  app.post('/api/reflection-generation-runs/:runId/retry', async (req, res) => {
+    const runId = req.params.runId;
+    if (typeof runId !== 'string' || runId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty reflection generation run id' });
+      return;
+    }
+
+    try {
+      const result = await reflectionGenerationService.retry(runId.trim());
+      res.status(result.status === 'created' ? 201 : 200).json(result);
+    } catch (error) {
+      if (isReflectionNotFoundError(error, 'Reflection generation run not found.')) {
+        res.status(404).json({ error: 'Reflection generation run not found' });
+        return;
+      }
+      if (error instanceof Error && (
+        error.message === 'Reflection generation run is not retryable.'
+        || error.message === 'Reflection generation run is not retryable by the current flow.'
+      )) {
+        res.status(409).json({ error: error.message });
+        return;
+      }
+      if (error instanceof LunaReflectionProviderError) {
+        res.status(error.code === 'missing_config' ? 503 : 502).json({
+          error: error.message,
+          code: error.code,
+        });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to retry reflection generation' });
+    }
+  });
+
   app.get('/api/reflection-artifacts/:artifactId', (req, res) => {
     const artifactId = req.params.artifactId;
     if (typeof artifactId !== 'string' || artifactId.trim().length === 0) {
