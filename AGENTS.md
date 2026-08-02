@@ -26,9 +26,8 @@ Guidance for AI coding agents working in this repository.
 5. `SPECS/session-covering-criteria.md`
 6. `SPECS/study-action-model.md`
 7. `STABILITY_FRONTIER.md` — how to interpret and maintain the current build-wave boundary (see §12)
-8. `TASKS.md` — versioned stability-frontier snapshot plus the winding-down pre-Linear task catalog; do not treat its task sections as current portfolio state (see §11)
-9. Task-spec notes linked from the relevant Linear item or supplied dispatch context, followed by only the working notes relevant to the task (working memory only; defer to SPECS on conflict — see [`notes/README.md`](notes/README.md))
-10. Relevant tests under `tests/` (see [`docs/testing.md`](docs/testing.md))
+8. Task-spec notes linked from the relevant Linear item or supplied dispatch context, followed by only the working notes relevant to the task (working memory only; defer to SPECS on conflict — see [`notes/README.md`](notes/README.md))
+9. Relevant tests under `tests/` (see [`docs/testing.md`](docs/testing.md))
 
 When code and spec conflict, treat the spec as intended behavior and update code + tests together.
 
@@ -128,30 +127,20 @@ This repo contains real DB artifacts and backups under `data/`.
 - Favor explicitness over hidden magic in learning/review logic.
 - Leave concise comments only where logic is non-obvious.
 
-## 11) Working With Linear And `TASKS.md`
+## 11) Working With Linear And Current Project State
 
-Effective 2026-07-24 from the commit that introduces the cutoff notice,
-Linear is the trial source of truth for current idea intake, classification,
-portfolio priority, readiness, themes, debt, parked work, declared Focus/Async
-work, and portfolio disposition. See
-[`PLANS/project-steward-linear-trial.md`](PLANS/project-steward-linear-trial.md)
-for the approved pilot contract.
-
-`TASKS.md` now contains the current stability-frontier snapshot plus the
-winding-down pre-Linear task catalog. Its Focus, Async Ready, Inbox, Recently
-Completed, Debt, and Parked sections are closed to new intake, promotion, and
-reprioritization after the cutoff and are not current portfolio authority.
-Existing entries that were already focused, dispatched, or otherwise planned
-at the cutoff may still be moved or closed under explicit human direction to
-record their intended terminal disposition during settling. Agents must not
-infer those dispositions, add follow-on work, or use this exception to revive
-`TASKS.md` as a current catalog. Every worktree sees a branch-local snapshot
-that may also be stale relative to current Linear state.
+Effective 2026-08-02, Linear is the source of truth for current idea intake,
+classification, portfolio priority, readiness, themes, debt, parked work,
+declared Focus/Async work, and portfolio disposition. The successful steward
+operating model is recorded in
+[`PLANS/project-steward-linear-trial.md`](PLANS/project-steward-linear-trial.md).
+The former repository task catalog has been retired; use Git history only when
+historical context is needed. Do not create a replacement repository backlog.
 
 - **Authority split**: Linear records the current portfolio and which cataloged tasks the human has declared in flight. A task remains in flight through execution, review, and revision. The initiating Codex prompt, task-spec note when one exists, and subsequent task thread own its detailed execution contract and context. GitHub pull requests and Git history own review, CI, integration, and merge truth. Durable product behavior, architecture, vision, and frontier decisions remain in Git.
 - **WIP policy**: Focus maximum 1; async tasks in flight maximum 2; work awaiting review maximum 2; Linear `Todo` maximum 5. The human selects or dispatches work and supplies disposition facts; agents must not dispatch additional work autonomously. A steward with authorized Linear access may record an explicitly supplied Focus/Async or disposition transition but must not infer unreported execution state.
 - **Direct prompts and one-offs**: a direct human prompt is sufficient authorization for the requested in-scope work. Brief one-offs do not need a Linear item merely to legitimize them and may remain unknown to the steward.
-- **Capture without Linear access**: if work surfaces a worthwhile new idea and the agent lacks authorized Linear access, report it in the handoff for the human or steward to capture. Do not append it to `TASKS.md` or create a parallel repository backlog.
+- **Capture without Linear access**: if work surfaces a worthwhile new idea and the agent lacks authorized Linear access, report it in the handoff for the human or steward to capture. Do not create a parallel repository backlog.
 - **Capture is not dispatch**: creating or updating a Linear item does not focus or dispatch it. The human controls selection, readiness, Focus/Async transitions, and final disposition.
 - **Dispatch-ready packet**: work promoted to `Todo` for independent dispatch should state its outcome, deliverable, scope, required inputs, done criteria, non-goals, dependencies/overlap, execution constraints, and when to stop for input. Keep this in Linear when short; otherwise link one task-spec note that consolidates the executable context.
 - **Potential staleness**: before focus or dispatch, the human revalidates that the outcome is still wanted, inputs are stable enough, no in-flight task owns the same decision boundary, semantic and merge overlap are acceptable, and review capacity exists.
@@ -165,7 +154,7 @@ that may also be stale relative to current Linear state.
 ## 12) Working With The Stability Frontier
 
 Read [`STABILITY_FRONTIER.md`](STABILITY_FRONTIER.md) before treating the
-frontier snapshot in `TASKS.md` as an implementation contract.
+current frontier as an implementation contract.
 
 - The frontier summarizes the current near-term product outcome, settled build
   assumptions, invariants, blocking decisions, non-goals, and advancement test.

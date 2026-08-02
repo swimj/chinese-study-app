@@ -132,8 +132,8 @@ useful because the reading appears in common lexical items such as 自给自足 
 
 The learner also identified a possible future compound capability: suppress a
 low-value production target while prioritizing a more useful related unstudied
-lexical item. That capability is parked in `TASKS.md` and is deliberately not
-part of this fixture's provider test bar. The reference result records it as an
+lexical item. That capability is deliberately deferred from this fixture's
+provider test bar. The reference result records it as an
 optional `unhandledNeed`, which can later become a developer-facing handle-gap
 artifact. A model is not required to discover it in this provider comparison.
 

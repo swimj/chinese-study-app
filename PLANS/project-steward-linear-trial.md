@@ -1,19 +1,19 @@
 # Project Steward + Linear Trial
 
-Status: active pilot; repository authority cutoff, steward, Linear MCP, and
-capture loop activated and smoke-tested 2026-07-24.
+Status: graduated 2026-08-02; the pilot's Linear-based steward operating model
+is now the project's durable portfolio workflow.
 
 Prepared: 2026-07-23
 Approved: 2026-07-24
 Activated: 2026-07-24
-Evaluation due: 2026-08-07 or after 10 real captures, whichever comes first
+Graduated: 2026-08-02
 
 Related:
 
 - [`AGENTS.md`](../AGENTS.md)
 - [`STABILITY_FRONTIER.md`](../STABILITY_FRONTIER.md)
-- [`TASKS.md`](../TASKS.md)
-- [`notes/active/2026-07-22-project-steward-linear-trial-task-spec.md`](../notes/active/2026-07-22-project-steward-linear-trial-task-spec.md)
+- [`STABILITY_FRONTIER.md`](../STABILITY_FRONTIER.md)
+- [`notes/archive/2026-07-22-project-steward-linear-trial-task-spec.md`](../notes/archive/2026-07-22-project-steward-linear-trial-task-spec.md)
 - [`docs/vision/agentic_adaptive_language_learning_vision.md`](../docs/vision/agentic_adaptive_language_learning_vision.md)
 - [`docs/vision/initial_agentic_srs_product_focus.md`](../docs/vision/initial_agentic_srs_product_focus.md)
 
@@ -85,7 +85,7 @@ becomes operative with the repository-orientation edit described below.
 | --- | --- | --- |
 | Product behavior and learning policy | Canonical `SPECS/` in Git | Linear may link to a spec or carry a proposal, never override it |
 | Product vision and accepted architecture | `docs/vision/`, accepted architecture docs, and accepted plans in Git | Linear may carry questions, evidence, and proposed changes |
-| Current build-wave boundary | `STABILITY_FRONTIER.md` plus the frontier snapshot in `TASKS.md` | Linear may flag a conflict or frontier-movement candidate, never change the boundary |
+| Current build-wave boundary | `STABILITY_FRONTIER.md` | Linear may flag a conflict or frontier-movement candidate, never change the boundary |
 | Current ideas, proposed work, themes, portfolio placement, prioritization, and declared execution lane | Linear, after the activation cutoff | Git may contain linked task specs or accepted durable conclusions, not a duplicate live catalog |
 | A dispatched task's contract and working context | Its initiating Codex prompt, task-spec note when one exists, and subsequent task thread | Linear carries a link and a short outcome/decision summary |
 | Which cataloged tasks have been focused or dispatched | Linear `In Progress` status plus Focus/Async lane | Codex owns the actual task conversation and worktree; Linear records the human-declared active set and links to it |
@@ -628,7 +628,7 @@ secondary signals justify challenging the current path.
 Operating sources
 
 - Repository root: /Users/jw/dev/chinese-study-app
-- Read AGENTS.md, STABILITY_FRONTIER.md, TASKS.md, docs/README.md,
+- Read AGENTS.md, STABILITY_FRONTIER.md, docs/README.md,
   docs/vision/agentic_adaptive_language_learning_vision.md,
   docs/vision/initial_agentic_srs_product_focus.md, and
   PLANS/project-steward-linear-trial.md before the first substantive action.
@@ -944,11 +944,13 @@ Pass if every raw input is recoverable, conviction is distinct from priority,
 the steward explains placement from repository context, and it declines to
 claim thematic accumulation before the threshold is met.
 
-## Evaluation
+## Evaluation and graduation
 
-The pilot is now accumulating real-use evidence. Evaluate at the earlier of
-2026-08-07 or 10 real captures, with a minimum of 5 captures unless the topology
-fails earlier. Smoke-test issues do not count toward the real-capture total.
+The original checkpoint was the earlier of 2026-08-07 or 10 real captures, with
+a minimum of 5 captures unless the topology failed earlier. Smoke-test issues
+did not count toward the real-capture total. On 2026-08-02, the human confirmed
+that the pilot had succeeded and authorized its graduation before that scheduled
+checkpoint.
 
 At the checkpoint, review the issue set together and answer:
 
@@ -991,11 +993,10 @@ than direct conversation without Linear.
 
 ## On Pilot Success
 
-If the evaluation supports continuing, graduate the trial through one
-human-approved documentation checkpoint. These are post-pilot actions, not
-launch prerequisites:
+The human approved graduation on 2026-08-02. The completed documentation
+checkpoint formalized the following:
 
-1. **Make the successful portfolio boundary durable.**
+1. **Make the successful portfolio boundary durable — completed.**
    - Confirm Linear as the current source of truth for ideas, proposed work,
      readiness, priority, themes, debt, parked work, declared Focus/Async work,
      and portfolio disposition.
@@ -1003,7 +1004,7 @@ launch prerequisites:
      authoritative for review, integration, and merge state.
    - Graduate the accepted steward charter and capture rules into the smallest
      appropriate durable repository guidance.
-2. **Give the current stability frontier a dedicated home.**
+2. **Give the current stability frontier a dedicated home — completed.**
    - Move the actual current frontier snapshot out of `TASKS.md` and into
      `STABILITY_FRONTIER.md`.
    - Prefer one document with clearly separated `Current Stability Frontier`
@@ -1012,21 +1013,18 @@ launch prerequisites:
      cadences create real maintenance friction.
    - Update repository links and agent reading order so the frontier no longer
      depends on the task catalog.
-3. **Retire the task-tracking role of `TASKS.md`.**
+3. **Retire the task-tracking role of `TASKS.md` — completed.**
    - Update `AGENTS.md` to point portfolio intake and prioritization to Linear,
      task execution to Codex, and integration state to GitHub.
-   - Continue terminal disposition of pre-cutoff `TASKS.md` entries during a
-     short settling period; do not accept new work or maintain it as a second
-     catalog.
-   - Reconsider legacy entries in Linear only when they become relevant. Do not
-     bulk-migrate the legacy catalog merely for completeness.
-   - After the settling period and an authority audit, archive or remove
-     `TASKS.md`; Git history remains the historical record.
-4. **Close the provisional scaffolding.**
+   - No legacy work was bulk-migrated. Reconsider a historical entry in Linear
+     only when it becomes relevant.
+   - The catalog was removed after the authority audit; Git history remains the
+     historical record.
+4. **Close the provisional scaffolding — completed.**
    - Verify representative ideas, active work, merged work, durable product
      decisions, and the frontier each have exactly one clear authority.
-   - Retire this trial plan and its active task-spec note after accepted rules
-     have graduated to their durable homes.
+   - Archived the active task-spec note after accepted rules graduated to their
+     durable homes.
    - Record any remaining workflow limitations as bounded follow-up work rather
      than extending the trial indefinitely.
 
@@ -1090,11 +1088,8 @@ prompt differs from this plan, a required MCP write disappears, or Linear's
 product UI no longer matches the documented workflow. Do not broaden into a
 product survey.
 
-## Recommendation
+## Graduation record
 
-**Continue the active pilot through its evaluation checkpoint.**
-
-The setup and launch gates passed without adding the deferred automation,
-integration, or hierarchy. The topology remains deliberately reversible. The
-next decision should be based on real capture and portfolio-review evidence,
-not additional setup work.
+**Graduated 2026-08-02.** The Linear-based steward is the accepted portfolio
+workflow. The deferred automation, integration, and hierarchy remain out of
+scope; future changes to those limits require separate decisions.

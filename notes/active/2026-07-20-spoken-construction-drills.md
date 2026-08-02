@@ -4,9 +4,6 @@ status: active
 type: research
 created: 2026-07-20
 retire-by: 2026-08-20
-related:
-  - TASKS.md
-
 ## Product instinct
 
 Vocabulary and collocation practice does not directly train the online act of assembling an utterance. A potentially higher-leverage complementary habit is a repertoire of **spoken constructions**: reusable form-and-meaning shapes that a learner can launch, extend, qualify, and close without rebuilding the sentence from English or from explicit grammar rules.

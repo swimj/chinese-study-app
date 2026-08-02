@@ -11,8 +11,8 @@ Prefer **one note per artifact** (e.g. one spike output, one paste-capture memo)
 Most notes are lightweight **working notes**: capture what is useful and avoid
 adding structure that has no clear consumer. When a body of work becomes
 important enough to execute as a tracked task, consolidate its critical
-context into a **task-spec note** and link that note from `TASKS.md`. This is a
-usage distinction, not a new required metadata type.
+context into a **task-spec note** and link that note from the relevant Linear
+item. This is a usage distinction, not a new required metadata type.
 
 ## When to use
 
@@ -27,7 +27,7 @@ usage distinction, not a new required metadata type.
 
 | Instead | Use when |
 | --- | --- |
-| `TASKS.md` | A cataloged work item or dispatch-ready task |
+| Linear | A cataloged work item or dispatch-ready task |
 | `PLANS/`, `SPECS/*-plan.md` | Committed multi-step milestone work (weeks–months) |
 | `SPECS/` (canonical) | Behavior that must be enforced and tested |
 | `docs/vision/`, `BACKLOG.md` | Long-term ideas without a near-term expiry |
@@ -58,22 +58,23 @@ related:                # optional; include only useful semantic references
 
 Body is freeform: findings, open questions, decisions-in-progress, links to PRs/commits.
 
-Working notes do not need a backlink to `TASKS.md`. For a task-spec note,
-`TASKS.md` should link to the note so the catalog points to its executable
-context. Neither document is a live source of agent execution or review state.
-The human currently tracks that state through unarchived Codex tasks/threads in
-the app sidebar and through GitHub pull requests; agents should not assume
-shared access to that view.
+Working notes do not need a backlink to Linear. For a task-spec note, the
+relevant Linear item should link to the note so the catalog points to its
+executable context. Neither the note nor Linear is a source of detailed
+execution or review state. Codex task threads and GitHub pull requests hold
+that state; agents should not assume shared access to those views.
 
 ## Lifecycle
 
 1. **Create** when you would otherwise re-explain context in a new chat.
 2. **Consolidate** critical inputs into a task-spec note when the work becomes a
-   tracked task; link that note from `TASKS.md`.
-3. **Graduate** durable outcomes upward (`SPECS/`, `PLANS/`, `TASKS/`) — the note is scaffolding, not the artifact.
+   tracked task; link that note from Linear.
+3. **Graduate** durable outcomes upward (`SPECS/`, `PLANS/`, or another
+   owning document) — the note is scaffolding, not the artifact.
 4. **Archive** when `retire-by` passes or `retire-when` is satisfied: move to `notes/archive/`, set `status: archived`, remove from the active index below.
 
-Agents may propose archive; triage and confirmation follow the same pattern as `TASKS.md`.
+Agents may propose archive; triage and confirmation follow the same human-led
+portfolio-disposition pattern as Linear.
 
 ## Active index
 
@@ -87,6 +88,5 @@ Agents may propose archive; triage and confirmation follow the same pattern as `
 | [2026-07-20-llm-provider-spike-summary.md](active/2026-07-20-llm-provider-spike-summary.md) | research | 2026-09-20 |
 | [2026-07-20-m1-artifact-store-planning.md](active/2026-07-20-m1-artifact-store-planning.md) | planning | 2026-09-20 |
 | [2026-07-20-spoken-construction-drills.md](active/2026-07-20-spoken-construction-drills.md) | research | 2026-08-20 |
-| [2026-07-22-project-steward-linear-trial-task-spec.md](active/2026-07-22-project-steward-linear-trial-task-spec.md) | work-bundle | after pilot evaluation and durable graduation or rollback |
 | [2026-07-29-initial-reflection-graphite-stack-task-spec.md](active/2026-07-29-initial-reflection-graphite-stack-task-spec.md) | work-bundle | after SWI-16 integration and Graphite trial evaluation |
 | [2026-07-30-human-code-review-workflow.md](active/2026-07-30-human-code-review-workflow.md) | research | 2026-08-27 |

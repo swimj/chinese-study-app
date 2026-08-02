@@ -1,4 +1,110 @@
-# Working With The Stability Frontier
+# Current Stability Frontier
+
+## Near-term product outcome
+
+Dogfood one learner-facing post-session reflection path:
+
+```text
+completed study session
+  -> bounded session-evidence bundle
+  -> one server-side Luna reflection call
+  -> strict local validation
+  -> durable reflection artifact with proposal-level review
+  -> minimal asynchronous user review
+  -> explicit application only for accepted, supported operations
+```
+
+The first useful outcome is not a complete agentic learning system. It is a
+reflection that can inspect real session evidence, make language-aware and
+bounded proposals, survive review after the session ends, and preserve a
+truthful record of what the model proposed, what the user decided, and what the
+application actually changed.
+
+## Settled enough to build against
+
+- Reflection is post-session and best-effort. It is outside the correctness
+  path for study commits, covering, and scheduling.
+- `gpt-5.6-luna-high` is the initial reflection model. The first flow uses one
+  monolithic model call rather than a planner, debate, or specialist-agent
+  pipeline.
+- Provider credentials and calls belong on the backend. Model output is
+  untrusted input and must pass strict local validation.
+- The model has proposal-only authority. It never directly mutates durable
+  learner or content state.
+- The bounded session-evidence bundle is the provisional input boundary for the
+  first reflection flow.
+- The initial reflection is written for learner consumption. Developer-facing
+  reflection and development artifacts are outside this wave.
+- Reflection output and proposal-level review state are durable so review can
+  resume asynchronously and provenance survives later application. The
+  provisionally settled persistence shape is one immutable provenance/blob row,
+  seeded proposal-review rows, and immutable authorized invocations with mutable
+  application projections. See
+  [`SPECS/reflection-proposals-and-handles.md`](SPECS/reflection-proposals-and-handles.md).
+- SQLite is sufficient for the first personal dogfood. Hosted tenancy and
+  Postgres follow only after the agentic core proves useful on personal data.
+
+## Invariants and constraints
+
+- Existing study-session behavior remains correct if reflection generation
+  fails, times out, produces invalid output, or is never reviewed.
+- Every durable operation requires explicit user authorization and domain-level
+  validation at application time.
+- An accepted handle may remain unapplied when no adapter exists; the UI and
+  persistence model must not imply that acceptance changed study state.
+- Review, edit, defer, dismiss, accept, and supported application may occur
+  asynchronously after the originating session ends.
+- The original evidence, model/prompt/schema versions, original proposal,
+  user-authorized operation, disposition, and actual effect must remain
+  distinguishable wherever they materially differ.
+- Until content ownership and customization policy is settled, operations that
+  customize learner or content state must preserve the distinguishability of
+  base state, user-authorized change, and applied effect. User-visible removal
+  or replacement should remain reversible unless true deletion is explicitly
+  intended. See the
+  [`hosted-beta tenancy table map`](PLANS/hosted-beta-tenancy-table-map.md#near-term-deferral-constraint-preserve-the-layers)
+  for rationale and boundaries.
+- Existing manual management paths must not conflict with the handle lifecycle
+  or create effects that reflection application cannot reconcile truthfully.
+- Initial implementation should remain narrow and reversible. Sticky operation
+  payload and identity decisions deserve more care than the storage substrate.
+
+## Current blocking decisions
+
+- The accepted V0 operation inventory, proposal/application lifecycle,
+  provenance/override semantics, and compatibility boundaries are defined in
+  [`SPECS/reflection-proposals-and-handles.md`](SPECS/reflection-proposals-and-handles.md).
+  The bounded first implementation contract, post-session trigger/API boundary,
+  and minimum review surface are defined in
+  [`PLANS/initial-reflection-steel-thread.md`](PLANS/initial-reflection-steel-thread.md).
+
+## Explicit non-goals for this wave
+
+- Multi-agent reflection, planner/debate loops, or content-authoring specialists.
+- Time-budgeted session planning or autonomous scheduling changes.
+- Hosted-tenancy implementation, authentication, Postgres migration, or beta
+  deployment. The bounded ownership-map task may proceed as pre-design but must
+  not expand into implementing these areas.
+- Developer-facing reflection artifacts or assistant-product-manager behavior.
+- A comprehensive evaluation harness or automatic extraction into deterministic
+  product logic.
+- Automatic application of model proposals.
+- Broad user-history context engineering.
+- Final production-cue stacks, answer classes, general word-priority handles,
+  or a universal command framework unless a confirmed V0 handle strictly
+  requires a small decision now.
+- Removal of existing manual remediation surfaces merely because an equivalent
+  reflection handle exists.
+
+## Frontier advancement test
+
+The frontier advances when a real completed session can produce a useful,
+validated learner-facing reflection; the user can return later to review and
+disposition its items; accepted, supported operations can be applied with
+truthful provenance; and normal study correctness is unaffected when any
+reflection step fails or the reflection is never reviewed.
+
+# How To Interpret And Evolve The Frontier
 
 The stability frontier is the repository's rolling boundary between:
 
@@ -7,10 +113,10 @@ The stability frontier is the repository's rolling boundary between:
 - questions that still require focused human judgment before independent
   implementation should proceed.
 
-The current frontier is maintained near the top of [`TASKS.md`](TASKS.md).
-Like every tracked file, each worktree sees the frontier as of its base
-revision; it is not a cross-worktree live update channel. This document
-explains how to interpret, use, and evolve it.
+The current frontier is maintained above. Like every tracked file, each
+worktree sees the frontier as of its base revision; it is not a cross-worktree
+live update channel. This document explains how to interpret, use, and evolve
+it.
 
 ## Purpose
 
@@ -46,7 +152,7 @@ evidence, and ask the human to resolve or approve the required movement.
 
 A frontier marked `Draft For Review` is not yet an implementation contract.
 Agents may analyze it and propose corrections, but must not treat disputed
-statements as settled merely because they appear in `TASKS.md`.
+statements as settled merely because they appear in the frontier.
 
 ## Confidence Levels
 
@@ -141,8 +247,8 @@ in a spec, plan, or active note; the frontier should summarize and link it.
 
 ### Before starting work
 
-1. Read the frontier snapshot in `TASKS.md` and determine whether it is accepted
-   or still draft. If the dispatch context says a newer frontier materially
+1. Read the frontier above and determine whether it is accepted or still draft.
+   If the dispatch context says a newer frontier materially
    changed, stop and obtain the relevant updated contract rather than assuming
    the branch-local copy is current.
 2. Confirm that the task fits the near-term outcome and explicit non-goals.
@@ -204,7 +310,7 @@ active notes and focused design work
 canonical specs and architecture docs
   -> hold accepted durable decisions
 
-stability frontier snapshot in TASKS.md
+current stability frontier in STABILITY_FRONTIER.md
   -> summarizes what the current wave may safely assume
 
 work catalog and task specs

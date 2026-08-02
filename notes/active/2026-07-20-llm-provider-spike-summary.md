@@ -5,7 +5,6 @@ type: research
 created: 2026-07-20
 retire-by: 2026-09-20
 related:
-  - TASKS.md
   - PLANS/agentic-roadmap-glm-5.2.md (M0 provider decision and developer-facing reflection prototype)
   - notes/active/2026-07-10-session-evidence-bundle-design.md
   - SPECS/reflection-proposals-and-handles.md
@@ -154,7 +153,7 @@ into the appropriate decision or design section only when explicitly asked.
 
 ## Near-term follow-ups
 
-`TASKS.md` contains parked tasks for:
+The Linear portfolio contains parked follow-up work for:
 
 - reflection adjudication tracking as part of initial Luna integration; and
 - reflection observability as a separate operational concern.

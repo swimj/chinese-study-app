@@ -1,12 +1,11 @@
 # Project steward + Linear trial orientation
 
-status: winding-down
+status: archived
 type: work-bundle
 created: 2026-07-22
-retire-when: The pilot is evaluated and its accepted operating rules graduate into durable homes, or the trial is rejected and rolled back
+retired: 2026-08-02
 related:
 
-- TASKS.md
 - AGENTS.md
 - STABILITY_FRONTIER.md
 - docs/vision/agentic_adaptive_language_learning_vision.md
@@ -15,8 +14,9 @@ related:
 Launch outcome: the pilot activated and passed its smoke tests on 2026-07-24.
 The active contract and evaluation record now live in
 [`PLANS/project-steward-linear-trial.md`](../../PLANS/project-steward-linear-trial.md).
-This task-spec note is winding down until the pilot is evaluated and either
-graduated or rolled back.
+This task-spec note was retired after the pilot graduated on 2026-08-02. The
+durable operating rules now live in `AGENTS.md`; this note is retained only as
+the trial's historical execution context.
 
 ## Purpose and context
 

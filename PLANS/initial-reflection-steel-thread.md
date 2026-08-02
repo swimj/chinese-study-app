@@ -10,7 +10,7 @@ truth for proposal or handle semantics.
 
 Related documents:
 
-- [`TASKS.md`](../TASKS.md) — current stability-frontier snapshot
+- [`STABILITY_FRONTIER.md`](../STABILITY_FRONTIER.md) — current stability frontier
 - [`STABILITY_FRONTIER.md`](../STABILITY_FRONTIER.md) — frontier operating rules
 - [`notes/active/2026-07-10-session-evidence-bundle-design.md`](../notes/active/2026-07-10-session-evidence-bundle-design.md)
 - [`notes/active/2026-07-10-session-lifecycle-code-verification.md`](../notes/active/2026-07-10-session-lifecycle-code-verification.md)
