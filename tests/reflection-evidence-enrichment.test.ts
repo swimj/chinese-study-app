@@ -133,7 +133,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
     assert.equal(built.bundle.items.length, 1);
   });
 
-  test('keeps two eligible items in the submitted stable evidence order', () => {
+  test('keeps eligible items below the cap in submitted stable evidence order', () => {
     const second = insertEligibleProductionMistake('second');
     const built = buildInitialReflectionBundleWithMetrics(
       'session-1',
@@ -141,7 +141,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
       generatedAt,
     );
 
-    assert.equal(INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS, 2);
+    assert.equal(INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS, 10);
     assert.equal(built.eligibleItemCount, 2);
     assert.equal(built.includedItemCount, 2);
     assert.deepEqual(built.bundle.items.map((item) => item.itemId), [
@@ -150,21 +150,23 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
     ]);
   });
 
-  test('caps more than two eligible items at the backend bundle boundary', () => {
-    const second = insertEligibleProductionMistake('second');
-    const third = insertEligibleProductionMistake('third');
+  test('caps more than ten eligible items at the backend bundle boundary', () => {
+    const additionalItems = Array.from({ length: 10 }, (_, index) => (
+      insertEligibleProductionMistake(`additional-${index + 1}`)
+    ));
     const built = buildInitialReflectionBundleWithMetrics(
       'session-1',
-      withItems(supplement('替代'), [supplement('替代').items[0]!, second, third]),
+      withItems(supplement('替代'), [supplement('替代').items[0]!, ...additionalItems]),
       generatedAt,
     );
 
-    assert.equal(built.eligibleItemCount, 3);
-    assert.equal(built.includedItemCount, 2);
-    assert.deepEqual(built.bundle.items.map((item) => item.itemId), [
-      'production-mistake:action-1',
-      'production-mistake:action-second',
-    ]);
+    assert.equal(built.eligibleItemCount, 11);
+    assert.equal(built.includedItemCount, 10);
+    assert.equal(built.bundle.items.length, INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS);
+    assert.deepEqual(
+      built.bundle.items.map((item) => item.itemId),
+      ['production-mistake:action-1', ...additionalItems.slice(0, 9).map((item) => item.itemId)],
+    );
   });
 
   test('keeps an exact unmatched typed response without inventing a word snapshot', () => {

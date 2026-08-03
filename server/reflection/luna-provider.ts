@@ -27,7 +27,7 @@ export const LUNA_REFLECTION_MODEL_CONFIG = {
   provider: 'openai',
   providerModel: 'gpt-5.6-luna',
   reasoningEffort: 'high',
-  maxOutputTokens: 8_192,
+  maxOutputTokens: 40_000,
   timeoutMs: 180_000,
 } as const;
 export const LUNA_REFLECTION_PROMPT_VERSION = 'reflection-v2' as const;

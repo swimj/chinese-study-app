@@ -169,7 +169,7 @@ describe('production Luna reflection provider', () => {
     ]);
     assert.equal(request.body.model, 'gpt-5.6-luna');
     assert.equal(request.body.reasoning_effort, 'high');
-    assert.equal(request.body.max_completion_tokens, 8_192);
+    assert.equal(request.body.max_completion_tokens, 40_000);
     assert.equal(Object.hasOwn(request.body, 'temperature'), false);
     assert.deepEqual(request.body.response_format, {
       type: 'json_schema',
@@ -185,7 +185,7 @@ describe('production Luna reflection provider', () => {
       provider: 'openai',
       providerModel: 'gpt-5.6-luna',
       reasoningEffort: 'high',
-      maxOutputTokens: 8_192,
+      maxOutputTokens: 40_000,
       timeoutMs: 180_000,
     });
     assert.deepEqual(generated.result, validResult);

@@ -77,10 +77,10 @@ type ClusterRow = {
 
 /**
  * Deliberately small dogfood guardrail. The initial reflection flow should
- * prefer a complete, useful result for a small number of mistakes over a
+ * prefer a complete, useful result for a bounded number of mistakes over a
  * potentially truncated result for an entire session.
  */
-export const INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS = 2;
+export const INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS = 10;
 
 export type InitialReflectionBundleBuild = {
   bundle: SessionReflectionBundleV1;
