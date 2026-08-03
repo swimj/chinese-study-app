@@ -1,6 +1,10 @@
 # Initial Post-Session Reflection Steel Thread
 
-Status: accepted implementation milestone; Slice 0 contract alignment complete.
+Status: completed and integrated on `main` (2026-08-03). The checklist below is
+retained as the historical implementation and acceptance record. Durable
+generation behavior has graduated to
+[`SPECS/session-reflection-generation.md`](../SPECS/session-reflection-generation.md);
+proposal and handle semantics remain owned by the canonical reflection spec.
 
 This plan defines the smallest end-to-end reflection path that exercises the
 durable contract in
@@ -10,8 +14,8 @@ truth for proposal or handle semantics.
 
 Related documents:
 
-- [`STABILITY_FRONTIER.md`](../STABILITY_FRONTIER.md) — current stability frontier
 - [`STABILITY_FRONTIER.md`](../STABILITY_FRONTIER.md) — frontier operating rules
+  and successor cue-repair wave
 - [`notes/active/2026-07-10-session-evidence-bundle-design.md`](../notes/active/2026-07-10-session-evidence-bundle-design.md)
 - [`notes/active/2026-07-10-session-lifecycle-code-verification.md`](../notes/active/2026-07-10-session-lifecycle-code-verification.md)
 - [`notes/active/2026-07-20-llm-provider-spike-summary.md`](../notes/active/2026-07-20-llm-provider-spike-summary.md)
@@ -403,54 +407,54 @@ not required by this milestone.
 
 ### Slice 1 — durable artifact and lifecycle store
 
-- [ ] Add schema initialization for artifacts, proposal reviews, and
+- [x] Add schema initialization for artifacts, proposal reviews, and
       invocations/application statuses.
-- [ ] Add persistence functions through a reflection-focused DB module/barrel.
-- [ ] Materialize validated results atomically with one pending review row per
+- [x] Add persistence functions through a reflection-focused DB module/barrel.
+- [x] Materialize validated results atomically with one pending review row per
       proposal.
-- [ ] Implement review and application transition invariants.
-- [ ] Add idempotency and joined read models for queue/detail UI.
+- [x] Implement review and application transition invariants.
+- [x] Add idempotency and joined read models for queue/detail UI.
 
 ### Slice 2 — completed-session evidence and generation
 
-- [ ] Preserve typed production response, cue as shown, and validation-only
+- [x] Preserve typed production response, cue as shown, and validation-only
       attempt links in a frontend session-evidence accumulator.
-- [ ] Trigger reflection only after the final pending study commit flushes.
-- [ ] Add backend bundle enrichment and strict validation.
-- [ ] Integrate the configured server-side Luna call and prompt version.
-- [ ] Persist only valid results and keep all failures outside study
+- [x] Trigger reflection only after the final pending study commit flushes.
+- [x] Add backend bundle enrichment and strict validation.
+- [x] Integrate the configured server-side Luna call and prompt version.
+- [x] Persist only valid results and keep all failures outside study
       correctness.
-- [ ] Make generation idempotent for the first flow version.
+- [x] Make generation idempotent for the first flow version.
 
 ### Slice 3 — proposal review and supported application
 
-- [ ] Add queue, artifact-detail, and proposal-review endpoints.
-- [ ] Implement exact/revised authorization and immutable invocation creation.
-- [ ] Implement production-suppression and atomic contrast-creation adapters.
-- [ ] Persist unsupported cue-repair and alternate applications truthfully.
-- [ ] Implement pending recovery if application is not transactional with
+- [x] Add queue, artifact-detail, and proposal-review endpoints.
+- [x] Implement exact/revised authorization and immutable invocation creation.
+- [x] Implement production-suppression and atomic contrast-creation adapters.
+- [x] Persist unsupported cue-repair and alternate applications truthfully.
+- [x] Implement pending recovery if application is not transactional with
       authorization.
-- [ ] Return application effects and non-effect reasons to the client.
+- [x] Return application effects and non-effect reasons to the client.
 
 ### Slice 4 — learner-facing review UI
 
-- [ ] Add the Reflections navigation destination and controller boundary.
-- [ ] Show completed-session generation progress without blocking session exit.
-- [ ] Render item analysis and proposal cards from durable detail.
-- [ ] Add defer, dismiss, accept, withdraw, and operation-specific edit flows.
-- [ ] Show support before acceptance and status/effects afterward.
-- [ ] Keep unresolved proposals resumable across reloads.
+- [x] Add the Reflections navigation destination and controller boundary.
+- [x] Show completed-session generation progress without blocking session exit.
+- [x] Render item analysis and proposal cards from durable detail.
+- [x] Add defer, dismiss, accept, withdraw, and operation-specific edit flows.
+- [x] Show support before acceptance and status/effects afterward.
+- [x] Keep unresolved proposals resumable across reloads.
 
 ### Slice 5 — dogfood hardening
 
-- [ ] Exercise at least one no-proposal result, exact acceptance, revised
+- [x] Exercise at least one no-proposal result, exact acceptance, revised
       acceptance, dismissal, deferral, supported apply, unsupported acceptance,
       withdrawal, already-satisfied outcome, stale outcome, and failed apply.
-- [ ] Exercise compound item output with independently reviewed proposals.
-- [ ] Verify a provider error and invalid result leave study completion intact.
-- [ ] Record prompt, validation, editor, and cue-model findings without
+- [x] Exercise compound item output with independently reviewed proposals.
+- [x] Verify a provider error and invalid result leave study completion intact.
+- [x] Record prompt, validation, editor, and cue-model findings without
       expanding the milestone automatically.
-- [ ] Update API, DB, frontend architecture, and testing maps with the
+- [x] Update API, DB, frontend architecture, and testing maps with the
       implemented boundaries.
 
 ## 11. Verification
@@ -495,29 +499,29 @@ in fixtures, logs, artifacts, or committed configuration.
 
 The milestone is complete when:
 
-- [ ] a real completed review session can produce a valid durable reflection;
-- [ ] normal study completion remains correct when reflection is absent or
+- [x] a real completed review session can produce a valid durable reflection;
+- [x] normal study completion remains correct when reflection is absent or
       fails;
-- [ ] the user can return later and independently disposition every proposal;
-- [ ] original proposal and final authorized operation remain distinguishable;
-- [ ] supported acceptance produces only the exact validated effect and records
+- [x] the user can return later and independently disposition every proposal;
+- [x] original proposal and final authorized operation remain distinguishable;
+- [x] supported acceptance produces only the exact validated effect and records
       it truthfully;
-- [ ] unsupported acceptance visibly changes no study/content state;
-- [ ] generated contrast/cue content can be edited before authorization;
-- [ ] application outcomes survive reload and can be traced to their invocation;
-- [ ] legacy manual paths remain functional and reconcilable;
-- [ ] focused automated tests cover all new surfaces where a reasonable unit or
+- [x] unsupported acceptance visibly changes no study/content state;
+- [x] generated contrast/cue content can be edited before authorization;
+- [x] application outcomes survive reload and can be traced to their invocation;
+- [x] legacy manual paths remain functional and reconcilable;
+- [x] focused automated tests cover all new surfaces where a reasonable unit or
       integration-test seam exists, and the full test suite and build pass;
-- [ ] any crucial automated-test gap is explicitly documented with its risk,
+- [x] any crucial automated-test gap is explicitly documented with its risk,
       cause, compensating verification, and required enabling test capability;
-- [ ] the canonical spec, API map, DB map, frontend map, tests, and code agree;
+- [x] the canonical spec, API map, DB map, frontend map, tests, and code agree;
       and
-- [ ] dogfooding has produced a concrete next set of prompt/validation/product
+- [x] dogfooding has produced a concrete next set of prompt/validation/product
       findings without requiring the cue model to be designed prematurely.
 
-These criteria satisfy the current frontier advancement test for the selected
-steel-thread slice. Advancing or replacing the frontier remains an explicit
-human decision.
+These criteria satisfied the reflection frontier advancement test active for
+this steel-thread slice. The frontier was subsequently advanced through an
+explicit human decision.
 
 ## 13. Explicit Non-Goals
 

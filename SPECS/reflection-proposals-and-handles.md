@@ -1,8 +1,9 @@
 # Reflection Proposals And Handles
 
-Status: accepted canonical design contract; not yet implemented behavior. The
-initial implementation subset is defined by
-[`PLANS/initial-reflection-steel-thread.md`](../PLANS/initial-reflection-steel-thread.md).
+Status: accepted canonical product contract. The core V1 proposal, review,
+authorization, application, and provenance lifecycle is implemented. Production
+cue repair and production-alternate application remain intentionally unsupported
+where this specification says no faithful domain model exists.
 
 This specification defines how learner-facing reflection describes bounded
 changes, how a user reviews or revises those proposals, and how an authorized
@@ -15,6 +16,7 @@ Related documents:
 
 - [`SPECS/study-action-model.md`](./study-action-model.md)
 - [`SPECS/session-covering-criteria.md`](./session-covering-criteria.md)
+- [`SPECS/session-reflection-generation.md`](./session-reflection-generation.md)
 - [`notes/active/2026-07-10-session-evidence-bundle-design.md`](../notes/active/2026-07-10-session-evidence-bundle-design.md)
 - [`notes/active/2026-07-20-llm-provider-spike-summary.md`](../notes/active/2026-07-20-llm-provider-spike-summary.md)
 - [`PLANS/hosted-beta-tenancy-table-map.md`](../PLANS/hosted-beta-tenancy-table-map.md)
@@ -37,7 +39,9 @@ This specification owns:
 It does not choose:
 
 - database tables or HTTP routes for a particular implementation milestone;
-- the exact reflection trigger, provider prompt, or review-page layout;
+- the exact reflection trigger or evidence-generation boundary, which are owned
+  by [`session-reflection-generation.md`](./session-reflection-generation.md),
+  or a provider prompt or review-page layout;
 - a universal schema-generated workbench;
 - a final production-cue, production-task, or answer-class model;
 - general word-priority or scheduling-policy operations;
@@ -611,6 +615,12 @@ under old authorization.
 `stale` and `superseded` operate at different boundaries. Supersession closes an
 unaccepted proposal. Staleness terminates application of an already-authorized
 invocation.
+
+An invocation state is not itself study content. Session composition or another
+domain consumer may use content caused by an invocation only after a truthful
+`applied` effect exists, or when an `already_satisfied` result points to the
+independently existing domain effect. Mere acceptance, `unsupported`, `pending`,
+`failed`, `stale`, or withdrawn authorization creates no selectable content.
 
 ## 9. Validation, Idempotency, And Attribution
 

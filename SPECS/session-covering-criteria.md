@@ -189,6 +189,24 @@ For an incorrect contrast selection, undo from either the frozen correction card
 or the next active card restores the original contrast prompt to an unanswered
 state: no selected choice, no revealed answer, and no pending contrast commit.
 
+## Completed-Session Reflection Boundary
+
+Reaching the session summary does not by itself close the final Undo window. The
+learner explicitly finishes the session before post-session reflection becomes
+eligible.
+
+Finishing must first flush the final accepted deferred commit and record the
+durable completed-session summary. Only after those steps succeed may the app
+freeze qualifying reflection evidence and start best-effort generation. If
+finalization fails, reflection does not start and must not fabricate a completed
+session.
+
+An undone transition contributes no reflection evidence. Reflection generation,
+validation, or later review failure never changes covering, accepted attempts,
+the completed-session record, or scheduler projection. The detailed evidence,
+generation, failure, and retry contract is defined in
+[`session-reflection-generation.md`](./session-reflection-generation.md).
+
 ## Commit Payload Intent
 
 This spec does not lock down the wire format, but it does define the conceptual payload content that the backend will need once a unit is covered.

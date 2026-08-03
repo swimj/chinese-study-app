@@ -27,10 +27,10 @@ item. This is a usage distinction, not a new required metadata type.
 
 | Instead | Use when |
 | --- | --- |
-| Linear | A cataloged work item or dispatch-ready task |
+| Linear | A current idea, cataloged work item, or dispatch-ready task that should remain retrievable and prioritized |
 | `PLANS/`, `SPECS/*-plan.md` | Committed multi-step milestone work (weeks–months) |
 | `SPECS/` (canonical) | Behavior that must be enforced and tested |
-| `docs/vision/`, `BACKLOG.md` | Long-term ideas without a near-term expiry |
+| `docs/vision/` | Durable long-term product direction, only when an explicit documentation change is wanted |
 
 ## Layout
 

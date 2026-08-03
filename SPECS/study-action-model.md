@@ -201,6 +201,30 @@ This intentionally uses the shorter name `production` instead of
 `orthographic_production`. The current UI tests typed Hanzi production, but
 the product language should not imply handwriting.
 
+#### Production task and cue boundary
+
+The current visible-meaning-to-Hanzi prompt is a compatibility implementation,
+not a durable claim that lexical meanings are production cues or that one word
+can have only one useful production exercise.
+
+The active cue-model work may rely on these boundaries:
+
+- the word and its production skill state remain the source of scheduling
+  demand;
+- a production task describes the competency being sampled for that word;
+- one or more cues are supporting presentation content for the task, not
+  independently scheduled SRS objects;
+- accepted-answer policy is distinct from cue text, even when the first task has
+  only the target word as a correct retrieval answer; and
+- a served `StudyAction` and its attempt evidence preserve the exact task/cue
+  identity or snapshot used so later cue revision cannot reinterpret history.
+
+The initial production-task cardinality, durable cue identity, cue ordering and
+selection, fallback rules, and accepted-answer representation remain the current
+focus decisions. Until they are accepted, implementations must not reinterpret
+meaning rows as cue entities or invent a cue table merely to make an unsupported
+reflection operation appear applied.
+
 ### Contextual Selection
 
 Can the learner choose the appropriate word among plausible alternatives?

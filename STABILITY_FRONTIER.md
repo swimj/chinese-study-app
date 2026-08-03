@@ -2,61 +2,102 @@
 
 ## Near-term product outcome
 
-Dogfood one learner-facing post-session reflection path:
+Dogfood one learner-approved production-cue repair loop:
 
 ```text
-completed study session
-  -> bounded session-evidence bundle
-  -> one server-side Luna reflection call
-  -> strict local validation
-  -> durable reflection artifact with proposal-level review
-  -> minimal asynchronous user review
-  -> explicit application only for accepted, supported operations
+completed production attempt with a misleading or overloaded cue
+  -> post-session reflection proposes a concrete cue repair
+  -> asynchronous learner review and explicit authorization
+  -> faithful, versioned application to durable learner-owned cue content
+  -> a later production action presents the repaired cue
+  -> attempt evidence identifies the exact production task and cue used
 ```
 
-The first useful outcome is not a complete agentic learning system. It is a
-reflection that can inspect real session evidence, make language-aware and
-bounded proposals, survive review after the session ends, and preserve a
-truthful record of what the model proposed, what the user decided, and what the
-application actually changed.
+The first useful cue outcome is not a final multi-sense exercise ontology or a
+general content-authoring system. It is one real repair that improves a later
+learner-facing production exercise without mutating lexical meanings, creating
+an independent cue scheduling stream, or rewriting what earlier attempts
+tested.
+
+## Current gap and focus
+
+The post-session reflection steel thread is implemented. It can generate and
+durably review `repair_production_cue@1`, but accepted cue repairs remain
+truthfully `unsupported`: there is no durable production-task/cue model or
+faithful application adapter yet.
+
+Closing that gap requires the current focus to settle only the boundaries
+needed for one vertical repair loop:
+
+- the identity and initial granularity of a production task relative to a word
+  and its production skill;
+- whether a task owns one active cue, an ordered cue set, or selectable cue
+  variants, and how durable cues interact with the current visible-meaning
+  fallback;
+- the boundary between task competency, cue presentation, and task-specific
+  accepted answers, without implementing general alternate-answer grading;
+- whether `repair_production_cue@1` has one faithful add/replace/activate
+  interpretation or must remain unsupported in favor of a new operation
+  version;
+- the task/cue identity and snapshot preserved on a served action and its
+  attempt evidence; and
+- learner ownership, forward revision, deactivation, restoration, and legacy
+  bad-prompt compatibility.
+
+These are the gap between the desired outcome and independently dispatchable
+implementation. The focus should resolve them through the smallest accepted
+contract and vertical slice rather than attempt to finish the entire future cue
+ontology up front.
 
 ## Settled enough to build against
 
-- Reflection is post-session and best-effort. It is outside the correctness
-  path for study commits, covering, and scheduling.
-- `gpt-5.6-luna-high` is the initial reflection model. The first flow uses one
-  monolithic model call rather than a planner, debate, or specialist-agent
-  pipeline.
-- Provider credentials and calls belong on the backend. Model output is
-  untrusted input and must pass strict local validation.
-- The model has proposal-only authority. It never directly mutates durable
-  learner or content state.
-- The bounded session-evidence bundle is the provisional input boundary for the
-  first reflection flow.
-- The initial reflection is written for learner consumption. Developer-facing
-  reflection and development artifacts are outside this wave.
-- Reflection output and proposal-level review state are durable so review can
-  resume asynchronously and provenance survives later application. The
-  provisionally settled persistence shape is one immutable provenance/blob row,
-  seeded proposal-review rows, and immutable authorized invocations with mutable
-  application projections. See
+- The implemented post-session generation boundary is defined in
+  [`SPECS/session-reflection-generation.md`](SPECS/session-reflection-generation.md).
+  Reflection remains best-effort and outside study-session correctness.
+- The implemented proposal, authorization, application, and provenance
+  lifecycle remains authoritative in
   [`SPECS/reflection-proposals-and-handles.md`](SPECS/reflection-proposals-and-handles.md).
+- Words and word-skill state remain the source of scheduling demand. A study
+  action is the exact served exercise instance; cues are supporting content,
+  not independently scheduled SRS objects. See
+  [`SPECS/study-action-model.md`](SPECS/study-action-model.md).
+- The current definition-gloss production prompt remains the compatibility
+  fallback for tasks without applied durable cue content. Its coexistence with
+  or selection relative to durable cues is part of the current focus.
+- Provider credentials and calls remain on the backend. Model output is
+  untrusted input and must pass strict local validation before it can become a
+  proposal or authorized operation.
+- The model retains proposal-only authority. Cue content originating in
+  reflection becomes selectable study content only through explicit
+  authorization, a supported adapter, and a truthful applied effect.
+- Current reflection batching, model choice, cost estimates, and run logging are
+  provisional dogfood mechanisms. Cue work must not require expanding them into
+  a planner or multi-agent reflection architecture.
 - SQLite is sufficient for the first personal dogfood. Hosted tenancy and
   Postgres follow only after the agentic core proves useful on personal data.
 
 ## Invariants and constraints
 
-- Existing study-session behavior remains correct if reflection generation
-  fails, times out, produces invalid output, or is never reviewed.
+- Existing study-session behavior remains correct if reflection generation or
+  cue application fails, times out, produces invalid output, or is never
+  reviewed.
 - Every durable operation requires explicit user authorization and domain-level
   validation at application time.
 - An accepted handle may remain unapplied when no adapter exists; the UI and
   persistence model must not imply that acceptance changed study state.
-- Review, edit, defer, dismiss, accept, and supported application may occur
-  asynchronously after the originating session ends.
 - The original evidence, model/prompt/schema versions, original proposal,
   user-authorized operation, disposition, and actual effect must remain
   distinguishable wherever they materially differ.
+- Production-task identity, cue presentation, accepted-answer policy, and
+  scheduling state must not be collapsed merely because the first vertical
+  implementation can choose simple cardinalities.
+- Applying or revising a cue must not mutate broad lexical meanings, reset or
+  fork word-skill scheduling state, or retrospectively reinterpret an earlier
+  attempt. A served production action and its durable attempt evidence preserve
+  the exact task/cue identity or snapshot used at that time.
+- Session composition may consume content caused by a reflection invocation
+  only when the invocation has a truthful applied effect. Accepted-but-
+  unsupported operations never create selectable study content.
 - Until content ownership and customization policy is settled, operations that
   customize learner or content state must preserve the distinguishability of
   base state, user-authorized change, and applied effect. User-visible removal
@@ -69,40 +110,38 @@ application actually changed.
 - Initial implementation should remain narrow and reversible. Sticky operation
   payload and identity decisions deserve more care than the storage substrate.
 
-## Current blocking decisions
-
-- The accepted V0 operation inventory, proposal/application lifecycle,
-  provenance/override semantics, and compatibility boundaries are defined in
-  [`SPECS/reflection-proposals-and-handles.md`](SPECS/reflection-proposals-and-handles.md).
-  The bounded first implementation contract, post-session trigger/API boundary,
-  and minimum review surface are defined in
-  [`PLANS/initial-reflection-steel-thread.md`](PLANS/initial-reflection-steel-thread.md).
-
 ## Explicit non-goals for this wave
 
-- Multi-agent reflection, planner/debate loops, or content-authoring specialists.
+- A complete multi-sense production-task ontology or universal cue model.
+- General production-alternate grading, retrospective credit, or answer-class
+  implementation; the task/cue/answer boundary may be designed only as far as
+  the cue vertical requires.
+- A cue marketplace, shared/public cue publication, or automatic migration of
+  existing bad-prompt reports.
+- Removing the current definition-gloss fallback or manual bad-production-
+  prompt escape hatches for unaffected words.
+- Multi-agent reflection, planner/debate loops, or content-authoring
+  specialists.
 - Time-budgeted session planning or autonomous scheduling changes.
 - Hosted-tenancy implementation, authentication, Postgres migration, or beta
   deployment. The bounded ownership-map task may proceed as pre-design but must
   not expand into implementing these areas.
-- Developer-facing reflection artifacts or assistant-product-manager behavior.
 - A comprehensive evaluation harness or automatic extraction into deterministic
   product logic.
 - Automatic application of model proposals.
 - Broad user-history context engineering.
-- Final production-cue stacks, answer classes, general word-priority handles,
-  or a universal command framework unless a confirmed V0 handle strictly
-  requires a small decision now.
 - Removal of existing manual remediation surfaces merely because an equivalent
   reflection handle exists.
 
 ## Frontier advancement test
 
-The frontier advances when a real completed session can produce a useful,
-validated learner-facing reflection; the user can return later to review and
-disposition its items; accepted, supported operations can be applied with
-truthful provenance; and normal study correctness is unaffected when any
-reflection step fails or the reflection is never reviewed.
+The frontier advances when a learner-approved cue-repair operation can create or
+update durable learner-owned cue content through a faithful versioned adapter; a
+later production action uses that content; the resulting attempt preserves the
+exact production task and cue that were tested; and unaffected lexical meaning,
+scheduling, Undo, and session behavior remain unchanged. Dogfooding should
+include several real cases in which the repaired prompt is materially fairer
+than the previous definition-derived exercise.
 
 # How To Interpret And Evolve The Frontier
 
@@ -202,8 +241,8 @@ is unsafe to build against.
 When a blocking block becomes sufficiently clear:
 
 1. graduate the durable detail into its owning spec or architecture document;
-2. move a concise summary from `Current blocking decisions` into `Settled
-   enough to build against`;
+2. move accepted parts of `Current gap and focus` into `Settled enough to build
+   against`;
 3. expose the next blocking decision; and
 4. reconsider which tasks are now safe to dispatch independently.
 

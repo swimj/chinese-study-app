@@ -1,6 +1,16 @@
 # Learning And Review Model
 
-This document captures the intended product model for word lifecycle and session behavior. It is the source of truth for future implementation, even where the current codebase still reflects an older prototype.
+Status: current contract for word lifecycle and established session behavior.
+Its direction-oriented scheduling language also documents existing behavior and
+is under renovation; it may not express the desired longer-term architecture in
+full. `study-action-model.md` owns the implemented word/skill/action scheduling
+architecture while this document continues to own lifecycle semantics.
+
+This document captures the established product model for word lifecycle and
+session behavior. It remains authoritative for those semantics even where the
+current codebase reflects older mechanics. Direction-oriented scheduling detail
+is transitional context and defers to `study-action-model.md` when the two use
+different architectural vocabulary.
 
 ## Scope
 

@@ -479,6 +479,13 @@ More importantly, reflection feeds the planner rather than the reverse. Every ha
 
 The heuristic time-budgeted planner remains a planned deliverable, but it lands after the reflection loop is proven, informed by real reflection data.
 
+Current sequencing clarification (2026-08-03): “after the reflection loop is
+proven” does not require an immediate pivot to planner work. The next focused
+development continues building out reflection through the production-task/cue
+model and a faithfully applicable cue-repair handle. This closes a high-value
+intervention boundary and gives a future planner better content and disposition
+signals to select from.
+
 ### Heuristic Planner, Agent Reflection
 
 The time-budgeted session planner can initially be heuristic and inspectable.
