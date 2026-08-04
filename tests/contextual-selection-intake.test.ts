@@ -234,6 +234,7 @@ describe('contextual selection intake', { concurrency: false }, () => {
     assert.equal(cluster.title, '考察 / 考查');
     assert.deepEqual(cluster.members.map((member) => member.wordId), ['target-kaocha', 'candidate-kaocha']);
     assert.equal(cluster.prompts.length, 1);
+    assertMembersEligible(cluster.members.map((member) => member.wordId));
     assert.equal(dbModule.getContrastIntakeGroups().groups.length, 1);
     assert.deepEqual(dbModule.getContrastIntakeGroups().groups[0]?.coverage.sharedClusterIds, [cluster.id]);
     assert.equal(dbModule.getContrastIntakeGroups().groups[0]?.coverage.usablePromptCount, 1);
@@ -309,6 +310,7 @@ describe('contextual selection intake', { concurrency: false }, () => {
       'other-kaoshi',
     ]);
     assert.equal(cluster.prompts[0]?.targetWordId, 'candidate-kaocha');
+    assertMembersEligible(cluster.members.map((member) => member.wordId));
     assert.equal(dbModule.getContrastIntakeGroups().groups.length, 1);
     assert.equal(dbModule.getContrastCandidateIntake()[0]?.status, 'open');
   });
@@ -601,6 +603,7 @@ describe('contextual selection intake', { concurrency: false }, () => {
       dbModule.getContrastIntakeWords().words[0]?.suggestedClusters.map((cluster) => cluster.id),
       ['destination-cluster'],
     );
+    assertMembersEligible(mergedCluster.members.map((member) => member.wordId));
   });
 
   test('resolves all matching words from candidate text at intake read time', () => {
@@ -707,6 +710,23 @@ function insertWord({
     priority,
     '2026-05-01T00:00:00.000Z',
   );
+}
+
+function assertMembersEligible(wordIds: string[]) {
+  for (const wordId of wordIds) {
+    const row = sqlite.prepare(`
+      SELECT
+        word_skill_relevance.relevance_state,
+        word_skill_state.enabled
+      FROM word_skill_relevance
+      INNER JOIN word_skill_state
+        ON word_skill_state.word_id = word_skill_relevance.word_id
+       AND word_skill_state.skill_id = word_skill_relevance.skill_id
+      WHERE word_skill_relevance.word_id = ?
+        AND word_skill_relevance.skill_id = 'contextual_selection'
+    `).get(wordId) as { relevance_state: string; enabled: number } | undefined;
+    assert.deepEqual(row ? { ...row } : undefined, { relevance_state: 'normal', enabled: 1 });
+  }
 }
 
 function insertIntake({

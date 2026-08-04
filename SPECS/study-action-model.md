@@ -657,12 +657,16 @@ Possible relation types:
 V0 should keep these relation types informal or manually assigned. The system
 should not attempt to infer a full semantic graph yet.
 
-Contrast eligibility lives on the word or word-skill state, not on the cluster.
+Cluster membership is the learner's explicit contextual-selection eligibility
+decision. Every cluster member has `contextual_selection` relevance `normal`
+and an enabled, initialized word-skill scheduler row. Membership creation,
+legacy/imported content, and database startup repair enforce that invariant;
+the cluster itself still does not become due or carry scheduler state.
+
 When a member word schedules contextual-selection practice, clusters provide
 candidate content for the action selector. The selector may use a prompt whose
 `targetWordId` is the scheduled word, or a prompt whose `targetWordId` is a
-sibling while the scheduled word appears as a distractor; the cluster itself
-does not become due.
+sibling while the scheduled word appears as a distractor.
 
 A served contrast action should separate the scheduling anchor from the prompt's
 correct answer:
@@ -711,15 +715,17 @@ evidence even if the explanation makes sense afterward.
 
 V0 contrast scheduling should be conservative:
 
-- only schedule contrast for manually eligible words
+- only schedule contrast for words made eligible through cluster membership
 - require available contrast content
 - prefer words already in learning or review
 - avoid damaging recognition/production progress after contrast failure
 - update contextual-selection state and confusion evidence instead
 
 Specific nouns and other low-ambiguity words may never need contrast training.
-The user should be able to opt words into richer differentiation training when
-that feels useful.
+The user opts words into richer differentiation training by adding them to a
+cluster and opts them out by removing them from every cluster. The former
+generic `suppress_skill` management action is not available for contrast
+selection; production suppression remains independent.
 
 ## 11. Mistake Capture
 
@@ -758,6 +764,12 @@ Early V0 mistake capture can be crude. It may simply persist:
 This can begin producing useful data before full contrast drills are built.
 One-off scripts can later migrate captured mistakes into clusters and contrast
 prompt content.
+
+The production/session-management action `add_contrast_candidate` is this
+intake-capture path, not a cluster-editor membership action. It records explicit
+interest in contextual selection for the target word and may initialize its
+eligibility before curated cluster content exists. Actual cluster membership
+later makes the all-member eligibility invariant apply.
 
 The first durable attempt-event milestone does not need to backfill or
 heuristically connect existing JSONL mistake candidates to source events. A

@@ -1016,14 +1016,6 @@ function ManageStudyPanel({
             <button
               type="button"
               className="secondary-button"
-              onClick={() => onManageStudyAction('suppress_skill', note)}
-              disabled={isSubmitting}
-            >
-              Suppress contrast
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
               onClick={() => onManageStudyAction('bad_prompt', note)}
               disabled={isSubmitting}
             >

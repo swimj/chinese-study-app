@@ -221,6 +221,12 @@ missing proposal/invocation ids return `404`; unexpected failures return `500`.
 
 ## Contrast clusters and prompts
 
+Adding a cluster member makes that word eligible for contextual-selection
+practice by ensuring normal relevance and enabled, initialized scheduler state.
+Removing a word from every cluster removes its available contrast content and
+is the supported way to stop contrast practice for that word; contrast actions
+do not expose generic skill suppression.
+
 | Method | Path | Handler domain |
 | --- | --- | --- |
 | GET | `/api/contrast-clusters` | `contrast` |
