@@ -153,6 +153,8 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.equal(countRows('contrast_clusters'), 0);
     assert.equal(countRows('contrast_cluster_members'), 0);
     assert.equal(countRows('contrast_prompts'), 0);
+    assert.equal(countRows('word_skill_relevance'), 0);
+    assert.equal(countRows('word_skill_state'), 0);
   });
 
   test('atomically creates complete contrast content and records every caused effect', () => {
@@ -168,6 +170,10 @@ describe('reflection application adapters', { concurrency: false }, () => {
       'contrast_cluster_member',
       'contrast_cluster_member',
       'contrast_prompt',
+      'word_skill_relevance',
+      'word_skill_state',
+      'word_skill_relevance',
+      'word_skill_state',
     ]);
 
     const clusterId = refs[0]?.id ?? '';
@@ -186,8 +192,43 @@ describe('reflection application adapters', { concurrency: false }, () => {
       ],
     );
     assert.equal(cluster?.prompts[0]?.promptText, 'Choose the intended word.');
+    for (const wordId of ['target', 'alternate']) {
+      assert.equal(
+        dbModule.getWordSkillRelevance(wordId, 'contextual_selection')?.relevanceState,
+        'normal',
+      );
+      assert.equal(fetchContextualSchedulerState(wordId)?.enabled, 1);
+    }
     assert.deepEqual(dbModule.getContrastCandidateIntake(), []);
     assert.deepEqual(dbModule.applyReflectionInvocation('contrast-new', createdAt), result);
+  });
+
+  test('attributes only contextual eligibility changes caused by contrast creation', () => {
+    sqlite.prepare(`
+      INSERT INTO word_skill_relevance (
+        word_id, skill_id, relevance_state, updated_at, source_event_id
+      ) VALUES ('target', 'contextual_selection', 'normal', ?, NULL)
+    `).run(createdAt);
+    insertContextualSchedulerState('target', true);
+    insertInvocation('contrast-partial-eligibility', contrastOperation());
+
+    const result = dbModule.applyReflectionInvocation('contrast-partial-eligibility', appliedAt);
+    assert.equal(result.application.state.kind, 'applied');
+    const refs = result.application.state.kind === 'applied'
+      ? result.application.state.effectRefs
+      : [];
+    assert.deepEqual(
+      refs.filter((ref) => ref.type.startsWith('word_skill_')),
+      [
+        { type: 'word_skill_relevance', id: 'alternate/contextual_selection' },
+        { type: 'word_skill_state', id: 'alternate/contextual_selection' },
+      ],
+    );
+    assert.equal(
+      dbModule.getWordSkillRelevance('target', 'contextual_selection')?.updatedAt,
+      createdAt,
+    );
+    assert.equal(fetchContextualSchedulerState('target')?.last_studied_at, createdAt);
   });
 
   test('applies revised contrast content while preserving the immutable original proposal', () => {
@@ -256,6 +297,35 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.equal(dbModule.getContrastClusters().length, 1);
   });
 
+  test('repairs eligibility instead of treating exact content alone as already satisfied', () => {
+    insertInvocation('contrast-content-first', contrastOperation());
+    dbModule.applyReflectionInvocation('contrast-content-first', appliedAt);
+    sqlite.prepare(`
+      DELETE FROM word_skill_relevance
+      WHERE word_id = 'alternate'
+        AND skill_id = 'contextual_selection'
+    `).run();
+    sqlite.prepare(`
+      DELETE FROM word_skill_state
+      WHERE word_id = 'alternate'
+        AND skill_id = 'contextual_selection'
+    `).run();
+    insertInvocation('contrast-repair-eligibility', contrastOperation());
+
+    const result = dbModule.applyReflectionInvocation('contrast-repair-eligibility', appliedAt);
+    assert.deepEqual(result.application.state, {
+      kind: 'applied',
+      appliedAt,
+      effectRefs: [
+        { type: 'word_skill_relevance', id: 'alternate/contextual_selection' },
+        { type: 'word_skill_state', id: 'alternate/contextual_selection' },
+      ],
+    });
+    assert.equal(dbModule.getContrastClusters().length, 1);
+    assert.equal(fetchContextualSchedulerState('alternate')?.enabled, 1);
+    assert.deepEqual(dbModule.applyReflectionInvocation('contrast-repair-eligibility', createdAt), result);
+  });
+
   test('creates a new cluster when existing content is only a near match', () => {
     insertInvocation('contrast-original', contrastOperation());
     dbModule.applyReflectionInvocation('contrast-original', appliedAt);
@@ -293,6 +363,8 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.equal(dbModule.getContrastClusters().length, 0);
     assert.equal(countRows('contrast_cluster_members'), 0);
     assert.equal(countRows('contrast_prompts'), 0);
+    assert.equal(countRows('word_skill_relevance'), 0);
+    assert.equal(countRows('word_skill_state'), 0);
     assert.deepEqual(dbModule.applyReflectionInvocation('contrast-failed', createdAt), result);
   });
 
@@ -492,6 +564,29 @@ function insertWord(wordId: string, hanzi: string): void {
       last_learning_covered_on
     ) VALUES (?, ?, 'pin1yin1', 'meaning', '["meaning"]', '', '[]', 'review', 1, ?, 0, NULL, NULL)
   `).run(wordId, hanzi, createdAt);
+}
+
+function insertContextualSchedulerState(wordId: string, enabled: boolean): void {
+  sqlite.prepare(`
+    INSERT INTO word_skill_state (
+      word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor
+    ) VALUES (?, 'contextual_selection', ?, 24, ?, ?, 2.5)
+  `).run(wordId, enabled ? 1 : 0, createdAt, appliedAt);
+}
+
+function fetchContextualSchedulerState(wordId: string) {
+  return sqlite.prepare(`
+    SELECT enabled, interval_hours, last_studied_at, next_due_at, ease_factor
+    FROM word_skill_state
+    WHERE word_id = ?
+      AND skill_id = 'contextual_selection'
+  `).get(wordId) as {
+    enabled: number;
+    interval_hours: number;
+    last_studied_at: string;
+    next_due_at: string | null;
+    ease_factor: number;
+  } | undefined;
 }
 
 function countRows(table: string): number {

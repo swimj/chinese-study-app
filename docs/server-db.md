@@ -69,8 +69,8 @@ The supported adapters are:
   source-event provenance and reporting preexisting suppression as
   `already_satisfied`; and
 - atomic creation of a contrast cluster, members, annotations, and prompts,
-  with complete effect references and deterministic exact-postcondition
-  detection.
+  plus all-member contextual eligibility, with caused-only effect references
+  and deterministic exact content-and-eligibility postcondition detection.
 
 Cue repair and production-alternate operations remain valid authorizations but
 persist as `unsupported` without domain writes.

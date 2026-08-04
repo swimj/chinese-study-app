@@ -25,7 +25,11 @@ import {
 import { parseSessionReflectionBundle } from '../../src/domain/reflection-evidence.ts';
 import type { NormalizedTokenUsage } from '../llm/types.ts';
 import { dbPath, getDb } from './connection.ts';
-import { suppressDefinitionProductionWithoutTransaction } from './domain-commands.ts';
+import {
+  enableContextualSelectionWithoutTransaction,
+  type EnableContextualSelectionResult,
+  suppressDefinitionProductionWithoutTransaction,
+} from './domain-commands.ts';
 
 export const INITIAL_REFLECTION_FLOW_VERSION = 'initial_post_session_reflection.v1';
 
@@ -1893,11 +1897,29 @@ function applyContrastClusterCreationWithoutTransaction(
       explanation: prompt.explanation?.trim() ?? '',
     })),
   };
-  const exact = findExactContrastClusterPostcondition(normalized);
-  if (exact !== null) {
+  const exactContentRefs = findExactContrastClusterPostcondition(normalized);
+  if (exactContentRefs !== null) {
+    const eligibilityResults = normalized.members.map((member) => (
+      enableContextualSelectionWithoutTransaction({
+        wordId: member.wordId,
+        updatedAt: appliedAt,
+        sourceEventId: null,
+      })
+    ));
+    const causedEligibilityRefs = eligibilityResults.flatMap(contextualEligibilityCausedEffectRefs);
+    if (causedEligibilityRefs.length > 0) {
+      return {
+        kind: 'applied',
+        appliedAt,
+        effectRefs: causedEligibilityRefs,
+      };
+    }
     return {
       kind: 'already_satisfied',
-      satisfyingEffectRefs: exact,
+      satisfyingEffectRefs: [
+        ...exactContentRefs,
+        ...eligibilityResults.flatMap(contextualEligibilitySatisfyingEffectRefs),
+      ],
     };
   }
 
@@ -1915,6 +1937,7 @@ function applyContrastClusterCreationWithoutTransaction(
       display_order
     ) VALUES (?, ?, ?, ?)
   `);
+  const eligibilityEffectRefs: EffectRef[] = [];
   for (const member of normalized.members) {
     insertMember.run(
       clusterId,
@@ -1926,6 +1949,15 @@ function applyContrastClusterCreationWithoutTransaction(
       type: 'contrast_cluster_member',
       id: `${encodeURIComponent(clusterId)}/${encodeURIComponent(member.wordId)}`,
     });
+    eligibilityEffectRefs.push(
+      ...contextualEligibilityCausedEffectRefs(
+        enableContextualSelectionWithoutTransaction({
+          wordId: member.wordId,
+          updatedAt: appliedAt,
+          sourceEventId: null,
+        }),
+      ),
+    );
   }
 
   const insertPrompt = getDb().prepare(`
@@ -1948,7 +1980,35 @@ function applyContrastClusterCreationWithoutTransaction(
     );
     effectRefs.push({ type: 'contrast_prompt', id: promptId });
   }
-  return { kind: 'applied', appliedAt, effectRefs };
+  return {
+    kind: 'applied',
+    appliedAt,
+    effectRefs: [...effectRefs, ...eligibilityEffectRefs],
+  };
+}
+
+function contextualEligibilityCausedEffectRefs(
+  result: EnableContextualSelectionResult,
+): EffectRef[] {
+  const refs: EffectRef[] = [];
+  const id = `${encodeURIComponent(result.relevance.wordId)}/contextual_selection`;
+  if (result.relevanceChanged) {
+    refs.push({ type: 'word_skill_relevance', id });
+  }
+  if (result.schedulerStateChanged) {
+    refs.push({ type: 'word_skill_state', id });
+  }
+  return refs;
+}
+
+function contextualEligibilitySatisfyingEffectRefs(
+  result: EnableContextualSelectionResult,
+): EffectRef[] {
+  const id = `${encodeURIComponent(result.relevance.wordId)}/contextual_selection`;
+  return [
+    { type: 'word_skill_relevance', id },
+    { type: 'word_skill_state', id },
+  ];
 }
 
 type NormalizedContrastCreation = {
