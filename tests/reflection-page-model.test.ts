@@ -8,10 +8,13 @@ import type {
 } from '../src/domain/reflection.js';
 import {
   buildReflectionItemPresentations,
+  buildReflectionProposalPresentations,
   cloneReflectionOperation,
   getOperationDraftState,
   reduceReflectionOperationDraft,
+  summarizeReflectionTokenUsage,
   type ReflectionArtifactDetailDto,
+  type ReflectionGenerationRunDto,
 } from '../src/features/reflection/reflection-page-model.js';
 
 describe('reflection page model', () => {
@@ -26,6 +29,71 @@ describe('reflection page model', () => {
       ['proposal-a', 'proposal-b'],
     );
     assert.equal(presentations[1].proposals.length, 0);
+  });
+
+  test('builds proposal queues by actionable lifecycle state without session grouping', () => {
+    const openDetail = artifactDetail();
+    openDetail.proposals[1].review.disposition = { kind: 'deferred' };
+    const unappliedDetail = artifactDetail();
+    unappliedDetail.artifactId = 'unapplied-artifact';
+    unappliedDetail.proposals[0].review.disposition = {
+      kind: 'accepted',
+      acceptanceMode: 'exact',
+      acceptedInvocationId: 'invocation-a',
+    };
+    unappliedDetail.proposals[0].invocation = {
+      invocation: {
+        invocationId: 'invocation-a',
+        createdAt: '2026-07-29T12:01:00.000Z',
+        origin: { kind: 'proposal_acceptance', proposalId: 'proposal-a' },
+        operation: unappliedDetail.proposals[0].proposal.operation,
+      },
+      application: {
+        invocationId: 'invocation-a',
+        updatedAt: '2026-07-29T12:01:00.000Z',
+        state: { kind: 'unsupported', reason: 'Not implemented yet.' },
+      },
+    };
+    unappliedDetail.proposals[1].review.disposition = { kind: 'dismissed', reason: null };
+
+    assert.deepEqual(
+      buildReflectionProposalPresentations([openDetail, unappliedDetail], 'attention')
+        .map((entry) => entry.proposal.review.proposalId),
+      ['proposal-a'],
+    );
+    assert.deepEqual(
+      buildReflectionProposalPresentations([openDetail, unappliedDetail], 'deferred')
+        .map((entry) => entry.proposal.review.proposalId),
+      ['proposal-b'],
+    );
+    assert.deepEqual(
+      buildReflectionProposalPresentations([openDetail, unappliedDetail], 'unapplied')
+        .map((entry) => entry.artifact.artifactId),
+      ['unapplied-artifact'],
+    );
+  });
+
+  test('summarizes known token categories and priced runs', () => {
+    const summary = summarizeReflectionTokenUsage([
+      generationRun({ totalTokens: 130, estimatedCostUsd: 0.001 }),
+      generationRun({ totalTokens: null, estimatedCostUsd: null, state: 'failed' }),
+    ]);
+
+    assert.deepEqual(summary, {
+      runCount: 2,
+      succeededCount: 1,
+      failedCount: 1,
+      usage: {
+        inputTokens: 100,
+        cachedInputTokens: 20,
+        cacheWriteInputTokens: null,
+        outputTokens: 30,
+        reasoningTokens: 10,
+        totalTokens: 130,
+      },
+      pricedRunCount: 1,
+      estimatedCostUsd: 0.001,
+    });
   });
 
   test('deep clones editable generated content while retaining exact acceptance', () => {
@@ -275,5 +343,46 @@ function wordSnapshot(wordId: string, hanzi: string) {
     hanzi,
     pinyin: 'pinyin',
     meanings: ['meaning'],
+  };
+}
+
+function generationRun({
+  totalTokens,
+  estimatedCostUsd,
+  state = 'succeeded',
+}: {
+  totalTokens: number | null;
+  estimatedCostUsd: number | null;
+  state?: ReflectionGenerationRunDto['state'];
+}): ReflectionGenerationRunDto {
+  return {
+    runId: `${state}-${String(totalTokens)}`,
+    sourceSessionId: 'session',
+    reflectionFlowVersion: 'initial_post_session_reflection.v1',
+    startedAt: '2026-07-29T12:00:00.000Z',
+    completedAt: '2026-07-29T12:00:01.000Z',
+    provider: 'openai',
+    model: 'gpt-5.6-luna-high',
+    providerModel: 'gpt-5.6-luna',
+    promptVersion: 'reflection-v2',
+    responseId: null,
+    finishReason: state === 'succeeded' ? 'stop' : null,
+    state,
+    failureCode: state === 'failed' ? 'upstream_failure' : null,
+    eligibleItemCount: 1,
+    includedItemCount: 1,
+    usage: {
+      inputTokens: state === 'succeeded' ? 100 : null,
+      cachedInputTokens: state === 'succeeded' ? 20 : null,
+      cacheWriteInputTokens: null,
+      outputTokens: state === 'succeeded' ? 30 : null,
+      reasoningTokens: state === 'succeeded' ? 10 : null,
+      totalTokens,
+    },
+    pricingSnapshotId: estimatedCostUsd === null ? null : 'price-v1',
+    pricingAsOf: estimatedCostUsd === null ? null : '2026-07-30',
+    pricingBasis: estimatedCostUsd === null ? null : {},
+    estimatedCostUsd,
+    retryable: state === 'failed',
   };
 }

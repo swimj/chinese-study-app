@@ -12,6 +12,7 @@ export type ReflectionPageController = {
   isLoading: boolean;
   openArtifacts: ReflectionArtifactSummaryDto[];
   recentArtifacts: ReflectionArtifactSummaryDto[];
+  artifactDetails: ReflectionArtifactDetailDto[];
   generationRuns: ReflectionGenerationRunDto[];
   selectedArtifact: ReflectionArtifactDetailDto | null;
   selectedArtifactId: string | null;
@@ -45,6 +46,7 @@ export function useReflectionPageController({
   const [isLoading, setIsLoading] = useState(false);
   const [openArtifacts, setOpenArtifacts] = useState<ReflectionArtifactSummaryDto[]>([]);
   const [recentArtifacts, setRecentArtifacts] = useState<ReflectionArtifactSummaryDto[]>([]);
+  const [artifactDetails, setArtifactDetails] = useState<ReflectionArtifactDetailDto[]>([]);
   const [generationRuns, setGenerationRuns] = useState<ReflectionGenerationRunDto[]>([]);
   const [selectedArtifact, setSelectedArtifact] = useState<ReflectionArtifactDetailDto | null>(null);
   const [submittingProposalId, setSubmittingProposalId] = useState<string | null>(null);
@@ -62,6 +64,7 @@ export function useReflectionPageController({
 
   async function loadListsAndDetail(
     preferredArtifactId: string | null,
+    forceArtifactIds: ReadonlySet<string> = new Set(),
   ): Promise<void> {
     const reviewApi = requireApi();
     const [nextOpenArtifacts, nextRecentArtifacts, nextGenerationRuns] = await Promise.all([
@@ -73,16 +76,44 @@ export function useReflectionPageController({
       ...nextOpenArtifacts.map((artifact) => artifact.artifactId),
       ...nextRecentArtifacts.map((artifact) => artifact.artifactId),
     ]);
+    const orderedArtifactIds = [
+      ...nextRecentArtifacts.map((artifact) => artifact.artifactId),
+      ...nextOpenArtifacts
+        .map((artifact) => artifact.artifactId)
+        .filter((artifactId) => !nextRecentArtifacts.some(
+          (artifact) => artifact.artifactId === artifactId,
+        )),
+    ];
+    const detailByArtifactId = new Map(
+      artifactDetails.map((detail) => [detail.artifactId, detail]),
+    );
+    const artifactIdsToLoad = orderedArtifactIds.filter((artifactId) => (
+      !detailByArtifactId.has(artifactId) || forceArtifactIds.has(artifactId)
+    ));
+    const loadedDetails = await Promise.all(
+      artifactIdsToLoad.map((artifactId) => reviewApi.getArtifact(artifactId)),
+    );
+    for (const detail of loadedDetails) {
+      detailByArtifactId.set(detail.artifactId, detail);
+    }
+    const nextArtifactDetails = orderedArtifactIds.map((artifactId) => {
+      const detail = detailByArtifactId.get(artifactId);
+      if (detail === undefined) {
+        throw new Error(`Reflection artifact ${artifactId} detail was not loaded.`);
+      }
+      return detail;
+    });
     const nextArtifactId = preferredArtifactId !== null
       && availableArtifactIds.has(preferredArtifactId)
       ? preferredArtifactId
       : nextOpenArtifacts[0]?.artifactId ?? nextRecentArtifacts[0]?.artifactId ?? null;
     const nextSelectedArtifact = nextArtifactId === null
       ? null
-      : await reviewApi.getArtifact(nextArtifactId);
+      : detailByArtifactId.get(nextArtifactId) ?? await reviewApi.getArtifact(nextArtifactId);
 
     setOpenArtifacts(nextOpenArtifacts);
     setRecentArtifacts(nextRecentArtifacts);
+    setArtifactDetails(nextArtifactDetails);
     setGenerationRuns(nextGenerationRuns);
     setSelectedArtifact(nextSelectedArtifact);
   }
@@ -126,7 +157,8 @@ export function useReflectionPageController({
     }
     try {
       await runLoading(async () => {
-        setSelectedArtifact(await requireApi().getArtifact(artifactId));
+        const loadedDetail = artifactDetails.find((detail) => detail.artifactId === artifactId);
+        setSelectedArtifact(loadedDetail ?? await requireApi().getArtifact(artifactId));
       });
     } catch {
       // Preserve the previous selection on failure.
@@ -156,11 +188,20 @@ export function useReflectionPageController({
     proposalId: string,
     request: ReviewProposalRequest,
   ): Promise<void> {
+    const artifactId = artifactDetails.find((detail) => (
+      detail.proposals.some((proposal) => proposal.review.proposalId === proposalId)
+    ))?.artifactId;
+    if (artifactId === undefined) {
+      throw new Error(`Reflection proposal ${proposalId} is not loaded.`);
+    }
     setSubmittingProposalId(proposalId);
     setError(null);
     try {
       await requireApi().reviewProposal(proposalId, request);
-      await loadListsAndDetail(selectedArtifact?.artifactId ?? null);
+      await loadListsAndDetail(
+        selectedArtifact?.artifactId ?? null,
+        new Set([artifactId]),
+      );
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to review reflection proposal');
       throw error;
@@ -170,11 +211,22 @@ export function useReflectionPageController({
   }
 
   async function withdrawAuthorization(invocationId: string): Promise<void> {
+    const artifactId = artifactDetails.find((detail) => (
+      detail.proposals.some((proposal) => (
+        proposal.invocation?.invocation.invocationId === invocationId
+      ))
+    ))?.artifactId;
+    if (artifactId === undefined) {
+      throw new Error(`Reflection invocation ${invocationId} is not loaded.`);
+    }
     setWithdrawingInvocationId(invocationId);
     setError(null);
     try {
       await requireApi().withdrawAuthorization(invocationId);
-      await loadListsAndDetail(selectedArtifact?.artifactId ?? null);
+      await loadListsAndDetail(
+        selectedArtifact?.artifactId ?? null,
+        new Set([artifactId]),
+      );
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to withdraw authorization');
       throw error;
@@ -187,6 +239,7 @@ export function useReflectionPageController({
     isLoading,
     openArtifacts,
     recentArtifacts,
+    artifactDetails,
     generationRuns,
     selectedArtifact,
     selectedArtifactId: selectedArtifact?.artifactId ?? null,
