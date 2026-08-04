@@ -1,11 +1,15 @@
 # Study Action Model
 
-Status: implemented architecture reference (scheduling, attempt events, contrast selection).
+Status: accepted canonical product contract. The existing scheduling,
+attempt-event, and contrast-selection sections describe implemented behavior;
+the V0 production-task/cue contract is accepted for the current build wave but
+is not yet implemented.
 
-This document describes how the study system is structured in code today:
-study actions, word-skill scheduler state, attempt-event projection, and contrast
-selection. It complements the word-lifecycle rules in `learning-review-model.md`
-and the in-session covering rules in `session-covering-criteria.md`.
+This document describes the study-action model, including current study
+actions, word-skill scheduler state, attempt-event projection, contrast
+selection, and accepted near-term production-cue behavior. It complements the
+word-lifecycle rules in `learning-review-model.md` and the in-session covering
+rules in `session-covering-criteria.md`.
 
 For long-term product vision beyond the current PoC, see
 `adaptive_vocabulary_training_product_notes.md`.
@@ -207,23 +211,61 @@ The current visible-meaning-to-Hanzi prompt is a compatibility implementation,
 not a durable claim that lexical meanings are production cues or that one word
 can have only one useful production exercise.
 
-The active cue-model work may rely on these boundaries:
+The durable V0 production-cue model separates:
 
-- the word and its production skill state remain the source of scheduling
-  demand;
-- a production task describes the competency being sampled for that word;
-- one or more cues are supporting presentation content for the task, not
-  independently scheduled SRS objects;
-- accepted-answer policy is distinct from cue text, even when the first task has
-  only the target word as a correct retrieval answer; and
-- a served `StudyAction` and its attempt evidence preserve the exact task/cue
-  identity or snapshot used so later cue revision cannot reinterpret history.
+- the word and its production skill state as the source of scheduling demand;
+- one default production task per word, identified by
+  `(wordId, 'default_production')`, as the content anchor describing the
+  competency being sampled; this keeps the first implementation simple while
+  leaving room for later sense-specific tasks and does not make the word and
+  task the same thing;
+- a collection of immutable cues per task, each containing cue-level identity,
+  a cue type (`definition_gloss`, `minimal_context`, or `circumstance`),
+  non-empty stimulus text, creation attribution, and an answer space of
+  accepted visible word ids that includes the task word as its V0 scheduling
+  anchor; a `definition_gloss` may narrow to an anchored sense, while register
+  and domain details belong in the cue text rather than a separate cue type;
+- cue lifecycle as explicit create, replace, activate, and deactivate effects;
+  editing content writes a new cue id, replacement deactivates only named cues,
+  and unrelated cues retain their identity;
+- multiple simultaneously active cues, with V0 randomly selecting one at serve
+  time independently of word admission or skill scheduling;
+- the current meaning-derived gloss prompt as base fallback content rather than
+  a cue row; it serves only when no durable cue is active, while a durable
+  `definition_gloss` cue remains distinct enriched content;
+- one answer-checking rule for every V0 cue: accept the submission only when it
+  matches the accepted-word set snapshotted on the served action;
+- asynchronous, learner-authorized reconsideration of an out-of-set response;
+  expanding the accepted set writes a replacement cue and may append a later
+  cue-evidence judgment without rewriting the source attempt or its provisional
+  word-scheduler effect; and
+- append-oriented cue evidence plus asynchronous shadow projection, kept
+  distinct from the current word-based scheduler and not consumed by V0
+  scheduling.
 
-The initial production-task cardinality, durable cue identity, cue ordering and
-selection, fallback rules, and accepted-answer representation remain the current
-focus decisions. Until they are accepted, implementations must not reinterpret
-meaning rows as cue entities or invent a cue table merely to make an unsupported
-reflection operation appear applied.
+`targetWordId` remains the word admitted at composition time and the task word
+in V0. A served action and its durable attempt evidence preserve the exact task,
+cue, cue text, accepted-word set, raw submission, nullable resolved submitted
+word, and session-time result so later cue revision cannot reinterpret history.
+
+Cues are content, not independently scheduled SRS objects. Cue application does
+not reset or fork word-skill scheduling. Multi-answer cues nevertheless expose
+a mismatch with the current scheduler: an action is anchored to one word even
+when another accepted word is produced. Treating that response as a lapse can
+falsely punish the anchor, while treating it as ordinary target-word success
+can falsely strengthen it.
+
+The first bounded scheduling response for accepted-anchor,
+accepted-non-anchor, and rejected submissions is therefore a replaceable
+implementation policy behind the recorded cue-evidence seam. It must be
+human-confirmed at implementation orientation, must prevent egregious behavior,
+and must not be promoted into cue semantics or a broader scheduling redesign.
+
+Legacy bad-prompt and definition-production suppression state continues to
+govern the meaning-derived fallback and is not cleared by cue application. A
+truthfully applied authorized cue may serve without claiming that the legacy
+definition exercise was restored. Meaning rows must not be reinterpreted as cue
+entities.
 
 ### Contextual Selection
 
@@ -261,7 +303,8 @@ type StudyActionKind =
 
 type StudyContentRef =
   | { type: 'contrast_prompt'; id: string }
-  | { type: 'example_sentence'; id: string };
+  | { type: 'example_sentence'; id: string }
+  | { type: 'production_cue'; taskId: string; cueId: string };
 
 type StudyAction = {
   sessionActionId: string;
@@ -511,6 +554,12 @@ type StudyAttemptEvent = {
 `sessionEventSequence` is the monotonic accepted-event order within the session.
 `actionAttemptSequence` is scoped to a `sessionActionId` and records repeated
 attempts against the same served action.
+
+For a production-cue action, `contentRef` identifies the durable task and cue.
+The event metadata snapshots `anchorWordId`, cue type and text,
+`acceptedWordIds`, raw submitted text, nullable resolved submitted word id, and
+the deterministic session-time result. The metadata is historical evidence,
+not a live lookup into mutable cue state.
 
 Example production events:
 

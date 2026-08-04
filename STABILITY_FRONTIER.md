@@ -21,33 +21,37 @@ tested.
 
 ## Current gap and focus
 
-The post-session reflection steel thread is implemented. It can generate and
-durably review `repair_production_cue@1`, but accepted cue repairs remain
-truthfully `unsupported`: there is no durable production-task/cue model or
-faithful application adapter yet.
+The post-session reflection steel thread is implemented, and the V0
+production-task/cue design is accepted in
+[`PLANS/swi-24-production-task-cue-contract.md`](PLANS/swi-24-production-task-cue-contract.md).
+No durable cue vertical is implemented yet. New reflection still emits
+`repair_production_cue@1`, accepted cue repairs remain truthfully unsupported,
+and production actions still use meaning-derived prompts without durable
+task/cue identity.
 
-Closing that gap requires the current focus to settle only the boundaries
-needed for one vertical repair loop:
+The next implementation focus is the complete bounded vertical: immutable cue
+persistence and lifecycle; direct V2 reflection generation, review, and
+application; active-cue serving and snapshot-based answer checking; exact
+served-action and attempt snapshots; append-oriented cue evidence with a shadow
+projector; and one replaceable reconciliation seam into the existing word
+scheduler.
 
-- the identity and initial granularity of a production task relative to a word
-  and its production skill;
-- whether a task owns one active cue, an ordered cue set, or selectable cue
-  variants, and how durable cues interact with the current visible-meaning
-  fallback;
-- the boundary between task competency, cue presentation, and task-specific
-  accepted answers, without implementing general alternate-answer grading;
-- whether `repair_production_cue@1` has one faithful add/replace/activate
-  interpretation or must remain unsupported in favor of a new operation
-  version;
-- the task/cue identity and snapshot preserved on a served action and its
-  attempt evidence; and
-- learner ownership, forward revision, deactivation, restoration, and legacy
-  bad-prompt compatibility.
+Two details remain explicit human-gated orientation decisions before
+substantial implementation:
 
-These are the gap between the desired outcome and independently dispatchable
-implementation. The focus should resolve them through the smallest accepted
-contract and vertical slice rather than attempt to finish the entire future cue
-ontology up front.
+- the exact nested `repair_production_cue@2` wire schema, including related
+  cue-evidence judgment and effect-reference shapes; and
+- the first bounded word-scheduler response for accepted anchor, accepted
+  non-anchor, and rejected multi-answer submissions.
+
+These gates choose faithful representations and a temporary policy inside the
+accepted boundary; they do not reopen the cue model or authorize a scheduler
+redesign. The implementation task remains Yellow until the human confirms both
+at orientation, then may proceed as a dynamically structured Graphite stack.
+Its task-specific dispatch context should be composed with the reusable
+[`stacked feature development and review model`](docs/stacked-feature-development-and-review.md).
+The portfolio item is SWI-26; neither that item nor this reference asserts that
+work has been dispatched.
 
 ## Settled enough to build against
 
@@ -61,9 +65,32 @@ ontology up front.
   action is the exact served exercise instance; cues are supporting content,
   not independently scheduled SRS objects. See
   [`SPECS/study-action-model.md`](SPECS/study-action-model.md).
-- The current definition-gloss production prompt remains the compatibility
-  fallback for tasks without applied durable cue content. Its coexistence with
-  or selection relative to durable cues is part of the current focus.
+- V0 has one `default_production` task per word as a content anchor, with an
+  explicit seam for later sense-specific tasks. It is not a separately
+  scheduled object and does not make word and task permanent synonyms.
+- A task may own multiple simultaneously active immutable cues. V0 randomly
+  selects one after the word is admitted. Cue content has explicit create,
+  replace, activate, and deactivate lifecycle effects; revision creates a new
+  cue id and leaves unrelated cues unchanged.
+- V0 cue types are `definition_gloss`, `minimal_context`, and `circumstance`.
+  A `definition_gloss` may narrow to an anchored sense; register and domain
+  details belong in cue text rather than a separate type. Each cue has an
+  accepted set of known visible words that includes the task word as scheduling
+  anchor.
+- The current definition-gloss production prompt remains base compatibility
+  fallback content, not a cue row. It serves only when no durable cue is active
+  and remains governed by existing bad-prompt and production-suppression state.
+- Every V0 cue uses the same answer-checking rule: accept a submission only when
+  it matches the accepted-word set snapshotted on the served action. Out-of-set
+  responses remain incorrect for that session; later learner authorization may
+  replace the cue with an expanded accepted set and append a judgment, but never
+  rewrites the attempt or scheduler effect.
+- `repair_production_cue@1` remains readable and unsupported. New reflection
+  generation uses V2 directly; any later V1 migration uses supersession and a
+  fresh authorization rather than reinterpretation.
+- Cue evidence is append-oriented and may feed asynchronous shadow projection.
+  V0 scheduling does not consume that shadow state, so temporary divergence
+  from word strength and interval state is explicit and acceptable.
 - Provider credentials and calls remain on the backend. Model output is
   untrusted input and must pass strict local validation before it can become a
   proposal or authorized operation.
@@ -90,11 +117,22 @@ ontology up front.
   distinguishable wherever they materially differ.
 - Production-task identity, cue presentation, accepted-answer policy, and
   scheduling state must not be collapsed merely because the first vertical
-  implementation can choose simple cardinalities.
+  starts with one task per word and a finite accepted-word set.
 - Applying or revising a cue must not mutate broad lexical meanings, reset or
   fork word-skill scheduling state, or retrospectively reinterpret an earlier
-  attempt. A served production action and its durable attempt evidence preserve
-  the exact task/cue identity or snapshot used at that time.
+  attempt. New cue content is immutable; destructive deletion is excluded.
+- A served production action and its durable attempt evidence preserve the
+  exact task id, cue id, cue type and text, accepted-word set, anchor word, raw
+  submission, nullable resolved word, and session-time result used at that
+  time. Later replacement, deactivation, or authorization cannot change that
+  record.
+- Model judgment never enters the live-session grading path. Model-generated
+  cue content or accepted-answer changes become selectable only after explicit
+  learner authorization and truthful application.
+- Cue attempts and later judgments are append-oriented facts. Withdrawal or
+  supersession uses compensating records rather than editing prior evidence.
+- The provisional word-scheduler response must stay behind a replaceable seam
+  and must not be represented as permanent cue semantics.
 - Session composition may consume content caused by a reflection invocation
   only when the invocation has a truthful applied effect. Accepted-but-
   unsupported operations never create selectable study content.
@@ -113,9 +151,16 @@ ontology up front.
 ## Explicit non-goals for this wave
 
 - A complete multi-sense production-task ontology or universal cue model.
-- General production-alternate grading, retrospective credit, or answer-class
-  implementation; the task/cue/answer boundary may be designed only as far as
-  the cue vertical requires.
+- General production-alternate grading or answer classes beyond a cue's
+  explicit accepted-word set; retrospective word-scheduler credit; free-form
+  accepted phrases or expressions; and hot-path model naturalness judgment.
+- Cue-aware due queues, independent cue scheduling, a full word-scheduler
+  redesign, arbitrary-distance Undo, or treating the provisional scheduler
+  response as durable policy.
+- Sense-specific production tasks, task re-anchoring, destructive cue deletion,
+  or learner-visible migration of historical V1 cue proposals.
+- A standalone manual cue-authoring surface beyond the editable reflection
+  proposal path.
 - A cue marketplace, shared/public cue publication, or automatic migration of
   existing bad-prompt reports.
 - Removing the current definition-gloss fallback or manual bad-production-
@@ -135,13 +180,21 @@ ontology up front.
 
 ## Frontier advancement test
 
-The frontier advances when a learner-approved cue-repair operation can create or
-update durable learner-owned cue content through a faithful versioned adapter; a
-later production action uses that content; the resulting attempt preserves the
-exact production task and cue that were tested; and unaffected lexical meaning,
-scheduling, Undo, and session behavior remain unchanged. Dogfooding should
-include several real cases in which the repaired prompt is materially fairer
-than the previous definition-derived exercise.
+The frontier advances when new reflection emits a faithful V2 cue repair; the
+learner can review and authorize it; the adapter atomically creates, replaces,
+activates, or deactivates immutable learner-owned cues; and a later production
+action serves one active cue or the correct fallback. Single- and multi-answer
+cues must use the same answer-checking rule against the served snapshot, and
+the durable attempt must preserve the exact task, cue, answer set, submission,
+and session-time result after later cue changes.
+
+The same vertical must append cue evidence and project it without feeding V0
+scheduling, preserve V1 as unsupported, isolate reflection/application failure
+from session correctness, and leave unaffected lexical meaning, legacy
+suppression, word scheduling, Undo, and session behavior unchanged. Dogfooding
+should include several real cases in which durable cues are materially fairer
+than the meaning-derived fallback, including at least one cue with multiple
+accepted catalogued words.
 
 # How To Interpret And Evolve The Frontier
 

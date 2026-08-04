@@ -1,9 +1,11 @@
 # Human code review workflow guidance
 
-status: active
+status: archived
 type: research
 created: 2026-07-30
-retire-by: 2026-08-27
+archived: 2026-08-05
+retired-because: synthesized into the durable stacked feature development and review model
+replaced-by: ../../docs/stacked-feature-development-and-review.md
 related:
   - AGENTS.md
   - PLANS/project-steward-linear-trial.md

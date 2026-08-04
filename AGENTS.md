@@ -73,6 +73,11 @@ CLI flags mirror env where applicable (`--mode`, `--data-dir`, `--study-profile`
 - Keep backend timestamps and date keys in UTC (`toISOString`, `YYYY-MM-DD` UTC date key) unless explicitly changing product policy.
 - Avoid hard-coding assumptions that only work in single-machine/local-only deployments if a cleaner abstraction can preserve future hosted-service options.
 - When the desired goal is vague, only write code roughly up to what is relatively well-defined, limit speculative policy decisions. Even if the prompt explicitly ask to go in one-shot, stop and alert me of the the points of ambiguity instead of proceeding.
+- When a task explicitly selects stacked Graphite delivery or review, compose
+  its task-specific execution contract with
+  [`docs/stacked-feature-development-and-review.md`](docs/stacked-feature-development-and-review.md)
+  and use the installed `gt` CLI directly for Graphite operations. Do not
+  impose that model on small or ordinary single-branch work.
 
 ## 4) Runbook Commands
 
