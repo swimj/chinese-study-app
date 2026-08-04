@@ -10,22 +10,42 @@ import { ReflectionOperationEditor } from '../features/reflection/ReflectionOper
 import type { ReflectionPageController } from '../features/reflection/useReflectionPageController';
 import {
   buildReflectionItemPresentations,
+  buildReflectionProposalPresentations,
   cloneReflectionOperation,
   getOperationDraftState,
   reflectionOperationLabel,
+  summarizeReflectionTokenUsage,
   type ReflectionArtifactSummaryDto,
   type ReflectionGenerationRunDto,
+  type ReflectionProposalPresentation,
   type ReflectionProposalDetailDto,
+  type ReflectionProposalQueueKind,
 } from '../features/reflection/reflection-page-model';
+
+type ReflectionView = ReflectionProposalQueueKind | 'sessions' | 'usage';
 
 export function ReflectionsPage({
   controller,
 }: {
   controller: ReflectionPageController;
 }) {
-  const items = controller.selectedArtifact === null
-    ? []
-    : buildReflectionItemPresentations(controller.selectedArtifact);
+  const [view, setView] = useState<ReflectionView>('attention');
+  const proposalQueues = {
+    attention: buildReflectionProposalPresentations(controller.artifactDetails, 'attention'),
+    deferred: buildReflectionProposalPresentations(controller.artifactDetails, 'deferred'),
+    unapplied: buildReflectionProposalPresentations(controller.artifactDetails, 'unapplied'),
+  };
+  const views: Array<{ key: ReflectionView; label: string; count?: number }> = [
+    { key: 'attention', label: 'Needs attention', count: proposalQueues.attention.length },
+    { key: 'deferred', label: 'Deferred', count: proposalQueues.deferred.length },
+    {
+      key: 'unapplied',
+      label: 'Pending / unsupported',
+      count: proposalQueues.unapplied.length,
+    },
+    { key: 'sessions', label: 'By session' },
+    { key: 'usage', label: 'Token usage' },
+  ];
 
   return (
     <section className="reflections-page">
@@ -46,144 +66,259 @@ export function ReflectionsPage({
         </button>
       </header>
 
-      <div className="reflection-layout">
-        <aside className="panel reflection-artifact-sidebar">
-          <ArtifactList
-            title="Open proposals"
-            emptyLabel="No pending or deferred proposals."
-            artifacts={controller.openArtifacts}
-            selectedArtifactId={controller.selectedArtifactId}
-            onSelect={controller.selectArtifact}
-          />
-          <ArtifactList
-            title="Recent history"
-            emptyLabel="No reflection artifacts yet."
-            artifacts={controller.recentArtifacts}
-            selectedArtifactId={controller.selectedArtifactId}
-            onSelect={controller.selectArtifact}
-          />
-          <ReflectionRunLog
-            runs={controller.generationRuns}
-            retryStatus={controller.generationRetryStatus}
-            onRetry={controller.retryGenerationRun}
-          />
-        </aside>
+      <nav className="priority-subtabs reflection-view-tabs" aria-label="Reflection views">
+        {views.map((option) => (
+          <button
+            type="button"
+            className={view === option.key ? 'priority-subtab active' : 'priority-subtab'}
+            aria-pressed={view === option.key}
+            key={option.key}
+            onClick={() => setView(option.key)}
+          >
+            {option.label}{option.count === undefined ? '' : ` (${option.count})`}
+          </button>
+        ))}
+      </nav>
 
-        <main className="reflection-detail">
-          {controller.selectedArtifact === null ? (
-            <div className="panel reflection-empty-state">
-              <h2>No reflection selected</h2>
-              <p className="notes">
-                Completed-session reflections, including informational results without proposals,
-                will appear in recent history.
-              </p>
-            </div>
-          ) : (
-            <>
-              <section className="panel reflection-artifact-header">
-                <div>
-                  <p className="reflection-eyebrow">Source session</p>
-                  <h2>{formatDateTime(
-                    controller.selectedArtifact.evidenceBundle.session.endedAt
-                      ?? controller.selectedArtifact.generatedAt,
-                  )}</h2>
-                  <p className="notes">
-                    Session {controller.selectedArtifact.sourceSessionId}
-                    {' · '}
-                    {controller.selectedArtifact.provider}/{controller.selectedArtifact.model}
-                    {' · '}
-                    {controller.selectedArtifact.promptVersion}
-                  </p>
-                </div>
-                <span className="reflection-count-pill">
-                  {controller.selectedArtifact.proposals.length} proposal
-                  {controller.selectedArtifact.proposals.length === 1 ? '' : 's'}
-                </span>
-              </section>
-
-              {items.map((item, itemIndex) => (
-                <article className="panel reflection-item-card" key={item.result.itemId}>
-                  <header className="reflection-item-heading">
-                    <div>
-                      <p className="reflection-eyebrow">Reflection item {itemIndex + 1}</p>
-                      <h2>{itemTitle(item.evidence)}</h2>
-                    </div>
-                    <div className="reflection-tag-list">
-                      {item.result.diagnosisTags.map((tag) => (
-                        <span className="reflection-tag" key={tag}>{humanize(tag)}</span>
-                      ))}
-                    </div>
-                  </header>
-
-                  <EvidenceView evidence={item.evidence} />
-
-                  <section className="reflection-analysis">
-                    <h3>Observation</h3>
-                    <p>{item.result.observation}</p>
-                    {item.result.learnerExplanation !== null ? (
-                      <>
-                        <h3>Learner-facing explanation</h3>
-                        <p>{item.result.learnerExplanation}</p>
-                      </>
-                    ) : null}
-                  </section>
-
-                  {item.result.questions.length > 0 ? (
-                    <InfoList
-                      title="Questions"
-                      entries={item.result.questions.map((question) => ({
-                        title: question.question,
-                        detail: question.reason,
-                      }))}
-                    />
-                  ) : null}
-
-                  {item.result.unhandledNeeds.length > 0 ? (
-                    <InfoList
-                      title="Unhandled needs"
-                      entries={item.result.unhandledNeeds.map((need) => ({
-                        title: need.description,
-                        detail: need.whyRegisteredOperationsDoNotFit,
-                      }))}
-                    />
-                  ) : null}
-
-                  <section className="reflection-proposals-section">
-                    <h3>Proposals</h3>
-                    {item.proposals.length === 0 ? (
-                      <p className="notes">
-                        Informational reflection only; no change was proposed.
-                      </p>
-                    ) : (
-                      <div className="reflection-proposal-list">
-                        {item.proposals.map((proposal) => (
-                          <ProposalCard
-                            key={proposal.review.proposalId}
-                            proposal={proposal}
-                            submitting={
-                              controller.submittingProposalId === proposal.review.proposalId
-                            }
-                            withdrawingInvocationId={controller.withdrawingInvocationId}
-                            onDefer={controller.deferProposal}
-                            onDismiss={controller.dismissProposal}
-                            onAccept={controller.acceptProposal}
-                            onWithdraw={controller.withdrawAuthorization}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </section>
-                </article>
-              ))}
-            </>
-          )}
-        </main>
-      </div>
+      {view === 'sessions' ? (
+        <SessionWorkspace controller={controller} />
+      ) : view === 'usage' ? (
+        <TokenUsageView
+          runs={controller.generationRuns}
+          retryStatus={controller.generationRetryStatus}
+          onRetry={controller.retryGenerationRun}
+        />
+      ) : (
+        <ProposalQueueView
+          kind={view}
+          proposals={proposalQueues[view]}
+          controller={controller}
+        />
+      )}
     </section>
   );
 }
 
-function ReflectionRunLog({
+function ProposalQueueView({
+  kind,
+  proposals,
+  controller,
+}: {
+  kind: ReflectionProposalQueueKind;
+  proposals: ReflectionProposalPresentation[];
+  controller: ReflectionPageController;
+}) {
+  const copy = {
+    attention: {
+      title: 'Needs attention',
+      empty: 'No proposals are waiting for a decision.',
+    },
+    deferred: {
+      title: 'Deferred proposals',
+      empty: 'No proposals are deferred.',
+    },
+    unapplied: {
+      title: 'Pending / unsupported authorizations',
+      empty: 'No accepted authorizations are pending or unsupported.',
+    },
+  }[kind];
+
+  return (
+    <main className="reflection-queue">
+      <header className="reflection-queue-heading">
+        <div>
+          <h2>{copy.title}</h2>
+          <p className="notes">
+            {proposals.length} proposal{proposals.length === 1 ? '' : 's'} across recent reflections
+          </p>
+        </div>
+      </header>
+      {proposals.length === 0 ? (
+        <section className="panel reflection-empty-state">
+          <h2>All clear</h2>
+          <p className="notes">{copy.empty}</p>
+        </section>
+      ) : proposals.map((presentation) => (
+        <article
+          className="panel reflection-queue-card"
+          key={presentation.proposal.review.proposalId}
+        >
+          <header className="reflection-item-heading">
+            <div>
+              <p className="reflection-eyebrow">
+                {formatDateTime(
+                  presentation.artifact.evidenceBundle.session.endedAt
+                    ?? presentation.artifact.generatedAt,
+                )}
+              </p>
+              <h2>{itemTitle(presentation.evidence)}</h2>
+            </div>
+            <div className="reflection-tag-list">
+              {presentation.result.diagnosisTags.map((tag) => (
+                <span className="reflection-tag" key={tag}>{humanize(tag)}</span>
+              ))}
+            </div>
+          </header>
+          <EvidenceView evidence={presentation.evidence} />
+          <section className="reflection-analysis">
+            <h3>Observation</h3>
+            <p>{presentation.result.observation}</p>
+          </section>
+          <ProposalCard
+            proposal={presentation.proposal}
+            submitting={
+              controller.submittingProposalId === presentation.proposal.review.proposalId
+            }
+            withdrawingInvocationId={controller.withdrawingInvocationId}
+            onDefer={controller.deferProposal}
+            onDismiss={controller.dismissProposal}
+            onAccept={controller.acceptProposal}
+            onWithdraw={controller.withdrawAuthorization}
+          />
+        </article>
+      ))}
+    </main>
+  );
+}
+
+function SessionWorkspace({ controller }: { controller: ReflectionPageController }) {
+  const items = controller.selectedArtifact === null
+    ? []
+    : buildReflectionItemPresentations(controller.selectedArtifact);
+
+  return (
+    <div className="reflection-layout">
+      <aside className="panel reflection-artifact-sidebar">
+        <ArtifactList
+          title="Open proposals"
+          emptyLabel="No pending or deferred proposals."
+          artifacts={controller.openArtifacts}
+          selectedArtifactId={controller.selectedArtifactId}
+          onSelect={controller.selectArtifact}
+        />
+        <ArtifactList
+          title="Recent history"
+          emptyLabel="No reflection artifacts yet."
+          artifacts={controller.recentArtifacts}
+          selectedArtifactId={controller.selectedArtifactId}
+          onSelect={controller.selectArtifact}
+        />
+      </aside>
+
+      <main className="reflection-detail">
+        {controller.selectedArtifact === null ? (
+          <div className="panel reflection-empty-state">
+            <h2>No reflection selected</h2>
+            <p className="notes">
+              Completed-session reflections, including informational results without proposals,
+              will appear in recent history.
+            </p>
+          </div>
+        ) : (
+          <>
+            <section className="panel reflection-artifact-header">
+              <div>
+                <p className="reflection-eyebrow">Source session</p>
+                <h2>{formatDateTime(
+                  controller.selectedArtifact.evidenceBundle.session.endedAt
+                    ?? controller.selectedArtifact.generatedAt,
+                )}</h2>
+                <p className="notes reflection-long-metadata">
+                  Session {controller.selectedArtifact.sourceSessionId}
+                  {' · '}
+                  {controller.selectedArtifact.provider}/{controller.selectedArtifact.model}
+                  {' · '}
+                  {controller.selectedArtifact.promptVersion}
+                </p>
+              </div>
+              <span className="reflection-count-pill">
+                {controller.selectedArtifact.proposals.length} proposal
+                {controller.selectedArtifact.proposals.length === 1 ? '' : 's'}
+              </span>
+            </section>
+
+            {items.map((item, itemIndex) => (
+              <article className="panel reflection-item-card" key={item.result.itemId}>
+                <header className="reflection-item-heading">
+                  <div>
+                    <p className="reflection-eyebrow">Reflection item {itemIndex + 1}</p>
+                    <h2>{itemTitle(item.evidence)}</h2>
+                  </div>
+                  <div className="reflection-tag-list">
+                    {item.result.diagnosisTags.map((tag) => (
+                      <span className="reflection-tag" key={tag}>{humanize(tag)}</span>
+                    ))}
+                  </div>
+                </header>
+
+                <EvidenceView evidence={item.evidence} />
+
+                <section className="reflection-analysis">
+                  <h3>Observation</h3>
+                  <p>{item.result.observation}</p>
+                  {item.result.learnerExplanation !== null ? (
+                    <>
+                      <h3>Learner-facing explanation</h3>
+                      <p>{item.result.learnerExplanation}</p>
+                    </>
+                  ) : null}
+                </section>
+
+                {item.result.questions.length > 0 ? (
+                  <InfoList
+                    title="Questions"
+                    entries={item.result.questions.map((question) => ({
+                      title: question.question,
+                      detail: question.reason,
+                    }))}
+                  />
+                ) : null}
+
+                {item.result.unhandledNeeds.length > 0 ? (
+                  <InfoList
+                    title="Unhandled needs"
+                    entries={item.result.unhandledNeeds.map((need) => ({
+                      title: need.description,
+                      detail: need.whyRegisteredOperationsDoNotFit,
+                    }))}
+                  />
+                ) : null}
+
+                <section className="reflection-proposals-section">
+                  <h3>Proposals</h3>
+                  {item.proposals.length === 0 ? (
+                    <p className="notes">
+                      Informational reflection only; no change was proposed.
+                    </p>
+                  ) : (
+                    <div className="reflection-proposal-list">
+                      {item.proposals.map((proposal) => (
+                        <ProposalCard
+                          key={proposal.review.proposalId}
+                          proposal={proposal}
+                          submitting={
+                            controller.submittingProposalId === proposal.review.proposalId
+                          }
+                          withdrawingInvocationId={controller.withdrawingInvocationId}
+                          onDefer={controller.deferProposal}
+                          onDismiss={controller.dismissProposal}
+                          onAccept={controller.acceptProposal}
+                          onWithdraw={controller.withdrawAuthorization}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </section>
+              </article>
+            ))}
+          </>
+        )}
+      </main>
+    </div>
+  );
+}
+
+export function TokenUsageView({
   runs,
   retryStatus,
   onRetry,
@@ -192,72 +327,148 @@ function ReflectionRunLog({
   retryStatus: ReflectionPageController['generationRetryStatus'];
   onRetry: (runId: string) => Promise<void>;
 }) {
+  const summary = summarizeReflectionTokenUsage(runs);
   return (
-    <section className="reflection-artifact-list">
-      <h2>Reflection runs</h2>
+    <main className="reflection-usage-view">
+      <section className="reflection-usage-summary" aria-label="Token usage summary">
+        <UsageMetric label="Runs" value={summary.runCount.toLocaleString()} />
+        <UsageMetric label="Input" value={formatTokenCount(summary.usage.inputTokens)} />
+        <UsageMetric label="Cached" value={formatTokenCount(summary.usage.cachedInputTokens)} />
+        <UsageMetric
+          label="Cache write"
+          value={formatTokenCount(summary.usage.cacheWriteInputTokens)}
+        />
+        <UsageMetric label="Output" value={formatTokenCount(summary.usage.outputTokens)} />
+        <UsageMetric label="Reasoning" value={formatTokenCount(summary.usage.reasoningTokens)} />
+        <UsageMetric label="Total" value={formatTokenCount(summary.usage.totalTokens)} />
+        <UsageMetric
+          label="Estimated cost"
+          value={summary.estimatedCostUsd === null ? '—' : formatUsd(summary.estimatedCostUsd)}
+          note={`${summary.pricedRunCount}/${summary.runCount} priced`}
+        />
+      </section>
       {runs.length === 0 ? (
-        <p className="notes">No reflection generation attempts yet.</p>
+        <section className="panel reflection-empty-state">
+          <h2>No token usage yet</h2>
+          <p className="notes">No reflection generation attempts yet.</p>
+        </section>
       ) : (
-        runs.map((run) => (
-          <article className="reflection-proposal-card" key={run.runId}>
-            <header className="reflection-proposal-heading">
-              <div>
-                <p className="reflection-eyebrow">{formatDateTime(run.completedAt)}</p>
-                <h4>{run.provider}/{run.model}</h4>
-              </div>
-              <div className="reflection-run-actions">
-                <span className={`reflection-state-pill state-${run.state}`}>
-                  {humanize(run.state)}
-                </span>
-                {retryStatus?.runId === run.runId ? (
-                  <span
-                    className={`reflection-state-pill state-${retryStatus.state}`}
-                    role="status"
-                  >
-                    {retryStatus.state === 'generating'
-                      ? 'Generating…'
-                      : retryStatus.state === 'succeeded'
-                        ? 'Ready'
-                        : 'Retry failed'}
+        <section className="panel reflection-run-table-wrap">
+          <div className="reflection-run-table" role="table" aria-label="Reflection token usage">
+            <div className="reflection-run-table-header" role="row">
+              <span>Status</span><span>Run</span><span>Input</span><span>Cached</span>
+              <span>Cache write</span><span>Output</span><span>Reasoning</span>
+              <span>Total</span><span>Cost</span>
+            </div>
+            {runs.map((run) => (
+              <div className="reflection-run-row" role="row" key={run.runId}>
+                <div className="reflection-run-status">
+                  <RunStatusControl
+                    run={run}
+                    retryStatus={retryStatus}
+                    onRetry={onRetry}
+                  />
+                </div>
+                <div className="reflection-run-identity">
+                  <strong>{formatDateTime(run.completedAt)}</strong>
+                  <span>{run.provider}/{run.model}</span>
+                  <span>
+                    {run.includedItemCount}/{run.eligibleItemCount} items
+                    {run.finishReason === null ? '' : ` · finish: ${run.finishReason}`}
+                    {run.failureCode === null ? '' : ` · ${humanize(run.failureCode)}`}
                   </span>
-                ) : run.retryable ? (
-                  <button
-                    type="button"
-                    className="reflection-retry-button"
-                    title="Retry this reflection?"
-                    aria-label="Retry this reflection?"
-                    onClick={() => void onRetry(run.runId)}
-                  >
-                    <span aria-hidden="true">↻</span> Retry?
-                  </button>
-                ) : null}
+                  {run.responseId === null ? null : (
+                    <span title={run.responseId}>response {abbreviateId(run.responseId)}</span>
+                  )}
+                </div>
+                <span>{formatTokenCount(run.usage.inputTokens)}</span>
+                <span>{formatTokenCount(run.usage.cachedInputTokens)}</span>
+                <span>{formatTokenCount(run.usage.cacheWriteInputTokens)}</span>
+                <span>{formatTokenCount(run.usage.outputTokens)}</span>
+                <span>{formatTokenCount(run.usage.reasoningTokens)}</span>
+                <strong>{formatTokenCount(run.usage.totalTokens)}</strong>
+                <span title={run.estimatedCostUsd === null
+                  ? 'Cost estimate unavailable for this run.'
+                  : `Rates as of ${run.pricingAsOf}; ${run.pricingSnapshotId}`}
+                >
+                  {run.estimatedCostUsd === null ? '—' : formatUsd(run.estimatedCostUsd)}
+                </span>
               </div>
-            </header>
-            <p className="notes">
-              {run.includedItemCount}/{run.eligibleItemCount} eligible item
-              {run.eligibleItemCount === 1 ? '' : 's'} included
-              {run.finishReason === null ? '' : ` · finish: ${run.finishReason}`}
-              {run.failureCode === null ? '' : ` · ${humanize(run.failureCode)}`}
-            </p>
-            <p className="notes">
-              Input {formatTokenCount(run.usage.inputTokens)}
-              {' · '}cached {formatTokenCount(run.usage.cachedInputTokens)}
-              {' · '}cache write {formatTokenCount(run.usage.cacheWriteInputTokens)}
-              {' · '}output {formatTokenCount(run.usage.outputTokens)}
-              {' · '}reasoning {formatTokenCount(run.usage.reasoningTokens)}
-              {' · '}total {formatTokenCount(run.usage.totalTokens)}
-            </p>
-            <p className="notes">
-              {run.estimatedCostUsd === null
-                ? 'Cost estimate unavailable for this run.'
-                : `Estimated cost: ${formatUsd(run.estimatedCostUsd)} (rates as of ${run.pricingAsOf}; ${run.pricingSnapshotId})`}
-              {run.responseId === null ? '' : ` · response ${run.responseId}`}
-            </p>
-          </article>
-        ))
+            ))}
+          </div>
+        </section>
       )}
-    </section>
+    </main>
   );
+}
+
+function UsageMetric({
+  label,
+  value,
+  note,
+}: {
+  label: string;
+  value: string;
+  note?: string;
+}) {
+  return (
+    <div className="panel reflection-usage-metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      {note === undefined ? null : <small>{note}</small>}
+    </div>
+  );
+}
+
+function RunStatusControl({
+  run,
+  retryStatus,
+  onRetry,
+}: {
+  run: ReflectionGenerationRunDto;
+  retryStatus: ReflectionPageController['generationRetryStatus'];
+  onRetry: (runId: string) => Promise<void>;
+}) {
+  if (retryStatus?.runId === run.runId && retryStatus.state === 'generating') {
+    return <span className="reflection-state-pill state-generating" role="status">Generating…</span>;
+  }
+  if (run.retryable) {
+    const retryFailed = retryStatus?.runId === run.runId && retryStatus.state === 'failed';
+    const label = retryFailed
+      ? 'Retry failed. Retry this reflection again.'
+      : `Retry failed reflection${run.failureCode === null ? '' : `: ${humanize(run.failureCode)}`}`;
+    return (
+      <button
+        type="button"
+        className="reflection-status-icon reflection-retry-button"
+        title={label}
+        aria-label={label}
+        onClick={() => void onRetry(run.runId)}
+      >
+        <span aria-hidden="true">↻</span>
+      </button>
+    );
+  }
+  return run.state === 'succeeded'
+    ? <StatusIcon kind="success" label="Reflection generation succeeded" />
+    : <StatusIcon kind="failure" label="Reflection generation failed" />;
+}
+
+function StatusIcon({ kind, label }: { kind: 'success' | 'failure'; label: string }) {
+  return (
+    <span
+      className={`reflection-status-icon status-${kind}`}
+      title={label}
+      aria-label={label}
+      role="img"
+    >
+      <span aria-hidden="true">{kind === 'success' ? '✓' : '×'}</span>
+    </span>
+  );
+}
+
+function abbreviateId(value: string): string {
+  return value.length <= 18 ? value : `${value.slice(0, 10)}…${value.slice(-5)}`;
 }
 
 function ArtifactList({
@@ -351,9 +562,7 @@ function ProposalCard({
           </p>
           <h4>{reflectionOperationLabel(original)}</h4>
         </div>
-        <span className={`reflection-state-pill state-${proposal.review.disposition.kind}`}>
-          {humanize(proposal.review.disposition.kind)}
-        </span>
+        <ProposalDispositionStatus disposition={proposal.review.disposition} />
       </header>
 
       <p>{proposal.proposal.rationale}</p>
@@ -466,6 +675,27 @@ function ProposalCard({
       )}
     </article>
   );
+}
+
+function ProposalDispositionStatus({
+  disposition,
+}: {
+  disposition: ProposalReviewDisposition;
+}) {
+  switch (disposition.kind) {
+    case 'accepted':
+      return <StatusIcon kind="success" label={`Accepted ${disposition.acceptanceMode}`} />;
+    case 'dismissed':
+      return <StatusIcon kind="failure" label="Dismissed" />;
+    case 'pending':
+    case 'deferred':
+    case 'superseded':
+      return (
+        <span className={`reflection-state-pill state-${disposition.kind}`}>
+          {humanize(disposition.kind)}
+        </span>
+      );
+  }
 }
 
 function SupportNotice({ support }: { support: 'supported' | 'unsupported' }) {

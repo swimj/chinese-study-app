@@ -67,16 +67,21 @@ session starts.
 
 ## Reflection review workspace
 
-`useReflectionPageController` loads the open queue, recent history, and the
-compact concluded-generation run log in parallel, preserves the selected
-artifact when possible, and loads its joined detail. Proposal review and
-authorization withdrawal reload both artifact lists and detail so unresolved
-queue state and persisted application results remain coherent across reloads.
+`useReflectionPageController` loads the capped open and recent artifact lists,
+their joined details, and the concluded-generation run log, preserves the
+selected artifact when possible, and reuses already loaded details. Proposal
+review and authorization withdrawal reload the affected artifact plus both
+lists so proposal-centered queues and persisted application results remain
+coherent without a manual refresh.
 
-`ReflectionsPage` is reachable outside an active session. It shows unresolved
-artifacts separately from recent history, then joins immutable evidence and
-item analysis to independent proposal cards. Questions and unhandled needs are
-informational and do not receive synthetic review state.
+`ReflectionsPage` is reachable outside an active session. Its default view is a
+flat, cross-session queue of pending proposals that need a learner decision.
+Separate convenience views show deferred proposals and accepted authorizations
+whose application is pending or unsupported, while **By session** retains the
+artifact-oriented dogfood view. Reviewing a proposal removes it from the
+current queue when its new lifecycle state no longer matches that filter.
+Questions and unhandled needs remain informational and do not receive synthetic
+review state.
 
 Each proposal has a purpose-built editor for exactly one V1 operation:
 
@@ -91,12 +96,14 @@ separately, then renders persisted application states, effect/satisfying
 references, and safe reasons or errors. Accepted `unsupported` or `pending`
 authorization may be withdrawn without rewriting the accepted proposal.
 
-The sidebar also shows the dogfood run log. It presents each attempt's
-provider/model, completion or failure state, response/finish metadata when
-available, eligible/included counts, normalized token categories, and the
-persisted estimated cost or an explicit unavailable state. It is observability
-for the initial reflection flow, not a learner correctness signal or a
-replacement for immutable artifact history.
+The **Token usage** view shows aggregate token and priced-run totals followed by
+a compact per-run table. It presents each attempt's provider/model, completion
+or failure state, response/finish metadata when available, eligible/included
+counts, normalized token categories, and the persisted estimated cost or an
+explicit unavailable state. Successful and failed states use compact icons;
+retryable failures retain an interactive retry control. This remains
+observability for the initial reflection flow, not a learner correctness signal
+or a replacement for immutable artifact history.
 
 A failed run with a retained bundle and no successful artifact exposes a small
 retry action. Retrying reuses the exact backend-owned bundle, replaces the
