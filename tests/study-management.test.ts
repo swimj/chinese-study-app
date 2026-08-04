@@ -281,6 +281,25 @@ describe('study management relevance events', { concurrency: false }, () => {
     assert.equal(fetchAdmissionState('target-word')?.earliest_next_study_at, addHours(event.occurredAt, 6));
   });
 
+  test('rejects retired contextual-selection suppression without recording an event', () => {
+    insertWord({ id: 'target-word', hanzi: '恰当', status: 'review' });
+
+    assert.throws(
+      () => dbModule.recordStudyManagementAction({
+        sessionId: 'session-1',
+        sessionActionId: 'review/target-word/contextual-selection',
+        targetWordId: 'target-word',
+        actionKind: 'contrast_selection',
+        sampledSkillIds: ['contextual_selection'],
+        contentRef: { type: 'contrast_prompt', id: 'contrast-prompt-1' },
+        managementAction: 'suppress_skill',
+      }),
+      /Invalid contrast management action/,
+    );
+    assert.deepEqual(dbModule.getStudyEventsForSession('session-1'), []);
+    assert.equal(dbModule.getWordSkillRelevance('target-word', 'contextual_selection'), null);
+  });
+
   test('exposes unresolved bad prompt feedback on contrast cluster content', () => {
     insertWord({ id: 'target-word', hanzi: '恰当', status: 'review' });
     insertWord({ id: 'sibling-word', hanzi: '适当', status: 'review' });
@@ -375,6 +394,48 @@ describe('study management relevance events', { concurrency: false }, () => {
     assert.equal(state?.last_studied_at, addHours(event.occurredAt, -6));
     assert.equal(state?.next_due_at, event.occurredAt);
     assert.equal(state?.ease_factor, 2.5);
+  });
+
+  test('candidate intake re-enables scheduler state without overwriting normal relevance provenance', () => {
+    insertWord({ id: 'target-word', hanzi: '考察', status: 'review' });
+    sqlite.prepare(`
+      INSERT INTO word_skill_relevance (
+        word_id, skill_id, relevance_state, updated_at, source_event_id
+      ) VALUES ('target-word', 'contextual_selection', 'normal', '2026-04-01T00:00:00.000Z', NULL)
+    `).run();
+    sqlite.prepare(`
+      INSERT INTO word_skill_state (
+        word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor
+      ) VALUES (
+        'target-word', 'contextual_selection', 0, 72,
+        '2026-04-02T00:00:00.000Z', '2026-04-05T00:00:00.000Z', 2.1
+      )
+    `).run();
+
+    dbModule.recordStudyManagementAction({
+      sessionId: 'session-1',
+      sessionActionId: 'review/target-word/production',
+      targetWordId: 'target-word',
+      actionKind: 'production',
+      sampledSkillIds: ['production'],
+      contentRef: null,
+      managementAction: 'add_contrast_candidate',
+      candidateText: '考查',
+    });
+
+    assert.equal(
+      dbModule.getWordSkillRelevance('target-word', 'contextual_selection')?.updatedAt,
+      '2026-04-01T00:00:00.000Z',
+    );
+    assert.deepEqual({ ...fetchWordSkillState('target-word', 'contextual_selection') }, {
+      word_id: 'target-word',
+      skill_id: 'contextual_selection',
+      enabled: 1,
+      interval_hours: 72,
+      last_studied_at: '2026-04-02T00:00:00.000Z',
+      next_due_at: '2026-04-05T00:00:00.000Z',
+      ease_factor: 2.1,
+    });
   });
 
   test('keeps skill management limited to review words initially', () => {

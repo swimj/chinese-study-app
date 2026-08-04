@@ -28,7 +28,10 @@ import {
   ensureReflectionSchema,
   validateReflectionSchema,
 } from './reflections.ts';
-import { suppressDefinitionProductionWithoutTransaction } from './domain-commands.ts';
+import {
+  enableContextualSelectionWithoutTransaction,
+  suppressDefinitionProductionWithoutTransaction,
+} from './domain-commands.ts';
 import {
   DEFAULT_DAILY_NEW_WORD_LIMIT,
   PRIORITY_BUMP_UNIT,
@@ -60,6 +63,8 @@ export function applyProductionContrastExerciseSeed() {
 
     getDb().exec(fs.readFileSync(sqlPath, 'utf8'));
   }
+
+  backfillContrastClusterMemberEligibility();
 }
 
 export function getUnstudiedCountBaseline(): number {
@@ -748,14 +753,27 @@ export function addContrastClusterMember({
   ensureContrastClusterExists(normalizedClusterId);
   ensureWordExists(normalizedWordId);
 
-  getDb().prepare(`
-    INSERT INTO contrast_cluster_members (
-      cluster_id,
-      word_id,
-      nuance_note,
-      display_order
-    ) VALUES (?, ?, ?, ?)
-  `).run(normalizedClusterId, normalizedWordId, normalizedNuanceNote, normalizedDisplayOrder);
+  getDb().exec('SAVEPOINT add_contrast_cluster_member');
+  try {
+    getDb().prepare(`
+      INSERT INTO contrast_cluster_members (
+        cluster_id,
+        word_id,
+        nuance_note,
+        display_order
+      ) VALUES (?, ?, ?, ?)
+    `).run(normalizedClusterId, normalizedWordId, normalizedNuanceNote, normalizedDisplayOrder);
+    enableContextualSelectionWithoutTransaction({
+      wordId: normalizedWordId,
+      updatedAt: new Date().toISOString(),
+      sourceEventId: null,
+    });
+    getDb().exec('RELEASE SAVEPOINT add_contrast_cluster_member');
+  } catch (error) {
+    getDb().exec('ROLLBACK TO SAVEPOINT add_contrast_cluster_member');
+    getDb().exec('RELEASE SAVEPOINT add_contrast_cluster_member');
+    throw error;
+  }
 
   return {
     clusterId: normalizedClusterId,
@@ -2205,14 +2223,11 @@ function projectStudyManagementActionWithoutTransaction({
   }
 
   if (input.managementAction === 'add_contrast_candidate') {
-    upsertWordSkillRelevanceWithoutTransaction({
+    enableContextualSelectionWithoutTransaction({
       wordId: input.targetWordId,
-      skillId: 'contextual_selection',
-      relevanceState: 'normal',
       updatedAt: projectedAt,
       sourceEventId: eventId,
     });
-    ensureContextualSelectionStateWithoutTransaction(input.targetWordId, projectedAt);
     insertContrastCandidateIntakeWithoutTransaction({
       input,
       eventId,
@@ -2229,14 +2244,11 @@ function projectStudyManagementActionWithoutTransaction({
       updatedAt: projectedAt,
       sourceEventId: eventId,
     });
-    upsertWordSkillRelevanceWithoutTransaction({
+    enableContextualSelectionWithoutTransaction({
       wordId: input.targetWordId,
-      skillId: 'contextual_selection',
-      relevanceState: 'normal',
       updatedAt: projectedAt,
       sourceEventId: eventId,
     });
-    ensureContextualSelectionStateWithoutTransaction(input.targetWordId, projectedAt);
     insertContrastCandidateIntakeWithoutTransaction({
       input,
       eventId,
@@ -2260,32 +2272,6 @@ function projectStudyManagementActionWithoutTransaction({
       addHours(projectedAt, REVIEW_PHASE_RECENCY_GUARD_HOURS),
     );
   }
-}
-
-function ensureContextualSelectionStateWithoutTransaction(wordId: string, now: string) {
-  const existing = getDb()
-    .prepare(`
-      SELECT 1
-      FROM word_skill_state
-      WHERE word_id = ?
-        AND skill_id = 'contextual_selection'
-      LIMIT 1
-    `)
-    .get(wordId) as { '1': number } | undefined;
-
-  if (existing) {
-    return;
-  }
-
-  upsertWordSkillState({
-    wordId,
-    skillId: 'contextual_selection',
-    enabled: true,
-    intervalHours: INITIAL_CONTEXTUAL_SELECTION_INTERVAL_HOURS,
-    lastStudiedAt: addHours(now, -INITIAL_CONTEXTUAL_SELECTION_INTERVAL_HOURS),
-    nextDueAt: now,
-    easeFactor: INITIAL_REVIEW_EASE_FACTOR,
-  });
 }
 
 function upsertWordSkillRelevanceWithoutTransaction(relevance: WordSkillRelevance) {
@@ -3014,6 +3000,13 @@ export function dismissWordFromStudy(wordId: string): void {
       `).run(wordId);
 
       deleteStudySchedulerStateForWord(wordId);
+      if (hasContrastClusterMembership(wordId)) {
+        enableContextualSelectionWithoutTransaction({
+          wordId,
+          updatedAt: new Date().toISOString(),
+          sourceEventId: null,
+        });
+      }
     }
 
     getDb().exec('COMMIT');
@@ -3027,6 +3020,7 @@ export function initializeDatabase() {
   if (!dbExistedOnStartup) {
     createSchema();
     seedDatabase();
+    backfillContrastClusterMemberEligibility();
     return;
   }
 
@@ -3035,12 +3029,14 @@ export function initializeDatabase() {
     validateSchema();
     ensureIndexes();
     seedEmptyDevDatabase();
+    backfillContrastClusterMemberEligibility();
   } catch (error) {
     if (!shouldRebuildDevDatabase(error)) {
       throw error;
     }
 
     rebuildDevDatabase(error);
+    backfillContrastClusterMemberEligibility();
   }
 }
 
@@ -3771,6 +3767,11 @@ function ensureContrastClusterMemberForIntakeWithoutTransaction({
   nuanceNote: string;
 }) {
   if (contrastClusterMemberExists(clusterId, wordId)) {
+    enableContextualSelectionWithoutTransaction({
+      wordId,
+      updatedAt: new Date().toISOString(),
+      sourceEventId: null,
+    });
     return;
   }
 
@@ -3794,6 +3795,43 @@ function contrastClusterMemberExists(clusterId: string, wordId: string): boolean
     .get(clusterId, wordId) as { '1': number } | undefined;
 
   return Boolean(row);
+}
+
+function hasContrastClusterMembership(wordId: string): boolean {
+  const row = getDb().prepare(`
+    SELECT 1
+    FROM contrast_cluster_members
+    WHERE word_id = ?
+    LIMIT 1
+  `).get(wordId) as { '1': number } | undefined;
+  return Boolean(row);
+}
+
+function backfillContrastClusterMemberEligibility(): void {
+  const rows = getDb().prepare(`
+    SELECT DISTINCT word_id
+    FROM contrast_cluster_members
+    ORDER BY word_id ASC
+  `).all() as Array<{ word_id: string }>;
+  if (rows.length === 0) {
+    return;
+  }
+
+  const updatedAt = new Date().toISOString();
+  getDb().exec('BEGIN');
+  try {
+    for (const row of rows) {
+      enableContextualSelectionWithoutTransaction({
+        wordId: row.word_id,
+        updatedAt,
+        sourceEventId: null,
+      });
+    }
+    getDb().exec('COMMIT');
+  } catch (error) {
+    getDb().exec('ROLLBACK');
+    throw error;
+  }
 }
 
 function getNextContrastClusterMemberDisplayOrder(clusterId: string): number {
@@ -5743,7 +5781,7 @@ function assertStudyManagementActionMatchesActionKind(input: RecordStudyManageme
     throw new Error('Expected contrast management action to sample contextual selection');
   }
 
-  if (input.managementAction !== 'suppress_skill' && input.managementAction !== 'bad_prompt') {
+  if (input.managementAction !== 'bad_prompt') {
     throw new Error('Invalid contrast management action');
   }
 }

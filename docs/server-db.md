@@ -10,7 +10,7 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`types.ts`](../server/db/types.ts) | Row/DTO types, scheduling constants, public type re-exports |
 | [`persistence.ts`](../server/db/persistence.ts) | Existing query/domain functions (words, priority, sessions, contrast, scheduler, analytics, durable learning-policy metadata) and `initializeDatabase` |
 | [`reflections.ts`](../server/db/reflections.ts) | Reflection schema validation, immutable artifact materialization, queue/detail read models, proposal review, immutable invocation authorization, application/recovery, and supported adapters |
-| [`domain-commands.ts`](../server/db/domain-commands.ts) | Shared transaction-aware domain commands used by reflection and legacy/manual paths; currently definition-production suppression |
+| [`domain-commands.ts`](../server/db/domain-commands.ts) | Shared transaction-aware domain commands used by reflection and legacy/manual paths; definition-production suppression and contextual-selection eligibility |
 | [`schema.ts`](../server/db/schema.ts) | Re-exports `applyProductionContrastExerciseSeed` and `initializeDatabase` for init ordering |
 | [`index.ts`](../server/db/index.ts) | Internal re-export barrel |
 
@@ -107,6 +107,11 @@ alters durable study attempts, completion summaries, or scheduling state.
    migrations, validation, and dev seed
 
 Tests that dynamic-import `server/db.ts?test=…` rely on this running once per import URL.
+
+Initialization also repairs every persisted contrast-cluster member to
+`contextual_selection` relevance `normal` with enabled scheduler state. Missing
+state is initialized as immediately due; existing scheduler history is
+preserved when a disabled row is re-enabled.
 
 The `app_metadata` key `daily_new_word_limit` stores the learner's configured
 non-negative integer limit. A missing key reads as the current default of `10`,
