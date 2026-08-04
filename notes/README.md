@@ -88,5 +88,3 @@ portfolio-disposition pattern as Linear.
 | [2026-07-20-llm-provider-spike-summary.md](active/2026-07-20-llm-provider-spike-summary.md) | research | 2026-09-20 |
 | [2026-07-20-m1-artifact-store-planning.md](active/2026-07-20-m1-artifact-store-planning.md) | planning | 2026-09-20 |
 | [2026-07-20-spoken-construction-drills.md](active/2026-07-20-spoken-construction-drills.md) | research | 2026-08-20 |
-| [2026-07-29-initial-reflection-graphite-stack-task-spec.md](active/2026-07-29-initial-reflection-graphite-stack-task-spec.md) | work-bundle | after SWI-16 integration and Graphite trial evaluation |
-| [2026-07-30-human-code-review-workflow.md](active/2026-07-30-human-code-review-workflow.md) | research | 2026-08-27 |

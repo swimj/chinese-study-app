@@ -41,6 +41,10 @@ When a map doc and code disagree, fix the map in the same change as the code (or
 - [scripts.md](./scripts.md) — maintenance scripts catalog
 - [reflection-frontend-architecture.md](./reflection-frontend-architecture.md) — feature-specific session-finalization, evidence, and review-UI map
 
+## Development and review workflows
+
+- [stacked-feature-development-and-review.md](./stacked-feature-development-and-review.md) — reusable Graphite-backed delivery and human-review model to compose with a task-specific execution contract
+
 ## Other root docs
 
 - [README.md](../README.md) — human getting started, modes, data layout

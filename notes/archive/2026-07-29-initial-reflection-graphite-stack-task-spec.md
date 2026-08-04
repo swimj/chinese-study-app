@@ -1,9 +1,11 @@
 # Initial reflection Graphite stack task spec
 
-status: active
+status: archived
 type: work-bundle
 created: 2026-07-29
-retire-when: SWI-16 is integrated and the Graphite trial has been evaluated
+archived: 2026-08-05
+retired-because: reusable guidance was consolidated into the durable stacked feature development and review model
+replaced-by: ../../docs/stacked-feature-development-and-review.md
 related:
 
 - SWI-16

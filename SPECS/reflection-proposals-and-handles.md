@@ -1,9 +1,10 @@
 # Reflection Proposals And Handles
 
 Status: accepted canonical product contract. The core V1 proposal, review,
-authorization, application, and provenance lifecycle is implemented. Production
-cue repair and production-alternate application remain intentionally unsupported
-where this specification says no faithful domain model exists.
+authorization, application, and provenance lifecycle is implemented.
+`repair_production_cue@1` and `accept_production_alternate@1` remain
+intentionally unsupported. The V2 production-cue repair behavior is accepted
+for the current implementation wave but is not yet implemented.
 
 This specification defines how learner-facing reflection describes bounded
 changes, how a user reviews or revises those proposals, and how an authorized
@@ -34,7 +35,7 @@ This specification owns:
 - user revisions, user-authored operations, and supersession semantics;
 - the shared domain-command boundary beneath reflection and manual editing;
 - the currently defined reflection operation contracts; and
-- the intentional boundary around the still-undeveloped production-cue model.
+- the accepted V0 production-task, cue-repair, and cue-evidence boundary.
 
 It does not choose:
 
@@ -43,7 +44,7 @@ It does not choose:
   by [`session-reflection-generation.md`](./session-reflection-generation.md),
   or a provider prompt or review-page layout;
 - a universal schema-generated workbench;
-- a final production-cue, production-task, or answer-class model;
+- a final multi-sense production-task ontology or general answer-class model;
 - general word-priority or scheduling-policy operations;
 - automatic authority for model output; or
 - a universal command framework for the application.
@@ -218,6 +219,7 @@ type ReflectionOperation =
   | SuppressDefinitionProductionOperationV1
   | CreateContrastClusterOperationV1
   | RepairProductionCueOperationV1
+  | RepairProductionCueOperationV2
   | AcceptProductionAlternateOperationV1;
 ```
 
@@ -363,6 +365,11 @@ type RepairProductionCueOperationV1 = {
 };
 ```
 
+The V1 enum remains unchanged for stored-payload compatibility. Its `cloze`
+and `register_or_domain_hint` values do not define the V0 cue taxonomy used by
+V2; cloze-shaped prompts are `minimal_context` in V0, while register and domain
+details belong in cue text.
+
 Purpose: preserve a concrete, reviewable draft of a fairer production cue when
 the current gloss-derived exercise is a poor test of the desired recall.
 
@@ -387,6 +394,60 @@ Non-effects:
 
 Deletion, disassociation, or another repair form should remain an
 `unhandledNeed` until the cue model can define its target and semantics.
+
+### `repair_production_cue` version 2
+
+The V2 contract applies learner-authorized changes to the accepted V0
+production-task and cue model. Its conceptual top-level shape is:
+
+```ts
+type RepairProductionCueOperationV2 = {
+  kind: 'repair_production_cue';
+  version: 2;
+  wordId: string;
+  taskId: string;
+  changes: ProductionCueChangeV2[];
+  sourceAttemptJudgments?: CueEvidenceJudgmentV2[];
+};
+```
+
+The exact nested wire unions for `ProductionCueChangeV2` and
+`CueEvidenceJudgmentV2`, including their effect-reference representation, are
+an explicit human-gated implementation-orientation decision. They must be
+frozen before substantial implementation rather than inferred silently from
+this conceptual TypeScript. The behavioral contract is settled:
+
+- `taskId` identifies the word's `default_production` task in V0;
+- one invocation may explicitly create, replace (including one-to-many split),
+  activate, or deactivate cue identities atomically;
+- a cue draft uses one V0 cue type (`definition_gloss`, `minimal_context`, or
+  `circumstance`), non-empty stimulus text, and an accepted set of known visible
+  word ids that includes `wordId`; when the answer space is omitted, it defaults
+  to the singleton task word; register and domain details are expressed in the
+  cue text rather than as a separate type;
+- new or edited cue content always receives a new cue id; replacement
+  deactivates only the named cue, and unrelated cues retain their identity and
+  activation state;
+- an optional source-attempt judgment appends a later learner-authorized
+  assessment to cue evidence; it never edits the source attempt; and
+- deactivating all durable cues re-exposes the meaning-derived fallback subject
+  to its existing production-suppression state.
+
+Validation resolves the word, task, referenced cues, accepted words, and any
+source attempt against current state. Every referenced cue must belong to the
+named task. A source-attempt judgment must match persisted evidence whose cue
+snapshot and submitted response support the reviewed change.
+
+Application records all created and lifecycle-affected cue ids, and any later
+cue-evidence judgment, as attributable effects of the invocation. Reapplying an
+invocation whose exact postcondition is already present produces
+`already_satisfied`. Applying V2 never mutates lexical meanings, changes
+meaning visibility, rewrites historical attempts, retroactively changes word
+scheduling state, or destructively deletes cues.
+
+New reflection generation emits V2 directly. V1 remains readable and
+unsupported; any later V1-to-V2 migration uses a newly authorized V2 invocation
+and supersession rather than reinterpreting the stored V1 payload.
 
 ### `accept_production_alternate` version 1
 
@@ -684,8 +745,9 @@ change is not enough to claim satisfaction or borrow its effect attribution.
 
 Generated content inside an operation remains editable before authorization.
 For contrast creation this includes title, cluster note, member nuance notes,
-prompt targets, prompt text, and explanations. For cue repair it includes the
-draft cue types and text.
+prompt targets, prompt text, and explanations. For V2 cue repair it includes
+the cue lifecycle changes, draft cue types and text, accepted-word sets, and
+optional source-attempt judgments.
 
 Editing generated content does not rewrite the artifact. Accepting an edited
 payload creates a revised invocation. The review system may assess diagnosis,
@@ -698,33 +760,25 @@ remains visibly unsupported.
 
 ## 11. Production-Cue Boundary
 
-The durable production-cue model is intentionally open. Current
-definition-gloss prompts are generated from visible meanings, and the evidence
-bundle captures text as shown with a nullable cue id. That snapshot is valuable
-provenance, but it is not proof that the product has a stable cue entity.
+The accepted V0 boundary is defined in the production section of
+[`study-action-model.md`](./study-action-model.md) and the accepted design memo
+[`PLANS/swi-24-production-task-cue-contract.md`](../PLANS/swi-24-production-task-cue-contract.md).
+It separates word-based scheduling demand, one default production task per
+word, immutable multi-active cue content, cue-scoped accepted-word sets, exact
+served snapshots, and append-oriented cue evidence with a non-scheduling
+shadow projection.
 
-The likely longer-term direction separates:
+This is a bounded implementation model, not a final ontology. Sense-specific
+tasks, free-form accepted expressions, destructive cue deletion, general
+alternate-answer grading, and cue-aware scheduling remain outside V0. Meaning
+rows remain base fallback content and must not be reinterpreted as cue rows.
+Legacy bad-definition-production feedback and suppression continue to govern
+that fallback rather than becoming a generalized cue flag.
 
-- a word as a source of scheduling demand;
-- a production task describing the competency being tested;
-- one or more cues used to present that task;
-- task-specific accepted answers; and
-- evidence about communicative success separately from exact target retrieval.
-
-This direction explains why production alternates should eventually be
-task-aware and why cue repair may mean replacement, addition, deletion, or
-disassociation from a target. It is not a complete design and does not
-authorize an implementation to invent cue tables or reinterpret meaning rows
-as cues.
-
-The legacy bad-definition-production feedback state does not establish a cue
-identity model and is not a registered reflection operation.
-
-Reflection may still diagnose an unfair or overloaded cue in its observation.
-When it can draft a concrete version 1 replacement, it may propose
-`repair_production_cue`. When it cannot, it should emit no operation and may
-record an `unhandledNeed`; it must not recreate legacy bad-prompt state through
-an invented generalized flag.
+Reflection generation for new cue repairs uses V2. When it cannot express a
+faithful V2 cue change, it should emit no operation and may record an
+`unhandledNeed`. The exact nested V2 wire schema remains a human-gated
+orientation decision, but the product behavior it must represent is settled.
 
 ## 12. Manual And Legacy Invocation Compatibility
 
@@ -775,7 +829,7 @@ The following are not defined operations yet:
 
 - extend or merge an existing contrast cluster;
 - revise or delete existing contrast prompts;
-- delete or disassociate a production cue;
+- destructively delete a production cue or re-anchor it to another task;
 - restore suppressed definition production;
 - change general word or skill priority;
 - assign maintenance or protection tiers;
@@ -814,11 +868,20 @@ The artifact retains the original prompt. The review becomes
 `accepted/revised`; the invocation stores the edited cluster operation; the
 adapter applies only that operation.
 
-### Accepted but unsupported
+### Accepted V1 cue repair remains unsupported
 
-The model proposes a cue repair. The user accepts its direction. The review is
-`accepted`, the exact draft is stored in an invocation, and application is
-`unsupported`. No cue, meaning, or scheduling state changes.
+The model proposes a V1 cue repair. The user accepts its direction. The review
+is `accepted`, the exact draft is stored in an invocation, and application is
+`unsupported`. No cue, meaning, or scheduling state changes. A later V2 repair
+requires a fresh authorized invocation and explicit supersession.
+
+### V2 cue repair applies prospectively
+
+The model proposes a V2 replacement that expands one cue's accepted-word set.
+The learner accepts it. The adapter creates a new immutable cue, deactivates
+only the named prior cue, records attributable effect references, and may
+append the authorized later judgment to cue evidence. The motivating attempt,
+its served acceptance snapshot, and its word-scheduler outcome are unchanged.
 
 ### Already satisfied elsewhere
 
