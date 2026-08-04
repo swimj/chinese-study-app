@@ -23,6 +23,31 @@ export type ReflectionItemPresentation = {
   proposals: ReflectionProposalDetailDto[];
 };
 
+export type ReflectionProposalQueueKind = 'attention' | 'deferred' | 'unapplied';
+
+export type ReflectionProposalPresentation = {
+  artifact: ReflectionArtifactDetailDto;
+  evidence: ReflectionInputItemV1 | null;
+  result: ReflectionItemResultV1;
+  proposal: ReflectionProposalDetailDto;
+};
+
+export type ReflectionTokenUsageSummary = {
+  runCount: number;
+  succeededCount: number;
+  failedCount: number;
+  usage: {
+    inputTokens: number | null;
+    cachedInputTokens: number | null;
+    cacheWriteInputTokens: number | null;
+    outputTokens: number | null;
+    reasoningTokens: number | null;
+    totalTokens: number | null;
+  };
+  pricedRunCount: number;
+  estimatedCostUsd: number | null;
+};
+
 export function buildReflectionItemPresentations(
   detail: ReflectionArtifactDetailDto,
 ): ReflectionItemPresentation[] {
@@ -41,6 +66,89 @@ export function buildReflectionItemPresentations(
     result,
     proposals: proposalsByItemId.get(result.itemId) ?? [],
   }));
+}
+
+export function buildReflectionProposalPresentations(
+  details: ReflectionArtifactDetailDto[],
+  kind: ReflectionProposalQueueKind,
+): ReflectionProposalPresentation[] {
+  const presentations: ReflectionProposalPresentation[] = [];
+
+  for (const artifact of details) {
+    const evidenceByItemId = new Map(
+      artifact.evidenceBundle.items.map((item) => [item.itemId, item]),
+    );
+    const resultByItemId = new Map(
+      artifact.result.itemResults.map((result) => [result.itemId, result]),
+    );
+
+    for (const proposal of artifact.proposals) {
+      if (!proposalBelongsInQueue(proposal, kind)) continue;
+      const result = resultByItemId.get(proposal.itemId);
+      if (result === undefined) {
+        throw new Error(
+          `Reflection proposal ${proposal.review.proposalId} has no matching item result.`,
+        );
+      }
+      presentations.push({
+        artifact,
+        evidence: evidenceByItemId.get(proposal.itemId) ?? null,
+        result,
+        proposal,
+      });
+    }
+  }
+
+  return presentations;
+}
+
+export function summarizeReflectionTokenUsage(
+  runs: ReflectionGenerationRunDto[],
+): ReflectionTokenUsageSummary {
+  const pricedRuns = runs.filter((run) => run.estimatedCostUsd !== null);
+  return {
+    runCount: runs.length,
+    succeededCount: runs.filter((run) => run.state === 'succeeded').length,
+    failedCount: runs.filter((run) => run.state === 'failed').length,
+    usage: {
+      inputTokens: sumKnown(runs.map((run) => run.usage.inputTokens)),
+      cachedInputTokens: sumKnown(runs.map((run) => run.usage.cachedInputTokens)),
+      cacheWriteInputTokens: sumKnown(runs.map((run) => run.usage.cacheWriteInputTokens)),
+      outputTokens: sumKnown(runs.map((run) => run.usage.outputTokens)),
+      reasoningTokens: sumKnown(runs.map((run) => run.usage.reasoningTokens)),
+      totalTokens: sumKnown(runs.map((run) => run.usage.totalTokens)),
+    },
+    pricedRunCount: pricedRuns.length,
+    estimatedCostUsd: pricedRuns.length === 0
+      ? null
+      : pricedRuns.reduce((total, run) => total + (run.estimatedCostUsd ?? 0), 0),
+  };
+}
+
+function proposalBelongsInQueue(
+  proposal: ReflectionProposalDetailDto,
+  kind: ReflectionProposalQueueKind,
+): boolean {
+  switch (kind) {
+    case 'attention':
+      return proposal.review.disposition.kind === 'pending';
+    case 'deferred':
+      return proposal.review.disposition.kind === 'deferred';
+    case 'unapplied':
+      return proposal.review.disposition.kind === 'accepted'
+        && proposal.invocation !== null
+        && (
+          proposal.invocation.application.state.kind === 'unsupported'
+          || proposal.invocation.application.state.kind === 'pending'
+        );
+  }
+}
+
+function sumKnown(values: Array<number | null>): number | null {
+  const knownValues = values.filter((value): value is number => value !== null);
+  return knownValues.length === 0
+    ? null
+    : knownValues.reduce((total, value) => total + value, 0);
 }
 
 export function cloneReflectionOperation(operation: ReflectionOperation): ReflectionOperation {
