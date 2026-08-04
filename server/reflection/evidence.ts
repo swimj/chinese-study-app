@@ -215,6 +215,9 @@ function buildProductionMistakeItem(
   if (hasExcludingManagementAction(sessionId, supplement.sessionActionId)) {
     return null;
   }
+  if (isTargetWordResponse(supplement.rawResponse, supplement.targetWordId)) {
+    return null;
+  }
 
   const submittedWord = getExactSubmittedWordSnapshot(supplement.rawResponse);
 
@@ -370,6 +373,20 @@ function getExactSubmittedWordSnapshot(rawResponse: string): ReflectionWordSnaps
     LIMIT 1
   `).get(rawResponse.trim(), rawResponse.trim()) as { id: string } | undefined;
   return row ? getWordSnapshot(row.id) : null;
+}
+
+function isTargetWordResponse(rawResponse: string, targetWordId: string): boolean {
+  const row = getDb().prepare(`
+    SELECT 1 AS present
+    FROM words
+    WHERE id = ?
+      AND (hanzi = ? OR traditional = ?)
+  `).get(
+    targetWordId,
+    rawResponse.trim(),
+    rawResponse.trim(),
+  ) as { present: 1 } | undefined;
+  return row !== undefined;
 }
 
 function getExistingContent(wordIds: string[]): ReflectionExistingContentV0 {

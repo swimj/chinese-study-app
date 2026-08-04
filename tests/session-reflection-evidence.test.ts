@@ -172,7 +172,6 @@ describe('completed-session reflection evidence', () => {
       item: noClue,
       attempt: createAttempt({ item: noClue, id: 'no-clue', response: null }),
     });
-
     const accumulator = cases.reduce(
       (current, entry) => recordProductionMistakeEvidence(current, {
         item: entry.item,

@@ -78,7 +78,10 @@ action, and attempt references before constructing a provider-facing bundle.
 ### Initial evidence kind
 
 The initial flow includes only review-phase production mistakes with a non-empty
-typed response. Each item preserves at least:
+typed response that is not the target Hanzi itself. A learner may mark an
+otherwise correct Hanzi response wrong because they recalled its pronunciation
+incorrectly; that remains a study mistake but is not reflection-eligible in the
+initial flow. Each item preserves at least:
 
 - the target word identity;
 - the production cue exactly as shown;

@@ -230,6 +230,32 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
     }
   });
 
+  test('excludes an incorrect rating for either target Hanzi form from reflection', () => {
+    sqlite.prepare(`
+      UPDATE study_attempt_events
+      SET response = '  目标  '
+      WHERE id = 'attempt-1'
+    `).run();
+
+    assertEvidenceError(
+      () => buildInitialReflectionBundle('session-1', supplement('  目标  '), generatedAt),
+      'no_qualifying_evidence',
+      400,
+    );
+
+    insertCompleteSession();
+    sqlite.prepare(`
+      UPDATE study_attempt_events
+      SET response = '目標'
+      WHERE id = 'attempt-1'
+    `).run();
+    assertEvidenceError(
+      () => buildInitialReflectionBundle('session-1', supplement('目標'), generatedAt),
+      'no_qualifying_evidence',
+      400,
+    );
+  });
+
   test('rejects structurally invalid or empty supplements safely', () => {
     assertEvidenceError(
       () => buildInitialReflectionBundle('session-1', {
