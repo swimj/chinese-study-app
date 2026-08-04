@@ -186,7 +186,7 @@ describe('reflection verification fixture', { concurrency: false }, () => {
       WHERE invocation_id = 'fixture-contrast'
     `).get() as { application_state: string; effect_refs_json: string };
     assert.equal(persisted.application_state, 'applied');
-    assert.equal(JSON.parse(persisted.effect_refs_json).length, 5);
+    assert.equal(JSON.parse(persisted.effect_refs_json).length, 9);
   });
 });
 

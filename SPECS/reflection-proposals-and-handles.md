@@ -319,17 +319,21 @@ Validation:
 - nullable notes and explanations remain editable generated content, not
   application instructions hidden in prose.
 
-Application creates the cluster, members, annotations, and prompts atomically
-and records effect references for every created entity. A deterministic exact
-match to an already-existing complete postcondition may produce
-`already_satisfied`; approximate thematic overlap is not sufficient.
+Application creates the cluster, members, annotations, and prompts atomically.
+It also enforces the contrast-membership policy for every member by ensuring
+`contextual_selection` relevance `normal` and enabled, initialized scheduler
+state. Effect references identify every created content entity and only the
+eligibility records actually changed by this invocation. A deterministic exact
+match to an already-existing complete content-and-eligibility postcondition may
+produce `already_satisfied`; approximate thematic overlap is not sufficient.
 
 Non-effects:
 
 - it does not extend, merge, overwrite, or delete an existing cluster;
 - it does not revise or delete existing prompts;
 - it does not automatically resolve unrelated intake rows;
-- it does not change production grading or word scheduling; and
+- it does not change recognition or production scheduling, production grading,
+  word admission, or lifecycle state; and
 - it does not imply a finite contrast-practice burst.
 
 Cluster extension is deliberately a later operation. A future reconciliation
@@ -736,7 +740,7 @@ there is a concrete reason to migrate them.
 | `add_contrast_candidate` | No equivalent operation; it creates unresolved intake rather than trainable content | Remain a legacy/manual intake path |
 | `suppress_skill_and_add_contrast_candidate` | Existing compound convenience over two different concerns | Remain parallel; reflection uses independent proposals and does not gain a compound handle |
 | In-session or out-of-session bad production prompt reporting | No registered reflection operation | Remain legacy compatibility behavior; do not treat it as a cue adapter |
-| Manual contrast cluster/member/prompt CRUD | Adjacent primitives for `create_contrast_cluster` | Keep manual editing; implement reflection creation through one atomic adapter over shared domain primitives |
+| Manual contrast cluster/member/prompt CRUD | Adjacent primitives for `create_contrast_cluster` | Keep manual editing; share the all-member contextual-eligibility command while reflection retains one atomic content adapter |
 | Contrast intake “create cluster” | Closest existing atomic composition, but its intake-resolution semantics are not part of the handle | Reuse or extract domain primitives without fabricating intake provenance |
 | Reflection proposal application | Canonical proposal-originated invocation path | Validate, authorize, apply by invocation id, and record exact effects |
 | Fully manual workbench | Canonical user-originated invocation path | Use the same operation registry without fabricating a proposal |
