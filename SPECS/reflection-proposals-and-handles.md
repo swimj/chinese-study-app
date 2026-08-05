@@ -495,12 +495,12 @@ invocation whose exact postcondition is already present produces
 meaning visibility, rewrites historical attempts, retroactively changes word
 scheduling state, or destructively deletes cues.
 
-The provider evidence for a V2 repair contains only the production-task
-identity and the singular cue snapshot served by the source attempt. Other
-active or inactive task cues are not supplied to generation and do not expand
-the model's allowed cue or accepted-word references. A fallback may support
-creation; a durable served cue may support replacement or terminal
-deactivation of that exact cue.
+The provider evidence for a V2 repair contains the target word and the singular
+cue snapshot served by the source attempt. The V0 default-production task id is
+derived at the trusted provider boundary. Other active or inactive task cues
+are not supplied to generation and do not expand the model's allowed cue or
+accepted-word references. A fallback may support creation; a durable served cue
+may support replacement or terminal deactivation of that exact cue.
 
 New reflection generation emits V2 directly. V1 remains readable and
 unsupported; any later V1-to-V2 migration uses a newly authorized V2 invocation

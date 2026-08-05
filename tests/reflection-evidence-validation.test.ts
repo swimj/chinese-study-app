@@ -3,9 +3,11 @@ import { describe, test } from 'node:test';
 import {
   parseInitialReflectionMilestoneBundle,
   parseSessionReflectionBundle,
+  parseSessionReflectionBundleV2,
   parseSessionReflectionEvidenceSupplement,
   validateInitialReflectionMilestoneBundle,
   validateSessionReflectionBundle,
+  validateSessionReflectionBundleV2,
   validateSessionReflectionEvidenceSupplement,
 } from '../src/domain/reflection-evidence.js';
 import type {
@@ -15,6 +17,7 @@ import type {
   ReflectionInputItemV1,
   ReflectionWordSnapshotV1,
   SessionReflectionBundleV1,
+  SessionReflectionBundleV2,
 } from '../src/domain/reflection.js';
 
 const generatedAt = '2026-07-29T12:00:00.000Z';
@@ -155,6 +158,64 @@ describe('session reflection bundle validation', () => {
   });
 });
 
+describe('session reflection bundle V2 validation', () => {
+  test('parses a durable served cue snapshot', () => {
+    const bundle = productionBundleV2();
+
+    assert.deepEqual(validateSessionReflectionBundleV2(bundle), []);
+    assert.equal(parseSessionReflectionBundleV2(bundle), bundle);
+    assert.deepEqual(bundle.items[0]!.servedCue, {
+      cueId: 'cue-1',
+      cueType: 'minimal_context',
+      text: 'Name the goal in one word.',
+      acceptedWordIds: ['target'],
+    });
+  });
+
+  test('rejects unknown served-cue fields', () => {
+    const bundle = productionBundleV2();
+    const item = bundle.items[0]!;
+    (item.servedCue as unknown as Record<string, unknown>).displayOrder = 0;
+
+    const errors = validateSessionReflectionBundleV2(bundle).join('\n');
+    assert.match(errors, /servedCue\.displayOrder: unknown property/);
+    assert.throws(
+      () => parseSessionReflectionBundleV2(bundle),
+      /Invalid session reflection bundle V2/,
+    );
+  });
+
+  test('accepts only definition-gloss fallback evidence and preserves its accepted anchor', () => {
+    const bundle = productionBundleV2();
+    const item = bundle.items[0]!;
+    item.servedCue = {
+      cueId: null,
+      cueType: 'definition_gloss',
+      text: 'goal; objective',
+      acceptedWordIds: ['target'],
+    };
+
+    assert.deepEqual(validateSessionReflectionBundleV2(bundle), []);
+
+    item.servedCue.cueType = 'circumstance';
+    assert.match(
+      validateSessionReflectionBundleV2(bundle).join('\n'),
+      /fallback evidence must be definition_gloss/,
+    );
+  });
+
+  test('rejects a malformed durable cue id and a served answer space without the anchor', () => {
+    const bundle = productionBundleV2();
+    const cue = bundle.items[0]!.servedCue;
+    cue.cueId = '';
+    cue.acceptedWordIds = ['alternate'];
+
+    const errors = validateSessionReflectionBundleV2(bundle).join('\n');
+    assert.match(errors, /servedCue\.cueId: must not be empty/);
+    assert.match(errors, /servedCue\.acceptedWordIds: must include the task word/);
+  });
+});
+
 describe('initial reflection milestone bundle validation', () => {
   test('accepts a completed bundle containing typed production mistakes', () => {
     const bundle: SessionReflectionBundleV1 = {
@@ -237,6 +298,42 @@ function broadBundle(): SessionReflectionBundleV1 {
       sessionNoteItem(),
       contrastItem(),
     ],
+  };
+}
+
+function productionBundleV2(): SessionReflectionBundleV2 {
+  return {
+    schemaVersion: 'session_reflection_bundle.v2',
+    generatedAt,
+    session: {
+      sessionId: 'session-1',
+      startedAt: '2026-07-29T11:50:00.000Z',
+      endedAt: generatedAt,
+      studyProfile: 'mandarin',
+    },
+    items: [{
+      itemId: 'production-item',
+      sourceAttemptId: 'attempt-1',
+      sessionActionId: 'production-action',
+      occurredAt: '2026-07-29T11:55:00.000Z',
+      source: 'production_mistake',
+      sourceActionKind: 'production',
+      targetWord: word('target', '目标'),
+      sessionNote: null,
+      existingContent: {
+        contrastClusters: [],
+        knownAcceptedAlternates: [],
+      },
+      servedCue: {
+        cueId: 'cue-1',
+        cueType: 'minimal_context',
+        text: 'Name the goal in one word.',
+        acceptedWordIds: ['target'],
+      },
+      rawResponse: '替代',
+      submittedWord: word('alternate', '替代'),
+      responseKind: 'matched_known_word',
+    }],
   };
 }
 

@@ -6,7 +6,9 @@ import type {
   ReflectionInputItemV1,
   ReflectionWordSnapshotV1,
   SessionNoteReflectionItemV1,
+  SessionReflectionBundle,
   SessionReflectionBundleV1,
+  SessionReflectionBundleV2,
 } from './reflection';
 
 export type ProductionMistakeEvidenceSupplementV1 = {
@@ -34,6 +36,7 @@ const bundleCueTypes = new Set([
 const actionKinds = new Set(['recognition', 'production', 'contrast_selection']);
 const studyProfiles = new Set(['mandarin', 'french']);
 const responseKinds = new Set(['matched_known_word', 'no_clue', 'unmatched_text']);
+const productionCueTypesV0 = new Set(['definition_gloss', 'minimal_context', 'circumstance']);
 const reflectionSignals = new Set(['clear_now', 'still_shaky', 'want_more_practice']);
 
 export function validateSessionReflectionEvidenceSupplement(value: unknown): string[] {
@@ -142,6 +145,103 @@ export function parseSessionReflectionBundle(value: unknown): SessionReflectionB
     throw new Error(`Invalid session reflection bundle:\n${errors.join('\n')}`);
   }
   return value as SessionReflectionBundleV1;
+}
+
+export function validateSessionReflectionBundleV2(value: unknown): string[] {
+  const errors = validateObjectFields(
+    value,
+    ['schemaVersion', 'generatedAt', 'session', 'items'],
+    '$',
+  );
+  if (!isRecord(value)) return errors;
+  if (value.schemaVersion !== 'session_reflection_bundle.v2') {
+    errors.push('$.schemaVersion: expected session_reflection_bundle.v2');
+  }
+  errors.push(...validateUtcTimestamp(value.generatedAt, '$.generatedAt'));
+  errors.push(...validateSession(value.session, '$.session'));
+  if (!Array.isArray(value.items)) {
+    errors.push('$.items: expected array');
+    return errors;
+  }
+  if (value.items.length === 0) {
+    errors.push('$.items: at least one qualifying production mistake is required');
+  }
+  const itemIds = new Set<string>();
+  const actionIds = new Set<string>();
+  const attemptIds = new Set<string>();
+  for (const [index, item] of value.items.entries()) {
+    const path = `$.items[${index}]`;
+    if (!isRecord(item)) {
+      errors.push(`${path}: expected object`);
+      continue;
+    }
+    errors.push(...validateItemBase(
+      item,
+      path,
+      [
+        'source',
+        'sourceActionKind',
+        'sourceAttemptId',
+        'servedCue',
+        'rawResponse',
+        'submittedWord',
+        'responseKind',
+      ],
+      itemIds,
+      actionIds,
+    ));
+    if (item.source !== 'production_mistake') {
+      errors.push(`${path}.source: expected production_mistake`);
+    }
+    if (item.sourceActionKind !== 'production') {
+      errors.push(`${path}.sourceActionKind: expected production`);
+    }
+    errors.push(...validateUniqueId(
+      item.sourceAttemptId,
+      `${path}.sourceAttemptId`,
+      attemptIds,
+      'source attempt id',
+    ));
+    errors.push(...validateServedCueSnapshot(
+      item.servedCue,
+      `${path}.servedCue`,
+      isRecord(item.targetWord) ? item.targetWord.wordId : null,
+    ));
+    errors.push(...validateNullableNonEmptyString(item.rawResponse, `${path}.rawResponse`));
+    errors.push(...validateNullableWord(item.submittedWord, `${path}.submittedWord`));
+    if (typeof item.responseKind !== 'string' || !responseKinds.has(item.responseKind)) {
+      errors.push(`${path}.responseKind: value is not in the allowed enum`);
+    } else {
+      if (item.responseKind === 'matched_known_word' && item.submittedWord === null) {
+        errors.push(`${path}.submittedWord: a matched response requires a word snapshot`);
+      }
+      if (item.responseKind !== 'matched_known_word' && item.submittedWord !== null) {
+        errors.push(`${path}.submittedWord: only an unambiguous matched response may include a word snapshot`);
+      }
+      if (item.responseKind === 'no_clue' && item.rawResponse !== null) {
+        errors.push(`${path}.rawResponse: must be null for a no-clue response`);
+      }
+      if (item.responseKind !== 'no_clue' && item.rawResponse === null) {
+        errors.push(`${path}.rawResponse: typed responses require raw text`);
+      }
+    }
+  }
+  return errors;
+}
+
+export function parseSessionReflectionBundleV2(value: unknown): SessionReflectionBundleV2 {
+  const errors = validateSessionReflectionBundleV2(value);
+  if (errors.length > 0) {
+    throw new Error(`Invalid session reflection bundle V2:\n${errors.join('\n')}`);
+  }
+  return value as SessionReflectionBundleV2;
+}
+
+export function parseStoredSessionReflectionBundle(value: unknown): SessionReflectionBundle {
+  if (isRecord(value) && value.schemaVersion === 'session_reflection_bundle.v2') {
+    return parseSessionReflectionBundleV2(value);
+  }
+  return parseSessionReflectionBundle(value);
 }
 
 /**
@@ -452,6 +552,36 @@ function validateCueList(value: unknown, path: string, requireNonEmpty: boolean)
       `${cuePath}.displayedMeanings`,
       false,
     ));
+  }
+  return errors;
+}
+
+function validateServedCueSnapshot(
+  value: unknown,
+  path: string,
+  targetWordId: unknown,
+): string[] {
+  const errors = validateObjectFields(
+    value,
+    ['cueId', 'cueType', 'text', 'acceptedWordIds'],
+    path,
+  );
+  if (!isRecord(value)) return errors;
+  if (value.cueId !== null) errors.push(...validateId(value.cueId, `${path}.cueId`));
+  if (value.cueId === null && value.cueType !== 'definition_gloss') {
+    errors.push(`${path}.cueType: fallback evidence must be definition_gloss`);
+  }
+  if (typeof value.cueType !== 'string' || !productionCueTypesV0.has(value.cueType)) {
+    errors.push(`${path}.cueType: value is not in the allowed enum`);
+  }
+  errors.push(...validateNonEmptyString(value.text, `${path}.text`));
+  errors.push(...validateIdArray(value.acceptedWordIds, `${path}.acceptedWordIds`));
+  if (
+    typeof targetWordId === 'string'
+    && Array.isArray(value.acceptedWordIds)
+    && !value.acceptedWordIds.includes(targetWordId)
+  ) {
+    errors.push(`${path}.acceptedWordIds: must include the task word`);
   }
   return errors;
 }

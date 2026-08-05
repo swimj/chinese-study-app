@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
-  SESSION_REFLECTION_RESULT_SCHEMA_NAME,
-  sessionReflectionResultSchema,
+  SESSION_REFLECTION_RESULT_V5_WIRE_SCHEMA_NAME,
+  sessionReflectionResultV5WireSchema,
 } from '../src/domain/reflection-result-schema.js';
 import type {
-  SessionReflectionBundleV1,
-  SessionReflectionResultV4,
+  SessionReflectionBundleV2,
+  SessionReflectionResultV5,
+  SessionReflectionResultV5Wire,
 } from '../src/domain/reflection.js';
 import {
   createLunaReflectionProvider,
@@ -15,6 +16,7 @@ import {
   LunaReflectionProviderError,
 } from '../server/reflection/luna-provider.js';
 import type { JsonValue } from '../server/llm/types.js';
+import { validateJsonSchema } from '../server/llm/json-schema-validator.js';
 import {
   describeReflectionProviderFailure,
   type ReflectionProviderDiagnostic,
@@ -27,8 +29,8 @@ type CapturedRequest = {
   signal: AbortSignal | null;
 };
 
-const bundle: SessionReflectionBundleV1 = {
-  schemaVersion: 'session_reflection_bundle.v1',
+const bundle: SessionReflectionBundleV2 = {
+  schemaVersion: 'session_reflection_bundle.v2',
   generatedAt: '2026-07-29T10:00:00.000Z',
   session: {
     sessionId: 'session-1',
@@ -53,13 +55,13 @@ const bundle: SessionReflectionBundleV1 = {
       contrastClusters: [],
       knownAcceptedAlternates: [],
     },
-    cuesAsShown: [{
+    sourceAttemptId: 'attempt-1',
+    servedCue: {
       cueId: 'cue-1',
       cueType: 'definition_gloss',
-      displayOrder: 0,
       text: 'to know',
-      displayedMeanings: ['to know'],
-    }],
+      acceptedWordIds: ['word-1'],
+    },
     rawResponse: '认识',
     submittedWord: {
       wordId: 'word-2',
@@ -71,17 +73,55 @@ const bundle: SessionReflectionBundleV1 = {
   }],
 };
 
-const validResult: SessionReflectionResultV4 = {
-  schemaVersion: 'session_reflection_result.v4',
+const validWireResult: SessionReflectionResultV5Wire = {
+  schemaVersion: 'session_reflection_result.v5',
   itemResults: [{
     itemId: 'item-1',
-    diagnosisTags: ['ordinary_retrieval_noise'],
-    observation: 'One near-meaning response does not yet support a durable change.',
+    diagnosisTags: ['valid_or_near_valid_alternate'],
+    observation: 'The resolved response belongs in this cue\'s accepted answer space.',
     learnerExplanation: null,
-    proposals: [],
+    proposals: [{
+      proposalGroupKey: null,
+      rationale: 'Admit the resolved alternate while preserving the exact cue evidence.',
+      operation: {
+        kind: 'repair_production_cue',
+        wordId: 'word-1',
+        changes: [{
+          kind: 'replace',
+          cueId: 'cue-1',
+          replacements: [{
+            cueType: 'definition_gloss',
+            text: 'to know',
+            acceptedWordIds: ['word-1', 'word-2'],
+          }],
+        }],
+        sourceAttemptJudgments: [{
+          kind: 'accepted_answer_space_omission',
+          sourceAttemptId: 'attempt-1',
+          submittedWordId: 'word-2',
+        }],
+      },
+    }],
     questions: [],
     unhandledNeeds: [],
   }],
+};
+
+const validCanonicalResult: SessionReflectionResultV5 = {
+  ...validWireResult,
+  itemResults: validWireResult.itemResults.map((itemResult) => ({
+    ...itemResult,
+    proposals: itemResult.proposals.map((proposal) => ({
+      ...proposal,
+      operation: proposal.operation.kind === 'repair_production_cue'
+        ? {
+            ...proposal.operation,
+            version: 2,
+            taskId: `production-task:${proposal.operation.wordId}:default_production`,
+          }
+        : proposal.operation,
+    })),
+  })),
 };
 
 function responseEnvelope(
@@ -140,7 +180,7 @@ async function expectProviderError(
 }
 
 describe('production Luna reflection provider', () => {
-  test('sends the exact model, reasoning, auth, prompt, and strict V4 schema request', async () => {
+  test('sends the exact model, reasoning, auth, prompt, and strict V5 wire schema request', async () => {
     const capture: CapturedRequest[] = [];
     const provider = createLunaReflectionProvider({
       environment: {
@@ -149,7 +189,7 @@ describe('production Luna reflection provider', () => {
       },
       systemPrompt: 'Production reflection system prompt.',
       fetchImplementation: capturingFetch(
-        responseEnvelope(JSON.stringify(validResult), {
+        responseEnvelope(JSON.stringify(validWireResult), {
           transportDebug: 'must-not-be-returned',
         }),
         capture,
@@ -174,9 +214,9 @@ describe('production Luna reflection provider', () => {
     assert.deepEqual(request.body.response_format, {
       type: 'json_schema',
       json_schema: {
-        name: SESSION_REFLECTION_RESULT_SCHEMA_NAME,
+        name: SESSION_REFLECTION_RESULT_V5_WIRE_SCHEMA_NAME,
         strict: true,
-        schema: sessionReflectionResultSchema,
+        schema: sessionReflectionResultV5WireSchema,
       },
     });
     assert.ok(request.signal instanceof AbortSignal);
@@ -188,12 +228,20 @@ describe('production Luna reflection provider', () => {
       maxOutputTokens: 40_000,
       timeoutMs: 180_000,
     });
-    assert.deepEqual(generated.result, validResult);
+    const wireOperation = validWireResult.itemResults[0]!.proposals[0]!.operation;
+    const canonicalOperation = generated.result.itemResults[0]!.proposals[0]!.operation;
+    assert.equal(wireOperation.kind, 'repair_production_cue');
+    assert.equal(Object.hasOwn(wireOperation, 'version'), false);
+    assert.equal(Object.hasOwn(wireOperation, 'taskId'), false);
+    assert.equal(canonicalOperation.kind, 'repair_production_cue');
+    assert.equal(canonicalOperation.version, 2);
+    assert.equal(canonicalOperation.taskId, 'production-task:word-1:default_production');
+    assert.deepEqual(generated.result, validCanonicalResult);
     assert.deepEqual(generated.metadata, {
       provider: 'openai',
       modelConfig: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v2',
+      promptVersion: 'reflection-v3',
       responseId: 'response-1',
       finishReason: 'stop',
       usage: {
@@ -205,7 +253,7 @@ describe('production Luna reflection provider', () => {
         totalTokens: 140,
       },
     });
-    assert.equal(LUNA_REFLECTION_PROMPT_VERSION, 'reflection-v2');
+    assert.equal(LUNA_REFLECTION_PROMPT_VERSION, 'reflection-v3');
     const serialized = JSON.stringify(generated);
     assert.equal(serialized.includes('unit-test-secret'), false);
     assert.equal(serialized.includes('transportDebug'), false);
@@ -299,7 +347,7 @@ describe('production Luna reflection provider', () => {
       environment: { OPENAI_API_KEY: 'secret' },
       systemPrompt: 'prompt',
       fetchImplementation: capturingFetch(responseEnvelope(
-        '{"schemaVersion":"session_reflection_result.v4"',
+        '{"schemaVersion":"session_reflection_result.v5"',
         {
           choices: [{
             finish_reason: 'length',
@@ -315,7 +363,7 @@ describe('production Luna reflection provider', () => {
       provider: 'openai',
       modelConfig: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v2',
+      promptVersion: 'reflection-v3',
       responseId: 'response-1',
       finishReason: 'length',
       usage: {
@@ -338,15 +386,15 @@ describe('production Luna reflection provider', () => {
       { content: '{not-json', code: 'invalid_json', hasIssues: false },
       {
         content: JSON.stringify({
-          schemaVersion: 'session_reflection_result.v4',
+          schemaVersion: 'session_reflection_result.v5',
         }),
         code: 'schema_invalid',
         hasIssues: true,
       },
       {
         content: JSON.stringify({
-          ...validResult,
-          itemResults: [{ ...validResult.itemResults[0]!, itemId: 'unknown-item' }],
+          ...validWireResult,
+          itemResults: [{ ...validWireResult.itemResults[0]!, itemId: 'unknown-item' }],
         }),
         code: 'domain_contract_invalid',
         hasIssues: true,
@@ -354,6 +402,12 @@ describe('production Luna reflection provider', () => {
     ];
 
     for (const testCase of cases) {
+      if (testCase.code === 'domain_contract_invalid') {
+        assert.deepEqual(
+          validateJsonSchema(JSON.parse(testCase.content), sessionReflectionResultV5WireSchema),
+          [],
+        );
+      }
       const provider = createLunaReflectionProvider({
         environment: { OPENAI_API_KEY: 'secret' },
         systemPrompt: 'prompt',
@@ -393,12 +447,12 @@ describe('production Luna reflection provider', () => {
     assert.match(error.diagnostic?.rejectedOutput ?? '', /truncated/);
   });
 
-  test('loads the promoted production V2 prompt when no prompt is injected', async () => {
+  test('loads the promoted production V3 prompt when no prompt is injected', async () => {
     const capture: CapturedRequest[] = [];
     const provider = createLunaReflectionProvider({
       environment: { OPENAI_API_KEY: 'secret' },
       fetchImplementation: capturingFetch(
-        responseEnvelope(JSON.stringify(validResult)),
+        responseEnvelope(JSON.stringify(validWireResult)),
         capture,
       ),
     });
@@ -416,7 +470,10 @@ describe('production Luna reflection provider', () => {
     assert.equal(typeof systemContent, 'string');
     assert.match(
       systemContent as string,
-      /^# Post-Session Reflection V2\n\nYou are a careful Mandarin-learning reflection assistant\./,
+      /^# Post-Session Reflection V3\n\nYou are a careful language-learning reflection assistant\./,
     );
+    assert.match(systemContent as string, /`servedCue` is the singular immutable cue snapshot/);
+    assert.equal((systemContent as string).includes('`activate`'), false);
+    assert.equal((systemContent as string).includes('productionTask'), false);
   });
 });

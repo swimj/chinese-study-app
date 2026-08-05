@@ -78,10 +78,12 @@ action, and attempt references before constructing a provider-facing bundle.
 ### Initial evidence kind
 
 The initial flow includes only review-phase production mistakes with a non-empty
-typed response that is not the target Hanzi itself. A learner may mark an
-otherwise correct Hanzi response wrong because they recalled its pronunciation
-incorrectly; that remains a study mistake but is not reflection-eligible in the
-initial flow. Each item preserves at least:
+typed response outside the accepted answer space snapshotted on the served cue.
+A learner may mark an otherwise accepted Hanzi response wrong because they
+recalled its pronunciation incorrectly; that remains a study mistake but is not
+reflection-eligible in the initial flow. The accepted words are treated as a
+cue-scoped equivalence class for this exclusion; the legacy fallback's accepted
+space contains only the target word. Each item preserves at least:
 
 - the target word identity;
 - the production cue exactly as shown;
@@ -89,13 +91,15 @@ initial flow. Each item preserves at least:
 - sufficient action and accepted-attempt identity for backend validation; and
 - the versioned word/content context selected by the backend.
 
-For the production-cue V2 flow, the provider receives the production-task
-identity and one singular immutable snapshot of the cue actually served. It
-does not receive the task's other active or inactive cues. A fallback snapshot
-has a null durable cue id; durable cue snapshots retain their exact cue id,
-type, text, and accepted-word set. This keeps model context and proposal
-authority causal to the attempt. Duplicate detection against other task content
-belongs at proposal review or application time, not in provider evidence.
+For the production-cue V2 flow, the provider receives the target word and one
+singular immutable snapshot of the cue actually served. The V0 task identity is
+deterministic from that word and is supplied at the trusted provider boundary,
+not copied through model evidence or output. The provider does not receive the
+task's other active or inactive cues. A fallback snapshot has a null durable cue
+id; durable cue snapshots retain their exact cue id, type, text, and accepted-
+word set. This keeps model context and proposal authority causal to the attempt.
+Duplicate detection against other task content belongs at proposal review or
+application time, not in provider evidence.
 
 Attempt references prove that the captured mistake belongs to the finalized,
 durably accepted action batch. Workflow-only reinforcement attempts need not be

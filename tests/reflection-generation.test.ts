@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type {
   ReflectionOperation,
-  SessionReflectionBundleV1,
-  SessionReflectionResultV4,
+  SessionReflectionBundleV2,
+  SessionReflectionResultV5,
 } from '../src/domain/reflection.ts';
 import type {
   MaterializeReflectionArtifactInput,
@@ -89,28 +89,28 @@ describe('initial reflection generation orchestration', () => {
     });
     assert.deepEqual(persisted, {
       sourceSessionId: 'session-1',
-      reflectionFlowVersion: 'initial_post_session_reflection.v1',
+      reflectionFlowVersion: 'initial_post_session_reflection.v2',
       generatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
-      promptVersion: 'reflection-v2',
+      promptVersion: 'reflection-v3',
       evidenceBundle,
       result: result(),
     });
     assert.deepEqual(recordedRun, {
       sourceSessionId: 'session-1',
-      reflectionFlowVersion: 'initial_post_session_reflection.v1',
+      reflectionFlowVersion: 'initial_post_session_reflection.v2',
       startedAt: generatedAt,
       completedAt: generatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v2',
+      promptVersion: 'reflection-v3',
       responseId: 'response-1',
       clientRequestId: null,
       finishReason: 'stop',
-      bundleSchemaVersion: 'session_reflection_bundle.v1',
-      resultSchemaVersion: 'session_reflection_result.v4',
+      bundleSchemaVersion: 'session_reflection_bundle.v2',
+      resultSchemaVersion: 'session_reflection_result.v5',
       diagnostic: null,
       state: 'succeeded',
       failureCode: null,
@@ -146,7 +146,7 @@ describe('initial reflection generation orchestration', () => {
 
   test('retries a failed durable run from its exact saved bundle', async () => {
     const evidenceBundle = bundle();
-    let providerBundle: SessionReflectionBundleV1 | null = null;
+    let providerBundle: SessionReflectionBundleV2 | null = null;
     let recordedRun: RecordReflectionGenerationRunInput | null = null;
     const service = createInitialReflectionGenerationService({
       now: () => generatedAt,
@@ -156,7 +156,7 @@ describe('initial reflection generation orchestration', () => {
         return {
           runId,
           sourceSessionId: 'session-1',
-          reflectionFlowVersion: 'initial_post_session_reflection.v1',
+          reflectionFlowVersion: 'initial_post_session_reflection.v2',
           eligibleItemCount: 3,
           includedItemCount: 1,
           evidenceBundle,
@@ -183,7 +183,7 @@ describe('initial reflection generation orchestration', () => {
       status: 'created',
     });
     assert.equal(providerBundle, evidenceBundle);
-    assert.equal(recordedRun?.evidenceBundle, evidenceBundle);
+    assert.deepEqual(recordedRun?.evidenceBundle, evidenceBundle);
     assert.equal(recordedRun?.eligibleItemCount, 3);
     assert.equal(recordedRun?.includedItemCount, 1);
   });
@@ -318,13 +318,9 @@ function providerSuccess(): LunaReflectionSuccess {
       provider: 'openai',
       modelConfig: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v2',
+      promptVersion: 'reflection-v3',
       responseId: 'response-1',
-      clientRequestId: null,
       finishReason: 'stop',
-      bundleSchemaVersion: 'session_reflection_bundle.v1',
-      resultSchemaVersion: 'session_reflection_result.v4',
-      diagnostic: null,
       usage: {
         inputTokens: 10,
         cachedInputTokens: null,
@@ -341,13 +337,13 @@ function artifactDetail(artifactId: string, proposalCount: number): ReflectionAr
   return {
     artifactId,
     sourceSessionId: 'session-1',
-    reflectionFlowVersion: 'initial_post_session_reflection.v1',
+    reflectionFlowVersion: 'initial_post_session_reflection.v2',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-v2',
-    bundleSchemaVersion: 'session_reflection_bundle.v1',
-    resultSchemaVersion: 'session_reflection_result.v4',
+    promptVersion: 'reflection-v3',
+    bundleSchemaVersion: 'session_reflection_bundle.v2',
+    resultSchemaVersion: 'session_reflection_result.v5',
     evidenceBundle: bundle(),
     result: result(),
     proposals: Array.from({ length: proposalCount }, (_, index) => ({
@@ -368,9 +364,9 @@ function artifactDetail(artifactId: string, proposalCount: number): ReflectionAr
   };
 }
 
-function bundle(): SessionReflectionBundleV1 {
+function bundle(): SessionReflectionBundleV2 {
   return {
-    schemaVersion: 'session_reflection_bundle.v1',
+    schemaVersion: 'session_reflection_bundle.v2',
     generatedAt,
     session: {
       sessionId: 'session-1',
@@ -382,6 +378,7 @@ function bundle(): SessionReflectionBundleV1 {
       itemId: 'item-1',
       source: 'production_mistake',
       sourceActionKind: 'production',
+      sourceAttemptId: 'attempt-1',
       sessionActionId: 'action-1',
       occurredAt: '2026-07-29T11:59:00.000Z',
       targetWord: {
@@ -392,13 +389,12 @@ function bundle(): SessionReflectionBundleV1 {
       },
       sessionNote: null,
       existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
-      cuesAsShown: [{
-        cueId: null,
+      servedCue: {
+        cueId: 'cue-1',
         cueType: 'definition_gloss',
-        displayOrder: 0,
         text: 'target',
-        displayedMeanings: ['target'],
-      }],
+        acceptedWordIds: ['target'],
+      },
       rawResponse: '替代',
       submittedWord: {
         wordId: 'alternate',
@@ -411,9 +407,9 @@ function bundle(): SessionReflectionBundleV1 {
   };
 }
 
-function result(): SessionReflectionResultV4 {
+function result(): SessionReflectionResultV5 {
   return {
-    schemaVersion: 'session_reflection_result.v4',
+    schemaVersion: 'session_reflection_result.v5',
     itemResults: [{
       itemId: 'item-1',
       diagnosisTags: ['persistent_confusion'],

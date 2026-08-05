@@ -15,6 +15,13 @@ export type ReflectionCueSnapshotV0 = {
   displayedMeanings: string[];
 };
 
+export type ReflectionServedCueSnapshotV1 = {
+  cueId: string | null;
+  cueType: ProductionCueTypeV0;
+  text: string;
+  acceptedWordIds: string[];
+};
+
 export type ReflectionExistingContentV0 = {
   contrastClusters: Array<{
     clusterId: string;
@@ -87,6 +94,26 @@ export type SessionReflectionBundleV1 = {
   };
   items: ReflectionInputItemV1[];
 };
+
+export type ProductionMistakeReflectionItemV2 = Omit<
+  ProductionMistakeReflectionItemV1,
+  'cuesAsShown' | 'responseKind'
+> & {
+  sourceAttemptId: string;
+  servedCue: ReflectionServedCueSnapshotV1;
+  responseKind: ProductionMistakeReflectionItemV1['responseKind'];
+};
+
+export type ReflectionInputItemV2 = ProductionMistakeReflectionItemV2;
+
+export type SessionReflectionBundleV2 = {
+  schemaVersion: 'session_reflection_bundle.v2';
+  generatedAt: string;
+  session: SessionReflectionBundleV1['session'];
+  items: ReflectionInputItemV2[];
+};
+
+export type SessionReflectionBundle = SessionReflectionBundleV1 | SessionReflectionBundleV2;
 
 export type ReflectionDiagnosisTagV1 =
   | 'valid_or_near_valid_alternate'
@@ -874,7 +901,7 @@ function validateRepairProductionCueOperationV2(
   return errors;
 }
 
-function visibleWordIds(item: ReflectionInputItemV1): Set<string> {
+function visibleWordIds(item: ReflectionInputItemV1 | ReflectionInputItemV2): Set<string> {
   const ids = new Set<string>();
   if (item.targetWord !== null) ids.add(item.targetWord.wordId);
   if (item.source === 'production_mistake' && item.submittedWord !== null) {
@@ -885,6 +912,9 @@ function visibleWordIds(item: ReflectionInputItemV1): Set<string> {
   }
   if (item.source === 'contrast_selection') {
     for (const choiceWord of item.promptAsShown.choiceWords) ids.add(choiceWord.wordId);
+  }
+  if ('servedCue' in item) {
+    for (const acceptedWordId of item.servedCue.acceptedWordIds) ids.add(acceptedWordId);
   }
   return ids;
 }
@@ -902,7 +932,7 @@ export function validateSessionReflectionResult(
 
 export function validateSessionReflectionResultV5(
   value: unknown,
-  bundle: SessionReflectionBundleV1,
+  bundle: SessionReflectionBundleV2,
 ): string[] {
   return validateSessionReflectionResultVersion(
     value,
@@ -913,7 +943,7 @@ export function validateSessionReflectionResultV5(
 
 function validateSessionReflectionResultVersion(
   value: unknown,
-  bundle: SessionReflectionBundleV1,
+  bundle: SessionReflectionBundle,
   schemaVersion: SessionReflectionResult['schemaVersion'],
 ): string[] {
   const errors = validateObjectFields(
@@ -1002,6 +1032,17 @@ function validateSessionReflectionResultVersion(
           evidenceItemId: inputItem?.itemId,
           path: `${proposalPath}.operation`,
         }));
+        if (
+          schemaVersion === 'session_reflection_result.v5'
+          && inputItem !== undefined
+          && 'servedCue' in inputItem
+        ) {
+          errors.push(...validateReflectionOperationEvidenceContext(
+            proposal.operation,
+            inputItem,
+            `${proposalPath}.operation`,
+          ));
+        }
       }
     }
 
@@ -1038,6 +1079,106 @@ function validateSessionReflectionResultVersion(
     }
   }
   return errors;
+}
+
+export function validateReflectionOperationEvidenceContext(
+  value: unknown,
+  item: ProductionMistakeReflectionItemV2,
+  path: string,
+): string[] {
+  if (!isRecord(value) || value.kind !== 'repair_production_cue' || value.version !== 2) {
+    return [];
+  }
+  const errors: string[] = [];
+  if (value.wordId !== item.targetWord.wordId) {
+    errors.push(`${path}.wordId: must match the evidence target word`);
+  }
+  if (value.taskId !== `production-task:${item.targetWord.wordId}:default_production`) {
+    errors.push(`${path}.taskId: must match the target word's default production task`);
+  }
+  const servedCueId = item.servedCue.cueId;
+  if (Array.isArray(value.changes)) {
+    for (const [index, change] of value.changes.entries()) {
+      if (isRecord(change) && change.kind === 'create' && servedCueId !== null) {
+        errors.push(`${path}.changes[${index}]: create is allowed only for fallback evidence`);
+      }
+      if (
+        isRecord(change)
+        && change.kind !== 'create'
+        && typeof change.cueId === 'string'
+        && change.cueId !== servedCueId
+      ) {
+        errors.push(`${path}.changes[${index}].cueId: must match the exact served cue`);
+      }
+    }
+  }
+  const servedCue = item.servedCue;
+  if (Array.isArray(value.sourceAttemptJudgments)) {
+    for (const [index, judgment] of value.sourceAttemptJudgments.entries()) {
+      if (!isRecord(judgment)) continue;
+      const judgmentPath = `${path}.sourceAttemptJudgments[${index}]`;
+      if (judgment.sourceAttemptId !== item.sourceAttemptId) {
+        errors.push(`${judgmentPath}.sourceAttemptId: must match the evidence source attempt`);
+      }
+      if (
+        judgment.kind === 'accepted_answer_space_omission'
+        && judgment.submittedWordId !== item.submittedWord?.wordId
+      ) {
+        errors.push(`${judgmentPath}.submittedWordId: must match the resolved submitted word`);
+      }
+      if (
+        (judgment.kind === 'accepted_answer_space_omission'
+          || judgment.kind === 'misleading_or_overloaded_cue')
+        && !hasExactServedCueRepair(value.changes, servedCue.cueId, judgment.submittedWordId)
+      ) {
+        errors.push(`${judgmentPath}: must repair the exact served cue contract`);
+      }
+    }
+  }
+  return errors;
+}
+
+function hasExactServedCueRepair(
+  changes: unknown,
+  servedCueId: string | null,
+  submittedWordId: unknown,
+): boolean {
+  if (!Array.isArray(changes)) return false;
+  if (submittedWordId === undefined) {
+    return changes.some((change) => (
+      isRecord(change)
+      && (
+        (servedCueId === null && change.kind === 'create' && isRecord(change.cue))
+        || (
+          servedCueId !== null
+          && change.cueId === servedCueId
+          && (
+            (change.kind === 'replace' && Array.isArray(change.replacements))
+            || change.kind === 'deactivate'
+          )
+        )
+      )
+    ));
+  }
+  const drafts = changes.flatMap((change) => {
+    if (!isRecord(change)) return [];
+    if (servedCueId === null && change.kind === 'create' && isRecord(change.cue)) {
+      return [change.cue];
+    }
+    if (
+      servedCueId !== null
+      && change.kind === 'replace'
+      && change.cueId === servedCueId
+      && Array.isArray(change.replacements)
+    ) {
+      return change.replacements.filter(isRecord);
+    }
+    return [];
+  });
+  return drafts.some((draft) => (
+    Array.isArray(draft.acceptedWordIds)
+    && draft.acceptedWordIds.includes(submittedWordId)
+  ));
 }
 
 export function normalizeSessionReflectionResultV5(
