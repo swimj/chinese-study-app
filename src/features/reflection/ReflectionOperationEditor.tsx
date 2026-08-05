@@ -49,6 +49,14 @@ export function ReflectionOperationEditor({
         />
       );
     case 'repair_production_cue':
+      if (operation.version === 2) {
+        return (
+          <div className="reflection-operation-fields">
+            <p>Production cue V2 editing is introduced with its application layer.</p>
+            <pre>{JSON.stringify(operation, null, 2)}</pre>
+          </div>
+        );
+      }
       return (
         <ProductionCueEditor
           operation={operation}

@@ -125,7 +125,7 @@ Existing bad-prompt and `suppress_definition_production` state is not cleared
 by cue application. Its durable intent remains suppression of the legacy
 definition-derived exercise. An active authorized cue may make cue-based
 production available without claiming that the old definition exercise was
-restored; when no active cue exists, the existing suppression still prevents
+re-enabled; when no active cue exists, the existing suppression still prevents
 the fallback from serving. An eventual explicit whole-production suppression
 would be a stronger policy and is not invented here.
 
@@ -191,17 +191,19 @@ regardless of what the learner produced.
   that caused a cue row. All distinguishable.
 - Cue content is immutable. Forward revision creates new cue ids and explicitly
   deactivates the cue ids it replaces. Deactivation without replacement
-  re-exposes the fallback when no active cues remain. Restoration is a new
-  authorized activation effect. No destructive delete in V0.
+  re-exposes the fallback when no active cues remain. A deactivated cue is a
+  terminal logical tombstone; any later cue with the same or similar content is
+  an ordinary new authorized create with a new id and no lifecycle continuity
+  with the deleted cue. No destructive delete in V0.
 - Manual and reflection paths share the same operation registry, validators,
   invocation writer, and apply adapter.
 
 ## 5. `repair_production_cue@1` decision and v2
 
-V1's declared non-effects forbid the replace/activate interpretation needed
+V1's declared non-effects forbid the replace/create interpretation needed
 to close the loop ("does not deactivate the current definition-production
 exercise," "does not apply a cue stack that does not yet exist"). The payload
-has no task/cue identity and no add/replace/activate mode. Reinterpreting an
+has no task/cue identity and no create/replace/deactivate mode. Reinterpreting an
 accepted V1 invocation would violate the "registering an adapter later must
 not reinterpret stored payloads" rule (`SPECS/reflection-proposals-and-handles.md` §4). So V1 stays `unsupported` for
 automatic application.
