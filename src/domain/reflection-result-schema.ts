@@ -97,6 +97,60 @@ const repairCueOperation = objectSchema({
   ]),
 });
 
+const productionCueDraftV2 = objectSchema({
+  cueType: enumSchema([
+    'definition_gloss',
+    'minimal_context',
+    'circumstance',
+  ]),
+  text: stringSchema,
+  acceptedWordIds: {
+    ...arraySchema(stringSchema),
+    minItems: 1,
+  },
+});
+
+const repairCueOperationV2Wire = objectSchema({
+  kind: enumSchema(['repair_production_cue']),
+  wordId: stringSchema,
+  changes: {
+    ...arraySchema({
+      anyOf: [
+        objectSchema({
+          kind: enumSchema(['create']),
+          cue: productionCueDraftV2,
+        }),
+        objectSchema({
+          kind: enumSchema(['replace']),
+          cueId: stringSchema,
+          replacements: {
+            ...arraySchema(productionCueDraftV2),
+            minItems: 1,
+          },
+        }),
+        objectSchema({
+          kind: enumSchema(['deactivate']),
+          cueId: stringSchema,
+        }),
+      ],
+    }),
+    minItems: 1,
+  },
+  sourceAttemptJudgments: arraySchema({
+    anyOf: [
+      objectSchema({
+        kind: enumSchema(['accepted_answer_space_omission']),
+        sourceAttemptId: stringSchema,
+        submittedWordId: stringSchema,
+      }),
+      objectSchema({
+        kind: enumSchema(['misleading_or_overloaded_cue']),
+        sourceAttemptId: stringSchema,
+      }),
+    ],
+  }),
+});
+
 const acceptAlternateOperation = objectSchema({
   kind: enumSchema(['accept_production_alternate']),
   version: enumSchema([1]),
@@ -144,9 +198,55 @@ const itemResultSchema = objectSchema({
   })),
 });
 
+const operationSchemaV5Wire: JsonSchema = {
+  anyOf: [
+    suppressProductionOperation,
+    createContrastClusterOperation,
+    repairCueOperationV2Wire,
+  ],
+};
+
+const proposalSchemaV5Wire = objectSchema({
+  proposalGroupKey: nullableStringSchema,
+  rationale: stringSchema,
+  operation: operationSchemaV5Wire,
+});
+
+const itemResultSchemaV5Wire = objectSchema({
+  itemId: stringSchema,
+  diagnosisTags: arraySchema(enumSchema([
+    'valid_or_near_valid_alternate',
+    'cue_overlap_hides_usage_difference',
+    'production_cue_overloaded',
+    'form_or_sound_interference',
+    'grammar_or_usage_role_interference',
+    'ordinary_retrieval_noise',
+    'persistent_confusion',
+    'insufficient_evidence',
+  ])),
+  observation: stringSchema,
+  learnerExplanation: nullableStringSchema,
+  proposals: arraySchema(proposalSchemaV5Wire),
+  questions: arraySchema(objectSchema({
+    question: stringSchema,
+    reason: stringSchema,
+  })),
+  unhandledNeeds: arraySchema(objectSchema({
+    description: stringSchema,
+    whyRegisteredOperationsDoNotFit: stringSchema,
+  })),
+});
+
 export const sessionReflectionResultSchema: JsonSchema = objectSchema({
   schemaVersion: enumSchema(['session_reflection_result.v4']),
   itemResults: arraySchema(itemResultSchema),
 }, 'One structured post-session reflection result.');
 
 export const SESSION_REFLECTION_RESULT_SCHEMA_NAME = 'session_reflection_result_v4';
+
+export const sessionReflectionResultV5WireSchema: JsonSchema = objectSchema({
+  schemaVersion: enumSchema(['session_reflection_result.v5']),
+  itemResults: arraySchema(itemResultSchemaV5Wire),
+}, 'One structured post-session reflection result using model-authored V2 cue repairs.');
+
+export const SESSION_REFLECTION_RESULT_V5_WIRE_SCHEMA_NAME = 'session_reflection_result_v5';

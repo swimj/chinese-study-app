@@ -7,15 +7,19 @@ import {
   classifyProposalAcceptance,
   isOperationApplicationTransitionAllowed,
   isProposalReviewTransitionAllowed,
+  normalizeSessionReflectionResultV5,
   reflectionOperationWordReferences,
   validateReflectionOperation,
   validateSessionReflectionResult,
+  validateSessionReflectionResultV5,
 } from '../src/domain/reflection.js';
 import type {
   CreateContrastClusterOperationV1,
   ReflectionOperation,
+  RepairProductionCueOperationV2,
   SessionReflectionBundleV1,
   SessionReflectionResultV4,
+  SessionReflectionResultV5Wire,
 } from '../src/domain/reflection.js';
 
 const visibleWordIds = new Set(['target', 'alternate']);
@@ -100,8 +104,31 @@ function contrastOperation(): CreateContrastClusterOperationV1 {
   };
 }
 
+function cueRepairV2(): RepairProductionCueOperationV2 {
+  return {
+    kind: 'repair_production_cue',
+    version: 2,
+    wordId: 'target',
+    taskId: 'production-task:target:default_production',
+    changes: [{
+      kind: 'replace',
+      cueId: 'cue-1',
+      replacements: [{
+        cueType: 'minimal_context',
+        text: 'A bounded context',
+        acceptedWordIds: ['target', 'alternate'],
+      }],
+    }],
+    sourceAttemptJudgments: [{
+      kind: 'accepted_answer_space_omission',
+      sourceAttemptId: 'attempt-1',
+      submittedWordId: 'alternate',
+    }],
+  };
+}
+
 describe('reflection operation registry and validation', () => {
-  test('declares editor and version-specific apply support for every V1 operation', () => {
+  test('declares editor and version-specific apply support for every operation', () => {
     assert.deepEqual(
       REFLECTION_OPERATION_REGISTRY.map(({ kind, version, editorAvailable, applySupport }) => (
         [kind, version, editorAvailable, applySupport]
@@ -110,6 +137,7 @@ describe('reflection operation registry and validation', () => {
         ['suppress_definition_production', 1, true, 'supported'],
         ['create_contrast_cluster', 1, true, 'supported'],
         ['repair_production_cue', 1, true, 'unsupported'],
+        ['repair_production_cue', 2, true, 'unsupported'],
         ['accept_production_alternate', 1, true, 'unsupported'],
       ],
     );
@@ -126,6 +154,7 @@ describe('reflection operation registry and validation', () => {
         proposedCues: [{ cueType: 'minimal_context', text: 'A bounded context' }],
         repairIntent: 'add_contextual_triangulation',
       },
+      cueRepairV2(),
       {
         kind: 'accept_production_alternate',
         version: 1,
@@ -241,6 +270,47 @@ describe('reflection operation registry and validation', () => {
       /must be distinct/,
     );
   });
+
+  test('validates immutable V2 cue changes, answer spaces, and judgments', () => {
+    const operation = cueRepairV2();
+    assert.deepEqual(
+      validateReflectionOperation(operation, { allowedWordIds: visibleWordIds }),
+      [],
+    );
+    assert.deepEqual(
+      reflectionOperationWordReferences(operation),
+      ['target', 'target', 'alternate', 'alternate'],
+    );
+
+    const invalid = structuredClone(operation);
+    invalid.changes.push({ kind: 'deactivate', cueId: 'cue-1' });
+    const replacement = invalid.changes[0];
+    assert.equal(replacement?.kind, 'replace');
+    if (replacement?.kind === 'replace') {
+      replacement.replacements[0]!.acceptedWordIds = ['alternate', 'alternate'];
+      replacement.replacements.push({
+        cueType: 'circumstance',
+        text: ' ',
+        acceptedWordIds: ['target'],
+      });
+    }
+    invalid.sourceAttemptJudgments.push(structuredClone(invalid.sourceAttemptJudgments[0]!));
+    const errors = validateReflectionOperation(invalid, {
+      allowedWordIds: visibleWordIds,
+    }).join('\n');
+    assert.match(errors, /must include anchor word target/);
+    assert.match(errors, /duplicate word id/);
+    assert.match(errors, /text: must not be empty/);
+    assert.match(errors, /cue id may be referenced by only one change/);
+    assert.match(errors, /duplicate judgment/);
+
+    const reactivation = structuredClone(operation) as unknown as Record<string, unknown>;
+    reactivation.changes = [{ kind: 'activate', cueId: 'cue-1' }];
+    assert.match(
+      validateReflectionOperation(reactivation, { allowedWordIds: visibleWordIds }).join('\n'),
+      /kind: value is not in the allowed enum/,
+    );
+  });
 });
 
 describe('reflection result validation', () => {
@@ -296,6 +366,26 @@ describe('reflection result validation', () => {
     assert.match(errors, /rationale: must not be empty/);
     assert.match(errors, /questions\[0\]\.question: must not be empty/);
     assert.match(errors, /unhandledNeeds\[0\]\.description: must not be empty/);
+  });
+
+  test('stamps fixed and deterministic V2 metadata at the provider boundary', () => {
+    const operation = cueRepairV2();
+    const { version: _version, taskId: _taskId, ...wireOperation } = operation;
+    const wireResult: SessionReflectionResultV5Wire = {
+      schemaVersion: 'session_reflection_result.v5',
+      itemResults: [{
+        ...result(contrastOperation()).itemResults[0]!,
+        proposals: [{
+          proposalGroupKey: null,
+          rationale: 'Replace the ambiguous cue without rewriting evidence.',
+          operation: wireOperation,
+        }],
+      }],
+    };
+    const normalized = normalizeSessionReflectionResultV5(wireResult);
+    assert.deepEqual(normalized.itemResults[0]!.proposals[0]!.operation, operation);
+    assert.deepEqual(validateSessionReflectionResultV5(normalized, bundle()), []);
+    assert.deepEqual(wireResult.itemResults[0]!.proposals[0]!.operation, wireOperation);
   });
 });
 

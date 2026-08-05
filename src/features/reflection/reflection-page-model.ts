@@ -162,6 +162,33 @@ export function cloneReflectionOperation(operation: ReflectionOperation): Reflec
         prompts: operation.prompts.map((prompt) => ({ ...prompt })),
       };
     case 'repair_production_cue':
+      if (operation.version === 2) {
+        return {
+          ...operation,
+          changes: operation.changes.map((change) => {
+            switch (change.kind) {
+              case 'create':
+                return {
+                  ...change,
+                  cue: { ...change.cue, acceptedWordIds: [...change.cue.acceptedWordIds] },
+                };
+              case 'replace':
+                return {
+                  ...change,
+                  replacements: change.replacements.map((cue) => ({
+                    ...cue,
+                    acceptedWordIds: [...cue.acceptedWordIds],
+                  })),
+                };
+              case 'deactivate':
+                return { ...change };
+            }
+          }),
+          sourceAttemptJudgments: operation.sourceAttemptJudgments.map((judgment) => ({
+            ...judgment,
+          })),
+        };
+      }
       return {
         ...operation,
         proposedCues: operation.proposedCues.map((cue) => ({ ...cue })),
@@ -308,23 +335,20 @@ export function reduceReflectionOperationDraft(
         }),
       );
     case 'set_cue_word':
-      return editOperation(
+      return editRepairCueV1(
         operation,
-        'repair_production_cue',
         action.type,
         (current) => ({ ...current, wordId: action.wordId }),
       );
     case 'set_repair_intent':
-      return editOperation(
+      return editRepairCueV1(
         operation,
-        'repair_production_cue',
         action.type,
         (current) => ({ ...current, repairIntent: action.repairIntent }),
       );
     case 'add_replacement_cue':
-      return editOperation(
+      return editRepairCueV1(
         operation,
-        'repair_production_cue',
         action.type,
         (current) => ({
           ...current,
@@ -335,9 +359,8 @@ export function reduceReflectionOperationDraft(
         }),
       );
     case 'remove_replacement_cue':
-      return editOperation(
+      return editRepairCueV1(
         operation,
-        'repair_production_cue',
         action.type,
         (current) => ({
           ...current,
@@ -345,9 +368,8 @@ export function reduceReflectionOperationDraft(
         }),
       );
     case 'update_replacement_cue':
-      return editOperation(
+      return editRepairCueV1(
         operation,
-        'repair_production_cue',
         action.type,
         (current) => ({
           ...current,
@@ -422,6 +444,19 @@ function editOperation<K extends ReflectionOperation['kind']>(
     );
   }
   return update(operation as Extract<ReflectionOperation, { kind: K }>);
+}
+
+function editRepairCueV1(
+  operation: ReflectionOperation,
+  actionType: string,
+  update: (current: RepairProductionCueOperationV1) => RepairProductionCueOperationV1,
+): RepairProductionCueOperationV1 {
+  if (operation.kind !== 'repair_production_cue' || operation.version !== 1) {
+    throw new Error(
+      `Invariant violated: ${actionType} cannot edit ${operation.kind}@${operation.version}.`,
+    );
+  }
+  return update(operation);
 }
 
 function updateAt<T>(

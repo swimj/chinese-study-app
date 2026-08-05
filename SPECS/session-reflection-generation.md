@@ -89,6 +89,14 @@ initial flow. Each item preserves at least:
 - sufficient action and accepted-attempt identity for backend validation; and
 - the versioned word/content context selected by the backend.
 
+For the production-cue V2 flow, the provider receives the production-task
+identity and one singular immutable snapshot of the cue actually served. It
+does not receive the task's other active or inactive cues. A fallback snapshot
+has a null durable cue id; durable cue snapshots retain their exact cue id,
+type, text, and accepted-word set. This keeps model context and proposal
+authority causal to the attempt. Duplicate detection against other task content
+belongs at proposal review or application time, not in provider evidence.
+
 Attempt references prove that the captured mistake belongs to the finalized,
 durably accepted action batch. Workflow-only reinforcement attempts need not be
 copied into the model-facing bundle.

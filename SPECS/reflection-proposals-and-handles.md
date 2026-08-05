@@ -398,52 +398,109 @@ Deletion, disassociation, or another repair form should remain an
 ### `repair_production_cue` version 2
 
 The V2 contract applies learner-authorized changes to the accepted V0
-production-task and cue model. Its conceptual top-level shape is:
+production-task and cue model. Its exact semantic shape is:
 
 ```ts
+type ProductionCueTypeV0 =
+  | 'definition_gloss'
+  | 'minimal_context'
+  | 'circumstance';
+
+type ProductionCueDraftV2 = {
+  cueType: ProductionCueTypeV0;
+  text: string;
+  acceptedWordIds: string[];
+};
+
+type ProductionCueChangeV2 =
+  | { kind: 'create'; cue: ProductionCueDraftV2 }
+  | {
+      kind: 'replace';
+      cueId: string;
+      replacements: ProductionCueDraftV2[];
+    }
+  | { kind: 'deactivate'; cueId: string };
+
+type CueEvidenceJudgmentV2 =
+  | {
+      kind: 'accepted_answer_space_omission';
+      sourceAttemptId: string;
+      submittedWordId: string;
+    }
+  | {
+      kind: 'misleading_or_overloaded_cue';
+      sourceAttemptId: string;
+    };
+
 type RepairProductionCueOperationV2 = {
   kind: 'repair_production_cue';
   version: 2;
   wordId: string;
   taskId: string;
   changes: ProductionCueChangeV2[];
-  sourceAttemptJudgments?: CueEvidenceJudgmentV2[];
+  sourceAttemptJudgments: CueEvidenceJudgmentV2[];
 };
+
+type ProductionCueEffectRef =
+  | { type: 'production_cue'; id: string }
+  | { type: 'production_cue_lifecycle_event'; id: string }
+  | { type: 'production_cue_evidence_judgment'; id: string };
 ```
 
-The exact nested wire unions for `ProductionCueChangeV2` and
-`CueEvidenceJudgmentV2`, including their effect-reference representation, are
-an explicit human-gated implementation-orientation decision. They must be
-frozen before substantial implementation rather than inferred silently from
-this conceptual TypeScript. The behavioral contract is settled:
+The strict model-facing wire form omits the fixed `version` field and the V0
+default-production `taskId` from `RepairProductionCueOperationV2`. After strict
+schema validation, the provider boundary stamps `version: 2` and derives the
+task id from the model-authored `wordId`; it does not alter model-authored cue
+semantics.
+Both arrays remain required on the wire, including when
+`sourceAttemptJudgments` is empty.
+
+The behavioral contract is:
 
 - `taskId` identifies the word's `default_production` task in V0;
 - one invocation may explicitly create, replace (including one-to-many split),
-  activate, or deactivate cue identities atomically;
+  or deactivate cue identities atomically;
 - a cue draft uses one V0 cue type (`definition_gloss`, `minimal_context`, or
   `circumstance`), non-empty stimulus text, and an accepted set of known visible
-  word ids that includes `wordId`; when the answer space is omitted, it defaults
-  to the singleton task word; register and domain details are expressed in the
-  cue text rather than as a separate type;
+  word ids that includes `wordId`; the answer space is always explicit and may
+  not contain duplicates; register and domain details are expressed in the cue
+  text rather than as a separate type;
 - new or edited cue content always receives a new cue id; replacement
   deactivates only the named cue, and unrelated cues retain their identity and
   activation state;
-- an optional source-attempt judgment appends a later learner-authorized
+- deactivation is terminal logical deletion: the immutable cue and its
+  lifecycle remain durable historical facts, but the cue cannot be reactivated;
+  a later cue with the same or similar content is an ordinary new create with a
+  new attributable cue id and no lifecycle continuity with the deleted cue;
+- a source-attempt judgment, when the required array is non-empty, appends a later learner-authorized
   assessment to cue evidence; it never edits the source attempt; and
 - deactivating all durable cues re-exposes the meaning-derived fallback subject
   to its existing production-suppression state.
 
-Validation resolves the word, task, referenced cues, accepted words, and any
-source attempt against current state. Every referenced cue must belong to the
-named task. A source-attempt judgment must match persisted evidence whose cue
-snapshot and submitted response support the reviewed change.
+Validation requires at least one change, allows a cue id in at most one change,
+requires at least one replacement for `replace`, and resolves the word, task,
+referenced cues, accepted words, and any source attempt against current state.
+Every referenced cue must belong to the named task. An accepted-answer-space
+judgment must identify the durable submitted word and admit it in the new answer
+space. For a durable served cue, that judgment must replace the exact cue; for
+the meaning-derived fallback, it may create the first durable cue. A misleading
+or overloaded judgment must likewise repair the exact served cue or create a
+durable cue for fallback evidence.
 
-Application records all created and lifecycle-affected cue ids, and any later
-cue-evidence judgment, as attributable effects of the invocation. Reapplying an
+Application activates every created or replacement cue immediately and records
+created cues, lifecycle events, and later cue-evidence judgments through the
+three exact effect-reference variants above. Reapplying an
 invocation whose exact postcondition is already present produces
 `already_satisfied`. Applying V2 never mutates lexical meanings, changes
 meaning visibility, rewrites historical attempts, retroactively changes word
 scheduling state, or destructively deletes cues.
+
+The provider evidence for a V2 repair contains only the production-task
+identity and the singular cue snapshot served by the source attempt. Other
+active or inactive task cues are not supplied to generation and do not expand
+the model's allowed cue or accepted-word references. A fallback may support
+creation; a durable served cue may support replacement or terminal
+deactivation of that exact cue.
 
 New reflection generation emits V2 directly. V1 remains readable and
 unsupported; any later V1-to-V2 migration uses a newly authorized V2 invocation
@@ -813,12 +870,14 @@ There is no generic reversal state or history rewrite. A later change is a new
 forward operation against current state. The original proposal, authorization,
 application result, and effects remain historical facts.
 
-Any handle-specific restore, detach, replace, or delete behavior requires its
+Any handle-specific follow-up mutation requires its
 own registered operation and validation. Until shared-versus-personal content
 ownership is settled, reflection-created content and customization must remain
 logically distinguishable from base content and attributable to its authorized
 invocation. User-visible removal should normally be reversible unless true
-deletion is explicitly intended.
+deletion is explicitly intended. V2 production-cue deactivation is an explicit
+logical deletion: historical facts remain, and any later cue creation is
+independent of the deleted cue.
 
 Creating a new private/local contrast cluster is compatible with that boundary.
 Silently overwriting base lexical meanings or shared content is not.
@@ -830,7 +889,7 @@ The following are not defined operations yet:
 - extend or merge an existing contrast cluster;
 - revise or delete existing contrast prompts;
 - destructively delete a production cue or re-anchor it to another task;
-- restore suppressed definition production;
+- re-enable suppressed definition production;
 - change general word or skill priority;
 - assign maintenance or protection tiers;
 - force next-session focus;

@@ -225,9 +225,11 @@ The durable V0 production-cue model separates:
   accepted visible word ids that includes the task word as its V0 scheduling
   anchor; a `definition_gloss` may narrow to an anchored sense, while register
   and domain details belong in the cue text rather than a separate cue type;
-- cue lifecycle as explicit create, replace, activate, and deactivate effects;
-  editing content writes a new cue id, replacement deactivates only named cues,
-  and unrelated cues retain their identity;
+- cue lifecycle as explicit create, replace, and deactivate effects; editing
+  content writes a new cue id, replacement deactivates only named cues, and
+  unrelated cues retain their identity; deactivation is terminal logical
+  deletion, and any later cue with similar content is an ordinary new create
+  with no lifecycle continuity with the deleted cue;
 - multiple simultaneously active cues, with V0 randomly selecting one at serve
   time independently of word admission or skill scheduling;
 - the current meaning-derived gloss prompt as base fallback content rather than
@@ -264,7 +266,7 @@ and must not be promoted into cue semantics or a broader scheduling redesign.
 Legacy bad-prompt and definition-production suppression state continues to
 govern the meaning-derived fallback and is not cleared by cue application. A
 truthfully applied authorized cue may serve without claiming that the legacy
-definition exercise was restored. Meaning rows must not be reinterpreted as cue
+definition exercise was re-enabled. Meaning rows must not be reinterpreted as cue
 entities.
 
 ### Contextual Selection

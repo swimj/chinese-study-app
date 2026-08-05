@@ -70,8 +70,11 @@ work has been dispatched.
   scheduled object and does not make word and task permanent synonyms.
 - A task may own multiple simultaneously active immutable cues. V0 randomly
   selects one after the word is admitted. Cue content has explicit create,
-  replace, activate, and deactivate lifecycle effects; revision creates a new
-  cue id and leaves unrelated cues unchanged.
+  replace, and deactivate lifecycle effects; deactivation is terminal logical
+  deletion, while immutable cue rows and lifecycle facts remain retained for
+  provenance. Revision creates a new cue id and leaves unrelated cues unchanged.
+  Any later cue with the same or similar content is an ordinary new create with
+  no lifecycle continuity with the deleted cue.
 - V0 cue types are `definition_gloss`, `minimal_context`, and `circumstance`.
   A `definition_gloss` may narrow to an anchored sense; register and domain
   details belong in cue text rather than a separate type. Each cue has an
@@ -94,6 +97,9 @@ work has been dispatched.
 - Provider credentials and calls remain on the backend. Model output is
   untrusted input and must pass strict local validation before it can become a
   proposal or authorized operation.
+- Production-mistake reflection supplies only the exact served cue and its task
+  identity to the provider. Other active or inactive cues are not causal
+  evidence for that attempt and must not broaden provider proposal authority.
 - The model retains proposal-only authority. Cue content originating in
   reflection becomes selectable study content only through explicit
   authorization, a supported adapter, and a truthful applied effect.
@@ -140,7 +146,9 @@ work has been dispatched.
   customize learner or content state must preserve the distinguishability of
   base state, user-authorized change, and applied effect. User-visible removal
   or replacement should remain reversible unless true deletion is explicitly
-  intended. See the
+  intended. Production-cue deactivation is such a logical deletion in this
+  wave: the facts remain retained, and any later cue creation is independent of
+  the deleted cue rather than a reactivation of its identity. See the
   [`hosted-beta tenancy table map`](PLANS/hosted-beta-tenancy-table-map.md#near-term-deferral-constraint-preserve-the-layers)
   for rationale and boundaries.
 - Existing manual management paths must not conflict with the handle lifecycle
@@ -182,7 +190,7 @@ work has been dispatched.
 
 The frontier advances when new reflection emits a faithful V2 cue repair; the
 learner can review and authorize it; the adapter atomically creates, replaces,
-activates, or deactivates immutable learner-owned cues; and a later production
+or deactivates immutable learner-owned cues; and a later production
 action serves one active cue or the correct fallback. Single- and multi-answer
 cues must use the same answer-checking rule against the served snapshot, and
 the durable attempt must preserve the exact task, cue, answer set, submission,
