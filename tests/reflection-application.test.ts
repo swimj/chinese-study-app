@@ -43,8 +43,19 @@ describe('reflection application adapters', { concurrency: false }, () => {
   beforeEach(() => {
     sqlite.exec(`
       DROP TRIGGER IF EXISTS fail_reflection_prompt_insert;
+      DROP TRIGGER IF EXISTS fail_production_cue_lifecycle_insert;
+      DROP TRIGGER IF EXISTS production_cues_no_delete;
+      DROP TRIGGER IF EXISTS production_cue_accepted_words_no_delete;
+      DROP TRIGGER IF EXISTS production_cue_lifecycle_events_no_delete;
+      DROP TRIGGER IF EXISTS production_cue_evidence_records_no_delete;
       PRAGMA defer_foreign_keys = ON;
       BEGIN;
+      DELETE FROM production_cue_evidence_projection;
+      DELETE FROM production_cue_evidence_records;
+      DELETE FROM production_cue_activation_state;
+      DELETE FROM production_cue_lifecycle_events;
+      DELETE FROM production_cues;
+      DELETE FROM production_tasks;
       DELETE FROM reflection_proposal_reviews;
       DELETE FROM reflection_operation_invocations;
       DELETE FROM reflection_generation_runs;
@@ -59,6 +70,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
       DELETE FROM words;
       COMMIT;
     `);
+    dbModule.ensureProductionCueSchema();
     insertWord('target', '目标');
     insertWord('alternate', '替代');
   });
@@ -66,6 +78,74 @@ describe('reflection application adapters', { concurrency: false }, () => {
   after(() => {
     sqlite.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  test('backfills default production tasks once and leaves future words to the insert trigger', () => {
+    sqlite.exec(`
+      DELETE FROM production_tasks;
+      DELETE FROM app_metadata WHERE key = 'production_tasks_backfill_v0';
+    `);
+
+    dbModule.ensureProductionCueSchema();
+
+    assert.deepEqual(
+      sqlite.prepare(`
+        SELECT task_id, word_id, task_kind, created_at
+        FROM production_tasks
+        ORDER BY word_id
+      `).all().map((row) => ({ ...row })),
+      [
+        {
+          task_id: 'production-task:alternate:default_production',
+          word_id: 'alternate',
+          task_kind: 'default_production',
+          created_at: createdAt,
+        },
+        {
+          task_id: 'production-task:target:default_production',
+          word_id: 'target',
+          task_kind: 'default_production',
+          created_at: createdAt,
+        },
+      ],
+    );
+    const marker = sqlite.prepare(`
+      SELECT value, updated_at
+      FROM app_metadata
+      WHERE key = 'production_tasks_backfill_v0'
+    `).get() as { value: string; updated_at: string };
+    assert.equal(marker.value, 'complete');
+    assert.equal(new Date(marker.updated_at).toISOString(), marker.updated_at);
+
+    sqlite.prepare(`
+      DELETE FROM app_metadata
+      WHERE key = 'production_tasks_backfill_v0'
+    `).run();
+    dbModule.ensureProductionCueSchema();
+    assert.equal(countRows('production_tasks'), 2);
+
+    sqlite.prepare(`
+      UPDATE app_metadata
+      SET updated_at = ?
+      WHERE key = 'production_tasks_backfill_v0'
+    `).run(appliedAt);
+    dbModule.ensureProductionCueSchema();
+    assert.equal(
+      (sqlite.prepare(`
+        SELECT updated_at
+        FROM app_metadata
+        WHERE key = 'production_tasks_backfill_v0'
+      `).get() as { updated_at: string }).updated_at,
+      appliedAt,
+    );
+
+    insertWord('future', '未来');
+    assert.deepEqual(dbModule.getDefaultProductionTask('future'), {
+      taskId: 'production-task:future:default_production',
+      wordId: 'future',
+      kind: 'default_production',
+      createdAt,
+    });
   });
 
   test('applies production suppression once and returns its recorded status on later calls', () => {
@@ -201,6 +281,442 @@ describe('reflection application adapters', { concurrency: false }, () => {
     }
     assert.deepEqual(dbModule.getContrastCandidateIntake(), []);
     assert.deepEqual(dbModule.applyReflectionInvocation('contrast-new', createdAt), result);
+  });
+
+  test('atomically creates immutable V2 production cues initially active', () => {
+    const operation = cueRepairOperation({
+      changes: [{
+        kind: 'create',
+        cue: {
+          cueType: 'minimal_context',
+          text: 'What you know about a fact',
+          acceptedWordIds: ['target'],
+        },
+      }],
+    });
+    insertInvocation('cue-create', operation);
+
+    const beforeSkillCount = countRows('word_skill_state');
+    const beforeAdmissionCount = countRows('word_study_admission_state');
+    const result = dbModule.applyReflectionInvocation('cue-create', appliedAt);
+    assert.equal(result.application.state.kind, 'applied');
+    const refs = result.application.state.kind === 'applied'
+      ? result.application.state.effectRefs
+      : [];
+    assert.deepEqual(refs.map((ref) => ref.type), [
+      'production_cue',
+      'production_cue_lifecycle_event',
+    ]);
+    const cue = dbModule.getProductionCue(refs[0]!.id);
+    assert.deepEqual(cue, {
+      cueId: refs[0]!.id,
+      taskId: 'production-task:target:default_production',
+      cueType: 'minimal_context',
+      text: 'What you know about a fact',
+      acceptedWordIds: ['target'],
+      createdAt: appliedAt,
+      attribution: { origin: 'reflection', invocationId: 'cue-create' },
+      active: true,
+    });
+    assert.equal(countRows('word_skill_state'), beforeSkillCount);
+    assert.equal(countRows('word_study_admission_state'), beforeAdmissionCount);
+    assert.deepEqual(dbModule.applyReflectionInvocation('cue-create', createdAt), result);
+  });
+
+  test('replaces only the named cue and preserves unrelated active cue identities', () => {
+    insertInvocation('cue-seed', cueRepairOperation({
+      changes: [
+        {
+          kind: 'create',
+          cue: {
+            cueType: 'definition_gloss',
+            text: 'target',
+            acceptedWordIds: ['target'],
+          },
+        },
+        {
+          kind: 'create',
+          cue: {
+            cueType: 'circumstance',
+            text: 'When identifying an objective',
+            acceptedWordIds: ['target'],
+          },
+        },
+      ],
+    }));
+    const seeded = dbModule.applyReflectionInvocation('cue-seed', appliedAt);
+    assert.equal(seeded.application.state.kind, 'applied');
+    const seededCueIds = seeded.application.state.kind === 'applied'
+      ? seeded.application.state.effectRefs
+        .filter((ref) => ref.type === 'production_cue')
+        .map((ref) => ref.id)
+      : [];
+    assert.equal(seededCueIds.length, 2);
+
+    insertInvocation('cue-replace', cueRepairOperation({
+      changes: [{
+        kind: 'replace',
+        cueId: seededCueIds[0]!,
+        replacements: [{
+          cueType: 'definition_gloss',
+          text: 'target or substitute',
+          acceptedWordIds: ['target', 'alternate'],
+        }],
+      }],
+    }));
+    const replaced = dbModule.applyReflectionInvocation(
+      'cue-replace',
+      '2026-07-29T12:02:00.000Z',
+    );
+    assert.equal(replaced.application.state.kind, 'applied');
+    assert.equal(dbModule.getProductionCue(seededCueIds[0]!)?.active, false);
+    assert.equal(dbModule.getProductionCue(seededCueIds[1]!)?.active, true);
+    const activeCues = dbModule.getActiveProductionCuesForWord('target');
+    assert.equal(activeCues.length, 2);
+    assert.ok(activeCues.some((cue) => cue.cueId === seededCueIds[1]));
+    assert.ok(activeCues.some((cue) => (
+      cue.text === 'target or substitute'
+      && cue.acceptedWordIds.join(',') === 'target,alternate'
+    )));
+  });
+
+  test('records terminal deactivation satisfaction and treats later creation independently', () => {
+    insertInvocation('cue-seed-lifecycle', cueRepairOperation({
+      changes: [{
+        kind: 'create',
+        cue: {
+          cueType: 'definition_gloss',
+          text: 'target',
+          acceptedWordIds: ['target'],
+        },
+      }],
+    }));
+    const seeded = dbModule.applyReflectionInvocation('cue-seed-lifecycle', appliedAt);
+    assert.equal(seeded.application.state.kind, 'applied');
+    const cueId = seeded.application.state.kind === 'applied'
+      ? seeded.application.state.effectRefs.find((ref) => ref.type === 'production_cue')!.id
+      : '';
+
+    insertInvocation('cue-deactivate', cueRepairOperation({
+      changes: [{ kind: 'deactivate', cueId }],
+    }));
+    const deactivated = dbModule.applyReflectionInvocation('cue-deactivate', appliedAt);
+    assert.equal(deactivated.application.state.kind, 'applied');
+    assert.equal(dbModule.getProductionCue(cueId)?.active, false);
+
+    insertInvocation('cue-already-deactivated', cueRepairOperation({
+      changes: [{ kind: 'deactivate', cueId }],
+    }));
+    const already = dbModule.applyReflectionInvocation('cue-already-deactivated', appliedAt);
+    assert.equal(already.application.state.kind, 'already_satisfied');
+    assert.deepEqual(
+      already.application.state.kind === 'already_satisfied'
+        ? already.application.state.satisfyingEffectRefs.map((ref) => ref.type)
+        : [],
+      ['production_cue_lifecycle_event'],
+    );
+
+    insertInvocation('cue-independent-create', cueRepairOperation({
+      changes: [{
+        kind: 'create',
+        cue: {
+          cueType: 'definition_gloss',
+          text: 'target',
+          acceptedWordIds: ['target'],
+        },
+      }],
+    }));
+    const independentCreate = dbModule.applyReflectionInvocation('cue-independent-create', appliedAt);
+    assert.equal(independentCreate.application.state.kind, 'applied');
+    const independentlyCreatedCueId = independentCreate.application.state.kind === 'applied'
+      ? independentCreate.application.state.effectRefs.find((ref) => ref.type === 'production_cue')!.id
+      : '';
+    assert.notEqual(independentlyCreatedCueId, cueId);
+    assert.equal(dbModule.getProductionCue(cueId)?.active, false);
+    assert.equal(dbModule.getProductionCue(independentlyCreatedCueId)?.active, true);
+
+    insertInvocation('cue-wrong-task', {
+      ...cueRepairOperation({ changes: [{ kind: 'deactivate', cueId: independentlyCreatedCueId }] }),
+      taskId: 'production-task:alternate:default_production',
+    });
+    const stale = dbModule.applyReflectionInvocation('cue-wrong-task', appliedAt);
+    assert.equal(stale.application.state.kind, 'stale');
+    assert.equal(dbModule.getProductionCue(independentlyCreatedCueId)?.active, true);
+  });
+
+  test('rolls back cue content and records failed application when lifecycle persistence fails', () => {
+    sqlite.exec(`
+      CREATE TRIGGER fail_production_cue_lifecycle_insert
+      BEFORE INSERT ON production_cue_lifecycle_events
+      BEGIN
+        SELECT RAISE(ABORT, 'forced cue lifecycle failure');
+      END;
+    `);
+    insertInvocation('cue-failure', cueRepairOperation({
+      changes: [{
+        kind: 'create',
+        cue: {
+          cueType: 'definition_gloss',
+          text: 'target',
+          acceptedWordIds: ['target'],
+        },
+      }],
+    }));
+
+    const failed = dbModule.applyReflectionInvocation('cue-failure', appliedAt);
+    assert.equal(failed.application.state.kind, 'failed');
+    assert.match(
+      failed.application.state.kind === 'failed' ? failed.application.state.error : '',
+      /forced cue lifecycle failure/,
+    );
+    assert.equal(countRows('production_cues'), 0);
+    assert.equal(countRows('production_cue_lifecycle_events'), 0);
+  });
+
+  test('appends authorized cue judgments and projects compensation without scheduling effects', () => {
+    insertInvocation('cue-evidence-seed', cueRepairOperation({
+      changes: [{
+        kind: 'create',
+        cue: {
+          cueType: 'definition_gloss',
+          text: 'target',
+          acceptedWordIds: ['target'],
+        },
+      }],
+    }));
+    const seeded = dbModule.applyReflectionInvocation('cue-evidence-seed', appliedAt);
+    assert.equal(seeded.application.state.kind, 'applied');
+    const cueId = seeded.application.state.kind === 'applied'
+      ? seeded.application.state.effectRefs.find((ref) => ref.type === 'production_cue')!.id
+      : '';
+    insertStudyAttempt('attempt-omission', { cueId });
+    dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
+      evidenceId: 'attempt-evidence-omission',
+      occurredAt: '2026-07-29T12:01:30.000Z',
+      taskId: 'production-task:target:default_production',
+      cueId,
+      sourceAttemptId: 'attempt-omission',
+      attemptResult: 'rejected',
+      submittedWordId: 'alternate',
+    });
+
+    const beforeSkillCount = countRows('word_skill_state');
+    const beforeAdmissionCount = countRows('word_study_admission_state');
+    insertInvocation('cue-evidence-repair', {
+      ...cueRepairOperation({
+        changes: [{
+          kind: 'replace',
+          cueId,
+          replacements: [{
+            cueType: 'definition_gloss',
+            text: 'target',
+            acceptedWordIds: ['target', 'alternate'],
+          }],
+        }],
+      }),
+      sourceAttemptJudgments: [{
+        kind: 'accepted_answer_space_omission',
+        sourceAttemptId: 'attempt-omission',
+        submittedWordId: 'alternate',
+      }],
+    });
+    const repaired = dbModule.applyReflectionInvocation(
+      'cue-evidence-repair',
+      '2026-07-29T12:02:00.000Z',
+    );
+    assert.equal(repaired.application.state.kind, 'applied');
+    const judgmentId = repaired.application.state.kind === 'applied'
+      ? repaired.application.state.effectRefs.find(
+        (ref) => ref.type === 'production_cue_evidence_judgment',
+      )!.id
+      : '';
+
+    dbModule.projectProductionCueEvidence('2026-07-29T12:03:00.000Z');
+    assert.deepEqual(dbModule.getProductionCueEvidenceProjection(cueId), {
+      cueId,
+      attemptCount: 1,
+      acceptedAnchorCount: 0,
+      acceptedNonAnchorCount: 0,
+      rejectedCount: 1,
+      activeJudgmentCount: 1,
+      updatedAt: '2026-07-29T12:03:00.000Z',
+    });
+
+    dbModule.appendProductionCueEvidenceCompensationWithoutTransaction({
+      evidenceId: 'judgment-compensation',
+      occurredAt: '2026-07-29T12:04:00.000Z',
+      sourceJudgmentEvidenceId: judgmentId,
+      reason: 'Learner later withdrew this interpretation.',
+    });
+    dbModule.projectProductionCueEvidence('2026-07-29T12:05:00.000Z');
+    assert.equal(
+      dbModule.getProductionCueEvidenceProjection(cueId)?.activeJudgmentCount,
+      0,
+    );
+    assert.equal(countRows('word_skill_state'), beforeSkillCount);
+    assert.equal(countRows('word_study_admission_state'), beforeAdmissionCount);
+  });
+
+  test('requires an accepted-answer judgment to replace the exact served cue', () => {
+    insertInvocation('cue-exact-repair-seed', cueRepairOperation({
+      changes: [{
+        kind: 'create',
+        cue: {
+          cueType: 'definition_gloss',
+          text: 'target',
+          acceptedWordIds: ['target'],
+        },
+      }],
+    }));
+    const seeded = dbModule.applyReflectionInvocation('cue-exact-repair-seed', appliedAt);
+    assert.equal(seeded.application.state.kind, 'applied');
+    const cueId = seeded.application.state.kind === 'applied'
+      ? seeded.application.state.effectRefs.find((ref) => ref.type === 'production_cue')!.id
+      : '';
+    insertStudyAttempt('attempt-exact-repair', { cueId });
+    dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
+      evidenceId: 'attempt-evidence-exact-repair',
+      occurredAt: appliedAt,
+      taskId: 'production-task:target:default_production',
+      cueId,
+      sourceAttemptId: 'attempt-exact-repair',
+      attemptResult: 'rejected',
+      submittedWordId: 'alternate',
+    });
+    insertInvocation('cue-wrong-repair', {
+      ...cueRepairOperation({
+        changes: [{
+          kind: 'create',
+          cue: {
+            cueType: 'minimal_context',
+            text: 'An unrelated new cue',
+            acceptedWordIds: ['target', 'alternate'],
+          },
+        }],
+      }),
+      sourceAttemptJudgments: [{
+        kind: 'accepted_answer_space_omission',
+        sourceAttemptId: 'attempt-exact-repair',
+        submittedWordId: 'alternate',
+      }],
+    });
+
+    const result = dbModule.applyReflectionInvocation('cue-wrong-repair', appliedAt);
+    assert.equal(result.application.state.kind, 'stale');
+    assert.equal(dbModule.getProductionCue(cueId)?.active, true);
+    assert.equal(
+      sqlite.prepare(`
+        SELECT COUNT(*) AS count
+        FROM production_cue_evidence_records
+        WHERE record_kind = 'judgment'
+      `).get().count,
+      0,
+    );
+  });
+
+  test('rejects cue evidence whose source attempt snapshot identifies another cue', () => {
+    insertInvocation('cue-snapshot-seed', cueRepairOperation({
+      changes: [{
+        kind: 'create',
+        cue: {
+          cueType: 'definition_gloss',
+          text: 'target',
+          acceptedWordIds: ['target'],
+        },
+      }],
+    }));
+    const seeded = dbModule.applyReflectionInvocation('cue-snapshot-seed', appliedAt);
+    assert.equal(seeded.application.state.kind, 'applied');
+    const cueId = seeded.application.state.kind === 'applied'
+      ? seeded.application.state.effectRefs.find((ref) => ref.type === 'production_cue')!.id
+      : '';
+    insertStudyAttempt('attempt-wrong-snapshot', {
+      cueId,
+      contentCueId: 'another-cue',
+    });
+
+    assert.throws(
+      () => dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
+        occurredAt: appliedAt,
+        taskId: 'production-task:target:default_production',
+        cueId,
+        sourceAttemptId: 'attempt-wrong-snapshot',
+        attemptResult: 'rejected',
+        submittedWordId: 'alternate',
+      }),
+      /does not identify production cue/,
+    );
+    assert.equal(countRows('production_cue_evidence_records'), 0);
+  });
+
+  test('marks fallback cue evidence projected without inventing cue shadow state', () => {
+    insertStudyAttempt('attempt-fallback', { cueId: null });
+    dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
+      evidenceId: 'fallback-attempt-evidence',
+      occurredAt: appliedAt,
+      taskId: 'production-task:target:default_production',
+      cueId: null,
+      sourceAttemptId: 'attempt-fallback',
+      attemptResult: 'rejected',
+      submittedWordId: 'alternate',
+    });
+
+    dbModule.projectProductionCueEvidence('2026-07-29T12:03:00.000Z');
+
+    assert.equal(
+      sqlite.prepare(`
+        SELECT projected_at
+        FROM production_cue_evidence_records
+        WHERE evidence_id = 'fallback-attempt-evidence'
+      `).get().projected_at,
+      '2026-07-29T12:03:00.000Z',
+    );
+    assert.equal(countRows('production_cue_evidence_projection'), 0);
+  });
+
+  test('prevents destructive deletion of immutable cue facts', () => {
+    insertInvocation('cue-delete-seed', cueRepairOperation({
+      changes: [{
+        kind: 'create',
+        cue: {
+          cueType: 'definition_gloss',
+          text: 'target',
+          acceptedWordIds: ['target'],
+        },
+      }],
+    }));
+    const seeded = dbModule.applyReflectionInvocation('cue-delete-seed', appliedAt);
+    assert.equal(seeded.application.state.kind, 'applied');
+    const cueId = seeded.application.state.kind === 'applied'
+      ? seeded.application.state.effectRefs.find((ref) => ref.type === 'production_cue')!.id
+      : '';
+    insertStudyAttempt('attempt-delete-guard', { cueId });
+    dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
+      evidenceId: 'delete-guard-evidence',
+      occurredAt: appliedAt,
+      taskId: 'production-task:target:default_production',
+      cueId,
+      sourceAttemptId: 'attempt-delete-guard',
+      attemptResult: 'rejected',
+      submittedWordId: 'alternate',
+    });
+
+    assert.throws(
+      () => sqlite.prepare(`DELETE FROM production_cue_accepted_words WHERE cue_id = ?`).run(cueId),
+      /accepted words cannot be deleted/,
+    );
+    assert.throws(
+      () => sqlite.prepare(`DELETE FROM production_cue_lifecycle_events WHERE cue_id = ?`).run(cueId),
+      /lifecycle events cannot be deleted/,
+    );
+    assert.throws(
+      () => sqlite.prepare(`DELETE FROM production_cue_evidence_records WHERE cue_id = ?`).run(cueId),
+      /evidence cannot be deleted/,
+    );
+    assert.throws(
+      () => sqlite.prepare(`DELETE FROM production_cues WHERE cue_id = ?`).run(cueId),
+      /production cues cannot be deleted/,
+    );
   });
 
   test('attributes only contextual eligibility changes caused by contrast creation', () => {
@@ -428,6 +944,22 @@ function contrastOperation(): ReflectionOperation {
   };
 }
 
+function cueRepairOperation(input: {
+  changes: Extract<ReflectionOperation, {
+    kind: 'repair_production_cue';
+    version: 2;
+  }>['changes'];
+}): Extract<ReflectionOperation, { kind: 'repair_production_cue'; version: 2 }> {
+  return {
+    kind: 'repair_production_cue',
+    version: 2,
+    wordId: 'target',
+    taskId: 'production-task:target:default_production',
+    changes: input.changes,
+    sourceAttemptJudgments: [],
+  };
+}
+
 function insertInvocation(
   invocationId: string,
   operation: ReflectionOperation,
@@ -564,6 +1096,61 @@ function insertWord(wordId: string, hanzi: string): void {
       last_learning_covered_on
     ) VALUES (?, ?, 'pin1yin1', 'meaning', '["meaning"]', '', '[]', 'review', 1, ?, 0, NULL, NULL)
   `).run(wordId, hanzi, createdAt);
+}
+
+function insertStudyAttempt(
+  attemptId: string,
+  options: { cueId: string | null; contentCueId?: string } = { cueId: null },
+): void {
+  sqlite.prepare(`
+    INSERT OR IGNORE INTO study_sessions (
+      id, started_at, ended_at, processing_state, processed_at
+    ) VALUES ('cue-evidence-session', ?, ?, 'processed', ?)
+  `).run(createdAt, appliedAt, appliedAt);
+  sqlite.prepare(`
+    INSERT INTO study_attempt_events (
+      id,
+      occurred_at,
+      session_id,
+      session_action_id,
+      session_event_sequence,
+      action_attempt_sequence,
+      action_kind,
+      target_word_id,
+      sampled_skill_ids_json,
+      response,
+      outcome,
+      rating,
+      content_ref_json,
+      metadata_json,
+      projected_at
+    ) VALUES (?, ?, 'cue-evidence-session', 'cue-action', 1, 1, 'production', 'target',
+      '["production"]', '替代', 'incorrect', 'forgot', ?, ?, ?)
+  `).run(
+    attemptId,
+    appliedAt,
+    options.cueId === null
+      ? null
+      : JSON.stringify({
+        type: 'production_cue',
+        taskId: 'production-task:target:default_production',
+        cueId: options.contentCueId ?? options.cueId,
+      }),
+    JSON.stringify({
+      production: {
+        taskId: 'production-task:target:default_production',
+        cueId: options.cueId,
+        cueType: 'definition_gloss',
+        text: 'target',
+        acceptedWordIds: ['target'],
+        anchorWordId: 'target',
+        submittedText: '替代',
+        submittedWordId: 'alternate',
+        result: 'rejected',
+      },
+    }),
+    appliedAt,
+  );
 }
 
 function insertContextualSchedulerState(wordId: string, enabled: boolean): void {

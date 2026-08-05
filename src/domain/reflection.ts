@@ -382,7 +382,7 @@ export const REFLECTION_OPERATION_REGISTRY = [
     kind: 'repair_production_cue',
     version: 2,
     editorAvailable: true,
-    applySupport: 'unsupported',
+    applySupport: 'supported',
   },
   {
     kind: 'accept_production_alternate',

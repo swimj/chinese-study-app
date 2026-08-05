@@ -33,6 +33,11 @@ import {
   suppressDefinitionProductionWithoutTransaction,
 } from './domain-commands.ts';
 import {
+  ensureProductionCueIndexes,
+  ensureProductionCueSchema,
+  validateProductionCueSchema,
+} from './production-cues.ts';
+import {
   DEFAULT_DAILY_NEW_WORD_LIMIT,
   PRIORITY_BUMP_UNIT,
   UNSTUDIED_COUNT_BASELINE,
@@ -3252,6 +3257,7 @@ function applyLightweightSchemaMigrations() {
     );
   `);
   ensureReflectionSchema();
+  ensureProductionCueSchema();
 
   const userPriorityColumns = getDb().prepare(`PRAGMA table_info(user_word_priority)`).all() as Array<{ name: string }>;
   const hasPriorityTier = userPriorityColumns.some((column) => column.name === 'priority_tier');
@@ -4321,6 +4327,7 @@ function createSchema() {
   `);
 
   ensureReflectionSchema();
+  ensureProductionCueSchema();
   ensureDefaultDailyNewWordLimit();
   ensureIndexes();
 }
@@ -4359,6 +4366,7 @@ function ensureIndexes() {
     CREATE INDEX IF NOT EXISTS idx_contrast_prompts_target ON contrast_prompts(target_word_id ASC);
   `);
   ensureReflectionIndexes();
+  ensureProductionCueIndexes();
 }
 
 function validateSchema() {
@@ -4525,6 +4533,7 @@ function validateSchema() {
     'explanation',
   ]);
   validateReflectionSchema();
+  validateProductionCueSchema();
 }
 
 function assertTableColumns(tableName: string, expectedColumns: string[]) {
