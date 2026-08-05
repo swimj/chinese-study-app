@@ -241,6 +241,9 @@ function cloneSessionStudyItem(item: SessionStudyItem): SessionStudyItem {
     ...item,
     sampledSkillIds: [...item.sampledSkillIds],
     contentRef: item.contentRef ? { ...item.contentRef } : null,
+    production: item.production
+      ? { ...item.production, acceptedWordIds: [...item.production.acceptedWordIds] }
+      : null,
     word: cloneWord(item.word),
     contrastSelection: item.contrastSelection
       ? {

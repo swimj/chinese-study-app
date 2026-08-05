@@ -477,6 +477,8 @@ export function StudySessionPanel({
                 </>
               ) : activeItem.actionKind === 'recognition' ? (
                 <strong className="prompt-value">{activePrompt}</strong>
+              ) : activeItem.production ? (
+                <strong className="prompt-value">{activePrompt}</strong>
               ) : activePromptDisplayedMeanings.length > 0 ? (
                 <MeaningList meanings={activePromptDisplayedMeanings} className="meaning-list-prompt" />
               ) : (

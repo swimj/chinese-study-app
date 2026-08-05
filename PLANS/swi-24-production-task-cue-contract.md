@@ -138,7 +138,9 @@ the live-session grading path.
 
 An out-of-set submission is incorrect for that session and receives the current
 target-word scheduling response. The attempt still records the raw submitted
-text and, when it resolves unambiguously to a catalogued word, its word id.
+text and the resolved word id when a unique out-of-set catalog word matches.
+An accepted same-form tie uses the bounded deterministic V0 rule documented in
+the study-action model rather than adding a separate ambiguity result state.
 Post-session reflection may propose that the submitted word belongs in the
 cue's answer space. Learner authorization applies that change prospectively by
 writing a new immutable cue and may append an explicit later cue-evidence

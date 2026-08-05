@@ -13,6 +13,7 @@ type StudySkillId = 'recognition' | 'production' | 'contextual_selection';
 type WordRecord = {
   id: string;
   hanzi: string;
+  traditional?: string | null;
   pinyin: string;
   meaning: string;
   examples: string[];
@@ -77,6 +78,18 @@ describe('session composition', { concurrency: false }, () => {
 
   beforeEach(() => {
     sqlite.exec(`
+      DROP TRIGGER IF EXISTS production_recheck_demands_no_delete;
+      DROP TRIGGER IF EXISTS production_cue_evidence_records_no_delete;
+      DROP TRIGGER IF EXISTS production_cue_lifecycle_events_no_delete;
+      DROP TRIGGER IF EXISTS production_cue_accepted_words_no_delete;
+      DROP TRIGGER IF EXISTS production_cues_no_delete;
+      DELETE FROM production_cue_evidence_projection;
+      DELETE FROM production_recheck_demands;
+      DELETE FROM production_cue_evidence_records;
+      DELETE FROM production_cue_activation_state;
+      DELETE FROM production_cue_lifecycle_events;
+      DELETE FROM production_cue_accepted_words;
+      DELETE FROM production_cues;
       DELETE FROM study_content_feedback;
       DELETE FROM contrast_candidate_intake;
       DELETE FROM word_skill_relevance;
@@ -96,6 +109,7 @@ describe('session composition', { concurrency: false }, () => {
       DELETE FROM contrast_clusters;
       DELETE FROM words;
     `);
+    dbModule.ensureProductionCueSchema();
   });
 
   after(() => {
@@ -205,6 +219,169 @@ describe('session composition', { concurrency: false }, () => {
         wordId: 'skill-only-review-word',
       },
     ]);
+  });
+
+  test('serves the exact active production cue and lets it supersede legacy fallback suppression', () => {
+    insertWord({
+      id: 'cue-word',
+      hanzi: '辨',
+      pinyin: 'bian',
+      meaning: 'distinguish',
+      examples: [],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(96),
+    });
+    insertWordStudyAdmissionState('cue-word', null);
+    insertWordSkillState({
+      wordId: 'cue-word',
+      skillId: 'production',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(48),
+      nextDueAt: isoHoursAgo(24),
+    });
+    insertWordSkillRelevance('cue-word', 'production', 'suppressed');
+    insertBadProductionPromptFeedback('cue-word');
+    insertProductionCue({
+      wordId: 'cue-word',
+      cueId: 'cue-active',
+      text: 'To tell two close possibilities apart',
+      acceptedWordIds: ['cue-word'],
+      active: true,
+    });
+    insertProductionCue({
+      wordId: 'cue-word',
+      cueId: 'cue-inactive',
+      text: 'retired prompt',
+      acceptedWordIds: ['cue-word'],
+      active: false,
+    });
+
+    const item = dbModule.getSessionPayload(studyDayKey).buckets.review[0];
+    assert.deepEqual(item?.contentRef, {
+      type: 'production_cue',
+      taskId: 'production-task:cue-word:default_production',
+      cueId: 'cue-active',
+    });
+    assert.deepEqual(item?.production, {
+      taskId: 'production-task:cue-word:default_production',
+      cueId: 'cue-active',
+      cueType: 'minimal_context',
+      text: 'To tell two close possibilities apart',
+      acceptedWordIds: ['cue-word'],
+      recheckDemandId: null,
+    });
+  });
+
+  test('does not resurrect the legacy production gloss when every normalized meaning is hidden', () => {
+    insertWord({
+      id: 'hidden-meaning-word',
+      hanzi: '隐',
+      pinyin: 'yin',
+      meaning: 'legacy fallback must stay hidden',
+      examples: [],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(96),
+    });
+    insertWordStudyAdmissionState('hidden-meaning-word', null);
+    insertWordSkillState({
+      wordId: 'hidden-meaning-word',
+      skillId: 'production',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(48),
+      nextDueAt: isoHoursAgo(24),
+    });
+    sqlite.prepare(`
+      INSERT INTO word_meanings (
+        id, word_id, position, text, show_on_production_prompt, created_at, updated_at
+      ) VALUES (?, ?, 0, ?, 0, ?, ?)
+    `).run(
+      'hidden-meaning-word-meaning-0',
+      'hidden-meaning-word',
+      'explicitly hidden',
+      isoHoursAgo(1),
+      isoHoursAgo(1),
+    );
+
+    assert.deepEqual(getSessionItemIds(dbModule), []);
+  });
+
+  test('masks ordinary production until a pending recheck is due, then forces production', () => {
+    insertWord({
+      id: 'recheck-word',
+      hanzi: '查',
+      pinyin: 'cha',
+      meaning: 'check',
+      examples: [],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(96),
+    });
+    insertWordStudyAdmissionState('recheck-word', null);
+    insertWordSkillState({
+      wordId: 'recheck-word',
+      skillId: 'production',
+      intervalHours: 72,
+      lastStudiedAt: isoHoursAgo(1),
+      nextDueAt: isoHoursFromNow(71),
+    });
+    insertWordSkillState({
+      wordId: 'recheck-word',
+      skillId: 'recognition',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(48),
+      nextDueAt: isoHoursAgo(24),
+    });
+    const sourceAttemptId = insertProjectedProductionAttempt('recheck-word');
+    const scheduledAt = isoHoursAgo(1);
+    dbModule.appendProductionRecheckDemandWithoutTransaction({
+      demandId: 'recheck-demand',
+      taskId: 'production-task:recheck-word:default_production',
+      sourceAttemptId,
+      scheduledAt,
+      dueAt: shiftHours(scheduledAt, 48),
+    });
+
+    assert.deepEqual(
+      dbModule.getSessionPayload(studyDayKey).buckets.review.map((item) => item.actionKind),
+      ['recognition'],
+    );
+
+    insertWord({
+      id: 'due-recheck-word',
+      hanzi: '再',
+      pinyin: 'zai',
+      meaning: 'again',
+      examples: [],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(96),
+    });
+    insertWordStudyAdmissionState('due-recheck-word', isoHoursFromNow(72));
+    insertWordSkillState({
+      wordId: 'due-recheck-word',
+      skillId: 'production',
+      intervalHours: 72,
+      lastStudiedAt: isoHoursAgo(1),
+      nextDueAt: isoHoursFromNow(71),
+    });
+    const dueSourceAttemptId = insertProjectedProductionAttempt('due-recheck-word');
+    const dueScheduledAt = isoHoursAgo(49);
+    dbModule.appendProductionRecheckDemandWithoutTransaction({
+      demandId: 'due-recheck-demand',
+      taskId: 'production-task:due-recheck-word:default_production',
+      sourceAttemptId: dueSourceAttemptId,
+      scheduledAt: dueScheduledAt,
+      dueAt: shiftHours(dueScheduledAt, 48),
+    });
+
+    const item = dbModule.getSessionPayload(studyDayKey).buckets.review.find(
+      (candidate) => candidate.targetWordId === 'due-recheck-word',
+    );
+    assert.equal(item?.actionKind, 'production');
+    assert.equal(item?.sessionActionId, 'review/due-recheck-word/production/recheck/due-recheck-demand');
+    assert.equal(item?.production?.recheckDemandId, 'due-recheck-demand');
   });
 
   test('does not schedule suppressed production even when its scheduler state is urgent', () => {
@@ -1366,7 +1543,7 @@ describe('session composition', { concurrency: false }, () => {
     assert.equal(afterCompletionIds.includes(`unstudied/${words[dailyNewWordLimit].id}`), false);
   });
 
-  test('session payload bundles only the words referenced by current session items', () => {
+  test('session payload keeps current buckets and includes the full canonical answer catalog', () => {
     insertWord({
       id: 'payload-review-word',
       hanzi: '走',
@@ -1421,6 +1598,7 @@ describe('session composition', { concurrency: false }, () => {
     insertWord({
       id: 'payload-excluded-word',
       hanzi: '坐',
+      traditional: '坐傳',
       pinyin: 'zuo',
       meaning: 'sit',
       examples: ['请坐。'],
@@ -1451,6 +1629,14 @@ describe('session composition', { concurrency: false }, () => {
     ]);
     assert.deepEqual(payload.buckets.learning.map((word) => word.id), ['payload-learning-word']);
     assert.deepEqual(payload.buckets.unstudied.map((word) => word.id), []);
+    assert.deepEqual(
+      payload.productionAnswerWords.find((word) => word.wordId === 'payload-excluded-word'),
+      {
+        wordId: 'payload-excluded-word',
+        hanzi: '坐',
+        traditional: '坐傳',
+      },
+    );
   });
 
   test('merges session categories as review actions first, then learning words, then unstudied intake', () => {
@@ -1614,11 +1800,121 @@ describe('session composition', { concurrency: false }, () => {
   test.todo('keeps UTC date-key and ISO timestamp handling consistent across session composition boundaries');
 });
 
+function insertProductionCue({
+  wordId,
+  cueId,
+  text,
+  acceptedWordIds,
+  active,
+}: {
+  wordId: string;
+  cueId: string;
+  text: string;
+  acceptedWordIds: string[];
+  active: boolean;
+}) {
+  const taskId = `production-task:${wordId}:default_production`;
+  const eventId = `${cueId}-lifecycle`;
+  sqlite.prepare(`
+    INSERT INTO production_cues (
+      cue_id, task_id, cue_type, cue_text, created_at, origin_kind, origin_invocation_id
+    ) VALUES (?, ?, 'minimal_context', ?, ?, 'manual', NULL)
+  `).run(cueId, taskId, text, isoHoursAgo(1));
+  const insertAccepted = sqlite.prepare(`
+    INSERT INTO production_cue_accepted_words (cue_id, word_id, position)
+    VALUES (?, ?, ?)
+  `);
+  acceptedWordIds.forEach((acceptedWordId, position) => {
+    insertAccepted.run(cueId, acceptedWordId, position);
+  });
+  sqlite.prepare(`
+    INSERT INTO production_cue_lifecycle_events (
+      event_id, cue_id, task_id, lifecycle_kind, occurred_at, invocation_id
+    ) VALUES (?, ?, ?, ?, ?, NULL)
+  `).run(eventId, cueId, taskId, active ? 'activated' : 'deactivated', isoHoursAgo(1));
+  sqlite.prepare(`
+    INSERT INTO production_cue_activation_state (
+      cue_id, active, latest_lifecycle_event_id, updated_at
+    ) VALUES (?, ?, ?, ?)
+  `).run(cueId, active ? 1 : 0, eventId, isoHoursAgo(1));
+}
+
+function insertProjectedProductionAttempt(wordId: string) {
+  const sessionId = `${wordId}-source-session`;
+  const attemptId = `${wordId}-source-attempt`;
+  const alternateWordId = `${wordId}-alternate`;
+  insertWord({
+    id: alternateWordId,
+    hanzi: `${wordId} alternate`,
+    pinyin: 'alternate',
+    meaning: 'alternate',
+    examples: [],
+    status: 'unstudied',
+    priority: -999,
+    createdAt: isoHoursAgo(96),
+  });
+  sqlite.prepare(`
+    INSERT INTO study_sessions (id, started_at, ended_at, processing_state, processed_at)
+    VALUES (?, ?, ?, 'processed', ?)
+  `).run(sessionId, isoHoursAgo(2), isoHoursAgo(1), isoHoursAgo(1));
+  sqlite.prepare(`
+    INSERT INTO study_attempt_events (
+      id,
+      occurred_at,
+      session_id,
+      session_action_id,
+      session_event_sequence,
+      action_attempt_sequence,
+      action_kind,
+      target_word_id,
+      sampled_skill_ids_json,
+      response,
+      outcome,
+      rating,
+      content_ref_json,
+      metadata_json,
+      projected_at
+    ) VALUES (?, ?, ?, ?, 1, 1, 'production', ?, '["production"]', ?, 'correct', 'good', NULL, ?, ?)
+  `).run(
+    attemptId,
+    isoHoursAgo(1),
+    sessionId,
+    `review/${wordId}/production`,
+    wordId,
+    alternateWordId,
+    JSON.stringify({
+      production: {
+        taskId: `production-task:${wordId}:default_production`,
+        cueId: null,
+        cueType: 'definition_gloss',
+        text: 'source prompt',
+        acceptedWordIds: [wordId, alternateWordId],
+        anchorWordId: wordId,
+        submittedText: alternateWordId,
+        submittedWordId: alternateWordId,
+        result: 'accepted_non_anchor',
+        recheckDemandId: null,
+      },
+    }),
+    isoHoursAgo(1),
+  );
+  dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
+    occurredAt: isoHoursAgo(1),
+    taskId: `production-task:${wordId}:default_production`,
+    cueId: null,
+    sourceAttemptId: attemptId,
+    attemptResult: 'accepted_non_anchor',
+    submittedWordId: alternateWordId,
+  });
+  return attemptId;
+}
+
 function insertWord(record: WordRecord) {
   sqlite.prepare(`
     INSERT INTO words (
       id,
       hanzi,
+      traditional,
       pinyin,
       meaning,
       examples_json,
@@ -1628,10 +1924,11 @@ function insertWord(record: WordRecord) {
       learning_streak,
       last_learning_success_on,
       last_learning_covered_on
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     record.id,
     record.hanzi,
+    record.traditional ?? null,
     record.pinyin,
     record.meaning,
     JSON.stringify(record.examples),

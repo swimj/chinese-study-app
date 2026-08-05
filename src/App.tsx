@@ -49,6 +49,7 @@ function App() {
     currentPage,
     setCurrentPage,
     setError,
+    onAcceptedProposal: studySession.refreshSessionPrefetch,
     api: {
       listArtifacts: fetchReflectionArtifacts,
       listGenerationRuns: fetchReflectionGenerationRuns,

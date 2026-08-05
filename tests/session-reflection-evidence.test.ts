@@ -33,17 +33,47 @@ describe('completed-session reflection evidence', () => {
       seed: 1,
     }));
 
-    let result = rateActiveSessionUnit(state, 'forgot', { response: '  生字原样  ' });
+    let result = rateActiveSessionUnit(state, 'forgot', {
+      response: '  生字原样  ',
+      productionResponse: {
+        submittedText: '  生字原样  ',
+        submittedWordId: null,
+        result: 'rejected',
+      },
+    });
     assert.equal(result.commit.type, 'none');
     assert.equal(
       result.state.reviewProgress[item.sessionActionId]?.attempts[0]?.response,
       '  生字原样  ',
     );
+    assert.deepEqual(
+      result.state.reviewProgress[item.sessionActionId]?.attempts[0]?.metadata.production,
+      {
+        taskId: 'production-task:review-word:default_production',
+        cueId: null,
+        cueType: 'definition_gloss',
+        text: 'target',
+        acceptedWordIds: ['review-word'],
+        anchorWordId: 'review-word',
+        submittedText: '  生字原样  ',
+        submittedWordId: null,
+        result: 'rejected',
+        recheckDemandId: null,
+      },
+    );
 
     state = result.state;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       state = markActiveSessionUnitStarted(state);
-      result = rateActiveSessionUnit(state, 'good', { response: `correct-${attempt + 1}` });
+      const response = `correct-${attempt + 1}`;
+      result = rateActiveSessionUnit(state, 'good', {
+        response,
+        productionResponse: {
+          submittedText: response,
+          submittedWordId: item.targetWordId,
+          result: 'accepted_anchor',
+        },
+      });
       state = result.state;
     }
 
@@ -57,6 +87,40 @@ describe('completed-session reflection evidence', () => {
       result.commit.events.map((event) => event.response),
       ['  生字原样  ', 'correct-1', 'correct-2', 'correct-3'],
     );
+  });
+
+  test('an accepted typed response can still be learner-rated forgot', () => {
+    const item = createStudyItem({ actionKind: 'production', status: 'review' });
+    const state = markActiveSessionUnitStarted(createBucketSessionState({
+      buckets: {
+        review: [item],
+        learning: [],
+        unstudied: [],
+      },
+      sessionId: 'accepted-forgot-session',
+      schedulerPolicy: {
+        bucketWeights: { review: 1, learning: 0, unstudied: 0 },
+      },
+      seed: 1,
+    }));
+
+    const result = rateActiveSessionUnit(state, 'forgot', {
+      response: '目标',
+      productionResponse: {
+        submittedText: '目标',
+        submittedWordId: item.targetWordId,
+        result: 'accepted_anchor',
+      },
+    });
+
+    assert.equal(result.commit.type, 'none');
+    const attempt = result.state.reviewProgress[item.sessionActionId]?.attempts[0];
+    assert.equal(attempt?.outcome, 'incorrect');
+    assert.equal(attempt?.rating, 'forgot');
+    assert.equal(attempt?.metadata.production && (
+      attempt.metadata.production as { result?: unknown }
+    ).result, 'accepted_anchor');
+    assert.equal(result.state.reviewProgress[item.sessionActionId]?.failureCount, 1);
   });
 
   test('recognition attempts keep a null response even when a response option is supplied', () => {
@@ -116,8 +180,8 @@ describe('completed-session reflection evidence', () => {
           cueId: null,
           cueType: 'definition_gloss',
           displayOrder: 0,
-          text: 'first meaning; second meaning; third meaning',
-          displayedMeanings: ['first meaning', 'second meaning', 'third meaning'],
+          text: 'target',
+          displayedMeanings: [],
         }],
         rawResponse: '  raw response  ',
         attemptIds: [],
@@ -135,6 +199,39 @@ describe('completed-session reflection evidence', () => {
       promptDisplayedMeanings: ['changed later'],
     });
     assert.equal(afterAnotherMistake, captured);
+
+    const durableItem: SessionStudyItem = {
+      ...item,
+      contentRef: {
+        type: 'production_cue',
+        taskId: 'production-task:review-word:default_production',
+        cueId: 'circumstance-cue',
+      },
+      production: {
+        taskId: 'production-task:review-word:default_production',
+        cueId: 'circumstance-cue',
+        cueType: 'circumstance',
+        text: 'When choosing a target under uncertain conditions',
+        acceptedWordIds: ['review-word'],
+        recheckDemandId: null,
+      },
+    };
+    const durableCaptured = recordProductionMistakeEvidence(initial, {
+      item: durableItem,
+      incorrectAttempt: createAttempt({
+        item: durableItem,
+        id: 'durable-mistake',
+        response: 'wrong',
+      }),
+      promptDisplayedMeanings: ['must not replace the durable cue'],
+    });
+    assert.deepEqual(durableCaptured.items[0]?.cuesAsShown, [{
+      cueId: 'circumstance-cue',
+      cueType: 'circumstance',
+      displayOrder: 0,
+      text: 'When choosing a target under uncertain conditions',
+      displayedMeanings: [],
+    }]);
   });
 
   test('excludes learning production, recognition, contrast, correct, and no-clue attempts', () => {
@@ -270,6 +367,16 @@ function createStudyItem({
     intervalHours: 24,
     word,
     contrastSelection: null,
+    production: actionKind === 'production' && status === 'review'
+      ? {
+          taskId: `production-task:${word.id}:default_production`,
+          cueId: null,
+          cueType: 'definition_gloss',
+          text: word.meaning,
+          acceptedWordIds: [word.id],
+          recheckDemandId: null,
+        }
+      : null,
   };
 }
 

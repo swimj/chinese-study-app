@@ -50,6 +50,12 @@ count and does not mutate an already-started frontend session.
 | --- | --- | --- |
 | GET | `/api/session-payload` | `session-composition` |
 
+The session payload contains the three study-item buckets plus a frozen
+production answer catalog of canonical `{ wordId, hanzi, traditional }` rows.
+Review production items also freeze their selected durable cue or meaning-
+derived fallback, accepted-word ids, and nullable recheck-demand id. The
+nullable `traditional` form is canonical content; lookup aliases are excluded.
+
 ## Study sessions and attempts
 
 | Method | Path | Handler domain |
@@ -59,6 +65,12 @@ count and does not mutate an already-started frontend session.
 | POST | `/api/study-sessions/:sessionId/manage-study-action` | `study-management` |
 | POST | `/api/study-sessions/:sessionId/reflections` | `reflection` |
 | POST | `/api/review-session-summaries` | `analytics` |
+
+Accepted review production events must include their exact frozen
+`metadata.production` snapshot. The accepted-review batch transaction appends
+cue evidence, applies the bounded anchor scheduler response, consumes or creates
+the 48-hour one-shot recheck demand, and marks the attempt events projected as
+one atomic operation.
 
 `POST /api/review-session-summaries` accepts a non-negative integer `activeDurationMs` alongside the existing completion counts. The `sessionId` upsert replaces all summary fields, including the duration.
 
@@ -105,7 +117,7 @@ A successful response is exactly:
 ```
 
 `created` returns `201`; an idempotent hit for the same
-`(sessionId, initial_post_session_reflection.v1)` returns `200` and does not
+`(sessionId, initial_post_session_reflection.v2)` returns `200` and does not
 call the provider again. Evidence validation errors return `400`, missing
 sessions or referenced entities return `404`, missing provider configuration
 returns `503`, provider/structured-output failures return `502`, and

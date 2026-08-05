@@ -3,6 +3,7 @@ import type {
   ContrastClusterMember,
   ContrastPrompt,
   SessionStudyItemBuckets,
+  ProductionAnswerWord,
   StudyActionKind,
   StudyManagementActionKind,
   StudySessionRecord,
@@ -466,6 +467,7 @@ export type SeedData = {
 
 export type SessionPayload = {
   buckets: SessionStudyItemBuckets;
+  productionAnswerWords: ProductionAnswerWord[];
 };
 
 export type WordSessionRow = {

@@ -48,6 +48,7 @@ describe('session study item domain adapters', () => {
         intervalHours: 24,
         word,
         contrastSelection: null,
+        production: null,
       },
     );
   });
@@ -75,6 +76,7 @@ describe('session study item domain adapters', () => {
         intervalHours: 24,
         word,
         contrastSelection: null,
+        production: null,
       },
     );
   });
@@ -92,6 +94,7 @@ describe('session study item domain adapters', () => {
         intervalHours: 0,
         word,
         contrastSelection: null,
+        production: null,
       },
       {
         sessionActionId: 'learning/learning-word/production',
@@ -102,6 +105,7 @@ describe('session study item domain adapters', () => {
         intervalHours: 0,
         word,
         contrastSelection: null,
+        production: null,
       },
     ]);
   });

@@ -13,6 +13,7 @@ export type SessionPrefetchState = {
 };
 
 let sessionPrefetchPromise: Promise<SessionPayload> | null = null;
+let sessionPrefetchGeneration = 0;
 let sessionPrefetchStateCache: SessionPrefetchState = {
   status: 'idle',
   payload: null,
@@ -27,6 +28,7 @@ export function getSessionPrefetchSnapshot(): SessionPrefetchState {
 }
 
 export function resetSessionPrefetchCache() {
+  sessionPrefetchGeneration += 1;
   sessionPrefetchPromise = null;
   sessionPrefetchStateCache = {
     status: 'idle',
@@ -52,8 +54,10 @@ export function beginSessionPrefetch(): Promise<SessionPayload> {
     error: null,
   };
 
+  const generation = sessionPrefetchGeneration;
   sessionPrefetchPromise = fetchSessionPayload()
     .then((payload) => {
+      if (generation !== sessionPrefetchGeneration) return payload;
       sessionPrefetchStateCache = {
         status: 'ready',
         payload,
@@ -64,6 +68,7 @@ export function beginSessionPrefetch(): Promise<SessionPayload> {
       return payload;
     })
     .catch((error) => {
+      if (generation !== sessionPrefetchGeneration) throw error;
       sessionPrefetchStateCache = {
         status: 'error',
         payload: null,

@@ -130,6 +130,11 @@ describe('study attempt event storage', { concurrency: false }, () => {
         response: '考察',
         outcome: 'correct',
         rating: 'good',
+        contentRef: {
+          type: 'production_cue',
+          taskId: 'production-task:target-word:default_production',
+          cueId: 'cue-1',
+        },
         metadata: { source: 'test', accepted: true },
       }),
       createAttemptEvent({
@@ -159,6 +164,11 @@ describe('study attempt event storage', { concurrency: false }, () => {
       rating: 'forgot',
       contentRef: { type: 'example_sentence', id: 'example-1' },
       metadata: {},
+    });
+    assert.deepEqual(events[1]?.contentRef, {
+      type: 'production_cue',
+      taskId: 'production-task:target-word:default_production',
+      cueId: 'cue-1',
     });
     assert.deepEqual(events[1]?.metadata, { source: 'test', accepted: true });
 

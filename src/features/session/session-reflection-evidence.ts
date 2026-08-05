@@ -53,16 +53,17 @@ export function recordProductionMistakeEvidence(
     return accumulator;
   }
 
-  const displayedMeanings = [...promptDisplayedMeanings];
+  const displayedMeanings = item.production ? [] : [...promptDisplayedMeanings];
+  const cue = item.production;
   const evidence: ProductionMistakeEvidenceSupplementV1 = {
     itemId: `production-mistake:${item.sessionActionId}`,
     sessionActionId: item.sessionActionId,
     targetWordId: item.targetWordId,
     cuesAsShown: [{
-      cueId: null,
-      cueType: 'definition_gloss',
+      cueId: cue?.cueId ?? null,
+      cueType: cue?.cueType ?? 'definition_gloss',
       displayOrder: 0,
-      text: displayedMeanings.join('; '),
+      text: cue?.text ?? displayedMeanings.join('; '),
       displayedMeanings,
     }],
     rawResponse: incorrectAttempt.response,

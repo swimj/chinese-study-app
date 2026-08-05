@@ -1,6 +1,7 @@
 import type {
   ContrastSelectionReflectionItemV1,
   ProductionMistakeReflectionItemV1,
+  ProductionCueTypeV0,
   ReflectionCueSnapshotV0,
   ReflectionExistingContentV0,
   ReflectionInputItemV1,
@@ -11,11 +12,15 @@ import type {
   SessionReflectionBundleV2,
 } from './reflection';
 
+export type ProductionMistakeCueEvidenceV1 = Omit<ReflectionCueSnapshotV0, 'cueType'> & {
+  cueType: ProductionCueTypeV0;
+};
+
 export type ProductionMistakeEvidenceSupplementV1 = {
   itemId: string;
   sessionActionId: string;
   targetWordId: string;
-  cuesAsShown: ReflectionCueSnapshotV0[];
+  cuesAsShown: ProductionMistakeCueEvidenceV1[];
   rawResponse: string;
   attemptIds: string[];
 };
@@ -72,7 +77,12 @@ export function validateSessionReflectionEvidenceSupplement(value: unknown): str
     ));
     errors.push(...validateId(item.targetWordId, `${path}.targetWordId`));
     errors.push(...validateNonEmptyString(item.rawResponse, `${path}.rawResponse`));
-    errors.push(...validateCueList(item.cuesAsShown, `${path}.cuesAsShown`, true));
+    errors.push(...validateCueList(
+      item.cuesAsShown,
+      `${path}.cuesAsShown`,
+      true,
+      productionCueTypesV0,
+    ));
 
     if (!Array.isArray(item.attemptIds)) {
       errors.push(`${path}.attemptIds: expected array`);
@@ -520,7 +530,12 @@ function validateWordList(value: unknown, path: string): string[] {
   return errors;
 }
 
-function validateCueList(value: unknown, path: string, requireNonEmpty: boolean): string[] {
+function validateCueList(
+  value: unknown,
+  path: string,
+  requireNonEmpty: boolean,
+  allowedCueTypes: Set<string> = bundleCueTypes,
+): string[] {
   if (!Array.isArray(value)) return [`${path}: expected array`];
   const errors: string[] = [];
   if (requireNonEmpty && value.length === 0) {
@@ -538,7 +553,7 @@ function validateCueList(value: unknown, path: string, requireNonEmpty: boolean)
     if (cue.cueId !== null) {
       errors.push(...validateUniqueId(cue.cueId, `${cuePath}.cueId`, cueIds, 'cue id'));
     }
-    if (typeof cue.cueType !== 'string' || !bundleCueTypes.has(cue.cueType)) {
+    if (typeof cue.cueType !== 'string' || !allowedCueTypes.has(cue.cueType)) {
       errors.push(`${cuePath}.cueType: value is not in the allowed enum`);
     }
     if (!Number.isInteger(cue.displayOrder) || (cue.displayOrder as number) < 0) {

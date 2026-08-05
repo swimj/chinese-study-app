@@ -4,7 +4,7 @@ Status: accepted canonical product contract. The core V1 proposal, review,
 authorization, application, and provenance lifecycle is implemented.
 `repair_production_cue@1` and `accept_production_alternate@1` remain
 intentionally unsupported. The V2 production-cue repair behavior is accepted
-for the current implementation wave but is not yet implemented.
+and implemented for the current build wave.
 
 This specification defines how learner-facing reflection describes bounded
 changes, how a user reviews or revises those proposals, and how an authorized
