@@ -168,6 +168,7 @@ function ProposalQueueView({
           ) : null}
           <ProposalCard
             proposal={presentation.proposal}
+            evidence={presentation.evidence}
             submitting={
               controller.submittingProposalId === presentation.proposal.review.proposalId
             }
@@ -298,6 +299,7 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                         <ProposalCard
                           key={proposal.review.proposalId}
                           proposal={proposal}
+                          evidence={item.evidence}
                           submitting={
                             controller.submittingProposalId === proposal.review.proposalId
                           }
@@ -560,6 +562,7 @@ function formatUsd(value: number): string {
 
 function ProposalCard({
   proposal,
+  evidence,
   submitting,
   withdrawingInvocationId,
   onDefer,
@@ -568,6 +571,7 @@ function ProposalCard({
   onWithdraw,
 }: {
   proposal: ReflectionProposalDetailDto;
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null;
   submitting: boolean;
   withdrawingInvocationId: string | null;
   onDefer: (proposalId: string) => Promise<void>;
@@ -584,7 +588,7 @@ function ProposalCard({
     setDismissReason('');
   }, [proposal.review.proposalId, proposal.review.updatedAt]);
 
-  const draftState = getOperationDraftState(original, draft);
+  const draftState = getOperationDraftState(original, draft, evidence);
   const unresolved = proposal.review.disposition.kind === 'pending'
     || proposal.review.disposition.kind === 'deferred';
   const invocation = proposal.invocation;

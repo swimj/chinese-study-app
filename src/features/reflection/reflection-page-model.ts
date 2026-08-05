@@ -5,7 +5,10 @@ import type {
   ReflectionInputItemV2,
   ReflectionItemResultV1,
   ReflectionOperation,
+  ProductionCueChangeV2,
+  ProductionCueDraftV2,
   RepairProductionCueOperationV1,
+  RepairProductionCueOperationV2,
 } from '../../domain/reflection';
 import type {
   ReflectionArtifactDetailDto,
@@ -16,6 +19,7 @@ import {
   classifyProposalAcceptance,
   getReflectionOperationRegistration,
   validateReflectionOperation,
+  validateReflectionOperationEvidenceContext,
 } from '../../domain/reflection';
 
 export type ReflectionItemPresentation = {
@@ -229,6 +233,36 @@ export type ReflectionOperationDraftAction =
       index: number;
       patch: Partial<RepairProductionCueOperationV1['proposedCues'][number]>;
     }
+  | { type: 'add_v2_cue_change' }
+  | { type: 'remove_v2_cue_change'; index: number }
+  | {
+      type: 'set_v2_cue_change_kind';
+      index: number;
+      kind: ProductionCueChangeV2['kind'];
+    }
+  | { type: 'set_v2_cue_change_id'; index: number; cueId: string }
+  | {
+      type: 'update_v2_create_cue';
+      changeIndex: number;
+      patch: Partial<ProductionCueDraftV2>;
+    }
+  | { type: 'add_v2_replacement'; changeIndex: number }
+  | { type: 'remove_v2_replacement'; changeIndex: number; replacementIndex: number }
+  | {
+      type: 'update_v2_replacement';
+      changeIndex: number;
+      replacementIndex: number;
+      patch: Partial<ProductionCueDraftV2>;
+    }
+  | { type: 'add_v2_cue_judgment' }
+  | { type: 'remove_v2_cue_judgment'; index: number }
+  | {
+      type: 'set_v2_cue_judgment_kind';
+      index: number;
+      kind: RepairProductionCueOperationV2['sourceAttemptJudgments'][number]['kind'];
+    }
+  | { type: 'set_v2_cue_judgment_attempt'; index: number; sourceAttemptId: string }
+  | { type: 'set_v2_cue_judgment_word'; index: number; submittedWordId: string }
   | { type: 'set_alternate_target'; targetWordId: string }
   | { type: 'set_alternate_word'; alternateWordId: string };
 
@@ -382,6 +416,182 @@ export function reduceReflectionOperationDraft(
           ),
         }),
       );
+    case 'add_v2_cue_change':
+      return editRepairCueV2(operation, action.type, (current) => ({
+        ...current,
+        changes: [...current.changes, {
+          kind: 'create',
+          cue: emptyProductionCueDraftV2(current.wordId),
+        }],
+      }));
+    case 'remove_v2_cue_change':
+      return editRepairCueV2(operation, action.type, (current) => ({
+        ...current,
+        changes: removeAt(current.changes, action.index, 'V2 cue change'),
+      }));
+    case 'set_v2_cue_change_kind':
+      return editRepairCueV2(operation, action.type, (current) => ({
+        ...current,
+        changes: updateAt(
+          current.changes,
+          action.index,
+          () => emptyProductionCueChangeV2(action.kind, current.wordId),
+          'V2 cue change',
+        ),
+      }));
+    case 'set_v2_cue_change_id':
+      return editRepairCueV2(operation, action.type, (current) => ({
+        ...current,
+        changes: updateAt(
+          current.changes,
+          action.index,
+          (change) => {
+            if (change.kind === 'create') {
+              throw new Error('Invariant violated: create changes do not reference a cue id.');
+            }
+            return { ...change, cueId: action.cueId };
+          },
+          'V2 cue change',
+        ),
+      }));
+    case 'update_v2_create_cue':
+      return editRepairCueV2(operation, action.type, (current) => ({
+        ...current,
+        changes: updateAt(
+          current.changes,
+          action.changeIndex,
+          (change) => {
+            if (change.kind !== 'create') {
+              throw new Error('Invariant violated: only create changes contain a create cue draft.');
+            }
+            return { ...change, cue: { ...change.cue, ...action.patch } };
+          },
+          'V2 cue change',
+        ),
+      }));
+    case 'add_v2_replacement':
+      return editRepairCueV2(operation, action.type, (current) => ({
+        ...current,
+        changes: updateAt(
+          current.changes,
+          action.changeIndex,
+          (change) => {
+            if (change.kind !== 'replace') {
+              throw new Error('Invariant violated: only replace changes contain replacements.');
+            }
+            return {
+              ...change,
+              replacements: [...change.replacements, emptyProductionCueDraftV2(current.wordId)],
+            };
+          },
+          'V2 cue change',
+        ),
+      }));
+    case 'remove_v2_replacement':
+      return editRepairCueV2(operation, action.type, (current) => ({
+        ...current,
+        changes: updateAt(
+          current.changes,
+          action.changeIndex,
+          (change) => {
+            if (change.kind !== 'replace') {
+              throw new Error('Invariant violated: only replace changes contain replacements.');
+            }
+            return {
+              ...change,
+              replacements: removeAt(
+                change.replacements,
+                action.replacementIndex,
+                'V2 replacement cue',
+              ),
+            };
+          },
+          'V2 cue change',
+        ),
+      }));
+    case 'update_v2_replacement':
+      return editRepairCueV2(operation, action.type, (current) => ({
+        ...current,
+        changes: updateAt(
+          current.changes,
+          action.changeIndex,
+          (change) => {
+            if (change.kind !== 'replace') {
+              throw new Error('Invariant violated: only replace changes contain replacements.');
+            }
+            return {
+              ...change,
+              replacements: updateAt(
+                change.replacements,
+                action.replacementIndex,
+                (replacement) => ({ ...replacement, ...action.patch }),
+                'V2 replacement cue',
+              ),
+            };
+          },
+          'V2 cue change',
+        ),
+      }));
+    case 'add_v2_cue_judgment':
+      return editRepairCueV2(operation, action.type, (current) => ({
+        ...current,
+        sourceAttemptJudgments: [...current.sourceAttemptJudgments, {
+          kind: 'misleading_or_overloaded_cue',
+          sourceAttemptId: '',
+        }],
+      }));
+    case 'remove_v2_cue_judgment':
+      return editRepairCueV2(operation, action.type, (current) => ({
+        ...current,
+        sourceAttemptJudgments: removeAt(
+          current.sourceAttemptJudgments,
+          action.index,
+          'V2 cue judgment',
+        ),
+      }));
+    case 'set_v2_cue_judgment_kind':
+      return editRepairCueV2(operation, action.type, (current) => ({
+        ...current,
+        sourceAttemptJudgments: updateAt(
+          current.sourceAttemptJudgments,
+          action.index,
+          (judgment) => action.kind === 'accepted_answer_space_omission'
+            ? {
+                kind: action.kind,
+                sourceAttemptId: judgment.sourceAttemptId,
+                submittedWordId: '',
+              }
+            : { kind: action.kind, sourceAttemptId: judgment.sourceAttemptId },
+          'V2 cue judgment',
+        ),
+      }));
+    case 'set_v2_cue_judgment_attempt':
+      return editRepairCueV2(operation, action.type, (current) => ({
+        ...current,
+        sourceAttemptJudgments: updateAt(
+          current.sourceAttemptJudgments,
+          action.index,
+          (judgment) => ({ ...judgment, sourceAttemptId: action.sourceAttemptId }),
+          'V2 cue judgment',
+        ),
+      }));
+    case 'set_v2_cue_judgment_word':
+      return editRepairCueV2(operation, action.type, (current) => ({
+        ...current,
+        sourceAttemptJudgments: updateAt(
+          current.sourceAttemptJudgments,
+          action.index,
+          (judgment) => {
+            if (judgment.kind !== 'accepted_answer_space_omission') {
+              throw new Error(
+                'Invariant violated: only accepted-answer judgments name a submitted word.',
+              );
+            }
+            return { ...judgment, submittedWordId: action.submittedWordId };
+          },
+          'V2 cue judgment',
+        ),
+      }));
     case 'set_alternate_target':
       return editOperation(
         operation,
@@ -402,6 +612,7 @@ export function reduceReflectionOperationDraft(
 export function getOperationDraftState(
   original: ReflectionOperation,
   draft: ReflectionOperation,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null = null,
 ): {
   acceptanceMode: 'exact' | 'revised';
   validationErrors: string[];
@@ -411,9 +622,13 @@ export function getOperationDraftState(
   if (registration === null) {
     throw new Error(`Invariant violated: unregistered operation ${draft.kind}@${draft.version}.`);
   }
+  const validationErrors = validateReflectionOperation(draft);
+  if (evidence !== null && 'servedCue' in evidence) {
+    validationErrors.push(...validateReflectionOperationEvidenceContext(draft, evidence, '$'));
+  }
   return {
     acceptanceMode: classifyProposalAcceptance(original, draft),
-    validationErrors: validateReflectionOperation(draft),
+    validationErrors,
     applySupport: registration.applySupport,
   };
 }
@@ -458,6 +673,41 @@ function editRepairCueV1(
     );
   }
   return update(operation);
+}
+
+function editRepairCueV2(
+  operation: ReflectionOperation,
+  actionType: string,
+  update: (current: RepairProductionCueOperationV2) => RepairProductionCueOperationV2,
+): RepairProductionCueOperationV2 {
+  if (operation.kind !== 'repair_production_cue' || operation.version !== 2) {
+    throw new Error(
+      `Invariant violated: ${actionType} cannot edit ${operation.kind}@${operation.version}.`,
+    );
+  }
+  return update(operation);
+}
+
+function emptyProductionCueDraftV2(wordId: string): ProductionCueDraftV2 {
+  return {
+    cueType: 'definition_gloss',
+    text: '',
+    acceptedWordIds: wordId.length === 0 ? [] : [wordId],
+  };
+}
+
+function emptyProductionCueChangeV2(
+  kind: ProductionCueChangeV2['kind'],
+  wordId: string,
+): ProductionCueChangeV2 {
+  switch (kind) {
+    case 'create':
+      return { kind, cue: emptyProductionCueDraftV2(wordId) };
+    case 'replace':
+      return { kind, cueId: '', replacements: [emptyProductionCueDraftV2(wordId)] };
+    case 'deactivate':
+      return { kind, cueId: '' };
+  }
 }
 
 function updateAt<T>(
