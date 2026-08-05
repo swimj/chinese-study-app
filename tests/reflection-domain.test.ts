@@ -137,7 +137,7 @@ describe('reflection operation registry and validation', () => {
         ['suppress_definition_production', 1, true, 'supported'],
         ['create_contrast_cluster', 1, true, 'supported'],
         ['repair_production_cue', 1, true, 'unsupported'],
-        ['repair_production_cue', 2, true, 'unsupported'],
+        ['repair_production_cue', 2, true, 'supported'],
         ['accept_production_alternate', 1, true, 'unsupported'],
       ],
     );

@@ -31,6 +31,7 @@ import {
   type EnableContextualSelectionResult,
   suppressDefinitionProductionWithoutTransaction,
 } from './domain-commands.ts';
+import { applyProductionCueRepairWithoutTransaction } from './production-cues.ts';
 
 export const INITIAL_REFLECTION_FLOW_VERSION = 'initial_post_session_reflection.v1';
 
@@ -1476,6 +1477,7 @@ export function applyReflectionInvocation(
   try {
     const nextState = applyPendingOperationWithoutTransaction(
       current.invocation.operation,
+      invocationId,
       appliedAt,
     );
     writeApplicationStateWithoutTransaction(invocationId, nextState, appliedAt);
@@ -1891,6 +1893,7 @@ function applicationStateColumns(state: OperationApplicationState): {
 
 function applyPendingOperationWithoutTransaction(
   operation: ReflectionOperation,
+  invocationId: string,
   appliedAt: string,
 ): OperationApplicationState {
   switch (operation.kind) {
@@ -1899,6 +1902,13 @@ function applyPendingOperationWithoutTransaction(
     case 'create_contrast_cluster':
       return applyContrastClusterCreationWithoutTransaction(operation, appliedAt);
     case 'repair_production_cue':
+      return operation.version === 2
+        ? applyProductionCueRepairWithoutTransaction(operation, invocationId, appliedAt)
+        : (() => {
+            throw new Error(
+              `No faithful application adapter is available for ${operation.kind}@${operation.version}.`,
+            );
+          })();
     case 'accept_production_alternate':
       throw new Error(
         `No faithful application adapter is available for ${operation.kind}@${operation.version}.`,
