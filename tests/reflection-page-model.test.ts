@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type {
   CreateContrastClusterOperationV1,
+  ProductionMistakeReflectionItemV2,
   ReflectionOperation,
+  RepairProductionCueOperationV2,
   SessionReflectionBundleV1,
   SessionReflectionResultV4,
 } from '../src/domain/reflection.js';
@@ -106,6 +108,134 @@ describe('reflection page model', () => {
       original.members,
     );
     assert.equal(getOperationDraftState(original, draft).acceptanceMode, 'exact');
+
+    const cueOriginal = cueRepairV2();
+    const cueDraft = cloneReflectionOperation(cueOriginal);
+    assert.equal(cueDraft.kind, 'repair_production_cue');
+    assert.equal(cueDraft.kind === 'repair_production_cue' && cueDraft.version, 2);
+    if (cueDraft.kind === 'repair_production_cue' && cueDraft.version === 2) {
+      assert.notEqual(cueDraft.changes, cueOriginal.changes);
+      assert.notEqual(cueDraft.sourceAttemptJudgments, cueOriginal.sourceAttemptJudgments);
+      const replacement = cueDraft.changes[0];
+      assert.equal(replacement?.kind, 'replace');
+      if (replacement?.kind === 'replace') {
+        assert.notEqual(replacement.replacements, cueOriginal.changes[0].kind === 'replace'
+          ? cueOriginal.changes[0].replacements
+          : null);
+        assert.notEqual(replacement.replacements[0], cueOriginal.changes[0].kind === 'replace'
+          ? cueOriginal.changes[0].replacements[0]
+          : null);
+        assert.notEqual(
+          replacement.replacements[0]?.acceptedWordIds,
+          cueOriginal.changes[0].kind === 'replace'
+            ? cueOriginal.changes[0].replacements[0]?.acceptedWordIds
+            : null,
+        );
+        replacement.replacements[0]!.acceptedWordIds.push('third');
+        assert.deepEqual(
+          cueOriginal.changes[0].kind === 'replace'
+            ? cueOriginal.changes[0].replacements[0]?.acceptedWordIds
+            : null,
+          ['target', 'alternate'],
+        );
+      }
+      assert.notEqual(cueDraft.sourceAttemptJudgments[0], cueOriginal.sourceAttemptJudgments[0]);
+    }
+  });
+
+  test('edits every V2 cue lifecycle, draft, answer-space, and judgment field', () => {
+    let operation: ReflectionOperation = cueRepairV2();
+    operation = reduceReflectionOperationDraft(operation, {
+      type: 'set_v2_cue_change_id',
+      index: 0,
+      cueId: 'cue-revised',
+    });
+    operation = reduceReflectionOperationDraft(operation, {
+      type: 'update_v2_replacement',
+      changeIndex: 0,
+      replacementIndex: 0,
+      patch: {
+        cueType: 'circumstance',
+        text: 'A revised circumstance',
+        acceptedWordIds: ['target', 'alternate'],
+      },
+    });
+    operation = reduceReflectionOperationDraft(operation, {
+      type: 'add_v2_replacement',
+      changeIndex: 0,
+    });
+    operation = reduceReflectionOperationDraft(operation, { type: 'add_v2_cue_change' });
+    operation = reduceReflectionOperationDraft(operation, {
+      type: 'update_v2_create_cue',
+      changeIndex: 1,
+      patch: { text: 'A created cue', acceptedWordIds: ['target'] },
+    });
+    operation = reduceReflectionOperationDraft(operation, { type: 'add_v2_cue_change' });
+    operation = reduceReflectionOperationDraft(operation, {
+      type: 'set_v2_cue_change_kind',
+      index: 2,
+      kind: 'deactivate',
+    });
+    operation = reduceReflectionOperationDraft(operation, {
+      type: 'set_v2_cue_change_id',
+      index: 2,
+      cueId: 'cue-overloaded',
+    });
+    operation = reduceReflectionOperationDraft(operation, { type: 'add_v2_cue_change' });
+    operation = reduceReflectionOperationDraft(operation, { type: 'add_v2_cue_judgment' });
+    operation = reduceReflectionOperationDraft(operation, {
+      type: 'set_v2_cue_judgment_kind',
+      index: 1,
+      kind: 'accepted_answer_space_omission',
+    });
+    operation = reduceReflectionOperationDraft(operation, {
+      type: 'set_v2_cue_judgment_attempt',
+      index: 1,
+      sourceAttemptId: 'attempt-2',
+    });
+    operation = reduceReflectionOperationDraft(operation, {
+      type: 'set_v2_cue_judgment_word',
+      index: 1,
+      submittedWordId: 'alternate',
+    });
+    operation = reduceReflectionOperationDraft(operation, {
+      type: 'set_v2_cue_judgment_kind',
+      index: 1,
+      kind: 'misleading_or_overloaded_cue',
+    });
+    operation = reduceReflectionOperationDraft(operation, {
+      type: 'remove_v2_replacement',
+      changeIndex: 0,
+      replacementIndex: 1,
+    });
+    operation = reduceReflectionOperationDraft(operation, {
+      type: 'remove_v2_cue_change',
+      index: 3,
+    });
+    operation = reduceReflectionOperationDraft(operation, {
+      type: 'remove_v2_cue_judgment',
+      index: 0,
+    });
+
+    assert.equal(operation.kind, 'repair_production_cue');
+    assert.equal(operation.kind === 'repair_production_cue' && operation.version, 2);
+    if (operation.kind === 'repair_production_cue' && operation.version === 2) {
+      assert.equal(operation.changes[0]?.kind, 'replace');
+      const replace = operation.changes[0];
+      if (replace?.kind === 'replace') {
+        assert.equal(replace.cueId, 'cue-revised');
+        assert.equal(replace.replacements.length, 1);
+        assert.equal(replace.replacements[0]?.cueType, 'circumstance');
+      }
+      assert.deepEqual(operation.changes.slice(1).map((change) => change.kind), [
+        'create',
+        'deactivate',
+      ]);
+      assert.deepEqual(operation.sourceAttemptJudgments[0], {
+        kind: 'misleading_or_overloaded_cue',
+        sourceAttemptId: 'attempt-2',
+      });
+    }
   });
 
   test('edits every supported and unsupported operation family through typed actions', () => {
@@ -186,6 +316,36 @@ describe('reflection page model', () => {
     const state = getOperationDraftState(unsupported, unsupported);
     assert.equal(state.applySupport, 'unsupported');
     assert.match(state.validationErrors[0], /at least one replacement/);
+
+    const cue = cueRepairV2();
+    assert.deepEqual(getOperationDraftState(cue, cue, v2Evidence()), {
+      acceptanceMode: 'exact',
+      validationErrors: [],
+      applySupport: 'supported',
+    });
+    const revisedCue = structuredClone(cue);
+    assert.equal(revisedCue.changes[0]?.kind, 'replace');
+    if (revisedCue.changes[0]?.kind === 'replace') {
+      revisedCue.changes[0].replacements[0]!.text = 'Revised bounded context';
+      revisedCue.changes[0].replacements[0]!.acceptedWordIds = ['target'];
+    }
+    revisedCue.sourceAttemptJudgments = [{
+      kind: 'accepted_answer_space_omission',
+      sourceAttemptId: 'attempt-1',
+      submittedWordId: 'alternate',
+    }];
+    const revisedState = getOperationDraftState(cue, revisedCue, v2Evidence());
+    assert.equal(revisedState.acceptanceMode, 'revised');
+    assert.equal(revisedState.applySupport, 'supported');
+    assert.match(revisedState.validationErrors.join('\n'), /must be admitted/);
+
+    const wrongCue = structuredClone(cue);
+    assert.equal(wrongCue.changes[0]?.kind, 'replace');
+    if (wrongCue.changes[0]?.kind === 'replace') wrongCue.changes[0].cueId = 'other-cue';
+    assert.match(
+      getOperationDraftState(cue, wrongCue, v2Evidence()).validationErrors.join('\n'),
+      /is not owned by the evidence task|must repair the exact served cue contract/,
+    );
   });
 
   test('fails loudly when an editor action targets the wrong operation shape or index', () => {
@@ -205,6 +365,60 @@ describe('reflection page model', () => {
       () => reduceReflectionOperationDraft(contrastOperation(), {
         type: 'remove_cluster_prompt',
         index: 7,
+      }),
+      /out of range/,
+    );
+    assert.throws(
+      () => reduceReflectionOperationDraft({
+        kind: 'repair_production_cue',
+        version: 1,
+        wordId: 'target',
+        repairIntent: 'add_distinguishing_anchor',
+        proposedCues: [{ cueType: 'definition_gloss', text: 'target' }],
+      }, { type: 'add_v2_cue_change' }),
+      /cannot edit repair_production_cue@1/,
+    );
+    const createOnly = reduceReflectionOperationDraft(cueRepairV2(), {
+      type: 'set_v2_cue_change_kind',
+      index: 0,
+      kind: 'create',
+    });
+    assert.throws(
+      () => reduceReflectionOperationDraft(createOnly, {
+        type: 'set_v2_cue_change_id',
+        index: 0,
+        cueId: 'cue',
+      }),
+      /create changes do not reference/,
+    );
+    assert.throws(
+      () => reduceReflectionOperationDraft(createOnly, {
+        type: 'add_v2_replacement',
+        changeIndex: 0,
+      }),
+      /only replace changes/,
+    );
+    assert.throws(
+      () => reduceReflectionOperationDraft(cueRepairV2(), {
+        type: 'set_v2_cue_judgment_word',
+        index: 0,
+        submittedWordId: 'alternate',
+      }),
+      /only accepted-answer judgments/,
+    );
+    assert.throws(
+      () => reduceReflectionOperationDraft(cueRepairV2(), {
+        type: 'update_v2_create_cue',
+        changeIndex: 0,
+        patch: { text: 'wrong variant' },
+      }),
+      /only create changes/,
+    );
+    assert.throws(
+      () => reduceReflectionOperationDraft(cueRepairV2(), {
+        type: 'remove_v2_replacement',
+        changeIndex: 0,
+        replacementIndex: 9,
       }),
       /out of range/,
     );
@@ -228,6 +442,61 @@ function contrastOperation(): CreateContrastClusterOperationV1 {
         explanation: null,
       },
     ],
+  };
+}
+
+function cueRepairV2(): RepairProductionCueOperationV2 {
+  return {
+    kind: 'repair_production_cue',
+    version: 2,
+    wordId: 'target',
+    taskId: 'production-task:target:default_production',
+    changes: [{
+      kind: 'replace',
+      cueId: 'cue-1',
+      replacements: [{
+        cueType: 'minimal_context',
+        text: 'A bounded context',
+        acceptedWordIds: ['target', 'alternate'],
+      }],
+    }],
+    sourceAttemptJudgments: [{
+      kind: 'misleading_or_overloaded_cue',
+      sourceAttemptId: 'attempt-1',
+    }],
+  };
+}
+
+function v2Evidence(): ProductionMistakeReflectionItemV2 {
+  return {
+    itemId: 'item',
+    source: 'production_mistake',
+    sourceActionKind: 'production',
+    sourceAttemptId: 'attempt-1',
+    sessionActionId: 'action-1',
+    occurredAt: '2026-07-29T11:59:00.000Z',
+    targetWord: {
+      wordId: 'target',
+      hanzi: '目标',
+      pinyin: 'mùbiāo',
+      meanings: ['target'],
+    },
+    sessionNote: null,
+    existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+    servedCue: {
+      cueId: 'cue-1',
+      cueType: 'definition_gloss',
+      text: 'target',
+      acceptedWordIds: ['target'],
+    },
+    rawResponse: '替代',
+    submittedWord: {
+      wordId: 'alternate',
+      hanzi: '替代',
+      pinyin: 'tìdài',
+      meanings: ['alternate'],
+    },
+    responseKind: 'matched_known_word',
   };
 }
 
