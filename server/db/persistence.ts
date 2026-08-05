@@ -11,6 +11,7 @@ import type {
   ReviewCommitFields,
   SessionStudyItem,
   SessionStudyItemBuckets,
+  ProductionExerciseSnapshot,
   StudyAttemptEvent,
   StudyAttemptOutcome,
   StudyActionKind,
@@ -33,9 +34,19 @@ import {
   suppressDefinitionProductionWithoutTransaction,
 } from './domain-commands.ts';
 import {
+  appendProductionCueAttemptEvidenceWithoutTransaction,
+  appendProductionRecheckDemandWithoutTransaction,
+  consumeProductionRecheckDemandWithoutTransaction,
+  defaultProductionTaskId,
   ensureProductionCueIndexes,
   ensureProductionCueSchema,
+  getActiveProductionCuesForWord,
+  getPendingProductionRecheckForWord,
+  getProductionRecheckDemand,
+  linkProductionRecheckReplacementWithoutTransaction,
+  projectProductionCueEvidence,
   validateProductionCueSchema,
+  type ProductionCueAttemptResultV0,
 } from './production-cues.ts';
 import {
   DEFAULT_DAILY_NEW_WORD_LIMIT,
@@ -607,6 +618,11 @@ export function getSessionPayload(studyDayKey: string): SessionPayload {
 
   return {
     buckets: getSessionItemBucketsWithWords(studyDayKey),
+    productionAnswerWords: getWords().map((word) => ({
+      wordId: word.id,
+      hanzi: word.hanzi,
+      traditional: word.traditional,
+    })),
   };
 }
 
@@ -1984,18 +2000,84 @@ export function recordAcceptedReviewAttemptBatch({
   assertDerivedReviewCommitMatchesIntent(derivedCommitFields, commitIntent);
 
   const reviewedAt = new Date().toISOString();
+  const productionAttempts = events
+    .filter((event) => event.actionKind === 'production')
+    .map((event) => ({ event, evidence: parseProductionAttemptEvidence(event) }));
+  const terminalProductionAttempt = productionAttempts.at(-1) ?? null;
+  const recheckDemandId = assertProductionAttemptRecheckDemandCoherence(productionAttempts);
+  const servedRecheck = recheckDemandId === null ? null : getProductionRecheckDemand(recheckDemandId);
+  if (recheckDemandId !== null && servedRecheck === null) {
+    throw new Error(`Production recheck demand ${recheckDemandId} does not exist.`);
+  }
+  if (servedRecheck !== null && (
+    servedRecheck.consumedAt !== null
+    || servedRecheck.taskId !== terminalProductionAttempt?.evidence.taskId
+    || servedRecheck.dueAt > reviewedAt
+  )) {
+    throw new Error(`Production recheck demand ${recheckDemandId} is stale or not due.`);
+  }
+  if (servedRecheck !== null && terminalProductionAttempt !== null) {
+    const expectedSessionActionId = `review/${terminalProductionAttempt.event.targetWordId}/production/recheck/${servedRecheck.demandId}`;
+    if (events.some((event) => event.sessionActionId !== expectedSessionActionId)) {
+      throw new Error(`Production recheck demand ${servedRecheck.demandId} does not match its served action.`);
+    }
+  } else if (
+    terminalProductionAttempt !== null
+    && terminalProductionAttempt.event.sessionActionId.includes('/production/recheck/')
+  ) {
+    throw new Error('Production recheck action is missing its demand snapshot.');
+  }
 
   getDb().exec('BEGIN');
 
   try {
     ensureStudySessionExistsWithoutTransaction(sessionId, events[0]?.occurredAt ?? reviewedAt);
     insertStudyAttemptEventsWithoutTransaction(events);
-    projectReviewAttemptEventsWithoutTransaction({
-      events,
-      failureCount: derivedCommitFields.failureCount,
-      terminalRating: derivedCommitFields.terminalRating,
-      reviewedAt,
-    });
+    for (const { event, evidence } of productionAttempts) {
+      appendProductionCueAttemptEvidenceWithoutTransaction({
+        occurredAt: event.occurredAt,
+        taskId: evidence.taskId,
+        cueId: evidence.cueId,
+        sourceAttemptId: event.id,
+        attemptResult: evidence.result,
+        submittedWordId: evidence.submittedWordId,
+      });
+    }
+    if (productionAttempts.length > 0) projectProductionCueEvidence(reviewedAt);
+
+    const preserveAnchorScheduler = derivedCommitFields.failureCount === 0
+      && terminalProductionAttempt !== null
+      && terminalProductionAttempt.evidence.result === 'accepted_non_anchor';
+    if (!preserveAnchorScheduler) {
+      projectReviewAttemptEventsWithoutTransaction({
+        events,
+        failureCount: derivedCommitFields.failureCount,
+        terminalRating: derivedCommitFields.terminalRating,
+        reviewedAt,
+      });
+    }
+
+    if (servedRecheck !== null && terminalProductionAttempt !== null) {
+      consumeProductionRecheckDemandWithoutTransaction({
+        demandId: servedRecheck.demandId,
+        consumedAt: reviewedAt,
+        consumedByAttemptId: terminalProductionAttempt.event.id,
+      });
+    }
+    if (preserveAnchorScheduler && terminalProductionAttempt !== null) {
+      const existingPending = getPendingProductionRecheckForWord(terminalProductionAttempt.event.targetWordId);
+      if (existingPending === null) {
+        const replacement = appendProductionRecheckDemandWithoutTransaction({
+          taskId: terminalProductionAttempt.evidence.taskId,
+          sourceAttemptId: terminalProductionAttempt.event.id,
+          scheduledAt: reviewedAt,
+          dueAt: addHours(reviewedAt, 48),
+        });
+        if (servedRecheck !== null) {
+          linkProductionRecheckReplacementWithoutTransaction(servedRecheck.demandId, replacement.demandId);
+        }
+      }
+    }
     markStudyAttemptEventsProjectedWithoutTransaction(events.map((event) => event.id), reviewedAt);
 
     getDb().exec('COMMIT');
@@ -2007,6 +2089,85 @@ export function recordAcceptedReviewAttemptBatch({
   return {
     events: getStudyAttemptEventsForSession(sessionId).filter((event) => events.some((input) => input.id === event.id)),
   };
+}
+
+type ParsedProductionAttemptEvidence = {
+  taskId: string;
+  cueId: string | null;
+  submittedWordId: string | null;
+  result: ProductionCueAttemptResultV0;
+  recheckDemandId: string | null;
+};
+
+function parseProductionAttemptEvidence(event: StudyAttemptEvent): ParsedProductionAttemptEvidence {
+  const production = isPlainRecord(event.metadata.production) ? event.metadata.production : null;
+  if (
+    production === null
+    || typeof production.taskId !== 'string'
+    || (production.cueId !== null && typeof production.cueId !== 'string')
+    || (production.submittedWordId !== null && typeof production.submittedWordId !== 'string')
+    || !isProductionCueAttemptResult(production.result)
+    || (production.recheckDemandId !== null && typeof production.recheckDemandId !== 'string')
+    || !Array.isArray(production.acceptedWordIds)
+    || production.acceptedWordIds.some((wordId) => typeof wordId !== 'string')
+    || typeof production.submittedText !== 'string'
+  ) {
+    throw new Error(`Production attempt ${event.id} has invalid production evidence metadata.`);
+  }
+  if (
+    production.submittedText !== event.response
+    || !isProductionAttemptResultCoherent(
+      production.result,
+      production.submittedWordId,
+      event.targetWordId,
+      production.acceptedWordIds,
+    )
+    || (production.result === 'rejected'
+      && (event.outcome !== 'incorrect' || event.rating !== 'forgot'))
+  ) {
+    throw new Error(`Production attempt ${event.id} has an inconsistent normalized response result.`);
+  }
+  return {
+    taskId: production.taskId,
+    cueId: production.cueId,
+    submittedWordId: production.submittedWordId,
+    result: production.result,
+    recheckDemandId: production.recheckDemandId,
+  };
+}
+
+function isProductionAttemptResultCoherent(
+  result: ProductionCueAttemptResultV0,
+  submittedWordId: string | null,
+  anchorWordId: string,
+  acceptedWordIds: unknown[],
+): boolean {
+  switch (result) {
+    case 'accepted_anchor':
+      return submittedWordId === anchorWordId && acceptedWordIds.includes(anchorWordId);
+    case 'accepted_non_anchor':
+      return submittedWordId !== null
+        && submittedWordId !== anchorWordId
+        && acceptedWordIds.includes(submittedWordId);
+    case 'rejected':
+      return submittedWordId === null || !acceptedWordIds.includes(submittedWordId);
+  }
+}
+
+function assertProductionAttemptRecheckDemandCoherence(
+  attempts: Array<{ evidence: ParsedProductionAttemptEvidence }>,
+): string | null {
+  const demandIds = new Set(attempts.map(({ evidence }) => evidence.recheckDemandId));
+  if (demandIds.size > 1) {
+    throw new Error('Production attempt batch must reference one recheck demand.');
+  }
+  return attempts[0]?.evidence.recheckDemandId ?? null;
+}
+
+function isProductionCueAttemptResult(value: unknown): value is ProductionCueAttemptResultV0 {
+  return value === 'accepted_anchor'
+    || value === 'accepted_non_anchor'
+    || value === 'rejected';
 }
 
 export function recordAcceptedContrastSelectionAttempt({
@@ -5976,6 +6137,12 @@ function assertContentRef(contentRef: StudyContentRef | null) {
     return;
   }
 
+  if (contentRef.type === 'production_cue') {
+    assertNonEmptyString(contentRef.taskId, 'Expected non-empty production task id');
+    assertNonEmptyString(contentRef.cueId, 'Expected non-empty production cue id');
+    return;
+  }
+
   if (contentRef.type !== 'contrast_prompt' && contentRef.type !== 'example_sentence') {
     throw new Error(`Invalid study content ref type "${String(contentRef.type)}"`);
   }
@@ -6054,12 +6221,16 @@ function getManagedSkillId(actionKind: Extract<StudyActionKind, 'production' | '
 }
 
 function isContentRef(value: unknown): value is StudyContentRef {
-  return (
-    isPlainRecord(value) &&
-    (value.type === 'contrast_prompt' || value.type === 'example_sentence') &&
-    typeof value.id === 'string' &&
-    value.id.length > 0
-  );
+  if (!isPlainRecord(value)) return false;
+  if (value.type === 'production_cue') {
+    return typeof value.taskId === 'string'
+      && value.taskId.length > 0
+      && typeof value.cueId === 'string'
+      && value.cueId.length > 0;
+  }
+  return (value.type === 'contrast_prompt' || value.type === 'example_sentence')
+    && typeof value.id === 'string'
+    && value.id.length > 0;
 }
 
 function getSessionItemBucketsWithWords(studyDayKey: string): SessionStudyItemBuckets {
@@ -6210,25 +6381,38 @@ function getReviewSessionStudyItems(now: string): SessionStudyItem[] {
       WHERE words.status = 'review'
         AND word_skill_state.enabled != 0
         AND word_skill_state.skill_id IN ('recognition', 'production', 'contextual_selection')
-        AND (
-          word_study_admission_state.earliest_next_study_at IS NULL
-          OR word_study_admission_state.earliest_next_study_at <= ?
-        )
       ORDER BY words.id ASC, word_skill_state.skill_id ASC
     `)
-    .all(now) as ReviewSessionItemWithSkillRow[];
+    .all() as ReviewSessionItemWithSkillRow[];
 
   const bestCandidateByWordId = new Map<string, ReviewSessionItemCandidate>();
   const generatedPromptFeedback = getGeneratedPromptFeedbackState();
   const blockedContrastPromptIds = getBlockedContrastPromptIds();
 
   for (const row of rows) {
-    if (!isReviewSkillCandidateAllowedByRelevancePolicy(row, generatedPromptFeedback)) {
+    const pendingRecheck = row.skill_id === 'production'
+      ? getPendingProductionRecheckForWord(row.id)
+      : null;
+    const dueRecheck = pendingRecheck !== null && pendingRecheck.dueAt <= now;
+    if (pendingRecheck !== null && !dueRecheck) {
       continue;
     }
 
-    const content = getReviewSkillContentIfAvailable(row, blockedContrastPromptIds);
+    const content = getReviewSkillContentIfAvailable(row, blockedContrastPromptIds, pendingRecheck?.demandId ?? null);
     if (content === undefined) {
+      continue;
+    }
+
+    if (!isReviewSkillCandidateAllowedByRelevancePolicy(
+      row,
+      generatedPromptFeedback,
+      content.production?.cueId !== null && content.production?.cueId !== undefined,
+    )) {
+      continue;
+    }
+
+    const ordinarilyAdmitted = row.earliest_next_study_at === null || row.earliest_next_study_at <= now;
+    if (!ordinarilyAdmitted && !dueRecheck) {
       continue;
     }
 
@@ -6239,17 +6423,21 @@ function getReviewSessionStudyItems(now: string): SessionStudyItem[] {
     }
 
     const elapsedHours = getElapsedHours(row.skill_last_studied_at, now);
-    const urgency = elapsedHours / row.skill_interval_hours;
+    const urgency = dueRecheck ? Number.POSITIVE_INFINITY : elapsedHours / row.skill_interval_hours;
     if (urgency < 1) {
       continue;
     }
 
     const candidate: ReviewSessionItemCandidate = {
-      item: mapReviewSessionItemWithSkillRow(row, content),
+      item: mapReviewSessionItemWithSkillRow(
+        row,
+        content,
+        dueRecheck ? `review/${row.id}/production/recheck/${pendingRecheck.demandId}` : undefined,
+      ),
       wordId: row.id,
       skillId: row.skill_id,
       urgency,
-      nextDueAt: row.skill_next_due_at,
+      nextDueAt: dueRecheck ? pendingRecheck.dueAt : row.skill_next_due_at,
     };
     const currentBest = bestCandidateByWordId.get(candidate.wordId);
 
@@ -6291,12 +6479,17 @@ function dedupeContrastChoiceSets(candidates: ReviewSessionItemCandidate[]): Rev
 function isReviewSkillCandidateAllowedByRelevancePolicy(
   row: ReviewSessionItemWithSkillRow,
   generatedPromptFeedback: GeneratedPromptFeedbackState,
+  hasDurableProductionCue: boolean,
 ) {
-  if (row.skill_relevance_state === 'suppressed') {
+  if (row.skill_relevance_state === 'suppressed' && !hasDurableProductionCue) {
     return false;
   }
 
-  if (row.skill_id === 'production' && generatedPromptFeedback.badDefinitionBasedProductionPromptWordIds.has(row.id)) {
+  if (
+    row.skill_id === 'production'
+    && !hasDurableProductionCue
+    && generatedPromptFeedback.badDefinitionBasedProductionPromptWordIds.has(row.id)
+  ) {
     return false;
   }
 
@@ -6306,7 +6499,12 @@ function isReviewSkillCandidateAllowedByRelevancePolicy(
 function getReviewSkillContentIfAvailable(
   row: ReviewSessionItemWithSkillRow,
   blockedContrastPromptIds: Set<string>,
-): { contentRef: StudyContentRef | null; contrastSelection: ContrastSelectionContent | null } | undefined {
+  recheckDemandId: string | null,
+): {
+  contentRef: StudyContentRef | null;
+  contrastSelection: ContrastSelectionContent | null;
+  production: ProductionExerciseSnapshot | null;
+} | undefined {
   if (row.skill_id === 'contextual_selection') {
     if (row.skill_relevance_state !== 'normal') {
       return undefined;
@@ -6317,12 +6515,52 @@ function getReviewSkillContentIfAvailable(
       : {
           contentRef: { type: 'contrast_prompt', id: contrastSelection.prompt.id },
           contrastSelection,
+          production: null,
         };
+  }
+
+  if (row.skill_id === 'production') {
+    const cue = randomArrayElement(getActiveProductionCuesForWord(row.id));
+    if (cue) {
+      return {
+        contentRef: { type: 'production_cue', taskId: cue.taskId, cueId: cue.cueId },
+        contrastSelection: null,
+        production: {
+          taskId: cue.taskId,
+          cueId: cue.cueId,
+          cueType: cue.cueType,
+          text: cue.text,
+          acceptedWordIds: [...cue.acceptedWordIds],
+          recheckDemandId,
+        },
+      };
+    }
+
+    const meaningRecords = getWordMeanings(row.id);
+    const promptMeanings = meaningRecords
+      .filter((meaning) => meaning.showOnProductionPrompt)
+      .map((meaning) => meaning.text);
+    if (meaningRecords.length > 0 && promptMeanings.length === 0) {
+      return undefined;
+    }
+    return {
+      contentRef: null,
+      contrastSelection: null,
+      production: {
+        taskId: defaultProductionTaskId(row.id),
+        cueId: null,
+        cueType: 'definition_gloss',
+        text: promptMeanings.join('; ') || row.meaning,
+        acceptedWordIds: [row.id],
+        recheckDemandId,
+      },
+    };
   }
 
   return {
     contentRef: null,
     contrastSelection: null,
+    production: null,
   };
 }
 
@@ -6530,7 +6768,12 @@ function getContrastChoice(clusterId: string, wordId: string): ContrastSelection
 
 function mapReviewSessionItemWithSkillRow(
   row: ReviewSessionItemWithSkillRow,
-  content: { contentRef: StudyContentRef | null; contrastSelection: ContrastSelectionContent | null },
+  content: {
+    contentRef: StudyContentRef | null;
+    contrastSelection: ContrastSelectionContent | null;
+    production: ProductionExerciseSnapshot | null;
+  },
+  sessionActionId?: string,
 ): SessionStudyItem {
   const word = mapWordRow(row);
   return buildReviewSessionStudyItem({
@@ -6544,8 +6787,10 @@ function mapReviewSessionItemWithSkillRow(
       easeFactor: row.skill_ease_factor,
     },
     word,
+    sessionActionId,
     contentRef: content.contentRef,
     contrastSelection: content.contrastSelection,
+    production: content.production,
   });
 }
 

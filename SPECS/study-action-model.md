@@ -1,9 +1,8 @@
 # Study Action Model
 
-Status: accepted canonical product contract. The existing scheduling,
-attempt-event, and contrast-selection sections describe implemented behavior;
-the V0 production-task/cue contract is accepted for the current build wave but
-is not yet implemented.
+Status: accepted canonical product contract. The scheduling, attempt-event,
+contrast-selection, and bounded V0 production-task/cue sections describe
+implemented behavior.
 
 This document describes the study-action model, including current study
 actions, word-skill scheduler state, attempt-event projection, contrast
@@ -257,11 +256,37 @@ when another accepted word is produced. Treating that response as a lapse can
 falsely punish the anchor, while treating it as ordinary target-word success
 can falsely strengthen it.
 
-The first bounded scheduling response for accepted-anchor,
-accepted-non-anchor, and rejected submissions is therefore a replaceable
-implementation policy behind the recorded cue-evidence seam. It must be
-human-confirmed at implementation orientation, must prevent egregious behavior,
-and must not be promoted into cue semantics or a broader scheduling redesign.
+The bounded scheduler response is a replaceable implementation policy behind
+the recorded cue-evidence seam:
+
+- a clean `accepted_anchor` result uses the ordinary anchor production
+  projection;
+- any covered action containing a rejected initial attempt, or an accepted
+  typed response that the learner rates `forgot`, uses the ordinary anchor
+  lapse/reinforcement projection;
+- a clean `accepted_non_anchor` result leaves both the
+  anchor production-skill row and word-admission row exactly unchanged and
+  appends a one-shot production recheck demand due 48 hours later;
+- a future recheck demand masks ordinary production for that word without
+  masking recognition; when due, it forces production admission using the
+  currently available active cue selection or governed fallback;
+- the durable commit consumes a served due demand; anchor acceptance or a
+  covered rejected action ends it, while a clean non-anchor result
+  links a successor demand due another 48 hours later.
+
+These demands are a temporary "check again soon" class, not cue schedule state.
+They do not make cues independently scheduled SRS objects and must not be
+promoted into cue semantics or a broader scheduling redesign.
+
+Response resolution uses the session-frozen Chinese word catalog. Only the
+canonical Hanzi and non-null traditional form participate; lookup aliases do
+not. If the response matches any word in the served accepted set, it is
+accepted even when an unaccepted catalog word shares that form. The anchor wins
+an accepted tie; otherwise the first matching id in the frozen accepted-set
+order is recorded as the accepted non-anchor. This deterministic attribution is
+a known rare V0 gap: it does not infer which same-form word the learner meant.
+When no accepted word matches, a unique known out-of-set word id is retained;
+multiple out-of-set matches and unknown text remain unresolved and rejected.
 
 Legacy bad-prompt and definition-production suppression state continues to
 govern the meaning-derived fallback and is not cleared by cue application. A
@@ -560,8 +585,9 @@ attempts against the same served action.
 For a production-cue action, `contentRef` identifies the durable task and cue.
 The event metadata snapshots `anchorWordId`, cue type and text,
 `acceptedWordIds`, raw submitted text, nullable resolved submitted word id, and
-the deterministic session-time result. The metadata is historical evidence,
-not a live lookup into mutable cue state.
+the deterministic session-time result, plus the nullable served recheck-demand
+id. The metadata is historical evidence, not a live lookup into mutable cue
+state.
 
 Example production events:
 

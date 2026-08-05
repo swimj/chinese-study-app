@@ -36,11 +36,13 @@ export function useReflectionPageController({
   currentPage,
   setCurrentPage,
   setError,
+  onAcceptedProposal,
   api,
 }: {
   currentPage: AppPageKey;
   setCurrentPage: (page: AppPageKey) => void;
   setError: (message: string | null) => void;
+  onAcceptedProposal?: () => Promise<void> | void;
   api?: ReflectionReviewApi;
 }): ReflectionPageController {
   const [isLoading, setIsLoading] = useState(false);
@@ -198,6 +200,13 @@ export function useReflectionPageController({
     setError(null);
     try {
       await requireApi().reviewProposal(proposalId, request);
+      if (request.action === 'accept') {
+        try {
+          void Promise.resolve(onAcceptedProposal?.()).catch(() => undefined);
+        } catch {
+          // The proposal is already applied. Cache refresh failure must not make it retryable.
+        }
+      }
       await loadListsAndDetail(
         selectedArtifact?.artifactId ?? null,
         new Set([artifactId]),

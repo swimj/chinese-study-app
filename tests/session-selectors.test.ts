@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   getPersonalNotesEditorTarget,
+  getActivePrompt,
   getStudySessionPanelView,
 } from '../src/features/session/session-selectors.ts';
 import type { Word } from '../src/types.ts';
@@ -103,6 +104,37 @@ describe('session selectors', () => {
       }),
       'unstudied_intro',
     );
+  });
+
+  test('uses the frozen production cue instead of live word meanings', () => {
+    const word = createWord({ id: 'cue-word', personalNotes: '' });
+    assert.equal(getActivePrompt({
+      item: {
+        sessionActionId: 'review/cue-word/production',
+        actionKind: 'production',
+        targetWordId: word.id,
+        sampledSkillIds: ['production'],
+        contentRef: {
+          type: 'production_cue',
+          taskId: 'production-task:cue-word:default_production',
+          cueId: 'cue-1',
+        },
+        intervalHours: 24,
+        word,
+        contrastSelection: null,
+        production: {
+          taskId: 'production-task:cue-word:default_production',
+          cueId: 'cue-1',
+          cueType: 'minimal_context',
+          text: 'The exact served cue',
+          acceptedWordIds: ['cue-word'],
+          recheckDemandId: null,
+        },
+      },
+      word,
+      promptDisplayedMeanings: ['live changed meaning'],
+      allMeanings: ['live changed meaning'],
+    }), 'The exact served cue');
   });
 });
 

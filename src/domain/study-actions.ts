@@ -9,7 +9,36 @@ export type StudyActionKind =
 
 export type StudyContentRef =
   | { type: 'contrast_prompt'; id: string }
-  | { type: 'example_sentence'; id: string };
+  | { type: 'example_sentence'; id: string }
+  | { type: 'production_cue'; taskId: string; cueId: string };
+
+export type ProductionCueType = 'definition_gloss' | 'minimal_context' | 'circumstance';
+
+export type ProductionAttemptResult =
+  | 'accepted_anchor'
+  | 'accepted_non_anchor'
+  | 'rejected';
+
+export type ProductionExerciseSnapshot = {
+  taskId: string;
+  cueId: string | null;
+  cueType: ProductionCueType;
+  text: string;
+  acceptedWordIds: string[];
+  recheckDemandId: string | null;
+};
+
+export type ProductionAnswerWord = {
+  wordId: string;
+  hanzi: string;
+  traditional: string | null;
+};
+
+export type ProductionResponseResolution = {
+  submittedText: string;
+  submittedWordId: string | null;
+  result: ProductionAttemptResult;
+};
 
 export type ContrastCluster = {
   id: string;
@@ -67,6 +96,7 @@ export type SessionStudyItem = {
   intervalHours: number;
   word: Word;
   contrastSelection: ContrastSelectionContent | null;
+  production: ProductionExerciseSnapshot | null;
 };
 
 export type SessionStudyItemBuckets = {
@@ -197,12 +227,14 @@ export function buildReviewSessionStudyItem({
   sessionActionId = buildSessionActionId('review', word.id, wordSkillState.skillId),
   contentRef = null,
   contrastSelection = null,
+  production = null,
 }: {
   wordSkillState: WordSkillState;
   word: Word;
   sessionActionId?: string;
   contentRef?: StudyContentRef | null;
   contrastSelection?: ContrastSelectionContent | null;
+  production?: ProductionExerciseSnapshot | null;
 }): SessionStudyItem {
   if (wordSkillState.wordId !== word.id) {
     throw new Error(
@@ -225,6 +257,7 @@ export function buildReviewSessionStudyItem({
     intervalHours: wordSkillState.intervalHours,
     word,
     contrastSelection,
+    production,
   };
 }
 
@@ -381,6 +414,7 @@ function buildWordLifecycleSessionStudyItem({
     intervalHours: 0,
     word,
     contrastSelection: null,
+    production: null,
   };
 }
 

@@ -33,9 +33,29 @@ export function cloneBucketSessionState(state: BucketSessionState): BucketSessio
         {
           failureCount: progress.failureCount,
           reinforcementStreak: progress.reinforcementStreak,
-          attempts: progress.attempts.map((attempt) => ({ ...attempt })),
+          attempts: progress.attempts.map((attempt) => ({
+            ...attempt,
+            sampledSkillIds: [...attempt.sampledSkillIds],
+            contentRef: attempt.contentRef ? { ...attempt.contentRef } : null,
+            metadata: cloneAttemptMetadata(attempt.metadata),
+          })),
         },
       ]),
     ),
+  };
+}
+
+function cloneAttemptMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+  const production = metadata.production;
+  if (typeof production !== 'object' || production === null || Array.isArray(production)) {
+    return { ...metadata };
+  }
+  const acceptedWordIds = (production as Record<string, unknown>).acceptedWordIds;
+  return {
+    ...metadata,
+    production: {
+      ...production,
+      acceptedWordIds: Array.isArray(acceptedWordIds) ? [...acceptedWordIds] : acceptedWordIds,
+    },
   };
 }

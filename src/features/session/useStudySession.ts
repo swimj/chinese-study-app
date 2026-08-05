@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { ReviewRating, Word, WordMeaning } from '../../types';
-import type { SessionStudyItem, StudyManagementActionKind } from '../../domain/study-actions';
+import type {
+  ProductionAnswerWord,
+  ProductionResponseResolution,
+  SessionStudyItem,
+  StudyManagementActionKind,
+} from '../../domain/study-actions';
 import { studyManagementActionRemovesCurrentReviewAction } from '../../domain/study-actions';
+import { resolveSessionProductionResponse } from '../../domain/production-response';
 import {
   dismissWordFromStudy,
   fetchWordMeanings,
@@ -112,6 +118,7 @@ type SessionUiSnapshot = {
   productionHanziInput: string;
   productionHanziError: string | null;
   productionSubmittedResponse: string | null;
+  productionResponseResolution: ProductionResponseResolution | null;
   productionContrastIntakeNote: string;
   productionContrastIntakeMarked: boolean;
   productionUiPhase: 'idle' | 'await-rating' | 'await-next';
@@ -238,6 +245,7 @@ export function useStudySession({
   const [productionHanziInput, setProductionHanziInput] = useState('');
   const [productionHanziError, setProductionHanziError] = useState<string | null>(null);
   const [productionSubmittedResponse, setProductionSubmittedResponse] = useState<string | null>(null);
+  const [productionResponseResolution, setProductionResponseResolution] = useState<ProductionResponseResolution | null>(null);
   const [productionContrastIntakeNote, setProductionContrastIntakeNote] = useState('');
   const [productionContrastIntakeMarked, setProductionContrastIntakeMarked] = useState(false);
   const [productionUiPhase, setProductionUiPhase] = useState<'idle' | 'await-rating' | 'await-next'>('idle');
@@ -252,6 +260,7 @@ export function useStudySession({
   );
   const pendingReflectionSupplementRef = useRef<SessionReflectionEvidenceSupplementV1 | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
+  const productionAnswerWordsRef = useRef<ProductionAnswerWord[]>([]);
   const [sessionFinalization, setSessionFinalization] = useState<SessionFinalizationState>(
     createSessionFinalizationState,
   );
@@ -394,6 +403,7 @@ export function useStudySession({
     setProductionHanziInput('');
     setProductionHanziError(null);
     setProductionSubmittedResponse(null);
+    setProductionResponseResolution(null);
     setProductionContrastIntakeNote('');
     setProductionContrastIntakeMarked(false);
     setProductionUiPhase('idle');
@@ -434,6 +444,7 @@ export function useStudySession({
       productionHanziInput,
       productionHanziError,
       productionSubmittedResponse,
+      productionResponseResolution,
       productionContrastIntakeNote,
       productionContrastIntakeMarked,
       productionUiPhase,
@@ -448,6 +459,7 @@ export function useStudySession({
     setProductionHanziInput(snapshot.productionHanziInput);
     setProductionHanziError(snapshot.productionHanziError);
     setProductionSubmittedResponse(snapshot.productionSubmittedResponse);
+    setProductionResponseResolution(snapshot.productionResponseResolution);
     setProductionContrastIntakeNote(snapshot.productionContrastIntakeNote);
     setProductionContrastIntakeMarked(snapshot.productionContrastIntakeMarked);
     setProductionUiPhase(snapshot.productionUiPhase);
@@ -504,6 +516,11 @@ export function useStudySession({
         supportsVisibilityApi: typeof document !== 'undefined' && 'visibilityState' in document,
       });
       setSessionState(createBucketSessionState({ buckets: sessionPayload.buckets, sessionId }));
+      productionAnswerWordsRef.current = sessionPayload.productionAnswerWords.map((word) => ({
+        wordId: word.wordId,
+        hanzi: word.hanzi,
+        traditional: word.traditional,
+      }));
       resetSessionScopedUi();
       setPendingSessionCommit(null);
       setLastUndoSnapshot(null);
@@ -718,6 +735,10 @@ export function useStudySession({
                 activeItem.actionKind === 'production'
                   ? productionSubmittedResponse
                   : null,
+              productionResponse:
+                activeItem.actionKind === 'production'
+                  ? productionResponseResolution
+                  : null,
             });
       setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
 
@@ -773,15 +794,31 @@ export function useStudySession({
         reflectionEvidence: snapshotSessionReflectionEvidence(reflectionEvidenceRef.current),
       });
 
-      const expectedHanzi = normalizeProductionAnswer(
-        activeWord.hanzi,
-        studyProfile.defaultProductionMatchOptions,
-      );
-      const isCorrect = submittedHanzi === expectedHanzi;
+      let resolution: ProductionResponseResolution;
+      if (activeWord.status === 'review') {
+        resolution = resolveSessionProductionResponse({
+          submittedText: productionHanziInput,
+          anchorWordId: activeWord.id,
+          production: activeItem.production,
+          answerWords: productionAnswerWordsRef.current,
+        });
+      } else {
+        const accepted = submittedHanzi === normalizeProductionAnswer(
+          activeWord.hanzi,
+          studyProfile.defaultProductionMatchOptions,
+        );
+        resolution = {
+          submittedText: productionHanziInput,
+          submittedWordId: accepted ? activeWord.id : null,
+          result: accepted ? 'accepted_anchor' : 'rejected',
+        };
+      }
+      const isCorrect = resolution.result !== 'rejected';
 
       if (isCorrect) {
         setProductionHanziError(null);
         setProductionSubmittedResponse(productionHanziInput);
+        setProductionResponseResolution(resolution);
         setProductionUiPhase('await-rating');
         setAnswerRevealed(true);
         return;
@@ -789,6 +826,7 @@ export function useStudySession({
 
       const transition = rateActiveSessionUnit(sessionState, 'forgot', {
         response: productionHanziInput,
+        productionResponse: activeWord.status === 'review' ? resolution : null,
       });
       if (activeWord.status === 'review') {
         const attempts = transition.state.reviewProgress[activeItem.sessionActionId]?.attempts;
@@ -829,8 +867,8 @@ export function useStudySession({
         status: activeWord.status,
         reviewedCount,
         queuedCount: sessionState ? getBucketSessionTotalCount(sessionState) : 0,
-        promptDisplayedMeanings: [...activePromptDisplayedMeanings],
-        fallbackPrompt: activeWord.meaning,
+        promptDisplayedMeanings: activeItem.production ? [] : [...activePromptDisplayedMeanings],
+        fallbackPrompt: activePrompt ?? activeWord.meaning,
         answerPinyin: activeWord.pinyin,
         answerText: activeWord.hanzi,
         allMeanings: [...activeAllMeanings],

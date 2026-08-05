@@ -154,6 +154,10 @@ export function getActivePrompt({
     return item.contrastSelection?.prompt.promptText ?? null;
   }
 
+  if (item.actionKind === 'production' && item.production) {
+    return item.production.text;
+  }
+
   return item.actionKind === 'recognition'
     ? word.hanzi
     : promptDisplayedMeanings[0] ?? allMeanings[0] ?? word.meaning;

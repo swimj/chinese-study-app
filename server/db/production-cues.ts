@@ -59,6 +59,17 @@ export type ProductionCueEvidenceProjectionV0 = {
   updatedAt: string;
 };
 
+export type ProductionRecheckDemandV0 = {
+  demandId: string;
+  taskId: string;
+  sourceAttemptId: string;
+  scheduledAt: string;
+  dueAt: string;
+  consumedAt: string | null;
+  consumedByAttemptId: string | null;
+  replacementDemandId: string | null;
+};
+
 type ProductionTaskRow = {
   task_id: string;
   word_id: string;
@@ -97,6 +108,17 @@ type SourceAttemptRow = {
   response: string | null;
   content_ref_json: string | null;
   metadata_json: string;
+};
+
+type ProductionRecheckDemandRow = {
+  demand_id: string;
+  task_id: string;
+  source_attempt_id: string;
+  scheduled_at: string;
+  due_at: string;
+  consumed_at: string | null;
+  consumed_by_attempt_id: string | null;
+  replacement_demand_id: string | null;
 };
 
 export function defaultProductionTaskId(wordId: string): string {
@@ -298,6 +320,37 @@ export function ensureProductionCueSchema(): void {
       active_judgment_count INTEGER NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS production_recheck_demands (
+      demand_id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES production_tasks(task_id) ON DELETE CASCADE,
+      source_attempt_id TEXT NOT NULL UNIQUE
+        REFERENCES study_attempt_events(id) ON DELETE RESTRICT,
+      scheduled_at TEXT NOT NULL,
+      due_at TEXT NOT NULL,
+      consumed_at TEXT,
+      consumed_by_attempt_id TEXT UNIQUE
+        REFERENCES study_attempt_events(id) ON DELETE RESTRICT,
+      replacement_demand_id TEXT UNIQUE
+        REFERENCES production_recheck_demands(demand_id) ON DELETE RESTRICT,
+      CHECK (
+        (consumed_at IS NULL AND consumed_by_attempt_id IS NULL AND replacement_demand_id IS NULL)
+        OR (consumed_at IS NOT NULL AND consumed_by_attempt_id IS NOT NULL)
+      )
+    );
+
+    CREATE TRIGGER IF NOT EXISTS production_recheck_demands_content_immutable
+    BEFORE UPDATE OF demand_id, task_id, source_attempt_id, scheduled_at, due_at
+    ON production_recheck_demands
+    BEGIN
+      SELECT RAISE(ABORT, 'production recheck demand content is immutable');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS production_recheck_demands_no_delete
+    BEFORE DELETE ON production_recheck_demands
+    BEGIN
+      SELECT RAISE(ABORT, 'production recheck demands cannot be deleted');
+    END;
   `);
 
   backfillDefaultProductionTasksOnce();
@@ -349,6 +402,12 @@ export function ensureProductionCueIndexes(): void {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_production_cue_compensation_source
       ON production_cue_evidence_records(source_evidence_id)
       WHERE record_kind = 'compensation';
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_production_recheck_pending_task
+      ON production_recheck_demands(task_id)
+      WHERE consumed_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_production_recheck_due
+      ON production_recheck_demands(due_at, task_id)
+      WHERE consumed_at IS NULL;
   `);
 }
 
@@ -404,6 +463,16 @@ export function validateProductionCueSchema(): void {
     'active_judgment_count',
     'updated_at',
   ]);
+  assertColumns('production_recheck_demands', [
+    'demand_id',
+    'task_id',
+    'source_attempt_id',
+    'scheduled_at',
+    'due_at',
+    'consumed_at',
+    'consumed_by_attempt_id',
+    'replacement_demand_id',
+  ]);
 }
 
 export function getDefaultProductionTask(wordId: string): ProductionTaskV0 | null {
@@ -432,6 +501,202 @@ export function getProductionCuesForTask(taskId: string): ProductionCueEntryV0[]
 
 export function getActiveProductionCuesForWord(wordId: string): ProductionCueEntryV0[] {
   return getProductionCuesForTask(defaultProductionTaskId(wordId)).filter((cue) => cue.active);
+}
+
+export function getPendingProductionRecheckForWord(wordId: string): ProductionRecheckDemandV0 | null {
+  const row = getDb().prepare(`
+    SELECT
+      demand_id,
+      task_id,
+      source_attempt_id,
+      scheduled_at,
+      due_at,
+      consumed_at,
+      consumed_by_attempt_id,
+      replacement_demand_id
+    FROM production_recheck_demands
+    WHERE task_id = ? AND consumed_at IS NULL
+  `).get(defaultProductionTaskId(wordId)) as ProductionRecheckDemandRow | undefined;
+  return row ? mapProductionRecheckDemandRow(row) : null;
+}
+
+export function getProductionRecheckDemand(demandId: string): ProductionRecheckDemandV0 | null {
+  const row = getDb().prepare(`
+    SELECT
+      demand_id,
+      task_id,
+      source_attempt_id,
+      scheduled_at,
+      due_at,
+      consumed_at,
+      consumed_by_attempt_id,
+      replacement_demand_id
+    FROM production_recheck_demands
+    WHERE demand_id = ?
+  `).get(demandId) as ProductionRecheckDemandRow | undefined;
+  return row ? mapProductionRecheckDemandRow(row) : null;
+}
+
+export function appendProductionRecheckDemandWithoutTransaction(input: {
+  demandId?: string;
+  taskId: string;
+  sourceAttemptId: string;
+  scheduledAt: string;
+  dueAt: string;
+}): ProductionRecheckDemandV0 {
+  assertCanonicalIsoTimestamp(input.scheduledAt, 'Production recheck scheduledAt');
+  assertCanonicalIsoTimestamp(input.dueAt, 'Production recheck dueAt');
+  if (input.dueAt !== addHoursToIso(input.scheduledAt, 48)) {
+    throw new Error('Production recheck demand must be due exactly 48 hours after it is scheduled.');
+  }
+  const source = getProductionRecheckAttemptContext(input.taskId, input.sourceAttemptId);
+  if (
+    source.action_kind !== 'production'
+    || source.target_word_id !== source.word_id
+    || source.outcome !== 'correct'
+    || source.rating === 'forgot'
+    || source.evidence_task_id !== input.taskId
+    || source.attempt_result !== 'accepted_non_anchor'
+  ) {
+    throw new Error(`Study attempt ${input.sourceAttemptId} cannot source a production recheck demand.`);
+  }
+  const demandId = input.demandId ?? randomUUID();
+  getDb().prepare(`
+    INSERT INTO production_recheck_demands (
+      demand_id,
+      task_id,
+      source_attempt_id,
+      scheduled_at,
+      due_at,
+      consumed_at,
+      consumed_by_attempt_id,
+      replacement_demand_id
+    ) VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL)
+  `).run(
+    demandId,
+    input.taskId,
+    input.sourceAttemptId,
+    input.scheduledAt,
+    input.dueAt,
+  );
+  return getProductionRecheckDemand(demandId)!;
+}
+
+export function consumeProductionRecheckDemandWithoutTransaction(input: {
+  demandId: string;
+  consumedAt: string;
+  consumedByAttemptId: string;
+}): void {
+  assertCanonicalIsoTimestamp(input.consumedAt, 'Production recheck consumedAt');
+  const demand = getProductionRecheckDemand(input.demandId);
+  if (demand === null || demand.consumedAt !== null || input.consumedAt < demand.dueAt) {
+    throw new Error(`Production recheck demand ${input.demandId} is no longer pending or is not due.`);
+  }
+  const consumer = getProductionRecheckAttemptContext(demand.taskId, input.consumedByAttemptId);
+  const consumerProduction = parseObjectJson(consumer.metadata_json)?.production;
+  if (
+    consumer.action_kind !== 'production'
+    || consumer.target_word_id !== consumer.word_id
+    || consumer.evidence_task_id !== demand.taskId
+    || !isRecord(consumerProduction)
+    || consumerProduction.taskId !== demand.taskId
+    || consumerProduction.anchorWordId !== consumer.word_id
+    || consumerProduction.recheckDemandId !== demand.demandId
+  ) {
+    throw new Error(
+      `Study attempt ${input.consumedByAttemptId} cannot consume production recheck demand ${input.demandId}.`,
+    );
+  }
+  const result = getDb().prepare(`
+    UPDATE production_recheck_demands
+    SET consumed_at = ?, consumed_by_attempt_id = ?, replacement_demand_id = ?
+    WHERE demand_id = ? AND consumed_at IS NULL
+  `).run(
+    input.consumedAt,
+    input.consumedByAttemptId,
+    null,
+    input.demandId,
+  );
+  if (result.changes !== 1) {
+    throw new Error(`Production recheck demand ${input.demandId} is no longer pending.`);
+  }
+}
+
+function getProductionRecheckAttemptContext(taskId: string, attemptId: string): SourceAttemptRow & {
+  word_id: string;
+  outcome: string;
+  rating: string | null;
+  evidence_task_id: string | null;
+  attempt_result: string | null;
+} {
+  const row = getDb().prepare(`
+    SELECT
+      production_tasks.word_id,
+      study_attempt_events.action_kind,
+      study_attempt_events.target_word_id,
+      study_attempt_events.response,
+      study_attempt_events.outcome,
+      study_attempt_events.rating,
+      study_attempt_events.content_ref_json,
+      study_attempt_events.metadata_json,
+      production_cue_evidence_records.task_id AS evidence_task_id,
+      production_cue_evidence_records.attempt_result
+    FROM production_tasks
+    JOIN study_attempt_events ON study_attempt_events.id = ?
+    LEFT JOIN production_cue_evidence_records
+      ON production_cue_evidence_records.source_attempt_id = study_attempt_events.id
+      AND production_cue_evidence_records.record_kind = 'attempt'
+    WHERE production_tasks.task_id = ?
+  `).get(attemptId, taskId) as (SourceAttemptRow & {
+    word_id: string;
+    outcome: string;
+    rating: string | null;
+    evidence_task_id: string | null;
+    attempt_result: string | null;
+  }) | undefined;
+  if (!row) {
+    throw new Error(`Production task ${taskId} or study attempt ${attemptId} does not exist.`);
+  }
+  return row;
+}
+
+function assertCanonicalIsoTimestamp(value: string, label: string): void {
+  const milliseconds = Date.parse(value);
+  if (!Number.isFinite(milliseconds) || new Date(milliseconds).toISOString() !== value) {
+    throw new Error(`${label} must be a canonical ISO timestamp.`);
+  }
+}
+
+function addHoursToIso(value: string, hours: number): string {
+  return new Date(Date.parse(value) + hours * 60 * 60 * 1_000).toISOString();
+}
+
+export function linkProductionRecheckReplacementWithoutTransaction(
+  demandId: string,
+  replacementDemandId: string,
+): void {
+  const demand = getProductionRecheckDemand(demandId);
+  const replacement = getProductionRecheckDemand(replacementDemandId);
+  if (
+    demand === null
+    || replacement === null
+    || demand.consumedAt === null
+    || replacement.consumedAt !== null
+    || demand.taskId !== replacement.taskId
+    || demand.consumedByAttemptId !== replacement.sourceAttemptId
+  ) {
+    throw new Error(`Production recheck demand ${demandId} cannot link to replacement ${replacementDemandId}.`);
+  }
+  const result = getDb().prepare(`
+    UPDATE production_recheck_demands
+    SET replacement_demand_id = ?
+    WHERE demand_id = ?
+      AND consumed_at IS NOT NULL
+      AND replacement_demand_id IS NULL
+  `).run(replacementDemandId, demandId);
+  if (result.changes !== 1) {
+    throw new Error(`Production recheck demand ${demandId} cannot be linked to a replacement.`);
+  }
 }
 
 export function applyProductionCueRepairWithoutTransaction(
@@ -1073,6 +1338,19 @@ function mapCueRow(row: ProductionCueRow): ProductionCueEntryV0 {
       invocationId: row.origin_invocation_id,
     },
     active: row.active !== 0,
+  };
+}
+
+function mapProductionRecheckDemandRow(row: ProductionRecheckDemandRow): ProductionRecheckDemandV0 {
+  return {
+    demandId: row.demand_id,
+    taskId: row.task_id,
+    sourceAttemptId: row.source_attempt_id,
+    scheduledAt: row.scheduled_at,
+    dueAt: row.due_at,
+    consumedAt: row.consumed_at,
+    consumedByAttemptId: row.consumed_by_attempt_id,
+    replacementDemandId: row.replacement_demand_id,
   };
 }
 

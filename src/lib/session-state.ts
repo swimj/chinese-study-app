@@ -1,5 +1,10 @@
 import type { ReviewRating, Word } from '../types';
-import type { SessionStudyItemBuckets, StudyAttemptEvent, StudySkillId } from '../domain/study-actions';
+import type {
+  ProductionResponseResolution,
+  SessionStudyItemBuckets,
+  StudyAttemptEvent,
+  StudySkillId,
+} from '../domain/study-actions';
 import {
   createBucketSessionScheduler,
   createInitialBucketLearningProgress,
@@ -93,6 +98,7 @@ export type RateActiveSessionUnitOptions = {
    * only for typed production actions; other action kinds keep a null response.
    */
   response?: string | null;
+  productionResponse?: ProductionResponseResolution | null;
 };
 
 export type SessionDismissIntent =
@@ -227,7 +233,13 @@ export function rateActiveSessionUnit(
       if (active.item.actionKind === 'contrast_selection') {
         throw new Error('Session invariant violated: contrast selection must be completed with a selected choice.');
       }
-      return handleBucketReviewAttempt(state, active, rating, options.response ?? null);
+      return handleBucketReviewAttempt(
+        state,
+        active,
+        rating,
+        options.response ?? null,
+        options.productionResponse ?? null,
+      );
     default:
       return assertUnreachableBucket(active.bucket);
   }
@@ -513,6 +525,7 @@ function handleBucketReviewAttempt(
   active: Extract<ActiveBucketSchedulerUnit, { type: 'study' }>,
   rating: ReviewRating,
   response: string | null,
+  productionResponse: ProductionResponseResolution | null,
 ): BucketSessionTransitionResult {
   const item = active.item;
   const currentProgress = state.reviewProgress[item.sessionActionId] ?? createInitialReviewProgress();
@@ -522,6 +535,7 @@ function handleBucketReviewAttempt(
     rating,
     actionAttemptSequence: currentProgress.attempts.length + 1,
     response,
+    productionResponse,
   });
   const nextAttempts = [...currentProgress.attempts, attemptEvent];
 
@@ -595,13 +609,18 @@ function buildBucketReviewAttemptEvent({
   rating,
   actionAttemptSequence,
   response,
+  productionResponse,
 }: {
   state: BucketSessionState;
   item: Extract<ActiveBucketSchedulerUnit, { type: 'study' }>['item'];
   rating: ReviewRating;
   actionAttemptSequence: number;
   response: string | null;
+  productionResponse: ProductionResponseResolution | null;
 }): StudyAttemptEvent {
+  const metadata = item.actionKind === 'production'
+    ? buildProductionAttemptMetadata(item, response, rating, productionResponse)
+    : {};
   return {
     id: `${state.sessionId}/${item.sessionActionId}/attempt-${actionAttemptSequence}`,
     occurredAt: new Date().toISOString(),
@@ -616,7 +635,39 @@ function buildBucketReviewAttemptEvent({
     outcome: rating === 'forgot' ? 'incorrect' : 'correct',
     rating,
     contentRef: item.contentRef,
-    metadata: {},
+    metadata,
+  };
+}
+
+function buildProductionAttemptMetadata(
+  item: Extract<ActiveBucketSchedulerUnit, { type: 'study' }>['item'],
+  response: string | null,
+  rating: ReviewRating,
+  resolution: ProductionResponseResolution | null,
+): Record<string, unknown> {
+  const production = item.production;
+  if (!production || !resolution || response === null) {
+    throw new Error('Session invariant violated: review production attempt is missing its frozen response evidence.');
+  }
+  if (resolution.submittedText !== response) {
+    throw new Error('Session invariant violated: production response evidence does not match the submitted response.');
+  }
+  if (resolution.result === 'rejected' && rating !== 'forgot') {
+    throw new Error('Session invariant violated: production response result does not match its rating.');
+  }
+  return {
+    production: {
+      taskId: production.taskId,
+      cueId: production.cueId,
+      cueType: production.cueType,
+      text: production.text,
+      acceptedWordIds: [...production.acceptedWordIds],
+      anchorWordId: item.targetWordId,
+      submittedText: resolution.submittedText,
+      submittedWordId: resolution.submittedWordId,
+      result: resolution.result,
+      recheckDemandId: production.recheckDemandId,
+    },
   };
 }
 
