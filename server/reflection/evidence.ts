@@ -1,14 +1,21 @@
 import type {
   ReflectionExistingContentV0,
+  ReflectionServedCueSnapshotV1,
   ReflectionWordSnapshotV1,
-  SessionReflectionBundleV1,
+  SessionReflectionBundleV2,
 } from '../../src/domain/reflection.ts';
+import { normalizeProductionAnswerForProfile } from '../../src/study-profile.ts';
 import {
-  parseInitialReflectionMilestoneBundle,
   parseSessionReflectionEvidenceSupplement,
+  parseSessionReflectionBundleV2,
   type ProductionMistakeEvidenceSupplementV1,
 } from '../../src/domain/reflection-evidence.ts';
 import { getConfig, getDb } from '../db/connection.ts';
+import {
+  defaultProductionTaskId,
+  getProductionCue,
+  type ProductionCueAttemptResultV0,
+} from '../db/production-cues.ts';
 
 export type ReflectionEvidenceErrorCode =
   | 'invalid_supplement'
@@ -54,6 +61,9 @@ type AttemptRow = {
   sampled_skill_ids_json: string;
   response: string | null;
   outcome: string;
+  rating: string;
+  content_ref_json: string | null;
+  metadata_json: string;
   projected_at: string | null;
 };
 
@@ -83,7 +93,7 @@ type ClusterRow = {
 export const INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS = 10;
 
 export type InitialReflectionBundleBuild = {
-  bundle: SessionReflectionBundleV1;
+  bundle: SessionReflectionBundleV2;
   eligibleItemCount: number;
   includedItemCount: number;
 };
@@ -92,7 +102,7 @@ export function buildInitialReflectionBundle(
   sessionId: string,
   supplementValue: unknown,
   generatedAt = new Date().toISOString(),
-): SessionReflectionBundleV1 {
+): SessionReflectionBundleV2 {
   return buildInitialReflectionBundleWithMetrics(
     sessionId,
     supplementValue,
@@ -164,8 +174,8 @@ export function buildInitialReflectionBundleWithMetrics(
   }
   const items = eligibleItems.slice(0, INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS);
 
-  const bundle: SessionReflectionBundleV1 = {
-    schemaVersion: 'session_reflection_bundle.v1',
+  const bundle: SessionReflectionBundleV2 = {
+    schemaVersion: 'session_reflection_bundle.v2',
     generatedAt,
     session: {
       sessionId: normalizedSessionId,
@@ -178,7 +188,7 @@ export function buildInitialReflectionBundleWithMetrics(
 
   try {
     return {
-      bundle: parseInitialReflectionMilestoneBundle(bundle),
+      bundle: parseSessionReflectionBundleV2(bundle),
       eligibleItemCount: eligibleItems.length,
       includedItemCount: items.length,
     };
@@ -193,7 +203,7 @@ export function buildInitialReflectionBundleWithMetrics(
 function buildProductionMistakeItem(
   sessionId: string,
   supplement: ProductionMistakeEvidenceSupplementV1,
-): SessionReflectionBundleV1['items'][number] | null {
+): SessionReflectionBundleV2['items'][number] | null {
   const targetWord = getWordSnapshot(supplement.targetWordId);
   const attempts = getActionAttempts(sessionId, supplement.sessionActionId);
   assertCompleteAttemptReferences(sessionId, supplement, attempts);
@@ -215,16 +225,34 @@ function buildProductionMistakeItem(
   if (hasExcludingManagementAction(sessionId, supplement.sessionActionId)) {
     return null;
   }
-  if (isTargetWordResponse(supplement.rawResponse, supplement.targetWordId)) {
+  const taskId = defaultProductionTaskId(targetWord.wordId);
+  const attemptMetadata = parseProductionAttemptMetadata(firstAttempt.metadata_json);
+  if (attemptMetadata !== null) {
+    validateProductionAttemptMetadata(
+      firstAttempt,
+      supplement,
+      attemptMetadata,
+      taskId,
+    );
+  } else if (isTargetWordResponse(supplement.rawResponse, supplement.targetWordId)) {
     return null;
   }
+  if (attemptMetadata !== null && attemptMetadata.result !== 'rejected') return null;
 
-  const submittedWord = getExactSubmittedWordSnapshot(supplement.rawResponse);
+  const submittedWord = attemptMetadata?.submittedWordId
+    ? getWordSnapshot(attemptMetadata.submittedWordId)
+    : null;
+  const servedCue = productionServedCue(
+    firstAttempt,
+    supplement,
+    attemptMetadata,
+  );
 
   return {
     itemId: supplement.itemId,
     source: 'production_mistake',
     sourceActionKind: 'production',
+    sourceAttemptId: firstAttempt.id,
     sessionActionId: supplement.sessionActionId,
     occurredAt: firstAttempt.occurred_at,
     targetWord,
@@ -234,13 +262,10 @@ function buildProductionMistakeItem(
         ? [targetWord.wordId, submittedWord.wordId]
         : [targetWord.wordId],
     ),
-    cuesAsShown: supplement.cuesAsShown.map((cue) => ({
-      ...cue,
-      displayedMeanings: [...cue.displayedMeanings],
-    })),
+    servedCue,
     rawResponse: supplement.rawResponse,
     submittedWord,
-    responseKind: submittedWord === null ? 'unmatched_text' : 'matched_known_word',
+    responseKind: submittedWord !== null ? 'matched_known_word' : 'unmatched_text',
   };
 }
 
@@ -257,6 +282,9 @@ function getActionAttempts(sessionId: string, sessionActionId: string): AttemptR
       sampled_skill_ids_json,
       response,
       outcome,
+      rating,
+      content_ref_json,
+      metadata_json,
       projected_at
     FROM study_attempt_events
     WHERE session_id = ?
@@ -363,30 +391,192 @@ function getWordSnapshot(wordId: string): ReflectionWordSnapshotV1 {
   };
 }
 
-function getExactSubmittedWordSnapshot(rawResponse: string): ReflectionWordSnapshotV1 | null {
-  const row = getDb().prepare(`
-    SELECT id
-    FROM words
-    WHERE hanzi = ?
-      OR traditional = ?
-    ORDER BY id ASC
-    LIMIT 1
-  `).get(rawResponse.trim(), rawResponse.trim()) as { id: string } | undefined;
-  return row ? getWordSnapshot(row.id) : null;
+function productionServedCue(
+  attempt: AttemptRow,
+  supplement: ProductionMistakeEvidenceSupplementV1,
+  metadata: ProductionAttemptMetadataV0 | null,
+): ReflectionServedCueSnapshotV1 {
+  const suppliedCue = supplement.cuesAsShown[0];
+  if (supplement.cuesAsShown.length !== 1 || suppliedCue === undefined) {
+    throw invalidReference('Expected exactly one supplied production cue snapshot.');
+  }
+  if (metadata !== null) {
+    if (
+      suppliedCue.cueId !== metadata.cueId
+      || suppliedCue.cueType !== metadata.cueType
+      || suppliedCue.text !== metadata.text
+    ) {
+      throw invalidReference('The supplied production cue does not match the attempt snapshot.');
+    }
+    return {
+      cueId: metadata.cueId,
+      cueType: metadata.cueType,
+      text: metadata.text,
+      acceptedWordIds: [...metadata.acceptedWordIds],
+    };
+  }
+  if (suppliedCue.cueId !== null) {
+    throw invalidReference('A durable production cue attempt is missing its exact snapshot metadata.');
+  }
+  if (suppliedCue.cueType !== 'definition_gloss') {
+    throw invalidReference('Legacy production fallback evidence must be definition gloss content.');
+  }
+  return {
+    cueId: null,
+    cueType: 'definition_gloss',
+    text: suppliedCue.text,
+    acceptedWordIds: [attempt.target_word_id],
+  };
+}
+
+type ProductionAttemptMetadataV0 = {
+  taskId: string;
+  cueId: string | null;
+  cueType: 'definition_gloss' | 'minimal_context' | 'circumstance';
+  text: string;
+  acceptedWordIds: string[];
+  anchorWordId: string;
+  submittedText: string;
+  submittedWordId: string | null;
+  result: ProductionCueAttemptResultV0;
+};
+
+function parseProductionAttemptMetadata(raw: string): ProductionAttemptMetadataV0 | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw invalidReference('The production attempt metadata is invalid JSON.');
+  }
+  if (!isRecord(parsed) || !isRecord(parsed.production)) return null;
+  const production = parsed.production;
+  if (
+    typeof production.taskId !== 'string'
+    || (production.cueId !== null && typeof production.cueId !== 'string')
+    || (
+      production.cueType !== 'definition_gloss'
+      && production.cueType !== 'minimal_context'
+      && production.cueType !== 'circumstance'
+    )
+    || typeof production.text !== 'string'
+    || production.text.trim().length === 0
+    || !Array.isArray(production.acceptedWordIds)
+    || production.acceptedWordIds.length === 0
+    || production.acceptedWordIds.some((wordId) => typeof wordId !== 'string')
+    || new Set(production.acceptedWordIds).size !== production.acceptedWordIds.length
+    || typeof production.anchorWordId !== 'string'
+    || typeof production.submittedText !== 'string'
+    || (production.submittedWordId !== null && typeof production.submittedWordId !== 'string')
+    || (
+      production.result !== 'accepted_anchor'
+      && production.result !== 'accepted_non_anchor'
+      && production.result !== 'rejected'
+    )
+  ) {
+    throw invalidReference('The production attempt snapshot metadata is malformed.');
+  }
+  return production as ProductionAttemptMetadataV0;
+}
+
+function validateProductionAttemptMetadata(
+  attempt: AttemptRow,
+  supplement: ProductionMistakeEvidenceSupplementV1,
+  metadata: ProductionAttemptMetadataV0,
+  taskId: string,
+): void {
+  if (
+    metadata.taskId !== taskId
+    || metadata.anchorWordId !== attempt.target_word_id
+    || metadata.submittedText !== attempt.response
+    || metadata.submittedText !== supplement.rawResponse
+    || !metadata.acceptedWordIds.includes(metadata.anchorWordId)
+    || !isProductionResultCoherent(metadata)
+    || !isProductionAttemptOutcomeCoherent(attempt, metadata.result)
+  ) {
+    throw invalidReference('The production attempt snapshot does not match its durable attempt.');
+  }
+
+  const contentRef = parseNullableObjectJson(attempt.content_ref_json);
+  if (metadata.cueId === null) {
+    if (metadata.cueType !== 'definition_gloss' || contentRef !== null) {
+      throw invalidReference('Fallback production evidence has an invalid cue reference.');
+    }
+    return;
+  }
+  if (
+    contentRef?.type !== 'production_cue'
+    || contentRef.taskId !== metadata.taskId
+    || contentRef.cueId !== metadata.cueId
+  ) {
+    throw invalidReference('Production attempt content reference does not match its cue snapshot.');
+  }
+  const cue = getProductionCue(metadata.cueId);
+  if (
+    !cue
+    || cue.taskId !== taskId
+    || cue.cueType !== metadata.cueType
+    || cue.text !== metadata.text
+    || cue.acceptedWordIds.length !== metadata.acceptedWordIds.length
+    || cue.acceptedWordIds.some((wordId, index) => wordId !== metadata.acceptedWordIds[index])
+  ) {
+    throw invalidReference('Production attempt metadata does not match its immutable cue.');
+  }
+}
+
+function isProductionAttemptOutcomeCoherent(
+  attempt: AttemptRow,
+  result: ProductionCueAttemptResultV0,
+): boolean {
+  if (result === 'rejected') {
+    return attempt.outcome === 'incorrect' && attempt.rating === 'forgot';
+  }
+  return attempt.rating === 'forgot'
+    ? attempt.outcome === 'incorrect'
+    : attempt.outcome === 'correct';
+}
+
+function isProductionResultCoherent(metadata: ProductionAttemptMetadataV0): boolean {
+  switch (metadata.result) {
+    case 'accepted_anchor':
+      return metadata.submittedWordId === metadata.anchorWordId;
+    case 'accepted_non_anchor':
+      return metadata.submittedWordId !== null
+        && metadata.submittedWordId !== metadata.anchorWordId
+        && metadata.acceptedWordIds.includes(metadata.submittedWordId);
+    case 'rejected':
+      return metadata.submittedWordId === null
+        || !metadata.acceptedWordIds.includes(metadata.submittedWordId);
+  }
+}
+
+function parseNullableObjectJson(raw: string | null): Record<string, unknown> | null {
+  if (raw === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (isRecord(parsed)) return parsed;
+  } catch {
+    // Fall through to the durable-reference error below.
+  }
+  throw invalidReference('The production attempt content reference is invalid.');
 }
 
 function isTargetWordResponse(rawResponse: string, targetWordId: string): boolean {
   const row = getDb().prepare(`
-    SELECT 1 AS present
+    SELECT hanzi, traditional
     FROM words
     WHERE id = ?
-      AND (hanzi = ? OR traditional = ?)
-  `).get(
-    targetWordId,
-    rawResponse.trim(),
-    rawResponse.trim(),
-  ) as { present: 1 } | undefined;
-  return row !== undefined;
+  `).get(targetWordId) as { hanzi: string; traditional: string | null } | undefined;
+  if (!row) return false;
+  const normalizedResponse = normalizeProductionAnswerForProfile(
+    rawResponse,
+    getConfig().studyProfile,
+  );
+  return [row.hanzi, row.traditional]
+    .filter((form): form is string => form !== null)
+    .some((form) => normalizeProductionAnswerForProfile(
+      form,
+      getConfig().studyProfile,
+    ) === normalizedResponse);
 }
 
 function getExistingContent(wordIds: string[]): ReflectionExistingContentV0 {
@@ -460,4 +650,8 @@ function parseWordMeanings(raw: string, fallback: string): string[] {
 
 function invalidReference(message: string): ReflectionEvidenceError {
   return new ReflectionEvidenceError('invalid_reference', message);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

@@ -91,6 +91,25 @@ export const studyProfiles: Record<StudyProfileId, StudyProfile> = {
 export const studyProfile = resolveStudyProfile(getConfiguredStudyProfileId());
 
 export function normalizeProductionAnswer(value: string, options: ProductionMatchOptions): string {
+  return normalizeProductionAnswerWithProfile(value, options, studyProfile.id);
+}
+
+export function normalizeProductionAnswerForProfile(
+  value: string,
+  profileId: StudyProfileId,
+): string {
+  return normalizeProductionAnswerWithProfile(
+    value,
+    studyProfiles[profileId].defaultProductionMatchOptions,
+    profileId,
+  );
+}
+
+function normalizeProductionAnswerWithProfile(
+  value: string,
+  options: ProductionMatchOptions,
+  profileId: StudyProfileId,
+): string {
   let normalized = value.trim();
 
   if (options.normalizeApostrophes) {
@@ -102,7 +121,7 @@ export function normalizeProductionAnswer(value: string, options: ProductionMatc
   }
 
   if (options.ignoreCase) {
-    normalized = normalized.toLocaleLowerCase(studyProfile.id === 'french' ? 'fr' : undefined);
+    normalized = normalized.toLocaleLowerCase(profileId === 'french' ? 'fr' : undefined);
   }
 
   if (options.ignoreAccents) {

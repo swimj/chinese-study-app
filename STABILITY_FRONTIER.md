@@ -97,9 +97,10 @@ work has been dispatched.
 - Provider credentials and calls remain on the backend. Model output is
   untrusted input and must pass strict local validation before it can become a
   proposal or authorized operation.
-- Production-mistake reflection supplies only the exact served cue and its task
-  identity to the provider. Other active or inactive cues are not causal
-  evidence for that attempt and must not broaden provider proposal authority.
+- Production-mistake reflection supplies only the target word and exact served
+  cue to the provider; the trusted boundary derives the V0 task id. Other active
+  or inactive cues are not causal evidence for that attempt and must not broaden
+  provider proposal authority.
 - The model retains proposal-only authority. Cue content originating in
   reflection becomes selectable study content only through explicit
   authorization, a supported adapter, and a truthful applied effect.

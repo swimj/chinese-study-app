@@ -8,7 +8,9 @@ import { pathToFileURL } from 'node:url';
 import type {
   ReflectionOperation,
   SessionReflectionBundleV1,
+  SessionReflectionBundleV2,
   SessionReflectionResultV4,
+  SessionReflectionResultV5,
 } from '../src/domain/reflection.js';
 
 type DbModule = typeof import('../server/db.ts');
@@ -255,6 +257,77 @@ describe('reflection durable store', { concurrency: false }, () => {
         WHERE artifact_id = ?
       `).run(materialized.artifact.artifactId),
       /reflection artifacts are immutable/,
+    );
+  });
+
+  test('round-trips V2 evidence with a canonical V5 cue repair', () => {
+    const input = materializationInputV2('v2-round-trip-session');
+    const materialized = dbModule.materializeReflectionArtifact(input);
+
+    assert.equal(materialized.created, true);
+    assert.deepEqual(materialized.artifact.evidenceBundle, input.evidenceBundle);
+    assert.deepEqual(materialized.artifact.result, input.result);
+    assert.equal(materialized.artifact.bundleSchemaVersion, 'session_reflection_bundle.v2');
+    assert.equal(materialized.artifact.resultSchemaVersion, 'session_reflection_result.v5');
+  });
+
+  test('rejects mismatched bundle and result generations', () => {
+    const v1 = materializationInput('mismatch-v1-session', suppressOperation('target'));
+    const v2 = materializationInputV2('mismatch-v2-session');
+    assert.throws(
+      () => dbModule.materializeReflectionArtifact({
+        ...v1,
+        result: v2.result,
+      } as Parameters<DbModule['materializeReflectionArtifact']>[0]),
+      /is not compatible with session_reflection_bundle.v1/,
+    );
+    assert.throws(
+      () => dbModule.materializeReflectionArtifact({
+        ...v2,
+        result: v1.result,
+      } as Parameters<DbModule['materializeReflectionArtifact']>[0]),
+      /is not compatible with session_reflection_bundle.v2/,
+    );
+  });
+
+  test('authorizes exact and contained revised V2 cue repairs against immutable evidence', () => {
+    const exactArtifact = dbModule.materializeReflectionArtifact(
+      materializationInputV2('v2-exact-session'),
+    ).artifact;
+    const exactOperation = exactArtifact.proposals[0]!.proposal.operation;
+    const exact = dbModule.acceptReflectionProposal({
+      proposalId: exactArtifact.proposals[0]!.review.proposalId,
+      operation: exactOperation,
+      invocationId: 'v2-exact-invocation',
+      createdAt: updatedAt,
+    });
+    assert.deepEqual(exact.review.disposition, {
+      kind: 'accepted',
+      acceptanceMode: 'exact',
+      acceptedInvocationId: 'v2-exact-invocation',
+    });
+
+    const revisedArtifact = dbModule.materializeReflectionArtifact(
+      materializationInputV2('v2-revised-session'),
+    ).artifact;
+    const revisedOperation = structuredClone(revisedArtifact.proposals[0]!.proposal.operation);
+    assert.equal(revisedOperation.kind, 'repair_production_cue');
+    if (revisedOperation.kind === 'repair_production_cue' && revisedOperation.version === 2) {
+      const create = revisedOperation.changes[0];
+      assert.equal(create?.kind, 'create');
+      if (create?.kind === 'create') create.cue.text = 'A learner-edited bounded context';
+    }
+    const revised = dbModule.acceptReflectionProposal({
+      proposalId: revisedArtifact.proposals[0]!.review.proposalId,
+      operation: revisedOperation,
+      invocationId: 'v2-revised-invocation',
+      createdAt: updatedAt,
+    });
+    assert.equal(
+      revised.review.disposition.kind === 'accepted'
+        ? revised.review.disposition.acceptanceMode
+        : null,
+      'revised',
     );
   });
 
@@ -569,6 +642,91 @@ function materializationInput(
     promptVersion: 'initial-reflection.v1',
     evidenceBundle: bundle(sessionId),
     result: result(operation),
+  };
+}
+
+function materializationInputV2(
+  sessionId: string,
+): Parameters<DbModule['materializeReflectionArtifact']>[0] {
+  sqlite.prepare(`
+    INSERT OR IGNORE INTO study_sessions (
+      id,
+      started_at,
+      ended_at,
+      processing_state,
+      processed_at
+    ) VALUES (?, '2026-07-29T11:30:00.000Z', ?, 'processed', ?)
+  `).run(sessionId, generatedAt, generatedAt);
+  return {
+    sourceSessionId: sessionId,
+    reflectionFlowVersion: 'initial_post_session_reflection.v2',
+    generatedAt,
+    provider: 'openai',
+    model: 'gpt-5.6-luna',
+    promptVersion: 'reflection-v3',
+    evidenceBundle: bundleV2(sessionId),
+    result: resultV5(),
+  };
+}
+
+function bundleV2(sessionId: string): SessionReflectionBundleV2 {
+  const { cuesAsShown: _legacyCuesAsShown, ...baseItem } = productionItem('item');
+  return {
+    schemaVersion: 'session_reflection_bundle.v2',
+    generatedAt,
+    session: {
+      sessionId,
+      startedAt: '2026-07-29T11:30:00.000Z',
+      endedAt: generatedAt,
+      studyProfile: 'mandarin',
+    },
+    items: [{
+      ...baseItem,
+      sourceAttemptId: 'attempt-item',
+      servedCue: {
+        cueId: null,
+        cueType: 'definition_gloss',
+        text: 'target',
+        acceptedWordIds: ['target'],
+      },
+    }],
+  };
+}
+
+function resultV5(): SessionReflectionResultV5 {
+  return {
+    schemaVersion: 'session_reflection_result.v5',
+    itemResults: [{
+      itemId: 'item',
+      diagnosisTags: ['valid_or_near_valid_alternate'],
+      observation: 'The fallback omitted a known accepted answer.',
+      learnerExplanation: null,
+      proposals: [{
+        proposalGroupKey: null,
+        rationale: 'Create a durable cue with the explicit answer space.',
+        operation: {
+          kind: 'repair_production_cue',
+          version: 2,
+          wordId: 'target',
+          taskId: 'production-task:target:default_production',
+          changes: [{
+            kind: 'create',
+            cue: {
+              cueType: 'minimal_context',
+              text: 'A bounded context',
+              acceptedWordIds: ['target', 'alternate'],
+            },
+          }],
+          sourceAttemptJudgments: [{
+            kind: 'accepted_answer_space_omission',
+            sourceAttemptId: 'attempt-item',
+            submittedWordId: 'alternate',
+          }],
+        },
+      }],
+      questions: [],
+      unhandledNeeds: [],
+    }],
   };
 }
 

@@ -1,13 +1,15 @@
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import {
-  SESSION_REFLECTION_RESULT_SCHEMA_NAME,
-  sessionReflectionResultSchema,
+  SESSION_REFLECTION_RESULT_V5_WIRE_SCHEMA_NAME,
+  sessionReflectionResultV5WireSchema,
 } from '../../src/domain/reflection-result-schema.js';
 import {
-  validateSessionReflectionResult,
-  type SessionReflectionBundleV1,
-  type SessionReflectionResultV4,
+  normalizeSessionReflectionResultV5,
+  validateSessionReflectionResultV5,
+  type SessionReflectionBundleV2,
+  type SessionReflectionResultV5,
+  type SessionReflectionResultV5Wire,
 } from '../../src/domain/reflection.js';
 import type { FetchImplementation } from '../llm/http.js';
 import { validateJsonSchemaIssues } from '../llm/json-schema-validator.js';
@@ -36,10 +38,10 @@ export const LUNA_REFLECTION_MODEL_CONFIG = {
   maxOutputTokens: 40_000,
   timeoutMs: 180_000,
 } as const;
-export const LUNA_REFLECTION_PROMPT_VERSION = 'reflection-v2' as const;
+export const LUNA_REFLECTION_PROMPT_VERSION = 'reflection-v3' as const;
 
 const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
-const productionPromptUrl = new URL('./prompts/reflection-v2.md', import.meta.url);
+const productionPromptUrl = new URL('./prompts/reflection-v3.md', import.meta.url);
 
 export type LunaReflectionFailureCode =
   | 'missing_config'
@@ -98,19 +100,19 @@ export type LunaReflectionRunMetadata = {
   provider: 'openai';
   modelConfig: 'gpt-5.6-luna-high';
   providerModel: 'gpt-5.6-luna';
-  promptVersion: 'reflection-v2';
+  promptVersion: 'reflection-v3';
   responseId: string | null;
   finishReason: string | null;
   usage: NormalizedTokenUsage;
 };
 
 export type LunaReflectionSuccess = {
-  result: SessionReflectionResultV4;
+  result: SessionReflectionResultV5;
   metadata: LunaReflectionRunMetadata;
 };
 
 export type LunaReflectionProvider = {
-  generate(bundle: SessionReflectionBundleV1): Promise<LunaReflectionSuccess>;
+  generate(bundle: SessionReflectionBundleV2): Promise<LunaReflectionSuccess>;
 };
 
 export type LunaReflectionProviderOptions = {
@@ -148,7 +150,7 @@ export function createLunaReflectionProvider(
   });
 
   return {
-    async generate(bundle: SessionReflectionBundleV1): Promise<LunaReflectionSuccess> {
+    async generate(bundle: SessionReflectionBundleV2): Promise<LunaReflectionSuccess> {
       // Read credentials at call time so importing or constructing the service
       // never requires secrets and local configuration can be supplied later.
       const apiKey = configuredValue(environment.OPENAI_API_KEY);
@@ -164,8 +166,8 @@ export function createLunaReflectionProvider(
           reasoningEffort: LUNA_REFLECTION_MODEL_CONFIG.reasoningEffort,
           systemPrompt,
           userPrompt: JSON.stringify(bundle),
-          outputSchemaName: SESSION_REFLECTION_RESULT_SCHEMA_NAME,
-          outputSchema: sessionReflectionResultSchema,
+          outputSchemaName: SESSION_REFLECTION_RESULT_V5_WIRE_SCHEMA_NAME,
+          outputSchema: sessionReflectionResultV5WireSchema,
           maxOutputTokens: LUNA_REFLECTION_MODEL_CONFIG.maxOutputTokens,
           temperature: null,
           timeoutMs: LUNA_REFLECTION_MODEL_CONFIG.timeoutMs,
@@ -202,7 +204,7 @@ export function createLunaReflectionProvider(
         );
       }
 
-      const schemaIssues = validateJsonSchemaIssues(parsed, sessionReflectionResultSchema);
+      const schemaIssues = validateJsonSchemaIssues(parsed, sessionReflectionResultV5WireSchema);
       if (schemaIssues.length > 0) {
         throw new LunaReflectionProviderError(
           'schema_invalid', schemaIssues.length, clientRequestId, metadata,
@@ -210,7 +212,10 @@ export function createLunaReflectionProvider(
         );
       }
 
-      const contractErrors = validateSessionReflectionResult(parsed, bundle);
+      const normalized = normalizeSessionReflectionResultV5(
+        parsed as SessionReflectionResultV5Wire,
+      );
+      const contractErrors = validateSessionReflectionResultV5(normalized, bundle);
       if (contractErrors.length > 0) {
         throw new LunaReflectionProviderError(
           'domain_contract_invalid', contractErrors.length, clientRequestId, metadata,
@@ -219,7 +224,7 @@ export function createLunaReflectionProvider(
       }
 
       return {
-        result: parsed as SessionReflectionResultV4,
+        result: normalized,
         metadata,
       };
     },

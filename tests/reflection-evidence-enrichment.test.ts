@@ -48,6 +48,10 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
       DELETE FROM contrast_prompts;
       DELETE FROM contrast_cluster_members;
       DELETE FROM contrast_clusters;
+      DELETE FROM production_cue_activation_state;
+      DELETE FROM production_cue_accepted_words;
+      DELETE FROM production_cues;
+      DELETE FROM production_tasks;
       DELETE FROM study_events;
       DELETE FROM study_attempt_events;
       DELETE FROM review_session_summaries;
@@ -103,8 +107,15 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
     assert.equal(bundle.items.length, 1);
     const item = bundle.items[0];
     assert(item?.source === 'production_mistake');
-    assert.equal(item.responseKind, 'matched_known_word');
-    assert.equal(item.submittedWord?.wordId, 'alternate');
+    assert.equal(item.responseKind, 'unmatched_text');
+    assert.equal(item.submittedWord, null);
+    assert.equal(item.sourceAttemptId, 'attempt-1');
+    assert.deepEqual(item.servedCue, {
+      cueId: null,
+      cueType: 'definition_gloss',
+      text: 'goal; objective',
+      acceptedWordIds: ['target'],
+    });
     assert.deepEqual(item.targetWord.meanings, ['goal', 'objective']);
     assert.equal(Object.hasOwn(item.targetWord, 'production'), false);
     assert.equal(Object.hasOwn(item, 'attempts'), false);
@@ -184,7 +195,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
     assert.equal(item.submittedWord, null);
   });
 
-  test('preserves raw response evidence while matching a trimmed exact known word', () => {
+  test('does not re-resolve legacy raw text against the current word catalog', () => {
     sqlite.prepare(`
       UPDATE study_attempt_events
       SET response = '  替代  '
@@ -195,8 +206,113 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
     const item = bundle.items[0];
     assert(item?.source === 'production_mistake');
     assert.equal(item.rawResponse, '  替代  ');
+    assert.equal(item.responseKind, 'unmatched_text');
+    assert.equal(item.submittedWord, null);
+  });
+
+  test('uses the exact durable production cue and response-resolution snapshot', () => {
+    insertProductionCue({ cueId: 'cue-served', active: true, acceptedWordIds: ['target'] });
+    insertProductionCue({
+      cueId: 'cue-inactive',
+      cueType: 'circumstance',
+      text: 'Use this for an objective or goal.',
+      active: false,
+      acceptedWordIds: ['target', 'alternate'],
+    });
+    sqlite.prepare(`
+      UPDATE study_attempt_events
+      SET content_ref_json = ?, metadata_json = ?
+      WHERE id = 'attempt-1'
+    `).run(
+      JSON.stringify({
+        type: 'production_cue',
+        taskId: 'production-task:target:default_production',
+        cueId: 'cue-served',
+      }),
+      JSON.stringify({
+        production: {
+          taskId: 'production-task:target:default_production',
+          cueId: 'cue-served',
+          cueType: 'minimal_context',
+          text: 'Name the goal in one word.',
+          acceptedWordIds: ['target'],
+          anchorWordId: 'target',
+          submittedText: '替代',
+          submittedWordId: 'alternate',
+          result: 'rejected',
+        },
+      }),
+    );
+
+    const bundle = buildInitialReflectionBundle(
+      'session-1',
+      withItem(supplement('替代'), {
+        cuesAsShown: [{
+          cueId: 'cue-served',
+          cueType: 'minimal_context',
+          displayOrder: 0,
+          text: 'Name the goal in one word.',
+          displayedMeanings: [],
+        }],
+      }),
+      generatedAt,
+    );
+    const item = bundle.items[0];
+    assert(item?.source === 'production_mistake');
     assert.equal(item.responseKind, 'matched_known_word');
     assert.equal(item.submittedWord?.wordId, 'alternate');
+    assert.deepEqual(item.servedCue, {
+      cueId: 'cue-served',
+      cueType: 'minimal_context',
+      text: 'Name the goal in one word.',
+      acceptedWordIds: ['target'],
+    });
+  });
+
+  test('rejects a production cue snapshot whose content reference names another cue', () => {
+    insertProductionCue({ cueId: 'cue-served', active: true, acceptedWordIds: ['target'] });
+    sqlite.prepare(`
+      UPDATE study_attempt_events
+      SET content_ref_json = ?, metadata_json = ?
+      WHERE id = 'attempt-1'
+    `).run(
+      JSON.stringify({
+        type: 'production_cue',
+        taskId: 'production-task:target:default_production',
+        cueId: 'different-cue',
+      }),
+      JSON.stringify({
+        production: {
+          taskId: 'production-task:target:default_production',
+          cueId: 'cue-served',
+          cueType: 'minimal_context',
+          text: 'Name the goal in one word.',
+          acceptedWordIds: ['target'],
+          anchorWordId: 'target',
+          submittedText: '替代',
+          submittedWordId: 'alternate',
+          result: 'rejected',
+        },
+      }),
+    );
+
+    assertEvidenceError(
+      () => buildInitialReflectionBundle(
+        'session-1',
+        withItem(supplement('替代'), {
+          cuesAsShown: [{
+            cueId: 'cue-served',
+            cueType: 'minimal_context',
+            displayOrder: 0,
+            text: 'Name the goal in one word.',
+            displayedMeanings: [],
+          }],
+        }),
+        generatedAt,
+      ),
+      'invalid_reference',
+      400,
+    );
   });
 
   test('excludes actions with an explicit same-session management judgment', () => {
@@ -230,12 +346,36 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
     }
   });
 
+  test('excludes an accepted non-anchor response that the learner rated forgot', () => {
+    sqlite.prepare(`
+      UPDATE study_attempt_events
+      SET metadata_json = ?
+      WHERE id = 'attempt-1'
+    `).run(productionAttemptMetadata({
+      submittedText: '替代',
+      submittedWordId: 'alternate',
+      result: 'accepted_non_anchor',
+      acceptedWordIds: ['target', 'alternate'],
+    }));
+
+    assertEvidenceError(
+      () => buildInitialReflectionBundle('session-1', supplement('替代'), generatedAt),
+      'no_qualifying_evidence',
+      400,
+    );
+  });
+
   test('excludes an incorrect rating for either target Hanzi form from reflection', () => {
     sqlite.prepare(`
       UPDATE study_attempt_events
-      SET response = '  目标  '
+      SET response = '  目标  ', metadata_json = ?
       WHERE id = 'attempt-1'
-    `).run();
+    `).run(productionAttemptMetadata({
+      submittedText: '  目标  ',
+      submittedWordId: 'target',
+      result: 'accepted_anchor',
+      acceptedWordIds: ['target'],
+    }));
 
     assertEvidenceError(
       () => buildInitialReflectionBundle('session-1', supplement('  目标  '), generatedAt),
@@ -246,9 +386,14 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
     insertCompleteSession();
     sqlite.prepare(`
       UPDATE study_attempt_events
-      SET response = '目標'
+      SET response = '目標', metadata_json = ?
       WHERE id = 'attempt-1'
-    `).run();
+    `).run(productionAttemptMetadata({
+      submittedText: '目標',
+      submittedWordId: 'target',
+      result: 'accepted_anchor',
+      acceptedWordIds: ['target'],
+    }));
     assertEvidenceError(
       () => buildInitialReflectionBundle('session-1', supplement('目標'), generatedAt),
       'no_qualifying_evidence',
@@ -415,6 +560,8 @@ function createSchema() {
       response TEXT,
       outcome TEXT NOT NULL,
       rating TEXT,
+      content_ref_json TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
       projected_at TEXT
     );
     CREATE TABLE study_events (
@@ -465,6 +612,33 @@ function createSchema() {
       prompt_text TEXT NOT NULL,
       explanation TEXT NOT NULL
     );
+    CREATE TABLE production_tasks (
+      task_id TEXT PRIMARY KEY,
+      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      task_kind TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE production_cues (
+      cue_id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES production_tasks(task_id) ON DELETE CASCADE,
+      cue_type TEXT NOT NULL,
+      cue_text TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      origin_kind TEXT NOT NULL,
+      origin_invocation_id TEXT
+    );
+    CREATE TABLE production_cue_accepted_words (
+      cue_id TEXT NOT NULL REFERENCES production_cues(cue_id) ON DELETE CASCADE,
+      word_id TEXT NOT NULL REFERENCES words(id),
+      position INTEGER NOT NULL,
+      PRIMARY KEY (cue_id, word_id)
+    );
+    CREATE TABLE production_cue_activation_state (
+      cue_id TEXT PRIMARY KEY REFERENCES production_cues(cue_id) ON DELETE CASCADE,
+      active INTEGER NOT NULL,
+      latest_lifecycle_event_id TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 }
 
@@ -479,6 +653,10 @@ function insertCompleteSession() {
       ('target-1', 'target', 0, 'goal'),
       ('target-2', 'target', 1, 'objective'),
       ('alternate-1', 'alternate', 0, 'substitute');
+    INSERT OR IGNORE INTO production_tasks (task_id, word_id, task_kind, created_at)
+    VALUES
+      ('production-task:target:default_production', 'target', 'default_production', '${startedAt}'),
+      ('production-task:alternate:default_production', 'alternate', 'default_production', '${startedAt}');
     INSERT OR IGNORE INTO study_sessions
       (id, started_at, ended_at, processing_state, processed_at)
     VALUES ('session-1', '${startedAt}', NULL, 'processed', '${completedAt}');
@@ -522,6 +700,33 @@ function supplement(rawResponse: string): SessionReflectionEvidenceSupplementV1 
   };
 }
 
+function productionAttemptMetadata({
+  submittedText,
+  submittedWordId,
+  result,
+  acceptedWordIds,
+}: {
+  submittedText: string;
+  submittedWordId: string | null;
+  result: 'accepted_anchor' | 'accepted_non_anchor' | 'rejected';
+  acceptedWordIds: string[];
+}): string {
+  return JSON.stringify({
+    production: {
+      taskId: 'production-task:target:default_production',
+      cueId: null,
+      cueType: 'definition_gloss',
+      text: 'goal; objective',
+      acceptedWordIds,
+      anchorWordId: 'target',
+      submittedText,
+      submittedWordId,
+      result,
+      recheckDemandId: null,
+    },
+  });
+}
+
 function withAttemptIds(
   value: SessionReflectionEvidenceSupplementV1,
   attemptIds: string[],
@@ -561,6 +766,10 @@ function insertEligibleProductionMistake(
     VALUES (?, ?, 0, ?)
   `).run(`${wordId}-meaning`, wordId, `meaning ${suffix}`);
   sqlite.prepare(`
+    INSERT INTO production_tasks (task_id, word_id, task_kind, created_at)
+    VALUES (?, ?, 'default_production', ?)
+  `).run(`production-task:${wordId}:default_production`, wordId, completedAt);
+  sqlite.prepare(`
     INSERT INTO study_attempt_events (
       id, occurred_at, session_id, session_action_id, session_event_sequence,
       action_attempt_sequence, action_kind, target_word_id,
@@ -587,6 +796,37 @@ function insertEligibleProductionMistake(
     rawResponse: response,
     attemptIds: [`attempt-${suffix}-1`, `attempt-${suffix}-2`],
   };
+}
+
+function insertProductionCue({
+  cueId,
+  cueType = 'minimal_context',
+  text = 'Name the goal in one word.',
+  active,
+  acceptedWordIds,
+}: {
+  cueId: string;
+  cueType?: 'definition_gloss' | 'minimal_context' | 'circumstance';
+  text?: string;
+  active: boolean;
+  acceptedWordIds: string[];
+}) {
+  sqlite.prepare(`
+    INSERT INTO production_cues (
+      cue_id, task_id, cue_type, cue_text, created_at, origin_kind, origin_invocation_id
+    ) VALUES (?, 'production-task:target:default_production', ?, ?, ?, 'manual', NULL)
+  `).run(cueId, cueType, text, `${completedAt}:${cueId}`);
+  acceptedWordIds.forEach((wordId, position) => {
+    sqlite.prepare(`
+      INSERT INTO production_cue_accepted_words (cue_id, word_id, position)
+      VALUES (?, ?, ?)
+    `).run(cueId, wordId, position);
+  });
+  sqlite.prepare(`
+    INSERT INTO production_cue_activation_state (
+      cue_id, active, latest_lifecycle_event_id, updated_at
+    ) VALUES (?, ?, ?, ?)
+  `).run(cueId, active ? 1 : 0, `lifecycle:${cueId}`, completedAt);
 }
 
 function assertEvidenceError(

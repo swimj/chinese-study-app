@@ -18,6 +18,7 @@ import type {
   ReflectionOperation,
   RepairProductionCueOperationV2,
   SessionReflectionBundleV1,
+  SessionReflectionBundleV2,
   SessionReflectionResultV4,
   SessionReflectionResultV5Wire,
 } from '../src/domain/reflection.js';
@@ -82,6 +83,25 @@ function result(operation: ReflectionOperation): SessionReflectionResultV4 {
       }],
       questions: [],
       unhandledNeeds: [],
+    }],
+  };
+}
+
+function bundleV2(): SessionReflectionBundleV2 {
+  const { cuesAsShown: _legacyCuesAsShown, ...baseItem } = bundle().items[0]!;
+  return {
+    schemaVersion: 'session_reflection_bundle.v2',
+    generatedAt: '2026-07-29T00:00:00.000Z',
+    session: bundle().session,
+    items: [{
+      ...baseItem,
+      sourceAttemptId: 'attempt-1',
+      servedCue: {
+        cueId: 'cue-1',
+        cueType: 'definition_gloss',
+        text: 'target',
+        acceptedWordIds: ['target'],
+      },
     }],
   };
 }
@@ -384,8 +404,61 @@ describe('reflection result validation', () => {
     };
     const normalized = normalizeSessionReflectionResultV5(wireResult);
     assert.deepEqual(normalized.itemResults[0]!.proposals[0]!.operation, operation);
-    assert.deepEqual(validateSessionReflectionResultV5(normalized, bundle()), []);
+    assert.deepEqual(validateSessionReflectionResultV5(normalized, bundleV2()), []);
     assert.deepEqual(wireResult.itemResults[0]!.proposals[0]!.operation, wireOperation);
+  });
+
+  test('binds V2 repairs and judgments to the exact served cue evidence', () => {
+    const operation = cueRepairV2();
+    const { version: _version, taskId: _taskId, ...wireOperation } = operation;
+    const wireResult: SessionReflectionResultV5Wire = {
+      schemaVersion: 'session_reflection_result.v5',
+      itemResults: [{
+        ...result(contrastOperation()).itemResults[0]!,
+        proposals: [{
+          proposalGroupKey: null,
+          rationale: 'Repair the exact served answer space.',
+          operation: wireOperation,
+        }],
+      }],
+    };
+    const normalized = normalizeSessionReflectionResultV5(wireResult);
+
+    const terminalDeactivation = structuredClone(normalized);
+    const deactivationOperation = terminalDeactivation.itemResults[0]!.proposals[0]!.operation;
+    assert.equal(deactivationOperation.kind, 'repair_production_cue');
+    if (deactivationOperation.kind === 'repair_production_cue' && deactivationOperation.version === 2) {
+      deactivationOperation.changes = [{ kind: 'deactivate', cueId: 'cue-1' }];
+      deactivationOperation.sourceAttemptJudgments = [{
+        kind: 'misleading_or_overloaded_cue',
+        sourceAttemptId: 'attempt-1',
+      }];
+    }
+    assert.deepEqual(validateSessionReflectionResultV5(terminalDeactivation, bundleV2()), []);
+
+    const wrongRepair = structuredClone(normalized);
+    const wrongOperation = wrongRepair.itemResults[0]!.proposals[0]!.operation;
+    assert.equal(wrongOperation.kind, 'repair_production_cue');
+    if (wrongOperation.kind === 'repair_production_cue' && wrongOperation.version === 2) {
+      wrongOperation.changes = [{
+        kind: 'create',
+        cue: {
+          cueType: 'minimal_context',
+          text: 'An unrelated cue',
+          acceptedWordIds: ['target', 'alternate'],
+        },
+      }];
+    }
+    const wrongRepairErrors = validateSessionReflectionResultV5(wrongRepair, bundleV2()).join('\n');
+    assert.match(wrongRepairErrors, /create is allowed only for fallback evidence/);
+    assert.match(wrongRepairErrors, /must repair the exact served cue contract/);
+
+    const otherServedCueBundle = bundleV2();
+    otherServedCueBundle.items[0]!.servedCue.cueId = 'cue-other';
+    assert.match(
+      validateSessionReflectionResultV5(normalized, otherServedCueBundle).join('\n'),
+      /must match the exact served cue/,
+    );
   });
 });
 

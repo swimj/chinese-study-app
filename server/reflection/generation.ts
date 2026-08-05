@@ -1,4 +1,4 @@
-import type { SessionReflectionBundleV1 } from '../../src/domain/reflection.ts';
+import type { SessionReflectionBundleV2 } from '../../src/domain/reflection.ts';
 import {
   getReflectionGenerationRetrySource,
   getReflectionArtifactBySessionAndFlow,
@@ -48,7 +48,7 @@ export type InitialReflectionGenerationDependencies = {
     sessionId: string,
     supplement: unknown,
     generatedAt: string,
-  ) => SessionReflectionBundleV1;
+  ) => SessionReflectionBundleV2;
   buildBundleWithMetrics?: (
     sessionId: string,
     supplement: unknown,
@@ -155,6 +155,9 @@ export function createInitialReflectionGenerationService(
       const retrySource = getRetrySource(runId);
       if (retrySource.reflectionFlowVersion !== INITIAL_REFLECTION_FLOW_VERSION) {
         throw new Error('Reflection generation run is not retryable by the current flow.');
+      }
+      if (retrySource.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v2') {
+        throw new Error('The current reflection flow cannot retry a non-V2 evidence bundle.');
       }
       const retryStartedAt = Date.now();
       lifecycleLogger?.emit({
@@ -324,7 +327,7 @@ function runRecordInput(input: {
   error: unknown;
   eligibleItemCount: number;
   includedItemCount: number;
-  evidenceBundle: SessionReflectionBundleV1;
+  evidenceBundle: SessionReflectionBundleV2;
 }): RecordReflectionGenerationRunInput {
   const estimate = estimateInitialReflectionRunCost({
     provider: input.metadata.provider,
@@ -346,7 +349,7 @@ function runRecordInput(input: {
       : null,
     finishReason: input.metadata.finishReason,
     bundleSchemaVersion: input.evidenceBundle.schemaVersion,
-    resultSchemaVersion: 'session_reflection_result.v4',
+    resultSchemaVersion: 'session_reflection_result.v5',
     diagnostic: input.error instanceof LunaReflectionProviderError
       ? input.error.diagnostic
       : null,

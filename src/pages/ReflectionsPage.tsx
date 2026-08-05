@@ -4,6 +4,7 @@ import type {
   OperationApplicationState,
   ProposalReviewDisposition,
   ReflectionInputItemV1,
+  ReflectionInputItemV2,
   ReflectionOperation,
 } from '../domain/reflection';
 import { ReflectionOperationEditor } from '../features/reflection/ReflectionOperationEditor';
@@ -822,7 +823,11 @@ function EffectRefs({ label, refs }: { label: string; refs: EffectRef[] }) {
   );
 }
 
-function EvidenceView({ evidence }: { evidence: ReflectionInputItemV1 | null }) {
+function EvidenceView({
+  evidence,
+}: {
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null;
+}) {
   if (evidence === null) {
     return (
       <section className="reflection-evidence">
@@ -833,6 +838,9 @@ function EvidenceView({ evidence }: { evidence: ReflectionInputItemV1 | null }) 
   }
 
   if (evidence.source === 'production_mistake') {
+    const servedCues = 'servedCue' in evidence
+      ? [evidence.servedCue]
+      : evidence.cuesAsShown;
     return (
       <section className="reflection-evidence">
         <h3>Evidence</h3>
@@ -847,7 +855,7 @@ function EvidenceView({ evidence }: { evidence: ReflectionInputItemV1 | null }) 
         <div className="reflection-evidence-notes">
           <strong>Cues as shown</strong>
           <ul>
-            {evidence.cuesAsShown.map((cue, index) => (
+            {servedCues.map((cue, index) => (
               <li key={`${cue.cueId ?? 'snapshot'}-${index}`}>{cue.text}</li>
             ))}
           </ul>
@@ -910,7 +918,7 @@ function InfoList({
   );
 }
 
-function itemTitle(evidence: ReflectionInputItemV1 | null): string {
+function itemTitle(evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null): string {
   if (evidence?.targetWord !== null && evidence?.targetWord !== undefined) {
     return wordLabel(evidence.targetWord);
   }

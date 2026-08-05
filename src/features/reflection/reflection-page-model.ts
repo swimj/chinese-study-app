@@ -2,6 +2,7 @@ import type {
   AcceptProductionAlternateOperationV1,
   CreateContrastClusterOperationV1,
   ReflectionInputItemV1,
+  ReflectionInputItemV2,
   ReflectionItemResultV1,
   ReflectionOperation,
   RepairProductionCueOperationV1,
@@ -18,7 +19,7 @@ import {
 } from '../../domain/reflection';
 
 export type ReflectionItemPresentation = {
-  evidence: ReflectionInputItemV1 | null;
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null;
   result: ReflectionItemResultV1;
   proposals: ReflectionProposalDetailDto[];
 };
@@ -27,7 +28,7 @@ export type ReflectionProposalQueueKind = 'attention' | 'deferred' | 'unapplied'
 
 export type ReflectionProposalPresentation = {
   artifact: ReflectionArtifactDetailDto;
-  evidence: ReflectionInputItemV1 | null;
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null;
   result: ReflectionItemResultV1;
   proposal: ReflectionProposalDetailDto;
 };

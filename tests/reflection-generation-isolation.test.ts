@@ -98,18 +98,18 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
     assert.deepEqual({ ...run, runId: 'generated-run-id' }, {
       runId: 'generated-run-id',
       sourceSessionId: 'session-1',
-      reflectionFlowVersion: 'initial_post_session_reflection.v1',
+      reflectionFlowVersion: 'initial_post_session_reflection.v2',
       startedAt: generatedAt,
       completedAt: generatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v2',
+      promptVersion: 'reflection-v3',
       responseId: null,
       clientRequestId: run.clientRequestId,
       finishReason: null,
-      bundleSchemaVersion: 'session_reflection_bundle.v1',
-      resultSchemaVersion: 'session_reflection_result.v4',
+      bundleSchemaVersion: 'session_reflection_bundle.v2',
+      resultSchemaVersion: 'session_reflection_result.v5',
       diagnostic: {
         schemaVersion: 'reflection_generation_diagnostic.v1',
         phase: 'provider_transport',
@@ -135,7 +135,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       environment: { OPENAI_API_KEY: 'test-only-key' },
       systemPrompt: 'Test reflection prompt.',
       fetchImplementation: providerFetch(responseEnvelope({
-        schemaVersion: 'session_reflection_result.v4',
+        schemaVersion: 'session_reflection_result.v5',
         itemResults: [{
           itemId: 'unknown-item',
           diagnosisTags: ['ordinary_retrieval_noise'],

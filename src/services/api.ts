@@ -25,8 +25,8 @@ import type {
   ProposalReviewStatus,
   ReflectionProposalV1,
   ReviewProposalRequest,
-  SessionReflectionBundleV1,
-  SessionReflectionResultV4,
+  SessionReflectionBundle,
+  SessionReflectionResult,
 } from '../domain/reflection';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:5174';
@@ -109,8 +109,8 @@ export type ReflectionArtifactSummaryDto = {
   provider: string;
   model: string;
   promptVersion: string;
-  bundleSchemaVersion: SessionReflectionBundleV1['schemaVersion'];
-  resultSchemaVersion: SessionReflectionResultV4['schemaVersion'];
+  bundleSchemaVersion: SessionReflectionBundle['schemaVersion'];
+  resultSchemaVersion: SessionReflectionResult['schemaVersion'];
   itemCount: number;
   proposalCount: number;
   openProposalCount: number;
@@ -133,8 +133,8 @@ export type ReflectionArtifactDetailDto = Omit<
   ReflectionArtifactSummaryDto,
   'itemCount' | 'proposalCount' | 'openProposalCount'
 > & {
-  evidenceBundle: SessionReflectionBundleV1;
-  result: SessionReflectionResultV4;
+  evidenceBundle: SessionReflectionBundle;
+  result: SessionReflectionResult;
   proposals: ReflectionProposalDetailDto[];
 };
 

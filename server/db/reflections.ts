@@ -10,8 +10,13 @@ import type {
   ReflectionOperation,
   ReflectionProposalV1,
   ReflectionInputItemV1,
+  ReflectionInputItemV2,
+  SessionReflectionBundle,
   SessionReflectionBundleV1,
+  SessionReflectionBundleV2,
+  SessionReflectionResult,
   SessionReflectionResultV4,
+  SessionReflectionResultV5,
 } from '../../src/domain/reflection.ts';
 import {
   assertOperationApplicationTransition,
@@ -19,10 +24,12 @@ import {
   classifyProposalAcceptance,
   getReflectionOperationRegistration,
   reflectionOperationWordReferences,
+  validateReflectionOperationEvidenceContext,
   validateReflectionOperation,
   validateSessionReflectionResult,
+  validateSessionReflectionResultV5,
 } from '../../src/domain/reflection.ts';
-import { parseSessionReflectionBundle } from '../../src/domain/reflection-evidence.ts';
+import { parseStoredSessionReflectionBundle } from '../../src/domain/reflection-evidence.ts';
 import type { NormalizedTokenUsage } from '../llm/types.ts';
 import type { ReflectionGenerationDiagnostic } from '../reflection/run-diagnostics.ts';
 import { dbPath, getDb } from './connection.ts';
@@ -33,13 +40,13 @@ import {
 } from './domain-commands.ts';
 import { applyProductionCueRepairWithoutTransaction } from './production-cues.ts';
 
-export const INITIAL_REFLECTION_FLOW_VERSION = 'initial_post_session_reflection.v1';
+export const INITIAL_REFLECTION_FLOW_VERSION = 'initial_post_session_reflection.v2';
 
 const unsupportedApplicationReason = (operation: ReflectionOperation) => (
   `No faithful application adapter is available for ${operation.kind}@${operation.version}.`
 );
 
-export type MaterializeReflectionArtifactInput = {
+type MaterializeReflectionArtifactBase = {
   artifactId?: string;
   sourceSessionId: string;
   reflectionFlowVersion: string;
@@ -47,9 +54,12 @@ export type MaterializeReflectionArtifactInput = {
   provider: string;
   model: string;
   promptVersion: string;
-  evidenceBundle: SessionReflectionBundleV1;
-  result: SessionReflectionResultV4;
 };
+
+export type MaterializeReflectionArtifactInput = MaterializeReflectionArtifactBase & (
+  | { evidenceBundle: SessionReflectionBundleV1; result: SessionReflectionResultV4 }
+  | { evidenceBundle: SessionReflectionBundleV2; result: SessionReflectionResultV5 }
+);
 
 export type ReflectionGenerationRunState = 'succeeded' | 'failed';
 
@@ -90,7 +100,7 @@ export type RecordReflectionGenerationRunInput = Omit<
   bundleSchemaVersion?: string | null;
   resultSchemaVersion?: string | null;
   diagnostic?: ReflectionGenerationDiagnostic | null;
-  evidenceBundle: SessionReflectionBundleV1;
+  evidenceBundle: SessionReflectionBundle;
 };
 
 export type ReflectionGenerationRetrySource = {
@@ -99,7 +109,7 @@ export type ReflectionGenerationRetrySource = {
   reflectionFlowVersion: string;
   eligibleItemCount: number;
   includedItemCount: number;
-  evidenceBundle: SessionReflectionBundleV1;
+  evidenceBundle: SessionReflectionBundle;
 };
 
 /**
@@ -132,10 +142,10 @@ export type ReflectionArtifactRecord = {
   provider: string;
   model: string;
   promptVersion: string;
-  bundleSchemaVersion: SessionReflectionBundleV1['schemaVersion'];
-  resultSchemaVersion: SessionReflectionResultV4['schemaVersion'];
-  evidenceBundle: SessionReflectionBundleV1;
-  result: SessionReflectionResultV4;
+  bundleSchemaVersion: SessionReflectionBundle['schemaVersion'];
+  resultSchemaVersion: SessionReflectionResult['schemaVersion'];
+  evidenceBundle: SessionReflectionBundle;
+  result: SessionReflectionResult;
 };
 
 export type OperationInvocationStatus = {
@@ -799,10 +809,13 @@ export function materializeReflectionArtifact(
   if (input.evidenceBundle.session.sessionId !== input.sourceSessionId) {
     throw new Error('Reflection evidence session does not match the source session id.');
   }
-  if (input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v1') {
-    throw new Error(`Unsupported reflection bundle schema ${input.evidenceBundle.schemaVersion}.`);
+  if (
+    input.reflectionFlowVersion === INITIAL_REFLECTION_FLOW_VERSION
+    && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v2'
+  ) {
+    throw new Error('The current reflection flow requires a V2 evidence bundle.');
   }
-  const validationErrors = validateSessionReflectionResult(input.result, input.evidenceBundle);
+  const validationErrors = validateReflectionArtifactPair(input.result, input.evidenceBundle);
   if (validationErrors.length > 0) {
     throw new Error(`Cannot materialize invalid reflection result:\n${validationErrors.join('\n')}`);
   }
@@ -1044,7 +1057,13 @@ export function recordReflectionGenerationRun(
   if (input.evidenceBundle.session.sessionId !== input.sourceSessionId) {
     throw new Error('Reflection generation run source session does not match its evidence bundle.');
   }
-  parseSessionReflectionBundle(input.evidenceBundle);
+  if (
+    input.reflectionFlowVersion === INITIAL_REFLECTION_FLOW_VERSION
+    && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v2'
+  ) {
+    throw new Error('The current reflection flow requires a V2 retained evidence bundle.');
+  }
+  parseStoredSessionReflectionBundle(input.evidenceBundle);
   assertNormalizedUsage(input.usage);
   if (input.estimatedCostUsd !== null && (!Number.isFinite(input.estimatedCostUsd)
     || input.estimatedCostUsd < 0)) {
@@ -1088,7 +1107,11 @@ export function recordReflectionGenerationRun(
     input.finishReason,
     input.clientRequestId ?? null,
     input.bundleSchemaVersion ?? input.evidenceBundle.schemaVersion,
-    input.resultSchemaVersion ?? 'session_reflection_result.v4',
+    input.resultSchemaVersion ?? (
+      input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v2'
+        ? 'session_reflection_result.v5'
+        : 'session_reflection_result.v4'
+    ),
     input.diagnostic === undefined || input.diagnostic === null
       ? null
       : JSON.stringify(input.diagnostic),
@@ -1178,9 +1201,9 @@ export function getReflectionGenerationRetrySource(
     throw new Error('Reflection generation run is not retryable.');
   }
 
-  let evidenceBundle: SessionReflectionBundleV1;
+  let evidenceBundle: SessionReflectionBundle;
   try {
-    evidenceBundle = parseSessionReflectionBundle(parseJson(
+    evidenceBundle = parseStoredSessionReflectionBundle(parseJson(
       row.evidence_bundle_json,
       `reflection generation run ${row.run_id} evidence bundle`,
     ));
@@ -1287,6 +1310,13 @@ export function acceptReflectionProposal(
       allowedWordIds: visibleWordIds(evidenceItem),
       evidenceItemId: evidenceItem.itemId,
     });
+    if ('servedCue' in evidenceItem) {
+      itemValidationErrors.push(...validateReflectionOperationEvidenceContext(
+        input.operation,
+        evidenceItem,
+        '$',
+      ));
+    }
     if (itemValidationErrors.length > 0) {
       throw new Error(
         `Cannot authorize reflection operation outside its evidence item:\n`
@@ -1556,7 +1586,7 @@ function requireProposalReviewRow(proposalId: string): ProposalReviewRow {
 
 function originalProposalContextForReview(row: ProposalReviewRow): {
   proposal: ReflectionProposalV1;
-  evidenceItem: ReflectionInputItemV1;
+  evidenceItem: ReflectionInputItemV1 | ReflectionInputItemV2;
 } {
   const artifactRow = getDb().prepare(`
     SELECT ${artifactColumns.join(', ')}
@@ -1680,7 +1710,7 @@ function mapArtifactRow(row: ArtifactRow): ReflectionArtifactRecord {
     row.result_json,
     `reflection artifact ${row.artifact_id} result`,
   );
-  const errors = validateSessionReflectionResult(result, evidenceBundle);
+  const errors = validateReflectionArtifactPair(result, evidenceBundle);
   if (errors.length > 0) {
     throw corruptionError(
       `artifact ${row.artifact_id} contains an invalid result:\n${errors.join('\n')}`,
@@ -1708,6 +1738,28 @@ function mapArtifactRow(row: ArtifactRow): ReflectionArtifactRecord {
     evidenceBundle,
     result,
   };
+}
+
+function validateReflectionArtifactPair(
+  result: unknown,
+  evidenceBundle: SessionReflectionBundle,
+): string[] {
+  if (!isRecord(result)) return ['$: expected object'];
+  if (
+    evidenceBundle.schemaVersion === 'session_reflection_bundle.v1'
+    && result.schemaVersion === 'session_reflection_result.v4'
+  ) {
+    return validateSessionReflectionResult(result, evidenceBundle);
+  }
+  if (
+    evidenceBundle.schemaVersion === 'session_reflection_bundle.v2'
+    && result.schemaVersion === 'session_reflection_result.v5'
+  ) {
+    return validateSessionReflectionResultV5(result, evidenceBundle);
+  }
+  return [
+    `$.schemaVersion: result ${String(result.schemaVersion)} is not compatible with ${evidenceBundle.schemaVersion}`,
+  ];
 }
 
 function mapProposalReviewRow(row: ProposalReviewRow): ProposalReviewStatus {
@@ -2265,14 +2317,10 @@ function assertWordReferencesExist(operation: ReflectionOperation): void {
 function assertReflectionBundle(
   value: unknown,
   artifactId: string,
-): asserts value is SessionReflectionBundleV1 {
-  if (
-    !isRecord(value)
-    || value.schemaVersion !== 'session_reflection_bundle.v1'
-    || !isRecord(value.session)
-    || typeof value.session.sessionId !== 'string'
-    || !Array.isArray(value.items)
-  ) {
+): asserts value is SessionReflectionBundle {
+  try {
+    parseStoredSessionReflectionBundle(value);
+  } catch {
     throw corruptionError(`artifact ${artifactId} contains an invalid evidence bundle`);
   }
 }
@@ -2562,7 +2610,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function visibleWordIds(item: ReflectionInputItemV1): Set<string> {
+function visibleWordIds(item: ReflectionInputItemV1 | ReflectionInputItemV2): Set<string> {
   const wordIds = new Set<string>();
   if (item.targetWord !== null) {
     wordIds.add(item.targetWord.wordId);
@@ -2579,6 +2627,9 @@ function visibleWordIds(item: ReflectionInputItemV1): Set<string> {
     for (const choiceWord of item.promptAsShown.choiceWords) {
       wordIds.add(choiceWord.wordId);
     }
+  }
+  if ('servedCue' in item) {
+    for (const acceptedWordId of item.servedCue.acceptedWordIds) wordIds.add(acceptedWordId);
   }
   return wordIds;
 }
