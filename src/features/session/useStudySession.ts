@@ -117,7 +117,6 @@ type SessionUiSnapshot = {
   productionUiPhase: 'idle' | 'await-rating' | 'await-next';
   frozenProductionCard: FrozenProductionCard | null;
   contrastSelectedWordId: string | null;
-  contrastPracticeMore: boolean;
   frozenContrastCard: FrozenContrastCard | null;
 };
 
@@ -169,7 +168,6 @@ export type StudySessionHomePageProps = {
   productionContrastIntakeNote: string;
   productionContrastIntakeMarked: boolean;
   contrastSelectedWordId: string | null;
-  contrastPracticeMore: boolean;
   contrastAwaitingRating: boolean;
   activeRatingOptions: RatingOption[];
   onStartSession: () => void;
@@ -189,7 +187,6 @@ export type StudySessionHomePageProps = {
   onSubmitProductionHanzi: () => void;
   onProductionHanziInputChange: (value: string) => void;
   onSelectContrastChoice: (wordId: string) => void;
-  onContrastPracticeMoreChange: (checked: boolean) => void;
   onRevealAnswer: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
 };
@@ -245,7 +242,6 @@ export function useStudySession({
   const [productionContrastIntakeMarked, setProductionContrastIntakeMarked] = useState(false);
   const [productionUiPhase, setProductionUiPhase] = useState<'idle' | 'await-rating' | 'await-next'>('idle');
   const [contrastSelectedWordId, setContrastSelectedWordId] = useState<string | null>(null);
-  const [contrastPracticeMore, setContrastPracticeMore] = useState(false);
   const [frozenProductionCard, setFrozenProductionCard] = useState<FrozenProductionCard | null>(null);
   const [frozenContrastCard, setFrozenContrastCard] = useState<FrozenContrastCard | null>(null);
   const personalNotesEditorInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -406,7 +402,6 @@ export function useStudySession({
 
   function resetContrastUi() {
     setContrastSelectedWordId(null);
-    setContrastPracticeMore(false);
     setFrozenContrastCard(null);
   }
 
@@ -444,7 +439,6 @@ export function useStudySession({
       productionUiPhase,
       frozenProductionCard,
       contrastSelectedWordId,
-      contrastPracticeMore,
       frozenContrastCard,
     };
   }
@@ -459,7 +453,6 @@ export function useStudySession({
     setProductionUiPhase(snapshot.productionUiPhase);
     setFrozenProductionCard(snapshot.frozenProductionCard);
     setContrastSelectedWordId(snapshot.contrastSelectedWordId);
-    setContrastPracticeMore(snapshot.contrastPracticeMore);
     setFrozenContrastCard(snapshot.frozenContrastCard);
   }
 
@@ -718,7 +711,7 @@ export function useStudySession({
               state: sessionState,
               selectedWordId: contrastSelectedWordId ?? '',
               rating,
-              practiceMore: contrastPracticeMore,
+              practiceMore: false,
             })
           : rateActiveSessionUnit(sessionState, rating, {
               response:
@@ -1529,7 +1522,6 @@ export function useStudySession({
       productionContrastIntakeNote,
       productionContrastIntakeMarked,
       contrastSelectedWordId,
-      contrastPracticeMore,
       contrastAwaitingRating,
       activeRatingOptions,
       onStartSession: () => void handleStartSession(),
@@ -1554,7 +1546,6 @@ export function useStudySession({
         }
       },
       onSelectContrastChoice: handleSelectContrastChoice,
-      onContrastPracticeMoreChange: setContrastPracticeMore,
       onRevealAnswer: () => setAnswerRevealed(true),
       onRate: (rating, options) => void handleRate(rating, options),
     },

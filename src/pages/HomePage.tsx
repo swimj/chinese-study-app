@@ -65,7 +65,6 @@ export function HomePage({
   productionContrastIntakeNote,
   productionContrastIntakeMarked,
   contrastSelectedWordId,
-  contrastPracticeMore,
   contrastAwaitingRating,
   activeRatingOptions,
   onStartSession,
@@ -85,7 +84,6 @@ export function HomePage({
   onSubmitProductionHanzi,
   onProductionHanziInputChange,
   onSelectContrastChoice,
-  onContrastPracticeMoreChange,
   onRevealAnswer,
   onRate,
 }: {
@@ -133,7 +131,6 @@ export function HomePage({
   productionContrastIntakeNote: string;
   productionContrastIntakeMarked: boolean;
   contrastSelectedWordId: string | null;
-  contrastPracticeMore: boolean;
   contrastAwaitingRating: boolean;
   activeRatingOptions: RatingOption[];
   onStartSession: () => void;
@@ -153,7 +150,6 @@ export function HomePage({
   onSubmitProductionHanzi: () => void;
   onProductionHanziInputChange: (value: string) => void;
   onSelectContrastChoice: (wordId: string) => void;
-  onContrastPracticeMoreChange: (checked: boolean) => void;
   onRevealAnswer: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
 }) {
@@ -249,7 +245,6 @@ export function HomePage({
             productionContrastIntakeNote={productionContrastIntakeNote}
             productionContrastIntakeMarked={productionContrastIntakeMarked}
             contrastSelectedWordId={contrastSelectedWordId}
-            contrastPracticeMore={contrastPracticeMore}
             contrastAwaitingRating={contrastAwaitingRating}
             activeRatingOptions={activeRatingOptions}
             onUndoLastRating={onUndoLastRating}
@@ -268,7 +263,6 @@ export function HomePage({
             onSubmitProductionHanzi={onSubmitProductionHanzi}
             onProductionHanziInputChange={onProductionHanziInputChange}
             onSelectContrastChoice={onSelectContrastChoice}
-            onContrastPracticeMoreChange={onContrastPracticeMoreChange}
             onRevealAnswer={onRevealAnswer}
             onRate={onRate}
           />

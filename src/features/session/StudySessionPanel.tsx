@@ -83,7 +83,6 @@ export function StudySessionPanel({
   productionContrastIntakeNote,
   productionContrastIntakeMarked,
   contrastSelectedWordId,
-  contrastPracticeMore,
   contrastAwaitingRating,
   activeRatingOptions,
   onUndoLastRating,
@@ -102,7 +101,6 @@ export function StudySessionPanel({
   onSubmitProductionHanzi,
   onProductionHanziInputChange,
   onSelectContrastChoice,
-  onContrastPracticeMoreChange,
   onRevealAnswer,
   onRate,
 }: {
@@ -146,7 +144,6 @@ export function StudySessionPanel({
   productionContrastIntakeNote: string;
   productionContrastIntakeMarked: boolean;
   contrastSelectedWordId: string | null;
-  contrastPracticeMore: boolean;
   contrastAwaitingRating: boolean;
   activeRatingOptions: RatingOption[];
   onUndoLastRating: () => void;
@@ -165,7 +162,6 @@ export function StudySessionPanel({
   onSubmitProductionHanzi: () => void;
   onProductionHanziInputChange: (value: string) => void;
   onSelectContrastChoice: (wordId: string) => void;
-  onContrastPracticeMoreChange: (checked: boolean) => void;
   onRevealAnswer: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
 }) {
@@ -318,10 +314,8 @@ export function StudySessionPanel({
               item={frozenContrastCard.item}
               selectedWordId={frozenContrastCard.selectedWordId}
               answerRevealed={true}
-              practiceMore={false}
               disabled={true}
               onSelectChoice={() => undefined}
-              onPracticeMoreChange={() => undefined}
             />
             <p className="notes">Incorrect contrast choice. This item was recorded as Forgot.</p>
           </div>
@@ -501,10 +495,8 @@ export function StudySessionPanel({
                 item={activeItem}
                 selectedWordId={contrastSelectedWordId}
                 answerRevealed={answerRevealed}
-                practiceMore={contrastPracticeMore}
                 disabled={submittingRating !== null || personalNotesEditorOpen}
                 onSelectChoice={onSelectContrastChoice}
-                onPracticeMoreChange={onContrastPracticeMoreChange}
               />
             ) : answerRevealed ? (
               <div className="answer-block">
@@ -735,18 +727,14 @@ function ContrastSelectionDrill({
   item,
   selectedWordId,
   answerRevealed,
-  practiceMore,
   disabled,
   onSelectChoice,
-  onPracticeMoreChange,
 }: {
   item: SessionStudyItem;
   selectedWordId: string | null;
   answerRevealed: boolean;
-  practiceMore: boolean;
   disabled: boolean;
   onSelectChoice: (wordId: string) => void;
-  onPracticeMoreChange: (checked: boolean) => void;
 }) {
   const contrastSelection = item.contrastSelection;
   if (!contrastSelection) {
@@ -807,15 +795,6 @@ function ContrastSelectionDrill({
           {contrastSelection.clusterNote.trim().length > 0 ? (
             <span className="prompt-meta">{contrastSelection.clusterNote}</span>
           ) : null}
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={practiceMore}
-              onChange={(event) => onPracticeMoreChange(event.target.checked)}
-              disabled={disabled}
-            />
-            <span>Practice this contrast more</span>
-          </label>
         </div>
       ) : null}
     </div>
