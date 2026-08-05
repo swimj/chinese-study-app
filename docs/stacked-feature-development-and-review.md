@@ -20,8 +20,8 @@ The initiating prompt or task spec must provide the task-specific contract:
 - decisions or orientation gates that require human confirmation;
 - focused, full-suite, manual, migration, and data-safety verification;
 - task-specific stop conditions; and
-- the permitted publication state: local-only, draft publication, or an update
-  to an already-published review boundary.
+- whether new pull requests should be draft or ready for review, or whether the
+  task updates an already-published review boundary.
 
 This document owns the delivery and review mechanics: worktree and Graphite
 preflight, review-unit design, stack evolution, feedback placement, validation,
@@ -147,23 +147,26 @@ Do not weaken task verification merely to make an intermediate branch pass.
 Report unavailable manual or environment-dependent checks rather than implying
 they ran.
 
-## Publication boundary
+## Publish the verified stack
 
-The prompt or task spec must choose the remote-state boundary. If it is silent,
-construct and verify the stack locally and stop before pushing or creating pull
-requests.
+After validation and final branch-boundary review, publish the whole intended
+stack through direct `gt` commands. Publication is part of completing this
+stacked delivery model; do not stop with an unpublished local stack merely to
+leave submission to the human.
 
-For a local-only task, do not push branches, run `gt submit`, create pull
-requests, merge, or squash the completed stack. Report the exact next command
-for the human only after checking it against the installed CLI help.
+From the top of the stack, use the installed version's equivalent of
+`gt submit --stack --confirm` so the full publication boundary is previewed
+explicitly. Add the installed CLI's supported draft option when the task says
+new pull requests should remain drafts. Do not use an update-only mode when the
+boundary contains new branches that need pull requests.
 
-When publication is explicitly authorized, publish the whole intended boundary
-through direct `gt` commands. From the top of the stack, the installed version's
-equivalent of `gt submit --stack --confirm` should provide an explicit preview
-before pushing; add its supported draft option when new pull requests should
-remain drafts. Do not use an update-only mode when the boundary contains new
-branches that need pull requests. Never merge unless the human separately
-authorizes it.
+Publishing authorizes only the Graphite-managed branch pushes and pull-request
+creation or updates needed for the task's stack. It does not authorize merging,
+changing unrelated repository settings, or mutating a different review
+boundary. Never merge unless the human separately authorizes it. If publishing
+is blocked by authentication, permissions, repository configuration, or an
+unclear CLI operation, stop and report the exact blocker rather than bypassing
+Graphite with an improvised Git/GitHub workflow.
 
 ## Review rounds
 
@@ -243,10 +246,10 @@ Report:
 5. the branch ownership of code-bearing feedback and any restructuring;
 6. focused, full, and manual validation with results;
 7. deviations, migrations, unresolved gaps, and displaced review context;
-8. the exact remote state changed, or confirmation that none changed;
+8. the exact remote state changed;
 9. intentionally unresolved review threads; and
-10. when local-only, the next human publication command verified against the
-    installed CLI help but not executed.
+10. the pull-request URL and draft/ready state for every branch in the published
+    stack.
 
 ## Suggested task prompt composition
 
@@ -255,5 +258,6 @@ Report:
 > contract. Use the repository's canonical specs and accepted stability
 > frontier as higher product authority. Work in the supplied isolated worktree,
 > use the installed `gt` CLI directly for Graphite operations, honor the task's
-> orientation and remote-state boundaries, and satisfy both documents' stop,
-> verification, and handoff requirements.
+> orientation gates, publish the complete verified stack through Graphite, and
+> satisfy both documents' stop, verification, and handoff requirements. Do not
+> merge the stack.
