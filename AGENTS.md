@@ -64,6 +64,9 @@ CLI flags mirror env where applicable (`--mode`, `--data-dir`, `--study-profile`
 
 - Keep changes minimal and scoped to the user request.
 - Prefer targeted fixes over broad refactors.
+- For sufficiently large tasks with independently bounded subtasks,
+  use subagents by default—especially for read-heavy exploration, test or CI triage, and review.
+  Keep concurrent code edits isolated; avoid edits in the same worktree unless coordination is explicit.
 - Do not introduce new dependencies unless necessary.
 - Preserve strict TypeScript quality; avoid `any` unless clearly justified.
 - Prefer strict invariants in state/domain transition functions:
