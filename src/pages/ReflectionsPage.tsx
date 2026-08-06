@@ -160,10 +160,11 @@ function ProposalQueueView({
             </div>
           </header>
           <EvidenceView evidence={presentation.evidence} />
-          <section className="reflection-analysis">
-            <h3>Observation</h3>
-            <p>{presentation.result.observation}</p>
-          </section>
+          {presentation.result.learnerExplanation !== null ? (
+            <section className="reflection-analysis">
+              <p>{presentation.result.learnerExplanation}</p>
+            </section>
+          ) : null}
           <ProposalCard
             proposal={presentation.proposal}
             submitting={
