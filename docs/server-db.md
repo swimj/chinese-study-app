@@ -54,6 +54,14 @@ runs also retain the exact validated evidence bundle used for the provider call;
 failed runs can therefore be retried after the originating session UI closes.
 Legacy rows without a saved bundle remain readable but are not retryable.
 
+Generation runs also have additive nullable columns for the provider client
+request id, bundle/result schema-version provenance, and a versioned
+`reflection_generation_diagnostic.v1` JSON document. The document records the
+failing phase, bounded structured issues, and capped/redacted rejected output.
+Migration adds these columns if absent; nulls are the truthful limited-
+diagnostics state for legacy rows. Diagnostics are observability only and never
+materialize reflection artifacts.
+
 Materialization and proposal-row seeding are one transaction. The
 `(source_session_id, reflection_flow_version)` unique key implements durable
 generation idempotency. Acceptance atomically records exact/revised review

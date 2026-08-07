@@ -1,5 +1,12 @@
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.js';
 
+export type JsonSchemaValidationIssue = {
+  path: string;
+  code: 'required' | 'additional_properties' | 'type' | 'enum' | 'min_items' | 'any_of';
+  message: string;
+  valueType: string | null;
+};
+
 function valueType(value: unknown): string {
   if (value === null) return 'null';
   if (Array.isArray(value)) return 'array';
@@ -92,4 +99,28 @@ function validateAt(value: unknown, schema: JsonSchema, path: string): string[] 
 
 export function validateJsonSchema(value: unknown, schema: JsonSchema): string[] {
   return validateAt(value, schema, '$');
+}
+
+/** Structured companion to the legacy string validator used by existing callers. */
+export function validateJsonSchemaIssues(
+  value: unknown,
+  schema: JsonSchema,
+): JsonSchemaValidationIssue[] {
+  return validateJsonSchema(value, schema).map((message) => {
+    const separator = message.indexOf(': ');
+    const path = separator < 0 ? '$' : message.slice(0, separator);
+    const detail = separator < 0 ? message : message.slice(separator + 2);
+    let code: JsonSchemaValidationIssue['code'] = 'any_of';
+    if (detail.startsWith('required property is missing')) code = 'required';
+    else if (detail.startsWith('unknown property')) code = 'additional_properties';
+    else if (detail.startsWith('expected at least')) code = 'min_items';
+    else if (detail.startsWith('expected ') && detail.includes(', got ')) code = 'type';
+    else if (detail.startsWith('value is not in')) code = 'enum';
+    return {
+      path,
+      code,
+      message: detail,
+      valueType: detail.match(/, got ([A-Za-z]+)/)?.[1] ?? null,
+    };
+  });
 }

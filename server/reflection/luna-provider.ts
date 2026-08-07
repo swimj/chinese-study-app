@@ -10,7 +10,7 @@ import {
   type SessionReflectionResultV4,
 } from '../../src/domain/reflection.js';
 import type { FetchImplementation } from '../llm/http.js';
-import { validateJsonSchema } from '../llm/json-schema-validator.js';
+import { validateJsonSchemaIssues } from '../llm/json-schema-validator.js';
 import { createOpenAiCompatibleAdapter } from '../llm/openai-compatible.js';
 import { proxiedFetch } from '../llm/proxy-fetch.js';
 import {
@@ -21,6 +21,12 @@ import {
   describeReflectionProviderFailure,
   type ReflectionProviderDiagnosticSink,
 } from './provider-diagnostics.ts';
+import {
+  safeRejectedOutput,
+  schemaIssuesToDiagnostics,
+  textIssuesToDiagnostics,
+  type ReflectionGenerationDiagnostic,
+} from './run-diagnostics.ts';
 
 export const LUNA_REFLECTION_MODEL_CONFIG = {
   id: 'gpt-5.6-luna-high',
@@ -57,12 +63,14 @@ export class LunaReflectionProviderError extends Error {
   readonly issueCount: number;
   readonly clientRequestId: string | null;
   readonly metadata: LunaReflectionRunMetadata | null;
+  readonly diagnostic: ReflectionGenerationDiagnostic | null;
 
   constructor(
     code: LunaReflectionFailureCode,
     issueCount = 0,
     clientRequestId: string | null = null,
     metadata: LunaReflectionRunMetadata | null = null,
+    diagnostic: ReflectionGenerationDiagnostic | null = null,
   ) {
     super(failureMessages[code]);
     this.name = 'LunaReflectionProviderError';
@@ -70,6 +78,19 @@ export class LunaReflectionProviderError extends Error {
     this.issueCount = issueCount;
     this.clientRequestId = clientRequestId;
     this.metadata = metadata;
+    // Keep rejected output available to the run logger without putting it in
+    // serialized API errors or ordinary error logs.
+    Object.defineProperty(this, 'diagnostic', {
+      value: diagnostic ?? ((code === 'upstream_failure' || code === 'missing_config')
+        ? {
+            schemaVersion: 'reflection_generation_diagnostic.v1',
+            phase: 'provider_transport',
+            issues: [],
+            rejectedOutput: null,
+          }
+        : null),
+      enumerable: false,
+    });
   }
 }
 
@@ -165,33 +186,35 @@ export function createLunaReflectionProvider(
 
       const metadata = runMetadataFromProviderResult(providerResult);
       if (isOutputTruncationFinishReason(providerResult.finishReason)) {
-        throw new LunaReflectionProviderError('output_truncated', 0, null, metadata);
+        throw new LunaReflectionProviderError(
+          'output_truncated', 0, clientRequestId, metadata,
+          diagnostic('truncation', [], providerResult.rawText),
+        );
       }
 
       let parsed: unknown;
       try {
         parsed = JSON.parse(providerResult.rawText);
       } catch {
-        throw new LunaReflectionProviderError('invalid_json', 0, null, metadata);
+        throw new LunaReflectionProviderError(
+          'invalid_json', 0, clientRequestId, metadata,
+          diagnostic('json_parse', [], providerResult.rawText),
+        );
       }
 
-      const schemaErrors = validateJsonSchema(parsed, sessionReflectionResultSchema);
-      if (schemaErrors.length > 0) {
+      const schemaIssues = validateJsonSchemaIssues(parsed, sessionReflectionResultSchema);
+      if (schemaIssues.length > 0) {
         throw new LunaReflectionProviderError(
-          'schema_invalid',
-          schemaErrors.length,
-          null,
-          metadata,
+          'schema_invalid', schemaIssues.length, clientRequestId, metadata,
+          diagnostic('structural_schema', schemaIssuesToDiagnostics(schemaIssues), providerResult.rawText),
         );
       }
 
       const contractErrors = validateSessionReflectionResult(parsed, bundle);
       if (contractErrors.length > 0) {
         throw new LunaReflectionProviderError(
-          'domain_contract_invalid',
-          contractErrors.length,
-          null,
-          metadata,
+          'domain_contract_invalid', contractErrors.length, clientRequestId, metadata,
+          diagnostic('domain_validation', textIssuesToDiagnostics(contractErrors), providerResult.rawText),
         );
       }
 
@@ -200,6 +223,19 @@ export function createLunaReflectionProvider(
         metadata,
       };
     },
+  };
+}
+
+function diagnostic(
+  phase: ReflectionGenerationDiagnostic['phase'],
+  issues: ReflectionGenerationDiagnostic['issues'],
+  output: string,
+): ReflectionGenerationDiagnostic {
+  return {
+    schemaVersion: 'reflection_generation_diagnostic.v1',
+    phase,
+    issues,
+    rejectedOutput: safeRejectedOutput(output),
   };
 }
 

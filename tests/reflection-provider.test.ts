@@ -362,7 +362,35 @@ describe('production Luna reflection provider', () => {
       const error = await expectProviderError(provider.generate(bundle), testCase.code);
       assert.equal(error.issueCount > 0, testCase.hasIssues);
       assert.equal(JSON.stringify(error).includes(testCase.content), false);
+      if (testCase.code === 'schema_invalid') {
+        assert.match(error.clientRequestId ?? '', /^[0-9a-f-]{36}$/);
+        assert.equal(error.diagnostic?.phase, 'structural_schema');
+        assert.ok(error.diagnostic?.issues.some((issue) => issue.path === '$.itemResults'));
+      }
+      if (testCase.code === 'domain_contract_invalid') {
+        assert.equal(error.diagnostic?.phase, 'domain_validation');
+        assert.ok(error.diagnostic?.issues.some((issue) => issue.path.includes('itemResults')));
+      }
     }
+  });
+
+  test('bounds and redacts rejected output in structured diagnostics', async () => {
+    const provider = createLunaReflectionProvider({
+      environment: { OPENAI_API_KEY: 'secret' },
+      systemPrompt: 'prompt',
+      fetchImplementation: capturingFetch(
+        responseEnvelope(JSON.stringify({
+          schemaVersion: 'session_reflection_result.v4',
+          apiKey: 'sk-secret-value-123456789',
+          rejected: 'x'.repeat(10_000),
+        })),
+        [],
+      ),
+    });
+    const error = await expectProviderError(provider.generate(bundle), 'schema_invalid');
+    assert.equal(error.diagnostic?.rejectedOutput?.includes('sk-secret-value'), false);
+    assert.ok((error.diagnostic?.rejectedOutput?.length ?? 0) <= 4_020);
+    assert.match(error.diagnostic?.rejectedOutput ?? '', /truncated/);
   });
 
   test('loads the promoted production V2 prompt when no prompt is injected', async () => {

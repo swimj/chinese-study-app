@@ -24,6 +24,7 @@ import {
 } from '../../src/domain/reflection.ts';
 import { parseSessionReflectionBundle } from '../../src/domain/reflection-evidence.ts';
 import type { NormalizedTokenUsage } from '../llm/types.ts';
+import type { ReflectionGenerationDiagnostic } from '../reflection/run-diagnostics.ts';
 import { dbPath, getDb } from './connection.ts';
 import {
   enableContextualSelectionWithoutTransaction,
@@ -62,7 +63,11 @@ export type ReflectionGenerationRunRecord = {
   providerModel: string;
   promptVersion: string;
   responseId: string | null;
+  clientRequestId: string | null;
   finishReason: string | null;
+  bundleSchemaVersion: string | null;
+  resultSchemaVersion: string | null;
+  diagnostic: ReflectionGenerationDiagnostic | null;
   state: ReflectionGenerationRunState;
   failureCode: string | null;
   eligibleItemCount: number;
@@ -80,6 +85,10 @@ export type RecordReflectionGenerationRunInput = Omit<
   'runId' | 'retryable'
 > & {
   runId?: string;
+  clientRequestId?: string | null;
+  bundleSchemaVersion?: string | null;
+  resultSchemaVersion?: string | null;
+  diagnostic?: ReflectionGenerationDiagnostic | null;
   evidenceBundle: SessionReflectionBundleV1;
 };
 
@@ -202,7 +211,11 @@ type ReflectionGenerationRunRow = {
   provider_model: string;
   prompt_version: string;
   response_id: string | null;
+  client_request_id: string | null;
   finish_reason: string | null;
+  bundle_schema_version: string | null;
+  result_schema_version: string | null;
+  diagnostic_json: string | null;
   state: ReflectionGenerationRunState;
   failure_code: string | null;
   eligible_item_count: number;
@@ -283,7 +296,10 @@ const reflectionGenerationRunColumns = [
   'provider_model',
   'prompt_version',
   'response_id',
+  'client_request_id',
   'finish_reason',
+  'bundle_schema_version',
+  'result_schema_version',
   'state',
   'failure_code',
   'eligible_item_count',
@@ -299,6 +315,7 @@ const reflectionGenerationRunColumns = [
   'pricing_basis_json',
   'estimated_cost_usd',
   'evidence_bundle_json',
+  'diagnostic_json',
 ] as const;
 
 const proposalReviewColumns = [
@@ -369,6 +386,10 @@ export function ensureReflectionSchema(): void {
       prompt_version TEXT NOT NULL,
       response_id TEXT,
       finish_reason TEXT,
+      client_request_id TEXT,
+      bundle_schema_version TEXT,
+      result_schema_version TEXT,
+      diagnostic_json TEXT,
       state TEXT NOT NULL CHECK (state IN ('succeeded', 'failed')),
       failure_code TEXT,
       eligible_item_count INTEGER NOT NULL CHECK (eligible_item_count >= 0),
@@ -636,6 +657,7 @@ export function ensureReflectionSchema(): void {
   `);
 
   ensureReflectionGenerationRunEvidenceBundleColumn();
+  ensureReflectionGenerationRunDiagnosticColumns();
   ensureReflectionIndexes();
 }
 
@@ -645,6 +667,15 @@ function ensureReflectionGenerationRunEvidenceBundleColumn(): void {
   }>;
   if (!columns.some((column) => column.name === 'evidence_bundle_json')) {
     getDb().exec('ALTER TABLE reflection_generation_runs ADD COLUMN evidence_bundle_json TEXT');
+  }
+}
+
+function ensureReflectionGenerationRunDiagnosticColumns(): void {
+  const columns = getDb().prepare('PRAGMA table_info(reflection_generation_runs)').all() as Array<{ name: string }>;
+  for (const name of ['client_request_id', 'bundle_schema_version', 'result_schema_version', 'diagnostic_json']) {
+    if (!columns.some((column) => column.name === name)) {
+      getDb().exec(`ALTER TABLE reflection_generation_runs ADD COLUMN ${name} TEXT`);
+    }
   }
 }
 
@@ -1036,11 +1067,12 @@ export function recordReflectionGenerationRun(
     INSERT INTO reflection_generation_runs (
       run_id, source_session_id, reflection_flow_version, started_at, completed_at,
       provider, model, provider_model, prompt_version, response_id, finish_reason,
+      client_request_id, bundle_schema_version, result_schema_version, diagnostic_json,
       state, failure_code, eligible_item_count, included_item_count,
       input_tokens, cached_input_tokens, cache_write_input_tokens, output_tokens,
       reasoning_tokens, total_tokens, pricing_snapshot_id, pricing_as_of,
       pricing_basis_json, estimated_cost_usd, evidence_bundle_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     runId,
     input.sourceSessionId,
@@ -1053,6 +1085,12 @@ export function recordReflectionGenerationRun(
     input.promptVersion,
     input.responseId,
     input.finishReason,
+    input.clientRequestId ?? null,
+    input.bundleSchemaVersion ?? input.evidenceBundle.schemaVersion,
+    input.resultSchemaVersion ?? 'session_reflection_result.v4',
+    input.diagnostic === undefined || input.diagnostic === null
+      ? null
+      : JSON.stringify(input.diagnostic),
     input.state,
     input.failureCode,
     input.eligibleItemCount,
@@ -1591,7 +1629,10 @@ function mapReflectionGenerationRunRow(
     providerModel: row.provider_model,
     promptVersion: row.prompt_version,
     responseId: row.response_id,
+    clientRequestId: row.client_request_id,
     finishReason: row.finish_reason,
+    bundleSchemaVersion: row.bundle_schema_version,
+    resultSchemaVersion: row.result_schema_version,
     state: row.state,
     failureCode: row.failure_code,
     eligibleItemCount: row.eligible_item_count,
@@ -1603,8 +1644,28 @@ function mapReflectionGenerationRunRow(
       ? null
       : parseJson(row.pricing_basis_json, 'reflection generation run pricing basis'),
     estimatedCostUsd: row.estimated_cost_usd,
+    diagnostic: row.diagnostic_json === null
+      ? null
+      : parseReflectionDiagnostic(row.diagnostic_json, row.run_id),
     retryable: row.retryable === 1,
   };
+}
+
+function parseReflectionDiagnostic(value: string, runId: string): ReflectionGenerationDiagnostic | null {
+  try {
+    const parsed = JSON.parse(value) as Partial<ReflectionGenerationDiagnostic>;
+    if (parsed.schemaVersion !== 'reflection_generation_diagnostic.v1'
+      || typeof parsed.phase !== 'string'
+      || !Array.isArray(parsed.issues)
+      || (parsed.rejectedOutput !== null && typeof parsed.rejectedOutput !== 'string')) {
+      throw new Error('unsupported diagnostic shape');
+    }
+    return parsed as ReflectionGenerationDiagnostic;
+  } catch (error) {
+    throw corruptionError(
+      `reflection generation run ${runId} contains invalid diagnostics: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 function mapArtifactRow(row: ArtifactRow): ReflectionArtifactRecord {

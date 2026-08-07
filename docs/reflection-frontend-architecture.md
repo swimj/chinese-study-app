@@ -105,6 +105,11 @@ retryable failures retain an interactive retry control. This remains
 observability for the initial reflection flow, not a learner correctness signal
 or a replacement for immutable artifact history.
 
+Failed runs with diagnostics have an expandable developer-facing detail showing
+the validation phase, bounded issue paths/rules/messages, schema provenance,
+provider request correlation, and capped rejected-output context. Missing detail
+is rendered as unavailable rather than inferred for legacy rows.
+
 A failed run with a retained bundle and no successful artifact exposes a small
 retry action. Retrying reuses the exact backend-owned bundle, replaces the
 action with a concise generating/result indicator, appends a new concluded run,
