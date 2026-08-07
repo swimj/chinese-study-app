@@ -135,8 +135,11 @@ returns those pricing fields as `null` rather than guessing. Each run also
 preserves nullable provider-request, bundle-schema, and result-schema
 provenance. Failed runs may expose a versioned diagnostic with phase
 `provider_transport`, `truncation`, `json_parse`, `structural_schema`, or
-`domain_validation`, bounded path/rule/message issues, and capped/redacted
-rejected-output context. Legacy rows without detail return null diagnostics.
+`domain_validation`, bounded path/rule/message issues, and capped
+rejected-output context. This is intentionally verbatim in the local dogfood
+environment; only its size is bounded. Productization must add the appropriate
+retention and secret-handling policy before broader deployment. Legacy rows
+without detail return null diagnostics.
 The endpoint does not expose saved bundles, raw prompts, or provider response
 envelopes. Its `retryable` flag is true only for a failed run whose bundle is retained and
 whose session/flow does not already have a successful artifact.
