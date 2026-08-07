@@ -381,6 +381,12 @@ export function TokenUsageView({
                   {run.responseId === null ? null : (
                     <span title={run.responseId}>response {abbreviateId(run.responseId)}</span>
                   )}
+                  {typeof run.clientRequestId !== 'string' ? null : (
+                    <span title={run.clientRequestId}>provider run {abbreviateId(run.clientRequestId)}</span>
+                  )}
+                  <span>
+                    bundle {run.bundleSchemaVersion ?? 'unknown'} · result {run.resultSchemaVersion ?? 'unknown'}
+                  </span>
                 </div>
                 <span>{formatTokenCount(run.usage.inputTokens)}</span>
                 <span>{formatTokenCount(run.usage.cachedInputTokens)}</span>
@@ -394,12 +400,42 @@ export function TokenUsageView({
                 >
                   {run.estimatedCostUsd === null ? '—' : formatUsd(run.estimatedCostUsd)}
                 </span>
+                {run.diagnostic === null ? null : <RunDiagnosticView diagnostic={run.diagnostic} />}
               </div>
             ))}
           </div>
         </section>
       )}
     </main>
+  );
+}
+
+function RunDiagnosticView({
+  diagnostic,
+}: {
+  diagnostic: NonNullable<ReflectionGenerationRunDto['diagnostic']>;
+}) {
+  return (
+    <details className="reflection-run-diagnostic">
+      <summary>{diagnostic.phase.replaceAll('_', ' ')} diagnostics</summary>
+      {diagnostic.issues.length === 0 ? (
+        <p className="notes">No structured issue detail was recorded.</p>
+      ) : (
+        <ul>
+          {diagnostic.issues.map((issue, index) => (
+            <li key={`${issue.path}-${index}`}>
+              <code>{issue.path}</code> · <code>{issue.code}</code> · {issue.message}
+              {issue.valueType === null ? '' : ` (value type: ${issue.valueType})`}
+            </li>
+          ))}
+        </ul>
+      )}
+      {diagnostic.rejectedOutput === null ? (
+        <p className="notes">Rejected output context unavailable.</p>
+      ) : (
+        <pre className="reflection-rejected-output">{diagnostic.rejectedOutput}</pre>
+      )}
+    </details>
   );
 }
 

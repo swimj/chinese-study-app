@@ -2080,6 +2080,34 @@ button:disabled:hover {
   justify-content: center;
 }
 
+.reflection-run-diagnostic {
+  grid-column: 1 / -1;
+  margin-top: 0.35rem;
+  color: #cbd5e1;
+}
+
+.reflection-run-diagnostic summary {
+  cursor: pointer;
+  color: #fbbf24;
+  font-weight: 700;
+}
+
+.reflection-run-diagnostic ul {
+  margin: 0.55rem 0;
+  padding-left: 1.2rem;
+}
+
+.reflection-rejected-output {
+  max-height: 12rem;
+  margin: 0.55rem 0 0;
+  overflow: auto;
+  padding: 0.65rem;
+  background: rgba(15, 23, 42, 0.8);
+  color: #cbd5e1;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .reflection-tag-list {
   display: flex;
   flex-wrap: wrap;

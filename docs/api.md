@@ -131,9 +131,14 @@ state, failure code, response and finish metadata when available, eligible and
 included evidence counts, and nullable normalized token categories. Cost is an
 estimate only: known initial Luna runs persist their complete versioned price
 basis, `pricingAsOf`, and USD estimate at write time; unknown or partial usage
-returns those pricing fields as `null` rather than guessing. The endpoint does
-not expose saved bundles, raw prompts, provider responses, or diagnostics. Its
-`retryable` flag is true only for a failed run whose bundle is retained and
+returns those pricing fields as `null` rather than guessing. Each run also
+preserves nullable provider-request, bundle-schema, and result-schema
+provenance. Failed runs may expose a versioned diagnostic with phase
+`provider_transport`, `truncation`, `json_parse`, `structural_schema`, or
+`domain_validation`, bounded path/rule/message issues, and capped/redacted
+rejected-output context. Legacy rows without detail return null diagnostics.
+The endpoint does not expose saved bundles, raw prompts, or provider response
+envelopes. Its `retryable` flag is true only for a failed run whose bundle is retained and
 whose session/flow does not already have a successful artifact.
 
 `POST /api/reflection-generation-runs/:runId/retry` reuses that run's exact

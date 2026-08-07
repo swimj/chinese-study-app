@@ -281,6 +281,7 @@ async function generateBundleAndMaterialize(input: {
         metadata: generated.metadata,
         state: 'succeeded',
         failureCode: null,
+        error: null,
         eligibleItemCount: builtBundle.eligibleItemCount,
         includedItemCount: builtBundle.includedItemCount,
         evidenceBundle: bundle,
@@ -300,6 +301,7 @@ async function generateBundleAndMaterialize(input: {
           metadata: failureMetadata(error),
           state: 'failed',
           failureCode: failureCode(error),
+          error,
           eligibleItemCount: builtBundle.eligibleItemCount,
           includedItemCount: builtBundle.includedItemCount,
           evidenceBundle: bundle,
@@ -319,6 +321,7 @@ function runRecordInput(input: {
   metadata: LunaReflectionRunMetadata;
   state: 'succeeded' | 'failed';
   failureCode: string | null;
+  error: unknown;
   eligibleItemCount: number;
   includedItemCount: number;
   evidenceBundle: SessionReflectionBundleV1;
@@ -338,7 +341,15 @@ function runRecordInput(input: {
     providerModel: input.metadata.providerModel,
     promptVersion: input.metadata.promptVersion,
     responseId: input.metadata.responseId,
+    clientRequestId: input.error instanceof LunaReflectionProviderError
+      ? input.error.clientRequestId
+      : null,
     finishReason: input.metadata.finishReason,
+    bundleSchemaVersion: input.evidenceBundle.schemaVersion,
+    resultSchemaVersion: 'session_reflection_result.v4',
+    diagnostic: input.error instanceof LunaReflectionProviderError
+      ? input.error.diagnostic
+      : null,
     state: input.state,
     failureCode: input.failureCode,
     eligibleItemCount: input.eligibleItemCount,

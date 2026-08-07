@@ -85,7 +85,10 @@ function run(overrides: {
     providerModel: 'gpt-5.6-luna',
     promptVersion: 'reflection-v2',
     responseId: 'response-1',
+    clientRequestId: null,
     finishReason: overrides.finishReason,
+    bundleSchemaVersion: 'session_reflection_bundle.v1',
+    resultSchemaVersion: 'session_reflection_result.v4',
     state: overrides.state,
     failureCode: overrides.failureCode,
     eligibleItemCount: 3,
@@ -102,6 +105,7 @@ function run(overrides: {
     pricingAsOf: overrides.pricingAsOf,
     pricingBasis: overrides.estimatedCostUsd === null ? null : { id: 'price-v1' },
     estimatedCostUsd: overrides.estimatedCostUsd,
+    diagnostic: null,
     retryable: overrides.state === 'failed',
   };
 }

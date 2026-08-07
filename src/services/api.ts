@@ -79,7 +79,10 @@ export type ReflectionGenerationRunDto = {
   providerModel: string;
   promptVersion: string;
   responseId: string | null;
+  clientRequestId: string | null;
   finishReason: string | null;
+  bundleSchemaVersion: string | null;
+  resultSchemaVersion: string | null;
   state: 'succeeded' | 'failed';
   failureCode: string | null;
   eligibleItemCount: number;
@@ -89,6 +92,12 @@ export type ReflectionGenerationRunDto = {
   pricingAsOf: string | null;
   pricingBasis: unknown | null;
   estimatedCostUsd: number | null;
+  diagnostic: {
+    schemaVersion: 'reflection_generation_diagnostic.v1';
+    phase: 'provider_transport' | 'truncation' | 'json_parse' | 'structural_schema' | 'domain_validation';
+    issues: Array<{ path: string; code: string; message: string; valueType: string | null }>;
+    rejectedOutput: string | null;
+  } | null;
   retryable: boolean;
 };
 
