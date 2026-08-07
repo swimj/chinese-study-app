@@ -374,7 +374,7 @@ describe('production Luna reflection provider', () => {
     }
   });
 
-  test('bounds and redacts rejected output in structured diagnostics', async () => {
+  test('bounds rejected output without hiding dogfood context', async () => {
     const provider = createLunaReflectionProvider({
       environment: { OPENAI_API_KEY: 'secret' },
       systemPrompt: 'prompt',
@@ -388,7 +388,7 @@ describe('production Luna reflection provider', () => {
       ),
     });
     const error = await expectProviderError(provider.generate(bundle), 'schema_invalid');
-    assert.equal(error.diagnostic?.rejectedOutput?.includes('sk-secret-value'), false);
+    assert.equal(error.diagnostic?.rejectedOutput?.includes('sk-secret-value-123456789'), true);
     assert.ok((error.diagnostic?.rejectedOutput?.length ?? 0) <= 4_020);
     assert.match(error.diagnostic?.rejectedOutput ?? '', /truncated/);
   });

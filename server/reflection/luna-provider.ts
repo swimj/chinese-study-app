@@ -22,7 +22,7 @@ import {
   type ReflectionProviderDiagnosticSink,
 } from './provider-diagnostics.ts';
 import {
-  safeRejectedOutput,
+  boundRejectedOutput,
   schemaIssuesToDiagnostics,
   textIssuesToDiagnostics,
   type ReflectionGenerationDiagnostic,
@@ -235,7 +235,7 @@ function diagnostic(
     schemaVersion: 'reflection_generation_diagnostic.v1',
     phase,
     issues,
-    rejectedOutput: safeRejectedOutput(output),
+    rejectedOutput: boundRejectedOutput(output),
   };
 }
 

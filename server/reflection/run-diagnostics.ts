@@ -41,14 +41,10 @@ export function textIssuesToDiagnostics(messages: string[]): ReflectionDiagnosti
   });
 }
 
-/** Keep useful mismatch context while redacting common credential forms. */
-export function safeRejectedOutput(value: string | null): string | null {
+/** Dogfood diagnostics retain output verbatim; only bound its size. */
+export function boundRejectedOutput(value: string | null): string | null {
   if (value === null) return null;
-  const redacted = value
-    .replaceAll(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [REDACTED]')
-    .replaceAll(/sk-[A-Za-z0-9_-]{8,}/gi, 'sk-[REDACTED]')
-    .replaceAll(/(api[_-]?key\s*[:=]\s*["']?)[A-Za-z0-9._~+/=-]+/gi, '$1[REDACTED]');
-  return redacted.length <= MAX_REJECTED_OUTPUT_CHARS
-    ? redacted
-    : `${redacted.slice(0, MAX_REJECTED_OUTPUT_CHARS)}\n[…truncated…]`;
+  return value.length <= MAX_REJECTED_OUTPUT_CHARS
+    ? value
+    : `${value.slice(0, MAX_REJECTED_OUTPUT_CHARS)}\n[…truncated…]`;
 }

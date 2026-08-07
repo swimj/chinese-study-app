@@ -57,7 +57,9 @@ Legacy rows without a saved bundle remain readable but are not retryable.
 Generation runs also have additive nullable columns for the provider client
 request id, bundle/result schema-version provenance, and a versioned
 `reflection_generation_diagnostic.v1` JSON document. The document records the
-failing phase, bounded structured issues, and capped/redacted rejected output.
+failing phase, bounded structured issues, and capped rejected output. In the
+current local dogfood environment the retained output is verbatim by design;
+productization owns future retention and secret-handling policy.
 Migration adds these columns if absent; nulls are the truthful limited-
 diagnostics state for legacy rows. Diagnostics are observability only and never
 materialize reflection artifacts.
