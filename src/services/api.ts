@@ -29,6 +29,10 @@ import type {
   SessionReflectionBundle,
   SessionReflectionResult,
 } from '../domain/reflection';
+import type {
+  ContentDiagnosticKind,
+  ContentDiagnosticsResponse,
+} from '../domain/content-diagnostics';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:5174';
 
@@ -153,6 +157,18 @@ export type ReflectionReviewApi = {
 };
 
 export type { BackendStatus };
+
+export async function fetchContentDiagnostics(
+  kind: ContentDiagnosticKind,
+  query: string,
+): Promise<ContentDiagnosticsResponse> {
+  const params = new URLSearchParams({ kind, q: query, limit: '50' });
+  const response = await fetch(`${API_BASE}/api/content-diagnostics?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error('Failed to load content diagnostics');
+  }
+  return response.json();
+}
 
 type UserPriorityPatch = {
   bumpDelta?: number;
