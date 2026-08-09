@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-export type AppPageKey = 'home' | 'priority' | 'intake' | 'reflections';
+export type AppPageKey = 'home' | 'priority' | 'intake' | 'reflections' | 'content';
 
 export function AppChrome({
   currentPage,
@@ -10,11 +10,13 @@ export function AppChrome({
   priorityPageLoading,
   intakePageLoading,
   reflectionPageLoading,
+  contentPageLoading,
   children,
   onOpenHomePage,
   onOpenPriorityPage,
   onOpenIntakePage,
   onOpenReflectionsPage,
+  onOpenContentPage,
 }: {
   currentPage: AppPageKey;
   error: string | null;
@@ -23,13 +25,15 @@ export function AppChrome({
   priorityPageLoading: boolean;
   intakePageLoading: boolean;
   reflectionPageLoading: boolean;
+  contentPageLoading: boolean;
   children: ReactNode;
   onOpenHomePage: () => void;
   onOpenPriorityPage: () => void;
   onOpenIntakePage: () => void;
   onOpenReflectionsPage: () => void;
+  onOpenContentPage: () => void;
 }) {
-  const navigationLoading = priorityPageLoading || intakePageLoading || reflectionPageLoading;
+  const navigationLoading = priorityPageLoading || intakePageLoading || reflectionPageLoading || contentPageLoading;
 
   return (
     <div className={sessionActive ? 'container app-session-active' : 'container'}>
@@ -70,6 +74,14 @@ export function AppChrome({
             disabled={navigationLoading}
           >
             {reflectionPageLoading ? 'Loading reflections...' : 'Reflections'}
+          </button>
+          <button
+            type="button"
+            className={`nav-tab ${currentPage === 'content' ? 'active' : ''}`}
+            onClick={onOpenContentPage}
+            disabled={navigationLoading}
+          >
+            {contentPageLoading ? 'Loading content...' : 'Content'}
           </button>
         </div>
       </nav>

@@ -21,6 +21,8 @@ import { PriorityPage } from './pages/PriorityPage';
 import { IntakePage } from './pages/IntakePage';
 import { ReflectionsPage } from './pages/ReflectionsPage';
 import { useReflectionPageController } from './features/reflection/useReflectionPageController';
+import { useContentDiagnosticsController } from './features/content/useContentDiagnosticsController';
+import { ContentDiagnosticsPage } from './pages/ContentDiagnosticsPage';
 
 const APP_VERSION = __APP_VERSION__;
 
@@ -59,6 +61,7 @@ function App() {
       withdrawAuthorization: withdrawReflectionAuthorization,
     },
   });
+  const contentPage = useContentDiagnosticsController({ currentPage, setCurrentPage, setError });
 
   useEffect(() => {
     async function loadData() {
@@ -110,6 +113,7 @@ function App() {
       priorityPageLoading={priorityPage.isLoading}
       intakePageLoading={intakePage.isLoading}
       reflectionPageLoading={reflectionPage.isLoading}
+      contentPageLoading={contentPage.isLoading}
       onOpenHomePage={() => setCurrentPage('home')}
       onOpenPriorityPage={() => void priorityPage.openPage()}
       onOpenIntakePage={() => void (async () => {
@@ -117,6 +121,7 @@ function App() {
         await intakePage.openPage();
       })()}
       onOpenReflectionsPage={() => void reflectionPage.openPage()}
+      onOpenContentPage={() => void contentPage.openPage()}
     >
       {currentPage === 'home' ? (
         <HomePage
@@ -198,6 +203,16 @@ function App() {
         />
       ) : currentPage === 'reflections' ? (
         <ReflectionsPage controller={reflectionPage} />
+      ) : currentPage === 'content' ? (
+        <ContentDiagnosticsPage
+          data={contentPage.data}
+          kind={contentPage.kind}
+          query={contentPage.query}
+          isLoading={contentPage.isLoading}
+          onQueryChange={contentPage.setQuery}
+          onSelectKind={(kind) => void contentPage.selectKind(kind)}
+          onSearch={() => void contentPage.submitSearch()}
+        />
       ) : null}
 
       {studySession.personalNotesEditor.open ? (

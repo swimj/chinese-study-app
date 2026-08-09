@@ -18,7 +18,7 @@ src/
   study-profile.ts                # mandarin vs french client profile
 
   components/
-    AppChrome.tsx                 # nav (home, priority, intake, reflections), version, errors
+    AppChrome.tsx                 # nav (home, priority, intake, reflections, content), version, errors
     MeaningList.tsx               # shared meaning list rendering
 
   pages/
@@ -27,6 +27,7 @@ src/
     PriorityPage.tsx              # unstudied priority queue + triage
     IntakePage.tsx                # contrast intake (candidates, cluster actions)
     ReflectionsPage.tsx           # artifact history/detail and proposal-level review
+    ContentDiagnosticsPage.tsx    # read-only primitive content browser
 
   features/
     session/
@@ -56,6 +57,9 @@ src/
       reflection-page-model.ts       # item grouping, typed draft edits, support/validation facts
       ReflectionOperationEditor.tsx  # purpose-built editors for the four V1 operations
 
+    content/
+      useContentDiagnosticsController.ts # bounded primitive-kind search and loading
+
   domain/
     study-actions.ts              # shared study-action types/adapters (also used by server)
     reflection.ts                 # canonical reflection result/operation/lifecycle contract
@@ -74,7 +78,7 @@ src/
 
 `App.tsx` is intentionally thin. It owns only cross-page concerns:
 
-- current page selection (`home` | `priority` | `intake` | `reflections`)
+- current page selection (`home` | `priority` | `intake` | `reflections` | `content`)
 - global error message
 - backend status refresh
 - app chrome wiring
@@ -98,6 +102,11 @@ Page-specific state should not drift back into `App.tsx`. Use a page controller 
 `useReflectionPageController` owns the reflection page. See the
 [reflection frontend architecture map](../docs/reflection-frontend-architecture.md)
 for its loading, compact dogfood run-log, review, and application-status boundaries.
+
+`useContentDiagnosticsController` owns the read-only content diagnostic page:
+primitive-kind selection and explicit query submission. Opening the page and
+switching primitive kinds remain idle; only a non-empty user query triggers
+bounded server-side selection and result loading.
 
 ## Session Controller
 
