@@ -4,6 +4,21 @@ Routes are defined in [server/index.ts](../server/index.ts). Frontend client: [s
 
 Base URL: `http://localhost:5174` (override with `VITE_API_BASE`).
 
+## Content diagnostics
+
+| Method | Path | Handler domain |
+| --- | --- | --- |
+| GET | `/api/content-diagnostics?kind=word\|contrast_cluster\|production_cue&q=<query>&limit=50` | Read-only content projection |
+
+The diagnostic query requires non-empty `q` input and applies the bound in SQL
+before hydrating the selected records. It returns only the selected kind and a
+`hasMore` signal; it does not read or count the corpus before a user query.
+Word items include
+cluster membership and production-task cue counts; cluster items include
+members and prompts; durable production-cue items include their anchor and
+accepted words, lifecycle state, provenance, and current evidence projection.
+It does not expose a content mutation path.
+
 ## Status
 
 | Method | Path | Handler domain |

@@ -23,6 +23,7 @@ import {
   getLearningPolicy,
   createContrastPrompt,
   getContrastClusterContent,
+  getContentDiagnostics,
   getContrastIntakeGroups,
   getContrastIntakeWords,
   getReflectionArtifactDetail,
@@ -57,6 +58,7 @@ import {
   withdrawReflectionInvocationAuthorization,
   type ReviewAttemptCommitIntent,
 } from './db.ts';
+import type { ContentDiagnosticKind } from '../src/domain/content-diagnostics.ts';
 import type {
   ContrastSelectionCommitIntent,
   StudyAttemptEvent,
@@ -99,6 +101,29 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.use(cors());
   app.use(express.json());
+
+  app.get('/api/content-diagnostics', (req, res) => {
+    const kind = req.query?.kind;
+    const query = req.query?.q;
+    const limit = readPositiveIntegerFromQuery(req.query?.limit, 50);
+    if (!isContentDiagnosticKind(kind)) {
+      res.status(400).json({ error: 'Expected kind to be word, contrast_cluster, or production_cue' });
+      return;
+    }
+    if (typeof query !== 'string' || query.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty string q query parameter' });
+      return;
+    }
+    if (limit === null) {
+      res.status(400).json({ error: 'Expected positive integer limit query parameter' });
+      return;
+    }
+    try {
+      res.json(getContentDiagnostics({ kind, query, limit }));
+    } catch {
+      res.status(500).json({ error: 'Failed to load content diagnostics' });
+    }
+  });
 
   app.get('/api/words/search', (req, res) => {
     const query = req.query?.q;
@@ -1476,6 +1501,10 @@ function readContrastIntakeGroupSelector(value: unknown): {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isContentDiagnosticKind(value: unknown): value is ContentDiagnosticKind {
+  return value === 'word' || value === 'contrast_cluster' || value === 'production_cue';
 }
 
 function readReviewProposalRequest(value: unknown): ReviewProposalRequest | null {
