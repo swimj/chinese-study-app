@@ -44,6 +44,14 @@ Agents should use the installed `gt` CLI directly for Graphite operations. This
 is the preferred interface for the smoothest eventual human workflow; no
 Graphite MCP layer should be introduced or required.
 
+The one exception is attaching a deliberately detached task-worktree snapshot
+to its first local branch. Codex worktrees are commonly created at a detached
+HEAD. When that is the case, use `git switch -c codex/<task-slug>` once, at the
+unchanged checked-out commit, then immediately track that branch with
+`gt branch track --parent <verified-parent>`. This is setup for Graphite, not a
+replacement for its stack operations. Do not use direct Git commits, rebases,
+branch moves, or topology edits after this bootstrap.
+
 Before using a topology-changing or publishing command whose behavior is not
 certain, inspect the installed version's `gt help` output. Ordinary read-only
 Git inspection remains appropriate, as does deliberate staging, but do not use
@@ -58,6 +66,33 @@ destructive Git/Graphite recovery without explicit authorization.
 Keep the full stack in one isolated task worktree with one writer at a time.
 Do not spread one stack across worktrees or create a second worktree during a
 review round.
+
+### Attach a detached task worktree
+
+A detached HEAD in a newly supplied Codex worktree is expected; it is not a
+Graphite initialization failure or a stop condition. Before doing substantive
+work, establish the first review branch as follows:
+
+1. Inspect `git status --short --branch`, `git rev-parse HEAD`, and
+   `git branch --show-current`. Do not attach a worktree that already has
+   unowned changes.
+2. Identify the intended parent from the checked-out commit and current
+   Graphite topology. Usually this is the configured trunk; it may instead be
+   the verified Graphite branch named by the task contract. Confirm the
+   relationship before continuing.
+3. If `git branch --show-current` is empty, create the unique task branch at
+   that exact snapshot: `git switch -c codex/<task-slug>`. Do not use `-B`,
+   reuse an existing branch name, or move the branch after creating it.
+4. Track that branch: `gt branch track --parent <verified-parent>`. If it
+   cannot be placed under the verified parent without guessing, stop and
+   report the topology rather than selecting a parent interactively.
+5. Treat this tracked branch as the first review unit. Its first commit is
+   created with `gt modify`; subsequent review units are created above it with
+   `gt create`.
+
+If the worktree already starts on a named pre-created task branch, do not
+create another branch. Instead, verify its parent relationship and Graphite
+tracking status as part of the normal preflight.
 
 Before substantial implementation or topology mutation:
 
@@ -116,8 +151,11 @@ For each coherent review unit:
 2. Inspect its diff against the direct parent for one digestible purpose.
 3. Run focused checks that validate the unit.
 4. Stage only intended files.
-5. Use the installed CLI's supported `gt create` workflow with a concise,
-   semantic branch name and commit title.
+5. For the first review unit after the detached-worktree bootstrap, use
+   `gt modify` with a concise semantic commit title; it creates the first
+   commit on that tracked branch. For every later unit, use the installed
+   CLI's supported `gt create` workflow with a concise, semantic branch name
+   and commit title.
 6. Continue the next unit on top.
 
 Revise the stack as understanding improves. Split a mixed unit, combine an
@@ -257,7 +295,8 @@ Report:
 > review model, composed with `<task-spec-path>` as the task-specific execution
 > contract. Use the repository's canonical specs and accepted stability
 > frontier as higher product authority. Work in the supplied isolated worktree,
-> use the installed `gt` CLI directly for Graphite operations, honor the task's
-> orientation gates, publish the complete verified stack through Graphite, and
-> satisfy both documents' stop, verification, and handoff requirements. Do not
-> merge the stack.
+> attach and track a detached snapshot as this guide directs before using
+> Graphite, use the installed `gt` CLI directly for Graphite operations, honor
+> the task's orientation gates, publish the complete verified stack through
+> Graphite, and satisfy both documents' stop, verification, and handoff
+> requirements. Do not merge the stack.
