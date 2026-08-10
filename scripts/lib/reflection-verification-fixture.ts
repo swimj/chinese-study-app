@@ -89,9 +89,19 @@ export function buildReflectionVerificationMaterializationInput(
             explanation: 'Here the focus is personal concern and emotional investment.',
           },
           {
+            targetWordId: words.zaiyi.wordId,
+            promptText: '他很在意这次比赛的结果。',
+            explanation: 'Here the focus is caring strongly about the outcome.',
+          },
+          {
             targetWordId: words.jieyi.wordId,
             promptText: '你介意我坐这里吗？',
             explanation: 'Here the focus is whether someone minds or objects.',
+          },
+          {
+            targetWordId: words.jieyi.wordId,
+            promptText: '我不介意你晚一点回复。',
+            explanation: 'Here the focus is having no objection.',
           },
         ],
       }),

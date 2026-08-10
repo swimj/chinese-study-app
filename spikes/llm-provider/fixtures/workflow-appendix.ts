@@ -358,7 +358,9 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
             ],
             prompts: [
               { targetWordId: c.targetWordId, promptText: '别人怎么评价我，我并不太___。', explanation: 'The speaker does not care much about others’ evaluations.' },
+              { targetWordId: c.targetWordId, promptText: '这件小事他很___，一直放在心上。', explanation: 'The speaker cares greatly about the matter.' },
               { targetWordId: c.submittedWordId, promptText: '你___我把窗户打开吗？', explanation: 'The speaker asks whether the other person objects.' },
+              { targetWordId: c.submittedWordId, promptText: '如果你不___，我想换个座位。', explanation: 'The speaker asks whether the other person minds.' },
             ],
           },
         )],

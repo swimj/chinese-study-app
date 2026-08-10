@@ -249,17 +249,7 @@ describe('reflection operation registry and validation', () => {
       reflectionOperationWordReferences(operation),
       ['target', 'alternate'],
     );
-    assert.deepEqual(
-      validateReflectionOperation({
-        ...operation,
-        prompts: [{
-          targetWordId: 'alternate',
-          promptText: 'Choose the alternate.',
-          explanation: null,
-        }],
-      }, { allowedWordIds: visibleWordIds }),
-      [],
-    );
+    assert.deepEqual(validateReflectionOperation(operation, { allowedWordIds: visibleWordIds }), []);
   });
 
   test('requires a concrete cue repair and distinct alternate words', () => {

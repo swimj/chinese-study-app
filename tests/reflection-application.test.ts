@@ -250,6 +250,9 @@ describe('reflection application adapters', { concurrency: false }, () => {
       'contrast_cluster_member',
       'contrast_cluster_member',
       'contrast_prompt',
+      'contrast_prompt',
+      'contrast_prompt',
+      'contrast_prompt',
       'word_skill_relevance',
       'word_skill_state',
       'word_skill_relevance',
@@ -786,8 +789,10 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.equal(applied.application.state.kind, 'applied');
     const cluster = dbModule.getContrastClusterContent()[0];
     assert.equal(cluster?.title, revised.title);
-    assert.equal(cluster?.prompts[0]?.promptText, revised.prompts[0]!.promptText);
-    assert.equal(cluster?.prompts[0]?.explanation, revised.prompts[0]!.explanation);
+    const editedPrompt = cluster?.prompts.find(
+      (prompt) => prompt.promptText === revised.prompts[0]!.promptText,
+    );
+    assert.equal(editedPrompt?.explanation, revised.prompts[0]!.explanation);
     assert.deepEqual(
       dbModule.getReflectionArtifactDetail(artifact.artifactId)
         .proposals[0]!.proposal.operation,
