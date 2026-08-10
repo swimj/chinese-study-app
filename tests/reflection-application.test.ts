@@ -936,11 +936,12 @@ function contrastOperation(): ReflectionOperation {
       { wordId: 'target', nuanceNote: ' intended ' },
       { wordId: 'alternate', nuanceNote: ' nearby ' },
     ],
-    prompts: [{
-      targetWordId: 'target',
-      promptText: ' Choose the intended word. ',
-      explanation: ' Target fits this context. ',
-    }],
+    prompts: [
+      { targetWordId: 'target', promptText: ' Choose the intended word. ', explanation: ' Target fits this context. ' },
+      { targetWordId: 'target', promptText: ' Use the intended word here. ', explanation: ' Target fits this context. ' },
+      { targetWordId: 'alternate', promptText: ' Choose the nearby word. ', explanation: ' Alternate fits this context. ' },
+      { targetWordId: 'alternate', promptText: ' Use the nearby word here. ', explanation: ' Alternate fits this context. ' },
+    ],
   };
 }
 

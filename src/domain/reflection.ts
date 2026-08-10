@@ -610,9 +610,6 @@ export function validateReflectionOperation(
       if (!Array.isArray(value.prompts)) {
         errors.push(`${path}.prompts: expected array`);
       } else {
-        if (value.prompts.length === 0) {
-          errors.push(`${path}.prompts: at least one prompt is required`);
-        }
         const memberIds = new Set(
           Array.isArray(value.members)
             ? value.members.flatMap((member) => (
@@ -621,6 +618,7 @@ export function validateReflectionOperation(
             : [],
         );
         const promptKeys = new Set<string>();
+        const promptCountByTarget = new Map<string, number>();
         for (const [index, prompt] of value.prompts.entries()) {
           const promptPath = `${path}.prompts[${index}]`;
           errors.push(...validateObjectFields(
@@ -639,12 +637,23 @@ export function validateReflectionOperation(
           if (typeof prompt.targetWordId === 'string' && !memberIds.has(prompt.targetWordId)) {
             errors.push(`${path}.prompts: every target must be a member`);
           }
+          if (typeof prompt.targetWordId === 'string' && memberIds.has(prompt.targetWordId)) {
+            promptCountByTarget.set(
+              prompt.targetWordId,
+              (promptCountByTarget.get(prompt.targetWordId) ?? 0) + 1,
+            );
+          }
           if (typeof prompt.targetWordId === 'string' && typeof prompt.promptText === 'string') {
             const promptKey = `${prompt.targetWordId}\u0000${prompt.promptText.trim()}`;
             if (promptKeys.has(promptKey)) {
               errors.push(`${path}.prompts: duplicate prompt`);
             }
             promptKeys.add(promptKey);
+          }
+        }
+        for (const memberId of memberIds) {
+          if ((promptCountByTarget.get(memberId) ?? 0) < 2) {
+            errors.push(`${path}.prompts: member ${memberId} requires at least two prompts`);
           }
         }
       }

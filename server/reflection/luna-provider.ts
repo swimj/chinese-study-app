@@ -38,10 +38,10 @@ export const LUNA_REFLECTION_MODEL_CONFIG = {
   maxOutputTokens: 40_000,
   timeoutMs: 180_000,
 } as const;
-export const LUNA_REFLECTION_PROMPT_VERSION = 'reflection-v3' as const;
+export const LUNA_REFLECTION_PROMPT_VERSION = 'reflection-v4' as const;
 
 const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
-const productionPromptUrl = new URL('./prompts/reflection-v3.md', import.meta.url);
+const productionPromptUrl = new URL('./prompts/reflection-v4.md', import.meta.url);
 
 export type LunaReflectionFailureCode =
   | 'missing_config'
@@ -100,7 +100,7 @@ export type LunaReflectionRunMetadata = {
   provider: 'openai';
   modelConfig: 'gpt-5.6-luna-high';
   providerModel: 'gpt-5.6-luna';
-  promptVersion: 'reflection-v3';
+  promptVersion: 'reflection-v4';
   responseId: string | null;
   finishReason: string | null;
   usage: NormalizedTokenUsage;

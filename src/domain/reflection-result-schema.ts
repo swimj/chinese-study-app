@@ -69,7 +69,7 @@ const createContrastClusterOperation = objectSchema({
       promptText: stringSchema,
       explanation: nullableStringSchema,
     })),
-    minItems: 1,
+    minItems: 4,
   },
 });
 

@@ -436,11 +436,10 @@ function contrastOperation(): CreateContrastClusterOperationV1 {
       { wordId: 'alternate', nuanceNote: 'wider sense' },
     ],
     prompts: [
-      {
-        targetWordId: 'target',
-        promptText: 'Choose the narrower word.',
-        explanation: null,
-      },
+      { targetWordId: 'target', promptText: 'Choose the narrower word.', explanation: null },
+      { targetWordId: 'target', promptText: 'Use the narrower word here.', explanation: null },
+      { targetWordId: 'alternate', promptText: 'Choose the wider word.', explanation: null },
+      { targetWordId: 'alternate', promptText: 'Use the wider word here.', explanation: null },
     ],
   };
 }

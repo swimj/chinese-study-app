@@ -241,7 +241,7 @@ describe('production Luna reflection provider', () => {
       provider: 'openai',
       modelConfig: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v3',
+      promptVersion: 'reflection-v4',
       responseId: 'response-1',
       finishReason: 'stop',
       usage: {
@@ -253,7 +253,7 @@ describe('production Luna reflection provider', () => {
         totalTokens: 140,
       },
     });
-    assert.equal(LUNA_REFLECTION_PROMPT_VERSION, 'reflection-v3');
+    assert.equal(LUNA_REFLECTION_PROMPT_VERSION, 'reflection-v4');
     const serialized = JSON.stringify(generated);
     assert.equal(serialized.includes('unit-test-secret'), false);
     assert.equal(serialized.includes('transportDebug'), false);
@@ -363,7 +363,7 @@ describe('production Luna reflection provider', () => {
       provider: 'openai',
       modelConfig: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v3',
+      promptVersion: 'reflection-v4',
       responseId: 'response-1',
       finishReason: 'length',
       usage: {
