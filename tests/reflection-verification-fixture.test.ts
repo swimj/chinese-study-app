@@ -149,7 +149,7 @@ describe('reflection verification fixture', { concurrency: false }, () => {
       'fixture-word-006',
       'fixture-word-007',
     ]);
-    assert.equal(cluster?.prompts.length, 2);
+    assert.equal(cluster?.prompts.length, 4);
 
     const cueRepair = proposalOperation(artifact, 'repair_production_cue');
     const meaningRowsBefore = countRows('word_meanings');
@@ -186,7 +186,7 @@ describe('reflection verification fixture', { concurrency: false }, () => {
       WHERE invocation_id = 'fixture-contrast'
     `).get() as { application_state: string; effect_refs_json: string };
     assert.equal(persisted.application_state, 'applied');
-    assert.equal(JSON.parse(persisted.effect_refs_json).length, 9);
+    assert.equal(JSON.parse(persisted.effect_refs_json).length, 11);
   });
 });
 

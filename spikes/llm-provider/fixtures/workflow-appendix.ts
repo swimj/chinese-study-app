@@ -252,7 +252,9 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
             ],
             prompts: [
               { targetWordId: c.targetWordId, promptText: '这本书是朋友送的，我一直___扔掉。', explanation: 'Attachment makes the speaker reluctant to discard it.' },
+              { targetWordId: c.targetWordId, promptText: '孩子对那只旧玩具___丢掉。', explanation: 'Attachment makes the child reluctant to discard it.' },
               { targetWordId: c.submittedWordId, promptText: '听到这个消息，他___马上飞回家。', explanation: 'The speaker intensely wishes to act immediately.' },
+              { targetWordId: c.submittedWordId, promptText: '堵车太严重了，我___立刻飞到公司。', explanation: 'The speaker intensely wishes to arrive immediately.' },
             ],
           },
         )],
@@ -311,7 +313,9 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
               ],
               prompts: [
                 { targetWordId: c.targetWordId, promptText: '他突然从门后出现，把我吓得很___。', explanation: 'A sudden appearance causes ordinary startlement.' },
+                { targetWordId: c.targetWordId, promptText: '听说他突然辞职，大家都很___。', explanation: 'The unexpected news causes ordinary surprise.' },
                 { targetWordId: c.submittedWordId, promptText: '这部纪录片的画面和故事非常___。', explanation: 'The work creates a powerful emotional impact.' },
+                { targetWordId: c.submittedWordId, promptText: '站在瀑布前，壮阔的景象令人十分___。', explanation: 'The scene creates a powerful impact.' },
               ],
             },
           ),
@@ -564,8 +568,12 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       submittedNuance: 'A produced or commercial product or merchandise.',
       targetPrompt: '请把贵重___放进保险箱。',
       targetPromptExplanation: 'The sentence refers broadly to valuable items.',
+      targetPrompt2: '离开前，请检查个人___是否带齐。',
+      targetPrompt2Explanation: 'The sentence refers broadly to personal items.',
       submittedPrompt: '这家公司今年推出了三款新___。',
       submittedPromptExplanation: 'The company launches commercial products.',
+      submittedPrompt2: '这家店专门销售环保___。',
+      submittedPrompt2Explanation: 'The store sells commercial products.',
     }),
     evaluation: cueRepairAndContrastEvaluation('Distinguish general items from produced or commercial products.'),
   }),
@@ -587,8 +595,12 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       submittedNuance: 'A general sign, symbol, mark, or indicator.',
       targetPrompt: '这家公司已经为新品牌注册了___。',
       targetPromptExplanation: 'Registration points to a trademark.',
+      targetPrompt2: '这个图案已经申请成为___。',
+      targetPrompt2Explanation: 'The application establishes a trademark.',
       submittedPrompt: '红灯通常是停车的___。',
       submittedPromptExplanation: 'A red light functions as a general sign.',
+      submittedPrompt2: '门口的箭头是出口的___。',
+      submittedPrompt2Explanation: 'The arrow functions as a general sign.',
     }),
     evaluation: cueRepairAndContrastEvaluation('Do not accept 标志 merely because it matches the “logo” fragment.'),
   }),
@@ -610,8 +622,12 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       submittedNuance: 'Arrange or combine elements as a group, set, or combination.',
       targetPrompt: '这种材料是由多种化学成分___的。',
       targetPromptExplanation: 'The components form a synthesized material.',
+      targetPrompt2: '研究人员成功___了一种新材料。',
+      targetPrompt2Explanation: 'The researchers synthesize a new material.',
       submittedPrompt: '这几个模块可以自由___。',
       submittedPromptExplanation: 'The modules can be arranged in different combinations.',
+      submittedPrompt2: '这些照片可以___成一面展示墙。',
+      submittedPrompt2Explanation: 'The photographs can be arranged into a display.',
     }),
     evaluation: cueRepairAndContrastEvaluation('Recognize sense-triangulation failure rather than treating one generic gloss fragment as sufficient.'),
   }),
@@ -633,8 +649,12 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       submittedNuance: 'Everywhere, in various places, or all over.',
       targetPrompt: '房子___都是高大的树。',
       targetPromptExplanation: 'The trees surround the house.',
+      targetPrompt2: '学校___新开了几家书店。',
+      targetPrompt2Explanation: 'The shops are around the school.',
       submittedPrompt: '我___找了，还是没找到钥匙。',
       submittedPromptExplanation: 'The speaker searched in many places.',
+      submittedPrompt2: '孩子把玩具___放得都是。',
+      submittedPrompt2Explanation: 'The toys are scattered in many places.',
     }),
     evaluation: cueRepairAndContrastEvaluation('Name the surrounding-reference-point versus dispersed-everywhere distinction.'),
   }),
@@ -656,8 +676,12 @@ const productionFixtures: ReflectionProviderFixtureV0[] = [
       submittedNuance: 'Discouraged or losing heart to continue.',
       targetPrompt: '比赛结果让所有支持者都很___。',
       targetPromptExplanation: 'The result failed to meet supporters’ hopes.',
+      targetPrompt2: '等了很久却取消了演出，观众很___。',
+      targetPrompt2Explanation: 'The cancellation disappointed the audience.',
       submittedPrompt: '虽然失败了几次，你也不要___。',
       submittedPromptExplanation: 'The advice is not to lose motivation to continue.',
+      submittedPrompt2: '进步慢一点没关系，别因此___。',
+      submittedPrompt2Explanation: 'The advice is not to lose heart.',
     }),
     evaluation: cueRepairAndContrastEvaluation('Distinguish disappointed evaluation from losing motivation to continue.'),
   }),
@@ -674,8 +698,12 @@ type CueRepairAndContrastSeed = {
   submittedNuance: string;
   targetPrompt: string;
   targetPromptExplanation: string;
+  targetPrompt2: string;
+  targetPrompt2Explanation: string;
   submittedPrompt: string;
   submittedPromptExplanation: string;
+  submittedPrompt2: string;
+  submittedPrompt2Explanation: string;
 };
 
 function cueRepairAndContrastResult(
@@ -715,7 +743,9 @@ function cueRepairAndContrastResult(
             ],
             prompts: [
               { targetWordId: context.targetWordId, promptText: seed.targetPrompt, explanation: seed.targetPromptExplanation },
+              { targetWordId: context.targetWordId, promptText: seed.targetPrompt2, explanation: seed.targetPrompt2Explanation },
               { targetWordId: context.submittedWordId, promptText: seed.submittedPrompt, explanation: seed.submittedPromptExplanation },
+              { targetWordId: context.submittedWordId, promptText: seed.submittedPrompt2, explanation: seed.submittedPrompt2Explanation },
             ],
           },
         ),
@@ -793,7 +823,9 @@ function sessionNoteFixture(): ReflectionProviderFixtureV0 {
           ],
           prompts: [
             { targetWordId, promptText: '这种现象大家见得太多，早已___。', explanation: 'Repeated exposure has made the phenomenon seem normal and unsurprising.' },
+            { targetWordId, promptText: '对这样的加班，他早已___。', explanation: 'Repeated exposure has made the situation seem normal.' },
             { targetWordId: relatedWordId, promptText: '我刚搬到上海，还不___这里的生活节奏。', explanation: 'The speaker has not yet become accustomed to the pace of life.' },
+            { targetWordId: relatedWordId, promptText: '她已经___每天早起跑步了。', explanation: 'The speaker has become accustomed to the routine.' },
           ],
         },
       )],

@@ -274,7 +274,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
         { wordId: 'alternate', nuanceNote: 'nearby', displayOrder: 2 },
       ],
     );
-    assert.equal(cluster?.prompts[0]?.promptText, 'Choose the intended word.');
+    assert.ok(cluster?.prompts.some((prompt) => prompt.promptText === 'Choose the intended word.'));
     for (const wordId of ['target', 'alternate']) {
       assert.equal(
         dbModule.getWordSkillRelevance(wordId, 'contextual_selection')?.relevanceState,
@@ -808,11 +808,15 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.deepEqual(dbModule.listPendingReflectionInvocationIds(), ['contrast-exact']);
     const [recovered] = dbModule.recoverPendingReflectionInvocations();
     assert.equal(recovered?.application.state.kind, 'already_satisfied');
+    const compareEffectRefs = (left: { type: string; id: string }, right: { type: string; id: string }) => (
+      left.type.localeCompare(right.type) || left.id.localeCompare(right.id)
+    );
     assert.deepEqual(
-      recovered?.application.state.kind === 'already_satisfied'
+      (recovered?.application.state.kind === 'already_satisfied'
         ? recovered.application.state.satisfyingEffectRefs
-        : [],
-      first.application.state.kind === 'applied' ? first.application.state.effectRefs : [],
+        : []).toSorted(compareEffectRefs),
+      (first.application.state.kind === 'applied' ? first.application.state.effectRefs : [])
+        .toSorted(compareEffectRefs),
     );
     assert.deepEqual(dbModule.listPendingReflectionInvocationIds(), []);
     assert.equal(dbModule.getContrastClusters().length, 1);
