@@ -246,7 +246,7 @@ describe('production Luna reflection provider', () => {
       provider: 'openai',
       modelConfig: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v4',
+      promptVersion: 'reflection-v5',
       responseId: 'response-1',
       finishReason: 'stop',
       usage: {
@@ -258,7 +258,7 @@ describe('production Luna reflection provider', () => {
         totalTokens: 140,
       },
     });
-    assert.equal(LUNA_REFLECTION_PROMPT_VERSION, 'reflection-v4');
+    assert.equal(LUNA_REFLECTION_PROMPT_VERSION, 'reflection-v5');
     const serialized = JSON.stringify(generated);
     assert.equal(serialized.includes('unit-test-secret'), false);
     assert.equal(serialized.includes('transportDebug'), false);
@@ -387,7 +387,7 @@ describe('production Luna reflection provider', () => {
       provider: 'openai',
       modelConfig: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v4',
+      promptVersion: 'reflection-v5',
       responseId: 'response-1',
       finishReason: 'length',
       usage: {
@@ -471,7 +471,7 @@ describe('production Luna reflection provider', () => {
     assert.match(error.diagnostic?.rejectedOutput ?? '', /truncated/);
   });
 
-  test('loads the promoted production V4 prompt when no prompt is injected', async () => {
+  test('loads the fixed active V5 prompt when no prompt is injected', async () => {
     const capture: CapturedRequest[] = [];
     const provider = createLunaReflectionProvider({
       environment: { OPENAI_API_KEY: 'secret' },
@@ -494,9 +494,10 @@ describe('production Luna reflection provider', () => {
     assert.equal(typeof systemContent, 'string');
     assert.match(
       systemContent as string,
-      /^# Post-Session Reflection V4\n\nYou are a careful language-learning reflection assistant\./,
+      /^# Post-Session Reflection V5\n\nYou are a careful language-learning reflection assistant\./,
     );
     assert.match(systemContent as string, /`servedCue` is the singular immutable cue snapshot/);
+    assert.match(systemContent as string, /`responseKind: no_clue` records no learner response/);
     assert.equal((systemContent as string).includes('`activate`'), false);
     assert.equal((systemContent as string).includes('productionTask'), false);
   });

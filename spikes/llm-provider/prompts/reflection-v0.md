@@ -3,7 +3,7 @@
 This prompt preserves the original provider-comparison contract. It is not
 compatible with `session_reflection_result.v4`; use
 the production-owned
-[`reflection-v2.md`](../../../server/reflection/prompts/reflection-v2.md) for
+[`reflection.md`](../../../server/reflection/prompts/reflection.md) for
 the accepted steel-thread semantics.
 
 ## 1. Product Objective
