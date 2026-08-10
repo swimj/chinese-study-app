@@ -29,6 +29,19 @@ describe('session reflection evidence supplement validation', () => {
     assert.deepEqual(validateSessionReflectionEvidenceSupplement(supplement), []);
   });
 
+  test('parses no-clue supplement evidence only with a null response', () => {
+    const supplement = validSupplement();
+    supplement.items[0]!.responseKind = 'no_clue';
+    supplement.items[0]!.rawResponse = null;
+    assert.equal(parseSessionReflectionEvidenceSupplement(supplement), supplement);
+
+    supplement.items[0]!.rawResponse = 'fabricated';
+    assert.match(
+      validateSessionReflectionEvidenceSupplement(supplement).join('\n'),
+      /must be null for a no-clue response/,
+    );
+  });
+
   test('strictly rejects unknown fields and empty ids, raw responses, cues, or attempts', () => {
     const supplement = structuredClone(validSupplement()) as unknown as Record<string, unknown>;
     const items = supplement.items as Array<Record<string, unknown>>;
@@ -172,6 +185,17 @@ describe('session reflection bundle V2 validation', () => {
     });
   });
 
+  test('accepts truthful no-clue V2 evidence without a schema change', () => {
+    const bundle = productionBundleV2();
+    const item = bundle.items[0]!;
+    item.rawResponse = null;
+    item.submittedWord = null;
+    item.responseKind = 'no_clue';
+
+    assert.deepEqual(validateSessionReflectionBundleV2(bundle), []);
+    assert.equal(parseSessionReflectionBundleV2(bundle), bundle);
+  });
+
   test('rejects unknown served-cue fields', () => {
     const bundle = productionBundleV2();
     const item = bundle.items[0]!;
@@ -278,6 +302,7 @@ function validSupplement(): SessionReflectionEvidenceSupplementV1 {
         displayedMeanings: ['target'],
       }],
       rawResponse: 'alternate',
+      responseKind: 'typed',
       attemptIds: ['attempt-1'],
     }],
   };

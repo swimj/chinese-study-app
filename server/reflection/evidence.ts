@@ -169,7 +169,7 @@ export function buildInitialReflectionBundleWithMetrics(
   if (eligibleItems.length === 0) {
     throw new ReflectionEvidenceError(
       'no_qualifying_evidence',
-      'No typed production mistakes remain after excluding managed study actions.',
+      'No qualifying production failures remain after excluding managed study actions.',
     );
   }
   const items = eligibleItems.slice(0, INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS);
@@ -214,12 +214,13 @@ function buildProductionMistakeItem(
   }
   if (
     firstAttempt.outcome !== 'incorrect'
-    || firstAttempt.response === null
-    || firstAttempt.response.trim().length === 0
     || firstAttempt.response !== supplement.rawResponse
+    || (supplement.responseKind === 'typed'
+      && (firstAttempt.response === null || firstAttempt.response.trim().length === 0))
+    || (supplement.responseKind === 'no_clue' && firstAttempt.response !== null)
   ) {
     throw invalidReference(
-      'The first referenced attempt must be the matching typed incorrect response.',
+      'The first referenced attempt must be the matching failed production response.',
     );
   }
   if (hasExcludingManagementAction(sessionId, supplement.sessionActionId)) {
@@ -227,6 +228,11 @@ function buildProductionMistakeItem(
   }
   const taskId = defaultProductionTaskId(targetWord.wordId);
   const attemptMetadata = parseProductionAttemptMetadata(firstAttempt.metadata_json);
+  if (supplement.responseKind === 'no_clue' && attemptMetadata === null) {
+    throw invalidReference(
+      'No-clue reflection evidence requires explicit durable no-clue provenance.',
+    );
+  }
   if (attemptMetadata !== null) {
     validateProductionAttemptMetadata(
       firstAttempt,
@@ -234,7 +240,10 @@ function buildProductionMistakeItem(
       attemptMetadata,
       taskId,
     );
-  } else if (isTargetWordResponse(supplement.rawResponse, supplement.targetWordId)) {
+  } else if (
+    supplement.rawResponse !== null
+    && isTargetWordResponse(supplement.rawResponse, supplement.targetWordId)
+  ) {
     return null;
   }
   if (attemptMetadata !== null && attemptMetadata.result !== 'rejected') return null;
@@ -265,7 +274,11 @@ function buildProductionMistakeItem(
     servedCue,
     rawResponse: supplement.rawResponse,
     submittedWord,
-    responseKind: submittedWord !== null ? 'matched_known_word' : 'unmatched_text',
+    responseKind: supplement.responseKind === 'no_clue'
+      ? 'no_clue'
+      : submittedWord !== null
+        ? 'matched_known_word'
+        : 'unmatched_text',
   };
 }
 
@@ -436,7 +449,8 @@ type ProductionAttemptMetadataV0 = {
   text: string;
   acceptedWordIds: string[];
   anchorWordId: string;
-  submittedText: string;
+  responseKind: 'typed' | 'no_clue';
+  submittedText: string | null;
   submittedWordId: string | null;
   result: ProductionCueAttemptResultV0;
 };
@@ -450,6 +464,7 @@ function parseProductionAttemptMetadata(raw: string): ProductionAttemptMetadataV
   }
   if (!isRecord(parsed) || !isRecord(parsed.production)) return null;
   const production = parsed.production;
+  const responseKind = production.responseKind === undefined ? 'typed' : production.responseKind;
   if (
     typeof production.taskId !== 'string'
     || (production.cueId !== null && typeof production.cueId !== 'string')
@@ -465,7 +480,9 @@ function parseProductionAttemptMetadata(raw: string): ProductionAttemptMetadataV
     || production.acceptedWordIds.some((wordId) => typeof wordId !== 'string')
     || new Set(production.acceptedWordIds).size !== production.acceptedWordIds.length
     || typeof production.anchorWordId !== 'string'
-    || typeof production.submittedText !== 'string'
+    || (responseKind !== 'typed' && responseKind !== 'no_clue')
+    || (responseKind === 'typed' && typeof production.submittedText !== 'string')
+    || (responseKind === 'no_clue' && production.submittedText !== null)
     || (production.submittedWordId !== null && typeof production.submittedWordId !== 'string')
     || (
       production.result !== 'accepted_anchor'
@@ -475,7 +492,7 @@ function parseProductionAttemptMetadata(raw: string): ProductionAttemptMetadataV
   ) {
     throw invalidReference('The production attempt snapshot metadata is malformed.');
   }
-  return production as ProductionAttemptMetadataV0;
+  return { ...production, responseKind } as ProductionAttemptMetadataV0;
 }
 
 function validateProductionAttemptMetadata(
@@ -489,6 +506,11 @@ function validateProductionAttemptMetadata(
     || metadata.anchorWordId !== attempt.target_word_id
     || metadata.submittedText !== attempt.response
     || metadata.submittedText !== supplement.rawResponse
+    || (metadata.responseKind === 'no_clue'
+      && (supplement.responseKind !== 'no_clue'
+        || metadata.submittedWordId !== null
+        || metadata.result !== 'rejected'))
+    || (metadata.responseKind === 'typed' && supplement.responseKind !== 'typed')
     || !metadata.acceptedWordIds.includes(metadata.anchorWordId)
     || !isProductionResultCoherent(metadata)
     || !isProductionAttemptOutcomeCoherent(attempt, metadata.result)

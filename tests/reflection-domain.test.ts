@@ -482,6 +482,37 @@ describe('reflection result validation', () => {
       /must match the exact served cue/,
     );
   });
+
+  test('no-clue evidence cannot ground contrast or alternate-answer claims', () => {
+    const noClueBundle = bundleV2();
+    noClueBundle.items[0]!.rawResponse = null;
+    noClueBundle.items[0]!.submittedWord = null;
+    noClueBundle.items[0]!.responseKind = 'no_clue';
+    noClueBundle.items[0]!.servedCue.acceptedWordIds = ['target', 'alternate'];
+
+    const contrastResult = normalizeSessionReflectionResultV5({
+      schemaVersion: 'session_reflection_result.v5',
+      itemResults: result(contrastOperation()).itemResults,
+    }, noClueBundle);
+    assert.match(
+      validateSessionReflectionResultV5(contrastResult, noClueBundle).join('\n'),
+      /no-clue evidence cannot ground contrast content/,
+    );
+
+    const alternateResult = normalizeSessionReflectionResultV5({
+      schemaVersion: 'session_reflection_result.v5',
+      itemResults: result({
+        kind: 'accept_production_alternate',
+        version: 1,
+        targetWordId: 'target',
+        alternateWordId: 'alternate',
+      }).itemResults,
+    }, noClueBundle);
+    assert.match(
+      validateSessionReflectionResultV5(alternateResult, noClueBundle).join('\n'),
+      /no-clue evidence cannot ground an alternate-answer claim/,
+    );
+  });
 });
 
 describe('reflection authorization and lifecycle rules', () => {

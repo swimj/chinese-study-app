@@ -243,6 +243,7 @@ describe('completed-session reflection evidence', () => {
           displayedMeanings: [],
         }],
         rawResponse: '  raw response  ',
+        responseKind: 'typed',
         attemptIds: [],
       }],
     });
@@ -293,7 +294,7 @@ describe('completed-session reflection evidence', () => {
     }]);
   });
 
-  test('excludes learning production, recognition, contrast, correct, and no-clue attempts', () => {
+  test('excludes learning production, recognition, contrast, and correct attempts', () => {
     const cases: Array<{
       item: SessionStudyItem;
       attempt: StudyAttemptEvent;
@@ -323,11 +324,6 @@ describe('completed-session reflection evidence', () => {
         response: 'typed',
       }),
     });
-    const noClue = createStudyItem({ actionKind: 'production', status: 'review' });
-    cases.push({
-      item: noClue,
-      attempt: createAttempt({ item: noClue, id: 'no-clue', response: null }),
-    });
     const accumulator = cases.reduce(
       (current, entry) => recordProductionMistakeEvidence(current, {
         item: entry.item,
@@ -338,6 +334,34 @@ describe('completed-session reflection evidence', () => {
     );
 
     assert.deepEqual(accumulator.items, []);
+  });
+
+  test('captures no clue without fabricating a response', () => {
+    const item = createStudyItem({ actionKind: 'production', status: 'review' });
+    const state = markActiveSessionUnitStarted(createBucketSessionState({
+      buckets: { review: [item], learning: [], unstudied: [] },
+      sessionId: 'no-clue-evidence-session',
+      schedulerPolicy: { bucketWeights: { review: 1, learning: 0, unstudied: 0 } },
+      seed: 1,
+    }));
+    const transition = rateActiveSessionUnit(state, 'forgot', {
+      response: null,
+      productionResponse: {
+        responseKind: 'no_clue',
+        submittedText: null,
+        submittedWordId: null,
+        result: 'rejected',
+      },
+    });
+    const attempt = transition.state.reviewProgress[item.sessionActionId]?.attempts[0];
+    if (!attempt) throw new Error('Expected no-clue attempt');
+
+    const captured = recordProductionMistakeEvidence(
+      createSessionReflectionEvidenceAccumulator(),
+      { item, incorrectAttempt: attempt, promptDisplayedMeanings: ['target'] },
+    );
+    assert.equal(captured.items[0]?.rawResponse, null);
+    assert.equal(captured.items[0]?.responseKind, 'no_clue');
   });
 
   test('links one ordered accepted attempt batch, snapshots for Undo, restores, and drops canceled evidence', () => {
