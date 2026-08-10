@@ -34,11 +34,19 @@ export type ProductionAnswerWord = {
   traditional: string | null;
 };
 
-export type ProductionResponseResolution = {
-  submittedText: string;
-  submittedWordId: string | null;
-  result: ProductionAttemptResult;
-};
+export type ProductionResponseResolution =
+  | {
+      responseKind?: 'typed';
+      submittedText: string;
+      submittedWordId: string | null;
+      result: ProductionAttemptResult;
+    }
+  | {
+      responseKind: 'no_clue';
+      submittedText: null;
+      submittedWordId: null;
+      result: 'rejected';
+    };
 
 export type ContrastCluster = {
   id: string;

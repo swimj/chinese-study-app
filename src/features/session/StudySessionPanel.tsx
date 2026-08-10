@@ -21,7 +21,7 @@ export type FrozenProductionCard = {
   actionKind: 'production';
   sampledSkillIds: SessionStudyItem['sampledSkillIds'];
   contentRef: SessionStudyItem['contentRef'];
-  attemptedHanzi: string;
+  attemptedHanzi: string | null;
   status: Word['status'];
   reviewedCount: number;
   queuedCount: number;
@@ -99,6 +99,7 @@ export function StudySessionPanel({
   onBeginUnstudiedDrill,
   onToggleMeaningVisibility,
   onSubmitProductionHanzi,
+  onNoClueProduction,
   onProductionHanziInputChange,
   onSelectContrastChoice,
   onRevealAnswer,
@@ -160,6 +161,7 @@ export function StudySessionPanel({
   onBeginUnstudiedDrill: (wordId: string) => void;
   onToggleMeaningVisibility: (meaning: WordMeaning) => void;
   onSubmitProductionHanzi: () => void;
+  onNoClueProduction: () => void;
   onProductionHanziInputChange: (value: string) => void;
   onSelectContrastChoice: (wordId: string) => void;
   onRevealAnswer: () => void;
@@ -246,7 +248,8 @@ export function StudySessionPanel({
               <span className="prompt-meta">{frozenProductionCard.example}</span>
             </div>
             <p className="notes">{studyProfile.labels.targetRecallIncorrect} This item was recorded as Forgot.</p>
-            <div className="contrast-candidate-controls">
+            {frozenProductionCard.attemptedHanzi !== null ? (
+              <div className="contrast-candidate-controls">
               <span className="prompt-label">Contrast intake</span>
               <span className="prompt-meta">
                 {frozenProductionCard.attemptedHanzi} {studyProfile.labels.targetContrastCandidate}
@@ -266,7 +269,8 @@ export function StudySessionPanel({
               >
                 {productionContrastIntakeMarked ? 'Marked for intake' : 'Mark for intake'}
               </button>
-            </div>
+              </div>
+            ) : null}
           </div>
           <div className="session-action-bar">
             <SessionActionSection>
@@ -284,6 +288,7 @@ export function StudySessionPanel({
               <SessionActionSection>
                 <FrozenProductionCardActions
                   isSubmitting={studyManagementSubmitting}
+                  allowContrastCandidate={frozenProductionCard.attemptedHanzi !== null}
                   onDismissFrozenProductionWord={onDismissFrozenProductionWord}
                   onManageFrozenProductionAction={onManageFrozenProductionAction}
                 />
@@ -602,13 +607,27 @@ export function StudySessionPanel({
                   ))}
                 </div>
               ) : productionRequiresHanziInput && !productionAwaitingRating ? (
-                <button
-                  type="submit"
-                  form={productionFormId}
-                  disabled={submittingRating !== null || personalNotesEditorOpen}
-                >
-                  {studyProfile.labels.submitProductionInput}
-                </button>
+                <div className="rating-grid">
+                  <button
+                    type="submit"
+                    form={productionFormId}
+                    disabled={submittingRating !== null || personalNotesEditorOpen}
+                  >
+                    {studyProfile.labels.submitProductionInput}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={onNoClueProduction}
+                    disabled={
+                      submittingRating !== null
+                      || personalNotesEditorOpen
+                      || productionHanziInput.trim().length > 0
+                    }
+                  >
+                    No clue
+                  </button>
+                </div>
               ) : (
                 <button type="button" onClick={onRevealAnswer} disabled={personalNotesEditorOpen}>
                   Reveal answer
@@ -890,10 +909,12 @@ function CardActions({
 
 function FrozenProductionCardActions({
   isSubmitting,
+  allowContrastCandidate,
   onDismissFrozenProductionWord,
   onManageFrozenProductionAction,
 }: {
   isSubmitting: boolean;
+  allowContrastCandidate: boolean;
   onDismissFrozenProductionWord: () => void;
   onManageFrozenProductionAction: (action: StudyManagementActionKind, note: string) => void;
 }) {
@@ -915,6 +936,7 @@ function FrozenProductionCardActions({
         <ManageStudyPanel
           actionKind="production"
           status="review"
+          allowContrastCandidate={allowContrastCandidate}
           isSubmitting={isSubmitting}
           onDismissWord={() => {
             setManageOpen(false);
@@ -933,12 +955,14 @@ function FrozenProductionCardActions({
 function ManageStudyPanel({
   actionKind,
   status,
+  allowContrastCandidate = true,
   isSubmitting,
   onDismissWord,
   onManageStudyAction,
 }: {
   actionKind: SessionStudyItem['actionKind'] | null;
   status: Word['status'];
+  allowContrastCandidate?: boolean;
   isSubmitting: boolean;
   onDismissWord: () => void;
   onManageStudyAction: (action: StudyManagementActionKind, note: string) => void;
@@ -966,22 +990,26 @@ function ManageStudyPanel({
             >
               Suppress production
             </button>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => onManageStudyAction('add_contrast_candidate', note)}
-              disabled={isSubmitting}
-            >
-              Add contrast candidate
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => onManageStudyAction('suppress_skill_and_add_contrast_candidate', note)}
-              disabled={isSubmitting}
-            >
-              Suppress + add contrast
-            </button>
+            {allowContrastCandidate ? (
+              <>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => onManageStudyAction('add_contrast_candidate', note)}
+                  disabled={isSubmitting}
+                >
+                  Add contrast candidate
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => onManageStudyAction('suppress_skill_and_add_contrast_candidate', note)}
+                  disabled={isSubmitting}
+                >
+                  Suppress + add contrast
+                </button>
+              </>
+            ) : null}
             <button
               type="button"
               className="secondary-button"

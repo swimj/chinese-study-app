@@ -82,6 +82,7 @@ export function HomePage({
   onBeginUnstudiedDrill,
   onToggleMeaningVisibility,
   onSubmitProductionHanzi,
+  onNoClueProduction,
   onProductionHanziInputChange,
   onSelectContrastChoice,
   onRevealAnswer,
@@ -148,6 +149,7 @@ export function HomePage({
   onBeginUnstudiedDrill: (wordId: string) => void;
   onToggleMeaningVisibility: (meaning: WordMeaning) => void;
   onSubmitProductionHanzi: () => void;
+  onNoClueProduction: () => void;
   onProductionHanziInputChange: (value: string) => void;
   onSelectContrastChoice: (wordId: string) => void;
   onRevealAnswer: () => void;
@@ -261,6 +263,7 @@ export function HomePage({
             onBeginUnstudiedDrill={onBeginUnstudiedDrill}
             onToggleMeaningVisibility={onToggleMeaningVisibility}
             onSubmitProductionHanzi={onSubmitProductionHanzi}
+            onNoClueProduction={onNoClueProduction}
             onProductionHanziInputChange={onProductionHanziInputChange}
             onSelectContrastChoice={onSelectContrastChoice}
             onRevealAnswer={onRevealAnswer}

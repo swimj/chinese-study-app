@@ -157,6 +157,8 @@ An undoable transition begins when user action changes session progress:
 - rating a recognition or production review card
 - submitting a production answer that matches no word in the served accepted
   set, which is automatically rated `Forgot`
+- choosing **No clue** on an unanswered typed-production item, which records no
+  response and is automatically rated `Forgot`
 - selecting an incorrect contrast choice, which is automatically rated `Forgot`
 - rating a correct contrast choice as `Hard`, `Good`, or `Easy`
 - completing a learning or unstudied word unit
