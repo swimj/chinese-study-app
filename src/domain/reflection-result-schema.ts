@@ -51,7 +51,7 @@ const suppressProductionOperation = objectSchema({
   wordId: stringSchema,
 });
 
-const createContrastClusterOperation = objectSchema({
+const createContrastClusterOperationV1 = objectSchema({
   kind: enumSchema(['create_contrast_cluster']),
   version: enumSchema([1]),
   title: stringSchema,
@@ -69,6 +69,15 @@ const createContrastClusterOperation = objectSchema({
       promptText: stringSchema,
       explanation: nullableStringSchema,
     })),
+    minItems: 1,
+  },
+});
+
+const createContrastClusterOperationV2 = objectSchema({
+  ...createContrastClusterOperationV1.properties,
+  version: enumSchema([2]),
+  prompts: {
+    ...createContrastClusterOperationV1.properties!.prompts,
     minItems: 4,
   },
 });
@@ -161,7 +170,7 @@ const acceptAlternateOperation = objectSchema({
 const operationSchema: JsonSchema = {
   anyOf: [
     suppressProductionOperation,
-    createContrastClusterOperation,
+    createContrastClusterOperationV1,
     repairCueOperation,
     acceptAlternateOperation,
   ],
@@ -201,7 +210,7 @@ const itemResultSchema = objectSchema({
 const operationSchemaV5Wire: JsonSchema = {
   anyOf: [
     suppressProductionOperation,
-    createContrastClusterOperation,
+    createContrastClusterOperationV2,
     repairCueOperationV2Wire,
   ],
 };

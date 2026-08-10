@@ -271,6 +271,44 @@ describe('reflection durable store', { concurrency: false }, () => {
     assert.equal(materialized.artifact.resultSchemaVersion, 'session_reflection_result.v5');
   });
 
+  test('reloads legacy V1 contrast artifacts and applied invocations under their frozen contract', () => {
+    const operation: ReflectionOperation = {
+      kind: 'create_contrast_cluster',
+      version: 1,
+      title: '目标 / 替代',
+      clusterNote: null,
+      members: [
+        { wordId: 'target', nuanceNote: null },
+        { wordId: 'alternate', nuanceNote: null },
+      ],
+      prompts: [{
+        targetWordId: 'target',
+        promptText: 'Choose the intended word.',
+        explanation: null,
+      }],
+    };
+    const artifact = dbModule.materializeReflectionArtifact(
+      materializationInput('legacy-contrast-session', operation),
+    ).artifact;
+    const accepted = dbModule.acceptReflectionProposal({
+      proposalId: artifact.proposals[0]!.review.proposalId,
+      operation,
+      invocationId: 'legacy-contrast-invocation',
+      createdAt: updatedAt,
+    });
+    dbModule.applyReflectionInvocation(
+      accepted.invocation.invocation.invocationId,
+      appliedAt,
+    );
+
+    assert.equal(dbModule.listReflectionArtifacts('all')[0]?.readState, 'available');
+    assert.equal(
+      dbModule.getReflectionArtifactDetail(artifact.artifactId)
+        .proposals[0]?.invocation?.invocation.operation.version,
+      1,
+    );
+  });
+
   test('rejects mismatched bundle and result generations', () => {
     const v1 = materializationInput('mismatch-v1-session', suppressOperation('target'));
     const v2 = materializationInputV2('mismatch-v2-session');

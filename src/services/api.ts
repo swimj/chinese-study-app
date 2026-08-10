@@ -115,12 +115,14 @@ export type ReflectionArtifactSummaryDto = {
   provider: string;
   model: string;
   promptVersion: string;
-  bundleSchemaVersion: SessionReflectionBundle['schemaVersion'];
-  resultSchemaVersion: SessionReflectionResult['schemaVersion'];
-  itemCount: number;
+  bundleSchemaVersion: string;
+  resultSchemaVersion: string;
   proposalCount: number;
   openProposalCount: number;
-};
+} & (
+  | { readState: 'available'; itemCount: number }
+  | { readState: 'unreadable'; itemCount: null }
+);
 
 export type OperationInvocationStatusDto = {
   invocation: OperationInvocation;
@@ -135,10 +137,16 @@ export type ReflectionProposalDetailDto = {
   invocation: OperationInvocationStatusDto | null;
 };
 
-export type ReflectionArtifactDetailDto = Omit<
-  ReflectionArtifactSummaryDto,
-  'itemCount' | 'proposalCount' | 'openProposalCount'
-> & {
+export type ReflectionArtifactDetailDto = {
+  artifactId: string;
+  sourceSessionId: string;
+  reflectionFlowVersion: string;
+  generatedAt: string;
+  provider: string;
+  model: string;
+  promptVersion: string;
+  bundleSchemaVersion: SessionReflectionBundle['schemaVersion'];
+  resultSchemaVersion: SessionReflectionResult['schemaVersion'];
   evidenceBundle: SessionReflectionBundle;
   result: SessionReflectionResult;
   proposals: ReflectionProposalDetailDto[];

@@ -131,9 +131,8 @@ export type SuppressDefinitionProductionOperationV1 = {
   wordId: string;
 };
 
-export type CreateContrastClusterOperationV1 = {
+type CreateContrastClusterOperationBase = {
   kind: 'create_contrast_cluster';
-  version: 1;
   title: string;
   clusterNote: string | null;
   members: Array<{
@@ -146,6 +145,18 @@ export type CreateContrastClusterOperationV1 = {
     explanation: string | null;
   }>;
 };
+
+export type CreateContrastClusterOperationV1 = CreateContrastClusterOperationBase & {
+  version: 1;
+};
+
+export type CreateContrastClusterOperationV2 = CreateContrastClusterOperationBase & {
+  version: 2;
+};
+
+export type CreateContrastClusterOperation =
+  | CreateContrastClusterOperationV1
+  | CreateContrastClusterOperationV2;
 
 export type RepairProductionCueOperationV1 = {
   kind: 'repair_production_cue';
@@ -226,14 +237,14 @@ export type AcceptProductionAlternateOperationV1 = {
 
 export type ReflectionOperation =
   | SuppressDefinitionProductionOperationV1
-  | CreateContrastClusterOperationV1
+  | CreateContrastClusterOperation
   | RepairProductionCueOperationV1
   | RepairProductionCueOperationV2
   | AcceptProductionAlternateOperationV1;
 
 export type ReflectionOperationV5Wire =
   | SuppressDefinitionProductionOperationV1
-  | CreateContrastClusterOperationV1
+  | CreateContrastClusterOperationV2
   | RepairProductionCueOperationV2Wire;
 
 export type ReflectionProposalV1 = {
@@ -396,6 +407,12 @@ export const REFLECTION_OPERATION_REGISTRY = [
   {
     kind: 'create_contrast_cluster',
     version: 1,
+    editorAvailable: true,
+    applySupport: 'supported',
+  },
+  {
+    kind: 'create_contrast_cluster',
+    version: 2,
     editorAvailable: true,
     applySupport: 'supported',
   },
@@ -651,9 +668,14 @@ export function validateReflectionOperation(
             promptKeys.add(promptKey);
           }
         }
-        for (const memberId of memberIds) {
-          if ((promptCountByTarget.get(memberId) ?? 0) < 2) {
-            errors.push(`${path}.prompts: member ${memberId} requires at least two prompts`);
+        if (version === 1 && value.prompts.length === 0) {
+          errors.push(`${path}.prompts: at least one prompt is required`);
+        }
+        if (version === 2) {
+          for (const memberId of memberIds) {
+            if ((promptCountByTarget.get(memberId) ?? 0) < 2) {
+              errors.push(`${path}.prompts: member ${memberId} requires at least two prompts`);
+            }
           }
         }
       }

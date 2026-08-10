@@ -286,7 +286,7 @@ Non-effects:
 - it does not create contrast content; and
 - it does not delete meanings or production evidence.
 
-### `create_contrast_cluster` version 1
+### `create_contrast_cluster` versions 1 and 2
 
 ```ts
 type CreateContrastClusterOperationV1 = {
@@ -304,23 +304,34 @@ type CreateContrastClusterOperationV1 = {
     explanation: string | null;
   }>;
 };
+
+type CreateContrastClusterOperationV2 = Omit<
+  CreateContrastClusterOperationV1,
+  'version'
+> & {
+  version: 2;
+};
 ```
 
 Purpose: create a concrete contrast-learning unit, including enough drafted
 content to make the distinction trainable rather than merely placing it in an
 intake backlog.
 
-Validation:
+Validation shared by both versions:
 
 - `title` and all prompt text are non-empty after trimming;
-- the operation contains at least two distinct members, with at least two
-  prompts targeting each member;
+- the operation contains at least two distinct members;
 - member word ids are unique, known, visible, and supported by the supplied
   evidence context;
 - every prompt target is one of the operation's members;
 - duplicate prompts within the payload are rejected; and
 - nullable notes and explanations remain editable generated content, not
   application instructions hidden in prose.
+
+Version 1 retains its original at-least-one-prompt rule for stored-payload and
+authorized-invocation compatibility. Version 2 requires at least two prompts
+targeting every member. New generation emits version 2; both versions share the
+same application behavior.
 
 Application creates the cluster, members, annotations, and prompts atomically.
 It also enforces the contrast-membership policy for every member by ensuring

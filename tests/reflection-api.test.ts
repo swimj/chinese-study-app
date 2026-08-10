@@ -276,6 +276,44 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     assert.equal((await request('/api/reflection-artifacts/missing')).status, 404);
   });
 
+  test('isolates an unreadable artifact instead of failing the artifact list', async () => {
+    const artifact = materialize('unreadable-session', suppressOperation('target')).artifact;
+    sqlite.exec('DROP TRIGGER reflection_artifacts_immutable;');
+    try {
+      sqlite.prepare(`
+        UPDATE reflection_artifacts
+        SET result_json = '{}'
+        WHERE artifact_id = ?
+      `).run(artifact.artifactId);
+    } finally {
+      dbModule.ensureReflectionSchema();
+    }
+
+    const response = await request('/api/reflection-artifacts?review=all');
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.json, {
+      artifacts: [{
+        artifactId: artifact.artifactId,
+        sourceSessionId: 'unreadable-session',
+        reflectionFlowVersion: 'initial_post_session_reflection.v1',
+        generatedAt,
+        provider: 'openai',
+        model: 'gpt-5.6-luna-high',
+        promptVersion: 'reflection-v2',
+        bundleSchemaVersion: 'session_reflection_bundle.v1',
+        resultSchemaVersion: 'session_reflection_result.v4',
+        proposalCount: 1,
+        openProposalCount: 1,
+        readState: 'unreadable',
+        itemCount: null,
+      }],
+    });
+    assert.equal(
+      (await request(`/api/reflection-artifacts/${artifact.artifactId}`)).status,
+      500,
+    );
+  });
+
   test('serves the compact reflection generation run log independently of artifacts', async () => {
     materializationInput('run-session', suppressOperation('target'));
     dbModule.recordReflectionGenerationRun({

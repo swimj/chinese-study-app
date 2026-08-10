@@ -3,9 +3,38 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, test } from 'node:test';
 import type { ReflectionPageController } from '../src/features/reflection/useReflectionPageController.ts';
-import { TokenUsageView } from '../src/pages/ReflectionsPage.tsx';
+import { ReflectionsPage, TokenUsageView } from '../src/pages/ReflectionsPage.tsx';
 
 describe('reflection run log presentation', () => {
+  test('keeps the page available when every stored artifact is unreadable', () => {
+    const artifactId = 'unreadable-artifact';
+    const controller: ReflectionPageController = {
+      isLoading: false,
+      openArtifacts: [unreadableArtifact(artifactId)],
+      recentArtifacts: [unreadableArtifact(artifactId)],
+      artifactDetails: [],
+      unreadableArtifactIds: new Set([artifactId]),
+      generationRuns: [],
+      selectedArtifact: null,
+      selectedArtifactId: null,
+      submittingProposalId: null,
+      withdrawingInvocationId: null,
+      generationRetryStatus: null,
+      openPage: async () => {},
+      refresh: async () => {},
+      selectArtifact: async () => {},
+      retryGenerationRun: async () => {},
+      deferProposal: async () => {},
+      dismissProposal: async () => {},
+      acceptProposal: async () => {},
+      withdrawAuthorization: async () => {},
+    };
+
+    const markup = renderToStaticMarkup(createElement(ReflectionsPage, { controller }));
+    assert.match(markup, /1 stored reflection could not be read/);
+    assert.match(markup, /No proposals are waiting for a decision/);
+  });
+
   test('renders the empty dogfood state', () => {
     const markup = renderRuns([]);
 
@@ -54,6 +83,26 @@ describe('reflection run log presentation', () => {
     assert.doesNotMatch(markup, /Retry failed reflection/);
   });
 });
+
+function unreadableArtifact(
+  artifactId: string,
+): ReflectionPageController['recentArtifacts'][number] {
+  return {
+    artifactId,
+    sourceSessionId: 'session-1',
+    reflectionFlowVersion: 'initial_post_session_reflection.v1',
+    generatedAt: '2026-07-29T12:00:00.000Z',
+    provider: 'openai',
+    model: 'gpt-5.6-luna-high',
+    promptVersion: 'reflection-v3',
+    bundleSchemaVersion: 'session_reflection_bundle.v2',
+    resultSchemaVersion: 'session_reflection_result.v5',
+    proposalCount: 1,
+    openProposalCount: 1,
+    readState: 'unreadable',
+    itemCount: null,
+  };
+}
 
 function renderRuns(
   runs: ReflectionPageController['generationRuns'],

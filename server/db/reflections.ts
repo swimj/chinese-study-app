@@ -167,12 +167,16 @@ export type ReflectionArtifactDetail = ReflectionArtifactRecord & {
 
 export type ReflectionArtifactSummary = Omit<
   ReflectionArtifactRecord,
-  'evidenceBundle' | 'result'
+  'bundleSchemaVersion' | 'resultSchemaVersion' | 'evidenceBundle' | 'result'
 > & {
-  itemCount: number;
+  bundleSchemaVersion: string;
+  resultSchemaVersion: string;
   proposalCount: number;
   openProposalCount: number;
-};
+} & (
+  | { readState: 'available'; itemCount: number }
+  | { readState: 'unreadable'; itemCount: null }
+);
 
 export type MaterializeReflectionArtifactResult = {
   created: boolean;
@@ -1003,25 +1007,37 @@ export function listReflectionArtifacts(
   `);
 
   return rows.map((row) => {
-    const artifact = mapArtifactRow(row);
-    const counts = countStatement.get(artifact.artifactId) as {
+    const counts = countStatement.get(row.artifact_id) as {
       proposal_count: number;
       open_proposal_count: number;
     };
-    return {
-      artifactId: artifact.artifactId,
-      sourceSessionId: artifact.sourceSessionId,
-      reflectionFlowVersion: artifact.reflectionFlowVersion,
-      generatedAt: artifact.generatedAt,
-      provider: artifact.provider,
-      model: artifact.model,
-      promptVersion: artifact.promptVersion,
-      bundleSchemaVersion: artifact.bundleSchemaVersion,
-      resultSchemaVersion: artifact.resultSchemaVersion,
-      itemCount: artifact.result.itemResults.length,
+    const summary = {
+      artifactId: row.artifact_id,
+      sourceSessionId: row.source_session_id,
+      reflectionFlowVersion: row.reflection_flow_version,
+      generatedAt: row.generated_at,
+      provider: row.provider,
+      model: row.model,
+      promptVersion: row.prompt_version,
+      bundleSchemaVersion: row.bundle_schema_version,
+      resultSchemaVersion: row.result_schema_version,
       proposalCount: counts.proposal_count,
       openProposalCount: counts.open_proposal_count,
     };
+    try {
+      const artifact = mapArtifactRow(row);
+      return {
+        ...summary,
+        readState: 'available' as const,
+        itemCount: artifact.result.itemResults.length,
+      };
+    } catch {
+      return {
+        ...summary,
+        readState: 'unreadable' as const,
+        itemCount: null,
+      };
+    }
   });
 }
 
