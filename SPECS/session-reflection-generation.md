@@ -77,13 +77,16 @@ action, and attempt references before constructing a provider-facing bundle.
 
 ### Initial evidence kind
 
-The initial flow includes only review-phase production mistakes with a non-empty
-typed response outside the accepted answer space snapshotted on the served cue.
-A learner may mark an otherwise accepted Hanzi response wrong because they
-recalled its pronunciation incorrectly; that remains a study mistake but is not
-reflection-eligible in the initial flow. The accepted words are treated as a
-cue-scoped equivalence class for this exclusion; the legacy fallback's accepted
-space contains only the target word. Each item preserves at least:
+The initial flow includes review-phase production failures that are either an
+explicit no-clue response or a non-empty typed response outside the accepted
+answer space snapshotted on the served cue. A learner may mark an otherwise
+accepted Hanzi response wrong because they recalled its pronunciation
+incorrectly; that remains a study mistake but is not reflection-eligible in the
+initial flow. The accepted words are treated as a cue-scoped equivalence class
+for this exclusion; the legacy fallback's accepted space contains only the
+target word. No-clue evidence preserves a null raw response and null submitted
+word with the explicit `no_clue` discriminator; it is not relabeled as a typed
+mistake. Each item preserves at least:
 
 - the target word identity;
 - the production cue exactly as shown;
@@ -109,10 +112,10 @@ An undone transition contributes no evidence. Evidence is also removed when the
 corresponding action is canceled or excluded through an in-session management
 path whose durable meaning is that the exercise should not be reflected on.
 
-No-clue answers, learner-authored session notes, contrast-selection signals,
-learning/unstudied actions, and broader history require explicit evidence-kind
-and bundle-schema extensions. Adding them must not silently reinterpret stored
-bundles from an earlier version.
+Learner-authored session notes, contrast-selection signals, learning/unstudied
+actions, and broader history require explicit evidence-kind and bundle-schema
+extensions. Adding them must not silently reinterpret stored bundles from an
+earlier version.
 
 ## 4. Generation Attempts And Artifacts
 
@@ -166,7 +169,7 @@ exposure. The mechanism may be a fixed evidence-item cap, deterministic
 partitioning, dynamic batching, or a later policy with equivalent safety. The
 bound and the handling of excluded eligible items must be inspectable.
 
-The initial two-item cap is a provisional dogfood control, not a permanent
+The initial ten-item cap is a provisional dogfood control, not a permanent
 product invariant. Replacing it must preserve:
 
 - deterministic accounting of eligible versus included evidence;

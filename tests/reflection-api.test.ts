@@ -723,6 +723,7 @@ function bundle(sessionId: string): SessionReflectionBundleV1 {
         displayedMeanings: ['target'],
       }],
       rawResponse: '替代',
+      responseKind: 'typed',
       submittedWord: {
         wordId: 'alternate',
         hanzi: '替代',

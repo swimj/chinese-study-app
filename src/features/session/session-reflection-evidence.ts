@@ -18,7 +18,7 @@ export function createSessionReflectionEvidenceAccumulator(): SessionReflectionE
 }
 
 /**
- * Captures the first qualifying typed production mistake for an action.
+ * Captures the first qualifying failed production recall for an action.
  *
  * The cue is frozen from the ordered meanings rendered by the production card.
  * Attempt ids are added only after the corresponding attempt batch has been
@@ -41,8 +41,7 @@ export function recordProductionMistakeEvidence(
     item.actionKind !== 'production' ||
     incorrectAttempt.actionKind !== 'production' ||
     incorrectAttempt.outcome !== 'incorrect' ||
-    incorrectAttempt.response === null ||
-    incorrectAttempt.response.trim().length === 0
+    !isQualifyingProductionFailure(incorrectAttempt)
   ) {
     return accumulator;
   }
@@ -67,6 +66,7 @@ export function recordProductionMistakeEvidence(
       displayedMeanings,
     }],
     rawResponse: incorrectAttempt.response,
+    responseKind: productionAttemptResponseKind(incorrectAttempt),
     attemptIds: [],
   };
 
@@ -74,6 +74,25 @@ export function recordProductionMistakeEvidence(
     ...accumulator,
     items: [...accumulator.items, evidence],
   };
+}
+
+function isQualifyingProductionFailure(attempt: StudyAttemptEvent): boolean {
+  if (attempt.response !== null) return attempt.response.trim().length > 0;
+  return productionAttemptResponseKind(attempt) === 'no_clue';
+}
+
+function productionAttemptResponseKind(attempt: StudyAttemptEvent): 'typed' | 'no_clue' {
+  const production = attempt.metadata.production;
+  if (
+    typeof production === 'object'
+    && production !== null
+    && !Array.isArray(production)
+    && 'responseKind' in production
+    && production.responseKind === 'no_clue'
+  ) {
+    return 'no_clue';
+  }
+  return 'typed';
 }
 
 /**

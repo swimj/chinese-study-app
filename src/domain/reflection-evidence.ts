@@ -21,7 +21,8 @@ export type ProductionMistakeEvidenceSupplementV1 = {
   sessionActionId: string;
   targetWordId: string;
   cuesAsShown: ProductionMistakeCueEvidenceV1[];
-  rawResponse: string;
+  rawResponse: string | null;
+  responseKind: 'typed' | 'no_clue';
   attemptIds: string[];
 };
 
@@ -63,7 +64,7 @@ export function validateSessionReflectionEvidenceSupplement(value: unknown): str
     const path = `$.items[${index}]`;
     errors.push(...validateObjectFields(
       item,
-      ['itemId', 'sessionActionId', 'targetWordId', 'cuesAsShown', 'rawResponse', 'attemptIds'],
+      ['itemId', 'sessionActionId', 'targetWordId', 'cuesAsShown', 'rawResponse', 'responseKind', 'attemptIds'],
       path,
     ));
     if (!isRecord(item)) continue;
@@ -76,7 +77,14 @@ export function validateSessionReflectionEvidenceSupplement(value: unknown): str
       'session action id',
     ));
     errors.push(...validateId(item.targetWordId, `${path}.targetWordId`));
-    errors.push(...validateNonEmptyString(item.rawResponse, `${path}.rawResponse`));
+    errors.push(...validateNullableNonEmptyString(item.rawResponse, `${path}.rawResponse`));
+    if (item.responseKind !== 'typed' && item.responseKind !== 'no_clue') {
+      errors.push(`${path}.responseKind: value is not in the allowed enum`);
+    } else if (item.responseKind === 'no_clue' && item.rawResponse !== null) {
+      errors.push(`${path}.rawResponse: must be null for a no-clue response`);
+    } else if (item.responseKind === 'typed' && item.rawResponse === null) {
+      errors.push(`${path}.rawResponse: typed responses require raw text`);
+    }
     errors.push(...validateCueList(
       item.cuesAsShown,
       `${path}.cuesAsShown`,

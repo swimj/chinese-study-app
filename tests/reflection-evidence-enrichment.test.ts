@@ -195,6 +195,53 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
     assert.equal(item.submittedWord, null);
   });
 
+  test('includes no clue with the exact cue and no fabricated response or submitted word', () => {
+    sqlite.prepare(`
+      UPDATE study_attempt_events
+      SET response = NULL, metadata_json = ?
+      WHERE id = 'attempt-1'
+    `).run(productionAttemptMetadata({
+      responseKind: 'no_clue',
+      submittedText: null,
+      submittedWordId: null,
+      result: 'rejected',
+      acceptedWordIds: ['target'],
+    }));
+
+    const built = buildInitialReflectionBundleWithMetrics(
+      'session-1',
+      supplement(null),
+      generatedAt,
+    );
+    assert.equal(built.eligibleItemCount, 1);
+    assert.equal(built.includedItemCount, 1);
+    assert.equal(built.bundle.items[0]?.sourceAttemptId, 'attempt-1');
+    assert.equal(built.bundle.items[0]?.rawResponse, null);
+    assert.equal(built.bundle.items[0]?.submittedWord, null);
+    assert.equal(built.bundle.items[0]?.responseKind, 'no_clue');
+    assert.deepEqual(built.bundle.items[0]?.servedCue, {
+      cueId: null,
+      cueType: 'definition_gloss',
+      text: 'goal; objective',
+      acceptedWordIds: ['target'],
+    });
+  });
+
+  test('rejects a no-clue supplement without explicit durable no-clue provenance', () => {
+    sqlite.prepare(`
+      UPDATE study_attempt_events
+      SET response = NULL, metadata_json = '{}'
+      WHERE id = 'attempt-1'
+    `).run();
+
+    assert.throws(
+      () => buildInitialReflectionBundle('session-1', supplement(null), generatedAt),
+      (error: unknown) => error instanceof ReflectionEvidenceError
+        && error.code === 'invalid_reference'
+        && error.message.includes('explicit durable no-clue provenance'),
+    );
+  });
+
   test('does not re-resolve legacy raw text against the current word catalog', () => {
     sqlite.prepare(`
       UPDATE study_attempt_events
@@ -680,7 +727,7 @@ function insertCompleteSession() {
   `);
 }
 
-function supplement(rawResponse: string): SessionReflectionEvidenceSupplementV1 {
+function supplement(rawResponse: string | null): SessionReflectionEvidenceSupplementV1 {
   return {
     schemaVersion: 'session_reflection_evidence_supplement.v1',
     items: [{
@@ -695,18 +742,21 @@ function supplement(rawResponse: string): SessionReflectionEvidenceSupplementV1 
         displayedMeanings: ['goal', 'objective'],
       }],
       rawResponse,
+      responseKind: rawResponse === null ? 'no_clue' : 'typed',
       attemptIds: ['attempt-1', 'attempt-2'],
     }],
   };
 }
 
 function productionAttemptMetadata({
+  responseKind = 'typed',
   submittedText,
   submittedWordId,
   result,
   acceptedWordIds,
 }: {
-  submittedText: string;
+  responseKind?: 'typed' | 'no_clue';
+  submittedText: string | null;
   submittedWordId: string | null;
   result: 'accepted_anchor' | 'accepted_non_anchor' | 'rejected';
   acceptedWordIds: string[];
@@ -719,6 +769,7 @@ function productionAttemptMetadata({
       text: 'goal; objective',
       acceptedWordIds,
       anchorWordId: 'target',
+      ...(responseKind === 'no_clue' ? { responseKind } : {}),
       submittedText,
       submittedWordId,
       result,
@@ -794,6 +845,7 @@ function insertEligibleProductionMistake(
       displayedMeanings: [`meaning ${suffix}`],
     }],
     rawResponse: response,
+    responseKind: 'typed',
     attemptIds: [`attempt-${suffix}-1`, `attempt-${suffix}-2`],
   };
 }

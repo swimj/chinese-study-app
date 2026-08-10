@@ -101,7 +101,7 @@ function SessionReflectionStatus({
     case 'skipped':
       return (
         <p className="notes">
-          Reflection skipped: this session had no qualifying typed production mistakes.
+          Reflection skipped: this session had no qualifying production failures.
         </p>
       );
     case 'generating':

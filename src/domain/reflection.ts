@@ -1129,10 +1129,17 @@ export function validateReflectionOperationEvidenceContext(
   item: ProductionMistakeReflectionItemV2,
   path: string,
 ): string[] {
-  if (!isRecord(value) || value.kind !== 'repair_production_cue' || value.version !== 2) {
-    return [];
-  }
+  if (!isRecord(value)) return [];
   const errors: string[] = [];
+  if (item.responseKind === 'no_clue') {
+    if (value.kind === 'create_contrast_cluster') {
+      errors.push(`${path}: no-clue evidence cannot ground contrast content`);
+    }
+    if (value.kind === 'accept_production_alternate') {
+      errors.push(`${path}: no-clue evidence cannot ground an alternate-answer claim`);
+    }
+  }
+  if (value.kind !== 'repair_production_cue' || value.version !== 2) return errors;
   if (value.wordId !== item.targetWord.wordId) {
     errors.push(`${path}.wordId: must match the evidence target word`);
   }
@@ -1160,6 +1167,9 @@ export function validateReflectionOperationEvidenceContext(
     for (const [index, judgment] of value.sourceAttemptJudgments.entries()) {
       if (!isRecord(judgment)) continue;
       const judgmentPath = `${path}.sourceAttemptJudgments[${index}]`;
+      if (item.responseKind === 'no_clue' && judgment.kind === 'accepted_answer_space_omission') {
+        errors.push(`${judgmentPath}: no-clue evidence cannot ground an alternate-answer claim`);
+      }
       if (
         judgment.kind === 'accepted_answer_space_omission'
         && judgment.submittedWordId !== item.submittedWord?.wordId

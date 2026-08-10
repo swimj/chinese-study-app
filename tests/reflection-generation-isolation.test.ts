@@ -300,6 +300,7 @@ function supplement(): SessionReflectionEvidenceSupplementV1 {
         displayedMeanings: ['goal', 'objective'],
       }],
       rawResponse: '替代',
+      responseKind: 'typed',
       attemptIds: ['attempt-1', 'attempt-2'],
     }],
   };

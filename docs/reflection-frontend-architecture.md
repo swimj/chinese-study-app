@@ -46,18 +46,19 @@ after close or after another session starts.
 
 ## Reflection evidence
 
-`session-reflection-evidence.ts` records only the first non-empty typed mistake
-for each review-phase production action. The backend is the authoritative
-reflection-eligibility boundary: it excludes learner-rated pronunciation lapses
-where the response is the target word itself, while preserving the study
-mistake. The accumulator freezes the raw response and full definition cue as
-shown. Ordered attempt ids are appended only after the deferred attempt batch
-is accepted durably.
+`session-reflection-evidence.ts` records only the first failed recall for each
+review-phase production action: either a non-empty typed mistake or an explicit
+no-clue action. The backend is the authoritative reflection-eligibility
+boundary: it excludes learner-rated pronunciation lapses where the response is
+the target word itself, while preserving the study mistake. The accumulator
+freezes the nullable raw response, explicit response kind, and full production
+cue as shown. Ordered attempt ids are appended only after the deferred attempt
+batch is accepted durably.
 
 Evidence is part of the Undo snapshot, restored on Undo, and removed when the
 corresponding action is canceled or dismissed. Recognition, learning,
-contrast-selection, no-clue, and production actions with no typed mistake are
-excluded. Later accepted attempt ids for a captured mistake action remain in
+contrast-selection, and production actions without a typed mistake or explicit
+no-clue response are excluded. Later accepted attempt ids for a captured action remain in
 the supplement only so the backend can validate the complete durable attempt
 batch; attempt rows and summaries are not copied into the provider bundle.
 
