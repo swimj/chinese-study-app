@@ -81,6 +81,18 @@ export function ReflectionsPage({
         ))}
       </nav>
 
+      {controller.unreadableArtifactIds.size > 0 ? (
+        <section className="panel reflection-unreadable-notice" role="status">
+          <strong>
+            {controller.unreadableArtifactIds.size} stored reflection
+            {controller.unreadableArtifactIds.size === 1 ? '' : 's'} could not be read
+          </strong>
+          <p className="notes">
+            They remain stored and are isolated from the readable proposal queues and history.
+          </p>
+        </section>
+      ) : null}
+
       {view === 'sessions' ? (
         <SessionWorkspace controller={controller} />
       ) : view === 'usage' ? (
@@ -197,6 +209,7 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
           emptyLabel="No pending or deferred proposals."
           artifacts={controller.openArtifacts}
           selectedArtifactId={controller.selectedArtifactId}
+          unreadableArtifactIds={controller.unreadableArtifactIds}
           onSelect={controller.selectArtifact}
         />
         <ArtifactList
@@ -204,6 +217,7 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
           emptyLabel="No reflection artifacts yet."
           artifacts={controller.recentArtifacts}
           selectedArtifactId={controller.selectedArtifactId}
+          unreadableArtifactIds={controller.unreadableArtifactIds}
           onSelect={controller.selectArtifact}
         />
       </aside>
@@ -516,12 +530,14 @@ function ArtifactList({
   emptyLabel,
   artifacts,
   selectedArtifactId,
+  unreadableArtifactIds,
   onSelect,
 }: {
   title: string;
   emptyLabel: string;
   artifacts: ReflectionArtifactSummaryDto[];
   selectedArtifactId: string | null;
+  unreadableArtifactIds: ReadonlySet<string>;
   onSelect: (artifactId: string) => Promise<void>;
 }) {
   return (
@@ -530,23 +546,31 @@ function ArtifactList({
       {artifacts.length === 0 ? (
         <p className="notes">{emptyLabel}</p>
       ) : (
-        artifacts.map((artifact) => (
-          <button
-            type="button"
-            className={
-              artifact.artifactId === selectedArtifactId
-                ? 'reflection-artifact-link active'
-                : 'reflection-artifact-link'
-            }
-            key={artifact.artifactId}
-            onClick={() => void onSelect(artifact.artifactId)}
-          >
-            <strong>{formatDateTime(artifact.generatedAt)}</strong>
-            <span>
-              {artifact.openProposalCount} open · {artifact.proposalCount} total
-            </span>
-          </button>
-        ))
+        artifacts.map((artifact) => {
+          const unreadable = artifact.readState === 'unreadable'
+            || unreadableArtifactIds.has(artifact.artifactId);
+          return (
+            <button
+              type="button"
+              className={
+                unreadable
+                  ? 'reflection-artifact-link unreadable'
+                  : artifact.artifactId === selectedArtifactId
+                    ? 'reflection-artifact-link active'
+                    : 'reflection-artifact-link'
+              }
+              disabled={unreadable}
+              key={artifact.artifactId}
+              onClick={() => void onSelect(artifact.artifactId)}
+            >
+              <strong>{formatDateTime(artifact.generatedAt)}</strong>
+              <span>
+                {unreadable ? 'Unreadable · ' : ''}
+                {artifact.openProposalCount} open · {artifact.proposalCount} total
+              </span>
+            </button>
+          );
+        })
       )}
     </section>
   );

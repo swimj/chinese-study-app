@@ -189,15 +189,20 @@ The response is:
 ```
 
 Each summary includes artifact/session/flow identity, generation and
-provider/model/prompt metadata, bundle/result schema versions, and item,
-proposal, and open-proposal counts.
+provider/model/prompt metadata, bundle/result schema versions, proposal and
+open-proposal counts, and a `readState` discriminator. Available artifacts have
+`readState: "available"` and a numeric item count. An artifact that cannot be
+reconstructed by the current reader has `readState: "unreadable"` and a null
+item count; it remains in the list without failing sibling artifacts or the
+page-wide request.
 
 Detail returns a `ReflectionArtifactDetailDto` directly. It adds the exact
 evidence bundle, validated result, and one joined proposal detail per immutable
 proposal. Each proposal detail contains its item locator, original proposal,
 current review status, and nullable invocation/application status.
 Both reads return `200` on success. Invalid queue filters return `400`, missing
-artifacts return `404`, and unexpected read failures return `500`.
+artifacts return `404`, and a detail request for an unreadable artifact returns
+`500`. Systemic list failures still return `500`.
 
 ### Proposal review and authorization withdrawal
 

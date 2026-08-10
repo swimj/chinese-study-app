@@ -150,7 +150,7 @@ English metalinguistic questions.
 - `suppress_definition_production` uses `version: 1` and only `wordId`. It
   suppresses the legacy meaning-derived fallback, not an authorized durable
   cue and not recognition or contextual practice.
-- `create_contrast_cluster` uses `version: 1`, a title, nullable cluster note,
+- `create_contrast_cluster` uses `version: 2`, a title, nullable cluster note,
   at least two unique members, and at least two natural cloze prompts for each
   member. It creates new content; never overwrite an existing cluster.
 - `repair_production_cue` is the V2 operation. Do not emit `version` or

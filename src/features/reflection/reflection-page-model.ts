@@ -1,6 +1,6 @@
 import type {
   AcceptProductionAlternateOperationV1,
-  CreateContrastClusterOperationV1,
+  CreateContrastClusterOperation,
   ReflectionInputItemV1,
   ReflectionInputItemV2,
   ReflectionItemResultV1,
@@ -212,14 +212,14 @@ export type ReflectionOperationDraftAction =
   | {
       type: 'update_cluster_member';
       index: number;
-      patch: Partial<CreateContrastClusterOperationV1['members'][number]>;
+      patch: Partial<CreateContrastClusterOperation['members'][number]>;
     }
   | { type: 'add_cluster_prompt' }
   | { type: 'remove_cluster_prompt'; index: number }
   | {
       type: 'update_cluster_prompt';
       index: number;
-      patch: Partial<CreateContrastClusterOperationV1['prompts'][number]>;
+      patch: Partial<CreateContrastClusterOperation['prompts'][number]>;
     }
   | { type: 'set_cue_word'; wordId: string }
   | {

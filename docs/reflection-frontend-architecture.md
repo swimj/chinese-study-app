@@ -74,6 +74,13 @@ review and authorization withdrawal reload the affected artifact plus both
 lists so proposal-centered queues and persisted application results remain
 coherent without a manual refresh.
 
+Artifact reconstruction is isolated per record. The backend lists unreadable
+artifact metadata explicitly instead of aborting the whole list, and the
+controller settles detail loads independently. The page excludes unreadable
+details from proposal queues, keeps readable artifacts and generation runs
+available, and shows a persistent unreadable-artifact notice without rewriting
+the stored payload.
+
 `ReflectionsPage` is reachable outside an active session. Its default view is a
 flat, cross-session queue of pending proposals that need a learner decision.
 Separate convenience views show deferred proposals and accepted authorizations
@@ -83,7 +90,7 @@ current queue when its new lifecycle state no longer matches that filter.
 Questions and unhandled needs remain informational and do not receive synthetic
 review state.
 
-Each proposal has a purpose-built editor for exactly one V1 operation:
+Each proposal has a purpose-built editor for each registered operation family:
 
 - definition-production suppression;
 - new contrast-cluster creation, including members, annotations, and prompts;

@@ -1,5 +1,5 @@
 import type {
-  CreateContrastClusterOperationV1,
+  CreateContrastClusterOperation,
   ProductionCueDraftV2,
   ReflectionOperation,
   RepairProductionCueOperationV1,
@@ -343,7 +343,7 @@ function ContrastClusterEditor({
   disabled,
   dispatch,
 }: {
-  operation: CreateContrastClusterOperationV1;
+  operation: CreateContrastClusterOperation;
   disabled: boolean;
   dispatch: (action: ReflectionOperationDraftAction) => void;
 }) {

@@ -165,8 +165,8 @@ describe('LLM provider result schema', () => {
     assert.equal(emptyPromptsOperation.kind, 'create_contrast_cluster');
     if (emptyPromptsOperation.kind !== 'create_contrast_cluster') throw new Error('Expected contrast content operation');
     emptyPromptsOperation.prompts = [];
-    assert.match(validateJsonSchema(emptyPromptsResult, sessionReflectionResultSchema).join('\n'), /expected at least 4 item/);
-    assert.match(validateResultAgainstBundle(emptyPromptsResult, fixture.inputBundle).join('\n'), /requires at least two prompts/);
+    assert.match(validateJsonSchema(emptyPromptsResult, sessionReflectionResultSchema).join('\n'), /expected at least 1 item/);
+    assert.match(validateResultAgainstBundle(emptyPromptsResult, fixture.inputBundle).join('\n'), /at least one prompt/);
 
     const otherFixture = allProviderFixtures.find((item) => item.fixtureId === 'ex02-to');
     assert.ok(otherFixture?.referenceResult);

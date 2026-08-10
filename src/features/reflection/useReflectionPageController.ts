@@ -13,6 +13,7 @@ export type ReflectionPageController = {
   openArtifacts: ReflectionArtifactSummaryDto[];
   recentArtifacts: ReflectionArtifactSummaryDto[];
   artifactDetails: ReflectionArtifactDetailDto[];
+  unreadableArtifactIds: ReadonlySet<string>;
   generationRuns: ReflectionGenerationRunDto[];
   selectedArtifact: ReflectionArtifactDetailDto | null;
   selectedArtifactId: string | null;
@@ -49,6 +50,9 @@ export function useReflectionPageController({
   const [openArtifacts, setOpenArtifacts] = useState<ReflectionArtifactSummaryDto[]>([]);
   const [recentArtifacts, setRecentArtifacts] = useState<ReflectionArtifactSummaryDto[]>([]);
   const [artifactDetails, setArtifactDetails] = useState<ReflectionArtifactDetailDto[]>([]);
+  const [unreadableArtifactIds, setUnreadableArtifactIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
   const [generationRuns, setGenerationRuns] = useState<ReflectionGenerationRunDto[]>([]);
   const [selectedArtifact, setSelectedArtifact] = useState<ReflectionArtifactDetailDto | null>(null);
   const [submittingProposalId, setSubmittingProposalId] = useState<string | null>(null);
@@ -74,48 +78,62 @@ export function useReflectionPageController({
       reviewApi.listArtifacts('all'),
       reviewApi.listGenerationRuns(),
     ]);
-    const availableArtifactIds = new Set([
-      ...nextOpenArtifacts.map((artifact) => artifact.artifactId),
-      ...nextRecentArtifacts.map((artifact) => artifact.artifactId),
-    ]);
-    const orderedArtifactIds = [
-      ...nextRecentArtifacts.map((artifact) => artifact.artifactId),
+    const orderedArtifacts = [
+      ...nextRecentArtifacts,
       ...nextOpenArtifacts
-        .map((artifact) => artifact.artifactId)
-        .filter((artifactId) => !nextRecentArtifacts.some(
-          (artifact) => artifact.artifactId === artifactId,
+        .filter((artifact) => !nextRecentArtifacts.some(
+          (recentArtifact) => recentArtifact.artifactId === artifact.artifactId,
         )),
     ];
+    const readableArtifactIds = orderedArtifacts
+      .filter((artifact) => artifact.readState === 'available')
+      .map((artifact) => artifact.artifactId);
+    const nextUnreadableArtifactIds = new Set(
+      orderedArtifacts
+        .filter((artifact) => artifact.readState === 'unreadable')
+        .map((artifact) => artifact.artifactId),
+    );
     const detailByArtifactId = new Map(
       artifactDetails.map((detail) => [detail.artifactId, detail]),
     );
-    const artifactIdsToLoad = orderedArtifactIds.filter((artifactId) => (
+    for (const artifactId of nextUnreadableArtifactIds) {
+      detailByArtifactId.delete(artifactId);
+    }
+    const artifactIdsToLoad = readableArtifactIds.filter((artifactId) => (
       !detailByArtifactId.has(artifactId) || forceArtifactIds.has(artifactId)
     ));
-    const loadedDetails = await Promise.all(
+    const loadedDetails = await Promise.allSettled(
       artifactIdsToLoad.map((artifactId) => reviewApi.getArtifact(artifactId)),
     );
-    for (const detail of loadedDetails) {
-      detailByArtifactId.set(detail.artifactId, detail);
-    }
-    const nextArtifactDetails = orderedArtifactIds.map((artifactId) => {
-      const detail = detailByArtifactId.get(artifactId);
-      if (detail === undefined) {
-        throw new Error(`Reflection artifact ${artifactId} detail was not loaded.`);
+    for (const [index, result] of loadedDetails.entries()) {
+      const artifactId = artifactIdsToLoad[index]!;
+      if (result.status === 'fulfilled') {
+        detailByArtifactId.set(artifactId, result.value);
+      } else {
+        detailByArtifactId.delete(artifactId);
+        nextUnreadableArtifactIds.add(artifactId);
       }
-      return detail;
+    }
+    const nextArtifactDetails = readableArtifactIds.flatMap((artifactId) => {
+      const detail = detailByArtifactId.get(artifactId);
+      return detail === undefined ? [] : [detail];
     });
     const nextArtifactId = preferredArtifactId !== null
-      && availableArtifactIds.has(preferredArtifactId)
+      && detailByArtifactId.has(preferredArtifactId)
       ? preferredArtifactId
-      : nextOpenArtifacts[0]?.artifactId ?? nextRecentArtifacts[0]?.artifactId ?? null;
+      : nextOpenArtifacts.find((artifact) => detailByArtifactId.has(artifact.artifactId))
+          ?.artifactId
+        ?? nextRecentArtifacts.find((artifact) => detailByArtifactId.has(artifact.artifactId))
+          ?.artifactId
+        ?? null;
     const nextSelectedArtifact = nextArtifactId === null
       ? null
-      : detailByArtifactId.get(nextArtifactId) ?? await reviewApi.getArtifact(nextArtifactId);
+      : detailByArtifactId.get(nextArtifactId) ?? null;
 
     setOpenArtifacts(nextOpenArtifacts);
     setRecentArtifacts(nextRecentArtifacts);
     setArtifactDetails(nextArtifactDetails);
+    setUnreadableArtifactIds(nextUnreadableArtifactIds);
     setGenerationRuns(nextGenerationRuns);
     setSelectedArtifact(nextSelectedArtifact);
   }
@@ -154,16 +172,21 @@ export function useReflectionPageController({
   }
 
   async function selectArtifact(artifactId: string): Promise<void> {
-    if (artifactId === selectedArtifact?.artifactId) {
+    if (artifactId === selectedArtifact?.artifactId || unreadableArtifactIds.has(artifactId)) {
       return;
     }
+    const loadedDetail = artifactDetails.find((detail) => detail.artifactId === artifactId);
+    if (loadedDetail !== undefined) {
+      setSelectedArtifact(loadedDetail);
+      return;
+    }
+    setIsLoading(true);
     try {
-      await runLoading(async () => {
-        const loadedDetail = artifactDetails.find((detail) => detail.artifactId === artifactId);
-        setSelectedArtifact(loadedDetail ?? await requireApi().getArtifact(artifactId));
-      });
+      setSelectedArtifact(await requireApi().getArtifact(artifactId));
     } catch {
-      // Preserve the previous selection on failure.
+      setUnreadableArtifactIds((current) => new Set(current).add(artifactId));
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -249,6 +272,7 @@ export function useReflectionPageController({
     openArtifacts,
     recentArtifacts,
     artifactDetails,
+    unreadableArtifactIds,
     generationRuns,
     selectedArtifact,
     selectedArtifactId: selectedArtifact?.artifactId ?? null,

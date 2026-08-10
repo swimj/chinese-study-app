@@ -15,6 +15,7 @@ import {
 } from '../src/domain/reflection.js';
 import type {
   CreateContrastClusterOperationV1,
+  CreateContrastClusterOperationV2,
   ReflectionOperation,
   RepairProductionCueOperationV2,
   SessionReflectionBundleV1,
@@ -125,6 +126,10 @@ function contrastOperation(): CreateContrastClusterOperationV1 {
   };
 }
 
+function contrastOperationV2(): CreateContrastClusterOperationV2 {
+  return { ...contrastOperation(), version: 2 };
+}
+
 function cueRepairV2(): RepairProductionCueOperationV2 {
   return {
     kind: 'repair_production_cue',
@@ -157,6 +162,7 @@ describe('reflection operation registry and validation', () => {
       [
         ['suppress_definition_production', 1, true, 'supported'],
         ['create_contrast_cluster', 1, true, 'supported'],
+        ['create_contrast_cluster', 2, true, 'supported'],
         ['repair_production_cue', 1, true, 'unsupported'],
         ['repair_production_cue', 2, true, 'supported'],
         ['accept_production_alternate', 1, true, 'unsupported'],
@@ -168,6 +174,7 @@ describe('reflection operation registry and validation', () => {
     const operations: ReflectionOperation[] = [
       { kind: 'suppress_definition_production', version: 1, wordId: 'target' },
       contrastOperation(),
+      contrastOperationV2(),
       {
         kind: 'repair_production_cue',
         version: 1,
@@ -240,7 +247,13 @@ describe('reflection operation registry and validation', () => {
     tooSmall.prompts = [];
     const sizeErrors = validateReflectionOperation(tooSmall).join('\n');
     assert.match(sizeErrors, /at least two distinct words/);
-    assert.match(sizeErrors, /member target requires at least two prompts/);
+    assert.match(sizeErrors, /at least one prompt/);
+
+    const strict = contrastOperationV2();
+    strict.prompts = strict.prompts.slice(0, 1);
+    const strictErrors = validateReflectionOperation(strict).join('\n');
+    assert.match(strictErrors, /member target requires at least two prompts/);
+    assert.match(strictErrors, /member alternate requires at least two prompts/);
   });
 
   test('lists member word ids as contrast-cluster word references', () => {

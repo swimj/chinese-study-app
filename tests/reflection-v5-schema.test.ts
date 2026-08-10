@@ -49,6 +49,28 @@ describe('reflection V5 provider wire schema', () => {
     assert.deepEqual(validateJsonSchema(result(), sessionReflectionResultV5WireSchema), []);
   });
 
+  test('requires V2 contrast clusters with at least four prompts', () => {
+    const contrastResult = structuredClone(result()) as unknown as {
+      itemResults: Array<{ proposals: Array<{ operation: Record<string, unknown> }> }>;
+    };
+    contrastResult.itemResults[0]!.proposals[0]!.operation = {
+      kind: 'create_contrast_cluster',
+      version: 2,
+      title: '目标 / 替代',
+      clusterNote: null,
+      members: [
+        { wordId: 'word-1', nuanceNote: null },
+        { wordId: 'word-2', nuanceNote: null },
+      ],
+      prompts: [],
+    };
+
+    assert.match(
+      validateJsonSchema(contrastResult, sessionReflectionResultV5WireSchema).join('\n'),
+      /prompts: expected at least 4 item/,
+    );
+  });
+
   test('rejects model-authored deterministic fields and malformed nested variants', () => {
     const versioned = structuredClone(result()) as unknown as {
       itemResults: Array<{ proposals: Array<{ operation: Record<string, unknown> }> }>;

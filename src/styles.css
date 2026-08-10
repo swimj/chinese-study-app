@@ -1866,6 +1866,22 @@ button:disabled:hover {
   box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.55);
 }
 
+.reflection-artifact-link.unreadable {
+  border-color: rgba(251, 191, 36, 0.5);
+  color: #fcd34d;
+  cursor: not-allowed;
+  opacity: 0.82;
+}
+
+.reflection-unreadable-notice {
+  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(120, 53, 15, 0.2);
+}
+
+.reflection-unreadable-notice p {
+  margin-bottom: 0;
+}
+
 .reflection-detail,
 .reflection-item-card,
 .reflection-proposal-list,
