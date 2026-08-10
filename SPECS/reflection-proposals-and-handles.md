@@ -313,7 +313,8 @@ intake backlog.
 Validation:
 
 - `title` and all prompt text are non-empty after trimming;
-- the operation contains at least two distinct members and at least one prompt;
+- the operation contains at least two distinct members, with at least two
+  prompts targeting each member;
 - member word ids are unique, known, visible, and supported by the supplied
   evidence context;
 - every prompt target is one of the operation's members;

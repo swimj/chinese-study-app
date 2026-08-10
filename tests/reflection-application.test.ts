@@ -250,6 +250,9 @@ describe('reflection application adapters', { concurrency: false }, () => {
       'contrast_cluster_member',
       'contrast_cluster_member',
       'contrast_prompt',
+      'contrast_prompt',
+      'contrast_prompt',
+      'contrast_prompt',
       'word_skill_relevance',
       'word_skill_state',
       'word_skill_relevance',
@@ -271,7 +274,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
         { wordId: 'alternate', nuanceNote: 'nearby', displayOrder: 2 },
       ],
     );
-    assert.equal(cluster?.prompts[0]?.promptText, 'Choose the intended word.');
+    assert.ok(cluster?.prompts.some((prompt) => prompt.promptText === 'Choose the intended word.'));
     for (const wordId of ['target', 'alternate']) {
       assert.equal(
         dbModule.getWordSkillRelevance(wordId, 'contextual_selection')?.relevanceState,
@@ -786,8 +789,10 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.equal(applied.application.state.kind, 'applied');
     const cluster = dbModule.getContrastClusterContent()[0];
     assert.equal(cluster?.title, revised.title);
-    assert.equal(cluster?.prompts[0]?.promptText, revised.prompts[0]!.promptText);
-    assert.equal(cluster?.prompts[0]?.explanation, revised.prompts[0]!.explanation);
+    const editedPrompt = cluster?.prompts.find(
+      (prompt) => prompt.promptText === revised.prompts[0]!.promptText,
+    );
+    assert.equal(editedPrompt?.explanation, revised.prompts[0]!.explanation);
     assert.deepEqual(
       dbModule.getReflectionArtifactDetail(artifact.artifactId)
         .proposals[0]!.proposal.operation,
@@ -803,11 +808,15 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.deepEqual(dbModule.listPendingReflectionInvocationIds(), ['contrast-exact']);
     const [recovered] = dbModule.recoverPendingReflectionInvocations();
     assert.equal(recovered?.application.state.kind, 'already_satisfied');
+    const compareEffectRefs = (left: { type: string; id: string }, right: { type: string; id: string }) => (
+      left.type.localeCompare(right.type) || left.id.localeCompare(right.id)
+    );
     assert.deepEqual(
-      recovered?.application.state.kind === 'already_satisfied'
+      (recovered?.application.state.kind === 'already_satisfied'
         ? recovered.application.state.satisfyingEffectRefs
-        : [],
-      first.application.state.kind === 'applied' ? first.application.state.effectRefs : [],
+        : []).toSorted(compareEffectRefs),
+      (first.application.state.kind === 'applied' ? first.application.state.effectRefs : [])
+        .toSorted(compareEffectRefs),
     );
     assert.deepEqual(dbModule.listPendingReflectionInvocationIds(), []);
     assert.equal(dbModule.getContrastClusters().length, 1);
@@ -936,11 +945,12 @@ function contrastOperation(): ReflectionOperation {
       { wordId: 'target', nuanceNote: ' intended ' },
       { wordId: 'alternate', nuanceNote: ' nearby ' },
     ],
-    prompts: [{
-      targetWordId: 'target',
-      promptText: ' Choose the intended word. ',
-      explanation: ' Target fits this context. ',
-    }],
+    prompts: [
+      { targetWordId: 'target', promptText: ' Choose the intended word. ', explanation: ' Target fits this context. ' },
+      { targetWordId: 'target', promptText: ' Use the intended word here. ', explanation: ' Target fits this context. ' },
+      { targetWordId: 'alternate', promptText: ' Choose the nearby word. ', explanation: ' Alternate fits this context. ' },
+      { targetWordId: 'alternate', promptText: ' Use the nearby word here. ', explanation: ' Alternate fits this context. ' },
+    ],
   };
 }
 

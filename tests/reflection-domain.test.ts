@@ -116,11 +116,12 @@ function contrastOperation(): CreateContrastClusterOperationV1 {
       { wordId: 'target', nuanceNote: null },
       { wordId: 'alternate', nuanceNote: null },
     ],
-    prompts: [{
-      targetWordId: 'target',
-      promptText: 'Choose the intended target.',
-      explanation: null,
-    }],
+    prompts: [
+      { targetWordId: 'target', promptText: 'Choose the intended target.', explanation: null },
+      { targetWordId: 'target', promptText: 'Use the intended target here.', explanation: null },
+      { targetWordId: 'alternate', promptText: 'Choose the alternate here.', explanation: null },
+      { targetWordId: 'alternate', promptText: 'Use the alternate here.', explanation: null },
+    ],
   };
 }
 
@@ -239,7 +240,7 @@ describe('reflection operation registry and validation', () => {
     tooSmall.prompts = [];
     const sizeErrors = validateReflectionOperation(tooSmall).join('\n');
     assert.match(sizeErrors, /at least two distinct words/);
-    assert.match(sizeErrors, /at least one prompt/);
+    assert.match(sizeErrors, /member target requires at least two prompts/);
   });
 
   test('lists member word ids as contrast-cluster word references', () => {
@@ -248,17 +249,7 @@ describe('reflection operation registry and validation', () => {
       reflectionOperationWordReferences(operation),
       ['target', 'alternate'],
     );
-    assert.deepEqual(
-      validateReflectionOperation({
-        ...operation,
-        prompts: [{
-          targetWordId: 'alternate',
-          promptText: 'Choose the alternate.',
-          explanation: null,
-        }],
-      }, { allowedWordIds: visibleWordIds }),
-      [],
-    );
+    assert.deepEqual(validateReflectionOperation(operation, { allowedWordIds: visibleWordIds }), []);
   });
 
   test('requires a concrete cue repair and distinct alternate words', () => {
