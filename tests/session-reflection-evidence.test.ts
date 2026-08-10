@@ -89,6 +89,65 @@ describe('completed-session reflection evidence', () => {
     );
   });
 
+  test('no clue uses ordinary Forgot reinforcement with null response provenance', () => {
+    const item = createStudyItem({ actionKind: 'production', status: 'review' });
+    let state = markActiveSessionUnitStarted(createBucketSessionState({
+      buckets: { review: [item], learning: [], unstudied: [] },
+      sessionId: 'no-clue-session',
+      schedulerPolicy: { bucketWeights: { review: 1, learning: 0, unstudied: 0 } },
+      seed: 1,
+    }));
+
+    let result = rateActiveSessionUnit(state, 'forgot', {
+      response: null,
+      productionResponse: {
+        responseKind: 'no_clue',
+        submittedText: null,
+        submittedWordId: null,
+        result: 'rejected',
+      },
+    });
+    const noClueAttempt = result.state.reviewProgress[item.sessionActionId]?.attempts[0];
+    assert.equal(result.commit.type, 'none');
+    assert.equal(noClueAttempt?.response, null);
+    assert.equal(noClueAttempt?.outcome, 'incorrect');
+    assert.equal(noClueAttempt?.rating, 'forgot');
+    assert.deepEqual(noClueAttempt?.metadata.production, {
+      taskId: 'production-task:review-word:default_production',
+      cueId: null,
+      cueType: 'definition_gloss',
+      text: 'target',
+      acceptedWordIds: ['review-word'],
+      anchorWordId: 'review-word',
+      responseKind: 'no_clue',
+      submittedText: null,
+      submittedWordId: null,
+      result: 'rejected',
+      recheckDemandId: null,
+    });
+    assert.equal(result.state.reviewProgress[item.sessionActionId]?.failureCount, 1);
+    assert.equal(result.state.reviewProgress[item.sessionActionId]?.reinforcementStreak, 0);
+
+    state = result.state;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      state = markActiveSessionUnitStarted(state);
+      result = rateActiveSessionUnit(state, 'good', {
+        response: '目标',
+        productionResponse: {
+          submittedText: '目标',
+          submittedWordId: item.targetWordId,
+          result: 'accepted_anchor',
+        },
+      });
+      state = result.state;
+    }
+    assert.equal(result.commit.type, 'commit-review-action-session');
+    if (result.commit.type !== 'commit-review-action-session') throw new Error('Expected covered review batch');
+    assert.equal(result.commit.failureCount, 1);
+    assert.equal(result.commit.terminalRating, null);
+    assert.deepEqual(result.commit.events.map((event) => event.response), [null, '目标', '目标', '目标']);
+  });
+
   test('an accepted typed response can still be learner-rated forgot', () => {
     const item = createStudyItem({ actionKind: 'production', status: 'review' });
     const state = markActiveSessionUnitStarted(createBucketSessionState({

@@ -584,9 +584,11 @@ attempts against the same served action.
 
 For a production-cue action, `contentRef` identifies the durable task and cue.
 The event metadata snapshots `anchorWordId`, cue type and text,
-`acceptedWordIds`, raw submitted text, nullable resolved submitted word id, and
-the deterministic session-time result, plus the nullable served recheck-demand
-id. The metadata is historical evidence, not a live lookup into mutable cue
+`acceptedWordIds`, nullable raw submitted text, nullable resolved submitted word
+id, the explicit `typed` or `no_clue` response kind, and the deterministic
+session-time result, plus the nullable served recheck-demand id. A no-clue
+attempt keeps both response fields null and uses the ordinary rejected/Forgot
+path. The metadata is historical evidence, not a live lookup into mutable cue
 state.
 
 Example production events:

@@ -192,6 +192,7 @@ export type StudySessionHomePageProps = {
   onBeginUnstudiedDrill: (wordId: string) => void;
   onToggleMeaningVisibility: (meaning: WordMeaning) => void;
   onSubmitProductionHanzi: () => void;
+  onNoClueProduction: () => void;
   onProductionHanziInputChange: (value: string) => void;
   onSelectContrastChoice: (wordId: string) => void;
   onRevealAnswer: () => void;
@@ -823,67 +824,140 @@ export function useStudySession({
         setAnswerRevealed(true);
         return;
       }
-
-      const transition = rateActiveSessionUnit(sessionState, 'forgot', {
+      applyAutomaticProductionForgot({
+        stateAtResponse: sessionState,
+        itemAtResponse: activeItem,
+        wordAtResponse: activeWord,
         response: productionHanziInput,
-        productionResponse: activeWord.status === 'review' ? resolution : null,
-      });
-      if (activeWord.status === 'review') {
-        const attempts = transition.state.reviewProgress[activeItem.sessionActionId]?.attempts;
-        const incorrectAttempt = attempts?.[attempts.length - 1];
-        if (!incorrectAttempt) {
-          throw new Error(
-            'Session reflection evidence invariant violated: typed production mistake has no attempt event.',
-          );
-        }
-        reflectionEvidenceRef.current = recordProductionMistakeEvidence(
-          reflectionEvidenceRef.current,
-          {
-            item: activeItem,
-            incorrectAttempt,
-            promptDisplayedMeanings: activePromptDisplayedMeanings,
-          },
-        );
-      }
-      setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
-      setSessionState(transition.state);
-      setSessionSummary((current) =>
-        updateSessionSummaryForRating({
-          summary: current,
-          transition,
-          rating: 'forgot',
-          activeWord,
-          activeItem,
-          previousPhase: sessionState.phase,
-        }),
-      );
-      setFrozenProductionCard({
-        sessionActionId: activeItem.sessionActionId,
-        targetWordId: activeWord.id,
-        actionKind: 'production',
-        sampledSkillIds: [...activeItem.sampledSkillIds],
-        contentRef: activeItem.contentRef,
+        resolution: activeWord.status === 'review' ? resolution : null,
         attemptedHanzi: submittedHanzi,
-        status: activeWord.status,
-        reviewedCount,
-        queuedCount: sessionState ? getBucketSessionTotalCount(sessionState) : 0,
-        promptDisplayedMeanings: activeItem.production ? [] : [...activePromptDisplayedMeanings],
-        fallbackPrompt: activePrompt ?? activeWord.meaning,
-        answerPinyin: activeWord.pinyin,
-        answerText: activeWord.hanzi,
-        allMeanings: [...activeAllMeanings],
-        personalNotes: activeWordPersonalNotes,
-        intervalHours: activeItem.intervalHours,
-        example: activeWord.examples[0] ?? '',
       });
-      setProductionHanziError(`Incorrect ${studyProfile.labels.target}. Expected "${activeWord.hanzi}".`);
-      setProductionUiPhase('await-next');
-      setAnswerRevealed(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setSubmittingRating(null);
     }
+  }
+
+  async function handleNoClueProduction() {
+    if (
+      personalNotesEditorOpen ||
+      !sessionState ||
+      !activeItem ||
+      !activeWord ||
+      activeItem.actionKind !== 'production' ||
+      productionHanziInput.trim().length > 0
+    ) {
+      return;
+    }
+
+    setSubmittingRating('forgot');
+    setError(null);
+
+    try {
+      await applyPendingUndoClosure();
+      setLastUndoSnapshot({
+        sessionState: cloneBucketSessionState(sessionState),
+        sessionSummary,
+        ui: createSessionUiSnapshot(),
+        reflectionEvidence: snapshotSessionReflectionEvidence(reflectionEvidenceRef.current),
+      });
+      applyAutomaticProductionForgot({
+        stateAtResponse: sessionState,
+        itemAtResponse: activeItem,
+        wordAtResponse: activeWord,
+        response: null,
+        resolution: activeWord.status === 'review'
+          ? {
+              responseKind: 'no_clue',
+              submittedText: null,
+              submittedWordId: null,
+              result: 'rejected',
+            }
+          : null,
+        attemptedHanzi: null,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setSubmittingRating(null);
+    }
+  }
+
+  function applyAutomaticProductionForgot({
+    stateAtResponse,
+    itemAtResponse,
+    wordAtResponse,
+    response,
+    resolution,
+    attemptedHanzi,
+  }: {
+    stateAtResponse: BucketSessionState;
+    itemAtResponse: SessionStudyItem;
+    wordAtResponse: Word;
+    response: string | null;
+    resolution: ProductionResponseResolution | null;
+    attemptedHanzi: string | null;
+  }) {
+    const transition = rateActiveSessionUnit(stateAtResponse, 'forgot', {
+      response,
+      productionResponse: resolution,
+    });
+    if (wordAtResponse.status === 'review') {
+      const attempts = transition.state.reviewProgress[itemAtResponse.sessionActionId]?.attempts;
+      const incorrectAttempt = attempts?.[attempts.length - 1];
+      if (!incorrectAttempt) {
+        throw new Error(
+          'Session reflection evidence invariant violated: production failure has no attempt event.',
+        );
+      }
+      reflectionEvidenceRef.current = recordProductionMistakeEvidence(
+        reflectionEvidenceRef.current,
+        {
+          item: itemAtResponse,
+          incorrectAttempt,
+          promptDisplayedMeanings: activePromptDisplayedMeanings,
+        },
+      );
+    }
+    setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
+    setSessionState(transition.state);
+    setSessionSummary((current) =>
+      updateSessionSummaryForRating({
+        summary: current,
+        transition,
+        rating: 'forgot',
+        activeWord: wordAtResponse,
+        activeItem: itemAtResponse,
+        previousPhase: stateAtResponse.phase,
+      }),
+    );
+    setFrozenProductionCard({
+      sessionActionId: itemAtResponse.sessionActionId,
+      targetWordId: wordAtResponse.id,
+      actionKind: 'production',
+      sampledSkillIds: [...itemAtResponse.sampledSkillIds],
+      contentRef: itemAtResponse.contentRef,
+      attemptedHanzi,
+      status: wordAtResponse.status,
+      reviewedCount,
+      queuedCount: getBucketSessionTotalCount(stateAtResponse),
+      promptDisplayedMeanings: itemAtResponse.production ? [] : [...activePromptDisplayedMeanings],
+      fallbackPrompt: activePrompt ?? wordAtResponse.meaning,
+      answerPinyin: wordAtResponse.pinyin,
+      answerText: wordAtResponse.hanzi,
+      allMeanings: [...activeAllMeanings],
+      personalNotes: activeWordPersonalNotes,
+      intervalHours: itemAtResponse.intervalHours,
+      example: wordAtResponse.examples[0] ?? '',
+    });
+    setProductionHanziError(
+      attemptedHanzi === null
+        ? `No clue recorded. Expected "${wordAtResponse.hanzi}".`
+        : `Incorrect ${studyProfile.labels.target}. Expected "${wordAtResponse.hanzi}".`,
+    );
+    setProductionUiPhase('await-next');
+    setAnswerRevealed(true);
   }
 
   function handleContinueAfterAutoForgot() {
@@ -1084,6 +1158,13 @@ export function useStudySession({
     if (frozenProductionCard.status !== 'review') {
       setError('Study management actions are currently limited to review cards.');
       return;
+    }
+    if (
+      frozenProductionCard.attemptedHanzi === null
+      && (managementAction === 'add_contrast_candidate'
+        || managementAction === 'suppress_skill_and_add_contrast_candidate')
+    ) {
+      throw new Error('Session invariant violated: no-clue attempts cannot create contrast candidates.');
     }
 
     setStudyManagementSubmitting(true);
@@ -1577,6 +1658,7 @@ export function useStudySession({
       onBeginUnstudiedDrill: handleBeginUnstudiedDrill,
       onToggleMeaningVisibility: (meaning) => void handleToggleMeaningVisibility(meaning),
       onSubmitProductionHanzi: () => void handleSubmitProductionHanzi(),
+      onNoClueProduction: () => void handleNoClueProduction(),
       onProductionHanziInputChange: (value) => {
         setProductionHanziInput(value);
         if (productionHanziError) {

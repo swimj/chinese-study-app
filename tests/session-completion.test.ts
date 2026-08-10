@@ -28,6 +28,7 @@ type ReviewAttemptInput = {
   rating: 'forgot' | 'hard' | 'good' | 'easy';
   outcome: 'correct' | 'incorrect';
   productionResult?: 'accepted_anchor' | 'rejected';
+  responseKind?: 'typed' | 'no_clue';
 };
 
 type DbModule = typeof import('../server/db.ts');
@@ -467,6 +468,45 @@ describe('session completion', { concurrency: false }, () => {
       easeFactor: updatedState.easeFactor,
     });
     assert.equal(fetchWordSkillState('production-word', 'recognition'), undefined);
+  });
+
+  test('a no-clue production attempt persists null provenance and uses ordinary lapse projection', () => {
+    insertReviewWordWithItem({
+      wordId: 'no-clue-production',
+      sessionActionId: 'no-clue-production-reverse',
+      direction: 'reverse',
+      intervalHours: 24,
+      easeFactor: 2.5,
+      nextDueAt: isoHoursAgo(1),
+    });
+    insertWordStudyAdmissionState('no-clue-production', null);
+    insertWordSkillState('no-clue-production', 'production', {
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(48),
+      nextDueAt: isoHoursAgo(1),
+      easeFactor: 2.5,
+    });
+
+    const { events, state } = recordAcceptedReviewBatch({
+      sessionActionId: 'no-clue-production-reverse',
+      wordId: 'no-clue-production',
+      actionKind: 'production',
+      skillId: 'production',
+      failureCount: 1,
+      terminalRating: null,
+      attempts: [
+        { rating: 'forgot', outcome: 'incorrect', responseKind: 'no_clue' },
+        { rating: 'good', outcome: 'correct' },
+        { rating: 'good', outcome: 'correct' },
+        { rating: 'good', outcome: 'correct' },
+      ],
+    });
+
+    assert.equal(events[0]?.response, null);
+    assert.equal((events[0]?.metadata.production as { responseKind?: unknown }).responseKind, 'no_clue');
+    assert.equal(state.intervalHours, 6);
+    assert.equal(state.easeFactor, 2.35);
+    assert.equal(dbModule.getPendingProductionRecheckForWord('no-clue-production'), null);
   });
 
   test('production reconciliation preserves clean alternate responses and consumes one-shot rechecks', () => {
@@ -1416,6 +1456,7 @@ function recordAcceptedReviewBatch({
       const productionResult = attempt.productionResult
         ?? (attempt.outcome === 'correct' ? 'accepted_anchor' : 'rejected');
       const productionAccepted = productionResult === 'accepted_anchor';
+      const noClue = attempt.responseKind === 'no_clue';
 
       return {
         id: `${computedSessionActionId}-attempt-${sequence}`,
@@ -1427,7 +1468,7 @@ function recordAcceptedReviewBatch({
         actionKind,
         targetWordId: wordId,
         sampledSkillIds: [skillId],
-        response: productionWord === null
+        response: productionWord === null || noClue
           ? null
           : productionAccepted
             ? productionWord.hanzi
@@ -1445,7 +1486,10 @@ function recordAcceptedReviewBatch({
                 text: productionWord.meaning,
                 acceptedWordIds: [wordId],
                 anchorWordId: wordId,
-                submittedText: productionAccepted
+                ...(noClue ? { responseKind: 'no_clue' } : {}),
+                submittedText: noClue
+                  ? null
+                  : productionAccepted
                   ? productionWord.hanzi
                   : 'incorrect-production-response',
                 submittedWordId: productionAccepted ? wordId : null,

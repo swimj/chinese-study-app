@@ -2097,10 +2097,12 @@ type ParsedProductionAttemptEvidence = {
   submittedWordId: string | null;
   result: ProductionCueAttemptResultV0;
   recheckDemandId: string | null;
+  responseKind: 'typed' | 'no_clue';
 };
 
 function parseProductionAttemptEvidence(event: StudyAttemptEvent): ParsedProductionAttemptEvidence {
   const production = isPlainRecord(event.metadata.production) ? event.metadata.production : null;
+  const responseKind = production?.responseKind === undefined ? 'typed' : production.responseKind;
   if (
     production === null
     || typeof production.taskId !== 'string'
@@ -2110,12 +2112,20 @@ function parseProductionAttemptEvidence(event: StudyAttemptEvent): ParsedProduct
     || (production.recheckDemandId !== null && typeof production.recheckDemandId !== 'string')
     || !Array.isArray(production.acceptedWordIds)
     || production.acceptedWordIds.some((wordId) => typeof wordId !== 'string')
-    || typeof production.submittedText !== 'string'
+    || (responseKind !== 'typed' && responseKind !== 'no_clue')
+    || (responseKind === 'typed' && typeof production.submittedText !== 'string')
+    || (responseKind === 'no_clue' && production.submittedText !== null)
   ) {
     throw new Error(`Production attempt ${event.id} has invalid production evidence metadata.`);
   }
   if (
     production.submittedText !== event.response
+    || (responseKind === 'no_clue'
+      && (event.response !== null
+        || production.submittedWordId !== null
+        || production.result !== 'rejected'
+        || event.outcome !== 'incorrect'
+        || event.rating !== 'forgot'))
     || !isProductionAttemptResultCoherent(
       production.result,
       production.submittedWordId,
@@ -2133,6 +2143,7 @@ function parseProductionAttemptEvidence(event: StudyAttemptEvent): ParsedProduct
     submittedWordId: production.submittedWordId,
     result: production.result,
     recheckDemandId: production.recheckDemandId,
+    responseKind,
   };
 }
 

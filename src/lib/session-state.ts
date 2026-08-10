@@ -646,11 +646,17 @@ function buildProductionAttemptMetadata(
   resolution: ProductionResponseResolution | null,
 ): Record<string, unknown> {
   const production = item.production;
-  if (!production || !resolution || response === null) {
+  if (!production || !resolution) {
     throw new Error('Session invariant violated: review production attempt is missing its frozen response evidence.');
   }
-  if (resolution.submittedText !== response) {
+  if (resolution.responseKind !== 'no_clue' && resolution.submittedText !== response) {
     throw new Error('Session invariant violated: production response evidence does not match the submitted response.');
+  }
+  if (
+    resolution.responseKind === 'no_clue'
+    && (response !== null || resolution.submittedText !== null || resolution.submittedWordId !== null)
+  ) {
+    throw new Error('Session invariant violated: no-clue production evidence must not contain a response.');
   }
   if (resolution.result === 'rejected' && rating !== 'forgot') {
     throw new Error('Session invariant violated: production response result does not match its rating.');
@@ -663,6 +669,7 @@ function buildProductionAttemptMetadata(
       text: production.text,
       acceptedWordIds: [...production.acceptedWordIds],
       anchorWordId: item.targetWordId,
+      ...(resolution.responseKind === 'no_clue' ? { responseKind: 'no_clue' } : {}),
       submittedText: resolution.submittedText,
       submittedWordId: resolution.submittedWordId,
       result: resolution.result,
