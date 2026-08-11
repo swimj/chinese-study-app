@@ -6,6 +6,7 @@ import {
 } from '../../src/domain/reflection-result-schema.js';
 import {
   normalizeSessionReflectionResultV5,
+  stripLegacySourceAttemptIdsFromV5Wire,
   validateSessionReflectionResultV5,
   type SessionReflectionBundleV2,
   type SessionReflectionResultV5,
@@ -204,7 +205,8 @@ export function createLunaReflectionProvider(
         );
       }
 
-      const schemaIssues = validateJsonSchemaIssues(parsed, sessionReflectionResultV5WireSchema);
+      const compatibleWire = stripLegacySourceAttemptIdsFromV5Wire(parsed);
+      const schemaIssues = validateJsonSchemaIssues(compatibleWire, sessionReflectionResultV5WireSchema);
       if (schemaIssues.length > 0) {
         throw new LunaReflectionProviderError(
           'schema_invalid', schemaIssues.length, clientRequestId, metadata,
@@ -213,7 +215,8 @@ export function createLunaReflectionProvider(
       }
 
       const normalized = normalizeSessionReflectionResultV5(
-        parsed as SessionReflectionResultV5Wire,
+        compatibleWire as SessionReflectionResultV5Wire,
+        bundle,
       );
       const contractErrors = validateSessionReflectionResultV5(normalized, bundle);
       if (contractErrors.length > 0) {

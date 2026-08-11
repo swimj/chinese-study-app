@@ -459,11 +459,13 @@ type ProductionCueEffectRef =
   | { type: 'production_cue_evidence_judgment'; id: string };
 ```
 
-The strict model-facing wire form omits the fixed `version` field and the V0
-default-production `taskId` from `RepairProductionCueOperationV2`. After strict
-schema validation, the provider boundary stamps `version: 2` and derives the
-task id from the model-authored `wordId`; it does not alter model-authored cue
-semantics.
+The strict model-facing wire form omits the fixed `version` field, the V0
+default-production `taskId`, and each judgment's `sourceAttemptId` from
+`RepairProductionCueOperationV2`. After strict schema validation, the provider
+boundary stamps `version: 2`, derives the task id from the model-authored
+`wordId`, and derives each judgment's canonical source attempt id from the
+matching backend-owned evidence item. Legacy model-supplied attempt ids are
+ignored; they never select provenance or application targets.
 Both arrays remain required on the wire, including when
 `sourceAttemptJudgments` is empty.
 

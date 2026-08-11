@@ -97,7 +97,6 @@ const validWireResult: SessionReflectionResultV5Wire = {
         }],
         sourceAttemptJudgments: [{
           kind: 'accepted_answer_space_omission',
-          sourceAttemptId: 'attempt-1',
           submittedWordId: 'word-2',
         }],
       },
@@ -115,9 +114,13 @@ const validCanonicalResult: SessionReflectionResultV5 = {
       ...proposal,
       operation: proposal.operation.kind === 'repair_production_cue'
         ? {
-            ...proposal.operation,
-            version: 2,
-            taskId: `production-task:${proposal.operation.wordId}:default_production`,
+              ...proposal.operation,
+              version: 2,
+              taskId: `production-task:${proposal.operation.wordId}:default_production`,
+              sourceAttemptJudgments: proposal.operation.sourceAttemptJudgments.map((judgment) => ({
+                ...judgment,
+                sourceAttemptId: 'attempt-1',
+              })),
           }
         : proposal.operation,
     })),
@@ -233,9 +236,11 @@ describe('production Luna reflection provider', () => {
     assert.equal(wireOperation.kind, 'repair_production_cue');
     assert.equal(Object.hasOwn(wireOperation, 'version'), false);
     assert.equal(Object.hasOwn(wireOperation, 'taskId'), false);
+    assert.equal(Object.hasOwn(wireOperation.sourceAttemptJudgments[0]!, 'sourceAttemptId'), false);
     assert.equal(canonicalOperation.kind, 'repair_production_cue');
     assert.equal(canonicalOperation.version, 2);
     assert.equal(canonicalOperation.taskId, 'production-task:word-1:default_production');
+    assert.equal(canonicalOperation.sourceAttemptJudgments[0]?.sourceAttemptId, 'attempt-1');
     assert.deepEqual(generated.result, validCanonicalResult);
     assert.deepEqual(generated.metadata, {
       provider: 'openai',
@@ -258,6 +263,25 @@ describe('production Luna reflection provider', () => {
     assert.equal(serialized.includes('unit-test-secret'), false);
     assert.equal(serialized.includes('transportDebug'), false);
     assert.equal(serialized.includes('must-not-be-returned'), false);
+  });
+
+  test('accepts legacy source attempt ids but canonicalizes them from evidence', async () => {
+    const legacy = structuredClone(validWireResult) as unknown as {
+      itemResults: Array<{ proposals: Array<{ operation: { sourceAttemptJudgments: Array<Record<string, string>> } }> }>;
+    };
+    legacy.itemResults[0]!.proposals[0]!.operation.sourceAttemptJudgments[0]!.sourceAttemptId = 'attempt-typo';
+    const provider = createLunaReflectionProvider({
+      environment: { OPENAI_API_KEY: 'secret' },
+      systemPrompt: 'prompt',
+      fetchImplementation: capturingFetch(responseEnvelope(JSON.stringify(legacy)), []),
+    });
+
+    const generated = await provider.generate(bundle);
+    const operation = generated.result.itemResults[0]!.proposals[0]!.operation;
+    assert.equal(operation.kind, 'repair_production_cue');
+    if (operation.kind === 'repair_production_cue') {
+      assert.equal(operation.sourceAttemptJudgments[0]?.sourceAttemptId, 'attempt-1');
+    }
   });
 
   test('loads credentials lazily and classifies missing configuration before fetch', async () => {

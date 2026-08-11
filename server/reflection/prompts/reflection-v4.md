@@ -167,10 +167,11 @@ the task word. Create and replacement cues become active atomically. Never
 invent cue, attempt, or word ids. Use only the non-null
 `servedCue.cueId` and visible accepted word ids.
 
-`sourceAttemptJudgments` is always an array. Use
-`accepted_answer_space_omission` only when the resolved submitted word should
-be admitted by a create or replacement in the same operation; copy the exact
-`sourceAttemptId` and `submittedWordId`. Use
+`sourceAttemptJudgments` is always an array. Do not produce a source attempt
+id: the application derives canonical attempt provenance from the containing
+evidence item. Use `accepted_answer_space_omission` only when the resolved
+submitted word should be admitted by a create or replacement in the same
+operation; include its `submittedWordId`. Use
 `misleading_or_overloaded_cue` only when the same operation creates a repair
 for fallback evidence or replaces/deactivates the exact served durable cue.
 Judgments do not rewrite the source attempt or its scheduler outcome.

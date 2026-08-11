@@ -32,7 +32,6 @@ function result(): SessionReflectionResultV5Wire {
           }],
           sourceAttemptJudgments: [{
             kind: 'accepted_answer_space_omission',
-            sourceAttemptId: 'attempt-1',
             submittedWordId: 'word-2',
           }],
         },
@@ -89,6 +88,15 @@ describe('reflection V5 provider wire schema', () => {
     assert.match(
       validateJsonSchema(taskIdentified, sessionReflectionResultV5WireSchema).join('\n'),
       /taskId: unknown property/,
+    );
+
+    const authoredAttempt = structuredClone(result()) as unknown as {
+      itemResults: Array<{ proposals: Array<{ operation: { sourceAttemptJudgments: Array<Record<string, string>> } }> }>;
+    };
+    authoredAttempt.itemResults[0]!.proposals[0]!.operation.sourceAttemptJudgments[0]!.sourceAttemptId = 'attempt-1';
+    assert.match(
+      validateJsonSchema(authoredAttempt, sessionReflectionResultV5WireSchema).join('\n'),
+      /sourceAttemptId: unknown property/,
     );
 
     const emptyReplacement = structuredClone(result());

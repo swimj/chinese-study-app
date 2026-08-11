@@ -394,7 +394,16 @@ describe('reflection result validation', () => {
 
   test('stamps fixed and deterministic V2 metadata at the provider boundary', () => {
     const operation = cueRepairV2();
-    const { version: _version, taskId: _taskId, ...wireOperation } = operation;
+    const {
+      version: _version,
+      taskId: _taskId,
+      sourceAttemptJudgments,
+      ...wireOperationBase
+    } = operation;
+    const wireOperation = {
+      ...wireOperationBase,
+      sourceAttemptJudgments: sourceAttemptJudgments.map(({ sourceAttemptId: _sourceAttemptId, ...judgment }) => judgment),
+    };
     const wireResult: SessionReflectionResultV5Wire = {
       schemaVersion: 'session_reflection_result.v5',
       itemResults: [{
@@ -406,7 +415,7 @@ describe('reflection result validation', () => {
         }],
       }],
     };
-    const normalized = normalizeSessionReflectionResultV5(wireResult);
+    const normalized = normalizeSessionReflectionResultV5(wireResult, bundleV2());
     assert.deepEqual(normalized.itemResults[0]!.proposals[0]!.operation, operation);
     assert.deepEqual(validateSessionReflectionResultV5(normalized, bundleV2()), []);
     assert.deepEqual(wireResult.itemResults[0]!.proposals[0]!.operation, wireOperation);
@@ -414,7 +423,16 @@ describe('reflection result validation', () => {
 
   test('binds V2 repairs and judgments to the exact served cue evidence', () => {
     const operation = cueRepairV2();
-    const { version: _version, taskId: _taskId, ...wireOperation } = operation;
+    const {
+      version: _version,
+      taskId: _taskId,
+      sourceAttemptJudgments,
+      ...wireOperationBase
+    } = operation;
+    const wireOperation = {
+      ...wireOperationBase,
+      sourceAttemptJudgments: sourceAttemptJudgments.map(({ sourceAttemptId: _sourceAttemptId, ...judgment }) => judgment),
+    };
     const wireResult: SessionReflectionResultV5Wire = {
       schemaVersion: 'session_reflection_result.v5',
       itemResults: [{
@@ -426,7 +444,7 @@ describe('reflection result validation', () => {
         }],
       }],
     };
-    const normalized = normalizeSessionReflectionResultV5(wireResult);
+    const normalized = normalizeSessionReflectionResultV5(wireResult, bundleV2());
 
     const terminalDeactivation = structuredClone(normalized);
     const deactivationOperation = terminalDeactivation.itemResults[0]!.proposals[0]!.operation;

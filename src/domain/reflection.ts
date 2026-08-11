@@ -214,6 +214,16 @@ export type CueEvidenceJudgmentV2 =
       sourceAttemptId: string;
     };
 
+/** Provider-facing judgments deliberately omit backend-owned attempt provenance. */
+export type CueEvidenceJudgmentV2Wire =
+  | {
+      kind: 'accepted_answer_space_omission';
+      submittedWordId: string;
+    }
+  | {
+      kind: 'misleading_or_overloaded_cue';
+    };
+
 export type RepairProductionCueOperationV2 = {
   kind: 'repair_production_cue';
   version: 2;
@@ -225,8 +235,10 @@ export type RepairProductionCueOperationV2 = {
 
 export type RepairProductionCueOperationV2Wire = Omit<
   RepairProductionCueOperationV2,
-  'version' | 'taskId'
->;
+  'version' | 'taskId' | 'sourceAttemptJudgments'
+> & {
+  sourceAttemptJudgments: CueEvidenceJudgmentV2Wire[];
+};
 
 export type AcceptProductionAlternateOperationV1 = {
   kind: 'accept_production_alternate';
@@ -1148,9 +1160,6 @@ export function validateReflectionOperationEvidenceContext(
     for (const [index, judgment] of value.sourceAttemptJudgments.entries()) {
       if (!isRecord(judgment)) continue;
       const judgmentPath = `${path}.sourceAttemptJudgments[${index}]`;
-      if (judgment.sourceAttemptId !== item.sourceAttemptId) {
-        errors.push(`${judgmentPath}.sourceAttemptId: must match the evidence source attempt`);
-      }
       if (
         judgment.kind === 'accepted_answer_space_omission'
         && judgment.submittedWordId !== item.submittedWord?.wordId
@@ -1214,22 +1223,66 @@ function hasExactServedCueRepair(
 
 export function normalizeSessionReflectionResultV5(
   value: SessionReflectionResultV5Wire,
+  bundle: SessionReflectionBundleV2,
 ): SessionReflectionResultV5 {
   return {
     schemaVersion: 'session_reflection_result.v5',
-    itemResults: value.itemResults.map((itemResult) => ({
-      ...itemResult,
-      proposals: itemResult.proposals.map((proposal) => ({
-        ...proposal,
-        operation: proposal.operation.kind === 'repair_production_cue'
-          ? {
+    itemResults: value.itemResults.map((itemResult) => {
+      const sourceAttemptId = bundle.items.find(
+        (item) => item.itemId === itemResult.itemId,
+      )?.sourceAttemptId ?? '';
+      return {
+        ...itemResult,
+        proposals: itemResult.proposals.map((proposal) => ({
+          ...proposal,
+          operation: proposal.operation.kind === 'repair_production_cue'
+            ? {
+                ...proposal.operation,
+                version: 2,
+                taskId: `production-task:${proposal.operation.wordId}:default_production`,
+                sourceAttemptJudgments: proposal.operation.sourceAttemptJudgments.map((judgment) => ({
+                  ...judgment,
+                  sourceAttemptId,
+                })),
+              }
+            : proposal.operation,
+        })),
+      };
+    }),
+  };
+}
+
+/**
+ * Legacy V5 output may contain model-authored attempt ids. They are neither
+ * part of the current wire contract nor trusted provenance, so strip them
+ * before strict schema validation and canonicalization.
+ */
+export function stripLegacySourceAttemptIdsFromV5Wire(value: unknown): unknown {
+  if (!isRecord(value) || !Array.isArray(value.itemResults)) return value;
+  return {
+    ...value,
+    itemResults: value.itemResults.map((itemResult) => {
+      if (!isRecord(itemResult) || !Array.isArray(itemResult.proposals)) return itemResult;
+      return {
+        ...itemResult,
+        proposals: itemResult.proposals.map((proposal) => {
+          if (!isRecord(proposal) || !isRecord(proposal.operation)
+            || proposal.operation.kind !== 'repair_production_cue'
+            || !Array.isArray(proposal.operation.sourceAttemptJudgments)) return proposal;
+          return {
+            ...proposal,
+            operation: {
               ...proposal.operation,
-              version: 2,
-              taskId: `production-task:${proposal.operation.wordId}:default_production`,
-            }
-          : proposal.operation,
-      })),
-    })),
+              sourceAttemptJudgments: proposal.operation.sourceAttemptJudgments.map((judgment) => {
+                if (!isRecord(judgment)) return judgment;
+                const { sourceAttemptId: _legacySourceAttemptId, ...wireJudgment } = judgment;
+                return wireJudgment;
+              }),
+            },
+          };
+        }),
+      };
+    }),
   };
 }
 

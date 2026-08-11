@@ -156,6 +156,7 @@ export type ReflectionReviewApi = {
   listArtifacts: (review: 'open' | 'all') => Promise<ReflectionArtifactSummaryDto[]>;
   listGenerationRuns: () => Promise<ReflectionGenerationRunDto[]>;
   retryGenerationRun: (runId: string) => Promise<GenerateSessionReflectionResult>;
+  upgradeV1AndRetryGenerationRun: (runId: string) => Promise<GenerateSessionReflectionResult>;
   getArtifact: (artifactId: string) => Promise<ReflectionArtifactDetailDto>;
   reviewProposal: (
     proposalId: string,
@@ -924,6 +925,19 @@ export async function retryReflectionGenerationRun(
   );
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to retry reflection generation'));
+  }
+  return response.json();
+}
+
+export async function upgradeV1AndRetryReflectionGenerationRun(
+  runId: string,
+): Promise<GenerateSessionReflectionResult> {
+  const response = await fetch(
+    `${API_BASE}/api/reflection-generation-runs/${encodeURIComponent(runId)}/upgrade-v1-and-retry`,
+    { method: 'POST' },
+  );
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to upgrade and retry reflection generation'));
   }
   return response.json();
 }

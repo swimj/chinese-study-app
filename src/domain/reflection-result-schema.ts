@@ -149,12 +149,10 @@ const repairCueOperationV2Wire = objectSchema({
     anyOf: [
       objectSchema({
         kind: enumSchema(['accepted_answer_space_omission']),
-        sourceAttemptId: stringSchema,
         submittedWordId: stringSchema,
       }),
       objectSchema({
         kind: enumSchema(['misleading_or_overloaded_cue']),
-        sourceAttemptId: stringSchema,
       }),
     ],
   }),
