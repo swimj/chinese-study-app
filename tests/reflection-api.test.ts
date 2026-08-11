@@ -455,6 +455,53 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     );
   });
 
+  test('replaces a proposal with a different handle and applies the replacement lifecycle', async () => {
+    const artifact = materialize('replacement-session', suppressOperation('target')).artifact;
+    const proposalId = artifact.proposals[0]!.review.proposalId;
+    const replacement = repairOperation('target');
+    const response = await request(`/api/reflection-proposals/${proposalId}/review`, {
+      method: 'POST',
+      body: { action: 'replace', operation: replacement },
+    });
+
+    assert.equal(response.status, 200);
+    const payload = response.json as {
+      review: { disposition: {
+        kind: string;
+        supersession: { replacementInvocationId: string; source: string; actor: string };
+      } };
+      invocation: { invocationId: string; origin: unknown; operation: unknown };
+      application: { state: { kind: string } };
+    };
+    assert.deepEqual(
+      payload.review.disposition,
+      {
+        kind: 'superseded',
+        supersession: {
+          source: 'user_replacement',
+          actor: 'user',
+          reason: 'The user authorized a different operation during proposal review.',
+          replacementProposalId: null,
+          replacementInvocationId: payload.invocation.invocationId,
+          satisfyingEffectRefs: [],
+        },
+      },
+    );
+    assert.deepEqual(payload.invocation.origin, {
+      kind: 'user_replacement',
+      supersededProposalId: proposalId,
+    });
+    assert.deepEqual(payload.invocation.operation, replacement);
+    assert.equal(payload.application.state.kind, 'unsupported');
+    assert.equal(
+      (await request(`/api/reflection-proposals/${proposalId}/review`, {
+        method: 'POST',
+        body: { action: 'replace', operation: suppressOperation('target') },
+      })).status,
+      400,
+    );
+  });
+
   test('preserves unsupported standing authorization and withdraws only its application', async () => {
     const artifact = materialize('unsupported-session', repairOperation('target')).artifact;
     const proposalId = artifact.proposals[0]!.review.proposalId;

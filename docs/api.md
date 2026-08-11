@@ -212,7 +212,8 @@ Proposal review accepts only this strict union; unknown fields are rejected:
 type ReviewProposalRequest =
   | { action: 'defer' }
   | { action: 'dismiss'; reason: string | null }
-  | { action: 'accept'; operation: ReflectionOperation };
+  | { action: 'accept'; operation: ReflectionOperation }
+  | { action: 'replace'; operation: ReflectionOperation };
 ```
 
 Defer and dismiss return:
@@ -233,6 +234,11 @@ with:
   application: OperationApplicationStatus;
 }
 ```
+
+Replace revalidates a different operation kind or version against the same
+proposal evidence, writes a `user_replacement` invocation, and supersedes the
+original proposal. It uses the same response and application behavior as
+acceptance.
 
 Cue repair and production-alternate acceptance return a truthful
 `unsupported` application without a domain write. Supported application may

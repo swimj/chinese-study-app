@@ -3,6 +3,7 @@ import express from 'express';
 import { pathToFileURL } from 'node:url';
 import {
   acceptReflectionProposal,
+  replaceReflectionProposal,
   applyReflectionInvocation,
   completeLearningWordSession,
   completeUnstudiedWordSession,
@@ -1143,7 +1144,12 @@ export function createApp(options: CreateAppOptions = {}) {
         return;
       }
 
-      const accepted = acceptReflectionProposal({
+      const accepted = request.action === 'replace'
+        ? replaceReflectionProposal({
+          proposalId: proposalId.trim(),
+          operation: request.operation,
+        })
+        : acceptReflectionProposal({
         proposalId: proposalId.trim(),
         operation: request.operation,
       });
@@ -1529,6 +1535,7 @@ function readReviewProposalRequest(value: unknown): ReviewProposalRequest | null
       }
       return { action: 'dismiss', reason: value.reason };
     case 'accept':
+    case 'replace':
       if (
         keys.length !== 2
         || keys[0] !== 'action'
@@ -1538,7 +1545,7 @@ function readReviewProposalRequest(value: unknown): ReviewProposalRequest | null
         return null;
       }
       return {
-        action: 'accept',
+        action: value.action,
         operation: value.operation as ReflectionOperation,
       };
     default:
@@ -1558,6 +1565,7 @@ function isReflectionReviewClientError(error: unknown): error is Error {
     || error.message.startsWith('Reflection operation references unknown word ')
     || error.message.startsWith('No reflection operation registration for ')
     || error.message === 'A revised proposal acceptance must preserve operation kind and version.'
+    || error.message === 'A replacement proposal must change operation kind or version.'
   );
 }
 

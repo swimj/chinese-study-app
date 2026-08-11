@@ -12,6 +12,7 @@ import {
   buildReflectionItemPresentations,
   buildReflectionProposalPresentations,
   cloneReflectionOperation,
+  createReplacementOperation,
   getOperationDraftState,
   reduceReflectionOperationDraft,
   summarizeReflectionTokenUsage,
@@ -346,6 +347,28 @@ describe('reflection page model', () => {
       getOperationDraftState(cue, wrongCue, v2Evidence()).validationErrors.join('\n'),
       /is not owned by the evidence task|must repair the exact served cue contract/,
     );
+  });
+
+  test('creates an editable replacement draft without treating it as a revision', () => {
+    const original: ReflectionOperation = {
+      kind: 'suppress_definition_production',
+      version: 1,
+      wordId: 'target',
+    };
+    const replacement = createReplacementOperation(
+      'accept_production_alternate',
+      1,
+      original,
+      artifactDetail().evidenceBundle.items[0]!,
+    );
+
+    assert.deepEqual(replacement, {
+      kind: 'accept_production_alternate',
+      version: 1,
+      targetWordId: 'target',
+      alternateWordId: 'alternate',
+    });
+    assert.equal(getOperationDraftState(original, replacement).acceptanceMode, 'replacement');
   });
 
   test('fails loudly when an editor action targets the wrong operation shape or index', () => {
