@@ -14,7 +14,6 @@ import {
 } from '../db/reflections.ts';
 import {
   buildInitialReflectionBundleWithMetrics,
-  upgradeInitialReflectionBundleV1,
   type InitialReflectionBundleBuild,
   ReflectionEvidenceError,
 } from './evidence.ts';
@@ -42,7 +41,6 @@ export type InitialReflectionGenerationService = {
     evidenceSupplement: unknown,
   ): Promise<InitialReflectionGenerationResult>;
   retry(runId: string): Promise<InitialReflectionGenerationResult>;
-  retryUpgradedV1(runId: string): Promise<InitialReflectionGenerationResult>;
 };
 
 export type InitialReflectionGenerationDependencies = {
@@ -211,30 +209,6 @@ export function createInitialReflectionGenerationService(
         });
         throw error;
       }
-    },
-
-    async retryUpgradedV1(runId: string): Promise<InitialReflectionGenerationResult> {
-      const retrySource = getRetrySource(runId);
-      if (retrySource.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v1') {
-        throw new Error('Reflection generation run does not have an upgradeable V1 evidence bundle.');
-      }
-      const upgraded = upgradeInitialReflectionBundleV1(retrySource.evidenceBundle, now());
-      const existing = findExistingArtifact(
-        retrySource.sourceSessionId,
-        INITIAL_REFLECTION_FLOW_VERSION,
-      );
-      return existing === null
-        ? generateBundleAndMaterialize({
-            sessionId: retrySource.sourceSessionId,
-            builtBundle: upgraded,
-            generatedAt: now(),
-            provider,
-            materializeArtifact,
-            recordRun,
-            now,
-            lifecycleLogger,
-          })
-        : generationResult(false, existing);
     },
   };
 }
