@@ -100,7 +100,6 @@ export function ReflectionsPage({
           runs={controller.generationRuns}
           retryStatus={controller.generationRetryStatus}
           onRetry={controller.retryGenerationRun}
-          onUpgradeV1AndRetry={controller.upgradeV1AndRetryGenerationRun}
         />
       ) : (
         <ProposalQueueView
@@ -341,12 +340,10 @@ export function TokenUsageView({
   runs,
   retryStatus,
   onRetry,
-  onUpgradeV1AndRetry,
 }: {
   runs: ReflectionGenerationRunDto[];
   retryStatus: ReflectionPageController['generationRetryStatus'];
   onRetry: (runId: string) => Promise<void>;
-  onUpgradeV1AndRetry: (runId: string) => Promise<void>;
 }) {
   const summary = summarizeReflectionTokenUsage(runs);
   return (
@@ -388,7 +385,6 @@ export function TokenUsageView({
                     run={run}
                     retryStatus={retryStatus}
                     onRetry={onRetry}
-                    onUpgradeV1AndRetry={onUpgradeV1AndRetry}
                   />
                 </div>
                 <div className="reflection-run-identity">
@@ -482,31 +478,15 @@ function RunStatusControl({
   run,
   retryStatus,
   onRetry,
-  onUpgradeV1AndRetry,
 }: {
   run: ReflectionGenerationRunDto;
   retryStatus: ReflectionPageController['generationRetryStatus'];
   onRetry: (runId: string) => Promise<void>;
-  onUpgradeV1AndRetry: (runId: string) => Promise<void>;
 }) {
   if (retryStatus?.runId === run.runId && retryStatus.state === 'generating') {
     return <span className="reflection-state-pill state-generating" role="status">Generating…</span>;
   }
   if (run.retryable) {
-    if (run.bundleSchemaVersion === 'session_reflection_bundle.v1') {
-      const label = 'Upgrade retained V1 evidence and retry with the current reflection flow';
-      return (
-        <button
-          type="button"
-          className="reflection-status-icon reflection-retry-button"
-          title={label}
-          aria-label={label}
-          onClick={() => void onUpgradeV1AndRetry(run.runId)}
-        >
-          <span aria-hidden="true">⇧</span>
-        </button>
-      );
-    }
     const retryFailed = retryStatus?.runId === run.runId && retryStatus.state === 'failed';
     const label = retryFailed
       ? 'Retry failed. Retry this reflection again.'

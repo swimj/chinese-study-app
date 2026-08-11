@@ -27,7 +27,6 @@ export type ReflectionPageController = {
   refresh: () => Promise<void>;
   selectArtifact: (artifactId: string) => Promise<void>;
   retryGenerationRun: (runId: string) => Promise<void>;
-  upgradeV1AndRetryGenerationRun: (runId: string) => Promise<void>;
   deferProposal: (proposalId: string) => Promise<void>;
   dismissProposal: (proposalId: string, reason: string | null) => Promise<void>;
   acceptProposal: (proposalId: string, operation: ReflectionOperation) => Promise<void>;
@@ -195,10 +194,6 @@ export function useReflectionPageController({
     await runGenerationAttempt(runId, () => requireApi().retryGenerationRun(runId));
   }
 
-  async function upgradeV1AndRetryGenerationRun(runId: string): Promise<void> {
-    await runGenerationAttempt(runId, () => requireApi().upgradeV1AndRetryGenerationRun(runId));
-  }
-
   async function runGenerationAttempt(
     runId: string,
     request: () => Promise<{ artifactId: string }>,
@@ -295,7 +290,6 @@ export function useReflectionPageController({
     refresh,
     selectArtifact,
     retryGenerationRun,
-    upgradeV1AndRetryGenerationRun,
     deferProposal: (proposalId) => reviewProposal(proposalId, { action: 'defer' }),
     dismissProposal: (proposalId, reason) => reviewProposal(proposalId, {
       action: 'dismiss',

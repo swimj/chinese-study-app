@@ -66,7 +66,7 @@ describe('reflection run log presentation', () => {
     assert.match(markup, /Cost estimate unavailable for this run/);
     assert.match(markup, /Rates as of 2026-07-30; price-v1/);
     assert.match(markup, /Cached/);
-    assert.match(markup, /Upgrade retained V1 evidence and retry with the current reflection flow/);
+    assert.match(markup, /Retry failed reflection: output truncated/);
   });
 
   test('replaces retry with a concise generation status', () => {
