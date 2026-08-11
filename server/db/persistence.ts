@@ -1800,7 +1800,6 @@ export function recordStudyManagementAction(input: RecordStudyManagementActionIn
   const now = new Date().toISOString();
   const eventId = randomUUID();
   const note = input.note?.trim() ?? '';
-  const candidateText = input.candidateText?.trim() ? input.candidateText.trim() : null;
   const eventType = mapStudyManagementActionToEventType(input.managementAction);
 
   getDb().exec('BEGIN');
@@ -1823,7 +1822,6 @@ export function recordStudyManagementAction(input: RecordStudyManagementActionIn
       payload: {
         managementAction: input.managementAction,
         note,
-        candidateText,
       },
       projectedAt: null,
     };
@@ -1834,7 +1832,6 @@ export function recordStudyManagementAction(input: RecordStudyManagementActionIn
       eventId,
       projectedAt: now,
       note,
-      candidateText,
     });
     markStudyEventProjectedWithoutTransaction(eventId, now);
 
@@ -2371,13 +2368,11 @@ function projectStudyManagementActionWithoutTransaction({
   eventId,
   projectedAt,
   note,
-  candidateText,
 }: {
   input: RecordStudyManagementActionInput;
   eventId: string;
   projectedAt: string;
   note: string;
-  candidateText: string | null;
 }) {
   if (input.managementAction === 'suppress_skill') {
     const skillId = getManagedSkillId(input.actionKind);
@@ -2396,43 +2391,6 @@ function projectStudyManagementActionWithoutTransaction({
         sourceEventId: eventId,
       });
     }
-    return;
-  }
-
-  if (input.managementAction === 'add_contrast_candidate') {
-    enableContextualSelectionWithoutTransaction({
-      wordId: input.targetWordId,
-      updatedAt: projectedAt,
-      sourceEventId: eventId,
-    });
-    insertContrastCandidateIntakeWithoutTransaction({
-      input,
-      eventId,
-      createdAt: projectedAt,
-      note,
-      candidateText,
-    });
-    return;
-  }
-
-  if (input.managementAction === 'suppress_skill_and_add_contrast_candidate') {
-    suppressDefinitionProductionWithoutTransaction({
-      wordId: input.targetWordId,
-      updatedAt: projectedAt,
-      sourceEventId: eventId,
-    });
-    enableContextualSelectionWithoutTransaction({
-      wordId: input.targetWordId,
-      updatedAt: projectedAt,
-      sourceEventId: eventId,
-    });
-    insertContrastCandidateIntakeWithoutTransaction({
-      input,
-      eventId,
-      createdAt: projectedAt,
-      note,
-      candidateText,
-    });
     return;
   }
 
@@ -2470,45 +2428,6 @@ function upsertWordSkillRelevanceWithoutTransaction(relevance: WordSkillRelevanc
     relevance.relevanceState,
     relevance.updatedAt,
     relevance.sourceEventId,
-  );
-}
-
-function insertContrastCandidateIntakeWithoutTransaction({
-  input,
-  eventId,
-  createdAt,
-  note,
-  candidateText,
-}: {
-  input: RecordStudyManagementActionInput;
-  eventId: string;
-  createdAt: string;
-  note: string;
-  candidateText: string | null;
-}) {
-  getDb().prepare(`
-    INSERT INTO contrast_candidate_intake (
-      id,
-      created_at,
-      target_word_id,
-      source_event_id,
-      source_action_kind,
-      source_content_ref_json,
-      candidate_text,
-      matched_word_id,
-      note,
-      status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')
-  `).run(
-    randomUUID(),
-    createdAt,
-    input.targetWordId,
-    eventId,
-    input.actionKind,
-    input.contentRef === null ? null : JSON.stringify(input.contentRef),
-    candidateText,
-    null,
-    note,
   );
 }
 
@@ -5933,10 +5852,6 @@ function assertStudyManagementActionInput(input: RecordStudyManagementActionInpu
     throw new Error('Expected note to be a string when provided');
   }
 
-  if (input.candidateText !== undefined && input.candidateText !== null && typeof input.candidateText !== 'string') {
-    throw new Error('Expected candidateText to be a string or null when provided');
-  }
-
   assertStudyManagementActionMatchesActionKind(input);
 }
 
@@ -5948,8 +5863,6 @@ function assertStudyManagementActionMatchesActionKind(input: RecordStudyManageme
 
     if (
       input.managementAction !== 'suppress_skill' &&
-      input.managementAction !== 'add_contrast_candidate' &&
-      input.managementAction !== 'suppress_skill_and_add_contrast_candidate' &&
       input.managementAction !== 'bad_prompt'
     ) {
       throw new Error('Invalid production management action');
@@ -6209,10 +6122,6 @@ function mapStudyManagementActionToEventType(action: StudyManagementActionKind):
   switch (action) {
     case 'suppress_skill':
       return 'skill_relevance_changed';
-    case 'add_contrast_candidate':
-      return 'contrast_candidate_requested';
-    case 'suppress_skill_and_add_contrast_candidate':
-      return 'skill_relevance_changed_with_contrast_candidate';
     case 'bad_prompt':
       return 'bad_prompt_reported';
     default:
@@ -7189,8 +7098,6 @@ function isStudyActionKind(value: unknown): value is StudyActionKind {
 function isStudyManagementActionKind(value: unknown): value is StudyManagementActionKind {
   return (
     value === 'suppress_skill' ||
-    value === 'add_contrast_candidate' ||
-    value === 'suppress_skill_and_add_contrast_candidate' ||
     value === 'bad_prompt'
   );
 }

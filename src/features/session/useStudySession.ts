@@ -119,8 +119,6 @@ type SessionUiSnapshot = {
   productionHanziError: string | null;
   productionSubmittedResponse: string | null;
   productionResponseResolution: ProductionResponseResolution | null;
-  productionContrastIntakeNote: string;
-  productionContrastIntakeMarked: boolean;
   productionUiPhase: 'idle' | 'await-rating' | 'await-next';
   frozenProductionCard: FrozenProductionCard | null;
   contrastSelectedWordId: string | null;
@@ -172,8 +170,6 @@ export type StudySessionHomePageProps = {
   productionHanziInput: string;
   productionHanziError: string | null;
   productionHanziInputRef: RefObject<HTMLInputElement>;
-  productionContrastIntakeNote: string;
-  productionContrastIntakeMarked: boolean;
   contrastSelectedWordId: string | null;
   contrastAwaitingRating: boolean;
   activeRatingOptions: RatingOption[];
@@ -183,7 +179,6 @@ export type StudySessionHomePageProps = {
   onUndoLastRating: () => void;
   onContinueAfterAutoForgot: () => void;
   onContinueAfterAutoContrastForgot: () => void;
-  onProductionContrastIntakeNoteChange: (value: string) => void;
   onDismissCurrentWord: () => void;
   onManageStudyAction: (action: StudyManagementActionKind, note: string) => void;
   onDismissFrozenProductionWord: () => void;
@@ -247,8 +242,6 @@ export function useStudySession({
   const [productionHanziError, setProductionHanziError] = useState<string | null>(null);
   const [productionSubmittedResponse, setProductionSubmittedResponse] = useState<string | null>(null);
   const [productionResponseResolution, setProductionResponseResolution] = useState<ProductionResponseResolution | null>(null);
-  const [productionContrastIntakeNote, setProductionContrastIntakeNote] = useState('');
-  const [productionContrastIntakeMarked, setProductionContrastIntakeMarked] = useState(false);
   const [productionUiPhase, setProductionUiPhase] = useState<'idle' | 'await-rating' | 'await-next'>('idle');
   const [contrastSelectedWordId, setContrastSelectedWordId] = useState<string | null>(null);
   const [frozenProductionCard, setFrozenProductionCard] = useState<FrozenProductionCard | null>(null);
@@ -405,8 +398,6 @@ export function useStudySession({
     setProductionHanziError(null);
     setProductionSubmittedResponse(null);
     setProductionResponseResolution(null);
-    setProductionContrastIntakeNote('');
-    setProductionContrastIntakeMarked(false);
     setProductionUiPhase('idle');
     setFrozenProductionCard(null);
   }
@@ -446,8 +437,6 @@ export function useStudySession({
       productionHanziError,
       productionSubmittedResponse,
       productionResponseResolution,
-      productionContrastIntakeNote,
-      productionContrastIntakeMarked,
       productionUiPhase,
       frozenProductionCard,
       contrastSelectedWordId,
@@ -461,8 +450,6 @@ export function useStudySession({
     setProductionHanziError(snapshot.productionHanziError);
     setProductionSubmittedResponse(snapshot.productionSubmittedResponse);
     setProductionResponseResolution(snapshot.productionResponseResolution);
-    setProductionContrastIntakeNote(snapshot.productionContrastIntakeNote);
-    setProductionContrastIntakeMarked(snapshot.productionContrastIntakeMarked);
     setProductionUiPhase(snapshot.productionUiPhase);
     setFrozenProductionCard(snapshot.frozenProductionCard);
     setContrastSelectedWordId(snapshot.contrastSelectedWordId);
@@ -1159,13 +1146,6 @@ export function useStudySession({
       setError('Study management actions are currently limited to review cards.');
       return;
     }
-    if (
-      frozenProductionCard.attemptedHanzi === null
-      && (managementAction === 'add_contrast_candidate'
-        || managementAction === 'suppress_skill_and_add_contrast_candidate')
-    ) {
-      throw new Error('Session invariant violated: no-clue attempts cannot create contrast candidates.');
-    }
 
     setStudyManagementSubmitting(true);
     setError(null);
@@ -1180,17 +1160,9 @@ export function useStudySession({
         contentRef: frozenProductionCard.contentRef,
         managementAction,
         note,
-        candidateText:
-          managementAction === 'add_contrast_candidate' ||
-          managementAction === 'suppress_skill_and_add_contrast_candidate'
-            ? frozenProductionCard.attemptedHanzi
-            : null,
       });
 
       if (!studyManagementActionRemovesCurrentReviewAction(managementAction)) {
-        if (managementAction === 'add_contrast_candidate') {
-          setProductionContrastIntakeMarked(true);
-        }
         return;
       }
 
@@ -1638,8 +1610,6 @@ export function useStudySession({
       productionHanziInput,
       productionHanziError,
       productionHanziInputRef,
-      productionContrastIntakeNote,
-      productionContrastIntakeMarked,
       contrastSelectedWordId,
       contrastAwaitingRating,
       activeRatingOptions,
@@ -1649,7 +1619,6 @@ export function useStudySession({
       onUndoLastRating: handleUndoLastRating,
       onContinueAfterAutoForgot: handleContinueAfterAutoForgot,
       onContinueAfterAutoContrastForgot: handleContinueAfterAutoContrastForgot,
-      onProductionContrastIntakeNoteChange: setProductionContrastIntakeNote,
       onDismissCurrentWord: () => void handleDismissCurrentWord(),
       onManageStudyAction: (action, note) => void handleManageStudyAction(action, note),
       onDismissFrozenProductionWord: () => void handleDismissFrozenProductionWord(),

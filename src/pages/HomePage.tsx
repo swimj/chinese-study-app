@@ -62,8 +62,6 @@ export function HomePage({
   productionHanziInput,
   productionHanziError,
   productionHanziInputRef,
-  productionContrastIntakeNote,
-  productionContrastIntakeMarked,
   contrastSelectedWordId,
   contrastAwaitingRating,
   activeRatingOptions,
@@ -73,7 +71,6 @@ export function HomePage({
   onUndoLastRating,
   onContinueAfterAutoForgot,
   onContinueAfterAutoContrastForgot,
-  onProductionContrastIntakeNoteChange,
   onDismissCurrentWord,
   onManageStudyAction,
   onDismissFrozenProductionWord,
@@ -129,8 +126,6 @@ export function HomePage({
   productionHanziInput: string;
   productionHanziError: string | null;
   productionHanziInputRef: RefObject<HTMLInputElement>;
-  productionContrastIntakeNote: string;
-  productionContrastIntakeMarked: boolean;
   contrastSelectedWordId: string | null;
   contrastAwaitingRating: boolean;
   activeRatingOptions: RatingOption[];
@@ -140,7 +135,6 @@ export function HomePage({
   onUndoLastRating: () => void;
   onContinueAfterAutoForgot: () => void;
   onContinueAfterAutoContrastForgot: () => void;
-  onProductionContrastIntakeNoteChange: (value: string) => void;
   onDismissCurrentWord: () => void;
   onManageStudyAction: (action: StudyManagementActionKind, note: string) => void;
   onDismissFrozenProductionWord: () => void;
@@ -244,8 +238,6 @@ export function HomePage({
             productionHanziInput={productionHanziInput}
             productionHanziError={productionHanziError}
             productionHanziInputRef={productionHanziInputRef}
-            productionContrastIntakeNote={productionContrastIntakeNote}
-            productionContrastIntakeMarked={productionContrastIntakeMarked}
             contrastSelectedWordId={contrastSelectedWordId}
             contrastAwaitingRating={contrastAwaitingRating}
             activeRatingOptions={activeRatingOptions}
@@ -254,7 +246,6 @@ export function HomePage({
             onRetrySessionReflection={onRetrySessionReflection}
             onContinueAfterAutoForgot={onContinueAfterAutoForgot}
             onContinueAfterAutoContrastForgot={onContinueAfterAutoContrastForgot}
-            onProductionContrastIntakeNoteChange={onProductionContrastIntakeNoteChange}
             onDismissCurrentWord={onDismissCurrentWord}
             onManageStudyAction={onManageStudyAction}
             onDismissFrozenProductionWord={onDismissFrozenProductionWord}

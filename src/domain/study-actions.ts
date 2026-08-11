@@ -141,8 +141,6 @@ export type WordSkillRelevanceState = 'normal' | 'deprioritized' | 'suppressed';
 
 export type StudyManagementActionKind =
   | 'suppress_skill'
-  | 'add_contrast_candidate'
-  | 'suppress_skill_and_add_contrast_candidate'
   | 'bad_prompt';
 
 export type StudyEvent = {
@@ -218,10 +216,7 @@ export function mapStudySkillToDefaultActionKind(skillId: StudySkillId): StudyAc
 
 export function studyManagementActionRemovesCurrentReviewAction(action: StudyManagementActionKind): boolean {
   switch (action) {
-    case 'add_contrast_candidate':
-      return false;
     case 'suppress_skill':
-    case 'suppress_skill_and_add_contrast_candidate':
     case 'bad_prompt':
       return true;
     default:

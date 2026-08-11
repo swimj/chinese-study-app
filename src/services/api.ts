@@ -803,7 +803,6 @@ export async function recordStudyManagementAction({
   contentRef,
   managementAction,
   note = '',
-  candidateText = null,
 }: {
   sessionId: string;
   sessionActionId: string;
@@ -813,7 +812,6 @@ export async function recordStudyManagementAction({
   contentRef: StudyContentRef | null;
   managementAction: StudyManagementActionKind;
   note?: string;
-  candidateText?: string | null;
 }): Promise<StudyEvent> {
   const response = await fetch(`${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/manage-study-action`, {
     method: 'POST',
@@ -828,7 +826,6 @@ export async function recordStudyManagementAction({
       contentRef,
       managementAction,
       note,
-      candidateText,
     }),
   });
 

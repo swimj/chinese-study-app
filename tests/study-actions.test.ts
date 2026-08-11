@@ -18,10 +18,8 @@ describe('study action domain adapters', () => {
     assert.equal(mapStudySkillToDefaultActionKind('contextual_selection'), 'contrast_selection');
   });
 
-  test('keeps plain contrast candidate requests additive to the current review action', () => {
-    assert.equal(studyManagementActionRemovesCurrentReviewAction('add_contrast_candidate'), false);
+  test('removes current review action for all management actions', () => {
     assert.equal(studyManagementActionRemovesCurrentReviewAction('suppress_skill'), true);
-    assert.equal(studyManagementActionRemovesCurrentReviewAction('suppress_skill_and_add_contrast_candidate'), true);
     assert.equal(studyManagementActionRemovesCurrentReviewAction('bad_prompt'), true);
   });
 });
