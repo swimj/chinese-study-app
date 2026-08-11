@@ -84,6 +84,12 @@ CLI flags mirror env where applicable (`--mode`, `--data-dir`, `--study-profile`
 
 ## 4) Runbook Commands
 
+### Child-worktree bootstrap
+
+- A child agent may start in a fresh worktree without dependencies or generated files. Before testing or building, verify the needed environment is present; do not assume another agent's environment is available.
+- When dependencies or generated files are missing, run `./scripts/codex-setup.sh` from the repository root.
+- `node_modules/` and the generated `.codex/environments/environment.toml` are ignored local files. Neither belongs in `.worktreeinclude`; the setup configuration invokes the tracked script to recreate dependencies per worktree.
+
 - Install deps: `npm install`
 - Start frontend: `npm run dev:frontend` (Vite on `4173`)
 - Start backend (dev mode): `npm run dev:backend` (API on `5174`)
