@@ -124,10 +124,12 @@ one exact bounded bundle. A successful reflection artifact is a separate,
 immutable product record containing the validated result and the provenance
 defined by the reflection proposal specification.
 
-The generation boundary is idempotent for `(source session, reflection flow
-version)`: after a successful artifact exists, repeating the ordinary generation
-request returns that artifact rather than asking the model to generate a second
-answer for the same flow.
+For dogfood model comparison, an explicit generation request creates a distinct
+candidate artifact even when the source session and reflection flow match an
+earlier candidate. The initial post-session request may select a configured
+model randomly; a deliberate retry reuses the exact stored bundle and defaults
+to the source run's model unless the operator selects another configured model.
+Each candidate retains its originating generation-run identity.
 
 Provider output is untrusted. It must pass strict structural and cross-reference
 validation before a successful artifact and its proposal-review rows are
@@ -154,8 +156,8 @@ deliberate retry. Retry:
 - creates a new generation-attempt record rather than overwriting the failed
   attempt;
 - still passes provider output through the current strict result validator;
-- materializes at most one successful artifact for the source session and flow;
-  and
+- materializes a distinct successful candidate artifact with provenance back to
+  its source run; and
 - never automatically authorizes or applies a resulting proposal.
 
 A legacy failure without a retained valid bundle is not retryable. Changing the

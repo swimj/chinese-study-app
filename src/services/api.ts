@@ -65,6 +65,8 @@ export type GenerateSessionReflectionResult = {
   status: 'created' | 'existing';
 };
 
+export type ReflectionModelChoice = 'openai:gpt-5.6-luna-high' | 'zai:glm-5.2-high';
+
 export type ReflectionTokenUsageDto = {
   inputTokens: number | null;
   cachedInputTokens: number | null;
@@ -110,6 +112,7 @@ export type ReflectionGenerationRunDto = {
 export type ReflectionArtifactSummaryDto = {
   artifactId: string;
   sourceSessionId: string;
+  sourceRunId: string | null;
   reflectionFlowVersion: string;
   generatedAt: string;
   provider: string;
@@ -140,6 +143,7 @@ export type ReflectionProposalDetailDto = {
 export type ReflectionArtifactDetailDto = {
   artifactId: string;
   sourceSessionId: string;
+  sourceRunId: string | null;
   reflectionFlowVersion: string;
   generatedAt: string;
   provider: string;
@@ -155,7 +159,7 @@ export type ReflectionArtifactDetailDto = {
 export type ReflectionReviewApi = {
   listArtifacts: (review: 'open' | 'all') => Promise<ReflectionArtifactSummaryDto[]>;
   listGenerationRuns: () => Promise<ReflectionGenerationRunDto[]>;
-  retryGenerationRun: (runId: string) => Promise<GenerateSessionReflectionResult>;
+  retryGenerationRun: (runId: string, model?: ReflectionModelChoice) => Promise<GenerateSessionReflectionResult>;
   getArtifact: (artifactId: string) => Promise<ReflectionArtifactDetailDto>;
   reviewProposal: (
     proposalId: string,
@@ -917,10 +921,15 @@ export async function fetchReflectionGenerationRuns(): Promise<ReflectionGenerat
 
 export async function retryReflectionGenerationRun(
   runId: string,
+  model?: ReflectionModelChoice,
 ): Promise<GenerateSessionReflectionResult> {
   const response = await fetch(
     `${API_BASE}/api/reflection-generation-runs/${encodeURIComponent(runId)}/retry`,
-    { method: 'POST' },
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: model === undefined ? undefined : JSON.stringify({ model }),
+    },
   );
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to retry reflection generation'));

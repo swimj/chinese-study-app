@@ -7,6 +7,7 @@ import type {
   ReflectionInputItemV2,
   ReflectionOperation,
 } from '../domain/reflection';
+import type { ReflectionModelChoice } from '../services/api';
 import { ReflectionOperationEditor } from '../features/reflection/ReflectionOperationEditor';
 import type { ReflectionPageController } from '../features/reflection/useReflectionPageController';
 import {
@@ -245,6 +246,10 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                 <p className="notes reflection-long-metadata">
                   Session {controller.selectedArtifact.sourceSessionId}
                   {' · '}
+                  {controller.selectedArtifact.sourceRunId === null
+                    ? 'legacy run'
+                    : `run ${abbreviateId(controller.selectedArtifact.sourceRunId)}`}
+                  {' · '}
                   {controller.selectedArtifact.provider}/{controller.selectedArtifact.model}
                   {' · '}
                   {controller.selectedArtifact.promptVersion}
@@ -346,7 +351,7 @@ export function TokenUsageView({
 }: {
   runs: ReflectionGenerationRunDto[];
   retryStatus: ReflectionPageController['generationRetryStatus'];
-  onRetry: (runId: string) => Promise<void>;
+  onRetry: (runId: string, model?: ReflectionModelChoice) => Promise<void>;
 }) {
   const summary = summarizeReflectionTokenUsage(runs);
   return (
@@ -484,7 +489,7 @@ function RunStatusControl({
 }: {
   run: ReflectionGenerationRunDto;
   retryStatus: ReflectionPageController['generationRetryStatus'];
-  onRetry: (runId: string) => Promise<void>;
+  onRetry: (runId: string, model?: ReflectionModelChoice) => Promise<void>;
 }) {
   if (retryStatus?.runId === run.runId && retryStatus.state === 'generating') {
     return <span className="reflection-state-pill state-generating" role="status">Generating…</span>;
@@ -495,15 +500,30 @@ function RunStatusControl({
       ? 'Retry failed. Retry this reflection again.'
       : `Retry failed reflection${run.failureCode === null ? '' : `: ${humanize(run.failureCode)}`}`;
     return (
-      <button
-        type="button"
-        className="reflection-status-icon reflection-retry-button"
-        title={label}
-        aria-label={label}
-        onClick={() => void onRetry(run.runId)}
-      >
-        <span aria-hidden="true">↻</span>
-      </button>
+      <span className="reflection-retry-control">
+        <button
+          type="button"
+          className="reflection-status-icon reflection-retry-button"
+          title={label}
+          aria-label={label}
+          onClick={() => void onRetry(run.runId)}
+        >
+          <span aria-hidden="true">↻</span>
+        </button>
+        <select
+          aria-label="Choose model for reflection retry"
+          defaultValue=""
+          onChange={(event) => {
+            const model = event.target.value as ReflectionModelChoice | '';
+            if (model) void onRetry(run.runId, model);
+            event.currentTarget.value = '';
+          }}
+        >
+          <option value="">Same model ({run.model})</option>
+          <option value="openai:gpt-5.6-luna-high">Luna high</option>
+          <option value="zai:glm-5.2-high">GLM-5.2 high</option>
+        </select>
+      </span>
     );
   }
   return run.state === 'succeeded'

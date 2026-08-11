@@ -48,6 +48,7 @@ const unsupportedApplicationReason = (operation: ReflectionOperation) => (
 
 type MaterializeReflectionArtifactBase = {
   artifactId?: string;
+  sourceRunId?: string;
   sourceSessionId: string;
   reflectionFlowVersion: string;
   generatedAt: string;
@@ -107,6 +108,7 @@ export type ReflectionGenerationRetrySource = {
   runId: string;
   sourceSessionId: string;
   reflectionFlowVersion: string;
+  model: string;
   eligibleItemCount: number;
   includedItemCount: number;
   evidenceBundle: SessionReflectionBundle;
@@ -137,6 +139,7 @@ export type ReflectionGenerationRetrySource = {
 export type ReflectionArtifactRecord = {
   artifactId: string;
   sourceSessionId: string;
+  sourceRunId: string | null;
   reflectionFlowVersion: string;
   generatedAt: string;
   provider: string;
@@ -216,6 +219,7 @@ export type SupersedeReflectionProposalInput = {
 type ArtifactRow = {
   artifact_id: string;
   source_session_id: string;
+  source_run_id: string | null;
   reflection_flow_version: string;
   generated_at: string;
   provider: string;
@@ -301,6 +305,7 @@ type InvocationRow = {
 const artifactColumns = [
   'artifact_id',
   'source_session_id',
+  'source_run_id',
   'reflection_flow_version',
   'generated_at',
   'provider',
@@ -388,6 +393,7 @@ export function ensureReflectionSchema(): void {
       artifact_id TEXT PRIMARY KEY,
       source_session_id TEXT NOT NULL
         REFERENCES study_sessions(id) ON DELETE RESTRICT,
+      source_run_id TEXT,
       reflection_flow_version TEXT NOT NULL,
       generated_at TEXT NOT NULL,
       provider TEXT NOT NULL,
@@ -396,8 +402,7 @@ export function ensureReflectionSchema(): void {
       bundle_schema_version TEXT NOT NULL,
       result_schema_version TEXT NOT NULL,
       evidence_bundle_json TEXT NOT NULL,
-      result_json TEXT NOT NULL,
-      UNIQUE (source_session_id, reflection_flow_version)
+      result_json TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS reflection_generation_runs (
@@ -683,9 +688,53 @@ export function ensureReflectionSchema(): void {
     END;
   `);
 
+  migrateReflectionArtifactsForMultipleCandidates();
   ensureReflectionGenerationRunEvidenceBundleColumn();
   ensureReflectionGenerationRunDiagnosticColumns();
   ensureReflectionIndexes();
+}
+
+function migrateReflectionArtifactsForMultipleCandidates(): void {
+  const columns = getDb().prepare('PRAGMA table_info(reflection_artifacts)').all() as Array<{ name: string }>;
+  if (columns.some((column) => column.name === 'source_run_id')) return;
+
+  // SQLite cannot drop a table-level UNIQUE constraint. Rebuild only this
+  // immutable parent table, preserving its artifact IDs for proposal-review FKs.
+  getDb().exec(`
+    PRAGMA foreign_keys = OFF;
+    DROP TRIGGER IF EXISTS reflection_artifacts_immutable;
+    CREATE TABLE reflection_artifacts_rebuilt (
+      artifact_id TEXT PRIMARY KEY,
+      source_session_id TEXT NOT NULL REFERENCES study_sessions(id) ON DELETE RESTRICT,
+      source_run_id TEXT,
+      reflection_flow_version TEXT NOT NULL,
+      generated_at TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      prompt_version TEXT NOT NULL,
+      bundle_schema_version TEXT NOT NULL,
+      result_schema_version TEXT NOT NULL,
+      evidence_bundle_json TEXT NOT NULL,
+      result_json TEXT NOT NULL
+    );
+    INSERT INTO reflection_artifacts_rebuilt (
+      artifact_id, source_session_id, source_run_id, reflection_flow_version, generated_at,
+      provider, model, prompt_version, bundle_schema_version, result_schema_version,
+      evidence_bundle_json, result_json
+    ) SELECT
+      artifact_id, source_session_id, NULL, reflection_flow_version, generated_at,
+      provider, model, prompt_version, bundle_schema_version, result_schema_version,
+      evidence_bundle_json, result_json
+    FROM reflection_artifacts;
+    DROP TABLE reflection_artifacts;
+    ALTER TABLE reflection_artifacts_rebuilt RENAME TO reflection_artifacts;
+    CREATE TRIGGER reflection_artifacts_immutable
+    BEFORE UPDATE ON reflection_artifacts
+    BEGIN
+      SELECT RAISE(ABORT, 'reflection artifacts are immutable');
+    END;
+    PRAGMA foreign_keys = ON;
+  `);
 }
 
 function ensureReflectionGenerationRunEvidenceBundleColumn(): void {
@@ -730,10 +779,6 @@ export function validateReflectionSchema(): void {
   assertTableColumns('reflection_generation_runs', reflectionGenerationRunColumns);
   assertTableColumns('reflection_proposal_reviews', proposalReviewColumns);
   assertTableColumns('reflection_operation_invocations', invocationColumns);
-  assertUniqueIndex(
-    'reflection_artifacts',
-    ['source_session_id', 'reflection_flow_version'],
-  );
   assertUniqueIndex(
     'reflection_proposal_reviews',
     ['artifact_id', 'item_id', 'proposal_index'],
@@ -844,18 +889,12 @@ export function materializeReflectionArtifact(
   database.exec('BEGIN IMMEDIATE');
 
   try {
-    const existing = getArtifactBySessionAndFlow(
-      input.sourceSessionId,
-      input.reflectionFlowVersion,
-    );
-    if (existing !== null) {
-      persistedArtifactId = existing.artifactId;
-      database.exec('COMMIT');
-    } else {
+    {
       database.prepare(`
         INSERT INTO reflection_artifacts (
           artifact_id,
           source_session_id,
+          source_run_id,
           reflection_flow_version,
           generated_at,
           provider,
@@ -865,10 +904,11 @@ export function materializeReflectionArtifact(
           result_schema_version,
           evidence_bundle_json,
           result_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         artifactId,
         input.sourceSessionId,
+        input.sourceRunId ?? null,
         input.reflectionFlowVersion,
         input.generatedAt,
         input.provider,
@@ -1168,16 +1208,8 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
   }
   const rows = getDb().prepare(`
     SELECT ${reflectionGenerationRunColumns.map((column) => `runs.${column}`).join(', ')},
-      CASE
-        WHEN runs.state = 'failed'
-          AND runs.evidence_bundle_json IS NOT NULL
-          AND artifacts.artifact_id IS NULL
-        THEN 1 ELSE 0
-      END AS retryable
+      CASE WHEN runs.evidence_bundle_json IS NOT NULL THEN 1 ELSE 0 END AS retryable
     FROM reflection_generation_runs AS runs
-    LEFT JOIN reflection_artifacts AS artifacts
-      ON artifacts.source_session_id = runs.source_session_id
-      AND artifacts.reflection_flow_version = runs.reflection_flow_version
     ORDER BY completed_at DESC, run_id ASC
     LIMIT ?
   `).all(limit) as unknown as ReflectionGenerationRunRow[];
@@ -1187,16 +1219,8 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
 function getReflectionGenerationRun(runId: string): ReflectionGenerationRunRecord {
   const row = getDb().prepare(`
     SELECT ${reflectionGenerationRunColumns.map((column) => `runs.${column}`).join(', ')},
-      CASE
-        WHEN runs.state = 'failed'
-          AND runs.evidence_bundle_json IS NOT NULL
-          AND artifacts.artifact_id IS NULL
-        THEN 1 ELSE 0
-      END AS retryable
+      CASE WHEN runs.evidence_bundle_json IS NOT NULL THEN 1 ELSE 0 END AS retryable
     FROM reflection_generation_runs AS runs
-    LEFT JOIN reflection_artifacts AS artifacts
-      ON artifacts.source_session_id = runs.source_session_id
-      AND artifacts.reflection_flow_version = runs.reflection_flow_version
     WHERE runs.run_id = ?
   `).get(runId) as ReflectionGenerationRunRow | undefined;
   if (!row) throw new Error('Reflection generation run not found.');
@@ -1212,16 +1236,8 @@ export function getReflectionGenerationRetrySource(
   }
   const row = getDb().prepare(`
     SELECT ${reflectionGenerationRunColumns.map((column) => `runs.${column}`).join(', ')},
-      CASE
-        WHEN runs.state = 'failed'
-          AND runs.evidence_bundle_json IS NOT NULL
-          AND artifacts.artifact_id IS NULL
-        THEN 1 ELSE 0
-      END AS retryable
+      CASE WHEN runs.evidence_bundle_json IS NOT NULL THEN 1 ELSE 0 END AS retryable
     FROM reflection_generation_runs AS runs
-    LEFT JOIN reflection_artifacts AS artifacts
-      ON artifacts.source_session_id = runs.source_session_id
-      AND artifacts.reflection_flow_version = runs.reflection_flow_version
     WHERE runs.run_id = ?
   `).get(normalizedRunId) as ReflectionGenerationRunRow | undefined;
   if (!row) throw new Error('Reflection generation run not found.');
@@ -1247,6 +1263,7 @@ export function getReflectionGenerationRetrySource(
     runId: row.run_id,
     sourceSessionId: row.source_session_id,
     reflectionFlowVersion: row.reflection_flow_version,
+    model: row.model,
     eligibleItemCount: row.eligible_item_count,
     includedItemCount: row.included_item_count,
     evidenceBundle,
@@ -1880,6 +1897,7 @@ function mapArtifactRow(row: ArtifactRow): ReflectionArtifactRecord {
   return {
     artifactId: row.artifact_id,
     sourceSessionId: row.source_session_id,
+    sourceRunId: row.source_run_id,
     reflectionFlowVersion: row.reflection_flow_version,
     generatedAt: row.generated_at,
     provider: row.provider,

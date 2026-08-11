@@ -987,6 +987,13 @@ export function createApp(options: CreateAppOptions = {}) {
     }
 
     const normalizedSessionId = sessionId.trim();
+    const requestedModel = req.body?.model;
+    if (requestedModel !== undefined
+      && requestedModel !== 'openai:gpt-5.6-luna-high'
+      && requestedModel !== 'zai:glm-5.2-high') {
+      res.status(400).json({ error: 'Expected a supported reflection model when provided' });
+      return;
+    }
     const generationStartedAt = Date.now();
     reflectionLifecycleLogger.emit({
       event: 'reflection.generation_requested',
@@ -994,7 +1001,7 @@ export function createApp(options: CreateAppOptions = {}) {
     });
 
     try {
-      const result = await reflectionGenerationService.generate(sessionId, req.body);
+      const result = await reflectionGenerationService.generate(sessionId, req.body, requestedModel);
       reflectionLifecycleLogger.emit({
         event: 'reflection.generation_succeeded',
         sessionId: normalizedSessionId,
@@ -1076,8 +1083,15 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
 
+    const requestedModel = req.body?.model;
+    if (requestedModel !== undefined
+      && requestedModel !== 'openai:gpt-5.6-luna-high'
+      && requestedModel !== 'zai:glm-5.2-high') {
+      res.status(400).json({ error: 'Expected a supported reflection model when provided' });
+      return;
+    }
     try {
-      const result = await reflectionGenerationService.retry(runId.trim());
+      const result = await reflectionGenerationService.retry(runId.trim(), requestedModel);
       res.status(result.status === 'created' ? 201 : 200).json(result);
     } catch (error) {
       if (isReflectionNotFoundError(error, 'Reflection generation run not found.')) {

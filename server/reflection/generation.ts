@@ -25,6 +25,8 @@ import {
   type LunaReflectionProvider,
   type LunaReflectionRunMetadata,
 } from './luna-provider.ts';
+import { createGlmReflectionProvider } from './glm-provider.ts';
+import { randomUUID } from 'node:crypto';
 import type { ReflectionLifecycleLogger } from './lifecycle-log.ts';
 import type { ReflectionProviderDiagnosticSink } from './provider-diagnostics.ts';
 import { estimateInitialReflectionRunCost } from './run-pricing.ts';
@@ -35,16 +37,21 @@ export type InitialReflectionGenerationResult = {
   status: 'created' | 'existing';
 };
 
+export type ReflectionModelChoice = 'openai:gpt-5.6-luna-high' | 'zai:glm-5.2-high';
+
 export type InitialReflectionGenerationService = {
   generate(
     sessionId: string,
     evidenceSupplement: unknown,
+    model?: ReflectionModelChoice,
   ): Promise<InitialReflectionGenerationResult>;
-  retry(runId: string): Promise<InitialReflectionGenerationResult>;
+  retry(runId: string, model?: ReflectionModelChoice): Promise<InitialReflectionGenerationResult>;
 };
 
 export type InitialReflectionGenerationDependencies = {
   provider?: LunaReflectionProvider;
+  glmProvider?: LunaReflectionProvider;
+  random?: () => number;
   now?: () => string;
   buildBundle?: (
     sessionId: string,
@@ -78,6 +85,10 @@ export function createInitialReflectionGenerationService(
   const provider = dependencies.provider ?? createLunaReflectionProvider({
     diagnosticSink: dependencies.providerDiagnosticSink,
   });
+  const glmProvider = dependencies.glmProvider ?? createGlmReflectionProvider({
+    diagnosticSink: dependencies.providerDiagnosticSink,
+  });
+  const random = dependencies.random ?? Math.random;
   const now = dependencies.now ?? (() => new Date().toISOString());
   const buildBundleWithMetrics = dependencies.buildBundleWithMetrics
     ?? (dependencies.buildBundle === undefined
@@ -99,22 +110,32 @@ export function createInitialReflectionGenerationService(
   const lifecycleLogger = dependencies.lifecycleLogger;
   const inFlight = new Map<string, Promise<InitialReflectionGenerationResult>>();
 
-  async function runCoalesced(
-    sessionId: string,
-    startGeneration: () => Promise<InitialReflectionGenerationResult>,
-  ): Promise<InitialReflectionGenerationResult> {
-    const generationKey = `${sessionId}\u0000${INITIAL_REFLECTION_FLOW_VERSION}`;
-    const activeGeneration = inFlight.get(generationKey);
-    if (activeGeneration) return activeGeneration;
+  function selectProvider(choice: ReflectionModelChoice | undefined): LunaReflectionProvider {
+    if (choice === undefined && dependencies.provider !== undefined && dependencies.glmProvider === undefined) {
+      return provider;
+    }
+    if (choice === 'openai:gpt-5.6-luna-high') return provider;
+    if (choice === 'zai:glm-5.2-high') return glmProvider;
+    return random() < 0.5 ? provider : glmProvider;
+  }
 
-    const generation = startGeneration();
-    inFlight.set(generationKey, generation);
+  function choiceForStoredModel(model: string): ReflectionModelChoice {
+    if (model === 'glm-5.2-high') return 'zai:glm-5.2-high';
+    return 'openai:gpt-5.6-luna-high';
+  }
+
+  async function runCoalesced(
+    key: string,
+    start: () => Promise<InitialReflectionGenerationResult>,
+  ): Promise<InitialReflectionGenerationResult> {
+    const active = inFlight.get(key);
+    if (active) return active;
+    const generation = start();
+    inFlight.set(key, generation);
     try {
       return await generation;
     } finally {
-      if (inFlight.get(generationKey) === generation) {
-        inFlight.delete(generationKey);
-      }
+      if (inFlight.get(key) === generation) inFlight.delete(key);
     }
   }
 
@@ -122,6 +143,7 @@ export function createInitialReflectionGenerationService(
     async generate(
       sessionId: string,
       evidenceSupplement: unknown,
+      model?: ReflectionModelChoice,
     ): Promise<InitialReflectionGenerationResult> {
       const normalizedSessionId = sessionId.trim();
       if (normalizedSessionId.length === 0) {
@@ -131,29 +153,24 @@ export function createInitialReflectionGenerationService(
         );
       }
 
-      const existing = findExistingArtifact(
-        normalizedSessionId,
-        INITIAL_REFLECTION_FLOW_VERSION,
-      );
-      if (existing !== null) {
-        return generationResult(false, existing);
-      }
-
       const generatedAt = now();
-      return runCoalesced(normalizedSessionId, () => generateAndMaterialize({
+      const selectedProvider = selectProvider(model);
+      const coalescingModelKey = model ?? 'initial-routed';
+      return runCoalesced(`${normalizedSessionId}\u0000${coalescingModelKey}`, () => generateAndMaterialize({
         sessionId: normalizedSessionId,
         evidenceSupplement,
         generatedAt,
-        provider,
+        provider: selectedProvider,
         buildBundleWithMetrics,
         materializeArtifact,
         recordRun,
         now,
         lifecycleLogger,
+        runId: randomUUID(),
       }));
     },
 
-    async retry(runId: string): Promise<InitialReflectionGenerationResult> {
+    async retry(runId: string, model?: ReflectionModelChoice): Promise<InitialReflectionGenerationResult> {
       const retrySource = getRetrySource(runId);
       if (retrySource.reflectionFlowVersion !== INITIAL_REFLECTION_FLOW_VERSION) {
         throw new Error('Reflection generation run is not retryable by the current flow.');
@@ -167,12 +184,7 @@ export function createInitialReflectionGenerationService(
         sessionId: retrySource.sourceSessionId,
       });
       try {
-        const existing = findExistingArtifact(
-          retrySource.sourceSessionId,
-          INITIAL_REFLECTION_FLOW_VERSION,
-        );
-        const result = existing === null
-          ? await runCoalesced(retrySource.sourceSessionId, () => generateBundleAndMaterialize({
+        const result = await generateBundleAndMaterialize({
               sessionId: retrySource.sourceSessionId,
               builtBundle: {
                 bundle: retrySource.evidenceBundle,
@@ -180,13 +192,13 @@ export function createInitialReflectionGenerationService(
                 includedItemCount: retrySource.includedItemCount,
               },
               generatedAt: now(),
-              provider,
+              provider: selectProvider(model ?? choiceForStoredModel(retrySource.model)),
               materializeArtifact,
               recordRun,
               now,
               lifecycleLogger,
-            }))
-          : generationResult(false, existing);
+              runId: randomUUID(),
+            });
         lifecycleLogger?.emit({
           event: 'reflection.generation_succeeded',
           sessionId: retrySource.sourceSessionId,
@@ -227,6 +239,7 @@ async function generateAndMaterialize(input: {
   recordRun: NonNullable<InitialReflectionGenerationDependencies['recordRun']>;
   now: () => string;
   lifecycleLogger: ReflectionLifecycleLogger | undefined;
+  runId: string;
 }): Promise<InitialReflectionGenerationResult> {
   const builtBundle = input.buildBundleWithMetrics(
     input.sessionId,
@@ -242,6 +255,7 @@ async function generateAndMaterialize(input: {
     recordRun: input.recordRun,
     now: input.now,
     lifecycleLogger: input.lifecycleLogger,
+    runId: input.runId,
   });
 }
 
@@ -256,6 +270,7 @@ async function generateBundleAndMaterialize(input: {
   recordRun: NonNullable<InitialReflectionGenerationDependencies['recordRun']>;
   now: () => string;
   lifecycleLogger: ReflectionLifecycleLogger | undefined;
+  runId: string;
 }): Promise<InitialReflectionGenerationResult> {
   const builtBundle = input.builtBundle;
   const { bundle } = builtBundle;
@@ -268,6 +283,7 @@ async function generateBundleAndMaterialize(input: {
   try {
     const generated = await input.provider.generate(bundle);
     const materialized: MaterializeReflectionArtifactResult = input.materializeArtifact({
+      sourceRunId: input.runId,
       sourceSessionId: input.sessionId,
       reflectionFlowVersion: INITIAL_REFLECTION_FLOW_VERSION,
       generatedAt: input.generatedAt,
@@ -280,6 +296,7 @@ async function generateBundleAndMaterialize(input: {
     artifactMaterialized = true;
     try {
       input.recordRun(runRecordInput({
+        runId: input.runId,
         sessionId: input.sessionId,
         startedAt: input.generatedAt,
         completedAt: input.now(),
@@ -300,6 +317,7 @@ async function generateBundleAndMaterialize(input: {
     if (!artifactMaterialized) {
       try {
         input.recordRun(runRecordInput({
+          runId: input.runId,
           sessionId: input.sessionId,
           startedAt: input.generatedAt,
           completedAt: input.now(),
@@ -320,6 +338,7 @@ async function generateBundleAndMaterialize(input: {
 }
 
 function runRecordInput(input: {
+  runId: string;
   sessionId: string;
   startedAt: string;
   completedAt: string;
@@ -337,6 +356,7 @@ function runRecordInput(input: {
     usage: input.metadata.usage,
   });
   return {
+    runId: input.runId,
     sourceSessionId: input.sessionId,
     reflectionFlowVersion: INITIAL_REFLECTION_FLOW_VERSION,
     startedAt: input.startedAt,

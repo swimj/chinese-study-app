@@ -171,7 +171,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       pricingAsOf: '2026-07-30',
       pricingBasis: { id: 'price-v1', inputPerMillionUsd: 0.2 },
       estimatedCostUsd: 0.00042,
-      retryable: false,
+      retryable: true,
     });
     assert.deepEqual(dbModule.listReflectionGenerationRuns(), [recorded]);
   });
@@ -214,6 +214,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       runId: 'failed-run',
       sourceSessionId: 'retry-session',
       reflectionFlowVersion: 'initial_post_session_reflection.v1',
+      model: 'gpt-5.6-luna-high',
       eligibleItemCount: 1,
       includedItemCount: 1,
       evidenceBundle,
@@ -222,11 +223,7 @@ describe('reflection durable store', { concurrency: false }, () => {
     dbModule.materializeReflectionArtifact(
       materializationInput('retry-session', suppressOperation('target')),
     );
-    assert.equal(dbModule.listReflectionGenerationRuns()[0]?.retryable, false);
-    assert.throws(
-      () => dbModule.getReflectionGenerationRetrySource('failed-run'),
-      /not retryable/,
-    );
+    assert.equal(dbModule.listReflectionGenerationRuns()[0]?.retryable, true);
   });
 
   test('atomically materializes immutable JSON and exactly one pending row per proposal', () => {
@@ -369,7 +366,7 @@ describe('reflection durable store', { concurrency: false }, () => {
     );
   });
 
-  test('returns the existing artifact for the session and flow idempotency key', () => {
+  test('materializes separate candidates for the same session and flow', () => {
     const first = dbModule.materializeReflectionArtifact(
       materializationInput('idempotent-session', suppressOperation('target')),
     );
@@ -380,17 +377,17 @@ describe('reflection durable store', { concurrency: false }, () => {
     secondInput.artifactId = 'must-not-be-inserted';
     const second = dbModule.materializeReflectionArtifact(secondInput);
 
-    assert.equal(second.created, false);
-    assert.equal(second.artifact.artifactId, first.artifact.artifactId);
+    assert.equal(second.created, true);
+    assert.notEqual(second.artifact.artifactId, first.artifact.artifactId);
     assert.deepEqual(
       second.artifact.proposals[0].proposal.operation,
-      suppressOperation('target'),
+      suppressOperation('alternate'),
     );
     const count = sqlite.prepare(`
       SELECT COUNT(*) AS count
       FROM reflection_artifacts
     `).get() as { count: number };
-    assert.equal(count.count, 1);
+    assert.equal(count.count, 2);
   });
 
   test('rolls back materialization when the source session provenance is missing', () => {
