@@ -177,6 +177,13 @@ initial generation. The retry is a new append-only generation run; it never
 rewrites the failed attempt. Missing runs return `404`, and concluded runs that
 cannot be retried return `409`.
 
+`POST /api/reflection-generation-runs/:runId/upgrade-v1-and-retry` is a
+one-time compatibility path for a retryable V1 retained bundle. The backend
+requires production-item action references and one cue snapshot, rebuilds V2
+attempt and served-cue provenance from durable immutable study evidence, then
+runs the normal current provider/materialization path. The prior failed run is
+preserved; missing or incompatible durable evidence returns `409`.
+
 ### Queue and detail
 
 `review` is required and must be `open` or `all`. The open query includes

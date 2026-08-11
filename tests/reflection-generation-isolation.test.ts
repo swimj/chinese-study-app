@@ -6,7 +6,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import type { SessionReflectionEvidenceSupplementV1 } from '../src/domain/reflection-evidence.ts';
+import type { SessionReflectionBundleV1 } from '../src/domain/reflection.ts';
 import { createInitialReflectionGenerationService } from '../server/reflection/generation.ts';
+import { buildInitialReflectionBundle } from '../server/reflection/evidence.ts';
 import {
   createLunaReflectionProvider,
   LunaReflectionProviderError,
@@ -226,7 +228,122 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
     });
     assert.equal(run?.estimatedCostUsd, 0.0000136);
   });
+
+  test('upgrades a retained V1 bundle and retries it through the current provider path', async () => {
+    sqlite.prepare(`
+      UPDATE study_attempt_events
+      SET metadata_json = ?
+      WHERE id = 'attempt-1'
+    `).run(JSON.stringify({
+      production: {
+        taskId: 'production-task:target:default_production',
+        cueId: null,
+        cueType: 'definition_gloss',
+        text: 'goal; objective',
+        acceptedWordIds: ['target'],
+        anchorWordId: 'target',
+        submittedText: '替代',
+        submittedWordId: null,
+        result: 'rejected',
+      },
+    }));
+    const currentBundle = buildInitialReflectionBundle('session-1', supplement(), generatedAt);
+    const evidenceBundle: SessionReflectionBundleV1 = {
+      schemaVersion: 'session_reflection_bundle.v1',
+      generatedAt,
+      session: currentBundle.session,
+      items: currentBundle.items.map(({ sourceAttemptId: _sourceAttemptId, servedCue, ...item }) => ({
+        ...item,
+        cuesAsShown: [{
+          cueId: servedCue.cueId,
+          cueType: servedCue.cueType,
+          displayOrder: 0,
+          text: servedCue.text,
+          displayedMeanings: ['goal', 'objective'],
+        }],
+      })),
+    };
+    dbModule.recordReflectionGenerationRun({
+      runId: 'legacy-v1-run',
+      sourceSessionId: 'session-1',
+      reflectionFlowVersion: 'initial_post_session_reflection.v1',
+      startedAt: generatedAt,
+      completedAt: generatedAt,
+      provider: 'openai',
+      model: 'gpt-5.6-luna-high',
+      providerModel: 'gpt-5.6-luna',
+      promptVersion: 'reflection-v4',
+      responseId: null,
+      clientRequestId: null,
+      finishReason: null,
+      state: 'failed',
+      failureCode: 'domain_contract_invalid',
+      eligibleItemCount: 1,
+      includedItemCount: 1,
+      usage: {
+        inputTokens: 10,
+        cachedInputTokens: null,
+        cacheWriteInputTokens: null,
+        outputTokens: 10,
+        reasoningTokens: null,
+        totalTokens: 20,
+      },
+      pricingSnapshotId: null,
+      pricingAsOf: null,
+      pricingBasis: null,
+      estimatedCostUsd: null,
+      diagnostic: null,
+      evidenceBundle,
+    });
+    const provider = createLunaReflectionProvider({
+      environment: { OPENAI_API_KEY: 'test-only-key' },
+      systemPrompt: 'Test reflection prompt.',
+      fetchImplementation: providerFetch(responseEnvelope(legacyCueRepairResult())),
+    });
+    const service = createInitialReflectionGenerationService({ provider, now: () => generatedAt });
+
+    const retried = await service.retryUpgradedV1('legacy-v1-run');
+    assert.equal(retried.status, 'created');
+    assert.equal(dbModule.listReflectionGenerationRuns().filter((run) => run.state === 'failed').length, 1);
+    const artifact = dbModule.getReflectionArtifactDetail(retried.artifactId);
+    assert.equal(artifact.evidenceBundle.schemaVersion, 'session_reflection_bundle.v2');
+    assert.equal(artifact.evidenceBundle.items[0]?.sourceAttemptId, 'attempt-1');
+  });
 });
+
+function legacyCueRepairResult(): JsonValue {
+  return {
+    schemaVersion: 'session_reflection_result.v5',
+    itemResults: [{
+      itemId: 'production-mistake:action-1',
+      diagnosisTags: ['production_cue_overloaded'],
+      observation: 'The fallback cue needs a more discriminating replacement.',
+      learnerExplanation: null,
+      proposals: [{
+        proposalGroupKey: null,
+        rationale: 'Create a faithful replacement cue.',
+        operation: {
+          kind: 'repair_production_cue',
+          wordId: 'target',
+          changes: [{
+            kind: 'create',
+            cue: {
+              cueType: 'definition_gloss',
+              text: 'goal',
+              acceptedWordIds: ['target'],
+            },
+          }],
+          sourceAttemptJudgments: [{
+            kind: 'misleading_or_overloaded_cue',
+            sourceAttemptId: 'attempt-typo',
+          }],
+        },
+      }],
+      questions: [],
+      unhandledNeeds: [],
+    }],
+  };
+}
 
 function insertCompletedStudyState() {
   sqlite.prepare(`
@@ -264,6 +381,7 @@ function insertCompletedStudyState() {
     failedReviewActionCount: 1,
     activeDurationMs: 1_200_000,
   });
+  dbModule.ensureProductionCueSchema();
   sqlite.prepare(`
     INSERT INTO study_attempt_events (
       id, occurred_at, session_id, session_action_id, session_event_sequence,

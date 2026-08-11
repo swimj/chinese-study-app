@@ -111,6 +111,47 @@ export function buildInitialReflectionBundle(
 }
 
 /**
+ * One-time compatibility bridge for retained V1/V4 generation runs. The old
+ * bundle supplies the original action, response, and shown cue; durable study
+ * attempts supply the V2-only canonical attempt and served-cue provenance.
+ */
+export function upgradeInitialReflectionBundleV1(
+  bundle: SessionReflectionBundleV1,
+  generatedAt = new Date().toISOString(),
+): InitialReflectionBundleBuild {
+  const supplement: SessionReflectionEvidenceSupplementV1 = {
+    schemaVersion: 'session_reflection_evidence_supplement.v1',
+    items: bundle.items.map((item) => {
+      if (
+        item.source !== 'production_mistake'
+        || item.sourceActionKind !== 'production'
+        || item.sessionActionId === null
+        || item.rawResponse === null
+      ) {
+        throw new ReflectionEvidenceError(
+          'invalid_reference',
+          'The retained V1 bundle cannot be upgraded to production-mistake evidence.',
+        );
+      }
+      const attempts = getActionAttempts(bundle.session.sessionId, item.sessionActionId);
+      return {
+        itemId: item.itemId,
+        sessionActionId: item.sessionActionId,
+        targetWordId: item.targetWord.wordId,
+        cuesAsShown: item.cuesAsShown,
+        rawResponse: item.rawResponse,
+        attemptIds: attempts.map((attempt) => attempt.id),
+      };
+    }),
+  };
+  return buildInitialReflectionBundleWithMetrics(
+    bundle.session.sessionId,
+    supplement,
+    generatedAt,
+  );
+}
+
+/**
  * Builds the canonical provider bundle and exposes only the bounded-selection
  * facts needed by reflection generation observability. The counts intentionally
  * do not become part of the model-facing bundle schema or artifact provenance.

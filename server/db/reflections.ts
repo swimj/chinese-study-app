@@ -1172,7 +1172,11 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
   return rows.map(mapReflectionGenerationRunRow);
 }
 
-function getReflectionGenerationRun(runId: string): ReflectionGenerationRunRecord {
+export function getReflectionGenerationRun(runId: string): ReflectionGenerationRunRecord {
+  const normalizedRunId = runId.trim();
+  if (normalizedRunId.length === 0) {
+    throw new Error('Expected non-empty reflection generation run id.');
+  }
   const row = getDb().prepare(`
     SELECT ${reflectionGenerationRunColumns.map((column) => `runs.${column}`).join(', ')},
       CASE
@@ -1186,7 +1190,7 @@ function getReflectionGenerationRun(runId: string): ReflectionGenerationRunRecor
       ON artifacts.source_session_id = runs.source_session_id
       AND artifacts.reflection_flow_version = runs.reflection_flow_version
     WHERE runs.run_id = ?
-  `).get(runId) as ReflectionGenerationRunRow | undefined;
+  `).get(normalizedRunId) as ReflectionGenerationRunRow | undefined;
   if (!row) throw new Error('Reflection generation run not found.');
   return mapReflectionGenerationRunRow(row);
 }
