@@ -394,7 +394,7 @@ function failureMetadata(error: unknown): LunaReflectionRunMetadata {
   }
   return {
     provider: 'openai',
-    modelConfig: LUNA_REFLECTION_MODEL_CONFIG.id,
+    modelConfig: LUNA_REFLECTION_MODEL_CONFIG.modelConfig,
     providerModel: LUNA_REFLECTION_MODEL_CONFIG.providerModel,
     promptVersion: LUNA_REFLECTION_PROMPT_VERSION,
     responseId: null,

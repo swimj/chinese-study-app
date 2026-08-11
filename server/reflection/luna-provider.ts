@@ -32,7 +32,6 @@ import {
 } from './run-diagnostics.ts';
 
 export const LUNA_REFLECTION_MODEL_CONFIG = {
-  id: 'gpt-5.6-luna-high',
   provider: 'openai',
   modelConfig: 'gpt-5.6-luna-high',
   providerModel: 'gpt-5.6-luna',
