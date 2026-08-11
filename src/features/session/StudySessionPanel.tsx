@@ -80,8 +80,6 @@ export function StudySessionPanel({
   productionHanziInput,
   productionHanziError,
   productionHanziInputRef,
-  productionContrastIntakeNote,
-  productionContrastIntakeMarked,
   contrastSelectedWordId,
   contrastAwaitingRating,
   activeRatingOptions,
@@ -90,7 +88,6 @@ export function StudySessionPanel({
   onRetrySessionReflection,
   onContinueAfterAutoForgot,
   onContinueAfterAutoContrastForgot,
-  onProductionContrastIntakeNoteChange,
   onDismissCurrentWord,
   onManageStudyAction,
   onDismissFrozenProductionWord,
@@ -142,8 +139,6 @@ export function StudySessionPanel({
   productionHanziInput: string;
   productionHanziError: string | null;
   productionHanziInputRef: RefObject<HTMLInputElement>;
-  productionContrastIntakeNote: string;
-  productionContrastIntakeMarked: boolean;
   contrastSelectedWordId: string | null;
   contrastAwaitingRating: boolean;
   activeRatingOptions: RatingOption[];
@@ -152,7 +147,6 @@ export function StudySessionPanel({
   onRetrySessionReflection: () => void;
   onContinueAfterAutoForgot: () => void;
   onContinueAfterAutoContrastForgot: () => void;
-  onProductionContrastIntakeNoteChange: (value: string) => void;
   onDismissCurrentWord: () => void;
   onManageStudyAction: (action: StudyManagementActionKind, note: string) => void;
   onDismissFrozenProductionWord: () => void;
@@ -248,29 +242,6 @@ export function StudySessionPanel({
               <span className="prompt-meta">{frozenProductionCard.example}</span>
             </div>
             <p className="notes">{studyProfile.labels.targetRecallIncorrect} This item was recorded as Forgot.</p>
-            {frozenProductionCard.attemptedHanzi !== null ? (
-              <div className="contrast-candidate-controls">
-              <span className="prompt-label">Contrast intake</span>
-              <span className="prompt-meta">
-                {frozenProductionCard.attemptedHanzi} {studyProfile.labels.targetContrastCandidate}
-              </span>
-              <textarea
-                value={productionContrastIntakeNote}
-                onChange={(event) => onProductionContrastIntakeNoteChange(event.target.value)}
-                disabled={personalNotesEditorOpen || studyManagementSubmitting || productionContrastIntakeMarked}
-                placeholder="Note"
-                rows={3}
-              />
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => onManageFrozenProductionAction('add_contrast_candidate', productionContrastIntakeNote)}
-                disabled={personalNotesEditorOpen || studyManagementSubmitting || productionContrastIntakeMarked}
-              >
-                {productionContrastIntakeMarked ? 'Marked for intake' : 'Mark for intake'}
-              </button>
-              </div>
-            ) : null}
           </div>
           <div className="session-action-bar">
             <SessionActionSection>
@@ -288,7 +259,6 @@ export function StudySessionPanel({
               <SessionActionSection>
                 <FrozenProductionCardActions
                   isSubmitting={studyManagementSubmitting}
-                  allowContrastCandidate={frozenProductionCard.attemptedHanzi !== null}
                   onDismissFrozenProductionWord={onDismissFrozenProductionWord}
                   onManageFrozenProductionAction={onManageFrozenProductionAction}
                 />
@@ -909,12 +879,10 @@ function CardActions({
 
 function FrozenProductionCardActions({
   isSubmitting,
-  allowContrastCandidate,
   onDismissFrozenProductionWord,
   onManageFrozenProductionAction,
 }: {
   isSubmitting: boolean;
-  allowContrastCandidate: boolean;
   onDismissFrozenProductionWord: () => void;
   onManageFrozenProductionAction: (action: StudyManagementActionKind, note: string) => void;
 }) {
@@ -936,7 +904,6 @@ function FrozenProductionCardActions({
         <ManageStudyPanel
           actionKind="production"
           status="review"
-          allowContrastCandidate={allowContrastCandidate}
           isSubmitting={isSubmitting}
           onDismissWord={() => {
             setManageOpen(false);
@@ -955,14 +922,12 @@ function FrozenProductionCardActions({
 function ManageStudyPanel({
   actionKind,
   status,
-  allowContrastCandidate = true,
   isSubmitting,
   onDismissWord,
   onManageStudyAction,
 }: {
   actionKind: SessionStudyItem['actionKind'] | null;
   status: Word['status'];
-  allowContrastCandidate?: boolean;
   isSubmitting: boolean;
   onDismissWord: () => void;
   onManageStudyAction: (action: StudyManagementActionKind, note: string) => void;
@@ -990,26 +955,6 @@ function ManageStudyPanel({
             >
               Suppress production
             </button>
-            {allowContrastCandidate ? (
-              <>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => onManageStudyAction('add_contrast_candidate', note)}
-                  disabled={isSubmitting}
-                >
-                  Add contrast candidate
-                </button>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => onManageStudyAction('suppress_skill_and_add_contrast_candidate', note)}
-                  disabled={isSubmitting}
-                >
-                  Suppress + add contrast
-                </button>
-              </>
-            ) : null}
             <button
               type="button"
               className="secondary-button"

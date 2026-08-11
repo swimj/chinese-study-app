@@ -852,7 +852,6 @@ export function createApp(options: CreateAppOptions = {}) {
     const contentRef = req.body?.contentRef ?? null;
     const managementAction = req.body?.managementAction;
     const note = req.body?.note ?? '';
-    const candidateText = req.body?.candidateText ?? null;
 
     if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
       res.status(400).json({ error: 'Expected non-empty session id' });
@@ -881,8 +880,6 @@ export function createApp(options: CreateAppOptions = {}) {
 
     if (
       managementAction !== 'suppress_skill' &&
-      managementAction !== 'add_contrast_candidate' &&
-      managementAction !== 'suppress_skill_and_add_contrast_candidate' &&
       managementAction !== 'bad_prompt'
     ) {
       res.status(400).json({ error: 'Expected valid managementAction' });
@@ -891,11 +888,6 @@ export function createApp(options: CreateAppOptions = {}) {
 
     if (typeof note !== 'string') {
       res.status(400).json({ error: 'Expected string note when provided' });
-      return;
-    }
-
-    if (candidateText !== null && typeof candidateText !== 'string') {
-      res.status(400).json({ error: 'Expected string candidateText when provided' });
       return;
     }
 
@@ -909,7 +901,6 @@ export function createApp(options: CreateAppOptions = {}) {
         contentRef: contentRef as StudyContentRef | null,
         managementAction: managementAction as StudyManagementActionKind,
         note,
-        candidateText,
       });
       res.status(201).json(event);
     } catch (error) {

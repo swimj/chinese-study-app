@@ -419,7 +419,6 @@ export type RecordStudyManagementActionInput = {
   contentRef: StudyContentRef | null;
   managementAction: StudyManagementActionKind;
   note?: string;
-  candidateText?: string | null;
 };
 
 export type ContrastClusterRow = {
