@@ -195,6 +195,18 @@ export type AcceptReflectionProposalResult = {
   invocation: OperationInvocationStatus;
 };
 
+export type ReplaceReflectionProposalInput = {
+  proposalId: string;
+  operation: ReflectionOperation;
+  invocationId?: string;
+  createdAt?: string;
+};
+
+export type ReplaceReflectionProposalResult = {
+  review: ProposalReviewStatus;
+  invocation: OperationInvocationStatus;
+};
+
 export type SupersedeReflectionProposalInput = {
   proposalId: string;
   supersession: ProposalSupersession;
@@ -1401,6 +1413,130 @@ export function acceptReflectionProposal(
           accepted_invocation_id = ?
       WHERE proposal_id = ?
     `).run(createdAt, acceptanceMode, invocationId, input.proposalId);
+    database.exec('COMMIT');
+  } catch (error) {
+    database.exec('ROLLBACK');
+    throw error;
+  }
+
+  const review = mapProposalReviewRow(requireProposalReviewRow(input.proposalId));
+  return { review, invocation: getReflectionInvocation(invocationId) };
+}
+
+export function replaceReflectionProposal(
+  input: ReplaceReflectionProposalInput,
+): ReplaceReflectionProposalResult {
+  const createdAt = input.createdAt ?? new Date().toISOString();
+  const invocationId = input.invocationId ?? randomUUID();
+  assertIsoTimestamp(createdAt, 'invocation creation timestamp');
+  assertNonEmpty(invocationId, 'invocation id');
+  const operationErrors = validateReflectionOperation(input.operation);
+  if (operationErrors.length > 0) {
+    throw new Error(`Cannot authorize invalid reflection operation:\n${operationErrors.join('\n')}`);
+  }
+
+  const database = getDb();
+  database.exec('BEGIN IMMEDIATE');
+  try {
+    const reviewRow = requireProposalReviewRow(input.proposalId);
+    assertProposalReviewTransition(
+      reviewRow.disposition as ProposalReviewDisposition['kind'],
+      'superseded',
+    );
+    const { proposal: originalProposal, evidenceItem } = originalProposalContextForReview(reviewRow);
+    if (
+      originalProposal.operation.kind === input.operation.kind
+      && originalProposal.operation.version === input.operation.version
+    ) {
+      throw new Error('A replacement proposal must change operation kind or version.');
+    }
+    const itemValidationErrors = validateReflectionOperation(input.operation, {
+      allowedWordIds: visibleWordIds(evidenceItem),
+      evidenceItemId: evidenceItem.itemId,
+    });
+    if ('servedCue' in evidenceItem) {
+      itemValidationErrors.push(...validateReflectionOperationEvidenceContext(
+        input.operation,
+        evidenceItem,
+        '$',
+      ));
+    }
+    if (itemValidationErrors.length > 0) {
+      throw new Error(
+        `Cannot authorize reflection operation outside its evidence item:\n`
+        + itemValidationErrors.join('\n'),
+      );
+    }
+    assertWordReferencesExist(input.operation);
+    const registration = getReflectionOperationRegistration(
+      input.operation.kind,
+      input.operation.version,
+    );
+    if (!registration) {
+      throw new Error(
+        `No reflection operation registration for ${input.operation.kind}@${input.operation.version}.`,
+      );
+    }
+    const initialApplication: OperationApplicationState = registration.applySupport === 'supported'
+      ? { kind: 'pending' }
+      : { kind: 'unsupported', reason: unsupportedApplicationReason(input.operation) };
+    const applicationColumns = applicationStateColumns(initialApplication);
+
+    database.prepare(`
+      INSERT INTO reflection_operation_invocations (
+        invocation_id,
+        created_at,
+        origin_kind,
+        origin_proposal_id,
+        origin_superseded_proposal_id,
+        operation_kind,
+        operation_version,
+        operation_json,
+        application_state,
+        application_updated_at,
+        unsupported_reason,
+        applied_at,
+        application_error,
+        stale_reason,
+        effect_refs_json,
+        satisfying_effect_refs_json
+      ) VALUES (?, ?, 'user_replacement', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      invocationId,
+      createdAt,
+      input.proposalId,
+      input.operation.kind,
+      input.operation.version,
+      JSON.stringify(input.operation),
+      initialApplication.kind,
+      createdAt,
+      applicationColumns.unsupportedReason,
+      applicationColumns.appliedAt,
+      applicationColumns.applicationError,
+      applicationColumns.staleReason,
+      applicationColumns.effectRefsJson,
+      applicationColumns.satisfyingEffectRefsJson,
+    );
+    database.prepare(`
+      UPDATE reflection_proposal_reviews
+      SET disposition = 'superseded',
+          updated_at = ?,
+          acceptance_mode = NULL,
+          accepted_invocation_id = NULL,
+          dismissal_reason = NULL,
+          supersession_source = 'user_replacement',
+          supersession_actor = 'user',
+          supersession_reason = ?,
+          replacement_proposal_id = NULL,
+          replacement_invocation_id = ?,
+          satisfying_effect_refs_json = '[]'
+      WHERE proposal_id = ?
+    `).run(
+      createdAt,
+      'The user authorized a different operation during proposal review.',
+      invocationId,
+      input.proposalId,
+    );
     database.exec('COMMIT');
   } catch (error) {
     database.exec('ROLLBACK');

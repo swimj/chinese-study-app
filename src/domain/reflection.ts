@@ -400,7 +400,8 @@ export type OperationApplicationStatus = {
 export type ReviewProposalRequest =
   | { action: 'defer' }
   | { action: 'dismiss'; reason: string | null }
-  | { action: 'accept'; operation: ReflectionOperation };
+  | { action: 'accept'; operation: ReflectionOperation }
+  | { action: 'replace'; operation: ReflectionOperation };
 
 export type ReflectionOperationRegistration = {
   kind: ReflectionOperation['kind'];

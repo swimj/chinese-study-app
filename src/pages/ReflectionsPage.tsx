@@ -13,6 +13,7 @@ import {
   buildReflectionItemPresentations,
   buildReflectionProposalPresentations,
   cloneReflectionOperation,
+  createReplacementOperation,
   getOperationDraftState,
   reflectionOperationLabel,
   summarizeReflectionTokenUsage,
@@ -188,6 +189,7 @@ function ProposalQueueView({
             onDefer={controller.deferProposal}
             onDismiss={controller.dismissProposal}
             onAccept={controller.acceptProposal}
+            onReplace={controller.replaceProposal}
             onWithdraw={controller.withdrawAuthorization}
           />
         </article>
@@ -321,6 +323,7 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                           onDefer={controller.deferProposal}
                           onDismiss={controller.dismissProposal}
                           onAccept={controller.acceptProposal}
+                          onReplace={controller.replaceProposal}
                           onWithdraw={controller.withdrawAuthorization}
                         />
                       ))}
@@ -592,6 +595,7 @@ function ProposalCard({
   onDefer,
   onDismiss,
   onAccept,
+  onReplace,
   onWithdraw,
 }: {
   proposal: ReflectionProposalDetailDto;
@@ -601,6 +605,7 @@ function ProposalCard({
   onDefer: (proposalId: string) => Promise<void>;
   onDismiss: (proposalId: string, reason: string | null) => Promise<void>;
   onAccept: (proposalId: string, operation: ReflectionOperation) => Promise<void>;
+  onReplace: (proposalId: string, operation: ReflectionOperation) => Promise<void>;
   onWithdraw: (invocationId: string) => Promise<void>;
 }) {
   const original = proposal.proposal.operation;
@@ -637,6 +642,30 @@ function ProposalCard({
       {unresolved ? (
         <>
           <ReflectionOperationEditor operation={draft} onChange={setDraft} />
+          <label className="reflection-field">
+            <span>Handle</span>
+            <select
+              aria-label="Handle"
+              disabled={submitting}
+              value={`${draft.kind}@${draft.version}`}
+              onChange={(event) => {
+                const [kind, versionText] = event.target.value.split('@');
+                setDraft(createReplacementOperation(
+                  kind as ReflectionOperation['kind'],
+                  Number(versionText),
+                  original,
+                  evidence,
+                ));
+              }}
+            >
+              <option value="suppress_definition_production@1">Suppress definition production</option>
+              <option value="create_contrast_cluster@1">Create contrast cluster (v1)</option>
+              <option value="create_contrast_cluster@2">Create contrast cluster (v2)</option>
+              <option value="repair_production_cue@1">Repair production cue (v1)</option>
+              <option value="repair_production_cue@2">Repair production cue (v2)</option>
+              <option value="accept_production_alternate@1">Accept production alternate</option>
+            </select>
+          </label>
           {draftState.validationErrors.length > 0 ? (
             <div className="reflection-validation" role="alert">
               <strong>Fix before accepting:</strong>
@@ -667,15 +696,17 @@ function ProposalCard({
             <button
               type="button"
               disabled={submitting || draftState.validationErrors.length > 0}
-              onClick={() => void onAccept(
-                proposal.review.proposalId,
-                draft,
+              onClick={() => void (draftState.acceptanceMode === 'replacement'
+                ? onReplace(proposal.review.proposalId, draft)
+                : onAccept(proposal.review.proposalId, draft)
               ).catch(() => undefined)}
             >
               {submitting
                 ? 'Saving...'
                 : draftState.acceptanceMode === 'exact'
                   ? 'Accept unchanged'
+                  : draftState.acceptanceMode === 'replacement'
+                    ? 'Authorize replacement'
                   : 'Accept revised'}
             </button>
           </div>
@@ -716,7 +747,16 @@ function ProposalCard({
                       disabled
                     />
                   </>
-                ) : null}
+                ) : proposal.review.disposition.kind === 'superseded'
+                    && proposal.review.disposition.supersession.source === 'user_replacement' ? (
+                      <>
+                        <h5>Authorized replacement</h5>
+                        <ReflectionOperationEditor
+                          operation={invocation.invocation.operation}
+                          disabled
+                        />
+                      </>
+                    ) : null}
               <ApplicationOutcome state={invocation.application.state} />
               {invocation.application.state.kind === 'unsupported'
                 || invocation.application.state.kind === 'pending' ? (

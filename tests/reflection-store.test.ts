@@ -497,6 +497,54 @@ describe('reflection durable store', { concurrency: false }, () => {
     );
   });
 
+  test('supersedes a proposal when the user authorizes a different handle', () => {
+    const artifact = dbModule.materializeReflectionArtifact(
+      materializationInput('replacement-session', suppressOperation('target')),
+    ).artifact;
+    const replacement: ReflectionOperation = {
+      kind: 'repair_production_cue',
+      version: 1,
+      wordId: 'target',
+      repairIntent: 'add_distinguishing_anchor',
+      proposedCues: [{ cueType: 'minimal_context', text: 'Use a distinguishing context.' }],
+    };
+
+    const replaced = dbModule.replaceReflectionProposal({
+      proposalId: artifact.proposals[0]!.review.proposalId,
+      operation: replacement,
+      invocationId: 'replacement-invocation',
+      createdAt: updatedAt,
+    });
+
+    assert.deepEqual(replaced.review.disposition, {
+      kind: 'superseded',
+      supersession: {
+        source: 'user_replacement',
+        actor: 'user',
+        reason: 'The user authorized a different operation during proposal review.',
+        replacementProposalId: null,
+        replacementInvocationId: 'replacement-invocation',
+        satisfyingEffectRefs: [],
+      },
+    });
+    assert.deepEqual(replaced.invocation.invocation.origin, {
+      kind: 'user_replacement',
+      supersededProposalId: artifact.proposals[0]!.review.proposalId,
+    });
+    assert.equal(replaced.invocation.application.state.kind, 'unsupported');
+    assert.deepEqual(
+      dbModule.getReflectionArtifactDetail(artifact.artifactId).proposals[0]?.invocation,
+      replaced.invocation,
+    );
+    assert.throws(
+      () => dbModule.replaceReflectionProposal({
+        proposalId: artifact.proposals[0]!.review.proposalId,
+        operation: replacement,
+      }),
+      /Invalid proposal review transition: superseded -> superseded/,
+    );
+  });
+
   test('persists application outcomes and rejects non-lifecycle transitions', () => {
     const artifact = dbModule.materializeReflectionArtifact(
       materializationInput('application-session', suppressOperation('target')),

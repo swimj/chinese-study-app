@@ -30,6 +30,7 @@ export type ReflectionPageController = {
   deferProposal: (proposalId: string) => Promise<void>;
   dismissProposal: (proposalId: string, reason: string | null) => Promise<void>;
   acceptProposal: (proposalId: string, operation: ReflectionOperation) => Promise<void>;
+  replaceProposal: (proposalId: string, operation: ReflectionOperation) => Promise<void>;
   withdrawAuthorization: (invocationId: string) => Promise<void>;
 };
 
@@ -230,7 +231,7 @@ export function useReflectionPageController({
     setError(null);
     try {
       await requireApi().reviewProposal(proposalId, request);
-      if (request.action === 'accept') {
+      if (request.action === 'accept' || request.action === 'replace') {
         try {
           void Promise.resolve(onAcceptedProposal?.()).catch(() => undefined);
         } catch {
@@ -297,6 +298,10 @@ export function useReflectionPageController({
     }),
     acceptProposal: (proposalId, operation) => reviewProposal(proposalId, {
       action: 'accept',
+      operation,
+    }),
+    replaceProposal: (proposalId, operation) => reviewProposal(proposalId, {
+      action: 'replace',
       operation,
     }),
     withdrawAuthorization,

@@ -614,7 +614,7 @@ export function getOperationDraftState(
   draft: ReflectionOperation,
   evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null = null,
 ): {
-  acceptanceMode: 'exact' | 'revised';
+  acceptanceMode: 'exact' | 'revised' | 'replacement';
   validationErrors: string[];
   applySupport: 'supported' | 'unsupported';
 } {
@@ -627,10 +627,65 @@ export function getOperationDraftState(
     validationErrors.push(...validateReflectionOperationEvidenceContext(draft, evidence, '$'));
   }
   return {
-    acceptanceMode: classifyProposalAcceptance(original, draft),
+    acceptanceMode: original.kind !== draft.kind || original.version !== draft.version
+      ? 'replacement'
+      : classifyProposalAcceptance(original, draft),
     validationErrors,
     applySupport: registration.applySupport,
   };
+}
+
+export function createReplacementOperation(
+  kind: ReflectionOperation['kind'],
+  version: number,
+  original: ReflectionOperation,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null,
+): ReflectionOperation {
+  const targetWordId = evidence?.targetWord?.wordId ?? primaryWordId(original);
+  const submittedWordId = evidence !== null && 'submittedWord' in evidence
+    ? evidence.submittedWord?.wordId ?? secondaryWordId(original)
+    : secondaryWordId(original);
+
+  switch (kind) {
+    case 'suppress_definition_production':
+      return { kind, version: 1, wordId: targetWordId };
+    case 'create_contrast_cluster':
+      return {
+        kind,
+        version: version === 2 ? 2 : 1,
+        title: '',
+        clusterNote: null,
+        members: submittedWordId !== '' && submittedWordId !== targetWordId
+          ? [{ wordId: targetWordId, nuanceNote: null }, { wordId: submittedWordId, nuanceNote: null }]
+          : [{ wordId: targetWordId, nuanceNote: null }],
+        prompts: [],
+      };
+    case 'repair_production_cue':
+      if (version === 2) {
+        return {
+          kind,
+          version: 2,
+          wordId: targetWordId,
+          taskId: `production-task:${targetWordId}:default_production`,
+          changes: [],
+          sourceAttemptJudgments: [],
+        };
+      }
+      return {
+        kind,
+        version: 1,
+        wordId: targetWordId,
+        proposedCues: [],
+        repairIntent: 'add_distinguishing_anchor',
+      };
+    case 'accept_production_alternate':
+      return {
+        kind,
+        version: 1,
+        targetWordId,
+        alternateWordId: submittedWordId,
+      };
+  }
 }
 
 export function reflectionOperationLabel(operation: ReflectionOperation): string {
@@ -643,6 +698,30 @@ export function reflectionOperationLabel(operation: ReflectionOperation): string
       return 'Repair production cue';
     case 'accept_production_alternate':
       return 'Accept production alternate';
+  }
+}
+
+function primaryWordId(operation: ReflectionOperation): string {
+  switch (operation.kind) {
+    case 'suppress_definition_production':
+    case 'repair_production_cue':
+      return operation.wordId;
+    case 'accept_production_alternate':
+      return operation.targetWordId;
+    case 'create_contrast_cluster':
+      return operation.members[0]?.wordId ?? '';
+  }
+}
+
+function secondaryWordId(operation: ReflectionOperation): string {
+  switch (operation.kind) {
+    case 'accept_production_alternate':
+      return operation.alternateWordId;
+    case 'create_contrast_cluster':
+      return operation.members[1]?.wordId ?? '';
+    case 'suppress_definition_production':
+    case 'repair_production_cue':
+      return '';
   }
 }
 
