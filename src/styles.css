@@ -2017,6 +2017,74 @@ button:disabled:hover {
   background: rgba(59, 130, 246, 0.28);
 }
 
+.reflection-retry-control {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reflection-retry-menu {
+  position: absolute;
+  z-index: 30;
+  top: 50%;
+  left: calc(100% + 0.45rem);
+  transform: translateY(-50%);
+  width: max-content;
+  min-width: 12.5rem;
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.65rem 0.7rem 0.55rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 0.7rem;
+  background: #0f172a;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.42);
+}
+
+.reflection-retry-menu-title {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.reflection-retry-menu-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.reflection-retry-menu-option {
+  display: block;
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: 0.45rem;
+  background: transparent;
+  color: #e2e8f0;
+  text-align: left;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.reflection-retry-menu-option:hover,
+.reflection-retry-menu-option.is-selected {
+  border-color: rgba(96, 165, 250, 0.35);
+  background: rgba(59, 130, 246, 0.18);
+  color: #eff6ff;
+}
+
+.reflection-retry-menu-hint {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.68rem;
+}
+
 .reflection-usage-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
@@ -2092,8 +2160,10 @@ button:disabled:hover {
 }
 
 .reflection-run-status {
+  position: relative;
   display: flex;
   justify-content: center;
+  overflow: visible;
 }
 
 .reflection-run-diagnostic {

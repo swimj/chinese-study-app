@@ -66,7 +66,9 @@ describe('reflection run log presentation', () => {
     assert.match(markup, /Cost estimate unavailable for this run/);
     assert.match(markup, /Rates as of 2026-07-30; price-v1/);
     assert.match(markup, /Cached/);
-    assert.match(markup, /Retry failed reflection: output truncated/);
+    assert.match(markup, /Retry reflection: output truncated\. Choose a model\./);
+    assert.doesNotMatch(markup, /<select/);
+    assert.doesNotMatch(markup, /Choose model for reflection retry/);
   });
 
   test('replaces retry with a concise generation status', () => {
@@ -80,7 +82,7 @@ describe('reflection run log presentation', () => {
     })];
     const markup = renderRuns(runs, { runId: 'failed', state: 'generating' });
     assert.match(markup, /Generating…/);
-    assert.doesNotMatch(markup, /Retry failed reflection/);
+    assert.doesNotMatch(markup, /Retry reflection/);
   });
 });
 
