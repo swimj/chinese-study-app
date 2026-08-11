@@ -15,7 +15,7 @@ import {
 import type { FetchImplementation } from '../llm/http.js';
 import { validateJsonSchemaIssues } from '../llm/json-schema-validator.js';
 import { createOpenAiCompatibleAdapter } from '../llm/openai-compatible.js';
-import { proxiedFetch } from '../llm/proxy-fetch.js';
+import { fetchImplementationForProvider } from '../llm/proxy-fetch.js';
 import {
   isOutputTruncationFinishReason,
   type NormalizedTokenUsage,
@@ -172,9 +172,10 @@ export function createReflectionProvider(
     apiKeyEnvironmentVariable: config.apiKeyEnvironmentVariable,
     structuredOutputMode: config.structuredOutputMode,
     maxTokensField: config.maxTokensField,
-    // Default through the local HTTP CONNECT proxy (same path as the LLM spike).
-    // Tests and callers may still inject a plain fetch implementation.
-    fetchImplementation: options.fetchImplementation ?? proxiedFetch,
+    // OpenAI defaults through the local HTTP CONNECT proxy (same path as the LLM spike).
+    // Other providers use direct fetch. Callers may still inject a custom implementation.
+    fetchImplementation: options.fetchImplementation
+      ?? fetchImplementationForProvider(config.provider),
   });
 
   return {
