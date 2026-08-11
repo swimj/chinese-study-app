@@ -16,7 +16,6 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `study-management.test.ts` | Suppress / bad-prompt / management actions | Dynamic `server/db.ts` |
 | `study-scheduler-state.test.ts` | Scheduler invariants | Dynamic `server/db.ts` |
 | `contrast-content.test.ts` | Contrast clusters and prompts | Dynamic `server/db.ts` |
-| `contextual-selection-intake.test.ts` | Contrast intake flows | Dynamic `server/db.ts` |
 | `reflection-domain.test.ts` | V3 result/operation validation, registry, exact/revised classification, lifecycle transitions | `src/domain/reflection.ts` |
 | `reflection-evidence-validation.test.ts` | Strict supplement/full-bundle shapes, validation-only attempt links, retired attempt/management metadata rejection, and initial-milestone evidence boundary | `src/domain/reflection-evidence.ts` |
 | `session-reflection-evidence.test.ts` | Raw production response persistence, evidence accumulation, accepted-attempt links, Undo/drop behavior | Session state + `session-reflection-evidence.ts` |
@@ -49,7 +48,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | --- | --- |
 | Session composition / SQL scheduling | `session-composition.test.ts` |
 | Session end / word lifecycle commits | `session-completion.test.ts` |
-| Contrast content or intake | `contrast-content.test.ts`, `contextual-selection-intake.test.ts` |
+| Contrast content | `contrast-content.test.ts` |
 | Study management / suppression | `study-management.test.ts` |
 | Priority / aliases | `user-priority.test.ts`, `priority-aliases.test.ts` |
 | Frontend session state only | `session-selectors.test.ts`, `session-bucket-state.test.ts` |

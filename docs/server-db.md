@@ -21,7 +21,7 @@ Domain-oriented re-export shims (navigation only; implementation stays in `persi
 | [`words.ts`](../server/db/words.ts) | `getWords`, `searchWords`, meanings, lifecycle completions |
 | [`priority.ts`](../server/db/priority.ts) | Unstudied priority queues, `addUnstudiedUserPriorityByHanzi` |
 | [`session-composition.ts`](../server/db/session-composition.ts) | `getSessionPayload`, projection guard |
-| [`contrast.ts`](../server/db/contrast.ts) | Clusters, prompts, intake |
+| [`contrast.ts`](../server/db/contrast.ts) | Clusters, prompts, candidate-intake table reader |
 | [`study-sessions.ts`](../server/db/study-sessions.ts) | Session records, attempt batches |
 | [`study-management.ts`](../server/db/study-management.ts) | Suppress / bad-prompt / management actions |
 | [`scheduler.ts`](../server/db/scheduler.ts) | Skill/admission state, invariants |
