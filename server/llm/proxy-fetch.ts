@@ -10,3 +10,8 @@ export const proxiedFetch: typeof globalThis.fetch = (input, init) =>
     ...(init as Record<string, unknown>),
     dispatcher: proxyDispatcher,
   } as Parameters<typeof undiciFetch>[1]);
+
+/** OpenAI is routed through the local proxy; other providers use direct fetch. */
+export function fetchImplementationForProvider(providerId: string): typeof globalThis.fetch {
+  return providerId === 'openai' ? proxiedFetch : globalThis.fetch;
+}
