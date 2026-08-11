@@ -18,14 +18,13 @@ src/
   study-profile.ts                # mandarin vs french client profile
 
   components/
-    AppChrome.tsx                 # nav (home, priority, intake, reflections, content), version, errors
+    AppChrome.tsx                 # nav (home, priority, reflections, content), version, errors
     MeaningList.tsx               # shared meaning list rendering
 
   pages/
     HomePage.tsx                  # home: overview + active session grid
     HomeOverviewPanel.tsx         # backend/session availability overview + Start session card (gear toggles SessionSettingsPanel)
     PriorityPage.tsx              # unstudied priority queue + triage
-    IntakePage.tsx                # contrast intake (candidates, cluster actions)
     ReflectionsPage.tsx           # artifact history/detail and proposal-level review
     ContentDiagnosticsPage.tsx    # read-only primitive content browser
 
@@ -47,10 +46,6 @@ src/
     priority/
       usePriorityPageController.ts # priority loading, search, batch updates
       priority-page-model.ts       # priority sorting helpers
-
-    contrast/
-      useIntakePageController.ts   # contrast intake page controller
-      useClusterPageController.ts  # cluster list/prompt management (used from Intake)
 
     reflection/
       useReflectionPageController.ts # open/history/detail loading and review mutations
@@ -78,14 +73,13 @@ src/
 
 `App.tsx` is intentionally thin. It owns only cross-page concerns:
 
-- current page selection (`home` | `priority` | `intake` | `reflections` | `content`)
+- current page selection (`home` | `priority` | `reflections` | `content`)
 - global error message
 - backend status refresh
 - app chrome wiring
 - personal-notes overlay mounting
 - wiring page controllers (`useStudySession`, `usePriorityPageController`,
-  `useIntakePageController`, `useClusterPageController`,
-  `useReflectionPageController`)
+  `useReflectionPageController`, `useContentDiagnosticsController`)
 
 Page-specific state should not drift back into `App.tsx`. Use a page controller hook or keep state inside the page component when it is purely local UI.
 
@@ -94,10 +88,6 @@ Page-specific state should not drift back into `App.tsx`. Use a page controller 
 `useStudySession` owns the in-flight study session on the home page (see Session Controller below).
 
 `usePriorityPageController` owns the priority page: loading, search, jump-to-word, batch priority updates, triage dismiss.
-
-`useIntakePageController` owns contrast intake: open candidates, resolve/merge/create cluster flows, suppress/report bad prompt from intake.
-
-`useClusterPageController` owns contrast cluster CRUD used from the intake page (cluster list, members, prompts, feedback resolution). `App.tsx` calls `clusterPage.loadData()` when opening intake and after mutating actions.
 
 `useReflectionPageController` owns the reflection page. See the
 [reflection frontend architecture map](../docs/reflection-frontend-architecture.md)
