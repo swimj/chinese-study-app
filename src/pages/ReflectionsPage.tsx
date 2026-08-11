@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import type {
   EffectRef,
   OperationApplicationState,
@@ -24,6 +24,20 @@ import {
   type ReflectionProposalDetailDto,
   type ReflectionProposalQueueKind,
 } from '../features/reflection/reflection-page-model';
+
+type ReflectionRetryMenuOption = {
+  id: string;
+  label: string;
+  model?: ReflectionModelChoice;
+};
+
+const REFLECTION_RETRY_MODEL_OPTIONS: ReadonlyArray<Omit<ReflectionRetryMenuOption, 'label'> & {
+  label: string;
+  model: ReflectionModelChoice;
+}> = [
+  { id: 'openai:gpt-5.6-luna-high', label: 'Luna high', model: 'openai:gpt-5.6-luna-high' },
+  { id: 'zai:glm-5.2-high', label: 'GLM-5.2 high', model: 'zai:glm-5.2-high' },
+];
 
 type ReflectionView = ReflectionProposalQueueKind | 'sessions' | 'usage';
 
@@ -495,40 +509,166 @@ function RunStatusControl({
     return <span className="reflection-state-pill state-generating" role="status">Generating…</span>;
   }
   if (run.retryable) {
-    const retryFailed = retryStatus?.runId === run.runId && retryStatus.state === 'failed';
-    const label = retryFailed
-      ? 'Retry failed. Retry this reflection again.'
-      : `Retry failed reflection${run.failureCode === null ? '' : `: ${humanize(run.failureCode)}`}`;
     return (
-      <span className="reflection-retry-control">
-        <button
-          type="button"
-          className="reflection-status-icon reflection-retry-button"
-          title={label}
-          aria-label={label}
-          onClick={() => void onRetry(run.runId)}
-        >
-          <span aria-hidden="true">↻</span>
-        </button>
-        <select
-          aria-label="Choose model for reflection retry"
-          defaultValue=""
-          onChange={(event) => {
-            const model = event.target.value as ReflectionModelChoice | '';
-            if (model) void onRetry(run.runId, model);
-            event.currentTarget.value = '';
-          }}
-        >
-          <option value="">Same model ({run.model})</option>
-          <option value="openai:gpt-5.6-luna-high">Luna high</option>
-          <option value="zai:glm-5.2-high">GLM-5.2 high</option>
-        </select>
-      </span>
+      <ReflectionRetryControl
+        run={run}
+        retryFailed={retryStatus?.runId === run.runId && retryStatus.state === 'failed'}
+        onRetry={onRetry}
+      />
     );
   }
   return run.state === 'succeeded'
     ? <StatusIcon kind="success" label="Reflection generation succeeded" />
     : <StatusIcon kind="failure" label="Reflection generation failed" />;
+}
+
+function ReflectionRetryControl({
+  run,
+  retryFailed,
+  onRetry,
+}: {
+  run: ReflectionGenerationRunDto;
+  retryFailed: boolean;
+  onRetry: (runId: string, model?: ReflectionModelChoice) => Promise<void>;
+}) {
+  const rootRef = useRef<HTMLSpanElement>(null);
+  const listId = useId();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const options: ReflectionRetryMenuOption[] = [
+    { id: 'same', label: `Same model (${run.model})` },
+    ...REFLECTION_RETRY_MODEL_OPTIONS,
+  ];
+  const label = retryFailed
+    ? 'Retry failed. Choose a model to retry this reflection.'
+    : `Retry reflection${run.failureCode === null ? '' : `: ${humanize(run.failureCode)}`}. Choose a model.`;
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    function handlePointerDown(event: MouseEvent) {
+      if (rootRef.current?.contains(event.target as Node)) return;
+      setMenuOpen(false);
+    }
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [menuOpen]);
+
+  function openMenu() {
+    setSelectedIndex(0);
+    setMenuOpen(true);
+  }
+
+  function closeMenu() {
+    setMenuOpen(false);
+    setSelectedIndex(0);
+  }
+
+  function confirmSelection(index = selectedIndex) {
+    const option = options[index];
+    if (option === undefined) return;
+    closeMenu();
+    void onRetry(run.runId, option.model);
+  }
+
+  function moveSelection(delta: number) {
+    setSelectedIndex((current) => {
+      const next = (current + delta + options.length) % options.length;
+      return next;
+    });
+  }
+
+  function handleRootKeyDown(event: KeyboardEvent<HTMLSpanElement>) {
+    if (!menuOpen) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        openMenu();
+      }
+      return;
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      moveSelection(1);
+      return;
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      moveSelection(-1);
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      confirmSelection();
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeMenu();
+    }
+  }
+
+  return (
+    <span
+      ref={rootRef}
+      className="reflection-retry-control"
+      onKeyDown={handleRootKeyDown}
+    >
+      <button
+        type="button"
+        className="reflection-status-icon reflection-retry-button"
+        title={label}
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={menuOpen}
+        aria-controls={menuOpen ? listId : undefined}
+        onClick={() => {
+          if (menuOpen) closeMenu();
+          else openMenu();
+        }}
+      >
+        <span aria-hidden="true">↻</span>
+      </button>
+      {menuOpen ? (
+        <div className="reflection-retry-menu" role="presentation">
+          <p className="reflection-retry-menu-title">Retry with</p>
+          <ul
+            id={listId}
+            className="reflection-retry-menu-list"
+            role="listbox"
+            aria-label="Choose model for reflection retry"
+            aria-activedescendant={`${listId}-option-${selectedIndex}`}
+          >
+            {options.map((option, index) => {
+              const selected = index === selectedIndex;
+              return (
+                <li key={option.id} role="presentation">
+                  <button
+                    type="button"
+                    id={`${listId}-option-${index}`}
+                    className={
+                      selected
+                        ? 'reflection-retry-menu-option is-selected'
+                        : 'reflection-retry-menu-option'
+                    }
+                    role="option"
+                    aria-selected={selected}
+                    tabIndex={-1}
+                    onMouseEnter={() => setSelectedIndex(index)}
+                    onClick={() => confirmSelection(index)}
+                  >
+                    {option.label}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="reflection-retry-menu-hint">↑↓ to choose · Enter to run</p>
+        </div>
+      ) : null}
+    </span>
+  );
 }
 
 function StatusIcon({ kind, label }: { kind: 'success' | 'failure'; label: string }) {

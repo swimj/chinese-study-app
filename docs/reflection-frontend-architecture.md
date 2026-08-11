@@ -109,8 +109,10 @@ a compact per-run table. It presents each attempt's provider/model, completion
 or failure state, response/finish metadata when available, eligible/included
 counts, normalized token categories, and the persisted estimated cost or an
 explicit unavailable state. Successful and failed states use compact icons;
-every retained bundle has an interactive retry control. Its primary action
-repeats the source model, while the model picker can select a comparison arm.
+every retained bundle has an interactive retry control. Clicking the compact
+retry icon opens a confirmation menu defaulting to the source model; arrow keys
+move the highlight, and Enter or a click starts the retry (including an
+explicit comparison-arm model when selected).
 This remains
 observability for the initial reflection flow, not a learner correctness signal
 or a replacement for immutable artifact history.
