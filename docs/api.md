@@ -265,39 +265,13 @@ missing proposal/invocation ids return `404`; unexpected failures return `500`.
 | POST | `/api/study-management/production/suppress` | `study-management` |
 | POST | `/api/study-management/production/bad-prompt` | `study-management` |
 
-## Contrast clusters and prompts
+## Contrast clusters and intake (retired HTTP)
 
-Adding a cluster member makes that word eligible for contextual-selection
-practice by ensuring normal relevance and enabled, initialized scheduler state.
-Removing a word from every cluster removes its available contrast content and
-is the supported way to stop contrast practice for that word; contrast actions
-do not expose generic skill suppression.
-
-| Method | Path | Handler domain |
-| --- | --- | --- |
-| GET | `/api/contrast-clusters` | `contrast` |
-| POST | `/api/contrast-clusters` | `contrast` |
-| PATCH | `/api/contrast-clusters/:clusterId` | `contrast` |
-| POST | `/api/contrast-clusters/:clusterId/members` | `contrast` |
-| PATCH | `/api/contrast-clusters/:clusterId/members/:wordId` | `contrast` |
-| DELETE | `/api/contrast-clusters/:clusterId/members/:wordId` | `contrast` |
-| POST | `/api/contrast-clusters/:clusterId/prompts` | `contrast` |
-| PATCH | `/api/contrast-prompts/:promptId` | `contrast` |
-| POST | `/api/contrast-prompts/:promptId/resolve-bad-feedback` | `contrast` |
-| DELETE | `/api/contrast-prompts/:promptId` | `contrast` |
-
-## Contrast intake
-
-| Method | Path | Handler domain |
-| --- | --- | --- |
-| GET | `/api/contrast-intake/groups` | `contrast` |
-| GET | `/api/contrast-intake/words` | `contrast` |
-| POST | `/api/contrast-intake/words/:targetWordId/resolve` | `contrast` |
-| POST | `/api/contrast-intake/words/:targetWordId/merge-suggested-clusters` | `contrast` |
-| POST | `/api/contrast-intake/groups/accept` | `contrast` |
-| POST | `/api/contrast-intake/groups/dismiss` | `contrast` |
-| POST | `/api/contrast-intake/groups/create-cluster` | `contrast` |
-| POST | `/api/contrast-intake/groups/add-to-cluster` | `contrast` |
-| POST | `/api/contrast-intake/groups/add-prompt` | `contrast` |
+Contrast-cluster management routes (`/api/contrast-clusters*`,
+`/api/contrast-prompts*`) and projected contrast-intake triage routes
+(`/api/contrast-intake/*`) are retired. Cluster/prompt creation for study now
+goes through reflection `create_contrast_cluster` application and persistence
+primitives; historical `contrast_candidate_intake` rows remain readable via
+`getContrastCandidateIntake()`.
 
 Domain column matches [server-db.md](./server-db.md) modules.
