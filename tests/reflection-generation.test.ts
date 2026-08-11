@@ -20,7 +20,7 @@ import {
 const generatedAt = '2026-07-29T12:00:00.000Z';
 
 describe('initial reflection generation orchestration', () => {
-  test('returns a durable preexisting artifact without rebuilding evidence or calling Luna', async () => {
+  test('creates a new candidate even when a prior artifact exists for the session and flow', async () => {
     let bundleCalls = 0;
     let providerCalls = 0;
     let materializeCalls = 0;
@@ -47,13 +47,13 @@ describe('initial reflection generation orchestration', () => {
     });
 
     assert.deepEqual(await service.generate(' session-1 ', { ignored: true }), {
-      artifactId: 'existing-artifact',
-      proposalCount: 2,
-      status: 'existing',
+      artifactId: 'unexpected-artifact',
+      proposalCount: 0,
+      status: 'created',
     });
-    assert.equal(bundleCalls, 0);
-    assert.equal(providerCalls, 0);
-    assert.equal(materializeCalls, 0);
+    assert.equal(bundleCalls, 1);
+    assert.equal(providerCalls, 1);
+    assert.equal(materializeCalls, 1);
   });
 
   test('enriches, calls the configured provider, and persists provider metadata once', async () => {
@@ -87,7 +87,10 @@ describe('initial reflection generation orchestration', () => {
       proposalCount: 1,
       status: 'created',
     });
-    assert.deepEqual(persisted, {
+    assert.equal(persisted?.sourceRunId !== undefined, true);
+    assert.equal(persisted?.sourceRunId, recordedRun?.runId);
+    const { sourceRunId: _sourceRunId, ...persistedWithoutRun } = persisted!;
+    assert.deepEqual(persistedWithoutRun, {
       sourceSessionId: 'session-1',
       reflectionFlowVersion: 'initial_post_session_reflection.v2',
       generatedAt,
@@ -97,7 +100,8 @@ describe('initial reflection generation orchestration', () => {
       evidenceBundle,
       result: result(),
     });
-    assert.deepEqual(recordedRun, {
+    const { runId: _runId, ...recordedRunWithoutId } = recordedRun!;
+    assert.deepEqual(recordedRunWithoutId, {
       sourceSessionId: 'session-1',
       reflectionFlowVersion: 'initial_post_session_reflection.v2',
       startedAt: generatedAt,

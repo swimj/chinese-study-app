@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { AppPageKey } from '../../components/AppChrome';
 import type { ReflectionOperation, ReviewProposalRequest } from '../../domain/reflection';
+import type { ReflectionModelChoice } from '../../services/api';
 import type {
   ReflectionArtifactDetailDto,
   ReflectionArtifactSummaryDto,
@@ -26,7 +27,7 @@ export type ReflectionPageController = {
   openPage: () => Promise<void>;
   refresh: () => Promise<void>;
   selectArtifact: (artifactId: string) => Promise<void>;
-  retryGenerationRun: (runId: string) => Promise<void>;
+  retryGenerationRun: (runId: string, model?: ReflectionModelChoice) => Promise<void>;
   deferProposal: (proposalId: string) => Promise<void>;
   dismissProposal: (proposalId: string, reason: string | null) => Promise<void>;
   acceptProposal: (proposalId: string, operation: ReflectionOperation) => Promise<void>;
@@ -191,8 +192,8 @@ export function useReflectionPageController({
     }
   }
 
-  async function retryGenerationRun(runId: string): Promise<void> {
-    await runGenerationAttempt(runId, () => requireApi().retryGenerationRun(runId));
+  async function retryGenerationRun(runId: string, model?: ReflectionModelChoice): Promise<void> {
+    await runGenerationAttempt(runId, () => requireApi().retryGenerationRun(runId, model));
   }
 
   async function runGenerationAttempt(

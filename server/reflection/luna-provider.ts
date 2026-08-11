@@ -34,14 +34,20 @@ import {
 export const LUNA_REFLECTION_MODEL_CONFIG = {
   id: 'gpt-5.6-luna-high',
   provider: 'openai',
+  modelConfig: 'gpt-5.6-luna-high',
   providerModel: 'gpt-5.6-luna',
   reasoningEffort: 'high',
   maxOutputTokens: 40_000,
   timeoutMs: 180_000,
+  promptVersion: 'reflection-v5',
+  defaultBaseUrl: 'https://api.openai.com/v1',
+  apiKeyEnvironmentVariable: 'OPENAI_API_KEY',
+  structuredOutputMode: 'json_schema',
+  maxTokensField: 'max_completion_tokens',
+  baseUrlEnvironmentVariable: 'OPENAI_BASE_URL',
 } as const;
 export const LUNA_REFLECTION_PROMPT_VERSION = 'reflection-v5' as const;
 
-const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
 const productionPromptUrl = new URL('./prompts/reflection.md', import.meta.url);
 
 export type LunaReflectionFailureCode =
@@ -98,10 +104,10 @@ export class LunaReflectionProviderError extends Error {
 }
 
 export type LunaReflectionRunMetadata = {
-  provider: 'openai';
-  modelConfig: 'gpt-5.6-luna-high';
-  providerModel: 'gpt-5.6-luna';
-  promptVersion: 'reflection-v5';
+  provider: string;
+  modelConfig: string;
+  providerModel: string;
+  promptVersion: string;
   responseId: string | null;
   finishReason: string | null;
   usage: NormalizedTokenUsage;
@@ -123,6 +129,21 @@ export type LunaReflectionProviderOptions = {
   diagnosticSink?: ReflectionProviderDiagnosticSink;
 };
 
+export type ReflectionProviderConfig = {
+  provider: string;
+  modelConfig: string;
+  providerModel: string;
+  reasoningEffort: 'high' | 'max';
+  maxOutputTokens: number;
+  timeoutMs: number;
+  promptVersion: string;
+  defaultBaseUrl: string;
+  apiKeyEnvironmentVariable: string;
+  structuredOutputMode: 'json_schema' | 'json_object';
+  maxTokensField: 'max_completion_tokens' | 'max_tokens';
+  baseUrlEnvironmentVariable?: string;
+};
+
 let productionPromptPromise: Promise<string> | null = null;
 
 function loadProductionPrompt(): Promise<string> {
@@ -138,13 +159,20 @@ function configuredValue(value: string | undefined): string | null {
 export function createLunaReflectionProvider(
   options: LunaReflectionProviderOptions = {},
 ): LunaReflectionProvider {
+  return createReflectionProvider(LUNA_REFLECTION_MODEL_CONFIG, options);
+}
+
+export function createReflectionProvider(
+  config: ReflectionProviderConfig,
+  options: LunaReflectionProviderOptions = {},
+): LunaReflectionProvider {
   const environment = options.environment ?? process.env;
   const adapter = createOpenAiCompatibleAdapter({
-    id: 'openai',
-    defaultBaseUrl: DEFAULT_OPENAI_BASE_URL,
-    apiKeyEnvironmentVariable: 'OPENAI_API_KEY',
-    structuredOutputMode: 'json_schema',
-    maxTokensField: 'max_completion_tokens',
+    id: config.provider,
+    defaultBaseUrl: config.defaultBaseUrl,
+    apiKeyEnvironmentVariable: config.apiKeyEnvironmentVariable,
+    structuredOutputMode: config.structuredOutputMode,
+    maxTokensField: config.maxTokensField,
     // Default through the local HTTP CONNECT proxy (same path as the LLM spike).
     // Tests and callers may still inject a plain fetch implementation.
     fetchImplementation: options.fetchImplementation ?? proxiedFetch,
@@ -154,24 +182,26 @@ export function createLunaReflectionProvider(
     async generate(bundle: SessionReflectionBundleV2): Promise<LunaReflectionSuccess> {
       // Read credentials at call time so importing or constructing the service
       // never requires secrets and local configuration can be supplied later.
-      const apiKey = configuredValue(environment.OPENAI_API_KEY);
+      const apiKey = configuredValue(environment[config.apiKeyEnvironmentVariable]);
       if (apiKey === null) throw new LunaReflectionProviderError('missing_config');
-      const baseUrl = configuredValue(environment.OPENAI_BASE_URL);
+      const baseUrl = config.baseUrlEnvironmentVariable === undefined
+        ? null
+        : configuredValue(environment[config.baseUrlEnvironmentVariable]);
       const systemPrompt = options.systemPrompt ?? await loadProductionPrompt();
       const clientRequestId = randomUUID();
 
       let providerResult;
       try {
         providerResult = await adapter.run({
-          model: LUNA_REFLECTION_MODEL_CONFIG.providerModel,
-          reasoningEffort: LUNA_REFLECTION_MODEL_CONFIG.reasoningEffort,
+          model: config.providerModel,
+          reasoningEffort: config.reasoningEffort,
           systemPrompt,
           userPrompt: JSON.stringify(bundle),
           outputSchemaName: SESSION_REFLECTION_RESULT_V5_WIRE_SCHEMA_NAME,
           outputSchema: sessionReflectionResultV5WireSchema,
-          maxOutputTokens: LUNA_REFLECTION_MODEL_CONFIG.maxOutputTokens,
+          maxOutputTokens: config.maxOutputTokens,
           temperature: null,
-          timeoutMs: LUNA_REFLECTION_MODEL_CONFIG.timeoutMs,
+          timeoutMs: config.timeoutMs,
           cachePrompt: true,
           clientRequestId,
         }, {
@@ -187,7 +217,7 @@ export function createLunaReflectionProvider(
         throw new LunaReflectionProviderError('upstream_failure', 0, clientRequestId);
       }
 
-      const metadata = runMetadataFromProviderResult(providerResult);
+      const metadata = runMetadataFromProviderResult(providerResult, config);
       if (isOutputTruncationFinishReason(providerResult.finishReason)) {
         throw new LunaReflectionProviderError(
           'output_truncated', 0, clientRequestId, metadata,
@@ -251,12 +281,12 @@ function runMetadataFromProviderResult(input: {
   responseId: string | null;
   finishReason: string | null;
   usage: NormalizedTokenUsage;
-}): LunaReflectionRunMetadata {
+}, config: ReflectionProviderConfig): LunaReflectionRunMetadata {
   return {
-    provider: 'openai',
-    modelConfig: LUNA_REFLECTION_MODEL_CONFIG.id,
-    providerModel: LUNA_REFLECTION_MODEL_CONFIG.providerModel,
-    promptVersion: LUNA_REFLECTION_PROMPT_VERSION,
+    provider: config.provider,
+    modelConfig: config.modelConfig,
+    providerModel: config.providerModel,
+    promptVersion: config.promptVersion,
     responseId: input.responseId,
     finishReason: input.finishReason,
     usage: input.usage,

@@ -3,7 +3,7 @@ import type { NormalizedTokenUsage } from '../llm/types.ts';
 export type ReflectionRunPricingSnapshot = {
   id: string;
   pricingAsOf: string;
-  provider: 'openai';
+  provider: string;
   providerModel: 'gpt-5.6-luna';
   serviceTier: 'standard';
   contextBand: 'short';
@@ -33,6 +33,22 @@ export const INITIAL_LUNA_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricingSn
   outputPerMillionUsd: 1.20,
 };
 
+export const INITIAL_GLM_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricingSnapshot = {
+  id: 'zai-glm-5.2-standard-short-context-2026-08-11',
+  pricingAsOf: '2026-08-11',
+  provider: 'zai',
+  providerModel: 'glm-5.2',
+  serviceTier: 'standard',
+  contextBand: 'short',
+  currency: 'USD',
+  inputPerMillionUsd: 1.4,
+  cachedInputPerMillionUsd: 0.26,
+  // Z.AI lists cached-input storage as limited-time free; the null-free
+  // convention records that no separately reported write rate was charged.
+  cacheWriteInputPerMillionUsd: 0,
+  outputPerMillionUsd: 4.4,
+};
+
 export type ReflectionRunCostEstimate = {
   estimatedCostUsd: number;
   pricing: ReflectionRunPricingSnapshot;
@@ -43,10 +59,14 @@ export function estimateInitialReflectionRunCost(input: {
   providerModel: string;
   usage: NormalizedTokenUsage;
 }): ReflectionRunCostEstimate | null {
-  const pricing = INITIAL_LUNA_STANDARD_SHORT_CONTEXT_PRICING;
+  const pricing = [
+    INITIAL_LUNA_STANDARD_SHORT_CONTEXT_PRICING,
+    INITIAL_GLM_STANDARD_SHORT_CONTEXT_PRICING,
+  ].find((candidate) => (
+    input.provider === candidate.provider && input.providerModel === candidate.providerModel
+  ));
   if (
-    input.provider !== pricing.provider
-    || input.providerModel !== pricing.providerModel
+    pricing === undefined
     || input.usage.inputTokens === null
     || input.usage.outputTokens === null
   ) {

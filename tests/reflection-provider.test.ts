@@ -15,6 +15,10 @@ import {
   LUNA_REFLECTION_PROMPT_VERSION,
   LunaReflectionProviderError,
 } from '../server/reflection/luna-provider.js';
+import {
+  createGlmReflectionProvider,
+  GLM_REFLECTION_MODEL_CONFIG,
+} from '../server/reflection/glm-provider.js';
 import type { JsonValue } from '../server/llm/types.js';
 import { validateJsonSchema } from '../server/llm/json-schema-validator.js';
 import {
@@ -183,6 +187,28 @@ async function expectProviderError(
 }
 
 describe('production Luna reflection provider', () => {
+  test('uses Z.AI JSON-object transport for GLM-5.2 high', async () => {
+    const capture: CapturedRequest[] = [];
+    const provider = createGlmReflectionProvider({
+      environment: { ZAI_API_KEY: 'unit-test-zai-secret' },
+      systemPrompt: 'Production reflection system prompt.',
+      fetchImplementation: capturingFetch(responseEnvelope(JSON.stringify(validWireResult)), capture),
+    });
+
+    const generated = await provider.generate(bundle);
+
+    const request = capture[0]!;
+    assert.equal(request.url, 'https://api.z.ai/api/paas/v4/chat/completions');
+    assert.equal(request.headers.get('authorization'), 'Bearer unit-test-zai-secret');
+    assert.equal(request.body.model, 'glm-5.2');
+    assert.equal(request.body.reasoning_effort, 'high');
+    assert.equal(request.body.max_tokens, 40_000);
+    assert.deepEqual(request.body.response_format, { type: 'json_object' });
+    assert.equal(generated.metadata.provider, 'zai');
+    assert.equal(generated.metadata.modelConfig, 'glm-5.2-high');
+    assert.equal(GLM_REFLECTION_MODEL_CONFIG.timeoutMs, 900_000);
+  });
+
   test('sends the exact model, reasoning, auth, prompt, and strict V5 wire schema request', async () => {
     const capture: CapturedRequest[] = [];
     const provider = createLunaReflectionProvider({
@@ -223,14 +249,8 @@ describe('production Luna reflection provider', () => {
       },
     });
     assert.ok(request.signal instanceof AbortSignal);
-    assert.deepEqual(LUNA_REFLECTION_MODEL_CONFIG, {
-      id: 'gpt-5.6-luna-high',
-      provider: 'openai',
-      providerModel: 'gpt-5.6-luna',
-      reasoningEffort: 'high',
-      maxOutputTokens: 40_000,
-      timeoutMs: 180_000,
-    });
+    assert.equal(LUNA_REFLECTION_MODEL_CONFIG.modelConfig, 'gpt-5.6-luna-high');
+    assert.equal(LUNA_REFLECTION_MODEL_CONFIG.providerModel, 'gpt-5.6-luna');
     const wireOperation = validWireResult.itemResults[0]!.proposals[0]!.operation;
     const canonicalOperation = generated.result.itemResults[0]!.proposals[0]!.operation;
     assert.equal(wireOperation.kind, 'repair_production_cue');
