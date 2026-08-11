@@ -14,11 +14,8 @@ import { AppChrome, type AppPageKey } from './components/AppChrome';
 import { PersonalNotesEditorOverlay } from './features/session/PersonalNotesEditorOverlay';
 import { useStudySession } from './features/session/useStudySession';
 import { usePriorityPageController } from './features/priority/usePriorityPageController';
-import { useClusterPageController } from './features/contrast/useClusterPageController';
-import { useIntakePageController } from './features/contrast/useIntakePageController';
 import { HomePage } from './pages/HomePage';
 import { PriorityPage } from './pages/PriorityPage';
-import { IntakePage } from './pages/IntakePage';
 import { ReflectionsPage } from './pages/ReflectionsPage';
 import { useReflectionPageController } from './features/reflection/useReflectionPageController';
 import { useContentDiagnosticsController } from './features/content/useContentDiagnosticsController';
@@ -35,14 +32,6 @@ function App() {
     onSessionEnded: reloadDashboard,
   });
   const priorityPage = usePriorityPageController({
-    currentPage,
-    setCurrentPage,
-    setError,
-  });
-  const clusterPage = useClusterPageController({
-    setError,
-  });
-  const intakePage = useIntakePageController({
     currentPage,
     setCurrentPage,
     setError,
@@ -98,10 +87,6 @@ function App() {
     void studySession.refreshSessionPrefetch().catch(() => undefined);
   }
 
-  async function refreshContrastManagementState() {
-    await clusterPage.loadData();
-  }
-
   const sessionActive = currentPage === 'home' && studySession.homePageProps.sessionStarted;
 
   return (
@@ -111,15 +96,10 @@ function App() {
       version={APP_VERSION}
       sessionActive={sessionActive}
       priorityPageLoading={priorityPage.isLoading}
-      intakePageLoading={intakePage.isLoading}
       reflectionPageLoading={reflectionPage.isLoading}
       contentPageLoading={contentPage.isLoading}
       onOpenHomePage={() => setCurrentPage('home')}
       onOpenPriorityPage={() => void priorityPage.openPage()}
-      onOpenIntakePage={() => void (async () => {
-        await clusterPage.loadData();
-        await intakePage.openPage();
-      })()}
       onOpenReflectionsPage={() => void reflectionPage.openPage()}
       onOpenContentPage={() => void contentPage.openPage()}
     >
@@ -154,52 +134,6 @@ function App() {
           bulkDismissSubmitting={priorityPage.bulkDismissSubmitting}
           onDismissFromTriage={(wordId) => void priorityPage.dismissFromTriage(wordId)}
           onBulkDismissFromTriage={(wordIds) => void priorityPage.bulkDismissFromTriage(wordIds)}
-        />
-      ) : currentPage === 'intake' ? (
-        <IntakePage
-          words={intakePage.words}
-          selectedWordIndex={intakePage.selectedWordIndex}
-          isSaving={intakePage.isSaving}
-          onSelectWordIndex={intakePage.selectWordIndex}
-          onResolveWord={async (targetWordId) => {
-            await intakePage.resolveWord(targetWordId);
-            await refreshContrastManagementState();
-          }}
-          onMergeSuggestedClusters={async (input) => {
-            const clusterId = await intakePage.mergeSuggestedClusters(input);
-            await refreshContrastManagementState();
-            clusterPage.selectCluster(clusterId);
-            return clusterId;
-          }}
-          onSuppressProduction={async (targetWordId) => {
-            await intakePage.suppressProduction(targetWordId);
-            await refreshContrastManagementState();
-          }}
-          onReportBadPrompt={async (input) => {
-            await intakePage.reportBadPrompt(input);
-            await refreshContrastManagementState();
-          }}
-          onCreateClusterForWord={async (input) => {
-            const clusterId = await intakePage.createClusterForWord(input);
-            await refreshContrastManagementState();
-            clusterPage.selectCluster(clusterId);
-            return clusterId;
-          }}
-          clusters={clusterPage.clusters}
-          selectedClusterId={clusterPage.selectedClusterId}
-          wordSearchResults={clusterPage.wordSearchResults}
-          isSavingCluster={clusterPage.isSavingPrompt}
-          onSelectCluster={clusterPage.selectCluster}
-          onSearchWords={clusterPage.searchWords}
-          onCreateCluster={clusterPage.createCluster}
-          onUpdateCluster={clusterPage.updateCluster}
-          onAddMember={clusterPage.addMember}
-          onUpdateMember={clusterPage.updateMember}
-          onRemoveMember={clusterPage.removeMember}
-          onCreatePrompt={clusterPage.createPrompt}
-          onUpdatePrompt={clusterPage.updatePrompt}
-          onResolvePromptFeedback={clusterPage.resolvePromptFeedback}
-          onDeletePrompt={clusterPage.deletePrompt}
         />
       ) : currentPage === 'reflections' ? (
         <ReflectionsPage controller={reflectionPage} />

@@ -29,8 +29,8 @@ Express (server/index.ts, :5174)
 | App shell | `App.tsx`, `components/AppChrome.tsx` | Page routing, global errors, backend status |
 | Home / study | `pages/HomePage.tsx`, `features/session/*` | Session runtime |
 | Priority | `pages/PriorityPage.tsx`, `features/priority/*` | Unstudied queue management |
-| Contrast intake | `pages/IntakePage.tsx`, `features/contrast/useIntakePageController.ts` | Candidate review |
-| Cluster management | `pages/ClusterManagementPage.tsx`, `features/contrast/useClusterPageController.ts` | Overlay from app chrome |
+| Reflections | `pages/ReflectionsPage.tsx`, `features/reflection/*` | Artifact history and proposal review |
+| Content diagnostics | `pages/ContentDiagnosticsPage.tsx`, `features/content/*` | Read-only primitive content browser |
 | Shared domain types | `domain/study-actions.ts`, `types.ts` | Used by FE and imported by server |
 | Study profile | `study-profile.ts` | Mandarin vs French client behavior |
 
