@@ -11,6 +11,7 @@ import type { ReflectionModelChoice } from '../services/api';
 import { ReflectionOperationEditor } from '../features/reflection/ReflectionOperationEditor';
 import type { ReflectionPageController } from '../features/reflection/useReflectionPageController';
 import {
+  buildNoDurableChangeGists,
   buildReflectionItemPresentations,
   buildReflectionProposalPresentations,
   cloneReflectionOperation,
@@ -18,6 +19,7 @@ import {
   getOperationDraftState,
   reflectionOperationLabel,
   summarizeReflectionTokenUsage,
+  type NoDurableChangeReflectionGist,
   type ReflectionArtifactSummaryDto,
   type ReflectionGenerationRunDto,
   type ReflectionProposalPresentation,
@@ -217,6 +219,7 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
   const items = controller.selectedArtifact === null
     ? []
     : buildReflectionItemPresentations(controller.selectedArtifact);
+  const noDurableChangeGists = buildNoDurableChangeGists(items);
 
   return (
     <div className="reflection-layout">
@@ -269,11 +272,22 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                   {controller.selectedArtifact.promptVersion}
                 </p>
               </div>
-              <span className="reflection-count-pill">
-                {controller.selectedArtifact.proposals.length} proposal
-                {controller.selectedArtifact.proposals.length === 1 ? '' : 's'}
-              </span>
+              <div className="reflection-header-counts">
+                <span className="reflection-count-pill">
+                  {controller.selectedArtifact.proposals.length} proposal
+                  {controller.selectedArtifact.proposals.length === 1 ? '' : 's'}
+                </span>
+                {noDurableChangeGists.length === 0 ? null : (
+                  <span className="reflection-count-pill reflection-count-pill-muted">
+                    {noDurableChangeGists.length} no durable change
+                  </span>
+                )}
+              </div>
             </section>
+
+            {noDurableChangeGists.length === 0 ? null : (
+              <NoDurableChangeGistPanel gists={noDurableChangeGists} />
+            )}
 
             {items.map((item, itemIndex) => (
               <article className="panel reflection-item-card" key={item.result.itemId}>
@@ -326,7 +340,9 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                   <h3>Proposals</h3>
                   {item.proposals.length === 0 ? (
                     <p className="notes">
-                      Informational reflection only; no change was proposed.
+                      {item.result.diagnosisTags.includes('ordinary_retrieval_noise')
+                        ? 'Judged as ordinary forgetting / retrieval noise; no durable change proposed.'
+                        : 'Informational reflection only; no change was proposed.'}
                     </p>
                   ) : (
                     <div className="reflection-proposal-list">
@@ -355,6 +371,52 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
         )}
       </main>
     </div>
+  );
+}
+
+function NoDurableChangeGistPanel({
+  gists,
+}: {
+  gists: NoDurableChangeReflectionGist[];
+}) {
+  return (
+    <section className="panel reflection-no-change-gist" aria-label="No durable change">
+      <div className="reflection-section-heading">
+        <div>
+          <p className="reflection-eyebrow">Session observability</p>
+          <h3>No durable change</h3>
+        </div>
+      </div>
+      <p className="notes">
+        Bundle items with empty proposal lists — often ordinary forgetting / retrieval noise,
+        sometimes insufficient evidence or questions only. Full item cards remain below.
+      </p>
+      <ul className="reflection-no-change-list">
+        {gists.map((gist) => (
+          <li key={gist.itemId}>
+            <div className="reflection-no-change-row">
+              <strong>{gist.title}</strong>
+              <div className="reflection-tag-list">
+                {gist.diagnosisTags.map((tag) => (
+                  <span className="reflection-tag" key={tag}>{humanize(tag)}</span>
+                ))}
+              </div>
+            </div>
+            <p className="notes reflection-no-change-context">
+              {[
+                gist.responseSummary,
+                gist.cueSummary === null ? null : `Cue: ${gist.cueSummary}`,
+                gist.questionCount === 0 ? null : `${gist.questionCount} question${gist.questionCount === 1 ? '' : 's'}`,
+                gist.unhandledNeedCount === 0
+                  ? null
+                  : `${gist.unhandledNeedCount} unhandled need${gist.unhandledNeedCount === 1 ? '' : 's'}`,
+              ].filter((part): part is string => part !== null).join(' · ') || 'No extra evidence summary'}
+            </p>
+            <p>{gist.observation}</p>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -729,6 +791,9 @@ function ArtifactList({
               <strong>{formatDateTime(artifact.generatedAt)}</strong>
               <span>
                 {unreadable ? 'Unreadable · ' : ''}
+                {artifact.readState === 'available'
+                  ? `${artifact.itemCount} item${artifact.itemCount === 1 ? '' : 's'} · `
+                  : ''}
                 {artifact.openProposalCount} open · {artifact.proposalCount} total
               </span>
             </button>
