@@ -9,6 +9,7 @@ import type {
   SessionReflectionResultV4,
 } from '../src/domain/reflection.js';
 import {
+  buildNoDurableChangeGists,
   buildReflectionItemPresentations,
   buildReflectionProposalPresentations,
   cloneReflectionOperation,
@@ -32,6 +33,23 @@ describe('reflection page model', () => {
       ['proposal-a', 'proposal-b'],
     );
     assert.equal(presentations[1].proposals.length, 0);
+  });
+
+  test('summarizes no-proposal bundle items for by-session observability', () => {
+    const presentations = buildReflectionItemPresentations(artifactDetail());
+    const gists = buildNoDurableChangeGists(presentations);
+
+    assert.equal(gists.length, 1);
+    assert.deepEqual(gists[0], {
+      itemId: 'informational',
+      title: '目标 · pinyin',
+      diagnosisTags: ['ordinary_retrieval_noise'],
+      observation: 'No durable change is warranted.',
+      responseSummary: 'Typed 替代 · pinyin',
+      cueSummary: 'target',
+      questionCount: 0,
+      unhandledNeedCount: 0,
+    });
   });
 
   test('builds proposal queues by actionable lifecycle state without session grouping', () => {

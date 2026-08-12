@@ -1582,6 +1582,64 @@ button:disabled:hover {
   font-weight: 700;
 }
 
+.reflection-header-counts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.reflection-count-pill-muted {
+  background: rgba(100, 116, 139, 0.28);
+  color: #94a3b8;
+}
+
+.reflection-no-change-gist {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.reflection-no-change-gist h3 {
+  margin: 0;
+}
+
+.reflection-no-change-list {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reflection-no-change-list > li {
+  display: grid;
+  gap: 0.35rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.reflection-no-change-list > li:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.reflection-no-change-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.reflection-no-change-row strong,
+.reflection-no-change-list > li > p:last-child {
+  margin: 0;
+}
+
+.reflection-no-change-context {
+  margin: 0;
+}
+
 .reflection-state-pill.state-pending,
 .reflection-state-pill.state-deferred {
   background: rgba(245, 158, 11, 0.18);

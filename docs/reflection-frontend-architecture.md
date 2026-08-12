@@ -86,7 +86,11 @@ the stored payload.
 flat, cross-session queue of pending proposals that need a learner decision.
 Separate convenience views show deferred proposals and accepted authorizations
 whose application is pending or unsupported, while **By session** retains the
-artifact-oriented dogfood view. Reviewing a proposal removes it from the
+artifact-oriented dogfood view. In that view, items whose results carry no
+proposals are summarized in a compact **No durable change** gist derived from
+the persisted evidence bundle (word, diagnosis tags, cue/response, observation),
+so ordinary forgetting and other no-action judgments stay visible without
+opening every item card. Reviewing a proposal removes it from the
 current queue when its new lifecycle state no longer matches that filter.
 Questions and unhandled needs remain informational and do not receive synthetic
 review state.
@@ -130,7 +134,9 @@ and opens the resulting artifact on success. Older run rows created before
 bundle retention remain visible without a retry action.
 
 The surface intentionally has no generic JSON editor, manual invocation
-workbench, different-kind replacement flow, or top-level reflection summary.
+workbench, or different-kind replacement flow. By session may show a compact
+no-durable-change gist for observability; that is not a learner correctness
+score or a replacement for immutable artifact history.
 
 ## Ownership boundaries
 

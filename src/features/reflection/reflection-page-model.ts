@@ -28,6 +28,18 @@ export type ReflectionItemPresentation = {
   proposals: ReflectionProposalDetailDto[];
 };
 
+/** Compact observability row for evidence items with no durable proposals. */
+export type NoDurableChangeReflectionGist = {
+  itemId: string;
+  title: string;
+  diagnosisTags: ReflectionItemResultV1['diagnosisTags'];
+  observation: string;
+  responseSummary: string | null;
+  cueSummary: string | null;
+  questionCount: number;
+  unhandledNeedCount: number;
+};
+
 export type ReflectionProposalQueueKind = 'attention' | 'deferred' | 'unapplied';
 
 export type ReflectionProposalPresentation = {
@@ -71,6 +83,28 @@ export function buildReflectionItemPresentations(
     result,
     proposals: proposalsByItemId.get(result.itemId) ?? [],
   }));
+}
+
+/**
+ * Session-scoped scan of evidence items that produced no proposals.
+ * Empty proposals mean no durable change (often ordinary forgetting / retrieval
+ * noise, but also insufficient evidence, questions-only, etc.).
+ */
+export function buildNoDurableChangeGists(
+  presentations: ReflectionItemPresentation[],
+): NoDurableChangeReflectionGist[] {
+  return presentations
+    .filter((item) => item.proposals.length === 0)
+    .map((item) => ({
+      itemId: item.result.itemId,
+      title: reflectionEvidenceTitle(item.evidence),
+      diagnosisTags: item.result.diagnosisTags,
+      observation: item.result.observation,
+      responseSummary: reflectionResponseSummary(item.evidence),
+      cueSummary: reflectionCueSummary(item.evidence),
+      questionCount: item.result.questions.length,
+      unhandledNeedCount: item.result.unhandledNeeds.length,
+    }));
 }
 
 export function buildReflectionProposalPresentations(
@@ -810,6 +844,54 @@ function assertIndex(values: unknown[], index: number, label: string): void {
   if (!Number.isInteger(index) || index < 0 || index >= values.length) {
     throw new Error(`Invariant violated: ${label} index ${index} is out of range.`);
   }
+}
+
+function reflectionEvidenceTitle(
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null,
+): string {
+  if (evidence?.targetWord !== null && evidence?.targetWord !== undefined) {
+    return reflectionWordLabel(evidence.targetWord);
+  }
+  return evidence?.source === 'session_note' ? 'Session note' : 'Reflection evidence';
+}
+
+function reflectionResponseSummary(
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null,
+): string | null {
+  if (evidence === null) return null;
+  if (evidence.source === 'production_mistake') {
+    if (evidence.responseKind === 'no_clue') return 'No clue';
+    if (evidence.submittedWord !== null) {
+      return `Typed ${reflectionWordLabel(evidence.submittedWord)}`;
+    }
+    return evidence.rawResponse === null || evidence.rawResponse.trim() === ''
+      ? 'No response'
+      : `Typed ${evidence.rawResponse}`;
+  }
+  if (evidence.source === 'contrast_selection') {
+    return evidence.reflectionSignal === null
+      ? 'Contrast selection'
+      : `Signal: ${evidence.reflectionSignal.replaceAll('_', ' ')}`;
+  }
+  return evidence.sessionNote;
+}
+
+function reflectionCueSummary(
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null,
+): string | null {
+  if (evidence === null) return null;
+  if (evidence.source === 'production_mistake') {
+    if ('servedCue' in evidence) return evidence.servedCue.text;
+    return evidence.cuesAsShown[0]?.text ?? null;
+  }
+  if (evidence.source === 'contrast_selection') {
+    return evidence.promptAsShown.promptText;
+  }
+  return null;
+}
+
+function reflectionWordLabel(word: { hanzi: string; pinyin: string }): string {
+  return `${word.hanzi} · ${word.pinyin}`;
 }
 
 export type {
