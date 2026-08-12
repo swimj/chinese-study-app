@@ -10,6 +10,7 @@ import type {
   SessionReflectionBundle,
   SessionReflectionBundleV1,
   SessionReflectionBundleV2,
+  SessionReflectionBundleV3,
 } from './reflection';
 
 export type ProductionMistakeCueEvidenceV1 = Omit<ReflectionCueSnapshotV0, 'cueType'> & {
@@ -29,6 +30,11 @@ export type ProductionMistakeEvidenceSupplementV1 = {
 export type SessionReflectionEvidenceSupplementV1 = {
   schemaVersion: 'session_reflection_evidence_supplement.v1';
   items: ProductionMistakeEvidenceSupplementV1[];
+};
+
+export type SessionReflectionEvidenceSupplementV2 = {
+  schemaVersion: 'session_reflection_evidence_supplement.v2';
+  items: Array<ProductionMistakeEvidenceSupplementV1 & { learnerRequestedReview?: true }>;
 };
 
 type UnknownRecord = Record<string, unknown>;
@@ -119,6 +125,32 @@ export function parseSessionReflectionEvidenceSupplement(
     throw new Error(`Invalid session reflection evidence supplement:\n${errors.join('\n')}`);
   }
   return value as SessionReflectionEvidenceSupplementV1;
+}
+
+export function parseSessionReflectionEvidenceSupplementV2(value: unknown): SessionReflectionEvidenceSupplementV2 {
+  if (!isRecord(value)) throw new Error('Invalid learner-requested reflection evidence supplement');
+  const rootErrors = validateObjectFields(value, ['schemaVersion', 'items'], '$');
+  const items = Array.isArray(value.items) ? value.items : null;
+  const normalizedItems = items?.map((item) => {
+    if (!isRecord(item)) return item;
+    const { learnerRequestedReview: _marker, ...base } = item;
+    return base;
+  });
+  const errors = normalizedItems === undefined
+    ? ['$.items: expected array']
+    : validateSessionReflectionEvidenceSupplement({
+        schemaVersion: 'session_reflection_evidence_supplement.v1',
+        items: normalizedItems,
+      });
+  items?.forEach((item, index) => {
+    if (isRecord(item) && item.learnerRequestedReview !== undefined && item.learnerRequestedReview !== true) {
+      errors.push(`$.items[${index}].learnerRequestedReview: expected true when present`);
+    }
+  });
+  errors.push(...rootErrors);
+  if (value.schemaVersion !== 'session_reflection_evidence_supplement.v2') errors.push('$.schemaVersion: expected session_reflection_evidence_supplement.v2');
+  if (errors.length > 0) throw new Error(`Invalid learner-requested reflection evidence supplement:\n${errors.join('\n')}`);
+  return value as SessionReflectionEvidenceSupplementV2;
 }
 
 /**
@@ -255,9 +287,44 @@ export function parseSessionReflectionBundleV2(value: unknown): SessionReflectio
   return value as SessionReflectionBundleV2;
 }
 
+export function validateSessionReflectionBundleV3(value: unknown): string[] {
+  if (!isRecord(value)) return validateSessionReflectionBundleV2(value);
+  const items = Array.isArray(value.items) ? value.items.map((item) => {
+    if (!isRecord(item)) return item;
+    const { learnerRequestedReview: _marker, ...base } = item;
+    if (base.responseKind !== null) return base;
+    return {
+      ...base,
+      responseKind: base.submittedWord === null ? 'unmatched_text' : 'matched_known_word',
+    };
+  }) : value.items;
+  const errors = validateSessionReflectionBundleV2({ ...value, schemaVersion: 'session_reflection_bundle.v2', items });
+  if (value.schemaVersion !== 'session_reflection_bundle.v3') {
+    errors.push('$.schemaVersion: expected session_reflection_bundle.v3');
+  }
+  if (Array.isArray(value.items)) value.items.forEach((item, index) => {
+    if (isRecord(item) && item.learnerRequestedReview !== undefined && item.learnerRequestedReview !== true) {
+      errors.push(`$.items[${index}].learnerRequestedReview: expected true when present`);
+    }
+    if (isRecord(item) && item.responseKind === null && item.learnerRequestedReview !== true) {
+      errors.push(`$.items[${index}].responseKind: null is reserved for learner-requested review`);
+    }
+  });
+  return errors;
+}
+
+export function parseSessionReflectionBundleV3(value: unknown): SessionReflectionBundleV3 {
+  const errors = validateSessionReflectionBundleV3(value);
+  if (errors.length > 0) throw new Error(`Invalid session reflection bundle V3:\n${errors.join('\n')}`);
+  return value as SessionReflectionBundleV3;
+}
+
 export function parseStoredSessionReflectionBundle(value: unknown): SessionReflectionBundle {
   if (isRecord(value) && value.schemaVersion === 'session_reflection_bundle.v2') {
     return parseSessionReflectionBundleV2(value);
+  }
+  if (isRecord(value) && value.schemaVersion === 'session_reflection_bundle.v3') {
+    return parseSessionReflectionBundleV3(value);
   }
   return parseSessionReflectionBundle(value);
 }

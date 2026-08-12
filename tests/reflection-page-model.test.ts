@@ -11,6 +11,7 @@ import type {
 import {
   buildNoDurableChangeGists,
   buildReflectionItemPresentations,
+  buildLearnerRequestedReflectionPresentations,
   buildReflectionProposalPresentations,
   cloneReflectionOperation,
   createReplacementOperation,
@@ -91,6 +92,28 @@ describe('reflection page model', () => {
       buildReflectionProposalPresentations([openDetail, unappliedDetail], 'unapplied')
         .map((entry) => entry.artifact.artifactId),
       ['unapplied-artifact'],
+    );
+  });
+
+  test('keeps learner-requested informational feedback visible without a proposal', () => {
+    const detail = artifactDetail();
+    detail.evidenceBundle = {
+      schemaVersion: 'session_reflection_bundle.v3',
+      generatedAt: detail.evidenceBundle.generatedAt,
+      session: detail.evidenceBundle.session,
+      items: [{ ...v2Evidence(), learnerRequestedReview: true }],
+    };
+    detail.result = {
+      schemaVersion: 'session_reflection_result.v5',
+      itemResults: [{
+        itemId: 'item', diagnosisTags: ['ordinary_retrieval_noise'],
+        observation: 'The cue is usable.', learnerExplanation: 'Try retrieving the phrase in a small context.',
+        proposals: [], questions: [], unhandledNeeds: [],
+      }],
+    };
+    assert.deepEqual(
+      buildLearnerRequestedReflectionPresentations([detail]).map((entry) => entry.result.learnerExplanation),
+      ['Try retrieving the phrase in a small context.'],
     );
   });
 

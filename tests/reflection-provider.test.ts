@@ -266,7 +266,7 @@ describe('production Luna reflection provider', () => {
       provider: 'openai',
       modelConfig: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v5',
+      promptVersion: 'reflection-v6',
       responseId: 'response-1',
       finishReason: 'stop',
       usage: {
@@ -278,7 +278,7 @@ describe('production Luna reflection provider', () => {
         totalTokens: 140,
       },
     });
-    assert.equal(LUNA_REFLECTION_PROMPT_VERSION, 'reflection-v5');
+    assert.equal(LUNA_REFLECTION_PROMPT_VERSION, 'reflection-v6');
     const serialized = JSON.stringify(generated);
     assert.equal(serialized.includes('unit-test-secret'), false);
     assert.equal(serialized.includes('transportDebug'), false);
@@ -407,7 +407,7 @@ describe('production Luna reflection provider', () => {
       provider: 'openai',
       modelConfig: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v5',
+      promptVersion: 'reflection-v6',
       responseId: 'response-1',
       finishReason: 'length',
       usage: {
@@ -514,7 +514,7 @@ describe('production Luna reflection provider', () => {
     assert.equal(typeof systemContent, 'string');
     assert.match(
       systemContent as string,
-      /^# Post-Session Reflection V5\n\nYou are a careful language-learning reflection assistant\./,
+      /^# Post-Session Reflection\n\nYou are a careful language-learning reflection assistant\./,
     );
     assert.match(systemContent as string, /`servedCue` is the singular immutable cue snapshot/);
     assert.match(systemContent as string, /`responseKind: no_clue` records no learner response/);

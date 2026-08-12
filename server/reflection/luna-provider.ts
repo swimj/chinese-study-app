@@ -9,6 +9,7 @@ import {
   stripLegacySourceAttemptIdsFromV5Wire,
   validateSessionReflectionResultV5,
   type SessionReflectionBundleV2,
+  type SessionReflectionBundleV3,
   type SessionReflectionResultV5,
   type SessionReflectionResultV5Wire,
 } from '../../src/domain/reflection.js';
@@ -38,14 +39,14 @@ export const LUNA_REFLECTION_MODEL_CONFIG = {
   reasoningEffort: 'high',
   maxOutputTokens: 40_000,
   timeoutMs: 180_000,
-  promptVersion: 'reflection-v5',
+  promptVersion: 'reflection-v6',
   defaultBaseUrl: 'https://api.openai.com/v1',
   apiKeyEnvironmentVariable: 'OPENAI_API_KEY',
   structuredOutputMode: 'json_schema',
   maxTokensField: 'max_completion_tokens',
   baseUrlEnvironmentVariable: 'OPENAI_BASE_URL',
 } as const;
-export const LUNA_REFLECTION_PROMPT_VERSION = 'reflection-v5' as const;
+export const LUNA_REFLECTION_PROMPT_VERSION = 'reflection-v6' as const;
 
 const productionPromptUrl = new URL('./prompts/reflection.md', import.meta.url);
 
@@ -118,7 +119,7 @@ export type LunaReflectionSuccess = {
 };
 
 export type LunaReflectionProvider = {
-  generate(bundle: SessionReflectionBundleV2): Promise<LunaReflectionSuccess>;
+  generate(bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3): Promise<LunaReflectionSuccess>;
 };
 
 export type LunaReflectionProviderOptions = {
@@ -179,7 +180,7 @@ export function createReflectionProvider(
   });
 
   return {
-    async generate(bundle: SessionReflectionBundleV2): Promise<LunaReflectionSuccess> {
+    async generate(bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3): Promise<LunaReflectionSuccess> {
       // Read credentials at call time so importing or constructing the service
       // never requires secrets and local configuration can be supplied later.
       const apiKey = configuredValue(environment[config.apiKeyEnvironmentVariable]);

@@ -16,7 +16,6 @@ import type {
   StudySkillId,
   StudyEvent,
 } from '../domain/study-actions';
-import type { SessionReflectionEvidenceSupplementV1 } from '../domain/reflection-evidence';
 import type {
   OperationApplicationStatus,
   OperationInvocation,
@@ -362,7 +361,7 @@ export async function generateSessionReflection({
   evidence,
 }: {
   sessionId: string;
-  evidence: SessionReflectionEvidenceSupplementV1;
+  evidence: unknown;
 }): Promise<GenerateSessionReflectionResult> {
   const response = await fetch(
     `${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/reflections`,

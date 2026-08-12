@@ -1,4 +1,5 @@
 import type {
+  SessionReflectionEvidenceSupplementV2,
   ProductionMistakeEvidenceSupplementV1,
   SessionReflectionEvidenceSupplementV1,
 } from '../../domain/reflection-evidence';
@@ -9,6 +10,11 @@ export type {
 import type { SessionStudyItem, StudyAttemptEvent } from '../../domain/study-actions';
 
 export type SessionReflectionEvidenceAccumulator = SessionReflectionEvidenceSupplementV1;
+export type LearnerRequestedReflectionAccumulator = SessionReflectionEvidenceSupplementV2;
+
+export function createLearnerRequestedReflectionAccumulator(): LearnerRequestedReflectionAccumulator {
+  return { schemaVersion: 'session_reflection_evidence_supplement.v2', items: [] };
+}
 
 export function createSessionReflectionEvidenceAccumulator(): SessionReflectionEvidenceAccumulator {
   return {
@@ -70,10 +76,83 @@ export function recordProductionMistakeEvidence(
     attemptIds: [],
   };
 
+  return { ...accumulator, items: [...accumulator.items, evidence] };
+}
+
+export function toggleLearnerRequestedReview(
+  accumulator: LearnerRequestedReflectionAccumulator,
+  item: Pick<SessionStudyItem, 'sessionActionId' | 'targetWordId' | 'actionKind' | 'production'> & {
+    word: Pick<SessionStudyItem['word'], 'status'>;
+  },
+  promptDisplayedMeanings: readonly string[],
+): LearnerRequestedReflectionAccumulator {
+  if (item.word.status !== 'review' || item.actionKind !== 'production') return accumulator;
+  const index = accumulator.items.findIndex((entry) => entry.sessionActionId === item.sessionActionId);
+  if (index >= 0) {
+    const items = [...accumulator.items];
+    items.splice(index, 1);
+    return { ...accumulator, items };
+  }
+  const cue = item.production;
   return {
     ...accumulator,
-    items: [...accumulator.items, evidence],
+    items: [...accumulator.items, {
+      itemId: `learner-request:${item.sessionActionId}`,
+      sessionActionId: item.sessionActionId,
+      targetWordId: item.targetWordId,
+      cuesAsShown: [{
+        cueId: cue?.cueId ?? null,
+        cueType: cue?.cueType ?? 'definition_gloss',
+        displayOrder: 0,
+        text: cue?.text ?? promptDisplayedMeanings.join('; '),
+        displayedMeanings: cue ? [] : [...promptDisplayedMeanings],
+      }],
+      rawResponse: null,
+      responseKind: 'no_clue',
+      attemptIds: [],
+      learnerRequestedReview: true,
+    }],
   };
+}
+
+export function appendAcceptedLearnerRequestedAttemptIds(
+  accumulator: LearnerRequestedReflectionAccumulator,
+  input: Parameters<typeof appendAcceptedProductionAttemptIds>[1],
+): LearnerRequestedReflectionAccumulator {
+  const base = appendAcceptedProductionAttemptIds({
+    schemaVersion: 'session_reflection_evidence_supplement.v1',
+    items: accumulator.items.map(({ learnerRequestedReview: _marker, ...item }) => item),
+  }, input);
+  return {
+    schemaVersion: accumulator.schemaVersion,
+    items: base.items.map((item) => ({ ...item, learnerRequestedReview: true })),
+  };
+}
+
+export function dropLearnerRequestedReflectionForAction(
+  accumulator: LearnerRequestedReflectionAccumulator,
+  sessionActionId: string,
+): LearnerRequestedReflectionAccumulator {
+  return { ...accumulator, items: accumulator.items.filter((item) => item.sessionActionId !== sessionActionId) };
+}
+
+/**
+ * A V3 supplement keeps the ordinary failure evidence plus an optional marker
+ * for the same action. That preserves one provider item per action while
+ * letting a correct marked response be eligible.
+ */
+export function buildLearnerRequestedReflectionSupplement(
+  failures: SessionReflectionEvidenceAccumulator,
+  requests: LearnerRequestedReflectionAccumulator,
+): SessionReflectionEvidenceSupplementV2 {
+  const requestByAction = new Map(requests.items.map((item) => [item.sessionActionId, item]));
+  const items = failures.items.map((failure) => {
+    const request = requestByAction.get(failure.sessionActionId);
+    requestByAction.delete(failure.sessionActionId);
+    return request ? { ...failure, learnerRequestedReview: true as const } : failure;
+  });
+  for (const request of requestByAction.values()) items.push(request);
+  return { schemaVersion: 'session_reflection_evidence_supplement.v2', items };
 }
 
 function isQualifyingProductionFailure(attempt: StudyAttemptEvent): boolean {

@@ -11,9 +11,11 @@ import type {
   ReflectionProposalV1,
   ReflectionInputItemV1,
   ReflectionInputItemV2,
+  ReflectionItemV3,
   SessionReflectionBundle,
   SessionReflectionBundleV1,
   SessionReflectionBundleV2,
+  SessionReflectionBundleV3,
   SessionReflectionResult,
   SessionReflectionResultV4,
   SessionReflectionResultV5,
@@ -60,6 +62,7 @@ type MaterializeReflectionArtifactBase = {
 export type MaterializeReflectionArtifactInput = MaterializeReflectionArtifactBase & (
   | { evidenceBundle: SessionReflectionBundleV1; result: SessionReflectionResultV4 }
   | { evidenceBundle: SessionReflectionBundleV2; result: SessionReflectionResultV5 }
+  | { evidenceBundle: SessionReflectionBundleV3; result: SessionReflectionResultV5 }
 );
 
 export type ReflectionGenerationRunState = 'succeeded' | 'failed';
@@ -873,8 +876,9 @@ export function materializeReflectionArtifact(
   if (
     input.reflectionFlowVersion === INITIAL_REFLECTION_FLOW_VERSION
     && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v2'
+    && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v3'
   ) {
-    throw new Error('The current reflection flow requires a V2 evidence bundle.');
+    throw new Error('The current reflection flow requires a V2 or V3 evidence bundle.');
   }
   const validationErrors = validateReflectionArtifactPair(input.result, input.evidenceBundle);
   if (validationErrors.length > 0) {
@@ -1128,8 +1132,9 @@ export function recordReflectionGenerationRun(
   if (
     input.reflectionFlowVersion === INITIAL_REFLECTION_FLOW_VERSION
     && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v2'
+    && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v3'
   ) {
-    throw new Error('The current reflection flow requires a V2 retained evidence bundle.');
+    throw new Error('The current reflection flow requires a V2 or V3 retained evidence bundle.');
   }
   parseStoredSessionReflectionBundle(input.evidenceBundle);
   assertNormalizedUsage(input.usage);
@@ -1755,7 +1760,7 @@ function requireProposalReviewRow(proposalId: string): ProposalReviewRow {
 
 function originalProposalContextForReview(row: ProposalReviewRow): {
   proposal: ReflectionProposalV1;
-  evidenceItem: ReflectionInputItemV1 | ReflectionInputItemV2;
+  evidenceItem: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3;
 } {
   const artifactRow = getDb().prepare(`
     SELECT ${artifactColumns.join(', ')}
@@ -1923,6 +1928,12 @@ function validateReflectionArtifactPair(
   }
   if (
     evidenceBundle.schemaVersion === 'session_reflection_bundle.v2'
+    && result.schemaVersion === 'session_reflection_result.v5'
+  ) {
+    return validateSessionReflectionResultV5(result, evidenceBundle);
+  }
+  if (
+    evidenceBundle.schemaVersion === 'session_reflection_bundle.v3'
     && result.schemaVersion === 'session_reflection_result.v5'
   ) {
     return validateSessionReflectionResultV5(result, evidenceBundle);
@@ -2780,12 +2791,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function visibleWordIds(item: ReflectionInputItemV1 | ReflectionInputItemV2): Set<string> {
+function visibleWordIds(item: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3): Set<string> {
   const wordIds = new Set<string>();
   if (item.targetWord !== null) {
     wordIds.add(item.targetWord.wordId);
   }
-  if (item.source === 'production_mistake' && item.submittedWord !== null) {
+  if ('submittedWord' in item && item.submittedWord !== null) {
     wordIds.add(item.submittedWord.wordId);
   }
   if (item.source === 'session_note') {

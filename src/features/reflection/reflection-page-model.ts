@@ -3,6 +3,7 @@ import type {
   CreateContrastClusterOperation,
   ReflectionInputItemV1,
   ReflectionInputItemV2,
+  ReflectionItemV3,
   ReflectionItemResultV1,
   ReflectionOperation,
   ProductionCueChangeV2,
@@ -23,7 +24,10 @@ import {
 } from '../../domain/reflection';
 
 export type ReflectionItemPresentation = {
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null;
+  evidence: ReflectionInputItemV1
+    | ReflectionInputItemV2
+    | ReflectionItemV3
+    | null;
   result: ReflectionItemResultV1;
   proposals: ReflectionProposalDetailDto[];
 };
@@ -42,9 +46,35 @@ export type NoDurableChangeReflectionGist = {
 
 export type ReflectionProposalQueueKind = 'attention' | 'deferred' | 'unapplied';
 
+export type LearnerRequestedReflectionPresentation = {
+  artifact: ReflectionArtifactDetailDto;
+  evidence: ReflectionInputItemV1
+    | ReflectionInputItemV2
+    | ReflectionItemV3
+    | null;
+  result: ReflectionItemResultV1;
+};
+
+export function buildLearnerRequestedReflectionPresentations(
+  details: ReflectionArtifactDetailDto[],
+): LearnerRequestedReflectionPresentation[] {
+  return details.flatMap((artifact) => {
+    const evidenceByItemId = new Map(artifact.evidenceBundle.items.map((item) => [item.itemId, item]));
+    return artifact.result.itemResults.flatMap((result) => {
+      const evidence = evidenceByItemId.get(result.itemId) ?? null;
+      return evidence !== null && 'learnerRequestedReview' in evidence && evidence.learnerRequestedReview
+        ? [{ artifact, evidence, result }]
+        : [];
+    });
+  });
+}
+
 export type ReflectionProposalPresentation = {
   artifact: ReflectionArtifactDetailDto;
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null;
+  evidence: ReflectionInputItemV1
+    | ReflectionInputItemV2
+    | ReflectionItemV3
+    | null;
   result: ReflectionItemResultV1;
   proposal: ReflectionProposalDetailDto;
 };
@@ -646,7 +676,7 @@ export function reduceReflectionOperationDraft(
 export function getOperationDraftState(
   original: ReflectionOperation,
   draft: ReflectionOperation,
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null = null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null = null,
 ): {
   acceptanceMode: 'exact' | 'revised' | 'replacement';
   validationErrors: string[];
@@ -673,7 +703,7 @@ export function createReplacementOperation(
   kind: ReflectionOperation['kind'],
   version: number,
   original: ReflectionOperation,
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
 ): ReflectionOperation {
   const targetWordId = evidence?.targetWord?.wordId ?? primaryWordId(original);
   const submittedWordId = evidence !== null && 'submittedWord' in evidence
@@ -847,7 +877,7 @@ function assertIndex(values: unknown[], index: number, label: string): void {
 }
 
 function reflectionEvidenceTitle(
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
 ): string {
   if (evidence?.targetWord !== null && evidence?.targetWord !== undefined) {
     return reflectionWordLabel(evidence.targetWord);
@@ -856,7 +886,7 @@ function reflectionEvidenceTitle(
 }
 
 function reflectionResponseSummary(
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
 ): string | null {
   if (evidence === null) return null;
   if (evidence.source === 'production_mistake') {
@@ -877,7 +907,7 @@ function reflectionResponseSummary(
 }
 
 function reflectionCueSummary(
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
 ): string | null {
   if (evidence === null) return null;
   if (evidence.source === 'production_mistake') {

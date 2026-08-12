@@ -8,12 +8,17 @@ import {
 } from '../src/lib/session-state.ts';
 import {
   appendAcceptedProductionAttemptIds,
+  appendAcceptedLearnerRequestedAttemptIds,
+  buildLearnerRequestedReflectionSupplement,
   buildSessionReflectionEvidenceSupplement,
+  createLearnerRequestedReflectionAccumulator,
   createSessionReflectionEvidenceAccumulator,
   dropSessionReflectionEvidenceForAction,
+  dropLearnerRequestedReflectionForAction,
   recordProductionMistakeEvidence,
   restoreSessionReflectionEvidence,
   snapshotSessionReflectionEvidence,
+  toggleLearnerRequestedReview,
 } from '../src/features/session/session-reflection-evidence.ts';
 import type { Word } from '../src/types.ts';
 
@@ -427,6 +432,28 @@ describe('completed-session reflection evidence', () => {
       dropSessionReflectionEvidenceForAction(linked, item.sessionActionId).items,
       [],
     );
+  });
+
+  test('keeps an explicit review request outside Undo while joining it to the accepted action batch', () => {
+    const item = createStudyItem({ actionKind: 'production', status: 'review' });
+    let requests = toggleLearnerRequestedReview(
+      createLearnerRequestedReflectionAccumulator(), item, ['target'],
+    );
+    const undoSnapshot = snapshotSessionReflectionEvidence(createSessionReflectionEvidenceAccumulator());
+    assert.equal(requests.items.length, 1);
+    assert.deepEqual(restoreSessionReflectionEvidence(undoSnapshot).items, []);
+
+    requests = appendAcceptedLearnerRequestedAttemptIds(requests, {
+      sessionActionId: item.sessionActionId,
+      acceptedAttempts: [createAttempt({ item, id: 'accepted', outcome: 'correct', response: '目标' })],
+    });
+    const supplement = buildLearnerRequestedReflectionSupplement(
+      createSessionReflectionEvidenceAccumulator(), requests,
+    );
+    assert.equal(supplement.schemaVersion, 'session_reflection_evidence_supplement.v2');
+    assert.equal(supplement.items[0]?.learnerRequestedReview, true);
+    assert.deepEqual(supplement.items[0]?.attemptIds, ['accepted']);
+    assert.deepEqual(dropLearnerRequestedReflectionForAction(requests, item.sessionActionId).items, []);
   });
 });
 

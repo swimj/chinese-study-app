@@ -13,6 +13,7 @@ import {
 import { setDb } from '../server/db/connection.ts';
 import type {
   SessionReflectionEvidenceSupplementV1,
+  SessionReflectionEvidenceSupplementV2,
 } from '../src/domain/reflection-evidence.ts';
 
 const startedAt = '2026-07-29T08:00:00.000Z';
@@ -98,6 +99,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
     const bundle = buildInitialReflectionBundle('session-1', supplement('替代'), generatedAt);
 
     assert.equal(totalChanges(), changesBefore);
+    assert.equal(bundle.schemaVersion, 'session_reflection_bundle.v3');
     assert.deepEqual(bundle.session, {
       sessionId: 'session-1',
       startedAt,
@@ -130,6 +132,26 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
       }],
       knownAcceptedAlternates: [],
     });
+  });
+
+  test('includes a learner-requested correct production action in the V3 bundle', () => {
+    sqlite.exec(`
+      UPDATE study_attempt_events
+      SET response = '目标', outcome = 'correct', rating = 'good', metadata_json = '${JSON.stringify(productionAttemptMetadata({
+        submittedText: '目标', submittedWordId: 'target', result: 'accepted_anchor', acceptedWordIds: ['target'],
+      })).replaceAll("'", "''")}'
+      WHERE id = 'attempt-1';
+    `);
+    const marked: SessionReflectionEvidenceSupplementV2 = {
+      ...supplement('目标'),
+      schemaVersion: 'session_reflection_evidence_supplement.v2',
+      items: [{ ...supplement('目标').items[0]!, learnerRequestedReview: true }],
+    };
+    const bundle = buildInitialReflectionBundle('session-1', marked, generatedAt);
+    assert.equal(bundle.schemaVersion, 'session_reflection_bundle.v3');
+    assert.equal(bundle.items[0]?.learnerRequestedReview, true);
+    assert.equal(bundle.items[0]?.responseKind, null);
+    assert.equal('attemptIds' in bundle.items[0]!, false);
   });
 
   test('reports the single eligible item included in an initial bundle', () => {
