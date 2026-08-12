@@ -2,12 +2,13 @@ import type {
   ReflectionExistingContentV0,
   ReflectionServedCueSnapshotV1,
   ReflectionWordSnapshotV1,
-  SessionReflectionBundleV2,
+  SessionReflectionBundleV3,
 } from '../../src/domain/reflection.ts';
 import { normalizeProductionAnswerForProfile } from '../../src/study-profile.ts';
 import {
   parseSessionReflectionEvidenceSupplement,
-  parseSessionReflectionBundleV2,
+  parseSessionReflectionEvidenceSupplementV2,
+  parseSessionReflectionBundleV3,
   type ProductionMistakeEvidenceSupplementV1,
 } from '../../src/domain/reflection-evidence.ts';
 import { getConfig, getDb } from '../db/connection.ts';
@@ -93,7 +94,7 @@ type ClusterRow = {
 export const INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS = 15;
 
 export type InitialReflectionBundleBuild = {
-  bundle: SessionReflectionBundleV2;
+  bundle: SessionReflectionBundleV3;
   eligibleItemCount: number;
   includedItemCount: number;
 };
@@ -102,7 +103,7 @@ export function buildInitialReflectionBundle(
   sessionId: string,
   supplementValue: unknown,
   generatedAt = new Date().toISOString(),
-): SessionReflectionBundleV2 {
+): SessionReflectionBundleV3 {
   return buildInitialReflectionBundleWithMetrics(
     sessionId,
     supplementValue,
@@ -127,7 +128,14 @@ export function buildInitialReflectionBundleWithMetrics(
 
   let supplement;
   try {
-    supplement = parseSessionReflectionEvidenceSupplement(supplementValue);
+    supplement = (
+      typeof supplementValue === 'object'
+      && supplementValue !== null
+      && 'schemaVersion' in supplementValue
+      && supplementValue.schemaVersion === 'session_reflection_evidence_supplement.v2'
+    )
+      ? parseSessionReflectionEvidenceSupplementV2(supplementValue)
+      : parseSessionReflectionEvidenceSupplement(supplementValue);
   } catch {
     throw new ReflectionEvidenceError(
       'invalid_supplement',
@@ -137,7 +145,7 @@ export function buildInitialReflectionBundleWithMetrics(
   if (supplement.items.length === 0) {
     throw new ReflectionEvidenceError(
       'no_qualifying_evidence',
-      'At least one qualifying typed production mistake is required.',
+      'At least one qualifying production reflection item is required.',
     );
   }
 
@@ -169,13 +177,12 @@ export function buildInitialReflectionBundleWithMetrics(
   if (eligibleItems.length === 0) {
     throw new ReflectionEvidenceError(
       'no_qualifying_evidence',
-      'No qualifying production failures remain after excluding managed study actions.',
+      'No qualifying production reflection evidence remains after excluding managed study actions.',
     );
   }
   const items = eligibleItems.slice(0, INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS);
-
-  const bundle: SessionReflectionBundleV2 = {
-    schemaVersion: 'session_reflection_bundle.v2',
+  const bundle = {
+    schemaVersion: 'session_reflection_bundle.v3' as const,
     generatedAt,
     session: {
       sessionId: normalizedSessionId,
@@ -188,7 +195,7 @@ export function buildInitialReflectionBundleWithMetrics(
 
   try {
     return {
-      bundle: parseSessionReflectionBundleV2(bundle),
+      bundle: parseSessionReflectionBundleV3(bundle),
       eligibleItemCount: eligibleItems.length,
       includedItemCount: items.length,
     };
@@ -202,8 +209,8 @@ export function buildInitialReflectionBundleWithMetrics(
 
 function buildProductionMistakeItem(
   sessionId: string,
-  supplement: ProductionMistakeEvidenceSupplementV1,
-): SessionReflectionBundleV2['items'][number] | null {
+  supplement: ProductionMistakeEvidenceSupplementV1 & { learnerRequestedReview?: true },
+): SessionReflectionBundleV3['items'][number] | null {
   const targetWord = getWordSnapshot(supplement.targetWordId);
   const attempts = getActionAttempts(sessionId, supplement.sessionActionId);
   assertCompleteAttemptReferences(sessionId, supplement, attempts);
@@ -213,11 +220,11 @@ function buildProductionMistakeItem(
     throw invalidReference('The referenced study action has no durable attempts.');
   }
   if (
-    firstAttempt.outcome !== 'incorrect'
-    || firstAttempt.response !== supplement.rawResponse
-    || (supplement.responseKind === 'typed'
+    (!supplement.learnerRequestedReview && firstAttempt.outcome !== 'incorrect')
+    || (!supplement.learnerRequestedReview && firstAttempt.response !== supplement.rawResponse)
+    || (!supplement.learnerRequestedReview && supplement.responseKind === 'typed'
       && (firstAttempt.response === null || firstAttempt.response.trim().length === 0))
-    || (supplement.responseKind === 'no_clue' && firstAttempt.response !== null)
+    || (!supplement.learnerRequestedReview && supplement.responseKind === 'no_clue' && firstAttempt.response !== null)
   ) {
     throw invalidReference(
       'The first referenced attempt must be the matching failed production response.',
@@ -228,6 +235,9 @@ function buildProductionMistakeItem(
   }
   const taskId = defaultProductionTaskId(targetWord.wordId);
   const attemptMetadata = parseProductionAttemptMetadata(firstAttempt.metadata_json);
+  const sourceSupplement = supplement.learnerRequestedReview && firstAttempt.response !== null
+    ? { ...supplement, rawResponse: firstAttempt.response, responseKind: 'typed' as const }
+    : supplement;
   if (supplement.responseKind === 'no_clue' && attemptMetadata === null) {
     throw invalidReference(
       'No-clue reflection evidence requires explicit durable no-clue provenance.',
@@ -236,24 +246,25 @@ function buildProductionMistakeItem(
   if (attemptMetadata !== null) {
     validateProductionAttemptMetadata(
       firstAttempt,
-      supplement,
+      sourceSupplement,
       attemptMetadata,
       taskId,
     );
   } else if (
-    supplement.rawResponse !== null
-    && isTargetWordResponse(supplement.rawResponse, supplement.targetWordId)
+    sourceSupplement.rawResponse !== null
+    && isTargetWordResponse(sourceSupplement.rawResponse, sourceSupplement.targetWordId)
+    && !supplement.learnerRequestedReview
   ) {
     return null;
   }
-  if (attemptMetadata !== null && attemptMetadata.result !== 'rejected') return null;
+  if (attemptMetadata !== null && attemptMetadata.result !== 'rejected' && !supplement.learnerRequestedReview) return null;
 
   const submittedWord = attemptMetadata?.submittedWordId
     ? getWordSnapshot(attemptMetadata.submittedWordId)
     : null;
   const servedCue = productionServedCue(
     firstAttempt,
-    supplement,
+    sourceSupplement,
     attemptMetadata,
   );
 
@@ -272,13 +283,16 @@ function buildProductionMistakeItem(
         : [targetWord.wordId],
     ),
     servedCue,
-    rawResponse: supplement.rawResponse,
+    rawResponse: sourceSupplement.rawResponse,
     submittedWord,
-    responseKind: supplement.responseKind === 'no_clue'
-      ? 'no_clue'
-      : submittedWord !== null
-        ? 'matched_known_word'
-        : 'unmatched_text',
+    responseKind: supplement.learnerRequestedReview && firstAttempt.outcome === 'correct'
+      ? null
+      : sourceSupplement.responseKind === 'no_clue'
+        ? 'no_clue'
+        : submittedWord !== null
+          ? 'matched_known_word'
+          : 'unmatched_text',
+    ...(supplement.learnerRequestedReview ? { learnerRequestedReview: true as const } : {}),
   };
 }
 

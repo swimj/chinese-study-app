@@ -46,7 +46,7 @@ after close or after another session starts.
 
 ## Reflection evidence
 
-`session-reflection-evidence.ts` records only the first failed recall for each
+`session-reflection-evidence.ts` records the first failed recall for each
 review-phase production action: either a non-empty typed mistake or an explicit
 no-clue action. The backend is the authoritative reflection-eligibility
 boundary: it excludes learner-rated pronunciation lapses where the response is
@@ -55,7 +55,7 @@ freezes the nullable raw response, explicit response kind, and full production
 cue as shown. Ordered attempt ids are appended only after the deferred attempt
 batch is accepted durably.
 
-Evidence is part of the Undo snapshot, restored on Undo, and removed when the
+Failure evidence is part of the Undo snapshot, restored on Undo, and removed when the
 corresponding action is canceled or dismissed. Recognition, learning,
 contrast-selection, and production actions without a typed mistake or explicit
 no-clue response are excluded. Later accepted attempt ids for a captured action remain in
@@ -65,6 +65,15 @@ batch; attempt rows and summaries are not copied into the provider bundle.
 The accumulator is ephemeral by design, remains available through
 generation/retry, and is cleared when the completed session closes or a new
 session starts.
+
+A separate learner-request accumulator backs the **Ask reflection to review**
+toggle on review production cards, including the frozen post-answer card. It
+captures the cue at marking time, is deliberately outside the Undo snapshot,
+and can be unmarked explicitly. At the deferred commit boundary it receives
+the same complete accepted attempt batch as failure evidence. Finalization
+merges both accumulators into the V3 evidence supplement by action, so a marked
+mistake becomes one item and a marked correct response can still enter
+reflection. Cancellation, dismissal, and management remove the request.
 
 ## Reflection review workspace
 
@@ -94,6 +103,10 @@ opening every item card. Reviewing a proposal removes it from the
 current queue when its new lifecycle state no longer matches that filter.
 Questions and unhandled needs remain informational and do not receive synthetic
 review state.
+
+The **Learner requests** view is an informational inbox for marked V3 items.
+It displays learner-facing feedback even when the result has no proposal, while
+the proposal queues retain their authorization-focused behavior.
 
 Each proposal has a purpose-built editor for each registered operation family:
 

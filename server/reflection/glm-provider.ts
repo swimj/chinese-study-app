@@ -11,7 +11,7 @@ export const GLM_REFLECTION_MODEL_CONFIG = {
   reasoningEffort: 'high',
   maxOutputTokens: 40_000,
   timeoutMs: 900_000,
-  promptVersion: 'reflection-v5',
+  promptVersion: 'reflection-v6',
   defaultBaseUrl: 'https://api.z.ai/api/paas/v4',
   apiKeyEnvironmentVariable: 'ZAI_API_KEY',
   structuredOutputMode: 'json_object',

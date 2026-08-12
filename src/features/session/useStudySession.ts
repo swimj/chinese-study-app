@@ -90,7 +90,13 @@ import {
   recordProductionMistakeEvidence,
   restoreSessionReflectionEvidence,
   snapshotSessionReflectionEvidence,
+  createLearnerRequestedReflectionAccumulator,
+  buildLearnerRequestedReflectionSupplement,
+  appendAcceptedLearnerRequestedAttemptIds,
+  dropLearnerRequestedReflectionForAction,
+  toggleLearnerRequestedReview,
   type SessionReflectionEvidenceAccumulator,
+  type LearnerRequestedReflectionAccumulator,
   type SessionReflectionEvidenceSupplementV1,
 } from './session-reflection-evidence';
 import {
@@ -173,6 +179,8 @@ export type StudySessionHomePageProps = {
   contrastSelectedWordId: string | null;
   contrastAwaitingRating: boolean;
   activeRatingOptions: RatingOption[];
+  learnerRequestedReview: boolean;
+  frozenProductionLearnerRequestedReview: boolean;
   onStartSession: () => void;
   onEndSession: () => void;
   onRetrySessionReflection: () => void;
@@ -191,6 +199,8 @@ export type StudySessionHomePageProps = {
   onProductionHanziInputChange: (value: string) => void;
   onSelectContrastChoice: (wordId: string) => void;
   onRevealAnswer: () => void;
+  onToggleLearnerRequestedReview: () => void;
+  onToggleFrozenProductionLearnerRequestedReview: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
 };
 
@@ -252,7 +262,10 @@ export function useStudySession({
   const reflectionEvidenceRef = useRef<SessionReflectionEvidenceAccumulator>(
     createSessionReflectionEvidenceAccumulator(),
   );
-  const pendingReflectionSupplementRef = useRef<SessionReflectionEvidenceSupplementV1 | null>(null);
+  const learnerRequestedReflectionRef = useRef<LearnerRequestedReflectionAccumulator>(
+    createLearnerRequestedReflectionAccumulator(),
+  );
+  const pendingReflectionSupplementRef = useRef<unknown>(null);
   const activeSessionIdRef = useRef<string | null>(null);
   const productionAnswerWordsRef = useRef<ProductionAnswerWord[]>([]);
   const [sessionFinalization, setSessionFinalization] = useState<SessionFinalizationState>(
@@ -362,6 +375,13 @@ export function useStudySession({
     !productionAwaitingNext &&
     !personalNotesEditorOpen;
   const personalNotesEditorCanSubmit = !personalNotesEditorSaving;
+  const learnerRequestedReview = activeItem !== null && learnerRequestedReflectionRef.current.items.some((item) => (
+    item.sessionActionId === activeItem.sessionActionId && item.learnerRequestedReview
+  ));
+  const frozenProductionLearnerRequestedReview = frozenProductionCard !== null
+    && learnerRequestedReflectionRef.current.items.some((item) => (
+      item.sessionActionId === frozenProductionCard.sessionActionId && item.learnerRequestedReview
+    ));
 
   useEffect(() => {
     if (!activeWord || sessionMeaningRowsByWordId[activeWord.id]) {
@@ -469,8 +489,14 @@ export function useStudySession({
               },
             )
           : reflectionEvidenceRef.current;
+      const acceptedRequests = commit.type === 'commit-review-action-session'
+        ? appendAcceptedLearnerRequestedAttemptIds(learnerRequestedReflectionRef.current, {
+            sessionActionId: commit.sessionActionId, acceptedAttempts: commit.events,
+          })
+        : learnerRequestedReflectionRef.current;
       await applySessionCommit(commit);
       reflectionEvidenceRef.current = acceptedEvidence;
+      learnerRequestedReflectionRef.current = acceptedRequests;
       setPendingSessionCommit(null);
     }
 
@@ -495,6 +521,7 @@ export function useStudySession({
       const sessionId = createFrontendSessionId();
       activeSessionIdRef.current = sessionId;
       reflectionEvidenceRef.current = createSessionReflectionEvidenceAccumulator();
+      learnerRequestedReflectionRef.current = createLearnerRequestedReflectionAccumulator();
       pendingReflectionSupplementRef.current = null;
       updateSessionFinalization(() => createSessionFinalizationState());
       setSessionNow(startedAt);
@@ -582,7 +609,8 @@ export function useStudySession({
       return;
     }
 
-    const hasReflectionEvidence = evidence.items.length > 0;
+    const hasReflectionEvidence = evidence.items.length > 0
+      || learnerRequestedReflectionRef.current.items.length > 0;
     updateSessionFinalization((current) =>
       completeSessionFinalization({
         state: current,
@@ -592,7 +620,9 @@ export function useStudySession({
 
     if (hasReflectionEvidence) {
       try {
-        const supplement = buildSessionReflectionEvidenceSupplement(evidence);
+        const supplement = learnerRequestedReflectionRef.current.items.length > 0
+          ? buildLearnerRequestedReflectionSupplement(evidence, learnerRequestedReflectionRef.current)
+          : buildSessionReflectionEvidenceSupplement(evidence);
         pendingReflectionSupplementRef.current = supplement;
         void runSessionReflectionGeneration(finalizingSummary.sessionId, supplement);
       } catch (err) {
@@ -609,7 +639,7 @@ export function useStudySession({
 
   async function runSessionReflectionGeneration(
     sessionId: string,
-    supplement: SessionReflectionEvidenceSupplementV1,
+    supplement: unknown,
   ) {
     try {
       const result = await generateSessionReflection({
@@ -665,6 +695,7 @@ export function useStudySession({
     updateSessionFinalization(() => createSessionFinalizationState());
     activeSessionClockRef.current = null;
     reflectionEvidenceRef.current = createSessionReflectionEvidenceAccumulator();
+    learnerRequestedReflectionRef.current = createLearnerRequestedReflectionAccumulator();
     pendingReflectionSupplementRef.current = null;
     resetSessionScopedUi();
     setPendingSessionCommit(null);
@@ -925,6 +956,7 @@ export function useStudySession({
       actionKind: 'production',
       sampledSkillIds: [...itemAtResponse.sampledSkillIds],
       contentRef: itemAtResponse.contentRef,
+      production: itemAtResponse.production ?? null,
       attemptedHanzi,
       status: wordAtResponse.status,
       reviewedCount,
@@ -1082,6 +1114,10 @@ export function useStudySession({
           reflectionEvidenceRef.current,
           activeItem.sessionActionId,
         );
+        learnerRequestedReflectionRef.current = dropLearnerRequestedReflectionForAction(
+          learnerRequestedReflectionRef.current,
+          activeItem.sessionActionId,
+        );
       }
       resetAnswerAndProductionUi();
       setLastUndoSnapshot(null);
@@ -1124,6 +1160,10 @@ export function useStudySession({
       if (studyManagementActionRemovesCurrentReviewAction(managementAction)) {
         reflectionEvidenceRef.current = dropSessionReflectionEvidenceForAction(
           reflectionEvidenceRef.current,
+          activeItem.sessionActionId,
+        );
+        learnerRequestedReflectionRef.current = dropLearnerRequestedReflectionForAction(
+          learnerRequestedReflectionRef.current,
           activeItem.sessionActionId,
         );
         setSessionState(dropActiveReviewSessionAction(sessionState));
@@ -1171,6 +1211,10 @@ export function useStudySession({
         reflectionEvidenceRef.current,
         frozenProductionCard.sessionActionId,
       );
+      learnerRequestedReflectionRef.current = dropLearnerRequestedReflectionForAction(
+        learnerRequestedReflectionRef.current,
+        frozenProductionCard.sessionActionId,
+      );
       setSessionState(nextState);
       setSessionSummary((current) =>
         cancelFrozenProductionRatingInSummary({
@@ -1212,6 +1256,10 @@ export function useStudySession({
       );
       reflectionEvidenceRef.current = dropSessionReflectionEvidenceForAction(
         reflectionEvidenceRef.current,
+        frozenProductionCard.sessionActionId,
+      );
+      learnerRequestedReflectionRef.current = dropLearnerRequestedReflectionForAction(
+        learnerRequestedReflectionRef.current,
         frozenProductionCard.sessionActionId,
       );
       setSessionState(nextState);
@@ -1613,6 +1661,8 @@ export function useStudySession({
       contrastSelectedWordId,
       contrastAwaitingRating,
       activeRatingOptions,
+      learnerRequestedReview,
+      frozenProductionLearnerRequestedReview,
       onStartSession: () => void handleStartSession(),
       onEndSession: () => void handleEndSession(),
       onRetrySessionReflection: handleRetrySessionReflection,
@@ -1636,6 +1686,30 @@ export function useStudySession({
       },
       onSelectContrastChoice: handleSelectContrastChoice,
       onRevealAnswer: () => setAnswerRevealed(true),
+      onToggleLearnerRequestedReview: () => {
+        if (!activeItem || activeItem.actionKind !== 'production') return;
+        learnerRequestedReflectionRef.current = toggleLearnerRequestedReview(
+          learnerRequestedReflectionRef.current,
+          activeItem,
+          activePromptDisplayedMeanings,
+        );
+        setSessionNow(new Date().toISOString());
+      },
+      onToggleFrozenProductionLearnerRequestedReview: () => {
+        if (!frozenProductionCard || frozenProductionCard.status !== 'review') return;
+        learnerRequestedReflectionRef.current = toggleLearnerRequestedReview(
+          learnerRequestedReflectionRef.current,
+          {
+            sessionActionId: frozenProductionCard.sessionActionId,
+            targetWordId: frozenProductionCard.targetWordId,
+            actionKind: 'production',
+            production: frozenProductionCard.production ?? null,
+            word: { status: frozenProductionCard.status },
+          },
+          frozenProductionCard.promptDisplayedMeanings,
+        );
+        setSessionNow(new Date().toISOString());
+      },
       onRate: (rating, options) => void handleRate(rating, options),
     },
     personalNotesEditor: {

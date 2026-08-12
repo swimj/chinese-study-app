@@ -65,6 +65,8 @@ export function HomePage({
   contrastSelectedWordId,
   contrastAwaitingRating,
   activeRatingOptions,
+  learnerRequestedReview,
+  frozenProductionLearnerRequestedReview,
   onStartSession,
   onEndSession,
   onRetrySessionReflection,
@@ -83,6 +85,8 @@ export function HomePage({
   onProductionHanziInputChange,
   onSelectContrastChoice,
   onRevealAnswer,
+  onToggleLearnerRequestedReview,
+  onToggleFrozenProductionLearnerRequestedReview,
   onRate,
 }: {
   backendStatus: BackendStatus | null;
@@ -129,6 +133,8 @@ export function HomePage({
   contrastSelectedWordId: string | null;
   contrastAwaitingRating: boolean;
   activeRatingOptions: RatingOption[];
+  learnerRequestedReview: boolean;
+  frozenProductionLearnerRequestedReview: boolean;
   onStartSession: () => void;
   onEndSession: () => void;
   onRetrySessionReflection: () => void;
@@ -147,6 +153,8 @@ export function HomePage({
   onProductionHanziInputChange: (value: string) => void;
   onSelectContrastChoice: (wordId: string) => void;
   onRevealAnswer: () => void;
+  onToggleLearnerRequestedReview: () => void;
+  onToggleFrozenProductionLearnerRequestedReview: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
 }) {
   const [sessionSettingsOpen, setSessionSettingsOpen] = useState(false);
@@ -241,6 +249,8 @@ export function HomePage({
             contrastSelectedWordId={contrastSelectedWordId}
             contrastAwaitingRating={contrastAwaitingRating}
             activeRatingOptions={activeRatingOptions}
+            learnerRequestedReview={learnerRequestedReview}
+            frozenProductionLearnerRequestedReview={frozenProductionLearnerRequestedReview}
             onUndoLastRating={onUndoLastRating}
             onEndSession={onEndSession}
             onRetrySessionReflection={onRetrySessionReflection}
@@ -258,6 +268,8 @@ export function HomePage({
             onProductionHanziInputChange={onProductionHanziInputChange}
             onSelectContrastChoice={onSelectContrastChoice}
             onRevealAnswer={onRevealAnswer}
+            onToggleLearnerRequestedReview={onToggleLearnerRequestedReview}
+            onToggleFrozenProductionLearnerRequestedReview={onToggleFrozenProductionLearnerRequestedReview}
             onRate={onRate}
           />
         )}

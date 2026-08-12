@@ -4,10 +4,13 @@ import {
   parseInitialReflectionMilestoneBundle,
   parseSessionReflectionBundle,
   parseSessionReflectionBundleV2,
+  parseSessionReflectionBundleV3,
+  parseSessionReflectionEvidenceSupplementV2,
   parseSessionReflectionEvidenceSupplement,
   validateInitialReflectionMilestoneBundle,
   validateSessionReflectionBundle,
   validateSessionReflectionBundleV2,
+  validateSessionReflectionBundleV3,
   validateSessionReflectionEvidenceSupplement,
 } from '../src/domain/reflection-evidence.js';
 import type {
@@ -18,6 +21,7 @@ import type {
   ReflectionWordSnapshotV1,
   SessionReflectionBundleV1,
   SessionReflectionBundleV2,
+  SessionReflectionBundleV3,
 } from '../src/domain/reflection.js';
 
 const generatedAt = '2026-07-29T12:00:00.000Z';
@@ -237,6 +241,35 @@ describe('session reflection bundle V2 validation', () => {
     const errors = validateSessionReflectionBundleV2(bundle).join('\n');
     assert.match(errors, /servedCue\.cueId: must not be empty/);
     assert.match(errors, /servedCue\.acceptedWordIds: must include the task word/);
+  });
+});
+
+describe('learner-requested reflection V3 validation', () => {
+  test('accepts a V3 supplement and bundle with a correct marked action', () => {
+    const supplement = {
+      ...validSupplement(),
+      schemaVersion: 'session_reflection_evidence_supplement.v2' as const,
+      items: [{ ...validSupplement().items[0]!, learnerRequestedReview: true as const }],
+    };
+    assert.equal(parseSessionReflectionEvidenceSupplementV2(supplement), supplement);
+    const { schemaVersion: _schemaVersion, ...base } = productionBundleV2();
+    const bundle: SessionReflectionBundleV3 = {
+      ...base,
+      schemaVersion: 'session_reflection_bundle.v3',
+      items: [{ ...base.items[0]!, learnerRequestedReview: true, responseKind: null }],
+    };
+    assert.deepEqual(validateSessionReflectionBundleV3(bundle), []);
+    assert.equal(parseSessionReflectionBundleV3(bundle), bundle);
+  });
+
+  test('reserves a null V3 response kind for learner-requested review', () => {
+    const { schemaVersion: _schemaVersion, ...base } = productionBundleV2();
+    const bundle: SessionReflectionBundleV3 = {
+      ...base,
+      schemaVersion: 'session_reflection_bundle.v3',
+      items: [{ ...base.items[0]!, responseKind: null }],
+    };
+    assert.match(validateSessionReflectionBundleV3(bundle).join('\n'), /null is reserved/);
   });
 });
 

@@ -5,6 +5,7 @@ import type {
   ProposalReviewDisposition,
   ReflectionInputItemV1,
   ReflectionInputItemV2,
+  ReflectionItemV3,
   ReflectionOperation,
 } from '../domain/reflection';
 import type { ReflectionModelChoice } from '../services/api';
@@ -13,6 +14,7 @@ import type { ReflectionPageController } from '../features/reflection/useReflect
 import {
   buildNoDurableChangeGists,
   buildReflectionItemPresentations,
+  buildLearnerRequestedReflectionPresentations,
   buildReflectionProposalPresentations,
   cloneReflectionOperation,
   createReplacementOperation,
@@ -41,7 +43,7 @@ const REFLECTION_RETRY_MODEL_OPTIONS: ReadonlyArray<Omit<ReflectionRetryMenuOpti
   { id: 'zai:glm-5.2-high', label: 'GLM-5.2 high', model: 'zai:glm-5.2-high' },
 ];
 
-type ReflectionView = ReflectionProposalQueueKind | 'sessions' | 'usage';
+type ReflectionView = ReflectionProposalQueueKind | 'requests' | 'sessions' | 'usage';
 
 export function ReflectionsPage({
   controller,
@@ -54,6 +56,7 @@ export function ReflectionsPage({
     deferred: buildReflectionProposalPresentations(controller.artifactDetails, 'deferred'),
     unapplied: buildReflectionProposalPresentations(controller.artifactDetails, 'unapplied'),
   };
+  const learnerRequests = buildLearnerRequestedReflectionPresentations(controller.artifactDetails);
   const views: Array<{ key: ReflectionView; label: string; count?: number }> = [
     { key: 'attention', label: 'Needs attention', count: proposalQueues.attention.length },
     { key: 'deferred', label: 'Deferred', count: proposalQueues.deferred.length },
@@ -62,6 +65,7 @@ export function ReflectionsPage({
       label: 'Pending / unsupported',
       count: proposalQueues.unapplied.length,
     },
+    { key: 'requests', label: 'Learner requests', count: learnerRequests.length },
     { key: 'sessions', label: 'By session' },
     { key: 'usage', label: 'Token usage' },
   ];
@@ -120,13 +124,51 @@ export function ReflectionsPage({
           onRetry={controller.retryGenerationRun}
         />
       ) : (
+        view === 'requests' ? (
+          <LearnerRequestsView requests={learnerRequests} />
+        ) : (
         <ProposalQueueView
           kind={view}
           proposals={proposalQueues[view]}
           controller={controller}
         />
+        )
       )}
     </section>
+  );
+}
+
+function LearnerRequestsView({
+  requests,
+}: {
+  requests: ReturnType<typeof buildLearnerRequestedReflectionPresentations>;
+}) {
+  return (
+    <main className="reflection-queue">
+      <header className="reflection-queue-heading">
+        <div>
+          <h2>Learner-requested feedback</h2>
+          <p className="notes">Feedback requested during study, including informational results.</p>
+        </div>
+      </header>
+      {requests.length === 0 ? (
+        <section className="panel reflection-empty-state">
+          <h2>No requests yet</h2>
+          <p className="notes">Marked study actions will appear here after reflection finishes.</p>
+        </section>
+      ) : requests.map(({ artifact, evidence, result }) => (
+        <article className="panel reflection-queue-card" key={`${artifact.artifactId}:${result.itemId}`}>
+          <header className="reflection-item-heading">
+            <div>
+              <p className="reflection-eyebrow">{formatDateTime(artifact.generatedAt)}</p>
+              <h2>{itemTitle(evidence)}</h2>
+            </div>
+          </header>
+          <EvidenceView evidence={evidence} />
+          <section className="reflection-analysis"><h3>Feedback</h3><p>{result.learnerExplanation ?? result.observation}</p></section>
+        </article>
+      ))}
+    </main>
   );
 }
 
@@ -824,7 +866,7 @@ function ProposalCard({
   onWithdraw,
 }: {
   proposal: ReflectionProposalDetailDto;
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null;
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null;
   submitting: boolean;
   withdrawingInvocationId: string | null;
   onDefer: (proposalId: string) => Promise<void>;
@@ -1119,7 +1161,7 @@ function EffectRefs({ label, refs }: { label: string; refs: EffectRef[] }) {
 function EvidenceView({
   evidence,
 }: {
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null;
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null;
 }) {
   if (evidence === null) {
     return (
@@ -1211,7 +1253,7 @@ function InfoList({
   );
 }
 
-function itemTitle(evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | null): string {
+function itemTitle(evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null): string {
   if (evidence?.targetWord !== null && evidence?.targetWord !== undefined) {
     return wordLabel(evidence.targetWord);
   }

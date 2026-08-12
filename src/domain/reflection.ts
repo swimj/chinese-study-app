@@ -113,7 +113,20 @@ export type SessionReflectionBundleV2 = {
   items: ReflectionInputItemV2[];
 };
 
-export type SessionReflectionBundle = SessionReflectionBundleV1 | SessionReflectionBundleV2;
+export type ReflectionItemV3 = Omit<ProductionMistakeReflectionItemV2, 'responseKind'> & {
+  /** Optional learner annotation; the base item still represents ordinary failure evidence when absent. */
+  learnerRequestedReview?: true;
+  responseKind: ProductionMistakeReflectionItemV2['responseKind'] | null;
+};
+
+export type SessionReflectionBundleV3 = {
+  schemaVersion: 'session_reflection_bundle.v3';
+  generatedAt: string;
+  session: SessionReflectionBundleV1['session'];
+  items: ReflectionItemV3[];
+};
+
+export type SessionReflectionBundle = SessionReflectionBundleV1 | SessionReflectionBundleV2 | SessionReflectionBundleV3;
 
 export type ReflectionDiagnosisTagV1 =
   | 'valid_or_near_valid_alternate'
@@ -945,10 +958,10 @@ function validateRepairProductionCueOperationV2(
   return errors;
 }
 
-function visibleWordIds(item: ReflectionInputItemV1 | ReflectionInputItemV2): Set<string> {
+function visibleWordIds(item: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3): Set<string> {
   const ids = new Set<string>();
   if (item.targetWord !== null) ids.add(item.targetWord.wordId);
-  if (item.source === 'production_mistake' && item.submittedWord !== null) {
+  if ('submittedWord' in item && item.submittedWord !== null) {
     ids.add(item.submittedWord.wordId);
   }
   if (item.source === 'session_note') {
@@ -976,7 +989,7 @@ export function validateSessionReflectionResult(
 
 export function validateSessionReflectionResultV5(
   value: unknown,
-  bundle: SessionReflectionBundleV2,
+  bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3,
 ): string[] {
   return validateSessionReflectionResultVersion(
     value,
@@ -1058,6 +1071,14 @@ function validateSessionReflectionResultVersion(
 
     const itemId = typeof itemResult.itemId === 'string' ? itemResult.itemId : null;
     const inputItem = itemId === null ? undefined : inputItemsById.get(itemId);
+    if (
+      inputItem !== undefined
+      && 'learnerRequestedReview' in inputItem
+      && inputItem.learnerRequestedReview === true
+      && itemResult.learnerExplanation === null
+    ) {
+      errors.push(`${itemPath}.learnerExplanation: learner-requested evidence requires feedback`);
+    }
     if (!Array.isArray(itemResult.proposals)) {
       errors.push(`${itemPath}.proposals: expected array`);
     } else {
@@ -1127,7 +1148,7 @@ function validateSessionReflectionResultVersion(
 
 export function validateReflectionOperationEvidenceContext(
   value: unknown,
-  item: ProductionMistakeReflectionItemV2,
+  item: ProductionMistakeReflectionItemV2 | ReflectionItemV3,
   path: string,
 ): string[] {
   if (!isRecord(value)) return [];
@@ -1234,7 +1255,7 @@ function hasExactServedCueRepair(
 
 export function normalizeSessionReflectionResultV5(
   value: SessionReflectionResultV5Wire,
-  bundle: SessionReflectionBundleV2,
+  bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3,
 ): SessionReflectionResultV5 {
   return {
     schemaVersion: 'session_reflection_result.v5',

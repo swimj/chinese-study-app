@@ -75,7 +75,7 @@ Reflection input distinguishes three layers:
 The client does not supply enriched domain truth. The backend verifies session,
 action, and attempt references before constructing a provider-facing bundle.
 
-### Initial evidence kind
+### Initial evidence kinds
 
 The initial flow includes review-phase production failures that are either an
 explicit no-clue response or a non-empty typed response outside the accepted
@@ -111,6 +111,27 @@ copied into the model-facing bundle.
 An undone transition contributes no evidence. Evidence is also removed when the
 corresponding action is canceled or excluded through an in-session management
 path whose durable meaning is that the exercise should not be reflected on.
+
+The V3 bundle additionally permits an untrusted learner-request marker on a
+review-phase production action. The marker may be set before or after the
+response, survives Undo, and can be explicitly removed. It becomes eligible
+only after its full action batch is durably accepted; it is removed with a
+canceled, dismissed, or managed-away action. A marked correct response is
+eligible, but the marker never changes grading, covering, scheduling,
+reinforcement, or completion. When the action also has a production failure,
+the V3 bundle has one item with both the original failure evidence and the
+marker.
+
+The marker and all learner-authored fields are hints, not strict content
+management directives. Backend reconstruction remains authoritative, and the
+prompt treats the marker only as a request for useful feedback. V3 pairs with
+the existing V5 result contract; marked items require a non-empty
+learner-facing explanation even when no proposal is warranted.
+
+All newly constructed provider bundles use V3, including sessions containing
+only ordinary failure evidence. V2 remains readable for immutable stored
+artifacts and exact-bundle retries, but new generation does not branch between
+V2 and V3 based on whether a marker happened to be present.
 
 Learner-authored session notes, contrast-selection signals, learning/unstudied
 actions, and broader history require explicit evidence-kind and bundle-schema

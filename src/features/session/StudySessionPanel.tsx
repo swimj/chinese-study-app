@@ -33,6 +33,7 @@ export type FrozenProductionCard = {
   personalNotes: string;
   intervalHours: number;
   example: string;
+  production?: SessionStudyItem['production'];
 };
 
 export type FrozenContrastCard = {
@@ -83,6 +84,8 @@ export function StudySessionPanel({
   contrastSelectedWordId,
   contrastAwaitingRating,
   activeRatingOptions,
+  learnerRequestedReview,
+  frozenProductionLearnerRequestedReview,
   onUndoLastRating,
   onEndSession,
   onRetrySessionReflection,
@@ -100,6 +103,8 @@ export function StudySessionPanel({
   onProductionHanziInputChange,
   onSelectContrastChoice,
   onRevealAnswer,
+  onToggleLearnerRequestedReview,
+  onToggleFrozenProductionLearnerRequestedReview,
   onRate,
 }: {
   sessionStarted: boolean;
@@ -142,6 +147,8 @@ export function StudySessionPanel({
   contrastSelectedWordId: string | null;
   contrastAwaitingRating: boolean;
   activeRatingOptions: RatingOption[];
+  learnerRequestedReview: boolean;
+  frozenProductionLearnerRequestedReview: boolean;
   onUndoLastRating: () => void;
   onEndSession: () => void;
   onRetrySessionReflection: () => void;
@@ -159,6 +166,8 @@ export function StudySessionPanel({
   onProductionHanziInputChange: (value: string) => void;
   onSelectContrastChoice: (wordId: string) => void;
   onRevealAnswer: () => void;
+  onToggleLearnerRequestedReview: () => void;
+  onToggleFrozenProductionLearnerRequestedReview: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
 }) {
   const productionFormId = 'production-hanzi-input-form';
@@ -257,6 +266,14 @@ export function StudySessionPanel({
             </SessionActionSection>
             {frozenProductionCard.status === 'review' ? (
               <SessionActionSection>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={onToggleFrozenProductionLearnerRequestedReview}
+                  disabled={personalNotesEditorOpen}
+                >
+                  {frozenProductionLearnerRequestedReview ? 'Remove reflection request' : 'Ask reflection to review'}
+                </button>
                 <FrozenProductionCardActions
                   isSubmitting={studyManagementSubmitting}
                   onDismissFrozenProductionWord={onDismissFrozenProductionWord}
@@ -611,6 +628,16 @@ export function StudySessionPanel({
               />
             </SessionActionSection>
             <SessionActionSection>
+              {activeItem.actionKind === 'production' && activeWord.status === 'review' ? (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={onToggleLearnerRequestedReview}
+                  disabled={personalNotesEditorOpen}
+                >
+                  {learnerRequestedReview ? 'Remove reflection request' : 'Ask reflection to review'}
+                </button>
+              ) : null}
               <CardActions
                 activeItem={activeItem}
                 activeWord={activeWord}

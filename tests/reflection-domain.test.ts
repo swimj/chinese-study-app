@@ -20,6 +20,7 @@ import type {
   RepairProductionCueOperationV2,
   SessionReflectionBundleV1,
   SessionReflectionBundleV2,
+  SessionReflectionBundleV3,
   SessionReflectionResultV4,
   SessionReflectionResultV5Wire,
 } from '../src/domain/reflection.js';
@@ -419,6 +420,23 @@ describe('reflection result validation', () => {
     assert.deepEqual(normalized.itemResults[0]!.proposals[0]!.operation, operation);
     assert.deepEqual(validateSessionReflectionResultV5(normalized, bundleV2()), []);
     assert.deepEqual(wireResult.itemResults[0]!.proposals[0]!.operation, wireOperation);
+  });
+
+  test('requires learner-facing feedback for a marked V3 item without changing the V5 result schema', () => {
+    const v2 = bundleV2();
+    const bundleV3: SessionReflectionBundleV3 = {
+      ...v2,
+      schemaVersion: 'session_reflection_bundle.v3',
+      items: [{ ...v2.items[0]!, learnerRequestedReview: true }],
+    };
+    const v5 = normalizeSessionReflectionResultV5({
+      schemaVersion: 'session_reflection_result.v5',
+      itemResults: [{
+        itemId: 'item', diagnosisTags: ['ordinary_retrieval_noise'], observation: 'No change is needed.',
+        learnerExplanation: null, proposals: [], questions: [], unhandledNeeds: [],
+      }],
+    }, bundleV3);
+    assert.match(validateSessionReflectionResultV5(v5, bundleV3).join('\n'), /requires feedback/);
   });
 
   test('binds V2 repairs and judgments to the exact served cue evidence', () => {
