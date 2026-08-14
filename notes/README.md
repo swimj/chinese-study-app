@@ -82,6 +82,7 @@ portfolio-disposition pattern as Linear.
 
 | Note | Type | Retire by |
 | --- | --- | --- |
+| [2026-08-14-meta-project-direction-todo.md](active/2026-08-14-meta-project-direction-todo.md) | work-bundle | 2026-09-14 |
 | [2026-07-06-session-reflection-workflow.md](active/2026-07-06-session-reflection-workflow.md) | research | 2026-07-20 |
 | [2026-07-10-session-lifecycle-code-verification.md](active/2026-07-10-session-lifecycle-code-verification.md) | research | 2026-07-24 |
 | [2026-07-10-session-evidence-bundle-design.md](active/2026-07-10-session-evidence-bundle-design.md) | research | 2026-07-24 |
