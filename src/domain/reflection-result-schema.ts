@@ -244,6 +244,26 @@ const itemResultSchemaV5Wire = objectSchema({
   })),
 });
 
+const itemResultSchemaV6Wire = objectSchema({
+  itemId: stringSchema,
+  diagnosisTags: arraySchema(enumSchema([
+    'valid_or_near_valid_alternate',
+    'cue_overlap_hides_usage_difference',
+    'production_cue_overloaded',
+    'form_or_sound_interference',
+    'grammar_or_usage_role_interference',
+    'ordinary_retrieval_noise',
+    'persistent_confusion',
+    'insufficient_evidence',
+  ])),
+  learnerExplanation: stringSchema,
+  proposals: arraySchema(proposalSchemaV5Wire),
+  questions: arraySchema(objectSchema({
+    question: stringSchema,
+    reason: stringSchema,
+  })),
+});
+
 export const sessionReflectionResultSchema: JsonSchema = objectSchema({
   schemaVersion: enumSchema(['session_reflection_result.v4']),
   itemResults: arraySchema(itemResultSchema),
@@ -257,3 +277,10 @@ export const sessionReflectionResultV5WireSchema: JsonSchema = objectSchema({
 }, 'One structured post-session reflection result using model-authored V2 cue repairs.');
 
 export const SESSION_REFLECTION_RESULT_V5_WIRE_SCHEMA_NAME = 'session_reflection_result_v5';
+
+export const sessionReflectionResultV6WireSchema: JsonSchema = objectSchema({
+  schemaVersion: enumSchema(['session_reflection_result.v6']),
+  itemResults: arraySchema(itemResultSchemaV6Wire),
+}, 'One structured post-session reflection result with one item-level teaching surface.');
+
+export const SESSION_REFLECTION_RESULT_V6_WIRE_SCHEMA_NAME = 'session_reflection_result_v6';

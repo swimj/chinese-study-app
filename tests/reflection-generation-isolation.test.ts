@@ -109,7 +109,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       clientRequestId: run.clientRequestId,
       finishReason: null,
       bundleSchemaVersion: 'session_reflection_bundle.v3',
-      resultSchemaVersion: 'session_reflection_result.v5',
+      resultSchemaVersion: 'session_reflection_result.v6',
       diagnostic: {
         schemaVersion: 'reflection_generation_diagnostic.v1',
         phase: 'provider_transport',

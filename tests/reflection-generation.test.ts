@@ -3,7 +3,7 @@ import { describe, test } from 'node:test';
 import type {
   ReflectionOperation,
   SessionReflectionBundleV2,
-  SessionReflectionResultV5,
+  SessionReflectionResultV6,
 } from '../src/domain/reflection.ts';
 import type {
   MaterializeReflectionArtifactInput,
@@ -114,7 +114,7 @@ describe('initial reflection generation orchestration', () => {
       clientRequestId: null,
       finishReason: 'stop',
       bundleSchemaVersion: 'session_reflection_bundle.v2',
-      resultSchemaVersion: 'session_reflection_result.v5',
+      resultSchemaVersion: 'session_reflection_result.v6',
       diagnostic: null,
       state: 'succeeded',
       failureCode: null,
@@ -347,7 +347,7 @@ function artifactDetail(artifactId: string, proposalCount: number): ReflectionAr
     model: 'gpt-5.6-luna-high',
     promptVersion: 'reflection-v3',
     bundleSchemaVersion: 'session_reflection_bundle.v2',
-    resultSchemaVersion: 'session_reflection_result.v5',
+    resultSchemaVersion: 'session_reflection_result.v6',
     evidenceBundle: bundle(),
     result: result(),
     proposals: Array.from({ length: proposalCount }, (_, index) => ({
@@ -411,21 +411,19 @@ function bundle(): SessionReflectionBundleV2 {
   };
 }
 
-function result(): SessionReflectionResultV5 {
+function result(): SessionReflectionResultV6 {
   return {
-    schemaVersion: 'session_reflection_result.v5',
+    schemaVersion: 'session_reflection_result.v6',
     itemResults: [{
       itemId: 'item-1',
       diagnosisTags: ['persistent_confusion'],
-      observation: 'This production goal is not useful.',
-      learnerExplanation: null,
+      learnerExplanation: 'This production goal is not useful as an isolated task.',
       proposals: [{
         proposalGroupKey: null,
         rationale: 'Suppress this production goal.',
         operation: operation(),
       }],
       questions: [],
-      unhandledNeeds: [],
     }],
   };
 }

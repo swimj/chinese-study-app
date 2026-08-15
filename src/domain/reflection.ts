@@ -298,6 +298,16 @@ export type ReflectionItemResultV1 = {
   unhandledNeeds: ReflectionUnhandledNeedV1[];
 };
 
+export type ReflectionItemResultV2 = {
+  itemId: string;
+  diagnosisTags: ReflectionDiagnosisTagV1[];
+  learnerExplanation: string;
+  proposals: ReflectionProposalV1[];
+  questions: ReflectionClarifyingQuestionV1[];
+};
+
+export type ReflectionItemResult = ReflectionItemResultV1 | ReflectionItemResultV2;
+
 export type SessionReflectionResultV4 = {
   schemaVersion: 'session_reflection_result.v4';
   itemResults: ReflectionItemResultV1[];
@@ -321,7 +331,24 @@ export type SessionReflectionResultV5 = {
   itemResults: ReflectionItemResultV1[];
 };
 
-export type SessionReflectionResult = SessionReflectionResultV4 | SessionReflectionResultV5;
+export type ReflectionItemResultV6Wire = Omit<ReflectionItemResultV2, 'proposals'> & {
+  proposals: ReflectionProposalV5Wire[];
+};
+
+export type SessionReflectionResultV6Wire = {
+  schemaVersion: 'session_reflection_result.v6';
+  itemResults: ReflectionItemResultV6Wire[];
+};
+
+export type SessionReflectionResultV6 = {
+  schemaVersion: 'session_reflection_result.v6';
+  itemResults: ReflectionItemResultV2[];
+};
+
+export type SessionReflectionResult =
+  | SessionReflectionResultV4
+  | SessionReflectionResultV5
+  | SessionReflectionResultV6;
 
 export type EffectRef = {
   type: string;
@@ -998,6 +1025,17 @@ export function validateSessionReflectionResultV5(
   );
 }
 
+export function validateSessionReflectionResultV6(
+  value: unknown,
+  bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3,
+): string[] {
+  return validateSessionReflectionResultVersion(
+    value,
+    bundle,
+    'session_reflection_result.v6',
+  );
+}
+
 function validateSessionReflectionResultVersion(
   value: unknown,
   bundle: SessionReflectionBundle,
@@ -1032,28 +1070,39 @@ function validateSessionReflectionResultVersion(
   }
 
   const inputItemsById = new Map(bundle.items.map((item) => [item.itemId, item]));
+  const usesStreamlinedItemResult = schemaVersion === 'session_reflection_result.v6';
   for (const [itemIndex, itemResult] of value.itemResults.entries()) {
     const itemPath = `$.itemResults[${itemIndex}]`;
     errors.push(...validateObjectFields(
       itemResult,
-      [
-        'itemId',
-        'diagnosisTags',
-        'observation',
-        'learnerExplanation',
-        'proposals',
-        'questions',
-        'unhandledNeeds',
-      ],
+      usesStreamlinedItemResult
+        ? ['itemId', 'diagnosisTags', 'learnerExplanation', 'proposals', 'questions']
+        : [
+            'itemId',
+            'diagnosisTags',
+            'observation',
+            'learnerExplanation',
+            'proposals',
+            'questions',
+            'unhandledNeeds',
+          ],
       itemPath,
     ));
     if (!isRecord(itemResult)) continue;
     errors.push(...validateString(itemResult.itemId, `${itemPath}.itemId`, true));
-    errors.push(...validateString(itemResult.observation, `${itemPath}.observation`, true));
-    errors.push(...validateNullableString(
-      itemResult.learnerExplanation,
-      `${itemPath}.learnerExplanation`,
-    ));
+    if (usesStreamlinedItemResult) {
+      errors.push(...validateString(
+        itemResult.learnerExplanation,
+        `${itemPath}.learnerExplanation`,
+        true,
+      ));
+    } else {
+      errors.push(...validateString(itemResult.observation, `${itemPath}.observation`, true));
+      errors.push(...validateNullableString(
+        itemResult.learnerExplanation,
+        `${itemPath}.learnerExplanation`,
+      ));
+    }
 
     if (!Array.isArray(itemResult.diagnosisTags)) {
       errors.push(`${itemPath}.diagnosisTags: expected array`);
@@ -1098,7 +1147,7 @@ function validateSessionReflectionResultVersion(
           path: `${proposalPath}.operation`,
         }));
         if (
-          schemaVersion === 'session_reflection_result.v5'
+          schemaVersion !== 'session_reflection_result.v4'
           && inputItem !== undefined
           && 'servedCue' in inputItem
         ) {
@@ -1123,10 +1172,11 @@ function validateSessionReflectionResultVersion(
       }
     }
 
-    if (!Array.isArray(itemResult.unhandledNeeds)) {
+    const unhandledNeeds = itemResult.unhandledNeeds;
+    if (!usesStreamlinedItemResult && !Array.isArray(unhandledNeeds)) {
       errors.push(`${itemPath}.unhandledNeeds: expected array`);
-    } else {
-      for (const [needIndex, need] of itemResult.unhandledNeeds.entries()) {
+    } else if (!usesStreamlinedItemResult && Array.isArray(unhandledNeeds)) {
+      for (const [needIndex, need] of unhandledNeeds.entries()) {
         const needPath = `${itemPath}.unhandledNeeds[${needIndex}]`;
         errors.push(...validateObjectFields(
           need,
@@ -1284,12 +1334,47 @@ export function normalizeSessionReflectionResultV5(
   };
 }
 
+export function normalizeSessionReflectionResultV6(
+  value: SessionReflectionResultV6Wire,
+  bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3,
+): SessionReflectionResultV6 {
+  return {
+    schemaVersion: 'session_reflection_result.v6',
+    itemResults: value.itemResults.map((itemResult) => {
+      const sourceAttemptId = bundle.items.find(
+        (item) => item.itemId === itemResult.itemId,
+      )?.sourceAttemptId ?? '';
+      return {
+        ...itemResult,
+        proposals: itemResult.proposals.map((proposal) => ({
+          ...proposal,
+          operation: proposal.operation.kind === 'repair_production_cue'
+            ? {
+                ...proposal.operation,
+                version: 2,
+                taskId: `production-task:${proposal.operation.wordId}:default_production`,
+                sourceAttemptJudgments: proposal.operation.sourceAttemptJudgments.map((judgment) => ({
+                  ...judgment,
+                  sourceAttemptId,
+                })),
+              }
+            : proposal.operation,
+        })),
+      };
+    }),
+  };
+}
+
 /**
  * Legacy V5 output may contain model-authored attempt ids. They are neither
  * part of the current wire contract nor trusted provenance, so strip them
  * before strict schema validation and canonicalization.
  */
 export function stripLegacySourceAttemptIdsFromV5Wire(value: unknown): unknown {
+  return stripLegacySourceAttemptIdsFromReflectionWire(value);
+}
+
+export function stripLegacySourceAttemptIdsFromReflectionWire(value: unknown): unknown {
   if (!isRecord(value) || !Array.isArray(value.itemResults)) return value;
   return {
     ...value,

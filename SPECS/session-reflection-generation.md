@@ -125,8 +125,9 @@ marker.
 The marker and all learner-authored fields are hints, not strict content
 management directives. Backend reconstruction remains authoritative, and the
 prompt treats the marker only as a request for useful feedback. V3 pairs with
-the existing V5 result contract; marked items require a non-empty
-learner-facing explanation even when no proposal is warranted.
+the current V6 result contract; every item has a non-empty learner-facing
+explanation even when no proposal is warranted. V5 remains readable for
+immutable stored artifacts.
 
 All newly constructed provider bundles use V3, including sessions containing
 only ordinary failure evidence. V2 remains readable for immutable stored
