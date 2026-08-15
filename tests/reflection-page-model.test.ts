@@ -45,11 +45,10 @@ describe('reflection page model', () => {
       itemId: 'informational',
       title: '目标 · pinyin',
       diagnosisTags: ['ordinary_retrieval_noise'],
-      observation: 'No durable change is warranted.',
+      feedback: 'Keep going.',
       responseSummary: 'Typed 替代 · pinyin',
       cueSummary: 'target',
       questionCount: 0,
-      unhandledNeedCount: 0,
     });
   });
 

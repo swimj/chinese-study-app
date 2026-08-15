@@ -97,12 +97,12 @@ Separate convenience views show deferred proposals and accepted authorizations
 whose application is pending or unsupported, while **By session** retains the
 artifact-oriented dogfood view. In that view, items whose results carry no
 proposals are summarized in a compact **No durable change** gist derived from
-the persisted evidence bundle (word, diagnosis tags, cue/response, observation),
+the persisted evidence and result (word, diagnosis tags, cue/response, learner
+feedback),
 so ordinary forgetting and other no-action judgments stay visible without
 opening every item card. Reviewing a proposal removes it from the
 current queue when its new lifecycle state no longer matches that filter.
-Questions and unhandled needs remain informational and do not receive synthetic
-review state.
+Questions remain informational and do not receive synthetic review state.
 
 The **Learner requests** view is an informational inbox for marked V3 items.
 It displays learner-facing feedback even when the result has no proposal, while
