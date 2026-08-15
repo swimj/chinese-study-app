@@ -313,6 +313,39 @@ describe('initial reflection generation orchestration', () => {
     assert.equal(providerCalls, 2);
     assert.equal(materializeCalls, 1);
   });
+
+  test('routes the initial run across four comparison arms with equal probability', async () => {
+    const selected: string[] = [];
+    const makeArm = (label: string) => ({
+      async generate() {
+        selected.push(label);
+        return providerSuccess();
+      },
+    });
+    let randomCalls = 0;
+    const service = createInitialReflectionGenerationService({
+      findExistingArtifact: () => null,
+      buildBundle: () => bundle(),
+      provider: makeArm('luna'),
+      glmProvider: makeArm('glm'),
+      qwen38MaxProvider: makeArm('qwen38'),
+      qwen37PlusProvider: makeArm('qwen37'),
+      random: () => {
+        const values = [0, 0.25, 0.5, 0.75];
+        return values[randomCalls++]!;
+      },
+      materializeArtifact: () => ({
+        created: true,
+        artifact: artifactDetail('routed-artifact', 1),
+      }),
+      recordRun: () => {},
+    });
+
+    for (let index = 0; index < 4; index += 1) {
+      await service.generate(`session-${index}`, {});
+    }
+    assert.deepEqual(selected, ['luna', 'glm', 'qwen38', 'qwen37']);
+  });
 });
 
 function providerSuccess(): LunaReflectionSuccess {

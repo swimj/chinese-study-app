@@ -29,6 +29,13 @@ export const providerAdapters: ProviderAdapter[] = [
     structuredOutputMode: 'json_object',
     maxTokensField: 'max_tokens',
   }),
+  createOpenAiCompatibleAdapter({
+    id: 'dashscope',
+    defaultBaseUrl: 'https://ws-k76i8wy95wc9oheq.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
+    apiKeyEnvironmentVariable: 'DASHSCOPE_API_KEY',
+    structuredOutputMode: 'json_object',
+    maxTokensField: 'max_tokens',
+  }),
 ];
 
 export function getProviderAdapter(providerId: string): ProviderAdapter {

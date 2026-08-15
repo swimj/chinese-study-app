@@ -73,8 +73,9 @@ The runner currently includes these adapters:
 | Google Gemini | `GEMINI_API_KEY` | Interactions API JSON Schema |
 | DeepSeek | `DEEPSEEK_API_KEY` | JSON-object mode plus local schema validation |
 | ZAI | `ZAI_API_KEY` | JSON-object mode plus local schema validation |
+| DashScope | `DASHSCOPE_API_KEY` | JSON-object mode plus local schema validation |
 
-OpenAI, DeepSeek, and ZAI share transport code, but remain separate adapters
+OpenAI, DeepSeek, ZAI, and DashScope share transport code, but remain separate adapters
 because their supported response formats, token fields, and request parameters
 differ.
 Anthropic and Gemini use their native APIs. Adding another provider requires a
