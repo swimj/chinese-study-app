@@ -4,7 +4,7 @@ export type ReflectionRunPricingSnapshot = {
   id: string;
   pricingAsOf: string;
   provider: string;
-  providerModel: 'gpt-5.6-luna';
+  providerModel: string;
   serviceTier: 'standard';
   contextBand: 'short';
   currency: 'USD';
@@ -49,20 +49,63 @@ export const INITIAL_GLM_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricingSna
   outputPerMillionUsd: 4.4,
 };
 
+/**
+ * International / Singapore Model Studio list prices (not limited-time promos).
+ * Cached input uses the implicit-cache hit rate; cache write uses explicit
+ * cache creation. Source: QwenCloud / Model Studio model pricing pages,
+ * pinned 2026-08-15.
+ */
+export const INITIAL_QWEN_3_8_MAX_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricingSnapshot = {
+  id: 'dashscope-qwen3.8-max-standard-short-context-2026-08-15',
+  pricingAsOf: '2026-08-15',
+  provider: 'dashscope',
+  providerModel: 'qwen3.8-max',
+  serviceTier: 'standard',
+  contextBand: 'short',
+  currency: 'USD',
+  inputPerMillionUsd: 2,
+  cachedInputPerMillionUsd: 0.25,
+  cacheWriteInputPerMillionUsd: 2.5,
+  outputPerMillionUsd: 6,
+};
+
+/**
+ * Same source date. Pins the first International tier only
+ * (0 < input tokens ≤ 256K). Higher context bands are 3× and intentionally
+ * omitted while reflection bundles stay well under that threshold.
+ */
+export const INITIAL_QWEN_3_7_PLUS_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricingSnapshot = {
+  id: 'dashscope-qwen3.7-plus-standard-short-context-2026-08-15',
+  pricingAsOf: '2026-08-15',
+  provider: 'dashscope',
+  providerModel: 'qwen3.7-plus',
+  serviceTier: 'standard',
+  contextBand: 'short',
+  currency: 'USD',
+  inputPerMillionUsd: 0.4,
+  cachedInputPerMillionUsd: 0.08,
+  cacheWriteInputPerMillionUsd: 0.5,
+  outputPerMillionUsd: 1.6,
+};
+
 export type ReflectionRunCostEstimate = {
   estimatedCostUsd: number;
   pricing: ReflectionRunPricingSnapshot;
 };
+
+const INITIAL_REFLECTION_RUN_PRICING: ReadonlyArray<ReflectionRunPricingSnapshot> = [
+  INITIAL_LUNA_STANDARD_SHORT_CONTEXT_PRICING,
+  INITIAL_GLM_STANDARD_SHORT_CONTEXT_PRICING,
+  INITIAL_QWEN_3_8_MAX_STANDARD_SHORT_CONTEXT_PRICING,
+  INITIAL_QWEN_3_7_PLUS_STANDARD_SHORT_CONTEXT_PRICING,
+];
 
 export function estimateInitialReflectionRunCost(input: {
   provider: string;
   providerModel: string;
   usage: NormalizedTokenUsage;
 }): ReflectionRunCostEstimate | null {
-  const pricing = [
-    INITIAL_LUNA_STANDARD_SHORT_CONTEXT_PRICING,
-    INITIAL_GLM_STANDARD_SHORT_CONTEXT_PRICING,
-  ].find((candidate) => (
+  const pricing = INITIAL_REFLECTION_RUN_PRICING.find((candidate) => (
     input.provider === candidate.provider && input.providerModel === candidate.providerModel
   ));
   if (

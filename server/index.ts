@@ -54,6 +54,7 @@ import type {
 } from '../src/domain/reflection.ts';
 import {
   createInitialReflectionGenerationService,
+  isReflectionModelChoice,
   type InitialReflectionGenerationService,
 } from './reflection/generation.ts';
 import { ReflectionEvidenceError } from './reflection/evidence.ts';
@@ -465,9 +466,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
     const normalizedSessionId = sessionId.trim();
     const requestedModel = req.body?.model;
-    if (requestedModel !== undefined
-      && requestedModel !== 'openai:gpt-5.6-luna-high'
-      && requestedModel !== 'zai:glm-5.2-high') {
+    if (requestedModel !== undefined && !isReflectionModelChoice(requestedModel)) {
       res.status(400).json({ error: 'Expected a supported reflection model when provided' });
       return;
     }
@@ -561,9 +560,7 @@ export function createApp(options: CreateAppOptions = {}) {
     }
 
     const requestedModel = req.body?.model;
-    if (requestedModel !== undefined
-      && requestedModel !== 'openai:gpt-5.6-luna-high'
-      && requestedModel !== 'zai:glm-5.2-high') {
+    if (requestedModel !== undefined && !isReflectionModelChoice(requestedModel)) {
       res.status(400).json({ error: 'Expected a supported reflection model when provided' });
       return;
     }

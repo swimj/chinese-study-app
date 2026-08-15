@@ -43,6 +43,8 @@ const REFLECTION_RETRY_MODEL_OPTIONS: ReadonlyArray<Omit<ReflectionRetryMenuOpti
 }> = [
   { id: 'openai:gpt-5.6-luna-high', label: 'Luna high', model: 'openai:gpt-5.6-luna-high' },
   { id: 'zai:glm-5.2-high', label: 'GLM-5.2 high', model: 'zai:glm-5.2-high' },
+  { id: 'dashscope:qwen3.8-max', label: 'Qwen3.8-Max', model: 'dashscope:qwen3.8-max' },
+  { id: 'dashscope:qwen3.7-plus', label: 'Qwen3.7 Plus', model: 'dashscope:qwen3.7-plus' },
 ];
 
 type ReflectionView = ReflectionProposalQueueKind | 'requests' | 'sessions' | 'usage';

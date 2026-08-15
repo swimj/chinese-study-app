@@ -325,9 +325,15 @@ describe('LLM provider model batch and viewer', () => {
       'gpt-5.4-mini-xhigh',
       'glm-5.2-high',
       'glm-5.2-max',
+      'qwen3.8-max',
+      'qwen3.7-plus',
     ]);
     assert.deepEqual(getModelTarget('glm-5.2-max'), { id: 'glm-5.2-max', provider: 'zai', model: 'glm-5.2', reasoningEffort: 'max' });
     assert.equal(getProviderAdapter('zai').defaultBaseUrl, 'https://api.z.ai/api/paas/v4');
+    assert.equal(
+      getProviderAdapter('dashscope').defaultBaseUrl,
+      'https://ws-k76i8wy95wc9oheq.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
+    );
   });
 
   test('writes ordered independent artifacts for later selection without generating a report', async () => {

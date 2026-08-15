@@ -19,6 +19,12 @@ import {
   createGlmReflectionProvider,
   GLM_REFLECTION_MODEL_CONFIG,
 } from '../server/reflection/glm-provider.js';
+import {
+  createQwen37PlusReflectionProvider,
+  createQwen38MaxReflectionProvider,
+  QWEN_3_7_PLUS_REFLECTION_MODEL_CONFIG,
+  QWEN_3_8_MAX_REFLECTION_MODEL_CONFIG,
+} from '../server/reflection/qwen-provider.js';
 import type { JsonValue } from '../server/llm/types.js';
 import { validateJsonSchema } from '../server/llm/json-schema-validator.js';
 import {
@@ -205,6 +211,48 @@ describe('production Luna reflection provider', () => {
     assert.equal(generated.metadata.provider, 'zai');
     assert.equal(generated.metadata.modelConfig, 'glm-5.2-high');
     assert.equal(GLM_REFLECTION_MODEL_CONFIG.timeoutMs, 900_000);
+  });
+
+  test('uses DashScope JSON-object transport for Qwen3.8-Max and Qwen3.7 Plus', async () => {
+    const cases = [
+      {
+        create: createQwen38MaxReflectionProvider,
+        config: QWEN_3_8_MAX_REFLECTION_MODEL_CONFIG,
+        model: 'qwen3.8-max',
+      },
+      {
+        create: createQwen37PlusReflectionProvider,
+        config: QWEN_3_7_PLUS_REFLECTION_MODEL_CONFIG,
+        model: 'qwen3.7-plus',
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      const capture: CapturedRequest[] = [];
+      const provider = testCase.create({
+        environment: { DASHSCOPE_API_KEY: 'unit-test-dashscope-secret' },
+        systemPrompt: 'Production reflection system prompt.',
+        fetchImplementation: capturingFetch(responseEnvelope(JSON.stringify(validWireResult)), capture),
+      });
+
+      const generated = await provider.generate(bundle);
+
+      const request = capture[0]!;
+      assert.equal(
+        request.url,
+        'https://ws-k76i8wy95wc9oheq.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions',
+      );
+      assert.equal(request.headers.get('authorization'), 'Bearer unit-test-dashscope-secret');
+      assert.equal(request.body.model, testCase.model);
+      assert.equal(request.body.reasoning_effort, 'high');
+      assert.equal(request.body.max_tokens, 40_000);
+      assert.deepEqual(request.body.response_format, { type: 'json_object' });
+      assert.equal(generated.metadata.provider, 'dashscope');
+      assert.equal(generated.metadata.modelConfig, testCase.model);
+      assert.equal(generated.metadata.providerModel, testCase.model);
+      assert.equal(testCase.config.timeoutMs, 900_000);
+      assert.equal(testCase.config.apiKeyEnvironmentVariable, 'DASHSCOPE_API_KEY');
+    }
   });
 
   test('sends the exact model, reasoning, auth, prompt, and strict V6 wire schema request', async () => {

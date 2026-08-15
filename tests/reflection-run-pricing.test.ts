@@ -37,6 +37,52 @@ describe('initial reflection run pricing', () => {
     });
   });
 
+  test('prices DashScope Qwen arms from the pinned August 15 International snapshots', () => {
+    assert.deepEqual(estimateInitialReflectionRunCost({
+      provider: 'dashscope',
+      providerModel: 'qwen3.8-max',
+      usage: completeUsage,
+    }), {
+      // 600k*2 + 400k*0.25 + 200k*2.5 + 200k*6 = 1200+100+500+1200 = 3000 / 1e6
+      estimatedCostUsd: 3,
+      pricing: {
+        id: 'dashscope-qwen3.8-max-standard-short-context-2026-08-15',
+        pricingAsOf: '2026-08-15',
+        provider: 'dashscope',
+        providerModel: 'qwen3.8-max',
+        serviceTier: 'standard',
+        contextBand: 'short',
+        currency: 'USD',
+        inputPerMillionUsd: 2,
+        cachedInputPerMillionUsd: 0.25,
+        cacheWriteInputPerMillionUsd: 2.5,
+        outputPerMillionUsd: 6,
+      },
+    });
+
+    assert.deepEqual(estimateInitialReflectionRunCost({
+      provider: 'dashscope',
+      providerModel: 'qwen3.7-plus',
+      usage: completeUsage,
+    }), {
+      // 600k*0.4 + 400k*0.08 + 200k*0.5 + 200k*1.6 = 240+32+100+320 = 692 / 1e6
+      estimatedCostUsd: 0.692,
+      pricing: {
+        id: 'dashscope-qwen3.7-plus-standard-short-context-2026-08-15',
+        pricingAsOf: '2026-08-15',
+        provider: 'dashscope',
+        providerModel: 'qwen3.7-plus',
+        serviceTier: 'standard',
+        contextBand: 'short',
+        currency: 'USD',
+        inputPerMillionUsd: 0.4,
+        cachedInputPerMillionUsd: 0.08,
+        cacheWriteInputPerMillionUsd: 0.5,
+        outputPerMillionUsd: 1.6,
+      },
+    });
+  });
+
   test('treats absent cache categories as zero but leaves incomplete or unknown pricing unavailable', () => {
     assert.deepEqual(estimateInitialReflectionRunCost({
       provider: 'openai',

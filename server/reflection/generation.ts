@@ -27,6 +27,10 @@ import {
   type LunaReflectionRunMetadata,
 } from './luna-provider.ts';
 import { createGlmReflectionProvider } from './glm-provider.ts';
+import {
+  createQwen37PlusReflectionProvider,
+  createQwen38MaxReflectionProvider,
+} from './qwen-provider.ts';
 import { randomUUID } from 'node:crypto';
 import type { ReflectionLifecycleLogger } from './lifecycle-log.ts';
 import type { ReflectionProviderDiagnosticSink } from './provider-diagnostics.ts';
@@ -38,7 +42,19 @@ export type InitialReflectionGenerationResult = {
   status: 'created' | 'existing';
 };
 
-export type ReflectionModelChoice = 'openai:gpt-5.6-luna-high' | 'zai:glm-5.2-high';
+export const REFLECTION_MODEL_CHOICES = [
+  'openai:gpt-5.6-luna-high',
+  'zai:glm-5.2-high',
+  'dashscope:qwen3.8-max',
+  'dashscope:qwen3.7-plus',
+] as const;
+
+export type ReflectionModelChoice = (typeof REFLECTION_MODEL_CHOICES)[number];
+
+export function isReflectionModelChoice(value: unknown): value is ReflectionModelChoice {
+  return typeof value === 'string'
+    && (REFLECTION_MODEL_CHOICES as readonly string[]).includes(value);
+}
 
 export type InitialReflectionGenerationService = {
   generate(
@@ -52,6 +68,8 @@ export type InitialReflectionGenerationService = {
 export type InitialReflectionGenerationDependencies = {
   provider?: LunaReflectionProvider;
   glmProvider?: LunaReflectionProvider;
+  qwen38MaxProvider?: LunaReflectionProvider;
+  qwen37PlusProvider?: LunaReflectionProvider;
   random?: () => number;
   now?: () => string;
   buildBundle?: (
@@ -89,6 +107,12 @@ export function createInitialReflectionGenerationService(
   const glmProvider = dependencies.glmProvider ?? createGlmReflectionProvider({
     diagnosticSink: dependencies.providerDiagnosticSink,
   });
+  const qwen38MaxProvider = dependencies.qwen38MaxProvider ?? createQwen38MaxReflectionProvider({
+    diagnosticSink: dependencies.providerDiagnosticSink,
+  });
+  const qwen37PlusProvider = dependencies.qwen37PlusProvider ?? createQwen37PlusReflectionProvider({
+    diagnosticSink: dependencies.providerDiagnosticSink,
+  });
   const random = dependencies.random ?? Math.random;
   const now = dependencies.now ?? (() => new Date().toISOString());
   const buildBundleWithMetrics = dependencies.buildBundleWithMetrics
@@ -110,18 +134,42 @@ export function createInitialReflectionGenerationService(
   const recordRun = dependencies.recordRun ?? recordReflectionGenerationRun;
   const lifecycleLogger = dependencies.lifecycleLogger;
   const inFlight = new Map<string, Promise<InitialReflectionGenerationResult>>();
+  const comparisonArms: ReadonlyArray<{
+    choice: ReflectionModelChoice;
+    provider: LunaReflectionProvider;
+  }> = [
+    { choice: 'openai:gpt-5.6-luna-high', provider },
+    { choice: 'zai:glm-5.2-high', provider: glmProvider },
+    { choice: 'dashscope:qwen3.8-max', provider: qwen38MaxProvider },
+    { choice: 'dashscope:qwen3.7-plus', provider: qwen37PlusProvider },
+  ];
 
   function selectProvider(choice: ReflectionModelChoice | undefined): LunaReflectionProvider {
-    if (choice === undefined && dependencies.provider !== undefined && dependencies.glmProvider === undefined) {
+    // Tests that inject only the Luna provider keep deterministic single-arm behavior.
+    if (
+      choice === undefined
+      && dependencies.provider !== undefined
+      && dependencies.glmProvider === undefined
+      && dependencies.qwen38MaxProvider === undefined
+      && dependencies.qwen37PlusProvider === undefined
+    ) {
       return provider;
     }
-    if (choice === 'openai:gpt-5.6-luna-high') return provider;
-    if (choice === 'zai:glm-5.2-high') return glmProvider;
-    return random() < 0.5 ? provider : glmProvider;
+    if (choice !== undefined) {
+      const selected = comparisonArms.find((arm) => arm.choice === choice);
+      if (selected === undefined) {
+        throw new Error(`Unsupported reflection model choice: ${choice}`);
+      }
+      return selected.provider;
+    }
+    const index = Math.floor(random() * comparisonArms.length);
+    return comparisonArms[index]!.provider;
   }
 
   function choiceForStoredModel(model: string): ReflectionModelChoice {
     if (model === 'glm-5.2-high') return 'zai:glm-5.2-high';
+    if (model === 'qwen3.8-max') return 'dashscope:qwen3.8-max';
+    if (model === 'qwen3.7-plus') return 'dashscope:qwen3.7-plus';
     return 'openai:gpt-5.6-luna-high';
   }
 
