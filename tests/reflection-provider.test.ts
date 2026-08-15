@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
-  SESSION_REFLECTION_RESULT_V5_WIRE_SCHEMA_NAME,
-  sessionReflectionResultV5WireSchema,
+  SESSION_REFLECTION_RESULT_V6_WIRE_SCHEMA_NAME,
+  sessionReflectionResultV6WireSchema,
 } from '../src/domain/reflection-result-schema.js';
 import type {
   SessionReflectionBundleV2,
-  SessionReflectionResultV5,
-  SessionReflectionResultV5Wire,
+  SessionReflectionResultV6,
+  SessionReflectionResultV6Wire,
 } from '../src/domain/reflection.js';
 import {
   createLunaReflectionProvider,
@@ -77,13 +77,12 @@ const bundle: SessionReflectionBundleV2 = {
   }],
 };
 
-const validWireResult: SessionReflectionResultV5Wire = {
-  schemaVersion: 'session_reflection_result.v5',
+const validWireResult: SessionReflectionResultV6Wire = {
+  schemaVersion: 'session_reflection_result.v6',
   itemResults: [{
     itemId: 'item-1',
     diagnosisTags: ['valid_or_near_valid_alternate'],
-    observation: 'The resolved response belongs in this cue\'s accepted answer space.',
-    learnerExplanation: null,
+    learnerExplanation: '认识 is also a natural answer to this exact broad cue, although its uses are not identical to 知道 in every context.',
     proposals: [{
       proposalGroupKey: null,
       rationale: 'Admit the resolved alternate while preserving the exact cue evidence.',
@@ -106,11 +105,10 @@ const validWireResult: SessionReflectionResultV5Wire = {
       },
     }],
     questions: [],
-    unhandledNeeds: [],
   }],
 };
 
-const validCanonicalResult: SessionReflectionResultV5 = {
+const validCanonicalResult: SessionReflectionResultV6 = {
   ...validWireResult,
   itemResults: validWireResult.itemResults.map((itemResult) => ({
     ...itemResult,
@@ -209,7 +207,7 @@ describe('production Luna reflection provider', () => {
     assert.equal(GLM_REFLECTION_MODEL_CONFIG.timeoutMs, 900_000);
   });
 
-  test('sends the exact model, reasoning, auth, prompt, and strict V5 wire schema request', async () => {
+  test('sends the exact model, reasoning, auth, prompt, and strict V6 wire schema request', async () => {
     const capture: CapturedRequest[] = [];
     const provider = createLunaReflectionProvider({
       environment: {
@@ -243,9 +241,9 @@ describe('production Luna reflection provider', () => {
     assert.deepEqual(request.body.response_format, {
       type: 'json_schema',
       json_schema: {
-        name: SESSION_REFLECTION_RESULT_V5_WIRE_SCHEMA_NAME,
+        name: SESSION_REFLECTION_RESULT_V6_WIRE_SCHEMA_NAME,
         strict: true,
-        schema: sessionReflectionResultV5WireSchema,
+        schema: sessionReflectionResultV6WireSchema,
       },
     });
     assert.ok(request.signal instanceof AbortSignal);
@@ -266,7 +264,7 @@ describe('production Luna reflection provider', () => {
       provider: 'openai',
       modelConfig: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v6',
+      promptVersion: 'reflection-v7',
       responseId: 'response-1',
       finishReason: 'stop',
       usage: {
@@ -278,7 +276,7 @@ describe('production Luna reflection provider', () => {
         totalTokens: 140,
       },
     });
-    assert.equal(LUNA_REFLECTION_PROMPT_VERSION, 'reflection-v6');
+    assert.equal(LUNA_REFLECTION_PROMPT_VERSION, 'reflection-v7');
     const serialized = JSON.stringify(generated);
     assert.equal(serialized.includes('unit-test-secret'), false);
     assert.equal(serialized.includes('transportDebug'), false);
@@ -391,7 +389,7 @@ describe('production Luna reflection provider', () => {
       environment: { OPENAI_API_KEY: 'secret' },
       systemPrompt: 'prompt',
       fetchImplementation: capturingFetch(responseEnvelope(
-        '{"schemaVersion":"session_reflection_result.v5"',
+        '{"schemaVersion":"session_reflection_result.v6"',
         {
           choices: [{
             finish_reason: 'length',
@@ -407,7 +405,7 @@ describe('production Luna reflection provider', () => {
       provider: 'openai',
       modelConfig: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v6',
+      promptVersion: 'reflection-v7',
       responseId: 'response-1',
       finishReason: 'length',
       usage: {
@@ -430,7 +428,7 @@ describe('production Luna reflection provider', () => {
       { content: '{not-json', code: 'invalid_json', hasIssues: false },
       {
         content: JSON.stringify({
-          schemaVersion: 'session_reflection_result.v5',
+          schemaVersion: 'session_reflection_result.v6',
         }),
         code: 'schema_invalid',
         hasIssues: true,
@@ -448,7 +446,7 @@ describe('production Luna reflection provider', () => {
     for (const testCase of cases) {
       if (testCase.code === 'domain_contract_invalid') {
         assert.deepEqual(
-          validateJsonSchema(JSON.parse(testCase.content), sessionReflectionResultV5WireSchema),
+          validateJsonSchema(JSON.parse(testCase.content), sessionReflectionResultV6WireSchema),
           [],
         );
       }
@@ -491,7 +489,7 @@ describe('production Luna reflection provider', () => {
     assert.match(error.diagnostic?.rejectedOutput ?? '', /truncated/);
   });
 
-  test('loads the fixed active V5 prompt when no prompt is injected', async () => {
+  test('loads the fixed active production prompt when no prompt is injected', async () => {
     const capture: CapturedRequest[] = [];
     const provider = createLunaReflectionProvider({
       environment: { OPENAI_API_KEY: 'secret' },
@@ -517,7 +515,10 @@ describe('production Luna reflection provider', () => {
       /^# Post-Session Reflection\n\nYou are a careful language-learning reflection assistant\./,
     );
     assert.match(systemContent as string, /`servedCue` is the singular immutable cue snapshot/);
-    assert.match(systemContent as string, /`responseKind: no_clue` records no learner response/);
+    assert.match(systemContent as string, /`responseKind: no_clue` contains no comparison word/);
+    assert.match(systemContent as string, /## Learner feedback and proposal rationales/);
+    assert.match(systemContent as string, /## Realizing future content/);
+    assert.match(systemContent as string, /## Final consistency check/);
     assert.equal((systemContent as string).includes('`activate`'), false);
     assert.equal((systemContent as string).includes('productionTask'), false);
   });

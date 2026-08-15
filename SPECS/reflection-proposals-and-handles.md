@@ -84,9 +84,10 @@ the artifact body.
 
 ### Item result
 
-An item result is the model's analysis of one evidence item. It can contain
-observations, explanations, questions, unhandled needs, and zero or more
-proposals.
+An item result is the model's analysis of one evidence item. The current result
+contains diagnosis tags, one required learner-facing explanation, optional
+questions, and zero or more proposals. Older immutable result versions may
+also contain the retired observation and unhandled-need fields.
 
 An item result does not own proposal disposition. Several proposals under one
 item may be reviewed independently, and an informative item with no proposal
@@ -99,10 +100,12 @@ authorized and, when an adapter exists, applied atomically. “Handle” names t
 registered product capability; “operation” names one exact payload for that
 capability.
 
-An observation, question, recommendation, `no_change` judgment, or missing
-capability is not a handle. No change is represented by an empty proposal list.
-A missing capability is represented as an `unhandledNeed`, never by squeezing
-the need into the nearest registered operation.
+A question, recommendation, `no_change` judgment, or missing capability is not
+a handle. No change is represented by an empty proposal list. The current
+result does not ask the model to inventory missing capabilities: dogfood did
+not establish a reliable authoring behavior or useful consumer for that field.
+The model must not squeeze a missing capability into the nearest registered
+operation.
 
 ### Proposal
 
@@ -135,19 +138,17 @@ provider spike did not establish a concrete consumer for one, while item-level
 output already carries the actionable content.
 
 ```ts
-type SessionReflectionResultV4 = {
-  schemaVersion: 'session_reflection_result.v4';
-  itemResults: ReflectionItemResultV1[];
+type SessionReflectionResultV6 = {
+  schemaVersion: 'session_reflection_result.v6';
+  itemResults: ReflectionItemResultV2[];
 };
 
-type ReflectionItemResultV1 = {
+type ReflectionItemResultV2 = {
   itemId: string;
   diagnosisTags: ReflectionDiagnosisTagV1[];
-  observation: string;
-  learnerExplanation: string | null;
+  learnerExplanation: string;
   proposals: ReflectionProposalV1[];
   questions: ReflectionClarifyingQuestionV1[];
-  unhandledNeeds: ReflectionUnhandledNeedV1[];
 };
 
 type ReflectionProposalV1 = {
@@ -161,11 +162,13 @@ type ReflectionClarifyingQuestionV1 = {
   reason: string;
 };
 
-type ReflectionUnhandledNeedV1 = {
-  description: string;
-  whyRegisteredOperationsDoNotFit: string;
-};
 ```
+
+V4 and V5 results remain readable under their frozen contracts. V6 removes
+`observation` because dogfood established the learner explanation as the useful
+item-level text surface, and removes `unhandledNeeds` because the current model
+and product do not use them reliably. New generation uses V6; stored V4/V5
+artifacts remain immutable.
 
 The current diagnosis vocabulary is:
 
@@ -186,20 +189,20 @@ application behavior. `insufficient_evidence` is the model's item-level
 uncertainty marker and may coexist with tags for the interpretations that
 remain plausible. Use it when the model lacks enough evidence to stand
 confidently behind a material part of its diagnosis or recommendation. Learner
-uncertainty is a separate observed fact and belongs in the evidence or
-observation instead.
+uncertainty is a separate observed fact and belongs in the evidence or learner
+explanation instead.
 
-Questions and unhandled needs are conversational output. They do not enter the
-operation registry or acquire proposal/application states. A later resumable
-conversation design may add a separate lifecycle for questions without
-pretending they are durable mutations.
+Questions are conversational output. They do not enter the operation registry
+or acquire proposal/application states. A later resumable conversation design
+may add a separate lifecycle for questions without pretending they are durable
+mutations.
 
 The model does not generate durable identifiers. `itemId` echoes the
 backend-supplied evidence-item id so results can be correlated and validated.
 `proposalGroupKey`, when present, is only a model-emitted label for grouping
 proposals within one item; it is not durable identity. Materialization assigns
-durable artifact and proposal ids. Questions and unhandled needs have no
-separate identity in this schema because they have no independent lifecycle.
+durable artifact and proposal ids. Questions have no separate identity in this
+schema because they have no independent lifecycle.
 
 Provider output uses a strict schema:
 
@@ -404,8 +407,8 @@ Non-effects:
 - it does not establish accepted answers; and
 - it cannot express cue deletion or target disassociation.
 
-Deletion, disassociation, or another repair form should remain an
-`unhandledNeed` until the cue model can define its target and semantics.
+Deletion, disassociation, or another repair form remains outside this operation
+until the cue model can define its target and semantics.
 
 ### `repair_production_cue` version 2
 
@@ -847,9 +850,9 @@ Legacy bad-definition-production feedback and suppression continue to govern
 that fallback rather than becoming a generalized cue flag.
 
 Reflection generation for new cue repairs uses V2. When it cannot express a
-faithful V2 cue change, it should emit no operation and may record an
-`unhandledNeed`. The exact nested V2 wire schema remains a human-gated
-orientation decision, but the product behavior it must represent is settled.
+faithful V2 cue change, it emits no operation. The exact nested V2 wire schema
+remains a human-gated orientation decision, but the product behavior it must
+represent is settled.
 
 ## 12. Manual And Legacy Invocation Compatibility
 
