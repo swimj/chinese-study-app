@@ -4,7 +4,7 @@ import type {
   ReflectionInputItemV1,
   ReflectionInputItemV2,
   ReflectionItemV3,
-  ReflectionItemResultV1,
+  ReflectionItemResult,
   ReflectionOperation,
   ProductionCueChangeV2,
   ProductionCueDraftV2,
@@ -28,7 +28,7 @@ export type ReflectionItemPresentation = {
     | ReflectionInputItemV2
     | ReflectionItemV3
     | null;
-  result: ReflectionItemResultV1;
+  result: ReflectionItemResult;
   proposals: ReflectionProposalDetailDto[];
 };
 
@@ -36,12 +36,11 @@ export type ReflectionItemPresentation = {
 export type NoDurableChangeReflectionGist = {
   itemId: string;
   title: string;
-  diagnosisTags: ReflectionItemResultV1['diagnosisTags'];
-  observation: string;
+  diagnosisTags: ReflectionItemResult['diagnosisTags'];
+  feedback: string;
   responseSummary: string | null;
   cueSummary: string | null;
   questionCount: number;
-  unhandledNeedCount: number;
 };
 
 export type ReflectionProposalQueueKind = 'attention' | 'deferred' | 'unapplied';
@@ -52,7 +51,7 @@ export type LearnerRequestedReflectionPresentation = {
     | ReflectionInputItemV2
     | ReflectionItemV3
     | null;
-  result: ReflectionItemResultV1;
+  result: ReflectionItemResult;
 };
 
 export function buildLearnerRequestedReflectionPresentations(
@@ -75,7 +74,7 @@ export type ReflectionProposalPresentation = {
     | ReflectionInputItemV2
     | ReflectionItemV3
     | null;
-  result: ReflectionItemResultV1;
+  result: ReflectionItemResult;
   proposal: ReflectionProposalDetailDto;
 };
 
@@ -129,12 +128,20 @@ export function buildNoDurableChangeGists(
       itemId: item.result.itemId,
       title: reflectionEvidenceTitle(item.evidence),
       diagnosisTags: item.result.diagnosisTags,
-      observation: item.result.observation,
+      feedback: reflectionLearnerFeedback(item.result),
       responseSummary: reflectionResponseSummary(item.evidence),
       cueSummary: reflectionCueSummary(item.evidence),
       questionCount: item.result.questions.length,
-      unhandledNeedCount: item.result.unhandledNeeds.length,
     }));
+}
+
+export function reflectionLearnerFeedback(result: ReflectionItemResult): string {
+  if (result.learnerExplanation !== null) return result.learnerExplanation;
+  return 'observation' in result ? result.observation : '';
+}
+
+export function legacyReflectionUnhandledNeeds(result: ReflectionItemResult) {
+  return 'unhandledNeeds' in result ? result.unhandledNeeds : [];
 }
 
 export function buildReflectionProposalPresentations(

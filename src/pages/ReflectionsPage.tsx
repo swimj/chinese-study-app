@@ -16,6 +16,8 @@ import {
   buildReflectionItemPresentations,
   buildLearnerRequestedReflectionPresentations,
   buildReflectionProposalPresentations,
+  legacyReflectionUnhandledNeeds,
+  reflectionLearnerFeedback,
   cloneReflectionOperation,
   createReplacementOperation,
   getOperationDraftState,
@@ -165,7 +167,7 @@ function LearnerRequestsView({
             </div>
           </header>
           <EvidenceView evidence={evidence} />
-          <section className="reflection-analysis"><h3>Feedback</h3><p>{result.learnerExplanation ?? result.observation}</p></section>
+          <section className="reflection-analysis"><h3>Feedback</h3><p>{reflectionLearnerFeedback(result)}</p></section>
         </article>
       ))}
     </main>
@@ -348,14 +350,8 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                 <EvidenceView evidence={item.evidence} />
 
                 <section className="reflection-analysis">
-                  <h3>Observation</h3>
-                  <p>{item.result.observation}</p>
-                  {item.result.learnerExplanation !== null ? (
-                    <>
-                      <h3>Learner-facing explanation</h3>
-                      <p>{item.result.learnerExplanation}</p>
-                    </>
-                  ) : null}
+                  <h3>Feedback</h3>
+                  <p>{reflectionLearnerFeedback(item.result)}</p>
                 </section>
 
                 {item.result.questions.length > 0 ? (
@@ -368,10 +364,10 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                   />
                 ) : null}
 
-                {item.result.unhandledNeeds.length > 0 ? (
+                {legacyReflectionUnhandledNeeds(item.result).length > 0 ? (
                   <InfoList
                     title="Unhandled needs"
-                    entries={item.result.unhandledNeeds.map((need) => ({
+                    entries={legacyReflectionUnhandledNeeds(item.result).map((need) => ({
                       title: need.description,
                       detail: need.whyRegisteredOperationsDoNotFit,
                     }))}
@@ -449,12 +445,9 @@ function NoDurableChangeGistPanel({
                 gist.responseSummary,
                 gist.cueSummary === null ? null : `Cue: ${gist.cueSummary}`,
                 gist.questionCount === 0 ? null : `${gist.questionCount} question${gist.questionCount === 1 ? '' : 's'}`,
-                gist.unhandledNeedCount === 0
-                  ? null
-                  : `${gist.unhandledNeedCount} unhandled need${gist.unhandledNeedCount === 1 ? '' : 's'}`,
               ].filter((part): part is string => part !== null).join(' · ') || 'No extra evidence summary'}
             </p>
-            <p>{gist.observation}</p>
+            <p>{gist.feedback}</p>
           </li>
         ))}
       </ul>
