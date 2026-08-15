@@ -1,17 +1,17 @@
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import {
-  SESSION_REFLECTION_RESULT_V5_WIRE_SCHEMA_NAME,
-  sessionReflectionResultV5WireSchema,
+  SESSION_REFLECTION_RESULT_V6_WIRE_SCHEMA_NAME,
+  sessionReflectionResultV6WireSchema,
 } from '../../src/domain/reflection-result-schema.js';
 import {
-  normalizeSessionReflectionResultV5,
-  stripLegacySourceAttemptIdsFromV5Wire,
-  validateSessionReflectionResultV5,
+  normalizeSessionReflectionResultV6,
+  stripLegacySourceAttemptIdsFromReflectionWire,
+  validateSessionReflectionResultV6,
   type SessionReflectionBundleV2,
   type SessionReflectionBundleV3,
-  type SessionReflectionResultV5,
-  type SessionReflectionResultV5Wire,
+  type SessionReflectionResultV6,
+  type SessionReflectionResultV6Wire,
 } from '../../src/domain/reflection.js';
 import type { FetchImplementation } from '../llm/http.js';
 import { validateJsonSchemaIssues } from '../llm/json-schema-validator.js';
@@ -39,14 +39,14 @@ export const LUNA_REFLECTION_MODEL_CONFIG = {
   reasoningEffort: 'high',
   maxOutputTokens: 40_000,
   timeoutMs: 180_000,
-  promptVersion: 'reflection-v6',
+  promptVersion: 'reflection-v7',
   defaultBaseUrl: 'https://api.openai.com/v1',
   apiKeyEnvironmentVariable: 'OPENAI_API_KEY',
   structuredOutputMode: 'json_schema',
   maxTokensField: 'max_completion_tokens',
   baseUrlEnvironmentVariable: 'OPENAI_BASE_URL',
 } as const;
-export const LUNA_REFLECTION_PROMPT_VERSION = 'reflection-v6' as const;
+export const LUNA_REFLECTION_PROMPT_VERSION = 'reflection-v7' as const;
 
 const productionPromptUrl = new URL('./prompts/reflection.md', import.meta.url);
 
@@ -114,7 +114,7 @@ export type LunaReflectionRunMetadata = {
 };
 
 export type LunaReflectionSuccess = {
-  result: SessionReflectionResultV5;
+  result: SessionReflectionResultV6;
   metadata: LunaReflectionRunMetadata;
 };
 
@@ -198,8 +198,8 @@ export function createReflectionProvider(
           reasoningEffort: config.reasoningEffort,
           systemPrompt,
           userPrompt: JSON.stringify(bundle),
-          outputSchemaName: SESSION_REFLECTION_RESULT_V5_WIRE_SCHEMA_NAME,
-          outputSchema: sessionReflectionResultV5WireSchema,
+          outputSchemaName: SESSION_REFLECTION_RESULT_V6_WIRE_SCHEMA_NAME,
+          outputSchema: sessionReflectionResultV6WireSchema,
           maxOutputTokens: config.maxOutputTokens,
           temperature: null,
           timeoutMs: config.timeoutMs,
@@ -236,8 +236,8 @@ export function createReflectionProvider(
         );
       }
 
-      const compatibleWire = stripLegacySourceAttemptIdsFromV5Wire(parsed);
-      const schemaIssues = validateJsonSchemaIssues(compatibleWire, sessionReflectionResultV5WireSchema);
+      const compatibleWire = stripLegacySourceAttemptIdsFromReflectionWire(parsed);
+      const schemaIssues = validateJsonSchemaIssues(compatibleWire, sessionReflectionResultV6WireSchema);
       if (schemaIssues.length > 0) {
         throw new LunaReflectionProviderError(
           'schema_invalid', schemaIssues.length, clientRequestId, metadata,
@@ -245,11 +245,11 @@ export function createReflectionProvider(
         );
       }
 
-      const normalized = normalizeSessionReflectionResultV5(
-        compatibleWire as SessionReflectionResultV5Wire,
+      const normalized = normalizeSessionReflectionResultV6(
+        compatibleWire as SessionReflectionResultV6Wire,
         bundle,
       );
-      const contractErrors = validateSessionReflectionResultV5(normalized, bundle);
+      const contractErrors = validateSessionReflectionResultV6(normalized, bundle);
       if (contractErrors.length > 0) {
         throw new LunaReflectionProviderError(
           'domain_contract_invalid', contractErrors.length, clientRequestId, metadata,

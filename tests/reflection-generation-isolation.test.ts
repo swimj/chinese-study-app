@@ -104,7 +104,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v6',
+      promptVersion: 'reflection-v7',
       responseId: null,
       clientRequestId: run.clientRequestId,
       finishReason: null,
@@ -135,15 +135,13 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       environment: { OPENAI_API_KEY: 'test-only-key' },
       systemPrompt: 'Test reflection prompt.',
       fetchImplementation: providerFetch(responseEnvelope({
-        schemaVersion: 'session_reflection_result.v5',
+        schemaVersion: 'session_reflection_result.v6',
         itemResults: [{
           itemId: 'unknown-item',
           diagnosisTags: ['ordinary_retrieval_noise'],
-          observation: 'This result does not correspond to the supplied item.',
-          learnerExplanation: null,
+          learnerExplanation: 'This result does not correspond to the supplied item.',
           proposals: [],
           questions: [],
-          unhandledNeeds: [],
         }],
       })),
     });
