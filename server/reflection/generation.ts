@@ -373,7 +373,7 @@ function runRecordInput(input: {
       : null,
     finishReason: input.metadata.finishReason,
     bundleSchemaVersion: input.evidenceBundle.schemaVersion,
-    resultSchemaVersion: 'session_reflection_result.v5',
+    resultSchemaVersion: 'session_reflection_result.v6',
     diagnostic: input.error instanceof LunaReflectionProviderError
       ? input.error.diagnostic
       : null,

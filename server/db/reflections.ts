@@ -19,6 +19,7 @@ import type {
   SessionReflectionResult,
   SessionReflectionResultV4,
   SessionReflectionResultV5,
+  SessionReflectionResultV6,
 } from '../../src/domain/reflection.ts';
 import {
   assertOperationApplicationTransition,
@@ -30,6 +31,7 @@ import {
   validateReflectionOperation,
   validateSessionReflectionResult,
   validateSessionReflectionResultV5,
+  validateSessionReflectionResultV6,
 } from '../../src/domain/reflection.ts';
 import { parseStoredSessionReflectionBundle } from '../../src/domain/reflection-evidence.ts';
 import type { NormalizedTokenUsage } from '../llm/types.ts';
@@ -63,6 +65,8 @@ export type MaterializeReflectionArtifactInput = MaterializeReflectionArtifactBa
   | { evidenceBundle: SessionReflectionBundleV1; result: SessionReflectionResultV4 }
   | { evidenceBundle: SessionReflectionBundleV2; result: SessionReflectionResultV5 }
   | { evidenceBundle: SessionReflectionBundleV3; result: SessionReflectionResultV5 }
+  | { evidenceBundle: SessionReflectionBundleV2; result: SessionReflectionResultV6 }
+  | { evidenceBundle: SessionReflectionBundleV3; result: SessionReflectionResultV6 }
 );
 
 export type ReflectionGenerationRunState = 'succeeded' | 'failed';
@@ -1181,8 +1185,11 @@ export function recordReflectionGenerationRun(
     input.clientRequestId ?? null,
     input.bundleSchemaVersion ?? input.evidenceBundle.schemaVersion,
     input.resultSchemaVersion ?? (
-      input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v2'
-        ? 'session_reflection_result.v5'
+      (
+        input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v2'
+        || input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v3'
+      )
+        ? 'session_reflection_result.v6'
         : 'session_reflection_result.v4'
     ),
     input.diagnostic === undefined || input.diagnostic === null
@@ -1937,6 +1944,18 @@ function validateReflectionArtifactPair(
     && result.schemaVersion === 'session_reflection_result.v5'
   ) {
     return validateSessionReflectionResultV5(result, evidenceBundle);
+  }
+  if (
+    evidenceBundle.schemaVersion === 'session_reflection_bundle.v2'
+    && result.schemaVersion === 'session_reflection_result.v6'
+  ) {
+    return validateSessionReflectionResultV6(result, evidenceBundle);
+  }
+  if (
+    evidenceBundle.schemaVersion === 'session_reflection_bundle.v3'
+    && result.schemaVersion === 'session_reflection_result.v6'
+  ) {
+    return validateSessionReflectionResultV6(result, evidenceBundle);
   }
   return [
     `$.schemaVersion: result ${String(result.schemaVersion)} is not compatible with ${evidenceBundle.schemaVersion}`,

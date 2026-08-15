@@ -11,6 +11,7 @@ import type {
   SessionReflectionBundleV2,
   SessionReflectionResultV4,
   SessionReflectionResultV5,
+  SessionReflectionResultV6,
 } from '../src/domain/reflection.js';
 
 type DbModule = typeof import('../server/db.ts');
@@ -266,6 +267,17 @@ describe('reflection durable store', { concurrency: false }, () => {
     assert.deepEqual(materialized.artifact.result, input.result);
     assert.equal(materialized.artifact.bundleSchemaVersion, 'session_reflection_bundle.v2');
     assert.equal(materialized.artifact.resultSchemaVersion, 'session_reflection_result.v5');
+  });
+
+  test('round-trips V2 evidence with the streamlined V6 item result', () => {
+    const input = materializationInputV6('v6-round-trip-session');
+    const materialized = dbModule.materializeReflectionArtifact(input);
+
+    assert.equal(materialized.created, true);
+    assert.deepEqual(materialized.artifact.evidenceBundle, input.evidenceBundle);
+    assert.deepEqual(materialized.artifact.result, input.result);
+    assert.equal(materialized.artifact.bundleSchemaVersion, 'session_reflection_bundle.v2');
+    assert.equal(materialized.artifact.resultSchemaVersion, 'session_reflection_result.v6');
   });
 
   test('reloads legacy V1 contrast artifacts and applied invocations under their frozen contract', () => {
@@ -752,6 +764,30 @@ function materializationInputV2(
   };
 }
 
+function materializationInputV6(
+  sessionId: string,
+): Parameters<DbModule['materializeReflectionArtifact']>[0] {
+  sqlite.prepare(`
+    INSERT OR IGNORE INTO study_sessions (
+      id,
+      started_at,
+      ended_at,
+      processing_state,
+      processed_at
+    ) VALUES (?, '2026-07-29T11:30:00.000Z', ?, 'processed', ?)
+  `).run(sessionId, generatedAt, generatedAt);
+  return {
+    sourceSessionId: sessionId,
+    reflectionFlowVersion: 'initial_post_session_reflection.v2',
+    generatedAt,
+    provider: 'openai',
+    model: 'gpt-5.6-luna',
+    promptVersion: 'reflection-v7',
+    evidenceBundle: bundleV2(sessionId),
+    result: resultV6(),
+  };
+}
+
 function bundleV2(sessionId: string): SessionReflectionBundleV2 {
   const { cuesAsShown: _legacyCuesAsShown, ...baseItem } = productionItem('item');
   return {
@@ -810,6 +846,20 @@ function resultV5(): SessionReflectionResultV5 {
       questions: [],
       unhandledNeeds: [],
     }],
+  };
+}
+
+function resultV6(): SessionReflectionResultV6 {
+  const legacy = resultV5();
+  return {
+    schemaVersion: 'session_reflection_result.v6',
+    itemResults: legacy.itemResults.map((item) => ({
+      itemId: item.itemId,
+      diagnosisTags: item.diagnosisTags,
+      learnerExplanation: 'The broad cue admits the alternate, so the repaired cue should make that local overlap explicit.',
+      proposals: item.proposals,
+      questions: item.questions,
+    })),
   };
 }
 
