@@ -5,6 +5,7 @@ import {
   acceptReflectionProposal,
   replaceReflectionProposal,
   applyReflectionInvocation,
+  clearReflectionQualityAnnotation,
   completeLearningWordSession,
   completeUnstudiedWordSession,
   deferReflectionProposal,
@@ -16,6 +17,7 @@ import {
   getLearningPolicy,
   getContentDiagnostics,
   getReflectionArtifactDetail,
+  getReflectionQualityStats,
   getPrioritizedUnstudiedWords,
   getReviewFailureRateDays,
   listReflectionArtifacts,
@@ -37,6 +39,7 @@ import {
   updateWordMeaningVisibility,
   updateWordPersonalNotes,
   updateWordUserPriority,
+  upsertReflectionQualityAnnotation,
   withdrawReflectionInvocationAuthorization,
   type ReviewAttemptCommitIntent,
 } from './db.ts';
@@ -49,8 +52,13 @@ import type {
   StudySkillId,
 } from '../src/domain/study-actions.ts';
 import type {
+  ClearReflectionQualityRequest,
   ReflectionOperation,
   ReviewProposalRequest,
+  UpsertReflectionQualityRequest,
+} from '../src/domain/reflection.ts';
+import {
+  isReflectionQualityCritiqueReason,
 } from '../src/domain/reflection.ts';
 import {
   createInitialReflectionGenerationService,
@@ -627,7 +635,12 @@ export function createApp(options: CreateAppOptions = {}) {
         return;
       }
       if (request.action === 'dismiss') {
-        const review = dismissReflectionProposal(proposalId.trim(), request.reason);
+        const review = dismissReflectionProposal(
+          proposalId.trim(),
+          request.reason,
+          undefined,
+          request.reasonCode,
+        );
         res.json({ review, invocation: null, application: null });
         return;
       }
@@ -700,6 +713,56 @@ export function createApp(options: CreateAppOptions = {}) {
       }
     },
   );
+
+  app.put('/api/reflection-quality', (req, res) => {
+    const request = readUpsertReflectionQualityRequest(req.body);
+    if (request === null) {
+      res.status(400).json({ error: 'Expected a valid reflection quality annotation upsert' });
+      return;
+    }
+    try {
+      res.json(upsertReflectionQualityAnnotation(request));
+    } catch (error) {
+      if (isReflectionQualityNotFoundError(error)) {
+        res.status(404).json({ error: error.message.replace(/\.$/, '') });
+        return;
+      }
+      if (isReflectionQualityClientError(error)) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to upsert reflection quality annotation' });
+    }
+  });
+
+  app.delete('/api/reflection-quality', (req, res) => {
+    const request = readClearReflectionQualityRequest(req.body);
+    if (request === null) {
+      res.status(400).json({ error: 'Expected a valid reflection quality clear request' });
+      return;
+    }
+    try {
+      res.json(clearReflectionQualityAnnotation(request));
+    } catch (error) {
+      if (isReflectionQualityNotFoundError(error)) {
+        res.status(404).json({ error: error.message.replace(/\.$/, '') });
+        return;
+      }
+      if (isReflectionQualityClientError(error)) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to clear reflection quality annotation' });
+    }
+  });
+
+  app.get('/api/reflection-quality-stats', (_req, res) => {
+    try {
+      res.json(getReflectionQualityStats());
+    } catch {
+      res.status(500).json({ error: 'Failed to load reflection quality stats' });
+    }
+  });
 
   app.post('/api/review-session-summaries', (req, res) => {
     const sessionId = req.body?.sessionId;
@@ -980,16 +1043,26 @@ function readReviewProposalRequest(value: unknown): ReviewProposalRequest | null
       return keys.length === 1 && keys[0] === 'action'
         ? { action: 'defer' }
         : null;
-    case 'dismiss':
+    case 'dismiss': {
+      const allowedKeys = new Set(['action', 'reason', 'reasonCode']);
       if (
-        keys.length !== 2
-        || keys[0] !== 'action'
-        || keys[1] !== 'reason'
+        !keys.every((key) => allowedKeys.has(key))
+        || !keys.includes('reason')
         || (value.reason !== null && typeof value.reason !== 'string')
       ) {
         return null;
       }
-      return { action: 'dismiss', reason: value.reason };
+      if (value.reasonCode !== undefined && !isReflectionQualityCritiqueReason(value.reasonCode)) {
+        return null;
+      }
+      return value.reasonCode === undefined
+        ? { action: 'dismiss', reason: value.reason }
+        : {
+            action: 'dismiss',
+            reason: value.reason,
+            reasonCode: value.reasonCode,
+          };
+    }
     case 'accept':
     case 'replace':
       if (
@@ -1022,6 +1095,115 @@ function isReflectionReviewClientError(error: unknown): error is Error {
     || error.message.startsWith('No reflection operation registration for ')
     || error.message === 'A revised proposal acceptance must preserve operation kind and version.'
     || error.message === 'A replacement proposal must change operation kind or version.'
+    || isReflectionQualityClientError(error)
+  );
+}
+
+function readUpsertReflectionQualityRequest(value: unknown): UpsertReflectionQualityRequest | null {
+  if (!isPlainObject(value) || !isPlainObject(value.subject) || typeof value.polarity !== 'string') {
+    return null;
+  }
+  const subject = readReflectionQualitySubject(value.subject);
+  if (subject === null) return null;
+  const note = value.note === undefined ? undefined : value.note;
+  if (note !== undefined && note !== null && typeof note !== 'string') {
+    return null;
+  }
+  if (value.polarity === 'praise') {
+    const keys = Object.keys(value);
+    if (keys.some((key) => !['subject', 'polarity', 'note'].includes(key))) {
+      return null;
+    }
+    return note === undefined
+      ? { subject, polarity: 'praise' }
+      : { subject, polarity: 'praise', note };
+  }
+  if (value.polarity === 'critique') {
+    const keys = Object.keys(value);
+    if (
+      keys.some((key) => !['subject', 'polarity', 'reasonCode', 'note'].includes(key))
+      || !isReflectionQualityCritiqueReason(value.reasonCode)
+    ) {
+      return null;
+    }
+    return note === undefined
+      ? { subject, polarity: 'critique', reasonCode: value.reasonCode }
+      : { subject, polarity: 'critique', reasonCode: value.reasonCode, note };
+  }
+  return null;
+}
+
+function readClearReflectionQualityRequest(value: unknown): ClearReflectionQualityRequest | null {
+  if (!isPlainObject(value) || !isPlainObject(value.subject)) {
+    return null;
+  }
+  const keys = Object.keys(value);
+  if (keys.length !== 1 || keys[0] !== 'subject') {
+    return null;
+  }
+  const subject = readReflectionQualitySubject(value.subject);
+  return subject === null ? null : { subject };
+}
+
+function readReflectionQualitySubject(
+  value: Record<string, unknown>,
+): UpsertReflectionQualityRequest['subject'] | null {
+  if (value.kind === 'proposal') {
+    const keys = Object.keys(value).sort();
+    if (
+      keys.length !== 2
+      || keys[0] !== 'kind'
+      || keys[1] !== 'proposalId'
+      || typeof value.proposalId !== 'string'
+      || value.proposalId.trim().length === 0
+    ) {
+      return null;
+    }
+    return { kind: 'proposal', proposalId: value.proposalId.trim() };
+  }
+  if (value.kind === 'item') {
+    const keys = Object.keys(value).sort();
+    if (
+      keys.length !== 3
+      || keys[0] !== 'artifactId'
+      || keys[1] !== 'itemId'
+      || keys[2] !== 'kind'
+      || typeof value.artifactId !== 'string'
+      || value.artifactId.trim().length === 0
+      || typeof value.itemId !== 'string'
+      || value.itemId.trim().length === 0
+    ) {
+      return null;
+    }
+    return {
+      kind: 'item',
+      artifactId: value.artifactId.trim(),
+      itemId: value.itemId.trim(),
+    };
+  }
+  return null;
+}
+
+function isReflectionQualityNotFoundError(error: unknown): error is Error {
+  return error instanceof Error && (
+    error.message === 'Reflection proposal not found.'
+    || error.message === 'Reflection artifact not found.'
+    || error.message === 'Reflection item not found.'
+  );
+}
+
+function isReflectionQualityClientError(error: unknown): error is Error {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message === 'Expected a valid reflection quality critique reason.'
+    || error.message === 'missed_intervention is valid only for item quality subjects.'
+    || error.message === 'other critique requires a non-empty note.'
+    || error.message === 'missed_intervention is valid only for items with no durable proposals.'
+    || error.message === 'Expected quality annotation note to be null or non-empty.'
+    || error.message === 'Expected quality annotation note to be a string or null.'
+    || error.message.startsWith('Expected non-empty ')
+    || error.message.startsWith('Expected ')
+      && error.message.includes('ISO-8601')
   );
 }
 
