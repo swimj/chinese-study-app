@@ -49,6 +49,7 @@ describe('reflection durable store', { concurrency: false }, () => {
     sqlite.exec(`
       PRAGMA defer_foreign_keys = ON;
       BEGIN;
+      DELETE FROM reflection_quality_annotations;
       DELETE FROM reflection_proposal_reviews;
       DELETE FROM reflection_operation_invocations;
       DELETE FROM reflection_generation_runs;
@@ -66,7 +67,7 @@ describe('reflection durable store', { concurrency: false }, () => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
-  test('initializes and validates the four-table reflection schema', () => {
+  test('initializes and validates the five-table reflection schema', () => {
     assert.doesNotThrow(() => dbModule.validateReflectionSchema());
     const tables = sqlite.prepare(`
       SELECT name
@@ -80,6 +81,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       'reflection_generation_runs',
       'reflection_operation_invocations',
       'reflection_proposal_reviews',
+      'reflection_quality_annotations',
     ]);
     const artifactForeignKeys = sqlite.prepare(`
       PRAGMA foreign_key_list(reflection_artifacts)
