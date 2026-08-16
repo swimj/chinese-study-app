@@ -456,6 +456,66 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     );
   });
 
+  test('upserts quality annotations, dismisses with reasonCode, and serves model-arm stats', async () => {
+    const artifact = materialize('quality-api-session', suppressOperation('target')).artifact;
+    const proposalId = artifact.proposals[0]!.review.proposalId;
+
+    const praise = await request('/api/reflection-quality', {
+      method: 'PUT',
+      body: {
+        subject: { kind: 'proposal', proposalId },
+        polarity: 'praise',
+      },
+    });
+    assert.equal(praise.status, 200);
+    assert.equal((praise.json as { polarity: string }).polarity, 'praise');
+
+    const dismissed = await request(`/api/reflection-proposals/${proposalId}/review`, {
+      method: 'POST',
+      body: {
+        action: 'dismiss',
+        reason: 'Wrong handle.',
+        reasonCode: 'wrong_intervention',
+      },
+    });
+    assert.equal(dismissed.status, 200);
+
+    const detail = await request(`/api/reflection-artifacts/${artifact.artifactId}`);
+    assert.equal(detail.status, 200);
+    const annotations = (detail.json as {
+      qualityAnnotations: Array<{ polarity: string; reasonCode: string | null }>;
+    }).qualityAnnotations;
+    assert.equal(annotations.length, 1);
+    assert.equal(annotations[0]!.polarity, 'critique');
+    assert.equal(annotations[0]!.reasonCode, 'wrong_intervention');
+
+    const stats = await request('/api/reflection-quality-stats');
+    assert.equal(stats.status, 200);
+    const arms = (stats.json as {
+      arms: Array<{ modelArm: string; dismissCount: number; dismissalReasons: Record<string, number> }>;
+    }).arms;
+    const arm = arms.find((entry) => entry.modelArm === 'gpt-5.6-luna-high');
+    assert(arm);
+    assert.equal(arm.dismissCount, 1);
+    assert.equal(arm.dismissalReasons.wrong_intervention, 1);
+
+    const cleared = await request('/api/reflection-quality', {
+      method: 'DELETE',
+      body: { subject: { kind: 'proposal', proposalId } },
+    });
+    assert.equal(cleared.status, 200);
+    assert.deepEqual(cleared.json, { cleared: true });
+
+    assert.equal((await request('/api/reflection-quality', {
+      method: 'PUT',
+      body: {
+        subject: { kind: 'proposal', proposalId },
+        polarity: 'critique',
+        reasonCode: 'missed_intervention',
+      },
+    })).status, 400);
+  });
+
   test('replaces a proposal with a different handle and applies the replacement lifecycle', async () => {
     const artifact = materialize('replacement-session', suppressOperation('target')).artifact;
     const proposalId = artifact.proposals[0]!.review.proposalId;

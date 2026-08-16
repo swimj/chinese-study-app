@@ -636,6 +636,7 @@ function artifactDetail(): ReflectionArtifactDetailDto {
       },
       invocation: null,
     })),
+    qualityAnnotations: [],
   };
 }
 

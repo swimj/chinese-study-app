@@ -21,9 +21,13 @@ import type {
   OperationInvocation,
   ProposalReviewStatus,
   ReflectionProposalV1,
+  ReflectionQualityAnnotation,
+  ReflectionQualityCritiqueReason,
   ReviewProposalRequest,
   SessionReflectionBundle,
   SessionReflectionResult,
+  UpsertReflectionQualityRequest,
+  ClearReflectionQualityRequest,
 } from '../domain/reflection';
 import type {
   ContentDiagnosticKind,
@@ -154,6 +158,33 @@ export type ReflectionArtifactDetailDto = {
   evidenceBundle: SessionReflectionBundle;
   result: SessionReflectionResult;
   proposals: ReflectionProposalDetailDto[];
+  qualityAnnotations: ReflectionQualityAnnotation[];
+};
+
+export type ReflectionQualityStatsDismissalBreakdown = Record<
+  ReflectionQualityCritiqueReason | 'unspecified',
+  number
+>;
+
+export type ReflectionQualityArmStatsDto = {
+  modelArm: string;
+  promptVersion: string;
+  terminalReviewCount: number;
+  exactAcceptCount: number;
+  revisedAcceptCount: number;
+  userReplaceCount: number;
+  dismissCount: number;
+  dismissalReasons: ReflectionQualityStatsDismissalBreakdown;
+  annotatedSubjectCount: number;
+  praiseCount: number;
+  critiqueCount: number;
+  proposalCritiqueCount: number;
+  itemCritiqueCount: number;
+  missedInterventionCount: number;
+};
+
+export type ReflectionQualityStatsDto = {
+  arms: ReflectionQualityArmStatsDto[];
 };
 
 export type ReflectionReviewApi = {
@@ -479,6 +510,42 @@ export async function withdrawReflectionAuthorization(
     );
   }
 
+  return response.json();
+}
+
+export async function upsertReflectionQuality(
+  request: UpsertReflectionQualityRequest,
+): Promise<ReflectionQualityAnnotation> {
+  const response = await fetch(`${API_BASE}/api/reflection-quality`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to save reflection quality'));
+  }
+  return response.json();
+}
+
+export async function clearReflectionQuality(
+  request: ClearReflectionQualityRequest,
+): Promise<{ cleared: boolean }> {
+  const response = await fetch(`${API_BASE}/api/reflection-quality`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to clear reflection quality'));
+  }
+  return response.json();
+}
+
+export async function fetchReflectionQualityStats(): Promise<ReflectionQualityStatsDto> {
+  const response = await fetch(`${API_BASE}/api/reflection-quality-stats`);
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to load reflection quality stats'));
+  }
   return response.json();
 }
 
