@@ -6,6 +6,9 @@ import type {
   ReflectionItemV3,
   ReflectionItemResult,
   ReflectionOperation,
+  ReflectionQualityAnnotation,
+  ReflectionQualityCritiqueReason,
+  ReflectionQualitySubject,
   ProductionCueChangeV2,
   ProductionCueDraftV2,
   RepairProductionCueOperationV1,
@@ -22,6 +25,76 @@ import {
   validateReflectionOperationEvidenceContext,
 } from '../../domain/reflection';
 
+export const REFLECTION_QUALITY_CRITIQUE_OPTIONS: ReadonlyArray<{
+  code: ReflectionQualityCritiqueReason;
+  label: string;
+  proposalAllowed: boolean;
+  itemAllowed: boolean;
+}> = [
+  {
+    code: 'wrong_diagnosis',
+    label: 'Wrong diagnosis',
+    proposalAllowed: true,
+    itemAllowed: true,
+  },
+  {
+    code: 'wrong_intervention',
+    label: 'Wrong intervention',
+    proposalAllowed: true,
+    itemAllowed: true,
+  },
+  {
+    code: 'missed_intervention',
+    label: 'Missed intervention',
+    proposalAllowed: false,
+    itemAllowed: true,
+  },
+  {
+    code: 'low_quality_content',
+    label: 'Low-quality content',
+    proposalAllowed: true,
+    itemAllowed: true,
+  },
+  {
+    code: 'inconsistent',
+    label: 'Inconsistent',
+    proposalAllowed: true,
+    itemAllowed: true,
+  },
+  {
+    code: 'other',
+    label: 'Other',
+    proposalAllowed: true,
+    itemAllowed: true,
+  },
+];
+
+export function findQualityAnnotation(
+  annotations: ReflectionQualityAnnotation[],
+  subject: ReflectionQualitySubject,
+): ReflectionQualityAnnotation | null {
+  return annotations.find((annotation) => {
+    if (subject.kind === 'proposal') {
+      return annotation.subject.kind === 'proposal'
+        && annotation.subject.proposalId === subject.proposalId;
+    }
+    return annotation.subject.kind === 'item'
+      && annotation.subject.artifactId === subject.artifactId
+      && annotation.subject.itemId === subject.itemId;
+  }) ?? null;
+}
+
+export function critiqueOptionsForSubject(
+  kind: ReflectionQualitySubject['kind'],
+  allowMissedIntervention: boolean,
+): typeof REFLECTION_QUALITY_CRITIQUE_OPTIONS {
+  return REFLECTION_QUALITY_CRITIQUE_OPTIONS.filter((option) => {
+    if (kind === 'proposal') return option.proposalAllowed;
+    if (option.code === 'missed_intervention') return allowMissedIntervention;
+    return option.itemAllowed;
+  });
+}
+
 export type ReflectionItemPresentation = {
   evidence: ReflectionInputItemV1
     | ReflectionInputItemV2
@@ -33,6 +106,7 @@ export type ReflectionItemPresentation = {
 
 /** Compact observability row for evidence items with no durable proposals. */
 export type NoDurableChangeReflectionGist = {
+  artifactId: string;
   itemId: string;
   title: string;
   diagnosisTags: ReflectionItemResult['diagnosisTags'];
@@ -103,11 +177,13 @@ export function buildReflectionItemPresentations(
  * noise, but also insufficient evidence, questions-only, etc.).
  */
 export function buildNoDurableChangeGists(
+  detail: ReflectionArtifactDetailDto,
   presentations: ReflectionItemPresentation[],
 ): NoDurableChangeReflectionGist[] {
   return presentations
     .filter((item) => item.proposals.length === 0)
     .map((item) => ({
+      artifactId: detail.artifactId,
       itemId: item.result.itemId,
       title: reflectionEvidenceTitle(item.evidence),
       diagnosisTags: item.result.diagnosisTags,
@@ -916,6 +992,7 @@ export type {
   ReflectionArtifactSummaryDto,
   ReflectionGenerationRunDto,
   ReflectionProposalDetailDto,
+  ReflectionQualityStatsDto,
   ReflectionReviewApi,
 } from '../../services/api';
 export type { AcceptProductionAlternateOperationV1 };

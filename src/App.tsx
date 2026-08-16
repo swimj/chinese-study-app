@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
 import type { BackendStatus } from './services/api';
 import {
+  clearReflectionQuality,
   fetchReflectionArtifactDetail,
   fetchReflectionArtifacts,
   fetchReflectionGenerationRuns,
+  fetchReflectionQualityStats,
   fetchStatus,
   reviewReflectionProposal,
   retryReflectionGenerationRun,
   updateDailyNewWordLimit,
+  upsertReflectionQuality,
   withdrawReflectionAuthorization,
 } from './services/api';
 import { AppChrome, type AppPageKey } from './components/AppChrome';
@@ -48,6 +51,9 @@ function App() {
       getArtifact: fetchReflectionArtifactDetail,
       reviewProposal: reviewReflectionProposal,
       withdrawAuthorization: withdrawReflectionAuthorization,
+      upsertQuality: upsertReflectionQuality,
+      clearQuality: clearReflectionQuality,
+      getQualityStats: fetchReflectionQualityStats,
     },
   });
   const contentPage = useContentDiagnosticsController({ currentPage, setCurrentPage, setError });

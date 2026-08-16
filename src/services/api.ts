@@ -197,6 +197,9 @@ export type ReflectionReviewApi = {
     request: ReviewProposalRequest,
   ) => Promise<unknown>;
   withdrawAuthorization: (invocationId: string) => Promise<unknown>;
+  upsertQuality: (request: UpsertReflectionQualityRequest) => Promise<ReflectionQualityAnnotation>;
+  clearQuality: (request: ClearReflectionQualityRequest) => Promise<{ cleared: boolean }>;
+  getQualityStats: () => Promise<ReflectionQualityStatsDto>;
 };
 
 export type { BackendStatus };

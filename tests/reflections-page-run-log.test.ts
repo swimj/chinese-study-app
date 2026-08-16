@@ -15,10 +15,12 @@ describe('reflection run log presentation', () => {
       artifactDetails: [],
       unreadableArtifactIds: new Set([artifactId]),
       generationRuns: [],
+      qualityStats: { arms: [] },
       selectedArtifact: null,
       selectedArtifactId: null,
       submittingProposalId: null,
       withdrawingInvocationId: null,
+      submittingQualitySubjectKey: null,
       generationRetryStatus: null,
       openPage: async () => {},
       refresh: async () => {},
@@ -27,7 +29,10 @@ describe('reflection run log presentation', () => {
       deferProposal: async () => {},
       dismissProposal: async () => {},
       acceptProposal: async () => {},
+      replaceProposal: async () => {},
       withdrawAuthorization: async () => {},
+      upsertQuality: async () => {},
+      clearQuality: async () => {},
     };
 
     const markup = renderToStaticMarkup(createElement(ReflectionsPage, { controller }));

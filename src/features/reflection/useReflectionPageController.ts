@@ -1,11 +1,18 @@
 import { useState } from 'react';
 import type { AppPageKey } from '../../components/AppChrome';
-import type { ReflectionOperation, ReviewProposalRequest } from '../../domain/reflection';
+import type {
+  ReflectionOperation,
+  ReflectionQualityCritiqueReason,
+  ReflectionQualitySubject,
+  ReviewProposalRequest,
+  UpsertReflectionQualityRequest,
+} from '../../domain/reflection';
 import type { ReflectionModelChoice } from '../../services/api';
 import type {
   ReflectionArtifactDetailDto,
   ReflectionArtifactSummaryDto,
   ReflectionGenerationRunDto,
+  ReflectionQualityStatsDto,
   ReflectionReviewApi,
 } from './reflection-page-model';
 
@@ -16,10 +23,12 @@ export type ReflectionPageController = {
   artifactDetails: ReflectionArtifactDetailDto[];
   unreadableArtifactIds: ReadonlySet<string>;
   generationRuns: ReflectionGenerationRunDto[];
+  qualityStats: ReflectionQualityStatsDto | null;
   selectedArtifact: ReflectionArtifactDetailDto | null;
   selectedArtifactId: string | null;
   submittingProposalId: string | null;
   withdrawingInvocationId: string | null;
+  submittingQualitySubjectKey: string | null;
   generationRetryStatus: {
     runId: string;
     state: 'generating' | 'succeeded' | 'failed';
@@ -29,11 +38,23 @@ export type ReflectionPageController = {
   selectArtifact: (artifactId: string) => Promise<void>;
   retryGenerationRun: (runId: string, model?: ReflectionModelChoice) => Promise<void>;
   deferProposal: (proposalId: string) => Promise<void>;
-  dismissProposal: (proposalId: string, reason: string | null) => Promise<void>;
+  dismissProposal: (
+    proposalId: string,
+    reason: string | null,
+    reasonCode: ReflectionQualityCritiqueReason,
+  ) => Promise<void>;
   acceptProposal: (proposalId: string, operation: ReflectionOperation) => Promise<void>;
   replaceProposal: (proposalId: string, operation: ReflectionOperation) => Promise<void>;
   withdrawAuthorization: (invocationId: string) => Promise<void>;
+  upsertQuality: (request: UpsertReflectionQualityRequest) => Promise<void>;
+  clearQuality: (subject: ReflectionQualitySubject) => Promise<void>;
 };
+
+export function qualitySubjectKey(subject: ReflectionQualitySubject): string {
+  return subject.kind === 'proposal'
+    ? `proposal:${subject.proposalId}`
+    : `item:${subject.artifactId}:${subject.itemId}`;
+}
 
 export function useReflectionPageController({
   currentPage,
@@ -56,9 +77,11 @@ export function useReflectionPageController({
     new Set(),
   );
   const [generationRuns, setGenerationRuns] = useState<ReflectionGenerationRunDto[]>([]);
+  const [qualityStats, setQualityStats] = useState<ReflectionQualityStatsDto | null>(null);
   const [selectedArtifact, setSelectedArtifact] = useState<ReflectionArtifactDetailDto | null>(null);
   const [submittingProposalId, setSubmittingProposalId] = useState<string | null>(null);
   const [withdrawingInvocationId, setWithdrawingInvocationId] = useState<string | null>(null);
+  const [submittingQualitySubjectKey, setSubmittingQualitySubjectKey] = useState<string | null>(null);
   const [generationRetryStatus, setGenerationRetryStatus] = useState<
     ReflectionPageController['generationRetryStatus']
   >(null);
@@ -75,11 +98,13 @@ export function useReflectionPageController({
     forceArtifactIds: ReadonlySet<string> = new Set(),
   ): Promise<void> {
     const reviewApi = requireApi();
-    const [nextOpenArtifacts, nextRecentArtifacts, nextGenerationRuns] = await Promise.all([
+    const [nextOpenArtifacts, nextRecentArtifacts, nextGenerationRuns, nextQualityStats] = await Promise.all([
       reviewApi.listArtifacts('open'),
       reviewApi.listArtifacts('all'),
       reviewApi.listGenerationRuns(),
+      reviewApi.getQualityStats(),
     ]);
+    setQualityStats(nextQualityStats);
     const orderedArtifacts = [
       ...nextRecentArtifacts,
       ...nextOpenArtifacts
@@ -276,6 +301,62 @@ export function useReflectionPageController({
     }
   }
 
+  async function upsertQuality(request: UpsertReflectionQualityRequest): Promise<void> {
+    let artifactId: string | undefined;
+    if (request.subject.kind === 'item') {
+      artifactId = request.subject.artifactId;
+    } else {
+      const proposalId = request.subject.proposalId;
+      artifactId = artifactDetails.find((detail) => (
+        detail.proposals.some((proposal) => proposal.review.proposalId === proposalId)
+      ))?.artifactId;
+    }
+    if (artifactId === undefined) {
+      throw new Error('Reflection quality subject is not loaded.');
+    }
+    const key = qualitySubjectKey(request.subject);
+    setSubmittingQualitySubjectKey(key);
+    setError(null);
+    try {
+      await requireApi().upsertQuality(request);
+      await loadListsAndDetail(
+        selectedArtifact?.artifactId ?? null,
+        new Set([artifactId]),
+      );
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to save reflection quality');
+      throw error;
+    } finally {
+      setSubmittingQualitySubjectKey(null);
+    }
+  }
+
+  async function clearQuality(subject: ReflectionQualitySubject): Promise<void> {
+    const artifactId = subject.kind === 'item'
+      ? subject.artifactId
+      : artifactDetails.find((detail) => (
+        detail.proposals.some((proposal) => proposal.review.proposalId === subject.proposalId)
+      ))?.artifactId;
+    if (artifactId === undefined) {
+      throw new Error('Reflection quality subject is not loaded.');
+    }
+    const key = qualitySubjectKey(subject);
+    setSubmittingQualitySubjectKey(key);
+    setError(null);
+    try {
+      await requireApi().clearQuality({ subject });
+      await loadListsAndDetail(
+        selectedArtifact?.artifactId ?? null,
+        new Set([artifactId]),
+      );
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to clear reflection quality');
+      throw error;
+    } finally {
+      setSubmittingQualitySubjectKey(null);
+    }
+  }
+
   return {
     isLoading,
     openArtifacts,
@@ -283,19 +364,22 @@ export function useReflectionPageController({
     artifactDetails,
     unreadableArtifactIds,
     generationRuns,
+    qualityStats,
     selectedArtifact,
     selectedArtifactId: selectedArtifact?.artifactId ?? null,
     submittingProposalId,
     withdrawingInvocationId,
+    submittingQualitySubjectKey,
     generationRetryStatus,
     openPage,
     refresh,
     selectArtifact,
     retryGenerationRun,
     deferProposal: (proposalId) => reviewProposal(proposalId, { action: 'defer' }),
-    dismissProposal: (proposalId, reason) => reviewProposal(proposalId, {
+    dismissProposal: (proposalId, reason, reasonCode) => reviewProposal(proposalId, {
       action: 'dismiss',
       reason,
+      reasonCode,
     }),
     acceptProposal: (proposalId, operation) => reviewProposal(proposalId, {
       action: 'accept',
@@ -306,5 +390,7 @@ export function useReflectionPageController({
       operation,
     }),
     withdrawAuthorization,
+    upsertQuality,
+    clearQuality,
   };
 }

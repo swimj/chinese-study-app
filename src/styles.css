@@ -1552,6 +1552,98 @@ button:disabled:hover {
   gap: 1rem;
 }
 
+.reflection-dismiss-block {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+}
+
+.reflection-quality-controls {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.75rem 0;
+}
+
+.reflection-quality-row,
+.reflection-quality-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.reflection-quality-chip {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(30, 41, 59, 0.55);
+  color: #cbd5e1;
+  border-radius: 999px;
+  padding: 0.28rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.reflection-quality-chip.is-selected {
+  border-color: rgba(125, 211, 252, 0.7);
+  background: rgba(14, 116, 144, 0.35);
+  color: #e0f2fe;
+}
+
+.reflection-quality-chip.is-praise.is-selected {
+  border-color: rgba(134, 239, 172, 0.7);
+  background: rgba(22, 101, 52, 0.4);
+  color: #dcfce7;
+}
+
+.reflection-quality-chip.is-critique.is-selected {
+  border-color: rgba(252, 165, 165, 0.7);
+  background: rgba(127, 29, 29, 0.4);
+  color: #fee2e2;
+}
+
+.reflection-quality-note {
+  width: 100%;
+}
+
+.reflection-quality-clear {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.75rem;
+}
+
+.reflection-quality-view {
+  display: grid;
+  gap: 1rem;
+}
+
+.reflection-quality-table {
+  display: grid;
+  gap: 0.35rem;
+  overflow-x: auto;
+}
+
+.reflection-quality-table-header,
+.reflection-quality-table-row {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1.4fr) minmax(7rem, 1fr) repeat(7, minmax(4.5rem, 0.8fr));
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.55rem 0.25rem;
+}
+
+.reflection-quality-table-header {
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.reflection-quality-table-row {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  font-size: 0.88rem;
+}
+
 .reflection-artifact-header h2,
 .reflection-item-heading h2,
 .reflection-proposal-heading h4,

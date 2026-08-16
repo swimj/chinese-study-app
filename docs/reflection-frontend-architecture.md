@@ -134,6 +134,12 @@ This remains
 observability for the initial reflection flow, not a learner correctness signal
 or a replacement for immutable artifact history.
 
+The **Quality** view shows server-side model-arm rates derived from terminal
+proposal reviews plus praise/critique overlays. Capture lives on proposal cards
+(required dismiss critique chips and optional praise) and on item /
+no-durable-change surfaces. Annotations never rewrite disposition or
+application.
+
 Failed runs with diagnostics have an expandable developer-facing detail showing
 the validation phase, bounded issue paths/rules/messages, schema provenance,
 provider request correlation, and capped rejected-output context. The current
