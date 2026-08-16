@@ -17,9 +17,9 @@ import {
   createReplacementOperation,
   getOperationDraftState,
   reduceReflectionOperationDraft,
-  summarizeReflectionTokenUsage,
+  formatRunDuration,
+  visibleOutputTokens,
   type ReflectionArtifactDetailDto,
-  type ReflectionGenerationRunDto,
 } from '../src/features/reflection/reflection-page-model.js';
 
 describe('reflection page model', () => {
@@ -116,27 +116,24 @@ describe('reflection page model', () => {
     );
   });
 
-  test('summarizes known token categories and priced runs', () => {
-    const summary = summarizeReflectionTokenUsage([
-      generationRun({ totalTokens: 130, estimatedCostUsd: 0.001 }),
-      generationRun({ totalTokens: null, estimatedCostUsd: null, state: 'failed' }),
-    ]);
+  test('derives visible output tokens and formats run duration', () => {
+    assert.equal(visibleOutputTokens({ outputTokens: 30, reasoningTokens: 10 }), 20);
+    assert.equal(visibleOutputTokens({ outputTokens: 30, reasoningTokens: null }), 30);
+    assert.equal(visibleOutputTokens({ outputTokens: null, reasoningTokens: 10 }), null);
+    assert.equal(visibleOutputTokens({ outputTokens: 5, reasoningTokens: 9 }), 0);
 
-    assert.deepEqual(summary, {
-      runCount: 2,
-      succeededCount: 1,
-      failedCount: 1,
-      usage: {
-        inputTokens: 100,
-        cachedInputTokens: 20,
-        cacheWriteInputTokens: null,
-        outputTokens: 30,
-        reasoningTokens: 10,
-        totalTokens: 130,
-      },
-      pricedRunCount: 1,
-      estimatedCostUsd: 0.001,
-    });
+    assert.equal(
+      formatRunDuration('2026-07-29T12:00:00.000Z', '2026-07-29T12:00:00.400Z'),
+      '0m 01s',
+    );
+    assert.equal(
+      formatRunDuration('2026-07-29T12:00:00.000Z', '2026-07-29T12:00:01.000Z'),
+      '0m 01s',
+    );
+    assert.equal(
+      formatRunDuration('2026-07-29T12:00:00.000Z', '2026-07-29T12:01:05.200Z'),
+      '1m 06s',
+    );
   });
 
   test('deep clones editable generated content while retaining exact acceptance', () => {
@@ -674,46 +671,5 @@ function wordSnapshot(wordId: string, hanzi: string) {
     hanzi,
     pinyin: 'pinyin',
     meanings: ['meaning'],
-  };
-}
-
-function generationRun({
-  totalTokens,
-  estimatedCostUsd,
-  state = 'succeeded',
-}: {
-  totalTokens: number | null;
-  estimatedCostUsd: number | null;
-  state?: ReflectionGenerationRunDto['state'];
-}): ReflectionGenerationRunDto {
-  return {
-    runId: `${state}-${String(totalTokens)}`,
-    sourceSessionId: 'session',
-    reflectionFlowVersion: 'initial_post_session_reflection.v1',
-    startedAt: '2026-07-29T12:00:00.000Z',
-    completedAt: '2026-07-29T12:00:01.000Z',
-    provider: 'openai',
-    model: 'gpt-5.6-luna-high',
-    providerModel: 'gpt-5.6-luna',
-    promptVersion: 'reflection-v2',
-    responseId: null,
-    finishReason: state === 'succeeded' ? 'stop' : null,
-    state,
-    failureCode: state === 'failed' ? 'upstream_failure' : null,
-    eligibleItemCount: 1,
-    includedItemCount: 1,
-    usage: {
-      inputTokens: state === 'succeeded' ? 100 : null,
-      cachedInputTokens: state === 'succeeded' ? 20 : null,
-      cacheWriteInputTokens: null,
-      outputTokens: state === 'succeeded' ? 30 : null,
-      reasoningTokens: state === 'succeeded' ? 10 : null,
-      totalTokens,
-    },
-    pricingSnapshotId: estimatedCostUsd === null ? null : 'price-v1',
-    pricingAsOf: estimatedCostUsd === null ? null : '2026-07-30',
-    pricingBasis: estimatedCostUsd === null ? null : {},
-    estimatedCostUsd,
-    retryable: state === 'failed',
   };
 }
