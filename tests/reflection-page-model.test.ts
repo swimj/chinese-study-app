@@ -13,6 +13,7 @@ import {
   buildReflectionItemPresentations,
   buildLearnerRequestedReflectionPresentations,
   buildReflectionProposalPresentations,
+  critiqueOptionsForSubject,
   cloneReflectionOperation,
   createReplacementOperation,
   getOperationDraftState,
@@ -37,11 +38,13 @@ describe('reflection page model', () => {
   });
 
   test('summarizes no-proposal bundle items for by-session observability', () => {
-    const presentations = buildReflectionItemPresentations(artifactDetail());
-    const gists = buildNoDurableChangeGists(presentations);
+    const detail = artifactDetail();
+    const presentations = buildReflectionItemPresentations(detail);
+    const gists = buildNoDurableChangeGists(detail, presentations);
 
     assert.equal(gists.length, 1);
     assert.deepEqual(gists[0], {
+      artifactId: 'artifact',
       itemId: 'informational',
       title: '目标 · pinyin',
       diagnosisTags: ['ordinary_retrieval_noise'],
@@ -50,6 +53,25 @@ describe('reflection page model', () => {
       cueSummary: 'target',
       questionCount: 0,
     });
+  });
+
+  test('limits missed_intervention to item subjects without proposals', () => {
+    assert.deepEqual(
+      critiqueOptionsForSubject('proposal', false).map((option) => option.code),
+      [
+        'wrong_diagnosis',
+        'wrong_intervention',
+        'low_quality_content',
+        'inconsistent',
+        'other',
+      ],
+    );
+    assert.ok(
+      critiqueOptionsForSubject('item', true).some((option) => option.code === 'missed_intervention'),
+    );
+    assert.ok(
+      !critiqueOptionsForSubject('item', false).some((option) => option.code === 'missed_intervention'),
+    );
   });
 
   test('builds proposal queues by actionable lifecycle state without session grouping', () => {
@@ -616,6 +638,7 @@ function artifactDetail(): ReflectionArtifactDetailDto {
   return {
     artifactId: 'artifact',
     sourceSessionId: 'session',
+    sourceRunId: null,
     reflectionFlowVersion: 'initial_post_session_reflection.v1',
     generatedAt: evidenceBundle.generatedAt,
     provider: 'openai-compatible',
