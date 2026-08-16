@@ -828,6 +828,51 @@ payload creates a revised invocation. The review system may assess diagnosis,
 intervention selection, and drafted-content quality separately even when V1
 stores only a coarse terminal `dismissed` disposition plus optional rationale.
 
+### Quality annotation overlay
+
+Dogfood review may attach a thin **quality annotation** overlay so model-arm
+taste can be compared over time. Annotations do not authorize effects, rewrite
+proposal disposition, create invocations, or change application status. Items
+still have no proposal-review row; an item annotation never fabricates a
+proposal.
+
+Subjects:
+
+- **proposal** — the handle and rationale of one immutable proposal; and
+- **item** — the item-level diagnosis, learner explanation, and no-durable-change
+  judgment (empty proposal list). An item and its proposals may be annotated
+  independently.
+
+Polarities (one annotation per subject; last write wins):
+
+- `praise` — unusually good analysis or content (“I really like this”); no
+  reason code; and
+- `critique` — structured dissatisfaction with a reason code and optional note.
+
+Critique reason codes:
+
+```ts
+type ReflectionQualityCritiqueReason =
+  | 'wrong_diagnosis'
+  | 'wrong_intervention'
+  | 'missed_intervention'
+  | 'low_quality_content'
+  | 'inconsistent'
+  | 'other';
+```
+
+`missed_intervention` is valid only for item subjects. `other` requires a short
+non-empty note. Coarse `dismissed` disposition remains independent: the review
+UI may require a critique code when dismissing, but the wire contract may still
+accept a dismiss without one. Historical dismissals without a structured code
+aggregate as `unspecified`.
+
+Annotations join to artifact `model` (the fused **model arm** config id) and
+`promptVersion` at read time. They do not denormalize routing identity onto the
+annotation row. Aggregating accept/exact/revised/user-replace/dismiss rates by
+model arm remains a read of existing review rows plus this overlay; generation
+routing is unchanged.
+
 The operation editor must not imply apply support. A user may inspect, edit, and
 accept a well-formed unsupported operation; the resulting application state
 remains visibly unsupported.
