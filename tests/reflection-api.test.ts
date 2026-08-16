@@ -77,6 +77,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     sqlite.exec(`
       PRAGMA defer_foreign_keys = ON;
       BEGIN;
+      DELETE FROM reflection_quality_annotations;
       DELETE FROM reflection_proposal_reviews;
       DELETE FROM reflection_operation_invocations;
       DELETE FROM reflection_generation_runs;

@@ -56,6 +56,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
       DELETE FROM production_cue_lifecycle_events;
       DELETE FROM production_cues;
       DELETE FROM production_tasks;
+      DELETE FROM reflection_quality_annotations;
       DELETE FROM reflection_proposal_reviews;
       DELETE FROM reflection_operation_invocations;
       DELETE FROM reflection_generation_runs;

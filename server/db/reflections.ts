@@ -19,6 +19,8 @@ import type {
   SessionReflectionResult,
   SessionReflectionResultV4,
   SessionReflectionResultV5,
+  ReflectionQualityAnnotation,
+  ReflectionQualityCritiqueReason,
   SessionReflectionResultV6,
 } from '../../src/domain/reflection.ts';
 import {
@@ -37,6 +39,12 @@ import { parseStoredSessionReflectionBundle } from '../../src/domain/reflection-
 import type { NormalizedTokenUsage } from '../llm/types.ts';
 import type { ReflectionGenerationDiagnostic } from '../reflection/run-diagnostics.ts';
 import { dbPath, getDb } from './connection.ts';
+import {
+  ensureReflectionQualitySchema,
+  listReflectionQualityAnnotationsForArtifact,
+  upsertReflectionQualityAnnotationWithoutTransaction,
+  validateReflectionQualitySchema,
+} from './reflection-quality.ts';
 import {
   enableContextualSelectionWithoutTransaction,
   type EnableContextualSelectionResult,
@@ -173,6 +181,7 @@ export type ReflectionProposalDetail = {
 
 export type ReflectionArtifactDetail = ReflectionArtifactRecord & {
   proposals: ReflectionProposalDetail[];
+  qualityAnnotations: ReflectionQualityAnnotation[];
 };
 
 export type ReflectionArtifactSummary = Omit<
@@ -699,6 +708,7 @@ export function ensureReflectionSchema(): void {
   ensureReflectionGenerationRunEvidenceBundleColumn();
   ensureReflectionGenerationRunDiagnosticColumns();
   ensureReflectionIndexes();
+  ensureReflectionQualitySchema();
 }
 
 function migrateReflectionArtifactsForMultipleCandidates(): void {
@@ -786,6 +796,7 @@ export function validateReflectionSchema(): void {
   assertTableColumns('reflection_generation_runs', reflectionGenerationRunColumns);
   assertTableColumns('reflection_proposal_reviews', proposalReviewColumns);
   assertTableColumns('reflection_operation_invocations', invocationColumns);
+  validateReflectionQualitySchema();
   assertUniqueIndex(
     'reflection_proposal_reviews',
     ['artifact_id', 'item_id', 'proposal_index'],
@@ -1027,7 +1038,11 @@ export function getReflectionArtifactDetail(artifactId: string): ReflectionArtif
     );
   }
 
-  return { ...artifact, proposals };
+  return {
+    ...artifact,
+    proposals,
+    qualityAnnotations: listReflectionQualityAnnotationsForArtifact(artifactId),
+  };
 }
 
 export function listReflectionArtifacts(
@@ -1300,6 +1315,7 @@ export function dismissReflectionProposal(
   proposalId: string,
   reason: string | null,
   updatedAt = new Date().toISOString(),
+  reasonCode?: ReflectionQualityCritiqueReason,
 ): ProposalReviewStatus {
   return transitionProposalReview(proposalId, 'dismissed', updatedAt, () => {
     getDb().prepare(`
@@ -1309,6 +1325,14 @@ export function dismissReflectionProposal(
           dismissal_reason = ?
       WHERE proposal_id = ?
     `).run(updatedAt, reason, proposalId);
+    if (reasonCode !== undefined) {
+      upsertReflectionQualityAnnotationWithoutTransaction({
+        subject: { kind: 'proposal', proposalId },
+        polarity: 'critique',
+        reasonCode,
+        note: reason,
+      }, updatedAt);
+    }
   });
 }
 

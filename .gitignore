@@ -10,3 +10,5 @@ data/local-user-data/
 data/friend-mandarin-user-data/
 artifacts/*
 !artifacts/README.md
+.codex/
+*.tsbuildinfo
