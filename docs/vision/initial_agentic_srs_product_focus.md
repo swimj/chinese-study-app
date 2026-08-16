@@ -479,12 +479,14 @@ More importantly, reflection feeds the planner rather than the reverse. Every ha
 
 The heuristic time-budgeted planner remains a planned deliverable, but it lands after the reflection loop is proven, informed by real reflection data.
 
-Current sequencing clarification (2026-08-03): “after the reflection loop is
-proven” does not require an immediate pivot to planner work. The next focused
-development continues building out reflection through the production-task/cue
-model and a faithfully applicable cue-repair handle. This closes a high-value
-intervention boundary and gives a future planner better content and disposition
-signals to select from.
+Sequencing update: on 2026-08-03, “after the reflection loop is proven” was
+clarified not to require an immediate pivot to planner work; the next focus was
+the production-task/cue model and faithfully applicable cue repair. That loop
+is now implemented and has met its stability-frontier advancement test. As of
+2026-08-15, the next product wave is an invite-only hosted Mandarin beta that
+operationalizes the bounded learning and reflection core for a small trusted
+cohort. The planner remains a later product direction rather than an implied
+next milestone merely because reflection succeeded.
 
 ### Heuristic Planner, Agent Reflection
 

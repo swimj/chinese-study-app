@@ -858,6 +858,10 @@ production attempt flow.
 
 ## 12. Implementation Roadmap
 
+This is the historical implementation sequence that produced the current
+study-action substrate. It is retained pending a dedicated spec-organization
+pass; it is not the current project roadmap or stability frontier.
+
 ### Phase 0: Frontend Foundation Cleanup
 
 - split the monolithic `App.tsx` into smaller page, session, and UI modules
@@ -989,6 +993,10 @@ for the implementation plan.
 
 ## 13. Non-Goals For The First Pass
 
+These were scope exclusions for that historical implementation sequence, not
+current project-level non-goals. Current-wave scope is defined in
+[`STABILITY_FRONTIER.md`](../STABILITY_FRONTIER.md).
+
 - full event sourcing
 - automatic prompt generation
 - automatic naturalness grading
@@ -1000,6 +1008,8 @@ for the implementation plan.
 - a finalized ease-factor update policy
 
 ## 14. Open Questions
+
+These remain possible study-action follow-ups, not current focus decisions.
 
 1. When should learning and unstudied flows move from legacy commit handlers
    into durable attempt-event projection?

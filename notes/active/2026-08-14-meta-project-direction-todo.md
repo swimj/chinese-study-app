@@ -12,56 +12,14 @@ Context: reflection and cue-based production have landed in a decently stable
 manner. This note is a working todo list for meta / project-direction work that
 follows from that — not a Linear backlog and not a product contract.
 
-## Decision-workshop outcome
-
-The working thread should turn the broad direction below into a compact,
-reviewable decision brief. Its job is to make the beta direction specific
-enough that the project steward and human can agree a new stability frontier
-and identify the next focused decision or implementation task. It should not
-implement the service, update Linear, or change canonical product or
-architecture authority.
-
-The discussion should actively resolve, or clearly leave open with a
-recommended default, these areas:
-
-1. **Private-beta contract** — intended cohort and size, supported study
-   profile, devices/browser posture, onboarding and data-import promise, core
-   supported learning loop, support/feedback promise, beta success evidence,
-   and explicit non-goals.
-2. **Hosted-service boundary** — the relationship among account identity,
-   learner-data isolation, shared and private content, storage topology,
-   authentication, deployment, migrations, backup/restore, and rollback.
-   Compare credible tenancy shapes rather than assuming Postgres or a shared
-   database in advance.
-3. **UI readiness boundary** — the critical learner journeys that must feel
-   coherent for beta, the acceptable polish bar, and which design work may run
-   in parallel without turning the beta into an unbounded redesign.
-4. **Product-calibration boundary** — what reflection quality is good enough
-   to launch, which prompt work remains an ongoing experiment, and what should
-   or should not block the service track.
-5. **Execution sequence and gates** — the smallest ordered focuses from the
-   current local dogfood state through hosted dogfood and the first invited
-   learner, including the evidence required to pass each gate.
-6. **Documentation consequences** — which accepted conclusions should later
-   become product specs, architecture/operations contracts, or frontier
-   summaries, and which existing material should merely be retired as
-   historical. This is an inventory for the steward, not authorization to edit
-   those documents.
-
-The final response from that thread should end with a **Steward return gist**
-that is concise enough to paste back into the steward conversation and has
-this shape:
-
-- proposed beta outcome and advancement test;
-- accepted or strongly recommended decisions, with decisive tradeoffs;
-- unresolved human decisions and the recommended default for each;
-- proposed focus sequence, including what can run asynchronously;
-- frontier/spec/architecture consequences;
-- material risks, rejected alternatives, and triggers for reconsideration.
-
-Preserve the distinction between explored options, working recommendations,
-and human-accepted decisions. Prefer a few consequential questions and active
-judgment over exhaustively enumerating generic web-service concerns.
+Decision checkpoint (2026-08-15): the private-beta workshop settled the first
+cohort, product-surface, reflection, onboarding, and UI boundaries. Those
+accepted wave decisions and the proposed advancement test have graduated into
+`STABILITY_FRONTIER.md`. Physical tenancy, account/request context, storage,
+vendors, release/recovery mechanics, and bounded support access remain the
+coupled decisions for the next service-boundary design. This note remains
+working input for later spec reorganization and should not be cited as current
+authority.
 
 ## Recommended next outcome
 
@@ -128,4 +86,7 @@ Once the beta outcome is aligned, I recommend a fairly decisive cleanup:
 - Create durable hosted-account/content-ownership behavior and hosted-service/release architecture documents only after those decisions are accepted.
 
 The new frontier’s advancement test should involve real operation, not merely merged infrastructure: an invited non-developer can onboard and study repeatedly, two accounts are demonstrably isolated, learner data survives a release, restore has been tested, and support does not depend on improvised database edits.
-The three decisions that most affect the next pass are: whether the first cohort is Mandarin-only, whether existing dogfood-history import is a launch requirement, and whether tenant-per-instance/database is acceptable for the beta or you specifically want a shared multi-user service from day one.
+
+The workshop settled Mandarin-only scope and the dogfood-history migration
+requirement. Physical tenancy remains deliberately open for the service-boundary
+design, as recorded in the frontier.

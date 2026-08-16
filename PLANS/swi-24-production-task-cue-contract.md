@@ -1,10 +1,10 @@
 # SWI-24 — Production-task and cue contract (design memo)
 
-Status: accepted implementation design (2026-08-05). The durable product
-contract has graduated into the owning canonical specs. Two deliberately
-unfrozen implementation details remain human-gated orientation decisions: the
-exact nested `repair_production_cue@2` wire schema and the first bounded
-word-scheduler reconciliation response for multi-answer cue attempts.
+Status: completed and integrated historical design memo. The durable product
+contract, including the strict `repair_production_cue@2` shape and the bounded
+word-scheduler reconciliation policy, has graduated into the owning canonical
+specs. This memo preserves the reasoning that led there; it is no longer an
+implementation contract or orientation gate.
 
 Scope: The cue-type, answer-space, grading, cue-evidence, and reflection-handle
 contracts are not separable from the cue-repair contract, so SWI-24 settles
@@ -14,11 +14,11 @@ word-scheduling response is deliberately replaceable policy behind a defined
 reconciliation seam (see §6), not a second design gate for the cue deliverable.
 
 Related:
-- `STABILITY_FRONTIER.md` (cue-repair loop near-term outcome)
+- `STABILITY_FRONTIER.md` (current build-wave boundary)
 - `SPECS/study-action-model.md` (production task / cue boundary)
 - `SPECS/reflection-proposals-and-handles.md` (`repair_production_cue` versions)
 
-## 1. Current-state trace
+## 1. Pre-implementation trace (historical)
 
 - Session composition admits words; the action selector picks a skill and
   emits a `StudyAction`. For production, `contentRef` is currently null.
@@ -249,13 +249,11 @@ and session-time result. A separate reconciliation policy may then project a
 provisional response into the current word/word-skill scheduler without
 changing those facts.
 
-At implementation orientation, the agent must trace the current scheduler and
-propose the initial response for accepted-anchor, accepted-non-anchor, and
-rejected submissions. The human confirms that policy before substantial
-implementation. Avoiding false punishment and false strengthening of the
-anchor are design aims; some temporary divergence is acceptable because this
-policy will be replaced with the broader scheduler rather than promoted into
-canonical cue semantics.
+Implementation traced the scheduler and resolved the initial response for
+accepted-anchor, accepted-non-anchor, and rejected submissions. The accepted
+bounded policy now lives in `SPECS/study-action-model.md`. Avoiding false
+punishment and false strengthening of the anchor remain the design aims; the
+policy stays replaceable rather than becoming canonical cue semantics.
 
 Possible bounded experiments include preferring an already authorized
 diagnostic cue on the next serve or applying a conservative interval floor or
@@ -272,11 +270,9 @@ so divergence between cue strength and stopgap word strength/interval is
 explicit and expected.
 
 The exact evidence-event, later-judgment, compensating-record, and projector
-shapes are delegated to implementation against the existing attempt and
-reflection stacks. They must preserve these append-only semantics and be
-proposed at the human-guided orientation checkpoint before substantial
-implementation, then reported in the implementation handoff. They are
-intentionally not frozen here.
+shapes were delegated to implementation against the existing attempt and
+reflection stacks. Their implemented contract now lives in the owning
+canonical specs; this memo intentionally does not duplicate the final shapes.
 
 This seam preserves the future design space for cue-aware or budget-based
 scheduling without requiring arbitrary-distance Undo in the current word
@@ -292,7 +288,6 @@ The durable contract now lives in:
 - the `repair_production_cue` version 2 contract in
   `SPECS/reflection-proposals-and-handles.md`.
 
-At orientation, implementation must read those current sections and inspect
-their diffs from the task's base revision rather than relying on duplicated
-excerpts in this memo. If this memo and a canonical spec diverge, the canonical
-spec wins.
+Future changes must read those current sections rather than relying on
+duplicated excerpts in this memo. If this memo and a canonical spec diverge,
+the canonical spec wins.

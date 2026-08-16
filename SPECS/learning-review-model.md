@@ -20,6 +20,11 @@ This spec assumes:
 - UTC calendar day is the definition of "today" for this prototype
 - session abort behavior is deferred for later design
 
+The single-user assumption describes the implemented lifecycle contract, not
+the accepted hosted-beta topology. The private-beta service-boundary design
+must preserve these learner semantics while replacing the implicit ownership
+boundary.
+
 For clarity:
 
 - persisted timestamps use UTC ISO-8601 strings

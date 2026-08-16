@@ -1,13 +1,18 @@
 # Hosted Beta Tenancy Table Map
 
-Status: reviewable pre-design inventory. Not an implementation or migration
-specification.
+Status: historical pre-design inventory. It was complete for the 18-table
+schema inspected at the time, but it predates the reflection and production-cue
+subsystems and is not a current hosted-beta inventory or implementation
+contract. The private-beta service-boundary design must refresh it from the
+current schema. Its preserve-the-layers rationale remains useful unless the
+new design explicitly replaces it.
 
-This document classifies every table in the current SQLite schema by its
-present role and likely ownership in a future hosted beta. It answers the
-inventory question in [`beta-web-service-plan.md`](./beta-web-service-plan.md)
-without choosing a database engine, request/user context, migration shape, or
-tenancy implementation.
+This document classified every table in the SQLite schema that existed when it
+was written by present role and likely hosted ownership. It answered the
+initial inventory question in
+[`beta-web-service-plan.md`](./beta-web-service-plan.md) without choosing a
+database engine, request/user context, migration shape, or tenancy
+implementation.
 
 ## Reading The Map
 
@@ -76,7 +81,7 @@ applies this broader content-preservation constraint to customization
 operations. The frontier carries the current-wave invariant, while this section
 records its rationale, interpretation, and exceptions.
 
-## Complete Table Inventory
+## Historical Table Inventory (18-table snapshot)
 
 | Table | Present role | Likely hosted ownership | Boundary needed before hosted beta | Planning confidence |
 | --- | --- | --- | --- | --- |
@@ -165,10 +170,11 @@ remain interpretable against the content actually served. This map identifies
 that requirement but deliberately does not design version tables, snapshots, or
 migration mechanics.
 
-## Conclusions Safe To Carry Into Hosted-Beta Planning
+## Historical Conclusions To Revalidate
 
-These conclusions follow directly from current behavior and do not require a
-new product decision:
+These conclusions followed directly from the behavior and schema inspected at
+the time. The service-boundary design should use them as hypotheses and
+revalidate them against current persistence and retired workflows:
 
 1. The current database file is an implicit single-learner boundary; row-level
    tenancy is not enforced anywhere.
@@ -232,17 +238,20 @@ These are defaults for the next planning step, not accepted product decisions:
 9. When referenced shared content changes or is removed, what minimum historical
    evidence must remain so attempt and management provenance stays truthful?
 
-None of these questions prevents using this map as a complete inventory. They
-do prevent treating the five mixed tables, metadata scope, or forensic
-retention as settled implementation contracts.
+At the time, these questions did not prevent using the map as a complete
+18-table inventory. They did prevent treating the five mixed tables, metadata
+scope, or forensic retention as settled implementation contracts. The current
+schema additions independently make the inventory incomplete today.
 
-## Completeness Check
+## Historical Completeness Check
 
-The inventory source is the `CREATE TABLE` list in `createSchema()` in
+The inventory source was the `CREATE TABLE` list in `createSchema()` in
 `server/db/persistence.ts`, cross-checked against the table list in
 `validateSchema()`. Temporary `*_next` tables used only while rebuilding a
-table during a lightweight migration are excluded because they are not part of
-the steady-state schema.
+table during a lightweight migration were excluded because they were not part
+of the steady-state schema. This check establishes historical completeness
+only; it must not be used as evidence that the current schema still has 18
+tables.
 
 The concrete check compares:
 

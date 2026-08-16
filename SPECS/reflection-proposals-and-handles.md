@@ -4,7 +4,7 @@ Status: accepted canonical product contract. The core V1 proposal, review,
 authorization, application, and provenance lifecycle is implemented.
 `repair_production_cue@1` and `accept_production_alternate@1` remain
 intentionally unsupported. The V2 production-cue repair behavior is accepted
-and implemented for the current build wave.
+and implemented current behavior.
 
 This specification defines how learner-facing reflection describes bounded
 changes, how a user reviews or revises those proposals, and how an authorized
@@ -18,9 +18,9 @@ Related documents:
 - [`SPECS/study-action-model.md`](./study-action-model.md)
 - [`SPECS/session-covering-criteria.md`](./session-covering-criteria.md)
 - [`SPECS/session-reflection-generation.md`](./session-reflection-generation.md)
+- [`STABILITY_FRONTIER.md`](../STABILITY_FRONTIER.md)
 - [`notes/active/2026-07-10-session-evidence-bundle-design.md`](../notes/active/2026-07-10-session-evidence-bundle-design.md)
 - [`notes/active/2026-07-20-llm-provider-spike-summary.md`](../notes/active/2026-07-20-llm-provider-spike-summary.md)
-- [`PLANS/hosted-beta-tenancy-table-map.md`](../PLANS/hosted-beta-tenancy-table-map.md)
 
 ## 1. Scope And Authority
 
@@ -834,9 +834,11 @@ remains visibly unsupported.
 
 ## 11. Production-Cue Boundary
 
-The accepted V0 boundary is defined in the production section of
-[`study-action-model.md`](./study-action-model.md) and the accepted design memo
-[`PLANS/swi-24-production-task-cue-contract.md`](../PLANS/swi-24-production-task-cue-contract.md).
+The accepted and implemented V0 boundary is defined in the production section
+of [`study-action-model.md`](./study-action-model.md). The completed
+[`SWI-24 design memo`](../PLANS/swi-24-production-task-cue-contract.md) is a
+historical rationale and implementation record, not additional current
+authority.
 It separates word-based scheduling demand, one default production task per
 word, immutable multi-active cue content, cue-scoped accepted-word sets, exact
 served snapshots, and append-oriented cue evidence with a non-scheduling
@@ -850,9 +852,9 @@ Legacy bad-definition-production feedback and suppression continue to govern
 that fallback rather than becoming a generalized cue flag.
 
 Reflection generation for new cue repairs uses V2. When it cannot express a
-faithful V2 cue change, it emits no operation. The exact nested V2 wire schema
-remains a human-gated orientation decision, but the product behavior it must
-represent is settled.
+faithful V2 cue change, it emits no operation. The strict nested provider wire
+shape, trusted-boundary derivations, validation rules, and durable operation
+shape are defined in the V2 contract above and are implemented behavior.
 
 ## 12. Manual And Legacy Invocation Compatibility
 

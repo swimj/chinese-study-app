@@ -4,18 +4,22 @@ A Mandarin study app currently built for a local-browser-first PoC workflow, wit
 
 ## Architecture Direction
 
-Current architecture is optimized for fast product iteration on one machine.
+The implemented architecture is optimized for fast product iteration on one
+machine, but the accepted current build wave is an invite-only hosted Mandarin
+beta. Local dogfood remains the trusted product-validation environment while a
+service-boundary design settles account identity, content and learner-state
+ownership, physical tenancy, migration, release, recovery, and support access.
 
-This is a phase, not a forever constraint:
-
-- Near-to-medium term: local-browser-first development and validation.
-- Longer term: keep code and boundaries friendly to a potential hosted web-service migration.
+See [`STABILITY_FRONTIER.md`](./STABILITY_FRONTIER.md) for the accepted outcome,
+open decisions, non-goals, and advancement test. Hosted work must not treat the
+current local shape as permanent, but it also must not assume Postgres or
+another topology before the service boundary is accepted.
 
 When making changes, prefer designs that avoid unnecessary coupling to single-machine assumptions.
 
 ## Current Status
 
-The current milestone includes:
+The current implementation includes:
 
 - local Express backend in [`server/`](/Users/jw/dev/chinese-study-app/server)
 - SQLite persistence
@@ -27,6 +31,10 @@ The current milestone includes:
 - mixed study sessions containing due review actions, active learning words, and top-priority unstudied words
 - active session snapshot owned by the frontend after session start
 - frontend dashboard that loads words and due review actions from the backend API
+- durable post-session reflection with proposal review, explicit authorization,
+  supported application, failure isolation, and retry diagnostics
+- immutable production tasks and cues with snapshotted answer spaces,
+  learner-authorized cue repair, and exact attempt provenance
 
 ## Release Versioning
 

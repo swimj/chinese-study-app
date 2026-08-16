@@ -67,28 +67,30 @@ materialize reflection artifacts.
 Materialization and proposal-row seeding are one transaction. The
 `(source_session_id, reflection_flow_version)` unique key implements durable
 generation idempotency. Acceptance atomically records exact/revised review
-disposition, immutable operation authorization, and the initial `pending` or
-`unsupported` application. Application is idempotent by invocation id: after
-application is terminal, later calls return its recorded status without
-duplicating effects.
+disposition, immutable operation authorization, and its application state.
+Application is idempotent by invocation id: after application is terminal,
+later calls return its recorded status without duplicating effects.
 
 The supported adapters are:
 
 - definition-production suppression, through
   `suppressDefinitionProductionWithoutTransaction`, preserving legacy
   source-event provenance and reporting preexisting suppression as
-  `already_satisfied`; and
+  `already_satisfied`;
 - atomic creation of a contrast cluster, members, annotations, and prompts,
   plus all-member contextual eligibility, with caused-only effect references
-  and deterministic exact content-and-eligibility postcondition detection.
-
-Cue repair and production-alternate operations remain valid authorizations but
-persist as `unsupported` without domain writes.
+  and deterministic exact content-and-eligibility postcondition detection; and
+- production-cue repair, through
+  `applyProductionCueRepairWithoutTransaction`, with current-state validation
+  of the task, referenced cues, accepted words, and source-attempt judgments;
+  atomic cue creation, replacement, or deactivation; append-only authorized
+  cue-evidence judgments; and exact caused or already-satisfying effect
+  references.
 
 Pending application is recoverable through
 `listPendingReflectionInvocationIds()` and
 `recoverPendingReflectionInvocations()`. The proposal-review route applies a
-supported pending invocation immediately. Direct backend startup calls
+pending invocation immediately. Direct backend startup calls
 `recoverPendingReflectionApplicationsAtStartup()` before listening, so a
 process interruption between authorization and application can be resumed.
 
