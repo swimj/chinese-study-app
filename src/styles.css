@@ -1790,34 +1790,6 @@ button:disabled:hover {
   font-size: 0.68rem;
 }
 
-.reflection-usage-summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
-  gap: 0.75rem;
-}
-
-.reflection-usage-metric {
-  display: grid;
-  gap: 0.25rem;
-  min-width: 0;
-}
-
-.reflection-usage-metric > span,
-.reflection-usage-metric small {
-  color: #94a3b8;
-}
-
-.reflection-usage-metric > span {
-  font-size: 0.75rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.reflection-usage-metric strong {
-  font-size: 1.35rem;
-}
-
 .reflection-run-table-wrap {
   min-width: 0;
   overflow-x: auto;
@@ -1862,6 +1834,13 @@ button:disabled:hover {
   color: #94a3b8;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.reflection-run-identity .reflection-run-schema {
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .reflection-run-status {

@@ -22,7 +22,8 @@ import {
   createReplacementOperation,
   getOperationDraftState,
   reflectionOperationLabel,
-  summarizeReflectionTokenUsage,
+  formatRunDuration,
+  visibleOutputTokens,
   type NoDurableChangeReflectionGist,
   type ReflectionArtifactSummaryDto,
   type ReflectionGenerationRunDto,
@@ -71,7 +72,7 @@ export function ReflectionsPage({
     },
     { key: 'requests', label: 'Learner requests', count: learnerRequests.length },
     { key: 'sessions', label: 'By session' },
-    { key: 'usage', label: 'Token usage' },
+    { key: 'usage', label: 'Run meta' },
   ];
 
   return (
@@ -466,38 +467,20 @@ export function TokenUsageView({
   retryStatus: ReflectionPageController['generationRetryStatus'];
   onRetry: (runId: string, model?: ReflectionModelChoice) => Promise<void>;
 }) {
-  const summary = summarizeReflectionTokenUsage(runs);
   return (
     <main className="reflection-usage-view">
-      <section className="reflection-usage-summary" aria-label="Token usage summary">
-        <UsageMetric label="Runs" value={summary.runCount.toLocaleString()} />
-        <UsageMetric label="Input" value={formatTokenCount(summary.usage.inputTokens)} />
-        <UsageMetric label="Cached" value={formatTokenCount(summary.usage.cachedInputTokens)} />
-        <UsageMetric
-          label="Cache write"
-          value={formatTokenCount(summary.usage.cacheWriteInputTokens)}
-        />
-        <UsageMetric label="Output" value={formatTokenCount(summary.usage.outputTokens)} />
-        <UsageMetric label="Reasoning" value={formatTokenCount(summary.usage.reasoningTokens)} />
-        <UsageMetric label="Total" value={formatTokenCount(summary.usage.totalTokens)} />
-        <UsageMetric
-          label="Estimated cost"
-          value={summary.estimatedCostUsd === null ? '—' : formatUsd(summary.estimatedCostUsd)}
-          note={`${summary.pricedRunCount}/${summary.runCount} priced`}
-        />
-      </section>
       {runs.length === 0 ? (
         <section className="panel reflection-empty-state">
-          <h2>No token usage yet</h2>
+          <h2>No run meta yet</h2>
           <p className="notes">No reflection generation attempts yet.</p>
         </section>
       ) : (
         <section className="panel reflection-run-table-wrap">
-          <div className="reflection-run-table" role="table" aria-label="Reflection token usage">
+          <div className="reflection-run-table" role="table" aria-label="Reflection run meta">
             <div className="reflection-run-table-header" role="row">
-              <span>Status</span><span>Run</span><span>Input</span><span>Cached</span>
-              <span>Cache write</span><span>Output</span><span>Reasoning</span>
-              <span>Total</span><span>Cost</span>
+              <span>Status</span><span>Run</span><span>Duration</span><span>Input</span><span>Cached</span>
+              <span>Output</span><span>Reasoning</span><span>Visible</span>
+              <span>Cost</span>
             </div>
             {runs.map((run) => (
               <div className="reflection-run-row" role="row" key={run.runId}>
@@ -516,22 +499,19 @@ export function TokenUsageView({
                     {run.finishReason === null ? '' : ` · finish: ${run.finishReason}`}
                     {run.failureCode === null ? '' : ` · ${humanize(run.failureCode)}`}
                   </span>
-                  {run.responseId === null ? null : (
-                    <span title={run.responseId}>response {abbreviateId(run.responseId)}</span>
-                  )}
-                  {typeof run.clientRequestId !== 'string' ? null : (
-                    <span title={run.clientRequestId}>provider run {abbreviateId(run.clientRequestId)}</span>
-                  )}
-                  <span>
-                    bundle {run.bundleSchemaVersion ?? 'unknown'} · result {run.resultSchemaVersion ?? 'unknown'}
+                  <span className="reflection-run-schema">
+                    bundle {run.bundleSchemaVersion ?? 'unknown'}
+                  </span>
+                  <span className="reflection-run-schema">
+                    result {run.resultSchemaVersion ?? 'unknown'}
                   </span>
                 </div>
+                <span>{formatRunDuration(run.startedAt, run.completedAt)}</span>
                 <span>{formatTokenCount(run.usage.inputTokens)}</span>
                 <span>{formatTokenCount(run.usage.cachedInputTokens)}</span>
-                <span>{formatTokenCount(run.usage.cacheWriteInputTokens)}</span>
                 <span>{formatTokenCount(run.usage.outputTokens)}</span>
                 <span>{formatTokenCount(run.usage.reasoningTokens)}</span>
-                <strong>{formatTokenCount(run.usage.totalTokens)}</strong>
+                <span>{formatTokenCount(visibleOutputTokens(run.usage))}</span>
                 <span title={run.estimatedCostUsd === null
                   ? 'Cost estimate unavailable for this run.'
                   : `Rates as of ${run.pricingAsOf}; ${run.pricingSnapshotId}`}
@@ -574,24 +554,6 @@ function RunDiagnosticView({
         <pre className="reflection-rejected-output">{diagnostic.rejectedOutput}</pre>
       )}
     </details>
-  );
-}
-
-function UsageMetric({
-  label,
-  value,
-  note,
-}: {
-  label: string;
-  value: string;
-  note?: string;
-}) {
-  return (
-    <div className="panel reflection-usage-metric">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      {note === undefined ? null : <small>{note}</small>}
-    </div>
   );
 }
 

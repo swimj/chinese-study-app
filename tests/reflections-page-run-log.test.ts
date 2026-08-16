@@ -50,6 +50,12 @@ describe('reflection run log presentation', () => {
           finishReason: 'length',
           estimatedCostUsd: null,
           pricingAsOf: null,
+          startedAt: '2026-07-29T12:00:00.000Z',
+          completedAt: '2026-07-29T12:00:00.250Z',
+          responseId: 'response-should-hide',
+          clientRequestId: 'client-should-hide',
+          outputTokens: 40,
+          reasoningTokens: 15,
         }),
         run({
           runId: 'succeeded',
@@ -58,6 +64,10 @@ describe('reflection run log presentation', () => {
           finishReason: 'stop',
           estimatedCostUsd: 0.000032,
           pricingAsOf: '2026-07-30',
+          startedAt: '2026-07-29T12:00:00.000Z',
+          completedAt: '2026-07-29T12:02:03.000Z',
+          outputTokens: 40,
+          reasoningTokens: 15,
         }),
       ]);
 
@@ -66,6 +76,19 @@ describe('reflection run log presentation', () => {
     assert.match(markup, /Cost estimate unavailable for this run/);
     assert.match(markup, /Rates as of 2026-07-30; price-v1/);
     assert.match(markup, /Cached/);
+    assert.match(markup, /Duration/);
+    assert.match(markup, /Visible/);
+    assert.match(markup, /0m 01s/);
+    assert.match(markup, /2m 03s/);
+    assert.match(markup, />25</);
+    assert.match(markup, /bundle session_reflection_bundle\.v1/);
+    assert.match(markup, /result session_reflection_result\.v4/);
+    assert.doesNotMatch(markup, /Cache write/);
+    assert.doesNotMatch(markup, />Total</);
+    assert.doesNotMatch(markup, /response /);
+    assert.doesNotMatch(markup, /provider run /);
+    assert.doesNotMatch(markup, /Token usage summary/);
+    assert.doesNotMatch(markup, /Estimated cost/);
     assert.match(markup, /Retry reflection: output truncated\. Choose a model\./);
     assert.doesNotMatch(markup, /<select/);
     assert.doesNotMatch(markup, /Choose model for reflection retry/);
@@ -124,19 +147,25 @@ function run(overrides: {
   finishReason: string | null;
   estimatedCostUsd: number | null;
   pricingAsOf: string | null;
+  startedAt?: string;
+  completedAt?: string;
+  responseId?: string | null;
+  clientRequestId?: string | null;
+  outputTokens?: number | null;
+  reasoningTokens?: number | null;
 }): ReflectionPageController['generationRuns'][number] {
   return {
     runId: overrides.runId,
     sourceSessionId: 'session-1',
     reflectionFlowVersion: 'initial_post_session_reflection.v1',
-    startedAt: '2026-07-29T12:00:00.000Z',
-    completedAt: '2026-07-29T12:00:01.000Z',
+    startedAt: overrides.startedAt ?? '2026-07-29T12:00:00.000Z',
+    completedAt: overrides.completedAt ?? '2026-07-29T12:00:01.000Z',
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
     providerModel: 'gpt-5.6-luna',
     promptVersion: 'reflection-v2',
-    responseId: 'response-1',
-    clientRequestId: null,
+    responseId: overrides.responseId === undefined ? 'response-1' : overrides.responseId,
+    clientRequestId: overrides.clientRequestId === undefined ? null : overrides.clientRequestId,
     finishReason: overrides.finishReason,
     bundleSchemaVersion: 'session_reflection_bundle.v1',
     resultSchemaVersion: 'session_reflection_result.v4',
@@ -148,8 +177,8 @@ function run(overrides: {
       inputTokens: 100,
       cachedInputTokens: null,
       cacheWriteInputTokens: null,
-      outputTokens: 10,
-      reasoningTokens: null,
+      outputTokens: overrides.outputTokens === undefined ? 10 : overrides.outputTokens,
+      reasoningTokens: overrides.reasoningTokens === undefined ? null : overrides.reasoningTokens,
       totalTokens: 110,
     },
     pricingSnapshotId: overrides.estimatedCostUsd === null ? null : 'price-v1',

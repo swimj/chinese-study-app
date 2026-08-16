@@ -14,7 +14,6 @@ import type {
 import type {
   ReflectionArtifactDetailDto,
   ReflectionProposalDetailDto,
-  ReflectionGenerationRunDto,
 } from '../../services/api';
 import {
   classifyProposalAcceptance,
@@ -76,22 +75,6 @@ export type ReflectionProposalPresentation = {
     | null;
   result: ReflectionItemResult;
   proposal: ReflectionProposalDetailDto;
-};
-
-export type ReflectionTokenUsageSummary = {
-  runCount: number;
-  succeededCount: number;
-  failedCount: number;
-  usage: {
-    inputTokens: number | null;
-    cachedInputTokens: number | null;
-    cacheWriteInputTokens: number | null;
-    outputTokens: number | null;
-    reasoningTokens: number | null;
-    totalTokens: number | null;
-  };
-  pricedRunCount: number;
-  estimatedCostUsd: number | null;
 };
 
 export function buildReflectionItemPresentations(
@@ -178,27 +161,31 @@ export function buildReflectionProposalPresentations(
   return presentations;
 }
 
-export function summarizeReflectionTokenUsage(
-  runs: ReflectionGenerationRunDto[],
-): ReflectionTokenUsageSummary {
-  const pricedRuns = runs.filter((run) => run.estimatedCostUsd !== null);
-  return {
-    runCount: runs.length,
-    succeededCount: runs.filter((run) => run.state === 'succeeded').length,
-    failedCount: runs.filter((run) => run.state === 'failed').length,
-    usage: {
-      inputTokens: sumKnown(runs.map((run) => run.usage.inputTokens)),
-      cachedInputTokens: sumKnown(runs.map((run) => run.usage.cachedInputTokens)),
-      cacheWriteInputTokens: sumKnown(runs.map((run) => run.usage.cacheWriteInputTokens)),
-      outputTokens: sumKnown(runs.map((run) => run.usage.outputTokens)),
-      reasoningTokens: sumKnown(runs.map((run) => run.usage.reasoningTokens)),
-      totalTokens: sumKnown(runs.map((run) => run.usage.totalTokens)),
-    },
-    pricedRunCount: pricedRuns.length,
-    estimatedCostUsd: pricedRuns.length === 0
-      ? null
-      : pricedRuns.reduce((total, run) => total + (run.estimatedCostUsd ?? 0), 0),
-  };
+/** User-facing output tokens: total output minus reasoning, when output is known. */
+export function visibleOutputTokens(usage: {
+  outputTokens: number | null;
+  reasoningTokens: number | null;
+}): number | null {
+  if (usage.outputTokens === null) return null;
+  const reasoning = usage.reasoningTokens ?? 0;
+  return Math.max(0, usage.outputTokens - reasoning);
+}
+
+/**
+ * Wall-clock run duration from persisted start/end timestamps.
+ * Sub-second spans round up to 1 second; longer spans ceil to whole seconds.
+ */
+export function formatRunDuration(startedAt: string, completedAt: string): string {
+  const startedMs = Date.parse(startedAt);
+  const completedMs = Date.parse(completedAt);
+  if (Number.isNaN(startedMs) || Number.isNaN(completedMs)) {
+    throw new Error('Expected valid ISO run timestamps for duration display');
+  }
+  const elapsedMs = Math.max(0, completedMs - startedMs);
+  const totalSeconds = Math.max(1, Math.ceil(elapsedMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
 }
 
 function proposalBelongsInQueue(
@@ -218,13 +205,6 @@ function proposalBelongsInQueue(
           || proposal.invocation.application.state.kind === 'pending'
         );
   }
-}
-
-function sumKnown(values: Array<number | null>): number | null {
-  const knownValues = values.filter((value): value is number => value !== null);
-  return knownValues.length === 0
-    ? null
-    : knownValues.reduce((total, value) => total + value, 0);
 }
 
 export function cloneReflectionOperation(operation: ReflectionOperation): ReflectionOperation {
