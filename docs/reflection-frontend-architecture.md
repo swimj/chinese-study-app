@@ -135,10 +135,9 @@ observability for the initial reflection flow, not a learner correctness signal
 or a replacement for immutable artifact history.
 
 The **Quality** view shows server-side model-arm rates derived from terminal
-proposal reviews plus praise/critique overlays. Capture lives on proposal cards
-(required dismiss critique chips and optional praise) and on item /
-no-durable-change surfaces. Annotations never rewrite disposition or
-application.
+proposal reviews plus item quality-tag overlays. Capture is a single tag-chip
+row on each reflection item (placed near accept/dismiss for convenience). Tags
+never rewrite disposition or application and are not required to review.
 
 Failed runs with diagnostics have an expandable developer-facing detail showing
 the validation phase, bounded issue paths/rules/messages, schema provenance,

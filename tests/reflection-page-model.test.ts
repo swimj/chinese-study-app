@@ -13,7 +13,7 @@ import {
   buildReflectionItemPresentations,
   buildLearnerRequestedReflectionPresentations,
   buildReflectionProposalPresentations,
-  critiqueOptionsForSubject,
+  REFLECTION_QUALITY_TAG_OPTIONS,
   cloneReflectionOperation,
   createReplacementOperation,
   getOperationDraftState,
@@ -55,22 +55,18 @@ describe('reflection page model', () => {
     });
   });
 
-  test('limits missed_intervention to item subjects without proposals', () => {
+  test('exposes the closed item quality tag set including praise', () => {
     assert.deepEqual(
-      critiqueOptionsForSubject('proposal', false).map((option) => option.code),
+      REFLECTION_QUALITY_TAG_OPTIONS.map((option) => option.code),
       [
+        'praise',
         'wrong_diagnosis',
         'wrong_intervention',
+        'missed_intervention',
         'low_quality_content',
         'inconsistent',
         'other',
       ],
-    );
-    assert.ok(
-      critiqueOptionsForSubject('item', true).some((option) => option.code === 'missed_intervention'),
-    );
-    assert.ok(
-      !critiqueOptionsForSubject('item', false).some((option) => option.code === 'missed_intervention'),
     );
   });
 
@@ -659,7 +655,7 @@ function artifactDetail(): ReflectionArtifactDetailDto {
       },
       invocation: null,
     })),
-    qualityAnnotations: [],
+    qualityItemTags: [],
   };
 }
 

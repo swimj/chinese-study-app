@@ -58,7 +58,7 @@ import type {
   UpsertReflectionQualityRequest,
 } from '../src/domain/reflection.ts';
 import {
-  isReflectionQualityCritiqueReason,
+  isReflectionQualityTag,
 } from '../src/domain/reflection.ts';
 import {
   createInitialReflectionGenerationService,
@@ -638,8 +638,6 @@ export function createApp(options: CreateAppOptions = {}) {
         const review = dismissReflectionProposal(
           proposalId.trim(),
           request.reason,
-          undefined,
-          request.reasonCode,
         );
         res.json({ review, invocation: null, application: null });
         return;
@@ -1044,7 +1042,7 @@ function readReviewProposalRequest(value: unknown): ReviewProposalRequest | null
         ? { action: 'defer' }
         : null;
     case 'dismiss': {
-      const allowedKeys = new Set(['action', 'reason', 'reasonCode']);
+      const allowedKeys = new Set(['action', 'reason']);
       if (
         !keys.every((key) => allowedKeys.has(key))
         || !keys.includes('reason')
@@ -1052,16 +1050,7 @@ function readReviewProposalRequest(value: unknown): ReviewProposalRequest | null
       ) {
         return null;
       }
-      if (value.reasonCode !== undefined && !isReflectionQualityCritiqueReason(value.reasonCode)) {
-        return null;
-      }
-      return value.reasonCode === undefined
-        ? { action: 'dismiss', reason: value.reason }
-        : {
-            action: 'dismiss',
-            reason: value.reason,
-            reasonCode: value.reasonCode,
-          };
+      return { action: 'dismiss', reason: value.reason };
     }
     case 'accept':
     case 'replace':
@@ -1100,94 +1089,63 @@ function isReflectionReviewClientError(error: unknown): error is Error {
 }
 
 function readUpsertReflectionQualityRequest(value: unknown): UpsertReflectionQualityRequest | null {
-  if (!isPlainObject(value) || !isPlainObject(value.subject) || typeof value.polarity !== 'string') {
+  if (!isPlainObject(value)) return null;
+  const keys = Object.keys(value);
+  if (keys.some((key) => !['artifactId', 'itemId', 'tags', 'note'].includes(key))) {
     return null;
   }
-  const subject = readReflectionQualitySubject(value.subject);
-  if (subject === null) return null;
+  if (
+    typeof value.artifactId !== 'string'
+    || value.artifactId.trim().length === 0
+    || typeof value.itemId !== 'string'
+    || value.itemId.trim().length === 0
+    || !Array.isArray(value.tags)
+    || value.tags.length === 0
+    || !value.tags.every((tag) => isReflectionQualityTag(tag))
+  ) {
+    return null;
+  }
   const note = value.note === undefined ? undefined : value.note;
   if (note !== undefined && note !== null && typeof note !== 'string') {
     return null;
   }
-  if (value.polarity === 'praise') {
-    const keys = Object.keys(value);
-    if (keys.some((key) => !['subject', 'polarity', 'note'].includes(key))) {
-      return null;
-    }
-    return note === undefined
-      ? { subject, polarity: 'praise' }
-      : { subject, polarity: 'praise', note };
-  }
-  if (value.polarity === 'critique') {
-    const keys = Object.keys(value);
-    if (
-      keys.some((key) => !['subject', 'polarity', 'reasonCode', 'note'].includes(key))
-      || !isReflectionQualityCritiqueReason(value.reasonCode)
-    ) {
-      return null;
-    }
-    return note === undefined
-      ? { subject, polarity: 'critique', reasonCode: value.reasonCode }
-      : { subject, polarity: 'critique', reasonCode: value.reasonCode, note };
-  }
-  return null;
+  return note === undefined
+    ? {
+        artifactId: value.artifactId.trim(),
+        itemId: value.itemId.trim(),
+        tags: value.tags,
+      }
+    : {
+        artifactId: value.artifactId.trim(),
+        itemId: value.itemId.trim(),
+        tags: value.tags,
+        note,
+      };
 }
 
 function readClearReflectionQualityRequest(value: unknown): ClearReflectionQualityRequest | null {
-  if (!isPlainObject(value) || !isPlainObject(value.subject)) {
+  if (!isPlainObject(value)) return null;
+  const keys = Object.keys(value).sort();
+  if (
+    keys.length !== 2
+    || keys[0] !== 'artifactId'
+    || keys[1] !== 'itemId'
+    || typeof value.artifactId !== 'string'
+    || value.artifactId.trim().length === 0
+    || typeof value.itemId !== 'string'
+    || value.itemId.trim().length === 0
+  ) {
     return null;
   }
-  const keys = Object.keys(value);
-  if (keys.length !== 1 || keys[0] !== 'subject') {
-    return null;
-  }
-  const subject = readReflectionQualitySubject(value.subject);
-  return subject === null ? null : { subject };
-}
-
-function readReflectionQualitySubject(
-  value: Record<string, unknown>,
-): UpsertReflectionQualityRequest['subject'] | null {
-  if (value.kind === 'proposal') {
-    const keys = Object.keys(value).sort();
-    if (
-      keys.length !== 2
-      || keys[0] !== 'kind'
-      || keys[1] !== 'proposalId'
-      || typeof value.proposalId !== 'string'
-      || value.proposalId.trim().length === 0
-    ) {
-      return null;
-    }
-    return { kind: 'proposal', proposalId: value.proposalId.trim() };
-  }
-  if (value.kind === 'item') {
-    const keys = Object.keys(value).sort();
-    if (
-      keys.length !== 3
-      || keys[0] !== 'artifactId'
-      || keys[1] !== 'itemId'
-      || keys[2] !== 'kind'
-      || typeof value.artifactId !== 'string'
-      || value.artifactId.trim().length === 0
-      || typeof value.itemId !== 'string'
-      || value.itemId.trim().length === 0
-    ) {
-      return null;
-    }
-    return {
-      kind: 'item',
-      artifactId: value.artifactId.trim(),
-      itemId: value.itemId.trim(),
-    };
-  }
-  return null;
+  return {
+    artifactId: value.artifactId.trim(),
+    itemId: value.itemId.trim(),
+  };
 }
 
 function isReflectionQualityNotFoundError(error: unknown): error is Error {
   return error instanceof Error && (
-    error.message === 'Reflection proposal not found.'
-    || error.message === 'Reflection artifact not found.'
+    error.message === 'Reflection artifact not found.'
     || error.message === 'Reflection item not found.'
   );
 }
@@ -1195,11 +1153,10 @@ function isReflectionQualityNotFoundError(error: unknown): error is Error {
 function isReflectionQualityClientError(error: unknown): error is Error {
   if (!(error instanceof Error)) return false;
   return (
-    error.message === 'Expected a valid reflection quality critique reason.'
-    || error.message === 'missed_intervention is valid only for item quality subjects.'
-    || error.message === 'other critique requires a non-empty note.'
-    || error.message === 'missed_intervention is valid only for items with no durable proposals.'
-    || error.message === 'Expected quality annotation note to be null or non-empty.'
+    error.message === 'Expected a valid reflection quality tag.'
+    || error.message === 'Expected a non-empty quality tag set.'
+    || error.message === 'Expected quality tags to be an array.'
+    || error.message === 'other tag requires a non-empty note.'
     || error.message === 'Expected quality annotation note to be a string or null.'
     || error.message.startsWith('Expected non-empty ')
     || error.message.startsWith('Expected ')

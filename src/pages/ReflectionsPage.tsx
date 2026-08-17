@@ -7,21 +7,20 @@ import type {
   ReflectionInputItemV2,
   ReflectionItemV3,
   ReflectionOperation,
-  ReflectionQualityAnnotation,
-  ReflectionQualityCritiqueReason,
-  ReflectionQualitySubject,
+  ReflectionQualityItemTags,
+  ReflectionQualityTag,
 } from '../domain/reflection';
 import type { ReflectionModelChoice, ReflectionQualityStatsDto } from '../services/api';
 import { ReflectionOperationEditor } from '../features/reflection/ReflectionOperationEditor';
 import type { ReflectionPageController } from '../features/reflection/useReflectionPageController';
-import { qualitySubjectKey } from '../features/reflection/useReflectionPageController';
+import { qualityItemKey } from '../features/reflection/useReflectionPageController';
 import {
   buildNoDurableChangeGists,
   buildReflectionItemPresentations,
   buildLearnerRequestedReflectionPresentations,
   buildReflectionProposalPresentations,
-  critiqueOptionsForSubject,
-  findQualityAnnotation,
+  findQualityItemTags,
+  REFLECTION_QUALITY_TAG_OPTIONS,
   legacyReflectionUnhandledNeeds,
   reflectionLearnerFeedback,
   cloneReflectionOperation,
@@ -182,21 +181,17 @@ function LearnerRequestsView({
           </header>
           <EvidenceView evidence={evidence} />
           <section className="reflection-analysis"><h3>Feedback</h3><p>{reflectionLearnerFeedback(result)}</p></section>
-          <QualityAnnotationControls
-            subject={{ kind: 'item', artifactId: artifact.artifactId, itemId: result.itemId }}
-            annotation={findQualityAnnotation(artifact.qualityAnnotations, {
-              kind: 'item',
-              artifactId: artifact.artifactId,
-              itemId: result.itemId,
-            })}
-            allowMissedIntervention={result.proposals.length === 0}
+          <ItemQualityTagControls
+            artifactId={artifact.artifactId}
+            itemId={result.itemId}
+            annotation={findQualityItemTags(
+              artifact.qualityItemTags,
+              artifact.artifactId,
+              result.itemId,
+            )}
             submitting={
-              controller.submittingQualitySubjectKey
-                === qualitySubjectKey({
-                  kind: 'item',
-                  artifactId: artifact.artifactId,
-                  itemId: result.itemId,
-                })
+              controller.submittingQualityItemKey
+                === qualityItemKey(artifact.artifactId, result.itemId)
             }
             onUpsert={controller.upsertQuality}
             onClear={controller.clearQuality}
@@ -273,24 +268,19 @@ function ProposalQueueView({
               <p>{presentation.result.learnerExplanation}</p>
             </section>
           ) : null}
-          <QualityAnnotationControls
-            subject={{
-              kind: 'item',
-              artifactId: presentation.artifact.artifactId,
-              itemId: presentation.result.itemId,
-            }}
-            annotation={findQualityAnnotation(presentation.artifact.qualityAnnotations, {
-              kind: 'item',
-              artifactId: presentation.artifact.artifactId,
-              itemId: presentation.result.itemId,
-            })}
-            allowMissedIntervention={presentation.result.proposals.length === 0}
+          <ItemQualityTagControls
+            artifactId={presentation.artifact.artifactId}
+            itemId={presentation.result.itemId}
+            annotation={findQualityItemTags(
+              presentation.artifact.qualityItemTags,
+              presentation.artifact.artifactId,
+              presentation.result.itemId,
+            )}
             submitting={
-              controller.submittingQualitySubjectKey === qualitySubjectKey({
-                kind: 'item',
-                artifactId: presentation.artifact.artifactId,
-                itemId: presentation.result.itemId,
-              })
+              controller.submittingQualityItemKey === qualityItemKey(
+                presentation.artifact.artifactId,
+                presentation.result.itemId,
+              )
             }
             onUpsert={controller.upsertQuality}
             onClear={controller.clearQuality}
@@ -298,21 +288,8 @@ function ProposalQueueView({
           <ProposalCard
             proposal={presentation.proposal}
             evidence={presentation.evidence}
-            qualityAnnotation={findQualityAnnotation(
-              presentation.artifact.qualityAnnotations,
-              {
-                kind: 'proposal',
-                proposalId: presentation.proposal.review.proposalId,
-              },
-            )}
             submitting={
               controller.submittingProposalId === presentation.proposal.review.proposalId
-            }
-            qualitySubmitting={
-              controller.submittingQualitySubjectKey === qualitySubjectKey({
-                kind: 'proposal',
-                proposalId: presentation.proposal.review.proposalId,
-              })
             }
             withdrawingInvocationId={controller.withdrawingInvocationId}
             onDefer={controller.deferProposal}
@@ -320,8 +297,6 @@ function ProposalQueueView({
             onAccept={controller.acceptProposal}
             onReplace={controller.replaceProposal}
             onWithdraw={controller.withdrawAuthorization}
-            onUpsertQuality={controller.upsertQuality}
-            onClearQuality={controller.clearQuality}
           />
         </article>
       ))}
@@ -428,27 +403,19 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                   <p>{reflectionLearnerFeedback(item.result)}</p>
                 </section>
 
-                <QualityAnnotationControls
-                  subject={{
-                    kind: 'item',
-                    artifactId: selectedArtifact.artifactId,
-                    itemId: item.result.itemId,
-                  }}
-                  annotation={findQualityAnnotation(
-                    selectedArtifact.qualityAnnotations,
-                    {
-                      kind: 'item',
-                      artifactId: selectedArtifact.artifactId,
-                      itemId: item.result.itemId,
-                    },
+                <ItemQualityTagControls
+                  artifactId={selectedArtifact.artifactId}
+                  itemId={item.result.itemId}
+                  annotation={findQualityItemTags(
+                    selectedArtifact.qualityItemTags,
+                    selectedArtifact.artifactId,
+                    item.result.itemId,
                   )}
-                  allowMissedIntervention={item.proposals.length === 0}
                   submitting={
-                    controller.submittingQualitySubjectKey === qualitySubjectKey({
-                      kind: 'item',
-                      artifactId: selectedArtifact.artifactId,
-                      itemId: item.result.itemId,
-                    })
+                    controller.submittingQualityItemKey === qualityItemKey(
+                      selectedArtifact.artifactId,
+                      item.result.itemId,
+                    )
                   }
                   onUpsert={controller.upsertQuality}
                   onClear={controller.clearQuality}
@@ -489,21 +456,8 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                           key={proposal.review.proposalId}
                           proposal={proposal}
                           evidence={item.evidence}
-                          qualityAnnotation={findQualityAnnotation(
-                            selectedArtifact.qualityAnnotations,
-                            {
-                              kind: 'proposal',
-                              proposalId: proposal.review.proposalId,
-                            },
-                          )}
                           submitting={
                             controller.submittingProposalId === proposal.review.proposalId
-                          }
-                          qualitySubmitting={
-                            controller.submittingQualitySubjectKey === qualitySubjectKey({
-                              kind: 'proposal',
-                              proposalId: proposal.review.proposalId,
-                            })
                           }
                           withdrawingInvocationId={controller.withdrawingInvocationId}
                           onDefer={controller.deferProposal}
@@ -511,8 +465,6 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                           onAccept={controller.acceptProposal}
                           onReplace={controller.replaceProposal}
                           onWithdraw={controller.withdrawAuthorization}
-                          onUpsertQuality={controller.upsertQuality}
-                          onClearQuality={controller.clearQuality}
                         />
                       ))}
                     </div>
@@ -549,14 +501,13 @@ function NoDurableChangeGistPanel({
       </p>
       <ul className="reflection-no-change-list">
         {gists.map((gist) => {
-          const subject: ReflectionQualitySubject = {
-            kind: 'item',
-            artifactId: gist.artifactId,
-            itemId: gist.itemId,
-          };
           const annotation = controller.selectedArtifact === null
             ? null
-            : findQualityAnnotation(controller.selectedArtifact.qualityAnnotations, subject);
+            : findQualityItemTags(
+              controller.selectedArtifact.qualityItemTags,
+              gist.artifactId,
+              gist.itemId,
+            );
           return (
             <li key={gist.itemId}>
               <div className="reflection-no-change-row">
@@ -577,12 +528,13 @@ function NoDurableChangeGistPanel({
                 ].filter((part): part is string => part !== null).join(' · ') || 'No extra evidence summary'}
               </p>
               <p>{gist.feedback}</p>
-              <QualityAnnotationControls
-                subject={subject}
+              <ItemQualityTagControls
+                artifactId={gist.artifactId}
+                itemId={gist.itemId}
                 annotation={annotation}
-                allowMissedIntervention
                 submitting={
-                  controller.submittingQualitySubjectKey === qualitySubjectKey(subject)
+                  controller.submittingQualityItemKey
+                    === qualityItemKey(gist.artifactId, gist.itemId)
                 }
                 onUpsert={controller.upsertQuality}
                 onClear={controller.clearQuality}
@@ -951,60 +903,40 @@ function formatUsd(value: number): string {
 function ProposalCard({
   proposal,
   evidence,
-  qualityAnnotation,
   submitting,
-  qualitySubmitting,
   withdrawingInvocationId,
   onDefer,
   onDismiss,
   onAccept,
   onReplace,
   onWithdraw,
-  onUpsertQuality,
-  onClearQuality,
 }: {
   proposal: ReflectionProposalDetailDto;
   evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null;
-  qualityAnnotation: ReflectionQualityAnnotation | null;
   submitting: boolean;
-  qualitySubmitting: boolean;
   withdrawingInvocationId: string | null;
   onDefer: (proposalId: string) => Promise<void>;
   onDismiss: (
     proposalId: string,
     reason: string | null,
-    reasonCode: ReflectionQualityCritiqueReason,
   ) => Promise<void>;
   onAccept: (proposalId: string, operation: ReflectionOperation) => Promise<void>;
   onReplace: (proposalId: string, operation: ReflectionOperation) => Promise<void>;
   onWithdraw: (invocationId: string) => Promise<void>;
-  onUpsertQuality: ReflectionPageController['upsertQuality'];
-  onClearQuality: ReflectionPageController['clearQuality'];
 }) {
   const original = proposal.proposal.operation;
   const [draft, setDraft] = useState(() => cloneReflectionOperation(original));
   const [dismissReason, setDismissReason] = useState('');
-  const [dismissReasonCode, setDismissReasonCode] = useState<ReflectionQualityCritiqueReason | null>(
-    null,
-  );
-  const proposalSubject: ReflectionQualitySubject = {
-    kind: 'proposal',
-    proposalId: proposal.review.proposalId,
-  };
 
   useEffect(() => {
     setDraft(cloneReflectionOperation(original));
     setDismissReason('');
-    setDismissReasonCode(null);
   }, [proposal.review.proposalId, proposal.review.updatedAt]);
 
   const draftState = getOperationDraftState(original, draft, evidence);
   const unresolved = proposal.review.disposition.kind === 'pending'
     || proposal.review.disposition.kind === 'deferred';
   const invocation = proposal.invocation;
-  const dismissOptions = critiqueOptionsForSubject('proposal', false);
-  const dismissBlocked = dismissReasonCode === null
-    || (dismissReasonCode === 'other' && dismissReason.trim().length === 0);
 
   return (
     <article className="reflection-proposal-card">
@@ -1022,15 +954,6 @@ function ProposalCard({
 
       <p>{proposal.proposal.rationale}</p>
       <SupportNotice support={draftState.applySupport} />
-      <QualityAnnotationControls
-        subject={proposalSubject}
-        annotation={qualityAnnotation}
-        allowMissedIntervention={false}
-        submitting={qualitySubmitting}
-        onUpsert={onUpsertQuality}
-        onClear={onClearQuality}
-        praiseOnly={unresolved}
-      />
 
       {unresolved ? (
         <>
@@ -1104,32 +1027,10 @@ function ProposalCard({
             </button>
           </div>
           <div className="reflection-dismiss-block">
-            <p className="reflection-eyebrow">Dismiss reason</p>
-            <div className="reflection-quality-chips" role="group" aria-label="Dismiss critique reason">
-              {dismissOptions.map((option) => (
-                <button
-                  type="button"
-                  key={option.code}
-                  className={
-                    dismissReasonCode === option.code
-                      ? 'reflection-quality-chip is-selected'
-                      : 'reflection-quality-chip'
-                  }
-                  disabled={submitting}
-                  onClick={() => setDismissReasonCode(option.code)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
             <div className="reflection-dismiss-row">
               <input
                 value={dismissReason}
-                placeholder={
-                  dismissReasonCode === 'other'
-                    ? 'Required note for other'
-                    : 'Optional dismissal note'
-                }
+                placeholder="Optional dismissal note"
                 aria-label="Optional dismissal note"
                 disabled={submitting}
                 onChange={(event) => setDismissReason(event.target.value)}
@@ -1137,13 +1038,11 @@ function ProposalCard({
               <button
                 type="button"
                 className="danger-button"
-                disabled={submitting || dismissBlocked}
+                disabled={submitting}
                 onClick={() => {
-                  if (dismissReasonCode === null) return;
                   void onDismiss(
                     proposal.review.proposalId,
                     dismissReason.trim().length === 0 ? null : dismissReason.trim(),
-                    dismissReasonCode,
                   ).catch(() => undefined);
                 }}
               >
@@ -1204,99 +1103,101 @@ function ProposalCard({
   );
 }
 
-function QualityAnnotationControls({
-  subject,
+function ItemQualityTagControls({
+  artifactId,
+  itemId,
   annotation,
-  allowMissedIntervention,
   submitting,
   onUpsert,
   onClear,
-  praiseOnly = false,
 }: {
-  subject: ReflectionQualitySubject;
-  annotation: ReflectionQualityAnnotation | null;
-  allowMissedIntervention: boolean;
+  artifactId: string;
+  itemId: string;
+  annotation: ReflectionQualityItemTags | null;
   submitting: boolean;
   onUpsert: ReflectionPageController['upsertQuality'];
   onClear: ReflectionPageController['clearQuality'];
-  praiseOnly?: boolean;
 }) {
   const [note, setNote] = useState(annotation?.note ?? '');
   useEffect(() => {
     setNote(annotation?.note ?? '');
   }, [annotation?.annotationId, annotation?.note, annotation?.updatedAt]);
 
-  const options = critiqueOptionsForSubject(subject.kind, allowMissedIntervention);
-  const praised = annotation?.polarity === 'praise';
-  const critiqueCode = annotation?.polarity === 'critique' ? annotation.reasonCode : null;
+  const selected = new Set(annotation?.tags ?? []);
+
+  function persist(nextTags: ReflectionQualityTag[], nextNote: string) {
+    const trimmed = nextNote.trim();
+    if (nextTags.length === 0) {
+      void onClear({ artifactId, itemId }).catch(() => undefined);
+      return;
+    }
+    if (nextTags.includes('other') && trimmed.length === 0) {
+      return;
+    }
+    void onUpsert({
+      artifactId,
+      itemId,
+      tags: nextTags,
+      note: trimmed.length === 0 ? null : trimmed,
+    }).catch(() => undefined);
+  }
 
   return (
-    <section className="reflection-quality-controls" aria-label="Quality vibe">
+    <section className="reflection-quality-controls" aria-label="Quality tags">
+      <div className="reflection-quality-chips" role="group" aria-label="Item quality tags">
+        {REFLECTION_QUALITY_TAG_OPTIONS.map((option) => {
+          const isSelected = selected.has(option.code);
+          return (
+            <button
+              type="button"
+              key={option.code}
+              className={
+                isSelected
+                  ? option.code === 'praise'
+                    ? 'reflection-quality-chip is-praise is-selected'
+                    : 'reflection-quality-chip is-critique is-selected'
+                  : option.code === 'praise'
+                    ? 'reflection-quality-chip is-praise'
+                    : 'reflection-quality-chip is-critique'
+              }
+              disabled={submitting}
+              onClick={() => {
+                const next = new Set(selected);
+                if (isSelected) next.delete(option.code);
+                else next.add(option.code);
+                persist([...next], note);
+              }}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
       <div className="reflection-quality-row">
-        <button
-          type="button"
-          className={praised ? 'reflection-quality-chip is-praise is-selected' : 'reflection-quality-chip is-praise'}
+        <input
+          className="reflection-quality-note"
+          value={note}
+          placeholder="Optional note (required for Other)"
+          aria-label="Quality note"
           disabled={submitting}
-          onClick={() => {
-            if (praised) {
-              void onClear(subject).catch(() => undefined);
-              return;
-            }
-            void onUpsert({ subject, polarity: 'praise' }).catch(() => undefined);
+          onChange={(event) => setNote(event.target.value)}
+          onBlur={() => {
+            if (annotation === null && note.trim().length === 0) return;
+            if (selected.size === 0) return;
+            persist([...selected], note);
           }}
-        >
-          {praised ? 'Liked' : 'I really like this'}
-        </button>
+        />
         {annotation !== null ? (
           <button
             type="button"
             className="secondary-button reflection-quality-clear"
             disabled={submitting}
-            onClick={() => void onClear(subject).catch(() => undefined)}
+            onClick={() => void onClear({ artifactId, itemId }).catch(() => undefined)}
           >
             Clear
           </button>
         ) : null}
       </div>
-      {praiseOnly ? null : (
-        <>
-          <div className="reflection-quality-chips" role="group" aria-label="Critique reasons">
-            {options.map((option) => (
-              <button
-                type="button"
-                key={option.code}
-                className={
-                  critiqueCode === option.code
-                    ? 'reflection-quality-chip is-critique is-selected'
-                    : 'reflection-quality-chip is-critique'
-                }
-                disabled={submitting}
-                onClick={() => {
-                  if (option.code === 'other' && note.trim().length === 0) {
-                    return;
-                  }
-                  void onUpsert({
-                    subject,
-                    polarity: 'critique',
-                    reasonCode: option.code,
-                    note: note.trim().length === 0 ? null : note.trim(),
-                  }).catch(() => undefined);
-                }}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-          <input
-            className="reflection-quality-note"
-            value={note}
-            placeholder="Optional note (required for Other)"
-            aria-label="Quality note"
-            disabled={submitting}
-            onChange={(event) => setNote(event.target.value)}
-          />
-        </>
-      )}
     </section>
   );
 }
@@ -1318,8 +1219,8 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
         <section className="panel reflection-empty-state">
           <h2>No quality signal yet</h2>
           <p className="notes">
-            Accept, dismiss, praise, and critique proposals or items while reviewing to accumulate
-            rates by model arm.
+            Accept, dismiss, and tag reflection items while reviewing to accumulate rates by model
+            arm.
           </p>
         </section>
       </main>
@@ -1333,8 +1234,9 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
           <div>
             <h2>Model-arm quality vibe</h2>
             <p className="notes">
-              Terminal user reviews plus praise/critique overlays. Pending, deferred, and system
-              supersession are excluded. Small counts are not statistical claims.
+              Terminal user reviews plus item tag overlays. Pending, deferred, and system
+              supersession are excluded from disposition rates. Tags count whenever present. Small
+              counts are not statistical claims.
             </p>
           </div>
         </header>
@@ -1347,6 +1249,7 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
             <span>Revised</span>
             <span>Replace</span>
             <span>Dismiss</span>
+            <span>Tagged</span>
             <span>Praise</span>
             <span>Missed</span>
           </div>
@@ -1362,16 +1265,10 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
               <span>{formatRate(arm.exactAcceptCount, arm.terminalReviewCount)}</span>
               <span>{formatRate(arm.revisedAcceptCount, arm.terminalReviewCount)}</span>
               <span>{formatRate(arm.userReplaceCount, arm.terminalReviewCount)}</span>
-              <span title={formatDismissalTitle(arm.dismissalReasons)}>
-                {formatRate(arm.dismissCount, arm.terminalReviewCount)}
-              </span>
-              <span>
-                {arm.praiseCount}
-                {arm.annotatedSubjectCount === 0
-                  ? ''
-                  : ` (${Math.round((arm.praiseCount / arm.annotatedSubjectCount) * 100)}%)`}
-              </span>
-              <span>{arm.missedInterventionCount}</span>
+              <span>{formatRate(arm.dismissCount, arm.terminalReviewCount)}</span>
+              <span>{arm.taggedItemCount}</span>
+              <span>{arm.tagCounts.praise}</span>
+              <span>{arm.tagCounts.missed_intervention}</span>
             </div>
           ))}
         </div>
@@ -1383,15 +1280,6 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
 function formatRate(count: number, total: number): string {
   if (total === 0) return '0';
   return `${count} (${Math.round((count / total) * 100)}%)`;
-}
-
-function formatDismissalTitle(
-  reasons: ReflectionQualityStatsDto['arms'][number]['dismissalReasons'],
-): string {
-  return Object.entries(reasons)
-    .filter(([, count]) => count > 0)
-    .map(([code, count]) => `${humanize(code)}: ${count}`)
-    .join(' · ') || 'No dismissals';
 }
 
 function ProposalDispositionStatus({

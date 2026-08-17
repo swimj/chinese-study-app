@@ -1,22 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import {
-  isReflectionQualityCritiqueReason,
+  isReflectionQualityTag,
+  REFLECTION_QUALITY_TAGS,
   type ClearReflectionQualityRequest,
-  type ReflectionQualityAnnotation,
-  type ReflectionQualityCritiqueReason,
-  type ReflectionQualitySubject,
+  type ReflectionQualityItemTags,
+  type ReflectionQualityTag,
   type UpsertReflectionQualityRequest,
 } from '../../src/domain/reflection.ts';
 import { getDb } from './connection.ts';
 
 const qualityAnnotationColumns = [
   'annotation_id',
-  'subject_kind',
-  'proposal_id',
   'artifact_id',
   'item_id',
-  'polarity',
-  'reason_code',
+  'tags_json',
   'note',
   'created_at',
   'updated_at',
@@ -24,21 +21,13 @@ const qualityAnnotationColumns = [
 
 type QualityAnnotationRow = {
   annotation_id: string;
-  subject_kind: 'proposal' | 'item';
-  proposal_id: string | null;
   artifact_id: string;
-  item_id: string | null;
-  polarity: 'praise' | 'critique';
-  reason_code: string | null;
+  item_id: string;
+  tags_json: string;
   note: string | null;
   created_at: string;
   updated_at: string;
 };
-
-export type ReflectionQualityStatsDismissalBreakdown = Record<
-  ReflectionQualityCritiqueReason | 'unspecified',
-  number
->;
 
 export type ReflectionQualityArmStats = {
   modelArm: string;
@@ -48,13 +37,8 @@ export type ReflectionQualityArmStats = {
   revisedAcceptCount: number;
   userReplaceCount: number;
   dismissCount: number;
-  dismissalReasons: ReflectionQualityStatsDismissalBreakdown;
-  annotatedSubjectCount: number;
-  praiseCount: number;
-  critiqueCount: number;
-  proposalCritiqueCount: number;
-  itemCritiqueCount: number;
-  missedInterventionCount: number;
+  taggedItemCount: number;
+  tagCounts: Record<ReflectionQualityTag, number>;
 };
 
 export type ReflectionQualityStats = {
@@ -62,60 +46,21 @@ export type ReflectionQualityStats = {
 };
 
 export function ensureReflectionQualitySchema(): void {
+  dropLegacyQualityAnnotationTableIfNeeded();
   getDb().exec(`
     CREATE TABLE IF NOT EXISTS reflection_quality_annotations (
       annotation_id TEXT PRIMARY KEY,
-      subject_kind TEXT NOT NULL CHECK (subject_kind IN ('proposal', 'item')),
-      proposal_id TEXT REFERENCES reflection_proposal_reviews(proposal_id) ON DELETE RESTRICT,
       artifact_id TEXT NOT NULL
         REFERENCES reflection_artifacts(artifact_id) ON DELETE RESTRICT,
-      item_id TEXT,
-      polarity TEXT NOT NULL CHECK (polarity IN ('praise', 'critique')),
-      reason_code TEXT CHECK (
-        reason_code IS NULL
-        OR reason_code IN (
-          'wrong_diagnosis',
-          'wrong_intervention',
-          'missed_intervention',
-          'low_quality_content',
-          'inconsistent',
-          'other'
-        )
-      ),
+      item_id TEXT NOT NULL,
+      tags_json TEXT NOT NULL,
       note TEXT,
       created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      CHECK (
-        (
-          subject_kind = 'proposal'
-          AND proposal_id IS NOT NULL
-          AND item_id IS NULL
-        )
-        OR (
-          subject_kind = 'item'
-          AND proposal_id IS NULL
-          AND item_id IS NOT NULL
-        )
-      ),
-      CHECK (
-        (
-          polarity = 'praise'
-          AND reason_code IS NULL
-        )
-        OR (
-          polarity = 'critique'
-          AND reason_code IS NOT NULL
-        )
-      )
+      updated_at TEXT NOT NULL
     );
 
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_reflection_quality_proposal_subject
-      ON reflection_quality_annotations(proposal_id)
-      WHERE subject_kind = 'proposal';
-
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_reflection_quality_item_subject
-      ON reflection_quality_annotations(artifact_id, item_id)
-      WHERE subject_kind = 'item';
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_reflection_quality_item
+      ON reflection_quality_annotations(artifact_id, item_id);
 
     CREATE INDEX IF NOT EXISTS idx_reflection_quality_artifact
       ON reflection_quality_annotations(artifact_id);
@@ -125,18 +70,10 @@ export function ensureReflectionQualitySchema(): void {
 export function validateReflectionQualitySchema(): void {
   assertTableColumns('reflection_quality_annotations', qualityAnnotationColumns);
   assertNamedIndex(
-    'idx_reflection_quality_proposal_subject',
-    'reflection_quality_annotations',
-    true,
-    ['proposal_id'],
-    true,
-  );
-  assertNamedIndex(
-    'idx_reflection_quality_item_subject',
+    'idx_reflection_quality_item',
     'reflection_quality_annotations',
     true,
     ['artifact_id', 'item_id'],
-    true,
   );
   assertNamedIndex(
     'idx_reflection_quality_artifact',
@@ -151,19 +88,12 @@ export function validateReflectionQualitySchema(): void {
     'artifact_id',
     'RESTRICT',
   );
-  assertForeignKey(
-    'reflection_quality_annotations',
-    'proposal_id',
-    'reflection_proposal_reviews',
-    'proposal_id',
-    'RESTRICT',
-  );
 }
 
 export function upsertReflectionQualityAnnotation(
   request: UpsertReflectionQualityRequest,
   updatedAt = new Date().toISOString(),
-): ReflectionQualityAnnotation {
+): ReflectionQualityItemTags {
   const database = getDb();
   database.exec('BEGIN IMMEDIATE');
   try {
@@ -177,51 +107,40 @@ export function upsertReflectionQualityAnnotation(
 }
 
 /**
- * Upserts inside a caller-owned transaction (e.g. dismiss + critique).
+ * Upserts inside a caller-owned transaction.
  */
 export function upsertReflectionQualityAnnotationWithoutTransaction(
   request: UpsertReflectionQualityRequest,
   updatedAt = new Date().toISOString(),
-): ReflectionQualityAnnotation {
+): ReflectionQualityItemTags {
   assertIsoTimestamp(updatedAt, 'quality annotation update timestamp');
-  const resolved = resolveSubject(request.subject);
+  resolveItem(request.artifactId, request.itemId);
+  const tags = normalizeTags(request.tags);
   const note = normalizeNote(request.note ?? null);
-  let reasonCode: ReflectionQualityCritiqueReason | null = null;
+  validateTagSet(tags, note);
 
-  if (request.polarity === 'critique') {
-    reasonCode = request.reasonCode;
-    validateCritique(request.subject, reasonCode, note, resolved);
-  } else if (note !== null && note.length === 0) {
-    throw new Error('Expected quality annotation note to be null or non-empty.');
-  }
-
-  const existing = findAnnotationRow(request.subject);
+  const existing = findAnnotationRow(request.artifactId, request.itemId);
   if (existing) {
     getDb().prepare(`
       UPDATE reflection_quality_annotations
-      SET polarity = ?,
-          reason_code = ?,
+      SET tags_json = ?,
           note = ?,
           updated_at = ?
       WHERE annotation_id = ?
-    `).run(request.polarity, reasonCode, note, updatedAt, existing.annotation_id);
+    `).run(JSON.stringify(tags), note, updatedAt, existing.annotation_id);
     return mapAnnotationRow(requireAnnotationRow(existing.annotation_id));
   }
 
   const annotationId = randomUUID();
   getDb().prepare(`
     INSERT INTO reflection_quality_annotations (
-      annotation_id, subject_kind, proposal_id, artifact_id, item_id,
-      polarity, reason_code, note, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      annotation_id, artifact_id, item_id, tags_json, note, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
     annotationId,
-    request.subject.kind,
-    request.subject.kind === 'proposal' ? request.subject.proposalId : null,
-    resolved.artifactId,
-    request.subject.kind === 'item' ? request.subject.itemId : null,
-    request.polarity,
-    reasonCode,
+    request.artifactId,
+    request.itemId,
+    JSON.stringify(tags),
     note,
     updatedAt,
     updatedAt,
@@ -232,8 +151,8 @@ export function upsertReflectionQualityAnnotationWithoutTransaction(
 export function clearReflectionQualityAnnotation(
   request: ClearReflectionQualityRequest,
 ): { cleared: boolean } {
-  resolveSubject(request.subject);
-  const existing = findAnnotationRow(request.subject);
+  resolveItem(request.artifactId, request.itemId);
+  const existing = findAnnotationRow(request.artifactId, request.itemId);
   if (!existing) {
     return { cleared: false };
   }
@@ -246,7 +165,7 @@ export function clearReflectionQualityAnnotation(
 
 export function listReflectionQualityAnnotationsForArtifact(
   artifactId: string,
-): ReflectionQualityAnnotation[] {
+): ReflectionQualityItemTags[] {
   assertNonEmpty(artifactId, 'artifact id');
   const rows = getDb().prepare(`
     SELECT ${qualityAnnotationColumns.join(', ')}
@@ -262,7 +181,6 @@ export function getReflectionQualityStats(): ReflectionQualityStats {
     SELECT
       artifacts.model AS model_arm,
       artifacts.prompt_version AS prompt_version,
-      reviews.proposal_id AS proposal_id,
       reviews.disposition AS disposition,
       reviews.acceptance_mode AS acceptance_mode,
       reviews.supersession_source AS supersession_source
@@ -272,7 +190,6 @@ export function getReflectionQualityStats(): ReflectionQualityStats {
   `).all() as Array<{
     model_arm: string;
     prompt_version: string;
-    proposal_id: string;
     disposition: string;
     acceptance_mode: string | null;
     supersession_source: string | null;
@@ -282,20 +199,14 @@ export function getReflectionQualityStats(): ReflectionQualityStats {
     SELECT
       artifacts.model AS model_arm,
       artifacts.prompt_version AS prompt_version,
-      annotations.subject_kind AS subject_kind,
-      annotations.polarity AS polarity,
-      annotations.reason_code AS reason_code,
-      annotations.proposal_id AS proposal_id
+      annotations.tags_json AS tags_json
     FROM reflection_quality_annotations AS annotations
     JOIN reflection_artifacts AS artifacts
       ON artifacts.artifact_id = annotations.artifact_id
   `).all() as Array<{
     model_arm: string;
     prompt_version: string;
-    subject_kind: 'proposal' | 'item';
-    polarity: 'praise' | 'critique';
-    reason_code: string | null;
-    proposal_id: string | null;
+    tags_json: string;
   }>;
 
   const arms = new Map<string, ReflectionQualityArmStats>();
@@ -316,13 +227,8 @@ export function getReflectionQualityStats(): ReflectionQualityStats {
       revisedAcceptCount: 0,
       userReplaceCount: 0,
       dismissCount: 0,
-      dismissalReasons: emptyDismissalBreakdown(),
-      annotatedSubjectCount: 0,
-      praiseCount: 0,
-      critiqueCount: 0,
-      proposalCritiqueCount: 0,
-      itemCritiqueCount: 0,
-      missedInterventionCount: 0,
+      taggedItemCount: 0,
+      tagCounts: emptyTagCounts(),
     };
     arms.set(key, created);
     return created;
@@ -348,36 +254,12 @@ export function getReflectionQualityStats(): ReflectionQualityStats {
     }
   }
 
-  const proposalCritiqueByProposal = new Map<string, ReflectionQualityCritiqueReason>();
   for (const row of annotationRows) {
+    const tags = parseTagsJson(row.tags_json, 'stats');
     const arm = ensureArm(row.model_arm, row.prompt_version);
-    arm.annotatedSubjectCount += 1;
-    if (row.polarity === 'praise') {
-      arm.praiseCount += 1;
-      continue;
-    }
-    arm.critiqueCount += 1;
-    if (row.subject_kind === 'proposal') {
-      arm.proposalCritiqueCount += 1;
-      if (row.proposal_id !== null && isReflectionQualityCritiqueReason(row.reason_code)) {
-        proposalCritiqueByProposal.set(row.proposal_id, row.reason_code);
-      }
-    } else {
-      arm.itemCritiqueCount += 1;
-      if (row.reason_code === 'missed_intervention') {
-        arm.missedInterventionCount += 1;
-      }
-    }
-  }
-
-  for (const row of reviewRows) {
-    if (row.disposition !== 'dismissed') continue;
-    const arm = ensureArm(row.model_arm, row.prompt_version);
-    const code = proposalCritiqueByProposal.get(row.proposal_id);
-    if (code === undefined) {
-      arm.dismissalReasons.unspecified += 1;
-    } else {
-      arm.dismissalReasons[code] += 1;
+    arm.taggedItemCount += 1;
+    for (const tag of tags) {
+      arm.tagCounts[tag] += 1;
     }
   }
 
@@ -391,39 +273,40 @@ export function getReflectionQualityStats(): ReflectionQualityStats {
   };
 }
 
-function emptyDismissalBreakdown(): ReflectionQualityStatsDismissalBreakdown {
+function emptyTagCounts(): Record<ReflectionQualityTag, number> {
   return {
+    praise: 0,
     wrong_diagnosis: 0,
     wrong_intervention: 0,
     missed_intervention: 0,
     low_quality_content: 0,
     inconsistent: 0,
     other: 0,
-    unspecified: 0,
   };
 }
 
-function resolveSubject(subject: ReflectionQualitySubject): { artifactId: string } {
-  if (subject.kind === 'proposal') {
-    assertNonEmpty(subject.proposalId, 'proposal id');
-    const row = getDb().prepare(`
-      SELECT artifact_id
-      FROM reflection_proposal_reviews
-      WHERE proposal_id = ?
-    `).get(subject.proposalId) as { artifact_id: string } | undefined;
-    if (!row) {
-      throw new Error('Reflection proposal not found.');
-    }
-    return { artifactId: row.artifact_id };
-  }
+function dropLegacyQualityAnnotationTableIfNeeded(): void {
+  const columns = getDb().prepare(`
+    PRAGMA table_info(reflection_quality_annotations)
+  `).all() as Array<{ name: string }>;
+  if (columns.length === 0) return;
+  const names = new Set(columns.map((column) => column.name));
+  const isLegacy = names.has('polarity')
+    || names.has('subject_kind')
+    || names.has('reason_code')
+    || !names.has('tags_json');
+  if (!isLegacy) return;
+  getDb().exec('DROP TABLE reflection_quality_annotations;');
+}
 
-  assertNonEmpty(subject.artifactId, 'artifact id');
-  assertNonEmpty(subject.itemId, 'item id');
+function resolveItem(artifactId: string, itemId: string): void {
+  assertNonEmpty(artifactId, 'artifact id');
+  assertNonEmpty(itemId, 'item id');
   const artifact = getDb().prepare(`
     SELECT result_json
     FROM reflection_artifacts
     WHERE artifact_id = ?
-  `).get(subject.artifactId) as { result_json: string } | undefined;
+  `).get(artifactId) as { result_json: string } | undefined;
   if (!artifact) {
     throw new Error('Reflection artifact not found.');
   }
@@ -434,43 +317,35 @@ function resolveSubject(subject: ReflectionQualitySubject): { artifactId: string
     };
     itemIds = (parsed.itemResults ?? [])
       .map((item) => item.itemId)
-      .filter((itemId): itemId is string => typeof itemId === 'string');
+      .filter((entry): entry is string => typeof entry === 'string');
   } catch {
-    throw new Error(`artifact ${subject.artifactId} contains an invalid reflection result`);
+    throw new Error(`artifact ${artifactId} contains an invalid reflection result`);
   }
-  if (!itemIds.includes(subject.itemId)) {
+  if (!itemIds.includes(itemId)) {
     throw new Error('Reflection item not found.');
   }
-  return { artifactId: subject.artifactId };
 }
 
-function validateCritique(
-  subject: ReflectionQualitySubject,
-  reasonCode: ReflectionQualityCritiqueReason,
-  note: string | null,
-  resolved: { artifactId: string },
-): void {
-  if (!isReflectionQualityCritiqueReason(reasonCode)) {
-    throw new Error('Expected a valid reflection quality critique reason.');
+function normalizeTags(tags: ReflectionQualityTag[]): ReflectionQualityTag[] {
+  if (!Array.isArray(tags)) {
+    throw new Error('Expected quality tags to be an array.');
   }
-  if (reasonCode === 'missed_intervention' && subject.kind !== 'item') {
-    throw new Error('missed_intervention is valid only for item quality subjects.');
+  if (tags.length === 0) {
+    throw new Error('Expected a non-empty quality tag set.');
   }
-  if (reasonCode === 'other' && (note === null || note.trim().length === 0)) {
-    throw new Error('other critique requires a non-empty note.');
-  }
-  if (reasonCode === 'missed_intervention' && subject.kind === 'item') {
-    const proposalCount = getDb().prepare(`
-      SELECT COUNT(*) AS count
-      FROM reflection_proposal_reviews
-      WHERE artifact_id = ?
-        AND item_id = ?
-    `).get(resolved.artifactId, subject.itemId) as { count: number };
-    if (proposalCount.count > 0) {
-      throw new Error(
-        'missed_intervention is valid only for items with no durable proposals.',
-      );
+  const unique = new Set<ReflectionQualityTag>();
+  for (const tag of tags) {
+    if (!isReflectionQualityTag(tag)) {
+      throw new Error('Expected a valid reflection quality tag.');
     }
+    unique.add(tag);
+  }
+  return REFLECTION_QUALITY_TAGS.filter((tag) => unique.has(tag));
+}
+
+function validateTagSet(tags: ReflectionQualityTag[], note: string | null): void {
+  if (tags.includes('other') && (note === null || note.trim().length === 0)) {
+    throw new Error('other tag requires a non-empty note.');
   }
 }
 
@@ -483,23 +358,16 @@ function normalizeNote(note: string | null): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
-function findAnnotationRow(subject: ReflectionQualitySubject): QualityAnnotationRow | null {
-  if (subject.kind === 'proposal') {
-    const row = getDb().prepare(`
-      SELECT ${qualityAnnotationColumns.join(', ')}
-      FROM reflection_quality_annotations
-      WHERE subject_kind = 'proposal'
-        AND proposal_id = ?
-    `).get(subject.proposalId) as QualityAnnotationRow | undefined;
-    return row ?? null;
-  }
+function findAnnotationRow(
+  artifactId: string,
+  itemId: string,
+): QualityAnnotationRow | null {
   const row = getDb().prepare(`
     SELECT ${qualityAnnotationColumns.join(', ')}
     FROM reflection_quality_annotations
-    WHERE subject_kind = 'item'
-      AND artifact_id = ?
+    WHERE artifact_id = ?
       AND item_id = ?
-  `).get(subject.artifactId, subject.itemId) as QualityAnnotationRow | undefined;
+  `).get(artifactId, itemId) as QualityAnnotationRow | undefined;
   return row ?? null;
 }
 
@@ -515,42 +383,36 @@ function requireAnnotationRow(annotationId: string): QualityAnnotationRow {
   return row;
 }
 
-function mapAnnotationRow(row: QualityAnnotationRow): ReflectionQualityAnnotation {
-  if (row.polarity === 'critique') {
-    if (!isReflectionQualityCritiqueReason(row.reason_code)) {
-      throw new Error(`quality annotation ${row.annotation_id} has invalid critique reason`);
-    }
-  } else if (row.reason_code !== null) {
-    throw new Error(`quality annotation ${row.annotation_id} has unexpected praise reason`);
-  }
-
-  const subject: ReflectionQualitySubject = row.subject_kind === 'proposal'
-    ? {
-        kind: 'proposal',
-        proposalId: row.proposal_id ?? (() => {
-          throw new Error(`quality annotation ${row.annotation_id} lacks proposal id`);
-        })(),
-      }
-    : {
-        kind: 'item',
-        artifactId: row.artifact_id,
-        itemId: row.item_id ?? (() => {
-          throw new Error(`quality annotation ${row.annotation_id} lacks item id`);
-        })(),
-      };
-
+function mapAnnotationRow(row: QualityAnnotationRow): ReflectionQualityItemTags {
   return {
     annotationId: row.annotation_id,
-    subject,
     artifactId: row.artifact_id,
-    polarity: row.polarity,
-    reasonCode: row.polarity === 'critique'
-      ? row.reason_code as ReflectionQualityCritiqueReason
-      : null,
+    itemId: row.item_id,
+    tags: parseTagsJson(row.tags_json, row.annotation_id),
     note: row.note,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function parseTagsJson(raw: string, label: string): ReflectionQualityTag[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error(`quality annotation ${label} has invalid tags_json`);
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error(`quality annotation ${label} has empty tags_json`);
+  }
+  const unique = new Set<ReflectionQualityTag>();
+  for (const entry of parsed) {
+    if (!isReflectionQualityTag(entry)) {
+      throw new Error(`quality annotation ${label} has invalid tag`);
+    }
+    unique.add(entry);
+  }
+  return REFLECTION_QUALITY_TAGS.filter((tag) => unique.has(tag));
 }
 
 function assertNonEmpty(value: string, label: string): void {

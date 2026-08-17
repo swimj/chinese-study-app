@@ -21,8 +21,8 @@ import type {
   OperationInvocation,
   ProposalReviewStatus,
   ReflectionProposalV1,
-  ReflectionQualityAnnotation,
-  ReflectionQualityCritiqueReason,
+  ReflectionQualityItemTags,
+  ReflectionQualityTag,
   ReviewProposalRequest,
   SessionReflectionBundle,
   SessionReflectionResult,
@@ -158,13 +158,8 @@ export type ReflectionArtifactDetailDto = {
   evidenceBundle: SessionReflectionBundle;
   result: SessionReflectionResult;
   proposals: ReflectionProposalDetailDto[];
-  qualityAnnotations: ReflectionQualityAnnotation[];
+  qualityItemTags: ReflectionQualityItemTags[];
 };
-
-export type ReflectionQualityStatsDismissalBreakdown = Record<
-  ReflectionQualityCritiqueReason | 'unspecified',
-  number
->;
 
 export type ReflectionQualityArmStatsDto = {
   modelArm: string;
@@ -174,13 +169,8 @@ export type ReflectionQualityArmStatsDto = {
   revisedAcceptCount: number;
   userReplaceCount: number;
   dismissCount: number;
-  dismissalReasons: ReflectionQualityStatsDismissalBreakdown;
-  annotatedSubjectCount: number;
-  praiseCount: number;
-  critiqueCount: number;
-  proposalCritiqueCount: number;
-  itemCritiqueCount: number;
-  missedInterventionCount: number;
+  taggedItemCount: number;
+  tagCounts: Record<ReflectionQualityTag, number>;
 };
 
 export type ReflectionQualityStatsDto = {
@@ -197,7 +187,7 @@ export type ReflectionReviewApi = {
     request: ReviewProposalRequest,
   ) => Promise<unknown>;
   withdrawAuthorization: (invocationId: string) => Promise<unknown>;
-  upsertQuality: (request: UpsertReflectionQualityRequest) => Promise<ReflectionQualityAnnotation>;
+  upsertQuality: (request: UpsertReflectionQualityRequest) => Promise<ReflectionQualityItemTags>;
   clearQuality: (request: ClearReflectionQualityRequest) => Promise<{ cleared: boolean }>;
   getQualityStats: () => Promise<ReflectionQualityStatsDto>;
 };
@@ -518,7 +508,7 @@ export async function withdrawReflectionAuthorization(
 
 export async function upsertReflectionQuality(
   request: UpsertReflectionQualityRequest,
-): Promise<ReflectionQualityAnnotation> {
+): Promise<ReflectionQualityItemTags> {
   const response = await fetch(`${API_BASE}/api/reflection-quality`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },

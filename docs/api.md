@@ -106,8 +106,8 @@ Request/result types live in
 | GET | `/api/reflection-artifacts/:artifactId` | Load immutable evidence/result plus current proposal/application statuses |
 | POST | `/api/reflection-proposals/:proposalId/review` | Defer, dismiss, or authorize one proposal |
 | POST | `/api/reflection-invocations/:invocationId/withdraw-authorization` | Withdraw a pending or unsupported authorization |
-| PUT | `/api/reflection-quality` | Upsert praise or critique on a proposal or item |
-| DELETE | `/api/reflection-quality` | Clear the quality annotation for one subject |
+| PUT | `/api/reflection-quality` | Upsert the tag set on one reflection item |
+| DELETE | `/api/reflection-quality` | Clear quality tags for one reflection item |
 | GET | `/api/reflection-quality-stats` | Aggregate dogfood quality rates by model arm |
 
 ### Generate
@@ -217,16 +217,13 @@ type ReviewProposalRequest =
   | {
       action: 'dismiss';
       reason: string | null;
-      reasonCode?: ReflectionQualityCritiqueReason;
     }
   | { action: 'accept'; operation: ReflectionOperation }
   | { action: 'replace'; operation: ReflectionOperation };
 ```
 
-`reasonCode` is optional on the wire so historical clients and tests remain
-valid. When present, dismiss writes a proposal-scoped `critique` quality
-annotation in the same transaction; `reason` remains the freeform note. The
-review UI may still require a code.
+Dismiss `reason` is an optional freeform note on the proposal review row. Item
+quality tags are a separate overlay and are not written by dismiss.
 
 Defer and dismiss return:
 
@@ -270,50 +267,40 @@ disposition unchanged and returns `200` with:
 Review/withdraw validation and invalid lifecycle transitions return `400`;
 missing proposal/invocation ids return `404`; unexpected failures return `500`.
 
-### Quality annotations and model-arm stats
+### Quality tags and model-arm stats
 
-Quality annotations are a dogfood overlay. They do not change proposal
-disposition, invocations, or application. Artifact detail includes current
-annotations for its proposals and items when present.
+Quality tags are a dogfood overlay on reflection items. They do not change
+proposal disposition, invocations, or application. Artifact detail includes
+`qualityItemTags` for items that have a tag row.
 
 `PUT /api/reflection-quality` accepts:
 
 ```ts
-type UpsertReflectionQualityRequest =
-  | {
-      subject: { kind: 'proposal'; proposalId: string }
-        | { kind: 'item'; artifactId: string; itemId: string };
-      polarity: 'praise';
-      note?: string | null;
-    }
-  | {
-      subject: { kind: 'proposal'; proposalId: string }
-        | { kind: 'item'; artifactId: string; itemId: string };
-      polarity: 'critique';
-      reasonCode: ReflectionQualityCritiqueReason;
-      note?: string | null;
-    };
+type UpsertReflectionQualityRequest = {
+  artifactId: string;
+  itemId: string;
+  tags: ReflectionQualityTag[];
+  note?: string | null;
+};
 ```
 
-Critique codes are `wrong_diagnosis`, `wrong_intervention`,
+Tags are `praise`, `wrong_diagnosis`, `wrong_intervention`,
 `missed_intervention`, `low_quality_content`, `inconsistent`, and `other`.
-`missed_intervention` is valid only for item subjects. `other` requires a
-non-empty note. Last write wins per subject. Success returns `200` with the
-stored annotation. Validation errors return `400`; missing subjects return
-`404`.
+The set must be non-empty; `other` requires a non-empty note. Last write wins
+for the item. Success returns `200` with the stored item tag row. Validation
+errors return `400`; missing artifact/item return `404`.
 
-`DELETE /api/reflection-quality` accepts `{ subject }` and returns `200` with
-`{ cleared: true }` when a row existed or `{ cleared: false }` when none did.
-Missing subjects still return `404` when the proposal or artifact/item cannot
-be resolved.
+`DELETE /api/reflection-quality` accepts `{ artifactId, itemId }` and returns
+`200` with `{ cleared: true }` when a row existed or `{ cleared: false }` when
+none did. Missing artifact/item still return `404`.
 
 `GET /api/reflection-quality-stats` returns rates grouped by artifact `model`
 (model arm) and secondarily by `promptVersion`. Terminal user reviews are
 `accepted` (exact/revised), `dismissed`, and `superseded` with
-`user_replacement`. Pending, deferred, and system supersession are excluded.
-Dismissal critique breakdown includes `unspecified` for dismissals without a
-structured code. Small-n counts are returned raw; the surface does not claim
-statistical significance.
+`user_replacement`. Pending, deferred, and system supersession are excluded
+from disposition rates. Tag counts include every present item tag row (including
+items whose proposals are still open). Small-n counts are returned raw; the
+surface does not claim statistical significance.
 
 ## Study management (outside session)
 

@@ -10,7 +10,7 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`types.ts`](../server/db/types.ts) | Row/DTO types, scheduling constants, public type re-exports |
 | [`persistence.ts`](../server/db/persistence.ts) | Existing query/domain functions (words, priority, sessions, contrast, scheduler, analytics, durable learning-policy metadata) and `initializeDatabase` |
 | [`reflections.ts`](../server/db/reflections.ts) | Reflection schema validation, immutable artifact materialization, queue/detail read models, proposal review, immutable invocation authorization, application/recovery, and supported adapters |
-| [`reflection-quality.ts`](../server/db/reflection-quality.ts) | Dogfood quality-annotation overlay (praise/critique), upsert-by-subject, and model-arm stats joins |
+| [`reflection-quality.ts`](../server/db/reflection-quality.ts) | Dogfood item quality-tag overlay, upsert-by-item, and model-arm stats joins |
 | [`domain-commands.ts`](../server/db/domain-commands.ts) | Shared transaction-aware domain commands used by reflection and legacy/manual paths; definition-production suppression and contextual-selection eligibility |
 | [`schema.ts`](../server/db/schema.ts) | Re-exports `applyProductionContrastExerciseSeed` and `initializeDatabase` for init ordering |
 | [`index.ts`](../server/db/index.ts) | Internal re-export barrel |
@@ -40,7 +40,7 @@ Reflection uses five SQLite tables initialized and validated from
 | `reflection_generation_runs` | Append-only provider-attempt log, including the exact validated bundle used for retry, failed/truncated attempts, normalized usage, and a persisted price snapshot |
 | `reflection_proposal_reviews` | One mutable review status for each immutable `(artifact, item, proposal index)` locator |
 | `reflection_operation_invocations` | Immutable authorized operation plus its mutable application status, effects, and non-effect reason |
-| `reflection_quality_annotations` | Optional praise/critique overlay keyed by proposal or `(artifact, item)`; joins to artifact model arm at read time |
+| `reflection_quality_annotations` | Optional item tag-set overlay keyed by `(artifact_id, item_id)`; joins to artifact model arm at read time |
 
 Artifacts preserve the exact bounded bundle, validated result, generation time,
 provider/model/prompt metadata, and schema versions. A restrictive foreign key
