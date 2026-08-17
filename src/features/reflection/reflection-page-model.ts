@@ -16,6 +16,7 @@ import type {
 import type {
   ReflectionArtifactDetailDto,
   ReflectionProposalDetailDto,
+  ReflectionQualityArmStatsDto,
 } from '../../services/api';
 import {
   classifyProposalAcceptance,
@@ -43,6 +44,69 @@ export function findQualityItemTags(
   itemId: string,
 ): ReflectionQualityItemTags | null {
   return rows.find((row) => row.artifactId === artifactId && row.itemId === itemId) ?? null;
+}
+
+export type QualityStatsGroupBy = 'model_and_prompt' | 'model' | 'prompt';
+
+export type QualityStatsPresentationOptions = {
+  promptVersionFilter: string | 'all';
+  groupBy: QualityStatsGroupBy;
+};
+
+export type QualityStatsArmPresentation = ReflectionQualityArmStatsDto & {
+  /** Display label for the grouping key (may combine arms). */
+  groupLabel: string;
+};
+
+export function presentQualityStatsArms(
+  arms: ReflectionQualityArmStatsDto[],
+  options: QualityStatsPresentationOptions,
+): QualityStatsArmPresentation[] {
+  const filtered = options.promptVersionFilter === 'all'
+    ? arms
+    : arms.filter((arm) => arm.promptVersion === options.promptVersionFilter);
+
+  if (options.groupBy === 'model_and_prompt') {
+    return filtered.map((arm) => ({
+      ...arm,
+      groupLabel: `${arm.modelArm} · ${arm.promptVersion}`,
+    }));
+  }
+
+  const buckets = new Map<string, QualityStatsArmPresentation>();
+  for (const arm of filtered) {
+    const key = options.groupBy === 'model' ? arm.modelArm : arm.promptVersion;
+    const existing = buckets.get(key);
+    if (existing === undefined) {
+      buckets.set(key, {
+        ...arm,
+        modelArm: options.groupBy === 'model' ? arm.modelArm : '—',
+        promptVersion: options.groupBy === 'prompt' ? arm.promptVersion : '—',
+        groupLabel: key,
+        tagCounts: { ...arm.tagCounts },
+      });
+      continue;
+    }
+    existing.terminalReviewCount += arm.terminalReviewCount;
+    existing.exactAcceptCount += arm.exactAcceptCount;
+    existing.revisedAcceptCount += arm.revisedAcceptCount;
+    existing.userReplaceCount += arm.userReplaceCount;
+    existing.dismissCount += arm.dismissCount;
+    existing.taggedItemCount += arm.taggedItemCount;
+    for (const tag of Object.keys(arm.tagCounts) as Array<keyof typeof arm.tagCounts>) {
+      existing.tagCounts[tag] += arm.tagCounts[tag];
+    }
+  }
+
+  return [...buckets.values()].sort((left, right) => left.groupLabel.localeCompare(right.groupLabel));
+}
+
+export function listQualityPromptVersions(
+  arms: ReflectionQualityArmStatsDto[],
+): string[] {
+  return [...new Set(arms.map((arm) => arm.promptVersion))].sort((left, right) => (
+    left.localeCompare(right)
+  ));
 }
 
 export type ReflectionItemPresentation = {

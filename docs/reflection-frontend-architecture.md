@@ -136,8 +136,11 @@ or a replacement for immutable artifact history.
 
 The **Quality** view shows server-side model-arm rates derived from terminal
 proposal reviews plus item quality-tag overlays. Capture is a single tag-chip
-row on each reflection item (placed near accept/dismiss for convenience). Tags
-never rewrite disposition or application and are not required to review.
+row on each reflection item, placed immediately above accept/dismiss on proposal
+cards (and on no-proposal surfaces). Saved notes render as committed text and
+become editable on click. The Quality table defaults to the current reflection
+prompt version and can group by model, prompt, or both. Tags never rewrite
+disposition or application and are not required to review.
 
 Failed runs with diagnostics have an expandable developer-facing detail showing
 the validation phase, bounded issue paths/rules/messages, schema provenance,

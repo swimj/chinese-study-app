@@ -10,6 +10,7 @@ import type {
   ReflectionQualityItemTags,
   ReflectionQualityTag,
 } from '../domain/reflection';
+import { CURRENT_REFLECTION_PROMPT_VERSION } from '../domain/reflection';
 import type { ReflectionModelChoice, ReflectionQualityStatsDto } from '../services/api';
 import { ReflectionOperationEditor } from '../features/reflection/ReflectionOperationEditor';
 import type { ReflectionPageController } from '../features/reflection/useReflectionPageController';
@@ -20,6 +21,8 @@ import {
   buildLearnerRequestedReflectionPresentations,
   buildReflectionProposalPresentations,
   findQualityItemTags,
+  listQualityPromptVersions,
+  presentQualityStatsArms,
   REFLECTION_QUALITY_TAG_OPTIONS,
   legacyReflectionUnhandledNeeds,
   reflectionLearnerFeedback,
@@ -30,6 +33,7 @@ import {
   formatRunDuration,
   visibleOutputTokens,
   type NoDurableChangeReflectionGist,
+  type QualityStatsGroupBy,
   type ReflectionArtifactSummaryDto,
   type ReflectionGenerationRunDto,
   type ReflectionProposalPresentation,
@@ -268,26 +272,22 @@ function ProposalQueueView({
               <p>{presentation.result.learnerExplanation}</p>
             </section>
           ) : null}
-          <ItemQualityTagControls
-            artifactId={presentation.artifact.artifactId}
-            itemId={presentation.result.itemId}
-            annotation={findQualityItemTags(
+          <ProposalCard
+            proposal={presentation.proposal}
+            evidence={presentation.evidence}
+            qualityArtifactId={presentation.artifact.artifactId}
+            qualityItemId={presentation.result.itemId}
+            qualityAnnotation={findQualityItemTags(
               presentation.artifact.qualityItemTags,
               presentation.artifact.artifactId,
               presentation.result.itemId,
             )}
-            submitting={
+            qualitySubmitting={
               controller.submittingQualityItemKey === qualityItemKey(
                 presentation.artifact.artifactId,
                 presentation.result.itemId,
               )
             }
-            onUpsert={controller.upsertQuality}
-            onClear={controller.clearQuality}
-          />
-          <ProposalCard
-            proposal={presentation.proposal}
-            evidence={presentation.evidence}
             submitting={
               controller.submittingProposalId === presentation.proposal.review.proposalId
             }
@@ -297,6 +297,8 @@ function ProposalQueueView({
             onAccept={controller.acceptProposal}
             onReplace={controller.replaceProposal}
             onWithdraw={controller.withdrawAuthorization}
+            onUpsertQuality={controller.upsertQuality}
+            onClearQuality={controller.clearQuality}
           />
         </article>
       ))}
@@ -403,24 +405,6 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                   <p>{reflectionLearnerFeedback(item.result)}</p>
                 </section>
 
-                <ItemQualityTagControls
-                  artifactId={selectedArtifact.artifactId}
-                  itemId={item.result.itemId}
-                  annotation={findQualityItemTags(
-                    selectedArtifact.qualityItemTags,
-                    selectedArtifact.artifactId,
-                    item.result.itemId,
-                  )}
-                  submitting={
-                    controller.submittingQualityItemKey === qualityItemKey(
-                      selectedArtifact.artifactId,
-                      item.result.itemId,
-                    )
-                  }
-                  onUpsert={controller.upsertQuality}
-                  onClear={controller.clearQuality}
-                />
-
                 {item.result.questions.length > 0 ? (
                   <InfoList
                     title="Questions"
@@ -444,11 +428,30 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                 <section className="reflection-proposals-section">
                   <h3>Proposals</h3>
                   {item.proposals.length === 0 ? (
-                    <p className="notes">
-                      {item.result.diagnosisTags.includes('ordinary_retrieval_noise')
-                        ? 'Judged as ordinary forgetting / retrieval noise; no durable change proposed.'
-                        : 'Informational reflection only; no change was proposed.'}
-                    </p>
+                    <>
+                      <p className="notes">
+                        {item.result.diagnosisTags.includes('ordinary_retrieval_noise')
+                          ? 'Judged as ordinary forgetting / retrieval noise; no durable change proposed.'
+                          : 'Informational reflection only; no change was proposed.'}
+                      </p>
+                      <ItemQualityTagControls
+                        artifactId={selectedArtifact.artifactId}
+                        itemId={item.result.itemId}
+                        annotation={findQualityItemTags(
+                          selectedArtifact.qualityItemTags,
+                          selectedArtifact.artifactId,
+                          item.result.itemId,
+                        )}
+                        submitting={
+                          controller.submittingQualityItemKey === qualityItemKey(
+                            selectedArtifact.artifactId,
+                            item.result.itemId,
+                          )
+                        }
+                        onUpsert={controller.upsertQuality}
+                        onClear={controller.clearQuality}
+                      />
+                    </>
                   ) : (
                     <div className="reflection-proposal-list">
                       {item.proposals.map((proposal) => (
@@ -456,6 +459,19 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                           key={proposal.review.proposalId}
                           proposal={proposal}
                           evidence={item.evidence}
+                          qualityArtifactId={selectedArtifact.artifactId}
+                          qualityItemId={item.result.itemId}
+                          qualityAnnotation={findQualityItemTags(
+                            selectedArtifact.qualityItemTags,
+                            selectedArtifact.artifactId,
+                            item.result.itemId,
+                          )}
+                          qualitySubmitting={
+                            controller.submittingQualityItemKey === qualityItemKey(
+                              selectedArtifact.artifactId,
+                              item.result.itemId,
+                            )
+                          }
                           submitting={
                             controller.submittingProposalId === proposal.review.proposalId
                           }
@@ -465,6 +481,8 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                           onAccept={controller.acceptProposal}
                           onReplace={controller.replaceProposal}
                           onWithdraw={controller.withdrawAuthorization}
+                          onUpsertQuality={controller.upsertQuality}
+                          onClearQuality={controller.clearQuality}
                         />
                       ))}
                     </div>
@@ -903,6 +921,10 @@ function formatUsd(value: number): string {
 function ProposalCard({
   proposal,
   evidence,
+  qualityArtifactId,
+  qualityItemId,
+  qualityAnnotation,
+  qualitySubmitting,
   submitting,
   withdrawingInvocationId,
   onDefer,
@@ -910,9 +932,15 @@ function ProposalCard({
   onAccept,
   onReplace,
   onWithdraw,
+  onUpsertQuality,
+  onClearQuality,
 }: {
   proposal: ReflectionProposalDetailDto;
   evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null;
+  qualityArtifactId: string;
+  qualityItemId: string;
+  qualityAnnotation: ReflectionQualityItemTags | null;
+  qualitySubmitting: boolean;
   submitting: boolean;
   withdrawingInvocationId: string | null;
   onDefer: (proposalId: string) => Promise<void>;
@@ -923,6 +951,8 @@ function ProposalCard({
   onAccept: (proposalId: string, operation: ReflectionOperation) => Promise<void>;
   onReplace: (proposalId: string, operation: ReflectionOperation) => Promise<void>;
   onWithdraw: (invocationId: string) => Promise<void>;
+  onUpsertQuality: ReflectionPageController['upsertQuality'];
+  onClearQuality: ReflectionPageController['clearQuality'];
 }) {
   const original = proposal.proposal.operation;
   const [draft, setDraft] = useState(() => cloneReflectionOperation(original));
@@ -937,6 +967,17 @@ function ProposalCard({
   const unresolved = proposal.review.disposition.kind === 'pending'
     || proposal.review.disposition.kind === 'deferred';
   const invocation = proposal.invocation;
+
+  const qualityControls = (
+    <ItemQualityTagControls
+      artifactId={qualityArtifactId}
+      itemId={qualityItemId}
+      annotation={qualityAnnotation}
+      submitting={qualitySubmitting}
+      onUpsert={onUpsertQuality}
+      onClear={onClearQuality}
+    />
+  );
 
   return (
     <article className="reflection-proposal-card">
@@ -990,6 +1031,7 @@ function ProposalCard({
               </ul>
             </div>
           ) : null}
+          {qualityControls}
           <div className="reflection-review-actions">
             <button
               type="button"
@@ -1097,6 +1139,7 @@ function ProposalCard({
                 ) : null}
             </>
           ) : null}
+          {qualityControls}
         </>
       )}
     </article>
@@ -1118,28 +1161,68 @@ function ItemQualityTagControls({
   onUpsert: ReflectionPageController['upsertQuality'];
   onClear: ReflectionPageController['clearQuality'];
 }) {
-  const [note, setNote] = useState(annotation?.note ?? '');
-  useEffect(() => {
-    setNote(annotation?.note ?? '');
-  }, [annotation?.annotationId, annotation?.note, annotation?.updatedAt]);
+  const noteInputRef = useRef<HTMLInputElement>(null);
+  const committedNote = annotation?.note ?? null;
+  const committedTags = annotation?.tags ?? [];
+  const [note, setNote] = useState(committedNote ?? '');
+  const [tags, setTags] = useState<ReflectionQualityTag[]>(committedTags);
+  const [editingNote, setEditingNote] = useState(false);
 
-  const selected = new Set(annotation?.tags ?? []);
+  useEffect(() => {
+    setNote(committedNote ?? '');
+    setTags(committedTags);
+    setEditingNote(false);
+  }, [annotation?.annotationId, annotation?.updatedAt, committedNote, committedTags.join('|')]);
+
+  useEffect(() => {
+    if (!editingNote) return;
+    noteInputRef.current?.focus();
+    noteInputRef.current?.select();
+  }, [editingNote]);
+
+  const selected = new Set(tags);
 
   function persist(nextTags: ReflectionQualityTag[], nextNote: string) {
     const trimmed = nextNote.trim();
     if (nextTags.length === 0) {
+      setTags([]);
       void onClear({ artifactId, itemId }).catch(() => undefined);
       return;
     }
     if (nextTags.includes('other') && trimmed.length === 0) {
+      setTags(nextTags);
+      setEditingNote(true);
       return;
     }
+    setTags(nextTags);
     void onUpsert({
       artifactId,
       itemId,
       tags: nextTags,
       note: trimmed.length === 0 ? null : trimmed,
     }).catch(() => undefined);
+  }
+
+  function commitNoteEdit() {
+    const trimmed = note.trim();
+    if (tags.length === 0) {
+      setNote(committedNote ?? '');
+      setEditingNote(false);
+      return;
+    }
+    if (tags.includes('other') && trimmed.length === 0) {
+      return;
+    }
+    if (
+      trimmed === (committedNote ?? '')
+      && tags.length === committedTags.length
+      && tags.every((tag) => committedTags.includes(tag))
+    ) {
+      setEditingNote(false);
+      return;
+    }
+    persist(tags, note);
+    setEditingNote(false);
   }
 
   return (
@@ -1165,6 +1248,9 @@ function ItemQualityTagControls({
                 const next = new Set(selected);
                 if (isSelected) next.delete(option.code);
                 else next.add(option.code);
+                if (option.code === 'other' && !isSelected && note.trim().length === 0) {
+                  setEditingNote(true);
+                }
                 persist([...next], note);
               }}
             >
@@ -1174,19 +1260,44 @@ function ItemQualityTagControls({
         })}
       </div>
       <div className="reflection-quality-row">
-        <input
-          className="reflection-quality-note"
-          value={note}
-          placeholder="Optional note (required for Other)"
-          aria-label="Quality note"
-          disabled={submitting}
-          onChange={(event) => setNote(event.target.value)}
-          onBlur={() => {
-            if (annotation === null && note.trim().length === 0) return;
-            if (selected.size === 0) return;
-            persist([...selected], note);
-          }}
-        />
+        {editingNote ? (
+          <input
+            ref={noteInputRef}
+            className="reflection-quality-note"
+            value={note}
+            placeholder="Optional note (required for Other)"
+            aria-label="Quality note"
+            disabled={submitting}
+            onChange={(event) => setNote(event.target.value)}
+            onBlur={() => commitNoteEdit()}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                commitNoteEdit();
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                setNote(committedNote ?? '');
+                setEditingNote(false);
+              }
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className={
+              committedNote === null || committedNote.length === 0
+                ? 'reflection-quality-note-display is-empty'
+                : 'reflection-quality-note-display'
+            }
+            disabled={submitting}
+            onClick={() => setEditingNote(true)}
+          >
+            {committedNote === null || committedNote.length === 0
+              ? 'Add note…'
+              : committedNote}
+          </button>
+        )}
         {annotation !== null ? (
           <button
             type="button"
@@ -1203,6 +1314,11 @@ function ItemQualityTagControls({
 }
 
 function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }) {
+  const [promptVersionFilter, setPromptVersionFilter] = useState<string | 'all'>(
+    CURRENT_REFLECTION_PROMPT_VERSION,
+  );
+  const [groupBy, setGroupBy] = useState<QualityStatsGroupBy>('model_and_prompt');
+
   if (stats === null) {
     return (
       <main className="reflection-quality-view">
@@ -1227,6 +1343,12 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
     );
   }
 
+  const promptVersions = listQualityPromptVersions(stats.arms);
+  const rows = presentQualityStatsArms(stats.arms, {
+    promptVersionFilter,
+    groupBy,
+  });
+
   return (
     <main className="reflection-quality-view">
       <section className="panel">
@@ -1240,38 +1362,85 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
             </p>
           </div>
         </header>
-        <div className="reflection-quality-table" role="table" aria-label="Quality by model arm">
-          <div className="reflection-quality-table-header" role="row">
-            <span>Model arm</span>
-            <span>Prompt</span>
-            <span>Terminal</span>
-            <span>Exact</span>
-            <span>Revised</span>
-            <span>Replace</span>
-            <span>Dismiss</span>
-            <span>Tagged</span>
-            <span>Praise</span>
-            <span>Missed</span>
-          </div>
-          {stats.arms.map((arm) => (
-            <div
-              className="reflection-quality-table-row"
-              role="row"
-              key={`${arm.modelArm}:${arm.promptVersion}`}
+        <div className="reflection-quality-toolbar" role="group" aria-label="Quality table controls">
+          <label className="reflection-field reflection-quality-filter">
+            <span>Reflection version</span>
+            <select
+              aria-label="Filter by reflection version"
+              value={promptVersionFilter}
+              onChange={(event) => {
+                const value = event.target.value;
+                setPromptVersionFilter(value === 'all' ? 'all' : value);
+              }}
             >
-              <strong>{arm.modelArm}</strong>
-              <span>{arm.promptVersion}</span>
-              <span>{arm.terminalReviewCount}</span>
-              <span>{formatRate(arm.exactAcceptCount, arm.terminalReviewCount)}</span>
-              <span>{formatRate(arm.revisedAcceptCount, arm.terminalReviewCount)}</span>
-              <span>{formatRate(arm.userReplaceCount, arm.terminalReviewCount)}</span>
-              <span>{formatRate(arm.dismissCount, arm.terminalReviewCount)}</span>
-              <span>{arm.taggedItemCount}</span>
-              <span>{arm.tagCounts.praise}</span>
-              <span>{arm.tagCounts.missed_intervention}</span>
-            </div>
-          ))}
+              <option value={CURRENT_REFLECTION_PROMPT_VERSION}>
+                Current ({CURRENT_REFLECTION_PROMPT_VERSION})
+              </option>
+              <option value="all">All versions</option>
+              {promptVersions
+                .filter((version) => version !== CURRENT_REFLECTION_PROMPT_VERSION)
+                .map((version) => (
+                  <option key={version} value={version}>{version}</option>
+                ))}
+            </select>
+          </label>
+          <label className="reflection-field reflection-quality-filter">
+            <span>Group by</span>
+            <select
+              aria-label="Group quality rows"
+              value={groupBy}
+              onChange={(event) => setGroupBy(event.target.value as QualityStatsGroupBy)}
+            >
+              <option value="model_and_prompt">Model + prompt</option>
+              <option value="model">Model</option>
+              <option value="prompt">Prompt version</option>
+            </select>
+          </label>
         </div>
+        {rows.length === 0 ? (
+          <p className="notes">No rows match this reflection version filter.</p>
+        ) : (
+          <div className="reflection-quality-table" role="table" aria-label="Quality by model arm">
+            <div className="reflection-quality-table-header" role="row">
+              <span>{groupBy === 'prompt' ? 'Prompt' : 'Model arm'}</span>
+              <span>{groupBy === 'model_and_prompt' ? 'Prompt' : 'Scope'}</span>
+              <span>Terminal</span>
+              <span>Exact</span>
+              <span>Revised</span>
+              <span>Replace</span>
+              <span>Dismiss</span>
+              <span>Tagged</span>
+              <span>Praise</span>
+              <span>Missed</span>
+            </div>
+            {rows.map((arm) => (
+              <div
+                className="reflection-quality-table-row"
+                role="row"
+                key={arm.groupLabel}
+              >
+                <strong>
+                  {groupBy === 'prompt' ? arm.promptVersion : arm.modelArm}
+                </strong>
+                <span>
+                  {groupBy === 'model_and_prompt'
+                    ? arm.promptVersion
+                    : groupBy === 'model'
+                      ? 'All matching prompts'
+                      : 'All matching models'}
+                </span>
+                <span>{arm.terminalReviewCount}</span>
+                <span>{formatRate(arm.exactAcceptCount, arm.terminalReviewCount)}</span>
+                <span>{formatRate(arm.revisedAcceptCount, arm.terminalReviewCount)}</span>
+                <span>{formatRate(arm.userReplaceCount, arm.terminalReviewCount)}</span>
+                <span>{formatRate(arm.dismissCount, arm.terminalReviewCount)}</span>
+                <span>{arm.taggedItemCount}</span>
+                <span>{arm.tagCounts.praise}</span>
+                <span>{arm.tagCounts.missed_intervention}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
     </main>
   );
