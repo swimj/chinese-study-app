@@ -6,9 +6,8 @@ import type {
   ReflectionItemV3,
   ReflectionItemResult,
   ReflectionOperation,
-  ReflectionQualityAnnotation,
-  ReflectionQualityCritiqueReason,
-  ReflectionQualitySubject,
+  ReflectionQualityItemTags,
+  ReflectionQualityTag,
   ProductionCueChangeV2,
   ProductionCueDraftV2,
   RepairProductionCueOperationV1,
@@ -25,74 +24,25 @@ import {
   validateReflectionOperationEvidenceContext,
 } from '../../domain/reflection';
 
-export const REFLECTION_QUALITY_CRITIQUE_OPTIONS: ReadonlyArray<{
-  code: ReflectionQualityCritiqueReason;
+export const REFLECTION_QUALITY_TAG_OPTIONS: ReadonlyArray<{
+  code: ReflectionQualityTag;
   label: string;
-  proposalAllowed: boolean;
-  itemAllowed: boolean;
 }> = [
-  {
-    code: 'wrong_diagnosis',
-    label: 'Wrong diagnosis',
-    proposalAllowed: true,
-    itemAllowed: true,
-  },
-  {
-    code: 'wrong_intervention',
-    label: 'Wrong intervention',
-    proposalAllowed: true,
-    itemAllowed: true,
-  },
-  {
-    code: 'missed_intervention',
-    label: 'Missed intervention',
-    proposalAllowed: false,
-    itemAllowed: true,
-  },
-  {
-    code: 'low_quality_content',
-    label: 'Low-quality content',
-    proposalAllowed: true,
-    itemAllowed: true,
-  },
-  {
-    code: 'inconsistent',
-    label: 'Inconsistent',
-    proposalAllowed: true,
-    itemAllowed: true,
-  },
-  {
-    code: 'other',
-    label: 'Other',
-    proposalAllowed: true,
-    itemAllowed: true,
-  },
+  { code: 'praise', label: 'I really like this' },
+  { code: 'wrong_diagnosis', label: 'Wrong diagnosis' },
+  { code: 'wrong_intervention', label: 'Wrong intervention' },
+  { code: 'missed_intervention', label: 'Missed intervention' },
+  { code: 'low_quality_content', label: 'Low-quality content' },
+  { code: 'inconsistent', label: 'Inconsistent' },
+  { code: 'other', label: 'Other' },
 ];
 
-export function findQualityAnnotation(
-  annotations: ReflectionQualityAnnotation[],
-  subject: ReflectionQualitySubject,
-): ReflectionQualityAnnotation | null {
-  return annotations.find((annotation) => {
-    if (subject.kind === 'proposal') {
-      return annotation.subject.kind === 'proposal'
-        && annotation.subject.proposalId === subject.proposalId;
-    }
-    return annotation.subject.kind === 'item'
-      && annotation.subject.artifactId === subject.artifactId
-      && annotation.subject.itemId === subject.itemId;
-  }) ?? null;
-}
-
-export function critiqueOptionsForSubject(
-  kind: ReflectionQualitySubject['kind'],
-  allowMissedIntervention: boolean,
-): typeof REFLECTION_QUALITY_CRITIQUE_OPTIONS {
-  return REFLECTION_QUALITY_CRITIQUE_OPTIONS.filter((option) => {
-    if (kind === 'proposal') return option.proposalAllowed;
-    if (option.code === 'missed_intervention') return allowMissedIntervention;
-    return option.itemAllowed;
-  });
+export function findQualityItemTags(
+  rows: ReflectionQualityItemTags[],
+  artifactId: string,
+  itemId: string,
+): ReflectionQualityItemTags | null {
+  return rows.find((row) => row.artifactId === artifactId && row.itemId === itemId) ?? null;
 }
 
 export type ReflectionItemPresentation = {

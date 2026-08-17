@@ -437,13 +437,28 @@ export type OperationApplicationStatus = {
   state: OperationApplicationState;
 };
 
-export type ReflectionQualityCritiqueReason =
+/** Closed dogfood tag set on a reflection item; praise may coexist with critiques. */
+export type ReflectionQualityTag =
+  | 'praise'
   | 'wrong_diagnosis'
   | 'wrong_intervention'
   | 'missed_intervention'
   | 'low_quality_content'
   | 'inconsistent'
   | 'other';
+
+export const REFLECTION_QUALITY_TAGS = [
+  'praise',
+  'wrong_diagnosis',
+  'wrong_intervention',
+  'missed_intervention',
+  'low_quality_content',
+  'inconsistent',
+  'other',
+] as const satisfies ReadonlyArray<ReflectionQualityTag>;
+
+/** @deprecated Prefer ReflectionQualityTag; kept for transitional call sites. */
+export type ReflectionQualityCritiqueReason = Exclude<ReflectionQualityTag, 'praise'>;
 
 export const REFLECTION_QUALITY_CRITIQUE_REASONS = [
   'wrong_diagnosis',
@@ -454,36 +469,26 @@ export const REFLECTION_QUALITY_CRITIQUE_REASONS = [
   'other',
 ] as const satisfies ReadonlyArray<ReflectionQualityCritiqueReason>;
 
-export type ReflectionQualitySubject =
-  | { kind: 'proposal'; proposalId: string }
-  | { kind: 'item'; artifactId: string; itemId: string };
-
-export type ReflectionQualityAnnotation = {
+export type ReflectionQualityItemTags = {
   annotationId: string;
-  subject: ReflectionQualitySubject;
   artifactId: string;
-  polarity: 'praise' | 'critique';
-  reasonCode: ReflectionQualityCritiqueReason | null;
+  itemId: string;
+  tags: ReflectionQualityTag[];
   note: string | null;
   createdAt: string;
   updatedAt: string;
 };
 
-export type UpsertReflectionQualityRequest =
-  | {
-      subject: ReflectionQualitySubject;
-      polarity: 'praise';
-      note?: string | null;
-    }
-  | {
-      subject: ReflectionQualitySubject;
-      polarity: 'critique';
-      reasonCode: ReflectionQualityCritiqueReason;
-      note?: string | null;
-    };
+export type UpsertReflectionQualityRequest = {
+  artifactId: string;
+  itemId: string;
+  tags: ReflectionQualityTag[];
+  note?: string | null;
+};
 
 export type ClearReflectionQualityRequest = {
-  subject: ReflectionQualitySubject;
+  artifactId: string;
+  itemId: string;
 };
 
 export type ReviewProposalRequest =
@@ -491,10 +496,14 @@ export type ReviewProposalRequest =
   | {
       action: 'dismiss';
       reason: string | null;
-      reasonCode?: ReflectionQualityCritiqueReason;
     }
   | { action: 'accept'; operation: ReflectionOperation }
   | { action: 'replace'; operation: ReflectionOperation };
+
+export function isReflectionQualityTag(value: unknown): value is ReflectionQualityTag {
+  return typeof value === 'string'
+    && (REFLECTION_QUALITY_TAGS as readonly string[]).includes(value);
+}
 
 export function isReflectionQualityCritiqueReason(
   value: unknown,

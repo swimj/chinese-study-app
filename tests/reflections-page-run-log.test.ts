@@ -20,7 +20,7 @@ describe('reflection run log presentation', () => {
       selectedArtifactId: null,
       submittingProposalId: null,
       withdrawingInvocationId: null,
-      submittingQualitySubjectKey: null,
+      submittingQualityItemKey: null,
       generationRetryStatus: null,
       openPage: async () => {},
       refresh: async () => {},

@@ -2,10 +2,9 @@ import { useState } from 'react';
 import type { AppPageKey } from '../../components/AppChrome';
 import type {
   ReflectionOperation,
-  ReflectionQualityCritiqueReason,
-  ReflectionQualitySubject,
   ReviewProposalRequest,
   UpsertReflectionQualityRequest,
+  ClearReflectionQualityRequest,
 } from '../../domain/reflection';
 import type { ReflectionModelChoice } from '../../services/api';
 import type {
@@ -28,7 +27,7 @@ export type ReflectionPageController = {
   selectedArtifactId: string | null;
   submittingProposalId: string | null;
   withdrawingInvocationId: string | null;
-  submittingQualitySubjectKey: string | null;
+  submittingQualityItemKey: string | null;
   generationRetryStatus: {
     runId: string;
     state: 'generating' | 'succeeded' | 'failed';
@@ -41,19 +40,16 @@ export type ReflectionPageController = {
   dismissProposal: (
     proposalId: string,
     reason: string | null,
-    reasonCode: ReflectionQualityCritiqueReason,
   ) => Promise<void>;
   acceptProposal: (proposalId: string, operation: ReflectionOperation) => Promise<void>;
   replaceProposal: (proposalId: string, operation: ReflectionOperation) => Promise<void>;
   withdrawAuthorization: (invocationId: string) => Promise<void>;
   upsertQuality: (request: UpsertReflectionQualityRequest) => Promise<void>;
-  clearQuality: (subject: ReflectionQualitySubject) => Promise<void>;
+  clearQuality: (request: ClearReflectionQualityRequest) => Promise<void>;
 };
 
-export function qualitySubjectKey(subject: ReflectionQualitySubject): string {
-  return subject.kind === 'proposal'
-    ? `proposal:${subject.proposalId}`
-    : `item:${subject.artifactId}:${subject.itemId}`;
+export function qualityItemKey(artifactId: string, itemId: string): string {
+  return `item:${artifactId}:${itemId}`;
 }
 
 export function useReflectionPageController({
@@ -81,7 +77,7 @@ export function useReflectionPageController({
   const [selectedArtifact, setSelectedArtifact] = useState<ReflectionArtifactDetailDto | null>(null);
   const [submittingProposalId, setSubmittingProposalId] = useState<string | null>(null);
   const [withdrawingInvocationId, setWithdrawingInvocationId] = useState<string | null>(null);
-  const [submittingQualitySubjectKey, setSubmittingQualitySubjectKey] = useState<string | null>(null);
+  const [submittingQualityItemKey, setSubmittingQualityItemKey] = useState<string | null>(null);
   const [generationRetryStatus, setGenerationRetryStatus] = useState<
     ReflectionPageController['generationRetryStatus']
   >(null);
@@ -302,58 +298,38 @@ export function useReflectionPageController({
   }
 
   async function upsertQuality(request: UpsertReflectionQualityRequest): Promise<void> {
-    let artifactId: string | undefined;
-    if (request.subject.kind === 'item') {
-      artifactId = request.subject.artifactId;
-    } else {
-      const proposalId = request.subject.proposalId;
-      artifactId = artifactDetails.find((detail) => (
-        detail.proposals.some((proposal) => proposal.review.proposalId === proposalId)
-      ))?.artifactId;
-    }
-    if (artifactId === undefined) {
-      throw new Error('Reflection quality subject is not loaded.');
-    }
-    const key = qualitySubjectKey(request.subject);
-    setSubmittingQualitySubjectKey(key);
+    const key = qualityItemKey(request.artifactId, request.itemId);
+    setSubmittingQualityItemKey(key);
     setError(null);
     try {
       await requireApi().upsertQuality(request);
       await loadListsAndDetail(
         selectedArtifact?.artifactId ?? null,
-        new Set([artifactId]),
+        new Set([request.artifactId]),
       );
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to save reflection quality');
       throw error;
     } finally {
-      setSubmittingQualitySubjectKey(null);
+      setSubmittingQualityItemKey(null);
     }
   }
 
-  async function clearQuality(subject: ReflectionQualitySubject): Promise<void> {
-    const artifactId = subject.kind === 'item'
-      ? subject.artifactId
-      : artifactDetails.find((detail) => (
-        detail.proposals.some((proposal) => proposal.review.proposalId === subject.proposalId)
-      ))?.artifactId;
-    if (artifactId === undefined) {
-      throw new Error('Reflection quality subject is not loaded.');
-    }
-    const key = qualitySubjectKey(subject);
-    setSubmittingQualitySubjectKey(key);
+  async function clearQuality(request: ClearReflectionQualityRequest): Promise<void> {
+    const key = qualityItemKey(request.artifactId, request.itemId);
+    setSubmittingQualityItemKey(key);
     setError(null);
     try {
-      await requireApi().clearQuality({ subject });
+      await requireApi().clearQuality(request);
       await loadListsAndDetail(
         selectedArtifact?.artifactId ?? null,
-        new Set([artifactId]),
+        new Set([request.artifactId]),
       );
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to clear reflection quality');
       throw error;
     } finally {
-      setSubmittingQualitySubjectKey(null);
+      setSubmittingQualityItemKey(null);
     }
   }
 
@@ -369,17 +345,16 @@ export function useReflectionPageController({
     selectedArtifactId: selectedArtifact?.artifactId ?? null,
     submittingProposalId,
     withdrawingInvocationId,
-    submittingQualitySubjectKey,
+    submittingQualityItemKey,
     generationRetryStatus,
     openPage,
     refresh,
     selectArtifact,
     retryGenerationRun,
     deferProposal: (proposalId) => reviewProposal(proposalId, { action: 'defer' }),
-    dismissProposal: (proposalId, reason, reasonCode) => reviewProposal(proposalId, {
+    dismissProposal: (proposalId, reason) => reviewProposal(proposalId, {
       action: 'dismiss',
       reason,
-      reasonCode,
     }),
     acceptProposal: (proposalId, operation) => reviewProposal(proposalId, {
       action: 'accept',

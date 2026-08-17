@@ -828,31 +828,26 @@ payload creates a revised invocation. The review system may assess diagnosis,
 intervention selection, and drafted-content quality separately even when V1
 stores only a coarse terminal `dismissed` disposition plus optional rationale.
 
-### Quality annotation overlay
+### Quality tag overlay
 
-Dogfood review may attach a thin **quality annotation** overlay so model-arm
-taste can be compared over time. Annotations do not authorize effects, rewrite
-proposal disposition, create invocations, or change application status. Items
-still have no proposal-review row; an item annotation never fabricates a
-proposal.
+Dogfood review may attach a thin **quality tag** overlay so model-arm taste can
+be compared over time. Tags do not authorize effects, rewrite proposal
+disposition, create invocations, or change application status.
 
-Subjects:
+**Subject:** one reflection item keyed by `{ artifactId, itemId }` (the
+generation artifact pins model arm; not session id alone). Tags are fuzzy at
+item grain: they do not recover per-proposal precision when an item has multiple
+proposals.
 
-- **proposal** — the handle and rationale of one immutable proposal; and
-- **item** — the item-level diagnosis, learner explanation, and no-durable-change
-  judgment (empty proposal list). An item and its proposals may be annotated
-  independently.
-
-Polarities (one annotation per subject; last write wins):
-
-- `praise` — unusually good analysis or content (“I really like this”); no
-  reason code; and
-- `critique` — structured dissatisfaction with a reason code and optional note.
-
-Critique reason codes:
+**Payload:** an unordered set of closed-enum tags plus an optional shared note.
+`praise` is an ordinary tag and may coexist with critique tags. Last write wins
+for the whole set on that item. `other` requires a short non-empty note; notes
+need not be fully self-describing because the durable row stays on the item for
+later drill-down.
 
 ```ts
-type ReflectionQualityCritiqueReason =
+type ReflectionQualityTag =
+  | 'praise'
   | 'wrong_diagnosis'
   | 'wrong_intervention'
   | 'missed_intervention'
@@ -861,17 +856,14 @@ type ReflectionQualityCritiqueReason =
   | 'other';
 ```
 
-`missed_intervention` is valid only for item subjects. `other` requires a short
-non-empty note. Coarse `dismissed` disposition remains independent: the review
-UI may require a critique code when dismissing, but the wire contract may still
-accept a dismiss without one. Historical dismissals without a structured code
-aggregate as `unspecified`.
+There is no disposition↔tag domain validation. Tags may be written anytime while
+reviewing; accept/dismiss/replace neither require nor clear them.
 
-Annotations join to artifact `model` (the fused **model arm** config id) and
-`promptVersion` at read time. They do not denormalize routing identity onto the
-annotation row. Aggregating accept/exact/revised/user-replace/dismiss rates by
-model arm remains a read of existing review rows plus this overlay; generation
-routing is unchanged.
+Tags join to artifact `model` (the fused **model arm** config id) and
+`promptVersion` at read time. Aggregating accept/exact/revised/user-replace/dismiss
+rates by model arm remains a read of existing review rows (pending, deferred, and
+non-user system supersession excluded). Tag rates count whenever a tag row is
+present. Generation routing is unchanged.
 
 The operation editor must not imply apply support. A user may inspect, edit, and
 accept a well-formed unsupported operation; the resulting application state

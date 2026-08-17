@@ -20,7 +20,7 @@ let dataDir = '';
 let sqlite: DatabaseSync;
 let dbModule: DbModule;
 
-describe('reflection quality annotations', { concurrency: false }, () => {
+describe('reflection quality item tags', { concurrency: false }, () => {
   before(async () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-reflection-quality-'));
     const previousMode = process.env.APP_MODE;
@@ -62,34 +62,58 @@ describe('reflection quality annotations', { concurrency: false }, () => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
-  test('upserts one annotation per subject and last write wins', () => {
+  test('upserts one tag set per item and last write wins', () => {
     const artifact = materialize('quality-upsert', suppressOperation('target'), 'gpt-5.6-luna-high').artifact;
-    const proposalId = artifact.proposals[0]!.review.proposalId;
 
-    const praise = dbModule.upsertReflectionQualityAnnotation({
-      subject: { kind: 'proposal', proposalId },
-      polarity: 'praise',
+    const first = dbModule.upsertReflectionQualityAnnotation({
+      artifactId: artifact.artifactId,
+      itemId: 'item',
+      tags: ['praise'],
     }, updatedAt);
-    assert.equal(praise.polarity, 'praise');
-    assert.equal(praise.reasonCode, null);
+    assert.deepEqual(first.tags, ['praise']);
+    assert.equal(first.note, null);
 
-    const critique = dbModule.upsertReflectionQualityAnnotation({
-      subject: { kind: 'proposal', proposalId },
-      polarity: 'critique',
-      reasonCode: 'wrong_diagnosis',
-      note: 'Missed the cue overload.',
+    const second = dbModule.upsertReflectionQualityAnnotation({
+      artifactId: artifact.artifactId,
+      itemId: 'item',
+      tags: ['praise', 'low_quality_content', 'wrong_diagnosis'],
+      note: 'Prompt text was awkward but diagnosis was useful.',
     }, '2026-08-16T08:02:00.000Z');
-    assert.equal(critique.annotationId, praise.annotationId);
-    assert.equal(critique.polarity, 'critique');
-    assert.equal(critique.reasonCode, 'wrong_diagnosis');
-    assert.equal(critique.note, 'Missed the cue overload.');
+    assert.equal(second.annotationId, first.annotationId);
+    assert.deepEqual(second.tags, ['praise', 'wrong_diagnosis', 'low_quality_content']);
+    assert.equal(second.note, 'Prompt text was awkward but diagnosis was useful.');
 
     const listed = dbModule.listReflectionQualityAnnotationsForArtifact(artifact.artifactId);
     assert.equal(listed.length, 1);
-    assert.equal(listed[0]!.polarity, 'critique');
+    assert.deepEqual(listed[0]!.tags, ['praise', 'wrong_diagnosis', 'low_quality_content']);
   });
 
-  test('dismiss with reasonCode writes critique in the same transaction', () => {
+  test('other requires a note; missed_intervention allowed with proposals', () => {
+    const withProposals = materialize(
+      'quality-item-has-proposals',
+      suppressOperation('target'),
+      'qwen3.8-max',
+    ).artifact;
+
+    assert.throws(
+      () => dbModule.upsertReflectionQualityAnnotation({
+        artifactId: withProposals.artifactId,
+        itemId: 'item',
+        tags: ['other'],
+      }, updatedAt),
+      /other tag requires a non-empty note/,
+    );
+
+    const tagged = dbModule.upsertReflectionQualityAnnotation({
+      artifactId: withProposals.artifactId,
+      itemId: 'item',
+      tags: ['missed_intervention', 'other'],
+      note: 'Should have repaired the cue too.',
+    }, updatedAt);
+    assert.deepEqual(tagged.tags, ['missed_intervention', 'other']);
+  });
+
+  test('dismiss does not write quality tags', () => {
     const artifact = materialize('quality-dismiss', suppressOperation('target'), 'glm-5.2-high').artifact;
     const proposalId = artifact.proposals[0]!.review.proposalId;
 
@@ -97,7 +121,6 @@ describe('reflection quality annotations', { concurrency: false }, () => {
       proposalId,
       'Cue accepts too much.',
       updatedAt,
-      'inconsistent',
     );
     assert.deepEqual(review.disposition, {
       kind: 'dismissed',
@@ -105,58 +128,7 @@ describe('reflection quality annotations', { concurrency: false }, () => {
     });
 
     const detail = dbModule.getReflectionArtifactDetail(artifact.artifactId);
-    assert.equal(detail.qualityAnnotations.length, 1);
-    assert.deepEqual(detail.qualityAnnotations[0]!.subject, {
-      kind: 'proposal',
-      proposalId,
-    });
-    assert.equal(detail.qualityAnnotations[0]!.polarity, 'critique');
-    assert.equal(detail.qualityAnnotations[0]!.reasonCode, 'inconsistent');
-    assert.equal(detail.qualityAnnotations[0]!.note, 'Cue accepts too much.');
-  });
-
-  test('item critique can mark missed_intervention only when there are no proposals', () => {
-    const withProposals = materialize(
-      'quality-item-has-proposals',
-      suppressOperation('target'),
-      'qwen3.8-max',
-    ).artifact;
-    assert.throws(
-      () => dbModule.upsertReflectionQualityAnnotation({
-        subject: {
-          kind: 'item',
-          artifactId: withProposals.artifactId,
-          itemId: 'item',
-        },
-        polarity: 'critique',
-        reasonCode: 'missed_intervention',
-      }, updatedAt),
-      /missed_intervention is valid only for items with no durable proposals/,
-    );
-
-    const empty = materializeInformational('quality-item-empty', 'qwen3.7-plus').artifact;
-    const annotation = dbModule.upsertReflectionQualityAnnotation({
-      subject: {
-        kind: 'item',
-        artifactId: empty.artifactId,
-        itemId: 'item',
-      },
-      polarity: 'critique',
-      reasonCode: 'missed_intervention',
-    }, updatedAt);
-    assert.equal(annotation.reasonCode, 'missed_intervention');
-
-    assert.throws(
-      () => dbModule.upsertReflectionQualityAnnotation({
-        subject: {
-          kind: 'proposal',
-          proposalId: withProposals.proposals[0]!.review.proposalId,
-        },
-        polarity: 'critique',
-        reasonCode: 'missed_intervention',
-      }, updatedAt),
-      /missed_intervention is valid only for item quality subjects/,
-    );
+    assert.equal(detail.qualityItemTags.length, 0);
   });
 
   test('stats group terminal user reviews by model arm and exclude pending/system supersession', () => {
@@ -174,7 +146,6 @@ describe('reflection quality annotations', { concurrency: false }, () => {
       glm.proposals[0]!.review.proposalId,
       null,
       updatedAt,
-      'wrong_intervention',
     );
     dbModule.supersedeReflectionProposal({
       proposalId: system.proposals[0]!.review.proposalId,
@@ -201,11 +172,9 @@ describe('reflection quality annotations', { concurrency: false }, () => {
     assert.equal(lunaArm.dismissCount, 0);
     assert.equal(glmArm.terminalReviewCount, 1);
     assert.equal(glmArm.dismissCount, 1);
-    assert.equal(glmArm.dismissalReasons.wrong_intervention, 1);
-    assert.equal(glmArm.dismissalReasons.unspecified, 0);
   });
 
-  test('stats aggregate multiple terminal reviews and annotations within one model arm', () => {
+  test('stats aggregate multiple terminal reviews and tags within one model arm including pending tags', () => {
     const exactA = materialize('agg-exact-a', suppressOperation('target'), 'gpt-5.6-luna-high').artifact;
     const exactB = materialize('agg-exact-b', suppressOperation('target'), 'gpt-5.6-luna-high').artifact;
     const exactC = materialize('agg-exact-c', suppressOperation('target'), 'gpt-5.6-luna-high').artifact;
@@ -226,6 +195,11 @@ describe('reflection quality annotations', { concurrency: false }, () => {
       'reflection-v6',
     ).artifact;
     const emptyItem = materializeInformational('agg-item-miss', 'gpt-5.6-luna-high').artifact;
+    const stillPending = materialize(
+      'agg-pending-tagged',
+      suppressOperation('target'),
+      'gpt-5.6-luna-high',
+    ).artifact;
 
     for (const artifact of [exactA, exactB, exactC]) {
       dbModule.acceptReflectionProposal({
@@ -238,7 +212,6 @@ describe('reflection quality annotations', { concurrency: false }, () => {
       dismissCoded.proposals[0]!.review.proposalId,
       'bad cue',
       updatedAt,
-      'inconsistent',
     );
     dbModule.dismissReflectionProposal(
       dismissLegacy.proposals[0]!.review.proposalId,
@@ -252,21 +225,24 @@ describe('reflection quality annotations', { concurrency: false }, () => {
     });
 
     dbModule.upsertReflectionQualityAnnotation({
-      subject: { kind: 'proposal', proposalId: exactA.proposals[0]!.review.proposalId },
-      polarity: 'praise',
+      artifactId: exactA.artifactId,
+      itemId: 'item',
+      tags: ['praise'],
     }, updatedAt);
     dbModule.upsertReflectionQualityAnnotation({
-      subject: { kind: 'proposal', proposalId: exactB.proposals[0]!.review.proposalId },
-      polarity: 'praise',
+      artifactId: exactB.artifactId,
+      itemId: 'item',
+      tags: ['praise', 'low_quality_content'],
     }, updatedAt);
     dbModule.upsertReflectionQualityAnnotation({
-      subject: {
-        kind: 'item',
-        artifactId: emptyItem.artifactId,
-        itemId: 'item',
-      },
-      polarity: 'critique',
-      reasonCode: 'missed_intervention',
+      artifactId: emptyItem.artifactId,
+      itemId: 'item',
+      tags: ['missed_intervention'],
+    }, updatedAt);
+    dbModule.upsertReflectionQualityAnnotation({
+      artifactId: stillPending.artifactId,
+      itemId: 'item',
+      tags: ['inconsistent'],
     }, updatedAt);
 
     const stats = dbModule.getReflectionQualityStats();
@@ -283,48 +259,33 @@ describe('reflection quality annotations', { concurrency: false }, () => {
     assert.equal(lunaV7.exactAcceptCount, 3);
     assert.equal(lunaV7.revisedAcceptCount, 0);
     assert.equal(lunaV7.dismissCount, 2);
-    assert.equal(lunaV7.dismissalReasons.inconsistent, 1);
-    assert.equal(lunaV7.dismissalReasons.unspecified, 1);
-    assert.equal(lunaV7.praiseCount, 2);
-    assert.equal(lunaV7.critiqueCount, 2);
-    assert.equal(lunaV7.missedInterventionCount, 1);
-    assert.equal(lunaV7.annotatedSubjectCount, 4);
-    assert.equal(lunaV7.itemCritiqueCount, 1);
-    assert.equal(lunaV7.proposalCritiqueCount, 1);
+    assert.equal(lunaV7.taggedItemCount, 4);
+    assert.equal(lunaV7.tagCounts.praise, 2);
+    assert.equal(lunaV7.tagCounts.low_quality_content, 1);
+    assert.equal(lunaV7.tagCounts.missed_intervention, 1);
+    assert.equal(lunaV7.tagCounts.inconsistent, 1);
 
     assert.equal(lunaV6.terminalReviewCount, 1);
     assert.equal(lunaV6.exactAcceptCount, 1);
     assert.equal(lunaV6.dismissCount, 0);
   });
 
-  test('dismiss without reasonCode aggregates as unspecified', () => {
-    const artifact = materialize(
-      'stats-unspecified',
-      suppressOperation('target'),
-      'gpt-5.6-luna-high',
-    ).artifact;
-    dbModule.dismissReflectionProposal(
-      artifact.proposals[0]!.review.proposalId,
-      'legacy freeform',
-      updatedAt,
-    );
-    const stats = dbModule.getReflectionQualityStats();
-    const arm = stats.arms.find((entry) => entry.modelArm === 'gpt-5.6-luna-high');
-    assert(arm);
-    assert.equal(arm.dismissCount, 1);
-    assert.equal(arm.dismissalReasons.unspecified, 1);
-  });
-
-  test('clear removes an annotation without changing disposition', () => {
+  test('clear removes tags without changing disposition', () => {
     const artifact = materialize('quality-clear', suppressOperation('target'), 'glm-5.2-high').artifact;
     const proposalId = artifact.proposals[0]!.review.proposalId;
-    dbModule.dismissReflectionProposal(proposalId, null, updatedAt, 'low_quality_content');
+    dbModule.dismissReflectionProposal(proposalId, null, updatedAt);
+    dbModule.upsertReflectionQualityAnnotation({
+      artifactId: artifact.artifactId,
+      itemId: 'item',
+      tags: ['low_quality_content'],
+    }, updatedAt);
     const cleared = dbModule.clearReflectionQualityAnnotation({
-      subject: { kind: 'proposal', proposalId },
+      artifactId: artifact.artifactId,
+      itemId: 'item',
     });
     assert.deepEqual(cleared, { cleared: true });
     assert.equal(
-      dbModule.getReflectionArtifactDetail(artifact.artifactId).qualityAnnotations.length,
+      dbModule.getReflectionArtifactDetail(artifact.artifactId).qualityItemTags.length,
       0,
     );
     assert.equal(

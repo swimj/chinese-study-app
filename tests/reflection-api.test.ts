@@ -456,52 +456,63 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     );
   });
 
-  test('upserts quality annotations, dismisses with reasonCode, and serves model-arm stats', async () => {
+  test('upserts item quality tags and serves model-arm stats', async () => {
     const artifact = materialize('quality-api-session', suppressOperation('target')).artifact;
     const proposalId = artifact.proposals[0]!.review.proposalId;
 
-    const praise = await request('/api/reflection-quality', {
+    const tagged = await request('/api/reflection-quality', {
       method: 'PUT',
       body: {
-        subject: { kind: 'proposal', proposalId },
-        polarity: 'praise',
+        artifactId: artifact.artifactId,
+        itemId: 'item-1',
+        tags: ['praise', 'low_quality_content'],
+        note: 'Useful handle, weak prompt.',
       },
     });
-    assert.equal(praise.status, 200);
-    assert.equal((praise.json as { polarity: string }).polarity, 'praise');
+    assert.equal(tagged.status, 200);
+    assert.deepEqual(
+      (tagged.json as { tags: string[] }).tags,
+      ['praise', 'low_quality_content'],
+    );
 
     const dismissed = await request(`/api/reflection-proposals/${proposalId}/review`, {
       method: 'POST',
       body: {
         action: 'dismiss',
         reason: 'Wrong handle.',
-        reasonCode: 'wrong_intervention',
       },
     });
     assert.equal(dismissed.status, 200);
 
     const detail = await request(`/api/reflection-artifacts/${artifact.artifactId}`);
     assert.equal(detail.status, 200);
-    const annotations = (detail.json as {
-      qualityAnnotations: Array<{ polarity: string; reasonCode: string | null }>;
-    }).qualityAnnotations;
-    assert.equal(annotations.length, 1);
-    assert.equal(annotations[0]!.polarity, 'critique');
-    assert.equal(annotations[0]!.reasonCode, 'wrong_intervention');
+    const qualityItemTags = (detail.json as {
+      qualityItemTags: Array<{ tags: string[]; note: string | null }>;
+    }).qualityItemTags;
+    assert.equal(qualityItemTags.length, 1);
+    assert.deepEqual(qualityItemTags[0]!.tags, ['praise', 'low_quality_content']);
+    assert.equal(qualityItemTags[0]!.note, 'Useful handle, weak prompt.');
 
     const stats = await request('/api/reflection-quality-stats');
     assert.equal(stats.status, 200);
     const arms = (stats.json as {
-      arms: Array<{ modelArm: string; dismissCount: number; dismissalReasons: Record<string, number> }>;
+      arms: Array<{
+        modelArm: string;
+        dismissCount: number;
+        taggedItemCount: number;
+        tagCounts: Record<string, number>;
+      }>;
     }).arms;
     const arm = arms.find((entry) => entry.modelArm === 'gpt-5.6-luna-high');
     assert(arm);
     assert.equal(arm.dismissCount, 1);
-    assert.equal(arm.dismissalReasons.wrong_intervention, 1);
+    assert.equal(arm.taggedItemCount, 1);
+    assert.equal(arm.tagCounts.praise, 1);
+    assert.equal(arm.tagCounts.low_quality_content, 1);
 
     const cleared = await request('/api/reflection-quality', {
       method: 'DELETE',
-      body: { subject: { kind: 'proposal', proposalId } },
+      body: { artifactId: artifact.artifactId, itemId: 'item-1' },
     });
     assert.equal(cleared.status, 200);
     assert.deepEqual(cleared.json, { cleared: true });
@@ -509,9 +520,9 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     assert.equal((await request('/api/reflection-quality', {
       method: 'PUT',
       body: {
-        subject: { kind: 'proposal', proposalId },
-        polarity: 'critique',
-        reasonCode: 'missed_intervention',
+        artifactId: artifact.artifactId,
+        itemId: 'item-1',
+        tags: ['other'],
       },
     })).status, 400);
   });
