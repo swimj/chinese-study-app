@@ -176,7 +176,7 @@ export function createReflectionProvider(
     // OpenAI defaults through the local HTTP CONNECT proxy (same path as the LLM spike).
     // Other providers use direct fetch. Callers may still inject a custom implementation.
     fetchImplementation: options.fetchImplementation
-      ?? fetchImplementationForProvider(config.provider),
+      ?? fetchImplementationForProvider(config.provider, config.timeoutMs),
   });
 
   return {
@@ -184,7 +184,11 @@ export function createReflectionProvider(
       // Read credentials at call time so importing or constructing the service
       // never requires secrets and local configuration can be supplied later.
       const apiKey = configuredValue(environment[config.apiKeyEnvironmentVariable]);
-      if (apiKey === null) throw new LunaReflectionProviderError('missing_config');
+      if (apiKey === null) {
+        throw new LunaReflectionProviderError(
+          'missing_config', 0, null, runMetadataWithoutProviderResult(config),
+        );
+      }
       const baseUrl = config.baseUrlEnvironmentVariable === undefined
         ? null
         : configuredValue(environment[config.baseUrlEnvironmentVariable]);
@@ -215,7 +219,9 @@ export function createReflectionProvider(
           clientRequestId,
           error,
         }));
-        throw new LunaReflectionProviderError('upstream_failure', 0, clientRequestId);
+        throw new LunaReflectionProviderError(
+          'upstream_failure', 0, clientRequestId, runMetadataWithoutProviderResult(config),
+        );
       }
 
       const metadata = runMetadataFromProviderResult(providerResult, config);
@@ -292,4 +298,21 @@ function runMetadataFromProviderResult(input: {
     finishReason: input.finishReason,
     usage: input.usage,
   };
+}
+
+function runMetadataWithoutProviderResult(
+  config: ReflectionProviderConfig,
+): LunaReflectionRunMetadata {
+  return runMetadataFromProviderResult({
+    responseId: null,
+    finishReason: null,
+    usage: {
+      inputTokens: null,
+      cachedInputTokens: null,
+      cacheWriteInputTokens: null,
+      outputTokens: null,
+      reasoningTokens: null,
+      totalTokens: null,
+    },
+  }, config);
 }
