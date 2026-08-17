@@ -447,6 +447,9 @@ export type ReflectionQualityTag =
   | 'inconsistent'
   | 'other';
 
+/** Prompt version currently used by live reflection generation arms. */
+export const CURRENT_REFLECTION_PROMPT_VERSION = 'reflection-v7' as const;
+
 export const REFLECTION_QUALITY_TAGS = [
   'praise',
   'wrong_diagnosis',

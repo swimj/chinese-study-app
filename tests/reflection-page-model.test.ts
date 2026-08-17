@@ -13,6 +13,8 @@ import {
   buildReflectionItemPresentations,
   buildLearnerRequestedReflectionPresentations,
   buildReflectionProposalPresentations,
+  listQualityPromptVersions,
+  presentQualityStatsArms,
   REFLECTION_QUALITY_TAG_OPTIONS,
   cloneReflectionOperation,
   createReplacementOperation,
@@ -22,6 +24,7 @@ import {
   visibleOutputTokens,
   type ReflectionArtifactDetailDto,
 } from '../src/features/reflection/reflection-page-model.js';
+import type { ReflectionQualityArmStatsDto } from '../src/services/api.js';
 
 describe('reflection page model', () => {
   test('groups each durable proposal under its immutable item without inventing rows', () => {
@@ -68,6 +71,39 @@ describe('reflection page model', () => {
         'other',
       ],
     );
+  });
+
+  test('filters and groups quality stats arms for the Quality table', () => {
+    const arms = [
+      qualityArm('luna', 'reflection-v7', { terminalReviewCount: 2, exactAcceptCount: 2, taggedItemCount: 1, praise: 1 }),
+      qualityArm('luna', 'reflection-v6', { terminalReviewCount: 1, exactAcceptCount: 1, taggedItemCount: 1, praise: 1 }),
+      qualityArm('glm', 'reflection-v7', { terminalReviewCount: 3, dismissCount: 1, taggedItemCount: 2, missed: 1 }),
+    ];
+
+    const currentOnly = presentQualityStatsArms(arms, {
+      promptVersionFilter: 'reflection-v7',
+      groupBy: 'model_and_prompt',
+    });
+    assert.equal(currentOnly.length, 2);
+    assert.ok(currentOnly.every((arm) => arm.promptVersion === 'reflection-v7'));
+
+    const byModel = presentQualityStatsArms(arms, {
+      promptVersionFilter: 'all',
+      groupBy: 'model',
+    });
+    const luna = byModel.find((arm) => arm.modelArm === 'luna');
+    assert(luna);
+    assert.equal(luna.terminalReviewCount, 3);
+    assert.equal(luna.tagCounts.praise, 2);
+
+    const byPrompt = presentQualityStatsArms(arms, {
+      promptVersionFilter: 'all',
+      groupBy: 'prompt',
+    });
+    const v7 = byPrompt.find((arm) => arm.promptVersion === 'reflection-v7');
+    assert(v7);
+    assert.equal(v7.terminalReviewCount, 5);
+    assert.deepEqual(listQualityPromptVersions(arms), ['reflection-v6', 'reflection-v7']);
   });
 
   test('builds proposal queues by actionable lifecycle state without session grouping', () => {
@@ -691,5 +727,38 @@ function wordSnapshot(wordId: string, hanzi: string) {
     hanzi,
     pinyin: 'pinyin',
     meanings: ['meaning'],
+  };
+}
+
+function qualityArm(
+  modelArm: string,
+  promptVersion: string,
+  values: {
+    terminalReviewCount: number;
+    exactAcceptCount?: number;
+    dismissCount?: number;
+    taggedItemCount?: number;
+    praise?: number;
+    missed?: number;
+  },
+): ReflectionQualityArmStatsDto {
+  return {
+    modelArm,
+    promptVersion,
+    terminalReviewCount: values.terminalReviewCount,
+    exactAcceptCount: values.exactAcceptCount ?? 0,
+    revisedAcceptCount: 0,
+    userReplaceCount: 0,
+    dismissCount: values.dismissCount ?? 0,
+    taggedItemCount: values.taggedItemCount ?? 0,
+    tagCounts: {
+      praise: values.praise ?? 0,
+      wrong_diagnosis: 0,
+      wrong_intervention: 0,
+      missed_intervention: values.missed ?? 0,
+      low_quality_content: 0,
+      inconsistent: 0,
+      other: 0,
+    },
   };
 }

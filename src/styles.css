@@ -1602,7 +1602,34 @@ button:disabled:hover {
 }
 
 .reflection-quality-note {
-  width: 100%;
+  flex: 1;
+  min-width: 12rem;
+  width: auto;
+}
+
+.reflection-quality-note-display {
+  flex: 1;
+  min-width: 12rem;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  padding: 0.45rem 0.55rem;
+  border-radius: 0.4rem;
+  cursor: text;
+  white-space: pre-wrap;
+  line-height: 1.4;
+}
+
+.reflection-quality-note-display:hover,
+.reflection-quality-note-display:focus-visible {
+  border-color: #334155;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.reflection-quality-note-display.is-empty {
+  color: #94a3b8;
+  font-style: italic;
 }
 
 .reflection-quality-clear {
@@ -1613,6 +1640,17 @@ button:disabled:hover {
 .reflection-quality-view {
   display: grid;
   gap: 1rem;
+}
+
+.reflection-quality-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  margin: 0 0 1rem;
+}
+
+.reflection-quality-filter {
+  min-width: 12rem;
 }
 
 .reflection-quality-table {
