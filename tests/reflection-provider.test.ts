@@ -405,6 +405,38 @@ describe('production Luna reflection provider', () => {
     assert.equal(serializedDiagnostic.includes('raw-upstream-private-response'), false);
   });
 
+  test('retains Qwen model metadata when transport fails before a response', async () => {
+    const provider = createQwen38MaxReflectionProvider({
+      environment: { DASHSCOPE_API_KEY: 'test-only-key' },
+      systemPrompt: 'prompt',
+      fetchImplementation: (async () => {
+        throw new TypeError('fetch failed', {
+          cause: Object.assign(new Error('headers timeout'), {
+            code: 'UND_ERR_HEADERS_TIMEOUT',
+          }),
+        });
+      }) as typeof globalThis.fetch,
+    });
+
+    const error = await expectProviderError(provider.generate(bundle), 'upstream_failure');
+    assert.deepEqual(error.metadata, {
+      provider: 'dashscope',
+      modelConfig: 'qwen3.8-max',
+      providerModel: 'qwen3.8-max',
+      promptVersion: 'reflection-v7',
+      responseId: null,
+      finishReason: null,
+      usage: {
+        inputTokens: null,
+        cachedInputTokens: null,
+        cacheWriteInputTokens: null,
+        outputTokens: null,
+        reasoningTokens: null,
+        totalTokens: null,
+      },
+    });
+  });
+
   test('records transport error categories and codes without messages or stacks', () => {
     const cause = Object.assign(new Error('private cause detail'), { code: 'ECONNRESET' });
     const transportError = Object.assign(new Error('private transport detail', { cause }), {
