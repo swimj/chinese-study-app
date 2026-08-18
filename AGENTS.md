@@ -76,11 +76,16 @@ CLI flags mirror env where applicable (`--mode`, `--data-dir`, `--study-profile`
 - Keep backend timestamps and date keys in UTC (`toISOString`, `YYYY-MM-DD` UTC date key) unless explicitly changing product policy.
 - Avoid hard-coding assumptions that only work in single-machine/local-only deployments if a cleaner abstraction can preserve future hosted-service options.
 - When the desired goal is vague, only write code roughly up to what is relatively well-defined, limit speculative policy decisions. Even if the prompt explicitly ask to go in one-shot, stop and alert me of the the points of ambiguity instead of proceeding.
-- When a task explicitly selects stacked Graphite delivery or review, compose
-  its task-specific execution contract with
-  [`docs/stacked-feature-development-and-review.md`](docs/stacked-feature-development-and-review.md)
-  and use the installed `gt` CLI directly for Graphite operations. Do not
-  impose that model on small or ordinary single-branch work.
+- Implementation work defaults to the proportional delivery and review model in
+  [`docs/stacked-feature-development-and-review.md`](docs/stacked-feature-development-and-review.md):
+  state whether it is one cohesive pull request or likely needs a stack, then
+  publish the verified implementation for review unless the task says
+  otherwise. A normal single GitHub pull request remains sufficient and should
+  keep the repository's ordinary validation scope. Use the installed `gt` CLI
+  only when multiple Graphite-managed branches improve review comprehension.
+  Standalone research, planning, and documentation-only tasks may return in
+  Codex without a pull request unless review publication is requested; docs
+  changed alongside implementation remain part of that implementation's PR.
 
 ## 4) Runbook Commands
 
@@ -165,7 +170,7 @@ historical context is needed. Do not create a replacement repository backlog.
 - **Worktree ownership**: each independently dispatched async task runs in its own worktree. Do not place multiple independently dispatched tasks in one worktree. Worktrees prevent simultaneous filesystem interference; they do not prevent logical conflicts, overlapping diffs, stale assumptions, or integration cost.
 - **Working notes vs task specs**: ordinary working notes stay lightweight and do not need a catalog backlink. When their content becomes critical to a cataloged task, consolidate the necessary context into a task-spec note and link it from Linear. Do not copy volatile execution or review state into note metadata.
 - **Review disposition**: review results are accepted/merged, returned for revision, discarded, or converted into a new decision/task. Finished agent execution is not completed project work until the human supplies or confirms its disposition.
-- **PR handoff**: reviewable async work should normally return through a GitHub PR. Its title and description should make the originating task recognizable and record the outcome, material deviations, verification, open decisions, dependencies/overlap, and follow-up work. A no-diff conclusion may return through the Codex task instead.
+- **PR handoff**: implementation work normally returns through a GitHub PR, whether dispatched async or directly prompted. Its title and description should make the originating task recognizable and record the outcome, material deviations, verification, open decisions, dependencies/overlap, and follow-up work. Standalone research, planning, and documentation-only work, plus a no-diff conclusion, may return through the Codex task unless review publication is requested.
 - **Commits and task identity**: stage deliberately so unrelated changes are not swept in. Every commit should be relatable to a Linear item, linked task spec, or directly requested one-off; items and commits need not be one-to-one.
 
 ## 12) Working With The Stability Frontier

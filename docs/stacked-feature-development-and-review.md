@@ -1,14 +1,19 @@
-# Stacked Feature Development And Review
+# Feature Development And Review
 
-This document defines a reusable Graphite-backed development and review model
-for substantial features. Use it as a delivery overlay alongside a specific
-task spec; it is not itself a task spec, a source of product behavior, or
-authorization to dispatch work.
+This document defines the default delivery and review model for implementation
+work. Use it alongside the initiating prompt or a task spec; it is not itself a
+task spec, a source of product behavior, or authorization to dispatch work.
 
-The model is useful when a feature benefits from several dependent review units
-that should explain the implementation from foundations through integration.
-It is optional. A small or naturally atomic change should remain a normal
-single-branch change unless the task explicitly selects this model.
+Every implementation should be organized for review and normally finish as a
+pull request. A cohesive change uses one branch and one pull request. When
+several dependent review units would make the implementation easier to review,
+the same model scales into a Graphite stack. The branch count is an agent
+judgment, not a requirement for either one branch or several.
+
+Standalone research, planning, and documentation-only work is not presumed to
+need a pull request. It may return through its Codex task unless the prompt asks
+for review publication. Documentation that accompanies an implementation
+belongs in that implementation's pull request.
 
 ## Compose this model with the task contract
 
@@ -20,12 +25,13 @@ The initiating prompt or task spec must provide the task-specific contract:
 - decisions or orientation gates that require human confirmation;
 - focused, full-suite, manual, migration, and data-safety verification;
 - task-specific stop conditions; and
-- whether new pull requests should be draft or ready for review, or whether the
-  task updates an already-published review boundary.
+- any reason to depart from the normal review-delivery default, including a
+  draft pull request, an existing review boundary, or no pull request.
 
-This document owns the delivery and review mechanics: worktree and Graphite
-preflight, review-unit design, stack evolution, feedback placement, validation,
-publication mechanics, and handoff.
+This document owns the delivery and review mechanics: orientation, review-unit
+design, stack evolution where needed, feedback placement, validation,
+publication mechanics, and handoff. Graphite-specific setup and commands apply
+only to a multi-branch stack.
 
 Use the repository's normal authority order when sources disagree. Canonical
 product specs and accepted architecture contracts own behavior. The stability
@@ -34,23 +40,46 @@ own the detailed execution contract. This model supplies workflow defaults;
 an explicit task-specific workflow rule may override a default. Stop and report
 any conflict that cannot be resolved through that order.
 
-One feature stack still represents one dispatched task or portfolio outcome.
-Creating several branches does not create new Linear items or authorize parts
-of the feature to be dispatched independently.
+One implementation or feature stack still represents one dispatched task or
+portfolio outcome. Creating several branches does not create new Linear items
+or authorize parts of the feature to be dispatched independently.
 
-## Direct Graphite CLI policy
+## Orientation and review-unit choice
 
-Agents should use the installed `gt` CLI directly for Graphite operations. This
-is the preferred interface for the smoothest eventual human workflow; no
-Graphite MCP layer should be introduced or required.
+Before substantial implementation, inspect the relevant code and focused tests,
+then state the delivery judgment: either a single cohesive pull request or the
+likely direction of a multi-branch stack. Do not fix a final stack size before
+the work warrants it. The human may override that judgment in the task prompt.
 
-The one exception is attaching a deliberately detached task-worktree snapshot
-to its first local branch. Codex worktrees are commonly created at a detached
-HEAD. When that is the case, use `git switch -c codex/<task-slug>` once, at the
-unchanged checked-out commit, then immediately track that branch with
-`gt branch track --parent <verified-parent>`. This is setup for Graphite, not a
-replacement for its stack operations. Do not use direct Git commits, rebases,
-branch moves, or topology edits after this bootstrap.
+For a complex task, pause after read-only orientation when the task names an
+orientation gate or when material ambiguity, conflicting authority, or overlap
+needs human direction. Otherwise, proceed and revise the chosen review boundary
+as understanding improves.
+
+Use a stack when dependent review units make the implementation easier to
+understand. A branch boundary is useful when it separates a coherent foundation,
+behavior, integration concern, or other independently meaningful delta. Keep a
+cohesive change in one pull request; do not manufacture branches merely because
+this is the default delivery model.
+
+## Direct Graphite CLI policy for stacks
+
+For a multi-branch stack, agents should use the installed `gt` CLI directly for
+Graphite operations. This is the preferred interface for the smoothest eventual
+human workflow; no Graphite MCP layer should be introduced or required.
+
+For a single-branch pull request, a normal GitHub branch and pull-request
+workflow is sufficient. GitHub pull requests sync to Graphite and are reviewed
+there; the agent need not create Graphite metadata or otherwise make Graphite
+topology a concern.
+
+When attaching a deliberately detached task-worktree snapshot to the first
+branch of a stack, Codex worktrees are commonly created at a detached HEAD.
+Use `git switch -c codex/<task-slug>` once, at the unchanged checked-out commit,
+then immediately track that branch with `gt branch track --parent
+<verified-parent>`. This is setup for Graphite, not a replacement for its stack
+operations. Do not use direct Git commits, rebases, branch moves, or topology
+edits after this bootstrap.
 
 Before using a topology-changing or publishing command whose behavior is not
 certain, inspect the installed version's `gt help` output. Ordinary read-only
@@ -61,7 +90,7 @@ Do not install or upgrade Graphite, authenticate it, initialize or reinitialize
 the repository, reset Graphite state, force-update branches, or perform
 destructive Git/Graphite recovery without explicit authorization.
 
-## Worktree and orientation preflight
+## Worktree and stack preflight
 
 Keep the full stack in one isolated task worktree with one writer at a time.
 Do not spread one stack across worktrees or create a second worktree during a
@@ -94,26 +123,16 @@ If the worktree already starts on a named pre-created task branch, do not
 create another branch. Instead, verify its parent relationship and Graphite
 tracking status as part of the normal preflight.
 
-Before substantial implementation or topology mutation:
+Before stack topology mutation:
 
-1. Read the repository guidance, current frontier, task spec, and its linked
-   product and architecture authorities.
-2. Inspect the relevant implementation and focused tests.
-3. Record the installed `gt` version, configured trunk, current branch,
+1. Record the installed `gt` version, configured trunk, current branch,
    worktree status, and current Graphite topology.
-4. Verify how any pre-created task branch relates to trunk and tracked
+2. Verify how any pre-created task branch relates to trunk and tracked
    Graphite branches.
-5. Report the important code/test seams, material ambiguity or overlap, the
-   proposed first review unit, and the likely stack direction without fixing a
-   final branch count.
-6. Pause only for the human gates named by the task contract or when a stop
-   condition below applies.
+3. Confirm that the proposed first review unit can be safely attached to its
+   verified parent.
 
-If the task requires a human-guided orientation checkpoint, complete only
-read-only orientation until the named decisions are accepted. After that, the
-stack may evolve without approval for every ordinary branch boundary.
-
-## Design the stack as an explanation
+## Design a stack as an explanation
 
 The stack contains `N` branches, where `N` emerges from the implementation.
 Optimize for reviewer comprehension, dependency order, and semantic cohesion,
@@ -170,7 +189,12 @@ corrections at the stack tip for convenience.
 
 ## Validate before publication or handoff
 
-The companion task spec owns the exact verification matrix. In addition:
+The companion task spec and repository guidance own the exact verification
+matrix. For a single pull request, run the normal focused and broader checks
+that apply to its change, inspect its one diff, and leave the worktree clean.
+That is one ordinary testing pass, not stack validation multiplied by one.
+
+For a stack, in addition:
 
 1. Run focused checks on the branches that introduce the relevant behavior.
 2. Run the repository's required full validation at the stack tip.
@@ -185,12 +209,28 @@ Do not weaken task verification merely to make an intermediate branch pass.
 Report unavailable manual or environment-dependent checks rather than implying
 they ran.
 
-## Publish the verified stack
+## Publish the reviewed implementation
+
+After validation, publish a reviewable pull request for implementation work by
+the repository's normal branch and GitHub workflow. A ready-for-review pull
+request is the default once the work is complete and validated; use a draft
+only when the task asks for it or the handoff truthfully identifies unfinished
+work. Do not merge unless the human separately authorizes it.
+
+The default does not require Graphite setup for a single branch. A GitHub pull
+request visible through Graphite sync is the intended normal review surface.
+If publication is blocked by authentication, permissions, or repository
+configuration, report the exact blocker rather than improvising a workaround.
+
+Standalone research, planning, and documentation-only tasks may hand off in
+Codex without publication unless the task asks for a pull request. This
+exception does not apply to documentation changed as part of implementation.
+
+### Publish a verified stack
 
 After validation and final branch-boundary review, publish the whole intended
-stack through direct `gt` commands. Publication is part of completing this
-stacked delivery model; do not stop with an unpublished local stack merely to
-leave submission to the human.
+stack through direct `gt` commands. Do not stop with an unpublished local stack
+merely to leave submission to the human.
 
 From the top of the stack, use the installed version's equivalent of
 `gt submit --stack --confirm` so the full publication boundary is previewed
@@ -210,10 +250,13 @@ Graphite with an improvised Git/GitHub workflow.
 
 Human review applies to the full integration line the human intends to merge,
 including later verification, debugging, or workflow branches that remain part
-of that line. At the start of each round:
+of that line. For a single pull request, its bottom and top are the same branch;
+the ownership and validation rules below still apply without stack restacking.
+At the start of each round:
 
 1. Verify a clean, single-writer worktree.
-2. Use `gt log` to record the reviewed bottom and top branches.
+2. For a stack, use `gt log` to record the reviewed bottom and top branches;
+   for a single pull request, record its branch and pull-request boundary.
 3. Read unresolved review comments and review summaries across that entire
    boundary, not only the current or top pull request.
 4. Group related comments into logical feedback items; several comments may
@@ -239,33 +282,39 @@ For every code-bearing feedback item:
 
 1. Check out the owning branch.
 2. Implement and test the correction there.
-3. Update it through `gt modify` and restack descendants.
+3. For a stack, update it through `gt modify` and restack descendants. For a
+   single pull request, update its normal branch through the repository's
+   ordinary workflow.
 4. Resolve conflicts carefully and validate affected branches.
 
-Then run full validation at the tip and inspect the entire stack again. If
-feedback reveals a poor boundary, split, combine, insert, move, or reorder
-branches. Conceptual clarity is more important than minimizing branch count or
-preserving an accidental original topology.
+Then rerun the validation required for the updated scope. For a stack, run full
+validation at the tip and inspect the entire stack again. If feedback reveals a
+poor boundary, split, combine, insert, move, or reorder branches. Conceptual
+clarity is more important than minimizing branch count or preserving an
+accidental original topology.
 
 Restructuring a published stack may rewrite branch and pull-request history or
 displace inline-comment context. Record the before-and-after branch mapping and
 surface affected review context explicitly.
 
-When the review task authorizes remote updates, submit the full reviewed
-boundary through `gt`. Do not merge. Do not mark remote review threads resolved
-unless the human explicitly asks; instead, report which feedback item and
-branch correspond to each thread so the human can verify and resolve it.
+When the review task authorizes remote updates, update a single pull request
+through the repository's ordinary workflow or submit the full reviewed stack
+through `gt`. Do not merge. Do not mark remote review threads resolved unless
+the human explicitly asks; instead, report which feedback item and branch
+correspond to each thread so the human can verify and resolve it.
 
 ## Stop conditions
 
 Stop and request human direction when:
 
 - a task-specific orientation or design gate has not been accepted;
-- Graphite is missing, uninitialized, or inconsistent with the expected trunk;
+- an intended multi-branch stack has Graphite missing, uninitialized, or
+  inconsistent with the expected trunk;
 - the worktree contains changes whose ownership or disposition is unclear;
-- the starting branch cannot be placed safely in verified topology;
-- an essential topology operation is unclear or unsupported by installed CLI
-  help;
+- an intended stack's starting branch cannot be placed safely in verified
+  topology;
+- an essential stack topology operation is unclear or unsupported by installed
+  CLI help;
 - progress would discard user work, reset Git/Graphite state, force-update
   branches, or require destructive recovery;
 - sources of authority cannot be reconciled without a product decision; or
@@ -274,7 +323,9 @@ Stop and request human direction when:
 
 ## Final handoff
 
-Report:
+For every implementation pull request, report the outcome, validation, material
+deviations or unresolved gaps, exact remote state changed, and pull-request URL
+with draft/ready state. For a stack, also report:
 
 1. branch names and commit titles from trunk to tip;
 2. each branch's purpose and why its boundary was chosen;
@@ -282,21 +333,17 @@ Report:
 4. every logical review item and whether it produced a stack change, a direct
    reply, or a discussion in Codex;
 5. the branch ownership of code-bearing feedback and any restructuring;
-6. focused, full, and manual validation with results;
-7. deviations, migrations, unresolved gaps, and displaced review context;
-8. the exact remote state changed;
-9. intentionally unresolved review threads; and
-10. the pull-request URL and draft/ready state for every branch in the published
-    stack.
+6. intentionally unresolved review threads; and
+7. the pull-request URL and draft/ready state for every branch in the published
+   stack.
 
 ## Suggested task prompt composition
 
 > Follow `docs/stacked-feature-development-and-review.md` as the delivery and
 > review model, composed with `<task-spec-path>` as the task-specific execution
-> contract. Use the repository's canonical specs and accepted stability
-> frontier as higher product authority. Work in the supplied isolated worktree,
-> attach and track a detached snapshot as this guide directs before using
-> Graphite, use the installed `gt` CLI directly for Graphite operations, honor
-> the task's orientation gates, publish the complete verified stack through
-> Graphite, and satisfy both documents' stop, verification, and handoff
-> requirements. Do not merge the stack.
+> contract. Use the repository's canonical specs and accepted stability frontier
+> as higher product authority. State whether the implementation is one cohesive
+> pull request or likely needs a stack, honoring any orientation gates. Publish
+> the verified implementation for review; if it needs a multi-branch stack, use
+> the installed `gt` CLI directly and publish the complete stack through
+> Graphite. Do not merge.

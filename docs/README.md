@@ -43,7 +43,7 @@ When a map doc and code disagree, fix the map in the same change as the code (or
 
 ## Development and review workflows
 
-- [stacked-feature-development-and-review.md](./stacked-feature-development-and-review.md) — reusable Graphite-backed delivery and human-review model to compose with a task-specific execution contract
+- [stacked-feature-development-and-review.md](./stacked-feature-development-and-review.md) — default proportional implementation delivery and review model; it scales from one PR to a Graphite stack
 
 ## Other root docs
 
