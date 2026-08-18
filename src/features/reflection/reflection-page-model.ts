@@ -191,10 +191,12 @@ export type ReflectionHelpCard =
     };
 
 /**
- * Learner help queue: pending proposals as one card each, plus explanation-only
- * items that still have an open Help inbox row. Membership comes from SQL
- * (pending proposal reviews ∪ open inbox rows), not from absence on the last-50
- * artifact list. Deferred and terminal proposal reviews stay out of this queue.
+ * Build the learner Help queue from loaded artifact details.
+ *
+ * One card per pending proposal. Explanation-only items contribute one card
+ * while their Help inbox row is still open. If an item has any pending
+ * proposals, those cards are shown instead of an explanation card for that
+ * item. Deferred and terminal proposal reviews are excluded.
  */
 export function buildReflectionHelpCards(
   details: ReflectionArtifactDetailDto[],
