@@ -6,6 +6,8 @@ import type {
 import { buildWordLifecycleSessionStudyItems } from '../domain/study-actions';
 import type { Word } from '../types';
 
+// Live sessions seed from sessionId. This fallback keeps scheduler unit tests
+// deterministic when they omit both a seed and a session id.
 const DEFAULT_SEED = 0x9e3779b9;
 
 export type BucketSchedulerBucket = 'review' | 'learning' | 'unstudied';
@@ -92,6 +94,15 @@ export function createBucketSessionScheduler({
   };
 
   return syncBucketScheduler(scheduler, normalizeBucketSchedulerProgress(progress));
+}
+
+export function sessionIdToSchedulerSeed(sessionId: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < sessionId.length; i += 1) {
+    hash ^= sessionId.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return normalizeSeed(hash);
 }
 
 export function getBucketSchedulerActiveUnit(scheduler: BucketSessionScheduler): ActiveBucketSchedulerUnit {

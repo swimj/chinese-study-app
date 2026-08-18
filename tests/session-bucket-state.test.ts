@@ -466,6 +466,41 @@ describe('bucket session state covering contract', () => {
     assert.equal(result.commit.event.response, 'contrast-distractor');
     assert.equal(result.commit.promptTargetWordId, 'contrast-target');
   });
+
+  test('defaults scheduler seed from sessionId so sessions interleave differently', async () => {
+    const {
+      createBucketSessionState,
+      getActiveSessionUnit,
+    } = await loadBucketSessionStateApi();
+    const buckets: SessionStudyItemBuckets = {
+      review: [createReviewStudyItem('review-1')],
+      learning: [createWord({ id: 'learning-1', status: 'learning' })],
+      unstudied: [createWord({ id: 'unstudied-1', status: 'unstudied' })],
+    };
+
+    const firstFor = (sessionId: string, seed?: number) => describeActiveSessionUnit(
+      getActiveSessionUnit(createBucketSessionState({ buckets, sessionId, seed })),
+    );
+
+    assert.equal(firstFor('session-a'), firstFor('session-a'));
+    assert.equal(firstFor('session-a', 1), firstFor('session-b', 1));
+
+    const firstUnits = [
+      'session-a',
+      'session-b',
+      'session-c',
+      'session-d',
+      'session-e',
+      'session-f',
+      'session-g',
+      'session-h',
+    ].map((sessionId) => firstFor(sessionId));
+
+    assert.ok(
+      new Set(firstUnits).size > 1,
+      `expected sessionId-derived seeds to vary the first unit, got ${firstUnits.join(', ')}`,
+    );
+  });
 });
 
 type BucketSessionActiveUnit =
@@ -580,6 +615,14 @@ function onlySampledSkill(sampledSkillIds: StudySkillId[]): Extract<StudySkillId
   const skillId = sampledSkillIds[0];
   assert.ok(skillId === 'recognition' || skillId === 'production');
   return skillId;
+}
+
+function describeActiveSessionUnit(unit: BucketSessionActiveUnit): string {
+  if (unit.type === 'unstudied_intro') {
+    return `unstudied_intro:${unit.word.id}`;
+  }
+
+  return `${unit.bucket}:${unit.item.targetWordId}:${unit.item.sampledSkillIds.join(',')}`;
 }
 
 function createReviewStudyItem(wordId: string): SessionStudyItem {
