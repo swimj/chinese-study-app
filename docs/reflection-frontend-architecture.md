@@ -125,10 +125,16 @@ Each proposal has a purpose-built editor for each registered operation family:
 - directional production alternates.
 
 The page validates drafts locally for feedback, but the backend remains
-authoritative. It labels exact versus revised acceptance and apply support
-separately, then renders persisted application states, effect/satisfying
-references, and safe reasons or errors. Accepted `unsupported` or `pending`
-authorization may be withdrawn without rewriting the accepted proposal.
+authoritative. Local validation uses the evidence-scoped allowed word set so
+Accept stays disabled for illegal word ids. It labels exact versus revised
+acceptance and apply support separately, then renders persisted application
+states, effect/satisfying references, and safe reasons or errors. Accepted
+`unsupported` or `pending` authorization may be withdrawn without rewriting the
+accepted proposal. Word fields are evidence comboboxes showing profile-aware
+`hanzi · pinyin` surface labels; they do not offer global content-diagnostics
+search. V2 cue repair hides source-attempt judgments, production task ids, and
+raw cue ids everywhere, including the post-accept original operation, while
+keeping those values in the Accept payload.
 
 The **Token usage** view shows aggregate token and priced-run totals followed by
 a compact per-run table. It presents each attempt's provider/model, completion

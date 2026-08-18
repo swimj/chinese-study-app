@@ -1070,7 +1070,7 @@ function validateRepairProductionCueOperationV2(
   return errors;
 }
 
-function visibleWordIds(item: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3): Set<string> {
+export function visibleWordIds(item: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3): Set<string> {
   const ids = new Set<string>();
   if (item.targetWord !== null) ids.add(item.targetWord.wordId);
   if ('submittedWord' in item && item.submittedWord !== null) {

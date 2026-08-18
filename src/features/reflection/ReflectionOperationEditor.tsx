@@ -1,24 +1,38 @@
 import type {
   CreateContrastClusterOperation,
   ProductionCueDraftV2,
+  ReflectionInputItemV1,
+  ReflectionInputItemV2,
+  ReflectionItemV3,
   ReflectionOperation,
   RepairProductionCueOperationV1,
   RepairProductionCueOperationV2,
 } from '../../domain/reflection';
+import { studyProfile } from '../../study-profile';
 import {
+  collectEvidenceWordOptions,
+  evidenceWordSurfaceLabel,
   reduceReflectionOperationDraft,
+  servedCueDisplayText,
+  type EvidenceWordOption,
   type ReflectionOperationDraftAction,
 } from './reflection-page-model';
 
 export function ReflectionOperationEditor({
   operation,
+  evidence = null,
   disabled = false,
   onChange,
 }: {
   operation: ReflectionOperation;
+  evidence?: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null;
   disabled?: boolean;
   onChange?: (operation: ReflectionOperation) => void;
 }) {
+  const wordOptions = collectEvidenceWordOptions(evidence);
+  const servedCueText = servedCueDisplayText(evidence);
+  const lockedTargetWordId = evidence?.targetWord?.wordId ?? null;
+
   function dispatch(action: ReflectionOperationDraftAction) {
     if (disabled || onChange === undefined) {
       return;
@@ -30,13 +44,14 @@ export function ReflectionOperationEditor({
     case 'suppress_definition_production':
       return (
         <div className="reflection-operation-fields">
-          <Field label="Word id">
-            <input
+          <Field label={studyProfile.labels.target}>
+            <EvidenceWordPicker
               value={operation.wordId}
+              options={wordOptions}
               disabled={disabled}
-              onChange={(event) => dispatch({
+              onChange={(wordId) => dispatch({
                 type: 'set_suppression_word',
-                wordId: event.target.value,
+                wordId,
               })}
             />
           </Field>
@@ -46,6 +61,7 @@ export function ReflectionOperationEditor({
       return (
         <ContrastClusterEditor
           operation={operation}
+          wordOptions={wordOptions}
           disabled={disabled}
           dispatch={dispatch}
         />
@@ -55,6 +71,9 @@ export function ReflectionOperationEditor({
         return (
           <ProductionCueEditorV2
             operation={operation}
+            wordOptions={wordOptions}
+            servedCueText={servedCueText}
+            lockedTargetWordId={lockedTargetWordId}
             disabled={disabled}
             dispatch={dispatch}
           />
@@ -63,6 +82,7 @@ export function ReflectionOperationEditor({
       return (
         <ProductionCueEditor
           operation={operation}
+          wordOptions={wordOptions}
           disabled={disabled}
           dispatch={dispatch}
         />
@@ -70,23 +90,31 @@ export function ReflectionOperationEditor({
     case 'accept_production_alternate':
       return (
         <div className="reflection-operation-fields reflection-two-column-fields">
-          <Field label="Target word id">
-            <input
+          <Field label={studyProfile.labels.target}>
+            <EvidenceWordPicker
               value={operation.targetWordId}
+              options={wordOptions}
+              excludeWordIds={new Set(
+                operation.alternateWordId.length === 0 ? [] : [operation.alternateWordId],
+              )}
               disabled={disabled}
-              onChange={(event) => dispatch({
+              onChange={(wordId) => dispatch({
                 type: 'set_alternate_target',
-                targetWordId: event.target.value,
+                targetWordId: wordId,
               })}
             />
           </Field>
-          <Field label="Accepted alternate word id">
-            <input
+          <Field label={`Accepted alternate ${studyProfile.labels.target}`}>
+            <EvidenceWordPicker
               value={operation.alternateWordId}
+              options={wordOptions}
+              excludeWordIds={new Set(
+                operation.targetWordId.length === 0 ? [] : [operation.targetWordId],
+              )}
               disabled={disabled}
-              onChange={(event) => dispatch({
+              onChange={(wordId) => dispatch({
                 type: 'set_alternate_word',
-                alternateWordId: event.target.value,
+                alternateWordId: wordId,
               })}
             />
           </Field>
@@ -97,29 +125,40 @@ export function ReflectionOperationEditor({
 
 function ProductionCueEditorV2({
   operation,
+  wordOptions,
+  servedCueText,
+  lockedTargetWordId,
   disabled,
   dispatch,
 }: {
   operation: RepairProductionCueOperationV2;
+  wordOptions: EvidenceWordOption[];
+  servedCueText: string | null;
+  lockedTargetWordId: string | null;
   disabled: boolean;
   dispatch: (action: ReflectionOperationDraftAction) => void;
 }) {
   const changeKinds = ['create', 'replace', 'deactivate'] as const;
-  const judgmentKinds = [
-    'accepted_answer_space_omission',
-    'misleading_or_overloaded_cue',
-  ] as const;
+  const targetOption = wordOptions.find((option) => option.wordId === operation.wordId)
+    ?? (operation.wordId.length === 0
+      ? null
+      : { wordId: operation.wordId, hanzi: operation.wordId, pinyin: '' });
 
   return (
     <div className="reflection-operation-fields">
-      <div className="reflection-two-column-fields">
-        <Field label="Word id">
-          <input value={operation.wordId} disabled />
-        </Field>
-        <Field label="Production task id">
-          <input value={operation.taskId} disabled />
-        </Field>
-      </div>
+      <Field label={studyProfile.labels.target}>
+        <input
+          value={targetOption === null ? '' : evidenceWordSurfaceLabel(targetOption)}
+          disabled
+          readOnly
+          aria-label={studyProfile.labels.target}
+        />
+      </Field>
+      {lockedTargetWordId !== null && operation.wordId !== lockedTargetWordId ? (
+        <p className="notes" role="status">
+          Cue repair is locked to the evidence target.
+        </p>
+      ) : null}
 
       <EditorCollection
         title="Cue lifecycle changes"
@@ -148,6 +187,7 @@ function ProductionCueEditorV2({
             {change.kind === 'create' ? (
               <ProductionCueDraftFields
                 draft={change.cue}
+                wordOptions={wordOptions}
                 disabled={disabled}
                 label="Created cue"
                 onPatch={(patch) => dispatch({
@@ -157,15 +197,11 @@ function ProductionCueEditorV2({
                 })}
               />
             ) : (
-              <Field label="Referenced cue id">
+              <Field label="Served cue">
                 <input
-                  value={change.cueId}
-                  disabled={disabled}
-                  onChange={(event) => dispatch({
-                    type: 'set_v2_cue_change_id',
-                    index: changeIndex,
-                    cueId: event.target.value,
-                  })}
+                  value={servedCueText ?? 'Served cue'}
+                  disabled
+                  readOnly
                 />
               </Field>
             )}
@@ -184,6 +220,7 @@ function ProductionCueEditorV2({
                   >
                     <ProductionCueDraftFields
                       draft={replacement}
+                      wordOptions={wordOptions}
                       disabled={disabled}
                       label={`Replacement ${replacementIndex + 1}`}
                       onPatch={(patch) => dispatch({
@@ -223,77 +260,19 @@ function ProductionCueEditorV2({
           </div>
         ))}
       </EditorCollection>
-
-      <EditorCollection
-        title="Source-attempt judgments"
-        addLabel="Add judgment"
-        disabled={disabled}
-        onAdd={() => dispatch({ type: 'add_v2_cue_judgment' })}
-      >
-        {operation.sourceAttemptJudgments.map((judgment, index) => (
-          <div className="reflection-editor-row" key={`judgment-${index}`}>
-            <Field label={`Judgment ${index + 1} kind`}>
-              <select
-                value={judgment.kind}
-                disabled={disabled}
-                onChange={(event) => dispatch({
-                  type: 'set_v2_cue_judgment_kind',
-                  index,
-                  kind: event.target.value as typeof judgmentKinds[number],
-                })}
-              >
-                {judgmentKinds.map((kind) => (
-                  <option value={kind} key={kind}>{humanize(kind)}</option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Source attempt id">
-              <input
-                value={judgment.sourceAttemptId}
-                disabled={disabled}
-                onChange={(event) => dispatch({
-                  type: 'set_v2_cue_judgment_attempt',
-                  index,
-                  sourceAttemptId: event.target.value,
-                })}
-              />
-            </Field>
-            {judgment.kind === 'accepted_answer_space_omission' ? (
-              <Field label="Submitted word id">
-                <input
-                  value={judgment.submittedWordId}
-                  disabled={disabled}
-                  onChange={(event) => dispatch({
-                    type: 'set_v2_cue_judgment_word',
-                    index,
-                    submittedWordId: event.target.value,
-                  })}
-                />
-              </Field>
-            ) : null}
-            {!disabled ? (
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => dispatch({ type: 'remove_v2_cue_judgment', index })}
-              >
-                Remove judgment
-              </button>
-            ) : null}
-          </div>
-        ))}
-      </EditorCollection>
     </div>
   );
 }
 
 function ProductionCueDraftFields({
   draft,
+  wordOptions,
   disabled,
   label,
   onPatch,
 }: {
   draft: ProductionCueDraftV2;
+  wordOptions: EvidenceWordOption[];
   disabled: boolean;
   label: string;
   onPatch: (patch: Partial<ProductionCueDraftV2>) => void;
@@ -325,25 +304,57 @@ function ProductionCueDraftFields({
           onChange={(event) => onPatch({ text: event.target.value })}
         />
       </Field>
-      <Field label={`${label} accepted word ids (comma or newline separated)`}>
-        <textarea
-          value={draft.acceptedWordIds.join('\n')}
-          disabled={disabled}
-          onChange={(event) => onPatch({
-            acceptedWordIds: parseWordIdList(event.target.value),
-          })}
-        />
-      </Field>
+      <EditorCollection
+        title={`${label} accepted ${studyProfile.labels.target}`}
+        addLabel="Add word"
+        disabled={disabled || wordOptions.every((option) => draft.acceptedWordIds.includes(option.wordId))}
+        onAdd={() => {
+          const next = wordOptions.find((option) => !draft.acceptedWordIds.includes(option.wordId));
+          if (next === undefined) return;
+          onPatch({ acceptedWordIds: [...draft.acceptedWordIds, next.wordId] });
+        }}
+      >
+        {draft.acceptedWordIds.map((wordId, index) => (
+          <div className="reflection-editor-row" key={`accepted-${wordId}-${index}`}>
+            <Field label={studyProfile.labels.target}>
+              <EvidenceWordPicker
+                value={wordId}
+                options={wordOptions}
+                excludeWordIds={new Set(draft.acceptedWordIds.filter((id) => id !== wordId))}
+                disabled={disabled}
+                onChange={(nextWordId) => {
+                  const next = [...draft.acceptedWordIds];
+                  next[index] = nextWordId;
+                  onPatch({ acceptedWordIds: next });
+                }}
+              />
+            </Field>
+            {!disabled ? (
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => onPatch({
+                  acceptedWordIds: draft.acceptedWordIds.filter((_, wordIndex) => wordIndex !== index),
+                })}
+              >
+                Remove word
+              </button>
+            ) : null}
+          </div>
+        ))}
+      </EditorCollection>
     </div>
   );
 }
 
 function ContrastClusterEditor({
   operation,
+  wordOptions,
   disabled,
   dispatch,
 }: {
   operation: CreateContrastClusterOperation;
+  wordOptions: EvidenceWordOption[];
   disabled: boolean;
   dispatch: (action: ReflectionOperationDraftAction) => void;
 }) {
@@ -378,14 +389,20 @@ function ContrastClusterEditor({
       >
         {operation.members.map((member, index) => (
           <div className="reflection-editor-row" key={`member-${index}`}>
-            <Field label={`Member ${index + 1} word id`}>
-              <input
+            <Field label={`Member ${index + 1} ${studyProfile.labels.target}`}>
+              <EvidenceWordPicker
                 value={member.wordId}
+                options={wordOptions}
+                excludeWordIds={new Set(
+                  operation.members
+                    .map((entry) => entry.wordId)
+                    .filter((wordId) => wordId.length > 0 && wordId !== member.wordId),
+                )}
                 disabled={disabled}
-                onChange={(event) => dispatch({
+                onChange={(wordId) => dispatch({
                   type: 'update_cluster_member',
                   index,
-                  patch: { wordId: event.target.value },
+                  patch: { wordId },
                 })}
               />
             </Field>
@@ -432,11 +449,15 @@ function ContrastClusterEditor({
                 })}
               >
                 {!operation.members.some((member) => member.wordId === prompt.targetWordId) ? (
-                  <option value={prompt.targetWordId}>{prompt.targetWordId}</option>
+                  <option value={prompt.targetWordId}>
+                    {surfaceLabelForWord(prompt.targetWordId, wordOptions)}
+                  </option>
                 ) : null}
                 {operation.members.map((member, memberIndex) => (
                   <option value={member.wordId} key={`${member.wordId}-${memberIndex}`}>
-                    {member.wordId || `Member ${memberIndex + 1}`}
+                    {member.wordId.length === 0
+                      ? `Member ${memberIndex + 1}`
+                      : surfaceLabelForWord(member.wordId, wordOptions)}
                   </option>
                 ))}
               </select>
@@ -481,10 +502,12 @@ function ContrastClusterEditor({
 
 function ProductionCueEditor({
   operation,
+  wordOptions,
   disabled,
   dispatch,
 }: {
   operation: RepairProductionCueOperationV1;
+  wordOptions: EvidenceWordOption[];
   disabled: boolean;
   dispatch: (action: ReflectionOperationDraftAction) => void;
 }) {
@@ -504,13 +527,14 @@ function ProductionCueEditor({
   return (
     <div className="reflection-operation-fields">
       <div className="reflection-two-column-fields">
-        <Field label="Word id">
-          <input
+        <Field label={studyProfile.labels.target}>
+          <EvidenceWordPicker
             value={operation.wordId}
+            options={wordOptions}
             disabled={disabled}
-            onChange={(event) => dispatch({
+            onChange={(wordId) => dispatch({
               type: 'set_cue_word',
-              wordId: event.target.value,
+              wordId,
             })}
           />
         </Field>
@@ -581,6 +605,49 @@ function ProductionCueEditor({
   );
 }
 
+function EvidenceWordPicker({
+  value,
+  options,
+  excludeWordIds = new Set(),
+  disabled,
+  onChange,
+}: {
+  value: string;
+  options: EvidenceWordOption[];
+  excludeWordIds?: ReadonlySet<string>;
+  disabled: boolean;
+  onChange: (wordId: string) => void;
+}) {
+  const visibleOptions = options.filter((option) => (
+    option.wordId === value || !excludeWordIds.has(option.wordId)
+  ));
+  const valueInOptions = visibleOptions.some((option) => option.wordId === value);
+
+  return (
+    <select
+      value={value}
+      disabled={disabled}
+      onChange={(event) => onChange(event.target.value)}
+    >
+      {value.length === 0 || valueInOptions ? (
+        <option value="">Select {studyProfile.labels.target}</option>
+      ) : (
+        <option value={value}>{surfaceLabelForWord(value, options)}</option>
+      )}
+      {visibleOptions.map((option) => (
+        <option value={option.wordId} key={option.wordId}>
+          {evidenceWordSurfaceLabel(option)}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function surfaceLabelForWord(wordId: string, options: EvidenceWordOption[]): string {
+  const match = options.find((option) => option.wordId === wordId);
+  return match === undefined ? wordId : evidenceWordSurfaceLabel(match);
+}
+
 function EditorCollection({
   title,
   addLabel,
@@ -626,10 +693,6 @@ function Field({
 
 function nullableText(value: string): string | null {
   return value.length === 0 ? null : value;
-}
-
-function parseWordIdList(value: string): string[] {
-  return value.split(/[\n,]/).map((wordId) => wordId.trim()).filter((wordId) => wordId.length > 0);
 }
 
 function humanize(value: string): string {

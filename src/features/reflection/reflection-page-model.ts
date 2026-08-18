@@ -24,6 +24,7 @@ import {
   getReflectionOperationRegistration,
   validateReflectionOperation,
   validateReflectionOperationEvidenceContext,
+  visibleWordIds,
 } from '../../domain/reflection';
 
 export const REFLECTION_QUALITY_TAG_OPTIONS: ReadonlyArray<{
@@ -848,7 +849,13 @@ export function getOperationDraftState(
   if (registration === null) {
     throw new Error(`Invariant violated: unregistered operation ${draft.kind}@${draft.version}.`);
   }
-  const validationErrors = validateReflectionOperation(draft);
+  const allowedWordIds = evidence === null ? undefined : visibleWordIds(evidence);
+  const validationErrors = validateReflectionOperation(
+    draft,
+    evidence === null || allowedWordIds === undefined
+      ? {}
+      : { allowedWordIds, evidenceItemId: evidence.itemId },
+  );
   if (evidence !== null && 'servedCue' in evidence) {
     validationErrors.push(...validateReflectionOperationEvidenceContext(draft, evidence, '$'));
   }
@@ -1084,6 +1091,51 @@ function reflectionCueSummary(
 
 function reflectionWordLabel(word: { hanzi: string; pinyin: string }): string {
   return `${word.hanzi} · ${word.pinyin}`;
+}
+
+export type EvidenceWordOption = {
+  wordId: string;
+  hanzi: string;
+  pinyin: string;
+};
+
+export function collectEvidenceWordOptions(
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
+): EvidenceWordOption[] {
+  if (evidence === null) return [];
+  const byId = new Map<string, EvidenceWordOption>();
+  function add(word: { wordId: string; hanzi: string; pinyin: string } | null | undefined) {
+    if (word === null || word === undefined) return;
+    if (!byId.has(word.wordId)) {
+      byId.set(word.wordId, {
+        wordId: word.wordId,
+        hanzi: word.hanzi,
+        pinyin: word.pinyin,
+      });
+    }
+  }
+  add(evidence.targetWord);
+  if ('submittedWord' in evidence) add(evidence.submittedWord);
+  if (evidence.source === 'session_note') {
+    for (const relatedWord of evidence.relatedWords) add(relatedWord);
+  }
+  if (evidence.source === 'contrast_selection') {
+    for (const choiceWord of evidence.promptAsShown.choiceWords) add(choiceWord);
+  }
+  return [...byId.values()];
+}
+
+export function evidenceWordSurfaceLabel(word: EvidenceWordOption): string {
+  return `${word.hanzi} · ${word.pinyin}`;
+}
+
+export function servedCueDisplayText(
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
+): string | null {
+  if (evidence === null) return null;
+  if ('servedCue' in evidence) return evidence.servedCue.text;
+  if (evidence.source === 'production_mistake') return evidence.cuesAsShown[0]?.text ?? null;
+  return null;
 }
 
 export type {
