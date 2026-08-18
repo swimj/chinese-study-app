@@ -1914,6 +1914,24 @@ button:disabled:hover {
   color: #eff6ff;
 }
 
+.reflection-retry-menu-option:disabled,
+.reflection-retry-menu-option:disabled:hover,
+.reflection-retry-menu-option:disabled.is-selected {
+  opacity: 0.55;
+  cursor: not-allowed;
+  border-color: transparent;
+  background: transparent;
+  color: #94a3b8;
+}
+
+.reflection-retry-menu-notice {
+  margin: 0;
+  color: #fbbf24;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
 .reflection-retry-menu-hint {
   margin: 0;
   color: #64748b;

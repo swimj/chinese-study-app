@@ -45,6 +45,7 @@ type ReflectionRetryMenuOption = {
   id: string;
   label: string;
   model?: ReflectionModelChoice;
+  disabled?: boolean;
 };
 
 const REFLECTION_RETRY_MODEL_OPTIONS: ReadonlyArray<Omit<ReflectionRetryMenuOption, 'label'> & {
@@ -54,8 +55,11 @@ const REFLECTION_RETRY_MODEL_OPTIONS: ReadonlyArray<Omit<ReflectionRetryMenuOpti
   { id: 'openai:gpt-5.6-luna-high', label: 'Luna high', model: 'openai:gpt-5.6-luna-high' },
   { id: 'zai:glm-5.2-high', label: 'GLM-5.2 high', model: 'zai:glm-5.2-high' },
   { id: 'dashscope:qwen3.8-max', label: 'Qwen3.8-Max', model: 'dashscope:qwen3.8-max' },
-  { id: 'dashscope:qwen3.7-plus', label: 'Qwen3.7 Plus', model: 'dashscope:qwen3.7-plus' },
 ];
+
+function sourceModelIsCurrentlyAvailable(storedModel: string): boolean {
+  return REFLECTION_RETRY_MODEL_OPTIONS.some((option) => option.model.endsWith(`:${storedModel}`));
+}
 
 type ReflectionView = ReflectionProposalQueueKind | 'requests' | 'sessions' | 'usage' | 'quality';
 
@@ -703,10 +707,18 @@ function ReflectionRetryControl({
   const listId = useId();
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const sameModelAvailable = sourceModelIsCurrentlyAvailable(run.model);
   const options: ReflectionRetryMenuOption[] = [
-    { id: 'same', label: `Same model (${run.model})` },
+    {
+      id: 'same',
+      label: sameModelAvailable
+        ? `Same model (${run.model})`
+        : `Same model (${run.model}) — no longer available`,
+      disabled: !sameModelAvailable,
+    },
     ...REFLECTION_RETRY_MODEL_OPTIONS,
   ];
+  const firstEnabledIndex = Math.max(0, options.findIndex((option) => !option.disabled));
   const label = retryFailed
     ? 'Retry failed. Choose a model to retry this reflection.'
     : `Retry reflection${run.failureCode === null ? '' : `: ${humanize(run.failureCode)}`}. Choose a model.`;
@@ -724,26 +736,29 @@ function ReflectionRetryControl({
   }, [menuOpen]);
 
   function openMenu() {
-    setSelectedIndex(0);
+    setSelectedIndex(firstEnabledIndex);
     setMenuOpen(true);
   }
 
   function closeMenu() {
     setMenuOpen(false);
-    setSelectedIndex(0);
+    setSelectedIndex(firstEnabledIndex);
   }
 
   function confirmSelection(index = selectedIndex) {
     const option = options[index];
-    if (option === undefined) return;
+    if (option === undefined || option.disabled) return;
     closeMenu();
     void onRetry(run.runId, option.model);
   }
 
   function moveSelection(delta: number) {
     setSelectedIndex((current) => {
-      const next = (current + delta + options.length) % options.length;
-      return next;
+      for (let step = 1; step <= options.length; step += 1) {
+        const next = (current + delta * step + options.length * step) % options.length;
+        if (!options[next]?.disabled) return next;
+      }
+      return current;
     });
   }
 
@@ -801,6 +816,11 @@ function ReflectionRetryControl({
       {menuOpen ? (
         <div className="reflection-retry-menu" role="presentation">
           <p className="reflection-retry-menu-title">Retry with</p>
+          {sameModelAvailable ? null : (
+            <p className="reflection-retry-menu-notice" role="status">
+              {run.model} is no longer available. Choose another model.
+            </p>
+          )}
           <ul
             id={listId}
             className="reflection-retry-menu-list"
@@ -822,8 +842,12 @@ function ReflectionRetryControl({
                     }
                     role="option"
                     aria-selected={selected}
+                    aria-disabled={option.disabled === true}
+                    disabled={option.disabled === true}
                     tabIndex={-1}
-                    onMouseEnter={() => setSelectedIndex(index)}
+                    onMouseEnter={() => {
+                      if (!option.disabled) setSelectedIndex(index);
+                    }}
                     onClick={() => confirmSelection(index)}
                   >
                     {option.label}

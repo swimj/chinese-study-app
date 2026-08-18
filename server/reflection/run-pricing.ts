@@ -69,25 +69,6 @@ export const INITIAL_QWEN_3_8_MAX_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunP
   outputPerMillionUsd: 6,
 };
 
-/**
- * Same source date. Pins the first International tier only
- * (0 < input tokens ≤ 256K). Higher context bands are 3× and intentionally
- * omitted while reflection bundles stay well under that threshold.
- */
-export const INITIAL_QWEN_3_7_PLUS_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricingSnapshot = {
-  id: 'dashscope-qwen3.7-plus-standard-short-context-2026-08-15',
-  pricingAsOf: '2026-08-15',
-  provider: 'dashscope',
-  providerModel: 'qwen3.7-plus',
-  serviceTier: 'standard',
-  contextBand: 'short',
-  currency: 'USD',
-  inputPerMillionUsd: 0.4,
-  cachedInputPerMillionUsd: 0.08,
-  cacheWriteInputPerMillionUsd: 0.5,
-  outputPerMillionUsd: 1.6,
-};
-
 export type ReflectionRunCostEstimate = {
   estimatedCostUsd: number;
   pricing: ReflectionRunPricingSnapshot;
@@ -97,7 +78,6 @@ const INITIAL_REFLECTION_RUN_PRICING: ReadonlyArray<ReflectionRunPricingSnapshot
   INITIAL_LUNA_STANDARD_SHORT_CONTEXT_PRICING,
   INITIAL_GLM_STANDARD_SHORT_CONTEXT_PRICING,
   INITIAL_QWEN_3_8_MAX_STANDARD_SHORT_CONTEXT_PRICING,
-  INITIAL_QWEN_3_7_PLUS_STANDARD_SHORT_CONTEXT_PRICING,
 ];
 
 export function estimateInitialReflectionRunCost(input: {

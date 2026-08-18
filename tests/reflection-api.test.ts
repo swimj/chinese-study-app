@@ -10,7 +10,10 @@ import type {
   SessionReflectionBundleV1,
   SessionReflectionResultV4,
 } from '../src/domain/reflection.ts';
-import type { InitialReflectionGenerationService } from '../server/reflection/generation.ts';
+import {
+  RetiredReflectionSourceModelError,
+  type InitialReflectionGenerationService,
+} from '../server/reflection/generation.ts';
 import { ReflectionEvidenceError } from '../server/reflection/evidence.ts';
 import { LunaReflectionProviderError } from '../server/reflection/luna-provider.ts';
 import type { ReflectionLifecycleEvent } from '../server/reflection/lifecycle-log.ts';
@@ -375,6 +378,18 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       '/api/reflection-generation-runs/succeeded-run/retry',
       { method: 'POST' },
     )).status, 409);
+
+    retryImplementation = async () => {
+      throw new RetiredReflectionSourceModelError('qwen3.7-plus');
+    };
+    const retired = await request(
+      '/api/reflection-generation-runs/failed-run/retry',
+      { method: 'POST' },
+    );
+    assert.equal(retired.status, 409);
+    assert.deepEqual(retired.json, {
+      error: 'The source run\'s model (qwen3.7-plus) is no longer available. Choose a current model.',
+    });
   });
 
   test('strictly reviews proposals and immediately applies supported acceptance', async () => {

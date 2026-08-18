@@ -150,8 +150,9 @@ For dogfood model comparison, an explicit generation request creates a distinct
 candidate artifact even when the source session and reflection flow match an
 earlier candidate. The initial post-session request may select a configured
 model randomly; a deliberate retry reuses the exact stored bundle and defaults
-to the source run's model unless the operator selects another configured model.
-Each candidate retains its originating generation-run identity.
+to the source run's model when that model is still a configured comparison arm.
+Same-model retry of a retired model is refused; the operator must select another
+configured model. Each candidate retains its originating generation-run identity.
 
 Provider output is untrusted. It must pass strict structural and cross-reference
 validation before a successful artifact and its proposal-review rows are
@@ -179,8 +180,11 @@ deliberate retry. Retry:
   attempt;
 - still passes provider output through the current strict result validator;
 - materializes a distinct successful candidate artifact with provenance back to
-  its source run; and
-- never automatically authorizes or applies a resulting proposal.
+  its source run;
+- never automatically authorizes or applies a resulting proposal; and
+- refuses same-model retry when the source run's model is no longer a
+  configured comparison arm. Retry with an explicit current model remains
+  available when the bundle is still retryable.
 
 A legacy failure without a retained valid bundle is not retryable. Changing the
 evidence, provider-flow contract, or intended interpretation requires a new

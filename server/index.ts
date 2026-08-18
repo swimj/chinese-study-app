@@ -63,6 +63,7 @@ import {
 import {
   createInitialReflectionGenerationService,
   isReflectionModelChoice,
+  RetiredReflectionSourceModelError,
   type InitialReflectionGenerationService,
 } from './reflection/generation.ts';
 import { ReflectionEvidenceError } from './reflection/evidence.ts';
@@ -578,6 +579,13 @@ export function createApp(options: CreateAppOptions = {}) {
     } catch (error) {
       if (isReflectionNotFoundError(error, 'Reflection generation run not found.')) {
         res.status(404).json({ error: 'Reflection generation run not found' });
+        return;
+      }
+      if (
+        error instanceof RetiredReflectionSourceModelError
+        || (error instanceof Error && error.name === 'RetiredReflectionSourceModelError')
+      ) {
+        res.status(409).json({ error: error.message });
         return;
       }
       if (error instanceof Error && (
