@@ -66,8 +66,7 @@ function sourceModelIsCurrentlyAvailable(storedModel: string): boolean {
   return REFLECTION_RETRY_MODEL_OPTIONS.some((option) => option.model.endsWith(`:${storedModel}`));
 }
 
-type ReflectionQueueView = Exclude<ReflectionProposalQueueKind, 'attention'>;
-type ReflectionView = 'help' | ReflectionQueueView | 'sessions' | 'usage' | 'quality';
+type ReflectionView = 'help' | ReflectionProposalQueueKind | 'sessions' | 'usage' | 'quality';
 
 export function ReflectionsPage({
   controller,
@@ -473,7 +472,7 @@ function ProposalQueueView({
   proposals,
   controller,
 }: {
-  kind: ReflectionQueueView;
+  kind: ReflectionProposalQueueKind;
   proposals: ReflectionProposalPresentation[];
   controller: ReflectionPageController;
 }) {

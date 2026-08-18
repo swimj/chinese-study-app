@@ -162,11 +162,6 @@ describe('reflection page model', () => {
     unappliedDetail.proposals[1].review.disposition = { kind: 'dismissed', reason: null };
 
     assert.deepEqual(
-      buildReflectionProposalPresentations([openDetail, unappliedDetail], 'attention')
-        .map((entry) => entry.proposal.review.proposalId),
-      ['proposal-a'],
-    );
-    assert.deepEqual(
       buildReflectionProposalPresentations([openDetail, unappliedDetail], 'deferred')
         .map((entry) => entry.proposal.review.proposalId),
       ['proposal-b'],
