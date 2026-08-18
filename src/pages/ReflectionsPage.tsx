@@ -18,7 +18,6 @@ import { qualityItemKey } from '../features/reflection/useReflectionPageControll
 import {
   buildNoDurableChangeGists,
   buildReflectionItemPresentations,
-  buildLearnerRequestedReflectionPresentations,
   buildReflectionProposalPresentations,
   buildReflectionHelpCards,
   findQualityItemTags,
@@ -67,7 +66,8 @@ function sourceModelIsCurrentlyAvailable(storedModel: string): boolean {
   return REFLECTION_RETRY_MODEL_OPTIONS.some((option) => option.model.endsWith(`:${storedModel}`));
 }
 
-type ReflectionView = 'help' | ReflectionProposalQueueKind | 'requests' | 'sessions' | 'usage' | 'quality';
+type ReflectionQueueView = Exclude<ReflectionProposalQueueKind, 'attention'>;
+type ReflectionView = 'help' | ReflectionQueueView | 'sessions' | 'usage' | 'quality';
 
 export function ReflectionsPage({
   controller,
@@ -77,21 +77,17 @@ export function ReflectionsPage({
   const [view, setView] = useState<ReflectionView>('help');
   const helpCards = buildReflectionHelpCards(controller.artifactDetails);
   const proposalQueues = {
-    attention: buildReflectionProposalPresentations(controller.artifactDetails, 'attention'),
     deferred: buildReflectionProposalPresentations(controller.artifactDetails, 'deferred'),
     unapplied: buildReflectionProposalPresentations(controller.artifactDetails, 'unapplied'),
   };
-  const learnerRequests = buildLearnerRequestedReflectionPresentations(controller.artifactDetails);
   const views: Array<{ key: ReflectionView; label: string; count?: number }> = [
     { key: 'help', label: 'Help', count: helpCards.length },
-    { key: 'attention', label: 'Needs attention', count: proposalQueues.attention.length },
     { key: 'deferred', label: 'Deferred', count: proposalQueues.deferred.length },
     {
       key: 'unapplied',
       label: 'Pending / unsupported',
       count: proposalQueues.unapplied.length,
     },
-    { key: 'requests', label: 'Learner requests', count: learnerRequests.length },
     { key: 'sessions', label: 'By session' },
     { key: 'usage', label: 'Run meta' },
     { key: 'quality', label: 'Quality' },
@@ -152,8 +148,6 @@ export function ReflectionsPage({
         />
       ) : view === 'quality' ? (
         <QualityStatsView stats={controller.qualityStats} />
-      ) : view === 'requests' ? (
-        <LearnerRequestsView requests={learnerRequests} controller={controller} />
       ) : view === 'help' ? (
         <HelpQueueView cards={helpCards} controller={controller} />
       ) : (
@@ -474,71 +468,16 @@ function HelpProposalCard({
   );
 }
 
-function LearnerRequestsView({
-  requests,
-  controller,
-}: {
-  requests: ReturnType<typeof buildLearnerRequestedReflectionPresentations>;
-  controller: ReflectionPageController;
-}) {
-  return (
-    <main className="reflection-queue">
-      <header className="reflection-queue-heading">
-        <div>
-          <h2>Learner-requested feedback</h2>
-          <p className="notes">Feedback requested during study, including informational results.</p>
-        </div>
-      </header>
-      {requests.length === 0 ? (
-        <section className="panel reflection-empty-state">
-          <h2>No requests yet</h2>
-          <p className="notes">Marked study actions will appear here after reflection finishes.</p>
-        </section>
-      ) : requests.map(({ artifact, evidence, result }) => (
-        <article className="panel reflection-queue-card" key={`${artifact.artifactId}:${result.itemId}`}>
-          <header className="reflection-item-heading">
-            <div>
-              <p className="reflection-eyebrow">{formatDateTime(artifact.generatedAt)}</p>
-              <h2>{itemTitle(evidence)}</h2>
-            </div>
-          </header>
-          <EvidenceView evidence={evidence} />
-          <section className="reflection-analysis"><h3>Feedback</h3><p>{reflectionLearnerFeedback(result)}</p></section>
-          <ItemQualityTagControls
-            artifactId={artifact.artifactId}
-            itemId={result.itemId}
-            annotation={findQualityItemTags(
-              artifact.qualityItemTags,
-              artifact.artifactId,
-              result.itemId,
-            )}
-            submitting={
-              controller.submittingQualityItemKey
-                === qualityItemKey(artifact.artifactId, result.itemId)
-            }
-            onUpsert={controller.upsertQuality}
-            onClear={controller.clearQuality}
-          />
-        </article>
-      ))}
-    </main>
-  );
-}
-
 function ProposalQueueView({
   kind,
   proposals,
   controller,
 }: {
-  kind: ReflectionProposalQueueKind;
+  kind: ReflectionQueueView;
   proposals: ReflectionProposalPresentation[];
   controller: ReflectionPageController;
 }) {
   const copy = {
-    attention: {
-      title: 'Needs attention',
-      empty: 'No proposals are waiting for a decision.',
-    },
     deferred: {
       title: 'Deferred proposals',
       empty: 'No proposals are deferred.',
