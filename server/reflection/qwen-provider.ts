@@ -7,7 +7,7 @@ import {
 const QWEN_SHARED = {
   provider: 'dashscope',
   reasoningEffort: 'high' as const,
-  maxOutputTokens: 40_000,
+  maxOutputTokens: 50_000,
   timeoutMs: 900_000,
   promptVersion: 'reflection-v7',
   defaultBaseUrl: 'https://ws-k76i8wy95wc9oheq.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',

@@ -206,7 +206,7 @@ describe('production Luna reflection provider', () => {
     assert.equal(request.headers.get('authorization'), 'Bearer unit-test-zai-secret');
     assert.equal(request.body.model, 'glm-5.2');
     assert.equal(request.body.reasoning_effort, 'high');
-    assert.equal(request.body.max_tokens, 40_000);
+    assert.equal(request.body.max_tokens, 50_000);
     assert.deepEqual(request.body.response_format, { type: 'json_object' });
     assert.equal(generated.metadata.provider, 'zai');
     assert.equal(generated.metadata.modelConfig, 'glm-5.2-high');
@@ -245,7 +245,7 @@ describe('production Luna reflection provider', () => {
       assert.equal(request.headers.get('authorization'), 'Bearer unit-test-dashscope-secret');
       assert.equal(request.body.model, testCase.model);
       assert.equal(request.body.reasoning_effort, 'high');
-      assert.equal(request.body.max_tokens, 40_000);
+      assert.equal(request.body.max_tokens, 50_000);
       assert.deepEqual(request.body.response_format, { type: 'json_object' });
       assert.equal(generated.metadata.provider, 'dashscope');
       assert.equal(generated.metadata.modelConfig, testCase.model);
@@ -284,7 +284,7 @@ describe('production Luna reflection provider', () => {
     ]);
     assert.equal(request.body.model, 'gpt-5.6-luna');
     assert.equal(request.body.reasoning_effort, 'high');
-    assert.equal(request.body.max_completion_tokens, 40_000);
+    assert.equal(request.body.max_completion_tokens, 50_000);
     assert.equal(Object.hasOwn(request.body, 'temperature'), false);
     assert.deepEqual(request.body.response_format, {
       type: 'json_schema',
