@@ -14,6 +14,7 @@ import type { SessionSummary } from './session-summary';
 import type { SessionFinalizationState } from './session-finalization';
 import { getStudySessionPanelView } from './session-selectors';
 import { SessionSummaryPanel } from './SessionSummaryPanel';
+import { formatIntervalHours } from '../../lib/format-interval';
 
 export type FrozenProductionCard = {
   sessionActionId: string;
@@ -246,7 +247,7 @@ export function StudySessionPanel({
                 <span className="prompt-meta">Notes: {frozenProductionCard.personalNotes}</span>
               ) : null}
               <span className="prompt-meta">
-                Interval {frozenProductionCard.intervalHours} hour{frozenProductionCard.intervalHours === 1 ? '' : 's'}
+                Interval {formatIntervalHours(frozenProductionCard.intervalHours)}
               </span>
               <span className="prompt-meta">{frozenProductionCard.example}</span>
             </div>
@@ -538,7 +539,7 @@ export function StudySessionPanel({
                   <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
                 ) : null}
                 <span className="prompt-meta">
-                  Interval {activeItem.intervalHours} hour{activeItem.intervalHours === 1 ? '' : 's'}
+                  Interval {formatIntervalHours(activeItem.intervalHours)}
                 </span>
                 <span className="prompt-meta">{activeWord.examples[0]}</span>
               </div>

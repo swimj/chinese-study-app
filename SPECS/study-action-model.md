@@ -444,6 +444,11 @@ time-based intervals. If future versions move to an abstract strength metric,
 that should be a real migration to a new field such as `strengthScore`, not a
 hidden semantic change under the old field name.
 
+Successful hard/good/easy interval updates apply a small hour fuzz of
+`-1`, `0`, or `+1` with probabilities `0.3`, `0.4`, and `0.3` (clamped to at
+least 1 hour) so words that share a base interval do not keep clustering on
+the same due times. Lapse resets stay fixed at 6 hours.
+
 `easeFactor` is scheduler trust elasticity. It is not the learner's skill
 level directly. It represents how aggressively the scheduler should stretch
 the interval after successful evidence for this word-skill pair. Lower ease

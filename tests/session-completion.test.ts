@@ -131,7 +131,7 @@ describe('session completion', { concurrency: false }, () => {
       failureCount: 0,
       terminalRating: 'hard',
     });
-    assert.equal(updatedState.intervalHours, 15); // 15 = 10 * 1.5 (hard pass multiplier)
+    assertIntervalHoursNear(updatedState.intervalHours, 15); // base 15 = 10 * 1.5 (hard pass), ±1h fuzz
     assert.equal(updatedState.easeFactor, 2.35); // 2.35 = 2.5 - 0.15 (hard pass easeFactor penalty)
     // We only care that completion writes a real UTC timestamp, not the exact wall-clock instant.
     assert.match(updatedState.lastStudiedAt, isoUtcTimestampPattern);
@@ -196,7 +196,7 @@ describe('session completion', { concurrency: false }, () => {
 
     assert.equal(state.wordId, 'contrast-scheduled-word');
     assert.equal(state.skillId, 'contextual_selection');
-    assert.equal(state.intervalHours, 15);
+    assertIntervalHoursNear(state.intervalHours, 15);
     assert.equal(state.easeFactor, 2.5);
     assert.equal(fetchWordSkillState('contrast-target-word', 'contextual_selection'), undefined);
     assert.equal(fetchAttemptProjectedAt('review/contrast-scheduled-word/contextual_selection-attempt-1'), state.lastStudiedAt);
@@ -298,9 +298,9 @@ describe('session completion', { concurrency: false }, () => {
       terminalRating: 'good',
     });
 
-    assert.equal(updatedState.intervalHours, 25);
+    assertIntervalHoursNear(updatedState.intervalHours, 25);
     assert.equal(updatedState.easeFactor, 2.5);
-    assert.equal(updatedState.nextDueAt, addHours(updatedState.lastStudiedAt, 25));
+    assert.equal(updatedState.nextDueAt, addHours(updatedState.lastStudiedAt, updatedState.intervalHours));
   });
 
   test('accepted review attempt batch rejects commit intents that do not match events', () => {
@@ -421,11 +421,11 @@ describe('session completion', { concurrency: false }, () => {
       terminalRating: 'good',
     });
 
-    assert.equal(updatedState.intervalHours, 53); // ceil(21 * 2.5) = ceil(52.5) = 53
+    assertIntervalHoursNear(updatedState.intervalHours, 53); // base ceil(21 * 2.5) = 53, ±1h fuzz
     assert.equal(updatedState.easeFactor, 2.5);
     assert.equal(
       updatedState.nextDueAt,
-      addHours(updatedState.lastStudiedAt, 53),
+      addHours(updatedState.lastStudiedAt, updatedState.intervalHours),
     );
     assertProjectedReviewState('good-word', 'recognition', updatedState);
   });
@@ -849,11 +849,11 @@ describe('session completion', { concurrency: false }, () => {
       terminalRating: 'easy',
     });
 
-    assert.equal(updatedState.intervalHours, 57); // ceil(20 * (2.5 + 0.35)) = ceil(57) = 57
+    assertIntervalHoursNear(updatedState.intervalHours, 57); // base ceil(20 * (2.5 + 0.35)) = 57, ±1h fuzz
     assert.equal(updatedState.easeFactor, 2.65);
     assert.equal(
       updatedState.nextDueAt,
-      addHours(updatedState.lastStudiedAt, 57),
+      addHours(updatedState.lastStudiedAt, updatedState.intervalHours),
     );
     assertProjectedReviewState('easy-word', 'recognition', updatedState);
   });
@@ -1871,6 +1871,13 @@ function addDays(dateKey: string, days: number) {
 
 function fail(message: string): never {
   throw new Error(message);
+}
+
+function assertIntervalHoursNear(actual: number, expectedBase: number) {
+  assert.ok(
+    actual >= expectedBase - 1 && actual <= expectedBase + 1,
+    `expected intervalHours near ${expectedBase} (±1 fuzz), got ${actual}`,
+  );
 }
 
 const isoUtcTimestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
