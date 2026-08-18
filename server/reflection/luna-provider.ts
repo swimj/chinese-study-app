@@ -16,6 +16,7 @@ import {
 import type { FetchImplementation } from '../llm/http.js';
 import { validateJsonSchemaIssues } from '../llm/json-schema-validator.js';
 import { createOpenAiCompatibleAdapter } from '../llm/openai-compatible.js';
+import type { JsonValue } from '../llm/types.js';
 import { fetchImplementationForProvider } from '../llm/proxy-fetch.js';
 import {
   isOutputTruncationFinishReason,
@@ -142,6 +143,12 @@ export type ReflectionProviderConfig = {
   structuredOutputMode: 'json_schema' | 'json_object';
   maxTokensField: 'max_completion_tokens' | 'max_tokens';
   baseUrlEnvironmentVariable?: string;
+  /**
+   * Transport-specific request fields. OpenRouter arms use this to prohibit
+   * fallback and select one upstream provider, making a comparison run
+   * attributable rather than an opaque routed request.
+   */
+  additionalRequestBody?: Record<string, JsonValue>;
 };
 
 let productionPromptPromise: Promise<string> | null = null;
@@ -173,6 +180,7 @@ export function createReflectionProvider(
     apiKeyEnvironmentVariable: config.apiKeyEnvironmentVariable,
     structuredOutputMode: config.structuredOutputMode,
     maxTokensField: config.maxTokensField,
+    additionalRequestBody: config.additionalRequestBody,
     // OpenAI defaults through the local HTTP CONNECT proxy (same path as the LLM spike).
     // Other providers use direct fetch. Callers may still inject a custom implementation.
     fetchImplementation: options.fetchImplementation

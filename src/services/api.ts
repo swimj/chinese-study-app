@@ -68,7 +68,11 @@ export type GenerateSessionReflectionResult = {
 export type ReflectionModelChoice =
   | 'openai:gpt-5.6-luna-high'
   | 'zai:glm-5.2-high'
-  | 'dashscope:qwen3.8-max';
+  | 'dashscope:qwen3.8-max'
+  | 'openrouter:gemini-3.6-flash'
+  | 'openrouter:deepseek-v4-pro'
+  | 'openrouter:claude-sonnet-5'
+  | 'openai:gpt-5.6-terra-high';
 
 export type ReflectionTokenUsageDto = {
   inputTokens: number | null;

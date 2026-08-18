@@ -1,0 +1,116 @@
+import type { ReflectionProviderConfig } from './luna-provider.ts';
+
+/**
+ * The complete comparison-arm registry.  It intentionally contains disabled
+ * dogfood arms: registration never sends learner data or requires credentials.
+ * Each arm uses the fixed reflection prompt and strict V6 validator supplied
+ * by createReflectionProvider.
+ */
+const OPENROUTER = {
+  provider: 'openrouter',
+  reasoningEffort: 'high' as const,
+  maxOutputTokens: 50_000,
+  timeoutMs: 900_000,
+  promptVersion: 'reflection-v7',
+  defaultBaseUrl: 'https://openrouter.ai/api/v1',
+  apiKeyEnvironmentVariable: 'OPENROUTER_API_KEY',
+  structuredOutputMode: 'json_schema' as const,
+  maxTokensField: 'max_tokens' as const,
+};
+
+function pinnedOpenRouterProvider(provider: string) {
+  return {
+    provider: {
+      only: [provider],
+      allow_fallbacks: false,
+      require_parameters: true,
+      data_collection: 'deny',
+    },
+  };
+}
+
+export const REFLECTION_MODEL_ARMS = [
+  {
+    choice: 'openai:gpt-5.6-luna-high',
+    label: 'Luna high',
+    enabledByDefault: true,
+    dogfoodSelectionWeight: 1,
+    config: null,
+  },
+  {
+    choice: 'zai:glm-5.2-high',
+    label: 'GLM-5.2 high',
+    enabledByDefault: true,
+    dogfoodSelectionWeight: 1,
+    config: null,
+  },
+  {
+    choice: 'dashscope:qwen3.8-max',
+    label: 'Qwen3.8-Max',
+    enabledByDefault: true,
+    dogfoodSelectionWeight: 1,
+    config: null,
+  },
+  {
+    choice: 'openrouter:gemini-3.6-flash',
+    label: 'Gemini 3.6 Flash',
+    enabledByDefault: false,
+    dogfoodSelectionWeight: 0,
+    config: {
+      ...OPENROUTER,
+      modelConfig: 'gemini-3.6-flash',
+      providerModel: 'google/gemini-3.6-flash',
+      additionalRequestBody: pinnedOpenRouterProvider('google'),
+    } satisfies ReflectionProviderConfig,
+  },
+  {
+    choice: 'openrouter:deepseek-v4-pro',
+    label: 'DeepSeek V4 Pro',
+    enabledByDefault: false,
+    dogfoodSelectionWeight: 0,
+    config: {
+      ...OPENROUTER,
+      modelConfig: 'deepseek-v4-pro',
+      providerModel: 'deepseek/deepseek-v4-pro',
+      additionalRequestBody: pinnedOpenRouterProvider('deepseek'),
+    } satisfies ReflectionProviderConfig,
+  },
+  {
+    choice: 'openrouter:claude-sonnet-5',
+    label: 'Claude Sonnet 5',
+    enabledByDefault: false,
+    dogfoodSelectionWeight: 0,
+    config: {
+      ...OPENROUTER,
+      modelConfig: 'claude-sonnet-5',
+      providerModel: 'anthropic/claude-sonnet-5',
+      additionalRequestBody: pinnedOpenRouterProvider('anthropic'),
+    } satisfies ReflectionProviderConfig,
+  },
+  {
+    choice: 'openai:gpt-5.6-terra-high',
+    label: 'GPT-5.6 Terra high',
+    enabledByDefault: false,
+    dogfoodSelectionWeight: 0,
+    config: {
+      provider: 'openai',
+      modelConfig: 'gpt-5.6-terra-high',
+      providerModel: 'gpt-5.6-terra',
+      reasoningEffort: 'high',
+      maxOutputTokens: 50_000,
+      timeoutMs: 180_000,
+      promptVersion: 'reflection-v7',
+      defaultBaseUrl: 'https://api.openai.com/v1',
+      apiKeyEnvironmentVariable: 'OPENAI_API_KEY',
+      structuredOutputMode: 'json_schema',
+      maxTokensField: 'max_completion_tokens',
+      baseUrlEnvironmentVariable: 'OPENAI_BASE_URL',
+    } satisfies ReflectionProviderConfig,
+  },
+] as const;
+
+export type ReflectionModelChoice = (typeof REFLECTION_MODEL_ARMS)[number]['choice'];
+
+export function isReflectionModelChoice(value: unknown): value is ReflectionModelChoice {
+  return typeof value === 'string' && REFLECTION_MODEL_ARMS.some((arm) => arm.choice === value);
+}

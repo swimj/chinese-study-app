@@ -69,6 +69,38 @@ export const INITIAL_QWEN_3_8_MAX_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunP
   outputPerMillionUsd: 6,
 };
 
+// OpenRouter list prices, pinned 2026-08-18. These deliberately use the
+// transport/model pair rather than direct-provider rates: a routed run must
+// not borrow a superficially similar direct price.
+export const INITIAL_OPENROUTER_GEMINI_3_6_FLASH_PRICING: ReflectionRunPricingSnapshot = {
+  id: 'openrouter-google-gemini-3.6-flash-standard-short-context-2026-08-18',
+  pricingAsOf: '2026-08-18', provider: 'openrouter', providerModel: 'google/gemini-3.6-flash',
+  serviceTier: 'standard', contextBand: 'short', currency: 'USD',
+  inputPerMillionUsd: 0.75, cachedInputPerMillionUsd: 0.075, cacheWriteInputPerMillionUsd: 0,
+  outputPerMillionUsd: 3.75,
+};
+export const INITIAL_OPENROUTER_DEEPSEEK_V4_PRO_PRICING: ReflectionRunPricingSnapshot = {
+  id: 'openrouter-deepseek-v4-pro-standard-short-context-2026-08-18',
+  pricingAsOf: '2026-08-18', provider: 'openrouter', providerModel: 'deepseek/deepseek-v4-pro',
+  serviceTier: 'standard', contextBand: 'short', currency: 'USD',
+  inputPerMillionUsd: 0.6943, cachedInputPerMillionUsd: 0.003625, cacheWriteInputPerMillionUsd: 0,
+  outputPerMillionUsd: 1.389,
+};
+export const INITIAL_OPENROUTER_CLAUDE_SONNET_5_PRICING: ReflectionRunPricingSnapshot = {
+  id: 'openrouter-anthropic-claude-sonnet-5-standard-short-context-2026-08-18',
+  pricingAsOf: '2026-08-18', provider: 'openrouter', providerModel: 'anthropic/claude-sonnet-5',
+  serviceTier: 'standard', contextBand: 'short', currency: 'USD',
+  inputPerMillionUsd: 2, cachedInputPerMillionUsd: 0.2, cacheWriteInputPerMillionUsd: 0,
+  outputPerMillionUsd: 10,
+};
+export const INITIAL_TERRA_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricingSnapshot = {
+  id: 'openai-gpt-5.6-terra-standard-short-context-2026-08-18',
+  pricingAsOf: '2026-08-18', provider: 'openai', providerModel: 'gpt-5.6-terra',
+  serviceTier: 'standard', contextBand: 'short', currency: 'USD',
+  inputPerMillionUsd: 2.5, cachedInputPerMillionUsd: 0.25, cacheWriteInputPerMillionUsd: 3.125,
+  outputPerMillionUsd: 15,
+};
+
 export type ReflectionRunCostEstimate = {
   estimatedCostUsd: number;
   pricing: ReflectionRunPricingSnapshot;
@@ -78,6 +110,10 @@ const INITIAL_REFLECTION_RUN_PRICING: ReadonlyArray<ReflectionRunPricingSnapshot
   INITIAL_LUNA_STANDARD_SHORT_CONTEXT_PRICING,
   INITIAL_GLM_STANDARD_SHORT_CONTEXT_PRICING,
   INITIAL_QWEN_3_8_MAX_STANDARD_SHORT_CONTEXT_PRICING,
+  INITIAL_OPENROUTER_GEMINI_3_6_FLASH_PRICING,
+  INITIAL_OPENROUTER_DEEPSEEK_V4_PRO_PRICING,
+  INITIAL_OPENROUTER_CLAUDE_SONNET_5_PRICING,
+  INITIAL_TERRA_STANDARD_SHORT_CONTEXT_PRICING,
 ];
 
 export function estimateInitialReflectionRunCost(input: {
