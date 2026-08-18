@@ -407,7 +407,11 @@ function HelpProposalCard({
         ) : null}
         <p>{card.proposal.proposal.rationale}</p>
         {draftState.applySupport === 'unsupported' ? <SupportNotice /> : null}
-        <ReflectionOperationEditor operation={draft} onChange={setDraft} />
+        <ReflectionOperationEditor
+          operation={draft}
+          evidence={card.evidence}
+          onChange={setDraft}
+        />
         <label className="reflection-field">
           <span>Handle</span>
           <select
@@ -1333,7 +1337,11 @@ function ProposalCard({
 
       {unresolved ? (
         <>
-          <ReflectionOperationEditor operation={draft} onChange={setDraft} />
+          <ReflectionOperationEditor
+            operation={draft}
+            evidence={evidence}
+            onChange={setDraft}
+          />
           <label className="reflection-field">
             <span>Handle</span>
             <select
@@ -1431,7 +1439,7 @@ function ProposalCard({
       ) : (
         <>
           <h5>Original operation</h5>
-          <ReflectionOperationEditor operation={original} disabled />
+          <ReflectionOperationEditor operation={original} evidence={evidence} disabled />
           <ReviewOutcome disposition={proposal.review.disposition} />
           {invocation !== null ? (
             <>
@@ -1441,6 +1449,7 @@ function ProposalCard({
                     <h5>Authorized revision</h5>
                     <ReflectionOperationEditor
                       operation={invocation.invocation.operation}
+                      evidence={evidence}
                       disabled
                     />
                   </>
@@ -1450,6 +1459,7 @@ function ProposalCard({
                         <h5>Authorized replacement</h5>
                         <ReflectionOperationEditor
                           operation={invocation.invocation.operation}
+                          evidence={evidence}
                           disabled
                         />
                       </>

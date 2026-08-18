@@ -14,6 +14,7 @@ import {
   buildLearnerRequestedReflectionPresentations,
   buildReflectionProposalPresentations,
   buildReflectionHelpCards,
+  collectEvidenceWordOptions,
   listQualityPromptVersions,
   presentQualityStatsArms,
   REFLECTION_QUALITY_TAG_OPTIONS,
@@ -467,6 +468,26 @@ describe('reflection page model', () => {
       getOperationDraftState(cue, wrongCue, v2Evidence()).validationErrors.join('\n'),
       /is not owned by the evidence task|must repair the exact served cue contract/,
     );
+  });
+
+  test('collects evidence-scoped word options and disables Accept for words outside that set', () => {
+    const evidence = v2Evidence();
+    assert.deepEqual(
+      collectEvidenceWordOptions(evidence).map((option) => option.wordId),
+      ['target', 'alternate'],
+    );
+
+    const original: ReflectionOperation = {
+      kind: 'suppress_definition_production',
+      version: 1,
+      wordId: 'target',
+    };
+    const invalid = { ...original, wordId: 'outsider' };
+    assert.match(
+      getOperationDraftState(original, invalid, evidence).validationErrors.join('\n'),
+      /word id outsider is not present in item/,
+    );
+    assert.deepEqual(getOperationDraftState(original, original, evidence).validationErrors, []);
   });
 
   test('creates an editable replacement draft without treating it as a revision', () => {
