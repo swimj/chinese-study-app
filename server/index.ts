@@ -22,6 +22,7 @@ import {
   getReviewFailureRateDays,
   listReflectionArtifacts,
   listReflectionGenerationRuns,
+  listReflectionHelpInbox,
   recoverPendingReflectionInvocations,
   getSessionActiveTimeMetrics,
   getSessionPayload,
@@ -40,6 +41,7 @@ import {
   updateWordPersonalNotes,
   updateWordUserPriority,
   upsertReflectionQualityAnnotation,
+  markReflectionHelpInboxDone,
   withdrawReflectionInvocationAuthorization,
   type ReviewAttemptCommitIntent,
 } from './db.ts';
@@ -53,6 +55,7 @@ import type {
 } from '../src/domain/study-actions.ts';
 import type {
   ClearReflectionQualityRequest,
+  MarkReflectionHelpInboxDoneRequest,
   ReflectionOperation,
   ReviewProposalRequest,
   UpsertReflectionQualityRequest,
@@ -770,6 +773,35 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
+  app.get('/api/reflection-help-inbox', (_req, res) => {
+    try {
+      res.json({ entries: listReflectionHelpInbox() });
+    } catch {
+      res.status(500).json({ error: 'Failed to load reflection help inbox' });
+    }
+  });
+
+  app.delete('/api/reflection-help-inbox', (req, res) => {
+    const request = readMarkReflectionHelpInboxDoneRequest(req.body);
+    if (request === null) {
+      res.status(400).json({ error: 'Expected a valid reflection help inbox done request' });
+      return;
+    }
+    try {
+      res.json(markReflectionHelpInboxDone(request));
+    } catch (error) {
+      if (isReflectionQualityNotFoundError(error)) {
+        res.status(404).json({ error: error.message.replace(/\.$/, '') });
+        return;
+      }
+      if (isReflectionQualityClientError(error)) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to mark reflection help inbox item done' });
+    }
+  });
+
   app.post('/api/review-session-summaries', (req, res) => {
     const sessionId = req.body?.sessionId;
     const completedAt = req.body?.completedAt;
@@ -1132,6 +1164,16 @@ function readUpsertReflectionQualityRequest(value: unknown): UpsertReflectionQua
 }
 
 function readClearReflectionQualityRequest(value: unknown): ClearReflectionQualityRequest | null {
+  return readItemLocatorRequest(value);
+}
+
+function readMarkReflectionHelpInboxDoneRequest(
+  value: unknown,
+): MarkReflectionHelpInboxDoneRequest | null {
+  return readItemLocatorRequest(value);
+}
+
+function readItemLocatorRequest(value: unknown): { artifactId: string; itemId: string } | null {
   if (!isPlainObject(value)) return null;
   const keys = Object.keys(value).sort();
   if (

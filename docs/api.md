@@ -109,6 +109,8 @@ Request/result types live in
 | PUT | `/api/reflection-quality` | Upsert the tag set on one reflection item |
 | DELETE | `/api/reflection-quality` | Clear quality tags for one reflection item |
 | GET | `/api/reflection-quality-stats` | Aggregate dogfood quality rates by model arm |
+| GET | `/api/reflection-help-inbox` | List open explanation-only Help inbox rows |
+| DELETE | `/api/reflection-help-inbox` | Mark one explanation-only Help item Done by deleting its inbox row |
 
 ### Generate
 
@@ -303,6 +305,34 @@ none did. Missing artifact/item still return `404`.
 from disposition rates. Tag counts include every present item tag row (including
 items whose proposals are still open). Small-n counts are returned raw; the
 surface does not claim statistical significance.
+
+### Help inbox
+
+The Help inbox is the open set of explanation-only items still in Help. Items
+with empty proposal lists are added when their artifact is materialized. Items
+that carry proposals are not inbox members; their Help presence follows
+proposal review. Artifact detail includes `helpInbox` for explanation-only
+items still open in Help.
+
+`GET /api/reflection-help-inbox` returns `{ entries }` for every still-open
+explanation item. Success returns `200` with:
+
+```ts
+type ReflectionHelpInboxEntry = {
+  inboxId: string;
+  artifactId: string;
+  itemId: string;
+  openedAt: string;
+};
+```
+
+`DELETE /api/reflection-help-inbox` accepts `{ artifactId, itemId }` and
+removes that item from Help. Success returns `200` with `{ done: true }` when
+a row existed or `{ done: false }` when none did. Missing artifact/item still
+return `404`. There is no learner-facing undo.
+
+Done leaves the artifact body unchanged, so By session and raw artifact reads
+still show the item.
 
 ## Study management (outside session)
 
