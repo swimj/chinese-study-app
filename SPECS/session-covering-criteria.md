@@ -10,9 +10,28 @@ This spec is about in-session behavior and commit boundaries.
 
 It does not yet define:
 
-- exact intra-session scheduling order between items
 - aborted-session behavior
 - long-term interval policy details beyond the commit payload needs
+
+## Intra-session ordering
+
+The live session interleaves nonempty buckets with weighted random selection:
+
+| Bucket | Weight |
+| --- | ---: |
+| review | 50 |
+| learning | 30 |
+| unstudied | 20 |
+
+The scheduler RNG is seeded from the frontend session id so the
+new / learning / review cadence varies across sessions. Tests may pass an
+explicit seed to keep sequences deterministic.
+
+Within a selected bucket:
+
+- review keeps the backend-composed order
+- learning and unstudied draw a remaining uncovered word from the pool, then
+  choose an open skill at random
 
 ## Core Principle
 

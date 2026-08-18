@@ -188,6 +188,14 @@ describe('bucket session scheduler contract', () => {
       oneSkillLearningWord.id,
     ]);
   });
+
+  test('hashes session ids to stable nonzero scheduler seeds', async () => {
+    const { sessionIdToSchedulerSeed } = await loadBucketSchedulerApi();
+
+    assert.equal(sessionIdToSchedulerSeed('session-a'), sessionIdToSchedulerSeed('session-a'));
+    assert.notEqual(sessionIdToSchedulerSeed('session-a'), sessionIdToSchedulerSeed('session-b'));
+    assert.notEqual(sessionIdToSchedulerSeed(''), 0);
+  });
 });
 
 type BucketSchedulerApi = {
@@ -219,6 +227,7 @@ type BucketSchedulerApi = {
     scheduler: unknown,
     bucket: 'learning' | 'unstudied',
   ) => string[];
+  sessionIdToSchedulerSeed: (sessionId: string) => number;
   syncBucketScheduler: (scheduler: unknown, progress?: unknown) => unknown;
 };
 
@@ -230,6 +239,7 @@ async function loadBucketSchedulerApi(): Promise<BucketSchedulerApi> {
     'getBucketSchedulerActiveUnit',
     'getBucketSchedulerBucketCounts',
     'getBucketSchedulerCandidateWordIds',
+    'sessionIdToSchedulerSeed',
     'syncBucketScheduler',
   ];
 
