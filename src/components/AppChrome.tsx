@@ -82,10 +82,6 @@ export function AppChrome({
       ) : null}
 
       {children}
-
-      <footer className="footer">
-        v{version} ·  if you are reading this then you are a top learner &#59;&#41;
-      </footer>
     </div>
   );
 }

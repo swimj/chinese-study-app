@@ -99,11 +99,10 @@ empty proposal lists produce one explanation card while that item remains in
 Help. Accept, Dismiss, Defer, and Done are durable and advance the pager; Done
 leaves Help with no learner-facing undo. Prev/Next are ephemeral. The help
 shell keeps pager chrome and those actions stable while evidence, explanation,
-questions, rationale, and the operation editor scroll. **Needs attention**
-remains a secondary stacked proposal inbox. Separate convenience views show
-deferred proposals and accepted authorizations whose application is pending or
-unsupported, while **By session** retains the artifact-oriented dogfood view,
-including explanation items already marked Done. In that view,
+questions, rationale, and the operation editor scroll. Separate convenience
+views show deferred proposals and accepted authorizations whose application is
+pending or unsupported, while **By session** retains the artifact-oriented
+dogfood view, including explanation items already marked Done. In that view,
 items whose results carry no proposals are summarized in a compact **No durable
 change** gist derived from the persisted evidence and result (word, diagnosis
 tags, cue/response, learner feedback), so ordinary forgetting and other
@@ -112,10 +111,6 @@ proposal removes it from the current queue when its new lifecycle state no
 longer matches that filter. Questions remain informational and do not receive
 synthetic review state. Finish session returns Home; there is no post-session
 jump or Open-reflection deep link.
-
-The **Learner requests** view is an informational inbox for marked V3 items.
-It displays learner-facing feedback even when the result has no proposal, while
-the proposal queues retain their authorization-focused behavior.
 
 Each proposal has a purpose-built editor for each registered operation family:
 
