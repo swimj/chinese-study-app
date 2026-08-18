@@ -2087,13 +2087,7 @@ button:disabled:hover {
   background: rgba(15, 23, 42, 0.72);
 }
 
-.reflection-support.supported {
-  border-color: rgba(34, 197, 94, 0.3);
-  background: rgba(34, 197, 94, 0.1);
-  color: #bbf7d0;
-}
-
-.reflection-support.unsupported {
+.reflection-support {
   border-color: rgba(245, 158, 11, 0.3);
   background: rgba(245, 158, 11, 0.1);
   color: #fde68a;
