@@ -140,7 +140,7 @@ export type NoDurableChangeReflectionGist = {
   questionCount: number;
 };
 
-export type ReflectionProposalQueueKind = 'attention' | 'deferred' | 'unapplied';
+export type ReflectionProposalQueueKind = 'deferred' | 'unapplied';
 
 export type LearnerRequestedReflectionPresentation = {
   artifact: ReflectionArtifactDetailDto;
@@ -369,8 +369,6 @@ function proposalBelongsInQueue(
   kind: ReflectionProposalQueueKind,
 ): boolean {
   switch (kind) {
-    case 'attention':
-      return proposal.review.disposition.kind === 'pending';
     case 'deferred':
       return proposal.review.disposition.kind === 'deferred';
     case 'unapplied':
