@@ -11,7 +11,7 @@ import type {
   ReflectionArtifactDetail,
 } from '../server/db/reflections.ts';
 import { ReflectionEvidenceError } from '../server/reflection/evidence.ts';
-import { createInitialReflectionGenerationService } from '../server/reflection/generation.ts';
+import { createInitialReflectionGenerationService, RetiredReflectionSourceModelError } from '../server/reflection/generation.ts';
 import {
   LunaReflectionProviderError,
   type LunaReflectionSuccess,
@@ -161,6 +161,7 @@ describe('initial reflection generation orchestration', () => {
           runId,
           sourceSessionId: 'session-1',
           reflectionFlowVersion: 'initial_post_session_reflection.v2',
+          model: 'gpt-5.6-luna-high',
           eligibleItemCount: 3,
           includedItemCount: 1,
           evidenceBundle,
@@ -314,7 +315,7 @@ describe('initial reflection generation orchestration', () => {
     assert.equal(materializeCalls, 1);
   });
 
-  test('routes the initial run across four comparison arms with equal probability', async () => {
+  test('routes the initial run across three comparison arms with equal probability', async () => {
     const selected: string[] = [];
     const makeArm = (label: string) => ({
       async generate() {
@@ -329,9 +330,8 @@ describe('initial reflection generation orchestration', () => {
       provider: makeArm('luna'),
       glmProvider: makeArm('glm'),
       qwen38MaxProvider: makeArm('qwen38'),
-      qwen37PlusProvider: makeArm('qwen37'),
       random: () => {
-        const values = [0, 0.25, 0.5, 0.75];
+        const values = [0, 0.4, 0.8];
         return values[randomCalls++]!;
       },
       materializeArtifact: () => ({
@@ -341,10 +341,57 @@ describe('initial reflection generation orchestration', () => {
       recordRun: () => {},
     });
 
-    for (let index = 0; index < 4; index += 1) {
+    for (let index = 0; index < 3; index += 1) {
       await service.generate(`session-${index}`, {});
     }
-    assert.deepEqual(selected, ['luna', 'glm', 'qwen38', 'qwen37']);
+    assert.deepEqual(selected, ['luna', 'glm', 'qwen38']);
+  });
+
+  test('refuses same-model retry when the stored model is no longer a current choice', async () => {
+    const selected: string[] = [];
+    const makeArm = (label: string) => ({
+      async generate() {
+        selected.push(label);
+        return providerSuccess();
+      },
+    });
+    const service = createInitialReflectionGenerationService({
+      findExistingArtifact: () => null,
+      buildBundle: () => bundle(),
+      getRetrySource: (runId) => {
+        assert.equal(runId, 'failed-retired-run');
+        return {
+          runId,
+          sourceSessionId: 'session-1',
+          reflectionFlowVersion: 'initial_post_session_reflection.v2',
+          model: 'qwen3.7-plus',
+          eligibleItemCount: 1,
+          includedItemCount: 1,
+          evidenceBundle: bundle(),
+        };
+      },
+      provider: makeArm('luna'),
+      glmProvider: makeArm('glm'),
+      qwen38MaxProvider: makeArm('qwen38'),
+      materializeArtifact: () => ({
+        created: true,
+        artifact: artifactDetail('artifact', 1),
+      }),
+      recordRun: () => {},
+    });
+
+    await assert.rejects(
+      () => service.retry('failed-retired-run'),
+      (error: unknown) => (
+        error instanceof RetiredReflectionSourceModelError
+        && error.model === 'qwen3.7-plus'
+        && error.message === 'The source run\'s model (qwen3.7-plus) is no longer available. Choose a current model.'
+      ),
+    );
+    assert.deepEqual(selected, []);
+
+    await service.retry('failed-retired-run', 'openai:gpt-5.6-luna-high');
+    assert.deepEqual(selected, ['luna']);
   });
 });
 

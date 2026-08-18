@@ -59,28 +59,6 @@ describe('initial reflection run pricing', () => {
         outputPerMillionUsd: 6,
       },
     });
-
-    assert.deepEqual(estimateInitialReflectionRunCost({
-      provider: 'dashscope',
-      providerModel: 'qwen3.7-plus',
-      usage: completeUsage,
-    }), {
-      // 600k*0.4 + 400k*0.08 + 200k*0.5 + 200k*1.6 = 240+32+100+320 = 692 / 1e6
-      estimatedCostUsd: 0.692,
-      pricing: {
-        id: 'dashscope-qwen3.7-plus-standard-short-context-2026-08-15',
-        pricingAsOf: '2026-08-15',
-        provider: 'dashscope',
-        providerModel: 'qwen3.7-plus',
-        serviceTier: 'standard',
-        contextBand: 'short',
-        currency: 'USD',
-        inputPerMillionUsd: 0.4,
-        cachedInputPerMillionUsd: 0.08,
-        cacheWriteInputPerMillionUsd: 0.5,
-        outputPerMillionUsd: 1.6,
-      },
-    });
   });
 
   test('treats absent cache categories as zero but leaves incomplete or unknown pricing unavailable', () => {
@@ -116,6 +94,11 @@ describe('initial reflection run pricing', () => {
     assert.equal(estimateInitialReflectionRunCost({
       provider: 'openai',
       providerModel: 'unknown-model',
+      usage: completeUsage,
+    }), null);
+    assert.equal(estimateInitialReflectionRunCost({
+      provider: 'dashscope',
+      providerModel: 'qwen3.7-plus',
       usage: completeUsage,
     }), null);
   });

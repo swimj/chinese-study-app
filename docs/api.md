@@ -177,8 +177,10 @@ whose session/flow does not already have a successful artifact.
 `POST /api/reflection-generation-runs/:runId/retry` reuses that run's exact
 saved bundle and returns the same response shape and `201`/`200` semantics as
 initial generation. The retry is a new append-only generation run; it never
-rewrites the failed attempt. Missing runs return `404`, and concluded runs that
-cannot be retried return `409`.
+rewrites the failed attempt. Missing runs return `404`. Concluded runs that
+cannot be retried, and same-model retries whose source model is no longer a
+configured comparison arm, return `409`. An explicit current model may still
+retry a retained bundle whose source model has been retired.
 
 ### Queue and detail
 

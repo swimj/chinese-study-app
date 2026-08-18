@@ -326,7 +326,6 @@ describe('LLM provider model batch and viewer', () => {
       'glm-5.2-high',
       'glm-5.2-max',
       'qwen3.8-max',
-      'qwen3.7-plus',
     ]);
     assert.deepEqual(getModelTarget('glm-5.2-max'), { id: 'glm-5.2-max', provider: 'zai', model: 'glm-5.2', reasoningEffort: 'max' });
     assert.equal(getProviderAdapter('zai').defaultBaseUrl, 'https://api.z.ai/api/paas/v4');

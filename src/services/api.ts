@@ -68,8 +68,7 @@ export type GenerateSessionReflectionResult = {
 export type ReflectionModelChoice =
   | 'openai:gpt-5.6-luna-high'
   | 'zai:glm-5.2-high'
-  | 'dashscope:qwen3.8-max'
-  | 'dashscope:qwen3.7-plus';
+  | 'dashscope:qwen3.8-max';
 
 export type ReflectionTokenUsageDto = {
   inputTokens: number | null;

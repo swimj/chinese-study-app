@@ -15,7 +15,6 @@ export const modelTargets: ModelTarget[] = [
   { id: 'glm-5.2-high', provider: 'zai', model: 'glm-5.2', reasoningEffort: 'high' },
   { id: 'glm-5.2-max', provider: 'zai', model: 'glm-5.2', reasoningEffort: 'max' },
   { id: 'qwen3.8-max', provider: 'dashscope', model: 'qwen3.8-max', reasoningEffort: 'high' },
-  { id: 'qwen3.7-plus', provider: 'dashscope', model: 'qwen3.7-plus', reasoningEffort: 'high' },
 ];
 
 const targetsById = new Map<string, ModelTarget>();

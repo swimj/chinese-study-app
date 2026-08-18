@@ -23,20 +23,8 @@ export const QWEN_3_8_MAX_REFLECTION_MODEL_CONFIG = {
   providerModel: 'qwen3.8-max',
 } as const;
 
-export const QWEN_3_7_PLUS_REFLECTION_MODEL_CONFIG = {
-  ...QWEN_SHARED,
-  modelConfig: 'qwen3.7-plus',
-  providerModel: 'qwen3.7-plus',
-} as const;
-
 export function createQwen38MaxReflectionProvider(
   options: LunaReflectionProviderOptions = {},
 ): LunaReflectionProvider {
   return createReflectionProvider(QWEN_3_8_MAX_REFLECTION_MODEL_CONFIG, options);
-}
-
-export function createQwen37PlusReflectionProvider(
-  options: LunaReflectionProviderOptions = {},
-): LunaReflectionProvider {
-  return createReflectionProvider(QWEN_3_7_PLUS_REFLECTION_MODEL_CONFIG, options);
 }
