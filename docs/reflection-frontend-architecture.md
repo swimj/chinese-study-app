@@ -78,11 +78,12 @@ reflection. Cancellation, dismissal, and management remove the request.
 ## Reflection review workspace
 
 `useReflectionPageController` loads the capped open and recent artifact lists,
-their joined details, and the concluded-generation run log, preserves the
-selected artifact when possible, and reuses already loaded details. Proposal
-review and authorization withdrawal reload the affected artifact plus both
-lists so proposal-centered queues and persisted application results remain
-coherent without a manual refresh.
+the Help inbox, their joined details, and the concluded-generation run log,
+preserves the selected artifact when possible, and reuses already loaded
+details. Help membership is the union of pending proposal reviews and open
+explanation inbox rows; artifact JSON is fetched to render those cards.
+Proposal review, authorization withdrawal, and Help Done reload the affected
+artifact plus both lists so queues remain coherent without a manual refresh.
 
 Artifact reconstruction is isolated per record. The backend lists unreadable
 artifact metadata explicitly instead of aborting the whole list, and the
@@ -92,17 +93,25 @@ available, and shows a persistent unreadable-artifact notice without rewriting
 the stored payload.
 
 `ReflectionsPage` is reachable outside an active session. Its default view is a
-flat, cross-session queue of pending proposals that need a learner decision.
-Separate convenience views show deferred proposals and accepted authorizations
-whose application is pending or unsupported, while **By session** retains the
-artifact-oriented dogfood view. In that view, items whose results carry no
-proposals are summarized in a compact **No durable change** gist derived from
-the persisted evidence and result (word, diagnosis tags, cue/response, learner
-feedback),
-so ordinary forgetting and other no-action judgments stay visible without
-opening every item card. Reviewing a proposal removes it from the
-current queue when its new lifecycle state no longer matches that filter.
-Questions remain informational and do not receive synthetic review state.
+cross-session **Help** pager: one card at a time for pending proposals and for
+explanation-only items still in Help. The grain is one proposal per card;
+empty proposal lists produce one explanation card while that item remains in
+Help. Accept, Dismiss, Defer, and Done are durable and advance the pager; Done
+leaves Help with no learner-facing undo. Prev/Next are ephemeral. The help
+shell keeps pager chrome and those actions stable while evidence, explanation,
+questions, rationale, and the operation editor scroll. **Needs attention**
+remains a secondary stacked proposal inbox. Separate convenience views show
+deferred proposals and accepted authorizations whose application is pending or
+unsupported, while **By session** retains the artifact-oriented dogfood view,
+including explanation items already marked Done. In that view,
+items whose results carry no proposals are summarized in a compact **No durable
+change** gist derived from the persisted evidence and result (word, diagnosis
+tags, cue/response, learner feedback), so ordinary forgetting and other
+no-action judgments stay visible without opening every item card. Reviewing a
+proposal removes it from the current queue when its new lifecycle state no
+longer matches that filter. Questions remain informational and do not receive
+synthetic review state. Finish session returns Home; there is no post-session
+jump or Open-reflection deep link.
 
 The **Learner requests** view is an informational inbox for marked V3 items.
 It displays learner-facing feedback even when the result has no proposal, while

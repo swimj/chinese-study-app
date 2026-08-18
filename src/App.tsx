@@ -12,6 +12,8 @@ import {
   updateDailyNewWordLimit,
   upsertReflectionQuality,
   withdrawReflectionAuthorization,
+  fetchReflectionHelpInbox,
+  markReflectionHelpInboxDone,
 } from './services/api';
 import { AppChrome, type AppPageKey } from './components/AppChrome';
 import { PersonalNotesEditorOverlay } from './features/session/PersonalNotesEditorOverlay';
@@ -54,6 +56,8 @@ function App() {
       upsertQuality: upsertReflectionQuality,
       clearQuality: clearReflectionQuality,
       getQualityStats: fetchReflectionQualityStats,
+      listHelpInbox: fetchReflectionHelpInbox,
+      markHelpInboxDone: markReflectionHelpInboxDone,
     },
   });
   const contentPage = useContentDiagnosticsController({ currentPage, setCurrentPage, setError });

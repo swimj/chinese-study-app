@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import type {
   EffectRef,
   OperationApplicationState,
@@ -20,6 +20,7 @@ import {
   buildReflectionItemPresentations,
   buildLearnerRequestedReflectionPresentations,
   buildReflectionProposalPresentations,
+  buildReflectionHelpCards,
   findQualityItemTags,
   listQualityPromptVersions,
   presentQualityStatsArms,
@@ -39,6 +40,7 @@ import {
   type ReflectionProposalPresentation,
   type ReflectionProposalDetailDto,
   type ReflectionProposalQueueKind,
+  type ReflectionHelpCard,
 } from '../features/reflection/reflection-page-model';
 
 type ReflectionRetryMenuOption = {
@@ -61,14 +63,15 @@ function sourceModelIsCurrentlyAvailable(storedModel: string): boolean {
   return REFLECTION_RETRY_MODEL_OPTIONS.some((option) => option.model.endsWith(`:${storedModel}`));
 }
 
-type ReflectionView = ReflectionProposalQueueKind | 'requests' | 'sessions' | 'usage' | 'quality';
+type ReflectionView = 'help' | ReflectionProposalQueueKind | 'requests' | 'sessions' | 'usage' | 'quality';
 
 export function ReflectionsPage({
   controller,
 }: {
   controller: ReflectionPageController;
 }) {
-  const [view, setView] = useState<ReflectionView>('attention');
+  const [view, setView] = useState<ReflectionView>('help');
+  const helpCards = buildReflectionHelpCards(controller.artifactDetails);
   const proposalQueues = {
     attention: buildReflectionProposalPresentations(controller.artifactDetails, 'attention'),
     deferred: buildReflectionProposalPresentations(controller.artifactDetails, 'deferred'),
@@ -76,6 +79,7 @@ export function ReflectionsPage({
   };
   const learnerRequests = buildLearnerRequestedReflectionPresentations(controller.artifactDetails);
   const views: Array<{ key: ReflectionView; label: string; count?: number }> = [
+    { key: 'help', label: 'Help', count: helpCards.length },
     { key: 'attention', label: 'Needs attention', count: proposalQueues.attention.length },
     { key: 'deferred', label: 'Deferred', count: proposalQueues.deferred.length },
     {
@@ -95,7 +99,7 @@ export function ReflectionsPage({
         <div>
           <h1 className="title">Reflections</h1>
           <p className="subtitle">
-            Review proposed changes one at a time. Nothing is authorized by generation alone.
+            Review the help you asked for, one card at a time. Nothing is authorized by generation alone.
           </p>
         </div>
         <button
@@ -144,18 +148,321 @@ export function ReflectionsPage({
         />
       ) : view === 'quality' ? (
         <QualityStatsView stats={controller.qualityStats} />
+      ) : view === 'requests' ? (
+        <LearnerRequestsView requests={learnerRequests} controller={controller} />
+      ) : view === 'help' ? (
+        <HelpQueueView cards={helpCards} controller={controller} />
       ) : (
-        view === 'requests' ? (
-          <LearnerRequestsView requests={learnerRequests} controller={controller} />
-        ) : (
         <ProposalQueueView
           kind={view}
           proposals={proposalQueues[view]}
           controller={controller}
         />
-        )
       )}
     </section>
+  );
+}
+
+function HelpQueueView({
+  cards,
+  controller,
+}: {
+  cards: ReflectionHelpCard[];
+  controller: ReflectionPageController;
+}) {
+  const [index, setIndex] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const safeIndex = cards.length === 0 ? 0 : Math.min(index, cards.length - 1);
+  const card = cards[safeIndex] ?? null;
+  const cardKey = card?.cardKey ?? 'empty';
+
+  useEffect(() => {
+    setIndex((current) => (cards.length === 0 ? 0 : Math.min(current, cards.length - 1)));
+  }, [cards.length]);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo(0, 0);
+    window.scrollTo(0, 0);
+  }, [cardKey, safeIndex]);
+
+  if (cards.length === 0) {
+    return (
+      <main className="reflection-queue">
+        <section className="panel reflection-empty-state">
+          <h2>All caught up</h2>
+          <p className="notes">
+            No remaining session help to review. Explanation-only cards you marked Done stay in By session.
+          </p>
+        </section>
+      </main>
+    );
+  }
+
+  if (card === null) {
+    throw new Error('Invariant violated: help queue has cards but no current card.');
+  }
+
+  const sessionDate = formatDateTime(
+    card.artifact.evidenceBundle.session.endedAt ?? card.artifact.generatedAt,
+  );
+
+  return (
+    <main className="reflection-help-shell">
+      <header className="reflection-help-chrome">
+        <div className="reflection-help-chrome-meta">
+          <p className="reflection-eyebrow">{safeIndex + 1} of {cards.length}</p>
+          <h2>{itemTitle(card.evidence)}</h2>
+          <p className="notes">{sessionDate}</p>
+          <div className="reflection-tag-list">
+            {card.result.diagnosisTags.map((tag) => (
+              <span className="reflection-tag" key={tag}>{humanize(tag)}</span>
+            ))}
+          </div>
+        </div>
+        <div className="reflection-help-pager">
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={safeIndex === 0}
+            onClick={() => setIndex((current) => Math.max(0, current - 1))}
+          >
+            Prev
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={safeIndex >= cards.length - 1}
+            onClick={() => setIndex((current) => Math.min(cards.length - 1, current + 1))}
+          >
+            Next
+          </button>
+        </div>
+      </header>
+      {card.kind === 'explanation' ? (
+        <HelpExplanationCard
+          key={card.cardKey}
+          card={card}
+          controller={controller}
+          scrollRef={scrollRef}
+        />
+      ) : (
+        <HelpProposalCard
+          key={card.cardKey}
+          card={card}
+          controller={controller}
+          scrollRef={scrollRef}
+        />
+      )}
+    </main>
+  );
+}
+
+function HelpExplanationCard({
+  card,
+  controller,
+  scrollRef,
+}: {
+  card: Extract<ReflectionHelpCard, { kind: 'explanation' }>;
+  controller: ReflectionPageController;
+  scrollRef: RefObject<HTMLDivElement>;
+}) {
+  const submitting = controller.submittingHelpInboxItemKey === qualityItemKey(
+    card.artifact.artifactId,
+    card.result.itemId,
+  );
+  return (
+    <>
+      <div className="reflection-help-actions">
+        <button
+          type="button"
+          disabled={submitting}
+          onClick={() => void controller.markHelpInboxDone({
+            artifactId: card.artifact.artifactId,
+            itemId: card.result.itemId,
+          }).catch(() => undefined)}
+        >
+          {submitting ? 'Saving...' : 'Done'}
+        </button>
+      </div>
+      <div className="reflection-help-scroll" ref={scrollRef}>
+        <EvidenceView evidence={card.evidence} />
+        <section className="reflection-analysis">
+          <h3>Feedback</h3>
+          <p>{reflectionLearnerFeedback(card.result)}</p>
+        </section>
+        {card.result.questions.length > 0 ? (
+          <InfoList
+            title="Questions"
+            entries={card.result.questions.map((question) => ({
+              title: question.question,
+              detail: question.reason,
+            }))}
+          />
+        ) : null}
+        <ItemQualityTagControls
+          artifactId={card.artifact.artifactId}
+          itemId={card.result.itemId}
+          annotation={findQualityItemTags(
+            card.artifact.qualityItemTags,
+            card.artifact.artifactId,
+            card.result.itemId,
+          )}
+          submitting={
+            controller.submittingQualityItemKey
+              === qualityItemKey(card.artifact.artifactId, card.result.itemId)
+          }
+          onUpsert={controller.upsertQuality}
+          onClear={controller.clearQuality}
+        />
+      </div>
+    </>
+  );
+}
+
+function HelpProposalCard({
+  card,
+  controller,
+  scrollRef,
+}: {
+  card: Extract<ReflectionHelpCard, { kind: 'proposal' }>;
+  controller: ReflectionPageController;
+  scrollRef: RefObject<HTMLDivElement>;
+}) {
+  const original = card.proposal.proposal.operation;
+  const [draft, setDraft] = useState(() => cloneReflectionOperation(original));
+  const [dismissReason, setDismissReason] = useState('');
+  const submitting = controller.submittingProposalId === card.proposal.review.proposalId;
+  const draftState = getOperationDraftState(original, draft, card.evidence);
+
+  return (
+    <>
+      <div className="reflection-help-actions">
+        {card.proposal.review.disposition.kind === 'pending' ? (
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={submitting}
+            onClick={() => void controller.deferProposal(card.proposal.review.proposalId).catch(() => undefined)}
+          >
+            Defer
+          </button>
+        ) : null}
+        <button
+          type="button"
+          disabled={submitting || draftState.validationErrors.length > 0}
+          onClick={() => void (draftState.acceptanceMode === 'replacement'
+            ? controller.replaceProposal(card.proposal.review.proposalId, draft)
+            : controller.acceptProposal(card.proposal.review.proposalId, draft)
+          ).catch(() => undefined)}
+        >
+          {submitting
+            ? 'Saving...'
+            : draftState.acceptanceMode === 'exact'
+              ? 'Accept'
+              : draftState.acceptanceMode === 'replacement'
+                ? 'Accept replacement'
+                : 'Accept'}
+        </button>
+        <div className="reflection-dismiss-row">
+          <input
+            value={dismissReason}
+            placeholder="Optional dismissal note"
+            aria-label="Optional dismissal note"
+            disabled={submitting}
+            onChange={(event) => setDismissReason(event.target.value)}
+          />
+          <button
+            type="button"
+            className="danger-button"
+            disabled={submitting}
+            onClick={() => {
+              void controller.dismissProposal(
+                card.proposal.review.proposalId,
+                dismissReason.trim().length === 0 ? null : dismissReason.trim(),
+              ).catch(() => undefined);
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      </div>
+      <div className="reflection-help-scroll" ref={scrollRef}>
+        <EvidenceView evidence={card.evidence} />
+        <section className="reflection-analysis">
+          <h3>Feedback</h3>
+          <p>{reflectionLearnerFeedback(card.result)}</p>
+        </section>
+        {card.result.questions.length > 0 ? (
+          <InfoList
+            title="Questions"
+            entries={card.result.questions.map((question) => ({
+              title: question.question,
+              detail: question.reason,
+            }))}
+          />
+        ) : null}
+        <p>{card.proposal.proposal.rationale}</p>
+        {draftState.applySupport === 'unsupported' ? <SupportNotice /> : null}
+        <ReflectionOperationEditor operation={draft} onChange={setDraft} />
+        <label className="reflection-field">
+          <span>Handle</span>
+          <select
+            aria-label="Handle"
+            disabled={submitting}
+            value={`${draft.kind}@${draft.version}`}
+            onChange={(event) => {
+              const [kind, versionText] = event.target.value.split('@');
+              setDraft(createReplacementOperation(
+                kind as ReflectionOperation['kind'],
+                Number(versionText),
+                original,
+                card.evidence,
+              ));
+            }}
+          >
+            <option value="suppress_definition_production@1">Suppress definition production</option>
+            <option value="create_contrast_cluster@1">Create contrast cluster (v1)</option>
+            <option value="create_contrast_cluster@2">Create contrast cluster (v2)</option>
+            <option value="repair_production_cue@1">Repair production cue (v1)</option>
+            <option value="repair_production_cue@2">Repair production cue (v2)</option>
+            <option value="accept_production_alternate@1">Accept production alternate</option>
+          </select>
+        </label>
+        {draftState.validationErrors.length > 0 ? (
+          <div className="reflection-validation" role="alert">
+            <strong>Fix before accepting:</strong>
+            <ul>
+              {draftState.validationErrors.map((error) => <li key={error}>{error}</li>)}
+            </ul>
+          </div>
+        ) : null}
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={submitting || draftState.acceptanceMode === 'exact'}
+          onClick={() => setDraft(cloneReflectionOperation(original))}
+        >
+          Reset edits
+        </button>
+        <ItemQualityTagControls
+          artifactId={card.artifact.artifactId}
+          itemId={card.result.itemId}
+          annotation={findQualityItemTags(
+            card.artifact.qualityItemTags,
+            card.artifact.artifactId,
+            card.result.itemId,
+          )}
+          submitting={
+            controller.submittingQualityItemKey === qualityItemKey(
+              card.artifact.artifactId,
+              card.result.itemId,
+            )
+          }
+          onUpsert={controller.upsertQuality}
+          onClear={controller.clearQuality}
+        />
+      </div>
+    </>
   );
 }
 
