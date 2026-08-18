@@ -61,6 +61,7 @@ import {
   REVIEW_PHASE_RECENCY_GUARD_HOURS,
   REVIEW_SKILL_URGENCY_TIE_EPSILON,
 } from './types.ts';
+import { applyIntervalHourFuzz } from './interval-schedule.ts';
 
 export function applyProductionContrastExerciseSeed() {
   if (!config.seedSampleData || !config.includeDevContrastSeed || config.studyProfile !== 'mandarin') {
@@ -5937,7 +5938,7 @@ function scheduleWordSkillStateFromReviewAttempt(
   }
 
   if (terminalRating === 'hard') {
-    const nextInterval = Math.max(6, ceilIntervalHours(state.intervalHours * 1.5));
+    const nextInterval = applyIntervalHourFuzz(Math.max(6, ceilIntervalHours(state.intervalHours * 1.5)));
 
     return {
       ...state,
@@ -5949,13 +5950,13 @@ function scheduleWordSkillStateFromReviewAttempt(
   }
 
   if (terminalRating === 'good') {
-    const baseInterval = ceilIntervalHours(state.intervalHours * state.easeFactor);
+    const nextInterval = applyIntervalHourFuzz(ceilIntervalHours(state.intervalHours * state.easeFactor));
 
     return {
       ...state,
-      intervalHours: baseInterval,
+      intervalHours: nextInterval,
       lastStudiedAt: reviewedAt,
-      nextDueAt: addHours(reviewedAt, baseInterval),
+      nextDueAt: addHours(reviewedAt, nextInterval),
       easeFactor: Number(state.easeFactor.toFixed(2)),
     };
   }
@@ -5964,7 +5965,9 @@ function scheduleWordSkillStateFromReviewAttempt(
     throw new Error('Expected terminal review rating');
   }
 
-  const nextInterval = ceilIntervalHours(state.intervalHours * (state.easeFactor + 0.35));
+  const nextInterval = applyIntervalHourFuzz(
+    ceilIntervalHours(state.intervalHours * (state.easeFactor + 0.35)),
+  );
 
   return {
     ...state,
