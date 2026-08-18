@@ -23,12 +23,15 @@ export type OpenAiCompatibleOptions = {
   structuredOutputMode: StructuredOutputMode;
   maxTokensField: 'max_completion_tokens' | 'max_tokens';
   fetchImplementation?: FetchImplementation;
+  /** Transport-specific fields, for example OpenRouter's pinned provider policy. */
+  additionalRequestBody?: Record<string, JsonValue>;
 };
 
 function requestBody(
   request: ProviderRunRequest,
   mode: StructuredOutputMode,
   maxTokensField: OpenAiCompatibleOptions['maxTokensField'],
+  additionalRequestBody: Record<string, JsonValue> | undefined,
 ): Record<string, JsonValue> {
   const systemPrompt = mode === 'json_schema'
     ? request.systemPrompt
@@ -58,7 +61,7 @@ function requestBody(
   };
   if (request.temperature !== null) body.temperature = request.temperature;
   if (request.reasoningEffort !== null) body.reasoning_effort = request.reasoningEffort;
-  return body;
+  return { ...body, ...additionalRequestBody };
 }
 
 function parseResponse(
@@ -128,7 +131,12 @@ export function createOpenAiCompatibleAdapter(
           authorization: `Bearer ${config.apiKey}`,
           ...(request.clientRequestId ? { 'x-client-request-id': request.clientRequestId } : {}),
         },
-        requestBody(request, options.structuredOutputMode, options.maxTokensField),
+        requestBody(
+          request,
+          options.structuredOutputMode,
+          options.maxTokensField,
+          options.additionalRequestBody,
+        ),
         request.timeoutMs,
       );
       return parseResponse(options.id, options.structuredOutputMode, rawResponse);

@@ -57,6 +57,10 @@ const REFLECTION_RETRY_MODEL_OPTIONS: ReadonlyArray<Omit<ReflectionRetryMenuOpti
   { id: 'openai:gpt-5.6-luna-high', label: 'Luna high', model: 'openai:gpt-5.6-luna-high' },
   { id: 'zai:glm-5.2-high', label: 'GLM-5.2 high', model: 'zai:glm-5.2-high' },
   { id: 'dashscope:qwen3.8-max', label: 'Qwen3.8-Max', model: 'dashscope:qwen3.8-max' },
+  { id: 'openrouter:gemini-3.6-flash', label: 'Gemini 3.6 Flash', model: 'openrouter:gemini-3.6-flash' },
+  { id: 'openrouter:deepseek-v4-pro', label: 'DeepSeek V4 Pro', model: 'openrouter:deepseek-v4-pro' },
+  { id: 'openrouter:claude-sonnet-5', label: 'Claude Sonnet 5', model: 'openrouter:claude-sonnet-5' },
+  { id: 'openai:gpt-5.6-terra-high', label: 'GPT-5.6 Terra high', model: 'openai:gpt-5.6-terra-high' },
 ];
 
 function sourceModelIsCurrentlyAvailable(storedModel: string): boolean {

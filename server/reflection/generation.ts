@@ -26,8 +26,14 @@ import {
   type LunaReflectionProvider,
   type LunaReflectionRunMetadata,
 } from './luna-provider.ts';
+import { createReflectionProvider } from './luna-provider.ts';
 import { createGlmReflectionProvider } from './glm-provider.ts';
 import { createQwen38MaxReflectionProvider } from './qwen-provider.ts';
+import {
+  REFLECTION_MODEL_ARMS,
+  isReflectionModelChoice,
+  type ReflectionModelChoice,
+} from './model-arms.ts';
 import { randomUUID } from 'node:crypto';
 import type { ReflectionLifecycleLogger } from './lifecycle-log.ts';
 import type { ReflectionProviderDiagnosticSink } from './provider-diagnostics.ts';
@@ -39,21 +45,10 @@ export type InitialReflectionGenerationResult = {
   status: 'created' | 'existing';
 };
 
-export const REFLECTION_MODEL_CHOICES = [
-  'openai:gpt-5.6-luna-high',
-  'zai:glm-5.2-high',
-  'dashscope:qwen3.8-max',
-] as const;
-
-export type ReflectionModelChoice = (typeof REFLECTION_MODEL_CHOICES)[number];
-
-export function isReflectionModelChoice(value: unknown): value is ReflectionModelChoice {
-  return typeof value === 'string'
-    && (REFLECTION_MODEL_CHOICES as readonly string[]).includes(value);
-}
+export { isReflectionModelChoice, type ReflectionModelChoice } from './model-arms.ts';
 
 export function choiceForStoredModel(model: string): ReflectionModelChoice | null {
-  const match = REFLECTION_MODEL_CHOICES.find((choice) => {
+  const match = REFLECTION_MODEL_ARMS.map((arm) => arm.choice).find((choice) => {
     const separator = choice.indexOf(':');
     return separator >= 0 && choice.slice(separator + 1) === model;
   });
@@ -83,6 +78,7 @@ export type InitialReflectionGenerationDependencies = {
   provider?: LunaReflectionProvider;
   glmProvider?: LunaReflectionProvider;
   qwen38MaxProvider?: LunaReflectionProvider;
+  comparisonProviders?: Partial<Record<ReflectionModelChoice, LunaReflectionProvider>>;
   random?: () => number;
   now?: () => string;
   buildBundle?: (
@@ -144,14 +140,29 @@ export function createInitialReflectionGenerationService(
   const recordRun = dependencies.recordRun ?? recordReflectionGenerationRun;
   const lifecycleLogger = dependencies.lifecycleLogger;
   const inFlight = new Map<string, Promise<InitialReflectionGenerationResult>>();
+  const configuredProviders: Partial<Record<ReflectionModelChoice, LunaReflectionProvider>> = {
+    ...dependencies.comparisonProviders,
+    'openai:gpt-5.6-luna-high': provider,
+    'zai:glm-5.2-high': glmProvider,
+    'dashscope:qwen3.8-max': qwen38MaxProvider,
+  };
+  for (const arm of REFLECTION_MODEL_ARMS) {
+    if (arm.config !== null && configuredProviders[arm.choice] === undefined) {
+      configuredProviders[arm.choice] = createReflectionProvider(arm.config, {
+        diagnosticSink: dependencies.providerDiagnosticSink,
+      });
+    }
+  }
   const comparisonArms: ReadonlyArray<{
     choice: ReflectionModelChoice;
     provider: LunaReflectionProvider;
-  }> = [
-    { choice: 'openai:gpt-5.6-luna-high', provider },
-    { choice: 'zai:glm-5.2-high', provider: glmProvider },
-    { choice: 'dashscope:qwen3.8-max', provider: qwen38MaxProvider },
-  ];
+  }> = REFLECTION_MODEL_ARMS.map((arm) => ({
+    choice: arm.choice,
+    provider: configuredProviders[arm.choice]!,
+  }));
+  const defaultComparisonArms = comparisonArms.filter((arm) => (
+    REFLECTION_MODEL_ARMS.find((candidate) => candidate.choice === arm.choice)!.enabledByDefault
+  ));
 
   function selectProvider(choice: ReflectionModelChoice | undefined): LunaReflectionProvider {
     // Tests that inject only the Luna provider keep deterministic single-arm behavior.
@@ -160,6 +171,7 @@ export function createInitialReflectionGenerationService(
       && dependencies.provider !== undefined
       && dependencies.glmProvider === undefined
       && dependencies.qwen38MaxProvider === undefined
+      && dependencies.comparisonProviders === undefined
     ) {
       return provider;
     }
@@ -170,8 +182,8 @@ export function createInitialReflectionGenerationService(
       }
       return selected.provider;
     }
-    const index = Math.floor(random() * comparisonArms.length);
-    return comparisonArms[index]!.provider;
+    const index = Math.floor(random() * defaultComparisonArms.length);
+    return defaultComparisonArms[index]!.provider;
   }
 
   async function runCoalesced(
