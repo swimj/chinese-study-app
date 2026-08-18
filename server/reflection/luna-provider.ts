@@ -37,7 +37,7 @@ export const LUNA_REFLECTION_MODEL_CONFIG = {
   modelConfig: 'gpt-5.6-luna-high',
   providerModel: 'gpt-5.6-luna',
   reasoningEffort: 'high',
-  maxOutputTokens: 40_000,
+  maxOutputTokens: 50_000,
   timeoutMs: 180_000,
   promptVersion: 'reflection-v7',
   defaultBaseUrl: 'https://api.openai.com/v1',

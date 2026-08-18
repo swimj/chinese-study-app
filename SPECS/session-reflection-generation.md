@@ -193,7 +193,7 @@ exposure. The mechanism may be a fixed evidence-item cap, deterministic
 partitioning, dynamic batching, or a later policy with equivalent safety. The
 bound and the handling of excluded eligible items must be inspectable.
 
-The initial fifteen-item cap is a provisional dogfood control, not a permanent
+The initial twenty-five-item cap is a provisional dogfood control, not a permanent
 product invariant. Replacing it must preserve:
 
 - deterministic accounting of eligible versus included evidence;

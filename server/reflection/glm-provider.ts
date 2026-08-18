@@ -9,7 +9,7 @@ export const GLM_REFLECTION_MODEL_CONFIG = {
   modelConfig: 'glm-5.2-high',
   providerModel: 'glm-5.2',
   reasoningEffort: 'high',
-  maxOutputTokens: 40_000,
+  maxOutputTokens: 50_000,
   timeoutMs: 900_000,
   promptVersion: 'reflection-v7',
   defaultBaseUrl: 'https://api.z.ai/api/paas/v4',

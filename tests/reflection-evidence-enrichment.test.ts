@@ -174,7 +174,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
       generatedAt,
     );
 
-    assert.equal(INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS, 15);
+    assert.equal(INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS, 25);
     assert.equal(built.eligibleItemCount, 2);
     assert.equal(built.includedItemCount, 2);
     assert.deepEqual(built.bundle.items.map((item) => item.itemId), [
@@ -183,8 +183,8 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
     ]);
   });
 
-  test('caps more than fifteen eligible items at the backend bundle boundary', () => {
-    const additionalItems = Array.from({ length: 15 }, (_, index) => (
+  test('caps more than twenty-five eligible items at the backend bundle boundary', () => {
+    const additionalItems = Array.from({ length: 25 }, (_, index) => (
       insertEligibleProductionMistake(`additional-${index + 1}`)
     ));
     const built = buildInitialReflectionBundleWithMetrics(
@@ -193,12 +193,12 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
       generatedAt,
     );
 
-    assert.equal(built.eligibleItemCount, 16);
-    assert.equal(built.includedItemCount, 15);
+    assert.equal(built.eligibleItemCount, 26);
+    assert.equal(built.includedItemCount, 25);
     assert.equal(built.bundle.items.length, INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS);
     assert.deepEqual(
       built.bundle.items.map((item) => item.itemId),
-      ['production-mistake:action-1', ...additionalItems.slice(0, 14).map((item) => item.itemId)],
+      ['production-mistake:action-1', ...additionalItems.slice(0, 24).map((item) => item.itemId)],
     );
   });
 
