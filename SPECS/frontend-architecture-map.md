@@ -25,7 +25,7 @@ src/
     HomePage.tsx                  # home: overview + active session grid
     HomeOverviewPanel.tsx         # backend/session availability overview + Start session card (gear toggles SessionSettingsPanel)
     PriorityPage.tsx              # unstudied priority queue + triage
-    ReflectionsPage.tsx           # artifact history/detail and proposal-level review
+    ReflectionsPage.tsx           # help pager, artifact history/detail, and proposal-level review
     ContentDiagnosticsPage.tsx    # read-only primitive content browser
 
   features/

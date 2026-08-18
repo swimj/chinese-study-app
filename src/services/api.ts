@@ -192,6 +192,10 @@ export type ReflectionReviewApi = {
   upsertQuality: (request: UpsertReflectionQualityRequest) => Promise<ReflectionQualityItemTags>;
   clearQuality: (request: ClearReflectionQualityRequest) => Promise<{ cleared: boolean }>;
   getQualityStats: () => Promise<ReflectionQualityStatsDto>;
+  listHelpInbox: () => Promise<{ entries: ReflectionHelpInboxEntry[] }>;
+  markHelpInboxDone: (
+    request: MarkReflectionHelpInboxDoneRequest,
+  ) => Promise<{ done: boolean }>;
 };
 
 export type { BackendStatus };

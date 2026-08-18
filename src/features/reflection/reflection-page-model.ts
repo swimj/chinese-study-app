@@ -5,6 +5,7 @@ import type {
   ReflectionInputItemV2,
   ReflectionItemV3,
   ReflectionItemResult,
+  ReflectionHelpInboxEntry,
   ReflectionOperation,
   ReflectionQualityItemTags,
   ReflectionQualityTag,
@@ -43,6 +44,14 @@ export function findQualityItemTags(
   artifactId: string,
   itemId: string,
 ): ReflectionQualityItemTags | null {
+  return rows.find((row) => row.artifactId === artifactId && row.itemId === itemId) ?? null;
+}
+
+export function findHelpInboxEntry(
+  rows: ReflectionHelpInboxEntry[],
+  artifactId: string,
+  itemId: string,
+): ReflectionHelpInboxEntry | null {
   return rows.find((row) => row.artifactId === artifactId && row.itemId === itemId) ?? null;
 }
 
@@ -164,6 +173,80 @@ export type ReflectionProposalPresentation = {
   result: ReflectionItemResult;
   proposal: ReflectionProposalDetailDto;
 };
+
+export type ReflectionHelpCard =
+  | (ReflectionProposalPresentation & {
+      kind: 'proposal';
+      cardKey: string;
+    })
+  | {
+      kind: 'explanation';
+      cardKey: string;
+      artifact: ReflectionArtifactDetailDto;
+      evidence: ReflectionInputItemV1
+        | ReflectionInputItemV2
+        | ReflectionItemV3
+        | null;
+      result: ReflectionItemResult;
+    };
+
+/**
+ * Learner help queue: pending proposals as one card each, plus explanation-only
+ * items that still have an open Help inbox row. Membership comes from SQL
+ * (pending proposal reviews ∪ open inbox rows), not from absence on the last-50
+ * artifact list. Deferred and terminal proposal reviews stay out of this queue.
+ */
+export function buildReflectionHelpCards(
+  details: ReflectionArtifactDetailDto[],
+): ReflectionHelpCard[] {
+  const cards: ReflectionHelpCard[] = [];
+
+  for (const artifact of details) {
+    const evidenceByItemId = new Map(
+      artifact.evidenceBundle.items.map((item) => [item.itemId, item]),
+    );
+    const proposalsByItemId = new Map<string, ReflectionProposalDetailDto[]>();
+    for (const proposal of artifact.proposals) {
+      const proposals = proposalsByItemId.get(proposal.itemId) ?? [];
+      proposals.push(proposal);
+      proposalsByItemId.set(proposal.itemId, proposals);
+    }
+
+    for (const result of artifact.result.itemResults) {
+      const evidence = evidenceByItemId.get(result.itemId) ?? null;
+      const proposals = proposalsByItemId.get(result.itemId) ?? [];
+      const pending = proposals.filter((proposal) => (
+        proposal.review.disposition.kind === 'pending'
+      ));
+      if (pending.length > 0) {
+        for (const proposal of pending) {
+          cards.push({
+            kind: 'proposal',
+            cardKey: `proposal:${proposal.review.proposalId}`,
+            artifact,
+            evidence,
+            result,
+            proposal,
+          });
+        }
+        continue;
+      }
+      if (proposals.length > 0) continue;
+      if (!findHelpInboxEntry(artifact.helpInbox, artifact.artifactId, result.itemId)) {
+        continue;
+      }
+      cards.push({
+        kind: 'explanation',
+        cardKey: `explanation:${artifact.artifactId}:${result.itemId}`,
+        artifact,
+        evidence,
+        result,
+      });
+    }
+  }
+
+  return cards;
+}
 
 export function buildReflectionItemPresentations(
   detail: ReflectionArtifactDetailDto,

@@ -5,6 +5,7 @@ import type {
   ReviewProposalRequest,
   UpsertReflectionQualityRequest,
   ClearReflectionQualityRequest,
+  MarkReflectionHelpInboxDoneRequest,
 } from '../../domain/reflection';
 import type { ReflectionModelChoice } from '../../services/api';
 import type {
@@ -28,6 +29,7 @@ export type ReflectionPageController = {
   submittingProposalId: string | null;
   withdrawingInvocationId: string | null;
   submittingQualityItemKey: string | null;
+  submittingHelpInboxItemKey: string | null;
   generationRetryStatus: {
     runId: string;
     state: 'generating' | 'succeeded' | 'failed';
@@ -46,6 +48,7 @@ export type ReflectionPageController = {
   withdrawAuthorization: (invocationId: string) => Promise<void>;
   upsertQuality: (request: UpsertReflectionQualityRequest) => Promise<void>;
   clearQuality: (request: ClearReflectionQualityRequest) => Promise<void>;
+  markHelpInboxDone: (request: MarkReflectionHelpInboxDoneRequest) => Promise<void>;
 };
 
 export function qualityItemKey(artifactId: string, itemId: string): string {
@@ -78,6 +81,7 @@ export function useReflectionPageController({
   const [submittingProposalId, setSubmittingProposalId] = useState<string | null>(null);
   const [withdrawingInvocationId, setWithdrawingInvocationId] = useState<string | null>(null);
   const [submittingQualityItemKey, setSubmittingQualityItemKey] = useState<string | null>(null);
+  const [submittingHelpInboxItemKey, setSubmittingHelpInboxItemKey] = useState<string | null>(null);
   const [generationRetryStatus, setGenerationRetryStatus] = useState<
     ReflectionPageController['generationRetryStatus']
   >(null);
@@ -94,11 +98,18 @@ export function useReflectionPageController({
     forceArtifactIds: ReadonlySet<string> = new Set(),
   ): Promise<void> {
     const reviewApi = requireApi();
-    const [nextOpenArtifacts, nextRecentArtifacts, nextGenerationRuns, nextQualityStats] = await Promise.all([
+    const [
+      nextOpenArtifacts,
+      nextRecentArtifacts,
+      nextGenerationRuns,
+      nextQualityStats,
+      nextHelpInbox,
+    ] = await Promise.all([
       reviewApi.listArtifacts('open'),
       reviewApi.listArtifacts('all'),
       reviewApi.listGenerationRuns(),
       reviewApi.getQualityStats(),
+      reviewApi.listHelpInbox(),
     ]);
     setQualityStats(nextQualityStats);
     const orderedArtifacts = [
@@ -108,6 +119,9 @@ export function useReflectionPageController({
           (recentArtifact) => recentArtifact.artifactId === artifact.artifactId,
         )),
     ];
+    const knownArtifactIds = new Set(orderedArtifacts.map((artifact) => artifact.artifactId));
+    const inboxArtifactIds = [...new Set(nextHelpInbox.entries.map((entry) => entry.artifactId))]
+      .filter((artifactId) => !knownArtifactIds.has(artifactId));
     const readableArtifactIds = orderedArtifacts
       .filter((artifact) => artifact.readState === 'available')
       .map((artifact) => artifact.artifactId);
@@ -122,8 +136,12 @@ export function useReflectionPageController({
     for (const artifactId of nextUnreadableArtifactIds) {
       detailByArtifactId.delete(artifactId);
     }
-    const artifactIdsToLoad = readableArtifactIds.filter((artifactId) => (
-      !detailByArtifactId.has(artifactId) || forceArtifactIds.has(artifactId)
+    const artifactIdsToLoad = [
+      ...readableArtifactIds,
+      ...inboxArtifactIds,
+    ].filter((artifactId, index, ids) => (
+      ids.indexOf(artifactId) === index
+      && (!detailByArtifactId.has(artifactId) || forceArtifactIds.has(artifactId))
     ));
     const loadedDetails = await Promise.allSettled(
       artifactIdsToLoad.map((artifactId) => reviewApi.getArtifact(artifactId)),
@@ -137,7 +155,10 @@ export function useReflectionPageController({
         nextUnreadableArtifactIds.add(artifactId);
       }
     }
-    const nextArtifactDetails = readableArtifactIds.flatMap((artifactId) => {
+    const nextArtifactDetails = [
+      ...readableArtifactIds,
+      ...inboxArtifactIds.filter((artifactId) => !readableArtifactIds.includes(artifactId)),
+    ].flatMap((artifactId) => {
       const detail = detailByArtifactId.get(artifactId);
       return detail === undefined ? [] : [detail];
     });
@@ -333,6 +354,24 @@ export function useReflectionPageController({
     }
   }
 
+  async function markHelpInboxDone(request: MarkReflectionHelpInboxDoneRequest): Promise<void> {
+    const key = qualityItemKey(request.artifactId, request.itemId);
+    setSubmittingHelpInboxItemKey(key);
+    setError(null);
+    try {
+      await requireApi().markHelpInboxDone(request);
+      await loadListsAndDetail(
+        selectedArtifact?.artifactId ?? null,
+        new Set([request.artifactId]),
+      );
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to mark reflection help item done');
+      throw error;
+    } finally {
+      setSubmittingHelpInboxItemKey(null);
+    }
+  }
+
   return {
     isLoading,
     openArtifacts,
@@ -346,6 +385,7 @@ export function useReflectionPageController({
     submittingProposalId,
     withdrawingInvocationId,
     submittingQualityItemKey,
+    submittingHelpInboxItemKey,
     generationRetryStatus,
     openPage,
     refresh,
@@ -367,5 +407,6 @@ export function useReflectionPageController({
     withdrawAuthorization,
     upsertQuality,
     clearQuality,
+    markHelpInboxDone,
   };
 }

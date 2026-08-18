@@ -21,6 +21,7 @@ describe('reflection run log presentation', () => {
       submittingProposalId: null,
       withdrawingInvocationId: null,
       submittingQualityItemKey: null,
+      submittingHelpInboxItemKey: null,
       generationRetryStatus: null,
       openPage: async () => {},
       refresh: async () => {},
@@ -33,11 +34,12 @@ describe('reflection run log presentation', () => {
       withdrawAuthorization: async () => {},
       upsertQuality: async () => {},
       clearQuality: async () => {},
+      markHelpInboxDone: async () => {},
     };
 
     const markup = renderToStaticMarkup(createElement(ReflectionsPage, { controller }));
     assert.match(markup, /1 stored reflection could not be read/);
-    assert.match(markup, /No proposals are waiting for a decision/);
+    assert.match(markup, /All caught up/);
   });
 
   test('renders the empty dogfood state', () => {

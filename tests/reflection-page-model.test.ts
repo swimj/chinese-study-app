@@ -13,6 +13,7 @@ import {
   buildReflectionItemPresentations,
   buildLearnerRequestedReflectionPresentations,
   buildReflectionProposalPresentations,
+  buildReflectionHelpCards,
   listQualityPromptVersions,
   presentQualityStatsArms,
   REFLECTION_QUALITY_TAG_OPTIONS,
@@ -56,6 +57,34 @@ describe('reflection page model', () => {
       cueSummary: 'target',
       questionCount: 0,
     });
+  });
+
+  test('builds one help card per pending proposal and one for open explanation inbox items', () => {
+    const detail = artifactDetail();
+    const cards = buildReflectionHelpCards([detail]);
+    assert.deepEqual(cards.map((card) => card.cardKey), [
+      'proposal:proposal-a',
+      'proposal:proposal-b',
+      'explanation:artifact:informational',
+    ]);
+    assert.equal(cards[0]?.kind === 'proposal' && cards[0].result.itemId, 'mistake');
+    assert.equal(cards[2]?.kind, 'explanation');
+  });
+
+  test('hides Done explanation cards from the help queue but keeps pending proposals', () => {
+    const detail = artifactDetail();
+    detail.helpInbox = [];
+    const cards = buildReflectionHelpCards([detail]);
+    assert.deepEqual(cards.map((card) => card.cardKey), [
+      'proposal:proposal-a',
+      'proposal:proposal-b',
+    ]);
+
+    detail.proposals[0]!.review.disposition = { kind: 'deferred' };
+    const afterDefer = buildReflectionHelpCards([detail]);
+    assert.deepEqual(afterDefer.map((card) => card.cardKey), [
+      'proposal:proposal-b',
+    ]);
   });
 
   test('exposes the closed item quality tag set including praise', () => {
@@ -692,7 +721,12 @@ function artifactDetail(): ReflectionArtifactDetailDto {
       invocation: null,
     })),
     qualityItemTags: [],
-    helpInbox: [],
+    helpInbox: [{
+      inboxId: 'inbox-informational',
+      artifactId: 'artifact',
+      itemId: 'informational',
+      openedAt: evidenceBundle.generatedAt,
+    }],
   };
 }
 
