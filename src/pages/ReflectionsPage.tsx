@@ -994,7 +994,7 @@ function ProposalCard({
       </header>
 
       <p>{proposal.proposal.rationale}</p>
-      <SupportNotice support={draftState.applySupport} />
+      {draftState.applySupport === 'unsupported' ? <SupportNotice /> : null}
 
       {unresolved ? (
         <>
@@ -1472,13 +1472,9 @@ function ProposalDispositionStatus({
   }
 }
 
-function SupportNotice({ support }: { support: 'supported' | 'unsupported' }) {
-  return support === 'supported' ? (
-    <div className="reflection-support supported">
-      Supported now. Acceptance starts application immediately.
-    </div>
-  ) : (
-    <div className="reflection-support unsupported">
+function SupportNotice() {
+  return (
+    <div className="reflection-support">
       Unsupported now. Acceptance records standing authorization for this exact operation but
       changes no study or content state. You can withdraw it before an adapter becomes available.
     </div>
