@@ -22,12 +22,14 @@ import type {
   ProposalReviewStatus,
   ReflectionProposalV1,
   ReflectionQualityItemTags,
+  ReflectionHelpInboxEntry,
   ReflectionQualityTag,
   ReviewProposalRequest,
   SessionReflectionBundle,
   SessionReflectionResult,
   UpsertReflectionQualityRequest,
   ClearReflectionQualityRequest,
+  MarkReflectionHelpInboxDoneRequest,
 } from '../domain/reflection';
 import type {
   ContentDiagnosticKind,
@@ -158,6 +160,7 @@ export type ReflectionArtifactDetailDto = {
   result: SessionReflectionResult;
   proposals: ReflectionProposalDetailDto[];
   qualityItemTags: ReflectionQualityItemTags[];
+  helpInbox: ReflectionHelpInboxEntry[];
 };
 
 export type ReflectionQualityArmStatsDto = {
@@ -537,6 +540,28 @@ export async function fetchReflectionQualityStats(): Promise<ReflectionQualitySt
   const response = await fetch(`${API_BASE}/api/reflection-quality-stats`);
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to load reflection quality stats'));
+  }
+  return response.json();
+}
+
+export async function fetchReflectionHelpInbox(): Promise<{ entries: ReflectionHelpInboxEntry[] }> {
+  const response = await fetch(`${API_BASE}/api/reflection-help-inbox`);
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to load reflection help inbox'));
+  }
+  return response.json();
+}
+
+export async function markReflectionHelpInboxDone(
+  request: MarkReflectionHelpInboxDoneRequest,
+): Promise<{ done: boolean }> {
+  const response = await fetch(`${API_BASE}/api/reflection-help-inbox`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to mark reflection help inbox item done'));
   }
   return response.json();
 }

@@ -446,6 +446,7 @@ function artifactDetail(artifactId: string, proposalCount: number): ReflectionAr
       invocation: null,
     })),
     qualityItemTags: [],
+    helpInbox: [],
   };
 }
 

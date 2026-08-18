@@ -692,6 +692,7 @@ function artifactDetail(): ReflectionArtifactDetailDto {
       invocation: null,
     })),
     qualityItemTags: [],
+    helpInbox: [],
   };
 }
 

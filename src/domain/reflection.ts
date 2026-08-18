@@ -494,6 +494,19 @@ export type ClearReflectionQualityRequest = {
   itemId: string;
 };
 
+/** Open Help inbox membership for an explanation-only reflection item. */
+export type ReflectionHelpInboxEntry = {
+  inboxId: string;
+  artifactId: string;
+  itemId: string;
+  openedAt: string;
+};
+
+export type MarkReflectionHelpInboxDoneRequest = {
+  artifactId: string;
+  itemId: string;
+};
+
 export type ReviewProposalRequest =
   | { action: 'defer' }
   | {

@@ -11,6 +11,7 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`persistence.ts`](../server/db/persistence.ts) | Existing query/domain functions (words, priority, sessions, contrast, scheduler, analytics, durable learning-policy metadata) and `initializeDatabase` |
 | [`reflections.ts`](../server/db/reflections.ts) | Reflection schema validation, immutable artifact materialization, queue/detail read models, proposal review, immutable invocation authorization, application/recovery, and supported adapters |
 | [`reflection-quality.ts`](../server/db/reflection-quality.ts) | Dogfood item quality-tag overlay, upsert-by-item, and model-arm stats joins |
+| [`reflection-help-inbox.ts`](../server/db/reflection-help-inbox.ts) | Open explanation-only Help inbox rows, keyed by `(artifact_id, item_id)`; Done deletes the row |
 | [`domain-commands.ts`](../server/db/domain-commands.ts) | Shared transaction-aware domain commands used by reflection and legacy/manual paths; definition-production suppression and contextual-selection eligibility |
 | [`schema.ts`](../server/db/schema.ts) | Re-exports `applyProductionContrastExerciseSeed` and `initializeDatabase` for init ordering |
 | [`index.ts`](../server/db/index.ts) | Internal re-export barrel |
@@ -30,9 +31,10 @@ Domain-oriented re-export shims (navigation only; implementation stays in `persi
 
 ## Reflection persistence
 
-Reflection uses five SQLite tables initialized and validated from
+Reflection uses seven SQLite tables initialized and validated from
 [`reflections.ts`](../server/db/reflections.ts) (quality overlay from
-[`reflection-quality.ts`](../server/db/reflection-quality.ts)):
+[`reflection-quality.ts`](../server/db/reflection-quality.ts); Help inbox from
+[`reflection-help-inbox.ts`](../server/db/reflection-help-inbox.ts)):
 
 | Table | Responsibility |
 | --- | --- |
@@ -41,6 +43,7 @@ Reflection uses five SQLite tables initialized and validated from
 | `reflection_proposal_reviews` | One mutable review status for each immutable `(artifact, item, proposal index)` locator |
 | `reflection_operation_invocations` | Immutable authorized operation plus its mutable application status, effects, and non-effect reason |
 | `reflection_quality_annotations` | Optional item tag-set overlay keyed by `(artifact_id, item_id)`; joins to artifact model arm at read time |
+| `reflection_help_inbox` | Open explanation-only Help membership keyed by `(artifact_id, item_id)`; seeded at artifact materialize; Done deletes the row |
 
 Artifacts preserve the exact bounded bundle, validated result, generation time,
 provider/model/prompt metadata, and schema versions. A restrictive foreign key

@@ -4,6 +4,7 @@ export * from './schema.ts';
 export * from './persistence.ts';
 export * from './reflections.ts';
 export * from './reflection-quality.ts';
+export * from './reflection-help-inbox.ts';
 export * from './domain-commands.ts';
 export * from './production-cues.ts';
 export * from './content-diagnostics.ts';

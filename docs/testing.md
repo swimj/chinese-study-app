@@ -24,11 +24,12 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `reflection-generation.test.ts` | Prelookup idempotency, provider/materialization/run metadata, included/eligible counts, in-process coalescing, exact saved-bundle failure retry | `server/reflection/generation.ts` with injected dependencies |
 | `reflection-generation-isolation.test.ts` | Real enrichment/provider failures preserve completed session, summary, and attempt state while recording available run usage | Reflection generation stack + temporary SQLite |
 | `reflection-run-pricing.test.ts` | Pinned token-category pricing math, partial usage handling, and unknown-rate unavailability | `server/reflection/run-pricing.ts` |
-| `reflection-store.test.ts` | Four-table schema, retained failed-run bundles/retryability, immutable run-price reconstruction, atomic artifact/review persistence, queue/detail, review/invocation lifecycle | Dynamic `server/db.ts` |
+| `reflection-store.test.ts` | Seven-table schema, retained failed-run bundles/retryability, immutable run-price reconstruction, atomic artifact/review persistence, queue/detail, review/invocation lifecycle | Dynamic `server/db.ts` |
 | `reflection-application.test.ts` | Suppression/contrast adapters, effect attribution, already/stale/failed/unsupported outcomes, recovery | Dynamic `server/db.ts` |
 | `reflection-persistence-reload.test.ts` | Queue/detail/review/application/effect reconstruction across fresh Node processes | Shared temporary `APP_DATA_DIR` |
-| `reflection-api.test.ts` | Generation statuses/errors, queue/detail, compact generation run log/retry, strict independent proposal review, quality tag upsert/stats, apply/withdraw, startup recovery | `server/index.ts` registered Express route handlers + temporary SQLite |
+| `reflection-api.test.ts` | Generation statuses/errors, queue/detail, compact generation run log/retry, strict independent proposal review, quality tag upsert/stats, Help inbox Done, apply/withdraw, startup recovery | `server/index.ts` registered Express route handlers + temporary SQLite |
 | `reflection-quality.test.ts` | Item quality tag-set upsert, multi-tag coexistence, model-arm disposition + tag stats | `server/db/reflection-quality.ts` + temporary SQLite |
+| `reflection-help-inbox.test.ts` | Explanation-only Help inbox seed at materialize, Done delete, independence from proposal disposition, 404 | `server/db/reflection-help-inbox.ts` + temporary SQLite |
 | `session-finalization.test.ts` | Explicit Finish boundary, commit-before-summary ordering, reflection isolation/retry and stale-response guards | `session-finalization.ts` |
 | `reflection-page-model.test.ts` | Item/proposal grouping, deep draft edits for four operations, support and validation presentation | `reflection-page-model.ts` |
 | `reflections-page-run-log.test.ts` | Empty, unavailable-cost, and priced run-log rendering states | `ReflectionsPage.tsx` server render |
@@ -56,7 +57,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | Reflection contracts / validation | `reflection-domain.test.ts`, `reflection-evidence-validation.test.ts` |
 | Reflection evidence / finalization | `session-reflection-evidence.test.ts`, `session-finalization.test.ts`, `reflection-evidence-enrichment.test.ts` |
 | Reflection provider / generation | `reflection-provider.test.ts`, `reflection-generation.test.ts`, `reflection-generation-isolation.test.ts` |
-| Reflection persistence / application | `reflection-store.test.ts`, `reflection-application.test.ts`, `reflection-persistence-reload.test.ts` |
+| Reflection persistence / application | `reflection-store.test.ts`, `reflection-application.test.ts`, `reflection-persistence-reload.test.ts`, `reflection-quality.test.ts`, `reflection-help-inbox.test.ts` |
 | Reflection HTTP / review UI model | `reflection-api.test.ts`, `reflection-page-model.test.ts` |
 | Schema or bootstrap | `dev-db-bootstrap.test.ts` + any db-touching tests above |
 

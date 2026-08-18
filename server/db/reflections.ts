@@ -20,6 +20,7 @@ import type {
   SessionReflectionResultV4,
   SessionReflectionResultV5,
   ReflectionQualityItemTags,
+  ReflectionHelpInboxEntry,
   SessionReflectionResultV6,
 } from '../../src/domain/reflection.ts';
 import {
@@ -43,6 +44,12 @@ import {
   listReflectionQualityAnnotationsForArtifact,
   validateReflectionQualitySchema,
 } from './reflection-quality.ts';
+import {
+  ensureReflectionHelpInboxSchema,
+  listReflectionHelpInboxForArtifact,
+  seedReflectionHelpInboxWithoutTransaction,
+  validateReflectionHelpInboxSchema,
+} from './reflection-help-inbox.ts';
 import {
   enableContextualSelectionWithoutTransaction,
   type EnableContextualSelectionResult,
@@ -180,6 +187,7 @@ export type ReflectionProposalDetail = {
 export type ReflectionArtifactDetail = ReflectionArtifactRecord & {
   proposals: ReflectionProposalDetail[];
   qualityItemTags: ReflectionQualityItemTags[];
+  helpInbox: ReflectionHelpInboxEntry[];
 };
 
 export type ReflectionArtifactSummary = Omit<
@@ -707,6 +715,7 @@ export function ensureReflectionSchema(): void {
   ensureReflectionGenerationRunDiagnosticColumns();
   ensureReflectionIndexes();
   ensureReflectionQualitySchema();
+  ensureReflectionHelpInboxSchema();
 }
 
 function migrateReflectionArtifactsForMultipleCandidates(): void {
@@ -795,6 +804,7 @@ export function validateReflectionSchema(): void {
   assertTableColumns('reflection_proposal_reviews', proposalReviewColumns);
   assertTableColumns('reflection_operation_invocations', invocationColumns);
   validateReflectionQualitySchema();
+  validateReflectionHelpInboxSchema();
   assertUniqueIndex(
     'reflection_proposal_reviews',
     ['artifact_id', 'item_id', 'proposal_index'],
@@ -947,7 +957,11 @@ export function materializeReflectionArtifact(
           updated_at
         ) VALUES (?, ?, ?, ?, 'pending', ?)
       `);
+      const explanationItemIds: string[] = [];
       for (const itemResult of input.result.itemResults) {
+        if (itemResult.proposals.length === 0) {
+          explanationItemIds.push(itemResult.itemId);
+        }
         for (const [proposalIndex] of itemResult.proposals.entries()) {
           insertProposal.run(
             randomUUID(),
@@ -958,6 +972,11 @@ export function materializeReflectionArtifact(
           );
         }
       }
+      seedReflectionHelpInboxWithoutTransaction(
+        artifactId,
+        explanationItemIds,
+        input.generatedAt,
+      );
       created = true;
       database.exec('COMMIT');
     }
@@ -1040,6 +1059,7 @@ export function getReflectionArtifactDetail(artifactId: string): ReflectionArtif
     ...artifact,
     proposals,
     qualityItemTags: listReflectionQualityAnnotationsForArtifact(artifactId),
+    helpInbox: listReflectionHelpInboxForArtifact(artifactId),
   };
 }
 

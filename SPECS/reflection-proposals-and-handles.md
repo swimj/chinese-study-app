@@ -618,9 +618,12 @@ Application outcomes never rewrite an accepted proposal's historical
 disposition. Conversely, an unaccepted proposal made unnecessary during review
 is superseded rather than given an application result.
 
-An item-level read, archive, or presentation state may be added later if the UI
-needs one. It must not substitute for proposal review or be described as
-proposal disposition.
+Explanation-only items enter Help when their artifact is materialized. Done
+removes them from Help. The item remains on the artifact, so By session still
+shows it.
+
+Help membership for those items is separate from proposal review. Learner-facing
+undo of Done is not offered. Artifact-level read/archive remains deferred.
 
 ## 7. Authorized Invocations
 

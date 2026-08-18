@@ -80,6 +80,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     sqlite.exec(`
       PRAGMA defer_foreign_keys = ON;
       BEGIN;
+      DELETE FROM reflection_help_inbox;
       DELETE FROM reflection_quality_annotations;
       DELETE FROM reflection_proposal_reviews;
       DELETE FROM reflection_operation_invocations;
@@ -542,6 +543,62 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     })).status, 400);
   });
 
+  test('seeds explanation-only help inbox and Done deletes it without changing proposal disposition', async () => {
+    const withProposals = materialize('inbox-api-session', suppressOperation('target')).artifact;
+    const informational = materializeInformational('inbox-api-explanation').artifact;
+    const proposalId = withProposals.proposals[0]!.review.proposalId;
+
+    const listed = await request('/api/reflection-help-inbox');
+    assert.equal(listed.status, 200);
+    const listPayload = listed.json as {
+      entries: Array<{ artifactId: string; itemId: string; openedAt: string }>;
+    };
+    assert.equal(listPayload.entries.length, 1);
+    assert.equal(listPayload.entries[0]!.artifactId, informational.artifactId);
+    assert.equal(listPayload.entries[0]!.itemId, 'item-1');
+
+    const proposalDetail = await request(`/api/reflection-artifacts/${withProposals.artifactId}`);
+    assert.equal(proposalDetail.status, 200);
+    const proposalPayload = proposalDetail.json as {
+      helpInbox: Array<{ itemId: string }>;
+      proposals: Array<{ review: { proposalId: string; disposition: { kind: string } } }>;
+    };
+    assert.equal(proposalPayload.helpInbox.length, 0);
+    assert.equal(proposalPayload.proposals[0]!.review.proposalId, proposalId);
+    assert.equal(proposalPayload.proposals[0]!.review.disposition.kind, 'pending');
+
+    const explanationDetail = await request(`/api/reflection-artifacts/${informational.artifactId}`);
+    assert.equal(explanationDetail.status, 200);
+    const explanationPayload = explanationDetail.json as {
+      helpInbox: Array<{ itemId: string; openedAt: string }>;
+    };
+    assert.equal(explanationPayload.helpInbox.length, 1);
+    assert.equal(explanationPayload.helpInbox[0]!.itemId, 'item-1');
+
+    const marked = await request('/api/reflection-help-inbox', {
+      method: 'DELETE',
+      body: {
+        artifactId: informational.artifactId,
+        itemId: 'item-1',
+      },
+    });
+    assert.equal(marked.status, 200);
+    assert.deepEqual(marked.json, { done: true });
+
+    const afterDone = await request(`/api/reflection-artifacts/${informational.artifactId}`);
+    assert.equal((afterDone.json as { helpInbox: unknown[] }).helpInbox.length, 0);
+
+    assert.equal((await request('/api/reflection-help-inbox', {
+      method: 'DELETE',
+      body: { artifactId: informational.artifactId },
+    })).status, 400);
+
+    assert.equal((await request('/api/reflection-help-inbox', {
+      method: 'DELETE',
+      body: { artifactId: informational.artifactId, itemId: 'missing-item' },
+    })).status, 404);
+  });
+
   test('replaces a proposal with a different handle and applies the replacement lifecycle', async () => {
     const artifact = materialize('replacement-session', suppressOperation('target')).artifact;
     const proposalId = artifact.proposals[0]!.review.proposalId;
@@ -802,6 +859,37 @@ function materialize(
   operation: ReflectionOperation,
 ): ReturnType<DbModule['materializeReflectionArtifact']> {
   return dbModule.materializeReflectionArtifact(materializationInput(sessionId, operation));
+}
+
+function materializeInformational(
+  sessionId: string,
+): ReturnType<DbModule['materializeReflectionArtifact']> {
+  sqlite.prepare(`
+    INSERT INTO study_sessions (
+      id, started_at, ended_at, processing_state, processed_at
+    ) VALUES (?, '2026-07-29T11:30:00.000Z', ?, 'processed', ?)
+  `).run(sessionId, generatedAt, generatedAt);
+  return dbModule.materializeReflectionArtifact({
+    sourceSessionId: sessionId,
+    reflectionFlowVersion: 'initial_post_session_reflection.v1',
+    generatedAt,
+    provider: 'openai',
+    model: 'gpt-5.6-luna-high',
+    promptVersion: 'reflection-v2',
+    evidenceBundle: bundle(sessionId),
+    result: {
+      schemaVersion: 'session_reflection_result.v4',
+      itemResults: [{
+        itemId: 'item-1',
+        diagnosisTags: ['ordinary_retrieval_noise'],
+        observation: 'Ordinary retrieval noise; no durable change.',
+        learnerExplanation: null,
+        proposals: [],
+        questions: [],
+        unhandledNeeds: [],
+      }],
+    },
+  });
 }
 
 function materializationInput(
