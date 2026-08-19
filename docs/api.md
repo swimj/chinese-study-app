@@ -179,14 +179,14 @@ whose session/flow does not already have a successful artifact.
 ### Comparison arms
 
 The reflection service has a backend-only comparison-arm registry. Luna, GLM,
-and the existing Qwen dogfood arm retain their current sampling behavior.
-Gemini 3.6 Flash, DeepSeek V4 Pro, Claude Sonnet 5, and GPT-5.6 Terra are
-available only through an explicit generation/retry model choice; they are not
-sampled automatically. OpenRouter arms require `OPENROUTER_API_KEY` and pin one
-upstream provider with fallbacks disabled and required parameters enforced.
-Missing credentials fail only that selected arm with the existing `503` typed
-failure; they never affect finalization or other arms. Prices are fixed
-transport/model snapshots and unavailable usage remains unpriced.
+Qwen3.8-Max, Gemini 3.6 Flash, DeepSeek V4 Pro, and Claude Sonnet 5 are sampled
+with equal probability for initial generation. GPT-5.6 Terra is available only
+through an explicit generation/retry model choice. OpenRouter arms require
+`OPENROUTER_API_KEY` and pin one upstream provider with fallbacks disabled and
+required parameters enforced. Missing credentials fail only the selected arm
+with the existing `503` typed failure; they never affect finalization or other
+arms. Prices are fixed transport/model snapshots and unavailable usage remains
+unpriced.
 
 `POST /api/reflection-generation-runs/:runId/retry` reuses that run's exact
 saved bundle and returns the same response shape and `201`/`200` semantics as
