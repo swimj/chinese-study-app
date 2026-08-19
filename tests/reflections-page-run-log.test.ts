@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, test } from 'node:test';
+import type { SessionReflectionBundleV1, SessionReflectionResultV4 } from '../src/domain/reflection.ts';
 import type { ReflectionPageController } from '../src/features/reflection/useReflectionPageController.ts';
 import { ReflectionsPage, TokenUsageView } from '../src/pages/ReflectionsPage.tsx';
+import type { ReflectionArtifactDetailDto } from '../src/services/api.ts';
 
 describe('reflection run log presentation', () => {
   test('keeps the page available when every stored artifact is unreadable', () => {
@@ -42,6 +44,21 @@ describe('reflection run log presentation', () => {
     assert.match(markup, /No remaining session help to review/);
     assert.match(markup, /reflection-view-rail/);
     assert.doesNotMatch(markup, /Review the help you asked for/);
+  });
+
+  test('explanation-only Help keeps the proposal toolbar and maps Accept to Done', () => {
+    const markup = renderToStaticMarkup(createElement(ReflectionsPage, {
+      controller: idleController({
+        artifactDetails: [explanationArtifact()],
+      }),
+    }));
+    assert.match(markup, /aria-label="Handle"/);
+    assert.match(markup, /disabled=""[^>]*>Reset</);
+    assert.match(markup, /disabled=""[^>]*>Defer</);
+    assert.match(markup, /disabled=""[^>]*>Dismiss</);
+    assert.match(markup, />Accept</);
+    assert.doesNotMatch(markup, />Done</);
+    assert.doesNotMatch(markup, /disabled=""[^>]*>Accept</);
   });
 
   test('renders the empty dogfood state', () => {
@@ -135,6 +152,118 @@ function unreadableArtifact(
     openProposalCount: 1,
     readState: 'unreadable',
     itemCount: null,
+  };
+}
+
+function idleController(
+  overrides: Partial<ReflectionPageController> = {},
+): ReflectionPageController {
+  return {
+    isLoading: false,
+    openArtifacts: [],
+    recentArtifacts: [],
+    artifactDetails: [],
+    unreadableArtifactIds: new Set(),
+    generationRuns: [],
+    qualityStats: { arms: [] },
+    selectedArtifact: null,
+    selectedArtifactId: null,
+    submittingProposalId: null,
+    withdrawingInvocationId: null,
+    submittingQualityItemKey: null,
+    submittingHelpInboxItemKey: null,
+    generationRetryStatus: null,
+    openPage: async () => {},
+    refresh: async () => {},
+    selectArtifact: async () => {},
+    retryGenerationRun: async () => {},
+    deferProposal: async () => {},
+    dismissProposal: async () => {},
+    acceptProposal: async () => {},
+    replaceProposal: async () => {},
+    withdrawAuthorization: async () => {},
+    upsertQuality: async () => {},
+    clearQuality: async () => {},
+    markHelpInboxDone: async () => {},
+    ...overrides,
+  };
+}
+
+function explanationArtifact(): ReflectionArtifactDetailDto {
+  const generatedAt = '2026-07-29T12:00:00.000Z';
+  const evidenceBundle: SessionReflectionBundleV1 = {
+    schemaVersion: 'session_reflection_bundle.v1',
+    generatedAt,
+    session: {
+      sessionId: 'session',
+      startedAt: generatedAt,
+      endedAt: generatedAt,
+      studyProfile: 'mandarin',
+    },
+    items: [{
+      itemId: 'informational',
+      source: 'production_mistake',
+      sourceActionKind: 'production',
+      sessionActionId: 'action-informational',
+      occurredAt: '2026-07-29T11:45:00.000Z',
+      targetWord: {
+        wordId: 'target',
+        hanzi: '目标',
+        pinyin: 'pinyin',
+        meanings: ['meaning'],
+      },
+      sessionNote: null,
+      existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+      cuesAsShown: [{
+        cueId: null,
+        cueType: 'definition_gloss',
+        displayOrder: 0,
+        text: 'target',
+        displayedMeanings: ['target'],
+      }],
+      rawResponse: '替代',
+      submittedWord: {
+        wordId: 'alternate',
+        hanzi: '替代',
+        pinyin: 'pinyin',
+        meanings: ['meaning'],
+      },
+      responseKind: 'matched_known_word',
+    }],
+  };
+  const result: SessionReflectionResultV4 = {
+    schemaVersion: 'session_reflection_result.v4',
+    itemResults: [{
+      itemId: 'informational',
+      diagnosisTags: ['ordinary_retrieval_noise'],
+      observation: 'Keep going.',
+      learnerExplanation: 'Keep going.',
+      proposals: [],
+      questions: [],
+      unhandledNeeds: [],
+    }],
+  };
+  return {
+    artifactId: 'artifact',
+    sourceSessionId: 'session',
+    sourceRunId: null,
+    reflectionFlowVersion: 'initial_post_session_reflection.v1',
+    generatedAt,
+    provider: 'openai-compatible',
+    model: 'gpt-5.6-luna',
+    promptVersion: 'reflection-v2',
+    bundleSchemaVersion: evidenceBundle.schemaVersion,
+    resultSchemaVersion: result.schemaVersion,
+    evidenceBundle,
+    result,
+    proposals: [],
+    qualityItemTags: [],
+    helpInbox: [{
+      inboxId: 'inbox-informational',
+      artifactId: 'artifact',
+      itemId: 'informational',
+      openedAt: generatedAt,
+    }],
   };
 }
 

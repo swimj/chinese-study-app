@@ -307,18 +307,26 @@ function HelpExplanationCard({
             onClear={controller.clearQuality}
           />
         </div>
-        <div className="reflection-help-toolbar">
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={() => void controller.markHelpInboxDone({
+        <HelpReviewToolbar
+          submitting={submitting}
+          handleValue=""
+          handleDisabled
+          onHandleChange={() => undefined}
+          resetDisabled
+          onReset={() => undefined}
+          deferDisabled
+          onDefer={() => undefined}
+          acceptDisabled={submitting}
+          acceptLabel={submitting ? 'Saving...' : 'Accept'}
+          onAccept={() => {
+            void controller.markHelpInboxDone({
               artifactId: card.artifact.artifactId,
               itemId: card.result.itemId,
-            }).catch(() => undefined)}
-          >
-            {submitting ? 'Saving...' : 'Done'}
-          </button>
-        </div>
+            }).catch(() => undefined);
+          }}
+          dismissDisabled
+          onDismiss={() => undefined}
+        />
       </div>
     </>
   );
@@ -391,65 +399,46 @@ function HelpProposalCard({
             </ul>
           </div>
         ) : null}
-        <div className="reflection-help-toolbar">
-          <ReflectionHandleSelect
-            disabled={submitting}
-            value={`${draft.kind}@${draft.version}`}
-            onChange={(value) => {
-              const [kind, versionText] = value.split('@');
-              setDraft(createReplacementOperation(
-                kind as ReflectionOperation['kind'],
-                Number(versionText),
-                original,
-                card.evidence,
-              ));
-            }}
-          />
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={submitting || draftState.acceptanceMode === 'exact'}
-            onClick={() => setDraft(cloneReflectionOperation(original))}
-          >
-            Reset
-          </button>
-          {card.proposal.review.disposition.kind === 'pending' ? (
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={submitting}
-              onClick={() => void controller.deferProposal(card.proposal.review.proposalId).catch(() => undefined)}
-            >
-              Defer
-            </button>
-          ) : null}
-          <button
-            type="button"
-            disabled={submitting || draftState.validationErrors.length > 0}
-            onClick={() => void (draftState.acceptanceMode === 'replacement'
-              ? controller.replaceProposal(card.proposal.review.proposalId, draft)
-              : controller.acceptProposal(card.proposal.review.proposalId, draft)
-            ).catch(() => undefined)}
-          >
-            {submitting
+        <HelpReviewToolbar
+          submitting={submitting}
+          handleValue={`${draft.kind}@${draft.version}`}
+          handleDisabled={submitting}
+          onHandleChange={(value) => {
+            const [kind, versionText] = value.split('@');
+            setDraft(createReplacementOperation(
+              kind as ReflectionOperation['kind'],
+              Number(versionText),
+              original,
+              card.evidence,
+            ));
+          }}
+          resetDisabled={submitting || draftState.acceptanceMode === 'exact'}
+          onReset={() => setDraft(cloneReflectionOperation(original))}
+          deferDisabled={submitting}
+          onDefer={() => {
+            void controller.deferProposal(card.proposal.review.proposalId).catch(() => undefined);
+          }}
+          acceptDisabled={submitting || draftState.validationErrors.length > 0}
+          acceptLabel={
+            submitting
               ? 'Saving...'
               : draftState.acceptanceMode === 'exact'
                 ? 'Accept'
                 : draftState.acceptanceMode === 'replacement'
                   ? 'Accept replacement'
-                  : 'Accept'}
-          </button>
-          <button
-            type="button"
-            className="danger-button"
-            disabled={submitting}
-            onClick={() => {
-              void controller.dismissProposal(card.proposal.review.proposalId, null).catch(() => undefined);
-            }}
-          >
-            Dismiss
-          </button>
-        </div>
+                  : 'Accept'
+          }
+          onAccept={() => {
+            void (draftState.acceptanceMode === 'replacement'
+              ? controller.replaceProposal(card.proposal.review.proposalId, draft)
+              : controller.acceptProposal(card.proposal.review.proposalId, draft)
+            ).catch(() => undefined);
+          }}
+          dismissDisabled={submitting}
+          onDismiss={() => {
+            void controller.dismissProposal(card.proposal.review.proposalId, null).catch(() => undefined);
+          }}
+        />
       </div>
     </>
   );
@@ -1908,6 +1897,77 @@ function ItemIdentityHeading({
   );
 }
 
+function HelpReviewToolbar({
+  submitting,
+  handleValue,
+  handleDisabled,
+  onHandleChange,
+  resetDisabled,
+  onReset,
+  deferDisabled,
+  onDefer,
+  acceptDisabled,
+  acceptLabel,
+  onAccept,
+  dismissDisabled,
+  onDismiss,
+}: {
+  submitting: boolean;
+  handleValue: string;
+  handleDisabled: boolean;
+  onHandleChange: (value: string) => void;
+  resetDisabled: boolean;
+  onReset: () => void;
+  deferDisabled: boolean;
+  onDefer: () => void;
+  acceptDisabled: boolean;
+  acceptLabel: string;
+  onAccept: () => void;
+  dismissDisabled: boolean;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="reflection-help-toolbar">
+      <ReflectionHandleSelect
+        disabled={handleDisabled || submitting}
+        value={handleValue}
+        onChange={onHandleChange}
+      />
+      <button
+        type="button"
+        className="secondary-button"
+        disabled={resetDisabled || submitting}
+        onClick={onReset}
+      >
+        Reset
+      </button>
+      <button
+        type="button"
+        className="secondary-button"
+        disabled={deferDisabled || submitting}
+        onClick={onDefer}
+      >
+        Defer
+      </button>
+      <button
+        type="button"
+        disabled={acceptDisabled || submitting}
+        onClick={onAccept}
+      >
+        {acceptLabel}
+      </button>
+      <button
+        type="button"
+        className="danger-button"
+        disabled={dismissDisabled || submitting}
+        onClick={onDismiss}
+      >
+        Dismiss
+      </button>
+    </div>
+  );
+}
+
 function ReflectionHandleSelect({
   value,
   disabled,
@@ -1917,14 +1977,16 @@ function ReflectionHandleSelect({
   disabled: boolean;
   onChange: (value: string) => void;
 }) {
+  const knownValue = REFLECTION_HANDLE_OPTIONS.some((option) => option.value === value);
   return (
     <select
       className="reflection-handle-select"
       aria-label="Handle"
       disabled={disabled}
-      value={value}
+      value={knownValue ? value : ''}
       onChange={(event) => onChange(event.target.value)}
     >
+      {knownValue ? null : <option value="">—</option>}
       {REFLECTION_HANDLE_OPTIONS.map((option) => (
         <option value={option.value} key={option.value}>{option.label}</option>
       ))}

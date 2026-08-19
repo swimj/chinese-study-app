@@ -101,8 +101,10 @@ explanation card while that item remains in Help. Accept, Dismiss, Defer, and
 Done are durable and advance the pager; Done leaves Help with no learner-facing
 undo. Prev/Next are ephemeral. Compact pager chrome stays above the reading
 pane with the target / typed-response identity line. Item quality chips, handle
-selection, reset, and Done / Defer / Accept / Dismiss sit together below the
-pane. Help does not show diagnosis tags or a dedicated dismissal-note field;
+selection, reset, and Accept / Defer / Dismiss sit together below the
+pane. Explanation-only cards use that same toolbar: Handle, Reset, Defer, and
+Dismiss stay visible and disabled, and Accept marks the Help inbox item Done.
+Help does not show diagnosis tags or a dedicated dismissal-note field;
 dismiss records a null reason and the quality note remains the single note
 surface. Evidence, explanation, questions, rationale, and the operation editor
 scroll inside the pane. Production evidence is a quiet tested-cue line
