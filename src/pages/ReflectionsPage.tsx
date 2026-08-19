@@ -49,6 +49,15 @@ type ReflectionRetryMenuOption = {
   disabled?: boolean;
 };
 
+const REFLECTION_HANDLE_OPTIONS = [
+  { value: 'suppress_definition_production@1', label: 'Suppress definition production' },
+  { value: 'create_contrast_cluster@1', label: 'Create contrast cluster (v1)' },
+  { value: 'create_contrast_cluster@2', label: 'Create contrast cluster (v2)' },
+  { value: 'repair_production_cue@1', label: 'Repair production cue (v1)' },
+  { value: 'repair_production_cue@2', label: 'Repair production cue (v2)' },
+  { value: 'accept_production_alternate@1', label: 'Accept production alternate' },
+] as const;
+
 const REFLECTION_RETRY_MODEL_OPTIONS: ReadonlyArray<Omit<ReflectionRetryMenuOption, 'label'> & {
   label: string;
   model: ReflectionModelChoice;
@@ -226,15 +235,8 @@ function HelpQueueView({
           </button>
         </div>
         <div className="reflection-help-chrome-meta">
-          <h2>{itemTitle(card.evidence)}</h2>
+          <ItemIdentityHeading evidence={card.evidence} />
           <p className="notes">{sessionDate}</p>
-          {card.result.diagnosisTags.length === 0 ? null : (
-            <div className="reflection-tag-list">
-              {card.result.diagnosisTags.map((tag) => (
-                <span className="reflection-tag" key={tag}>{humanize(tag)}</span>
-              ))}
-            </div>
-          )}
         </div>
       </header>
       {card.kind === 'explanation' ? (
@@ -271,18 +273,6 @@ function HelpExplanationCard({
   );
   return (
     <>
-      <div className="reflection-help-actions">
-        <button
-          type="button"
-          disabled={submitting}
-          onClick={() => void controller.markHelpInboxDone({
-            artifactId: card.artifact.artifactId,
-            itemId: card.result.itemId,
-          }).catch(() => undefined)}
-        >
-          {submitting ? 'Saving...' : 'Done'}
-        </button>
-      </div>
       <div className="reflection-help-scroll" ref={scrollRef}>
         <EvidenceView evidence={card.evidence} />
         <section className="reflection-analysis">
@@ -299,22 +289,36 @@ function HelpExplanationCard({
           />
         ) : null}
       </div>
-      <div className="reflection-help-quality">
-        <ItemQualityTagControls
-          artifactId={card.artifact.artifactId}
-          itemId={card.result.itemId}
-          annotation={findQualityItemTags(
-            card.artifact.qualityItemTags,
-            card.artifact.artifactId,
-            card.result.itemId,
-          )}
-          submitting={
-            controller.submittingQualityItemKey
-              === qualityItemKey(card.artifact.artifactId, card.result.itemId)
-          }
-          onUpsert={controller.upsertQuality}
-          onClear={controller.clearQuality}
-        />
+      <div className="reflection-help-footer">
+        <div className="reflection-help-quality">
+          <ItemQualityTagControls
+            artifactId={card.artifact.artifactId}
+            itemId={card.result.itemId}
+            annotation={findQualityItemTags(
+              card.artifact.qualityItemTags,
+              card.artifact.artifactId,
+              card.result.itemId,
+            )}
+            submitting={
+              controller.submittingQualityItemKey
+                === qualityItemKey(card.artifact.artifactId, card.result.itemId)
+            }
+            onUpsert={controller.upsertQuality}
+            onClear={controller.clearQuality}
+          />
+        </div>
+        <div className="reflection-help-toolbar">
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={() => void controller.markHelpInboxDone({
+              artifactId: card.artifact.artifactId,
+              itemId: card.result.itemId,
+            }).catch(() => undefined)}
+          >
+            {submitting ? 'Saving...' : 'Done'}
+          </button>
+        </div>
       </div>
     </>
   );
@@ -331,62 +335,11 @@ function HelpProposalCard({
 }) {
   const original = card.proposal.proposal.operation;
   const [draft, setDraft] = useState(() => cloneReflectionOperation(original));
-  const [dismissReason, setDismissReason] = useState('');
   const submitting = controller.submittingProposalId === card.proposal.review.proposalId;
   const draftState = getOperationDraftState(original, draft, card.evidence);
 
   return (
     <>
-      <div className="reflection-help-actions">
-        {card.proposal.review.disposition.kind === 'pending' ? (
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={submitting}
-            onClick={() => void controller.deferProposal(card.proposal.review.proposalId).catch(() => undefined)}
-          >
-            Defer
-          </button>
-        ) : null}
-        <button
-          type="button"
-          disabled={submitting || draftState.validationErrors.length > 0}
-          onClick={() => void (draftState.acceptanceMode === 'replacement'
-            ? controller.replaceProposal(card.proposal.review.proposalId, draft)
-            : controller.acceptProposal(card.proposal.review.proposalId, draft)
-          ).catch(() => undefined)}
-        >
-          {submitting
-            ? 'Saving...'
-            : draftState.acceptanceMode === 'exact'
-              ? 'Accept'
-              : draftState.acceptanceMode === 'replacement'
-                ? 'Accept replacement'
-                : 'Accept'}
-        </button>
-        <div className="reflection-dismiss-row">
-          <input
-            value={dismissReason}
-            placeholder="Optional dismissal note"
-            aria-label="Optional dismissal note"
-            disabled={submitting}
-            onChange={(event) => setDismissReason(event.target.value)}
-          />
-          <button
-            type="button"
-            className="danger-button"
-            disabled={submitting}
-            onClick={() => {
-              void controller.dismissProposal(
-                card.proposal.review.proposalId,
-                dismissReason.trim().length === 0 ? null : dismissReason.trim(),
-              ).catch(() => undefined);
-            }}
-          >
-            Dismiss
-          </button>
-        </div>
-      </div>
       <div className="reflection-help-scroll" ref={scrollRef}>
         <EvidenceView evidence={card.evidence} />
         <section className="reflection-analysis">
@@ -409,30 +362,27 @@ function HelpProposalCard({
           evidence={card.evidence}
           onChange={setDraft}
         />
-        <label className="reflection-field">
-          <span>Handle</span>
-          <select
-            aria-label="Handle"
-            disabled={submitting}
-            value={`${draft.kind}@${draft.version}`}
-            onChange={(event) => {
-              const [kind, versionText] = event.target.value.split('@');
-              setDraft(createReplacementOperation(
-                kind as ReflectionOperation['kind'],
-                Number(versionText),
-                original,
-                card.evidence,
-              ));
-            }}
-          >
-            <option value="suppress_definition_production@1">Suppress definition production</option>
-            <option value="create_contrast_cluster@1">Create contrast cluster (v1)</option>
-            <option value="create_contrast_cluster@2">Create contrast cluster (v2)</option>
-            <option value="repair_production_cue@1">Repair production cue (v1)</option>
-            <option value="repair_production_cue@2">Repair production cue (v2)</option>
-            <option value="accept_production_alternate@1">Accept production alternate</option>
-          </select>
-        </label>
+      </div>
+      <div className="reflection-help-footer">
+        <div className="reflection-help-quality">
+          <ItemQualityTagControls
+            artifactId={card.artifact.artifactId}
+            itemId={card.result.itemId}
+            annotation={findQualityItemTags(
+              card.artifact.qualityItemTags,
+              card.artifact.artifactId,
+              card.result.itemId,
+            )}
+            submitting={
+              controller.submittingQualityItemKey === qualityItemKey(
+                card.artifact.artifactId,
+                card.result.itemId,
+              )
+            }
+            onUpsert={controller.upsertQuality}
+            onClear={controller.clearQuality}
+          />
+        </div>
         {draftState.validationErrors.length > 0 ? (
           <div className="reflection-validation" role="alert">
             <strong>Fix before accepting:</strong>
@@ -441,33 +391,65 @@ function HelpProposalCard({
             </ul>
           </div>
         ) : null}
-        <button
-          type="button"
-          className="secondary-button"
-          disabled={submitting || draftState.acceptanceMode === 'exact'}
-          onClick={() => setDraft(cloneReflectionOperation(original))}
-        >
-          Reset edits
-        </button>
-      </div>
-      <div className="reflection-help-quality">
-        <ItemQualityTagControls
-          artifactId={card.artifact.artifactId}
-          itemId={card.result.itemId}
-          annotation={findQualityItemTags(
-            card.artifact.qualityItemTags,
-            card.artifact.artifactId,
-            card.result.itemId,
-          )}
-          submitting={
-            controller.submittingQualityItemKey === qualityItemKey(
-              card.artifact.artifactId,
-              card.result.itemId,
-            )
-          }
-          onUpsert={controller.upsertQuality}
-          onClear={controller.clearQuality}
-        />
+        <div className="reflection-help-toolbar">
+          <ReflectionHandleSelect
+            disabled={submitting}
+            value={`${draft.kind}@${draft.version}`}
+            onChange={(value) => {
+              const [kind, versionText] = value.split('@');
+              setDraft(createReplacementOperation(
+                kind as ReflectionOperation['kind'],
+                Number(versionText),
+                original,
+                card.evidence,
+              ));
+            }}
+          />
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={submitting || draftState.acceptanceMode === 'exact'}
+            onClick={() => setDraft(cloneReflectionOperation(original))}
+          >
+            Reset
+          </button>
+          {card.proposal.review.disposition.kind === 'pending' ? (
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={submitting}
+              onClick={() => void controller.deferProposal(card.proposal.review.proposalId).catch(() => undefined)}
+            >
+              Defer
+            </button>
+          ) : null}
+          <button
+            type="button"
+            disabled={submitting || draftState.validationErrors.length > 0}
+            onClick={() => void (draftState.acceptanceMode === 'replacement'
+              ? controller.replaceProposal(card.proposal.review.proposalId, draft)
+              : controller.acceptProposal(card.proposal.review.proposalId, draft)
+            ).catch(() => undefined)}
+          >
+            {submitting
+              ? 'Saving...'
+              : draftState.acceptanceMode === 'exact'
+                ? 'Accept'
+                : draftState.acceptanceMode === 'replacement'
+                  ? 'Accept replacement'
+                  : 'Accept'}
+          </button>
+          <button
+            type="button"
+            className="danger-button"
+            disabled={submitting}
+            onClick={() => {
+              void controller.dismissProposal(card.proposal.review.proposalId, null).catch(() => undefined);
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
       </div>
     </>
   );
@@ -521,7 +503,7 @@ function ProposalQueueView({
                     ?? presentation.artifact.generatedAt,
                 )}
               </p>
-              <h2>{itemTitle(presentation.evidence)}</h2>
+              <ItemIdentityHeading evidence={presentation.evidence} />
             </div>
             <div className="reflection-tag-list">
               {presentation.result.diagnosisTags.map((tag) => (
@@ -652,7 +634,7 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                 <header className="reflection-item-heading">
                   <div>
                     <p className="reflection-eyebrow">Reflection item {itemIndex + 1}</p>
-                    <h2>{itemTitle(item.evidence)}</h2>
+                    <ItemIdentityHeading evidence={item.evidence} />
                   </div>
                   <div className="reflection-tag-list">
                     {item.result.diagnosisTags.map((tag) => (
@@ -1288,12 +1270,11 @@ function ProposalCard({
           />
           <label className="reflection-field">
             <span>Handle</span>
-            <select
-              aria-label="Handle"
+            <ReflectionHandleSelect
               disabled={submitting}
               value={`${draft.kind}@${draft.version}`}
-              onChange={(event) => {
-                const [kind, versionText] = event.target.value.split('@');
+              onChange={(value) => {
+                const [kind, versionText] = value.split('@');
                 setDraft(createReplacementOperation(
                   kind as ReflectionOperation['kind'],
                   Number(versionText),
@@ -1301,14 +1282,7 @@ function ProposalCard({
                   evidence,
                 ));
               }}
-            >
-              <option value="suppress_definition_production@1">Suppress definition production</option>
-              <option value="create_contrast_cluster@1">Create contrast cluster (v1)</option>
-              <option value="create_contrast_cluster@2">Create contrast cluster (v2)</option>
-              <option value="repair_production_cue@1">Repair production cue (v1)</option>
-              <option value="repair_production_cue@2">Repair production cue (v2)</option>
-              <option value="accept_production_alternate@1">Accept production alternate</option>
-            </select>
+            />
           </label>
           {draftState.validationErrors.length > 0 ? (
             <div className="reflection-validation" role="alert">
@@ -1851,8 +1825,7 @@ function EvidenceView({
 }) {
   if (evidence === null) {
     return (
-      <section className="reflection-evidence">
-        <h3>Evidence</h3>
+      <section className="reflection-tested-cue">
         <p className="notes">The evidence item could not be reconstructed for display.</p>
       </section>
     );
@@ -1862,60 +1835,100 @@ function EvidenceView({
     const servedCues = 'servedCue' in evidence
       ? [evidence.servedCue]
       : evidence.cuesAsShown;
-    return (
-      <section className="reflection-evidence">
-        <h3>Evidence</h3>
-        <dl className="reflection-evidence-grid">
-          <EvidenceFact label="Target" value={wordLabel(evidence.targetWord)} />
-          <EvidenceFact label="Typed response" value={evidence.rawResponse ?? 'No response'} />
-          <EvidenceFact
-            label="Matched word"
-            value={evidence.submittedWord === null ? 'Unmatched' : wordLabel(evidence.submittedWord)}
-          />
-        </dl>
-        <div className="reflection-evidence-notes">
-          <strong>Cues as shown</strong>
-          <ul>
-            {servedCues.map((cue, index) => (
-              <li key={`${cue.cueId ?? 'snapshot'}-${index}`}>{cue.text}</li>
-            ))}
-          </ul>
-        </div>
-      </section>
-    );
+    return <TestedCueLine label="Tested cue" texts={servedCues.map((cue) => cue.text)} />;
   }
 
   if (evidence.source === 'contrast_selection') {
     return (
-      <section className="reflection-evidence">
-        <h3>Evidence</h3>
-        <p>{evidence.promptAsShown.promptText}</p>
-        <p className="notes">
-          Target: {wordLabel(evidence.targetWord)}
-          {' · '}
-          Signal: {evidence.reflectionSignal === null ? 'none' : humanize(evidence.reflectionSignal)}
-        </p>
-      </section>
+      <TestedCueLine
+        label="Prompt"
+        texts={evidence.promptAsShown.promptText.length === 0
+          ? []
+          : [evidence.promptAsShown.promptText]}
+      />
     );
   }
 
   return (
-    <section className="reflection-evidence">
-      <h3>Evidence</h3>
-      <p>{evidence.sessionNote ?? 'Session note'}</p>
+    <>
+      <TestedCueLine
+        label="Session note"
+        texts={evidence.sessionNote === null || evidence.sessionNote.length === 0
+          ? []
+          : [evidence.sessionNote]}
+      />
       {evidence.relatedWords.length > 0 ? (
         <p className="notes">Related: {evidence.relatedWords.map(wordLabel).join(', ')}</p>
       ) : null}
+    </>
+  );
+}
+
+function TestedCueLine({
+  label,
+  texts,
+}: {
+  label: string;
+  texts: string[];
+}) {
+  const visible = texts.map((text) => text.trim()).filter((text) => text.length > 0);
+  if (visible.length === 0) return null;
+  const [first, ...rest] = visible;
+  return (
+    <section className="reflection-tested-cue">
+      <h3>{label}</h3>
+      <details>
+        <summary>{first}</summary>
+        {rest.length === 0 ? null : (
+          <ul>
+            {rest.map((text, index) => <li key={`${text}-${index}`}>{text}</li>)}
+          </ul>
+        )}
+      </details>
     </section>
   );
 }
 
-function EvidenceFact({ label, value }: { label: string; value: string }) {
+function ItemIdentityHeading({
+  evidence,
+}: {
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null;
+}) {
+  const target = itemTitle(evidence);
+  const typed = evidence?.source === 'production_mistake'
+    ? evidence.rawResponse ?? 'No response'
+    : null;
   return (
-    <div>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </div>
+    <h2>
+      {target}
+      {typed === null ? null : (
+        <span className="reflection-identity-typed"> / {typed}</span>
+      )}
+    </h2>
+  );
+}
+
+function ReflectionHandleSelect({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <select
+      className="reflection-handle-select"
+      aria-label="Handle"
+      disabled={disabled}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    >
+      {REFLECTION_HANDLE_OPTIONS.map((option) => (
+        <option value={option.value} key={option.value}>{option.label}</option>
+      ))}
+    </select>
   );
 }
 
