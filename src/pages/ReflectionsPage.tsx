@@ -84,7 +84,7 @@ export function ReflectionsPage({
     { key: 'deferred', label: 'Deferred', count: proposalQueues.deferred.length },
     {
       key: 'unapplied',
-      label: 'Pending / unsupported',
+      label: 'Pending',
       count: proposalQueues.unapplied.length,
     },
     { key: 'sessions', label: 'By session' },
@@ -94,68 +94,65 @@ export function ReflectionsPage({
 
   return (
     <section className="reflections-page">
-      <header className="header">
-        <div>
-          <h1 className="title">Reflections</h1>
-          <p className="subtitle">
-            Review the help you asked for, one card at a time. Nothing is authorized by generation alone.
-          </p>
-        </div>
+      <nav className="reflection-view-rail" aria-label="Reflection views">
+        {views.map((option) => (
+          <button
+            type="button"
+            className={view === option.key ? 'reflection-view-rail-tab active' : 'reflection-view-rail-tab'}
+            aria-current={view === option.key ? 'page' : undefined}
+            aria-pressed={view === option.key}
+            key={option.key}
+            onClick={() => setView(option.key)}
+          >
+            <span>{option.label}</span>
+            {option.count === undefined ? null : (
+              <span className="reflection-view-rail-count">{option.count}</span>
+            )}
+          </button>
+        ))}
         <button
           type="button"
-          className="secondary-button"
+          className="secondary-button reflection-view-rail-refresh"
           disabled={controller.isLoading}
           onClick={() => void controller.refresh()}
         >
           {controller.isLoading ? 'Refreshing...' : 'Refresh'}
         </button>
-      </header>
-
-      <nav className="priority-subtabs reflection-view-tabs" aria-label="Reflection views">
-        {views.map((option) => (
-          <button
-            type="button"
-            className={view === option.key ? 'priority-subtab active' : 'priority-subtab'}
-            aria-pressed={view === option.key}
-            key={option.key}
-            onClick={() => setView(option.key)}
-          >
-            {option.label}{option.count === undefined ? '' : ` (${option.count})`}
-          </button>
-        ))}
       </nav>
 
-      {controller.unreadableArtifactIds.size > 0 ? (
-        <section className="panel reflection-unreadable-notice" role="status">
-          <strong>
-            {controller.unreadableArtifactIds.size} stored reflection
-            {controller.unreadableArtifactIds.size === 1 ? '' : 's'} could not be read
-          </strong>
-          <p className="notes">
-            They remain stored and are isolated from the readable proposal queues and history.
-          </p>
-        </section>
-      ) : null}
+      <div className="reflections-page-main">
+        {controller.unreadableArtifactIds.size > 0 ? (
+          <section className="panel reflection-unreadable-notice" role="status">
+            <strong>
+              {controller.unreadableArtifactIds.size} stored reflection
+              {controller.unreadableArtifactIds.size === 1 ? '' : 's'} could not be read
+            </strong>
+            <p className="notes">
+              They remain stored and are isolated from the readable proposal queues and history.
+            </p>
+          </section>
+        ) : null}
 
-      {view === 'sessions' ? (
-        <SessionWorkspace controller={controller} />
-      ) : view === 'usage' ? (
-        <TokenUsageView
-          runs={controller.generationRuns}
-          retryStatus={controller.generationRetryStatus}
-          onRetry={controller.retryGenerationRun}
-        />
-      ) : view === 'quality' ? (
-        <QualityStatsView stats={controller.qualityStats} />
-      ) : view === 'help' ? (
-        <HelpQueueView cards={helpCards} controller={controller} />
-      ) : (
-        <ProposalQueueView
-          kind={view}
-          proposals={proposalQueues[view]}
-          controller={controller}
-        />
-      )}
+        {view === 'sessions' ? (
+          <SessionWorkspace controller={controller} />
+        ) : view === 'usage' ? (
+          <TokenUsageView
+            runs={controller.generationRuns}
+            retryStatus={controller.generationRetryStatus}
+            onRetry={controller.retryGenerationRun}
+          />
+        ) : view === 'quality' ? (
+          <QualityStatsView stats={controller.qualityStats} />
+        ) : view === 'help' ? (
+          <HelpQueueView cards={helpCards} controller={controller} />
+        ) : (
+          <ProposalQueueView
+            kind={view}
+            proposals={proposalQueues[view]}
+            controller={controller}
+          />
+        )}
+      </div>
     </section>
   );
 }
@@ -184,9 +181,8 @@ function HelpQueueView({
 
   if (cards.length === 0) {
     return (
-      <main className="reflection-queue">
+      <main className="reflection-help-shell is-empty">
         <section className="panel reflection-empty-state">
-          <h2>All caught up</h2>
           <p className="notes">
             No remaining session help to review. Explanation-only cards you marked Done stay in By session.
           </p>
@@ -199,40 +195,46 @@ function HelpQueueView({
     throw new Error('Invariant violated: help queue has cards but no current card.');
   }
 
-  const sessionDate = formatDateTime(
+  const sessionDate = formatCompactDateTime(
     card.artifact.evidenceBundle.session.endedAt ?? card.artifact.generatedAt,
   );
 
   return (
     <main className="reflection-help-shell">
       <header className="reflection-help-chrome">
-        <div className="reflection-help-chrome-meta">
-          <p className="reflection-eyebrow">{safeIndex + 1} of {cards.length}</p>
-          <h2>{itemTitle(card.evidence)}</h2>
-          <p className="notes">{sessionDate}</p>
-          <div className="reflection-tag-list">
-            {card.result.diagnosisTags.map((tag) => (
-              <span className="reflection-tag" key={tag}>{humanize(tag)}</span>
-            ))}
-          </div>
-        </div>
         <div className="reflection-help-pager">
           <button
             type="button"
-            className="secondary-button"
+            className="secondary-button reflection-help-pager-button"
             disabled={safeIndex === 0}
+            aria-label="Previous help card"
             onClick={() => setIndex((current) => Math.max(0, current - 1))}
           >
-            Prev
+            ‹
           </button>
+          <span className="reflection-help-pager-index" aria-live="polite">
+            {safeIndex + 1} / {cards.length}
+          </span>
           <button
             type="button"
-            className="secondary-button"
+            className="secondary-button reflection-help-pager-button"
             disabled={safeIndex >= cards.length - 1}
+            aria-label="Next help card"
             onClick={() => setIndex((current) => Math.min(cards.length - 1, current + 1))}
           >
-            Next
+            ›
           </button>
+        </div>
+        <div className="reflection-help-chrome-meta">
+          <h2>{itemTitle(card.evidence)}</h2>
+          <p className="notes">{sessionDate}</p>
+          {card.result.diagnosisTags.length === 0 ? null : (
+            <div className="reflection-tag-list">
+              {card.result.diagnosisTags.map((tag) => (
+                <span className="reflection-tag" key={tag}>{humanize(tag)}</span>
+              ))}
+            </div>
+          )}
         </div>
       </header>
       {card.kind === 'explanation' ? (
@@ -296,6 +298,8 @@ function HelpExplanationCard({
             }))}
           />
         ) : null}
+      </div>
+      <div className="reflection-help-quality">
         <ItemQualityTagControls
           artifactId={card.artifact.artifactId}
           itemId={card.result.itemId}
@@ -445,6 +449,8 @@ function HelpProposalCard({
         >
           Reset edits
         </button>
+      </div>
+      <div className="reflection-help-quality">
         <ItemQualityTagControls
           artifactId={card.artifact.artifactId}
           itemId={card.result.itemId}
@@ -1951,4 +1957,15 @@ function humanize(value: string): string {
 function formatDateTime(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function formatCompactDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }

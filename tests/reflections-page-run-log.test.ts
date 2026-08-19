@@ -39,7 +39,9 @@ describe('reflection run log presentation', () => {
 
     const markup = renderToStaticMarkup(createElement(ReflectionsPage, { controller }));
     assert.match(markup, /1 stored reflection could not be read/);
-    assert.match(markup, /All caught up/);
+    assert.match(markup, /No remaining session help to review/);
+    assert.match(markup, /reflection-view-rail/);
+    assert.doesNotMatch(markup, /Review the help you asked for/);
   });
 
   test('renders the empty dogfood state', () => {
