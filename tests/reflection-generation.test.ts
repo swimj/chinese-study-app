@@ -315,7 +315,7 @@ describe('initial reflection generation orchestration', () => {
     assert.equal(materializeCalls, 1);
   });
 
-  test('routes the initial run across three comparison arms with equal probability', async () => {
+  test('routes the initial run across six comparison arms with equal probability', async () => {
     const selected: string[] = [];
     const makeArm = (label: string) => ({
       async generate() {
@@ -330,8 +330,13 @@ describe('initial reflection generation orchestration', () => {
       provider: makeArm('luna'),
       glmProvider: makeArm('glm'),
       qwen38MaxProvider: makeArm('qwen38'),
+      comparisonProviders: {
+        'openrouter:gemini-3.6-flash': makeArm('gemini'),
+        'openrouter:deepseek-v4-pro': makeArm('deepseek'),
+        'openrouter:claude-sonnet-5': makeArm('claude'),
+      },
       random: () => {
-        const values = [0, 0.4, 0.8];
+        const values = [0, 0.17, 0.34, 0.5, 0.67, 0.84];
         return values[randomCalls++]!;
       },
       materializeArtifact: () => ({
@@ -341,10 +346,10 @@ describe('initial reflection generation orchestration', () => {
       recordRun: () => {},
     });
 
-    for (let index = 0; index < 3; index += 1) {
+    for (let index = 0; index < 6; index += 1) {
       await service.generate(`session-${index}`, {});
     }
-    assert.deepEqual(selected, ['luna', 'glm', 'qwen38']);
+    assert.deepEqual(selected, ['luna', 'glm', 'qwen38', 'gemini', 'deepseek', 'claude']);
   });
 
   test('refuses same-model retry when the stored model is no longer a current choice', async () => {

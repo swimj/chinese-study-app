@@ -54,8 +54,8 @@ export const REFLECTION_MODEL_ARMS = [
   {
     choice: 'openrouter:gemini-3.6-flash',
     label: 'Gemini 3.6 Flash',
-    enabledByDefault: false,
-    dogfoodSelectionWeight: 0,
+    enabledByDefault: true,
+    dogfoodSelectionWeight: 1,
     config: {
       ...OPENROUTER,
       modelConfig: 'gemini-3.6-flash',
@@ -66,8 +66,8 @@ export const REFLECTION_MODEL_ARMS = [
   {
     choice: 'openrouter:deepseek-v4-pro',
     label: 'DeepSeek V4 Pro',
-    enabledByDefault: false,
-    dogfoodSelectionWeight: 0,
+    enabledByDefault: true,
+    dogfoodSelectionWeight: 1,
     config: {
       ...OPENROUTER,
       modelConfig: 'deepseek-v4-pro',
@@ -78,8 +78,8 @@ export const REFLECTION_MODEL_ARMS = [
   {
     choice: 'openrouter:claude-sonnet-5',
     label: 'Claude Sonnet 5',
-    enabledByDefault: false,
-    dogfoodSelectionWeight: 0,
+    enabledByDefault: true,
+    dogfoodSelectionWeight: 1,
     config: {
       ...OPENROUTER,
       modelConfig: 'claude-sonnet-5',
