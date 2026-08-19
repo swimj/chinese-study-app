@@ -92,19 +92,22 @@ details from proposal queues, keeps readable artifacts and generation runs
 available, and shows a persistent unreadable-artifact notice without rewriting
 the stored payload.
 
-`ReflectionsPage` is reachable outside an active session. Its default view is a
-cross-session **Help** pager: one card at a time for pending proposals and for
-explanation-only items still in Help. The grain is one proposal per card;
-empty proposal lists produce one explanation card while that item remains in
-Help. Accept, Dismiss, Defer, and Done are durable and advance the pager; Done
-leaves Help with no learner-facing undo. Prev/Next are ephemeral. The help
-shell keeps pager chrome and those actions stable while evidence, explanation,
-questions, rationale, and the operation editor scroll. Separate convenience
-views show deferred proposals and accepted authorizations whose application is
-pending or unsupported, while **By session** retains the artifact-oriented
-dogfood view, including explanation items already marked Done. In that view,
-items whose results carry no proposals are summarized in a compact **No durable
-change** gist derived from the persisted evidence and result (word, diagnosis
+`ReflectionsPage` is reachable outside an active session. The page uses a
+left view rail instead of a page title, so the default **Help** workspace can
+give most of the viewport to the current card. Help is a cross-session pager:
+one card at a time for pending proposals and for explanation-only items still
+in Help. The grain is one proposal per card; empty proposal lists produce one
+explanation card while that item remains in Help. Accept, Dismiss, Defer, and
+Done are durable and advance the pager; Done leaves Help with no learner-facing
+undo. Prev/Next are ephemeral. Compact pager chrome and those actions stay
+outside the reading pane, as do item quality chips; evidence, explanation,
+questions, rationale, and the operation editor scroll inside the pane. Separate
+convenience views show deferred proposals and accepted authorizations whose
+application is pending or unsupported, while **By session** retains the
+artifact-oriented dogfood view, including explanation items already marked
+Done. In that view, items whose results carry no proposals are summarized in a
+compact **No durable change** gist derived from the persisted evidence and
+result (word, diagnosis
 tags, cue/response, learner feedback), so ordinary forgetting and other
 no-action judgments stay visible without opening every item card. Reviewing a
 proposal removes it from the current queue when its new lifecycle state no
@@ -148,9 +151,10 @@ or a replacement for immutable artifact history.
 
 The **Quality** view shows server-side model-arm rates derived from terminal
 proposal reviews plus item quality-tag overlays. Capture is a single tag-chip
-row on each reflection item, placed immediately above accept/dismiss on proposal
-cards (and on no-proposal surfaces). Saved notes render as committed text and
-become editable on click. The Quality table defaults to the current reflection
+row on each reflection item. In Help that row sits outside the reading pane;
+on other proposal cards it remains immediately above accept/dismiss (and on
+no-proposal surfaces). Saved notes render as committed text and become editable
+on click. The Quality table defaults to the current reflection
 prompt version and can group by model, prompt, or both. Tags never rewrite
 disposition or application and are not required to review.
 

@@ -32,7 +32,13 @@ export function AppChrome({
   const navigationLoading = priorityPageLoading || reflectionPageLoading || contentPageLoading;
 
   return (
-    <div className={sessionActive ? 'container app-session-active' : 'container'}>
+    <div className={
+      sessionActive
+        ? 'container app-session-active'
+        : currentPage === 'reflections'
+          ? 'container app-reflections-page'
+          : 'container'
+    }>
       <nav className="navbar" aria-label="Primary">
         <div className="nav-brand">
           <strong>法华挣路</strong>
