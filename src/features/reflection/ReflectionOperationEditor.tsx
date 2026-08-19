@@ -371,45 +371,72 @@ function ProductionCueDraftFields({
           onChange={(event) => onPatch({ text: event.target.value })}
         />
       </Field>
-      <EditorCollection
-        title={`${label} accepted ${studyProfile.labels.target}`}
-        addLabel="Add word"
-        disabled={disabled || wordOptions.every((option) => draft.acceptedWordIds.includes(option.wordId))}
-        onAdd={() => {
-          const next = wordOptions.find((option) => !draft.acceptedWordIds.includes(option.wordId));
-          if (next === undefined) return;
-          onPatch({ acceptedWordIds: [...draft.acceptedWordIds, next.wordId] });
-        }}
-      >
-        {draft.acceptedWordIds.map((wordId, index) => (
-          <div className="reflection-editor-row" key={`accepted-${wordId}-${index}`}>
-            <Field label={studyProfile.labels.target}>
-              <EvidenceWordPicker
-                value={wordId}
-                options={wordOptions}
-                excludeWordIds={new Set(draft.acceptedWordIds.filter((id) => id !== wordId))}
-                disabled={disabled}
-                onChange={(nextWordId) => {
-                  const next = [...draft.acceptedWordIds];
-                  next[index] = nextWordId;
-                  onPatch({ acceptedWordIds: next });
-                }}
-              />
-            </Field>
-            {!disabled ? (
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => onPatch({
-                  acceptedWordIds: draft.acceptedWordIds.filter((_, wordIndex) => wordIndex !== index),
-                })}
-              >
-                Remove word
-              </button>
-            ) : null}
-          </div>
-        ))}
-      </EditorCollection>
+      <AcceptedWordChips
+        wordOptions={wordOptions}
+        acceptedWordIds={draft.acceptedWordIds}
+        disabled={disabled}
+        onChange={(acceptedWordIds) => onPatch({ acceptedWordIds })}
+      />
+    </div>
+  );
+}
+
+export function AcceptedWordChips({
+  wordOptions,
+  acceptedWordIds,
+  disabled,
+  onChange,
+}: {
+  wordOptions: EvidenceWordOption[];
+  acceptedWordIds: string[];
+  disabled: boolean;
+  onChange: (acceptedWordIds: string[]) => void;
+}) {
+  const selected = new Set(acceptedWordIds);
+  const extraOptions = acceptedWordIds
+    .filter((wordId) => !wordOptions.some((option) => option.wordId === wordId))
+    .map((wordId) => ({ wordId, hanzi: wordId, pinyin: '' }));
+  const chips = [...wordOptions, ...extraOptions];
+
+  if (chips.length === 0) {
+    return (
+      <div className="reflection-accepted-words">
+        <span className="reflection-accepted-words-label">Accepted</span>
+        <p className="notes">No visible words on this attempt.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="reflection-accepted-words">
+      <span className="reflection-accepted-words-label">Accepted</span>
+      <div className="reflection-accepted-word-chips" role="group" aria-label="Accepted words">
+        {chips.map((option) => {
+          const isAccepted = selected.has(option.wordId);
+          return (
+            <button
+              type="button"
+              key={option.wordId}
+              className={
+                isAccepted
+                  ? 'reflection-accepted-word-chip is-accepted'
+                  : 'reflection-accepted-word-chip'
+              }
+              disabled={disabled}
+              aria-pressed={isAccepted}
+              onClick={() => {
+                onChange(
+                  isAccepted
+                    ? acceptedWordIds.filter((wordId) => wordId !== option.wordId)
+                    : [...acceptedWordIds, option.wordId],
+                );
+              }}
+            >
+              {evidenceWordSurfaceLabel(option)}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

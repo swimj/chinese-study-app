@@ -6,7 +6,7 @@ import type {
   ProductionMistakeReflectionItemV2,
   RepairProductionCueOperationV2,
 } from '../src/domain/reflection.ts';
-import { ReflectionOperationEditor } from '../src/features/reflection/ReflectionOperationEditor.tsx';
+import { AcceptedWordChips, ReflectionOperationEditor } from '../src/features/reflection/ReflectionOperationEditor.tsx';
 
 describe('reflection operation editor', () => {
   test('lists V2 cue changes compactly and does not restate Hanzi', () => {
@@ -28,6 +28,26 @@ describe('reflection operation editor', () => {
     assert.doesNotMatch(markup, /Change 1 kind/);
     assert.doesNotMatch(markup, /aria-label="Hanzi"/);
     assert.doesNotMatch(markup, /Cue to replace/);
+    assert.doesNotMatch(markup, /Add word/);
+    assert.doesNotMatch(markup, /Remove word/);
+  });
+
+  test('accepted-word chips cover visible attempt words and mark the proposal set', () => {
+    const markup = renderToStaticMarkup(createElement(AcceptedWordChips, {
+      wordOptions: [
+        { wordId: 'target', hanzi: '目标', pinyin: 'mùbiāo' },
+        { wordId: 'alternate', hanzi: '替代', pinyin: 'tìdài' },
+      ],
+      acceptedWordIds: ['target'],
+      disabled: false,
+      onChange: () => {},
+    }));
+
+    assert.match(markup, /目标 · mùbiāo/);
+    assert.match(markup, /替代 · tìdài/);
+    assert.match(markup, /aria-pressed="true"/);
+    assert.match(markup, /aria-pressed="false"/);
+    assert.match(markup, /is-accepted/);
   });
 });
 
