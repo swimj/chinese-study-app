@@ -89,6 +89,7 @@ function parseResponse(
   const completionDetails = usage.completion_tokens_details === undefined
     ? {}
     : asRecord(usage.completion_tokens_details, `${provider} response.usage.completion_tokens_details`);
+  const reportedCostUsd = numberOrNull(usage.cost);
 
   return {
     provider,
@@ -106,6 +107,7 @@ function parseResponse(
       reasoningTokens: numberOrNull(completionDetails.reasoning_tokens),
       totalTokens: numberOrNull(usage.total_tokens),
     },
+    ...(reportedCostUsd !== null && reportedCostUsd >= 0 ? { reportedCostUsd } : {}),
     rawResponse,
   };
 }

@@ -31,17 +31,10 @@ describe('reflection comparison-arm registry', () => {
     );
   });
 
-  test('pins every OpenRouter arm to one provider and refuses fallback', () => {
+  test('lets OpenRouter select an eligible provider for every arm', () => {
     for (const arm of REFLECTION_MODEL_ARMS) {
       if (!arm.choice.startsWith('openrouter:')) continue;
-      const policy = arm.config?.additionalRequestBody?.provider;
-      assert.deepEqual(policy && typeof policy === 'object' ? policy : null, {
-        only: arm.choice.includes('gemini') ? ['google']
-          : arm.choice.includes('deepseek') ? ['deepseek'] : ['anthropic'],
-        allow_fallbacks: false,
-        require_parameters: true,
-        data_collection: 'deny',
-      });
+      assert.equal(arm.config?.additionalRequestBody, undefined);
     }
   });
 });

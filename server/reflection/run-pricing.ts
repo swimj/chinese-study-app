@@ -14,6 +14,17 @@ export type ReflectionRunPricingSnapshot = {
   outputPerMillionUsd: number;
 };
 
+export type OpenRouterReportedCostBasis = {
+  id: 'openrouter-usage-cost.v1';
+  pricingAsOf: string;
+  provider: 'openrouter';
+  providerModel: string;
+  currency: 'USD';
+  source: 'openrouter.usage.cost';
+};
+
+export type ReflectionRunPricingBasis = ReflectionRunPricingSnapshot | OpenRouterReportedCostBasis;
+
 /**
  * A fixed dogfood estimate, not a billing integration. Keep the exact price
  * basis beside every persisted estimate so later price-table changes do not
@@ -103,7 +114,7 @@ export const INITIAL_TERRA_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricingS
 
 export type ReflectionRunCostEstimate = {
   estimatedCostUsd: number;
-  pricing: ReflectionRunPricingSnapshot;
+  pricing: ReflectionRunPricingBasis;
 };
 
 const INITIAL_REFLECTION_RUN_PRICING: ReadonlyArray<ReflectionRunPricingSnapshot> = [
@@ -120,7 +131,28 @@ export function estimateInitialReflectionRunCost(input: {
   provider: string;
   providerModel: string;
   usage: NormalizedTokenUsage;
+  reportedCostUsd?: number;
+  reportedAt?: string;
 }): ReflectionRunCostEstimate | null {
+  if (
+    input.provider === 'openrouter'
+    && input.reportedCostUsd !== undefined
+    && Number.isFinite(input.reportedCostUsd)
+    && input.reportedCostUsd >= 0
+    && input.reportedAt !== undefined
+  ) {
+    return {
+      estimatedCostUsd: input.reportedCostUsd,
+      pricing: {
+        id: 'openrouter-usage-cost.v1',
+        pricingAsOf: input.reportedAt.slice(0, 10),
+        provider: 'openrouter',
+        providerModel: input.providerModel,
+        currency: 'USD',
+        source: 'openrouter.usage.cost',
+      },
+    };
+  }
   const pricing = INITIAL_REFLECTION_RUN_PRICING.find((candidate) => (
     input.provider === candidate.provider && input.providerModel === candidate.providerModel
   ));

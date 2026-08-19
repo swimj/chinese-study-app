@@ -45,6 +45,8 @@ export type ProviderRawResult = {
   rawText: string;
   finishReason: string | null;
   usage: NormalizedTokenUsage;
+  /** Provider-reported amount charged for this request, in USD. */
+  reportedCostUsd?: number;
   rawResponse: JsonValue;
 };
 

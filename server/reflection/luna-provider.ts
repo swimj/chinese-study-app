@@ -112,6 +112,7 @@ export type LunaReflectionRunMetadata = {
   responseId: string | null;
   finishReason: string | null;
   usage: NormalizedTokenUsage;
+  reportedCostUsd?: number;
 };
 
 export type LunaReflectionSuccess = {
@@ -143,11 +144,7 @@ export type ReflectionProviderConfig = {
   structuredOutputMode: 'json_schema' | 'json_object';
   maxTokensField: 'max_completion_tokens' | 'max_tokens';
   baseUrlEnvironmentVariable?: string;
-  /**
-   * Transport-specific request fields. OpenRouter arms use this to prohibit
-   * fallback and select one upstream provider, making a comparison run
-   * attributable rather than an opaque routed request.
-   */
+  /** Transport-specific request fields for OpenAI-compatible providers. */
   additionalRequestBody?: Record<string, JsonValue>;
 };
 
@@ -296,6 +293,7 @@ function runMetadataFromProviderResult(input: {
   responseId: string | null;
   finishReason: string | null;
   usage: NormalizedTokenUsage;
+  reportedCostUsd?: number;
 }, config: ReflectionProviderConfig): LunaReflectionRunMetadata {
   return {
     provider: config.provider,
@@ -305,6 +303,7 @@ function runMetadataFromProviderResult(input: {
     responseId: input.responseId,
     finishReason: input.finishReason,
     usage: input.usage,
+    ...(input.reportedCostUsd === undefined ? {} : { reportedCostUsd: input.reportedCostUsd }),
   };
 }
 

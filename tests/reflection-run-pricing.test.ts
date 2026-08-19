@@ -102,4 +102,24 @@ describe('initial reflection run pricing', () => {
       usage: completeUsage,
     }), null);
   });
+
+  test('uses OpenRouter\'s reported charged amount instead of a static routed-model estimate', () => {
+    assert.deepEqual(estimateInitialReflectionRunCost({
+      provider: 'openrouter',
+      providerModel: 'deepseek/deepseek-v4-pro',
+      usage: completeUsage,
+      reportedCostUsd: 0.000082824,
+      reportedAt: '2026-08-19T08:00:00.000Z',
+    }), {
+      estimatedCostUsd: 0.000082824,
+      pricing: {
+        id: 'openrouter-usage-cost.v1',
+        pricingAsOf: '2026-08-19',
+        provider: 'openrouter',
+        providerModel: 'deepseek/deepseek-v4-pro',
+        currency: 'USD',
+        source: 'openrouter.usage.cost',
+      },
+    });
+  });
 });
