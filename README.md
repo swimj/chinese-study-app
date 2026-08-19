@@ -7,13 +7,16 @@ A Mandarin study app currently built for a local-browser-first PoC workflow, wit
 The implemented architecture is optimized for fast product iteration on one
 machine, but the accepted current build wave is an invite-only hosted Mandarin
 beta. Local dogfood remains the trusted product-validation environment while a
-service-boundary design settles account identity, content and learner-state
-ownership, physical tenancy, migration, release, recovery, and support access.
+hosted implementation steel thread introduces account identity, explicit
+learner ownership, shared content, migration, release, recovery, and bounded
+support access.
 
 See [`STABILITY_FRONTIER.md`](./STABILITY_FRONTIER.md) for the accepted outcome,
-open decisions, non-goals, and advancement test. Hosted work must not treat the
-current local shape as permanent, but it also must not assume Postgres or
-another topology before the service boundary is accepted.
+non-goals, and advancement test, and
+[`docs/private-beta-service-boundary.md`](./docs/private-beta-service-boundary.md)
+for the accepted hosted architecture contract. The first beta deliberately uses
+one shared embedded SQLite database; Postgres remains an evidence-triggered
+later migration rather than a prerequisite for hosting.
 
 When making changes, prefer designs that avoid unnecessary coupling to single-machine assumptions.
 

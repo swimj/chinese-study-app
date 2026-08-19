@@ -14,7 +14,8 @@ How documentation in this repo is classified and where to start.
    - [SPECS/session-reflection-generation.md](../SPECS/session-reflection-generation.md)
    - [SPECS/reflection-proposals-and-handles.md](../SPECS/reflection-proposals-and-handles.md)
 5. [architecture.md](./architecture.md) — system map (navigation only)
-6. Relevant tests — see [testing.md](./testing.md)
+6. [private-beta-service-boundary.md](./private-beta-service-boundary.md) — accepted hosted-beta ownership, identity, persistence, release, and trust contract
+7. Relevant tests — see [testing.md](./testing.md)
 
 ## Doc classes
 
@@ -23,6 +24,7 @@ How documentation in this repo is classified and where to start.
 | **Current operating contract** | `STABILITY_FRONTIER.md` | Understanding what the current build wave may assume, what remains blocking, and when human guidance is required |
 | **Canonical product** | `SPECS/learning-review-model.md`, `session-covering-criteria.md`, `study-action-model.md`, `session-reflection-generation.md`, `reflection-proposals-and-handles.md` | Changing user-visible study or reflection behavior |
 | **Architecture maps** | `docs/architecture.md`, `docs/api.md`, `docs/server-db.md`, `SPECS/frontend-architecture-map.md` | Finding code; must stay in sync with implementation |
+| **Accepted architecture contracts** | `docs/private-beta-service-boundary.md` | Building the hosted private-beta service boundary and steel thread |
 | **Active plans** | Active entries in `PLANS/`, open milestone slices in `SPECS/` | Planned work not yet done |
 | **Completed / historical** | `SPECS/archive/`, completed plans retained in `PLANS/` | Context only; not authoritative for current behavior |
 | **Vision / strategic context** | `docs/vision/`, `SPECS/adaptive_vocabulary_training_product_notes.md` | Long-term direction and hypotheses; not implementation contracts or a current task catalog |
@@ -44,6 +46,7 @@ When a map doc and code disagree, fix the map in the same change as the code (or
 ## Development and review workflows
 
 - [stacked-feature-development-and-review.md](./stacked-feature-development-and-review.md) — default proportional implementation delivery and review model; it scales from one PR to a Graphite stack
+- [hosted-beta-implementation-steel-thread.md](../PLANS/hosted-beta-implementation-steel-thread.md) — accepted implementation sequence and proof gates for the private-beta service
 
 ## Other root docs
 

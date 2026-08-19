@@ -3,9 +3,11 @@
 Status: historical pre-design inventory. It was complete for the 18-table
 schema inspected at the time, but it predates the reflection and production-cue
 subsystems and is not a current hosted-beta inventory or implementation
-contract. The private-beta service-boundary design must refresh it from the
-current schema. Its preserve-the-layers rationale remains useful unless the
-new design explicitly replaces it.
+contract. The accepted 30-table ownership inventory and service contract now
+live in
+[`docs/private-beta-service-boundary.md`](../docs/private-beta-service-boundary.md).
+Its preserve-the-layers rationale remains useful where consistent with that
+contract.
 
 This document classified every table in the SQLite schema that existed when it
 was written by present role and likely hosted ownership. It answered the

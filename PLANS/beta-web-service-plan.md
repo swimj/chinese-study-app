@@ -1,10 +1,13 @@
 # Beta Web Service Plan
 
 Status: historical draft planning input. The accepted beta outcome and current
-decision boundary now live in [`STABILITY_FRONTIER.md`](../STABILITY_FRONTIER.md).
-The next service-boundary design may reuse this workstream inventory, but its
-Postgres-first sequencing and other architecture suggestions are not accepted
-implementation assumptions.
+decision boundary now live in [`STABILITY_FRONTIER.md`](../STABILITY_FRONTIER.md)
+and the accepted
+[`private-beta service boundary`](../docs/private-beta-service-boundary.md).
+The implementation sequence lives in
+[`hosted-beta-implementation-steel-thread.md`](./hosted-beta-implementation-steel-thread.md).
+This plan's Postgres-first sequencing and other architecture suggestions are
+not accepted implementation assumptions.
 
 This document sketches the scope of work needed to turn the current
 local-browser-first study app into an initial hosted beta service.

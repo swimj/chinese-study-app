@@ -1,6 +1,6 @@
 # Current Stability Frontier
 
-Status: accepted current build-wave boundary (2026-08-15).
+Status: accepted current build-wave boundary (2026-08-19).
 
 ## Near-term product outcome
 
@@ -33,20 +33,17 @@ their exact snapshotted answer spaces. The durable behavior is owned by
 [`SPECS/reflection-proposals-and-handles.md`](SPECS/reflection-proposals-and-handles.md),
 and [`SPECS/study-action-model.md`](SPECS/study-action-model.md).
 
-The application is still a local, implicit-single-learner system. One process
-opens one SQLite database through global configuration; the HTTP API has no
-account or authorization boundary; shared corpus content and learner state are
-not physically separated; and there is no accepted hosted topology, migration
-and release contract, restore procedure, or bounded support-access model.
-
-The next focused decision is therefore a **private-beta service-boundary
-design**, not immediate infrastructure implementation. It must produce accepted
-contracts for account and request identity, learner-data isolation,
-shared/versioned content and private overlays, physical tenancy and storage,
-authentication, migration, release and rollback, backup/restore, diagnostics,
-and operator access. It must compare credible topologies rather than assume
-Postgres merely because the service is hosted. Linear remains authoritative for
-when this work is actually selected or dispatched.
+The application is still a local, implicit-single-learner system, but the
+private-beta service boundary is now accepted. The next focused work is the
+hosted-beta implementation steel thread: make learner ownership unskippable,
+prove the provisional platform package with disposable data, bring up a fresh
+invited learner, implement the shared-content loop, migrate the primary
+dogfood history, and exercise one intentional release plus independent restore.
+The detailed authority is
+[`docs/private-beta-service-boundary.md`](docs/private-beta-service-boundary.md)
+and the ordered proof gates are
+[`PLANS/hosted-beta-implementation-steel-thread.md`](PLANS/hosted-beta-implementation-steel-thread.md).
+Linear remains authoritative for selection and dispatch.
 
 A steady-state desktop UX audit and interaction brief may proceed
 asynchronously if portfolio capacity permits. It should improve density,
@@ -80,11 +77,30 @@ is the recurring problem.
 - Initial onboarding may be concierge-assisted. A polished self-service
   onboarding system is deferred until the steady-state experience is more
   settled.
-- Shared content is a versioned base concept; learner state, private
-  customization, evidence, and candidate improvements must remain
-  distinguishable from it. Promotion of a learner change into shared content
-  is deferred, and ordinary learner actions must not automatically mutate the
-  global base.
+- Shared reusable content consists of immutable, lineaged artifacts with
+  explicit publication status; there is no canonical or blessed tier. Imported
+  content is an `available` bootstrap snapshot. Validated reusable content
+  normally enters `shared_trial` after source-learner authorization and
+  sanitization, while source evidence and all learner state remain private.
+  Eligible content is initially selected uniformly at random.
+- One service and one shared embedded SQLite database is the accepted beta
+  topology. Every private row and cross-reference has explicit learner
+  ownership. Postgres is reconsidered from observed contention, scaling,
+  recovery, or operational needs rather than assumed merely because hosting is
+  involved.
+- One externally authenticated account maps to one stable local learner
+  identity. The server derives request identity; clients never choose a learner
+  id; authorization is enforced below HTTP handlers; and support uses a
+  distinct attributable principal.
+- Planned downtime is acceptable. Schema-changing releases quiesce writes,
+  take a pre-release backup, run a rehearsed versioned migration, smoke two
+  identities, and reopen only after the gate passes. Independent backups target
+  at most approximately one hour of acknowledged data loss and must be proven
+  by restore.
+- The primary dogfood database is the only required legacy import. Migration is
+  deterministic, rehearsed on recoverable copies, validates shared/private
+  classification and provenance, and has no dual-write period. Historical
+  bad-prompt model judgment runs separately from the migration.
 - Release, migration, rollback, backup, restore, and supportability constrain
   the first hosted persistence design. They are not cleanup work to add after
   beta data accumulates.
@@ -96,46 +112,38 @@ is the recurring problem.
   untrusted proposal input subject to strict validation, bounded resource
   exposure, explicit authorization, and registered application adapters.
 
-## Decisions the next focus must settle
+## Provisional implementation choices and proof gates
 
-- **Physical tenancy and storage.** Compare at least isolated service/database
-  per learner, multiple learner databases behind one service, shared SQLite
-  with explicit learner ownership, and shared Postgres with explicit learner
-  ownership. Select against cohort needs, isolation risk, migration cost,
-  operational fan-out, and future shared-content requirements.
-- **Account and request context.** Define how authenticated identity reaches
-  every learner-owned read, write, provider request, and support operation, and
-  where authorization is enforced.
-- **Content and state ownership.** Refresh the complete schema inventory and
-  define shared corpus identity/versioning, learner-owned scheduling and
-  history, private generated content and overlays, operational metadata scope,
-  and historical references across content revisions.
-- **Release and recovery.** Define schema migration ownership, compatibility
-  rules, deploy ordering, failure behavior, rollback limits, backup cadence,
-  restore verification, and the dogfood-history migration path.
-- **Operational trust.** Define secrets, logs, diagnostics, provider cost
-  bounds, data egress disclosure, account recovery, privacy/delete/export
-  posture, and bounded operator access.
-- **Vendor selection.** Choose authentication, hosting, database, and
-  deployment vendors only after the service contract supplies the criteria.
-  Vendor convenience must not silently choose the product ownership model.
-
-These decisions are coupled enough to share one design focus. They are not
-permission to provision services, rewrite persistence, or dispatch the hosted
-implementation before the resulting contract is accepted.
+- Use one Fly.io Machine and encrypted Volume in Singapore or Tokyo, with
+  Litestream continuously replicating SQLite WAL changes to independent
+  S3-compatible storage. Fly local storage is unreplicated and release commands
+  cannot mount the Volume, so the spike must prove persistence, controlled
+  migration, WAL replication, independent restore, and metrics. Railway is the
+  named hosting fallback.
+- Use Clerk restricted-mode invitations and sessions mapped to local learner
+  identities. The spike must prove invite restriction, sign-in/out,
+  revocation, and local disablement. WorkOS AuthKit is the named auth fallback.
+- Retain the current OpenAI reflection path under no-training-by-default terms,
+  bounded retention, explicit learner disclosure, cost/resource limits,
+  content-free ordinary logs, and a kill switch.
+- No real learner data enters the service until explicit ownership and
+  adversarial two-learner isolation tests cover the complete durable-object
+  graph. A backup does not satisfy the recovery gate until an isolated restore
+  has succeeded.
 
 ## Invariants and constraints
 
 - No authenticated learner may read, mutate, schedule from, reflect on, or
   invoke provider work against another learner's private state or evidence.
   References to shared content do not establish learner ownership.
-- Shared base content, its version, learner-owned overlays or suppressions,
-  source evidence, authorized operations, applied effects, and historical
-  served snapshots remain distinguishable wherever their difference affects
-  interpretation or recovery.
-- Ordinary learner customization never silently mutates shared base content.
-  Shared-content promotion requires a separately designed and authorized
-  workflow when repeated evidence justifies one.
+- Shared artifact identity, lineage, publication status, learner-owned
+  suppressions, source evidence, authorized operations, applied effects, and
+  historical served snapshots remain distinguishable wherever their difference
+  affects interpretation or recovery.
+- Ordinary learner actions never rewrite a shared artifact in place. Reusable
+  content may enter optimistic shared trial only through the accepted,
+  validated, sanitized, and learner-authorized publication operation. Private
+  evidence and learner identity never become shared content.
 - Existing study-session behavior remains correct if reflection generation,
   proposal review, cue application, or the external model provider fails,
   times out, returns invalid output, or is never used.
@@ -171,8 +179,6 @@ implementation before the resulting contract is accepted.
   a generalized role hierarchy.
 - Generalized data import for external users; external beta accounts start
   fresh.
-- Automatic promotion of learner-created cues, clusters, gloss improvements,
-  or other candidate changes into shared content.
 - A content marketplace, public/community publishing system, or complete
   shared-content curation workflow.
 - A time-budgeted planner, autonomous scheduling changes, multi-agent
@@ -188,7 +194,8 @@ implementation before the resulting contract is accepted.
 - Large-scale observability, enterprise operations, or infrastructure designed
   for an unproven public-user load.
 - Automatic model authority over study state, content state, account state, or
-  shared publication.
+  shared publication without the required learner authorization and local
+  validation.
 
 ## Frontier advancement test
 
