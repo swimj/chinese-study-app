@@ -104,10 +104,10 @@ npm run seed:reflection-review-fixture -- --data-dir="$verify_dir"
 That artifact contains independently reviewable suppression, contrast-creation,
 cue-repair, and alternate-acceptance proposals. It is local fixture content,
 not provider output. Use a fresh temporary directory without that command for a
-real-provider generation pass; set `OPENAI_API_KEY` privately in the backend
-environment and do not place it in a fixture or log. Live OpenAI calls go
-through the local HTTP CONNECT proxy at `127.0.0.1:7897` (same as the LLM
-spike); keep that proxy running for a real-provider pass.
+real-provider generation pass; set provider credentials privately in the backend
+environment and do not place them in a fixture or log. Live OpenAI and
+OpenRouter calls go through the local HTTP CONNECT proxy at `127.0.0.1:7897`
+(same as the LLM spike); keep that proxy running for a real-provider pass.
 
 After either manual path, inspect persisted state without starting the app or
 writing to SQLite:
