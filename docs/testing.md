@@ -32,6 +32,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `reflection-help-inbox.test.ts` | Explanation-only Help inbox seed at materialize, Done delete, independence from proposal disposition, 404 | `server/db/reflection-help-inbox.ts` + temporary SQLite |
 | `session-finalization.test.ts` | Explicit Finish boundary, commit-before-summary ordering, reflection isolation/retry and stale-response guards | `session-finalization.ts` |
 | `reflection-page-model.test.ts` | Item/proposal grouping, help-queue cards from Help inbox membership, deep draft edits for four operations, support and validation presentation | `reflection-page-model.ts` |
+| `reflection-operation-editor.test.ts` | Compact V2 cue-change list and hidden restated Hanzi field | `ReflectionOperationEditor.tsx` |
 | `reflections-page-run-log.test.ts` | Empty, unavailable-cost, and priced run-log rendering states | `ReflectionsPage.tsx` server render |
 | `reflection-verification-fixture.test.ts` | Reflection-focused dev seed plus direct SQLite assertions for supported effects, unsupported authorization, and withdrawal | Disposable dev database seeded from `server/seeds/reflection-dev.json` |
 | `llm-provider-runner.test.ts` | Spike compatibility shims, provider adapters, fixtures, current V3 validation/viewer behavior | `spikes/llm-provider/` |
@@ -58,7 +59,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | Reflection evidence / finalization | `session-reflection-evidence.test.ts`, `session-finalization.test.ts`, `reflection-evidence-enrichment.test.ts` |
 | Reflection provider / generation | `reflection-provider.test.ts`, `reflection-generation.test.ts`, `reflection-generation-isolation.test.ts` |
 | Reflection persistence / application | `reflection-store.test.ts`, `reflection-application.test.ts`, `reflection-persistence-reload.test.ts`, `reflection-quality.test.ts`, `reflection-help-inbox.test.ts` |
-| Reflection HTTP / review UI model | `reflection-api.test.ts`, `reflection-page-model.test.ts` |
+| Reflection HTTP / review UI model | `reflection-api.test.ts`, `reflection-page-model.test.ts`, `reflection-operation-editor.test.ts`, `reflections-page-run-log.test.ts` |
 | Schema or bootstrap | `dev-db-bootstrap.test.ts` + any db-touching tests above |
 
 Tests that dynamic-import `server/db.ts` set `APP_MODE=study` and `APP_DATA_DIR` to a temp directory before import.

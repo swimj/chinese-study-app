@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import type {
   CreateContrastClusterOperation,
+  ProductionCueChangeV2,
   ProductionCueDraftV2,
   ReflectionInputItemV1,
   ReflectionInputItemV2,
@@ -139,129 +141,194 @@ function ProductionCueEditorV2({
   dispatch: (action: ReflectionOperationDraftAction) => void;
 }) {
   const changeKinds = ['create', 'replace', 'deactivate'] as const;
-  const targetOption = wordOptions.find((option) => option.wordId === operation.wordId)
-    ?? (operation.wordId.length === 0
-      ? null
-      : { wordId: operation.wordId, hanzi: operation.wordId, pinyin: '' });
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
   return (
     <div className="reflection-operation-fields">
-      <Field label={studyProfile.labels.target}>
-        <input
-          value={targetOption === null ? '' : evidenceWordSurfaceLabel(targetOption)}
-          disabled
-          readOnly
-          aria-label={studyProfile.labels.target}
-        />
-      </Field>
       {lockedTargetWordId !== null && operation.wordId !== lockedTargetWordId ? (
         <p className="notes" role="status">
           Cue repair is locked to the evidence target.
         </p>
       ) : null}
 
-      <EditorCollection
-        title="Cue lifecycle changes"
-        addLabel="Add change"
-        disabled={disabled}
-        onAdd={() => dispatch({ type: 'add_v2_cue_change' })}
-      >
-        {operation.changes.map((change, changeIndex) => (
-          <div className="reflection-editor-row" key={`change-${changeIndex}`}>
-            <Field label={`Change ${changeIndex + 1} kind`}>
-              <select
-                value={change.kind}
-                disabled={disabled}
-                onChange={(event) => dispatch({
-                  type: 'set_v2_cue_change_kind',
-                  index: changeIndex,
-                  kind: event.target.value as typeof changeKinds[number],
-                })}
-              >
-                {changeKinds.map((kind) => (
-                  <option value={kind} key={kind}>{humanize(kind)}</option>
-                ))}
-              </select>
-            </Field>
-
-            {change.kind === 'create' ? (
-              <ProductionCueDraftFields
-                draft={change.cue}
-                wordOptions={wordOptions}
-                disabled={disabled}
-                label="Created cue"
-                onPatch={(patch) => dispatch({
-                  type: 'update_v2_create_cue',
-                  changeIndex,
-                  patch,
-                })}
-              />
-            ) : (
-              <Field label="Served cue">
-                <input
-                  value={servedCueText ?? 'Served cue'}
-                  disabled
-                  readOnly
-                />
-              </Field>
-            )}
-
-            {change.kind === 'replace' ? (
-              <EditorCollection
-                title="Replacement cues"
-                addLabel="Add replacement"
-                disabled={disabled}
-                onAdd={() => dispatch({ type: 'add_v2_replacement', changeIndex })}
-              >
-                {change.replacements.map((replacement, replacementIndex) => (
-                  <div
-                    className="reflection-editor-row"
-                    key={`replacement-${changeIndex}-${replacementIndex}`}
-                  >
-                    <ProductionCueDraftFields
-                      draft={replacement}
-                      wordOptions={wordOptions}
-                      disabled={disabled}
-                      label={`Replacement ${replacementIndex + 1}`}
-                      onPatch={(patch) => dispatch({
-                        type: 'update_v2_replacement',
-                        changeIndex,
-                        replacementIndex,
-                        patch,
-                      })}
+      <section className="reflection-cue-change-list" aria-label="Cue changes">
+        <div className="reflection-cue-change-heading">
+          <span className="reflection-cue-change-count">
+            {operation.changes.length} change{operation.changes.length === 1 ? '' : 's'}
+          </span>
+          {!disabled ? (
+            <button
+              type="button"
+              className="secondary-button reflection-cue-change-add"
+              aria-label="Add cue change"
+              onClick={() => {
+                setExpandedIndex(operation.changes.length);
+                dispatch({ type: 'add_v2_cue_change' });
+              }}
+            >
+              +
+            </button>
+          ) : null}
+        </div>
+        {operation.changes.length === 0 ? (
+          <p className="notes">No cue changes yet.</p>
+        ) : (
+          <ul className="reflection-cue-change-items">
+            {operation.changes.map((change, changeIndex) => {
+              const expanded = expandedIndex === changeIndex;
+              const preview = compactCueChangePreview(change, servedCueText);
+              return (
+                <li
+                  className={
+                    expanded
+                      ? 'reflection-cue-change-item is-expanded'
+                      : 'reflection-cue-change-item'
+                  }
+                  key={`change-${changeIndex}`}
+                >
+                  <div className="reflection-cue-change-row">
+                    <span
+                      className={`reflection-cue-change-kind kind-${change.kind}`}
+                      title={humanize(change.kind)}
+                      aria-hidden="true"
                     />
+                    <button
+                      type="button"
+                      className="reflection-cue-change-preview"
+                      aria-expanded={expanded}
+                      aria-label={`${humanize(change.kind)}: ${preview}`}
+                      onClick={() => setExpandedIndex(expanded ? null : changeIndex)}
+                    >
+                      {preview}
+                    </button>
                     {!disabled ? (
                       <button
                         type="button"
-                        className="secondary-button"
-                        onClick={() => dispatch({
-                          type: 'remove_v2_replacement',
-                          changeIndex,
-                          replacementIndex,
-                        })}
+                        className="secondary-button reflection-cue-change-delete"
+                        aria-label={`Remove ${humanize(change.kind)} change`}
+                        onClick={() => {
+                          if (expandedIndex === changeIndex) setExpandedIndex(null);
+                          else if (expandedIndex !== null && expandedIndex > changeIndex) {
+                            setExpandedIndex(expandedIndex - 1);
+                          }
+                          dispatch({ type: 'remove_v2_cue_change', index: changeIndex });
+                        }}
                       >
-                        Remove replacement
+                        ×
                       </button>
                     ) : null}
                   </div>
-                ))}
-              </EditorCollection>
-            ) : null}
+                  {expanded ? (
+                    <div className="reflection-cue-change-detail">
+                      <Field label="Change kind">
+                        <select
+                          value={change.kind}
+                          disabled={disabled}
+                          onChange={(event) => dispatch({
+                            type: 'set_v2_cue_change_kind',
+                            index: changeIndex,
+                            kind: event.target.value as typeof changeKinds[number],
+                          })}
+                        >
+                          {changeKinds.map((kind) => (
+                            <option value={kind} key={kind}>{humanize(kind)}</option>
+                          ))}
+                        </select>
+                      </Field>
 
-            {!disabled ? (
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => dispatch({ type: 'remove_v2_cue_change', index: changeIndex })}
-              >
-                Remove change
-              </button>
-            ) : null}
-          </div>
-        ))}
-      </EditorCollection>
+                      {change.kind === 'create' ? (
+                        <ProductionCueDraftFields
+                          draft={change.cue}
+                          wordOptions={wordOptions}
+                          disabled={disabled}
+                          label="New cue"
+                          onPatch={(patch) => dispatch({
+                            type: 'update_v2_create_cue',
+                            changeIndex,
+                            patch,
+                          })}
+                        />
+                      ) : (
+                        <Field label={change.kind === 'replace' ? 'Cue to replace' : 'Tested cue'}>
+                          <input
+                            value={servedCueText ?? 'Served cue'}
+                            disabled
+                            readOnly
+                          />
+                        </Field>
+                      )}
+
+                      {change.kind === 'replace' ? (
+                        <EditorCollection
+                          title="Replacement cues"
+                          addLabel="Add replacement"
+                          disabled={disabled}
+                          onAdd={() => dispatch({ type: 'add_v2_replacement', changeIndex })}
+                        >
+                          {change.replacements.map((replacement, replacementIndex) => (
+                            <div
+                              className="reflection-editor-row"
+                              key={`replacement-${changeIndex}-${replacementIndex}`}
+                            >
+                              <ProductionCueDraftFields
+                                draft={replacement}
+                                wordOptions={wordOptions}
+                                disabled={disabled}
+                                label={`Replacement ${replacementIndex + 1}`}
+                                onPatch={(patch) => dispatch({
+                                  type: 'update_v2_replacement',
+                                  changeIndex,
+                                  replacementIndex,
+                                  patch,
+                                })}
+                              />
+                              {!disabled ? (
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  onClick={() => dispatch({
+                                    type: 'remove_v2_replacement',
+                                    changeIndex,
+                                    replacementIndex,
+                                  })}
+                                >
+                                  Remove replacement
+                                </button>
+                              ) : null}
+                            </div>
+                          ))}
+                        </EditorCollection>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
     </div>
   );
+}
+
+function compactCueChangePreview(
+  change: ProductionCueChangeV2,
+  servedCueText: string | null,
+): string {
+  if (change.kind === 'create') {
+    const text = change.cue.text.trim();
+    return text.length === 0 ? 'New cue' : text;
+  }
+  if (change.kind === 'deactivate') {
+    const text = servedCueText?.trim() ?? '';
+    return text.length === 0 ? 'Served cue' : text;
+  }
+  const texts = change.replacements
+    .map((replacement) => replacement.text.trim())
+    .filter((text) => text.length > 0);
+  if (texts.length === 0) return 'Replacement cue';
+  if (texts.length === 1) return texts[0]!;
+  return `${texts[0]} +${texts.length - 1}`;
 }
 
 function ProductionCueDraftFields({

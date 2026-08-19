@@ -99,17 +99,22 @@ one card at a time for pending proposals and for explanation-only items still
 in Help. The grain is one proposal per card; empty proposal lists produce one
 explanation card while that item remains in Help. Accept, Dismiss, Defer, and
 Done are durable and advance the pager; Done leaves Help with no learner-facing
-undo. Prev/Next are ephemeral. Compact pager chrome and those actions stay
-outside the reading pane, as do item quality chips; evidence, explanation,
-questions, rationale, and the operation editor scroll inside the pane. Separate
+undo. Prev/Next are ephemeral. Compact pager chrome stays above the reading
+pane with the target / typed-response identity line. Item quality chips, handle
+selection, reset, and Done / Defer / Accept / Dismiss sit together below the
+pane. Help does not show diagnosis tags or a dedicated dismissal-note field;
+dismiss records a null reason and the quality note remains the single note
+surface. Evidence, explanation, questions, rationale, and the operation editor
+scroll inside the pane. Production evidence is a quiet tested-cue line
+(truncated, expandable) rather than a second identity card. Separate
 convenience views show deferred proposals and accepted authorizations whose
 application is pending or unsupported, while **By session** retains the
 artifact-oriented dogfood view, including explanation items already marked
 Done. In that view, items whose results carry no proposals are summarized in a
 compact **No durable change** gist derived from the persisted evidence and
-result (word, diagnosis
-tags, cue/response, learner feedback), so ordinary forgetting and other
-no-action judgments stay visible without opening every item card. Reviewing a
+result (word, diagnosis tags, cue/response, learner feedback), so ordinary
+forgetting and other no-action judgments stay visible without opening every
+item card. Reviewing a
 proposal removes it from the current queue when its new lifecycle state no
 longer matches that filter. Questions remain informational and do not receive
 synthetic review state. Finish session returns Home; there is no post-session
@@ -130,9 +135,12 @@ states, effect/satisfying references, and safe reasons or errors. Accepted
 `unsupported` or `pending` authorization may be withdrawn without rewriting the
 accepted proposal. Word fields are evidence comboboxes showing profile-aware
 `hanzi · pinyin` surface labels; they do not offer global content-diagnostics
-search. V2 cue repair hides source-attempt judgments, production task ids, and
-raw cue ids everywhere, including the post-accept original operation, while
-keeping those values in the Accept payload.
+search. V2 cue repair hides the restated target-word field, source-attempt
+judgments, production task ids, and raw cue ids. Cue lifecycle changes render
+as a compact list of cue texts (kind via color); a row expands for editing,
+replace's cue-to-be-replaced appears only in that detail, and rows can be
+added or deleted without expanding. Those hidden identifiers remain in the
+Accept payload.
 
 The **Token usage** view shows aggregate token and priced-run totals followed by
 a compact per-run table. It presents each attempt's provider/model, completion
@@ -151,9 +159,9 @@ or a replacement for immutable artifact history.
 
 The **Quality** view shows server-side model-arm rates derived from terminal
 proposal reviews plus item quality-tag overlays. Capture is a single tag-chip
-row on each reflection item. In Help that row sits outside the reading pane;
-on other proposal cards it remains immediately above accept/dismiss (and on
-no-proposal surfaces). Saved notes render as committed text and become editable
+row on each reflection item. In Help that row sits below the reading pane
+with the review actions; on other proposal cards it remains immediately above
+accept/dismiss (and on no-proposal surfaces). Saved notes render as committed text and become editable
 on click. The Quality table defaults to the current reflection
 prompt version and can group by model, prompt, or both. Tags never rewrite
 disposition or application and are not required to review.
