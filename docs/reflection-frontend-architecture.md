@@ -135,9 +135,11 @@ Accept stays disabled for illegal word ids. It labels exact versus revised
 acceptance and apply support separately, then renders persisted application
 states, effect/satisfying references, and safe reasons or errors. Accepted
 `unsupported` or `pending` authorization may be withdrawn without rewriting the
-accepted proposal. Word fields are evidence comboboxes showing profile-aware
-`hanzi · pinyin` surface labels; they do not offer global content-diagnostics
-search. V2 cue repair hides the restated target-word field, source-attempt
+accepted proposal. Word fields for contrast members and suppression/alternate
+targets remain evidence comboboxes showing `hanzi · pinyin` surface labels; they
+do not offer global content-diagnostics search. V2 cue accepted words are
+toggle chips for the attempt's visible words, populated from the proposal and
+green when accepted. V2 cue repair hides the restated target-word field, source-attempt
 judgments, production task ids, and raw cue ids. Cue lifecycle changes render
 as a compact list of cue texts (kind via color); a row expands for editing,
 replace's cue-to-be-replaced appears only in that detail, and rows can be

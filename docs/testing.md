@@ -32,7 +32,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `reflection-help-inbox.test.ts` | Explanation-only Help inbox seed at materialize, Done delete, independence from proposal disposition, 404 | `server/db/reflection-help-inbox.ts` + temporary SQLite |
 | `session-finalization.test.ts` | Explicit Finish boundary, commit-before-summary ordering, reflection isolation/retry and stale-response guards | `session-finalization.ts` |
 | `reflection-page-model.test.ts` | Item/proposal grouping, help-queue cards from Help inbox membership, deep draft edits for four operations, support and validation presentation | `reflection-page-model.ts` |
-| `reflection-operation-editor.test.ts` | Compact V2 cue-change list and hidden restated Hanzi field | `ReflectionOperationEditor.tsx` |
+| `reflection-operation-editor.test.ts` | Compact V2 cue-change list, hidden restated Hanzi field, and accepted-word chips | `ReflectionOperationEditor.tsx` |
 | `reflections-page-run-log.test.ts` | Empty, unavailable-cost, and priced run-log rendering states | `ReflectionsPage.tsx` server render |
 | `reflection-verification-fixture.test.ts` | Reflection-focused dev seed plus direct SQLite assertions for supported effects, unsupported authorization, and withdrawal | Disposable dev database seeded from `server/seeds/reflection-dev.json` |
 | `llm-provider-runner.test.ts` | Spike compatibility shims, provider adapters, fixtures, current V3 validation/viewer behavior | `spikes/llm-provider/` |

@@ -1772,6 +1772,52 @@ button:disabled:hover {
   padding: 0 0.75rem 0.75rem;
 }
 
+.reflection-accepted-words {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.reflection-accepted-words-label {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.reflection-accepted-word-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.reflection-accepted-word-chip {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(30, 41, 59, 0.55);
+  color: #94a3b8;
+  border-radius: 999px;
+  padding: 0.28rem 0.7rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.reflection-accepted-word-chip:hover,
+.reflection-accepted-word-chip:disabled:hover {
+  transform: none;
+  background: rgba(30, 41, 59, 0.7);
+}
+
+.reflection-accepted-word-chip.is-accepted {
+  border-color: rgba(134, 239, 172, 0.7);
+  background: rgba(22, 101, 52, 0.4);
+  color: #dcfce7;
+}
+
+.reflection-accepted-word-chip.is-accepted:hover,
+.reflection-accepted-word-chip.is-accepted:disabled:hover {
+  background: rgba(22, 101, 52, 0.52);
+}
+
 .reflection-layout {
   display: grid;
   grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr);
