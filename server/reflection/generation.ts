@@ -421,6 +421,8 @@ function runRecordInput(input: {
     provider: input.metadata.provider,
     providerModel: input.metadata.providerModel,
     usage: input.metadata.usage,
+    reportedCostUsd: input.metadata.reportedCostUsd,
+    reportedAt: input.completedAt,
   });
   return {
     runId: input.runId,

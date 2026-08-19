@@ -853,9 +853,7 @@ export function TokenUsageView({
                 <span>{formatTokenCount(run.usage.outputTokens)}</span>
                 <span>{formatTokenCount(run.usage.reasoningTokens)}</span>
                 <span>{formatTokenCount(visibleOutputTokens(run.usage))}</span>
-                <span title={run.estimatedCostUsd === null
-                  ? 'Cost estimate unavailable for this run.'
-                  : `Rates as of ${run.pricingAsOf}; ${run.pricingSnapshotId}`}
+                <span title={costTitle(run)}
                 >
                   {run.estimatedCostUsd === null ? '—' : formatUsd(run.estimatedCostUsd)}
                 </span>
@@ -867,6 +865,22 @@ export function TokenUsageView({
       )}
     </main>
   );
+}
+
+function costTitle(run: ReflectionGenerationRunDto): string {
+  if (run.estimatedCostUsd === null) return 'Cost estimate unavailable for this run.';
+  if (isOpenRouterReportedCostBasis(run.pricingBasis)) {
+    return `Amount charged and reported by OpenRouter on ${run.pricingAsOf}; ${run.pricingSnapshotId}`;
+  }
+  return `Rates as of ${run.pricingAsOf}; ${run.pricingSnapshotId}`;
+}
+
+function isOpenRouterReportedCostBasis(value: unknown): value is { source: 'openrouter.usage.cost' } {
+  return typeof value === 'object'
+    && value !== null
+    && !Array.isArray(value)
+    && 'source' in value
+    && value.source === 'openrouter.usage.cost';
 }
 
 function RunDiagnosticView({

@@ -314,6 +314,24 @@ describe('production Luna reflection provider', () => {
     assert.equal(serialized.includes('must-not-be-returned'), false);
   });
 
+  test('retains a non-negative provider-reported request cost', async () => {
+    const provider = createLunaReflectionProvider({
+      environment: { OPENAI_API_KEY: 'unit-test-secret' },
+      systemPrompt: 'prompt',
+      fetchImplementation: capturingFetch(responseEnvelope(JSON.stringify(validWireResult), {
+        usage: {
+          prompt_tokens: 100,
+          completion_tokens: 40,
+          total_tokens: 140,
+          cost: 0.000082824,
+        },
+      }), []),
+    });
+
+    const generated = await provider.generate(bundle);
+    assert.equal(generated.metadata.reportedCostUsd, 0.000082824);
+  });
+
   test('accepts legacy source attempt ids but canonicalizes them from evidence', async () => {
     const legacy = structuredClone(validWireResult) as unknown as {
       itemResults: Array<{ proposals: Array<{ operation: { sourceAttemptJudgments: Array<Record<string, string>> } }> }>;

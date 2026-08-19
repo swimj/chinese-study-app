@@ -18,17 +18,6 @@ const OPENROUTER = {
   maxTokensField: 'max_tokens' as const,
 };
 
-function pinnedOpenRouterProvider(provider: string) {
-  return {
-    provider: {
-      only: [provider],
-      allow_fallbacks: false,
-      require_parameters: true,
-      data_collection: 'deny',
-    },
-  };
-}
-
 export const REFLECTION_MODEL_ARMS = [
   {
     choice: 'openai:gpt-5.6-luna-high',
@@ -60,7 +49,6 @@ export const REFLECTION_MODEL_ARMS = [
       ...OPENROUTER,
       modelConfig: 'gemini-3.6-flash',
       providerModel: 'google/gemini-3.6-flash',
-      additionalRequestBody: pinnedOpenRouterProvider('google'),
     } satisfies ReflectionProviderConfig,
   },
   {
@@ -72,7 +60,6 @@ export const REFLECTION_MODEL_ARMS = [
       ...OPENROUTER,
       modelConfig: 'deepseek-v4-pro',
       providerModel: 'deepseek/deepseek-v4-pro',
-      additionalRequestBody: pinnedOpenRouterProvider('deepseek'),
     } satisfies ReflectionProviderConfig,
   },
   {
@@ -84,7 +71,6 @@ export const REFLECTION_MODEL_ARMS = [
       ...OPENROUTER,
       modelConfig: 'claude-sonnet-5',
       providerModel: 'anthropic/claude-sonnet-5',
-      additionalRequestBody: pinnedOpenRouterProvider('anthropic'),
     } satisfies ReflectionProviderConfig,
   },
   {

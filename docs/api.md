@@ -161,9 +161,14 @@ attempts can appear without implying that a usable reflection was created. It
 includes provider/configured model and provider model, `succeeded` or `failed`
 state, failure code, response and finish metadata when available, eligible and
 included evidence counts, and nullable normalized token categories. Cost is an
-estimate only: known initial Luna runs persist their complete versioned price
-basis, `pricingAsOf`, and USD estimate at write time; unknown or partial usage
-returns those pricing fields as `null` rather than guessing. Each run also
+estimate for direct-provider arms: known initial Luna runs persist their
+complete versioned price basis, `pricingAsOf`, and USD estimate at write time.
+Successful OpenRouter runs instead persist its response's `usage.cost` as the
+amount charged, with `openrouter-usage-cost.v1` recorded as the source basis;
+the routed upstream price mix remains deliberately unmodeled. If that field is
+unavailable but complete token usage is present, the existing static
+transport/model estimate remains a fallback; unknown or partial usage returns
+those pricing fields as `null` rather than guessing. Each run also
 preserves nullable provider-request, bundle-schema, and result-schema
 provenance. Failed runs may expose a versioned diagnostic with phase
 `provider_transport`, `truncation`, `json_parse`, `structural_schema`, or
@@ -182,11 +187,12 @@ The reflection service has a backend-only comparison-arm registry. Luna, GLM,
 Qwen3.8-Max, Gemini 3.6 Flash, DeepSeek V4 Pro, and Claude Sonnet 5 are sampled
 with equal probability for initial generation. GPT-5.6 Terra is available only
 through an explicit generation/retry model choice. OpenRouter arms require
-`OPENROUTER_API_KEY` and pin one upstream provider with fallbacks disabled and
-required parameters enforced. Missing credentials fail only the selected arm
-with the existing `503` typed failure; they never affect finalization or other
-arms. Prices are fixed transport/model snapshots and unavailable usage remains
-unpriced.
+`OPENROUTER_API_KEY` and use OpenRouter's normal eligible-provider routing;
+they do not pin one upstream host or disable fallbacks. Missing credentials fail
+only the selected arm with the existing `503` typed failure; they never affect
+finalization or other arms. OpenRouter's returned cost is preserved for a
+successful routed run; complete usage without a returned cost uses the existing
+model estimate, while unavailable usage remains unpriced.
 
 `POST /api/reflection-generation-runs/:runId/retry` reuses that run's exact
 saved bundle and returns the same response shape and `201`/`200` semantics as
