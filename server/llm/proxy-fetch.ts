@@ -28,15 +28,16 @@ function proxyDispatcher(timeoutMs: number): Dispatcher {
 
 export const proxiedFetch = fetchWithDispatcher(proxyDispatcher(DEFAULT_PROVIDER_TIMEOUT_MS));
 
-/** OpenAI is routed through the local proxy; other providers use direct fetch. */
+/** OpenAI and OpenRouter are routed through the local proxy; other providers use direct fetch. */
 export function fetchImplementationForProvider(
   providerId: string,
   timeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS,
 ): typeof globalThis.fetch {
-  if (providerId === 'openai' && timeoutMs === DEFAULT_PROVIDER_TIMEOUT_MS) {
+  const usesLocalProxy = providerId === 'openai' || providerId === 'openrouter';
+  if (usesLocalProxy && timeoutMs === DEFAULT_PROVIDER_TIMEOUT_MS) {
     return proxiedFetch;
   }
   return fetchWithDispatcher(
-    providerId === 'openai' ? proxyDispatcher(timeoutMs) : directDispatcher(timeoutMs),
+    usesLocalProxy ? proxyDispatcher(timeoutMs) : directDispatcher(timeoutMs),
   );
 }

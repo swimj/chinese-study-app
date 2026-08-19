@@ -178,8 +178,9 @@ export function createReflectionProvider(
     structuredOutputMode: config.structuredOutputMode,
     maxTokensField: config.maxTokensField,
     additionalRequestBody: config.additionalRequestBody,
-    // OpenAI defaults through the local HTTP CONNECT proxy (same path as the LLM spike).
-    // Other providers use direct fetch. Callers may still inject a custom implementation.
+    // OpenAI-compatible OpenRouter traffic follows OpenAI through the local
+    // HTTP CONNECT proxy; other providers use direct fetch. Callers may still
+    // inject a custom implementation.
     fetchImplementation: options.fetchImplementation
       ?? fetchImplementationForProvider(config.provider, config.timeoutMs),
   });
