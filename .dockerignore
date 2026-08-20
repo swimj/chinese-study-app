@@ -1,0 +1,9 @@
+*
+!package.json
+!package-lock.json
+!spikes/
+spikes/*
+!spikes/hosted-beta-platform/
+!spikes/hosted-beta-platform/**
+spikes/hosted-beta-platform/.generated/
+spikes/hosted-beta-platform/evidence/private/

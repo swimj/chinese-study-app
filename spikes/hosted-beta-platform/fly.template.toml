@@ -1,0 +1,33 @@
+app = "REPLACE_WITH_DISPOSABLE_APP_NAME"
+primary_region = "sin"
+
+[build]
+  dockerfile = "../Dockerfile"
+
+[env]
+  APP_DATA_DIR = "/data"
+  CLERK_AUTHORIZED_PARTY = "https://REPLACE_WITH_DISPOSABLE_APP_NAME.fly.dev"
+  PORT = "5174"
+
+[mounts]
+  source = "app_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 5174
+  force_https = true
+  auto_start_machines = true
+  auto_stop_machines = "off"
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "3s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

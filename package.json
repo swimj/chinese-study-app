@@ -35,16 +35,24 @@
     "spike:llm": "node --import tsx spikes/llm-provider/runner/cli.ts",
     "spike:llm:env": "node --env-file=.env --import tsx spikes/llm-provider/runner/cli.ts",
     "spike:llm:view": "node --import tsx spikes/llm-provider/viewer/server.ts",
+    "spike:platform": "node --import tsx spikes/hosted-beta-platform/src/server.ts",
+    "spike:platform:account": "node --import tsx spikes/hosted-beta-platform/scripts/set-account-enabled.ts",
+    "spike:platform:clerk": "node --import tsx spikes/hosted-beta-platform/scripts/clerk-admin.ts",
+    "spike:platform:maintenance": "node --import tsx spikes/hosted-beta-platform/scripts/set-maintenance.ts",
+    "spike:platform:migrate": "node --import tsx spikes/hosted-beta-platform/scripts/migrate.ts",
+    "spike:platform:restore-check": "node --import tsx spikes/hosted-beta-platform/scripts/verify-restore.ts",
+    "spike:platform:sentinel": "node --import tsx spikes/hosted-beta-platform/scripts/seed-sentinel.ts",
     "test": "node --import tsx --test tests/*.test.ts",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@clerk/express": "^2.1.60",
     "cors": "^2.8.5",
     "express": "^4.18.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "undici": "^8.7.0"
+    "undici": "^8.10.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
