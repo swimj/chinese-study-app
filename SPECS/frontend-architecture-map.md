@@ -60,6 +60,7 @@ src/
     reflection.ts                 # canonical reflection result/operation/lifecycle contract
     reflection-evidence.ts        # strict supplement and initial-bundle validation
     reflection-result-schema.ts   # strict provider JSON schema
+    intake-triage.ts              # intake advisor provider request/response and app annotation contract
 
   lib/
     session-state.ts              # frontend in-flight session state machine
@@ -87,7 +88,9 @@ Page-specific state should not drift back into `App.tsx`. Use a page controller 
 
 `useStudySession` owns the in-flight study session on the home page (see Session Controller below).
 
-`usePriorityPageController` owns the priority page: loading, search, jump-to-word, batch priority updates, triage dismiss.
+`usePriorityPageController` owns the priority page: loading, search,
+jump-to-word, batch priority updates, unbumped triage loading, manual advisor
+generation, and assessment accept/dismiss actions.
 
 `useReflectionPageController` owns the reflection page. See the
 [reflection frontend architecture map](../docs/reflection-frontend-architecture.md)

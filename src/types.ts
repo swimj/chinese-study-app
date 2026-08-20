@@ -44,6 +44,15 @@ export type IntakeTriagePriorityWordsResponse = {
   analysisCandidateCount: number;
 };
 
+export type IntakeTriageRunReceipt = {
+  runId: string;
+  state: 'succeeded';
+  includedWordCount: number;
+  clientRequestId: string;
+  responseId: string | null;
+  estimatedCostUsd: number | null;
+};
+
 export type ReviewFailureRateDay = {
   dayKey: string;
   completedReviewActionSessions: number;

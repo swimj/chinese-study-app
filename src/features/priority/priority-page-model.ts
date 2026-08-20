@@ -1,6 +1,6 @@
 import type { PriorityWord } from '../../types';
 
-export function sortPriorityWords(words: PriorityWord[]) {
+export function sortPriorityWords<T extends PriorityWord>(words: T[]): T[] {
   return [...words].sort((left, right) => {
     const forceTopDelta = Number(right.forceTop) - Number(left.forceTop);
     if (forceTopDelta !== 0) {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type React from 'react';
-import type { PriorityWord } from '../types';
+import type { IntakeTriagePriorityWord, IntakeTriageRunReceipt, PriorityWord } from '../types';
 import { MeaningList } from '../components/MeaningList';
 import { studyProfile } from '../study-profile';
 
@@ -22,15 +22,22 @@ export function PriorityPage({
   updatingWordId,
   priorityBatchSubmitting,
   bulkDismissSubmitting,
+  analysisCandidateCount,
+  advisorGenerating,
+  advisorRunReceipt,
+  advisorUpdatingAssessmentId,
   onRequireForNextSession,
   onMoveSelectedToTop,
   onBumpSelectedAgain,
   onRemoveSelected,
   onDismissFromTriage,
   onBulkDismissFromTriage,
+  onRunAdvisor,
+  onAcceptAdvisorAssessment,
+  onDismissAdvisorAssessment,
 }: {
   rows: PriorityWord[];
-  triageRows: PriorityWord[];
+  triageRows: IntakeTriagePriorityWord[];
   unstudiedTotalCount: number;
   searchHanzi: string;
   requireAddedMatches: boolean;
@@ -44,12 +51,19 @@ export function PriorityPage({
   updatingWordId: string | null;
   priorityBatchSubmitting: boolean;
   bulkDismissSubmitting: boolean;
+  analysisCandidateCount: number;
+  advisorGenerating: boolean;
+  advisorRunReceipt: IntakeTriageRunReceipt | null;
+  advisorUpdatingAssessmentId: string | null;
   onRequireForNextSession: (wordIds: string[], requiredForNextSession: boolean) => Promise<void>;
   onMoveSelectedToTop: (wordIds: string[]) => Promise<void>;
   onBumpSelectedAgain: (wordIds: string[]) => Promise<void>;
   onRemoveSelected: (wordIds: string[]) => Promise<void>;
   onDismissFromTriage: (wordId: string) => void;
   onBulkDismissFromTriage: (wordIds: string[]) => void;
+  onRunAdvisor: () => void;
+  onAcceptAdvisorAssessment: (assessmentId: string) => void;
+  onDismissAdvisorAssessment: (assessmentId: string) => void;
 }) {
   const [activeSubtab, setActiveSubtab] = useState<PrioritySubtab>('manage');
   const [expandedDefinitionByWordId, setExpandedDefinitionByWordId] = useState<Record<string, boolean>>({});
@@ -190,7 +204,7 @@ export function PriorityPage({
   }
 
   function handleSingleDismiss(word: PriorityWord) {
-    const confirmed = window.confirm(`Dismiss ${word.word.hanzi} from new-word study?`);
+    const confirmed = window.confirm(`Move ${word.word.hanzi} to the bottom of new-word priority?`);
     if (!confirmed) {
       return;
     }
@@ -306,8 +320,17 @@ export function PriorityPage({
           <div className="priority-panel-header">
             <div>
               <h2>Top unstudied words</h2>
-              <p className="notes">Long-press any row to select words for bulk dismiss.</p>
+              <p className="notes">Unbumped top 50. Long-press a row for bulk actions.</p>
             </div>
+            {!bulkSelectActive ? (
+              <button
+                type="button"
+                onClick={onRunAdvisor}
+                disabled={advisorGenerating || analysisCandidateCount === 0}
+              >
+                {advisorGenerating ? 'Analyzing...' : `Analyze ${analysisCandidateCount} new word${analysisCandidateCount === 1 ? '' : 's'}`}
+              </button>
+            ) : null}
             {bulkSelectActive ? (
               <div className="pagination-actions">
                 <button type="button" className="secondary-button" onClick={() => setSelectedTriageWordIds([])}>
@@ -318,11 +341,16 @@ export function PriorityPage({
                   onClick={handleBulkDismiss}
                   disabled={selectedTriageWordIds.length === 0 || bulkDismissSubmitting}
                 >
-                  {bulkDismissSubmitting ? 'Dismissing...' : `Bulk dismiss (${selectedTriageWordIds.length})`}
+                  {bulkDismissSubmitting ? 'Moving...' : `Move to bottom (${selectedTriageWordIds.length})`}
                 </button>
               </div>
             ) : null}
           </div>
+          {advisorRunReceipt ? (
+            <p className="notes intake-advisor-run-receipt" title={`Client request ${advisorRunReceipt.clientRequestId}${advisorRunReceipt.responseId ? ` · Provider response ${advisorRunReceipt.responseId}` : ''}`}>
+              Run {advisorRunReceipt.runId.slice(0, 8)} · analyzed {advisorRunReceipt.includedWordCount} · {formatEstimatedCost(advisorRunReceipt.estimatedCostUsd)}
+            </p>
+          ) : null}
           {triageRows.length === 0 ? (
             <p className="notes">No top unstudied words are currently available.</p>
           ) : (
@@ -331,7 +359,8 @@ export function PriorityPage({
               expandedDefinitionByWordId={expandedDefinitionByWordId}
               setExpandedDefinitionByWordId={setExpandedDefinitionByWordId}
               unstudiedTotalCount={unstudiedTotalCount}
-              actionHeader={bulkSelectActive ? 'Select' : 'Dismiss'}
+              actionHeader={bulkSelectActive ? 'Select' : 'Priority'}
+              advisorHeader="Advisor"
               extraHeader={bulkSelectActive ? <th aria-label="Selected" /> : null}
               renderExtraCell={(word) =>
                 bulkSelectActive ? (
@@ -369,10 +398,22 @@ export function PriorityPage({
                     onPointerDown={(event) => event.stopPropagation()}
                     disabled={rowUpdating || bulkSelectActive}
                   >
-                    {rowUpdating ? 'Dismissing...' : 'Dismiss'}
+                    {rowUpdating ? 'Moving...' : 'Move to bottom'}
                   </button>
                 );
               }}
+              renderAdvisorCell={(word) => {
+                const row = triageRows.find((entry) => entry.word.id === word.word.id);
+                return row ? (
+                  <IntakeAdvisorAnnotation
+                    row={row}
+                    updatingAssessmentId={advisorUpdatingAssessmentId}
+                    onAccept={onAcceptAdvisorAssessment}
+                    onDismiss={onDismissAdvisorAssessment}
+                  />
+                ) : null;
+              }}
+              showBumps={false}
             />
           )}
         </div>
@@ -450,9 +491,12 @@ function PriorityWordTable({
   setExpandedDefinitionByWordId,
   unstudiedTotalCount,
   actionHeader,
+  advisorHeader,
   extraHeader = null,
   renderExtraCell,
   renderActionCell,
+  renderAdvisorCell,
+  showBumps = true,
   getRowClassName,
   getRowHandlers,
 }: {
@@ -463,9 +507,12 @@ function PriorityWordTable({
   setExpandedDefinitionByWordId: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   unstudiedTotalCount: number;
   actionHeader?: string;
+  advisorHeader?: string;
   extraHeader?: React.ReactNode;
   renderExtraCell?: (word: PriorityWord) => React.ReactNode;
   renderActionCell?: (word: PriorityWord) => React.ReactNode;
+  renderAdvisorCell?: (word: PriorityWord) => React.ReactNode;
+  showBumps?: boolean;
   getRowClassName?: (word: PriorityWord) => string;
   getRowHandlers?: (word: PriorityWord) => React.HTMLAttributes<HTMLTableRowElement>;
 }) {
@@ -478,7 +525,8 @@ function PriorityWordTable({
             <th>Word</th>
             <th>Definition</th>
             <th>Priority</th>
-            <th>Bumps</th>
+            {showBumps ? <th>Bumps</th> : null}
+            {renderAdvisorCell ? <th>{advisorHeader}</th> : null}
             {renderActionCell ? <th>{actionHeader}</th> : null}
           </tr>
         </thead>
@@ -534,7 +582,8 @@ function PriorityWordTable({
                   </div>
                 </td>
                 <td>{priorityPercentile ?? <span className="notes">N/A</span>}</td>
-                <td>{word.bumpCount}</td>
+                {showBumps ? <td>{word.bumpCount}</td> : null}
+                {renderAdvisorCell ? <td>{renderAdvisorCell(word)}</td> : null}
                 {renderActionCell ? <td>{renderActionCell(word)}</td> : null}
               </tr>
             );
@@ -543,6 +592,67 @@ function PriorityWordTable({
       </table>
     </div>
   );
+}
+
+function IntakeAdvisorAnnotation({
+  row,
+  updatingAssessmentId,
+  onAccept,
+  onDismiss,
+}: {
+  row: IntakeTriagePriorityWord;
+  updatingAssessmentId: string | null;
+  onAccept: (assessmentId: string) => void;
+  onDismiss: (assessmentId: string) => void;
+}) {
+  const annotation = row.intakeTriage;
+  if (!annotation) return null;
+  if (annotation.kind === 'production_suppressed') {
+    return (
+      <div className="intake-advisor-annotation accepted">
+        <strong>Review production suppressed</strong>
+        {annotation.rationale ? <span>{annotation.rationale}</span> : null}
+      </div>
+    );
+  }
+
+  const updating = updatingAssessmentId === annotation.assessmentId;
+  const label = annotation.judgment === 'defer_active_study'
+    ? 'Move down'
+    : annotation.judgment === 'recognition_only'
+      ? 'Recognition only?'
+      : 'Unsure';
+  return (
+    <div className={`intake-advisor-annotation ${annotation.judgment}`}>
+      <strong>{label}</strong>
+      <span>{annotation.rationale}</span>
+      <div className="intake-advisor-actions">
+        {annotation.judgment === 'recognition_only' ? (
+          <button
+            type="button"
+            onClick={(event) => { event.stopPropagation(); onAccept(annotation.assessmentId); }}
+            disabled={updating}
+          >
+            {updating ? 'Saving...' : 'Accept'}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={(event) => { event.stopPropagation(); onDismiss(annotation.assessmentId); }}
+          disabled={updating}
+        >
+          Dismiss suggestion
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function formatEstimatedCost(estimatedCostUsd: number | null): string {
+  return estimatedCostUsd === null
+    ? 'cost unavailable'
+    : `estimated $${estimatedCostUsd.toFixed(6)}`;
 }
 
 function getPriorityPercentileText(effectiveRank: number | null, unstudiedTotalCount: number | null) {

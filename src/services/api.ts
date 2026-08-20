@@ -1,5 +1,7 @@
 import type {
   PriorityWord,
+  IntakeTriagePriorityWordsResponse,
+  IntakeTriageRunReceipt,
   ReviewFailureRateDay,
   SessionActiveTimeMetrics,
   Word,
@@ -641,12 +643,40 @@ export async function fetchUnstudiedPriorityWords(): Promise<PriorityWordsRespon
   return response.json();
 }
 
-export async function fetchTopUnstudiedPriorityWords(limit = 50): Promise<PriorityWordsResponse> {
+export async function fetchTopUnstudiedPriorityWords(limit = 50): Promise<IntakeTriagePriorityWordsResponse> {
   const response = await fetch(`${API_BASE}/api/priority/unstudied/top?limit=${encodeURIComponent(limit)}`);
   if (!response.ok) {
     throw new Error('Failed to load top unstudied priority words');
   }
   return response.json();
+}
+
+export async function runIntakeTriageAdvisor(): Promise<IntakeTriageRunReceipt> {
+  const response = await fetch(`${API_BASE}/api/intake-triage/runs`, { method: 'POST' });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to run intake advisor'));
+  }
+  return response.json();
+}
+
+export async function acceptIntakeTriageAssessment(assessmentId: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE}/api/intake-triage/assessments/${encodeURIComponent(assessmentId)}/accept`,
+    { method: 'POST' },
+  );
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to accept intake recommendation'));
+  }
+}
+
+export async function dismissIntakeTriageAssessment(assessmentId: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE}/api/intake-triage/assessments/${encodeURIComponent(assessmentId)}/dismiss`,
+    { method: 'POST' },
+  );
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to dismiss intake recommendation'));
+  }
 }
 
 export async function addUnstudiedPriorityByHanzi(

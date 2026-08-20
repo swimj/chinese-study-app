@@ -142,8 +142,15 @@ function App() {
           onBumpSelectedAgain={priorityPage.bumpSelectedAgain}
           onRemoveSelected={priorityPage.removeSelected}
           bulkDismissSubmitting={priorityPage.bulkDismissSubmitting}
+          analysisCandidateCount={priorityPage.analysisCandidateCount}
+          advisorGenerating={priorityPage.advisorGenerating}
+          advisorRunReceipt={priorityPage.advisorRunReceipt}
+          advisorUpdatingAssessmentId={priorityPage.advisorUpdatingAssessmentId}
           onDismissFromTriage={(wordId) => void priorityPage.dismissFromTriage(wordId)}
           onBulkDismissFromTriage={(wordIds) => void priorityPage.bulkDismissFromTriage(wordIds)}
+          onRunAdvisor={() => void priorityPage.runAdvisor()}
+          onAcceptAdvisorAssessment={(assessmentId) => void priorityPage.acceptAdvisorAssessment(assessmentId)}
+          onDismissAdvisorAssessment={(assessmentId) => void priorityPage.dismissAdvisorAssessment(assessmentId)}
         />
       ) : currentPage === 'reflections' ? (
         <ReflectionsPage controller={reflectionPage} />
