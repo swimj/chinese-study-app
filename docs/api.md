@@ -59,6 +59,32 @@ count and does not mutate an already-started frontend session.
 | GET | `/api/priority/unstudied/top` | `priority` |
 | POST | `/api/priority/unstudied/add-by-hanzi` | `priority` |
 
+`GET /api/priority/unstudied/top` is the advisor-aware intake queue. It excludes
+words with any explicit positive priority override and returns an
+`intakeTriage` annotation per word plus `analysisCandidateCount`.
+
+## Intake triage advisor
+
+The durable product contract is
+[`SPECS/intake-triage-advisor.md`](../SPECS/intake-triage-advisor.md).
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/api/intake-triage/runs` | Analyze fresh eligible entries in the current top 50 |
+| POST | `/api/intake-triage/assessments/:id/accept` | Apply an actionable assessment atomically |
+| POST | `/api/intake-triage/assessments/:id/dismiss` | Hide advice without changing the word |
+
+Generation returns `201`; no candidates or a concurrent run returns `409`,
+missing provider configuration returns `503`, and safe provider failures return
+`502`. Assessment actions return `404` for an unknown id and `409` for stale,
+already-reviewed, or non-actionable advice. Clients never submit a word id or
+effect with an assessment action.
+
+A successful run response includes its app run/client-request id, nullable
+provider response id, included word count, and nullable estimated USD cost. The
+provider request and raw response are transient; API reads expose only the
+translated annotations attached to priority words.
+
 ## Session composition
 
 | Method | Path | Handler domain |

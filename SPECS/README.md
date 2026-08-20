@@ -13,13 +13,15 @@ Behavior changes must align with these and update tests in the same change.
 | [study-action-model.md](./study-action-model.md) | Implemented scheduling architecture: study actions, word-skill state, attempt events, contrast selection, and the bounded production-task/cue model |
 | [session-reflection-generation.md](./session-reflection-generation.md) | Completed-session boundary, reflection evidence, generation attempts, failure isolation, retry, and resource bounds |
 | [reflection-proposals-and-handles.md](./reflection-proposals-and-handles.md) | Reflection result, proposal review, authorized-operation, application, provenance, and handle contracts |
+| [intake-triage-advisor.md](./intake-triage-advisor.md) | Pre-introduction advisor evidence, judgments, review actions, persistence, and triage presentation |
 
 **Layering:** `learning-review-model` defines word-status semantics;
 `study-action-model` defines how skills and actions are scheduled and projected;
 `session-covering-criteria` defines how the frontend treats items inside an
 active session; `session-reflection-generation` owns finalized evidence and
 generation; and `reflection-proposals-and-handles` owns review, authorization,
-application, and provenance after generation succeeds.
+application, and provenance after generation succeeds. `intake-triage-advisor`
+owns the separate pre-introduction language-aware triage loop.
 
 ## Architecture maps (navigation only)
 

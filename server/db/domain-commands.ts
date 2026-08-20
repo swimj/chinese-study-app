@@ -2,6 +2,7 @@ import type { WordSkillRelevance, WordSkillState, WordSkillStateRow } from './ty
 import {
   INITIAL_CONTEXTUAL_SELECTION_INTERVAL_HOURS,
   INITIAL_REVIEW_EASE_FACTOR,
+  PRIORITY_TIER_SUNK,
 } from './types.ts';
 import { getDb } from './connection.ts';
 
@@ -21,6 +22,31 @@ export type SuppressDefinitionProductionResult =
       kind: 'already_satisfied';
       relevance: WordSkillRelevance;
     };
+
+export function sinkWordPriorityWithoutTransaction({
+  wordId,
+  updatedAt,
+}: {
+  wordId: string;
+  updatedAt: string;
+}): void {
+  getDb().prepare(`
+    INSERT INTO user_word_priority (
+      word_id,
+      bump_count,
+      force_top,
+      priority_tier,
+      required_for_next_session,
+      updated_at
+    ) VALUES (?, 0, 0, ?, 0, ?)
+    ON CONFLICT(word_id) DO UPDATE SET
+      bump_count = excluded.bump_count,
+      force_top = excluded.force_top,
+      priority_tier = excluded.priority_tier,
+      required_for_next_session = excluded.required_for_next_session,
+      updated_at = excluded.updated_at
+  `).run(wordId, PRIORITY_TIER_SUNK, updatedAt);
+}
 
 /**
  * Shared production-suppression command for callers that already own a
