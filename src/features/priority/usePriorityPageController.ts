@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import type { AppPageKey } from '../../components/AppChrome';
 import {
+  acceptIntakeTriageAssessment,
   addUnstudiedPriorityByHanzi,
+  dismissIntakeTriageAssessment,
   dismissWordFromStudy,
   fetchTopUnstudiedPriorityWords,
   fetchUnstudiedPriorityWords,
+  runIntakeTriageAdvisor,
   updateWordUserPriority,
 } from '../../services/api';
 import { studyProfile } from '../../study-profile';
-import type { PriorityWord } from '../../types';
+import type { IntakeTriagePriorityWord, IntakeTriageRunReceipt, PriorityWord } from '../../types';
 import { sortPriorityWords } from './priority-page-model';
 
 export type PriorityPageControllerOptions = {
@@ -20,7 +23,11 @@ export type PriorityPageControllerOptions = {
 export type PriorityPageController = {
   isLoading: boolean;
   rows: PriorityWord[];
-  triageRows: PriorityWord[];
+  triageRows: IntakeTriagePriorityWord[];
+  analysisCandidateCount: number;
+  advisorGenerating: boolean;
+  advisorRunReceipt: IntakeTriageRunReceipt | null;
+  advisorUpdatingAssessmentId: string | null;
   unstudiedTotalCount: number;
   searchHanzi: string;
   requireAddedMatches: boolean;
@@ -44,6 +51,9 @@ export type PriorityPageController = {
   remove: (wordId: string) => Promise<void>;
   dismissFromTriage: (wordId: string) => Promise<void>;
   bulkDismissFromTriage: (wordIds: string[]) => Promise<void>;
+  runAdvisor: () => Promise<void>;
+  acceptAdvisorAssessment: (assessmentId: string) => Promise<void>;
+  dismissAdvisorAssessment: (assessmentId: string) => Promise<void>;
 };
 
 export function usePriorityPageController({
@@ -53,7 +63,11 @@ export function usePriorityPageController({
 }: PriorityPageControllerOptions): PriorityPageController {
   const [isLoading, setIsLoading] = useState(false);
   const [rows, setRows] = useState<PriorityWord[]>([]);
-  const [triageRows, setTriageRows] = useState<PriorityWord[]>([]);
+  const [triageRows, setTriageRows] = useState<IntakeTriagePriorityWord[]>([]);
+  const [analysisCandidateCount, setAnalysisCandidateCount] = useState(0);
+  const [advisorGenerating, setAdvisorGenerating] = useState(false);
+  const [advisorRunReceipt, setAdvisorRunReceipt] = useState<IntakeTriageRunReceipt | null>(null);
+  const [advisorUpdatingAssessmentId, setAdvisorUpdatingAssessmentId] = useState<string | null>(null);
   const [unstudiedTotalCount, setUnstudiedTotalCount] = useState(0);
   const [searchHanzi, setSearchHanzi] = useState('');
   const [requireAddedMatches, setRequireAddedMatches] = useState(false);
@@ -79,6 +93,7 @@ export function usePriorityPageController({
       ]);
       setRows(sortPriorityWords(priorityWordsResponse.words));
       setTriageRows(sortPriorityWords(triageWordsResponse.words));
+      setAnalysisCandidateCount(triageWordsResponse.analysisCandidateCount);
       setUnstudiedTotalCount(priorityWordsResponse.unstudiedTotalCount);
       setSearchNotice(null);
       setJumpRequestWordId(null);
@@ -88,6 +103,12 @@ export function usePriorityPageController({
     } finally {
       setIsLoading(false);
     }
+  }
+
+  async function refreshTriage(): Promise<void> {
+    const response = await fetchTopUnstudiedPriorityWords(50);
+    setTriageRows(sortPriorityWords(response.words));
+    setAnalysisCandidateCount(response.analysisCandidateCount);
   }
 
   async function updateWordPriority(
@@ -111,7 +132,9 @@ export function usePriorityPageController({
 
         return mergePriorityWord(current, updatedWord);
       });
-      setTriageRows((current) => mergePriorityWordIfPresent(current, updatedWord));
+      if (patch.bumpDelta || patch.forceTop || patch.requiredForNextSession) {
+        setTriageRows((current) => current.filter((entry) => entry.word.id !== wordId));
+      }
       setSearchNotice(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -158,9 +181,15 @@ export function usePriorityPageController({
     setError(null);
 
     try {
-      await dismissWordFromStudy(wordId);
+      const row = triageRows.find((entry) => entry.word.id === wordId);
+      const recommendation = row?.intakeTriage;
+      if (recommendation?.kind === 'recommendation' && recommendation.judgment === 'defer_active_study') {
+        await acceptIntakeTriageAssessment(recommendation.assessmentId);
+      } else {
+        await dismissWordFromStudy(wordId);
+      }
       setRows((current) => current.filter((entry) => entry.word.id !== wordId));
-      setTriageRows((current) => current.filter((entry) => entry.word.id !== wordId));
+      await refreshTriage();
       setSearchNotice(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -179,15 +208,51 @@ export function usePriorityPageController({
     setError(null);
 
     try {
-      await Promise.all(uniqueWordIds.map((wordId) => dismissWordFromStudy(wordId)));
+      await Promise.all(uniqueWordIds.map((wordId) => {
+        const recommendation = triageRows.find((entry) => entry.word.id === wordId)?.intakeTriage;
+        return recommendation?.kind === 'recommendation' && recommendation.judgment === 'defer_active_study'
+          ? acceptIntakeTriageAssessment(recommendation.assessmentId)
+          : dismissWordFromStudy(wordId);
+      }));
       const dismissedIds = new Set(uniqueWordIds);
       setRows((current) => current.filter((entry) => !dismissedIds.has(entry.word.id)));
-      setTriageRows((current) => current.filter((entry) => !dismissedIds.has(entry.word.id)));
+      await refreshTriage();
       setSearchNotice(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setBulkDismissSubmitting(false);
+    }
+  }
+
+  async function runAdvisor(): Promise<void> {
+    setAdvisorGenerating(true);
+    setAdvisorRunReceipt(null);
+    setError(null);
+    try {
+      const receipt = await runIntakeTriageAdvisor();
+      setAdvisorRunReceipt(receipt);
+      await refreshTriage();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setAdvisorGenerating(false);
+    }
+  }
+
+  async function updateAdvisorAssessment(
+    assessmentId: string,
+    action: (id: string) => Promise<void>,
+  ): Promise<void> {
+    setAdvisorUpdatingAssessmentId(assessmentId);
+    setError(null);
+    try {
+      await action(assessmentId);
+      await refreshTriage();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setAdvisorUpdatingAssessmentId(null);
     }
   }
 
@@ -219,10 +284,9 @@ export function usePriorityPageController({
 
         return sortPriorityWords(current.map((entry) => updatedById.get(entry.word.id) ?? entry));
       });
-      setTriageRows((current) => {
-        const next = current.map((entry) => updatedById.get(entry.word.id) ?? entry);
-        return sortPriorityWords(next);
-      });
+      if (patch.bumpDelta || patch.forceTop || patch.requiredForNextSession) {
+        setTriageRows((current) => current.filter((entry) => !updatedById.has(entry.word.id)));
+      }
       setSearchNotice(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -236,6 +300,10 @@ export function usePriorityPageController({
     isLoading,
     rows,
     triageRows,
+    analysisCandidateCount,
+    advisorGenerating,
+    advisorRunReceipt,
+    advisorUpdatingAssessmentId,
     unstudiedTotalCount,
     searchHanzi,
     requireAddedMatches,
@@ -260,20 +328,17 @@ export function usePriorityPageController({
     remove: (wordId: string) => updateWordPriority(wordId, { reset: true }),
     dismissFromTriage,
     bulkDismissFromTriage,
+    runAdvisor,
+    acceptAdvisorAssessment: (assessmentId) =>
+      updateAdvisorAssessment(assessmentId, acceptIntakeTriageAssessment),
+    dismissAdvisorAssessment: (assessmentId) =>
+      updateAdvisorAssessment(assessmentId, dismissIntakeTriageAssessment),
   };
 }
 
 function mergePriorityWord(rows: PriorityWord[], updatedWord: PriorityWord): PriorityWord[] {
   if (!rows.some((entry) => entry.word.id === updatedWord.word.id)) {
     throw new Error(`Invariant violated: updated priority word "${updatedWord.word.id}" is missing from the current rows.`);
-  }
-
-  return sortPriorityWords(rows.map((entry) => (entry.word.id === updatedWord.word.id ? updatedWord : entry)));
-}
-
-function mergePriorityWordIfPresent(rows: PriorityWord[], updatedWord: PriorityWord): PriorityWord[] {
-  if (!rows.some((entry) => entry.word.id === updatedWord.word.id)) {
-    return rows;
   }
 
   return sortPriorityWords(rows.map((entry) => (entry.word.id === updatedWord.word.id ? updatedWord : entry)));

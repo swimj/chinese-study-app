@@ -1239,6 +1239,41 @@ button:hover {
   text-transform: uppercase;
 }
 
+.intake-advisor-annotation {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 15rem;
+  padding: 0.65rem;
+  border-left: 3px solid #64748b;
+  border-radius: 0.35rem;
+  background: rgba(100, 116, 139, 0.12);
+}
+
+.intake-advisor-annotation.defer_active_study {
+  border-left-color: #be5967;
+  background: rgba(190, 89, 103, 0.12);
+}
+
+.intake-advisor-annotation.recognition_only {
+  border-left-color: #c58c2a;
+  background: rgba(197, 140, 42, 0.13);
+}
+
+.intake-advisor-annotation.uncertain {
+  color: #94a3b8;
+}
+
+.intake-advisor-annotation.accepted {
+  border-left-color: #618a79;
+  background: rgba(97, 138, 121, 0.14);
+}
+
+.intake-advisor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
 .pagination-actions button:disabled,
 button:disabled {
   opacity: 0.55;
