@@ -143,8 +143,10 @@ green when accepted. V2 cue repair hides the restated target-word field, source-
 judgments, production task ids, and raw cue ids. Cue lifecycle changes render
 as a compact list of cue texts (kind via color); a row expands for editing,
 replace's cue-to-be-replaced appears only in that detail, and rows can be
-added or deleted without expanding. Those hidden identifiers remain in the
-Accept payload.
+added or deleted without expanding. Switching a change to replace or deactivate
+stamps the evidence served-cue id into that hidden payload field so a learner
+can authorize terminal deactivation without typing a raw id. Those hidden
+identifiers remain in the Accept payload.
 
 The **Token usage** view shows aggregate token and priced-run totals followed by
 a compact per-run table. It presents each attempt's provider/model, completion

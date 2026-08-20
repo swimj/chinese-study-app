@@ -464,6 +464,7 @@ export type ReflectionOperationDraftAction =
       type: 'set_v2_cue_change_kind';
       index: number;
       kind: ProductionCueChangeV2['kind'];
+      cueId?: string;
     }
   | { type: 'set_v2_cue_change_id'; index: number; cueId: string }
   | {
@@ -660,7 +661,11 @@ export function reduceReflectionOperationDraft(
         changes: updateAt(
           current.changes,
           action.index,
-          () => emptyProductionCueChangeV2(action.kind, current.wordId),
+          (change) => emptyProductionCueChangeV2(
+            action.kind,
+            current.wordId,
+            retainedCueId(change, action.cueId),
+          ),
           'V2 cue change',
         ),
       }));
@@ -1009,15 +1014,21 @@ function emptyProductionCueDraftV2(wordId: string): ProductionCueDraftV2 {
 function emptyProductionCueChangeV2(
   kind: ProductionCueChangeV2['kind'],
   wordId: string,
+  cueId = '',
 ): ProductionCueChangeV2 {
   switch (kind) {
     case 'create':
       return { kind, cue: emptyProductionCueDraftV2(wordId) };
     case 'replace':
-      return { kind, cueId: '', replacements: [emptyProductionCueDraftV2(wordId)] };
+      return { kind, cueId, replacements: [emptyProductionCueDraftV2(wordId)] };
     case 'deactivate':
-      return { kind, cueId: '' };
+      return { kind, cueId };
   }
+}
+
+function retainedCueId(change: ProductionCueChangeV2, fallbackCueId = ''): string {
+  if (change.kind !== 'create' && change.cueId.length > 0) return change.cueId;
+  return fallbackCueId;
 }
 
 function updateAt<T>(
@@ -1134,6 +1145,13 @@ export function servedCueDisplayText(
   if ('servedCue' in evidence) return evidence.servedCue.text;
   if (evidence.source === 'production_mistake') return evidence.cuesAsShown[0]?.text ?? null;
   return null;
+}
+
+export function servedCueId(
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
+): string | null {
+  if (evidence === null || !('servedCue' in evidence)) return null;
+  return evidence.servedCue.cueId;
 }
 
 export type {
