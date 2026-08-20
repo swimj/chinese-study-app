@@ -12,3 +12,5 @@ artifacts/*
 !artifacts/README.md
 .codex/
 *.tsbuildinfo
+spikes/hosted-beta-platform/.generated/
+spikes/hosted-beta-platform/evidence/private/

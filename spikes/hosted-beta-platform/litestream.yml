@@ -1,0 +1,26 @@
+logging:
+  level: info
+  type: json
+  stderr: true
+
+shutdown-sync-timeout: 30s
+shutdown-sync-interval: 500ms
+
+socket:
+  enabled: true
+  path: /data/litestream.sock
+  permissions: 0600
+
+snapshot:
+  interval: 1h
+  retention: 24h
+
+dbs:
+  - path: /data/app.db
+    monitor-interval: 1s
+    checkpoint-interval: 1m
+    busy-timeout: 5s
+    replica:
+      url: s3://${LITESTREAM_BUCKET}/swi-46/app
+      region: ap-southeast-1
+      sync-interval: 1s
