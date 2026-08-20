@@ -1,8 +1,9 @@
 import cors from 'cors';
-import express from 'express';
+import express, { type Response } from 'express';
 import { pathToFileURL } from 'node:url';
 import {
   acceptReflectionProposal,
+  acceptIntakeTriageAssessment,
   replaceReflectionProposal,
   applyReflectionInvocation,
   clearReflectionQualityAnnotation,
@@ -11,6 +12,7 @@ import {
   deferReflectionProposal,
   dismissWordFromStudy,
   dismissReflectionProposal,
+  dismissIntakeTriageAssessment,
   addUnstudiedUserPriorityByHanzi,
   dbConfig,
   getUnstudiedCountBaseline,
@@ -27,7 +29,6 @@ import {
   getSessionActiveTimeMetrics,
   getSessionPayload,
   setDailyNewWordLimit,
-  getTopUnstudiedPriorityWords,
   getWordMeanings,
   getWordStatusCounts,
   recordAcceptedContrastSelectionAttempt,
@@ -45,6 +46,14 @@ import {
   withdrawReflectionInvocationAuthorization,
   type ReviewAttemptCommitIntent,
 } from './db.ts';
+import { getIntakeTriagePriorityWords } from './intake-triage/evidence.ts';
+import {
+  createIntakeTriageGenerationService,
+  IntakeTriageGenerationError,
+  type IntakeTriageGenerationService,
+} from './intake-triage/generation.ts';
+import { INTAKE_TRIAGE_PROMPT_VERSION } from './intake-triage/provider.ts';
+import { IntakeTriageAssessmentError } from './db/intake-triage.ts';
 import type { ContentDiagnosticKind } from '../src/domain/content-diagnostics.ts';
 import type {
   ContrastSelectionCommitIntent,
@@ -82,6 +91,7 @@ const port = dbConfig.port;
 export type CreateAppOptions = {
   reflectionGenerationService?: InitialReflectionGenerationService;
   reflectionLifecycleLogger?: ReflectionLifecycleLogger;
+  intakeTriageGenerationService?: IntakeTriageGenerationService;
 };
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -93,6 +103,8 @@ export function createApp(options: CreateAppOptions = {}) {
       lifecycleLogger: reflectionLifecycleLogger,
       providerDiagnosticSink: createFileReflectionProviderDiagnosticSink(dbConfig.dataDir),
     });
+  const intakeTriageGenerationService = options.intakeTriageGenerationService
+    ?? createIntakeTriageGenerationService();
 
   app.use(cors());
   app.use(express.json());
@@ -176,7 +188,38 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
 
-    res.json(getTopUnstudiedPriorityWords(limit));
+    res.json(getIntakeTriagePriorityWords(limit));
+  });
+
+  app.post('/api/intake-triage/runs', async (_req, res) => {
+    try {
+      res.status(201).json(await intakeTriageGenerationService.generate());
+    } catch (error) {
+      if (error instanceof IntakeTriageGenerationError) {
+        const status = error.code === 'no_candidates' || error.code === 'already_running'
+          ? 409
+          : error.providerCode === 'missing_config' ? 503 : 502;
+        res.status(status).json({ error: error.message, code: error.providerCode ?? error.code });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to run the intake advisor' });
+    }
+  });
+
+  app.post('/api/intake-triage/assessments/:id/accept', (req, res) => {
+    try {
+      res.json(acceptIntakeTriageAssessment(req.params.id, INTAKE_TRIAGE_PROMPT_VERSION));
+    } catch (error) {
+      handleIntakeTriageAssessmentError(error, res);
+    }
+  });
+
+  app.post('/api/intake-triage/assessments/:id/dismiss', (req, res) => {
+    try {
+      res.json(dismissIntakeTriageAssessment(req.params.id));
+    } catch (error) {
+      handleIntakeTriageAssessmentError(error, res);
+    }
   });
 
   app.post('/api/priority/unstudied/add-by-hanzi', (req, res) => {
@@ -1212,6 +1255,15 @@ function isReflectionQualityClientError(error: unknown): error is Error {
     || error.message.startsWith('Expected ')
       && error.message.includes('ISO-8601')
   );
+}
+
+function handleIntakeTriageAssessmentError(error: unknown, res: Response): void {
+  if (error instanceof IntakeTriageAssessmentError) {
+    const status = error.code === 'not_found' ? 404 : 409;
+    res.status(status).json({ error: error.message, code: error.code });
+    return;
+  }
+  res.status(500).json({ error: 'Failed to update the intake assessment' });
 }
 
 function normalizeStudyDayKey(value: string): string | null {

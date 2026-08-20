@@ -34,6 +34,16 @@ export type PriorityWord = {
   effectiveRank: number;
 };
 
+export type IntakeTriagePriorityWord = PriorityWord & {
+  intakeTriage: import('./domain/intake-triage').IntakeTriageAnnotation | null;
+};
+
+export type IntakeTriagePriorityWordsResponse = {
+  unstudiedTotalCount: number;
+  words: IntakeTriagePriorityWord[];
+  analysisCandidateCount: number;
+};
+
 export type ReviewFailureRateDay = {
   dayKey: string;
   completedReviewActionSessions: number;

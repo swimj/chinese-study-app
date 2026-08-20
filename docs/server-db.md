@@ -12,6 +12,7 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`reflections.ts`](../server/db/reflections.ts) | Reflection schema validation, immutable artifact materialization, queue/detail read models, proposal review, immutable invocation authorization, application/recovery, and supported adapters |
 | [`reflection-quality.ts`](../server/db/reflection-quality.ts) | Dogfood item quality-tag overlay, upsert-by-item, and model-arm stats joins |
 | [`reflection-help-inbox.ts`](../server/db/reflection-help-inbox.ts) | Open explanation-only Help inbox rows, keyed by `(artifact_id, item_id)`; Done deletes the row |
+| [`intake-triage.ts`](../server/db/intake-triage.ts) | Immutable advisor runs and assessments, learner dispositions, fresh annotation reads, and atomic accepted effects |
 | [`domain-commands.ts`](../server/db/domain-commands.ts) | Shared transaction-aware domain commands used by reflection and legacy/manual paths; definition-production suppression and contextual-selection eligibility |
 | [`schema.ts`](../server/db/schema.ts) | Re-exports `applyProductionContrastExerciseSeed` and `initializeDatabase` for init ordering |
 | [`index.ts`](../server/db/index.ts) | Internal re-export barrel |
@@ -111,10 +112,28 @@ Generation is deliberately outside the DB module:
 | [`server/reflection/luna-provider.ts`](../server/reflection/luna-provider.ts) | Lazy credential loading, pinned Luna model configuration, production prompt loading, structured-output and domain validation, sanitized typed failures with available response metadata |
 | [`server/reflection/run-pricing.ts`](../server/reflection/run-pricing.ts) | Versioned direct-provider estimates plus OpenRouter response-cost preservation for reflection runs |
 | [`server/reflection/prompts/reflection.md`](../server/reflection/prompts/reflection.md) | Fixed active reflection prompt; previous stamped versions live under `prompts/archive/` |
-| [`server/llm/`](../server/llm/) | Provider-neutral HTTP, OpenAI-compatible request, token/finish-reason, and JSON-schema validation primitives |
+| [`server/llm/`](../server/llm/) | Provider-neutral HTTP, OpenAI-compatible request, token/finish-reason, JSON-schema validation, and static run-pricing primitives |
 
 Provider or evidence failure occurs before artifact materialization and never
 alters durable study attempts, completion summaries, or scheduling state.
+
+## Intake triage advisor
+
+Intake triage uses three additive tables: `intake_triage_runs` stores terminal
+provider provenance, request correlation, usage, and a versioned cost estimate;
+`intake_triage_assessments` stores the app-translated immutable per-word
+judgments and lexical fingerprints; and
+`intake_triage_assessment_dispositions` stores the learner's one accepted or
+dismissed decision. Accepted effects reuse transaction-aware domain commands
+for the sunk priority tier and definition-production suppression.
+
+Generation stays outside the DB layer in `server/intake-triage/`: `evidence.ts`
+selects the unbumped top-50 entries and reduces them to lexical provider input,
+`provider.ts` owns the fixed Luna-high prompt and strict lexical-reference
+validation and translation, and `generation.ts` coordinates one manual run. Raw provider
+requests and responses are transient rather than persisted. These records use
+the implicit local learner boundary for V1 and must be
+learner-scoped when hosted tenancy lands.
 
 ## Init order
 

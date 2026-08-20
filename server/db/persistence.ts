@@ -30,7 +30,13 @@ import {
   validateReflectionSchema,
 } from './reflections.ts';
 import {
+  ensureIntakeTriageIndexes,
+  ensureIntakeTriageSchema,
+  validateIntakeTriageSchema,
+} from './intake-triage.ts';
+import {
   enableContextualSelectionWithoutTransaction,
+  sinkWordPriorityWithoutTransaction,
   suppressDefinitionProductionWithoutTransaction,
 } from './domain-commands.ts';
 import {
@@ -364,7 +370,10 @@ export function getTopUnstudiedPriorityWords(limit: number): PriorityWordsPayloa
         FROM words
         LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
         WHERE words.status = 'unstudied'
-          AND COALESCE(user_word_priority.priority_tier, 0) >= ${PRIORITY_TIER_REGULAR}
+          AND COALESCE(user_word_priority.bump_count, 0) = 0
+          AND COALESCE(user_word_priority.force_top, 0) = 0
+          AND COALESCE(user_word_priority.priority_tier, 0) = ${PRIORITY_TIER_REGULAR}
+          AND COALESCE(user_word_priority.required_for_next_session, 0) = 0
       )
       ORDER BY
         priority_tier DESC,
@@ -2631,22 +2640,10 @@ export function dismissWordFromStudy(wordId: string): void {
   getDb().exec('BEGIN');
 
   try {
-    getDb().prepare(`
-      INSERT INTO user_word_priority (
-        word_id,
-        bump_count,
-        force_top,
-        priority_tier,
-        required_for_next_session,
-        updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(word_id) DO UPDATE SET
-        bump_count = excluded.bump_count,
-        force_top = excluded.force_top,
-        priority_tier = excluded.priority_tier,
-        required_for_next_session = excluded.required_for_next_session,
-        updated_at = excluded.updated_at
-    `).run(wordId, 0, 0, PRIORITY_TIER_SUNK, 0, new Date().toISOString());
+    sinkWordPriorityWithoutTransaction({
+      wordId,
+      updatedAt: new Date().toISOString(),
+    });
 
     if (existingWord.status !== 'unstudied') {
       getDb().prepare(`
@@ -2911,6 +2908,7 @@ function applyLightweightSchemaMigrations() {
   `);
   ensureReflectionSchema();
   ensureProductionCueSchema();
+  ensureIntakeTriageSchema();
 
   const userPriorityColumns = getDb().prepare(`PRAGMA table_info(user_word_priority)`).all() as Array<{ name: string }>;
   const hasPriorityTier = userPriorityColumns.some((column) => column.name === 'priority_tier');
@@ -3575,6 +3573,7 @@ function createSchema() {
 
   ensureReflectionSchema();
   ensureProductionCueSchema();
+  ensureIntakeTriageSchema();
   ensureDefaultDailyNewWordLimit();
   ensureIndexes();
 }
@@ -3614,6 +3613,7 @@ function ensureIndexes() {
   `);
   ensureReflectionIndexes();
   ensureProductionCueIndexes();
+  ensureIntakeTriageIndexes();
 }
 
 function validateSchema() {
@@ -3781,6 +3781,7 @@ function validateSchema() {
   ]);
   validateReflectionSchema();
   validateProductionCueSchema();
+  validateIntakeTriageSchema();
 }
 
 function assertTableColumns(tableName: string, expectedColumns: string[]) {
