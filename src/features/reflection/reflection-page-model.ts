@@ -425,6 +425,8 @@ export function cloneReflectionOperation(operation: ReflectionOperation): Reflec
       };
     case 'accept_production_alternate':
       return { ...operation };
+    case 'add_production_cue_supplement':
+      return { ...operation };
   }
 }
 
@@ -489,7 +491,10 @@ export type ReflectionOperationDraftAction =
   | { type: 'set_v2_cue_judgment_attempt'; index: number; sourceAttemptId: string }
   | { type: 'set_v2_cue_judgment_word'; index: number; submittedWordId: string }
   | { type: 'set_alternate_target'; targetWordId: string }
-  | { type: 'set_alternate_word'; alternateWordId: string };
+  | { type: 'set_alternate_word'; alternateWordId: string }
+  | { type: 'set_supplement_english_frame'; englishFrame: string }
+  | { type: 'set_supplement_example_sentence'; exampleSentence: string }
+  | { type: 'set_supplement_example_translation'; exampleTranslation: string };
 
 export function reduceReflectionOperationDraft(
   operation: ReflectionOperation,
@@ -831,6 +836,27 @@ export function reduceReflectionOperationDraft(
         action.type,
         (current) => ({ ...current, alternateWordId: action.alternateWordId }),
       );
+    case 'set_supplement_english_frame':
+      return editOperation(
+        operation,
+        'add_production_cue_supplement',
+        action.type,
+        (current) => ({ ...current, englishFrame: action.englishFrame }),
+      );
+    case 'set_supplement_example_sentence':
+      return editOperation(
+        operation,
+        'add_production_cue_supplement',
+        action.type,
+        (current) => ({ ...current, exampleSentence: action.exampleSentence }),
+      );
+    case 'set_supplement_example_translation':
+      return editOperation(
+        operation,
+        'add_production_cue_supplement',
+        action.type,
+        (current) => ({ ...current, exampleTranslation: action.exampleTranslation }),
+      );
   }
 }
 
@@ -909,6 +935,17 @@ export function createReplacementOperation(
         proposedCues: [],
         repairIntent: 'add_distinguishing_anchor',
       };
+    case 'add_production_cue_supplement':
+      return {
+        kind,
+        version: 1,
+        wordId: targetWordId,
+        taskId: `production-task:${targetWordId}:default_production`,
+        cueId: evidence !== null && 'servedCue' in evidence ? evidence.servedCue.cueId : null,
+        englishFrame: '',
+        exampleSentence: '',
+        exampleTranslation: '',
+      };
     case 'accept_production_alternate':
       return {
         kind,
@@ -927,6 +964,8 @@ export function reflectionOperationLabel(operation: ReflectionOperation): string
       return 'Create contrast cluster';
     case 'repair_production_cue':
       return 'Repair production cue';
+    case 'add_production_cue_supplement':
+      return 'Add post-reveal context';
     case 'accept_production_alternate':
       return 'Accept production alternate';
   }
@@ -936,6 +975,7 @@ function primaryWordId(operation: ReflectionOperation): string {
   switch (operation.kind) {
     case 'suppress_definition_production':
     case 'repair_production_cue':
+    case 'add_production_cue_supplement':
       return operation.wordId;
     case 'accept_production_alternate':
       return operation.targetWordId;
@@ -952,6 +992,7 @@ function secondaryWordId(operation: ReflectionOperation): string {
       return operation.members[1]?.wordId ?? '';
     case 'suppress_definition_production':
     case 'repair_production_cue':
+    case 'add_production_cue_supplement':
       return '';
   }
 }

@@ -16,12 +16,14 @@ import type {
   SessionReflectionBundleV1,
   SessionReflectionBundleV2,
   SessionReflectionBundleV3,
+  SessionReflectionBundleV4,
   SessionReflectionResult,
   SessionReflectionResultV4,
   SessionReflectionResultV5,
   ReflectionQualityItemTags,
   ReflectionHelpInboxEntry,
   SessionReflectionResultV6,
+  SessionReflectionResultV7,
 } from '../../src/domain/reflection.ts';
 import {
   assertOperationApplicationTransition,
@@ -34,6 +36,7 @@ import {
   validateSessionReflectionResult,
   validateSessionReflectionResultV5,
   validateSessionReflectionResultV6,
+  validateSessionReflectionResultV7,
 } from '../../src/domain/reflection.ts';
 import { parseStoredSessionReflectionBundle } from '../../src/domain/reflection-evidence.ts';
 import type { NormalizedTokenUsage } from '../llm/types.ts';
@@ -55,7 +58,10 @@ import {
   type EnableContextualSelectionResult,
   suppressDefinitionProductionWithoutTransaction,
 } from './domain-commands.ts';
-import { applyProductionCueRepairWithoutTransaction } from './production-cues.ts';
+import {
+  applyProductionCueRepairWithoutTransaction,
+  applyProductionCueSupplementWithoutTransaction,
+} from './production-cues.ts';
 
 export const INITIAL_REFLECTION_FLOW_VERSION = 'initial_post_session_reflection.v2';
 
@@ -80,6 +86,9 @@ export type MaterializeReflectionArtifactInput = MaterializeReflectionArtifactBa
   | { evidenceBundle: SessionReflectionBundleV3; result: SessionReflectionResultV5 }
   | { evidenceBundle: SessionReflectionBundleV2; result: SessionReflectionResultV6 }
   | { evidenceBundle: SessionReflectionBundleV3; result: SessionReflectionResultV6 }
+  | { evidenceBundle: SessionReflectionBundleV4; result: SessionReflectionResultV7 }
+  | { evidenceBundle: SessionReflectionBundleV2; result: SessionReflectionResultV7 }
+  | { evidenceBundle: SessionReflectionBundleV3; result: SessionReflectionResultV7 }
 );
 
 export type ReflectionGenerationRunState = 'succeeded' | 'failed';
@@ -900,8 +909,9 @@ export function materializeReflectionArtifact(
     input.reflectionFlowVersion === INITIAL_REFLECTION_FLOW_VERSION
     && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v2'
     && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v3'
+    && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v4'
   ) {
-    throw new Error('The current reflection flow requires a V2 or V3 evidence bundle.');
+    throw new Error('The current reflection flow requires a V2, V3, or V4 evidence bundle.');
   }
   const validationErrors = validateReflectionArtifactPair(input.result, input.evidenceBundle);
   if (validationErrors.length > 0) {
@@ -1170,8 +1180,9 @@ export function recordReflectionGenerationRun(
     input.reflectionFlowVersion === INITIAL_REFLECTION_FLOW_VERSION
     && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v2'
     && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v3'
+    && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v4'
   ) {
-    throw new Error('The current reflection flow requires a V2 or V3 retained evidence bundle.');
+    throw new Error('The current reflection flow requires a V2, V3, or V4 retained evidence bundle.');
   }
   parseStoredSessionReflectionBundle(input.evidenceBundle);
   assertNormalizedUsage(input.usage);
@@ -1221,8 +1232,11 @@ export function recordReflectionGenerationRun(
       (
         input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v2'
         || input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v3'
+        || input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v4'
       )
-        ? 'session_reflection_result.v6'
+        ? input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v4'
+          ? 'session_reflection_result.v7'
+          : 'session_reflection_result.v6'
         : 'session_reflection_result.v4'
     ),
     input.diagnostic === undefined || input.diagnostic === null
@@ -1990,6 +2004,19 @@ function validateReflectionArtifactPair(
   ) {
     return validateSessionReflectionResultV6(result, evidenceBundle);
   }
+  if (
+    evidenceBundle.schemaVersion === 'session_reflection_bundle.v4'
+    && result.schemaVersion === 'session_reflection_result.v7'
+  ) {
+    return validateSessionReflectionResultV7(result, evidenceBundle);
+  }
+  if (
+    (evidenceBundle.schemaVersion === 'session_reflection_bundle.v2'
+      || evidenceBundle.schemaVersion === 'session_reflection_bundle.v3')
+    && result.schemaVersion === 'session_reflection_result.v7'
+  ) {
+    return validateSessionReflectionResultV7(result, evidenceBundle);
+  }
   return [
     `$.schemaVersion: result ${String(result.schemaVersion)} is not compatible with ${evidenceBundle.schemaVersion}`,
   ];
@@ -2194,6 +2221,12 @@ function applyPendingOperationWithoutTransaction(
               `No faithful application adapter is available for ${operation.kind}@${operation.version}.`,
             );
           })();
+    case 'add_production_cue_supplement':
+      return applyProductionCueSupplementWithoutTransaction(
+        operation,
+        invocationId,
+        appliedAt,
+      );
     case 'accept_production_alternate':
       throw new Error(
         `No faithful application adapter is available for ${operation.kind}@${operation.version}.`,

@@ -4,7 +4,9 @@ Status: accepted canonical product contract. The core V1 proposal, review,
 authorization, application, and provenance lifecycle is implemented.
 `repair_production_cue@1` and `accept_production_alternate@1` remain
 intentionally unsupported. The V2 production-cue repair behavior is accepted
-and implemented current behavior.
+and implemented current behavior. `add_production_cue_supplement@1` is the
+accepted bounded path for adding post-reveal contextual reinforcement without
+replacing a fair definition-based production cue.
 
 This specification defines how learner-facing reflection describes bounded
 changes, how a user reviews or revises those proposals, and how an authorized
@@ -138,8 +140,8 @@ provider spike did not establish a concrete consumer for one, while item-level
 output already carries the actionable content.
 
 ```ts
-type SessionReflectionResultV6 = {
-  schemaVersion: 'session_reflection_result.v6';
+type SessionReflectionResultV7 = {
+  schemaVersion: 'session_reflection_result.v7';
   itemResults: ReflectionItemResultV2[];
 };
 
@@ -164,11 +166,12 @@ type ReflectionClarifyingQuestionV1 = {
 
 ```
 
-V4 and V5 results remain readable under their frozen contracts. V6 removes
+V4, V5, and V6 results remain readable under their frozen contracts. V6 removes
 `observation` because dogfood established the learner explanation as the useful
 item-level text surface, and removes `unhandledNeeds` because the current model
-and product do not use them reliably. New generation uses V6; stored V4/V5
-artifacts remain immutable.
+and product do not use them reliably. V7 retains that item shape and adds the
+strict `add_production_cue_supplement@1` wire operation. New generation uses
+V7; stored V4/V5/V6 artifacts remain immutable.
 
 The current diagnosis vocabulary is:
 
@@ -223,6 +226,7 @@ type ReflectionOperation =
   | CreateContrastClusterOperationV1
   | RepairProductionCueOperationV1
   | RepairProductionCueOperationV2
+  | AddProductionCueSupplementOperationV1
   | AcceptProductionAlternateOperationV1;
 ```
 
@@ -522,6 +526,76 @@ may support replacement or terminal deactivation of that exact cue.
 New reflection generation emits V2 directly. V1 remains readable and
 unsupported; any later V1-to-V2 migration uses a newly authorized V2 invocation
 and supersession rather than reinterpreting the stored V1 payload.
+
+### `add_production_cue_supplement` version 1
+
+```ts
+type AddProductionCueSupplementOperationV1 = {
+  kind: 'add_production_cue_supplement';
+  version: 1;
+  wordId: string;
+  taskId: string;
+  cueId: string | null;
+  englishFrame: string;
+  exampleSentence: string;
+  exampleTranslation: string;
+};
+
+type ProductionCueSupplementEffectRef = {
+  type: 'production_cue_supplement';
+  id: string;
+};
+```
+
+Purpose: keep a fair definition-based production cue unchanged while adding a
+small, durable piece of natural-context reinforcement. The supplement is not a
+second clue. It appears only after the learner's response and answer reveal,
+so its complete example sentence may contain the target word.
+
+The structured content has three required non-empty fields:
+
+- `englishFrame` concisely states the usage, register, relationship, or
+  situation that the example reinforces without merely repeating a dictionary
+  definition;
+- `exampleSentence` is one natural target-language sentence containing the
+  target expression in ordinary context; and
+- `exampleTranslation` is a faithful English translation of that sentence.
+
+`taskId` identifies the word's V0 `default_production` task. `cueId` identifies
+the exact durable `definition_gloss` cue being supplemented, or is null for the
+meaning-derived fallback. The strict model-facing form omits `version`,
+`taskId`, and `cueId`; after validation the provider boundary derives them from
+the backend-owned evidence item. The operation is valid only when the exact
+served cue is definition-based and its evidence snapshot records no existing
+supplement.
+
+An exact retry of a stored V2 or V3 evidence bundle may use the current V7
+result contract, but cannot propose this operation because those legacy items
+do not snapshot supplement state.
+
+Application creates one immutable supplement attributed to the authorized
+invocation. A durable-cue supplement serves only with that exact cue. A
+fallback supplement serves only when the ordinary meaning-derived fallback is
+selected; active durable cues continue to supersede the fallback and therefore
+its supplement. The selected supplement is snapshotted on the served action and
+its attempt evidence so later reflection can distinguish the pre-reveal cue
+from post-reveal reinforcement.
+
+V1 permits at most one supplement for an exact durable cue or fallback. An
+identical existing supplement produces `already_satisfied`. A different
+existing supplement makes the invocation stale rather than accumulating an
+unbounded prompt tail. Replacement, deactivation, and multiple supplements are
+later operations. A durable cue that is no longer active at apply time also
+makes the operation stale.
+
+Non-effects:
+
+- it does not change cue text, type, lifecycle, or accepted answers;
+- it does not change meaning rows, production relevance, scheduling, grading,
+  or historical attempts;
+- it does not turn the example into a cloze or show it before recall; and
+- it does not attach reinforcement to `minimal_context` or `circumstance`
+  cues, whose existing prompt already supplies natural context.
 
 ### `accept_production_alternate` version 1
 
@@ -824,7 +898,9 @@ Generated content inside an operation remains editable before authorization.
 For contrast creation this includes title, cluster note, member nuance notes,
 prompt targets, prompt text, and explanations. For V2 cue repair it includes
 the cue lifecycle changes, draft cue types and text, accepted-word sets, and
-optional source-attempt judgments.
+optional source-attempt judgments. For a cue supplement it includes the English
+frame, full example sentence, and translation; changing any of those fields
+creates a revised invocation without changing the exact evidence attachment.
 
 Editing generated content does not rewrite the artifact. Accepting an edited
 payload creates a revised invocation. The review system may assess diagnosis,
@@ -948,6 +1024,8 @@ The following are not defined operations yet:
 - extend or merge an existing contrast cluster;
 - revise or delete existing contrast prompts;
 - destructively delete a production cue or re-anchor it to another task;
+- replace, deactivate, or stack multiple post-reveal production-cue
+  supplements;
 - re-enable suppressed definition production;
 - change general word or skill priority;
 - assign maintenance or protection tiers;
@@ -1000,6 +1078,16 @@ The learner accepts it. The adapter creates a new immutable cue, deactivates
 only the named prior cue, records attributable effect references, and may
 append the authorized later judgment to cue evidence. The motivating attempt,
 its served acceptance snapshot, and its word-scheduler outcome are unchanged.
+
+### Fair definition cue gains post-reveal reinforcement
+
+The model judges a served definition gloss or meaning fallback fair but thin.
+It proposes one English usage frame, a natural full example containing the
+answer, and its translation. The learner accepts. Application creates one
+immutable supplement for that exact cue or fallback. Future sessions keep the
+original recall cue and answer space unchanged, then show the supplement after
+answer reveal. A second identical invocation is already satisfied; different
+content requires a future replacement operation rather than silent stacking.
 
 ### Already satisfied elsewhere
 

@@ -66,6 +66,11 @@ The accumulator is ephemeral by design, remains available through
 generation/retry, and is cleared when the completed session closes or a new
 session starts.
 
+The durable attempt snapshot also preserves the nullable post-reveal
+production supplement separately from the pre-reveal cue. New provider bundles
+include that exact snapshot so reflection does not propose a second V1
+supplement for content the learner already saw.
+
 A separate learner-request accumulator backs the **Ask reflection to review**
 toggle on review production cards, including the frozen post-answer card. It
 captures the cue at marking time, is deliberately outside the Undo snapshot,
@@ -126,7 +131,9 @@ Each proposal has a purpose-built editor for each registered operation family:
 
 - definition-production suppression;
 - new contrast-cluster creation, including members, annotations, and prompts;
-- production-cue repair drafts; and
+- production-cue repair drafts;
+- post-reveal production-cue supplements, with editable English frame, complete
+  target-language example, and English translation; and
 - directional production alternates.
 
 The page validates drafts locally for feedback, but the backend remains

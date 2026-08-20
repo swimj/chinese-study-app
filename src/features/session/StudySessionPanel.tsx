@@ -243,6 +243,18 @@ export function StudySessionPanel({
               <span className="answer-pinyin">{frozenProductionCard.answerPinyin}</span>
               <strong className="answer-value">{frozenProductionCard.answerText}</strong>
               <MeaningList meanings={frozenProductionCard.allMeanings} />
+              {frozenProductionCard.production?.supplement ? (
+                <div className="production-supplement">
+                  <span className="prompt-label">In context</span>
+                  <span className="prompt-meta">
+                    {frozenProductionCard.production.supplement.englishFrame}
+                  </span>
+                  <span>{frozenProductionCard.production.supplement.exampleSentence}</span>
+                  <span className="prompt-meta">
+                    {frozenProductionCard.production.supplement.exampleTranslation}
+                  </span>
+                </div>
+              ) : null}
               {frozenProductionCard.personalNotes.trim().length > 0 ? (
                 <span className="prompt-meta">Notes: {frozenProductionCard.personalNotes}</span>
               ) : null}
@@ -535,6 +547,18 @@ export function StudySessionPanel({
                 ) : (
                   <MeaningList meanings={activeAllMeanings} />
                 )}
+                {activeItem.production?.supplement ? (
+                  <div className="production-supplement">
+                    <span className="prompt-label">In context</span>
+                    <span className="prompt-meta">
+                      {activeItem.production.supplement.englishFrame}
+                    </span>
+                    <span>{activeItem.production.supplement.exampleSentence}</span>
+                    <span className="prompt-meta">
+                      {activeItem.production.supplement.exampleTranslation}
+                    </span>
+                  </div>
+                ) : null}
                 {activeWordPersonalNotes.trim().length > 0 ? (
                   <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
                 ) : null}

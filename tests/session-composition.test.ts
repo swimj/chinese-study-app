@@ -83,13 +83,16 @@ describe('session composition', { concurrency: false }, () => {
       DROP TRIGGER IF EXISTS production_cue_lifecycle_events_no_delete;
       DROP TRIGGER IF EXISTS production_cue_accepted_words_no_delete;
       DROP TRIGGER IF EXISTS production_cues_no_delete;
+      DROP TRIGGER IF EXISTS production_cue_supplements_no_delete;
       DELETE FROM production_cue_evidence_projection;
       DELETE FROM production_recheck_demands;
       DELETE FROM production_cue_evidence_records;
       DELETE FROM production_cue_activation_state;
       DELETE FROM production_cue_lifecycle_events;
       DELETE FROM production_cue_accepted_words;
+      DELETE FROM production_cue_supplements;
       DELETE FROM production_cues;
+      DELETE FROM reflection_operation_invocations;
       DELETE FROM study_content_feedback;
       DELETE FROM contrast_candidate_intake;
       DELETE FROM word_skill_relevance;
@@ -269,7 +272,70 @@ describe('session composition', { concurrency: false }, () => {
       cueType: 'minimal_context',
       text: 'To tell two close possibilities apart',
       acceptedWordIds: ['cue-word'],
+      supplement: null,
       recheckDemandId: null,
+    });
+  });
+
+  test('serves fallback reinforcement as a separate post-reveal supplement snapshot', () => {
+    insertWord({
+      id: 'supplemented-word',
+      hanzi: '包庇',
+      pinyin: 'baobi',
+      meaning: 'to shield; to harbor',
+      examples: [],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(96),
+    });
+    insertWordStudyAdmissionState('supplemented-word', null);
+    insertWordSkillState({
+      wordId: 'supplemented-word',
+      skillId: 'production',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(48),
+      nextDueAt: isoHoursAgo(24),
+    });
+    const operation = {
+      kind: 'add_production_cue_supplement' as const,
+      version: 1 as const,
+      wordId: 'supplemented-word',
+      taskId: 'production-task:supplemented-word:default_production',
+      cueId: null,
+      englishFrame: 'Knowingly shielding someone from responsibility.',
+      exampleSentence: '他明知儿子犯了罪，却包庇了他。',
+      exampleTranslation: 'He knew his son had committed a crime but shielded him.',
+    };
+    const appliedAt = new Date().toISOString();
+    sqlite.prepare(`
+      INSERT INTO reflection_operation_invocations (
+        invocation_id, created_at, origin_kind, origin_proposal_id,
+        origin_superseded_proposal_id, operation_kind, operation_version,
+        operation_json, application_state, application_updated_at,
+        unsupported_reason, applied_at, application_error, stale_reason,
+        effect_refs_json, satisfying_effect_refs_json
+      ) VALUES (
+        'supplement-session-invocation', ?, 'manual', NULL, NULL, ?, 1, ?,
+        'pending', ?, NULL, NULL, NULL, NULL, '[]', '[]'
+      )
+    `).run(appliedAt, operation.kind, JSON.stringify(operation), appliedAt);
+    const applied = dbModule.applyProductionCueSupplementWithoutTransaction(
+      operation,
+      'supplement-session-invocation',
+      appliedAt,
+    );
+    assert.equal(applied.kind, 'applied');
+
+    const item = dbModule.getSessionPayload(studyDayKey).buckets.review.find(
+      (candidate) => candidate.targetWordId === 'supplemented-word',
+    );
+    assert.equal(item?.production?.text, 'to shield; to harbor');
+    assert.equal(item?.production?.cueId, null);
+    assert.deepEqual(item?.production?.supplement, {
+      supplementId: applied.kind === 'applied' ? applied.effectRefs[0]!.id : '',
+      englishFrame: operation.englishFrame,
+      exampleSentence: operation.exampleSentence,
+      exampleTranslation: operation.exampleTranslation,
     });
   });
 

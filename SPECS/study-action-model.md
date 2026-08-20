@@ -234,6 +234,11 @@ The durable V0 production-cue model separates:
 - the current meaning-derived gloss prompt as base fallback content rather than
   a cue row; it serves only when no durable cue is active, while a durable
   `definition_gloss` cue remains distinct enriched content;
+- at most one immutable V1 post-reveal supplement for an exact durable
+  `definition_gloss` cue or for the meaning-derived fallback of a default task;
+  it contains an English usage frame, a complete natural target-language
+  example, and an English translation, and is never shown as part of the
+  pre-reveal production clue;
 - one answer-checking rule for every V0 cue: accept the submission only when it
   matches the accepted-word set snapshotted on the served action;
 - asynchronous, learner-authorized reconsideration of an out-of-set response;
@@ -247,7 +252,8 @@ The durable V0 production-cue model separates:
 `targetWordId` remains the word admitted at composition time and the task word
 in V0. A served action and its durable attempt evidence preserve the exact task,
 cue, cue text, accepted-word set, raw submission, nullable resolved submitted
-word, and session-time result so later cue revision cannot reinterpret history.
+word, nullable post-reveal supplement snapshot, and session-time result so later
+content changes cannot reinterpret history.
 
 Cues are content, not independently scheduled SRS objects. Cue application does
 not reset or fork word-skill scheduling. Multi-answer cues nevertheless expose
@@ -293,6 +299,12 @@ govern the meaning-derived fallback and is not cleared by cue application. A
 truthfully applied authorized cue may serve without claiming that the legacy
 definition exercise was re-enabled. Meaning rows must not be reinterpreted as cue
 entities.
+
+A supplement attached to a durable cue is selectable only with that exact
+active cue. A fallback supplement is selectable only when the normal fallback
+is used, so any active durable cue supersedes both the fallback prompt and its
+reinforcement. Supplements do not participate in answer checking, cue random
+selection, relevance policy, or scheduling.
 
 ### Contextual Selection
 

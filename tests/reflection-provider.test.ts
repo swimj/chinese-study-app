@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
-  SESSION_REFLECTION_RESULT_V6_WIRE_SCHEMA_NAME,
-  sessionReflectionResultV6WireSchema,
+  SESSION_REFLECTION_RESULT_V7_WIRE_SCHEMA_NAME,
+  sessionReflectionResultV7WireSchema,
 } from '../src/domain/reflection-result-schema.js';
 import type {
   SessionReflectionBundleV2,
-  SessionReflectionResultV6,
-  SessionReflectionResultV6Wire,
+  SessionReflectionResultV7,
+  SessionReflectionResultV7Wire,
 } from '../src/domain/reflection.js';
 import {
   createLunaReflectionProvider,
@@ -81,8 +81,8 @@ const bundle: SessionReflectionBundleV2 = {
   }],
 };
 
-const validWireResult: SessionReflectionResultV6Wire = {
-  schemaVersion: 'session_reflection_result.v6',
+const validWireResult: SessionReflectionResultV7Wire = {
+  schemaVersion: 'session_reflection_result.v7',
   itemResults: [{
     itemId: 'item-1',
     diagnosisTags: ['valid_or_near_valid_alternate'],
@@ -112,7 +112,7 @@ const validWireResult: SessionReflectionResultV6Wire = {
   }],
 };
 
-const validCanonicalResult: SessionReflectionResultV6 = {
+const validCanonicalResult: SessionReflectionResultV7 = {
   ...validWireResult,
   itemResults: validWireResult.itemResults.map((itemResult) => ({
     ...itemResult,
@@ -238,7 +238,7 @@ describe('production Luna reflection provider', () => {
     assert.equal(QWEN_3_8_MAX_REFLECTION_MODEL_CONFIG.apiKeyEnvironmentVariable, 'DASHSCOPE_API_KEY');
   });
 
-  test('sends the exact model, reasoning, auth, prompt, and strict V6 wire schema request', async () => {
+  test('sends the exact model, reasoning, auth, prompt, and strict V7 wire schema request', async () => {
     const capture: CapturedRequest[] = [];
     const provider = createLunaReflectionProvider({
       environment: {
@@ -272,9 +272,9 @@ describe('production Luna reflection provider', () => {
     assert.deepEqual(request.body.response_format, {
       type: 'json_schema',
       json_schema: {
-        name: SESSION_REFLECTION_RESULT_V6_WIRE_SCHEMA_NAME,
+        name: SESSION_REFLECTION_RESULT_V7_WIRE_SCHEMA_NAME,
         strict: true,
-        schema: sessionReflectionResultV6WireSchema,
+        schema: sessionReflectionResultV7WireSchema,
       },
     });
     assert.ok(request.signal instanceof AbortSignal);
@@ -295,7 +295,7 @@ describe('production Luna reflection provider', () => {
       provider: 'openai',
       modelConfig: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v7',
+      promptVersion: 'reflection-v8',
       responseId: 'response-1',
       finishReason: 'stop',
       usage: {
@@ -307,7 +307,7 @@ describe('production Luna reflection provider', () => {
         totalTokens: 140,
       },
     });
-    assert.equal(LUNA_REFLECTION_PROMPT_VERSION, 'reflection-v7');
+    assert.equal(LUNA_REFLECTION_PROMPT_VERSION, 'reflection-v8');
     const serialized = JSON.stringify(generated);
     assert.equal(serialized.includes('unit-test-secret'), false);
     assert.equal(serialized.includes('transportDebug'), false);
@@ -424,7 +424,7 @@ describe('production Luna reflection provider', () => {
       provider: 'dashscope',
       modelConfig: 'qwen3.8-max',
       providerModel: 'qwen3.8-max',
-      promptVersion: 'reflection-v7',
+      promptVersion: 'reflection-v8',
       responseId: null,
       finishReason: null,
       usage: {
@@ -470,7 +470,7 @@ describe('production Luna reflection provider', () => {
       environment: { OPENAI_API_KEY: 'secret' },
       systemPrompt: 'prompt',
       fetchImplementation: capturingFetch(responseEnvelope(
-        '{"schemaVersion":"session_reflection_result.v6"',
+        '{"schemaVersion":"session_reflection_result.v7"',
         {
           choices: [{
             finish_reason: 'length',
@@ -486,7 +486,7 @@ describe('production Luna reflection provider', () => {
       provider: 'openai',
       modelConfig: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v7',
+      promptVersion: 'reflection-v8',
       responseId: 'response-1',
       finishReason: 'length',
       usage: {
@@ -509,7 +509,7 @@ describe('production Luna reflection provider', () => {
       { content: '{not-json', code: 'invalid_json', hasIssues: false },
       {
         content: JSON.stringify({
-          schemaVersion: 'session_reflection_result.v6',
+          schemaVersion: 'session_reflection_result.v7',
         }),
         code: 'schema_invalid',
         hasIssues: true,
@@ -527,7 +527,7 @@ describe('production Luna reflection provider', () => {
     for (const testCase of cases) {
       if (testCase.code === 'domain_contract_invalid') {
         assert.deepEqual(
-          validateJsonSchema(JSON.parse(testCase.content), sessionReflectionResultV6WireSchema),
+          validateJsonSchema(JSON.parse(testCase.content), sessionReflectionResultV7WireSchema),
           [],
         );
       }

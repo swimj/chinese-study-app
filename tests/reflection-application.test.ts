@@ -45,6 +45,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
       DROP TRIGGER IF EXISTS fail_reflection_prompt_insert;
       DROP TRIGGER IF EXISTS fail_production_cue_lifecycle_insert;
       DROP TRIGGER IF EXISTS production_cues_no_delete;
+      DROP TRIGGER IF EXISTS production_cue_supplements_no_delete;
       DROP TRIGGER IF EXISTS production_cue_accepted_words_no_delete;
       DROP TRIGGER IF EXISTS production_cue_lifecycle_events_no_delete;
       DROP TRIGGER IF EXISTS production_cue_evidence_records_no_delete;
@@ -54,6 +55,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
       DELETE FROM production_cue_evidence_records;
       DELETE FROM production_cue_activation_state;
       DELETE FROM production_cue_lifecycle_events;
+      DELETE FROM production_cue_supplements;
       DELETE FROM production_cues;
       DELETE FROM production_tasks;
       DELETE FROM reflection_help_inbox;
@@ -326,6 +328,118 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.equal(countRows('word_skill_state'), beforeSkillCount);
     assert.equal(countRows('word_study_admission_state'), beforeAdmissionCount);
     assert.deepEqual(dbModule.applyReflectionInvocation('cue-create', createdAt), result);
+  });
+
+  test('adds one immutable fallback supplement without changing the cue or scheduler', () => {
+    const operation = supplementOperation(null);
+    insertInvocation('supplement-create', operation);
+
+    const beforeSkillCount = countRows('word_skill_state');
+    const beforeAdmissionCount = countRows('word_study_admission_state');
+    const result = dbModule.applyReflectionInvocation('supplement-create', appliedAt);
+    assert.equal(result.application.state.kind, 'applied');
+    const ref = result.application.state.kind === 'applied'
+      ? result.application.state.effectRefs[0]
+      : null;
+    assert.equal(ref?.type, 'production_cue_supplement');
+    assert.deepEqual(
+      dbModule.getProductionCueSupplement('production-task:target:default_production', null),
+      {
+        supplementId: ref?.id,
+        taskId: 'production-task:target:default_production',
+        cueId: null,
+        englishFrame: operation.englishFrame,
+        exampleSentence: operation.exampleSentence,
+        exampleTranslation: operation.exampleTranslation,
+        createdAt: appliedAt,
+        invocationId: 'supplement-create',
+      },
+    );
+    assert.equal(countRows('production_cues'), 0);
+    assert.equal(countRows('word_skill_state'), beforeSkillCount);
+    assert.equal(countRows('word_study_admission_state'), beforeAdmissionCount);
+    assert.deepEqual(dbModule.applyReflectionInvocation('supplement-create', createdAt), result);
+
+    insertInvocation('supplement-conflict', {
+      ...operation,
+      englishFrame: 'A different frame cannot silently stack.',
+    });
+    const conflict = dbModule.applyReflectionInvocation('supplement-conflict', appliedAt);
+    assert.equal(conflict.application.state.kind, 'stale');
+    assert.equal(countRows('production_cue_supplements'), 1);
+  });
+
+  test('attaches supplements only to the exact active definition cue', () => {
+    insertInvocation('supplement-cue-seed', cueRepairOperation({
+      changes: [
+        {
+          kind: 'create',
+          cue: {
+            cueType: 'definition_gloss',
+            text: 'an objective or intended result',
+            acceptedWordIds: ['target'],
+          },
+        },
+        {
+          kind: 'create',
+          cue: {
+            cueType: 'minimal_context',
+            text: '我们终于达成了共同的____。',
+            acceptedWordIds: ['target'],
+          },
+        },
+        {
+          kind: 'create',
+          cue: {
+            cueType: 'definition_gloss',
+            text: 'a goal to pursue',
+            acceptedWordIds: ['target'],
+          },
+        },
+      ],
+    }));
+    const seeded = dbModule.applyReflectionInvocation('supplement-cue-seed', appliedAt);
+    assert.equal(seeded.application.state.kind, 'applied');
+    const cueIds = seeded.application.state.kind === 'applied'
+      ? seeded.application.state.effectRefs
+        .filter((ref) => ref.type === 'production_cue')
+        .map((ref) => ref.id)
+      : [];
+    assert.equal(cueIds.length, 3);
+
+    insertInvocation('supplement-definition', supplementOperation(cueIds[0]!));
+    const definitionResult = dbModule.applyReflectionInvocation('supplement-definition', appliedAt);
+    assert.equal(definitionResult.application.state.kind, 'applied');
+    assert.equal(
+      dbModule.getProductionCueSupplement(
+        'production-task:target:default_production',
+        cueIds[0]!,
+      )?.cueId,
+      cueIds[0],
+    );
+
+    insertInvocation('supplement-minimal-context', supplementOperation(cueIds[1]!));
+    const minimalContextResult = dbModule.applyReflectionInvocation(
+      'supplement-minimal-context',
+      appliedAt,
+    );
+    assert.equal(minimalContextResult.application.state.kind, 'stale');
+
+    insertInvocation('supplement-cue-deactivate', cueRepairOperation({
+      changes: [{ kind: 'deactivate', cueId: cueIds[2]! }],
+    }));
+    const deactivated = dbModule.applyReflectionInvocation(
+      'supplement-cue-deactivate',
+      '2026-07-29T12:02:00.000Z',
+    );
+    assert.equal(deactivated.application.state.kind, 'applied');
+    insertInvocation('supplement-inactive-definition', supplementOperation(cueIds[2]!));
+    const inactiveResult = dbModule.applyReflectionInvocation(
+      'supplement-inactive-definition',
+      '2026-07-29T12:03:00.000Z',
+    );
+    assert.equal(inactiveResult.application.state.kind, 'stale');
+    assert.equal(countRows('production_cue_supplements'), 1);
   });
 
   test('replaces only the named cue and preserves unrelated active cue identities', () => {
@@ -969,6 +1083,21 @@ function cueRepairOperation(input: {
     taskId: 'production-task:target:default_production',
     changes: input.changes,
     sourceAttemptJudgments: [],
+  };
+}
+
+function supplementOperation(
+  cueId: string | null,
+): Extract<ReflectionOperation, { kind: 'add_production_cue_supplement' }> {
+  return {
+    kind: 'add_production_cue_supplement',
+    version: 1,
+    wordId: 'target',
+    taskId: 'production-task:target:default_production',
+    cueId,
+    englishFrame: 'A formal context involving responsibility.',
+    exampleSentence: '这个决定直接关系到项目目标。',
+    exampleTranslation: 'This decision directly concerns the project goal.',
   };
 }
 

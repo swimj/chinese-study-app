@@ -22,6 +22,17 @@ export type ReflectionServedCueSnapshotV1 = {
   acceptedWordIds: string[];
 };
 
+export type ReflectionServedCueSupplementSnapshotV1 = {
+  supplementId: string;
+  englishFrame: string;
+  exampleSentence: string;
+  exampleTranslation: string;
+};
+
+export type ReflectionServedCueSnapshotV2 = ReflectionServedCueSnapshotV1 & {
+  supplement: ReflectionServedCueSupplementSnapshotV1 | null;
+};
+
 export type ReflectionExistingContentV0 = {
   contrastClusters: Array<{
     clusterId: string;
@@ -126,7 +137,22 @@ export type SessionReflectionBundleV3 = {
   items: ReflectionItemV3[];
 };
 
-export type SessionReflectionBundle = SessionReflectionBundleV1 | SessionReflectionBundleV2 | SessionReflectionBundleV3;
+export type ReflectionItemV4 = Omit<ReflectionItemV3, 'servedCue'> & {
+  servedCue: ReflectionServedCueSnapshotV2;
+};
+
+export type SessionReflectionBundleV4 = {
+  schemaVersion: 'session_reflection_bundle.v4';
+  generatedAt: string;
+  session: SessionReflectionBundleV1['session'];
+  items: ReflectionItemV4[];
+};
+
+export type SessionReflectionBundle =
+  | SessionReflectionBundleV1
+  | SessionReflectionBundleV2
+  | SessionReflectionBundleV3
+  | SessionReflectionBundleV4;
 
 export type ReflectionDiagnosisTagV1 =
   | 'valid_or_near_valid_alternate'
@@ -253,6 +279,22 @@ export type RepairProductionCueOperationV2Wire = Omit<
   sourceAttemptJudgments: CueEvidenceJudgmentV2Wire[];
 };
 
+export type AddProductionCueSupplementOperationV1 = {
+  kind: 'add_production_cue_supplement';
+  version: 1;
+  wordId: string;
+  taskId: string;
+  cueId: string | null;
+  englishFrame: string;
+  exampleSentence: string;
+  exampleTranslation: string;
+};
+
+export type AddProductionCueSupplementOperationV1Wire = Omit<
+  AddProductionCueSupplementOperationV1,
+  'version' | 'taskId' | 'cueId'
+>;
+
 export type AcceptProductionAlternateOperationV1 = {
   kind: 'accept_production_alternate';
   version: 1;
@@ -265,12 +307,17 @@ export type ReflectionOperation =
   | CreateContrastClusterOperation
   | RepairProductionCueOperationV1
   | RepairProductionCueOperationV2
+  | AddProductionCueSupplementOperationV1
   | AcceptProductionAlternateOperationV1;
 
 export type ReflectionOperationV5Wire =
   | SuppressDefinitionProductionOperationV1
   | CreateContrastClusterOperationV2
   | RepairProductionCueOperationV2Wire;
+
+export type ReflectionOperationV7Wire =
+  | ReflectionOperationV5Wire
+  | AddProductionCueSupplementOperationV1Wire;
 
 export type ReflectionProposalV1 = {
   proposalGroupKey: string | null;
@@ -345,10 +392,29 @@ export type SessionReflectionResultV6 = {
   itemResults: ReflectionItemResultV2[];
 };
 
+export type ReflectionProposalV7Wire = Omit<ReflectionProposalV1, 'operation'> & {
+  operation: ReflectionOperationV7Wire;
+};
+
+export type ReflectionItemResultV7Wire = Omit<ReflectionItemResultV2, 'proposals'> & {
+  proposals: ReflectionProposalV7Wire[];
+};
+
+export type SessionReflectionResultV7Wire = {
+  schemaVersion: 'session_reflection_result.v7';
+  itemResults: ReflectionItemResultV7Wire[];
+};
+
+export type SessionReflectionResultV7 = {
+  schemaVersion: 'session_reflection_result.v7';
+  itemResults: ReflectionItemResultV2[];
+};
+
 export type SessionReflectionResult =
   | SessionReflectionResultV4
   | SessionReflectionResultV5
-  | SessionReflectionResultV6;
+  | SessionReflectionResultV6
+  | SessionReflectionResultV7;
 
 export type EffectRef = {
   type: string;
@@ -359,6 +425,11 @@ export type ProductionCueEffectRef =
   | { type: 'production_cue'; id: string }
   | { type: 'production_cue_lifecycle_event'; id: string }
   | { type: 'production_cue_evidence_judgment'; id: string };
+
+export type ProductionCueSupplementEffectRef = {
+  type: 'production_cue_supplement';
+  id: string;
+};
 
 export type ProposalSupersession = {
   source: 'competing_proposal' | 'user_replacement' | 'external_state';
@@ -448,7 +519,7 @@ export type ReflectionQualityTag =
   | 'other';
 
 /** Prompt version currently used by live reflection generation arms. */
-export const CURRENT_REFLECTION_PROMPT_VERSION = 'reflection-v7' as const;
+export const CURRENT_REFLECTION_PROMPT_VERSION = 'reflection-v8' as const;
 
 export const REFLECTION_QUALITY_TAGS = [
   'praise',
@@ -563,6 +634,12 @@ export const REFLECTION_OPERATION_REGISTRY = [
   {
     kind: 'repair_production_cue',
     version: 2,
+    editorAvailable: true,
+    applySupport: 'supported',
+  },
+  {
+    kind: 'add_production_cue_supplement',
+    version: 1,
     editorAvailable: true,
     applySupport: 'supported',
   },
@@ -703,6 +780,8 @@ export function reflectionOperationWordReferences(operation: ReflectionOperation
             : []
         )),
       ];
+    case 'add_production_cue_supplement':
+      return [operation.wordId];
     case 'create_contrast_cluster':
       return operation.members.map((member) => member.wordId);
     case 'accept_production_alternate':
@@ -849,6 +928,29 @@ export function validateReflectionOperation(
       if (typeof value.repairIntent !== 'string' || !repairIntents.has(value.repairIntent)) {
         errors.push(`${path}.repairIntent: value is not in the allowed enum`);
       }
+      break;
+    }
+    case 'add_production_cue_supplement': {
+      errors.push(...validateObjectFields(
+        value,
+        [
+          'kind',
+          'version',
+          'wordId',
+          'taskId',
+          'cueId',
+          'englishFrame',
+          'exampleSentence',
+          'exampleTranslation',
+        ],
+        path,
+      ));
+      errors.push(...validateWordReference(value.wordId, `${path}.wordId`, options));
+      errors.push(...validateString(value.taskId, `${path}.taskId`, true));
+      errors.push(...validateNullableString(value.cueId, `${path}.cueId`));
+      errors.push(...validateString(value.englishFrame, `${path}.englishFrame`, true));
+      errors.push(...validateString(value.exampleSentence, `${path}.exampleSentence`, true));
+      errors.push(...validateString(value.exampleTranslation, `${path}.exampleTranslation`, true));
       break;
     }
     case 'accept_production_alternate': {
@@ -1121,6 +1223,17 @@ export function validateSessionReflectionResultV6(
   );
 }
 
+export function validateSessionReflectionResultV7(
+  value: unknown,
+  bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4,
+): string[] {
+  return validateSessionReflectionResultVersion(
+    value,
+    bundle,
+    'session_reflection_result.v7',
+  );
+}
+
 function validateSessionReflectionResultVersion(
   value: unknown,
   bundle: SessionReflectionBundle,
@@ -1155,7 +1268,8 @@ function validateSessionReflectionResultVersion(
   }
 
   const inputItemsById = new Map(bundle.items.map((item) => [item.itemId, item]));
-  const usesStreamlinedItemResult = schemaVersion === 'session_reflection_result.v6';
+  const usesStreamlinedItemResult = schemaVersion === 'session_reflection_result.v6'
+    || schemaVersion === 'session_reflection_result.v7';
   for (const [itemIndex, itemResult] of value.itemResults.entries()) {
     const itemPath = `$.itemResults[${itemIndex}]`;
     errors.push(...validateObjectFields(
@@ -1283,7 +1397,7 @@ function validateSessionReflectionResultVersion(
 
 export function validateReflectionOperationEvidenceContext(
   value: unknown,
-  item: ProductionMistakeReflectionItemV2 | ReflectionItemV3,
+  item: ProductionMistakeReflectionItemV2 | ReflectionItemV3 | ReflectionItemV4,
   path: string,
 ): string[] {
   if (!isRecord(value)) return [];
@@ -1295,6 +1409,32 @@ export function validateReflectionOperationEvidenceContext(
     if (value.kind === 'accept_production_alternate') {
       errors.push(`${path}: no-clue evidence cannot ground an alternate-answer claim`);
     }
+  }
+  if (value.kind === 'add_production_cue_supplement' && value.version === 1) {
+    if (value.wordId !== item.targetWord.wordId) {
+      errors.push(`${path}.wordId: must match the evidence target word`);
+    }
+    if (value.taskId !== `production-task:${item.targetWord.wordId}:default_production`) {
+      errors.push(`${path}.taskId: must match the target word's default production task`);
+    }
+    if (value.cueId !== item.servedCue.cueId) {
+      errors.push(`${path}.cueId: must match the exact served cue`);
+    }
+    if (item.servedCue.cueType !== 'definition_gloss') {
+      errors.push(`${path}: supplements require definition-gloss evidence`);
+    }
+    if (!('supplement' in item.servedCue)) {
+      errors.push(`${path}: supplement proposals require a V4 evidence snapshot`);
+    } else if (item.servedCue.supplement !== null) {
+      errors.push(`${path}: the served definition exercise already has a supplement`);
+    }
+    if (
+      typeof value.exampleSentence === 'string'
+      && !value.exampleSentence.includes(item.targetWord.hanzi)
+    ) {
+      errors.push(`${path}.exampleSentence: must contain the target expression`);
+    }
+    return errors;
   }
   if (value.kind !== 'repair_production_cue' || value.version !== 2) return errors;
   if (value.wordId !== item.targetWord.wordId) {
@@ -1444,6 +1584,43 @@ export function normalizeSessionReflectionResultV6(
                 })),
               }
             : proposal.operation,
+        })),
+      };
+    }),
+  };
+}
+
+export function normalizeSessionReflectionResultV7(
+  value: SessionReflectionResultV7Wire,
+  bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4,
+): SessionReflectionResultV7 {
+  return {
+    schemaVersion: 'session_reflection_result.v7',
+    itemResults: value.itemResults.map((itemResult) => {
+      const item = bundle.items.find((candidate) => candidate.itemId === itemResult.itemId);
+      const sourceAttemptId = item?.sourceAttemptId ?? '';
+      return {
+        ...itemResult,
+        proposals: itemResult.proposals.map((proposal) => ({
+          ...proposal,
+          operation: proposal.operation.kind === 'repair_production_cue'
+            ? {
+                ...proposal.operation,
+                version: 2,
+                taskId: `production-task:${proposal.operation.wordId}:default_production`,
+                sourceAttemptJudgments: proposal.operation.sourceAttemptJudgments.map((judgment) => ({
+                  ...judgment,
+                  sourceAttemptId,
+                })),
+              }
+            : proposal.operation.kind === 'add_production_cue_supplement'
+              ? {
+                  ...proposal.operation,
+                  version: 1,
+                  taskId: `production-task:${proposal.operation.wordId}:default_production`,
+                  cueId: item?.servedCue.cueId ?? null,
+                }
+              : proposal.operation,
         })),
       };
     }),

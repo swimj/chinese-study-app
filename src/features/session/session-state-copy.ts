@@ -51,11 +51,15 @@ function cloneAttemptMetadata(metadata: Record<string, unknown>): Record<string,
     return { ...metadata };
   }
   const acceptedWordIds = (production as Record<string, unknown>).acceptedWordIds;
+  const supplement = (production as Record<string, unknown>).supplement;
   return {
     ...metadata,
     production: {
       ...production,
       acceptedWordIds: Array.isArray(acceptedWordIds) ? [...acceptedWordIds] : acceptedWordIds,
+      supplement: typeof supplement === 'object' && supplement !== null && !Array.isArray(supplement)
+        ? { ...supplement }
+        : supplement,
     },
   };
 }

@@ -19,12 +19,20 @@ export type ProductionAttemptResult =
   | 'accepted_non_anchor'
   | 'rejected';
 
+export type ProductionCueSupplementSnapshot = {
+  supplementId: string;
+  englishFrame: string;
+  exampleSentence: string;
+  exampleTranslation: string;
+};
+
 export type ProductionExerciseSnapshot = {
   taskId: string;
   cueId: string | null;
   cueType: ProductionCueType;
   text: string;
   acceptedWordIds: string[];
+  supplement: ProductionCueSupplementSnapshot | null;
   recheckDemandId: string | null;
 };
 

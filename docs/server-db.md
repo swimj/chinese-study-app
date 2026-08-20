@@ -13,6 +13,7 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`reflection-quality.ts`](../server/db/reflection-quality.ts) | Dogfood item quality-tag overlay, upsert-by-item, and model-arm stats joins |
 | [`reflection-help-inbox.ts`](../server/db/reflection-help-inbox.ts) | Open explanation-only Help inbox rows, keyed by `(artifact_id, item_id)`; Done deletes the row |
 | [`domain-commands.ts`](../server/db/domain-commands.ts) | Shared transaction-aware domain commands used by reflection and legacy/manual paths; definition-production suppression and contextual-selection eligibility |
+| [`production-cues.ts`](../server/db/production-cues.ts) | Default production tasks, immutable cue/lifecycle/evidence state, one immutable post-reveal supplement per definition cue or fallback, production recheck demands, and cue/supplement application adapters |
 | [`schema.ts`](../server/db/schema.ts) | Re-exports `applyProductionContrastExerciseSeed` and `initializeDatabase` for init ordering |
 | [`index.ts`](../server/db/index.ts) | Internal re-export barrel |
 
@@ -91,7 +92,11 @@ The supported adapters are:
   of the task, referenced cues, accepted words, and source-attempt judgments;
   atomic cue creation, replacement, or deactivation; append-only authorized
   cue-evidence judgments; and exact caused or already-satisfying effect
-  references.
+  references; and
+- post-reveal definition reinforcement, through
+  `applyProductionCueSupplementWithoutTransaction`, creating one immutable,
+  invocation-attributed English-frame/example/translation supplement for the
+  exact definition cue or fallback without changing grading or scheduling.
 
 Pending application is recoverable through
 `listPendingReflectionInvocationIds()` and

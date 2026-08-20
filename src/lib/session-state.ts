@@ -669,6 +669,7 @@ function buildProductionAttemptMetadata(
       cueType: production.cueType,
       text: production.text,
       acceptedWordIds: [...production.acceptedWordIds],
+      supplement: production.supplement == null ? null : { ...production.supplement },
       anchorWordId: item.targetWordId,
       ...(resolution.responseKind === 'no_clue' ? { responseKind: 'no_clue' } : {}),
       submittedText: resolution.submittedText,

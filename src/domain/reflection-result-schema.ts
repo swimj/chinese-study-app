@@ -158,6 +158,14 @@ const repairCueOperationV2Wire = objectSchema({
   }),
 });
 
+const addProductionCueSupplementOperationV1Wire = objectSchema({
+  kind: enumSchema(['add_production_cue_supplement']),
+  wordId: stringSchema,
+  englishFrame: stringSchema,
+  exampleSentence: stringSchema,
+  exampleTranslation: stringSchema,
+});
+
 const acceptAlternateOperation = objectSchema({
   kind: enumSchema(['accept_production_alternate']),
   version: enumSchema([1]),
@@ -213,6 +221,15 @@ const operationSchemaV5Wire: JsonSchema = {
   ],
 };
 
+const operationSchemaV7Wire: JsonSchema = {
+  anyOf: [
+    suppressProductionOperation,
+    createContrastClusterOperationV2,
+    repairCueOperationV2Wire,
+    addProductionCueSupplementOperationV1Wire,
+  ],
+};
+
 const proposalSchemaV5Wire = objectSchema({
   proposalGroupKey: nullableStringSchema,
   rationale: stringSchema,
@@ -264,6 +281,17 @@ const itemResultSchemaV6Wire = objectSchema({
   })),
 });
 
+const proposalSchemaV7Wire = objectSchema({
+  proposalGroupKey: nullableStringSchema,
+  rationale: stringSchema,
+  operation: operationSchemaV7Wire,
+});
+
+const itemResultSchemaV7Wire = objectSchema({
+  ...itemResultSchemaV6Wire.properties,
+  proposals: arraySchema(proposalSchemaV7Wire),
+});
+
 export const sessionReflectionResultSchema: JsonSchema = objectSchema({
   schemaVersion: enumSchema(['session_reflection_result.v4']),
   itemResults: arraySchema(itemResultSchema),
@@ -284,3 +312,10 @@ export const sessionReflectionResultV6WireSchema: JsonSchema = objectSchema({
 }, 'One structured post-session reflection result with one item-level teaching surface.');
 
 export const SESSION_REFLECTION_RESULT_V6_WIRE_SCHEMA_NAME = 'session_reflection_result_v6';
+
+export const sessionReflectionResultV7WireSchema: JsonSchema = objectSchema({
+  schemaVersion: enumSchema(['session_reflection_result.v7']),
+  itemResults: arraySchema(itemResultSchemaV7Wire),
+}, 'One structured post-session reflection result with post-reveal cue supplements.');
+
+export const SESSION_REFLECTION_RESULT_V7_WIRE_SCHEMA_NAME = 'session_reflection_result_v7';

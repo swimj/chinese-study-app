@@ -1,20 +1,21 @@
 import type {
   ReflectionExistingContentV0,
-  ReflectionServedCueSnapshotV1,
+  ReflectionServedCueSnapshotV2,
   ReflectionWordSnapshotV1,
-  SessionReflectionBundleV3,
+  SessionReflectionBundleV4,
 } from '../../src/domain/reflection.ts';
 import { normalizeProductionAnswerForProfile } from '../../src/study-profile.ts';
 import {
   parseSessionReflectionEvidenceSupplement,
   parseSessionReflectionEvidenceSupplementV2,
-  parseSessionReflectionBundleV3,
+  parseSessionReflectionBundleV4,
   type ProductionMistakeEvidenceSupplementV1,
 } from '../../src/domain/reflection-evidence.ts';
 import { getConfig, getDb } from '../db/connection.ts';
 import {
   defaultProductionTaskId,
   getProductionCue,
+  getProductionCueSupplement,
   type ProductionCueAttemptResultV0,
 } from '../db/production-cues.ts';
 
@@ -94,7 +95,7 @@ type ClusterRow = {
 export const INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS = 25;
 
 export type InitialReflectionBundleBuild = {
-  bundle: SessionReflectionBundleV3;
+  bundle: SessionReflectionBundleV4;
   eligibleItemCount: number;
   includedItemCount: number;
 };
@@ -103,7 +104,7 @@ export function buildInitialReflectionBundle(
   sessionId: string,
   supplementValue: unknown,
   generatedAt = new Date().toISOString(),
-): SessionReflectionBundleV3 {
+): SessionReflectionBundleV4 {
   return buildInitialReflectionBundleWithMetrics(
     sessionId,
     supplementValue,
@@ -182,7 +183,7 @@ export function buildInitialReflectionBundleWithMetrics(
   }
   const items = eligibleItems.slice(0, INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS);
   const bundle = {
-    schemaVersion: 'session_reflection_bundle.v3' as const,
+    schemaVersion: 'session_reflection_bundle.v4' as const,
     generatedAt,
     session: {
       sessionId: normalizedSessionId,
@@ -195,7 +196,7 @@ export function buildInitialReflectionBundleWithMetrics(
 
   try {
     return {
-      bundle: parseSessionReflectionBundleV3(bundle),
+      bundle: parseSessionReflectionBundleV4(bundle),
       eligibleItemCount: eligibleItems.length,
       includedItemCount: items.length,
     };
@@ -210,7 +211,7 @@ export function buildInitialReflectionBundleWithMetrics(
 function buildProductionMistakeItem(
   sessionId: string,
   supplement: ProductionMistakeEvidenceSupplementV1 & { learnerRequestedReview?: true },
-): SessionReflectionBundleV3['items'][number] | null {
+): SessionReflectionBundleV4['items'][number] | null {
   const targetWord = getWordSnapshot(supplement.targetWordId);
   const attempts = getActionAttempts(sessionId, supplement.sessionActionId);
   assertCompleteAttemptReferences(sessionId, supplement, attempts);
@@ -422,7 +423,7 @@ function productionServedCue(
   attempt: AttemptRow,
   supplement: ProductionMistakeEvidenceSupplementV1,
   metadata: ProductionAttemptMetadataV0 | null,
-): ReflectionServedCueSnapshotV1 {
+): ReflectionServedCueSnapshotV2 {
   const suppliedCue = supplement.cuesAsShown[0];
   if (supplement.cuesAsShown.length !== 1 || suppliedCue === undefined) {
     throw invalidReference('Expected exactly one supplied production cue snapshot.');
@@ -440,6 +441,7 @@ function productionServedCue(
       cueType: metadata.cueType,
       text: metadata.text,
       acceptedWordIds: [...metadata.acceptedWordIds],
+      supplement: metadata.supplement,
     };
   }
   if (suppliedCue.cueId !== null) {
@@ -453,6 +455,7 @@ function productionServedCue(
     cueType: 'definition_gloss',
     text: suppliedCue.text,
     acceptedWordIds: [attempt.target_word_id],
+    supplement: null,
   };
 }
 
@@ -462,6 +465,12 @@ type ProductionAttemptMetadataV0 = {
   cueType: 'definition_gloss' | 'minimal_context' | 'circumstance';
   text: string;
   acceptedWordIds: string[];
+  supplement: {
+    supplementId: string;
+    englishFrame: string;
+    exampleSentence: string;
+    exampleTranslation: string;
+  } | null;
   anchorWordId: string;
   responseKind: 'typed' | 'no_clue';
   submittedText: string | null;
@@ -478,6 +487,7 @@ function parseProductionAttemptMetadata(raw: string): ProductionAttemptMetadataV
   }
   if (!isRecord(parsed) || !isRecord(parsed.production)) return null;
   const production = parsed.production;
+  const supplement = production.supplement === undefined ? null : production.supplement;
   const responseKind = production.responseKind === undefined ? 'typed' : production.responseKind;
   if (
     typeof production.taskId !== 'string'
@@ -493,6 +503,19 @@ function parseProductionAttemptMetadata(raw: string): ProductionAttemptMetadataV
     || production.acceptedWordIds.length === 0
     || production.acceptedWordIds.some((wordId) => typeof wordId !== 'string')
     || new Set(production.acceptedWordIds).size !== production.acceptedWordIds.length
+    || (
+      supplement !== null
+      && (
+        !isRecord(supplement)
+        || typeof supplement.supplementId !== 'string'
+        || typeof supplement.englishFrame !== 'string'
+        || supplement.englishFrame.trim().length === 0
+        || typeof supplement.exampleSentence !== 'string'
+        || supplement.exampleSentence.trim().length === 0
+        || typeof supplement.exampleTranslation !== 'string'
+        || supplement.exampleTranslation.trim().length === 0
+      )
+    )
     || typeof production.anchorWordId !== 'string'
     || (responseKind !== 'typed' && responseKind !== 'no_clue')
     || (responseKind === 'typed' && typeof production.submittedText !== 'string')
@@ -506,7 +529,7 @@ function parseProductionAttemptMetadata(raw: string): ProductionAttemptMetadataV
   ) {
     throw invalidReference('The production attempt snapshot metadata is malformed.');
   }
-  return { ...production, responseKind } as ProductionAttemptMetadataV0;
+  return { ...production, supplement, responseKind } as ProductionAttemptMetadataV0;
 }
 
 function validateProductionAttemptMetadata(
@@ -533,6 +556,16 @@ function validateProductionAttemptMetadata(
   }
 
   const contentRef = parseNullableObjectJson(attempt.content_ref_json);
+  const durableSupplement = getProductionCueSupplement(metadata.taskId, metadata.cueId);
+  if (metadata.supplement !== null && (
+    durableSupplement === null
+    || durableSupplement.supplementId !== metadata.supplement.supplementId
+    || durableSupplement.englishFrame !== metadata.supplement.englishFrame
+    || durableSupplement.exampleSentence !== metadata.supplement.exampleSentence
+    || durableSupplement.exampleTranslation !== metadata.supplement.exampleTranslation
+  )) {
+    throw invalidReference('Production attempt metadata does not match its immutable supplement.');
+  }
   if (metadata.cueId === null) {
     if (metadata.cueType !== 'definition_gloss' || contentRef !== null) {
       throw invalidReference('Fallback production evidence has an invalid cue reference.');

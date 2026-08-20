@@ -42,6 +42,7 @@ import {
   ensureProductionCueSchema,
   getActiveProductionCuesForWord,
   getPendingProductionRecheckForWord,
+  getProductionCueSupplement,
   getProductionRecheckDemand,
   linkProductionRecheckReplacementWithoutTransaction,
   projectProductionCueEvidence,
@@ -5598,6 +5599,7 @@ function getReviewSkillContentIfAvailable(
   if (row.skill_id === 'production') {
     const cue = randomArrayElement(getActiveProductionCuesForWord(row.id));
     if (cue) {
+      const supplement = getProductionCueSupplement(cue.taskId, cue.cueId);
       return {
         contentRef: { type: 'production_cue', taskId: cue.taskId, cueId: cue.cueId },
         contrastSelection: null,
@@ -5607,6 +5609,12 @@ function getReviewSkillContentIfAvailable(
           cueType: cue.cueType,
           text: cue.text,
           acceptedWordIds: [...cue.acceptedWordIds],
+          supplement: supplement === null ? null : {
+            supplementId: supplement.supplementId,
+            englishFrame: supplement.englishFrame,
+            exampleSentence: supplement.exampleSentence,
+            exampleTranslation: supplement.exampleTranslation,
+          },
           recheckDemandId,
         },
       };
@@ -5619,15 +5627,23 @@ function getReviewSkillContentIfAvailable(
     if (meaningRecords.length > 0 && promptMeanings.length === 0) {
       return undefined;
     }
+    const taskId = defaultProductionTaskId(row.id);
+    const supplement = getProductionCueSupplement(taskId, null);
     return {
       contentRef: null,
       contrastSelection: null,
       production: {
-        taskId: defaultProductionTaskId(row.id),
+        taskId,
         cueId: null,
         cueType: 'definition_gloss',
         text: promptMeanings.join('; ') || row.meaning,
         acceptedWordIds: [row.id],
+        supplement: supplement === null ? null : {
+          supplementId: supplement.supplementId,
+          englishFrame: supplement.englishFrame,
+          exampleSentence: supplement.exampleSentence,
+          exampleTranslation: supplement.exampleTranslation,
+        },
         recheckDemandId,
       },
     };

@@ -9,7 +9,7 @@ const QWEN_SHARED = {
   reasoningEffort: 'high' as const,
   maxOutputTokens: 50_000,
   timeoutMs: 900_000,
-  promptVersion: 'reflection-v7',
+  promptVersion: 'reflection-v8',
   defaultBaseUrl: 'https://ws-k76i8wy95wc9oheq.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
   apiKeyEnvironmentVariable: 'DASHSCOPE_API_KEY',
   structuredOutputMode: 'json_object' as const,

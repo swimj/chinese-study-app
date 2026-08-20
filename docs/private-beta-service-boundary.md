@@ -88,7 +88,8 @@ evidence into service-owned data.
 - Reusable contrast content currently represented by `contrast_clusters`,
   `contrast_cluster_members`, and `contrast_prompts`.
 - Reusable production content currently represented by `production_tasks`,
-  `production_cues`, and `production_cue_accepted_words`.
+  `production_cues`, `production_cue_accepted_words`, and post-reveal
+  `production_cue_supplements`.
 - A new or explicitly repurposed shared publication lifecycle records
   `shared_trial`, `available`, `quarantined`, and `retired`. It is separate
   from the current learner activation history and from learner suppression.

@@ -409,6 +409,33 @@ describe('reflection page model', () => {
       alternate.kind === 'accept_production_alternate' && alternate.alternateWordId,
       'third',
     );
+
+    let supplement: ReflectionOperation = {
+      kind: 'add_production_cue_supplement',
+      version: 1,
+      wordId: 'target',
+      taskId: 'production-task:target:default_production',
+      cueId: null,
+      englishFrame: 'old frame',
+      exampleSentence: '目标在这里。',
+      exampleTranslation: 'The target is here.',
+    };
+    supplement = reduceReflectionOperationDraft(supplement, {
+      type: 'set_supplement_english_frame',
+      englishFrame: 'new frame',
+    });
+    supplement = reduceReflectionOperationDraft(supplement, {
+      type: 'set_supplement_example_sentence',
+      exampleSentence: '我们已经确定了目标。',
+    });
+    assert.equal(
+      supplement.kind === 'add_production_cue_supplement' && supplement.englishFrame,
+      'new frame',
+    );
+    assert.equal(
+      supplement.kind === 'add_production_cue_supplement' && supplement.exampleSentence,
+      '我们已经确定了目标。',
+    );
   });
 
   test('reports revised acceptance, runtime support, and deterministic draft errors', () => {
