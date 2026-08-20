@@ -16,6 +16,7 @@ import {
   evidenceWordSurfaceLabel,
   reduceReflectionOperationDraft,
   servedCueDisplayText,
+  servedCueId,
   type EvidenceWordOption,
   type ReflectionOperationDraftAction,
 } from './reflection-page-model';
@@ -33,6 +34,7 @@ export function ReflectionOperationEditor({
 }) {
   const wordOptions = collectEvidenceWordOptions(evidence);
   const servedCueText = servedCueDisplayText(evidence);
+  const lockedServedCueId = servedCueId(evidence);
   const lockedTargetWordId = evidence?.targetWord?.wordId ?? null;
 
   function dispatch(action: ReflectionOperationDraftAction) {
@@ -75,6 +77,7 @@ export function ReflectionOperationEditor({
             operation={operation}
             wordOptions={wordOptions}
             servedCueText={servedCueText}
+            lockedServedCueId={lockedServedCueId}
             lockedTargetWordId={lockedTargetWordId}
             disabled={disabled}
             dispatch={dispatch}
@@ -129,6 +132,7 @@ function ProductionCueEditorV2({
   operation,
   wordOptions,
   servedCueText,
+  lockedServedCueId,
   lockedTargetWordId,
   disabled,
   dispatch,
@@ -136,6 +140,7 @@ function ProductionCueEditorV2({
   operation: RepairProductionCueOperationV2;
   wordOptions: EvidenceWordOption[];
   servedCueText: string | null;
+  lockedServedCueId: string | null;
   lockedTargetWordId: string | null;
   disabled: boolean;
   dispatch: (action: ReflectionOperationDraftAction) => void;
@@ -228,6 +233,7 @@ function ProductionCueEditorV2({
                             type: 'set_v2_cue_change_kind',
                             index: changeIndex,
                             kind: event.target.value as typeof changeKinds[number],
+                            cueId: lockedServedCueId ?? '',
                           })}
                         >
                           {changeKinds.map((kind) => (

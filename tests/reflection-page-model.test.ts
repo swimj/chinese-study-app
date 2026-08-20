@@ -507,6 +507,51 @@ describe('reflection page model', () => {
     assert.equal(getOperationDraftState(original, replacement).acceptanceMode, 'replacement');
   });
 
+  test('stamps the served cue id when a manual V2 change is switched to deactivate', () => {
+    const evidence = v2Evidence();
+    const original: ReflectionOperation = {
+      kind: 'suppress_definition_production',
+      version: 1,
+      wordId: 'target',
+    };
+    let draft = createReplacementOperation(
+      'repair_production_cue',
+      2,
+      original,
+      evidence,
+    );
+    draft = reduceReflectionOperationDraft(draft, { type: 'add_v2_cue_change' });
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'set_v2_cue_change_kind',
+      index: 0,
+      kind: 'deactivate',
+      cueId: evidence.servedCue.cueId ?? '',
+    });
+
+    assert.equal(draft.kind, 'repair_production_cue');
+    assert.equal(draft.kind === 'repair_production_cue' && draft.version, 2);
+    if (draft.kind === 'repair_production_cue' && draft.version === 2) {
+      assert.deepEqual(draft.changes, [{ kind: 'deactivate', cueId: 'cue-1' }]);
+    }
+    assert.deepEqual(getOperationDraftState(original, draft, evidence).validationErrors, []);
+  });
+
+  test('keeps an existing V2 cue id when switching replace to deactivate', () => {
+    const deactivated = reduceReflectionOperationDraft(cueRepairV2(), {
+      type: 'set_v2_cue_change_kind',
+      index: 0,
+      kind: 'deactivate',
+    });
+    assert.equal(deactivated.kind, 'repair_production_cue');
+    if (deactivated.kind === 'repair_production_cue' && deactivated.version === 2) {
+      assert.deepEqual(deactivated.changes, [{ kind: 'deactivate', cueId: 'cue-1' }]);
+    }
+    assert.deepEqual(
+      getOperationDraftState(cueRepairV2(), deactivated, v2Evidence()).validationErrors,
+      [],
+    );
+  });
+
   test('fails loudly when an editor action targets the wrong operation shape or index', () => {
     const suppression = {
       kind: 'suppress_definition_production',
