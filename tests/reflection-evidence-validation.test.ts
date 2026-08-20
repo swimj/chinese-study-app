@@ -5,12 +5,14 @@ import {
   parseSessionReflectionBundle,
   parseSessionReflectionBundleV2,
   parseSessionReflectionBundleV3,
+  parseSessionReflectionBundleV4,
   parseSessionReflectionEvidenceSupplementV2,
   parseSessionReflectionEvidenceSupplement,
   validateInitialReflectionMilestoneBundle,
   validateSessionReflectionBundle,
   validateSessionReflectionBundleV2,
   validateSessionReflectionBundleV3,
+  validateSessionReflectionBundleV4,
   validateSessionReflectionEvidenceSupplement,
 } from '../src/domain/reflection-evidence.js';
 import type {
@@ -22,6 +24,7 @@ import type {
   SessionReflectionBundleV1,
   SessionReflectionBundleV2,
   SessionReflectionBundleV3,
+  SessionReflectionBundleV4,
 } from '../src/domain/reflection.js';
 
 const generatedAt = '2026-07-29T12:00:00.000Z';
@@ -270,6 +273,37 @@ describe('learner-requested reflection V3 validation', () => {
       items: [{ ...base.items[0]!, responseKind: null }],
     };
     assert.match(validateSessionReflectionBundleV3(bundle).join('\n'), /null is reserved/);
+  });
+});
+
+describe('post-reveal supplement V4 validation', () => {
+  test('preserves a strict nullable supplement snapshot separately from the cue', () => {
+    const { schemaVersion: _schemaVersion, ...base } = productionBundleV2();
+    const bundle: SessionReflectionBundleV4 = {
+      ...base,
+      schemaVersion: 'session_reflection_bundle.v4',
+      items: [{
+        ...base.items[0]!,
+        servedCue: {
+          ...base.items[0]!.servedCue,
+          supplement: {
+            supplementId: 'supplement-1',
+            englishFrame: 'A formal legal context.',
+            exampleSentence: '他明知儿子犯了罪，却包庇了他。',
+            exampleTranslation: 'He knowingly shielded his son after the crime.',
+          },
+        },
+      }],
+    };
+    assert.deepEqual(validateSessionReflectionBundleV4(bundle), []);
+    assert.equal(parseSessionReflectionBundleV4(bundle), bundle);
+
+    const malformed = structuredClone(bundle) as unknown as Record<string, unknown>;
+    const item = (malformed.items as Array<Record<string, unknown>>)[0]!;
+    const cue = item.servedCue as Record<string, unknown>;
+    const supplement = cue.supplement as Record<string, unknown>;
+    supplement.exampleTranslation = '';
+    assert.match(validateSessionReflectionBundleV4(malformed).join('\n'), /exampleTranslation: must not be empty/);
   });
 });
 

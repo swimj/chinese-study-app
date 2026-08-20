@@ -11,6 +11,7 @@ import type {
   SessionReflectionBundleV1,
   SessionReflectionBundleV2,
   SessionReflectionBundleV3,
+  SessionReflectionBundleV4,
 } from './reflection';
 
 export type ProductionMistakeCueEvidenceV1 = Omit<ReflectionCueSnapshotV0, 'cueType'> & {
@@ -319,12 +320,46 @@ export function parseSessionReflectionBundleV3(value: unknown): SessionReflectio
   return value as SessionReflectionBundleV3;
 }
 
+export function validateSessionReflectionBundleV4(value: unknown): string[] {
+  if (!isRecord(value)) return validateSessionReflectionBundleV3(value);
+  const items = Array.isArray(value.items) ? value.items.map((item) => {
+    if (!isRecord(item) || !isRecord(item.servedCue)) return item;
+    const { supplement: _supplement, ...servedCue } = item.servedCue;
+    return { ...item, servedCue };
+  }) : value.items;
+  const errors = validateSessionReflectionBundleV3({
+    ...value,
+    schemaVersion: 'session_reflection_bundle.v3',
+    items,
+  });
+  if (value.schemaVersion !== 'session_reflection_bundle.v4') {
+    errors.push('$.schemaVersion: expected session_reflection_bundle.v4');
+  }
+  if (Array.isArray(value.items)) value.items.forEach((item, index) => {
+    if (!isRecord(item) || !isRecord(item.servedCue)) return;
+    errors.push(...validateServedCueSupplement(
+      item.servedCue.supplement,
+      `$.items[${index}].servedCue.supplement`,
+    ));
+  });
+  return errors;
+}
+
+export function parseSessionReflectionBundleV4(value: unknown): SessionReflectionBundleV4 {
+  const errors = validateSessionReflectionBundleV4(value);
+  if (errors.length > 0) throw new Error(`Invalid session reflection bundle V4:\n${errors.join('\n')}`);
+  return value as SessionReflectionBundleV4;
+}
+
 export function parseStoredSessionReflectionBundle(value: unknown): SessionReflectionBundle {
   if (isRecord(value) && value.schemaVersion === 'session_reflection_bundle.v2') {
     return parseSessionReflectionBundleV2(value);
   }
   if (isRecord(value) && value.schemaVersion === 'session_reflection_bundle.v3') {
     return parseSessionReflectionBundleV3(value);
+  }
+  if (isRecord(value) && value.schemaVersion === 'session_reflection_bundle.v4') {
+    return parseSessionReflectionBundleV4(value);
   }
   return parseSessionReflectionBundle(value);
 }
@@ -673,6 +708,21 @@ function validateServedCueSnapshot(
   ) {
     errors.push(`${path}.acceptedWordIds: must include the task word`);
   }
+  return errors;
+}
+
+function validateServedCueSupplement(value: unknown, path: string): string[] {
+  if (value === null) return [];
+  const errors = validateObjectFields(
+    value,
+    ['supplementId', 'englishFrame', 'exampleSentence', 'exampleTranslation'],
+    path,
+  );
+  if (!isRecord(value)) return errors;
+  errors.push(...validateId(value.supplementId, `${path}.supplementId`));
+  errors.push(...validateNonEmptyString(value.englishFrame, `${path}.englishFrame`));
+  errors.push(...validateNonEmptyString(value.exampleSentence, `${path}.exampleSentence`));
+  errors.push(...validateNonEmptyString(value.exampleTranslation, `${path}.exampleTranslation`));
   return errors;
 }
 

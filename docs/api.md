@@ -140,17 +140,19 @@ Request/result types live in
 
 ### Generate
 
-The request body is the `SessionReflectionEvidenceSupplementV1` object itself,
-not a wrapper. The current milestone accepts one or more qualifying typed
-production-mistake supplement items containing the cue as shown, raw typed
-response, and the complete ordered ids of the accepted attempt batch. The
+The request body is a `SessionReflectionEvidenceSupplementV1` or V2 object
+itself, not a wrapper. It contains one or more qualifying review-production
+items, including the cue as shown, nullable raw response, complete ordered ids
+of the accepted attempt batch, and the optional V2 learner-request marker. The
 backend uses those ids only to validate durable session/action identity, then
-enriches each into a canonical `production_mistake` bundle item without attempt
-rows, attempt summaries, or production-management metadata.
-For the initial flow, the backend includes only the first two eligible enriched
-items in stable evidence order. The run record retains both eligible and
-included counts; omitted items are intentionally unreflected in this
-provisional flow.
+enriches each into a canonical V4 `production_mistake` bundle item without
+attempt rows, attempt summaries, or production-management metadata. V4 keeps
+the exact nullable post-reveal supplement separate from the pre-reveal cue;
+new generation returns the strict V7 result contract.
+For the initial flow, the backend includes at most the first 25 eligible
+enriched items in stable evidence order. The run record retains both eligible
+and included counts; omitted items are intentionally unreflected under this
+provisional bound.
 
 A successful response is exactly:
 

@@ -49,6 +49,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
       DELETE FROM contrast_prompts;
       DELETE FROM contrast_cluster_members;
       DELETE FROM contrast_clusters;
+      DELETE FROM production_cue_supplements;
       DELETE FROM production_cue_activation_state;
       DELETE FROM production_cue_accepted_words;
       DELETE FROM production_cues;
@@ -99,7 +100,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
     const bundle = buildInitialReflectionBundle('session-1', supplement('替代'), generatedAt);
 
     assert.equal(totalChanges(), changesBefore);
-    assert.equal(bundle.schemaVersion, 'session_reflection_bundle.v3');
+    assert.equal(bundle.schemaVersion, 'session_reflection_bundle.v4');
     assert.deepEqual(bundle.session, {
       sessionId: 'session-1',
       startedAt,
@@ -117,6 +118,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
       cueType: 'definition_gloss',
       text: 'goal; objective',
       acceptedWordIds: ['target'],
+      supplement: null,
     });
     assert.deepEqual(item.targetWord.meanings, ['goal', 'objective']);
     assert.equal(Object.hasOwn(item.targetWord, 'production'), false);
@@ -134,7 +136,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
     });
   });
 
-  test('includes a learner-requested correct production action in the V3 bundle', () => {
+  test('includes a learner-requested correct production action in the V4 bundle', () => {
     sqlite.exec(`
       UPDATE study_attempt_events
       SET response = '目标', outcome = 'correct', rating = 'good', metadata_json = '${JSON.stringify(productionAttemptMetadata({
@@ -148,10 +150,46 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
       items: [{ ...supplement('目标').items[0]!, learnerRequestedReview: true }],
     };
     const bundle = buildInitialReflectionBundle('session-1', marked, generatedAt);
-    assert.equal(bundle.schemaVersion, 'session_reflection_bundle.v3');
+    assert.equal(bundle.schemaVersion, 'session_reflection_bundle.v4');
     assert.equal(bundle.items[0]?.learnerRequestedReview, true);
     assert.equal(bundle.items[0]?.responseKind, null);
     assert.equal('attemptIds' in bundle.items[0]!, false);
+  });
+
+  test('preserves the exact post-reveal supplement separately from the tested cue', () => {
+    const servedSupplement = {
+      supplementId: 'supplement-1',
+      englishFrame: 'A formal context involving responsibility.',
+      exampleSentence: '这个决定直接关系到项目目标。',
+      exampleTranslation: 'This decision directly concerns the project goal.',
+    };
+    sqlite.prepare(`
+      INSERT INTO production_cue_supplements (
+        supplement_id, task_id, cue_id, english_frame, example_sentence,
+        example_translation, created_at, origin_invocation_id
+      ) VALUES (?, 'production-task:target:default_production', NULL, ?, ?, ?, ?, 'invocation-1')
+    `).run(
+      servedSupplement.supplementId,
+      servedSupplement.englishFrame,
+      servedSupplement.exampleSentence,
+      servedSupplement.exampleTranslation,
+      completedAt,
+    );
+    sqlite.prepare(`
+      UPDATE study_attempt_events
+      SET metadata_json = ?
+      WHERE id = 'attempt-1'
+    `).run(productionAttemptMetadata({
+      submittedText: '替代',
+      submittedWordId: null,
+      result: 'rejected',
+      acceptedWordIds: ['target'],
+      supplement: servedSupplement,
+    }));
+
+    const bundle = buildInitialReflectionBundle('session-1', supplement('替代'), generatedAt);
+    assert.deepEqual(bundle.items[0]?.servedCue.supplement, servedSupplement);
+    assert.equal(bundle.items[0]?.servedCue.text, 'goal; objective');
   });
 
   test('reports the single eligible item included in an initial bundle', () => {
@@ -246,6 +284,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
       cueType: 'definition_gloss',
       text: 'goal; objective',
       acceptedWordIds: ['target'],
+      supplement: null,
     });
   });
 
@@ -335,6 +374,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
       cueType: 'minimal_context',
       text: 'Name the goal in one word.',
       acceptedWordIds: ['target'],
+      supplement: null,
     });
   });
 
@@ -702,6 +742,16 @@ function createSchema() {
       position INTEGER NOT NULL,
       PRIMARY KEY (cue_id, word_id)
     );
+    CREATE TABLE production_cue_supplements (
+      supplement_id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES production_tasks(task_id) ON DELETE CASCADE,
+      cue_id TEXT REFERENCES production_cues(cue_id),
+      english_frame TEXT NOT NULL,
+      example_sentence TEXT NOT NULL,
+      example_translation TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      origin_invocation_id TEXT NOT NULL
+    );
     CREATE TABLE production_cue_activation_state (
       cue_id TEXT PRIMARY KEY REFERENCES production_cues(cue_id) ON DELETE CASCADE,
       active INTEGER NOT NULL,
@@ -776,12 +826,19 @@ function productionAttemptMetadata({
   submittedWordId,
   result,
   acceptedWordIds,
+  supplement,
 }: {
   responseKind?: 'typed' | 'no_clue';
   submittedText: string | null;
   submittedWordId: string | null;
   result: 'accepted_anchor' | 'accepted_non_anchor' | 'rejected';
   acceptedWordIds: string[];
+  supplement?: {
+    supplementId: string;
+    englishFrame: string;
+    exampleSentence: string;
+    exampleTranslation: string;
+  } | null;
 }): string {
   return JSON.stringify({
     production: {
@@ -790,6 +847,7 @@ function productionAttemptMetadata({
       cueType: 'definition_gloss',
       text: 'goal; objective',
       acceptedWordIds,
+      supplement: supplement ?? null,
       anchorWordId: 'target',
       ...(responseKind === 'no_clue' ? { responseKind } : {}),
       submittedText,

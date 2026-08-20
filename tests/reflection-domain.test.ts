@@ -166,6 +166,7 @@ describe('reflection operation registry and validation', () => {
         ['create_contrast_cluster', 2, true, 'supported'],
         ['repair_production_cue', 1, true, 'unsupported'],
         ['repair_production_cue', 2, true, 'supported'],
+        ['add_production_cue_supplement', 1, true, 'supported'],
         ['accept_production_alternate', 1, true, 'unsupported'],
       ],
     );
@@ -184,6 +185,16 @@ describe('reflection operation registry and validation', () => {
         repairIntent: 'add_contextual_triangulation',
       },
       cueRepairV2(),
+      {
+        kind: 'add_production_cue_supplement',
+        version: 1,
+        wordId: 'target',
+        taskId: 'production-task:target:default_production',
+        cueId: null,
+        englishFrame: 'Knowingly shielding someone from responsibility.',
+        exampleSentence: '他明知儿子犯了罪，却包庇了他。',
+        exampleTranslation: 'He knew his son had committed a crime but shielded him.',
+      },
       {
         kind: 'accept_production_alternate',
         version: 1,

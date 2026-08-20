@@ -3,7 +3,7 @@ import { describe, test } from 'node:test';
 import type {
   ReflectionOperation,
   SessionReflectionBundleV2,
-  SessionReflectionResultV6,
+  SessionReflectionResultV7,
 } from '../src/domain/reflection.ts';
 import type {
   MaterializeReflectionArtifactInput,
@@ -114,7 +114,7 @@ describe('initial reflection generation orchestration', () => {
       clientRequestId: null,
       finishReason: 'stop',
       bundleSchemaVersion: 'session_reflection_bundle.v2',
-      resultSchemaVersion: 'session_reflection_result.v6',
+      resultSchemaVersion: 'session_reflection_result.v7',
       diagnostic: null,
       state: 'succeeded',
       failureCode: null,
@@ -432,7 +432,7 @@ function artifactDetail(artifactId: string, proposalCount: number): ReflectionAr
     model: 'gpt-5.6-luna-high',
     promptVersion: 'reflection-v3',
     bundleSchemaVersion: 'session_reflection_bundle.v2',
-    resultSchemaVersion: 'session_reflection_result.v6',
+    resultSchemaVersion: 'session_reflection_result.v7',
     evidenceBundle: bundle(),
     result: result(),
     proposals: Array.from({ length: proposalCount }, (_, index) => ({
@@ -498,9 +498,9 @@ function bundle(): SessionReflectionBundleV2 {
   };
 }
 
-function result(): SessionReflectionResultV6 {
+function result(): SessionReflectionResultV7 {
   return {
-    schemaVersion: 'session_reflection_result.v6',
+    schemaVersion: 'session_reflection_result.v7',
     itemResults: [{
       itemId: 'item-1',
       diagnosisTags: ['persistent_confusion'],

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type {
+  AddProductionCueSupplementOperationV1,
   CueEvidenceJudgmentV2,
   EffectRef,
   OperationApplicationState,
@@ -32,6 +33,17 @@ export type ProductionCueEntryV0 = {
     invocationId: string | null;
   };
   active: boolean;
+};
+
+export type ProductionCueSupplementEntryV1 = {
+  supplementId: string;
+  taskId: string;
+  cueId: string | null;
+  englishFrame: string;
+  exampleSentence: string;
+  exampleTranslation: string;
+  createdAt: string;
+  invocationId: string;
 };
 
 export type ProductionCueAttemptResultV0 =
@@ -86,6 +98,17 @@ type ProductionCueRow = {
   origin_kind: string;
   origin_invocation_id: string | null;
   active: number;
+};
+
+type ProductionCueSupplementRow = {
+  supplement_id: string;
+  task_id: string;
+  cue_id: string | null;
+  english_frame: string;
+  example_sentence: string;
+  example_translation: string;
+  created_at: string;
+  origin_invocation_id: string;
 };
 
 type CueStateRow = {
@@ -169,6 +192,30 @@ export function ensureProductionCueSchema(): void {
     BEFORE DELETE ON production_cues
     BEGIN
       SELECT RAISE(ABORT, 'production cues cannot be deleted');
+    END;
+
+    CREATE TABLE IF NOT EXISTS production_cue_supplements (
+      supplement_id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES production_tasks(task_id) ON DELETE CASCADE,
+      cue_id TEXT REFERENCES production_cues(cue_id) ON DELETE RESTRICT,
+      english_frame TEXT NOT NULL CHECK (length(trim(english_frame)) > 0),
+      example_sentence TEXT NOT NULL CHECK (length(trim(example_sentence)) > 0),
+      example_translation TEXT NOT NULL CHECK (length(trim(example_translation)) > 0),
+      created_at TEXT NOT NULL,
+      origin_invocation_id TEXT NOT NULL
+        REFERENCES reflection_operation_invocations(invocation_id) ON DELETE RESTRICT
+    );
+
+    CREATE TRIGGER IF NOT EXISTS production_cue_supplements_immutable
+    BEFORE UPDATE ON production_cue_supplements
+    BEGIN
+      SELECT RAISE(ABORT, 'production cue supplements are immutable');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS production_cue_supplements_no_delete
+    BEFORE DELETE ON production_cue_supplements
+    BEGIN
+      SELECT RAISE(ABORT, 'production cue supplements cannot be deleted');
     END;
 
     CREATE TABLE IF NOT EXISTS production_cue_accepted_words (
@@ -385,6 +432,12 @@ export function ensureProductionCueIndexes(): void {
       ON production_tasks(word_id, task_kind);
     CREATE INDEX IF NOT EXISTS idx_production_cues_task
       ON production_cues(task_id, created_at, cue_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_production_cue_supplements_cue
+      ON production_cue_supplements(cue_id)
+      WHERE cue_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_production_cue_supplements_fallback
+      ON production_cue_supplements(task_id)
+      WHERE cue_id IS NULL;
     CREATE INDEX IF NOT EXISTS idx_production_cue_accepted_words_word
       ON production_cue_accepted_words(word_id, cue_id);
     CREATE INDEX IF NOT EXISTS idx_production_cue_lifecycle_latest
@@ -420,6 +473,16 @@ export function validateProductionCueSchema(): void {
     'cue_text',
     'created_at',
     'origin_kind',
+    'origin_invocation_id',
+  ]);
+  assertColumns('production_cue_supplements', [
+    'supplement_id',
+    'task_id',
+    'cue_id',
+    'english_frame',
+    'example_sentence',
+    'example_translation',
+    'created_at',
     'origin_invocation_id',
   ]);
   assertColumns('production_cue_accepted_words', ['cue_id', 'word_id', 'position']);
@@ -501,6 +564,29 @@ export function getProductionCuesForTask(taskId: string): ProductionCueEntryV0[]
 
 export function getActiveProductionCuesForWord(wordId: string): ProductionCueEntryV0[] {
   return getProductionCuesForTask(defaultProductionTaskId(wordId)).filter((cue) => cue.active);
+}
+
+export function getProductionCueSupplement(
+  taskId: string,
+  cueId: string | null,
+): ProductionCueSupplementEntryV1 | null {
+  const row = getDb().prepare(`
+    SELECT
+      supplement_id,
+      task_id,
+      cue_id,
+      english_frame,
+      example_sentence,
+      example_translation,
+      created_at,
+      origin_invocation_id
+    FROM production_cue_supplements
+    WHERE task_id = ? AND (
+      (? IS NULL AND cue_id IS NULL)
+      OR cue_id = ?
+    )
+  `).get(taskId, cueId, cueId) as ProductionCueSupplementRow | undefined;
+  return row ? mapProductionCueSupplementRow(row) : null;
 }
 
 export function getPendingProductionRecheckForWord(wordId: string): ProductionRecheckDemandV0 | null {
@@ -836,6 +922,88 @@ export function applyProductionCueRepairWithoutTransaction(
   return causedEffectRefs.length > 0
     ? { kind: 'applied', appliedAt, effectRefs: causedEffectRefs }
     : { kind: 'already_satisfied', satisfyingEffectRefs };
+}
+
+export function applyProductionCueSupplementWithoutTransaction(
+  operation: AddProductionCueSupplementOperationV1,
+  invocationId: string,
+  appliedAt: string,
+): OperationApplicationState {
+  const task = getDb().prepare(`
+    SELECT production_tasks.task_id, production_tasks.word_id, production_tasks.task_kind,
+      production_tasks.created_at, words.hanzi
+    FROM production_tasks
+    JOIN words ON words.id = production_tasks.word_id
+    WHERE production_tasks.task_id = ?
+  `).get(operation.taskId) as (ProductionTaskRow & { hanzi: string }) | undefined;
+  if (!task || task.word_id !== operation.wordId || task.task_kind !== DEFAULT_PRODUCTION_TASK_KIND) {
+    return {
+      kind: 'stale',
+      reason: `Default production task ${operation.taskId} no longer belongs to word ${operation.wordId}.`,
+    };
+  }
+  if (!operation.exampleSentence.includes(task.hanzi)) {
+    return {
+      kind: 'stale',
+      reason: 'The supplemental example no longer contains the target expression.',
+    };
+  }
+
+  if (operation.cueId !== null) {
+    const cue = getProductionCue(operation.cueId);
+    if (
+      cue === null
+      || cue.taskId !== operation.taskId
+      || cue.cueType !== 'definition_gloss'
+      || !cue.active
+    ) {
+      return {
+        kind: 'stale',
+        reason: `Definition cue ${operation.cueId} is no longer active for task ${operation.taskId}.`,
+      };
+    }
+  }
+
+  const existing = getProductionCueSupplement(operation.taskId, operation.cueId);
+  if (existing !== null) {
+    const effectRef = { type: 'production_cue_supplement', id: existing.supplementId };
+    return existing.englishFrame === operation.englishFrame
+      && existing.exampleSentence === operation.exampleSentence
+      && existing.exampleTranslation === operation.exampleTranslation
+      ? { kind: 'already_satisfied', satisfyingEffectRefs: [effectRef] }
+      : {
+          kind: 'stale',
+          reason: 'The served production exercise already has different supplemental content.',
+        };
+  }
+
+  const supplementId = randomUUID();
+  getDb().prepare(`
+    INSERT INTO production_cue_supplements (
+      supplement_id,
+      task_id,
+      cue_id,
+      english_frame,
+      example_sentence,
+      example_translation,
+      created_at,
+      origin_invocation_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    supplementId,
+    operation.taskId,
+    operation.cueId,
+    operation.englishFrame,
+    operation.exampleSentence,
+    operation.exampleTranslation,
+    appliedAt,
+    invocationId,
+  );
+  return {
+    kind: 'applied',
+    appliedAt,
+    effectRefs: [{ type: 'production_cue_supplement', id: supplementId }],
+  };
 }
 
 export function appendProductionCueAttemptEvidenceWithoutTransaction(
@@ -1338,6 +1506,21 @@ function mapCueRow(row: ProductionCueRow): ProductionCueEntryV0 {
       invocationId: row.origin_invocation_id,
     },
     active: row.active !== 0,
+  };
+}
+
+function mapProductionCueSupplementRow(
+  row: ProductionCueSupplementRow,
+): ProductionCueSupplementEntryV1 {
+  return {
+    supplementId: row.supplement_id,
+    taskId: row.task_id,
+    cueId: row.cue_id,
+    englishFrame: row.english_frame,
+    exampleSentence: row.example_sentence,
+    exampleTranslation: row.example_translation,
+    createdAt: row.created_at,
+    invocationId: row.origin_invocation_id,
   };
 }
 

@@ -1,6 +1,7 @@
 import type {
   SessionReflectionBundleV2,
   SessionReflectionBundleV3,
+  SessionReflectionBundleV4,
 } from '../../src/domain/reflection.ts';
 import {
   getReflectionGenerationRetrySource,
@@ -85,7 +86,7 @@ export type InitialReflectionGenerationDependencies = {
     sessionId: string,
     supplement: unknown,
     generatedAt: string,
-  ) => SessionReflectionBundleV3;
+  ) => SessionReflectionBundleV4;
   buildBundleWithMetrics?: (
     sessionId: string,
     supplement: unknown,
@@ -238,7 +239,8 @@ export function createInitialReflectionGenerationService(
         throw new Error('Reflection generation run is not retryable by the current flow.');
       }
       if (retrySource.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v2'
-        && retrySource.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v3') {
+        && retrySource.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v3'
+        && retrySource.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v4') {
         throw new Error('The current reflection flow cannot retry this evidence bundle.');
       }
       const selectedChoice = model ?? choiceForStoredModel(retrySource.model);
@@ -415,7 +417,7 @@ function runRecordInput(input: {
   error: unknown;
   eligibleItemCount: number;
   includedItemCount: number;
-  evidenceBundle: SessionReflectionBundleV2 | SessionReflectionBundleV3;
+  evidenceBundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4;
 }): RecordReflectionGenerationRunInput {
   const estimate = estimateInitialReflectionRunCost({
     provider: input.metadata.provider,
@@ -440,7 +442,7 @@ function runRecordInput(input: {
       : null,
     finishReason: input.metadata.finishReason,
     bundleSchemaVersion: input.evidenceBundle.schemaVersion,
-    resultSchemaVersion: 'session_reflection_result.v6',
+    resultSchemaVersion: 'session_reflection_result.v7',
     diagnostic: input.error instanceof LunaReflectionProviderError
       ? input.error.diagnostic
       : null,

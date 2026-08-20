@@ -55,7 +55,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | Study management / suppression | `study-management.test.ts` |
 | Priority / aliases | `user-priority.test.ts`, `priority-aliases.test.ts` |
 | Frontend session state only | `session-selectors.test.ts`, `session-bucket-state.test.ts` |
-| Reflection contracts / validation | `reflection-domain.test.ts`, `reflection-evidence-validation.test.ts` |
+| Reflection contracts / validation | `reflection-domain.test.ts`, `reflection-evidence-validation.test.ts`, `reflection-v7-schema.test.ts` |
 | Reflection evidence / finalization | `session-reflection-evidence.test.ts`, `session-finalization.test.ts`, `reflection-evidence-enrichment.test.ts` |
 | Reflection provider / generation | `reflection-provider.test.ts`, `reflection-generation.test.ts`, `reflection-generation-isolation.test.ts` |
 | Reflection persistence / application | `reflection-store.test.ts`, `reflection-application.test.ts`, `reflection-persistence-reload.test.ts`, `reflection-quality.test.ts`, `reflection-help-inbox.test.ts` |

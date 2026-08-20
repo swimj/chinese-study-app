@@ -125,6 +125,41 @@ export function ReflectionOperationEditor({
           </Field>
         </div>
       );
+    case 'add_production_cue_supplement':
+      return (
+        <div className="reflection-operation-fields">
+          <Field label="English usage frame">
+            <textarea
+              value={operation.englishFrame}
+              disabled={disabled}
+              onChange={(event) => dispatch({
+                type: 'set_supplement_english_frame',
+                englishFrame: event.target.value,
+              })}
+            />
+          </Field>
+          <Field label="Chinese example sentence">
+            <textarea
+              value={operation.exampleSentence}
+              disabled={disabled}
+              onChange={(event) => dispatch({
+                type: 'set_supplement_example_sentence',
+                exampleSentence: event.target.value,
+              })}
+            />
+          </Field>
+          <Field label="English translation">
+            <textarea
+              value={operation.exampleTranslation}
+              disabled={disabled}
+              onChange={(event) => dispatch({
+                type: 'set_supplement_example_translation',
+                exampleTranslation: event.target.value,
+              })}
+            />
+          </Field>
+        </div>
+      );
   }
 }
 

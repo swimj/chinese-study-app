@@ -94,7 +94,7 @@ mistake. Each item preserves at least:
 - sufficient action and accepted-attempt identity for backend validation; and
 - the versioned word/content context selected by the backend.
 
-For the production-cue V2 flow, the provider receives the target word and one
+For the production-cue flow, the provider receives the target word and one
 singular immutable snapshot of the cue actually served. The V0 task identity is
 deterministic from that word and is supplied at the trusted provider boundary,
 not copied through model evidence or output. The provider does not receive the
@@ -104,6 +104,13 @@ word set. This keeps model context and proposal authority causal to the attempt.
 Duplicate detection against other task content belongs at proposal review or
 application time, not in provider evidence.
 
+The V4 bundle additionally snapshots the nullable post-reveal production-cue
+supplement served with that exercise. A supplement retains its immutable id,
+English frame, complete target-language example, and English translation. It
+is distinct from the pre-reveal cue text because it did not influence recall or
+grading. Supplying it prevents reflection from proposing a second V1 supplement
+for an exercise that already has one.
+
 Attempt references prove that the captured mistake belongs to the finalized,
 durably accepted action batch. Workflow-only reinforcement attempts need not be
 copied into the model-facing bundle.
@@ -112,7 +119,7 @@ An undone transition contributes no evidence. Evidence is also removed when the
 corresponding action is canceled or excluded through an in-session management
 path whose durable meaning is that the exercise should not be reflected on.
 
-The V3 bundle additionally permits an untrusted learner-request marker on a
+The V3 bundle introduced an untrusted learner-request marker on a
 review-phase production action. The marker may be set before or after the
 response, survives Undo, and can be explicitly removed. It becomes eligible
 only after its full action batch is durably accepted; it is removed with a
@@ -124,15 +131,15 @@ marker.
 
 The marker and all learner-authored fields are hints, not strict content
 management directives. Backend reconstruction remains authoritative, and the
-prompt treats the marker only as a request for useful feedback. V3 pairs with
-the current V6 result contract; every item has a non-empty learner-facing
-explanation even when no proposal is warranted. V5 remains readable for
-immutable stored artifacts.
+prompt treats the marker only as a request for useful feedback. V4 retains that
+marker and pairs with the current V7 result contract; every item has a non-empty
+learner-facing explanation even when no proposal is warranted. V5 and V6
+results remain readable for immutable stored artifacts.
 
-All newly constructed provider bundles use V3, including sessions containing
-only ordinary failure evidence. V2 remains readable for immutable stored
-artifacts and exact-bundle retries, but new generation does not branch between
-V2 and V3 based on whether a marker happened to be present.
+All newly constructed provider bundles use V4, including sessions containing
+only ordinary failure evidence or no served supplement. V2 and V3 remain
+readable for immutable stored artifacts and exact-bundle retries, but new
+generation does not branch by marker or supplement presence.
 
 Learner-authored session notes, contrast-selection signals, learning/unstudied
 actions, and broader history require explicit evidence-kind and bundle-schema

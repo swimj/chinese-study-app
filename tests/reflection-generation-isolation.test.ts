@@ -106,12 +106,12 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v7',
+      promptVersion: 'reflection-v8',
       responseId: null,
       clientRequestId: run.clientRequestId,
       finishReason: null,
-      bundleSchemaVersion: 'session_reflection_bundle.v3',
-      resultSchemaVersion: 'session_reflection_result.v6',
+      bundleSchemaVersion: 'session_reflection_bundle.v4',
+      resultSchemaVersion: 'session_reflection_result.v7',
       diagnostic: {
         schemaVersion: 'reflection_generation_diagnostic.v1',
         phase: 'provider_transport',
@@ -137,7 +137,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       environment: { OPENAI_API_KEY: 'test-only-key' },
       systemPrompt: 'Test reflection prompt.',
       fetchImplementation: providerFetch(responseEnvelope({
-        schemaVersion: 'session_reflection_result.v6',
+        schemaVersion: 'session_reflection_result.v7',
         itemResults: [{
           itemId: 'unknown-item',
           diagnosisTags: ['ordinary_retrieval_noise'],

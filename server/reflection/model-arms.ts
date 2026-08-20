@@ -3,7 +3,7 @@ import type { ReflectionProviderConfig } from './luna-provider.ts';
 /**
  * The complete comparison-arm registry.  It intentionally contains disabled
  * dogfood arms: registration never sends learner data or requires credentials.
- * Each arm uses the fixed reflection prompt and strict V6 validator supplied
+ * Each arm uses the fixed reflection prompt and strict V7 validator supplied
  * by createReflectionProvider.
  */
 const OPENROUTER = {
@@ -11,7 +11,7 @@ const OPENROUTER = {
   reasoningEffort: 'high' as const,
   maxOutputTokens: 50_000,
   timeoutMs: 900_000,
-  promptVersion: 'reflection-v7',
+  promptVersion: 'reflection-v8',
   defaultBaseUrl: 'https://openrouter.ai/api/v1',
   apiKeyEnvironmentVariable: 'OPENROUTER_API_KEY',
   structuredOutputMode: 'json_schema' as const,
@@ -85,7 +85,7 @@ export const REFLECTION_MODEL_ARMS = [
       reasoningEffort: 'high',
       maxOutputTokens: 50_000,
       timeoutMs: 180_000,
-      promptVersion: 'reflection-v7',
+      promptVersion: 'reflection-v8',
       defaultBaseUrl: 'https://api.openai.com/v1',
       apiKeyEnvironmentVariable: 'OPENAI_API_KEY',
       structuredOutputMode: 'json_schema',
