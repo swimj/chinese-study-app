@@ -123,10 +123,6 @@ enriches each into a canonical V4 `production_mistake` bundle item without
 attempt rows, attempt summaries, or production-management metadata. V4 keeps
 the exact nullable post-reveal supplement separate from the pre-reveal cue;
 new generation returns the strict V7 result contract.
-For the initial flow, the backend includes at most the first 25 eligible
-enriched items in stable evidence order. The run record retains both eligible
-and included counts; omitted items are intentionally unreflected under this
-provisional bound.
 
 A successful response is exactly:
 

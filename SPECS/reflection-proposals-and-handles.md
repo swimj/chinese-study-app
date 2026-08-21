@@ -569,10 +569,6 @@ the backend-owned evidence item. The operation is valid only when the exact
 served cue is definition-based and its evidence snapshot records no existing
 supplement.
 
-An exact retry of a stored V2 or V3 evidence bundle may use the current V7
-result contract, but cannot propose this operation because those legacy items
-do not snapshot supplement state.
-
 Application creates one immutable supplement attributed to the authorized
 invocation. A durable-cue supplement serves only with that exact cue. A
 fallback supplement serves only when the ordinary meaning-derived fallback is
