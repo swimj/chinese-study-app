@@ -54,10 +54,15 @@ and a self-service recovery product are outside this beta contract.
 
 ## Durable Ownership Inventory
 
-The current schema has 30 steady-state application tables. Temporary migration
+The current schema has 36 steady-state application tables. Temporary migration
 tables and SQLite internals are excluded. Existing mixed tables must be split
 or given an equivalently explicit ownership/scope boundary before real hosted
 learner data is accepted.
+
+The machine-auditable inventory is
+[`server/db/ownership-manifest.ts`](../server/db/ownership-manifest.ts). Its
+schema-completeness test requires every new steady-state table to be classified
+before it can land.
 
 ### Learner-owned state, evidence, and history
 
@@ -66,7 +71,10 @@ learner data is accepted.
   `study_attempt_events`, `study_events`, `word_skill_relevance`,
   `contrast_candidate_intake`, and `study_content_feedback`.
 - `reflection_artifacts`, `reflection_generation_runs`,
-  `reflection_proposal_reviews`, and `reflection_operation_invocations`.
+  `reflection_proposal_reviews`, `reflection_operation_invocations`,
+  `reflection_quality_annotations`, and `reflection_help_inbox`.
+- `intake_triage_runs`, `intake_triage_assessments`, and
+  `intake_triage_assessment_dispositions`.
 - `production_cue_evidence_records`, `production_cue_evidence_projection`, and
   `production_recheck_demands`.
 - `production_cue_lifecycle_events` and `production_cue_activation_state` in
@@ -100,6 +108,14 @@ evidence retain the exact artifact version, fallback, answer space, and other
 served snapshot required to interpret the historical event.
 
 ### Service and import metadata
+
+`contrast_candidate_intake` is a vestigial local experiment and will be
+retired rather than tenant-adapted. The polymorphic `study_content_feedback`
+log will be replaced by narrow learner-owned definition-fallback and
+contrast-prompt exclusion state. Migration preserves active bad-prompt intent,
+its useful note, and explicit legacy origin without conflating it with general
+production suppression; resolved history remains in the migration validation
+report. SWI-49 owns later shared-artifact reporting and quarantine.
 
 `app_metadata` must no longer be an undefined global keyspace. Metadata has an
 explicit scope such as deployment/schema, shared-content snapshot, or

@@ -82,7 +82,7 @@ collapse internal whitespace
 preserve accents
 ```
 
-This mirrors `normalizeFrenchLookupText` in `scripts/build-french-corpus.ts`.
+This mirrors the normalization policy used by the retired French corpus build.
 
 ## DB Behavior
 

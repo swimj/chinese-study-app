@@ -35,7 +35,6 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `reflection-page-model.test.ts` | Item/proposal grouping, help-queue cards from Help inbox membership, deep draft edits for four operations, support and validation presentation | `reflection-page-model.ts` |
 | `reflection-operation-editor.test.ts` | Compact V2 cue-change list, hidden restated Hanzi field, and accepted-word chips | `ReflectionOperationEditor.tsx` |
 | `reflections-page-run-log.test.ts` | Empty, unavailable-cost, and priced run-log rendering states | `ReflectionsPage.tsx` server render |
-| `reflection-verification-fixture.test.ts` | Reflection-focused dev seed plus direct SQLite assertions for supported effects, unsupported authorization, and withdrawal | Disposable dev database seeded from `server/seeds/reflection-dev.json` |
 | `llm-provider-runner.test.ts` | Spike compatibility shims, provider adapters, fixtures, current V3 validation/viewer behavior | `spikes/llm-provider/` |
 | `user-priority.test.ts` | User priority patches | Dynamic `server/db.ts` |
 | `priority-page-model.test.ts` | Stash manage-list overlay recency sort | `src/features/priority/priority-page-model.ts` |
@@ -74,57 +73,7 @@ demonstration still requires a separate manual study-mode run with a real
 completed session and `OPENAI_API_KEY`; secrets must not enter fixtures, logs,
 or artifacts.
 
-## Reflection verification fixture
-
-`server/seeds/reflection-dev.json` is a small disposable Mandarin fixture for
-hands-on reflection verification. Its backend command deliberately disables the
-unrelated general Mandarin dev-contrast seed, leaving a six-item review queue:
-recognition-only surname `俞`, `难怪` / `怪不得`, `吃惊` / `震撼`, and `在意` /
-`介意`, plus two ordinary review items.
-
-Start it against a temporary directory:
-
-```bash
-verify_dir=$(mktemp -d /private/tmp/reflection-verify.XXXXXX)
-npm run reset:reflection-verification -- --data-dir="$verify_dir"
-npm run dev:reflection:backend -- --data-dir="$verify_dir" --port=5181
-VITE_API_BASE=http://127.0.0.1:5181 npm run dev:frontend -- --port=4181
-```
-
-Run the reset command again between walkthroughs to discard the prior session,
-artifact, review, and application state before restarting the backend. It
-requires an explicit non-default data directory and refuses the workspace or
-normal `data/` directory.
-
-For a deterministic review-page walkthrough, stop the backend, seed the
-fixture artifact, then restart the same backend command:
-
-```bash
-npm run seed:reflection-review-fixture -- --data-dir="$verify_dir"
-```
-
-That artifact contains independently reviewable suppression, contrast-creation,
-cue-repair, and alternate-acceptance proposals. It is local fixture content,
-not provider output. Use a fresh temporary directory without that command for a
-real-provider generation pass; set provider credentials privately in the backend
-environment and do not place them in a fixture or log. Live OpenAI and
-OpenRouter calls go through the local HTTP CONNECT proxy at `127.0.0.1:7897`
-(same as the LLM spike); keep that proxy running for a real-provider pass.
-
-After either manual path, inspect persisted state without starting the app or
-writing to SQLite:
-
-```bash
-npm run report:reflection-state -- --data-dir="$verify_dir"
-```
-
-The report intentionally omits evidence bodies, raw learner responses, and
-provider output. It shows artifact/provider metadata, proposal disposition and
-application state, effect references, suppressed definition-production words,
-and contrast clusters. Run it before and after a backend restart to confirm the
-same durable state is reconstructed.
-
-### Reflection lifecycle logs
+## Reflection lifecycle logs
 
 The backend writes one newline-delimited JSON event to its normal stdout for
 each reflection boundary. No prompts, learner responses, provider responses, or
