@@ -25,11 +25,31 @@ export type ReflectionRunPricingBasis = ReflectionRunPricingSnapshot | OpenRoute
  */
 export const INITIAL_LUNA_STANDARD_SHORT_CONTEXT_PRICING = LUNA_STANDARD_SHORT_CONTEXT_PRICING;
 
-export const INITIAL_GLM_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricingSnapshot = {
+/**
+ * Historical GLM-5.2 snapshot. Kept so persisted glm-5.2 runs still price
+ * against the original basis and stay distinguishable from GLM-5.3.
+ */
+export const INITIAL_GLM_5_2_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricingSnapshot = {
   id: 'zai-glm-5.2-standard-short-context-2026-08-11',
   pricingAsOf: '2026-08-11',
   provider: 'zai',
   providerModel: 'glm-5.2',
+  serviceTier: 'standard',
+  contextBand: 'short',
+  currency: 'USD',
+  inputPerMillionUsd: 1.4,
+  cachedInputPerMillionUsd: 0.26,
+  // Z.AI lists cached-input storage as limited-time free; the null-free
+  // convention records that no separately reported write rate was charged.
+  cacheWriteInputPerMillionUsd: 0,
+  outputPerMillionUsd: 4.4,
+};
+
+export const INITIAL_GLM_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricingSnapshot = {
+  id: 'zai-glm-5.3-standard-short-context-2026-08-21',
+  pricingAsOf: '2026-08-21',
+  provider: 'zai',
+  providerModel: 'glm-5.3',
   serviceTier: 'standard',
   contextBand: 'short',
   currency: 'USD',
@@ -100,6 +120,7 @@ export type ReflectionRunCostEstimate = {
 
 const INITIAL_REFLECTION_RUN_PRICING: ReadonlyArray<ReflectionRunPricingSnapshot> = [
   INITIAL_LUNA_STANDARD_SHORT_CONTEXT_PRICING,
+  INITIAL_GLM_5_2_STANDARD_SHORT_CONTEXT_PRICING,
   INITIAL_GLM_STANDARD_SHORT_CONTEXT_PRICING,
   INITIAL_QWEN_3_8_MAX_STANDARD_SHORT_CONTEXT_PRICING,
   INITIAL_OPENROUTER_GEMINI_3_6_FLASH_PRICING,

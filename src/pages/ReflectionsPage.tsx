@@ -63,7 +63,7 @@ const REFLECTION_RETRY_MODEL_OPTIONS: ReadonlyArray<Omit<ReflectionRetryMenuOpti
   model: ReflectionModelChoice;
 }> = [
   { id: 'openai:gpt-5.6-luna-high', label: 'Luna high', model: 'openai:gpt-5.6-luna-high' },
-  { id: 'zai:glm-5.2-high', label: 'GLM-5.2 high', model: 'zai:glm-5.2-high' },
+  { id: 'zai:glm-5.3-high', label: 'GLM-5.3 high', model: 'zai:glm-5.3-high' },
   { id: 'dashscope:qwen3.8-max', label: 'Qwen3.8-Max', model: 'dashscope:qwen3.8-max' },
   { id: 'openrouter:gemini-3.6-flash', label: 'Gemini 3.6 Flash', model: 'openrouter:gemini-3.6-flash' },
   { id: 'openrouter:deepseek-v4-pro', label: 'DeepSeek V4 Pro', model: 'openrouter:deepseek-v4-pro' },

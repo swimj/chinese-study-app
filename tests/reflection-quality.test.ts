@@ -115,7 +115,7 @@ describe('reflection quality item tags', { concurrency: false }, () => {
   });
 
   test('dismiss does not write quality tags', () => {
-    const artifact = materialize('quality-dismiss', suppressOperation('target'), 'glm-5.2-high').artifact;
+    const artifact = materialize('quality-dismiss', suppressOperation('target'), 'glm-5.3-high').artifact;
     const proposalId = artifact.proposals[0]!.review.proposalId;
 
     const review = dbModule.dismissReflectionProposal(
@@ -134,7 +134,7 @@ describe('reflection quality item tags', { concurrency: false }, () => {
 
   test('stats group terminal user reviews by model arm and exclude pending/system supersession', () => {
     const luna = materialize('stats-luna', suppressOperation('target'), 'gpt-5.6-luna-high').artifact;
-    const glm = materialize('stats-glm', suppressOperation('target'), 'glm-5.2-high').artifact;
+    const glm = materialize('stats-glm', suppressOperation('target'), 'glm-5.3-high').artifact;
     const pending = materialize('stats-pending', suppressOperation('target'), 'gpt-5.6-luna-high').artifact;
     const system = materialize('stats-system', suppressOperation('target'), 'gpt-5.6-luna-high').artifact;
 
@@ -165,7 +165,7 @@ describe('reflection quality item tags', { concurrency: false }, () => {
 
     const stats = dbModule.getReflectionQualityStats();
     const lunaArm = stats.arms.find((arm) => arm.modelArm === 'gpt-5.6-luna-high');
-    const glmArm = stats.arms.find((arm) => arm.modelArm === 'glm-5.2-high');
+    const glmArm = stats.arms.find((arm) => arm.modelArm === 'glm-5.3-high');
     assert(lunaArm);
     assert(glmArm);
     assert.equal(lunaArm.terminalReviewCount, 1);
@@ -173,6 +173,34 @@ describe('reflection quality item tags', { concurrency: false }, () => {
     assert.equal(lunaArm.dismissCount, 0);
     assert.equal(glmArm.terminalReviewCount, 1);
     assert.equal(glmArm.dismissCount, 1);
+  });
+
+  test('keeps GLM-5.2 and GLM-5.3 terminal reviews on separate quality arms', () => {
+    const glm52 = materialize('stats-glm-5.2', suppressOperation('target'), 'glm-5.2-high').artifact;
+    const glm53 = materialize('stats-glm-5.3', suppressOperation('target'), 'glm-5.3-high').artifact;
+
+    dbModule.dismissReflectionProposal(
+      glm52.proposals[0]!.review.proposalId,
+      null,
+      updatedAt,
+    );
+    dbModule.acceptReflectionProposal({
+      proposalId: glm53.proposals[0]!.review.proposalId,
+      operation: suppressOperation('target'),
+      createdAt: updatedAt,
+    });
+
+    const stats = dbModule.getReflectionQualityStats();
+    const glm52Arm = stats.arms.find((arm) => arm.modelArm === 'glm-5.2-high');
+    const glm53Arm = stats.arms.find((arm) => arm.modelArm === 'glm-5.3-high');
+    assert(glm52Arm);
+    assert(glm53Arm);
+    assert.equal(glm52Arm.terminalReviewCount, 1);
+    assert.equal(glm52Arm.dismissCount, 1);
+    assert.equal(glm52Arm.exactAcceptCount, 0);
+    assert.equal(glm53Arm.terminalReviewCount, 1);
+    assert.equal(glm53Arm.exactAcceptCount, 1);
+    assert.equal(glm53Arm.dismissCount, 0);
   });
 
   test('stats aggregate multiple terminal reviews and tags within one model arm including pending tags', () => {
@@ -272,7 +300,7 @@ describe('reflection quality item tags', { concurrency: false }, () => {
   });
 
   test('clear removes tags without changing disposition', () => {
-    const artifact = materialize('quality-clear', suppressOperation('target'), 'glm-5.2-high').artifact;
+    const artifact = materialize('quality-clear', suppressOperation('target'), 'glm-5.3-high').artifact;
     const proposalId = artifact.proposals[0]!.review.proposalId;
     dbModule.dismissReflectionProposal(proposalId, null, updatedAt);
     dbModule.upsertReflectionQualityAnnotation({
