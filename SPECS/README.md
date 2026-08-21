@@ -39,8 +39,6 @@ Also see [docs/architecture.md](../docs/architecture.md), [docs/api.md](../docs/
 | --- | --- |
 | [study-db-setup.md](./study-db-setup.md) | Study-mode DB setup and restore |
 
-Local setup: [docs/ops/SELINA_SETUP.md](../docs/ops/SELINA_SETUP.md).
-
 ## Active plans
 
 | Document | Role |

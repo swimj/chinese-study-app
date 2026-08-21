@@ -137,8 +137,18 @@ function getDataDir(): string {
   return path.resolve(dataDirArg?.slice('--data-dir='.length) || process.env.APP_DATA_DIR || 'data');
 }
 
+function getLearnerId(): string {
+  const learnerIdArg = process.argv.find((argument) => argument.startsWith('--learner-id='));
+  const learnerId = learnerIdArg?.slice('--learner-id='.length) || process.env.APP_LEARNER_ID || '';
+  if (learnerId.trim().length === 0) {
+    throw new Error('Pass --learner-id=<stable-id> or set APP_LEARNER_ID.');
+  }
+  return learnerId.trim();
+}
+
 export async function runWordReportCli(): Promise<void> {
   const dataDir = getDataDir();
+  const learnerId = getLearnerId();
   const dbPath = path.join(dataDir, 'app.db');
   if (!fs.existsSync(dbPath)) {
     throw new Error(`Database not found at ${dbPath}. Pass --data-dir=/absolute/path or set APP_DATA_DIR.`);
@@ -147,6 +157,14 @@ export async function runWordReportCli(): Promise<void> {
   // This connection is deliberately read-only. Do not replace it with the app DB barrel:
   // importing that module initializes the database and may seed or migrate it.
   const db = new DatabaseSync(dbPath, { readOnly: true });
+  const learner = db.prepare(`
+    SELECT 1 FROM learners WHERE learner_id = ? AND disabled_at IS NULL
+  `).get(learnerId);
+  if (!learner) {
+    db.close();
+    throw new Error(`Enabled learner "${learnerId}" was not found in ${dbPath}.`);
+  }
+  db.function('current_learner_id', () => learnerId);
   const cli = readline.createInterface({ input, output });
 
   try {
