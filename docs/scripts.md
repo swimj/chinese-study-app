@@ -13,7 +13,6 @@ Entry points under `scripts/`. Run with `node --import tsx scripts/<name>.ts` un
 | `scripts/check-study-management-state.ts` | Report study-management state |
 | `scripts/report-eventual-contrast-selection.ts` | Report eventual contrast-selection coverage |
 | `scripts/report-canonical-overlap.ts` | Canonical wordlist overlap report |
-| `scripts/compute-priority-bump-unit.ts` | Derive priority bump unit constant |
 | `scripts/build-canonical-wordlist.ts` | Build canonical wordlist artifact |
 | `npm run build:study-import` | Build study import artifact |
 

@@ -30,8 +30,6 @@ export type PriorityWord = {
   bumpCount: number;
   forceTop: boolean;
   requiredForNextSession: boolean;
-  effectivePriority: number;
-  effectiveRank: number;
   overlayUpdatedAt: string | null;
 };
 
@@ -40,7 +38,6 @@ export type IntakeTriagePriorityWord = PriorityWord & {
 };
 
 export type IntakeTriagePriorityWordsResponse = {
-  unstudiedTotalCount: number;
   words: IntakeTriagePriorityWord[];
   analysisCandidateCount: number;
 };

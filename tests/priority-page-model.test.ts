@@ -39,8 +39,6 @@ function stashWord(id: string, forceTop: boolean, overlayUpdatedAt: string): Pri
     bumpCount: forceTop ? 0 : 3,
     forceTop,
     requiredForNextSession: false,
-    effectivePriority: 1,
-    effectiveRank: 1,
     overlayUpdatedAt,
   };
 }

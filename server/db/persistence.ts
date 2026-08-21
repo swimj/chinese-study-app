@@ -57,9 +57,6 @@ import {
 } from './production-cues.ts';
 import {
   DEFAULT_DAILY_NEW_WORD_LIMIT,
-  PRIORITY_BUMP_UNIT,
-  UNSTUDIED_COUNT_BASELINE,
-  PRIORITY_MAX_BASELINE,
   INITIAL_REVIEW_EASE_FACTOR,
   INITIAL_CONTEXTUAL_SELECTION_INTERVAL_HOURS,
   PRIORITY_TIER_TOP,
@@ -94,10 +91,6 @@ export function applyProductionContrastExerciseSeed() {
   }
 
   backfillContrastClusterMemberEligibility();
-}
-
-export function getUnstudiedCountBaseline(): number {
-  return UNSTUDIED_COUNT_BASELINE;
 }
 
 export function getWords(): Word[] {
@@ -239,55 +232,6 @@ export function updateWordMeaningVisibility(wordId: string, meaningId: string, s
   return getWordMeanings(wordId);
 }
 
-export function getUnstudiedPriorityWords(): PriorityWordsPayload {
-  const rows = getDb()
-    .prepare(`
-      SELECT
-        words.id,
-        words.hanzi,
-        words.traditional,
-        words.pinyin,
-        words.meaning,
-        words.meanings_json,
-        words.personal_notes,
-        words.examples_json,
-        words.status,
-        words.priority,
-        words.created_at,
-        words.learning_streak,
-        words.last_learning_success_on,
-        words.last_learning_covered_on,
-        COALESCE(user_word_priority.bump_count, 0) AS bump_count,
-        COALESCE(user_word_priority.force_top, 0) AS force_top,
-        COALESCE(user_word_priority.priority_tier, 0) AS priority_tier,
-        COALESCE(user_word_priority.required_for_next_session, 0) AS required_for_next_session,
-        user_word_priority.updated_at AS overlay_updated_at,
-        words.priority
-          + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} AS effective_priority,
-        ROW_NUMBER() OVER (
-          ORDER BY
-            COALESCE(user_word_priority.priority_tier, 0) DESC,
-            words.priority + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} DESC,
-            words.priority DESC,
-            words.created_at ASC
-        ) AS effective_rank
-      FROM words
-      LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
-      WHERE words.status = 'unstudied'
-      ORDER BY
-        priority_tier DESC,
-        effective_priority DESC,
-        priority DESC,
-        created_at ASC
-    `)
-    .all() as PriorityWordRow[];
-
-  return {
-    unstudiedTotalCount: UNSTUDIED_COUNT_BASELINE,
-    words: rows.map(mapPriorityWordRow),
-  };
-}
-
 export function getPrioritizedUnstudiedWords(): PriorityWordsPayload {
   const rows = getDb()
     .prepare(`
@@ -310,8 +254,7 @@ export function getPrioritizedUnstudiedWords(): PriorityWordsPayload {
         user_word_priority.force_top,
         user_word_priority.priority_tier,
         user_word_priority.required_for_next_session,
-        user_word_priority.updated_at AS overlay_updated_at,
-        words.priority + user_word_priority.bump_count * ${PRIORITY_BUMP_UNIT} AS effective_priority
+        user_word_priority.updated_at AS overlay_updated_at
       FROM user_word_priority
       JOIN words ON words.id = user_word_priority.word_id
       WHERE words.status = 'unstudied'
@@ -326,18 +269,10 @@ export function getPrioritizedUnstudiedWords(): PriorityWordsPayload {
         user_word_priority.updated_at DESC,
         words.id ASC
     `)
-    .all() as Array<WordRow & {
-      bump_count: number;
-      force_top: number;
-      priority_tier: number;
-      required_for_next_session: number;
-      overlay_updated_at: string;
-      effective_priority: number;
-    }>;
+    .all() as PriorityWordRow[];
 
   return {
-    unstudiedTotalCount: UNSTUDIED_COUNT_BASELINE,
-    words: rows.map(mapPrioritizedWordRowWithApproximateRank),
+    words: rows.map(mapPriorityWordRow),
   };
 }
 
@@ -345,56 +280,41 @@ export function getTopUnstudiedPriorityWords(limit: number): PriorityWordsPayloa
   const boundedLimit = clampInteger(limit, 1, 100);
   const rows = getDb()
     .prepare(`
-      SELECT *
-      FROM (
-        SELECT
-          words.id,
-          words.hanzi,
-          words.traditional,
-          words.pinyin,
-          words.meaning,
-          words.meanings_json,
-          words.personal_notes,
-          words.examples_json,
-          words.status,
-          words.priority,
-          words.created_at,
-          words.learning_streak,
-          words.last_learning_success_on,
-          words.last_learning_covered_on,
-          COALESCE(user_word_priority.bump_count, 0) AS bump_count,
-          COALESCE(user_word_priority.force_top, 0) AS force_top,
-          COALESCE(user_word_priority.priority_tier, 0) AS priority_tier,
-          COALESCE(user_word_priority.required_for_next_session, 0) AS required_for_next_session,
-          user_word_priority.updated_at AS overlay_updated_at,
-          words.priority
-            + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} AS effective_priority,
-          ROW_NUMBER() OVER (
-            ORDER BY
-              COALESCE(user_word_priority.priority_tier, 0) DESC,
-              words.priority + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} DESC,
-              words.priority DESC,
-              words.created_at ASC
-          ) AS effective_rank
-        FROM words
-        LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
-        WHERE words.status = 'unstudied'
-          AND COALESCE(user_word_priority.bump_count, 0) = 0
-          AND COALESCE(user_word_priority.force_top, 0) = 0
-          AND COALESCE(user_word_priority.priority_tier, 0) = ${PRIORITY_TIER_REGULAR}
-          AND COALESCE(user_word_priority.required_for_next_session, 0) = 0
-      )
+      SELECT
+        words.id,
+        words.hanzi,
+        words.traditional,
+        words.pinyin,
+        words.meaning,
+        words.meanings_json,
+        words.personal_notes,
+        words.examples_json,
+        words.status,
+        words.priority,
+        words.created_at,
+        words.learning_streak,
+        words.last_learning_success_on,
+        words.last_learning_covered_on,
+        COALESCE(user_word_priority.bump_count, 0) AS bump_count,
+        COALESCE(user_word_priority.force_top, 0) AS force_top,
+        COALESCE(user_word_priority.priority_tier, 0) AS priority_tier,
+        COALESCE(user_word_priority.required_for_next_session, 0) AS required_for_next_session,
+        user_word_priority.updated_at AS overlay_updated_at
+      FROM words
+      LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
+      WHERE words.status = 'unstudied'
+        AND COALESCE(user_word_priority.bump_count, 0) = 0
+        AND COALESCE(user_word_priority.force_top, 0) = 0
+        AND COALESCE(user_word_priority.priority_tier, 0) = ${PRIORITY_TIER_REGULAR}
+        AND COALESCE(user_word_priority.required_for_next_session, 0) = 0
       ORDER BY
-        priority_tier DESC,
-        effective_priority DESC,
-        priority DESC,
-        created_at ASC
+        words.priority DESC,
+        words.created_at ASC
       LIMIT ?
     `)
     .all(boundedLimit) as PriorityWordRow[];
 
   return {
-    unstudiedTotalCount: UNSTUDIED_COUNT_BASELINE,
     words: rows.map(mapPriorityWordRow),
   };
 }
@@ -480,9 +400,14 @@ export function updateWordUserPriority(wordId: string, patch: UserWordPriorityPa
   const currentBumpCount = existingPriorityRow?.bump_count ?? 0;
   const currentPriorityTier = existingPriorityRow?.priority_tier ?? PRIORITY_TIER_REGULAR;
   const currentRequiredForNextSession = existingPriorityRow?.required_for_next_session ?? 0;
-  const currentForceTop = currentPriorityTier === PRIORITY_TIER_TOP;
   const reset = patch.reset === true;
-  const nextBumpCount = reset ? 0 : clampInteger(currentBumpCount + (patch.bumpDelta ?? 0), 0, 10);
+  const nextBumpCount = reset
+    ? 0
+    : patch.bumpDelta === undefined
+      ? currentBumpCount
+      : patch.bumpDelta > 0
+        ? Math.max(currentBumpCount, 1)
+        : 0;
   const nextPriorityTier = reset
     ? PRIORITY_TIER_REGULAR
     : patch.forceTop === undefined
@@ -4668,68 +4593,7 @@ function mapPriorityWordRow(row: PriorityWordRow): PriorityWord {
     bumpCount: row.bump_count,
     forceTop: row.priority_tier === PRIORITY_TIER_TOP,
     requiredForNextSession: row.required_for_next_session !== 0,
-    effectivePriority: row.effective_priority,
-    effectiveRank: row.effective_rank,
     overlayUpdatedAt: row.overlay_updated_at,
-  };
-}
-
-function mapPrioritizedWordRowWithApproximateRank(
-  row: WordRow & {
-    bump_count: number;
-    force_top: number;
-    priority_tier: number;
-    required_for_next_session: number;
-    overlay_updated_at: string | null;
-    effective_priority: number;
-  },
-): PriorityWord {
-  const bumpCount = row.bump_count;
-  const forceTop = row.priority_tier === PRIORITY_TIER_TOP;
-  const requiredForNextSession = row.required_for_next_session !== 0;
-  const effectivePriority = row.effective_priority;
-  const effectiveRank = estimateApproximatePriorityRank({
-    priority: row.priority,
-    bumpCount,
-    priorityTier: row.priority_tier,
-  });
-
-  return buildPriorityWordFromParts({
-    row,
-    bumpCount,
-    forceTop,
-    requiredForNextSession,
-    effectivePriority,
-    effectiveRank,
-    overlayUpdatedAt: row.overlay_updated_at,
-  });
-}
-
-function buildPriorityWordFromParts({
-  row,
-  bumpCount,
-  forceTop,
-  requiredForNextSession,
-  effectivePriority,
-  effectiveRank,
-  overlayUpdatedAt,
-}: {
-  row: WordRow;
-  bumpCount: number;
-  forceTop: boolean;
-  requiredForNextSession: boolean;
-  effectivePriority: number;
-  effectiveRank: number;
-  overlayUpdatedAt: string | null;
-}): PriorityWord {
-  return {
-    word: mapWordRow(row),
-    bumpCount,
-    forceTop,
-    requiredForNextSession,
-    effectivePriority,
-    effectiveRank,
-    overlayUpdatedAt,
   };
 }
 
@@ -6102,7 +5966,6 @@ function normalizeLookupText(value: string): string {
     .replace(/\s+/g, ' ');
 }
 
-// just used on the update path, intentionally fuzzy
 function getUnstudiedPriorityWordById(wordId: string): PriorityWord {
   const row = getDb()
     .prepare(`
@@ -6125,73 +5988,19 @@ function getUnstudiedPriorityWordById(wordId: string): PriorityWord {
         COALESCE(user_word_priority.force_top, 0) AS force_top,
         COALESCE(user_word_priority.priority_tier, 0) AS priority_tier,
         COALESCE(user_word_priority.required_for_next_session, 0) AS required_for_next_session,
-        user_word_priority.updated_at AS overlay_updated_at,
-        words.priority
-          + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} AS effective_priority
+        user_word_priority.updated_at AS overlay_updated_at
       FROM words
       LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
       WHERE words.id = ?
         AND words.status = 'unstudied'
     `)
-    .get(wordId) as
-    | (WordRow & {
-      bump_count: number;
-      force_top: number;
-      priority_tier: number;
-      required_for_next_session: number;
-      overlay_updated_at: string | null;
-      effective_priority: number;
-    })
-    | undefined;
+    .get(wordId) as PriorityWordRow | undefined;
 
   if (!row) {
     throw new Error('Expected unstudied word');
   }
 
-  const bumpCount = row.bump_count;
-  const forceTop = row.priority_tier === PRIORITY_TIER_TOP;
-  const requiredForNextSession = row.required_for_next_session !== 0;
-  const effectivePriority = row.effective_priority;
-  const effectiveRank = estimateApproximatePriorityRank({
-    priority: row.priority,
-    bumpCount,
-    priorityTier: row.priority_tier,
-  });
-
-  return buildPriorityWordFromParts({
-    row,
-    bumpCount,
-    forceTop,
-    requiredForNextSession,
-    effectivePriority,
-    effectiveRank,
-    overlayUpdatedAt: row.overlay_updated_at,
-  });
-}
-
-function estimateApproximatePriorityRank({
-  priority,
-  bumpCount,
-  priorityTier,
-}: {
-  priority: number;
-  bumpCount: number;
-  priorityTier: number;
-}): number {
-  if (priorityTier === PRIORITY_TIER_TOP) {
-    return 1;
-  }
-
-  if (priorityTier === PRIORITY_TIER_SUNK) {
-    return UNSTUDIED_COUNT_BASELINE;
-  }
-
-  const normalizedPriority = clampInteger(Math.round(priority), 0, PRIORITY_MAX_BASELINE);
-  const priorityRatio = PRIORITY_MAX_BASELINE === 0 ? 0 : normalizedPriority / PRIORITY_MAX_BASELINE;
-  const baseRank = Math.round((1 - priorityRatio) * (UNSTUDIED_COUNT_BASELINE - 1)) + 1;
-  const bumpRankShift = bumpCount * Math.ceil(UNSTUDIED_COUNT_BASELINE * 0.1);
-
-  return clampInteger(baseRank - bumpRankShift, 1, UNSTUDIED_COUNT_BASELINE);
+  return mapPriorityWordRow(row);
 }
 
 function addDaysToDateKey(dateKey: string, days: number): string {

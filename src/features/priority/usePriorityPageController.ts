@@ -28,7 +28,6 @@ export type PriorityPageController = {
   advisorGenerating: boolean;
   advisorRunReceipt: IntakeTriageRunReceipt | null;
   advisorUpdatingAssessmentId: string | null;
-  unstudiedTotalCount: number;
   searchHanzi: string;
   requireAddedMatches: boolean;
   searchNotice: string | null;
@@ -68,7 +67,6 @@ export function usePriorityPageController({
   const [advisorGenerating, setAdvisorGenerating] = useState(false);
   const [advisorRunReceipt, setAdvisorRunReceipt] = useState<IntakeTriageRunReceipt | null>(null);
   const [advisorUpdatingAssessmentId, setAdvisorUpdatingAssessmentId] = useState<string | null>(null);
-  const [unstudiedTotalCount, setUnstudiedTotalCount] = useState(0);
   const [searchHanzi, setSearchHanzi] = useState('');
   const [requireAddedMatches, setRequireAddedMatches] = useState(false);
   const [searchSubmitting, setSearchSubmitting] = useState(false);
@@ -94,7 +92,6 @@ export function usePriorityPageController({
       setRows(sortStashManageWords(priorityWordsResponse.words));
       setTriageRows(sortPriorityWords(triageWordsResponse.words));
       setAnalysisCandidateCount(triageWordsResponse.analysisCandidateCount);
-      setUnstudiedTotalCount(priorityWordsResponse.unstudiedTotalCount);
       setSearchNotice(null);
       setJumpRequestWordId(null);
       setCurrentPage('priority');
@@ -165,7 +162,6 @@ export function usePriorityPageController({
       });
       const prioritizedAddedWord = sortStashManageWords(response.words)[0];
       setJumpRequestWordId(prioritizedAddedWord?.word.id ?? null);
-      setUnstudiedTotalCount(response.unstudiedTotalCount);
       setSearchNotice(`Added ${response.addedCount} matching word${response.addedCount === 1 ? '' : 's'} for "${normalizedHanzi}".`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
@@ -304,7 +300,6 @@ export function usePriorityPageController({
     advisorGenerating,
     advisorRunReceipt,
     advisorUpdatingAssessmentId,
-    unstudiedTotalCount,
     searchHanzi,
     requireAddedMatches,
     searchNotice,

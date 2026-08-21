@@ -9,7 +9,6 @@ type PrioritySubtab = 'manage' | 'triage';
 export function PriorityPage({
   rows,
   triageRows,
-  unstudiedTotalCount,
   searchHanzi,
   requireAddedMatches,
   searchNotice,
@@ -38,7 +37,6 @@ export function PriorityPage({
 }: {
   rows: PriorityWord[];
   triageRows: IntakeTriagePriorityWord[];
-  unstudiedTotalCount: number;
   searchHanzi: string;
   requireAddedMatches: boolean;
   searchNotice: string | null;
@@ -304,7 +302,6 @@ export function PriorityPage({
                 tableTopAnchorRef={tableTopAnchorRef}
                 expandedDefinitionByWordId={expandedDefinitionByWordId}
                 setExpandedDefinitionByWordId={setExpandedDefinitionByWordId}
-                unstudiedTotalCount={unstudiedTotalCount}
                 getRowClassName={(word) =>
                   selectedManageWordIds.includes(word.word.id) ? 'priority-manage-row selected' : 'priority-manage-row'
                 }
@@ -358,7 +355,6 @@ export function PriorityPage({
               rows={triageRows}
               expandedDefinitionByWordId={expandedDefinitionByWordId}
               setExpandedDefinitionByWordId={setExpandedDefinitionByWordId}
-              unstudiedTotalCount={unstudiedTotalCount}
               actionHeader={bulkSelectActive ? 'Select' : 'Priority'}
               advisorHeader="Advisor"
               extraHeader={bulkSelectActive ? <th aria-label="Selected" /> : null}
@@ -413,7 +409,6 @@ export function PriorityPage({
                   />
                 ) : null;
               }}
-              showBumps={false}
             />
           )}
         </div>
@@ -489,14 +484,12 @@ function PriorityWordTable({
   tableTopAnchorRef,
   expandedDefinitionByWordId,
   setExpandedDefinitionByWordId,
-  unstudiedTotalCount,
   actionHeader,
   advisorHeader,
   extraHeader = null,
   renderExtraCell,
   renderActionCell,
   renderAdvisorCell,
-  showBumps = true,
   getRowClassName,
   getRowHandlers,
 }: {
@@ -505,14 +498,12 @@ function PriorityWordTable({
   tableTopAnchorRef?: React.RefObject<HTMLDivElement>;
   expandedDefinitionByWordId: Record<string, boolean>;
   setExpandedDefinitionByWordId: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
-  unstudiedTotalCount: number;
   actionHeader?: string;
   advisorHeader?: string;
   extraHeader?: React.ReactNode;
   renderExtraCell?: (word: PriorityWord) => React.ReactNode;
   renderActionCell?: (word: PriorityWord) => React.ReactNode;
   renderAdvisorCell?: (word: PriorityWord) => React.ReactNode;
-  showBumps?: boolean;
   getRowClassName?: (word: PriorityWord) => string;
   getRowHandlers?: (word: PriorityWord) => React.HTMLAttributes<HTMLTableRowElement>;
 }) {
@@ -524,8 +515,6 @@ function PriorityWordTable({
             {extraHeader}
             <th>Word</th>
             <th>Definition</th>
-            <th>Priority</th>
-            {showBumps ? <th>Bumps</th> : null}
             {renderAdvisorCell ? <th>{advisorHeader}</th> : null}
             {renderActionCell ? <th>{actionHeader}</th> : null}
           </tr>
@@ -536,9 +525,6 @@ function PriorityWordTable({
             const firstMeaning = word.word.meanings[0] ?? word.word.meaning;
             const hasAdditionalMeanings = word.word.meanings.length > 1;
             const definitionsToShow = isDefinitionExpanded ? word.word.meanings : [firstMeaning];
-            const priorityPercentile = word.forceTop
-              ? null
-              : getPriorityPercentileText(word.effectiveRank, unstudiedTotalCount);
             const rowHandlers = getRowHandlers?.(word) ?? {};
 
             return (
@@ -581,8 +567,6 @@ function PriorityWordTable({
                     ) : null}
                   </div>
                 </td>
-                <td>{priorityPercentile ?? <span className="notes">N/A</span>}</td>
-                {showBumps ? <td>{word.bumpCount}</td> : null}
                 {renderAdvisorCell ? <td>{renderAdvisorCell(word)}</td> : null}
                 {renderActionCell ? <td>{renderActionCell(word)}</td> : null}
               </tr>
@@ -653,13 +637,4 @@ function formatEstimatedCost(estimatedCostUsd: number | null): string {
   return estimatedCostUsd === null
     ? 'cost unavailable'
     : `estimated $${estimatedCostUsd.toFixed(6)}`;
-}
-
-function getPriorityPercentileText(effectiveRank: number | null, unstudiedTotalCount: number | null) {
-  if (!effectiveRank || !unstudiedTotalCount || unstudiedTotalCount <= 0) {
-    return 'N/A';
-  }
-
-  const higherThanPercent = Math.max(0, Math.round(((unstudiedTotalCount - effectiveRank) / unstudiedTotalCount) * 100));
-  return `Higher than ${higherThanPercent}%`;
 }

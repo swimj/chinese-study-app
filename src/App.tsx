@@ -123,7 +123,6 @@ function App() {
         <PriorityPage
           rows={priorityPage.rows}
           triageRows={priorityPage.triageRows}
-          unstudiedTotalCount={priorityPage.unstudiedTotalCount}
           searchHanzi={priorityPage.searchHanzi}
           requireAddedMatches={priorityPage.requireAddedMatches}
           searchNotice={priorityPage.searchNotice}

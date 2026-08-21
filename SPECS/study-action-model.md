@@ -569,7 +569,8 @@ Two provenances of `unstudied` words:
 - **Stash:** any unstudied word that has a `user_word_priority` overlay
   (add-by-hanzi bump, move-to-top, require, or any other overlay write).
   Overlay membership is stash membership. Stash is **not** ranked by corpus
-  frequency. `bump_count` remains stored but does **not** affect admission
+  frequency. `bump_count` remains stored on the overlay update path and is
+  treated as zero/nonzero stash membership. It does **not** affect admission
   rank (SWI-12 is not implemented).
 
 Sunk/dismissed words (`priority_tier` bottom / `PRIORITY_TIER_SUNK`) are in

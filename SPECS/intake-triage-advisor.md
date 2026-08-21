@@ -104,8 +104,9 @@ It is advice, not hidden application instructions.
 
 ## 6. Triage Presentation
 
-The triage table uses the columns Word, Definition, Priority, Advisor, and
-Action. It does not show a Bumps column because bumped words are absent.
+The triage table uses the columns Word, Definition, Advisor, and Action. It
+does not show bump counts or corpus-percentile rank; bumped words are already
+absent from this queue.
 
 - `defer_active_study` renders a rose **Move down** annotation and rationale.
 - `recognition_only` renders an amber **Recognition only?**
