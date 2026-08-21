@@ -18,6 +18,8 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`production-cues.ts`](../server/db/production-cues.ts) | Default production tasks, immutable cue/lifecycle/evidence state, one immutable post-reveal supplement per definition cue or fallback, production recheck demands, and cue/supplement application adapters |
 | [`schema.ts`](../server/db/schema.ts) | Re-exports `applyProductionContrastExerciseSeed` and `initializeDatabase` for init ordering |
 | [`ownership-manifest.ts`](../server/db/ownership-manifest.ts) | Auditable ownership, enforcement, history, migration, and lifecycle classification for every durable application table |
+| [`identity.ts`](../server/db/identity.ts) | Stable learner records, auth-provider mappings, learner settings, and explicit Clerk-free bootstrap |
+| [`learner-context.ts`](../server/db/learner-context.ts) | Required learner context for private persistence operations |
 | [`index.ts`](../server/db/index.ts) | Internal re-export barrel |
 
 Domain-oriented re-export shims (navigation only; implementation stays in `persistence.ts`):

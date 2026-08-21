@@ -71,6 +71,12 @@ import {
   selectAdmittedUnstudiedWordIds,
   type UnstudiedStashCandidate,
 } from './unstudied-admission.ts';
+import {
+  assertLearnerExists,
+  bootstrapLearner,
+  ensureIdentitySchema,
+  hasIdentitySchema,
+} from './identity.ts';
 
 export function applyProductionContrastExerciseSeed() {
   if (!config.seedSampleData || !config.includeDevContrastSeed || config.studyProfile !== 'mandarin') {
@@ -2361,14 +2367,21 @@ export function dismissWordFromStudy(wordId: string): void {
 export function initializeDatabase() {
   if (!dbExistedOnStartup) {
     createSchema();
+    bootstrapLearner({ learnerId: config.learnerId });
     seedDatabase();
     backfillContrastClusterMemberEligibility();
     return;
   }
 
   try {
+    if (!hasIdentitySchema()) {
+      throw new Error(
+        `Database at ${dbPath} predates learner ownership. Run the explicit SWI-47 legacy upgrade before starting it.`,
+      );
+    }
     applyLightweightSchemaMigrations();
     validateSchema();
+    assertLearnerExists(config.learnerId);
     ensureIndexes();
     seedEmptyDevDatabase();
     backfillContrastClusterMemberEligibility();
@@ -3068,6 +3081,7 @@ function seedEmptyDevDatabase() {
 }
 
 function createSchema() {
+  ensureIdentitySchema();
   getDb().exec(`
     CREATE TABLE words (
       id TEXT PRIMARY KEY,

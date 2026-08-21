@@ -123,6 +123,7 @@ Typed production answers use the French profile's forgiving default normalizatio
 
 - Requires an explicit data directory
 - For French alias lookup, pass `--study-profile=french` or set `APP_STUDY_PROFILE=french`
+- Study mode requires a stable local learner via `--learner-id=<id>` or `APP_LEARNER_ID=<id>`
 - Uses `app.db` inside that directory
 - Does not seed sample data on first run
 - Intended for real study history that you care about preserving

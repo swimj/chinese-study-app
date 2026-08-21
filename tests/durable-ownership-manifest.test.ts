@@ -10,7 +10,7 @@ import { durableOwnershipManifest } from '../server/db/ownership-manifest.ts';
 test('classifies every steady-state application table exactly once', async () => {
   const manifestNames = durableOwnershipManifest.map((entry) => entry.table);
   assert.equal(new Set(manifestNames).size, manifestNames.length, 'ownership manifest contains duplicate tables');
-  assert.equal(durableOwnershipManifest.length, 36);
+  assert.equal(durableOwnershipManifest.length, 41);
   assert.ok(durableOwnershipManifest.every((entry) => entry.ambiguity === null));
 
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-ownership-manifest-'));
