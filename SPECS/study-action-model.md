@@ -2,7 +2,9 @@
 
 Status: accepted canonical product contract. The scheduling, attempt-event,
 contrast-selection, and bounded V0 production-task/cue sections describe
-implemented behavior.
+implemented behavior. The dual-pool unstudied admission policy below is an
+experimental implementation contract for current code and tests; it is
+throwaway-tolerant relative to a future session-composition rewrite.
 
 This document describes the study-action model, including current study
 actions, word-skill scheduler state, attempt-event projection, contrast
@@ -90,8 +92,9 @@ This new admission model is primarily about words in `review`.
 
 The existing lifecycle states still have distinct value:
 
-- `unstudied` selection can continue to rely on priority and new-word intake
-  policy.
+- `unstudied` selection follows the experimental dual-pool admission policy
+  in [Experimental Dual-Pool Unstudied Admission](#experimental-dual-pool-unstudied-admission)
+  plus the remaining daily new-word cap.
 - `learning` words can continue to be session obligations until covered.
 - `review` words are where the system needs a holistic admission policy over
   multiple skill dimensions.
@@ -536,6 +539,99 @@ can move toward that incrementally.
 
 The deferred performance adjustment can move the budget up when the user has
 been succeeding easily and down when the user is struggling.
+
+## Experimental Dual-Pool Unstudied Admission
+
+Status: **experimental** current-implementation contract. This policy is
+authoritative for today's unstudied admission ranking and selection. It does
+not need to survive a future session-composition rewrite. In-session covering,
+undo, and bucket weights remain unaware of diet vs stash.
+
+### Diet vs stash
+
+Two provenances of `unstudied` words:
+
+- **Diet:** unmanaged unstudied words with no `user_word_priority` overlay.
+  Ranked by existing corpus/hardcoded `words.priority` (then `created_at`,
+  then `id`). Intake triage and the advisor remain diet-only.
+- **Stash:** any unstudied word that has a `user_word_priority` overlay
+  (add-by-hanzi bump, move-to-top, require, or any other overlay write).
+  Overlay membership is stash membership. Stash is **not** ranked by corpus
+  frequency. `bump_count` remains stored but does **not** affect admission
+  rank (SWI-12 is not implemented).
+
+Sunk/dismissed words (`priority_tier` bottom / `PRIORITY_TIER_SUNK`) are in
+**neither** pool and are excluded from scheduling. They keep an overlay row,
+but that overlay does not make them stash.
+
+Session composition remains a snapshot. Want-soon / require is not a
+mid-session add feature. Covering criteria and the 20% unstudied bucket
+weight are unchanged.
+
+### Remaining-quota split
+
+At composition time, compute the existing remaining daily new-word cap
+(`configured limit − today's completed new-word count`). Split **that
+remaining quota** 50/50, then let existing session logic consume the
+admitted unstudied set as its candidate pool.
+
+Rounding:
+
+```text
+stash_slots = Math.floor(remaining / 2)
+diet_slots  = remaining - stash_slots
+```
+
+The odd leftover slot goes to diet. If `remaining` is `0`, this split admits
+nobody; require-bypass may still apply.
+
+### Filling the halves
+
+1. **Tops** (move-to-top / force-top) fill the stash half first, newest-first
+   by `user_word_priority.updated_at` (UTC ISO). There is no overlay
+   `created_at`; any overlay mutation refreshes `updated_at`, so "newest"
+   means last overlay write. Tie-break by word `id` ascending.
+2. Tops **cannot exceed the stash half**. Extra tops wait until a later
+   session. This is a behavior change from "all tops beat everything."
+3. Remaining stash slots are a **random sample** of non-top stash. The draw
+   happens once per composition. The selected unstudied set is frozen in the
+   existing frontend session payload snapshot, so reload/undo/rebuild of the
+   same session does not re-roll. Backend composition has no frontend session
+   id yet, so the RNG is seeded from `unstudied-admission:${studyDayKey}:${remainingQuota}`
+   (stable for identical remaining quota on that UTC day). Tests may depend
+   on that seed.
+4. If stash cannot fill `stash_slots`, leftover stash slots are filled from
+   diet in frequency order.
+5. Diet takes `diet_slots` plus any leftover stash slots, frequency-ranked.
+
+The composed unstudied admitted set is:
+
+```text
+selected_stash ∪ selected_diet ∪ required_bypass
+```
+
+### Require-next-session bypass
+
+Require-next-session is the one interrupt above the mix. Existing require
+behavior is kept as a **post-split cap-bypass union**: required unstudied
+words that are not sunk still enter even when the cap/split is full,
+including when `remaining` is `0`.
+
+Required words are overlay/stash. If the split already selected a required
+word, it is **not** double-counted. Extra tops that are also required still
+enter via this bypass.
+
+### Non-goals
+
+This experiment does not add:
+
+- keep / skip / park UI
+- ETA
+- a stash advisor or agent-on-stash
+- a user-facing mix-ratio control
+- a diet ranker rewrite
+- grandfathering of currently-bumped high-frequency words (they become
+  lottery tickets in the stash half)
 
 Longer term, the system may target a desired failure rate as a measure of
 productive difficulty. A user may eventually be able to choose that stress

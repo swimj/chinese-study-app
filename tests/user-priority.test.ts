@@ -119,7 +119,7 @@ describe('user priority layer', { concurrency: false }, () => {
     assert(added.every((word) => word.bumpCount >= 1));
 
     const prioritizedIds = dbModule.getPrioritizedUnstudiedWords().words.map((entry) => entry.word.id);
-    assert.deepEqual(prioritizedIds, ['dup-a', 'dup-b']);
+    assert.deepEqual(new Set(prioritizedIds), new Set(['dup-a', 'dup-b']));
   });
 
   test('add-by-hanzi can require all matching unstudied words', () => {
@@ -131,7 +131,7 @@ describe('user priority layer', { concurrency: false }, () => {
     assert(added.every((word) => word.requiredForNextSession));
 
     const prioritized = dbModule.getPrioritizedUnstudiedWords().words;
-    assert.deepEqual(prioritized.map((entry) => entry.word.id), ['required-dup-a', 'required-dup-b']);
+    assert.deepEqual(new Set(prioritized.map((entry) => entry.word.id)), new Set(['required-dup-a', 'required-dup-b']));
     assert(prioritized.every((entry) => entry.requiredForNextSession));
   });
 
@@ -174,6 +174,25 @@ describe('user priority layer', { concurrency: false }, () => {
 
     const ordered = dbModule.getUnstudiedPriorityWords().words.map((entry) => entry.word.id);
     assert.deepEqual(ordered, ['forced', 'boosted', 'base-high-older', 'base-high-newer']);
+  });
+
+  test('manage-list stash order is tops newest-first then overlay recency, not corpus frequency', () => {
+    insertWord('older-bump', 90, 'unstudied', '2026-01-01T00:00:00.000Z');
+    insertWord('newer-bump', 10, 'unstudied', '2026-01-02T00:00:00.000Z');
+    insertWord('older-top', 5, 'unstudied', '2026-01-03T00:00:00.000Z');
+    insertWord('newer-top', 1, 'unstudied', '2026-01-04T00:00:00.000Z');
+
+    dbModule.updateWordUserPriority('older-bump', { bumpDelta: 1 });
+    dbModule.updateWordUserPriority('newer-bump', { bumpDelta: 1 });
+    dbModule.updateWordUserPriority('older-top', { forceTop: true });
+    dbModule.updateWordUserPriority('newer-top', { forceTop: true });
+    sqlite.prepare('UPDATE user_word_priority SET updated_at = ? WHERE word_id = ?').run('2026-01-01T00:00:00.000Z', 'older-bump');
+    sqlite.prepare('UPDATE user_word_priority SET updated_at = ? WHERE word_id = ?').run('2026-01-04T00:00:00.000Z', 'newer-bump');
+    sqlite.prepare('UPDATE user_word_priority SET updated_at = ? WHERE word_id = ?').run('2026-01-02T00:00:00.000Z', 'older-top');
+    sqlite.prepare('UPDATE user_word_priority SET updated_at = ? WHERE word_id = ?').run('2026-01-03T00:00:00.000Z', 'newer-top');
+
+    const ordered = dbModule.getPrioritizedUnstudiedWords().words.map((entry) => entry.word.id);
+    assert.deepEqual(ordered, ['newer-top', 'older-top', 'newer-bump', 'older-bump']);
   });
 
   test('session unstudied intake respects cap and expected selection set', () => {

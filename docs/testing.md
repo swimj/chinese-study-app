@@ -7,6 +7,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | Test file | Domain | Imports |
 | --- | --- | --- |
 | `session-composition.test.ts` | Session payload / scheduling composition | Dynamic `server/db.ts` |
+| `unstudied-admission.test.ts` | Experimental dual-pool unstudied admission selector | `server/db/unstudied-admission.ts` |
 | `session-completion.test.ts` | Session completion commits | Dynamic `server/db.ts` |
 | `session-bucket-scheduler.test.ts` | Bucket ordering helpers | `src/domain/study-actions.ts` |
 | `session-bucket-state.test.ts` | In-session bucket state | `src/domain/study-actions.ts` |
@@ -37,6 +38,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `reflection-verification-fixture.test.ts` | Reflection-focused dev seed plus direct SQLite assertions for supported effects, unsupported authorization, and withdrawal | Disposable dev database seeded from `server/seeds/reflection-dev.json` |
 | `llm-provider-runner.test.ts` | Spike compatibility shims, provider adapters, fixtures, current V3 validation/viewer behavior | `spikes/llm-provider/` |
 | `user-priority.test.ts` | User priority patches | Dynamic `server/db.ts` |
+| `priority-page-model.test.ts` | Stash manage-list overlay recency sort | `src/features/priority/priority-page-model.ts` |
 | `priority-aliases.test.ts` | French alias lookup | Dynamic `server/db.ts` |
 | `word-meanings.test.ts` | Word meanings CRUD | Dynamic `server/db.ts` |
 | `dev-db-bootstrap.test.ts` | Dev DB bootstrap | Dynamic `server/db.ts` |
@@ -49,7 +51,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 
 | Area | Run first |
 | --- | --- |
-| Session composition / SQL scheduling | `session-composition.test.ts` |
+| Session composition / SQL scheduling | `session-composition.test.ts`, `unstudied-admission.test.ts` |
 | Session end / word lifecycle commits | `session-completion.test.ts` |
 | Contrast content | `contrast-content.test.ts` |
 | Study management / suppression | `study-management.test.ts` |

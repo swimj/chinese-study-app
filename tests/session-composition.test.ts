@@ -97,6 +97,7 @@ describe('session composition', { concurrency: false }, () => {
       DELETE FROM study_attempt_events;
       DELETE FROM study_sessions;
       DELETE FROM daily_new_word_intake;
+      DELETE FROM user_word_priority;
       INSERT INTO app_metadata (key, value, updated_at)
       VALUES ('daily_new_word_limit', '10', '2026-01-01T00:00:00.000Z')
       ON CONFLICT(key) DO UPDATE SET
@@ -1434,22 +1435,21 @@ describe('session composition', { concurrency: false }, () => {
     assert.equal(sessionIds.includes(`unstudied/unstudied-${totalUnstudiedWords}`), false);
   });
 
-  test('includes required unstudied words beyond the normal daily cap', () => {
-    const { dailyNewWordLimit } = dbModule.getLearningPolicy(studyDayKey);
-    const totalUnstudiedWords = dailyNewWordLimit + 2;
-
-    for (let index = 0; index < totalUnstudiedWords; index += 1) {
-      const day = String(index + 1).padStart(2, '0');
-      insertUnstudiedWordPair(`required-overflow-${index + 1}`, 100 - index, `2026-03-${day}T00:00:00.000Z`);
-    }
-
-    const requiredOverflowId = `required-overflow-${totalUnstudiedWords}`;
-    dbModule.updateWordUserPriority(requiredOverflowId, { requiredForNextSession: true });
+  test('includes required unstudied words beyond the split even when the stash half is full of tops', () => {
+    dbModule.setDailyNewWordLimit(2);
+    insertUnstudiedWordPair('diet-high', 100, '2026-01-01T00:00:00.000Z');
+    insertUnstudiedWordPair('diet-low', 10, '2026-01-02T00:00:00.000Z');
+    insertUnstudiedWordPair('top-fills-stash', 1, '2026-01-03T00:00:00.000Z');
+    insertUnstudiedWordPair('required-extra', 2, '2026-01-04T00:00:00.000Z');
+    dbModule.updateWordUserPriority('top-fills-stash', { forceTop: true });
+    dbModule.updateWordUserPriority('required-extra', { requiredForNextSession: true });
 
     const sessionIds = getSessionItemIds(dbModule);
-    assert.equal(sessionIds.length, dailyNewWordLimit + 1);
-    const sessionIdSet = new Set(sessionIds);
-    assert.equal(sessionIdSet.has(`unstudied/${requiredOverflowId}`), true);
+    assert.deepEqual(new Set(sessionIds), new Set([
+      'unstudied/top-fills-stash',
+      'unstudied/diet-high',
+      'unstudied/required-extra',
+    ]));
   });
 
   test('does not duplicate required words that are already inside the normal cap', () => {
@@ -1483,6 +1483,125 @@ describe('session composition', { concurrency: false }, () => {
     const sessionIds = getSessionItemIds(dbModule);
     assert.equal(sessionIds.length, dailyNewWordLimit);
     assert.equal(sessionIds.includes(`unstudied/${dismissedRequiredId}`), false);
+  });
+
+  test('splits remaining unstudied quota 50/50 between stash and diet', () => {
+    dbModule.setDailyNewWordLimit(4);
+    insertUnstudiedWordPair('diet-a', 100, '2026-01-01T00:00:00.000Z');
+    insertUnstudiedWordPair('diet-b', 90, '2026-01-02T00:00:00.000Z');
+    insertUnstudiedWordPair('diet-c', 80, '2026-01-03T00:00:00.000Z');
+    insertUnstudiedWordPair('stash-a', 1, '2026-01-04T00:00:00.000Z');
+    insertUnstudiedWordPair('stash-b', 2, '2026-01-05T00:00:00.000Z');
+    insertUnstudiedWordPair('stash-c', 3, '2026-01-06T00:00:00.000Z');
+    dbModule.updateWordUserPriority('stash-a', { bumpDelta: 1 });
+    dbModule.updateWordUserPriority('stash-b', { bumpDelta: 1 });
+    dbModule.updateWordUserPriority('stash-c', { bumpDelta: 1 });
+
+    const unstudiedIds = dbModule.getSessionPayload(studyDayKey).buckets.unstudied.map((word) => word.id);
+    const stashIds = unstudiedIds.filter((id) => id.startsWith('stash-'));
+    const dietIds = unstudiedIds.filter((id) => id.startsWith('diet-'));
+
+    assert.equal(unstudiedIds.length, 4);
+    assert.equal(stashIds.length, 2);
+    assert.deepEqual(dietIds, ['diet-a', 'diet-b']);
+  });
+
+  test('odd remaining quota gives the extra unstudied slot to diet', () => {
+    dbModule.setDailyNewWordLimit(5);
+    insertUnstudiedWordPair('diet-a', 100, '2026-01-01T00:00:00.000Z');
+    insertUnstudiedWordPair('diet-b', 90, '2026-01-02T00:00:00.000Z');
+    insertUnstudiedWordPair('diet-c', 80, '2026-01-03T00:00:00.000Z');
+    insertUnstudiedWordPair('diet-d', 70, '2026-01-04T00:00:00.000Z');
+    insertUnstudiedWordPair('stash-a', 1, '2026-01-05T00:00:00.000Z');
+    insertUnstudiedWordPair('stash-b', 2, '2026-01-06T00:00:00.000Z');
+    insertUnstudiedWordPair('stash-c', 3, '2026-01-07T00:00:00.000Z');
+    dbModule.updateWordUserPriority('stash-a', { bumpDelta: 1 });
+    dbModule.updateWordUserPriority('stash-b', { bumpDelta: 1 });
+    dbModule.updateWordUserPriority('stash-c', { bumpDelta: 1 });
+
+    const unstudiedIds = dbModule.getSessionPayload(studyDayKey).buckets.unstudied.map((word) => word.id);
+    assert.equal(unstudiedIds.filter((id) => id.startsWith('stash-')).length, 2);
+    assert.deepEqual(unstudiedIds.filter((id) => id.startsWith('diet-')), ['diet-a', 'diet-b', 'diet-c']);
+  });
+
+  test('fills leftover stash slots from diet and keeps diet frequency-ranked', () => {
+    dbModule.setDailyNewWordLimit(4);
+    insertUnstudiedWordPair('diet-a', 100, '2026-01-01T00:00:00.000Z');
+    insertUnstudiedWordPair('diet-b', 90, '2026-01-02T00:00:00.000Z');
+    insertUnstudiedWordPair('diet-c', 80, '2026-01-03T00:00:00.000Z');
+    insertUnstudiedWordPair('diet-d', 70, '2026-01-04T00:00:00.000Z');
+    insertUnstudiedWordPair('stash-only', 1, '2026-01-05T00:00:00.000Z');
+    dbModule.updateWordUserPriority('stash-only', { bumpDelta: 1 });
+
+    assert.deepEqual(
+      dbModule.getSessionPayload(studyDayKey).buckets.unstudied.map((word) => word.id),
+      ['stash-only', 'diet-a', 'diet-b', 'diet-c'],
+    );
+  });
+
+  test('tops fill the stash half newest-first and extra tops wait', () => {
+    dbModule.setDailyNewWordLimit(4);
+    insertUnstudiedWordPair('diet-a', 100, '2026-01-01T00:00:00.000Z');
+    insertUnstudiedWordPair('diet-b', 90, '2026-01-02T00:00:00.000Z');
+    insertUnstudiedWordPair('diet-c', 80, '2026-01-03T00:00:00.000Z');
+    insertUnstudiedWordPair('top-old', 1, '2026-01-04T00:00:00.000Z');
+    insertUnstudiedWordPair('top-mid', 2, '2026-01-05T00:00:00.000Z');
+    insertUnstudiedWordPair('top-new', 3, '2026-01-06T00:00:00.000Z');
+    dbModule.updateWordUserPriority('top-old', { forceTop: true });
+    dbModule.updateWordUserPriority('top-mid', { forceTop: true });
+    dbModule.updateWordUserPriority('top-new', { forceTop: true });
+    setOverlayUpdatedAt('top-old', '2026-01-01T00:00:00.000Z');
+    setOverlayUpdatedAt('top-mid', '2026-01-02T00:00:00.000Z');
+    setOverlayUpdatedAt('top-new', '2026-01-03T00:00:00.000Z');
+
+    assert.deepEqual(
+      dbModule.getSessionPayload(studyDayKey).buckets.unstudied.map((word) => word.id),
+      ['top-new', 'top-mid', 'diet-a', 'diet-b'],
+    );
+  });
+
+  test('sunk words are excluded from both unstudied pools', () => {
+    dbModule.setDailyNewWordLimit(4);
+    insertUnstudiedWordPair('diet-a', 50, '2026-01-01T00:00:00.000Z');
+    insertUnstudiedWordPair('sunk-high', 100, '2026-01-02T00:00:00.000Z');
+    dbModule.dismissWordFromStudy('sunk-high');
+
+    assert.deepEqual(
+      dbModule.getSessionPayload(studyDayKey).buckets.unstudied.map((word) => word.id),
+      ['diet-a'],
+    );
+  });
+
+  test('overlay bump does not replace a higher-frequency diet word across pools', () => {
+    dbModule.setDailyNewWordLimit(2);
+    insertUnstudiedWordPair('diet-high', 100, '2026-01-01T00:00:00.000Z');
+    insertUnstudiedWordPair('diet-mid', 90, '2026-01-02T00:00:00.000Z');
+    insertUnstudiedWordPair('bumped-low', 1, '2026-01-03T00:00:00.000Z');
+    insertUnstudiedWordPair('bumped-lower', 2, '2026-01-04T00:00:00.000Z');
+    dbModule.updateWordUserPriority('bumped-low', { bumpDelta: 5 });
+    dbModule.updateWordUserPriority('bumped-lower', { bumpDelta: 5 });
+
+    const unstudiedIds = dbModule.getSessionPayload(studyDayKey).buckets.unstudied.map((word) => word.id);
+    assert.equal(unstudiedIds.length, 2);
+    assert.equal(unstudiedIds.filter((id) => id.startsWith('bumped-')).length, 1);
+    assert.equal(unstudiedIds.includes('diet-high'), true);
+    assert.equal(unstudiedIds.includes('diet-mid'), false);
+  });
+
+  test('recomputing the same session payload does not re-roll stash admission', () => {
+    dbModule.setDailyNewWordLimit(4);
+    insertUnstudiedWordPair('diet-a', 100, '2026-01-01T00:00:00.000Z');
+    insertUnstudiedWordPair('diet-b', 90, '2026-01-02T00:00:00.000Z');
+    insertUnstudiedWordPair('stash-a', 1, '2026-01-03T00:00:00.000Z');
+    insertUnstudiedWordPair('stash-b', 2, '2026-01-04T00:00:00.000Z');
+    insertUnstudiedWordPair('stash-c', 3, '2026-01-05T00:00:00.000Z');
+    dbModule.updateWordUserPriority('stash-a', { bumpDelta: 1 });
+    dbModule.updateWordUserPriority('stash-b', { bumpDelta: 1 });
+    dbModule.updateWordUserPriority('stash-c', { bumpDelta: 1 });
+
+    const first = dbModule.getSessionPayload(studyDayKey).buckets.unstudied.map((word) => word.id);
+    const second = dbModule.getSessionPayload(studyDayKey).buckets.unstudied.map((word) => word.id);
+    assert.deepEqual(second, first);
   });
 
   test('unstudied completion clears required state', () => {
@@ -2208,6 +2327,14 @@ function insertUnstudiedWordPair(id: string, priority: number, createdAt: string
     intervalHours: 6,
     nextDueAt: null,
   });
+}
+
+function setOverlayUpdatedAt(wordId: string, updatedAt: string) {
+  sqlite.prepare(`
+    UPDATE user_word_priority
+    SET updated_at = ?
+    WHERE word_id = ?
+  `).run(updatedAt, wordId);
 }
 
 function isoHoursAgo(hours: number) {

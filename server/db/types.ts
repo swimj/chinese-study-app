@@ -46,6 +46,7 @@ export type PriorityWord = {
   requiredForNextSession: boolean;
   effectivePriority: number;
   effectiveRank: number;
+  overlayUpdatedAt: string | null;
 };
 
 export type PriorityWordsPayload = {
@@ -389,6 +390,7 @@ export type PriorityWordRow = WordRow & {
   required_for_next_session: number;
   effective_priority: number;
   effective_rank: number;
+  overlay_updated_at: string | null;
 };
 
 export const DEFAULT_DAILY_NEW_WORD_LIMIT = 10;

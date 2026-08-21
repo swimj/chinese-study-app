@@ -1,4 +1,6 @@
+export { getSessionPayload, ensureAcceptedReviewAttemptEventsProjectedBeforeSessionComposition } from './persistence.ts';
 export {
-  getSessionPayload,
-  ensureAcceptedReviewAttemptEventsProjectedBeforeSessionComposition,
-} from './persistence.ts';
+  buildUnstudiedAdmissionSeedSource,
+  selectAdmittedUnstudiedWordIds,
+  splitRemainingUnstudiedQuota,
+} from './unstudied-admission.ts';

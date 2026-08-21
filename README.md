@@ -31,7 +31,7 @@ The current implementation includes:
 - sample `Word` records and word-skill scheduler state in `dev` mode
 - persisted word states: `unstudied`, `learning`, `review`
 - direction-specific review intervals tracked in hours
-- mixed study sessions containing due review actions, active learning words, and top-priority unstudied words
+- mixed study sessions containing due review actions, active learning words, and unstudied words admitted by the current new-word intake policy
 - active session snapshot owned by the frontend after session start
 - frontend dashboard that loads words and due review actions from the backend API
 - durable post-session reflection with proposal review, explicit authorization,

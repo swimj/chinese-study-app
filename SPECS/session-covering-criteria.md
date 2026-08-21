@@ -27,6 +27,10 @@ The scheduler RNG is seeded from the frontend session id so the
 new / learning / review cadence varies across sessions. Tests may pass an
 explicit seed to keep sequences deterministic.
 
+The unstudied bucket is the backend-admitted snapshot from the experimental
+dual-pool intake policy in `study-action-model.md`. Covering, undo, and
+bucket weights do not distinguish diet from stash.
+
 Within a selected bucket:
 
 - review keeps the backend-composed order
