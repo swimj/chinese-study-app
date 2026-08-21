@@ -16,7 +16,8 @@ Entry points under `scripts/`. Run with `node --import tsx scripts/<name>.ts` un
 | Script / npm command | Purpose |
 | --- | --- |
 | `npm run study:backend` | Start study-mode API |
-| `scripts/setup-local-user-data.ts` | Initialize local user data dir |
+| `npm run upgrade:legacy-learner` | Report on or upgrade a pre-SWI-47 dogfood database |
+| `npm run check:legacy-learner-upgrade` | Compare a legacy backup with its learner-owned replacement |
 
 ## Libraries (`scripts/lib/`)
 
