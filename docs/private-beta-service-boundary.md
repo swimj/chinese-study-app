@@ -54,7 +54,7 @@ and a self-service recovery product are outside this beta contract.
 
 ## Durable Ownership Inventory
 
-The current schema has 41 steady-state application tables. Temporary migration
+The current schema has 40 steady-state application tables. Temporary migration
 tables and SQLite internals are excluded. Existing mixed tables must be split
 or given an equivalently explicit ownership/scope boundary before real hosted
 learner data is accepted.
@@ -117,10 +117,9 @@ its useful note, and explicit legacy origin without conflating it with general
 production suppression; resolved history remains in the migration validation
 report. SWI-49 owns later shared-artifact reporting and quarantine.
 
-`app_metadata` must no longer be an undefined global keyspace. Metadata has an
-explicit scope such as deployment/schema, shared-content snapshot, or
-learner-import. Release and migration ledgers are service-operational records;
-they do not grant access to learner content.
+The former `app_metadata` keyspace is replaced by `learner_settings`,
+`schema_migrations`, and `content_imports`. Release and migration ledgers are
+service-operational records; they do not grant access to learner content.
 
 ## Shared Content Contract
 

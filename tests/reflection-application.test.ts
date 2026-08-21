@@ -87,7 +87,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
   test('backfills default production tasks once and leaves future words to the insert trigger', () => {
     sqlite.exec(`
       DELETE FROM production_tasks;
-      DELETE FROM app_metadata WHERE key = 'production_tasks_backfill_v0';
+      DELETE FROM schema_migrations WHERE migration_id = 'production_tasks_backfill_v0';
     `);
 
     dbModule.ensureProductionCueSchema();
@@ -114,32 +114,32 @@ describe('reflection application adapters', { concurrency: false }, () => {
       ],
     );
     const marker = sqlite.prepare(`
-      SELECT value, updated_at
-      FROM app_metadata
-      WHERE key = 'production_tasks_backfill_v0'
-    `).get() as { value: string; updated_at: string };
-    assert.equal(marker.value, 'complete');
-    assert.equal(new Date(marker.updated_at).toISOString(), marker.updated_at);
+      SELECT applied_at, details_json
+      FROM schema_migrations
+      WHERE migration_id = 'production_tasks_backfill_v0'
+    `).get() as { applied_at: string; details_json: string };
+    assert.deepEqual(JSON.parse(marker.details_json), { status: 'complete' });
+    assert.equal(new Date(marker.applied_at).toISOString(), marker.applied_at);
 
     sqlite.prepare(`
-      DELETE FROM app_metadata
-      WHERE key = 'production_tasks_backfill_v0'
+      DELETE FROM schema_migrations
+      WHERE migration_id = 'production_tasks_backfill_v0'
     `).run();
     dbModule.ensureProductionCueSchema();
     assert.equal(countRows('production_tasks'), 2);
 
     sqlite.prepare(`
-      UPDATE app_metadata
-      SET updated_at = ?
-      WHERE key = 'production_tasks_backfill_v0'
+      UPDATE schema_migrations
+      SET applied_at = ?
+      WHERE migration_id = 'production_tasks_backfill_v0'
     `).run(appliedAt);
     dbModule.ensureProductionCueSchema();
     assert.equal(
       (sqlite.prepare(`
-        SELECT updated_at
-        FROM app_metadata
-        WHERE key = 'production_tasks_backfill_v0'
-      `).get() as { updated_at: string }).updated_at,
+        SELECT applied_at
+        FROM schema_migrations
+        WHERE migration_id = 'production_tasks_backfill_v0'
+      `).get() as { applied_at: string }).applied_at,
       appliedAt,
     );
 

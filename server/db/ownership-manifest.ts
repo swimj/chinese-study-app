@@ -65,17 +65,6 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
     disposition: 'retain',
     ambiguity: null,
   },
-  {
-    table: 'app_metadata',
-    ownershipClass: 'mixed_requires_separation',
-    ownershipRoot: 'learner settings, schema ledger, and content/import ledgers',
-    crossScopeReferences: 'operational facts grant no learner-data access',
-    enforcementPoints: 'typed scoped tables replace the global keyspace',
-    historicalOwnership: 'daily limit and one-shot migration markers share global keys',
-    migrationTreatment: 'move learner settings to the legacy learner and markers to explicit ledgers',
-    disposition: 'replace',
-    ambiguity: null,
-  },
   ...privateWordStateEntries(),
   ...studyHistoryEntries(),
   {

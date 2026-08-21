@@ -101,10 +101,10 @@ describe('session composition', { concurrency: false }, () => {
       DELETE FROM study_sessions;
       DELETE FROM daily_new_word_intake;
       DELETE FROM user_word_priority;
-      INSERT INTO app_metadata (key, value, updated_at)
-      VALUES ('daily_new_word_limit', '10', '2026-01-01T00:00:00.000Z')
-      ON CONFLICT(key) DO UPDATE SET
-        value = excluded.value,
+      INSERT INTO learner_settings (learner_id, setting_key, value_json, updated_at)
+      VALUES ('test-learner', 'daily_new_word_limit', '10', '2026-01-01T00:00:00.000Z')
+      ON CONFLICT(learner_id, setting_key) DO UPDATE SET
+        value_json = excluded.value_json,
         updated_at = excluded.updated_at;
       DELETE FROM word_skill_state;
       DELETE FROM word_study_admission_state;
@@ -1411,13 +1411,13 @@ describe('session composition', { concurrency: false }, () => {
     dbModule.setDailyNewWordLimit(5);
 
     const settingRow = sqlite
-      .prepare(`SELECT value FROM app_metadata WHERE key = 'daily_new_word_limit'`)
-      .get() as { value: string } | undefined;
+      .prepare(`SELECT value_json FROM learner_settings WHERE learner_id = 'test-learner' AND setting_key = 'daily_new_word_limit'`)
+      .get() as { value_json: string } | undefined;
     const intakeRow = sqlite
       .prepare('SELECT new_study_count FROM daily_new_word_intake WHERE day_key = ?')
       .get(studyDayKey) as { new_study_count: number } | undefined;
 
-    assert.equal(settingRow?.value, '5');
+    assert.equal(settingRow?.value_json, '5');
     assert.equal(intakeRow?.new_study_count, 1);
     assert.equal(dbModule.getLearningPolicy(studyDayKey).dailyNewWordLimit, 5);
   });
