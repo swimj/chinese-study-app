@@ -17,7 +17,7 @@ describe('reflection comparison-arm registry', () => {
       REFLECTION_MODEL_ARMS.filter((arm) => arm.enabledByDefault).map((arm) => arm.choice),
       [
         'openai:gpt-5.6-luna-high',
-        'zai:glm-5.2-high',
+        'zai:glm-5.3-high',
         'dashscope:qwen3.8-max',
         'openrouter:gemini-3.6-flash',
         'openrouter:deepseek-v4-pro',

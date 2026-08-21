@@ -323,11 +323,11 @@ describe('LLM provider model batch and viewer', () => {
       'gpt-5.6-luna-xhigh',
       'gpt-5.4-mini-high',
       'gpt-5.4-mini-xhigh',
-      'glm-5.2-high',
-      'glm-5.2-max',
+      'glm-5.3-high',
+      'glm-5.3-max',
       'qwen3.8-max',
     ]);
-    assert.deepEqual(getModelTarget('glm-5.2-max'), { id: 'glm-5.2-max', provider: 'zai', model: 'glm-5.2', reasoningEffort: 'max' });
+    assert.deepEqual(getModelTarget('glm-5.3-max'), { id: 'glm-5.3-max', provider: 'zai', model: 'glm-5.3', reasoningEffort: 'max' });
     assert.equal(getProviderAdapter('zai').defaultBaseUrl, 'https://api.z.ai/api/paas/v4');
     assert.equal(
       getProviderAdapter('dashscope').defaultBaseUrl,

@@ -27,8 +27,8 @@ export const REFLECTION_MODEL_ARMS = [
     config: null,
   },
   {
-    choice: 'zai:glm-5.2-high',
-    label: 'GLM-5.2 high',
+    choice: 'zai:glm-5.3-high',
+    label: 'GLM-5.3 high',
     enabledByDefault: true,
     dogfoodSelectionWeight: 1,
     config: null,

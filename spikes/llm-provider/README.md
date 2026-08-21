@@ -148,7 +148,7 @@ configuration, in the requested order, and writes one raw artifact per call.
 
 ```bash
 npm run spike:llm:env -- \
-  --models gpt-5.6-terra-high,gpt-5.6-terra-xhigh,gpt-5.4-mini-xhigh,glm-5.2-max \
+  --models gpt-5.6-terra-high,gpt-5.6-terra-xhigh,gpt-5.4-mini-xhigh,glm-5.3-max \
   --fixture ex02-to \
   --system-prompt-file spikes/llm-provider/prompts/PROMPT_FILE
 ```

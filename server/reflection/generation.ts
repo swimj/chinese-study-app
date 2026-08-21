@@ -143,7 +143,7 @@ export function createInitialReflectionGenerationService(
   const configuredProviders: Partial<Record<ReflectionModelChoice, LunaReflectionProvider>> = {
     ...dependencies.comparisonProviders,
     'openai:gpt-5.6-luna-high': provider,
-    'zai:glm-5.2-high': glmProvider,
+    'zai:glm-5.3-high': glmProvider,
     'dashscope:qwen3.8-max': qwen38MaxProvider,
   };
   for (const arm of REFLECTION_MODEL_ARMS) {

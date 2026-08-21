@@ -189,7 +189,7 @@ async function expectProviderError(
 }
 
 describe('production Luna reflection provider', () => {
-  test('uses Z.AI JSON-object transport for GLM-5.2 high', async () => {
+  test('uses Z.AI JSON-object transport for GLM-5.3 high', async () => {
     const capture: CapturedRequest[] = [];
     const provider = createGlmReflectionProvider({
       environment: { ZAI_API_KEY: 'unit-test-zai-secret' },
@@ -202,12 +202,12 @@ describe('production Luna reflection provider', () => {
     const request = capture[0]!;
     assert.equal(request.url, 'https://api.z.ai/api/paas/v4/chat/completions');
     assert.equal(request.headers.get('authorization'), 'Bearer unit-test-zai-secret');
-    assert.equal(request.body.model, 'glm-5.2');
+    assert.equal(request.body.model, 'glm-5.3');
     assert.equal(request.body.reasoning_effort, 'high');
     assert.equal(request.body.max_tokens, 50_000);
     assert.deepEqual(request.body.response_format, { type: 'json_object' });
     assert.equal(generated.metadata.provider, 'zai');
-    assert.equal(generated.metadata.modelConfig, 'glm-5.2-high');
+    assert.equal(generated.metadata.modelConfig, 'glm-5.3-high');
     assert.equal(GLM_REFLECTION_MODEL_CONFIG.timeoutMs, 900_000);
   });
 
