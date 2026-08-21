@@ -41,6 +41,8 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `priority-aliases.test.ts` | French alias lookup | Dynamic `server/db.ts` |
 | `word-meanings.test.ts` | Word meanings CRUD | Dynamic `server/db.ts` |
 | `dev-db-bootstrap.test.ts` | Dev DB bootstrap | Dynamic `server/db.ts` |
+| `learner-isolation.test.ts` | Shared lexical visibility, private overlays/content, duplicate private ids, cross-owner references | Dynamic `server/db.ts` + raw scoped connection |
+| `legacy-prompt-feedback-migration.test.ts` | Report-only bad-prompt inventory, full legacy learner upgrade, and backup-vs-upgrade critical-state comparison | Upgrade persistence + CLI |
 | `study-profile.test.ts` | Study profile helpers | `src/study-profile.ts` |
 | `canonical-words.test.ts` | Canonical wordlist scripts | `scripts/lib/canonical-words.ts` |
 | `cc-cedict.test.ts` | CC-CEDICT parsing | `scripts/lib/cc-cedict.ts` |
@@ -63,7 +65,9 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | Reflection HTTP / review UI model | `reflection-api.test.ts`, `reflection-page-model.test.ts`, `reflection-operation-editor.test.ts`, `reflections-page-run-log.test.ts` |
 | Schema or bootstrap | `dev-db-bootstrap.test.ts` + any db-touching tests above |
 
-Tests that dynamic-import `server/db.ts` set `APP_MODE=study` and `APP_DATA_DIR` to a temp directory before import.
+Tests that dynamic-import `server/db.ts` set `APP_MODE=study` and
+`APP_DATA_DIR` to a temp directory before import. Node's test context selects
+the stable `test-learner` unless a test supplies `APP_LEARNER_ID` explicitly.
 
 The reflection API suite invokes the actual handlers registered in Express
 without binding a TCP port, which keeps the automated suite compatible with

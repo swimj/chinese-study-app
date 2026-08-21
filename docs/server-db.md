@@ -20,6 +20,12 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`ownership-manifest.ts`](../server/db/ownership-manifest.ts) | Auditable ownership, enforcement, history, migration, and lifecycle classification for every durable application table |
 | [`identity.ts`](../server/db/identity.ts) | Stable learner records, auth-provider mappings, learner settings, and explicit Clerk-free bootstrap |
 | [`learner-context.ts`](../server/db/learner-context.ts) | Required learner context for private persistence operations |
+| [`learner-scoped-tables.ts`](../server/db/learner-scoped-tables.ts) | Physical learner-owned tables plus current-learner compatibility views/triggers |
+| [`scoped-content-tables.ts`](../server/db/scoped-content-tables.ts) | Learner/shared scope filtering and write boundaries for contrast and production content |
+| [`learner-ownership-guards.ts`](../server/db/learner-ownership-guards.ts) | Same-owner private references and accessible-cue enforcement beneath HTTP |
+| [`prompt-exclusions.ts`](../server/db/prompt-exclusions.ts) | Narrow learner-owned definition-fallback and contrast-prompt exclusions |
+| [`legacy-learner-upgrade.ts`](../server/db/legacy-learner-upgrade.ts) | Validated copy from an implicit-single-learner database into a fresh SWI-47 schema |
+| [`legacy-upgrade-validation.ts`](../server/db/legacy-upgrade-validation.ts) | Exact backup-vs-upgrade comparison for critical scheduler, priority, learner state, and suppression surfaces |
 | [`index.ts`](../server/db/index.ts) | Internal re-export barrel |
 
 Domain-oriented re-export shims (navigation only; implementation stays in `persistence.ts`):
@@ -29,7 +35,7 @@ Domain-oriented re-export shims (navigation only; implementation stays in `persi
 | [`words.ts`](../server/db/words.ts) | `getWords`, `searchWords`, meanings, lifecycle completions |
 | [`priority.ts`](../server/db/priority.ts) | Unstudied priority queues, `addUnstudiedUserPriorityByHanzi` |
 | [`session-composition.ts`](../server/db/session-composition.ts) | `getSessionPayload`, projection guard, dual-pool unstudied admission re-exports |
-| [`contrast.ts`](../server/db/contrast.ts) | Clusters, prompts, candidate-intake table reader |
+| [`contrast.ts`](../server/db/contrast.ts) | Scoped clusters and prompts |
 | [`study-sessions.ts`](../server/db/study-sessions.ts) | Session records, attempt batches |
 | [`study-management.ts`](../server/db/study-management.ts) | Suppress / bad-prompt / management actions |
 | [`scheduler.ts`](../server/db/scheduler.ts) | Skill/admission state, invariants |
@@ -37,7 +43,7 @@ Domain-oriented re-export shims (navigation only; implementation stays in `persi
 
 ## Reflection persistence
 
-Reflection uses seven SQLite tables initialized and validated from
+Reflection uses six SQLite tables initialized and validated from
 [`reflections.ts`](../server/db/reflections.ts) (quality overlay from
 [`reflection-quality.ts`](../server/db/reflection-quality.ts); Help inbox from
 [`reflection-help-inbox.ts`](../server/db/reflection-help-inbox.ts)):
@@ -52,9 +58,14 @@ Reflection uses seven SQLite tables initialized and validated from
 | `reflection_help_inbox` | Open explanation-only Help membership keyed by `(artifact_id, item_id)`; seeded at artifact materialize; Done deletes the row |
 
 Artifacts preserve the exact bounded bundle, validated result, generation time,
-provider/model/prompt metadata, and schema versions. A restrictive foreign key
-keeps the source study session available. Triggers prevent artifact updates,
-proposal-identity rewrites, and invocation-authorization rewrites.
+provider/model/prompt metadata, and schema versions. Same-owner guards require
+the source study session and private provenance chain to belong to the artifact
+learner. Triggers prevent artifact updates, proposal-identity rewrites, and
+invocation-authorization rewrites.
+
+The public SQL names above are current-learner views. Their physical tables use
+the `learner_owned_` prefix and carry required `learner_id`; persistence guards
+reject private references whose parent belongs to another learner.
 
 Generation runs remain separate from artifacts: an artifact still means a
 validated successful result, while the run log records each concluded provider
@@ -140,17 +151,38 @@ Generation stays outside the DB layer in `server/intake-triage/`: `evidence.ts`
 selects the unbumped top-50 entries and reduces them to lexical provider input,
 `provider.ts` owns the fixed Luna-high prompt and strict lexical-reference
 validation and translation, and `generation.ts` coordinates one manual run. Raw provider
-requests and responses are transient rather than persisted. These records use
-the implicit local learner boundary for V1 and must be
-learner-scoped when hosted tenancy lands.
+requests and responses are transient rather than persisted. All three durable
+tables are learner-owned and same-owner run/assessment references are enforced
+below the HTTP layer.
+
+## Learner and content scope
+
+`learners` is the stable local identity. `learner_auth_mappings` keeps provider
+subjects separate, including the current `trusted_local` mapping used for
+dogfood without Clerk. Every request runs under the configured learner context;
+SQLite views and triggers apply that context to private reads and writes.
+
+Lexical content lives in shared `lexical_words` and
+`lexical_word_meanings`. Learner lifecycle/notes and meaning visibility live in
+`learner_word_state` and `learner_word_meaning_preferences`. The legacy
+`words` and `word_meanings` names remain compatibility views so the domain API
+does not need a simultaneous rewrite.
+
+Contrast artifacts and production cues/supplements use physical `scoped_*`
+tables. Normal app writes create `learner` scope owned by the current learner;
+`shared` rows are readable but immutable through learner paths. Publication is
+deliberately not inferred from reflection provenance and remains a later
+service operation. Private cue lifecycle, evidence, activation, and recheck
+state stay in `learner_owned_*` tables.
 
 ## Init order
 
 [`server/db.ts`](../server/db.ts) runs:
 
 1. `initDbConnection()` — reads current `APP_*` env and opens `app.db`
-2. `initializeDatabase()` — schema (including reflection tables/indexes),
-   migrations, validation, and dev seed
+2. `initializeDatabase()` — creates a fresh schema and trusted-local learner,
+   or validates the SWI-47 ownership marker before installing scoped views,
+   guards, indexes, and any dev seed
 
 Tests that dynamic-import `server/db.ts?test=…` rely on this running once per import URL.
 
@@ -164,6 +196,19 @@ the learner's configured non-negative integer limit as JSON. A missing row
 reads as the current default of `10`. This setting is independent of
 `daily_new_word_intake.new_study_count`, the per-UTC-day counter incremented
 only when an unstudied word is completed.
+
+Legacy single-learner databases are not mutated during startup. Run
+`npm run upgrade:legacy-learner -- --data-dir=/absolute/path --learner-id=<id>`
+to inspect one, then repeat with `--apply=true`. Apply mode backs up the source,
+copies shared and private data into a freshly initialized target, reconstructs
+legacy normalized meanings, converts active bad-prompt reports to narrow
+provenance-marked exclusions, validates row counts and foreign keys, validates
+a normal startup, and then compares every legacy scheduler and admission row by
+logical key, plus exact priority, learner-word-state, meaning-visibility,
+production-suppression, and migrated bad-prompt sets. Only then does it replace
+`app.db`. The comparison records a row count and SHA-256 digest for every
+surface and can be rerun against the timestamped backup with
+`npm run check:legacy-learner-upgrade`.
 
 ## Primary tests by area
 
