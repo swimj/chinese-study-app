@@ -988,60 +988,6 @@ function getContrastPromptContentForCluster(clusterId: string): ContrastPromptCo
   });
 }
 
-function getContrastPromptContentById(id: string): ContrastPromptContent {
-  const normalizedId = id.trim();
-  assertNonEmptyString(normalizedId, 'Expected non-empty contrast prompt id');
-
-  const row = getDb()
-    .prepare(`
-      SELECT
-        id,
-        cluster_id,
-        target_word_id,
-        prompt_text,
-        explanation
-      FROM contrast_prompts
-      WHERE id = ?
-    `)
-    .get(normalizedId) as ContrastPromptRow | undefined;
-
-  if (!row) {
-    throw new Error('Contrast prompt not found');
-  }
-
-  return {
-    ...mapContrastPromptRow(row),
-    feedback: getContrastPromptFeedbackSummariesByPromptId().get(normalizedId) ?? createEmptyContrastPromptFeedbackSummary(),
-  };
-}
-
-export function resolveContrastPromptBadFeedback({
-  promptId,
-  note = '',
-}: {
-  promptId: string;
-  note?: string;
-}): ContrastPromptContent {
-  const normalizedPromptId = promptId.trim();
-  const normalizedNote = note.trim();
-  assertNonEmptyString(normalizedPromptId, 'Expected non-empty contrast prompt id');
-  const prompt = getContrastPromptContentById(normalizedPromptId);
-  ensureWordExists(prompt.targetWordId);
-
-  insertStudyContentFeedbackLogRow({
-    targetType: 'contrast_prompt',
-    targetId: prompt.id,
-    targetWordId: prompt.targetWordId,
-    actionKind: 'contrast_selection',
-    feedbackType: 'bad_prompt',
-    feedbackAction: 'resolved',
-    sourceEventId: null,
-    note: normalizedNote,
-  });
-
-  return getContrastPromptContentById(normalizedPromptId);
-}
-
 type ContrastPromptFeedbackSummary = ContrastPromptContent['feedback'];
 
 function createEmptyContrastPromptFeedbackSummary(): ContrastPromptFeedbackSummary {
@@ -1305,7 +1251,6 @@ export function recordStudyManagementAction(input: RecordStudyManagementActionIn
 
   const now = new Date().toISOString();
   const eventId = randomUUID();
-  const note = input.note?.trim() ?? '';
   const eventType = mapStudyManagementActionToEventType(input.managementAction);
 
   getDb().exec('BEGIN');
@@ -1327,7 +1272,6 @@ export function recordStudyManagementAction(input: RecordStudyManagementActionIn
       contentRef: input.contentRef,
       payload: {
         managementAction: input.managementAction,
-        note,
       },
       projectedAt: null,
     };
@@ -1337,7 +1281,6 @@ export function recordStudyManagementAction(input: RecordStudyManagementActionIn
       input,
       eventId,
       projectedAt: now,
-      note,
     });
     markStudyEventProjectedWithoutTransaction(eventId, now);
 
@@ -1375,75 +1318,6 @@ export function suppressProductionForWordOutsideSession({
     });
     getDb().exec('COMMIT');
     return result.relevance;
-  } catch (error) {
-    getDb().exec('ROLLBACK');
-    throw error;
-  }
-}
-
-export function reportBadProductionPromptOutsideSession({
-  targetWordId,
-  note = '',
-}: {
-  targetWordId: string;
-  note?: string;
-}): StudyContentFeedback {
-  const normalizedTargetWordId = targetWordId.trim();
-  const normalizedNote = note.trim();
-  assertNonEmptyString(normalizedTargetWordId, 'Expected non-empty target word id');
-  const targetWord = getWordById(normalizedTargetWordId);
-  if (!targetWord) {
-    throw new Error('Word not found');
-  }
-
-  const now = new Date().toISOString();
-  const feedback: StudyContentFeedback = {
-    id: randomUUID(),
-    createdAt: now,
-    targetType: 'generated_prompt',
-    targetId: 'definition_based_production',
-    targetWordId: normalizedTargetWordId,
-    actionKind: 'production',
-    feedbackType: 'bad_prompt',
-    feedbackAction: 'reported',
-    sourceEventId: null,
-    note: normalizedNote,
-  };
-
-  getDb().exec('BEGIN');
-  try {
-    getDb().prepare(`
-      INSERT INTO study_content_feedback (
-        id,
-        created_at,
-        target_type,
-        target_id,
-        target_word_id,
-        action_kind,
-        feedback_type,
-        feedback_action,
-        source_event_id,
-        note
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      feedback.id,
-      feedback.createdAt,
-      feedback.targetType,
-      feedback.targetId,
-      feedback.targetWordId,
-      feedback.actionKind,
-      feedback.feedbackType,
-      feedback.feedbackAction,
-      null,
-      feedback.note,
-    );
-    upsertWordStudyAdmissionState(
-      normalizedTargetWordId,
-      'review',
-      addHours(now, REVIEW_PHASE_RECENCY_GUARD_HOURS),
-    );
-    getDb().exec('COMMIT');
-    return feedback;
   } catch (error) {
     getDb().exec('ROLLBACK');
     throw error;
@@ -1873,46 +1747,16 @@ function projectStudyManagementActionWithoutTransaction({
   input,
   eventId,
   projectedAt,
-  note,
 }: {
   input: RecordStudyManagementActionInput;
   eventId: string;
   projectedAt: string;
-  note: string;
 }) {
-  if (input.managementAction === 'suppress_skill') {
-    const skillId = getManagedSkillId(input.actionKind);
-    if (skillId === 'production') {
-      suppressDefinitionProductionWithoutTransaction({
-        wordId: input.targetWordId,
-        updatedAt: projectedAt,
-        sourceEventId: eventId,
-      });
-    } else {
-      upsertWordSkillRelevanceWithoutTransaction({
-        wordId: input.targetWordId,
-        skillId,
-        relevanceState: 'suppressed',
-        updatedAt: projectedAt,
-        sourceEventId: eventId,
-      });
-    }
-    return;
-  }
-
-  if (input.managementAction === 'bad_prompt') {
-    insertStudyContentFeedbackWithoutTransaction({
-      input,
-      eventId,
-      createdAt: projectedAt,
-      note,
-    });
-    upsertWordStudyAdmissionState(
-      input.targetWordId,
-      'review',
-      addHours(projectedAt, REVIEW_PHASE_RECENCY_GUARD_HOURS),
-    );
-  }
+  suppressDefinitionProductionWithoutTransaction({
+    wordId: input.targetWordId,
+    updatedAt: projectedAt,
+    sourceEventId: eventId,
+  });
 }
 
 function upsertWordSkillRelevanceWithoutTransaction(relevance: WordSkillRelevance) {
@@ -1935,98 +1779,6 @@ function upsertWordSkillRelevanceWithoutTransaction(relevance: WordSkillRelevanc
     relevance.updatedAt,
     relevance.sourceEventId,
   );
-}
-
-function insertStudyContentFeedbackWithoutTransaction({
-  input,
-  eventId,
-  createdAt,
-  note,
-}: {
-  input: RecordStudyManagementActionInput;
-  eventId: string;
-  createdAt: string;
-  note: string;
-}) {
-  const feedbackTarget = getStudyContentFeedbackTarget(input);
-
-  insertStudyContentFeedbackLogRow({
-    targetType: feedbackTarget.targetType,
-    targetId: feedbackTarget.targetId,
-    targetWordId: input.targetWordId,
-    actionKind: input.actionKind,
-    feedbackType: 'bad_prompt',
-    feedbackAction: 'reported',
-    sourceEventId: eventId,
-    note,
-    createdAt,
-  });
-}
-
-function insertStudyContentFeedbackLogRow({
-  targetType,
-  targetId,
-  targetWordId,
-  actionKind,
-  feedbackType,
-  feedbackAction,
-  sourceEventId,
-  note,
-  createdAt = new Date().toISOString(),
-}: {
-  targetType: StudyContentFeedback['targetType'];
-  targetId: string;
-  targetWordId: string;
-  actionKind: StudyContentFeedback['actionKind'];
-  feedbackType: StudyContentFeedback['feedbackType'];
-  feedbackAction: StudyContentFeedback['feedbackAction'];
-  sourceEventId: string | null;
-  note: string;
-  createdAt?: string;
-}) {
-  getDb().prepare(`
-    INSERT INTO study_content_feedback (
-      id,
-      created_at,
-      target_type,
-      target_id,
-      target_word_id,
-      action_kind,
-      feedback_type,
-      feedback_action,
-      source_event_id,
-      note
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    randomUUID(),
-    createdAt,
-    targetType,
-    targetId,
-    targetWordId,
-    actionKind,
-    feedbackType,
-    feedbackAction,
-    sourceEventId,
-    note,
-  );
-}
-
-function getStudyContentFeedbackTarget(input: RecordStudyManagementActionInput): Pick<StudyContentFeedback, 'targetType' | 'targetId'> {
-  if (input.contentRef?.type === 'contrast_prompt') {
-    return {
-      targetType: 'contrast_prompt',
-      targetId: input.contentRef.id,
-    };
-  }
-
-  if (input.actionKind === 'production') {
-    return {
-      targetType: 'generated_prompt',
-      targetId: 'definition_based_production',
-    };
-  }
-
-  throw new Error('Expected contrast prompt content reference for contrast prompt feedback');
 }
 
 function markStudyEventProjectedWithoutTransaction(eventId: string, projectedAt: string) {
@@ -4864,8 +4616,8 @@ function assertStudyManagementActionInput(input: RecordStudyManagementActionInpu
   assertNonEmptyString(input.sessionActionId, 'Expected non-empty session action id');
   assertNonEmptyString(input.targetWordId, 'Expected non-empty target word id');
 
-  if (input.actionKind !== 'production' && input.actionKind !== 'contrast_selection') {
-    throw new Error('Expected production or contrast selection action kind');
+  if (input.actionKind !== 'production') {
+    throw new Error('Expected production action kind');
   }
 
   if (!Array.isArray(input.sampledSkillIds) || input.sampledSkillIds.length === 0) {
@@ -4884,35 +4636,12 @@ function assertStudyManagementActionInput(input: RecordStudyManagementActionInpu
     throw new Error(`Invalid study management action "${String(input.managementAction)}"`);
   }
 
-  if (input.note !== undefined && typeof input.note !== 'string') {
-    throw new Error('Expected note to be a string when provided');
-  }
-
   assertStudyManagementActionMatchesActionKind(input);
 }
 
 function assertStudyManagementActionMatchesActionKind(input: RecordStudyManagementActionInput) {
-  if (input.actionKind === 'production') {
-    if (!input.sampledSkillIds.includes('production')) {
-      throw new Error('Expected production management action to sample production');
-    }
-
-    if (
-      input.managementAction !== 'suppress_skill' &&
-      input.managementAction !== 'bad_prompt'
-    ) {
-      throw new Error('Invalid production management action');
-    }
-
-    return;
-  }
-
-  if (!input.sampledSkillIds.includes('contextual_selection')) {
-    throw new Error('Expected contrast management action to sample contextual selection');
-  }
-
-  if (input.managementAction !== 'bad_prompt') {
-    throw new Error('Invalid contrast management action');
+  if (!input.sampledSkillIds.includes('production')) {
+    throw new Error('Expected production management action to sample production');
   }
 }
 
@@ -5158,21 +4887,8 @@ function mapStudyManagementActionToEventType(action: StudyManagementActionKind):
   switch (action) {
     case 'suppress_skill':
       return 'skill_relevance_changed';
-    case 'bad_prompt':
-      return 'bad_prompt_reported';
     default:
       return assertUnreachableStudyManagementAction(action);
-  }
-}
-
-function getManagedSkillId(actionKind: Extract<StudyActionKind, 'production' | 'contrast_selection'>): StudySkillId {
-  switch (actionKind) {
-    case 'production':
-      return 'production';
-    case 'contrast_selection':
-      return 'contextual_selection';
-    default:
-      return assertUnreachableStudyActionKind(actionKind);
   }
 }
 
@@ -6114,10 +5830,7 @@ function isStudyActionKind(value: unknown): value is StudyActionKind {
 }
 
 function isStudyManagementActionKind(value: unknown): value is StudyManagementActionKind {
-  return (
-    value === 'suppress_skill' ||
-    value === 'bad_prompt'
-  );
+  return value === 'suppress_skill';
 }
 
 function isStudySessionProcessingState(value: unknown): value is StudySessionProcessingState {

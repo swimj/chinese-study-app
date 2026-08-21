@@ -289,11 +289,10 @@ export type RecordStudyManagementActionInput = {
   sessionId: string;
   sessionActionId: string;
   targetWordId: string;
-  actionKind: Extract<StudyActionKind, 'production' | 'contrast_selection'>;
+  actionKind: Extract<StudyActionKind, 'production'>;
   sampledSkillIds: StudySkillId[];
   contentRef: StudyContentRef | null;
   managementAction: StudyManagementActionKind;
-  note?: string;
 };
 
 export type ContrastClusterRow = {

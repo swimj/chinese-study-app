@@ -11,7 +11,6 @@ export {
   getContrastPromptsForCluster,
   deleteContrastPrompt,
   getContrastClusterContent,
-  resolveContrastPromptBadFeedback,
   updateContrastPrompt,
   getContrastCandidateIntake,
   getStudyContentFeedback,

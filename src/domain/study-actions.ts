@@ -147,9 +147,7 @@ export type StudyEventType =
 // 'deprioritized' unused currently, saved for future enrichment
 export type WordSkillRelevanceState = 'normal' | 'deprioritized' | 'suppressed';
 
-export type StudyManagementActionKind =
-  | 'suppress_skill'
-  | 'bad_prompt';
+export type StudyManagementActionKind = 'suppress_skill';
 
 export type StudyEvent = {
   id: string;
@@ -225,7 +223,6 @@ export function mapStudySkillToDefaultActionKind(skillId: StudySkillId): StudyAc
 export function studyManagementActionRemovesCurrentReviewAction(action: StudyManagementActionKind): boolean {
   switch (action) {
     case 'suppress_skill':
-    case 'bad_prompt':
       return true;
     default:
       return assertUnreachableStudyManagementAction(action);

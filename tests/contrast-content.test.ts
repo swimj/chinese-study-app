@@ -395,7 +395,18 @@ describe('contrast content model', { concurrency: false }, () => {
     dbModule.addContrastClusterMember({ clusterId: 'cluster-flags', wordId: 'normal-word', displayOrder: 3 });
 
     dbModule.suppressProductionForWordOutsideSession({ targetWordId: 'suppressed-word' });
-    dbModule.reportBadProductionPromptOutsideSession({ targetWordId: 'bad-prompt-word', note: 'Definition too broad.' });
+    sqlite.prepare(`
+      INSERT INTO study_content_feedback (
+        id, created_at, target_type, target_id, target_word_id, action_kind,
+        feedback_type, feedback_action, source_event_id, note
+      ) VALUES (?, ?, 'generated_prompt', 'definition_based_production', ?, 'production',
+        'bad_prompt', 'reported', NULL, ?)
+    `).run(
+      'legacy-bad-prompt-feedback',
+      '2026-05-10T00:00:00.000Z',
+      'bad-prompt-word',
+      'Definition too broad.',
+    );
 
     const cluster = dbModule.getContrastClusterContent().find((candidate) => candidate.id === 'cluster-flags');
     assert.ok(cluster);

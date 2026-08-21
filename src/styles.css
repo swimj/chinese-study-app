@@ -328,16 +328,6 @@ button:hover {
   gap: 0.45rem;
 }
 
-.session-action-bar .manage-study-note {
-  gap: 0.3rem;
-  font-size: 0.82rem;
-}
-
-.session-action-bar .manage-study-note textarea {
-  min-height: 58px;
-  max-height: 96px;
-}
-
 .session-action-hint {
   line-height: 1.45;
 }
@@ -799,17 +789,6 @@ button:hover {
 
 .manage-study-actions {
   align-items: stretch;
-}
-
-.manage-study-note {
-  display: grid;
-  gap: 0.35rem;
-  color: #cbd5e1;
-  font-size: 0.9rem;
-}
-
-.manage-study-note textarea {
-  min-height: 78px;
 }
 
 .secondary-button {

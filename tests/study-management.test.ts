@@ -117,36 +117,6 @@ describe('study management relevance events', { concurrency: false }, () => {
     ]);
   });
 
-  test('records bad prompt feedback without changing skill relevance', () => {
-    insertWord({ id: 'target-word', hanzi: '恰当', status: 'review' });
-
-    const event = dbModule.recordStudyManagementAction({
-      sessionId: 'session-1',
-      sessionActionId: 'review/target-word/production',
-      targetWordId: 'target-word',
-      actionKind: 'production',
-      sampledSkillIds: ['production'],
-      contentRef: null,
-      managementAction: 'bad_prompt',
-      note: 'Definition is too broad.',
-    });
-
-    assert.equal(event.eventType, 'bad_prompt_reported');
-    assert.equal(dbModule.getWordSkillRelevance('target-word', 'production'), null);
-    assert.deepEqual(dbModule.getContrastCandidateIntake(), []);
-    const feedbackRows = dbModule.getStudyContentFeedback();
-    assert.equal(feedbackRows.length, 1);
-    assert.equal(feedbackRows[0]?.targetType, 'generated_prompt');
-    assert.equal(feedbackRows[0]?.targetId, 'definition_based_production');
-    assert.equal(feedbackRows[0]?.targetWordId, 'target-word');
-    assert.equal(feedbackRows[0]?.actionKind, 'production');
-    assert.equal(feedbackRows[0]?.feedbackType, 'bad_prompt');
-    assert.equal(feedbackRows[0]?.feedbackAction, 'reported');
-    assert.equal(feedbackRows[0]?.sourceEventId, event.id);
-    assert.equal(feedbackRows[0]?.note, 'Definition is too broad.');
-    assert.equal(fetchAdmissionState('target-word')?.earliest_next_study_at, addHours(event.occurredAt, 6));
-  });
-
   test('suppresses production outside session without creating study events', () => {
     insertWord({ id: 'target-word', hanzi: '恰当', status: 'review' });
     const relevance = dbModule.suppressProductionForWordOutsideSession({ targetWordId: 'target-word' });
@@ -180,60 +150,22 @@ describe('study management relevance events', { concurrency: false }, () => {
     );
   });
 
-  test('reports bad production prompt outside session without creating study events', () => {
+  test('keeps legacy bad-prompt feedback readable without a live write path', () => {
     insertWord({ id: 'target-word', hanzi: '恰当', status: 'review' });
-    const feedback = dbModule.reportBadProductionPromptOutsideSession({ targetWordId: 'target-word', note: 'Too broad.' });
+    insertLegacyFeedback({
+      id: 'legacy-definition-feedback',
+      targetType: 'generated_prompt',
+      targetId: 'definition_based_production',
+      targetWordId: 'target-word',
+      actionKind: 'production',
+      note: 'Too broad.',
+    });
 
+    const feedback = dbModule.getStudyContentFeedback().at(-1);
     assert.equal(feedback.targetType, 'generated_prompt');
     assert.equal(feedback.targetId, 'definition_based_production');
     assert.equal(feedback.targetWordId, 'target-word');
     assert.equal(feedback.sourceEventId, null);
-    assert.equal(dbModule.getStudyContentFeedback().at(-1)?.targetWordId, 'target-word');
-  });
-
-  test('projects bad contrast prompt feedback to a contrast prompt feedback target', () => {
-    insertWord({ id: 'target-word', hanzi: '恰当', status: 'review' });
-
-    const event = dbModule.recordStudyManagementAction({
-      sessionId: 'session-1',
-      sessionActionId: 'review/target-word/contextual-selection',
-      targetWordId: 'target-word',
-      actionKind: 'contrast_selection',
-      sampledSkillIds: ['contextual_selection'],
-      contentRef: { type: 'contrast_prompt', id: 'contrast-prompt-1' },
-      managementAction: 'bad_prompt',
-      note: 'The context admits both answers.',
-    });
-
-    const feedbackRows = dbModule.getStudyContentFeedback();
-    assert.equal(feedbackRows.length, 1);
-    assert.equal(feedbackRows[0]?.targetType, 'contrast_prompt');
-    assert.equal(feedbackRows[0]?.targetId, 'contrast-prompt-1');
-    assert.equal(feedbackRows[0]?.targetWordId, 'target-word');
-    assert.equal(feedbackRows[0]?.actionKind, 'contrast_selection');
-    assert.equal(feedbackRows[0]?.feedbackAction, 'reported');
-    assert.equal(feedbackRows[0]?.sourceEventId, event.id);
-    assert.equal(feedbackRows[0]?.note, 'The context admits both answers.');
-    assert.equal(fetchAdmissionState('target-word')?.earliest_next_study_at, addHours(event.occurredAt, 6));
-  });
-
-  test('rejects retired contextual-selection suppression without recording an event', () => {
-    insertWord({ id: 'target-word', hanzi: '恰当', status: 'review' });
-
-    assert.throws(
-      () => dbModule.recordStudyManagementAction({
-        sessionId: 'session-1',
-        sessionActionId: 'review/target-word/contextual-selection',
-        targetWordId: 'target-word',
-        actionKind: 'contrast_selection',
-        sampledSkillIds: ['contextual_selection'],
-        contentRef: { type: 'contrast_prompt', id: 'contrast-prompt-1' },
-        managementAction: 'suppress_skill',
-      }),
-      /Invalid contrast management action/,
-    );
-    assert.deepEqual(dbModule.getStudyEventsForSession('session-1'), []);
-    assert.equal(dbModule.getWordSkillRelevance('target-word', 'contextual_selection'), null);
   });
 
   test('exposes unresolved bad prompt feedback on contrast cluster content', () => {
@@ -249,14 +181,12 @@ describe('study management relevance events', { concurrency: false }, () => {
       promptText: '这个例子很____。',
     });
 
-    dbModule.recordStudyManagementAction({
-      sessionId: 'session-1',
-      sessionActionId: 'review/target-word/contextual-selection',
+    insertLegacyFeedback({
+      id: 'legacy-contrast-feedback',
+      targetType: 'contrast_prompt',
+      targetId: prompt.id,
       targetWordId: 'target-word',
       actionKind: 'contrast_selection',
-      sampledSkillIds: ['contextual_selection'],
-      contentRef: { type: 'contrast_prompt', id: prompt.id },
-      managementAction: 'bad_prompt',
       note: 'Wrong target.',
     });
 
@@ -267,44 +197,6 @@ describe('study management relevance events', { concurrency: false }, () => {
     assert.equal(promptContent?.feedback.badPromptCount, 1);
     assert.equal(promptContent?.feedback.notes[0], 'Wrong target.');
     assert.match(promptContent?.feedback.latestBadPromptAt ?? '', /^\d{4}-\d{2}-\d{2}T/);
-  });
-
-  test('resolving contrast prompt feedback clears prior bad prompt reports', () => {
-    insertWord({ id: 'target-word', hanzi: '恰当', status: 'review' });
-    insertWord({ id: 'sibling-word', hanzi: '适当', status: 'review' });
-    dbModule.createContrastCluster({ id: 'cluster-1', title: '恰当 / 适当' });
-    dbModule.addContrastClusterMember({ clusterId: 'cluster-1', wordId: 'target-word' });
-    dbModule.addContrastClusterMember({ clusterId: 'cluster-1', wordId: 'sibling-word' });
-    const prompt = dbModule.createContrastPrompt({
-      id: 'contrast-prompt-1',
-      clusterId: 'cluster-1',
-      targetWordId: 'target-word',
-      promptText: '这个例子很____。',
-    });
-
-    dbModule.recordStudyManagementAction({
-      sessionId: 'session-1',
-      sessionActionId: 'review/target-word/contextual-selection',
-      targetWordId: 'target-word',
-      actionKind: 'contrast_selection',
-      sampledSkillIds: ['contextual_selection'],
-      contentRef: { type: 'contrast_prompt', id: prompt.id },
-      managementAction: 'bad_prompt',
-      note: 'Wrong target.',
-    });
-
-    const resolvedPrompt = dbModule.resolveContrastPromptBadFeedback({
-      promptId: prompt.id,
-      note: 'Fixed target.',
-    });
-
-    assert.equal(resolvedPrompt.feedback.flagged, false);
-    assert.equal(resolvedPrompt.feedback.badPromptCount, 0);
-    assert.deepEqual(resolvedPrompt.feedback.notes, []);
-    const feedbackRows = dbModule.getStudyContentFeedback();
-    assert.equal(feedbackRows.length, 2);
-    assert.equal(feedbackRows[1]?.feedbackAction, 'resolved');
-    assert.equal(feedbackRows[1]?.note, 'Fixed target.');
   });
 
   test('keeps skill management limited to review words initially', () => {
@@ -324,6 +216,37 @@ describe('study management relevance events', { concurrency: false }, () => {
     );
   });
 });
+
+function insertLegacyFeedback({
+  id,
+  targetType,
+  targetId,
+  targetWordId,
+  actionKind,
+  note,
+}: {
+  id: string;
+  targetType: 'generated_prompt' | 'contrast_prompt';
+  targetId: string;
+  targetWordId: string;
+  actionKind: 'production' | 'contrast_selection';
+  note: string;
+}) {
+  sqlite.prepare(`
+    INSERT INTO study_content_feedback (
+      id, created_at, target_type, target_id, target_word_id, action_kind,
+      feedback_type, feedback_action, source_event_id, note
+    ) VALUES (?, ?, ?, ?, ?, ?, 'bad_prompt', 'reported', NULL, ?)
+  `).run(
+    id,
+    '2026-05-10T00:00:00.000Z',
+    targetType,
+    targetId,
+    targetWordId,
+    actionKind,
+    note,
+  );
+}
 
 function insertWord({
   id,

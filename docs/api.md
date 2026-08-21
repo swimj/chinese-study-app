@@ -395,7 +395,11 @@ still show the item.
 | Method | Path | Handler domain |
 | --- | --- | --- |
 | POST | `/api/study-management/production/suppress` | `study-management` |
-| POST | `/api/study-management/production/bad-prompt` | `study-management` |
+
+Live bad-prompt reporting is retired. Existing `study_content_feedback` rows
+remain a read-only compatibility input until the tenancy upgrade converts
+active reports into learner-owned prompt exclusions with explicit migration
+provenance.
 
 ## Contrast clusters and intake (retired HTTP)
 
