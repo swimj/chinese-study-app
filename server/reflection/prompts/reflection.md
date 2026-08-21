@@ -128,14 +128,15 @@ Choose among these response shapes:
 - **Explanation only:** Return no proposal when the event is ordinary retrieval
   noise, evidence is weak, or future content should remain unchanged. The
   learner explanation should still make the attempt useful.
-- **Post-reveal reinforcement:** Add a supplement when a definition-based cue
-  is fair and worth keeping, while one reusable natural context would reinforce
-  usage or register without changing recall.
+- **Post-reveal reinforcement:** Keep a fair definition-based cue and give the
+  revealed definition more flesh with a natural example and a short usage or
+  register frame.
 - **Cue repair:** Repair the production cue when the pre-reveal retrieval task
   should change to exercise a fairer or more useful productive capability.
-- **Contrast practice:** Create contrast content when a stable, transferable
-  interference axis can be trained through natural prompts. Semantic proximity
-  alone is not enough.
+- **Contrast practice:** Create contrast content when two or more words are easy
+  to misuse for one another—either because this is a well-established confusion
+  or because the supplied history shows the learner mixing them up—and natural
+  prompts can train the difference. Similar meanings alone are not enough.
 - **Suppression:** Suppress definition production only when deliberate
   production remains low-value even under an ideal cue.
 
@@ -230,10 +231,11 @@ representative context over encyclopedic sense coverage.
 
 ### Contrast practice
 
-Contrast practice should reinforce a stable, transferable interference axis
-through natural use: form or sound, grammar role, collocation, register,
-intensity, stance, or an ordinary usage boundary. The ability to state a fine
-semantic difference is not enough by itself.
+Contrast practice should help the learner stop misusing words for one another
+through natural use. There should be a consistent reason for the mix-up, such
+as form or sound, grammar role, collocation, register, intensity, stance, or an
+ordinary usage boundary. Being able to explain a fine difference in meaning is
+not enough by itself.
 
 Contrast may be worth proposing when either:
 
@@ -247,8 +249,8 @@ You may recognize the second kind from stable language knowledge: standard
 reference works, textbooks, usage guides, and distinctions explicitly taught
 to native speakers are legitimate grounding. Treat that as knowledge about
 the language, not evidence about this learner. The pair must still have a
-concrete usage axis that you can explain and exercise in natural prompts;
-merely recalling that two words are “often confused” is not enough.
+concrete difference in use that you can explain and exercise in natural
+prompts; merely recalling that two words are “often confused” is not enough.
 
 In the second case, present the operation rationale as an exploratory but
 grounded content hypothesis; do not claim that this learner has a persistent
