@@ -9,6 +9,7 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`connection.ts`](../server/db/connection.ts) | Config resolution per `initDbConnection()`, SQLite singleton (`getDb` / `setDb`) |
 | [`types.ts`](../server/db/types.ts) | Row/DTO types, scheduling constants, public type re-exports |
 | [`persistence.ts`](../server/db/persistence.ts) | Existing query/domain functions (words, priority, sessions, contrast, scheduler, analytics, durable learning-policy metadata) and `initializeDatabase` |
+| [`unstudied-admission.ts`](../server/db/unstudied-admission.ts) | Experimental diet/stash unstudied admission selector |
 | [`reflections.ts`](../server/db/reflections.ts) | Reflection schema validation, immutable artifact materialization, queue/detail read models, proposal review, immutable invocation authorization, application/recovery, and supported adapters |
 | [`reflection-quality.ts`](../server/db/reflection-quality.ts) | Dogfood item quality-tag overlay, upsert-by-item, and model-arm stats joins |
 | [`reflection-help-inbox.ts`](../server/db/reflection-help-inbox.ts) | Open explanation-only Help inbox rows, keyed by `(artifact_id, item_id)`; Done deletes the row |
@@ -24,7 +25,7 @@ Domain-oriented re-export shims (navigation only; implementation stays in `persi
 | --- | --- |
 | [`words.ts`](../server/db/words.ts) | `getWords`, `searchWords`, meanings, lifecycle completions |
 | [`priority.ts`](../server/db/priority.ts) | Unstudied priority queues, `addUnstudiedUserPriorityByHanzi` |
-| [`session-composition.ts`](../server/db/session-composition.ts) | `getSessionPayload`, projection guard |
+| [`session-composition.ts`](../server/db/session-composition.ts) | `getSessionPayload`, projection guard, dual-pool unstudied admission re-exports |
 | [`contrast.ts`](../server/db/contrast.ts) | Clusters, prompts, candidate-intake table reader |
 | [`study-sessions.ts`](../server/db/study-sessions.ts) | Session records, attempt batches |
 | [`study-management.ts`](../server/db/study-management.ts) | Suppress / bad-prompt / management actions |

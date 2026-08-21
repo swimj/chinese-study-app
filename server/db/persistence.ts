@@ -69,6 +69,11 @@ import {
   REVIEW_SKILL_URGENCY_TIE_EPSILON,
 } from './types.ts';
 import { applyIntervalHourFuzz } from './interval-schedule.ts';
+import {
+  buildUnstudiedAdmissionSeedSource,
+  selectAdmittedUnstudiedWordIds,
+  type UnstudiedStashCandidate,
+} from './unstudied-admission.ts';
 
 export function applyProductionContrastExerciseSeed() {
   if (!config.seedSampleData || !config.includeDevContrastSeed || config.studyProfile !== 'mandarin') {
@@ -256,6 +261,7 @@ export function getUnstudiedPriorityWords(): PriorityWordsPayload {
         COALESCE(user_word_priority.force_top, 0) AS force_top,
         COALESCE(user_word_priority.priority_tier, 0) AS priority_tier,
         COALESCE(user_word_priority.required_for_next_session, 0) AS required_for_next_session,
+        user_word_priority.updated_at AS overlay_updated_at,
         words.priority
           + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} AS effective_priority,
         ROW_NUMBER() OVER (
@@ -304,6 +310,7 @@ export function getPrioritizedUnstudiedWords(): PriorityWordsPayload {
         user_word_priority.force_top,
         user_word_priority.priority_tier,
         user_word_priority.required_for_next_session,
+        user_word_priority.updated_at AS overlay_updated_at,
         words.priority + user_word_priority.bump_count * ${PRIORITY_BUMP_UNIT} AS effective_priority
       FROM user_word_priority
       JOIN words ON words.id = user_word_priority.word_id
@@ -316,15 +323,15 @@ export function getPrioritizedUnstudiedWords(): PriorityWordsPayload {
         )
       ORDER BY
         user_word_priority.priority_tier DESC,
-        effective_priority DESC,
-        words.priority DESC,
-        words.created_at ASC
+        user_word_priority.updated_at DESC,
+        words.id ASC
     `)
     .all() as Array<WordRow & {
       bump_count: number;
       force_top: number;
       priority_tier: number;
       required_for_next_session: number;
+      overlay_updated_at: string;
       effective_priority: number;
     }>;
 
@@ -359,6 +366,7 @@ export function getTopUnstudiedPriorityWords(limit: number): PriorityWordsPayloa
           COALESCE(user_word_priority.force_top, 0) AS force_top,
           COALESCE(user_word_priority.priority_tier, 0) AS priority_tier,
           COALESCE(user_word_priority.required_for_next_session, 0) AS required_for_next_session,
+          user_word_priority.updated_at AS overlay_updated_at,
           words.priority
             + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} AS effective_priority,
           ROW_NUMBER() OVER (
@@ -4662,6 +4670,7 @@ function mapPriorityWordRow(row: PriorityWordRow): PriorityWord {
     requiredForNextSession: row.required_for_next_session !== 0,
     effectivePriority: row.effective_priority,
     effectiveRank: row.effective_rank,
+    overlayUpdatedAt: row.overlay_updated_at,
   };
 }
 
@@ -4671,6 +4680,7 @@ function mapPrioritizedWordRowWithApproximateRank(
     force_top: number;
     priority_tier: number;
     required_for_next_session: number;
+    overlay_updated_at: string | null;
     effective_priority: number;
   },
 ): PriorityWord {
@@ -4691,6 +4701,7 @@ function mapPrioritizedWordRowWithApproximateRank(
     requiredForNextSession,
     effectivePriority,
     effectiveRank,
+    overlayUpdatedAt: row.overlay_updated_at,
   });
 }
 
@@ -4701,6 +4712,7 @@ function buildPriorityWordFromParts({
   requiredForNextSession,
   effectivePriority,
   effectiveRank,
+  overlayUpdatedAt,
 }: {
   row: WordRow;
   bumpCount: number;
@@ -4708,6 +4720,7 @@ function buildPriorityWordFromParts({
   requiredForNextSession: boolean;
   effectivePriority: number;
   effectiveRank: number;
+  overlayUpdatedAt: string | null;
 }): PriorityWord {
   return {
     word: mapWordRow(row),
@@ -4716,6 +4729,7 @@ function buildPriorityWordFromParts({
     requiredForNextSession,
     effectivePriority,
     effectiveRank,
+    overlayUpdatedAt,
   };
 }
 
@@ -5341,54 +5355,16 @@ function getSessionItemBucketsWithWords(studyDayKey: string): SessionStudyItemBu
     `)
     .all(today) as WordRow[];
 
-  const unstudiedRows = getDb()
+  return {
+    review: reviewRows,
+    learning: learningRows.map(mapWordRow),
+    unstudied: getAdmittedUnstudiedWords(remainingDailyNewWordSlots, studyDayKey),
+  };
+}
+
+function getAdmittedUnstudiedWords(remainingDailyNewWordSlots: number, studyDayKey: string): Word[] {
+  const stashRows = getDb()
     .prepare(`
-      WITH ranked_unstudied AS (
-        SELECT
-          words.id,
-          words.priority AS base_priority,
-          words.created_at,
-          COALESCE(user_word_priority.bump_count, 0) AS bump_count,
-          COALESCE(user_word_priority.force_top, 0) AS force_top,
-          COALESCE(user_word_priority.priority_tier, 0) AS priority_tier,
-          COALESCE(user_word_priority.required_for_next_session, 0) AS required_for_next_session,
-          words.priority
-            + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} AS effective_priority
-        FROM words
-        LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
-        WHERE words.status = 'unstudied'
-      ),
-      normal_selected AS (
-        SELECT
-          id,
-          base_priority,
-          created_at,
-          priority_tier,
-          effective_priority
-        FROM ranked_unstudied
-        ORDER BY
-          priority_tier DESC,
-          effective_priority DESC,
-          base_priority DESC,
-          created_at ASC
-        LIMIT ?
-      ),
-      required_overflow AS (
-        SELECT
-          id,
-          base_priority,
-          created_at,
-          priority_tier,
-          effective_priority
-        FROM ranked_unstudied
-        WHERE required_for_next_session != 0
-          AND priority_tier >= ${PRIORITY_TIER_REGULAR}
-      ),
-      selected_unstudied AS (
-        SELECT * FROM normal_selected
-        UNION
-        SELECT * FROM required_overflow
-      )
       SELECT
         words.id,
         words.hanzi,
@@ -5403,23 +5379,78 @@ function getSessionItemBucketsWithWords(studyDayKey: string): SessionStudyItemBu
         words.created_at,
         words.learning_streak,
         words.last_learning_success_on,
-        words.last_learning_covered_on
-      FROM words
-      INNER JOIN selected_unstudied ON selected_unstudied.id = words.id
-      ORDER BY
-        selected_unstudied.priority_tier DESC,
-        selected_unstudied.effective_priority DESC,
-        words.priority DESC,
-        words.created_at ASC,
-        words.id ASC
+        words.last_learning_covered_on,
+        user_word_priority.priority_tier,
+        user_word_priority.required_for_next_session,
+        user_word_priority.updated_at AS overlay_updated_at
+      FROM user_word_priority
+      JOIN words ON words.id = user_word_priority.word_id
+      WHERE words.status = 'unstudied'
+        AND user_word_priority.priority_tier >= ${PRIORITY_TIER_REGULAR}
     `)
-    .all(remainingDailyNewWordSlots) as WordRow[];
+    .all() as Array<WordRow & {
+      priority_tier: number;
+      required_for_next_session: number;
+      overlay_updated_at: string;
+    }>;
 
-  return {
-    review: reviewRows,
-    learning: learningRows.map(mapWordRow),
-    unstudied: unstudiedRows.map(mapWordRow),
-  };
+  const dietRows = remainingDailyNewWordSlots === 0
+    ? []
+    : getDb()
+      .prepare(`
+        SELECT
+          words.id,
+          words.hanzi,
+          words.traditional,
+          words.pinyin,
+          words.meaning,
+          words.meanings_json,
+          words.personal_notes,
+          words.examples_json,
+          words.status,
+          words.priority,
+          words.created_at,
+          words.learning_streak,
+          words.last_learning_success_on,
+          words.last_learning_covered_on
+        FROM words
+        LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
+        WHERE words.status = 'unstudied'
+          AND user_word_priority.word_id IS NULL
+        ORDER BY words.priority DESC, words.created_at ASC, words.id ASC
+        LIMIT ?
+      `)
+      .all(remainingDailyNewWordSlots) as WordRow[];
+
+  const stash: UnstudiedStashCandidate[] = stashRows.map((row) => ({
+    id: row.id,
+    overlayUpdatedAt: row.overlay_updated_at,
+    isTop: row.priority_tier === PRIORITY_TIER_TOP,
+    isRequired: row.required_for_next_session !== 0,
+  }));
+  const admittedIds = selectAdmittedUnstudiedWordIds({
+    stash,
+    dietIds: dietRows.map((row) => row.id),
+    remainingQuota: remainingDailyNewWordSlots,
+    seedSource: buildUnstudiedAdmissionSeedSource(studyDayKey, remainingDailyNewWordSlots),
+  });
+
+  const wordsById = new Map<string, Word>();
+  for (const row of stashRows) {
+    wordsById.set(row.id, mapWordRow(row));
+  }
+  for (const row of dietRows) {
+    wordsById.set(row.id, mapWordRow(row));
+  }
+
+  return admittedIds.map((wordId) => {
+    const word = wordsById.get(wordId);
+    if (!word) {
+      throw new Error(`Unstudied admission invariant violated: selected word "${wordId}" is missing from loaded candidates.`);
+    }
+
+    return word;
+  });
 }
 
 function getReviewSessionStudyItems(now: string): SessionStudyItem[] {
@@ -6094,6 +6125,7 @@ function getUnstudiedPriorityWordById(wordId: string): PriorityWord {
         COALESCE(user_word_priority.force_top, 0) AS force_top,
         COALESCE(user_word_priority.priority_tier, 0) AS priority_tier,
         COALESCE(user_word_priority.required_for_next_session, 0) AS required_for_next_session,
+        user_word_priority.updated_at AS overlay_updated_at,
         words.priority
           + COALESCE(user_word_priority.bump_count, 0) * ${PRIORITY_BUMP_UNIT} AS effective_priority
       FROM words
@@ -6107,6 +6139,7 @@ function getUnstudiedPriorityWordById(wordId: string): PriorityWord {
       force_top: number;
       priority_tier: number;
       required_for_next_session: number;
+      overlay_updated_at: string | null;
       effective_priority: number;
     })
     | undefined;
@@ -6132,6 +6165,7 @@ function getUnstudiedPriorityWordById(wordId: string): PriorityWord {
     requiredForNextSession,
     effectivePriority,
     effectiveRank,
+    overlayUpdatedAt: row.overlay_updated_at,
   });
 }
 

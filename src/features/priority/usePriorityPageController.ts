@@ -12,7 +12,7 @@ import {
 } from '../../services/api';
 import { studyProfile } from '../../study-profile';
 import type { IntakeTriagePriorityWord, IntakeTriageRunReceipt, PriorityWord } from '../../types';
-import { sortPriorityWords } from './priority-page-model';
+import { sortPriorityWords, sortStashManageWords } from './priority-page-model';
 
 export type PriorityPageControllerOptions = {
   currentPage: AppPageKey;
@@ -91,7 +91,7 @@ export function usePriorityPageController({
         fetchUnstudiedPriorityWords(),
         fetchTopUnstudiedPriorityWords(50),
       ]);
-      setRows(sortPriorityWords(priorityWordsResponse.words));
+      setRows(sortStashManageWords(priorityWordsResponse.words));
       setTriageRows(sortPriorityWords(triageWordsResponse.words));
       setAnalysisCandidateCount(triageWordsResponse.analysisCandidateCount);
       setUnstudiedTotalCount(priorityWordsResponse.unstudiedTotalCount);
@@ -161,9 +161,9 @@ export function usePriorityPageController({
           byId.set(word.word.id, word);
         }
 
-        return sortPriorityWords([...byId.values()]);
+        return sortStashManageWords([...byId.values()]);
       });
-      const prioritizedAddedWord = sortPriorityWords(response.words)[0];
+      const prioritizedAddedWord = sortStashManageWords(response.words)[0];
       setJumpRequestWordId(prioritizedAddedWord?.word.id ?? null);
       setUnstudiedTotalCount(response.unstudiedTotalCount);
       setSearchNotice(`Added ${response.addedCount} matching word${response.addedCount === 1 ? '' : 's'} for "${normalizedHanzi}".`);
@@ -282,7 +282,7 @@ export function usePriorityPageController({
           return current.filter((entry) => !updatedById.has(entry.word.id));
         }
 
-        return sortPriorityWords(current.map((entry) => updatedById.get(entry.word.id) ?? entry));
+        return sortStashManageWords(current.map((entry) => updatedById.get(entry.word.id) ?? entry));
       });
       if (patch.bumpDelta || patch.forceTop || patch.requiredForNextSession) {
         setTriageRows((current) => current.filter((entry) => !updatedById.has(entry.word.id)));
@@ -341,5 +341,5 @@ function mergePriorityWord(rows: PriorityWord[], updatedWord: PriorityWord): Pri
     throw new Error(`Invariant violated: updated priority word "${updatedWord.word.id}" is missing from the current rows.`);
   }
 
-  return sortPriorityWords(rows.map((entry) => (entry.word.id === updatedWord.word.id ? updatedWord : entry)));
+  return sortStashManageWords(rows.map((entry) => (entry.word.id === updatedWord.word.id ? updatedWord : entry)));
 }

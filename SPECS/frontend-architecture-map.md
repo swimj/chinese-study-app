@@ -45,7 +45,7 @@ src/
 
     priority/
       usePriorityPageController.ts # priority loading, search, batch updates
-      priority-page-model.ts       # priority sorting helpers
+      priority-page-model.ts       # triage frequency sort + stash manage-list overlay recency sort
 
     reflection/
       useReflectionPageController.ts # open/history/detail loading and review mutations

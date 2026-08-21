@@ -94,7 +94,10 @@ The user may complete as much or as little of the session as they want.
 
 New-word intake is policy-driven.
 
-For the current stage, the policy may still use a daily learning cap and priority threshold. That is a policy choice, not a fundamental property of the model.
+For the current stage, the policy uses a daily new-word cap plus the
+experimental dual-pool unstudied admission contract in
+[`study-action-model.md`](./study-action-model.md#experimental-dual-pool-unstudied-admission).
+That is a policy choice, not a fundamental property of the model.
 
 Important rule:
 

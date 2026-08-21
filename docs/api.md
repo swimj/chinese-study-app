@@ -59,6 +59,10 @@ count and does not mutate an already-started frontend session.
 | GET | `/api/priority/unstudied/top` | `priority` |
 | POST | `/api/priority/unstudied/add-by-hanzi` | `priority` |
 
+`GET /api/priority/unstudied` is the stash manage list: unstudied words with a
+user-priority overlay, ordered tops newest-first by overlay `updated_at`, then
+other stash by the same timestamp. Corpus frequency no longer ranks that list.
+
 `GET /api/priority/unstudied/top` is the advisor-aware intake queue. It excludes
 words with any explicit positive priority override and returns an
 `intakeTriage` annotation per word plus `analysisCandidateCount`.
@@ -93,6 +97,9 @@ translated annotations attached to priority words.
 
 The session payload contains the three study-item buckets plus a frozen
 production answer catalog of canonical `{ wordId, hanzi, traditional }` rows.
+Unstudied membership is the experimental dual-pool admitted set from
+[`SPECS/study-action-model.md`](../SPECS/study-action-model.md#experimental-dual-pool-unstudied-admission)
+(stash/diet split of remaining daily new-word quota, plus require bypass).
 Review production items also freeze their selected durable cue or meaning-
 derived fallback, accepted-word ids, and nullable recheck-demand id. The
 nullable `traditional` form is canonical content; lookup aliases are excluded.

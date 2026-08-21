@@ -32,6 +32,7 @@ export type PriorityWord = {
   requiredForNextSession: boolean;
   effectivePriority: number;
   effectiveRank: number;
+  overlayUpdatedAt: string | null;
 };
 
 export type IntakeTriagePriorityWord = PriorityWord & {
