@@ -77,6 +77,7 @@ import {
   ensureIdentitySchema,
   hasIdentitySchema,
 } from './identity.ts';
+import { requireLearnerId } from './learner-context.ts';
 
 export function applyProductionContrastExerciseSeed() {
   if (!config.seedSampleData || !config.includeDevContrastSeed || config.studyProfile !== 'mandarin') {
@@ -1984,15 +1985,16 @@ export function getLearningPolicy(studyDayKey: string) {
 export function setDailyNewWordLimit(dailyNewWordLimit: number) {
   assertDailyNewWordLimit(dailyNewWordLimit);
   getDb().prepare(`
-    INSERT INTO app_metadata (
-      key,
-      value,
+    INSERT INTO learner_settings (
+      learner_id,
+      setting_key,
+      value_json,
       updated_at
-    ) VALUES ('daily_new_word_limit', ?, ?)
-    ON CONFLICT(key) DO UPDATE SET
-      value = excluded.value,
+    ) VALUES (?, 'daily_new_word_limit', ?, ?)
+    ON CONFLICT(learner_id, setting_key) DO UPDATE SET
+      value_json = excluded.value_json,
       updated_at = excluded.updated_at
-  `).run(String(dailyNewWordLimit), new Date().toISOString());
+  `).run(requireLearnerId(), JSON.stringify(dailyNewWordLimit), new Date().toISOString());
 
   return {
     dailyNewWordLimit,
@@ -2368,6 +2370,7 @@ export function initializeDatabase() {
   if (!dbExistedOnStartup) {
     createSchema();
     bootstrapLearner({ learnerId: config.learnerId });
+    ensureDefaultDailyNewWordLimit();
     seedDatabase();
     backfillContrastClusterMemberEligibility();
     return;
@@ -2413,13 +2416,6 @@ function applyLightweightSchemaMigrations() {
     getDb().exec(`ALTER TABLE words ADD COLUMN personal_notes TEXT NOT NULL DEFAULT ''`);
   }
 
-  getDb().exec(`
-    CREATE TABLE IF NOT EXISTS app_metadata (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-  `);
   ensureDefaultDailyNewWordLimit();
 
   getDb().exec(`
@@ -3132,12 +3128,6 @@ function createSchema() {
       PRIMARY KEY (normalized_alias, word_id, source)
     );
 
-    CREATE TABLE app_metadata (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
     CREATE TABLE word_study_admission_state (
       word_id TEXT PRIMARY KEY REFERENCES words(id) ON DELETE CASCADE,
       study_phase TEXT NOT NULL,
@@ -3274,18 +3264,18 @@ function createSchema() {
   ensureReflectionSchema();
   ensureProductionCueSchema();
   ensureIntakeTriageSchema();
-  ensureDefaultDailyNewWordLimit();
   ensureIndexes();
 }
 
 function ensureDefaultDailyNewWordLimit() {
   getDb().prepare(`
-    INSERT OR IGNORE INTO app_metadata (
-      key,
-      value,
+    INSERT OR IGNORE INTO learner_settings (
+      learner_id,
+      setting_key,
+      value_json,
       updated_at
-    ) VALUES ('daily_new_word_limit', ?, ?)
-  `).run(String(DEFAULT_DAILY_NEW_WORD_LIMIT), new Date().toISOString());
+    ) VALUES (?, 'daily_new_word_limit', ?, ?)
+  `).run(requireLearnerId(), JSON.stringify(DEFAULT_DAILY_NEW_WORD_LIMIT), new Date().toISOString());
 }
 
 function ensureIndexes() {
@@ -3363,11 +3353,6 @@ function validateSchema() {
   assertTableColumns('daily_new_word_intake', [
     'day_key',
     'new_study_count',
-  ]);
-  assertTableColumns('app_metadata', [
-    'key',
-    'value',
-    'updated_at',
   ]);
   assertTableColumns('word_study_admission_state', [
     'word_id',
@@ -5751,17 +5736,17 @@ function getRemainingDailyNewWordSlots(studyDayKey: string): number {
 function getDailyNewWordLimit(): number {
   const row = getDb()
     .prepare(`
-      SELECT value
-      FROM app_metadata
-      WHERE key = 'daily_new_word_limit'
+      SELECT value_json
+      FROM learner_settings
+      WHERE learner_id = ? AND setting_key = 'daily_new_word_limit'
     `)
-    .get() as { value: string } | undefined;
+    .get(requireLearnerId()) as { value_json: string } | undefined;
 
   if (!row) {
     return DEFAULT_DAILY_NEW_WORD_LIMIT;
   }
 
-  const dailyNewWordLimit = Number(row.value);
+  const dailyNewWordLimit = JSON.parse(row.value_json) as unknown;
   assertDailyNewWordLimit(dailyNewWordLimit);
   return dailyNewWordLimit;
 }

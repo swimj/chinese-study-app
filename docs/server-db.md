@@ -159,11 +159,11 @@ Initialization also repairs every persisted contrast-cluster member to
 state is initialized as immediately due; existing scheduler history is
 preserved when a disabled row is re-enabled.
 
-The `app_metadata` key `daily_new_word_limit` stores the learner's configured
-non-negative integer limit. A missing key reads as the current default of `10`,
-which preserves existing databases without rewriting them. This setting is
-independent of `daily_new_word_intake.new_study_count`, the per-UTC-day counter
-incremented only when an unstudied word is completed.
+The `learner_settings` row keyed by `(learner_id, daily_new_word_limit)` stores
+the learner's configured non-negative integer limit as JSON. A missing row
+reads as the current default of `10`. This setting is independent of
+`daily_new_word_intake.new_study_count`, the per-UTC-day counter incremented
+only when an unstudied word is completed.
 
 ## Primary tests by area
 

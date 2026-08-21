@@ -12,7 +12,7 @@ import { getDb } from './connection.ts';
 
 export const DEFAULT_PRODUCTION_TASK_KIND = 'default_production' as const;
 
-const PRODUCTION_TASKS_BACKFILL_MARKER_KEY = 'production_tasks_backfill_v0';
+const PRODUCTION_TASKS_BACKFILL_MIGRATION_ID = 'production_tasks_backfill_v0';
 
 export type ProductionTaskV0 = {
   taskId: string;
@@ -406,9 +406,9 @@ export function ensureProductionCueSchema(): void {
 function backfillDefaultProductionTasksOnce(): void {
   const marker = getDb().prepare(`
     SELECT 1
-    FROM app_metadata
-    WHERE key = ?
-  `).get(PRODUCTION_TASKS_BACKFILL_MARKER_KEY);
+    FROM schema_migrations
+    WHERE migration_id = ?
+  `).get(PRODUCTION_TASKS_BACKFILL_MIGRATION_ID);
   if (marker) return;
 
   getDb().exec(`
@@ -421,9 +421,9 @@ function backfillDefaultProductionTasksOnce(): void {
     FROM words;
   `);
   getDb().prepare(`
-    INSERT OR IGNORE INTO app_metadata (key, value, updated_at)
-    VALUES (?, 'complete', ?)
-  `).run(PRODUCTION_TASKS_BACKFILL_MARKER_KEY, new Date().toISOString());
+    INSERT OR IGNORE INTO schema_migrations (migration_id, applied_at, details_json)
+    VALUES (?, ?, '{"status":"complete"}')
+  `).run(PRODUCTION_TASKS_BACKFILL_MIGRATION_ID, new Date().toISOString());
 }
 
 export function ensureProductionCueIndexes(): void {
