@@ -17,6 +17,7 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`domain-commands.ts`](../server/db/domain-commands.ts) | Shared transaction-aware domain commands used by reflection and legacy/manual paths; definition-production suppression and contextual-selection eligibility |
 | [`production-cues.ts`](../server/db/production-cues.ts) | Default production tasks, immutable cue/lifecycle/evidence state, one immutable post-reveal supplement per definition cue or fallback, production recheck demands, and cue/supplement application adapters |
 | [`schema.ts`](../server/db/schema.ts) | Re-exports `applyProductionContrastExerciseSeed` and `initializeDatabase` for init ordering |
+| [`ownership-manifest.ts`](../server/db/ownership-manifest.ts) | Auditable ownership, enforcement, history, migration, and lifecycle classification for every durable application table |
 | [`index.ts`](../server/db/index.ts) | Internal re-export barrel |
 
 Domain-oriented re-export shims (navigation only; implementation stays in `persistence.ts`):
@@ -165,18 +166,3 @@ incremented only when an unstudied word is completed.
 ## Primary tests by area
 
 See [testing.md](./testing.md). DB-touching suites import `server/db.ts` with a temp `APP_DATA_DIR`.
-
-## Regenerating from monolith (maintainers)
-
-If you need to rebuild `persistence.ts` from a known-good single file:
-
-```bash
-node scripts/rebuild-persistence.mjs
-```
-
-Uses the current monolithic `server/db.ts` on disk, or pass another export:
-
-```bash
-git show HEAD:server/db.ts > /tmp/db-monolith.ts
-node scripts/rebuild-persistence.mjs --source=/tmp/db-monolith.ts
-```
