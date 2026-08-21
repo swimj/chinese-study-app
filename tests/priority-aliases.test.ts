@@ -152,6 +152,7 @@ async function createHarness(studyProfile: StudyProfile): Promise<Harness> {
     const moduleUrl = `${pathToFileURL(path.resolve('server/db.ts')).href}?priorityAlias=${studyProfile}-${Date.now()}-${Math.random()}`;
     const dbModule = await import(moduleUrl);
     const sqlite = new DatabaseSync(path.join(dataDir, 'app.db'));
+    sqlite.function('current_learner_id', () => 'test-learner');
     sqlite.exec('PRAGMA foreign_keys = ON;');
     return { dataDir, sqlite, dbModule };
   } finally {

@@ -4,6 +4,7 @@ import type {
   ReflectionHelpInboxEntry,
 } from '../../src/domain/reflection.ts';
 import { getDb } from './connection.ts';
+import { learnerScopedStorageTableName } from './learner-scoped-tables.ts';
 
 const helpInboxColumns = [
   'inbox_id',
@@ -35,11 +36,15 @@ type HelpInboxRow = {
  * backfill is intentionally not performed.
  */
 export function ensureReflectionHelpInboxSchema(): void {
+  if (learnerScopedStorageTableName('reflection_help_inbox') !== 'reflection_help_inbox') {
+    return;
+  }
   getDb().exec(`
     DROP TABLE IF EXISTS reflection_item_presentation;
 
     CREATE TABLE IF NOT EXISTS reflection_help_inbox (
       inbox_id TEXT PRIMARY KEY,
+      learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       artifact_id TEXT NOT NULL
         REFERENCES reflection_artifacts(artifact_id) ON DELETE RESTRICT,
       item_id TEXT NOT NULL,
@@ -205,7 +210,8 @@ function assertIsoTimestamp(value: string, label: string): void {
 }
 
 function assertTableColumns(tableName: string, columns: readonly string[]): void {
-  const present = getDb().prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
+  const storageTableName = learnerScopedStorageTableName(tableName);
+  const present = getDb().prepare(`PRAGMA table_info(${storageTableName})`).all() as Array<{ name: string }>;
   const names = new Set(present.map((column) => column.name));
   for (const column of columns) {
     if (!names.has(column)) {
@@ -221,11 +227,12 @@ function assertNamedIndex(
   columns: readonly string[],
   partial = false,
 ): void {
+  const storageTableName = learnerScopedStorageTableName(tableName);
   const index = getDb().prepare(`
     SELECT name, "unique", origin, partial
     FROM pragma_index_list(?)
     WHERE name = ?
-  `).get(tableName, indexName) as {
+  `).get(storageTableName, indexName) as {
     name: string;
     unique: number;
     origin: string;
@@ -257,14 +264,16 @@ function assertForeignKey(
   targetColumn: string,
   onDelete: string,
 ): void {
-  const foreignKeys = getDb().prepare(`PRAGMA foreign_key_list(${tableName})`).all() as Array<{
+  const storageTableName = learnerScopedStorageTableName(tableName);
+  const storageTargetTable = learnerScopedStorageTableName(targetTable);
+  const foreignKeys = getDb().prepare(`PRAGMA foreign_key_list(${storageTableName})`).all() as Array<{
     table: string;
     from: string;
     to: string;
     on_delete: string;
   }>;
   const present = foreignKeys.some((foreignKey) => (
-    foreignKey.table === targetTable
+    foreignKey.table === storageTargetTable
     && foreignKey.from === fromColumn
     && foreignKey.to === targetColumn
     && foreignKey.on_delete === onDelete

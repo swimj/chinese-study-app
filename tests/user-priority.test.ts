@@ -42,6 +42,7 @@ describe('user priority layer', { concurrency: false }, () => {
     }
 
     sqlite = new DatabaseSync(dbPath);
+    sqlite.function('current_learner_id', () => 'test-learner');
     sqlite.exec('PRAGMA foreign_keys = ON;');
   });
 

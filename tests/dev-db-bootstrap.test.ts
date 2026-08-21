@@ -12,6 +12,17 @@ const mandarinDevContrastPromptCount = 11;
 const mandarinDevContextualSelectionCount = 11;
 const mandarinDevBinaryContrastChoiceSetCount = 2;
 
+function registerPersistedLearnerContext(sqlite: DatabaseSync): void {
+  const learner = sqlite.prepare(`
+    SELECT learner_id
+    FROM learners
+    ORDER BY learner_id ASC
+    LIMIT 1
+  `).get() as { learner_id: string } | undefined;
+  assert.ok(learner, 'expected the bootstrapped database to contain a learner');
+  sqlite.function('current_learner_id', () => learner.learner_id);
+}
+
 describe('dev database bootstrap', { concurrency: false }, () => {
   test('rebuilds an invalid dev database from the checked-in mandarin dev seed fixture', async () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-dev-bootstrap-'));
@@ -59,6 +70,7 @@ describe('dev database bootstrap', { concurrency: false }, () => {
       );
 
       const sqlite = new DatabaseSync(dbPath);
+      registerPersistedLearnerContext(sqlite);
 
       try {
         const wordCount = sqlite.prepare('SELECT COUNT(*) AS count FROM words').get() as { count: number };
@@ -197,6 +209,7 @@ describe('dev database bootstrap', { concurrency: false }, () => {
       await import(`${pathToFileURL(path.resolve('server/db.ts')).href}?test=cluster-backfill-prime-${Date.now()}`);
 
       const sqlite = new DatabaseSync(dbPath);
+      registerPersistedLearnerContext(sqlite);
       sqlite.exec('PRAGMA foreign_keys = ON;');
       sqlite.exec(`
         INSERT INTO words (
@@ -228,6 +241,7 @@ describe('dev database bootstrap', { concurrency: false }, () => {
       await import(`${pathToFileURL(path.resolve('server/db.ts')).href}?test=cluster-backfill-apply-${Date.now()}`);
 
       const repaired = new DatabaseSync(dbPath);
+      registerPersistedLearnerContext(repaired);
       try {
         const rows = repaired.prepare(`
           SELECT

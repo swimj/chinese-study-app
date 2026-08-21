@@ -41,13 +41,14 @@ describe('study management relevance events', { concurrency: false }, () => {
     }
 
     sqlite = new DatabaseSync(dbPath);
+    sqlite.function('current_learner_id', () => 'test-learner');
     sqlite.exec('PRAGMA foreign_keys = ON;');
   });
 
   beforeEach(() => {
     sqlite.exec(`
-      DELETE FROM study_content_feedback;
-      DELETE FROM contrast_candidate_intake;
+      DELETE FROM contrast_prompt_exclusions;
+      DELETE FROM definition_fallback_exclusions;
       DELETE FROM contrast_prompts;
       DELETE FROM contrast_cluster_members;
       DELETE FROM contrast_clusters;
@@ -66,7 +67,7 @@ describe('study management relevance events', { concurrency: false }, () => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
-  test('creates generic study-event, skill relevance, and contrast intake tables', () => {
+  test('creates study-event, skill relevance, and purpose-specific prompt exclusion tables', () => {
     assertTableHasColumns('study_events', [
       'id',
       'occurred_at',
@@ -90,29 +91,24 @@ describe('study management relevance events', { concurrency: false }, () => {
       'source_event_id',
     ]);
 
-    assertTableHasColumns('contrast_candidate_intake', [
-      'id',
+    assertTableHasColumns('definition_fallback_exclusions', [
+      'learner_id',
+      'word_id',
+      'origin',
+      'source_feedback_ids_json',
+      'migration_id',
       'created_at',
-      'target_word_id',
-      'source_event_id',
-      'source_action_kind',
-      'source_content_ref_json',
-      'candidate_text',
-      'matched_word_id',
       'note',
-      'status',
     ]);
 
-    assertTableHasColumns('study_content_feedback', [
-      'id',
-      'created_at',
-      'target_type',
-      'target_id',
+    assertTableHasColumns('contrast_prompt_exclusions', [
+      'learner_id',
+      'prompt_id',
       'target_word_id',
-      'action_kind',
-      'feedback_type',
-      'feedback_action',
-      'source_event_id',
+      'origin',
+      'source_feedback_ids_json',
+      'migration_id',
+      'created_at',
       'note',
     ]);
   });
@@ -232,20 +228,24 @@ function insertLegacyFeedback({
   actionKind: 'production' | 'contrast_selection';
   note: string;
 }) {
+  if (targetType === 'generated_prompt') {
+    assert.equal(targetId, 'definition_based_production');
+    assert.equal(actionKind, 'production');
+    sqlite.prepare(`
+      INSERT INTO definition_fallback_exclusions (
+        learner_id, word_id, origin, source_feedback_ids_json, migration_id, created_at, note
+      ) VALUES ('test-learner', ?, 'legacy_bad_prompt_migration', ?, NULL, ?, ?)
+    `).run(targetWordId, JSON.stringify([id]), '2026-05-10T00:00:00.000Z', note);
+    return;
+  }
+
+  assert.equal(actionKind, 'contrast_selection');
   sqlite.prepare(`
-    INSERT INTO study_content_feedback (
-      id, created_at, target_type, target_id, target_word_id, action_kind,
-      feedback_type, feedback_action, source_event_id, note
-    ) VALUES (?, ?, ?, ?, ?, ?, 'bad_prompt', 'reported', NULL, ?)
-  `).run(
-    id,
-    '2026-05-10T00:00:00.000Z',
-    targetType,
-    targetId,
-    targetWordId,
-    actionKind,
-    note,
-  );
+    INSERT INTO contrast_prompt_exclusions (
+      learner_id, prompt_id, target_word_id, origin, source_feedback_ids_json,
+      migration_id, created_at, note
+    ) VALUES ('test-learner', ?, ?, 'legacy_bad_prompt_migration', ?, NULL, ?, ?)
+  `).run(targetId, targetWordId, JSON.stringify([id]), '2026-05-10T00:00:00.000Z', note);
 }
 
 function insertWord({

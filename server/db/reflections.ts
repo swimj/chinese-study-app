@@ -43,6 +43,10 @@ import type { NormalizedTokenUsage } from '../llm/types.ts';
 import type { ReflectionGenerationDiagnostic } from '../reflection/run-diagnostics.ts';
 import { dbPath, getDb } from './connection.ts';
 import {
+  learnerScopedStorageTableName,
+  physicalLearnerTableName,
+} from './learner-scoped-tables.ts';
+import {
   ensureReflectionQualitySchema,
   listReflectionQualityAnnotationsForArtifact,
   validateReflectionQualitySchema,
@@ -419,11 +423,14 @@ const invocationColumns = [
 ] as const;
 
 export function ensureReflectionSchema(): void {
+  if (learnerScopedStorageTableName('reflection_artifacts') !== 'reflection_artifacts') {
+    return;
+  }
   getDb().exec(`
     CREATE TABLE IF NOT EXISTS reflection_artifacts (
       artifact_id TEXT PRIMARY KEY,
-      source_session_id TEXT NOT NULL
-        REFERENCES study_sessions(id) ON DELETE RESTRICT,
+      learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
+      source_session_id TEXT NOT NULL,
       source_run_id TEXT,
       reflection_flow_version TEXT NOT NULL,
       generated_at TEXT NOT NULL,
@@ -438,8 +445,8 @@ export function ensureReflectionSchema(): void {
 
     CREATE TABLE IF NOT EXISTS reflection_generation_runs (
       run_id TEXT PRIMARY KEY,
-      source_session_id TEXT NOT NULL
-        REFERENCES study_sessions(id) ON DELETE RESTRICT,
+      learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
+      source_session_id TEXT NOT NULL,
       reflection_flow_version TEXT NOT NULL,
       started_at TEXT NOT NULL,
       completed_at TEXT NOT NULL,
@@ -490,6 +497,7 @@ export function ensureReflectionSchema(): void {
 
     CREATE TABLE IF NOT EXISTS reflection_proposal_reviews (
       proposal_id TEXT PRIMARY KEY,
+      learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       artifact_id TEXT NOT NULL
         REFERENCES reflection_artifacts(artifact_id) ON DELETE RESTRICT,
       item_id TEXT NOT NULL,
@@ -586,6 +594,7 @@ export function ensureReflectionSchema(): void {
 
     CREATE TABLE IF NOT EXISTS reflection_operation_invocations (
       invocation_id TEXT PRIMARY KEY,
+      learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       created_at TEXT NOT NULL,
       origin_kind TEXT NOT NULL
         CHECK (origin_kind IN ('proposal_acceptance', 'user_replacement', 'manual')),
@@ -791,18 +800,18 @@ function ensureReflectionGenerationRunDiagnosticColumns(): void {
 export function ensureReflectionIndexes(): void {
   getDb().exec(`
     CREATE INDEX IF NOT EXISTS idx_reflection_artifacts_generated
-      ON reflection_artifacts(generated_at DESC, artifact_id ASC);
+      ON ${learnerScopedStorageTableName('reflection_artifacts')}(generated_at DESC, artifact_id ASC);
     CREATE INDEX IF NOT EXISTS idx_reflection_generation_runs_completed
-      ON reflection_generation_runs(completed_at DESC, run_id ASC);
+      ON ${learnerScopedStorageTableName('reflection_generation_runs')}(completed_at DESC, run_id ASC);
     CREATE INDEX IF NOT EXISTS idx_reflection_proposal_reviews_open
-      ON reflection_proposal_reviews(disposition, artifact_id);
+      ON ${learnerScopedStorageTableName('reflection_proposal_reviews')}(disposition, artifact_id);
     CREATE INDEX IF NOT EXISTS idx_reflection_invocations_application
-      ON reflection_operation_invocations(application_state, application_updated_at ASC);
+      ON ${learnerScopedStorageTableName('reflection_operation_invocations')}(application_state, application_updated_at ASC);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_reflection_invocations_proposal_origin
-      ON reflection_operation_invocations(origin_proposal_id)
+      ON ${learnerScopedStorageTableName('reflection_operation_invocations')}(origin_proposal_id)
       WHERE origin_kind = 'proposal_acceptance';
     CREATE UNIQUE INDEX IF NOT EXISTS idx_reflection_proposal_reviews_accepted_invocation
-      ON reflection_proposal_reviews(accepted_invocation_id)
+      ON ${learnerScopedStorageTableName('reflection_proposal_reviews')}(accepted_invocation_id)
       WHERE accepted_invocation_id IS NOT NULL;
   `);
 }
@@ -855,20 +864,6 @@ export function validateReflectionSchema(): void {
     true,
     ['accepted_invocation_id'],
     true,
-  );
-  assertForeignKey(
-    'reflection_artifacts',
-    'source_session_id',
-    'study_sessions',
-    'id',
-    'RESTRICT',
-  );
-  assertForeignKey(
-    'reflection_generation_runs',
-    'source_session_id',
-    'study_sessions',
-    'id',
-    'RESTRICT',
   );
   assertForeignKey(
     'reflection_proposal_reviews',
@@ -1651,7 +1646,7 @@ export function transitionReflectionInvocationApplication(
     const current = getReflectionInvocation(invocationId);
     assertOperationApplicationTransition(current.application.state.kind, state.kind);
     database.prepare(`
-      UPDATE reflection_operation_invocations
+      UPDATE ${physicalLearnerTableName('reflection_operation_invocations')}
       SET application_state = ?,
           application_updated_at = ?,
           unsupported_reason = ?,
@@ -1744,7 +1739,7 @@ export function applyReflectionInvocation(
   } catch (error) {
     database.exec('ROLLBACK');
     const failed = database.prepare(`
-      UPDATE reflection_operation_invocations
+      UPDATE ${physicalLearnerTableName('reflection_operation_invocations')}
       SET application_state = 'failed',
           application_updated_at = ?,
           unsupported_reason = NULL,
@@ -2513,7 +2508,7 @@ function writeApplicationStateWithoutTransaction(
   assertOperationApplicationTransition('pending', state.kind);
   const columns = applicationStateColumns(state);
   const result = getDb().prepare(`
-    UPDATE reflection_operation_invocations
+    UPDATE ${physicalLearnerTableName('reflection_operation_invocations')}
     SET application_state = ?,
         application_updated_at = ?,
         unsupported_reason = ?,
@@ -2738,7 +2733,8 @@ function parseJson(json: string, label: string): unknown {
 }
 
 function assertTableColumns(tableName: string, expectedColumns: readonly string[]): void {
-  const rows = getDb().prepare(`PRAGMA table_info(${tableName})`).all() as Array<{
+  const storageTableName = learnerScopedStorageTableName(tableName);
+  const rows = getDb().prepare(`PRAGMA table_info(${storageTableName})`).all() as Array<{
     name: string;
   }>;
   const actualColumns = new Set(rows.map((row) => row.name));
@@ -2755,7 +2751,8 @@ function assertTableColumns(tableName: string, expectedColumns: readonly string[
 }
 
 function assertUniqueIndex(tableName: string, expectedColumns: readonly string[]): void {
-  const indexes = getDb().prepare(`PRAGMA index_list(${tableName})`).all() as Array<{
+  const storageTableName = learnerScopedStorageTableName(tableName);
+  const indexes = getDb().prepare(`PRAGMA index_list(${storageTableName})`).all() as Array<{
     name: string;
     unique: number;
   }>;
@@ -2782,7 +2779,8 @@ function assertNamedIndex(
   expectedColumns: readonly string[],
   partial = false,
 ): void {
-  const indexes = getDb().prepare(`PRAGMA index_list(${tableName})`).all() as Array<{
+  const storageTableName = learnerScopedStorageTableName(tableName);
+  const indexes = getDb().prepare(`PRAGMA index_list(${storageTableName})`).all() as Array<{
     name: string;
     unique: number;
     partial: number;
@@ -2810,14 +2808,16 @@ function assertForeignKey(
   targetColumn: string,
   onDelete: string,
 ): void {
-  const foreignKeys = getDb().prepare(`PRAGMA foreign_key_list(${tableName})`).all() as Array<{
+  const storageTableName = learnerScopedStorageTableName(tableName);
+  const storageTargetTable = learnerScopedStorageTableName(targetTable);
+  const foreignKeys = getDb().prepare(`PRAGMA foreign_key_list(${storageTableName})`).all() as Array<{
     table: string;
     from: string;
     to: string;
     on_delete: string;
   }>;
   const present = foreignKeys.some((foreignKey) => (
-    foreignKey.table === targetTable
+    foreignKey.table === storageTargetTable
     && foreignKey.from === fromColumn
     && foreignKey.to === targetColumn
     && foreignKey.on_delete === onDelete

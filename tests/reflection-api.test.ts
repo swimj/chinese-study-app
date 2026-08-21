@@ -55,6 +55,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     }
 
     sqlite = new DatabaseSync(path.join(dataDir, 'app.db'));
+    sqlite.function('current_learner_id', () => 'test-learner');
     sqlite.exec('PRAGMA foreign_keys = ON;');
     const generationService: InitialReflectionGenerationService = {
       generate(sessionId, evidenceSupplement) {
@@ -89,7 +90,6 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       DELETE FROM contrast_prompts;
       DELETE FROM contrast_cluster_members;
       DELETE FROM contrast_clusters;
-      DELETE FROM contrast_candidate_intake;
       DELETE FROM word_skill_relevance;
       DELETE FROM review_session_summaries;
       DELETE FROM study_attempt_events;
@@ -286,12 +286,18 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     sqlite.exec('DROP TRIGGER reflection_artifacts_immutable;');
     try {
       sqlite.prepare(`
-        UPDATE reflection_artifacts
+        UPDATE learner_owned_reflection_artifacts
         SET result_json = '{}'
-        WHERE artifact_id = ?
+        WHERE learner_id = 'test-learner' AND artifact_id = ?
       `).run(artifact.artifactId);
     } finally {
-      dbModule.ensureReflectionSchema();
+      sqlite.exec(`
+        CREATE TRIGGER reflection_artifacts_immutable
+        BEFORE UPDATE ON learner_owned_reflection_artifacts
+        BEGIN
+          SELECT RAISE(ABORT, 'reflection artifacts are immutable');
+        END;
+      `);
     }
 
     const response = await request('/api/reflection-artifacts?review=all');

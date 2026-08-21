@@ -45,6 +45,7 @@ describe('intake triage advisor', { concurrency: false }, () => {
     else process.env.APP_STUDY_PROFILE = previousStudyProfile;
 
     sqlite = new DatabaseSync(path.join(dataDir, 'app.db'));
+    sqlite.function('current_learner_id', () => 'test-learner');
     sqlite.exec('PRAGMA foreign_keys = ON;');
   });
 

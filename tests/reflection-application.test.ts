@@ -37,6 +37,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
       else process.env.APP_DATA_DIR = previousDataDir;
     }
     sqlite = new DatabaseSync(path.join(dataDir, 'app.db'));
+    sqlite.function('current_learner_id', () => 'test-learner');
     sqlite.exec('PRAGMA foreign_keys = ON;');
   });
 
@@ -55,8 +56,8 @@ describe('reflection application adapters', { concurrency: false }, () => {
       DELETE FROM production_cue_evidence_records;
       DELETE FROM production_cue_activation_state;
       DELETE FROM production_cue_lifecycle_events;
-      DELETE FROM production_cue_supplements;
-      DELETE FROM production_cues;
+      DELETE FROM scoped_production_cue_supplements;
+      DELETE FROM scoped_production_cues;
       DELETE FROM production_tasks;
       DELETE FROM reflection_help_inbox;
       DELETE FROM reflection_quality_annotations;
@@ -64,7 +65,6 @@ describe('reflection application adapters', { concurrency: false }, () => {
       DELETE FROM reflection_operation_invocations;
       DELETE FROM reflection_generation_runs;
       DELETE FROM reflection_artifacts;
-      DELETE FROM contrast_candidate_intake;
       DELETE FROM contrast_prompts;
       DELETE FROM contrast_cluster_members;
       DELETE FROM contrast_clusters;
@@ -286,7 +286,6 @@ describe('reflection application adapters', { concurrency: false }, () => {
       );
       assert.equal(fetchContextualSchedulerState(wordId)?.enabled, 1);
     }
-    assert.deepEqual(dbModule.getContrastCandidateIntake(), []);
     assert.deepEqual(dbModule.applyReflectionInvocation('contrast-new', createdAt), result);
   });
 
@@ -566,7 +565,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
   test('rolls back cue content and records failed application when lifecycle persistence fails', () => {
     sqlite.exec(`
       CREATE TRIGGER fail_production_cue_lifecycle_insert
-      BEFORE INSERT ON production_cue_lifecycle_events
+      BEFORE INSERT ON learner_owned_production_cue_lifecycle_events
       BEGIN
         SELECT RAISE(ABORT, 'forced cue lifecycle failure');
       END;
@@ -989,7 +988,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
     insertInvocation('contrast-failed', contrastOperation());
     sqlite.exec(`
       CREATE TRIGGER fail_reflection_prompt_insert
-      BEFORE INSERT ON contrast_prompts
+      BEFORE INSERT ON scoped_contrast_prompts
       BEGIN
         SELECT RAISE(ABORT, 'injected prompt failure');
       END;

@@ -75,9 +75,24 @@ import {
   assertLearnerExists,
   bootstrapLearner,
   ensureIdentitySchema,
-  hasIdentitySchema,
+  hasLearnerOwnershipSchema,
+  recordLearnerOwnershipSchema,
 } from './identity.ts';
-import { requireLearnerId } from './learner-context.ts';
+import { installLearnerContextSqlFunction, requireLearnerId } from './learner-context.ts';
+import {
+  ensurePromptExclusionSchema,
+  getContrastPromptExclusions,
+  getDefinitionFallbackExclusions,
+} from './prompt-exclusions.ts';
+import {
+  installLearnerScopedCompatibilityViews,
+  learnerScopedStorageTableName,
+} from './learner-scoped-tables.ts';
+import {
+  installScopedContentCompatibilityViews,
+  scopedContentStorageTableName,
+} from './scoped-content-tables.ts';
+import { installLearnerOwnershipGuards } from './learner-ownership-guards.ts';
 
 export function applyProductionContrastExerciseSeed() {
   if (!config.seedSampleData || !config.includeDevContrastSeed || config.studyProfile !== 'mandarin') {
@@ -434,7 +449,7 @@ export function updateWordUserPriority(wordId: string, patch: UserWordPriorityPa
     `).run(wordId);
   } else {
     getDb().prepare(`
-      INSERT INTO user_word_priority (
+      INSERT INTO learner_owned_user_word_priority (
         word_id,
         bump_count,
         force_top,
@@ -442,7 +457,7 @@ export function updateWordUserPriority(wordId: string, patch: UserWordPriorityPa
         required_for_next_session,
         updated_at
       ) VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(word_id) DO UPDATE SET
+      ON CONFLICT(learner_id, word_id) DO UPDATE SET
         bump_count = excluded.bump_count,
         force_top = excluded.force_top,
         priority_tier = excluded.priority_tier,
@@ -492,7 +507,7 @@ export function addUnstudiedUserPriorityByHanzi(hanzi: string, requiredForNextSe
       const nextRequiredForNextSession = requiredForNextSession ? 1 : (existingPriorityRow?.required_for_next_session ?? 0);
 
       getDb().prepare(`
-        INSERT INTO user_word_priority (
+        INSERT INTO learner_owned_user_word_priority (
           word_id,
           bump_count,
           force_top,
@@ -500,7 +515,7 @@ export function addUnstudiedUserPriorityByHanzi(hanzi: string, requiredForNextSe
           required_for_next_session,
           updated_at
         ) VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(word_id) DO UPDATE SET
+        ON CONFLICT(learner_id, word_id) DO UPDATE SET
           bump_count = excluded.bump_count,
           force_top = excluded.force_top,
           priority_tier = excluded.priority_tier,
@@ -1093,14 +1108,14 @@ export function upsertStudySessionRecord(record: StudySessionRecord): StudySessi
   assertStudySessionRecord(record);
 
   getDb().prepare(`
-    INSERT INTO study_sessions (
+    INSERT INTO learner_owned_study_sessions (
       id,
       started_at,
       ended_at,
       processing_state,
       processed_at
     ) VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
+    ON CONFLICT(learner_id, id) DO UPDATE SET
       started_at = excluded.started_at,
       ended_at = excluded.ended_at,
       processing_state = excluded.processing_state,
@@ -1200,48 +1215,33 @@ export function getWordSkillRelevanceRows(): WordSkillRelevance[] {
   return rows.map(mapWordSkillRelevanceRow);
 }
 
-export function getContrastCandidateIntake(): ContrastCandidateIntake[] {
-  const rows = getDb()
-    .prepare(`
-      SELECT
-        id,
-        created_at,
-        target_word_id,
-        source_event_id,
-        source_action_kind,
-        source_content_ref_json,
-        candidate_text,
-        matched_word_id,
-        note,
-        status
-      FROM contrast_candidate_intake
-      ORDER BY created_at ASC, id ASC
-    `)
-    .all() as ContrastCandidateIntakeRow[];
-
-  return rows.map(mapContrastCandidateIntakeRow);
-}
-
 export function getStudyContentFeedback(): StudyContentFeedback[] {
-  const rows = getDb()
-    .prepare(`
-      SELECT
-        id,
-        created_at,
-        target_type,
-        target_id,
-        target_word_id,
-        action_kind,
-        feedback_type,
-        feedback_action,
-        source_event_id,
-        note
-      FROM study_content_feedback
-      ORDER BY created_at ASC, rowid ASC
-    `)
-    .all() as StudyContentFeedbackRow[];
-
-  return rows.map(mapStudyContentFeedbackRow);
+  return [
+    ...getDefinitionFallbackExclusions().map((exclusion): StudyContentFeedback => ({
+      id: `definition-exclusion:${exclusion.learnerId}:${exclusion.wordId}`,
+      createdAt: exclusion.createdAt,
+      targetType: 'generated_prompt',
+      targetId: 'definition_based_production',
+      targetWordId: exclusion.wordId,
+      actionKind: 'production',
+      feedbackType: 'bad_prompt',
+      feedbackAction: 'reported',
+      sourceEventId: null,
+      note: exclusion.note,
+    })),
+    ...getContrastPromptExclusions().map((exclusion): StudyContentFeedback => ({
+      id: `contrast-exclusion:${exclusion.learnerId}:${exclusion.promptId}`,
+      createdAt: exclusion.createdAt,
+      targetType: 'contrast_prompt',
+      targetId: exclusion.promptId,
+      targetWordId: exclusion.targetWordId,
+      actionKind: 'contrast_selection',
+      feedbackType: 'bad_prompt',
+      feedbackAction: 'reported',
+      sourceEventId: null,
+      note: exclusion.note,
+    })),
+  ].sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
 }
 
 export function recordStudyManagementAction(input: RecordStudyManagementActionInput): StudyEvent {
@@ -1687,14 +1687,14 @@ function insertStudyAttemptEventsWithoutTransaction(events: StudyAttemptEvent[])
 
 function ensureStudySessionExistsWithoutTransaction(sessionId: string, startedAt: string) {
   getDb().prepare(`
-    INSERT INTO study_sessions (
+    INSERT INTO learner_owned_study_sessions (
       id,
       started_at,
       ended_at,
       processing_state,
       processed_at
     ) VALUES (?, ?, NULL, 'open', NULL)
-    ON CONFLICT(id) DO NOTHING
+    ON CONFLICT(learner_id, id) DO NOTHING
   `).run(sessionId, startedAt);
 }
 
@@ -1768,14 +1768,14 @@ function projectStudyManagementActionWithoutTransaction({
 
 function upsertWordSkillRelevanceWithoutTransaction(relevance: WordSkillRelevance) {
   getDb().prepare(`
-    INSERT INTO word_skill_relevance (
+    INSERT INTO learner_owned_word_skill_relevance (
       word_id,
       skill_id,
       relevance_state,
       updated_at,
       source_event_id
     ) VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(word_id, skill_id) DO UPDATE SET
+    ON CONFLICT(learner_id, word_id, skill_id) DO UPDATE SET
       relevance_state = excluded.relevance_state,
       updated_at = excluded.updated_at,
       source_event_id = excluded.source_event_id
@@ -2205,7 +2205,7 @@ export function recordReviewSessionSummary({
   }
 
   getDb().prepare(`
-    INSERT INTO review_session_summaries (
+    INSERT INTO learner_owned_review_session_summaries (
       session_id,
       completed_at,
       day_key,
@@ -2213,7 +2213,7 @@ export function recordReviewSessionSummary({
       failed_count,
       active_duration_ms
     ) VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(session_id) DO UPDATE SET
+    ON CONFLICT(learner_id, session_id) DO UPDATE SET
       completed_at = excluded.completed_at,
       day_key = excluded.day_key,
       completed_count = excluded.completed_count,
@@ -2370,6 +2370,7 @@ export function initializeDatabase() {
   if (!dbExistedOnStartup) {
     createSchema();
     bootstrapLearner({ learnerId: config.learnerId });
+    recordLearnerOwnershipSchema();
     ensureDefaultDailyNewWordLimit();
     seedDatabase();
     backfillContrastClusterMemberEligibility();
@@ -2377,12 +2378,14 @@ export function initializeDatabase() {
   }
 
   try {
-    if (!hasIdentitySchema()) {
+    if (!hasLearnerOwnershipSchema()) {
       throw new Error(
         `Database at ${dbPath} predates learner ownership. Run the explicit SWI-47 legacy upgrade before starting it.`,
       );
     }
-    applyLightweightSchemaMigrations();
+    installScopedContentCompatibilityViews();
+    installLearnerScopedCompatibilityViews();
+    installLearnerOwnershipGuards();
     validateSchema();
     assertLearnerExists(config.learnerId);
     ensureIndexes();
@@ -2420,7 +2423,7 @@ function applyLightweightSchemaMigrations() {
 
   getDb().exec(`
     CREATE TABLE IF NOT EXISTS user_word_priority (
-      word_id TEXT PRIMARY KEY REFERENCES words(id) ON DELETE CASCADE,
+      word_id TEXT PRIMARY KEY REFERENCES lexical_words(id) ON DELETE CASCADE,
       bump_count INTEGER NOT NULL DEFAULT 0,
       force_top INTEGER NOT NULL DEFAULT 0,
       priority_tier INTEGER NOT NULL DEFAULT 0,
@@ -2434,7 +2437,7 @@ function applyLightweightSchemaMigrations() {
   getDb().exec(`
     CREATE TABLE IF NOT EXISTS word_meanings (
       id TEXT PRIMARY KEY,
-      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
       position INTEGER NOT NULL,
       text TEXT NOT NULL,
       show_on_production_prompt INTEGER NOT NULL DEFAULT 1,
@@ -2453,7 +2456,7 @@ function applyLightweightSchemaMigrations() {
 
   getDb().exec(`
     CREATE TABLE IF NOT EXISTS word_study_admission_state (
-      word_id TEXT PRIMARY KEY REFERENCES words(id) ON DELETE CASCADE,
+      word_id TEXT PRIMARY KEY REFERENCES lexical_words(id) ON DELETE CASCADE,
       study_phase TEXT NOT NULL,
       earliest_next_study_at TEXT
     );
@@ -2461,7 +2464,7 @@ function applyLightweightSchemaMigrations() {
 
   getDb().exec(`
     CREATE TABLE IF NOT EXISTS word_skill_state (
-      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
       skill_id TEXT NOT NULL,
       enabled INTEGER NOT NULL DEFAULT 1,
       interval_hours INTEGER NOT NULL,
@@ -2505,7 +2508,7 @@ function applyLightweightSchemaMigrations() {
       session_event_sequence INTEGER NOT NULL,
       action_attempt_sequence INTEGER NOT NULL,
       action_kind TEXT NOT NULL,
-      target_word_id TEXT NOT NULL REFERENCES words(id),
+      target_word_id TEXT NOT NULL REFERENCES lexical_words(id),
       sampled_skill_ids_json TEXT NOT NULL,
       response TEXT,
       outcome TEXT NOT NULL,
@@ -2524,7 +2527,7 @@ function applyLightweightSchemaMigrations() {
       session_action_id TEXT,
       session_event_sequence INTEGER,
       event_type TEXT NOT NULL,
-      target_word_id TEXT REFERENCES words(id),
+      target_word_id TEXT REFERENCES lexical_words(id),
       action_kind TEXT,
       sampled_skill_ids_json TEXT NOT NULL DEFAULT '[]',
       content_ref_json TEXT,
@@ -2535,7 +2538,7 @@ function applyLightweightSchemaMigrations() {
 
   getDb().exec(`
     CREATE TABLE IF NOT EXISTS word_skill_relevance (
-      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
       skill_id TEXT NOT NULL,
       relevance_state TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -2543,37 +2546,6 @@ function applyLightweightSchemaMigrations() {
       PRIMARY KEY (word_id, skill_id)
     );
   `);
-
-  getDb().exec(`
-    CREATE TABLE IF NOT EXISTS contrast_candidate_intake (
-      id TEXT PRIMARY KEY,
-      created_at TEXT NOT NULL,
-      target_word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
-      source_event_id TEXT REFERENCES study_events(id) ON DELETE SET NULL,
-      source_action_kind TEXT,
-      source_content_ref_json TEXT,
-      candidate_text TEXT,
-      matched_word_id TEXT REFERENCES words(id) ON DELETE SET NULL,
-      note TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'open'
-    );
-  `);
-
-  getDb().exec(`
-    CREATE TABLE IF NOT EXISTS study_content_feedback (
-      id TEXT PRIMARY KEY,
-      created_at TEXT NOT NULL,
-      target_type TEXT NOT NULL,
-      target_id TEXT NOT NULL,
-      target_word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
-      action_kind TEXT NOT NULL,
-      feedback_type TEXT NOT NULL,
-      feedback_action TEXT NOT NULL DEFAULT 'reported',
-      source_event_id TEXT REFERENCES study_events(id) ON DELETE SET NULL,
-      note TEXT NOT NULL DEFAULT ''
-    );
-  `);
-  ensureStudyContentFeedbackSchema();
 
   getDb().exec(`
     CREATE TABLE IF NOT EXISTS contrast_clusters (
@@ -2584,7 +2556,7 @@ function applyLightweightSchemaMigrations() {
 
     CREATE TABLE IF NOT EXISTS contrast_cluster_members (
       cluster_id TEXT NOT NULL REFERENCES contrast_clusters(id) ON DELETE CASCADE,
-      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
       nuance_note TEXT NOT NULL DEFAULT '',
       display_order INTEGER,
       PRIMARY KEY (cluster_id, word_id)
@@ -2601,6 +2573,7 @@ function applyLightweightSchemaMigrations() {
         ON DELETE CASCADE
     );
   `);
+  ensurePromptExclusionSchema();
   ensureReflectionSchema();
   ensureProductionCueSchema();
   ensureIntakeTriageSchema();
@@ -2629,24 +2602,12 @@ function applyLightweightSchemaMigrations() {
   backfillWordMeaningsFromWords();
 }
 
-function ensureStudyContentFeedbackSchema() {
-  const columns = getDb().prepare(`PRAGMA table_info(study_content_feedback)`).all() as Array<{ name: string }>;
-  if (columns.length === 0) {
-    return;
-  }
-
-  const hasFeedbackAction = columns.some((column) => column.name === 'feedback_action');
-  if (!hasFeedbackAction) {
-    getDb().exec(`ALTER TABLE study_content_feedback ADD COLUMN feedback_action TEXT NOT NULL DEFAULT 'reported'`);
-  }
-}
-
 function ensureWordLookupAliasesSchema() {
   getDb().exec(`
     CREATE TABLE IF NOT EXISTS word_lookup_aliases (
       alias_text TEXT NOT NULL,
       normalized_alias TEXT NOT NULL,
-      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
       relation TEXT NOT NULL,
       source TEXT NOT NULL,
       tags_json TEXT NOT NULL DEFAULT '[]',
@@ -2683,7 +2644,7 @@ function migrateWordLookupAliasesPrimaryKey() {
       CREATE TABLE word_lookup_aliases_next (
         alias_text TEXT NOT NULL,
         normalized_alias TEXT NOT NULL,
-        word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+        word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
         relation TEXT NOT NULL,
         source TEXT NOT NULL,
         tags_json TEXT NOT NULL DEFAULT '[]',
@@ -2751,7 +2712,7 @@ function migrateWordSkillStateLastStudiedAtNotNull() {
   try {
     getDb().exec(`
       CREATE TABLE word_skill_state_next (
-        word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+        word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
         skill_id TEXT NOT NULL,
         enabled INTEGER NOT NULL DEFAULT 1,
         interval_hours INTEGER NOT NULL,
@@ -2856,12 +2817,12 @@ function upsertWordStudyAdmissionState(
   earliestNextStudyAt: string | null,
 ) {
   getDb().prepare(`
-    INSERT INTO word_study_admission_state (
+    INSERT INTO learner_owned_word_study_admission_state (
       word_id,
       study_phase,
       earliest_next_study_at
     ) VALUES (?, ?, ?)
-    ON CONFLICT(word_id) DO UPDATE SET
+    ON CONFLICT(learner_id, word_id) DO UPDATE SET
       study_phase = excluded.study_phase,
       earliest_next_study_at = excluded.earliest_next_study_at
   `).run(wordId, studyPhase, earliestNextStudyAt);
@@ -3055,7 +3016,11 @@ function rebuildDevDatabase(error: unknown) {
   );
 
   setDb(openDatabase(dbPath));
+  installLearnerContextSqlFunction();
   createSchema();
+  bootstrapLearner({ learnerId: config.learnerId });
+  recordLearnerOwnershipSchema();
+  ensureDefaultDailyNewWordLimit();
   seedDatabase();
 }
 
@@ -3079,47 +3044,191 @@ function seedEmptyDevDatabase() {
 function createSchema() {
   ensureIdentitySchema();
   getDb().exec(`
-    CREATE TABLE words (
+    CREATE TABLE lexical_words (
       id TEXT PRIMARY KEY,
       hanzi TEXT NOT NULL,
       traditional TEXT,
       pinyin TEXT NOT NULL,
       meaning TEXT NOT NULL,
       meanings_json TEXT NOT NULL DEFAULT '[]',
-      personal_notes TEXT NOT NULL DEFAULT '',
       examples_json TEXT NOT NULL,
-      status TEXT NOT NULL,
       priority INTEGER NOT NULL,
-      created_at TEXT NOT NULL,
-      learning_streak INTEGER NOT NULL DEFAULT 0,
-      last_learning_success_on TEXT,
-      last_learning_covered_on TEXT
+      created_at TEXT NOT NULL
     );
 
-    CREATE TABLE word_meanings (
+    CREATE TABLE learner_word_state (
+      learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
+      word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
+      personal_notes TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'unstudied',
+      learning_streak INTEGER NOT NULL DEFAULT 0,
+      last_learning_success_on TEXT,
+      last_learning_covered_on TEXT,
+      PRIMARY KEY (learner_id, word_id)
+    );
+
+    CREATE VIEW words AS
+    SELECT
+      lexical_words.id,
+      lexical_words.hanzi,
+      lexical_words.traditional,
+      lexical_words.pinyin,
+      lexical_words.meaning,
+      lexical_words.meanings_json,
+      COALESCE(learner_word_state.personal_notes, '') AS personal_notes,
+      lexical_words.examples_json,
+      COALESCE(learner_word_state.status, 'unstudied') AS status,
+      lexical_words.priority,
+      lexical_words.created_at,
+      COALESCE(learner_word_state.learning_streak, 0) AS learning_streak,
+      learner_word_state.last_learning_success_on,
+      learner_word_state.last_learning_covered_on
+    FROM lexical_words
+    LEFT JOIN learner_word_state
+      ON learner_word_state.word_id = lexical_words.id
+     AND learner_word_state.learner_id = current_learner_id();
+
+    CREATE TRIGGER words_insert
+    INSTEAD OF INSERT ON words
+    BEGIN
+      INSERT INTO lexical_words (
+        id, hanzi, traditional, pinyin, meaning, meanings_json, examples_json, priority, created_at
+      ) VALUES (
+        NEW.id, NEW.hanzi, NEW.traditional, NEW.pinyin, NEW.meaning,
+        COALESCE(NEW.meanings_json, '[]'), NEW.examples_json, NEW.priority, NEW.created_at
+      ) ON CONFLICT(id) DO NOTHING;
+      INSERT INTO learner_word_state (
+        learner_id, word_id, personal_notes, status, learning_streak,
+        last_learning_success_on, last_learning_covered_on
+      ) VALUES (
+        current_learner_id(), NEW.id, COALESCE(NEW.personal_notes, ''),
+        COALESCE(NEW.status, 'unstudied'), COALESCE(NEW.learning_streak, 0),
+        NEW.last_learning_success_on, NEW.last_learning_covered_on
+      ) ON CONFLICT(learner_id, word_id) DO UPDATE SET
+        personal_notes = excluded.personal_notes,
+        status = excluded.status,
+        learning_streak = excluded.learning_streak,
+        last_learning_success_on = excluded.last_learning_success_on,
+        last_learning_covered_on = excluded.last_learning_covered_on;
+    END;
+
+    CREATE TRIGGER words_update
+    INSTEAD OF UPDATE ON words
+    BEGIN
+      UPDATE lexical_words SET
+        hanzi = NEW.hanzi, traditional = NEW.traditional, pinyin = NEW.pinyin,
+        meaning = NEW.meaning, meanings_json = NEW.meanings_json,
+        examples_json = NEW.examples_json, priority = NEW.priority, created_at = NEW.created_at
+      WHERE id = OLD.id;
+      INSERT INTO learner_word_state (
+        learner_id, word_id, personal_notes, status, learning_streak,
+        last_learning_success_on, last_learning_covered_on
+      ) VALUES (
+        current_learner_id(), OLD.id, NEW.personal_notes, NEW.status, NEW.learning_streak,
+        NEW.last_learning_success_on, NEW.last_learning_covered_on
+      ) ON CONFLICT(learner_id, word_id) DO UPDATE SET
+        personal_notes = excluded.personal_notes,
+        status = excluded.status,
+        learning_streak = excluded.learning_streak,
+        last_learning_success_on = excluded.last_learning_success_on,
+        last_learning_covered_on = excluded.last_learning_covered_on;
+    END;
+
+    CREATE TRIGGER words_delete
+    INSTEAD OF DELETE ON words
+    BEGIN
+      DELETE FROM learner_word_state
+      WHERE learner_id = current_learner_id() AND word_id = OLD.id;
+      DELETE FROM lexical_words
+      WHERE id = OLD.id AND NOT EXISTS (
+        SELECT 1 FROM learner_word_state WHERE word_id = OLD.id
+      );
+    END;
+
+    CREATE TABLE lexical_word_meanings (
       id TEXT PRIMARY KEY,
-      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
       position INTEGER NOT NULL,
       text TEXT NOT NULL,
-      show_on_production_prompt INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       UNIQUE(word_id, position)
     );
 
+    CREATE TABLE learner_word_meaning_preferences (
+      learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
+      meaning_id TEXT NOT NULL REFERENCES lexical_word_meanings(id) ON DELETE CASCADE,
+      show_on_production_prompt INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (learner_id, meaning_id)
+    );
+
+    CREATE VIEW word_meanings AS
+    SELECT
+      lexical_word_meanings.id,
+      lexical_word_meanings.word_id,
+      lexical_word_meanings.position,
+      lexical_word_meanings.text,
+      COALESCE(learner_word_meaning_preferences.show_on_production_prompt, 1)
+        AS show_on_production_prompt,
+      lexical_word_meanings.created_at,
+      lexical_word_meanings.updated_at
+    FROM lexical_word_meanings
+    LEFT JOIN learner_word_meaning_preferences
+      ON learner_word_meaning_preferences.meaning_id = lexical_word_meanings.id
+     AND learner_word_meaning_preferences.learner_id = current_learner_id();
+
+    CREATE TRIGGER word_meanings_insert
+    INSTEAD OF INSERT ON word_meanings
+    BEGIN
+      INSERT INTO lexical_word_meanings (id, word_id, position, text, created_at, updated_at)
+      VALUES (NEW.id, NEW.word_id, NEW.position, NEW.text, NEW.created_at, NEW.updated_at)
+      ON CONFLICT(id) DO NOTHING;
+      INSERT INTO learner_word_meaning_preferences (
+        learner_id, meaning_id, show_on_production_prompt, updated_at
+      ) VALUES (
+        current_learner_id(), NEW.id, COALESCE(NEW.show_on_production_prompt, 1), NEW.updated_at
+      ) ON CONFLICT(learner_id, meaning_id) DO UPDATE SET
+        show_on_production_prompt = excluded.show_on_production_prompt,
+        updated_at = excluded.updated_at;
+    END;
+
+    CREATE TRIGGER word_meanings_update
+    INSTEAD OF UPDATE ON word_meanings
+    BEGIN
+      UPDATE lexical_word_meanings SET
+        position = NEW.position, text = NEW.text, updated_at = NEW.updated_at
+      WHERE id = OLD.id;
+      INSERT INTO learner_word_meaning_preferences (
+        learner_id, meaning_id, show_on_production_prompt, updated_at
+      ) VALUES (
+        current_learner_id(), OLD.id, NEW.show_on_production_prompt, NEW.updated_at
+      ) ON CONFLICT(learner_id, meaning_id) DO UPDATE SET
+        show_on_production_prompt = excluded.show_on_production_prompt,
+        updated_at = excluded.updated_at;
+    END;
+
+    CREATE TRIGGER word_meanings_delete
+    INSTEAD OF DELETE ON word_meanings
+    BEGIN
+      DELETE FROM lexical_word_meanings WHERE id = OLD.id;
+    END;
+
     CREATE TABLE user_word_priority (
-      word_id TEXT PRIMARY KEY REFERENCES words(id) ON DELETE CASCADE,
+      learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
+      word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
       bump_count INTEGER NOT NULL DEFAULT 0,
       force_top INTEGER NOT NULL DEFAULT 0,
       priority_tier INTEGER NOT NULL DEFAULT 0,
       required_for_next_session INTEGER NOT NULL DEFAULT 0,
-      updated_at TEXT NOT NULL
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (learner_id, word_id)
     );
 
     CREATE TABLE word_lookup_aliases (
       alias_text TEXT NOT NULL,
       normalized_alias TEXT NOT NULL,
-      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
       relation TEXT NOT NULL,
       source TEXT NOT NULL,
       tags_json TEXT NOT NULL DEFAULT '[]',
@@ -3129,121 +3238,118 @@ function createSchema() {
     );
 
     CREATE TABLE word_study_admission_state (
-      word_id TEXT PRIMARY KEY REFERENCES words(id) ON DELETE CASCADE,
+      learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
+      word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
       study_phase TEXT NOT NULL,
-      earliest_next_study_at TEXT
+      earliest_next_study_at TEXT,
+      PRIMARY KEY (learner_id, word_id)
     );
 
     CREATE TABLE word_skill_state (
-      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
+      word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
       skill_id TEXT NOT NULL,
       enabled INTEGER NOT NULL DEFAULT 1,
       interval_hours INTEGER NOT NULL,
       last_studied_at TEXT NOT NULL,
       next_due_at TEXT,
       ease_factor REAL NOT NULL,
-      PRIMARY KEY (word_id, skill_id)
+      PRIMARY KEY (learner_id, word_id, skill_id)
     );
 
     CREATE TABLE daily_new_word_intake (
-      day_key TEXT PRIMARY KEY,
-      new_study_count INTEGER NOT NULL DEFAULT 0
+      learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
+      day_key TEXT NOT NULL,
+      new_study_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (learner_id, day_key)
     );
 
     CREATE TABLE review_session_summaries (
-      session_id TEXT PRIMARY KEY,
+      learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
+      session_id TEXT NOT NULL,
       completed_at TEXT NOT NULL,
       day_key TEXT NOT NULL,
       completed_count INTEGER NOT NULL,
       failed_count INTEGER NOT NULL,
-      active_duration_ms INTEGER NOT NULL DEFAULT 0
+      active_duration_ms INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (learner_id, session_id)
     );
 
     CREATE TABLE study_sessions (
-      id TEXT PRIMARY KEY,
+      id TEXT NOT NULL,
+      learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       started_at TEXT NOT NULL,
       ended_at TEXT,
       processing_state TEXT NOT NULL,
-      processed_at TEXT
+      processed_at TEXT,
+      PRIMARY KEY (learner_id, id)
     );
 
     CREATE TABLE study_attempt_events (
-      id TEXT PRIMARY KEY,
+      id TEXT NOT NULL,
+      learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       occurred_at TEXT NOT NULL,
-      session_id TEXT NOT NULL REFERENCES study_sessions(id) ON DELETE CASCADE,
+      session_id TEXT NOT NULL,
       session_action_id TEXT NOT NULL,
       session_event_sequence INTEGER NOT NULL,
       action_attempt_sequence INTEGER NOT NULL,
       action_kind TEXT NOT NULL,
-      target_word_id TEXT NOT NULL REFERENCES words(id),
+      target_word_id TEXT NOT NULL REFERENCES lexical_words(id),
       sampled_skill_ids_json TEXT NOT NULL,
       response TEXT,
       outcome TEXT NOT NULL,
       rating TEXT,
       content_ref_json TEXT,
       metadata_json TEXT NOT NULL,
-      projected_at TEXT
+      projected_at TEXT,
+      FOREIGN KEY (learner_id, session_id) REFERENCES study_sessions(learner_id, id) ON DELETE CASCADE,
+      PRIMARY KEY (learner_id, id)
     );
 
     CREATE TABLE study_events (
-      id TEXT PRIMARY KEY,
+      id TEXT NOT NULL,
+      learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       occurred_at TEXT NOT NULL,
-      session_id TEXT REFERENCES study_sessions(id) ON DELETE CASCADE,
+      session_id TEXT,
       session_action_id TEXT,
       session_event_sequence INTEGER,
       event_type TEXT NOT NULL,
-      target_word_id TEXT REFERENCES words(id),
+      target_word_id TEXT REFERENCES lexical_words(id),
       action_kind TEXT,
       sampled_skill_ids_json TEXT NOT NULL DEFAULT '[]',
       content_ref_json TEXT,
       payload_json TEXT NOT NULL,
-      projected_at TEXT
+      projected_at TEXT,
+      FOREIGN KEY (learner_id, session_id) REFERENCES study_sessions(learner_id, id) ON DELETE CASCADE,
+      PRIMARY KEY (learner_id, id)
     );
 
     CREATE TABLE word_skill_relevance (
-      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
+      word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
       skill_id TEXT NOT NULL,
       relevance_state TEXT NOT NULL,
       updated_at TEXT NOT NULL,
-      source_event_id TEXT REFERENCES study_events(id) ON DELETE SET NULL,
-      PRIMARY KEY (word_id, skill_id)
-    );
-
-    CREATE TABLE contrast_candidate_intake (
-      id TEXT PRIMARY KEY,
-      created_at TEXT NOT NULL,
-      target_word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
-      source_event_id TEXT REFERENCES study_events(id) ON DELETE SET NULL,
-      source_action_kind TEXT,
-      source_content_ref_json TEXT,
-      candidate_text TEXT,
-      matched_word_id TEXT REFERENCES words(id) ON DELETE SET NULL,
-      note TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'open'
-    );
-
-    CREATE TABLE study_content_feedback (
-      id TEXT PRIMARY KEY,
-      created_at TEXT NOT NULL,
-      target_type TEXT NOT NULL,
-      target_id TEXT NOT NULL,
-      target_word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
-      action_kind TEXT NOT NULL,
-      feedback_type TEXT NOT NULL,
-      feedback_action TEXT NOT NULL DEFAULT 'reported',
-      source_event_id TEXT REFERENCES study_events(id) ON DELETE SET NULL,
-      note TEXT NOT NULL DEFAULT ''
+      source_event_id TEXT,
+      PRIMARY KEY (learner_id, word_id, skill_id),
+      FOREIGN KEY (learner_id, source_event_id) REFERENCES study_events(learner_id, id) ON DELETE SET NULL
     );
 
     CREATE TABLE contrast_clusters (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
-      note TEXT NOT NULL DEFAULT ''
+      note TEXT NOT NULL DEFAULT '',
+      content_scope TEXT NOT NULL DEFAULT 'learner' CHECK (content_scope IN ('learner', 'shared')),
+      owner_learner_id TEXT DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE RESTRICT,
+      CHECK (
+        (content_scope = 'learner' AND owner_learner_id IS NOT NULL)
+        OR (content_scope = 'shared' AND owner_learner_id IS NULL)
+      )
     );
 
     CREATE TABLE contrast_cluster_members (
       cluster_id TEXT NOT NULL REFERENCES contrast_clusters(id) ON DELETE CASCADE,
-      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
       nuance_note TEXT NOT NULL DEFAULT '',
       display_order INTEGER,
       PRIMARY KEY (cluster_id, word_id)
@@ -3261,10 +3367,15 @@ function createSchema() {
     );
   `);
 
+  ensurePromptExclusionSchema();
+
   ensureReflectionSchema();
   ensureProductionCueSchema();
   ensureIntakeTriageSchema();
   ensureIndexes();
+  installScopedContentCompatibilityViews();
+  installLearnerScopedCompatibilityViews();
+  installLearnerOwnershipGuards();
 }
 
 function ensureDefaultDailyNewWordLimit() {
@@ -3280,26 +3391,22 @@ function ensureDefaultDailyNewWordLimit() {
 
 function ensureIndexes() {
   getDb().exec(`
-    CREATE INDEX IF NOT EXISTS idx_words_priority ON words(priority DESC, created_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_words_priority ON lexical_words(priority DESC, created_at ASC);
     CREATE INDEX IF NOT EXISTS idx_word_lookup_aliases_normalized_alias ON word_lookup_aliases(normalized_alias);
-    CREATE INDEX IF NOT EXISTS idx_word_meanings_word_position ON word_meanings(word_id, position ASC);
-    CREATE INDEX IF NOT EXISTS idx_user_word_priority_force_top ON user_word_priority(force_top DESC, updated_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_user_word_priority_tier ON user_word_priority(priority_tier DESC, updated_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_word_study_admission_next ON word_study_admission_state(earliest_next_study_at ASC);
-    CREATE INDEX IF NOT EXISTS idx_word_skill_state_due ON word_skill_state(next_due_at ASC);
-    CREATE INDEX IF NOT EXISTS idx_review_session_summaries_day ON review_session_summaries(day_key ASC);
-    CREATE INDEX IF NOT EXISTS idx_study_attempt_events_session ON study_attempt_events(session_id ASC, session_event_sequence ASC);
-    CREATE INDEX IF NOT EXISTS idx_study_attempt_events_projected ON study_attempt_events(projected_at ASC, session_id ASC);
-    CREATE INDEX IF NOT EXISTS idx_study_events_session ON study_events(session_id ASC, session_event_sequence ASC);
-    CREATE INDEX IF NOT EXISTS idx_study_events_projected ON study_events(projected_at ASC, occurred_at ASC);
-    CREATE INDEX IF NOT EXISTS idx_word_skill_relevance_state ON word_skill_relevance(skill_id ASC, relevance_state ASC);
-    CREATE INDEX IF NOT EXISTS idx_contrast_candidate_intake_status ON contrast_candidate_intake(status ASC, created_at ASC);
-    CREATE INDEX IF NOT EXISTS idx_contrast_candidate_intake_target ON contrast_candidate_intake(target_word_id ASC, created_at ASC);
-    CREATE INDEX IF NOT EXISTS idx_study_content_feedback_target ON study_content_feedback(target_type ASC, target_id ASC, created_at ASC);
-    CREATE INDEX IF NOT EXISTS idx_study_content_feedback_word ON study_content_feedback(target_word_id ASC, created_at ASC);
-    CREATE INDEX IF NOT EXISTS idx_contrast_cluster_members_word ON contrast_cluster_members(word_id ASC, cluster_id ASC);
-    CREATE INDEX IF NOT EXISTS idx_contrast_prompts_cluster_target ON contrast_prompts(cluster_id ASC, target_word_id ASC);
-    CREATE INDEX IF NOT EXISTS idx_contrast_prompts_target ON contrast_prompts(target_word_id ASC);
+    CREATE INDEX IF NOT EXISTS idx_word_meanings_word_position ON lexical_word_meanings(word_id, position ASC);
+    CREATE INDEX IF NOT EXISTS idx_user_word_priority_force_top ON ${learnerScopedStorageTableName('user_word_priority')}(force_top DESC, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_user_word_priority_tier ON ${learnerScopedStorageTableName('user_word_priority')}(priority_tier DESC, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_word_study_admission_next ON ${learnerScopedStorageTableName('word_study_admission_state')}(earliest_next_study_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_word_skill_state_due ON ${learnerScopedStorageTableName('word_skill_state')}(next_due_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_review_session_summaries_day ON ${learnerScopedStorageTableName('review_session_summaries')}(day_key ASC);
+    CREATE INDEX IF NOT EXISTS idx_study_attempt_events_session ON ${learnerScopedStorageTableName('study_attempt_events')}(session_id ASC, session_event_sequence ASC);
+    CREATE INDEX IF NOT EXISTS idx_study_attempt_events_projected ON ${learnerScopedStorageTableName('study_attempt_events')}(projected_at ASC, session_id ASC);
+    CREATE INDEX IF NOT EXISTS idx_study_events_session ON ${learnerScopedStorageTableName('study_events')}(session_id ASC, session_event_sequence ASC);
+    CREATE INDEX IF NOT EXISTS idx_study_events_projected ON ${learnerScopedStorageTableName('study_events')}(projected_at ASC, occurred_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_word_skill_relevance_state ON ${learnerScopedStorageTableName('word_skill_relevance')}(skill_id ASC, relevance_state ASC);
+    CREATE INDEX IF NOT EXISTS idx_contrast_cluster_members_word ON ${scopedContentStorageTableName('contrast_cluster_members')}(word_id ASC, cluster_id ASC);
+    CREATE INDEX IF NOT EXISTS idx_contrast_prompts_cluster_target ON ${scopedContentStorageTableName('contrast_prompts')}(cluster_id ASC, target_word_id ASC);
+    CREATE INDEX IF NOT EXISTS idx_contrast_prompts_target ON ${scopedContentStorageTableName('contrast_prompts')}(target_word_id ASC);
   `);
   ensureReflectionIndexes();
   ensureProductionCueIndexes();
@@ -3422,30 +3529,6 @@ function validateSchema() {
     'updated_at',
     'source_event_id',
   ]);
-  assertTableColumns('contrast_candidate_intake', [
-    'id',
-    'created_at',
-    'target_word_id',
-    'source_event_id',
-    'source_action_kind',
-    'source_content_ref_json',
-    'candidate_text',
-    'matched_word_id',
-    'note',
-    'status',
-  ]);
-  assertTableColumns('study_content_feedback', [
-    'id',
-    'created_at',
-    'target_type',
-    'target_id',
-    'target_word_id',
-    'action_kind',
-    'feedback_type',
-    'feedback_action',
-    'source_event_id',
-    'note',
-  ]);
   assertTableColumns('contrast_clusters', [
     'id',
     'title',
@@ -3487,7 +3570,8 @@ function assertTableColumns(tableName: string, expectedColumns: string[]) {
 }
 
 function assertTableColumnNotNull(tableName: string, columnName: string) {
-  const rows = getDb().prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string; notnull: number; pk: number }>;
+  const storageTableName = learnerScopedStorageTableName(tableName);
+  const rows = getDb().prepare(`PRAGMA table_info(${storageTableName})`).all() as Array<{ name: string; notnull: number; pk: number }>;
   const column = rows.find((row) => row.name === columnName);
 
   if (!column) {
@@ -3548,7 +3632,7 @@ function seedDatabase() {
     VALUES (?, ?, ?)
   `);
   const insertWordSkillState = getDb().prepare(`
-    INSERT INTO word_skill_state (
+    INSERT INTO learner_owned_word_skill_state (
       word_id,
       skill_id,
       enabled,
@@ -4407,7 +4491,7 @@ function getWordSkillState(wordId: string, skillId: StudySkillId): WordSkillStat
 
 function upsertWordSkillState(state: WordSkillState) {
   getDb().prepare(`
-    INSERT INTO word_skill_state (
+    INSERT INTO learner_owned_word_skill_state (
       word_id,
       skill_id,
       enabled,
@@ -4416,7 +4500,7 @@ function upsertWordSkillState(state: WordSkillState) {
       next_due_at,
       ease_factor
     ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(word_id, skill_id) DO UPDATE SET
+    ON CONFLICT(learner_id, word_id, skill_id) DO UPDATE SET
       enabled = excluded.enabled,
       interval_hours = excluded.interval_hours,
       last_studied_at = excluded.last_studied_at,
@@ -4486,36 +4570,6 @@ function mapWordSkillRelevanceRow(row: WordSkillRelevanceRow): WordSkillRelevanc
     relevanceState: row.relevance_state,
     updatedAt: row.updated_at,
     sourceEventId: row.source_event_id,
-  };
-}
-
-function mapContrastCandidateIntakeRow(row: ContrastCandidateIntakeRow): ContrastCandidateIntake {
-  return {
-    id: row.id,
-    createdAt: row.created_at,
-    targetWordId: row.target_word_id,
-    sourceEventId: row.source_event_id,
-    sourceActionKind: row.source_action_kind,
-    sourceContentRef: parseNullableContentRefJson(row.source_content_ref_json),
-    candidateText: row.candidate_text,
-    matchedWordId: row.matched_word_id,
-    note: row.note,
-    status: row.status,
-  };
-}
-
-function mapStudyContentFeedbackRow(row: StudyContentFeedbackRow): StudyContentFeedback {
-  return {
-    id: row.id,
-    createdAt: row.created_at,
-    targetType: row.target_type,
-    targetId: row.target_id,
-    targetWordId: row.target_word_id,
-    actionKind: row.action_kind,
-    feedbackType: row.feedback_type,
-    feedbackAction: row.feedback_action,
-    sourceEventId: row.source_event_id,
-    note: row.note,
   };
 }
 
@@ -5767,12 +5821,12 @@ function getDailyNewStudyCount(studyDayKey: string): number {
 
 function incrementDailyNewStudyCount(studyDayKey: string) {
   getDb().prepare(`
-    INSERT INTO daily_new_word_intake (
+    INSERT INTO learner_owned_daily_new_word_intake (
       day_key,
       new_study_count
     ) VALUES (?, 1)
-    ON CONFLICT(day_key) DO UPDATE SET
-      new_study_count = daily_new_word_intake.new_study_count + 1
+    ON CONFLICT(learner_id, day_key) DO UPDATE SET
+      new_study_count = learner_owned_daily_new_word_intake.new_study_count + 1
   `).run(studyDayKey);
 }
 

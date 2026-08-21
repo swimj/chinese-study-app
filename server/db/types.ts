@@ -233,32 +233,6 @@ export type WordSkillRelevanceRow = {
   source_event_id: string | null;
 };
 
-export type ContrastCandidateIntake = {
-  id: string;
-  createdAt: string;
-  targetWordId: string;
-  sourceEventId: string | null;
-  sourceActionKind: StudyActionKind | null;
-  sourceContentRef: StudyContentRef | null;
-  candidateText: string | null;
-  matchedWordId: string | null;
-  note: string;
-  status: 'open' | 'accepted' | 'dismissed' | 'resolved';
-};
-
-export type ContrastCandidateIntakeRow = {
-  id: string;
-  created_at: string;
-  target_word_id: string;
-  source_event_id: string | null;
-  source_action_kind: StudyActionKind | null;
-  source_content_ref_json: string | null;
-  candidate_text: string | null;
-  matched_word_id: string | null;
-  note: string;
-  status: 'open' | 'accepted' | 'dismissed' | 'resolved';
-};
-
 export type StudyContentFeedback = {
   id: string;
   createdAt: string;
@@ -269,19 +243,6 @@ export type StudyContentFeedback = {
   feedbackType: 'bad_prompt';
   feedbackAction: 'reported' | 'resolved';
   sourceEventId: string | null;
-  note: string;
-};
-
-export type StudyContentFeedbackRow = {
-  id: string;
-  created_at: string;
-  target_type: 'generated_prompt' | 'contrast_prompt';
-  target_id: string;
-  target_word_id: string;
-  action_kind: StudyActionKind;
-  feedback_type: 'bad_prompt';
-  feedback_action: 'reported' | 'resolved';
-  source_event_id: string | null;
   note: string;
 };
 
@@ -407,7 +368,6 @@ export type {
   ContrastClusterMember,
   ContrastPrompt,
   ContrastPromptContent,
-  ContrastCandidateIntake,
   PriorityWord,
   PriorityWordsPayload,
   StudyContentFeedback,

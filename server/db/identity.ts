@@ -1,6 +1,7 @@
 import { getDb } from './connection.ts';
 
 export const LOCAL_AUTH_PROVIDER = 'trusted_local';
+export const LEARNER_OWNERSHIP_MIGRATION_ID = 'swi_47_learner_ownership_v1';
 
 export function ensureIdentitySchema(): void {
   getDb().exec(`
@@ -101,6 +102,20 @@ export function hasIdentitySchema(): boolean {
     WHERE type = 'table' AND name = 'learners'
   `).get() as { present: number } | undefined;
   return row?.present === 1;
+}
+
+export function recordLearnerOwnershipSchema(appliedAt = new Date().toISOString()): void {
+  getDb().prepare(`
+    INSERT OR IGNORE INTO schema_migrations (migration_id, applied_at, details_json)
+    VALUES (?, ?, '{"status":"complete"}')
+  `).run(LEARNER_OWNERSHIP_MIGRATION_ID, appliedAt);
+}
+
+export function hasLearnerOwnershipSchema(): boolean {
+  if (!hasIdentitySchema()) return false;
+  return Boolean(getDb().prepare(`
+    SELECT 1 FROM schema_migrations WHERE migration_id = ?
+  `).get(LEARNER_OWNERSHIP_MIGRATION_ID));
 }
 
 export function assertLearnerExists(learnerId: string): void {
