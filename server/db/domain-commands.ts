@@ -31,7 +31,7 @@ export function sinkWordPriorityWithoutTransaction({
   updatedAt: string;
 }): void {
   getDb().prepare(`
-    INSERT INTO user_word_priority (
+    INSERT INTO learner_owned_user_word_priority (
       word_id,
       bump_count,
       force_top,
@@ -39,7 +39,7 @@ export function sinkWordPriorityWithoutTransaction({
       required_for_next_session,
       updated_at
     ) VALUES (?, 0, 0, ?, 0, ?)
-    ON CONFLICT(word_id) DO UPDATE SET
+    ON CONFLICT(learner_id, word_id) DO UPDATE SET
       bump_count = excluded.bump_count,
       force_top = excluded.force_top,
       priority_tier = excluded.priority_tier,
@@ -108,14 +108,14 @@ export function suppressDefinitionProductionWithoutTransaction({
     sourceEventId,
   };
   getDb().prepare(`
-    INSERT INTO word_skill_relevance (
+    INSERT INTO learner_owned_word_skill_relevance (
       word_id,
       skill_id,
       relevance_state,
       updated_at,
       source_event_id
     ) VALUES (?, 'production', 'suppressed', ?, ?)
-    ON CONFLICT(word_id, skill_id) DO UPDATE SET
+    ON CONFLICT(learner_id, word_id, skill_id) DO UPDATE SET
       relevance_state = excluded.relevance_state,
       updated_at = excluded.updated_at,
       source_event_id = excluded.source_event_id
@@ -181,14 +181,14 @@ export function enableContextualSelectionWithoutTransaction({
       };
   if (relevanceChanged) {
     getDb().prepare(`
-      INSERT INTO word_skill_relevance (
+      INSERT INTO learner_owned_word_skill_relevance (
         word_id,
         skill_id,
         relevance_state,
         updated_at,
         source_event_id
       ) VALUES (?, 'contextual_selection', 'normal', ?, ?)
-      ON CONFLICT(word_id, skill_id) DO UPDATE SET
+      ON CONFLICT(learner_id, word_id, skill_id) DO UPDATE SET
         relevance_state = excluded.relevance_state,
         updated_at = excluded.updated_at,
         source_event_id = excluded.source_event_id

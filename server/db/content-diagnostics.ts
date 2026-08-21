@@ -8,6 +8,7 @@ import type {
 import type { ProductionCueType } from '../../src/domain/study-actions.ts';
 import type { Word, WordRow, WordStatus } from './types.ts';
 import { getDb } from './connection.ts';
+import { requireLearnerId } from './learner-context.ts';
 
 const DEFAULT_DIAGNOSTIC_LIMIT = 50;
 const MAX_DIAGNOSTIC_LIMIT = 50;
@@ -246,19 +247,15 @@ function searchClusterDiagnostics(query: string, limit: number): ContrastCluster
         contrast_prompts.target_word_id,
         contrast_prompts.prompt_text,
         contrast_prompts.explanation,
-        (
-          SELECT feedback_action
-          FROM study_content_feedback
-          WHERE target_type = 'contrast_prompt'
-            AND feedback_type = 'bad_prompt'
-            AND target_id = contrast_prompts.id
-          ORDER BY created_at DESC, id DESC
-          LIMIT 1
-        ) AS latest_feedback_action
+        CASE WHEN contrast_prompt_exclusions.prompt_id IS NULL THEN NULL ELSE 'reported' END
+          AS latest_feedback_action
       FROM contrast_prompts
+      LEFT JOIN contrast_prompt_exclusions
+        ON contrast_prompt_exclusions.prompt_id = contrast_prompts.id
+       AND contrast_prompt_exclusions.learner_id = ?
       WHERE contrast_prompts.cluster_id IN (__IDS__)
       ORDER BY contrast_prompts.cluster_id ASC, contrast_prompts.id ASC
-    `),
+    `, [requireLearnerId()]),
     (row) => row.cluster_id,
   );
 
@@ -409,11 +406,11 @@ function selectWordsByIds(ids: string[]): Word[] {
   `).map(mapWordRow);
 }
 
-function selectForIds<Row>(ids: string[], _idColumn: string, sql: string): Row[] {
+function selectForIds<Row>(ids: string[], _idColumn: string, sql: string, leadingParams: unknown[] = []): Row[] {
   const uniqueIds = [...new Set(ids)];
   if (uniqueIds.length === 0) return [];
   const placeholders = uniqueIds.map(() => '?').join(', ');
-  return getDb().prepare(sql.replace('__IDS__', placeholders)).all(...uniqueIds) as Row[];
+  return getDb().prepare(sql.replace('__IDS__', placeholders)).all(...leadingParams, ...uniqueIds) as Row[];
 }
 
 function groupBy<Row>(rows: Row[], keyFor: (row: Row) => string): Map<string, Row[]> {

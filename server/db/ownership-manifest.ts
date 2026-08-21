@@ -32,28 +32,18 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
   privateEntry('learner_settings', 'learner settings root', 'bootstrap explicit defaults for each learner'),
   operationalEntry('schema_migrations', 'database schema migration ledger'),
   operationalEntry('content_imports', 'shared content import ledger'),
-  {
-    table: 'words',
-    ownershipClass: 'mixed_requires_separation',
-    ownershipRoot: 'shared lexical word plus learner-word state',
-    crossScopeReferences: 'shared word identity never authorizes learner state',
-    enforcementPoints: 'split shared lexical fields from learner-owned lifecycle, notes, and coverage',
-    historicalOwnership: 'existing row combines shared corpus content with the implicit local learner',
-    migrationTreatment: 'copy lexical fields once and assign private fields to the explicit legacy learner',
-    disposition: 'split',
-    ambiguity: null,
-  },
-  {
-    table: 'word_meanings',
-    ownershipClass: 'mixed_requires_separation',
-    ownershipRoot: 'shared meaning plus learner meaning-prompt preference',
-    crossScopeReferences: 'meaning content is shared; visibility is private',
-    enforcementPoints: 'move show_on_production_prompt to a narrow learner overlay',
-    historicalOwnership: 'meaning text and the implicit learner preference currently share one row',
-    migrationTreatment: 'retain compatibility meaning storage and assign visibility to the legacy learner',
-    disposition: 'split',
-    ambiguity: null,
-  },
+  sharedEntry('lexical_words', 'shared lexical word', 'copy lexical fields once from legacy words'),
+  privateEntry(
+    'learner_word_state',
+    'learner plus shared lexical word',
+    'assign legacy lifecycle, notes, and coverage to the explicit legacy learner',
+  ),
+  sharedEntry('lexical_word_meanings', 'shared lexical meaning', 'copy legacy meaning content once'),
+  privateEntry(
+    'learner_word_meaning_preferences',
+    'learner plus shared lexical meaning',
+    'assign legacy production-prompt visibility to the explicit legacy learner',
+  ),
   {
     table: 'word_lookup_aliases',
     ownershipClass: 'shared',
@@ -67,28 +57,16 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
   },
   ...privateWordStateEntries(),
   ...studyHistoryEntries(),
-  {
-    table: 'contrast_candidate_intake',
-    ownershipClass: 'learner_private',
-    ownershipRoot: 'learner and optional source study event',
-    crossScopeReferences: 'shared word references grant no access',
-    enforcementPoints: 'retired rather than tenant-adapted',
-    historicalOwnership: 'vestigial private mistake-intake state',
-    migrationTreatment: 'drop; no hosted import',
-    disposition: 'retire',
-    ambiguity: null,
-  },
-  {
-    table: 'study_content_feedback',
-    ownershipClass: 'learner_private',
-    ownershipRoot: 'learner and optional source study event',
-    crossScopeReferences: 'polymorphic content target grants no ownership',
-    enforcementPoints: 'replace with purpose-specific learner definition-fallback and contrast-prompt exclusions',
-    historicalOwnership: 'vestigial private feedback with unenforced target ids',
-    migrationTreatment: 'fold active reports into narrow exclusions with explicit legacy migration provenance; retain a validation report',
-    disposition: 'replace',
-    ambiguity: null,
-  },
+  privateEntry(
+    'definition_fallback_exclusions',
+    'learner plus shared word',
+    'fold active legacy definition feedback into explicit exclusions with migration provenance',
+  ),
+  privateEntry(
+    'contrast_prompt_exclusions',
+    'learner plus scoped contrast prompt',
+    'fold active legacy contrast feedback into explicit exclusions with migration provenance',
+  ),
   ...contrastContentEntries(),
   ...reflectionEntries(),
   ...productionEntries(),
@@ -97,12 +75,12 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
 
 function privateWordStateEntries(): DurableOwnershipEntry[] {
   return [
-    privateEntry('user_word_priority', 'learner plus shared word', 'assign current rows to the legacy learner'),
-    privateEntry('word_study_admission_state', 'learner plus shared word', 'assign current rows to the legacy learner'),
-    privateEntry('word_skill_state', 'learner plus shared word and skill', 'assign current rows to the legacy learner'),
-    privateEntry('daily_new_word_intake', 'learner plus UTC day', 'assign current rows to the legacy learner'),
+    privateEntry('learner_owned_user_word_priority', 'learner plus shared word', 'assign current rows to the legacy learner'),
+    privateEntry('learner_owned_word_study_admission_state', 'learner plus shared word', 'assign current rows to the legacy learner'),
+    privateEntry('learner_owned_word_skill_state', 'learner plus shared word and skill', 'assign current rows to the legacy learner'),
+    privateEntry('learner_owned_daily_new_word_intake', 'learner plus UTC day', 'assign current rows to the legacy learner'),
     privateEntry(
-      'word_skill_relevance',
+      'learner_owned_word_skill_relevance',
       'learner plus shared word and skill',
       'assign current rows and any source event to the same legacy learner',
     ),
@@ -123,21 +101,35 @@ function operationalEntry(table: string, ownershipRoot: string): DurableOwnershi
   };
 }
 
+function sharedEntry(table: string, ownershipRoot: string, migrationTreatment: string): DurableOwnershipEntry {
+  return {
+    table,
+    ownershipClass: 'shared',
+    ownershipRoot,
+    crossScopeReferences: 'shared content identity grants no learner-state access',
+    enforcementPoints: 'shared-content persistence boundary',
+    historicalOwnership: 'split from the legacy mixed lexical row by SWI-47',
+    migrationTreatment,
+    disposition: 'retain',
+    ambiguity: null,
+  };
+}
+
 function studyHistoryEntries(): DurableOwnershipEntry[] {
   return [
-    privateEntry('study_sessions', 'learner session root', 'assign current sessions to the legacy learner'),
+    privateEntry('learner_owned_study_sessions', 'learner session root', 'assign current sessions to the legacy learner'),
     privateEntry(
-      'review_session_summaries',
-      'learner plus source session',
-      'assign to the source session learner and add the missing ownership-bearing reference',
+      'learner_owned_review_session_summaries',
+      'direct learner analytics root',
+      'assign legacy summaries to the explicit learner; session ids remain descriptive rather than authorization roots',
     ),
     privateEntry(
-      'study_attempt_events',
+      'learner_owned_study_attempt_events',
       'learner plus source session',
       'assign to the source session learner; retain exact shared-content snapshots',
     ),
     privateEntry(
-      'study_events',
+      'learner_owned_study_events',
       'learner event root because session is optional',
       'assign current events to the legacy learner and verify optional session ownership',
     ),
@@ -147,17 +139,17 @@ function studyHistoryEntries(): DurableOwnershipEntry[] {
 function contrastContentEntries(): DurableOwnershipEntry[] {
   return [
     scopedContentEntry(
-      'contrast_clusters',
+      'scoped_contrast_clusters',
       'contrast artifact root',
       'classify accepted corpus rows as shared available and reflection-created rows as learner-owned',
     ),
     scopedContentEntry(
-      'contrast_cluster_members',
+      'scoped_contrast_cluster_members',
       'contrast cluster scope',
       'inherit the migrated cluster scope; word remains shared',
     ),
     scopedContentEntry(
-      'contrast_prompts',
+      'scoped_contrast_prompts',
       'contrast cluster scope',
       'inherit the migrated cluster scope and preserve prompt content',
     ),
@@ -167,35 +159,35 @@ function contrastContentEntries(): DurableOwnershipEntry[] {
 function reflectionEntries(): DurableOwnershipEntry[] {
   return [
     privateEntry(
-      'reflection_artifacts',
+      'learner_owned_reflection_artifacts',
       'learner plus source study session',
       'assign to and enforce the source session learner',
       'append-only successful provider artifact',
     ),
     privateEntry(
-      'reflection_generation_runs',
+      'learner_owned_reflection_generation_runs',
       'learner plus source study session',
       'assign to and enforce the source session learner',
       'append-only provider attempt and retry basis',
     ),
     privateEntry(
-      'reflection_proposal_reviews',
+      'learner_owned_reflection_proposal_reviews',
       'learner plus reflection artifact',
       'inherit artifact ownership and validate invocation links within the same learner',
     ),
     privateEntry(
-      'reflection_operation_invocations',
+      'learner_owned_reflection_operation_invocations',
       'direct learner root because manual operations may have no proposal',
       'assign existing invocations to their artifact/session chain or explicit legacy learner',
       'immutable authorization with mutable recoverable application state',
     ),
     privateEntry(
-      'reflection_quality_annotations',
+      'learner_owned_reflection_quality_annotations',
       'learner plus reflection artifact',
       'inherit artifact ownership even when an operator supplies the annotation',
     ),
     privateEntry(
-      'reflection_help_inbox',
+      'learner_owned_reflection_help_inbox',
       'learner plus reflection artifact',
       'inherit artifact ownership',
     ),
@@ -216,46 +208,46 @@ function productionEntries(): DurableOwnershipEntry[] {
       ambiguity: null,
     },
     scopedContentEntry(
-      'production_cues',
+      'scoped_production_cues',
       'production cue artifact',
       'remove direct shared-to-private origin coupling and classify cue scope explicitly',
     ),
     scopedContentEntry(
-      'production_cue_accepted_words',
+      'scoped_production_cue_accepted_words',
       'production cue scope',
       'inherit cue scope; accepted words remain shared references',
     ),
     scopedContentEntry(
-      'production_cue_supplements',
+      'scoped_production_cue_supplements',
       'production supplement artifact',
       'remove direct shared-to-private origin coupling and classify supplement scope explicitly',
     ),
     privateEntry(
-      'production_cue_lifecycle_events',
+      'learner_owned_production_cue_lifecycle_events',
       'learner plus accessible production cue',
       'assign current lifecycle to the legacy learner; later publication is a separate lifecycle',
       'append-only learner activation history',
     ),
     privateEntry(
-      'production_cue_activation_state',
+      'learner_owned_production_cue_activation_state',
       'learner plus accessible production cue',
       'rebuild from same-learner lifecycle events',
       'current projection of learner activation history',
     ),
     privateEntry(
-      'production_cue_evidence_records',
+      'learner_owned_production_cue_evidence_records',
       'learner evidence root plus same-learner attempts and invocations',
       'assign all private references to the same legacy learner',
       'append-only attempt, judgment, and compensation evidence',
     ),
     privateEntry(
-      'production_cue_evidence_projection',
+      'learner_owned_production_cue_evidence_projection',
       'learner plus accessible production cue',
       'rebuild from same-learner cue evidence',
       'shadow evidence aggregate; not scheduling authority',
     ),
     privateEntry(
-      'production_recheck_demands',
+      'learner_owned_production_recheck_demands',
       'learner plus production task and source attempt',
       'assign source, consumer, and replacement references to one learner',
       'temporary learner scheduling demand',
@@ -266,19 +258,19 @@ function productionEntries(): DurableOwnershipEntry[] {
 function intakeTriageEntries(): DurableOwnershipEntry[] {
   return [
     privateEntry(
-      'intake_triage_runs',
+      'learner_owned_intake_triage_runs',
       'learner provider-operation root',
       'assign current runs to the legacy learner',
       'append-only provider run and cost record',
     ),
     privateEntry(
-      'intake_triage_assessments',
+      'learner_owned_intake_triage_assessments',
       'learner plus intake-triage run',
       'inherit run ownership; word remains shared',
       'immutable provider assessment',
     ),
     privateEntry(
-      'intake_triage_assessment_dispositions',
+      'learner_owned_intake_triage_assessment_dispositions',
       'learner plus intake-triage assessment',
       'inherit assessment ownership and validate private effect refs',
       'immutable learner disposition',

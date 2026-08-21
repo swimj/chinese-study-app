@@ -41,6 +41,7 @@ describe('study attempt event storage', { concurrency: false }, () => {
     }
 
     sqlite = new DatabaseSync(dbPath);
+    sqlite.function('current_learner_id', () => 'test-learner');
     sqlite.exec('PRAGMA foreign_keys = ON;');
   });
 
@@ -191,7 +192,7 @@ describe('study attempt event storage', { concurrency: false }, () => {
 
     assert.throws(
       () => dbModule.insertStudyAttemptEvents([event]),
-      /UNIQUE constraint failed: study_attempt_events\.id/,
+      /UNIQUE constraint failed: learner_owned_study_attempt_events\.learner_id, learner_owned_study_attempt_events\.id/,
     );
   });
 

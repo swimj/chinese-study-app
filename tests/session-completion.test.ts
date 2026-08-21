@@ -68,6 +68,7 @@ describe('session completion', { concurrency: false }, () => {
     }
 
     sqlite = new DatabaseSync(dbPath);
+    sqlite.function('current_learner_id', () => 'test-learner');
     sqlite.exec('PRAGMA foreign_keys = ON;');
   });
 
@@ -83,10 +84,10 @@ describe('session completion', { concurrency: false }, () => {
       DELETE FROM production_cue_evidence_records;
       DELETE FROM production_cue_activation_state;
       DELETE FROM production_cue_lifecycle_events;
-      DELETE FROM production_cue_accepted_words;
-      DELETE FROM production_cues;
-      DELETE FROM study_content_feedback;
-      DELETE FROM contrast_candidate_intake;
+      DELETE FROM scoped_production_cue_accepted_words;
+      DELETE FROM scoped_production_cues;
+      DELETE FROM contrast_prompt_exclusions;
+      DELETE FROM definition_fallback_exclusions;
       DELETE FROM word_skill_relevance;
       DELETE FROM study_attempt_events;
       DELETE FROM study_sessions;
@@ -789,7 +790,7 @@ describe('session completion', { concurrency: false }, () => {
     const originalAdmission = fetchAdmissionState('atomic-anchor');
     sqlite.exec(`
       CREATE TRIGGER fail_session_cue_evidence
-      BEFORE INSERT ON production_cue_evidence_records
+      BEFORE INSERT ON learner_owned_production_cue_evidence_records
       BEGIN
         SELECT RAISE(ABORT, 'forced cue evidence failure');
       END;

@@ -42,6 +42,7 @@ describe('reflection durable store', { concurrency: false }, () => {
     }
 
     sqlite = new DatabaseSync(path.join(dataDir, 'app.db'));
+    sqlite.function('current_learner_id', () => 'test-learner');
     sqlite.exec('PRAGMA foreign_keys = ON;');
   });
 
@@ -74,36 +75,23 @@ describe('reflection durable store', { concurrency: false }, () => {
       SELECT name
       FROM sqlite_master
       WHERE type = 'table'
-        AND name LIKE 'reflection_%'
+        AND name LIKE 'learner_owned_reflection_%'
       ORDER BY name
     `).all() as Array<{ name: string }>;
     assert.deepEqual(tables.map((row) => row.name), [
-      'reflection_artifacts',
-      'reflection_generation_runs',
-      'reflection_help_inbox',
-      'reflection_operation_invocations',
-      'reflection_proposal_reviews',
-      'reflection_quality_annotations',
+      'learner_owned_reflection_artifacts',
+      'learner_owned_reflection_generation_runs',
+      'learner_owned_reflection_help_inbox',
+      'learner_owned_reflection_operation_invocations',
+      'learner_owned_reflection_proposal_reviews',
+      'learner_owned_reflection_quality_annotations',
     ]);
-    const artifactForeignKeys = sqlite.prepare(`
-      PRAGMA foreign_key_list(reflection_artifacts)
-    `).all() as Array<{ table: string; from: string; to: string; on_delete: string }>;
-    assert(artifactForeignKeys.some((foreignKey) => (
-      foreignKey.table === 'study_sessions'
-      && foreignKey.from === 'source_session_id'
-      && foreignKey.to === 'id'
-      && foreignKey.on_delete === 'RESTRICT'
-    )));
-  });
-
-  test('adds nullable retained-bundle storage to an existing generation-run table', () => {
-    sqlite.exec('ALTER TABLE reflection_generation_runs DROP COLUMN evidence_bundle_json');
-    assert.throws(
-      () => dbModule.validateReflectionSchema(),
-      /Missing column "evidence_bundle_json"/,
-    );
-    dbModule.ensureReflectionSchema();
-    assert.doesNotThrow(() => dbModule.validateReflectionSchema());
+    const ownershipTrigger = sqlite.prepare(`
+      SELECT 1 FROM sqlite_master
+      WHERE type = 'trigger'
+        AND name = 'learner_owned_reflection_artifacts_source_session_id_same_owner_insert'
+    `).get();
+    assert(ownershipTrigger);
   });
 
   test('persists a complete immutable pricing basis with a generation run', () => {
@@ -412,7 +400,7 @@ describe('reflection durable store', { concurrency: false }, () => {
 
     assert.throws(
       () => dbModule.materializeReflectionArtifact(input),
-      /FOREIGN KEY constraint failed/,
+      /cross-learner private reference/,
     );
     const counts = sqlite.prepare(`
       SELECT

@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { config } from './connection.ts';
+import { getDb } from './connection.ts';
 
 const learnerContext = new AsyncLocalStorage<string>();
 
@@ -17,4 +18,8 @@ export function requireLearnerId(): string {
     throw new Error('Learner context is required');
   }
   return learnerId;
+}
+
+export function installLearnerContextSqlFunction(): void {
+  getDb().function('current_learner_id', { deterministic: false }, requireLearnerId);
 }

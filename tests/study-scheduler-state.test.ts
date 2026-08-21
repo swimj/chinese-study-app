@@ -15,6 +15,7 @@ describe('study scheduler state', { concurrency: false }, () => {
       const dbModule = await import(moduleUrl);
 
       const sqlite = new DatabaseSync(path.join(dataDir, 'app.db'));
+      sqlite.function('current_learner_id', () => 'test-learner');
       try {
         insertWord(sqlite, 'missing-state-word');
       } finally {

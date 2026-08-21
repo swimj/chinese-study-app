@@ -44,7 +44,8 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
 
   beforeEach(() => {
     sqlite.exec(`
-      DELETE FROM study_content_feedback;
+      DELETE FROM contrast_prompt_exclusions;
+      DELETE FROM definition_fallback_exclusions;
       DELETE FROM word_skill_relevance;
       DELETE FROM contrast_prompts;
       DELETE FROM contrast_cluster_members;
@@ -77,13 +78,11 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
       INSERT INTO word_skill_relevance
         (word_id, skill_id, relevance_state, updated_at, source_event_id)
       VALUES ('target', 'production', 'suppressed', '${completedAt}', NULL);
-      INSERT INTO study_content_feedback
-        (id, created_at, target_type, target_id, target_word_id, action_kind,
-         feedback_type, feedback_action, source_event_id, note)
+      INSERT INTO definition_fallback_exclusions
+        (learner_id, word_id, origin, source_feedback_ids_json, migration_id, created_at, note)
       VALUES
-        ('feedback-1', '${completedAt}', 'generated_prompt',
-         'definition_based_production', 'target', 'production',
-         'bad_prompt', 'reported', NULL, 'The gloss is too broad.');
+        ('test-learner', 'target', 'legacy_bad_prompt_migration', '["feedback-1"]',
+         NULL, '${completedAt}', 'The gloss is too broad.');
       INSERT INTO contrast_clusters (id, title, note)
       VALUES ('cluster-1', '目标 / 替代', 'Near-synonyms');
       INSERT INTO contrast_cluster_members
@@ -690,17 +689,26 @@ function createSchema() {
       source_event_id TEXT,
       PRIMARY KEY (word_id, skill_id)
     );
-    CREATE TABLE study_content_feedback (
-      id TEXT PRIMARY KEY,
+    CREATE TABLE definition_fallback_exclusions (
+      learner_id TEXT NOT NULL,
+      word_id TEXT NOT NULL,
+      origin TEXT NOT NULL,
+      source_feedback_ids_json TEXT NOT NULL,
+      migration_id TEXT,
       created_at TEXT NOT NULL,
-      target_type TEXT NOT NULL,
-      target_id TEXT NOT NULL,
+      note TEXT NOT NULL,
+      PRIMARY KEY (learner_id, word_id)
+    );
+    CREATE TABLE contrast_prompt_exclusions (
+      learner_id TEXT NOT NULL,
+      prompt_id TEXT NOT NULL,
       target_word_id TEXT NOT NULL,
-      action_kind TEXT NOT NULL,
-      feedback_type TEXT NOT NULL,
-      feedback_action TEXT NOT NULL,
-      source_event_id TEXT,
-      note TEXT NOT NULL
+      origin TEXT NOT NULL,
+      source_feedback_ids_json TEXT NOT NULL,
+      migration_id TEXT,
+      created_at TEXT NOT NULL,
+      note TEXT NOT NULL,
+      PRIMARY KEY (learner_id, prompt_id)
     );
     CREATE TABLE contrast_clusters (
       id TEXT PRIMARY KEY,

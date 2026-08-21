@@ -53,13 +53,15 @@ describe('contrast content model', { concurrency: false }, () => {
     }
 
     sqlite = new DatabaseSync(dbPath);
+    sqlite.function('current_learner_id', () => 'test-learner');
     sqlite.exec('PRAGMA foreign_keys = ON;');
   });
 
   beforeEach(() => {
     sqlite.exec(`
       DROP TRIGGER IF EXISTS fail_contextual_relevance_insert;
-      DELETE FROM study_content_feedback;
+      DELETE FROM contrast_prompt_exclusions;
+      DELETE FROM definition_fallback_exclusions;
       DELETE FROM word_skill_relevance;
       DELETE FROM study_events;
       DELETE FROM contrast_prompts;
@@ -186,7 +188,7 @@ describe('contrast content model', { concurrency: false }, () => {
     dbModule.createContrastCluster({ id: 'cluster-atomic', title: 'Atomic cluster' });
     sqlite.exec(`
       CREATE TRIGGER fail_contextual_relevance_insert
-      BEFORE INSERT ON word_skill_relevance
+      BEFORE INSERT ON learner_owned_word_skill_relevance
       WHEN NEW.word_id = 'atomic-member'
       BEGIN
         SELECT RAISE(ABORT, 'injected eligibility failure');
@@ -396,15 +398,12 @@ describe('contrast content model', { concurrency: false }, () => {
 
     dbModule.suppressProductionForWordOutsideSession({ targetWordId: 'suppressed-word' });
     sqlite.prepare(`
-      INSERT INTO study_content_feedback (
-        id, created_at, target_type, target_id, target_word_id, action_kind,
-        feedback_type, feedback_action, source_event_id, note
-      ) VALUES (?, ?, 'generated_prompt', 'definition_based_production', ?, 'production',
-        'bad_prompt', 'reported', NULL, ?)
+      INSERT INTO definition_fallback_exclusions (
+        learner_id, word_id, origin, source_feedback_ids_json, migration_id, created_at, note
+      ) VALUES ('test-learner', ?, 'legacy_bad_prompt_migration', '["legacy-bad-prompt-feedback"]', NULL, ?, ?)
     `).run(
-      'legacy-bad-prompt-feedback',
-      '2026-05-10T00:00:00.000Z',
       'bad-prompt-word',
+      '2026-05-10T00:00:00.000Z',
       'Definition too broad.',
     );
 

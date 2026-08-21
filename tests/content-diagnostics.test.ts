@@ -25,6 +25,7 @@ describe('content diagnostics', { concurrency: false }, () => {
     restoreEnv('APP_MODE', previousMode);
     restoreEnv('APP_DATA_DIR', previousDataDir);
     sqlite = new DatabaseSync(path.join(dataDir, 'app.db'));
+    sqlite.function('current_learner_id', () => 'test-learner');
     sqlite.exec('PRAGMA foreign_keys = ON;');
 
     insertWord('check', '考查', 'kǎochá', 'to check');

@@ -43,6 +43,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
     }
 
     sqlite = new DatabaseSync(path.join(dataDir, 'app.db'));
+    sqlite.function('current_learner_id', () => 'test-learner');
     sqlite.exec('PRAGMA foreign_keys = ON;');
   });
 

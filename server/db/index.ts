@@ -12,3 +12,7 @@ export * from './content-diagnostics.ts';
 export * from './intake-triage.ts';
 export * from './identity.ts';
 export * from './learner-context.ts';
+export * from './prompt-exclusions.ts';
+export * from './learner-scoped-tables.ts';
+export * from './scoped-content-tables.ts';
+export * from './learner-ownership-guards.ts';

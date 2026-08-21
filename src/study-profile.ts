@@ -24,7 +24,6 @@ export type StudyProfile = {
     targetSearchPrompt: string;
     targetSearchPlaceholder: string;
     targetRecallIncorrect: string;
-    targetContrastCandidate: string;
   };
   defaultProductionMatchOptions: ProductionMatchOptions;
 };
@@ -64,7 +63,6 @@ export const studyProfiles: Record<StudyProfileId, StudyProfile> = {
       targetSearchPrompt: 'Search by hanzi to add matching unstudied words to the priority list.',
       targetSearchPlaceholder: 'Enter hanzi and submit',
       targetRecallIncorrect: 'Hanzi recall was incorrect.',
-      targetContrastCandidate: 'contrast candidate?',
     },
     defaultProductionMatchOptions: exactProductionMatchOptions,
   },
@@ -82,7 +80,6 @@ export const studyProfiles: Record<StudyProfileId, StudyProfile> = {
       targetSearchPrompt: 'Search by French term to add matching unstudied words to the priority list.',
       targetSearchPlaceholder: 'Enter French term and submit',
       targetRecallIncorrect: 'French recall was incorrect.',
-      targetContrastCandidate: 'contrast candidate?',
     },
     defaultProductionMatchOptions: forgivingFrenchProductionMatchOptions,
   },

@@ -25,6 +25,7 @@ import {
   listReflectionGenerationRuns,
   listReflectionHelpInbox,
   recoverPendingReflectionInvocations,
+  runWithLearnerId,
   getSessionActiveTimeMetrics,
   getSessionPayload,
   setDailyNewWordLimit,
@@ -105,6 +106,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.use(cors());
   app.use(express.json());
+  app.use((_req, _res, next) => runWithLearnerId(dbConfig.learnerId, next));
 
   app.get('/api/content-diagnostics', (req, res) => {
     const kind = req.query?.kind;

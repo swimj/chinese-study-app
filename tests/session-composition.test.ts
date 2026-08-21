@@ -73,6 +73,7 @@ describe('session composition', { concurrency: false }, () => {
     }
 
     sqlite = new DatabaseSync(dbPath);
+    sqlite.function('current_learner_id', () => 'test-learner');
     sqlite.exec('PRAGMA foreign_keys = ON;');
   });
 
@@ -89,12 +90,12 @@ describe('session composition', { concurrency: false }, () => {
       DELETE FROM production_cue_evidence_records;
       DELETE FROM production_cue_activation_state;
       DELETE FROM production_cue_lifecycle_events;
-      DELETE FROM production_cue_accepted_words;
-      DELETE FROM production_cue_supplements;
-      DELETE FROM production_cues;
+      DELETE FROM scoped_production_cue_accepted_words;
+      DELETE FROM scoped_production_cue_supplements;
+      DELETE FROM scoped_production_cues;
       DELETE FROM reflection_operation_invocations;
-      DELETE FROM study_content_feedback;
-      DELETE FROM contrast_candidate_intake;
+      DELETE FROM contrast_prompt_exclusions;
+      DELETE FROM definition_fallback_exclusions;
       DELETE FROM word_skill_relevance;
       DELETE FROM study_events;
       DELETE FROM study_attempt_events;
@@ -987,16 +988,10 @@ describe('session composition', { concurrency: false }, () => {
     });
 
     sqlite.prepare(`
-      INSERT INTO study_content_feedback (
-        id, created_at, target_type, target_id, target_word_id, action_kind,
-        feedback_type, feedback_action, source_event_id, note
-      ) VALUES (?, ?, 'contrast_prompt', ?, ?, 'contrast_selection',
-        'bad_prompt', 'resolved', NULL, '')
+      DELETE FROM contrast_prompt_exclusions
+      WHERE learner_id = 'test-learner' AND prompt_id = ?
     `).run(
-      'resolved-contrast-prompt-feedback',
-      '2026-05-10T01:00:00.000Z',
       'prompt-resolved-contrast',
-      'context-resolved-prompt-word',
     );
 
     assert.deepEqual(getSessionItemIds(dbModule), ['review/context-resolved-prompt-word/contextual_selection']);
@@ -2163,12 +2158,12 @@ function insertReviewSkillState(record: ReviewSkillStateRecord) {
 
 function insertWordStudyAdmissionState(wordId: string, earliestNextStudyAt: string | null) {
   sqlite.prepare(`
-    INSERT INTO word_study_admission_state (
+    INSERT INTO learner_owned_word_study_admission_state (
       word_id,
       study_phase,
       earliest_next_study_at
     ) VALUES (?, ?, ?)
-    ON CONFLICT(word_id) DO UPDATE SET
+    ON CONFLICT(learner_id, word_id) DO UPDATE SET
       study_phase = excluded.study_phase,
       earliest_next_study_at = excluded.earliest_next_study_at
   `).run(wordId, 'review', earliestNextStudyAt);
@@ -2192,7 +2187,7 @@ function insertWordSkillState({
   easeFactor?: number;
 }) {
   sqlite.prepare(`
-    INSERT INTO word_skill_state (
+    INSERT INTO learner_owned_word_skill_state (
       word_id,
       skill_id,
       enabled,
@@ -2201,7 +2196,7 @@ function insertWordSkillState({
       next_due_at,
       ease_factor
     ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(word_id, skill_id) DO UPDATE SET
+    ON CONFLICT(learner_id, word_id, skill_id) DO UPDATE SET
       enabled = excluded.enabled,
       interval_hours = excluded.interval_hours,
       last_studied_at = excluded.last_studied_at,
@@ -2216,14 +2211,14 @@ function insertWordSkillRelevance(
   relevanceState: 'normal' | 'deprioritized' | 'suppressed',
 ) {
   sqlite.prepare(`
-    INSERT INTO word_skill_relevance (
+    INSERT INTO learner_owned_word_skill_relevance (
       word_id,
       skill_id,
       relevance_state,
       updated_at,
       source_event_id
     ) VALUES (?, ?, ?, ?, NULL)
-    ON CONFLICT(word_id, skill_id) DO UPDATE SET
+    ON CONFLICT(learner_id, word_id, skill_id) DO UPDATE SET
       relevance_state = excluded.relevance_state,
       updated_at = excluded.updated_at,
       source_event_id = excluded.source_event_id
@@ -2232,21 +2227,13 @@ function insertWordSkillRelevance(
 
 function insertBadProductionPromptFeedback(wordId: string) {
   sqlite.prepare(`
-    INSERT INTO study_content_feedback (
-      id,
-      created_at,
-      target_type,
-      target_id,
-      target_word_id,
-      action_kind,
-      feedback_type,
-      source_event_id,
-      note
-    ) VALUES (?, ?, 'generated_prompt', 'definition_based_production', ?, 'production', 'bad_prompt', NULL, ?)
+    INSERT INTO definition_fallback_exclusions (
+      learner_id, word_id, origin, source_feedback_ids_json, migration_id, created_at, note
+    ) VALUES ('test-learner', ?, 'legacy_bad_prompt_migration', ?, NULL, ?, ?)
   `).run(
-    `bad-production-prompt-${wordId}`,
-    '2026-05-10T00:00:00.000Z',
     wordId,
+    JSON.stringify([`bad-production-prompt-${wordId}`]),
+    '2026-05-10T00:00:00.000Z',
     'Definition-based production prompt was marked bad.',
   );
 }
@@ -2259,22 +2246,15 @@ function insertBadContrastPromptFeedback({
   targetWordId: string;
 }) {
   sqlite.prepare(`
-    INSERT INTO study_content_feedback (
-      id,
-      created_at,
-      target_type,
-      target_id,
-      target_word_id,
-      action_kind,
-      feedback_type,
-      source_event_id,
-      note
-    ) VALUES (?, ?, 'contrast_prompt', ?, ?, 'contrast_selection', 'bad_prompt', NULL, ?)
+    INSERT INTO contrast_prompt_exclusions (
+      learner_id, prompt_id, target_word_id, origin, source_feedback_ids_json,
+      migration_id, created_at, note
+    ) VALUES ('test-learner', ?, ?, 'legacy_bad_prompt_migration', ?, NULL, ?, ?)
   `).run(
-    `bad-contrast-prompt-${promptId}`,
-    '2026-05-10T00:00:00.000Z',
     promptId,
     targetWordId,
+    JSON.stringify([`bad-contrast-prompt-${promptId}`]),
+    '2026-05-10T00:00:00.000Z',
     'Contrast prompt was marked bad.',
   );
 }
