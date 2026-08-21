@@ -71,6 +71,11 @@ export const REFLECTION_MODEL_ARMS = [
       ...OPENROUTER,
       modelConfig: 'claude-sonnet-5',
       providerModel: 'anthropic/claude-sonnet-5',
+      // This arm is only useful when OpenRouter can honor the strict V7
+      // response schema; do not fall back to JSON-object prompting.
+      additionalRequestBody: {
+        provider: { require_parameters: true },
+      },
     } satisfies ReflectionProviderConfig,
   },
   {

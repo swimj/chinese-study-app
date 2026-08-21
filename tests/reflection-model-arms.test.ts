@@ -31,9 +31,18 @@ describe('reflection comparison-arm registry', () => {
     );
   });
 
-  test('lets OpenRouter select an eligible provider for every arm', () => {
+  test('requires a JSON-schema-capable endpoint only for the Claude arm', () => {
+    const claudeArm = REFLECTION_MODEL_ARMS.find((arm) => (
+      arm.choice === 'openrouter:claude-sonnet-5'
+    ));
+    assert.deepEqual(claudeArm?.config?.additionalRequestBody, {
+      provider: { require_parameters: true },
+    });
+
     for (const arm of REFLECTION_MODEL_ARMS) {
-      if (!arm.choice.startsWith('openrouter:')) continue;
+      if (!arm.choice.startsWith('openrouter:') || arm.choice === 'openrouter:claude-sonnet-5') {
+        continue;
+      }
       assert.equal(arm.config?.additionalRequestBody, undefined);
     }
   });
