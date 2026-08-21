@@ -38,6 +38,8 @@ The current implementation includes:
   supported application, failure isolation, and retry diagnostics
 - immutable production tasks and cues with snapshotted answer spaces,
   learner-authorized cue repair, and exact attempt provenance
+- stable learner identities with learner-scoped state/history, shared lexical
+  content, and explicitly scoped learner/shared generated content
 
 ## Release Versioning
 
@@ -118,7 +120,9 @@ Typed production answers use the French profile's forgiving default normalizatio
 - Command:
 
   ```bash
-  npm run study:backend -- --data-dir="$HOME/path/to/chinese-study-data"
+  npm run study:backend -- \
+    --data-dir="$HOME/path/to/chinese-study-data" \
+    --learner-id=dogfood-local
   ```
 
 - Requires an explicit data directory
@@ -127,6 +131,43 @@ Typed production answers use the French profile's forgiving default normalizatio
 - Uses `app.db` inside that directory
 - Does not seed sample data on first run
 - Intended for real study history that you care about preserving
+
+On a brand-new empty study database, the configured learner is bootstrapped
+with a `trusted_local` identity mapping; no Clerk registration is involved.
+Existing databases from before SWI-47 are never silently rewritten at startup.
+Inspect one first (the default is report-only):
+
+```bash
+npm run upgrade:legacy-learner -- \
+  --data-dir="$HOME/path/to/chinese-study-data" \
+  --learner-id=dogfood-local
+```
+
+After checking the report, apply the validated replacement:
+
+```bash
+npm run upgrade:legacy-learner -- \
+  --data-dir="$HOME/path/to/chinese-study-data" \
+  --learner-id=dogfood-local \
+  --apply=true
+```
+
+Apply mode makes a timestamped `app.db.pre-swi-47-*` backup, builds and
+validates a fresh tenant-aware database, preserves scheduler due dates, and
+converts active legacy bad-prompt reports into provenance-marked prompt
+exclusions. Before cutover it compares every legacy scheduler and admission
+row by logical key, plus exact corpus and learner priorities, learner word
+state, meaning visibility, production suppression, and migrated bad-prompt
+sets. The original database is replaced only after validation succeeds.
+
+The same comparison can be rerun later against the timestamped backup:
+
+```bash
+npm run check:legacy-learner-upgrade -- \
+  --legacy-db="$HOME/path/to/chinese-study-data/app.db.pre-swi-47-<timestamp>" \
+  --upgraded-db="$HOME/path/to/chinese-study-data/app.db" \
+  --learner-id=dogfood-local
+```
 
 We recommend keeping study data outside the cloned repo, even though this version does not enforce that.
 

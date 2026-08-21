@@ -7,8 +7,8 @@ Entry points under `scripts/`. Run with `node --import tsx scripts/<name>.ts` un
 | Script / npm command | Purpose |
 | --- | --- |
 | `npm run reset:dev-data` | Reset dev SQLite |
-| `scripts/check-study-scheduler-state.ts` | Report scheduler invariant issues |
-| `npm run report:word -- --data-dir=/absolute/path` | Interactive read-only report for exact hanzi matches |
+| `npm run check:study-scheduler-state -- --mode=study --data-dir=/absolute/path --learner-id=<id>` | Report one learner's scheduler invariant issues |
+| `npm run report:word -- --data-dir=/absolute/path --learner-id=<id>` | Interactive read-only report for one learner's exact hanzi matches |
 | `scripts/build-canonical-wordlist.ts` | Build canonical wordlist artifact |
 
 ## Mutates or targets study / user data (use explicit `--data-dir`)
@@ -16,8 +16,14 @@ Entry points under `scripts/`. Run with `node --import tsx scripts/<name>.ts` un
 | Script / npm command | Purpose |
 | --- | --- |
 | `npm run study:backend` | Start study-mode API |
-| `npm run upgrade:legacy-learner` | Report on or upgrade a pre-SWI-47 dogfood database |
-| `npm run check:legacy-learner-upgrade` | Compare a legacy backup with its learner-owned replacement |
+| `npm run upgrade:legacy-learner -- --data-dir=/absolute/path --learner-id=<id>` | Report a legacy database upgrade; add `--apply=true` only after reviewing the report |
+| `npm run check:legacy-learner-upgrade -- --legacy-db=/absolute/path/to/backup --upgraded-db=/absolute/path/to/app.db --learner-id=<id>` | Compare the critical migrated state with its legacy backup |
+
+The legacy upgrade creates a timestamped backup before apply, preserves study
+due dates, assigns private rows to the named learner, validates row counts and
+foreign keys, and compares scheduler, priority, learner word state, and
+suppression values before replacing `app.db`. It defaults to report-only. The
+same comparison can be rerun later against the timestamped backup.
 
 ## Libraries (`scripts/lib/`)
 

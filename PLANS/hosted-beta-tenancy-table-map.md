@@ -3,7 +3,7 @@
 Status: historical pre-design inventory. It was complete for the 18-table
 schema inspected at the time, but it predates the reflection and production-cue
 subsystems and is not a current hosted-beta inventory or implementation
-contract. The accepted 30-table ownership inventory and service contract now
+contract. The accepted current ownership inventory and service contract now
 live in
 [`docs/private-beta-service-boundary.md`](../docs/private-beta-service-boundary.md).
 Its preserve-the-layers rationale remains useful where consistent with that

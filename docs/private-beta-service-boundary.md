@@ -54,7 +54,7 @@ and a self-service recovery product are outside this beta contract.
 
 ## Durable Ownership Inventory
 
-The current schema has 40 steady-state application tables. Temporary migration
+The current schema has 42 steady-state application tables. Temporary migration
 tables and SQLite internals are excluded. Existing mixed tables must be split
 or given an equivalently explicit ownership/scope boundary before real hosted
 learner data is accepted.
@@ -68,8 +68,7 @@ before it can land.
 
 - `user_word_priority`, `word_study_admission_state`, `word_skill_state`,
   `daily_new_word_intake`, `review_session_summaries`, `study_sessions`,
-  `study_attempt_events`, `study_events`, `word_skill_relevance`,
-  `contrast_candidate_intake`, and `study_content_feedback`.
+  `study_attempt_events`, `study_events`, and `word_skill_relevance`.
 - `reflection_artifacts`, `reflection_generation_runs`,
   `reflection_proposal_reviews`, `reflection_operation_invocations`,
   `reflection_quality_annotations`, and `reflection_help_inbox`.
@@ -78,12 +77,10 @@ before it can land.
 - `production_cue_evidence_records`, `production_cue_evidence_projection`, and
   `production_recheck_demands`.
 - `production_cue_lifecycle_events` and `production_cue_activation_state` in
-  their current meaning. They record the single learner's authorized cue
-  activation history and projection, so they must gain learner ownership or be
-  replaced by an explicitly learner-owned equivalent.
-- The learner portions currently mixed into `words` and `word_meanings`,
-  including notes, lifecycle, scheduling/coverage state, and suppression or
-  visibility choices.
+  their current meaning. They record each learner's authorized cue activation
+  history and projection and are explicitly learner-owned.
+- `learner_word_state` and `learner_word_meaning_preferences`, split from the
+  shared lexical roots formerly mixed into `words` and `word_meanings`.
 
 These records remain private even when they motivate reusable shared content.
 Service processing fields and provider provenance do not convert learner
@@ -109,9 +106,9 @@ served snapshot required to interpret the historical event.
 
 ### Service and import metadata
 
-`contrast_candidate_intake` is a vestigial local experiment and will be
-retired rather than tenant-adapted. The polymorphic `study_content_feedback`
-log will be replaced by narrow learner-owned definition-fallback and
+`contrast_candidate_intake` was a vestigial local experiment and is retired
+rather than tenant-adapted. The polymorphic `study_content_feedback` log is
+replaced by narrow learner-owned definition-fallback and
 contrast-prompt exclusion state. Migration preserves active bad-prompt intent,
 its useful note, and explicit legacy origin without conflating it with general
 production suppression; resolved history remains in the migration validation
@@ -120,6 +117,12 @@ report. SWI-49 owns later shared-artifact reporting and quarantine.
 The former `app_metadata` keyspace is replaced by `learner_settings`,
 `schema_migrations`, and `content_imports`. Release and migration ledgers are
 service-operational records; they do not grant access to learner content.
+
+SWI-47 implements this boundary with physical learner-owned tables behind
+current-learner compatibility views, shared lexical tables plus learner
+overlays, and explicit `learner`/`shared` scope on contrast and production cue
+artifacts. Ordinary application writes create learner-private generated
+content; shared publication remains a later service operation.
 
 ## Shared Content Contract
 

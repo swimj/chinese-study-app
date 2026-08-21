@@ -397,9 +397,9 @@ still show the item.
 | POST | `/api/study-management/production/suppress` | `study-management` |
 
 Live bad-prompt reporting is retired. Existing `study_content_feedback` rows
-remain a read-only compatibility input until the tenancy upgrade converts
-active reports into learner-owned prompt exclusions with explicit migration
-provenance.
+are only an input to the explicit SWI-47 upgrade, which converts active reports
+into learner-owned prompt exclusions with explicit migration provenance and
+drops the legacy table. There is no live compatibility storage or write path.
 
 ## Contrast clusters and intake (retired HTTP)
 
@@ -407,7 +407,8 @@ Contrast-cluster management routes (`/api/contrast-clusters*`,
 `/api/contrast-prompts*`) and projected contrast-intake triage routes
 (`/api/contrast-intake/*`) are retired. Cluster/prompt creation for study now
 goes through reflection `create_contrast_cluster` application and persistence
-primitives; historical `contrast_candidate_intake` rows remain readable via
-`getContrastCandidateIntake()`.
+primitives. The vestigial `contrast_candidate_intake` table and reader are
+retired; the explicit SWI-47 upgrade accounts for legacy rows before dropping
+the table.
 
 Domain column matches [server-db.md](./server-db.md) modules.

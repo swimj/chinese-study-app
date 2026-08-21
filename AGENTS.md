@@ -52,6 +52,7 @@ When code and spec conflict, treat the spec as intended behavior and update code
 | --- | --- | --- |
 | `APP_MODE` | Backend | `dev` (seed sample data) or `study` (requires explicit data dir) |
 | `APP_DATA_DIR` | Backend | Directory containing `app.db` |
+| `APP_LEARNER_ID` | Backend | Stable learner id; required in study mode unless `--learner-id` is supplied |
 | `APP_STUDY_PROFILE` | Backend | `mandarin` or `french` |
 | `APP_SEED_DATA_PATH` | Backend | Required in dev mode; seed JSON path |
 | `PORT` | Backend | API port (default `5174`) |
@@ -98,7 +99,7 @@ CLI flags mirror env where applicable (`--mode`, `--data-dir`, `--study-profile`
 - Install deps: `npm install`
 - Start frontend: `npm run dev:frontend` (Vite on `4173`)
 - Start backend (dev mode): `npm run dev:backend` (API on `5174`)
-- Start backend (study mode): `npm run study:backend -- --data-dir=/absolute/path`
+- Start backend (study mode): `npm run study:backend -- --data-dir=/absolute/path --learner-id=<stable-id>`
 - Reset dev DB: `npm run reset:dev-data`
 - Run tests: `npm test`
 - Build frontend: `npm run build`

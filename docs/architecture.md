@@ -41,7 +41,7 @@ Detail: [SPECS/frontend-architecture-map.md](../SPECS/frontend-architecture-map.
 | File | Role |
 | --- | --- |
 | `index.ts` | Express app, route handlers (thin) |
-| `config.ts` | `APP_MODE`, data dir, study profile, port |
+| `config.ts` | `APP_MODE`, learner id, data dir, study profile, port |
 | `db.ts` | Barrel: init DB on import, re-export `server/db/*` |
 | `db/` | Split persistence and domain logic — see [server-db.md](./server-db.md) |
 | `reset-dev-db.ts` | Dev data reset entrypoint |
@@ -52,6 +52,7 @@ Detail: [SPECS/frontend-architecture-map.md](../SPECS/frontend-architecture-map.
 | --- | --- | --- |
 | `APP_MODE` | Backend | `dev` (seed) or `study` (explicit data dir) |
 | `APP_DATA_DIR` | Backend | SQLite directory |
+| `APP_LEARNER_ID` | Backend | Stable trusted-local learner selected for this process |
 | `APP_STUDY_PROFILE` | Backend | `mandarin` or `french` |
 | `APP_SEED_DATA_PATH` | Backend | Required in dev mode; seed JSON path |
 | `VITE_API_BASE` | Frontend | API origin (default `http://localhost:5174`) |

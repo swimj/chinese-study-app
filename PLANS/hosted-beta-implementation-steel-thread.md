@@ -61,7 +61,7 @@ Required tests:
 - two learners using the same shared word/content identities cannot read,
   update, schedule from, reflect on, or invoke provider work against each
   other's state;
-- adversarial cross-learner identifiers fail across the complete 30-table
+- adversarial cross-learner identifiers fail across the complete 42-table
   durable-object graph; and
 - shared-content references alone never authorize private rows.
 

@@ -959,10 +959,11 @@ One-off scripts can later migrate captured mistakes into clusters and contrast
 prompt content.
 
 The production/session-management action `add_contrast_candidate` was this
-intake-capture path (not a cluster-editor membership action). Live capture and
-the projected intake triage UI/API are retired; historical
-`contrast_candidate_intake` rows may remain readable as legacy storage. Actual
-cluster membership still makes the all-member eligibility invariant apply.
+intake-capture path (not a cluster-editor membership action). Live capture, the
+projected intake triage UI/API, and the vestigial durable table are retired.
+The explicit SWI-47 legacy upgrade drops that storage after accounting for its
+row count. Actual cluster membership still makes the all-member eligibility
+invariant apply.
 
 The first durable attempt-event milestone does not need to backfill or
 heuristically connect existing JSONL mistake candidates to source events. A

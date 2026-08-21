@@ -979,9 +979,9 @@ there is a concrete reason to migrate them.
 | --- | --- | --- |
 | In-session `suppress_skill` for production | Same durable intent as `suppress_definition_production` when the sampled skill is production | Converge on the same production-suppression domain command; retain session-event provenance |
 | Out-of-session production suppression | Same effect as `suppress_definition_production` | Converge on the same domain command; reflection application adds invocation/effect provenance |
-| `add_contrast_candidate` | No equivalent operation; it created unresolved intake rather than trainable content | Retired live path; legacy `contrast_candidate_intake` storage may remain readable |
+| `add_contrast_candidate` | No equivalent operation; it created unresolved intake rather than trainable content | Retired live path and storage; the explicit SWI-47 upgrade accounts for and drops the legacy table |
 | `suppress_skill_and_add_contrast_candidate` | Former compound convenience over two different concerns | Retired with intake capture; reflection keeps independent proposals and does not gain a compound handle |
-| In-session or out-of-session bad production prompt reporting | No registered reflection operation | Remain legacy compatibility behavior; do not treat it as a cue adapter |
+| In-session or out-of-session bad production prompt reporting | No registered reflection operation | Live writes are retired; the SWI-47 upgrade preserves active intent as narrow prompt exclusions, not as a cue adapter |
 | Manual contrast cluster/member/prompt CRUD HTTP | Adjacent primitives for `create_contrast_cluster` | Retired management UI/API; persistence primitives and reflection’s atomic adapter remain |
 | Contrast intake “create cluster” | Closest former atomic composition, but its intake-resolution semantics are not part of the handle | Retired with intake triage; do not fabricate intake provenance on the reflection handle |
 | Reflection proposal application | Canonical proposal-originated invocation path | Validate, authorize, apply by invocation id, and record exact effects |
