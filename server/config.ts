@@ -6,6 +6,7 @@ type StudyProfile = 'mandarin' | 'french';
 type AppConfig = {
   mode: AppMode;
   studyProfile: StudyProfile;
+  learnerId: string;
   dataDir: string;
   dbPath: string;
   port: number;
@@ -25,6 +26,12 @@ export function getAppConfig(options: AppConfigOptions = {}): AppConfig {
 
   const mode = options.modeOverride ?? parseMode(args.get('mode') ?? process.env.APP_MODE ?? 'dev');
   const studyProfile = parseStudyProfile(args.get('study-profile') ?? process.env.APP_STUDY_PROFILE ?? 'mandarin');
+  const learnerId = parseLearnerId(
+    args.get('learner-id')
+      ?? process.env.APP_LEARNER_ID
+      ?? (process.env.NODE_TEST_CONTEXT ? 'test-learner' : mode === 'dev' ? 'dev-learner' : ''),
+    mode,
+  );
   const rawDataDir = args.get('data-dir') ?? process.env.APP_DATA_DIR;
   const rawSeedDataPath = args.get('seed-data') ?? process.env.APP_SEED_DATA_PATH;
   const includeDevContrastSeed = parseBoolean(
@@ -60,6 +67,7 @@ export function getAppConfig(options: AppConfigOptions = {}): AppConfig {
   return {
     mode,
     studyProfile,
+    learnerId,
     dataDir,
     dbPath: path.join(dataDir, 'app.db'),
     port,
@@ -67,6 +75,18 @@ export function getAppConfig(options: AppConfigOptions = {}): AppConfig {
     seedDataPath: rawSeedDataPath ? path.resolve(rawSeedDataPath) : '',
     includeDevContrastSeed,
   };
+}
+
+function parseLearnerId(value: string, mode: AppMode): string {
+  const learnerId = value.trim();
+  if (learnerId.length > 0) {
+    return learnerId;
+  }
+
+  throw new Error(
+    `${mode === 'study' ? 'Study' : 'Dev'} mode requires an explicit learner id. `
+      + 'Pass --learner-id=<stable-id> or set APP_LEARNER_ID.',
+  );
 }
 
 function parseMode(value: string): AppMode {

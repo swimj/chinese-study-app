@@ -27,6 +27,11 @@ export type DurableOwnershipEntry = {
  * new durable object cannot land without an explicit classification.
  */
 export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
+  operationalEntry('learners', 'stable local learner identity'),
+  operationalEntry('learner_auth_mappings', 'external-provider subject to stable learner mapping'),
+  privateEntry('learner_settings', 'learner settings root', 'bootstrap explicit defaults for each learner'),
+  operationalEntry('schema_migrations', 'database schema migration ledger'),
+  operationalEntry('content_imports', 'shared content import ledger'),
   {
     table: 'words',
     ownershipClass: 'mixed_requires_separation',
@@ -113,6 +118,20 @@ function privateWordStateEntries(): DurableOwnershipEntry[] {
       'assign current rows and any source event to the same legacy learner',
     ),
   ];
+}
+
+function operationalEntry(table: string, ownershipRoot: string): DurableOwnershipEntry {
+  return {
+    table,
+    ownershipClass: 'operational',
+    ownershipRoot,
+    crossScopeReferences: 'operational identity or ledger rows grant no learner-data access',
+    enforcementPoints: 'identity and migration persistence boundary',
+    historicalOwnership: 'introduced by SWI-47',
+    migrationTreatment: 'created explicitly during fresh bootstrap or legacy upgrade',
+    disposition: 'retain',
+    ambiguity: null,
+  };
 }
 
 function studyHistoryEntries(): DurableOwnershipEntry[] {

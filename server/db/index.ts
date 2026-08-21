@@ -10,3 +10,5 @@ export * from './domain-commands.ts';
 export * from './production-cues.ts';
 export * from './content-diagnostics.ts';
 export * from './intake-triage.ts';
+export * from './identity.ts';
+export * from './learner-context.ts';
