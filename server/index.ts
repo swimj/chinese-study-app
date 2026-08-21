@@ -15,7 +15,6 @@ import {
   dismissIntakeTriageAssessment,
   addUnstudiedUserPriorityByHanzi,
   dbConfig,
-  getUnstudiedCountBaseline,
   getLearningPolicy,
   getContentDiagnostics,
   getReflectionArtifactDetail,
@@ -247,7 +246,6 @@ export function createApp(options: CreateAppOptions = {}) {
       res.json({
         addedCount: addedWords.length,
         words: addedWords,
-        unstudiedTotalCount: getUnstudiedCountBaseline(),
       });
     } catch (error) {
       if (error instanceof Error && error.message === 'No matching unstudied words found') {

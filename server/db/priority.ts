@@ -1,6 +1,4 @@
 export {
-  getUnstudiedCountBaseline,
-  getUnstudiedPriorityWords,
   getPrioritizedUnstudiedWords,
   getTopUnstudiedPriorityWords,
   updateWordUserPriority,

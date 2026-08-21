@@ -62,6 +62,9 @@ count and does not mutate an already-started frontend session.
 `GET /api/priority/unstudied` is the stash manage list: unstudied words with a
 user-priority overlay, ordered tops newest-first by overlay `updated_at`, then
 other stash by the same timestamp. Corpus frequency no longer ranks that list.
+`bump_count` is still written on overlay updates and is treated as zero/nonzero
+stash membership; the payload no longer includes approximate rank, percentile
+baseline, or bump-boosted effective priority.
 
 `GET /api/priority/unstudied/top` is the advisor-aware intake queue. It excludes
 words with any explicit positive priority override and returns an

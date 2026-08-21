@@ -19,14 +19,12 @@ export function getIntakeTriagePriorityWords(limit = 50): IntakeTriagePriorityWo
   const payload = getTopUnstudiedPriorityWords(limit);
   if (config.studyProfile !== 'mandarin') {
     return {
-      unstudiedTotalCount: payload.unstudiedTotalCount,
       words: payload.words.map((entry) => ({ ...entry, intakeTriage: null })),
       analysisCandidateCount: 0,
     };
   }
   const state = getIntakeTriagePageState(payload.words, INTAKE_TRIAGE_PROMPT_VERSION);
   return {
-    unstudiedTotalCount: payload.unstudiedTotalCount,
     words: payload.words.map((entry) => ({
       ...entry,
       intakeTriage: state.annotationsByWordId.get(entry.word.id) ?? null,

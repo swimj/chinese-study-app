@@ -227,12 +227,10 @@ type UserPriorityPatch = {
 
 type AddPriorityByHanziResponse = {
   addedCount: number;
-  unstudiedTotalCount: number;
   words: PriorityWord[];
 };
 
 type PriorityWordsResponse = {
-  unstudiedTotalCount: number;
   words: PriorityWord[];
 };
 

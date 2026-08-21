@@ -7,10 +7,6 @@ export function sortPriorityWords<T extends PriorityWord>(words: T[]): T[] {
       return forceTopDelta;
     }
 
-    if (right.effectivePriority !== left.effectivePriority) {
-      return right.effectivePriority - left.effectivePriority;
-    }
-
     if (right.word.priority !== left.word.priority) {
       return right.word.priority - left.word.priority;
     }

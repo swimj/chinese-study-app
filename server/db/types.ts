@@ -44,13 +44,10 @@ export type PriorityWord = {
   bumpCount: number;
   forceTop: boolean;
   requiredForNextSession: boolean;
-  effectivePriority: number;
-  effectiveRank: number;
   overlayUpdatedAt: string | null;
 };
 
 export type PriorityWordsPayload = {
-  unstudiedTotalCount: number;
   words: PriorityWord[];
 };
 
@@ -388,15 +385,10 @@ export type PriorityWordRow = WordRow & {
   force_top: number;
   priority_tier: number;
   required_for_next_session: number;
-  effective_priority: number;
-  effective_rank: number;
   overlay_updated_at: string | null;
 };
 
 export const DEFAULT_DAILY_NEW_WORD_LIMIT = 10;
-export const PRIORITY_BUMP_UNIT = 12248;
-export const UNSTUDIED_COUNT_BASELINE = 116000;
-export const PRIORITY_MAX_BASELINE = PRIORITY_BUMP_UNIT * 10;
 export const INITIAL_REVIEW_EASE_FACTOR = 2.5;
 export const INITIAL_CONTEXTUAL_SELECTION_INTERVAL_HOURS = 6;
 export const PRIORITY_TIER_TOP = 1;

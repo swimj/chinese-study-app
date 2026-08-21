@@ -70,14 +70,17 @@ describe('user priority layer', { concurrency: false }, () => {
     ]);
   });
 
-  test('bump count clamps to [0, 10], force-top toggles, required toggles, and reset clears overrides', () => {
+  test('positive bump marks stash membership without accumulating a rank boost', () => {
     insertWord('priority-word', 73, 'unstudied', '2026-01-01T00:00:00.000Z');
 
-    const maxed = dbModule.updateWordUserPriority('priority-word', { bumpDelta: 999 });
-    assert.equal(maxed.bumpCount, 10);
+    const marked = dbModule.updateWordUserPriority('priority-word', { bumpDelta: 999 });
+    assert.equal(marked.bumpCount, 1);
 
-    const clampedToZero = dbModule.updateWordUserPriority('priority-word', { bumpDelta: -999 });
-    assert.equal(clampedToZero.bumpCount, 0);
+    const stillMarked = dbModule.updateWordUserPriority('priority-word', { bumpDelta: 1 });
+    assert.equal(stillMarked.bumpCount, 1);
+
+    const clearedBump = dbModule.updateWordUserPriority('priority-word', { bumpDelta: -1 });
+    assert.equal(clearedBump.bumpCount, 0);
 
     const forceTopOn = dbModule.updateWordUserPriority('priority-word', { forceTop: true });
     assert.equal(forceTopOn.forceTop, true);
@@ -99,14 +102,15 @@ describe('user priority layer', { concurrency: false }, () => {
     assert.equal(persisted, undefined);
   });
 
-  test('boost unit uses the fixed policy constant and affects effective priority', () => {
+  test('bump writes persist as stash membership and do not change corpus priority', () => {
     insertWord('top-base', 94, 'unstudied', '2026-01-01T00:00:00.000Z');
     insertWord('boosted', 50, 'unstudied', '2026-01-02T00:00:00.000Z');
 
     const updated = dbModule.updateWordUserPriority('boosted', { bumpDelta: 2 });
 
-    // Fixed bump unit is currently 12248.
-    assert.equal(updated.effectivePriority, 50 + 2 * 12248);
+    assert.equal(updated.bumpCount, 1);
+    assert.equal(updated.word.priority, 50);
+    assert.deepEqual(dbModule.getPrioritizedUnstudiedWords().words.map((entry) => entry.word.id), ['boosted']);
   });
 
   test('add-by-hanzi adds all matching unstudied words into the prioritized list', () => {
@@ -163,19 +167,6 @@ describe('user priority layer', { concurrency: false }, () => {
     assert.equal(priorityRow.required_for_next_session, 0);
   });
 
-  test('unstudied ordering is forceTop > effective > base > createdAt', () => {
-    insertWord('base-high-older', 100, 'unstudied', '2026-01-01T00:00:00.000Z');
-    insertWord('base-high-newer', 100, 'unstudied', '2026-01-02T00:00:00.000Z');
-    insertWord('boosted', 60, 'unstudied', '2026-01-03T00:00:00.000Z');
-    insertWord('forced', 10, 'unstudied', '2026-01-04T00:00:00.000Z');
-
-    dbModule.updateWordUserPriority('boosted', { bumpDelta: 5 });
-    dbModule.updateWordUserPriority('forced', { forceTop: true });
-
-    const ordered = dbModule.getUnstudiedPriorityWords().words.map((entry) => entry.word.id);
-    assert.deepEqual(ordered, ['forced', 'boosted', 'base-high-older', 'base-high-newer']);
-  });
-
   test('manage-list stash order is tops newest-first then overlay recency, not corpus frequency', () => {
     insertWord('older-bump', 90, 'unstudied', '2026-01-01T00:00:00.000Z');
     insertWord('newer-bump', 10, 'unstudied', '2026-01-02T00:00:00.000Z');
@@ -217,16 +208,6 @@ describe('user priority layer', { concurrency: false }, () => {
 
     assert.equal(sessionIds.length, expectedIdSet.size);
     assert.deepEqual(sessionIdSet, expectedIdSet);
-  });
-
-  test('sunk words rank below regular words in unstudied ordering', () => {
-    insertWord('regular-word', 40, 'unstudied', '2026-01-01T00:00:00.000Z');
-    insertWord('sunk-word', 100, 'unstudied', '2026-01-02T00:00:00.000Z');
-
-    dbModule.dismissWordFromStudy('sunk-word');
-
-    const ordered = dbModule.getUnstudiedPriorityWords().words.map((entry) => entry.word.id);
-    assert.deepEqual(ordered.slice(0, 2), ['regular-word', 'sunk-word']);
   });
 
   test('top triage list is capped and excludes every explicit user priority override', () => {
