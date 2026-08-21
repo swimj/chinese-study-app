@@ -986,7 +986,18 @@ describe('session composition', { concurrency: false }, () => {
       targetWordId: 'context-resolved-prompt-word',
     });
 
-    dbModule.resolveContrastPromptBadFeedback({ promptId: 'prompt-resolved-contrast' });
+    sqlite.prepare(`
+      INSERT INTO study_content_feedback (
+        id, created_at, target_type, target_id, target_word_id, action_kind,
+        feedback_type, feedback_action, source_event_id, note
+      ) VALUES (?, ?, 'contrast_prompt', ?, ?, 'contrast_selection',
+        'bad_prompt', 'resolved', NULL, '')
+    `).run(
+      'resolved-contrast-prompt-feedback',
+      '2026-05-10T01:00:00.000Z',
+      'prompt-resolved-contrast',
+      'context-resolved-prompt-word',
+    );
 
     assert.deepEqual(getSessionItemIds(dbModule), ['review/context-resolved-prompt-word/contextual_selection']);
   });

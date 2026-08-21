@@ -7,7 +7,7 @@ import type {
   ReviewActionProgress,
   UnstudiedWordProgress,
 } from '../lib/session-state';
-import type { SessionStudyItem, StudyManagementActionKind } from '../domain/study-actions';
+import type { SessionStudyItem } from '../domain/study-actions';
 import type { ReviewRating, Word, WordMeaning } from '../types';
 import type { SessionPrefetchState } from '../features/session/session-prefetch';
 import type { RatingOption } from '../features/session/session-rating';
@@ -142,9 +142,9 @@ export function HomePage({
   onContinueAfterAutoForgot: () => void;
   onContinueAfterAutoContrastForgot: () => void;
   onDismissCurrentWord: () => void;
-  onManageStudyAction: (action: StudyManagementActionKind, note: string) => void;
+  onManageStudyAction: () => void;
   onDismissFrozenProductionWord: () => void;
-  onManageFrozenProductionAction: (action: StudyManagementActionKind, note: string) => void;
+  onManageFrozenProductionAction: () => void;
   onOpenPersonalNotesEditor: () => void;
   onBeginUnstudiedDrill: (wordId: string) => void;
   onToggleMeaningVisibility: (meaning: WordMeaning) => void;

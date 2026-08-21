@@ -4,7 +4,6 @@ import type {
   ProductionAnswerWord,
   ProductionResponseResolution,
   SessionStudyItem,
-  StudyManagementActionKind,
 } from '../../domain/study-actions';
 import { studyManagementActionRemovesCurrentReviewAction } from '../../domain/study-actions';
 import { resolveSessionProductionResponse } from '../../domain/production-response';
@@ -188,9 +187,9 @@ export type StudySessionHomePageProps = {
   onContinueAfterAutoForgot: () => void;
   onContinueAfterAutoContrastForgot: () => void;
   onDismissCurrentWord: () => void;
-  onManageStudyAction: (action: StudyManagementActionKind, note: string) => void;
+  onManageStudyAction: () => void;
   onDismissFrozenProductionWord: () => void;
-  onManageFrozenProductionAction: (action: StudyManagementActionKind, note: string) => void;
+  onManageFrozenProductionAction: () => void;
   onOpenPersonalNotesEditor: () => void;
   onBeginUnstudiedDrill: (wordId: string) => void;
   onToggleMeaningVisibility: (meaning: WordMeaning) => void;
@@ -1127,7 +1126,7 @@ export function useStudySession({
     }
   }
 
-  async function handleManageStudyAction(managementAction: StudyManagementActionKind, note: string) {
+  async function handleManageStudyAction() {
     if (!sessionState || !activeItem || !activeWord) {
       return;
     }
@@ -1137,7 +1136,7 @@ export function useStudySession({
       return;
     }
 
-    if (activeItem.actionKind !== 'production' && activeItem.actionKind !== 'contrast_selection') {
+    if (activeItem.actionKind !== 'production') {
       setError('This card only supports dismiss from Manage Study right now.');
       return;
     }
@@ -1153,11 +1152,10 @@ export function useStudySession({
         actionKind: activeItem.actionKind,
         sampledSkillIds: activeItem.sampledSkillIds,
         contentRef: activeItem.contentRef,
-        managementAction,
-        note,
+        managementAction: 'suppress_skill',
       });
 
-      if (studyManagementActionRemovesCurrentReviewAction(managementAction)) {
+      if (studyManagementActionRemovesCurrentReviewAction('suppress_skill')) {
         reflectionEvidenceRef.current = dropSessionReflectionEvidenceForAction(
           reflectionEvidenceRef.current,
           activeItem.sessionActionId,
@@ -1177,7 +1175,7 @@ export function useStudySession({
     }
   }
 
-  async function handleManageFrozenProductionAction(managementAction: StudyManagementActionKind, note: string) {
+  async function handleManageFrozenProductionAction() {
     if (!sessionState || !frozenProductionCard) {
       return;
     }
@@ -1198,11 +1196,10 @@ export function useStudySession({
         actionKind: frozenProductionCard.actionKind,
         sampledSkillIds: frozenProductionCard.sampledSkillIds,
         contentRef: frozenProductionCard.contentRef,
-        managementAction,
-        note,
+        managementAction: 'suppress_skill',
       });
 
-      if (!studyManagementActionRemovesCurrentReviewAction(managementAction)) {
+      if (!studyManagementActionRemovesCurrentReviewAction('suppress_skill')) {
         return;
       }
 
@@ -1670,9 +1667,9 @@ export function useStudySession({
       onContinueAfterAutoForgot: handleContinueAfterAutoForgot,
       onContinueAfterAutoContrastForgot: handleContinueAfterAutoContrastForgot,
       onDismissCurrentWord: () => void handleDismissCurrentWord(),
-      onManageStudyAction: (action, note) => void handleManageStudyAction(action, note),
+      onManageStudyAction: () => void handleManageStudyAction(),
       onDismissFrozenProductionWord: () => void handleDismissFrozenProductionWord(),
-      onManageFrozenProductionAction: (action, note) => void handleManageFrozenProductionAction(action, note),
+      onManageFrozenProductionAction: () => void handleManageFrozenProductionAction(),
       onOpenPersonalNotesEditor: handleOpenPersonalNotesEditor,
       onBeginUnstudiedDrill: handleBeginUnstudiedDrill,
       onToggleMeaningVisibility: (meaning) => void handleToggleMeaningVisibility(meaning),

@@ -36,7 +36,6 @@ import {
   recordStudyManagementAction,
   searchWords,
   suppressProductionForWordOutsideSession,
-  reportBadProductionPromptOutsideSession,
   updateWordMeaningVisibility,
   updateWordPersonalNotes,
   updateWordUserPriority,
@@ -58,7 +57,6 @@ import type {
   ContrastSelectionCommitIntent,
   StudyAttemptEvent,
   StudyContentRef,
-  StudyManagementActionKind,
   StudySkillId,
 } from '../src/domain/study-actions.ts';
 import type {
@@ -391,7 +389,6 @@ export function createApp(options: CreateAppOptions = {}) {
     const sampledSkillIds = req.body?.sampledSkillIds;
     const contentRef = req.body?.contentRef ?? null;
     const managementAction = req.body?.managementAction;
-    const note = req.body?.note ?? '';
 
     if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
       res.status(400).json({ error: 'Expected non-empty session id' });
@@ -408,8 +405,8 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
 
-    if (actionKind !== 'production' && actionKind !== 'contrast_selection') {
-      res.status(400).json({ error: 'Expected production or contrast_selection actionKind' });
+    if (actionKind !== 'production') {
+      res.status(400).json({ error: 'Expected production actionKind' });
       return;
     }
 
@@ -418,16 +415,8 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
 
-    if (
-      managementAction !== 'suppress_skill' &&
-      managementAction !== 'bad_prompt'
-    ) {
-      res.status(400).json({ error: 'Expected valid managementAction' });
-      return;
-    }
-
-    if (typeof note !== 'string') {
-      res.status(400).json({ error: 'Expected string note when provided' });
+    if (managementAction !== 'suppress_skill') {
+      res.status(400).json({ error: 'Expected suppress_skill managementAction' });
       return;
     }
 
@@ -439,8 +428,7 @@ export function createApp(options: CreateAppOptions = {}) {
         actionKind,
         sampledSkillIds: sampledSkillIds as StudySkillId[],
         contentRef: contentRef as StudyContentRef | null,
-        managementAction: managementAction as StudyManagementActionKind,
-        note,
+        managementAction,
       });
       res.status(201).json(event);
     } catch (error) {
@@ -481,32 +469,6 @@ export function createApp(options: CreateAppOptions = {}) {
         return;
       }
       res.status(500).json({ error: 'Failed to suppress production for word' });
-    }
-  });
-
-  app.post('/api/study-management/production/bad-prompt', (req, res) => {
-    const targetWordId = req.body?.targetWordId;
-    const note = req.body?.note ?? '';
-    if (typeof targetWordId !== 'string' || targetWordId.trim().length === 0) {
-      res.status(400).json({ error: 'Expected non-empty targetWordId' });
-      return;
-    }
-    if (typeof note !== 'string') {
-      res.status(400).json({ error: 'Expected string note when provided' });
-      return;
-    }
-    try {
-      res.status(201).json(reportBadProductionPromptOutsideSession({ targetWordId: targetWordId.trim(), note }));
-    } catch (error) {
-      if (error instanceof Error && error.message === 'Word not found') {
-        res.status(404).json({ error: error.message });
-        return;
-      }
-      if (error instanceof Error && error.message.startsWith('Expected ')) {
-        res.status(400).json({ error: error.message });
-        return;
-      }
-      res.status(500).json({ error: 'Failed to report bad production prompt' });
     }
   });
 

@@ -18,9 +18,8 @@ describe('study action domain adapters', () => {
     assert.equal(mapStudySkillToDefaultActionKind('contextual_selection'), 'contrast_selection');
   });
 
-  test('removes current review action for all management actions', () => {
+  test('removes the current review action when production is suppressed', () => {
     assert.equal(studyManagementActionRemovesCurrentReviewAction('suppress_skill'), true);
-    assert.equal(studyManagementActionRemovesCurrentReviewAction('bad_prompt'), true);
   });
 });
 

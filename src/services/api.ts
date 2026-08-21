@@ -331,16 +331,14 @@ export async function recordStudyManagementAction({
   sampledSkillIds,
   contentRef,
   managementAction,
-  note = '',
 }: {
   sessionId: string;
   sessionActionId: string;
   targetWordId: string;
-  actionKind: 'production' | 'contrast_selection';
+  actionKind: 'production';
   sampledSkillIds: StudySkillId[];
   contentRef: StudyContentRef | null;
   managementAction: StudyManagementActionKind;
-  note?: string;
 }): Promise<StudyEvent> {
   const response = await fetch(`${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/manage-study-action`, {
     method: 'POST',
@@ -354,7 +352,6 @@ export async function recordStudyManagementAction({
       sampledSkillIds,
       contentRef,
       managementAction,
-      note,
     }),
   });
 
