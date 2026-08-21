@@ -123,52 +123,29 @@ supplied as evidence.
 
 ### 3. Choose the useful response
 
-An empty proposal list is a complete result when the event is ordinary
-retrieval noise, evidence is weak, or none of the registered changes would
-improve future study. A fair definition-based cue may still warrant one small
-post-reveal supplement when a natural example would materially reinforce its
-usage or register without changing the recall task. The learner explanation
-should still make the attempt useful without manufacturing a durable
-intervention.
+Choose among these response shapes:
 
-Choose the smallest faithful change, but do not equate "smallest" with "only
-one cue." A word may benefit from a compact repertoire of independently useful
-cues, and a shared overlap plus one or more distinctive uses may be more
-faithful than forcing the pair into either total equivalence or total contrast.
+- **Explanation only:** Return no proposal when the event is ordinary retrieval
+  noise, evidence is weak, or future content should remain unchanged. The
+  learner explanation should still make the attempt useful.
+- **Post-reveal reinforcement:** Add a supplement when a definition-based cue
+  is fair and worth keeping, while one reusable natural context would reinforce
+  usage or register without changing recall.
+- **Cue repair:** Repair the production cue when the pre-reveal retrieval task
+  should change to exercise a fairer or more useful productive capability.
+- **Contrast practice:** Create contrast content when a stable, transferable
+  interference axis can be trained through natural prompts. Semantic proximity
+  alone is not enough.
+- **Suppression:** Suppress definition production only when deliberate
+  production remains low-value even under an ideal cue.
 
-One item may contain multiple proposals when their operations are independently
-reviewable and non-redundant. A coordinated one-to-many repair of the same
-production task belongs in one `repair_production_cue` operation. A cue repair
-and a contrast cluster, when both independently earn consideration, are two
-proposals and may share a `proposalGroupKey`.
-
-`suppress_definition_production` and an active cue create or replacement for
-the same target are contradictory and must not be proposed together.
-
-### Post-reveal definition reinforcement
-
-Use `add_production_cue_supplement` only when the exact served cue is
-`definition_gloss`, including the meaning-derived fallback, and that cue is a
-fair production prompt worth keeping unchanged. The supplement is for a useful
-middle case between cue repair and explanation-only feedback. It is revealed
-after the response, never used as another clue, and never changes accepted
-answers or grading.
-
-Draft all three parts:
-
-- `englishFrame`: a concise English usage, register, relationship, or situation
-  frame that adds instinct-building value beyond repeating the cue;
-- `exampleSentence`: one natural complete Chinese sentence containing the
-  target expression visibly, not a cloze; and
-- `exampleTranslation`: a faithful English translation of that sentence.
-
-Only propose it when `servedCue` includes a `supplement` field and that field is
-null. If the field is absent, the item came from a legacy evidence bundle whose
-exact supplement state is unavailable. Do not propose this operation for
-`minimal_context` or `circumstance` cues, for a definition cue that needs
-repair, or when `servedCue.supplement` is already non-null. Do not use it merely
-to persist arbitrary explanation prose. Prefer one compact, representative
-context over encyclopedic sense coverage.
+Choose the smallest faithful response. Multiple proposals are appropriate only
+when their operations are independently reviewable and non-redundant. A
+coordinated one-to-many repair of the same production task belongs in one
+`repair_production_cue` operation. A cue repair and contrast cluster may be
+separate related proposals and share a `proposalGroupKey`. Do not pair
+`suppress_definition_production` with an active cue create or replacement for
+the same target.
 
 ## Realizing future content
 
@@ -227,6 +204,29 @@ around a one-character blank does not turn the compound into a faithful cue for
 that character: `____会人员` exercises the complete word `与会`, not bare `与`.
 Treat this as a mismatched cue, not evidence for suppression; return to the
 target's genuine uses and the production-capability judgment.
+
+### Post-reveal definition reinforcement
+
+Use `add_production_cue_supplement` only when the exact served cue is
+`definition_gloss`, including the meaning-derived fallback, and that cue is a
+fair production prompt worth keeping unchanged. The supplement is for a useful
+middle case between cue repair and explanation-only feedback. It is revealed
+after the response, never used as another clue, and never changes accepted
+answers or grading.
+
+Draft all three parts:
+
+- `englishFrame`: a concise English usage, register, relationship, or situation
+  frame that adds instinct-building value beyond repeating the cue;
+- `exampleSentence`: one natural complete Chinese sentence containing the
+  target expression visibly, not a cloze; and
+- `exampleTranslation`: a faithful English translation of that sentence.
+
+Only propose it when `servedCue.supplement` is null. Do not propose this
+operation for `minimal_context` or `circumstance` cues, for a definition cue
+that needs repair, or when a supplement was already served. Do not use it
+merely to persist arbitrary explanation prose. Prefer one compact,
+representative context over encyclopedic sense coverage.
 
 ### Contrast practice
 
@@ -352,6 +352,21 @@ circumstance such as `Describe a quality, ability, or tendency as inborn rather
 than acquired: ____聪明、____乐观。` gives `天生` a natural productive task.
 Explain that the response was correct and the proposal improves later study.
 
+### Keep a fair definition cue and reinforce it after reveal
+
+#### `包庇` / correct response / “to shield; to harbor; to cover up”
+
+The answer is correct and the definition cue is fair, so keep the recall task
+unchanged. The word's formal, often legal register is useful durable context.
+Add a post-reveal supplement such as:
+
+- `englishFrame`: `knowingly shielding a wrongdoer from responsibility or discovery`;
+- `exampleSentence`: `他明知儿子犯了罪，却包庇了他。`; and
+- `exampleTranslation`: `He knew his son had committed a crime but shielded him.`
+
+The complete sentence is reinforcement after recall, not a cloze or a
+replacement cue.
+
 ### Add a frame to preserve instinctive flow
 
 #### `愚蠢` / `蠢货` / “silly; stupid”
@@ -395,8 +410,9 @@ independently reviewable proposals together; it is not durable identity.
 - `create_contrast_cluster` uses `version: 2`, a title, nullable cluster note,
   at least two unique visible members, and at least two prompts per member.
   It creates new content and never overwrites an existing cluster.
-- `repair_production_cue` is the V2 operation. Omit `version` and `taskId`; the
-  provider supplies them. Copy the target `wordId`. Its non-empty `changes`
+- `add_production_cue_supplement` copies the visible target `wordId` and
+  provides the three content fields described above.
+- `repair_production_cue` copies the target `wordId`. Its non-empty `changes`
   may:
   - `create` one or more active cue drafts when the served cue is the fallback;
   - `replace` the exact non-null served cue with one or more active drafts; or
@@ -420,11 +436,6 @@ attempt id from the evidence item.
   visible `submittedWordId`.
 - Use `misleading_or_overloaded_cue` only when the same operation creates a
   fallback repair or replaces/deactivates the exact served durable cue.
-- `add_production_cue_supplement` omits `version`, `taskId`, and `cueId`; the
-  provider derives the exact attachment from the evidence item. Copy the target
-  `wordId` and provide non-empty `englishFrame`, `exampleSentence`, and
-  `exampleTranslation`. The example sentence must visibly contain the target
-  expression.
 
 ## Final consistency check
 
