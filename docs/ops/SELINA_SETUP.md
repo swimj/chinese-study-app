@@ -106,11 +106,11 @@ In plain English: the CEFR list gives the app a reasonable default order, and yo
 
 ### Adding words by search
 
-Go to `Priority`, then `Manage priority`, and use `Add by French term`.
+Go to `Priority`, then `Manage`, and use the bottom `Add by French term` field.
 
 The search can match the exact canonical term, but it can also find aliases. That is helpful for French because the word you naturally type might not be the exact stored headword. For example, an inflected form, a spelling variant, or a related alias may point at one or more canonical entries.
 
-After adding matches, skim what landed in the prioritized list. Alias matching is intentionally useful, not magical, so it can occasionally pull in a false match or a word you do not actually want. Select those rows and use `Remove` to take them back out of your priority list. If the word shows up in `Triage top 50` and you do not want it as a new word at all, use `Dismiss`.
+After adding matches, skim what landed in the stash word bank. Alias matching is intentionally useful, not magical, so it can occasionally pull in a false match or a word you do not actually want. Hover a chip and use the remove icon, or select chips and use `Remove`. If the word shows up in `Triage` and you do not want it as a new word at all, use `Move to bottom`.
 
 ### Triage top 50
 
@@ -119,7 +119,7 @@ After adding matches, skim what landed in the prioritized list. Alias matching i
 A good way to use it:
 
 1. Open `Priority`.
-2. Click `Triage top 50`.
+2. Click `Triage`.
 3. Dismiss words you definitely do not want to study.
 4. Leave words that look useful, even if you do not need them immediately.
 

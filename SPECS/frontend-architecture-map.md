@@ -24,7 +24,7 @@ src/
   pages/
     HomePage.tsx                  # home: overview + active session grid
     HomeOverviewPanel.tsx         # backend/session availability overview + Start session card (gear toggles SessionSettingsPanel)
-    PriorityPage.tsx              # unstudied priority queue + triage
+    PriorityPage.tsx              # unstudied priority chip bank + triage
     ReflectionsPage.tsx           # help pager, artifact history/detail, and proposal-level review
     ContentDiagnosticsPage.tsx    # read-only primitive content browser
 
@@ -45,7 +45,8 @@ src/
 
     priority/
       usePriorityPageController.ts # priority loading, search, batch updates
-      priority-page-model.ts       # triage frequency sort + stash manage-list overlay recency sort
+      priority-page-model.ts       # triage frequency sort, stash recency, chip-bank partition/selection
+      PriorityWordBank.tsx         # manage-view top/stash chip bank, hover details, drag between sections
 
     reflection/
       useReflectionPageController.ts # open/history/detail loading and review mutations
@@ -89,7 +90,7 @@ Page-specific state should not drift back into `App.tsx`. Use a page controller 
 `useStudySession` owns the in-flight study session on the home page (see Session Controller below).
 
 `usePriorityPageController` owns the priority page: loading, search,
-jump-to-word, batch priority updates, unbumped triage loading, manual advisor
+added-word highlighting, batch priority updates, unbumped triage loading, manual advisor
 generation, and assessment accept/dismiss actions.
 
 `useReflectionPageController` owns the reflection page. See the

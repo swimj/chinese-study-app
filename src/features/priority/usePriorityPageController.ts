@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { AppPageKey } from '../../components/AppChrome';
 import {
   acceptIntakeTriageAssessment,
@@ -12,7 +12,7 @@ import {
 } from '../../services/api';
 import { studyProfile } from '../../study-profile';
 import type { IntakeTriagePriorityWord, IntakeTriageRunReceipt, PriorityWord } from '../../types';
-import { sortPriorityWords, sortStashManageWords } from './priority-page-model';
+import { applyPriorityPatch, sortPriorityWords, sortStashManageWords } from './priority-page-model';
 
 export type PriorityPageControllerOptions = {
   currentPage: AppPageKey;
@@ -32,19 +32,20 @@ export type PriorityPageController = {
   requireAddedMatches: boolean;
   searchNotice: string | null;
   searchSubmitting: boolean;
-  jumpRequestWordId: string | null;
+  highlightedWordIds: string[];
   updatingWordId: string | null;
   bulkDismissSubmitting: boolean;
   priorityBatchSubmitting: boolean;
   setSearchHanzi: (value: string) => void;
   setRequireAddedMatches: (value: boolean) => void;
-  clearJumpRequest: () => void;
+  clearHighlights: () => void;
   openPage: () => Promise<void>;
   submitSearch: () => Promise<void>;
   moveToTop: (wordId: string) => Promise<void>;
   bumpAgain: (wordId: string) => Promise<void>;
   requireForNextSession: (wordIds: string[], requiredForNextSession: boolean) => Promise<void>;
   moveSelectedToTop: (wordIds: string[]) => Promise<void>;
+  moveSelectedToStash: (wordIds: string[]) => Promise<void>;
   bumpSelectedAgain: (wordIds: string[]) => Promise<void>;
   removeSelected: (wordIds: string[]) => Promise<void>;
   remove: (wordId: string) => Promise<void>;
@@ -71,10 +72,13 @@ export function usePriorityPageController({
   const [requireAddedMatches, setRequireAddedMatches] = useState(false);
   const [searchSubmitting, setSearchSubmitting] = useState(false);
   const [searchNotice, setSearchNotice] = useState<string | null>(null);
-  const [jumpRequestWordId, setJumpRequestWordId] = useState<string | null>(null);
+  const [highlightedWordIds, setHighlightedWordIds] = useState<string[]>([]);
   const [updatingWordId, setUpdatingWordId] = useState<string | null>(null);
   const [bulkDismissSubmitting, setBulkDismissSubmitting] = useState(false);
   const [priorityBatchSubmitting, setPriorityBatchSubmitting] = useState(false);
+  const rowsRef = useRef<PriorityWord[]>([]);
+  const batchSubmittingRef = useRef(false);
+  rowsRef.current = rows;
 
   async function openPage(): Promise<void> {
     if (currentPage === 'priority') {
@@ -93,7 +97,7 @@ export function usePriorityPageController({
       setTriageRows(sortPriorityWords(triageWordsResponse.words));
       setAnalysisCandidateCount(triageWordsResponse.analysisCandidateCount);
       setSearchNotice(null);
-      setJumpRequestWordId(null);
+      setHighlightedWordIds([]);
       setCurrentPage('priority');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -160,13 +164,12 @@ export function usePriorityPageController({
 
         return sortStashManageWords([...byId.values()]);
       });
-      const prioritizedAddedWord = sortStashManageWords(response.words)[0];
-      setJumpRequestWordId(prioritizedAddedWord?.word.id ?? null);
+      setHighlightedWordIds(response.words.map((word) => word.word.id));
       setSearchNotice(`Added ${response.addedCount} matching word${response.addedCount === 1 ? '' : 's'} for "${normalizedHanzi}".`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       setSearchNotice(message);
-      setJumpRequestWordId(null);
+      setHighlightedWordIds([]);
     } finally {
       setSearchSubmitting(false);
     }
@@ -262,12 +265,26 @@ export function usePriorityPageController({
     },
   ): Promise<void> {
     const uniqueWordIds = [...new Set(wordIds)];
-    if (uniqueWordIds.length === 0) {
+    if (uniqueWordIds.length === 0 || batchSubmittingRef.current) {
       return;
     }
 
+    batchSubmittingRef.current = true;
     setPriorityBatchSubmitting(true);
     setError(null);
+    const snapshot = rowsRef.current;
+    const overlayUpdatedAt = new Date().toISOString();
+    setRows((current) => {
+      if (patch.reset) {
+        return current.filter((entry) => !uniqueWordIds.includes(entry.word.id));
+      }
+
+      return sortStashManageWords(current.map((entry) => (
+        uniqueWordIds.includes(entry.word.id)
+          ? applyPriorityPatch(entry, patch, overlayUpdatedAt)
+          : entry
+      )));
+    });
 
     try {
       const updatedWords = await Promise.all(uniqueWordIds.map((wordId) => updateWordUserPriority(wordId, patch)));
@@ -280,14 +297,16 @@ export function usePriorityPageController({
 
         return sortStashManageWords(current.map((entry) => updatedById.get(entry.word.id) ?? entry));
       });
-      if (patch.bumpDelta || patch.forceTop || patch.requiredForNextSession) {
+      if (patch.bumpDelta || patch.forceTop || patch.requiredForNextSession !== undefined) {
         setTriageRows((current) => current.filter((entry) => !updatedById.has(entry.word.id)));
       }
       setSearchNotice(null);
     } catch (err) {
+      setRows(snapshot);
       setError(err instanceof Error ? err.message : 'Unknown error');
       throw err;
     } finally {
+      batchSubmittingRef.current = false;
       setPriorityBatchSubmitting(false);
     }
   }
@@ -304,13 +323,13 @@ export function usePriorityPageController({
     requireAddedMatches,
     searchNotice,
     searchSubmitting,
-    jumpRequestWordId,
+    highlightedWordIds,
     updatingWordId,
     bulkDismissSubmitting,
     priorityBatchSubmitting,
     setSearchHanzi: (value: string) => setSearchHanzi(value),
     setRequireAddedMatches,
-    clearJumpRequest: () => setJumpRequestWordId(null),
+    clearHighlights: () => setHighlightedWordIds([]),
     openPage,
     submitSearch,
     moveToTop: (wordId: string) => updateWordPriority(wordId, { forceTop: true }),
@@ -318,6 +337,7 @@ export function usePriorityPageController({
     requireForNextSession: (wordIds: string[], requiredForNextSession: boolean) =>
       batchUpdateWordPriority(wordIds, { requiredForNextSession }),
     moveSelectedToTop: (wordIds: string[]) => batchUpdateWordPriority(wordIds, { forceTop: true }),
+    moveSelectedToStash: (wordIds: string[]) => batchUpdateWordPriority(wordIds, { forceTop: false, bumpDelta: 1 }),
     bumpSelectedAgain: (wordIds: string[]) => batchUpdateWordPriority(wordIds, { bumpDelta: 1 }),
     removeSelected: (wordIds: string[]) => batchUpdateWordPriority(wordIds, { reset: true }),
     remove: (wordId: string) => updateWordPriority(wordId, { reset: true }),

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type React from 'react';
 import type { IntakeTriagePriorityWord, IntakeTriageRunReceipt, PriorityWord } from '../types';
 import { MeaningList } from '../components/MeaningList';
+import { PriorityWordBank } from '../features/priority/PriorityWordBank';
+import { partitionPriorityBank } from '../features/priority/priority-page-model';
 import { studyProfile } from '../study-profile';
 
 type PrioritySubtab = 'manage' | 'triage';
@@ -13,11 +15,11 @@ export function PriorityPage({
   requireAddedMatches,
   searchNotice,
   searchSubmitting,
-  jumpRequestWordId,
+  highlightedWordIds,
   onSearchHanziChange,
   onRequireAddedMatchesChange,
   onSearchSubmit,
-  onJumpHandled,
+  onHighlightsHandled,
   updatingWordId,
   priorityBatchSubmitting,
   bulkDismissSubmitting,
@@ -27,7 +29,7 @@ export function PriorityPage({
   advisorUpdatingAssessmentId,
   onRequireForNextSession,
   onMoveSelectedToTop,
-  onBumpSelectedAgain,
+  onMoveSelectedToStash,
   onRemoveSelected,
   onDismissFromTriage,
   onBulkDismissFromTriage,
@@ -41,11 +43,11 @@ export function PriorityPage({
   requireAddedMatches: boolean;
   searchNotice: string | null;
   searchSubmitting: boolean;
-  jumpRequestWordId: string | null;
+  highlightedWordIds: string[];
   onSearchHanziChange: (value: string) => void;
   onRequireAddedMatchesChange: (value: boolean) => void;
   onSearchSubmit: () => void;
-  onJumpHandled: () => void;
+  onHighlightsHandled: () => void;
   updatingWordId: string | null;
   priorityBatchSubmitting: boolean;
   bulkDismissSubmitting: boolean;
@@ -55,7 +57,7 @@ export function PriorityPage({
   advisorUpdatingAssessmentId: string | null;
   onRequireForNextSession: (wordIds: string[], requiredForNextSession: boolean) => Promise<void>;
   onMoveSelectedToTop: (wordIds: string[]) => Promise<void>;
-  onBumpSelectedAgain: (wordIds: string[]) => Promise<void>;
+  onMoveSelectedToStash: (wordIds: string[]) => Promise<void>;
   onRemoveSelected: (wordIds: string[]) => Promise<void>;
   onDismissFromTriage: (wordId: string) => void;
   onBulkDismissFromTriage: (wordIds: string[]) => void;
@@ -65,26 +67,14 @@ export function PriorityPage({
 }) {
   const [activeSubtab, setActiveSubtab] = useState<PrioritySubtab>('manage');
   const [expandedDefinitionByWordId, setExpandedDefinitionByWordId] = useState<Record<string, boolean>>({});
-  const [showJumpToTopButton, setShowJumpToTopButton] = useState(false);
   const [selectedManageWordIds, setSelectedManageWordIds] = useState<string[]>([]);
   const [bulkSelectActive, setBulkSelectActive] = useState(false);
   const [selectedTriageWordIds, setSelectedTriageWordIds] = useState<string[]>([]);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const tableTopAnchorRef = useRef<HTMLDivElement | null>(null);
-  const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
-  const onJumpHandledRef = useRef(onJumpHandled);
   const longPressTimerRef = useRef<number | null>(null);
   const longPressActivatedRef = useRef(false);
-  const jumpTopButtonSawScrolledPageRef = useRef(false);
+  const { top, stash } = partitionPriorityBank(rows);
 
-  useEffect(() => {
-    onJumpHandledRef.current = onJumpHandled;
-  }, [onJumpHandled]);
-
-  // primarily for the case when a selected entry is removed, the update goes to the rows state,
-  // and this effect is triggered to then clear the corresponding id from the selectedManageWordIds state.
-  // when there's a new row, this update also runs, which is weird because the new row's wordId
-  // cannot be in the current selectedManagerWordIds state, but that's ok...
   useEffect(() => {
     setSelectedManageWordIds((current) =>
       current.filter((wordId) => rows.some((entry) => entry.word.id === wordId)),
@@ -102,62 +92,6 @@ export function PriorityPage({
       setBulkSelectActive(false);
     }
   }, [bulkDismissSubmitting, bulkSelectActive, selectedTriageWordIds.length]);
-
-  useEffect(() => {
-    if (!jumpRequestWordId) {
-      return;
-    }
-
-    jumpTopButtonSawScrolledPageRef.current = false;
-    setShowJumpToTopButton(true);
-    const targetRowElement = rowRefs.current[jumpRequestWordId];
-    const tableTopAnchorElement = tableTopAnchorRef.current;
-
-    if (!targetRowElement || !tableTopAnchorElement) {
-      onJumpHandledRef.current();
-      return;
-    }
-
-    const targetRowRect = targetRowElement.getBoundingClientRect();
-    const tableTopRect = tableTopAnchorElement.getBoundingClientRect();
-    const targetRowAbsoluteTop = targetRowRect.top + window.scrollY;
-    const tableTopAbsoluteAtPageTop = tableTopRect.top + window.scrollY;
-    const desiredScrollTop = Math.max(0, targetRowAbsoluteTop - tableTopAbsoluteAtPageTop);
-    const shouldJump = targetRowRect.top > tableTopRect.top + 8;
-
-    if (shouldJump) {
-      window.scrollTo({ top: desiredScrollTop, behavior: 'smooth' });
-      setShowJumpToTopButton(true);
-    }
-
-    onJumpHandledRef.current();
-  }, [jumpRequestWordId]);
-
-  useEffect(() => {
-    if (!showJumpToTopButton) {
-      return;
-    }
-
-    function handleScroll() {
-      if (window.scrollY > 8) {
-        jumpTopButtonSawScrolledPageRef.current = true;
-        return;
-      }
-
-      if (jumpTopButtonSawScrolledPageRef.current) {
-        setShowJumpToTopButton(false);
-      }
-    }
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [showJumpToTopButton]);
-
-  function toggleManageSelection(wordId: string) {
-    setSelectedManageWordIds((current) =>
-      current.includes(wordId) ? current.filter((selectedId) => selectedId !== wordId) : [...current, wordId],
-    );
-  }
 
   function toggleTriageSelection(wordId: string) {
     setSelectedTriageWordIds((current) =>
@@ -216,15 +150,13 @@ export function PriorityPage({
     setBulkSelectActive(false);
   }
 
-  async function handleSelectedManageAction(action: (wordIds: string[]) => Promise<void>) {
-    const selectedIds = selectedManageWordIds;
-    if (selectedIds.length === 0) {
+  async function handleSelectedManageAction(action: (wordIds: string[]) => Promise<void>, wordIds = selectedManageWordIds) {
+    if (wordIds.length === 0) {
       return;
     }
 
     try {
-      await action(selectedIds);
-      setSelectedManageWordIds([]);
+      await action(wordIds);
     } catch {
       // The controller owns the visible error state; keep the selection intact.
     }
@@ -233,247 +165,235 @@ export function PriorityPage({
   const selectedManageRows = rows.filter((entry) => selectedManageWordIds.includes(entry.word.id));
   const allSelectedRequired =
     selectedManageRows.length > 0 && selectedManageRows.every((entry) => entry.requiredForNextSession);
+  const someSelectedNotTop = selectedManageRows.some((entry) => !entry.forceTop);
+  const someSelectedTop = selectedManageRows.some((entry) => entry.forceTop);
   const manageSelectionActive = selectedManageWordIds.length > 0;
-  const searchDisabled = searchSubmitting || manageSelectionActive;
 
   return (
-    <section className="words-page">
-      <header className="header">
-        <div>
-          <h1 className="title">Priority</h1>
-          <p className="subtitle">{studyProfile.labels.targetSearchPrompt}</p>
-        </div>
-      </header>
-
-      <div className="priority-subtabs" role="tablist" aria-label="Priority views">
+    <section className="priority-page">
+      <nav className="priority-view-rail" aria-label="Priority views">
         <button
           type="button"
-          className={activeSubtab === 'manage' ? 'priority-subtab active' : 'priority-subtab'}
+          className={activeSubtab === 'manage' ? 'priority-view-rail-tab active' : 'priority-view-rail-tab'}
+          aria-current={activeSubtab === 'manage' ? 'page' : undefined}
           onClick={() => setActiveSubtab('manage')}
         >
-          Manage priority
+          <span>Manage</span>
+          <span className="priority-view-rail-count">{rows.length}</span>
         </button>
         <button
           type="button"
-          className={activeSubtab === 'triage' ? 'priority-subtab active' : 'priority-subtab'}
+          className={activeSubtab === 'triage' ? 'priority-view-rail-tab active' : 'priority-view-rail-tab'}
+          aria-current={activeSubtab === 'triage' ? 'page' : undefined}
           onClick={() => setActiveSubtab('triage')}
         >
-          Triage top 50
+          <span>Triage</span>
+          <span className="priority-view-rail-count">{triageRows.length}</span>
         </button>
-      </div>
+      </nav>
 
-      {activeSubtab === 'manage' ? (
-        <>
-          <div className="panel">
-            <h2>{studyProfile.labels.addByTarget}</h2>
-            <div className="pagination-actions">
+      <div className="priority-page-main">
+        {activeSubtab === 'manage' ? (
+          <>
+            <PriorityWordBank
+              rows={rows}
+              selectedWordIds={selectedManageWordIds}
+              highlightedWordIds={highlightedWordIds}
+              submitting={priorityBatchSubmitting}
+              onSelectedWordIdsChange={setSelectedManageWordIds}
+              onMoveToTop={(wordIds) => handleSelectedManageAction(onMoveSelectedToTop, wordIds)}
+              onMoveToStash={(wordIds) => handleSelectedManageAction(onMoveSelectedToStash, wordIds)}
+              onRemove={(wordIds) => handleSelectedManageAction(onRemoveSelected, wordIds)}
+              onHighlightsHandled={onHighlightsHandled}
+            />
+            <div className="priority-bottom-rail">
               <input
                 ref={searchInputRef}
                 type="text"
                 value={searchHanzi}
                 onChange={(event) => onSearchHanziChange(event.target.value)}
-                placeholder={studyProfile.labels.targetSearchPlaceholder}
-                disabled={searchDisabled}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    onSearchSubmit();
+                  }
+                }}
+                placeholder={studyProfile.labels.addByTarget}
+                aria-label={studyProfile.labels.addByTarget}
+                disabled={searchSubmitting}
               />
               <label className="inline-checkbox">
                 <input
                   type="checkbox"
                   checked={requireAddedMatches}
-                  disabled={searchDisabled}
+                  disabled={searchSubmitting}
                   onChange={(event) => onRequireAddedMatchesChange(event.target.checked)}
                 />
-                Require added matches
+                Require added
               </label>
-              <button type="button" onClick={onSearchSubmit} disabled={searchDisabled}>
-                {searchSubmitting ? 'Adding...' : 'Add matches'}
+              <button type="button" onClick={onSearchSubmit} disabled={searchSubmitting}>
+                {searchSubmitting ? 'Adding...' : 'Add'}
               </button>
-            </div>
-            {searchNotice ? <p className="notes">{searchNotice}</p> : null}
-          </div>
-
-          <div className="panel">
-            <h2>Prioritized list</h2>
-            {rows.length === 0 ? (
-              <p className="notes">No prioritized unstudied words yet.</p>
-            ) : (
-              <PriorityWordTable
-                rows={rows}
-                rowRefs={rowRefs}
-                tableTopAnchorRef={tableTopAnchorRef}
-                expandedDefinitionByWordId={expandedDefinitionByWordId}
-                setExpandedDefinitionByWordId={setExpandedDefinitionByWordId}
-                getRowClassName={(word) =>
-                  selectedManageWordIds.includes(word.word.id) ? 'priority-manage-row selected' : 'priority-manage-row'
-                }
-                getRowHandlers={(word) => ({
-                  onClick: () => toggleManageSelection(word.word.id),
-                })}
-              />
-            )}
-          </div>
-        </>
-      ) : (
-        <div className="panel">
-          <div className="priority-panel-header">
-            <div>
-              <h2>Top unstudied words</h2>
-              <p className="notes">Unbumped top 50. Long-press a row for bulk actions.</p>
-            </div>
-            {!bulkSelectActive ? (
-              <button
-                type="button"
-                onClick={onRunAdvisor}
-                disabled={advisorGenerating || analysisCandidateCount === 0}
-              >
-                {advisorGenerating ? 'Analyzing...' : `Analyze ${analysisCandidateCount} new word${analysisCandidateCount === 1 ? '' : 's'}`}
-              </button>
-            ) : null}
-            {bulkSelectActive ? (
-              <div className="pagination-actions">
-                <button type="button" className="secondary-button" onClick={() => setSelectedTriageWordIds([])}>
-                  Clear
-                </button>
-                <button
-                  type="button"
-                  onClick={handleBulkDismiss}
-                  disabled={selectedTriageWordIds.length === 0 || bulkDismissSubmitting}
-                >
-                  {bulkDismissSubmitting ? 'Moving...' : `Move to bottom (${selectedTriageWordIds.length})`}
-                </button>
-              </div>
-            ) : null}
-          </div>
-          {advisorRunReceipt ? (
-            <p className="notes intake-advisor-run-receipt" title={`Client request ${advisorRunReceipt.clientRequestId}${advisorRunReceipt.responseId ? ` · Provider response ${advisorRunReceipt.responseId}` : ''}`}>
-              Run {advisorRunReceipt.runId.slice(0, 8)} · analyzed {advisorRunReceipt.includedWordCount} · {formatEstimatedCost(advisorRunReceipt.estimatedCostUsd)}
-            </p>
-          ) : null}
-          {triageRows.length === 0 ? (
-            <p className="notes">No top unstudied words are currently available.</p>
-          ) : (
-            <PriorityWordTable
-              rows={triageRows}
-              expandedDefinitionByWordId={expandedDefinitionByWordId}
-              setExpandedDefinitionByWordId={setExpandedDefinitionByWordId}
-              actionHeader={bulkSelectActive ? 'Select' : 'Priority'}
-              advisorHeader="Advisor"
-              extraHeader={bulkSelectActive ? <th aria-label="Selected" /> : null}
-              renderExtraCell={(word) =>
-                bulkSelectActive ? (
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={selectedTriageWordIds.includes(word.word.id)}
-                      onClick={(event) => event.stopPropagation()}
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onChange={() => toggleTriageSelection(word.word.id)}
-                    />
-                  </td>
-                ) : null
-              }
-              getRowClassName={(word) =>
-                selectedTriageWordIds.includes(word.word.id) ? 'priority-triage-row selected' : 'priority-triage-row'
-              }
-              getRowHandlers={(word) => ({
-                onPointerDown: () => handleTriagePointerDown(word.word.id),
-                onPointerUp: handleTriagePointerEnd,
-                onPointerCancel: handleTriagePointerEnd,
-                onPointerLeave: handleTriagePointerEnd,
-                onClick: () => handleTriageRowClick(word.word.id),
-              })}
-              renderActionCell={(word) => {
-                const rowUpdating = updatingWordId === word.word.id;
-                return (
+              {searchNotice ? <span className="priority-bottom-rail-notice">{searchNotice}</span> : null}
+              {manageSelectionActive ? (
+                <div className="priority-bottom-rail-selection" role="group" aria-label="Selected priority word actions">
+                  <span className="priority-selection-count">{selectedManageWordIds.length}</span>
                   <button
                     type="button"
                     className="secondary-button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      handleSingleDismiss(word);
-                    }}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    disabled={rowUpdating || bulkSelectActive}
+                    onClick={() => void handleSelectedManageAction(onMoveSelectedToTop)}
+                    disabled={priorityBatchSubmitting || !someSelectedNotTop}
                   >
-                    {rowUpdating ? 'Moving...' : 'Move to bottom'}
+                    To top
                   </button>
-                );
-              }}
-              renderAdvisorCell={(word) => {
-                const row = triageRows.find((entry) => entry.word.id === word.word.id);
-                return row ? (
-                  <IntakeAdvisorAnnotation
-                    row={row}
-                    updatingAssessmentId={advisorUpdatingAssessmentId}
-                    onAccept={onAcceptAdvisorAssessment}
-                    onDismiss={onDismissAdvisorAssessment}
-                  />
-                ) : null;
-              }}
-            />
-          )}
-        </div>
-      )}
-
-      {showJumpToTopButton ? (
-        <button
-          type="button"
-          className="priority-jump-top-button"
-          onClick={() => {
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            setShowJumpToTopButton(false);
-            window.setTimeout(() => {
-              searchInputRef.current?.focus();
-              searchInputRef.current?.select();
-            }, 250);
-          }}
-        >
-          Jump to top
-        </button>
-      ) : null}
-
-      {manageSelectionActive ? (
-        <div className="priority-floating-actions" role="group" aria-label="Selected priority word actions">
-          <span className="priority-selection-count">{selectedManageWordIds.length} selected</span>
-          <button
-            type="button"
-            onClick={() => void handleSelectedManageAction(onBumpSelectedAgain)}
-            disabled={priorityBatchSubmitting}
-          >
-            Bump
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleSelectedManageAction(onMoveSelectedToTop)}
-            disabled={priorityBatchSubmitting || selectedManageRows.every((entry) => entry.forceTop)}
-          >
-            Move to top
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              void handleSelectedManageAction((wordIds) => onRequireForNextSession(wordIds, !allSelectedRequired))
-            }
-            disabled={priorityBatchSubmitting}
-          >
-            {allSelectedRequired ? 'Unrequire' : 'Require'}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleSelectedManageAction(onRemoveSelected)}
-            disabled={priorityBatchSubmitting}
-          >
-            Remove
-          </button>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => setSelectedManageWordIds([])}
-            disabled={priorityBatchSubmitting}
-          >
-            Clear selected
-          </button>
-        </div>
-      ) : null}
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => void handleSelectedManageAction(onMoveSelectedToStash)}
+                    disabled={priorityBatchSubmitting || !someSelectedTop}
+                  >
+                    To stash
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() =>
+                      void handleSelectedManageAction((wordIds) =>
+                        onRequireForNextSession(wordIds, !allSelectedRequired),
+                      )
+                    }
+                    disabled={priorityBatchSubmitting}
+                  >
+                    {allSelectedRequired ? 'Unrequire' : 'Require'}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => void handleSelectedManageAction(onRemoveSelected)}
+                    disabled={priorityBatchSubmitting}
+                  >
+                    Remove
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setSelectedManageWordIds([])}
+                    disabled={priorityBatchSubmitting}
+                  >
+                    Clear
+                  </button>
+                </div>
+              ) : (
+                <span className="priority-bottom-rail-hint">
+                  {top.length + stash.length === 0
+                    ? null
+                    : 'Click to select · drag between sections'}
+                </span>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="priority-triage-shell">
+            <div className="priority-triage-toolbar">
+              {!bulkSelectActive ? (
+                <button
+                  type="button"
+                  onClick={onRunAdvisor}
+                  disabled={advisorGenerating || analysisCandidateCount === 0}
+                >
+                  {advisorGenerating
+                    ? 'Analyzing...'
+                    : `Analyze ${analysisCandidateCount} new word${analysisCandidateCount === 1 ? '' : 's'}`}
+                </button>
+              ) : (
+                <div className="pagination-actions">
+                  <button type="button" className="secondary-button" onClick={() => setSelectedTriageWordIds([])}>
+                    Clear
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleBulkDismiss}
+                    disabled={selectedTriageWordIds.length === 0 || bulkDismissSubmitting}
+                  >
+                    {bulkDismissSubmitting ? 'Moving...' : `Move to bottom (${selectedTriageWordIds.length})`}
+                  </button>
+                </div>
+              )}
+              {advisorRunReceipt ? (
+                <p
+                  className="notes intake-advisor-run-receipt"
+                  title={`Client request ${advisorRunReceipt.clientRequestId}${advisorRunReceipt.responseId ? ` · Provider response ${advisorRunReceipt.responseId}` : ''}`}
+                >
+                  Run {advisorRunReceipt.runId.slice(0, 8)} · analyzed {advisorRunReceipt.includedWordCount} · {formatEstimatedCost(advisorRunReceipt.estimatedCostUsd)}
+                </p>
+              ) : null}
+            </div>
+            {triageRows.length === 0 ? (
+              <p className="notes">No top unstudied words are currently available.</p>
+            ) : (
+              <PriorityWordTable
+                rows={triageRows}
+                expandedDefinitionByWordId={expandedDefinitionByWordId}
+                setExpandedDefinitionByWordId={setExpandedDefinitionByWordId}
+                actionHeader={bulkSelectActive ? 'Select' : 'Priority'}
+                advisorHeader="Advisor"
+                extraHeader={bulkSelectActive ? <th aria-label="Selected" /> : null}
+                renderExtraCell={(word) =>
+                  bulkSelectActive ? (
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={selectedTriageWordIds.includes(word.word.id)}
+                        onClick={(event) => event.stopPropagation()}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onChange={() => toggleTriageSelection(word.word.id)}
+                      />
+                    </td>
+                  ) : null
+                }
+                getRowClassName={(word) =>
+                  selectedTriageWordIds.includes(word.word.id) ? 'priority-triage-row selected' : 'priority-triage-row'
+                }
+                getRowHandlers={(word) => ({
+                  onPointerDown: () => handleTriagePointerDown(word.word.id),
+                  onPointerUp: handleTriagePointerEnd,
+                  onPointerCancel: handleTriagePointerEnd,
+                  onPointerLeave: handleTriagePointerEnd,
+                  onClick: () => handleTriageRowClick(word.word.id),
+                })}
+                renderActionCell={(word) => {
+                  const rowUpdating = updatingWordId === word.word.id;
+                  return (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleSingleDismiss(word);
+                      }}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      disabled={rowUpdating || bulkSelectActive}
+                    >
+                      {rowUpdating ? 'Moving...' : 'Move to bottom'}
+                    </button>
+                  );
+                }}
+                renderAdvisorCell={(word) => {
+                  const row = triageRows.find((entry) => entry.word.id === word.word.id);
+                  return row ? (
+                    <IntakeAdvisorAnnotation
+                      row={row}
+                      updatingAssessmentId={advisorUpdatingAssessmentId}
+                      onAccept={onAcceptAdvisorAssessment}
+                      onDismiss={onDismissAdvisorAssessment}
+                    />
+                  ) : null;
+                }}
+              />
+            )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }
