@@ -39,6 +39,9 @@ export type ReflectionQualityArmStats = {
   dismissCount: number;
   taggedItemCount: number;
   tagCounts: Record<ReflectionQualityTag, number>;
+  failedRunCount: number;
+  totalCostUsd: number | null;
+  avgCostPerExactAcceptUsd: number | null;
 };
 
 export type ReflectionQualityStats = {
@@ -209,6 +212,20 @@ export function getReflectionQualityStats(): ReflectionQualityStats {
     tags_json: string;
   }>;
 
+  const runRows = getDb().prepare(`
+    SELECT
+      model AS model_arm,
+      prompt_version,
+      state,
+      estimated_cost_usd
+    FROM reflection_generation_runs
+  `).all() as Array<{
+    model_arm: string;
+    prompt_version: string;
+    state: string;
+    estimated_cost_usd: number | null;
+  }>;
+
   const arms = new Map<string, ReflectionQualityArmStats>();
 
   function armKey(modelArm: string, promptVersion: string): string {
@@ -229,6 +246,9 @@ export function getReflectionQualityStats(): ReflectionQualityStats {
       dismissCount: 0,
       taggedItemCount: 0,
       tagCounts: emptyTagCounts(),
+      failedRunCount: 0,
+      totalCostUsd: null,
+      avgCostPerExactAcceptUsd: null,
     };
     arms.set(key, created);
     return created;
@@ -261,6 +281,22 @@ export function getReflectionQualityStats(): ReflectionQualityStats {
     for (const tag of tags) {
       arm.tagCounts[tag] += 1;
     }
+  }
+
+  for (const row of runRows) {
+    const arm = ensureArm(row.model_arm, row.prompt_version);
+    if (row.state === 'failed') {
+      arm.failedRunCount += 1;
+    }
+    if (row.estimated_cost_usd !== null) {
+      arm.totalCostUsd = (arm.totalCostUsd ?? 0) + row.estimated_cost_usd;
+    }
+  }
+
+  for (const arm of arms.values()) {
+    arm.avgCostPerExactAcceptUsd = arm.exactAcceptCount > 0 && arm.totalCostUsd !== null
+      ? arm.totalCostUsd / arm.exactAcceptCount
+      : null;
   }
 
   return {

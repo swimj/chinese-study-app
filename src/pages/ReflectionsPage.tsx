@@ -33,7 +33,6 @@ import {
   formatRunDuration,
   visibleOutputTokens,
   type NoDurableChangeReflectionGist,
-  type QualityStatsGroupBy,
   type ReflectionArtifactSummaryDto,
   type ReflectionGenerationRunDto,
   type ReflectionProposalPresentation,
@@ -1583,7 +1582,7 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
   const [promptVersionFilter, setPromptVersionFilter] = useState<string | 'all'>(
     CURRENT_REFLECTION_PROMPT_VERSION,
   );
-  const [groupBy, setGroupBy] = useState<QualityStatsGroupBy>('model_and_prompt');
+  const [expandedModels, setExpandedModels] = useState<Set<string>>(() => new Set());
 
   if (stats === null) {
     return (
@@ -1612,7 +1611,6 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
   const promptVersions = listQualityPromptVersions(stats.arms);
   const rows = presentQualityStatsArms(stats.arms, {
     promptVersionFilter,
-    groupBy,
   });
 
   return (
@@ -1623,7 +1621,8 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
             <h2>Model-arm quality vibe</h2>
             <p className="notes">
               Terminal user reviews plus item tag overlays. Pending, deferred, and system
-              supersession are excluded from disposition rates. Tags count whenever present. Small
+              supersession are excluded from disposition rates. Tags count whenever present.
+              Run cost sums priced generation attempts, including validation failures. Small
               counts are not statistical claims.
             </p>
           </div>
@@ -1637,6 +1636,7 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
               onChange={(event) => {
                 const value = event.target.value;
                 setPromptVersionFilter(value === 'all' ? 'all' : value);
+                setExpandedModels(new Set());
               }}
             >
               <option value={CURRENT_REFLECTION_PROMPT_VERSION}>
@@ -1650,26 +1650,13 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
                 ))}
             </select>
           </label>
-          <label className="reflection-field reflection-quality-filter">
-            <span>Group by</span>
-            <select
-              aria-label="Group quality rows"
-              value={groupBy}
-              onChange={(event) => setGroupBy(event.target.value as QualityStatsGroupBy)}
-            >
-              <option value="model_and_prompt">Model + prompt</option>
-              <option value="model">Model</option>
-              <option value="prompt">Prompt version</option>
-            </select>
-          </label>
         </div>
         {rows.length === 0 ? (
           <p className="notes">No rows match this reflection version filter.</p>
         ) : (
           <div className="reflection-quality-table" role="table" aria-label="Quality by model arm">
             <div className="reflection-quality-table-header" role="row">
-              <span>{groupBy === 'prompt' ? 'Prompt' : 'Model arm'}</span>
-              <span>{groupBy === 'model_and_prompt' ? 'Prompt' : 'Scope'}</span>
+              <span>Model arm</span>
               <span>Terminal</span>
               <span>Exact</span>
               <span>Revised</span>
@@ -1678,38 +1665,104 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
               <span>Tagged</span>
               <span>Praise</span>
               <span>Missed</span>
+              <span>Failed</span>
+              <span>Cost</span>
+              <span>$/Exact</span>
             </div>
-            {rows.map((arm) => (
-              <div
-                className="reflection-quality-table-row"
-                role="row"
-                key={arm.groupLabel}
-              >
-                <strong>
-                  {groupBy === 'prompt' ? arm.promptVersion : arm.modelArm}
-                </strong>
-                <span>
-                  {groupBy === 'model_and_prompt'
-                    ? arm.promptVersion
-                    : groupBy === 'model'
-                      ? 'All matching prompts'
-                      : 'All matching models'}
-                </span>
-                <span>{arm.terminalReviewCount}</span>
-                <span>{formatRate(arm.exactAcceptCount, arm.terminalReviewCount)}</span>
-                <span>{formatRate(arm.revisedAcceptCount, arm.terminalReviewCount)}</span>
-                <span>{formatRate(arm.userReplaceCount, arm.terminalReviewCount)}</span>
-                <span>{formatRate(arm.dismissCount, arm.terminalReviewCount)}</span>
-                <span>{arm.taggedItemCount}</span>
-                <span>{arm.tagCounts.praise}</span>
-                <span>{arm.tagCounts.missed_intervention}</span>
-              </div>
-            ))}
+            {rows.flatMap((arm) => {
+              const expandable = arm.promptBreakdown.length > 0;
+              const expanded = expandedModels.has(arm.modelArm);
+              const mainRow = (
+                <QualityStatsTableRow
+                  key={arm.groupLabel}
+                  arm={arm}
+                  expandable={expandable}
+                  expanded={expanded}
+                  onToggle={() => {
+                    setExpandedModels((current) => {
+                      const next = new Set(current);
+                      if (next.has(arm.modelArm)) {
+                        next.delete(arm.modelArm);
+                      } else {
+                        next.add(arm.modelArm);
+                      }
+                      return next;
+                    });
+                  }}
+                />
+              );
+              if (!expandable || !expanded) {
+                return [mainRow];
+              }
+              return [
+                mainRow,
+                ...arm.promptBreakdown.map((breakdown) => (
+                  <QualityStatsTableRow
+                    key={`${arm.groupLabel}:${breakdown.promptVersion}`}
+                    arm={breakdown}
+                    isBreakdown
+                  />
+                )),
+              ];
+            })}
           </div>
         )}
       </section>
     </main>
   );
+}
+
+function QualityStatsTableRow({
+  arm,
+  expandable = false,
+  expanded = false,
+  isBreakdown = false,
+  onToggle,
+}: {
+  arm: ReflectionQualityStatsDto['arms'][number];
+  expandable?: boolean;
+  expanded?: boolean;
+  isBreakdown?: boolean;
+  onToggle?: () => void;
+}) {
+  return (
+    <div
+      className={isBreakdown
+        ? 'reflection-quality-table-row is-breakdown'
+        : 'reflection-quality-table-row'}
+      role="row"
+    >
+      <span className="reflection-quality-model-cell">
+        {expandable ? (
+          <button
+            type="button"
+            className="reflection-quality-expand"
+            aria-expanded={expanded}
+            aria-label={expanded ? 'Collapse prompt versions' : 'Expand prompt versions'}
+            onClick={onToggle}
+          >
+            {expanded ? '▾' : '▸'}
+          </button>
+        ) : null}
+        <strong>{isBreakdown ? arm.promptVersion : arm.modelArm}</strong>
+      </span>
+      <span>{arm.terminalReviewCount}</span>
+      <span>{formatRate(arm.exactAcceptCount, arm.terminalReviewCount)}</span>
+      <span>{formatRate(arm.revisedAcceptCount, arm.terminalReviewCount)}</span>
+      <span>{formatRate(arm.userReplaceCount, arm.terminalReviewCount)}</span>
+      <span>{formatRate(arm.dismissCount, arm.terminalReviewCount)}</span>
+      <span>{arm.taggedItemCount}</span>
+      <span>{arm.tagCounts.praise}</span>
+      <span>{arm.tagCounts.missed_intervention}</span>
+      <span>{arm.failedRunCount}</span>
+      <span>{formatQualityCost(arm.totalCostUsd)}</span>
+      <span>{formatQualityCost(arm.avgCostPerExactAcceptUsd)}</span>
+    </div>
+  );
+}
+
+function formatQualityCost(value: number | null): string {
+  return value === null ? '—' : formatUsd(value);
 }
 
 function formatRate(count: number, total: number): string {

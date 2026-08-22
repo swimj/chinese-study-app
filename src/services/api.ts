@@ -179,6 +179,9 @@ export type ReflectionQualityArmStatsDto = {
   dismissCount: number;
   taggedItemCount: number;
   tagCounts: Record<ReflectionQualityTag, number>;
+  failedRunCount: number;
+  totalCostUsd: number | null;
+  avgCostPerExactAcceptUsd: number | null;
 };
 
 export type ReflectionQualityStatsDto = {

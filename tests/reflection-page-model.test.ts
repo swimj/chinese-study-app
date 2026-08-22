@@ -103,7 +103,7 @@ describe('reflection page model', () => {
     );
   });
 
-  test('filters and groups quality stats arms for the Quality table', () => {
+  test('filters and aggregates quality stats by model with prompt breakdown', () => {
     const arms = [
       qualityArm('luna', 'reflection-v7', { terminalReviewCount: 2, exactAcceptCount: 2, taggedItemCount: 1, praise: 1 }),
       qualityArm('luna', 'reflection-v6', { terminalReviewCount: 1, exactAcceptCount: 1, taggedItemCount: 1, praise: 1 }),
@@ -112,27 +112,29 @@ describe('reflection page model', () => {
 
     const currentOnly = presentQualityStatsArms(arms, {
       promptVersionFilter: 'reflection-v7',
-      groupBy: 'model_and_prompt',
     });
     assert.equal(currentOnly.length, 2);
-    assert.ok(currentOnly.every((arm) => arm.promptVersion === 'reflection-v7'));
+    assert.ok(currentOnly.every((arm) => arm.promptVersion === 'reflection-v7' || arm.promptVersion === '—'));
+    assert.equal(currentOnly.find((arm) => arm.modelArm === 'luna')?.terminalReviewCount, 2);
+    assert.equal(currentOnly.find((arm) => arm.modelArm === 'luna')?.promptBreakdown.length, 0);
 
-    const byModel = presentQualityStatsArms(arms, {
+    const allVersions = presentQualityStatsArms(arms, {
       promptVersionFilter: 'all',
-      groupBy: 'model',
     });
-    const luna = byModel.find((arm) => arm.modelArm === 'luna');
+    const luna = allVersions.find((arm) => arm.modelArm === 'luna');
     assert(luna);
     assert.equal(luna.terminalReviewCount, 3);
     assert.equal(luna.tagCounts.praise, 2);
+    assert.equal(luna.promptBreakdown.length, 2);
+    assert.deepEqual(
+      luna.promptBreakdown.map((arm) => arm.promptVersion),
+      ['reflection-v6', 'reflection-v7'],
+    );
 
-    const byPrompt = presentQualityStatsArms(arms, {
-      promptVersionFilter: 'all',
-      groupBy: 'prompt',
-    });
-    const v7 = byPrompt.find((arm) => arm.promptVersion === 'reflection-v7');
-    assert(v7);
-    assert.equal(v7.terminalReviewCount, 5);
+    const glm = allVersions.find((arm) => arm.modelArm === 'glm');
+    assert(glm);
+    assert.equal(glm.terminalReviewCount, 3);
+    assert.equal(glm.promptBreakdown.length, 0);
     assert.deepEqual(listQualityPromptVersions(arms), ['reflection-v6', 'reflection-v7']);
   });
 
@@ -863,13 +865,18 @@ function qualityArm(
     taggedItemCount?: number;
     praise?: number;
     missed?: number;
+    failedRunCount?: number;
+    totalCostUsd?: number | null;
+    avgCostPerExactAcceptUsd?: number | null;
   },
 ): ReflectionQualityArmStatsDto {
+  const exactAcceptCount = values.exactAcceptCount ?? 0;
+  const totalCostUsd = values.totalCostUsd ?? null;
   return {
     modelArm,
     promptVersion,
     terminalReviewCount: values.terminalReviewCount,
-    exactAcceptCount: values.exactAcceptCount ?? 0,
+    exactAcceptCount,
     revisedAcceptCount: 0,
     userReplaceCount: 0,
     dismissCount: values.dismissCount ?? 0,
@@ -883,5 +890,12 @@ function qualityArm(
       inconsistent: 0,
       other: 0,
     },
+    failedRunCount: values.failedRunCount ?? 0,
+    totalCostUsd,
+    avgCostPerExactAcceptUsd: values.avgCostPerExactAcceptUsd ?? (
+      exactAcceptCount > 0 && totalCostUsd !== null
+        ? totalCostUsd / exactAcceptCount
+        : null
+    ),
   };
 }
