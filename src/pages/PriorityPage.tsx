@@ -93,6 +93,14 @@ export function PriorityPage({
     }
   }, [bulkDismissSubmitting, bulkSelectActive, selectedTriageWordIds.length]);
 
+  const wasSearchSubmittingRef = useRef(false);
+  useEffect(() => {
+    if (wasSearchSubmittingRef.current && !searchSubmitting) {
+      searchInputRef.current?.focus();
+    }
+    wasSearchSubmittingRef.current = searchSubmitting;
+  }, [searchSubmitting]);
+
   function toggleTriageSelection(wordId: string) {
     setSelectedTriageWordIds((current) =>
       current.includes(wordId) ? current.filter((selectedId) => selectedId !== wordId) : [...current, wordId],
@@ -148,6 +156,11 @@ export function PriorityPage({
     onBulkDismissFromTriage(selectedTriageWordIds);
     setSelectedTriageWordIds([]);
     setBulkSelectActive(false);
+  }
+
+  function submitAndKeepFocus() {
+    onSearchSubmit();
+    searchInputRef.current?.focus();
   }
 
   async function handleSelectedManageAction(action: (wordIds: string[]) => Promise<void>, wordIds = selectedManageWordIds) {
@@ -213,14 +226,16 @@ export function PriorityPage({
                 value={searchHanzi}
                 onChange={(event) => onSearchHanziChange(event.target.value)}
                 onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing || event.keyCode === 229) {
+                    return;
+                  }
                   if (event.key === 'Enter') {
                     event.preventDefault();
-                    onSearchSubmit();
+                    submitAndKeepFocus();
                   }
                 }}
                 placeholder={studyProfile.labels.addByTarget}
                 aria-label={studyProfile.labels.addByTarget}
-                disabled={searchSubmitting}
               />
               <label className="inline-checkbox">
                 <input
@@ -231,7 +246,7 @@ export function PriorityPage({
                 />
                 Require added
               </label>
-              <button type="button" onClick={onSearchSubmit} disabled={searchSubmitting}>
+              <button type="button" onClick={submitAndKeepFocus} disabled={searchSubmitting}>
                 {searchSubmitting ? 'Adding...' : 'Add'}
               </button>
               {searchNotice ? <span className="priority-bottom-rail-notice">{searchNotice}</span> : null}

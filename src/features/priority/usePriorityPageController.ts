@@ -78,6 +78,7 @@ export function usePriorityPageController({
   const [priorityBatchSubmitting, setPriorityBatchSubmitting] = useState(false);
   const rowsRef = useRef<PriorityWord[]>([]);
   const batchSubmittingRef = useRef(false);
+  const searchSubmittingRef = useRef(false);
   rowsRef.current = rows;
 
   async function openPage(): Promise<void> {
@@ -145,13 +146,19 @@ export function usePriorityPageController({
   }
 
   async function submitSearch(): Promise<void> {
+    if (searchSubmittingRef.current) {
+      return;
+    }
+
     const normalizedHanzi = searchHanzi.trim();
     if (normalizedHanzi.length === 0) {
       setSearchNotice(`${studyProfile.labels.targetSearchPlaceholder}.`);
       return;
     }
 
+    searchSubmittingRef.current = true;
     setSearchSubmitting(true);
+    setSearchHanzi('');
     setError(null);
 
     try {
@@ -170,7 +177,9 @@ export function usePriorityPageController({
       const message = err instanceof Error ? err.message : 'Unknown error';
       setSearchNotice(message);
       setHighlightedWordIds([]);
+      setSearchHanzi((current) => (current.length === 0 ? normalizedHanzi : current));
     } finally {
+      searchSubmittingRef.current = false;
       setSearchSubmitting(false);
     }
   }
