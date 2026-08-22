@@ -351,12 +351,16 @@ errors return `400`; missing artifact/item return `404`.
 none did. Missing artifact/item still return `404`.
 
 `GET /api/reflection-quality-stats` returns rates grouped by artifact `model`
-(model arm) and secondarily by `promptVersion`. Terminal user reviews are
+(model arm) and `promptVersion`. Terminal user reviews are
 `accepted` (exact/revised), `dismissed`, and `superseded` with
 `user_replacement`. Pending, deferred, and system supersession are excluded
 from disposition rates. Tag counts include every present item tag row (including
-items whose proposals are still open). Small-n counts are returned raw; the
-surface does not claim statistical significance.
+items whose proposals are still open). Each arm also includes `failedRunCount`,
+`totalCostUsd` (sum of priced generation runs, including validation failures),
+and `avgCostPerExactAcceptUsd` when both cost and exact accepts are available.
+Small-n counts are returned raw; the surface does not claim statistical
+significance. The UI aggregates arms by model and can expand multi-version
+models into per-`promptVersion` breakdown rows.
 
 ### Help inbox
 

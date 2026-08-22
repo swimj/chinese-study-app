@@ -56,16 +56,15 @@ export function findHelpInboxEntry(
   return rows.find((row) => row.artifactId === artifactId && row.itemId === itemId) ?? null;
 }
 
-export type QualityStatsGroupBy = 'model_and_prompt' | 'model' | 'prompt';
-
 export type QualityStatsPresentationOptions = {
   promptVersionFilter: string | 'all';
-  groupBy: QualityStatsGroupBy;
 };
 
 export type QualityStatsArmPresentation = ReflectionQualityArmStatsDto & {
   /** Display label for the grouping key (may combine arms). */
   groupLabel: string;
+  /** Per-prompt-version rows when this model arm spans multiple reflection versions. */
+  promptBreakdown: ReflectionQualityArmStatsDto[];
 };
 
 export function presentQualityStatsArms(
@@ -76,39 +75,82 @@ export function presentQualityStatsArms(
     ? arms
     : arms.filter((arm) => arm.promptVersion === options.promptVersionFilter);
 
-  if (options.groupBy === 'model_and_prompt') {
-    return filtered.map((arm) => ({
-      ...arm,
-      groupLabel: `${arm.modelArm} · ${arm.promptVersion}`,
-    }));
-  }
-
-  const buckets = new Map<string, QualityStatsArmPresentation>();
+  const byModel = new Map<string, ReflectionQualityArmStatsDto[]>();
   for (const arm of filtered) {
-    const key = options.groupBy === 'model' ? arm.modelArm : arm.promptVersion;
-    const existing = buckets.get(key);
-    if (existing === undefined) {
-      buckets.set(key, {
-        ...arm,
-        modelArm: options.groupBy === 'model' ? arm.modelArm : '—',
-        promptVersion: options.groupBy === 'prompt' ? arm.promptVersion : '—',
-        groupLabel: key,
-        tagCounts: { ...arm.tagCounts },
-      });
-      continue;
-    }
-    existing.terminalReviewCount += arm.terminalReviewCount;
-    existing.exactAcceptCount += arm.exactAcceptCount;
-    existing.revisedAcceptCount += arm.revisedAcceptCount;
-    existing.userReplaceCount += arm.userReplaceCount;
-    existing.dismissCount += arm.dismissCount;
-    existing.taggedItemCount += arm.taggedItemCount;
-    for (const tag of Object.keys(arm.tagCounts) as Array<keyof typeof arm.tagCounts>) {
-      existing.tagCounts[tag] += arm.tagCounts[tag];
-    }
+    const modelArms = byModel.get(arm.modelArm) ?? [];
+    modelArms.push(arm);
+    byModel.set(arm.modelArm, modelArms);
   }
 
-  return [...buckets.values()].sort((left, right) => left.groupLabel.localeCompare(right.groupLabel));
+  return [...byModel.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([modelArm, modelArms]) => {
+      const sorted = [...modelArms].sort((left, right) => (
+        left.promptVersion.localeCompare(right.promptVersion)
+      ));
+      const aggregated = aggregateQualityArmStats(sorted);
+      aggregated.modelArm = modelArm;
+      aggregated.promptVersion = sorted.length === 1 ? sorted[0]!.promptVersion : '—';
+      return {
+        ...aggregated,
+        groupLabel: modelArm,
+        promptBreakdown: sorted.length > 1 ? sorted : [],
+      };
+    });
+}
+
+export function aggregateQualityArmStats(
+  arms: ReflectionQualityArmStatsDto[],
+): ReflectionQualityArmStatsDto {
+  if (arms.length === 0) {
+    throw new Error('Expected at least one quality arm to aggregate.');
+  }
+  const first = arms[0]!;
+  const merged: ReflectionQualityArmStatsDto = {
+    modelArm: first.modelArm,
+    promptVersion: first.promptVersion,
+    terminalReviewCount: 0,
+    exactAcceptCount: 0,
+    revisedAcceptCount: 0,
+    userReplaceCount: 0,
+    dismissCount: 0,
+    taggedItemCount: 0,
+    tagCounts: emptyQualityTagCounts(),
+    failedRunCount: 0,
+    totalCostUsd: null,
+    avgCostPerExactAcceptUsd: null,
+  };
+  for (const arm of arms) {
+    merged.terminalReviewCount += arm.terminalReviewCount;
+    merged.exactAcceptCount += arm.exactAcceptCount;
+    merged.revisedAcceptCount += arm.revisedAcceptCount;
+    merged.userReplaceCount += arm.userReplaceCount;
+    merged.dismissCount += arm.dismissCount;
+    merged.taggedItemCount += arm.taggedItemCount;
+    merged.failedRunCount += arm.failedRunCount;
+    for (const tag of Object.keys(arm.tagCounts) as Array<keyof typeof arm.tagCounts>) {
+      merged.tagCounts[tag] += arm.tagCounts[tag];
+    }
+    if (arm.totalCostUsd !== null) {
+      merged.totalCostUsd = (merged.totalCostUsd ?? 0) + arm.totalCostUsd;
+    }
+  }
+  merged.avgCostPerExactAcceptUsd = merged.exactAcceptCount > 0 && merged.totalCostUsd !== null
+    ? merged.totalCostUsd / merged.exactAcceptCount
+    : null;
+  return merged;
+}
+
+function emptyQualityTagCounts(): ReflectionQualityArmStatsDto['tagCounts'] {
+  return {
+    praise: 0,
+    wrong_diagnosis: 0,
+    wrong_intervention: 0,
+    missed_intervention: 0,
+    low_quality_content: 0,
+    inconsistent: 0,
+    other: 0,
+  };
 }
 
 export function listQualityPromptVersions(

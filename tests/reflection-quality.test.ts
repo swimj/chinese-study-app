@@ -299,6 +299,139 @@ describe('reflection quality item tags', { concurrency: false }, () => {
     assert.equal(lunaV6.dismissCount, 0);
   });
 
+  test('stats aggregate generation run failures and priced cost by model arm', () => {
+    const luna = materialize('run-stats-luna', suppressOperation('target'), 'gpt-5.6-luna-high').artifact;
+    dbModule.acceptReflectionProposal({
+      proposalId: luna.proposals[0]!.review.proposalId,
+      operation: suppressOperation('target'),
+      createdAt: updatedAt,
+    });
+
+    dbModule.recordReflectionGenerationRun({
+      runId: 'run-success',
+      sourceSessionId: 'run-stats-luna',
+      reflectionFlowVersion: 'initial_post_session_reflection.v2',
+      startedAt: generatedAt,
+      completedAt: updatedAt,
+      provider: 'openai',
+      model: 'gpt-5.6-luna-high',
+      providerModel: 'gpt-5.6-luna',
+      promptVersion: 'reflection-v7',
+      responseId: 'response-1',
+      clientRequestId: null,
+      finishReason: 'stop',
+      bundleSchemaVersion: 'session_reflection_bundle.v2',
+      resultSchemaVersion: 'session_reflection_result.v6',
+      diagnostic: null,
+      state: 'succeeded',
+      failureCode: null,
+      eligibleItemCount: 1,
+      includedItemCount: 1,
+      usage: {
+        inputTokens: 100,
+        cachedInputTokens: null,
+        cacheWriteInputTokens: null,
+        outputTokens: 50,
+        reasoningTokens: null,
+        totalTokens: 150,
+      },
+      pricingSnapshotId: 'price-v1',
+      pricingAsOf: '2026-07-30',
+      pricingBasis: { id: 'price-v1' },
+      estimatedCostUsd: 0.01,
+      evidenceBundle: bundle('run-stats-luna'),
+    });
+    dbModule.recordReflectionGenerationRun({
+      runId: 'run-failed-validation',
+      sourceSessionId: 'run-stats-luna',
+      reflectionFlowVersion: 'initial_post_session_reflection.v2',
+      startedAt: generatedAt,
+      completedAt: updatedAt,
+      provider: 'openai',
+      model: 'gpt-5.6-luna-high',
+      providerModel: 'gpt-5.6-luna',
+      promptVersion: 'reflection-v7',
+      responseId: 'response-2',
+      clientRequestId: null,
+      finishReason: 'stop',
+      bundleSchemaVersion: 'session_reflection_bundle.v2',
+      resultSchemaVersion: 'session_reflection_result.v6',
+      diagnostic: {
+        schemaVersion: 'reflection_generation_diagnostic.v1',
+        phase: 'domain_validation',
+        issues: [],
+        rejectedOutput: null,
+      },
+      state: 'failed',
+      failureCode: 'domain_contract_invalid',
+      eligibleItemCount: 1,
+      includedItemCount: 1,
+      usage: {
+        inputTokens: 100,
+        cachedInputTokens: null,
+        cacheWriteInputTokens: null,
+        outputTokens: 50,
+        reasoningTokens: null,
+        totalTokens: 150,
+      },
+      pricingSnapshotId: 'price-v1',
+      pricingAsOf: '2026-07-30',
+      pricingBasis: { id: 'price-v1' },
+      estimatedCostUsd: 0.02,
+      evidenceBundle: bundle('run-stats-luna'),
+    });
+    dbModule.recordReflectionGenerationRun({
+      runId: 'run-failed-upstream',
+      sourceSessionId: 'run-stats-luna',
+      reflectionFlowVersion: 'initial_post_session_reflection.v2',
+      startedAt: generatedAt,
+      completedAt: updatedAt,
+      provider: 'openai',
+      model: 'gpt-5.6-luna-high',
+      providerModel: 'gpt-5.6-luna',
+      promptVersion: 'reflection-v6',
+      responseId: null,
+      clientRequestId: null,
+      finishReason: null,
+      bundleSchemaVersion: 'session_reflection_bundle.v2',
+      resultSchemaVersion: 'session_reflection_result.v6',
+      diagnostic: null,
+      state: 'failed',
+      failureCode: 'upstream_failure',
+      eligibleItemCount: 1,
+      includedItemCount: 1,
+      usage: {
+        inputTokens: null,
+        cachedInputTokens: null,
+        cacheWriteInputTokens: null,
+        outputTokens: null,
+        reasoningTokens: null,
+        totalTokens: null,
+      },
+      pricingSnapshotId: null,
+      pricingAsOf: null,
+      pricingBasis: null,
+      estimatedCostUsd: null,
+      evidenceBundle: bundle('run-stats-luna'),
+    });
+
+    const stats = dbModule.getReflectionQualityStats();
+    const lunaV7 = stats.arms.find((arm) => (
+      arm.modelArm === 'gpt-5.6-luna-high' && arm.promptVersion === 'reflection-v7'
+    ));
+    const lunaV6 = stats.arms.find((arm) => (
+      arm.modelArm === 'gpt-5.6-luna-high' && arm.promptVersion === 'reflection-v6'
+    ));
+    assert(lunaV7);
+    assert(lunaV6);
+    assert.equal(lunaV7.failedRunCount, 1);
+    assert.equal(lunaV7.totalCostUsd, 0.03);
+    assert.equal(lunaV7.avgCostPerExactAcceptUsd, 0.03);
+    assert.equal(lunaV6.failedRunCount, 1);
+    assert.equal(lunaV6.totalCostUsd, null);
+    assert.equal(lunaV6.avgCostPerExactAcceptUsd, null);
+  });
+
   test('clear removes tags without changing disposition', () => {
     const artifact = materialize('quality-clear', suppressOperation('target'), 'glm-5.3-high').artifact;
     const proposalId = artifact.proposals[0]!.review.proposalId;
