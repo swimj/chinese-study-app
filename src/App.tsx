@@ -127,18 +127,18 @@ function App() {
           requireAddedMatches={priorityPage.requireAddedMatches}
           searchNotice={priorityPage.searchNotice}
           searchSubmitting={priorityPage.searchSubmitting}
-          jumpRequestWordId={priorityPage.jumpRequestWordId}
+          highlightedWordIds={priorityPage.highlightedWordIds}
           onSearchHanziChange={priorityPage.setSearchHanzi}
           onRequireAddedMatchesChange={priorityPage.setRequireAddedMatches}
           onSearchSubmit={() => void priorityPage.submitSearch()}
-          onJumpHandled={priorityPage.clearJumpRequest}
+          onHighlightsHandled={priorityPage.clearHighlights}
           updatingWordId={priorityPage.updatingWordId}
           priorityBatchSubmitting={priorityPage.priorityBatchSubmitting}
           onRequireForNextSession={(wordIds, requiredForNextSession) =>
             priorityPage.requireForNextSession(wordIds, requiredForNextSession)
           }
           onMoveSelectedToTop={priorityPage.moveSelectedToTop}
-          onBumpSelectedAgain={priorityPage.bumpSelectedAgain}
+          onMoveSelectedToStash={priorityPage.moveSelectedToStash}
           onRemoveSelected={priorityPage.removeSelected}
           bulkDismissSubmitting={priorityPage.bulkDismissSubmitting}
           analysisCandidateCount={priorityPage.analysisCandidateCount}

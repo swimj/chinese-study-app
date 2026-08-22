@@ -37,7 +37,9 @@ export function AppChrome({
         ? 'container app-session-active'
         : currentPage === 'reflections'
           ? 'container app-reflections-page'
-          : 'container'
+          : currentPage === 'priority'
+            ? 'container app-priority-page'
+            : 'container'
     }>
       <nav className="navbar" aria-label="Primary">
         <div className="nav-brand">
