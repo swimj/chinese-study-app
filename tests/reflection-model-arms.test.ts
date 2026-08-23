@@ -31,12 +31,16 @@ describe('reflection comparison-arm registry', () => {
     );
   });
 
-  test('requires a JSON-schema-capable endpoint only for the Claude arm', () => {
+  test('pins Claude to Anthropic for native JSON-schema output', () => {
     const claudeArm = REFLECTION_MODEL_ARMS.find((arm) => (
       arm.choice === 'openrouter:claude-sonnet-5'
     ));
     assert.deepEqual(claudeArm?.config?.additionalRequestBody, {
-      provider: { require_parameters: true },
+      provider: {
+        order: ['anthropic'],
+        allow_fallbacks: false,
+        require_parameters: true,
+      },
     });
 
     for (const arm of REFLECTION_MODEL_ARMS) {
