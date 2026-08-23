@@ -5,11 +5,23 @@ type SameOwnerReference = {
   childReferenceColumn: string;
   parentTable: string;
   parentIdColumn: string;
+  /**
+   * Reflection artifacts receive their generated run id before the optional
+   * observability row is written. The run is deliberately recorded after the
+   * artifact, so this reference is valid while its parent is still absent.
+   */
+  allowsForwardReference?: boolean;
 };
 
 const sameOwnerReferences: readonly SameOwnerReference[] = [
   reference('learner_owned_reflection_artifacts', 'source_session_id', 'learner_owned_study_sessions', 'id'),
-  reference('learner_owned_reflection_artifacts', 'source_run_id', 'learner_owned_reflection_generation_runs', 'run_id'),
+  reference(
+    'learner_owned_reflection_artifacts',
+    'source_run_id',
+    'learner_owned_reflection_generation_runs',
+    'run_id',
+    { allowsForwardReference: true },
+  ),
   reference('learner_owned_reflection_generation_runs', 'source_session_id', 'learner_owned_study_sessions', 'id'),
   reference('learner_owned_reflection_proposal_reviews', 'artifact_id', 'learner_owned_reflection_artifacts', 'artifact_id'),
   reference('learner_owned_reflection_proposal_reviews', 'accepted_invocation_id', 'learner_owned_reflection_operation_invocations', 'invocation_id'),
@@ -39,11 +51,27 @@ export function installLearnerOwnershipGuards(): void {
 
 function installSameOwnerReference(item: SameOwnerReference): void {
   const baseName = `${item.childTable}_${item.childReferenceColumn}_same_owner`;
-  const predicate = `NEW.${item.childReferenceColumn} IS NOT NULL AND NOT EXISTS (
+  const matchingOwner = `EXISTS (
     SELECT 1 FROM ${item.parentTable} AS parent
     WHERE parent.${item.parentIdColumn} = NEW.${item.childReferenceColumn}
       AND parent.learner_id = NEW.learner_id
   )`;
+  const predicate = item.allowsForwardReference
+    ? `NEW.${item.childReferenceColumn} IS NOT NULL
+      AND NOT ${matchingOwner}
+      AND EXISTS (
+        SELECT 1 FROM ${item.parentTable} AS parent
+        WHERE parent.${item.parentIdColumn} = NEW.${item.childReferenceColumn}
+      )`
+    : `NEW.${item.childReferenceColumn} IS NOT NULL AND NOT ${matchingOwner}`;
+
+  // These definitions are part of the active schema contract, rather than a
+  // one-time migration. Recreate them so a restarted upgraded database gets
+  // the current predicate too.
+  getDb().exec(`
+    DROP TRIGGER IF EXISTS ${baseName}_insert;
+    DROP TRIGGER IF EXISTS ${baseName}_update;
+  `);
   getDb().exec(`
     CREATE TRIGGER IF NOT EXISTS ${baseName}_insert
     BEFORE INSERT ON ${item.childTable}
@@ -114,6 +142,7 @@ function reference(
   childReferenceColumn: string,
   parentTable: string,
   parentIdColumn: string,
+  options: Pick<SameOwnerReference, 'allowsForwardReference'> = {},
 ): SameOwnerReference {
-  return { childTable, childReferenceColumn, parentTable, parentIdColumn };
+  return { childTable, childReferenceColumn, parentTable, parentIdColumn, ...options };
 }

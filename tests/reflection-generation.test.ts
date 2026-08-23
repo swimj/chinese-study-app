@@ -315,6 +315,50 @@ describe('initial reflection generation orchestration', () => {
     assert.equal(materializeCalls, 1);
   });
 
+  test('retains the selected provider metadata when persistence fails after generation', async () => {
+    let recordedRun: RecordReflectionGenerationRunInput | null = null;
+    const glmSuccess: LunaReflectionSuccess = {
+      ...providerSuccess(),
+      metadata: {
+        ...providerSuccess().metadata,
+        provider: 'zai',
+        modelConfig: 'glm-5.3-high',
+        providerModel: 'glm-5.3',
+      },
+    };
+    const service = createInitialReflectionGenerationService({
+      now: () => generatedAt,
+      getRetrySource: () => ({
+        runId: 'failed-run',
+        sourceSessionId: 'session-1',
+        reflectionFlowVersion: 'initial_post_session_reflection.v2',
+        model: 'gpt-5.6-luna-high',
+        eligibleItemCount: 1,
+        includedItemCount: 1,
+        evidenceBundle: bundle(),
+      }),
+      provider: { generate: async () => providerSuccess() },
+      glmProvider: { generate: async () => glmSuccess },
+      materializeArtifact: () => {
+        throw new Error('persistence rejected the artifact');
+      },
+      recordRun: (input) => {
+        recordedRun = input;
+      },
+    });
+
+    await assert.rejects(
+      () => service.retry('failed-run', 'zai:glm-5.3-high'),
+      /persistence rejected the artifact/,
+    );
+    assert.equal(recordedRun?.state, 'failed');
+    assert.equal(recordedRun?.failureCode, 'internal_error');
+    assert.equal(recordedRun?.provider, 'zai');
+    assert.equal(recordedRun?.model, 'glm-5.3-high');
+    assert.equal(recordedRun?.providerModel, 'glm-5.3');
+    assert.equal(recordedRun?.responseId, 'response-1');
+  });
+
   test('routes the initial run across six comparison arms with equal probability', async () => {
     const selected: string[] = [];
     const makeArm = (label: string) => ({
