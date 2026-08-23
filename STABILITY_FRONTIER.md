@@ -77,8 +77,10 @@ is the recurring problem.
 - Initial onboarding may be concierge-assisted. A polished self-service
   onboarding system is deferred until the steady-state experience is more
   settled.
-- Shared reusable content consists of immutable, lineaged artifacts with
-  explicit publication status; there is no canonical or blessed tier. Imported
+- Shared reusable content is immutable and has explicit publication status and
+  attributable publication provenance; there is no canonical or blessed tier.
+  The beta does not assume that corrections form a stable artifact identity or
+  numbered version series. Imported
   content is an `available` bootstrap snapshot. Validated reusable content
   normally enters `shared_trial` after source-learner authorization and
   sanitization, while source evidence and all learner state remain private.
@@ -136,11 +138,12 @@ is the recurring problem.
 - No authenticated learner may read, mutate, schedule from, reflect on, or
   invoke provider work against another learner's private state or evidence.
   References to shared content do not establish learner ownership.
-- Shared artifact identity, lineage, publication status, learner-owned
+- Shared content identity, publication status and provenance, learner-owned
   suppressions, source evidence, authorized operations, applied effects, and
   historical served snapshots remain distinguishable wherever their difference
-  affects interpretation or recovery.
-- Ordinary learner actions never rewrite a shared artifact in place. Reusable
+  affects interpretation or recovery. A causal repair record does not by itself
+  assert that old and new content are versions of one stable artifact.
+- Ordinary learner actions never rewrite shared content in place. Reusable
   content may enter optimistic shared trial only through the accepted,
   validated, sanitized, and learner-authorized publication operation. Private
   evidence and learner identity never become shared content.

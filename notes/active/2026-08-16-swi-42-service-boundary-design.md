@@ -246,7 +246,7 @@ The earlier question incorrectly collapsed three separate concerns:
    private evidence motivated it.
 2. **Publication status** — whether the content is private, a service-visible
    candidate, beta-visible, quarantined, retired, or otherwise shareable.
-3. **Learner activation** — which version is active, suppressed, preferred, or
+3. **Learner activation** — which content is active, suppressed, preferred, or
    historically served for a particular learner.
 
 This permits shared-first product intent without letting one learner's ordinary
@@ -281,8 +281,8 @@ Candidate refinement, not yet a complete accepted contract:
 - Shared trial content may be served to other eligible learners without manual
   review; this is distinct from immediately replacing the baseline default
   for everyone.
-- Exact immutable versions, a stable baseline fallback, attributable feedback, and
-  rapid retirement provide the initial quality circuit breaker.
+- Exact immutable content, a stable baseline fallback, attributable feedback,
+  and rapid quarantine provide the initial quality circuit breaker.
 - Manual or agent-assisted review is exception-triggered by reports, anomalous
   outcomes, validation conflicts, or a demonstrated quality drop rather than
   required for every publication.
@@ -305,36 +305,37 @@ fallback, not a claim of superior pedagogical truth.
 Immutability, provenance, release reproducibility, and delta layering do not
 require canonical authority. Keep these concerns separate:
 
-- **Content identity and lineage:** immutable artifact/version plus its source
-  and derivation.
+- **Content identity and provenance:** immutable content plus attributable
+  publication provenance and, where useful, causal repair history.
 - **Publication lifecycle:** shared trial, available, quarantined, or retired.
 - **Selection policy:** how likely an eligible artifact is to be served for a
   learner/context, informed by mixed quality and learning signals.
-- **Release snapshot:** which content versions and policies a deploy can
+- **Release snapshot:** which content and policies a deploy can
   reproduce, without declaring them universally best.
 - **Learner-private state:** evidence, notes, reflection analysis, scheduling,
   preferences, and activation history; never shared as content.
 
-An initial imported artifact may remain a stable fallback because it is
+An initial imported content item may remain a stable fallback because it is
 operationally useful and reproducible, not because it is canonical. Evidence
 may shift selection toward or away from any published artifact without
 rewriting its historical identity.
 
 ### Candidate beta selection policy — 2026-08-18
 
-When multiple shared artifacts are eligible for the same learning purpose,
+When multiple shared content items are eligible for the same learning purpose,
 start with uniform random selection. Conceptually, selection policies may be
 probability distributions over the eligible set, but the beta does not need a
 general optimizer or policy framework before actual use reveals a need.
 
 The minimal contract is:
 
-- first filter out artifacts that are ineligible for the learner/context,
+- first filter out content that is ineligible for the learner/context,
   quarantined, retired, or explicitly suppressed for that learner;
-- select uniformly at random from the remaining eligible artifacts, including
-  imported baseline artifacts; origin does not imply a special weight;
-- use a defined task-level fallback only when no content artifact is eligible;
-- persist the exact artifact/version and served answer space with the attempt;
+- select uniformly at random from the remaining eligible content, including
+  imported baseline content; origin does not imply a special weight;
+- use a defined task-level fallback only when no content is eligible;
+- persist the exact content reference, served snapshot, and answer space with
+  the attempt;
   reproducibility concerns the historical fact of what was served, not replay
   of the random draw; and
 - keep selection randomness injectable/deterministic in tests without making a
@@ -344,20 +345,37 @@ Later evidence may change weights, eligibility, or contextual fit. That is a
 refinement of the distribution rather than a rewrite of content identity or
 publication lifecycle.
 
-### Accepted beta content direction — 2026-08-18
+### Human direction — publication without a version series, 2026-08-27
+
+The beta has not yet identified a stable logical unit whose corrections should
+form a numbered version history. In particular, a one-for-one
+`repair_production_cue@2` replacement does not establish that the old and new
+cues are versions of one artifact. Preserve the immutable operation and its
+caused effects as causal provenance without assigning stable artifact identity,
+parent-version lineage, or version numbers.
+
+Each immutable shared content item may have one addressable publication record
+with an explicit disposition. Publication status, private source authorization,
+reports, and status events remain separate durable facts. Replacement does not
+itself authorize a global retirement; shared quarantine or retirement requires
+an explicit publication disposition. Attempts preserve the immutable content
+reference and served snapshot, not the publication id.
+
+### Accepted beta content direction — 2026-08-18, revised 2026-08-27
 
 - Learner evidence, notes, reflection analysis, scheduling, preferences, and
   activation history are private and never shared as content.
 - Reusable generated content normally enters shared trial automatically after
   source-learner approval and sanitization.
-- Shared content has immutable identity, lineage, and publication status; the
+- Shared content has immutable identity, attributable publication provenance,
+  and publication status; the
   beta has no canonical or blessed content tier.
 - Trial and available content are eligible for automatic serving. Quarantined
   and retired content are not.
 - Selection is uniform random across eligible content for the same learning
   purpose, including imported content; later weighting is a refinement.
-- Every historical attempt preserves the exact artifact/version and answer
-  space served.
+- Every historical attempt preserves the exact content reference, snapshot,
+  and answer space served. Publication identity is not attempt evidence.
 - Imported content is a reproducible bootstrap snapshot, not an authority
   claim.
 

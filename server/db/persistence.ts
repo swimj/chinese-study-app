@@ -93,6 +93,10 @@ import {
   scopedContentStorageTableName,
 } from './scoped-content-tables.ts';
 import { installLearnerOwnershipGuards } from './learner-ownership-guards.ts';
+import {
+  ensureSharedContentSchema,
+  validateSharedContentSchema,
+} from './shared-content.ts';
 
 export function applyProductionContrastExerciseSeed() {
   if (!config.seedSampleData || !config.includeDevContrastSeed || config.studyProfile !== 'mandarin') {
@@ -2385,6 +2389,7 @@ export function initializeDatabase() {
         `Database at ${dbPath} predates learner ownership. Run the explicit SWI-47 legacy upgrade before starting it.`,
       );
     }
+    ensureSharedContentSchema();
     installScopedContentCompatibilityViews();
     installLearnerScopedCompatibilityViews();
     installLearnerOwnershipGuards();
@@ -2580,6 +2585,7 @@ function applyLightweightSchemaMigrations() {
   ensurePromptExclusionSchema();
   ensureReflectionSchema();
   ensureProductionCueSchema();
+  ensureSharedContentSchema();
   ensureIntakeTriageSchema();
 
   const userPriorityColumns = getDb().prepare(`PRAGMA table_info(user_word_priority)`).all() as Array<{ name: string }>;
@@ -3377,6 +3383,7 @@ function createSchema() {
 
   ensureReflectionSchema();
   ensureProductionCueSchema();
+  ensureSharedContentSchema();
   ensureIntakeTriageSchema();
   ensureIndexes();
   installScopedContentCompatibilityViews();
@@ -3555,6 +3562,7 @@ function validateSchema() {
   ]);
   validateReflectionSchema();
   validateProductionCueSchema();
+  validateSharedContentSchema();
   validateIntakeTriageSchema();
 }
 

@@ -10,6 +10,7 @@ import type {
 } from '../../src/domain/reflection.ts';
 import { getDb } from './connection.ts';
 import { physicalLearnerTableName } from './learner-scoped-tables.ts';
+import { publishAuthorizedProductionCueWithoutTransaction } from './shared-content.ts';
 
 export const DEFAULT_PRODUCTION_TASK_KIND = 'default_production' as const;
 
@@ -578,7 +579,7 @@ export function getDefaultProductionTask(wordId: string): ProductionTaskV0 | nul
 }
 
 export function getProductionCue(cueId: string): ProductionCueEntryV0 | null {
-  const row = getDb().prepare(`${productionCueSelect()} WHERE production_cues.cue_id = ?`)
+  const row = getDb().prepare(`${productionCueSelect()} AND production_cues.cue_id = ?`)
     .get(cueId) as ProductionCueRow | undefined;
   return row ? mapCueRow(row) : null;
 }
@@ -586,7 +587,7 @@ export function getProductionCue(cueId: string): ProductionCueEntryV0 | null {
 export function getProductionCuesForTask(taskId: string): ProductionCueEntryV0[] {
   const rows = getDb().prepare(`
     ${productionCueSelect()}
-    WHERE production_cues.task_id = ?
+    AND production_cues.task_id = ?
     ORDER BY production_cues.created_at ASC, production_cues.cue_id ASC
   `).all(taskId) as ProductionCueRow[];
   return rows.map(mapCueRow);
@@ -1281,6 +1282,11 @@ function createCue(
     invocationId,
     appliedAt,
   );
+  publishAuthorizedProductionCueWithoutTransaction({
+    cueId,
+    invocationId,
+    authorizedAt: appliedAt,
+  });
   return [{ type: 'production_cue', id: cueId }, lifecycleRef];
 }
 
@@ -1480,6 +1486,26 @@ function getAttemptEvidence(sourceAttemptId: string): CueAttemptEvidenceRow | nu
 }
 
 function productionCueSelect(): string {
+  const cueTable = scopedStorageTable('production_cues');
+  const cueColumns = new Set((getDb().prepare(`PRAGMA table_info(${cueTable})`).all() as Array<{ name: string }>)
+    .map((column) => column.name));
+  if (!cueColumns.has('content_scope')) {
+    return `
+      SELECT
+        production_cues.cue_id,
+        production_cues.task_id,
+        production_cues.cue_type,
+        production_cues.cue_text,
+        production_cues.created_at,
+        production_cues.origin_kind,
+        production_cues.origin_invocation_id,
+        production_cue_activation_state.active
+      FROM ${cueTable} AS production_cues
+      INNER JOIN production_cue_activation_state
+        ON production_cue_activation_state.cue_id = production_cues.cue_id
+      WHERE 1 = 1
+    `;
+  }
   return `
     SELECT
       production_cues.cue_id,
@@ -1487,12 +1513,33 @@ function productionCueSelect(): string {
       production_cues.cue_type,
       production_cues.cue_text,
       production_cues.created_at,
-      production_cues.origin_kind,
-      production_cues.origin_invocation_id,
-      production_cue_activation_state.active
-    FROM production_cues
-    INNER JOIN production_cue_activation_state
-      ON production_cue_activation_state.cue_id = production_cues.cue_id
+      CASE
+        WHEN provenance.source_invocation_id IS NOT NULL THEN 'reflection'
+        ELSE production_cues.origin_kind
+      END AS origin_kind,
+      provenance.source_invocation_id AS origin_invocation_id,
+      CASE
+        WHEN production_cues.content_scope = 'shared' THEN
+          CASE
+            WHEN publication.publication_status IN ('shared_trial', 'available')
+              AND COALESCE(production_cue_activation_state.active, 1) != 0
+            THEN 1 ELSE 0
+          END
+        ELSE COALESCE(production_cue_activation_state.active, 0)
+      END AS active
+    FROM ${cueTable} AS production_cues
+    LEFT JOIN ${physicalLearnerTableName('production_cue_activation_state')} AS production_cue_activation_state
+      ON production_cue_activation_state.learner_id = current_learner_id()
+      AND production_cue_activation_state.cue_id = production_cues.cue_id
+    LEFT JOIN shared_content_publications AS publication
+      ON publication.content_kind = 'production_cue'
+      AND publication.content_id = production_cues.cue_id
+    LEFT JOIN shared_content_publication_provenance AS provenance
+      ON provenance.publication_id = publication.publication_id
+    WHERE (
+      production_cues.content_scope = 'shared'
+      OR production_cues.owner_learner_id = current_learner_id()
+    )
   `;
 }
 

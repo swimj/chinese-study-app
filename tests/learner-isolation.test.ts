@@ -5,6 +5,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, before, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
+import type { ReflectionOperation } from '../src/domain/reflection.js';
 
 type DbModule = typeof import('../server/db.ts');
 
@@ -126,7 +127,197 @@ describe('learner isolation', { concurrency: false }, () => {
       /FOREIGN KEY constraint failed/,
     );
   });
+
+  test('shares authorized cue publications without exposing source provenance or reports', () => {
+    rawLearnerId = 'learner-a';
+    insertInvocation('learner-a-cue-create', cueRepairOperation({
+      changes: [{
+        kind: 'create',
+        cue: {
+          cueType: 'definition_gloss',
+          text: 'something held in common',
+          acceptedWordIds: ['shared-word'],
+        },
+      }],
+    }));
+    const created = dbModule.runWithLearnerId(
+      'learner-a',
+      () => dbModule.applyReflectionInvocation(
+        'learner-a-cue-create',
+        '2026-08-21T04:01:00.000Z',
+      ),
+    );
+    assert.equal(created.application.state.kind, 'applied');
+    const originalCueId = created.application.state.kind === 'applied'
+      ? created.application.state.effectRefs.find((ref) => ref.type === 'production_cue')!.id
+      : '';
+
+    const sourceCue = dbModule.runWithLearnerId(
+      'learner-a',
+      () => dbModule.getProductionCue(originalCueId),
+    );
+    const originalPublication = dbModule.getSharedContentPublicationForContent(
+      'production_cue',
+      originalCueId,
+    );
+    assert.ok(originalPublication);
+    assert.deepEqual(sourceCue?.attribution, {
+      origin: 'reflection',
+      invocationId: 'learner-a-cue-create',
+    });
+    assert.equal(
+      dbModule.runWithLearnerId(
+        'learner-a',
+        () => dbModule.getSharedContentPublication(originalPublication.publicationId)?.publicationStatus,
+      ),
+      'shared_trial',
+    );
+
+    const otherLearnerCue = dbModule.runWithLearnerId(
+      'learner-b',
+      () => dbModule.getProductionCue(originalCueId),
+    );
+    assert.deepEqual(otherLearnerCue, {
+      cueId: originalCueId,
+      taskId: 'production-task:shared-word:default_production',
+      cueType: 'definition_gloss',
+      text: 'something held in common',
+      acceptedWordIds: ['shared-word'],
+      createdAt: '2026-08-21T04:01:00.000Z',
+      attribution: { origin: 'manual', invocationId: null },
+      active: true,
+    });
+    assert.equal(
+      dbModule.runWithLearnerId(
+        'learner-b',
+        () => dbModule.getSharedContentPublicationProvenance(originalPublication.publicationId),
+      ),
+      null,
+    );
+
+    rawLearnerId = 'learner-a';
+    insertInvocation('learner-a-cue-replace', cueRepairOperation({
+      changes: [{
+        kind: 'replace',
+        cueId: originalCueId,
+        replacements: [{
+          cueType: 'definition_gloss',
+          text: 'something owned or used by more than one person',
+          acceptedWordIds: ['shared-word'],
+        }],
+      }],
+    }));
+    const replaced = dbModule.runWithLearnerId(
+      'learner-a',
+      () => dbModule.applyReflectionInvocation(
+        'learner-a-cue-replace',
+        '2026-08-21T04:02:00.000Z',
+      ),
+    );
+    assert.equal(replaced.application.state.kind, 'applied');
+    const replacementCueId = replaced.application.state.kind === 'applied'
+      ? replaced.application.state.effectRefs.find((ref) => ref.type === 'production_cue')!.id
+      : '';
+    const replacementPublication = dbModule.getSharedContentPublicationForContent(
+      'production_cue',
+      replacementCueId,
+    );
+    assert.ok(replacementPublication);
+    assert.equal(
+      dbModule.getSharedContentPublication(originalPublication.publicationId)?.publicationStatus,
+      'shared_trial',
+    );
+    assert.equal(
+      dbModule.getSharedContentPublication(replacementPublication.publicationId)?.publicationStatus,
+      'shared_trial',
+    );
+    assert.equal(
+      dbModule.runWithLearnerId(
+        'learner-b',
+        () => dbModule.getProductionCue(originalCueId)?.active,
+      ),
+      true,
+    );
+    assert.equal(
+      dbModule.runWithLearnerId(
+        'learner-a',
+        () => dbModule.getProductionCue(originalCueId)?.active,
+      ),
+      false,
+    );
+
+    rawLearnerId = 'learner-b';
+    const report = dbModule.runWithLearnerId('learner-b', () => (
+      dbModule.reportSharedContentPublication({
+        publicationId: replacementPublication.publicationId,
+        category: 'misleading',
+        note: 'This cue needs operator review.',
+        createdAt: '2026-08-21T04:03:00.000Z',
+      })
+    ));
+    assert.equal(
+      dbModule.runWithLearnerId(
+        'learner-a',
+        () => dbModule.getSharedContentReport(report.reportId),
+      ),
+      null,
+    );
+    assert.equal(
+      dbModule.getSharedContentPublication(replacementPublication.publicationId)?.publicationStatus,
+      'shared_trial',
+    );
+
+    const quarantined = dbModule.runWithLearnerId('learner-b', () => (
+      dbModule.quarantineSharedContentPublicationFromReport({
+        reportId: report.reportId,
+        operatorId: 'operator-1',
+        occurredAt: '2026-08-21T04:04:00.000Z',
+      })
+    ));
+    assert.equal(quarantined.publicationStatus, 'quarantined');
+    assert.equal(
+      dbModule.runWithLearnerId(
+        'learner-b',
+        () => dbModule.getProductionCue(replacementCueId)?.active,
+      ),
+      false,
+    );
+    assert.throws(
+      () => sqlite.prepare(`DELETE FROM shared_content_publications WHERE publication_id = ?`)
+        .run(replacementPublication.publicationId),
+      /shared content publications cannot be deleted/,
+    );
+  });
 });
+
+function cueRepairOperation(input: {
+  changes: Extract<ReflectionOperation, {
+    kind: 'repair_production_cue';
+    version: 2;
+  }>['changes'];
+}): Extract<ReflectionOperation, { kind: 'repair_production_cue'; version: 2 }> {
+  return {
+    kind: 'repair_production_cue',
+    version: 2,
+    wordId: 'shared-word',
+    taskId: 'production-task:shared-word:default_production',
+    changes: input.changes,
+    sourceAttemptJudgments: [],
+  };
+}
+
+function insertInvocation(invocationId: string, operation: ReflectionOperation): void {
+  sqlite.prepare(`
+    INSERT INTO reflection_operation_invocations (
+      invocation_id, created_at, origin_kind, origin_proposal_id,
+      origin_superseded_proposal_id, operation_kind, operation_version,
+      operation_json, application_state, application_updated_at,
+      unsupported_reason, applied_at, application_error, stale_reason,
+      effect_refs_json, satisfying_effect_refs_json
+    ) VALUES (?, '2026-08-21T04:00:00.000Z', 'manual', NULL, NULL, ?, ?, ?,
+      'pending', '2026-08-21T04:00:00.000Z', NULL, NULL, NULL, NULL, '[]', '[]')
+  `).run(invocationId, operation.kind, operation.version, JSON.stringify(operation));
+}
 
 function restoreEnv(name: string, value: string | undefined): void {
   if (value === undefined) delete process.env[name];

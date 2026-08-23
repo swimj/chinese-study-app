@@ -32,6 +32,27 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
   privateEntry('learner_settings', 'learner settings root', 'bootstrap explicit defaults for each learner'),
   operationalEntry('schema_migrations', 'database schema migration ledger'),
   operationalEntry('content_imports', 'shared content import ledger'),
+  sharedEntry(
+    'shared_content_publications',
+    'immutable reusable content plus publication disposition',
+    'create explicit available or shared-trial publications without source learner evidence',
+  ),
+  sharedEntry(
+    'shared_content_publication_events',
+    'shared content publication lifecycle',
+    'retain attributable state transitions without learner-private report or evidence bodies',
+  ),
+  privateEntry(
+    'learner_owned_shared_content_publication_provenance',
+    'source learner authorization plus shared publication',
+    'retain the private source invocation and content link outside the publication',
+    'immutable learner-authorized publication provenance',
+  ),
+  privateEntry(
+    'learner_owned_shared_content_reports',
+    'reporting learner plus shared publication',
+    'retain report detail privately while shared quarantine records only its attributable disposition',
+  ),
   sharedEntry('lexical_words', 'shared lexical word', 'copy lexical fields once from legacy words'),
   privateEntry(
     'learner_word_state',
