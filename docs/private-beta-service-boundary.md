@@ -99,10 +99,12 @@ evidence into service-owned data.
   `shared_trial`, `available`, `quarantined`, and `retired`. It is separate
   from the current learner activation history and from learner suppression.
 
-Shared artifacts are immutable and lineaged. Corrections create a new version
-or an attributable disposition rather than rewriting history. Attempts and
-evidence retain the exact artifact version, fallback, answer space, and other
-served snapshot required to interpret the historical event.
+Shared content is immutable. Corrections create distinct attributable content
+or an explicit disposition rather than rewriting history. A repair operation
+preserves causal provenance without assuming that its inputs and outputs are
+versions of one stable artifact. Attempts and evidence retain the exact content
+reference, fallback, answer space, and other served snapshot required to
+interpret the historical event; they do not carry publication identity.
 
 ### Service and import metadata
 
