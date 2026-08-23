@@ -411,6 +411,16 @@ describe('reflection durable store', { concurrency: false }, () => {
     assert.equal(counts.review_count, 0);
   });
 
+  test('permits an artifact to name its run before optional run logging writes it', () => {
+    const input = materializationInput('forward-run-session', suppressOperation('target'));
+    input.sourceRunId = 'run-recorded-after-artifact';
+
+    const materialized = dbModule.materializeReflectionArtifact(input);
+
+    assert.equal(materialized.created, true);
+    assert.equal(materialized.artifact.sourceRunId, 'run-recorded-after-artifact');
+  });
+
   test('keeps open proposal queue semantics separate from recent informational history', () => {
     const openArtifact = dbModule.materializeReflectionArtifact(
       materializationInput('open-session', suppressOperation('target')),

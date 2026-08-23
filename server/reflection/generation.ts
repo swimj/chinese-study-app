@@ -349,8 +349,10 @@ async function generateBundleAndMaterialize(input: {
     evidenceItemCount: bundle.items.length,
   });
   let artifactMaterialized = false;
+  let generatedMetadata: LunaReflectionRunMetadata | null = null;
   try {
     const generated = await input.provider.generate(bundle);
+    generatedMetadata = generated.metadata;
     const materialized: MaterializeReflectionArtifactResult = input.materializeArtifact({
       sourceRunId: input.runId,
       sourceSessionId: input.sessionId,
@@ -390,7 +392,7 @@ async function generateBundleAndMaterialize(input: {
           sessionId: input.sessionId,
           startedAt: input.generatedAt,
           completedAt: input.now(),
-          metadata: failureMetadata(error),
+          metadata: failureMetadata(error, generatedMetadata),
           state: 'failed',
           failureCode: failureCode(error),
           error,
@@ -459,10 +461,14 @@ function runRecordInput(input: {
   };
 }
 
-function failureMetadata(error: unknown): LunaReflectionRunMetadata {
+function failureMetadata(
+  error: unknown,
+  generatedMetadata: LunaReflectionRunMetadata | null,
+): LunaReflectionRunMetadata {
   if (error instanceof LunaReflectionProviderError && error.metadata !== null) {
     return error.metadata;
   }
+  if (generatedMetadata !== null) return generatedMetadata;
   return {
     provider: 'openai',
     modelConfig: LUNA_REFLECTION_MODEL_CONFIG.modelConfig,
