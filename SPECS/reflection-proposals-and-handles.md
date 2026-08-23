@@ -726,8 +726,10 @@ the original; the invocation keeps the final authorized operation.
 
 Changing operation kind or version is not a revision. It creates a
 user-authored replacement invocation and supersedes the original proposal with
-a link to that invocation. A manual operation unrelated to reflection has no
-proposal or proposal-review row.
+a link to that invocation. A fully user-authored operation has an invocation
+and application status without a fabricated reflection proposal. Help
+explanation-only cards may originate that manual invocation against the
+item's evidence; the immutable result stays explanation-only.
 
 The full manual workbench and reflection editing use the same operation
 registry, validators, editors, invocation writer, and apply adapters. This does
@@ -1038,7 +1040,7 @@ The following infrastructure and policy questions are also deferred:
 - a complete evaluation harness;
 - broad learner-history context;
 - hosted tenancy and publication policy;
-- a generic manual workbench UI; and
+- a generic standalone manual workbench UI; and
 - artifact-level read/archive state.
 
 Real repeated needs should promote a new operation or schema version. They
@@ -1082,8 +1084,15 @@ It proposes one English usage frame, a natural full example containing the
 answer, and its translation. The learner accepts. Application creates one
 immutable supplement for that exact cue or fallback. Future sessions keep the
 original recall cue and answer space unchanged, then show the supplement after
-answer reveal. A second identical invocation is already satisfied; different
-content requires a future replacement operation rather than silent stacking.
+answer reveal.
+
+### Explanation-only Help overridden in place
+
+The model returns a learner explanation and no proposals. Help shows that
+item. The learner selects a registered handle, edits the operation, and
+accepts. The artifact remains explanation-only. A `manual` invocation is
+authorized against that item's evidence, applied if supported, and the Help
+inbox row is removed.
 
 ### Already satisfied elsewhere
 

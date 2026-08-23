@@ -125,6 +125,35 @@ describe('reflection help inbox', { concurrency: false }, () => {
     assert.equal(dbModule.listReflectionHelpInbox().length, 0);
   });
 
+  test('authorizes a manual operation on an explanation-only item and leaves Help', () => {
+    const informational = materializeInformational('inbox-manual-override').artifact;
+    const authorized = dbModule.authorizeManualReflectionOperation({
+      artifactId: informational.artifactId,
+      itemId: 'item',
+      operation: suppressOperation('target'),
+    });
+    const invocation = authorized.invocation.application.state.kind === 'pending'
+      ? dbModule.applyReflectionInvocation(authorized.invocation.invocation.invocationId)
+      : authorized.invocation;
+
+    assert.deepEqual(invocation.invocation.origin, { kind: 'manual' });
+    assert.equal(invocation.invocation.operation.kind, 'suppress_definition_production');
+    assert.equal(invocation.application.state.kind, 'applied');
+    assert.equal(dbModule.listReflectionHelpInbox().length, 0);
+    assert.equal(
+      dbModule.getReflectionArtifactDetail(informational.artifactId).helpInbox.length,
+      0,
+    );
+    assert.throws(
+      () => dbModule.authorizeManualReflectionOperation({
+        artifactId: materialize('inbox-manual-has-proposal', suppressOperation('target')).artifact.artifactId,
+        itemId: 'item',
+        operation: suppressOperation('target'),
+      }),
+      /Manual authorization is only available for explanation-only reflection items/,
+    );
+  });
+
   test('rejects missing artifact or item', () => {
     const artifact = materializeInformational('inbox-missing').artifact;
     assert.throws(

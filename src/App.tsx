@@ -14,6 +14,7 @@ import {
   withdrawReflectionAuthorization,
   fetchReflectionHelpInbox,
   markReflectionHelpInboxDone,
+  authorizeManualReflectionOperation,
 } from './services/api';
 import { AppChrome, type AppPageKey } from './components/AppChrome';
 import { PersonalNotesEditorOverlay } from './features/session/PersonalNotesEditorOverlay';
@@ -58,6 +59,7 @@ function App() {
       getQualityStats: fetchReflectionQualityStats,
       listHelpInbox: fetchReflectionHelpInbox,
       markHelpInboxDone: markReflectionHelpInboxDone,
+      authorizeManualOperation: authorizeManualReflectionOperation,
     },
   });
   const contentPage = useContentDiagnosticsController({ currentPage, setCurrentPage, setError });

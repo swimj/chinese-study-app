@@ -19,6 +19,7 @@ import {
   presentQualityStatsArms,
   REFLECTION_QUALITY_TAG_OPTIONS,
   cloneReflectionOperation,
+  createManualOperation,
   createReplacementOperation,
   getOperationDraftState,
   reduceReflectionOperationDraft,
@@ -534,6 +535,25 @@ describe('reflection page model', () => {
       alternateWordId: 'alternate',
     });
     assert.equal(getOperationDraftState(original, replacement).acceptanceMode, 'replacement');
+  });
+
+  test('creates a blank manual draft from explanation evidence', () => {
+    const evidence = artifactDetail().evidenceBundle.items[0]!;
+    const draft = createManualOperation('repair_production_cue', 2, evidence);
+    assert.equal(draft.kind, 'repair_production_cue');
+    assert.equal(draft.version, 2);
+    if (draft.kind === 'repair_production_cue' && draft.version === 2) {
+      assert.equal(draft.wordId, 'target');
+      assert.deepEqual(draft.changes, []);
+    }
+    assert.deepEqual(
+      createManualOperation('suppress_definition_production', 1, evidence),
+      {
+        kind: 'suppress_definition_production',
+        version: 1,
+        wordId: 'target',
+      },
+    );
   });
 
   test('stamps the served cue id when a manual V2 change is switched to deactivate', () => {

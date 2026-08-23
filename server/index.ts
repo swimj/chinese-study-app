@@ -6,6 +6,7 @@ import {
   acceptIntakeTriageAssessment,
   replaceReflectionProposal,
   applyReflectionInvocation,
+  authorizeManualReflectionOperation,
   clearReflectionQualityAnnotation,
   completeLearningWordSession,
   completeUnstudiedWordSession,
@@ -632,6 +633,57 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
+  app.post(
+    '/api/reflection-artifacts/:artifactId/items/:itemId/manual-invocations',
+    (req, res) => {
+      const artifactId = req.params.artifactId;
+      const itemId = req.params.itemId;
+      if (typeof artifactId !== 'string' || artifactId.trim().length === 0) {
+        res.status(400).json({ error: 'Expected non-empty reflection artifact id' });
+        return;
+      }
+      if (typeof itemId !== 'string' || itemId.trim().length === 0) {
+        res.status(400).json({ error: 'Expected non-empty reflection item id' });
+        return;
+      }
+      const request = readAuthorizeManualReflectionOperationRequest(req.body);
+      if (request === null) {
+        res.status(400).json({ error: 'Expected a valid manual reflection invocation request' });
+        return;
+      }
+
+      try {
+        const authorized = authorizeManualReflectionOperation({
+          artifactId: artifactId.trim(),
+          itemId: itemId.trim(),
+          operation: request.operation,
+        });
+        const invocation = authorized.invocation.application.state.kind === 'pending'
+          ? applyReflectionInvocation(authorized.invocation.invocation.invocationId)
+          : authorized.invocation;
+        res.json({
+          invocation: invocation.invocation,
+          application: invocation.application,
+        });
+      } catch (error) {
+        if (
+          isReflectionNotFoundError(error, 'Reflection artifact not found.')
+          || isReflectionNotFoundError(error, 'Reflection item not found.')
+        ) {
+          res.status(404).json({
+            error: error.message.replace(/\.$/, ''),
+          });
+          return;
+        }
+        if (isReflectionReviewClientError(error)) {
+          res.status(400).json({ error: error.message });
+          return;
+        }
+        res.status(500).json({ error: 'Failed to authorize manual reflection operation' });
+      }
+    },
+  );
+
   app.post('/api/reflection-proposals/:proposalId/review', (req, res) => {
     const proposalId = req.params.proposalId;
     if (typeof proposalId !== 'string' || proposalId.trim().length === 0) {
@@ -1129,8 +1181,22 @@ function isReflectionReviewClientError(error: unknown): error is Error {
     || error.message.startsWith('No reflection operation registration for ')
     || error.message === 'A revised proposal acceptance must preserve operation kind and version.'
     || error.message === 'A replacement proposal must change operation kind or version.'
+    || error.message === 'Manual authorization is only available for explanation-only reflection items.'
     || isReflectionQualityClientError(error)
   );
+}
+
+function readAuthorizeManualReflectionOperationRequest(
+  value: unknown,
+): { operation: ReflectionOperation } | null {
+  if (!isPlainObject(value) || !isPlainObject(value.operation)) {
+    return null;
+  }
+  const keys = Object.keys(value);
+  if (keys.length !== 1 || keys[0] !== 'operation') {
+    return null;
+  }
+  return { operation: value.operation as ReflectionOperation };
 }
 
 function readUpsertReflectionQualityRequest(value: unknown): UpsertReflectionQualityRequest | null {

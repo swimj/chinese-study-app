@@ -147,6 +147,7 @@ Request/result types live in
 | GET | `/api/reflection-quality-stats` | Aggregate dogfood quality rates by model arm |
 | GET | `/api/reflection-help-inbox` | List open explanation-only Help inbox rows |
 | DELETE | `/api/reflection-help-inbox` | Mark one explanation-only Help item Done by deleting its inbox row |
+| POST | `/api/reflection-artifacts/:artifactId/items/:itemId/manual-invocations` | Authorize a registered operation against an explanation-only item |
 
 ### Generate
 
@@ -389,6 +390,31 @@ return `404`. There is no learner-facing undo.
 
 Done leaves the artifact body unchanged, so By session and raw artifact reads
 still show the item.
+
+### Manual authorization from explanation-only items
+
+`POST /api/reflection-artifacts/:artifactId/items/:itemId/manual-invocations`
+authorizes a registered operation against one explanation-only item's evidence.
+It does not fabricate a proposal or rewrite the immutable artifact. The request
+body is `{ operation }`; unknown fields are rejected.
+
+The item must exist on the artifact and must have an empty proposal list.
+Validation, application, and withdrawal then follow the same invocation path as
+proposal acceptance. If the item still has a Help inbox row, that row is
+removed in the same authorization transaction.
+
+Success returns `200` with:
+
+```ts
+{
+  invocation: OperationInvocation;
+  application: OperationApplicationStatus;
+}
+```
+
+Invalid operations, items that already carry proposals, and unknown fields
+return `400`. Missing artifact or item ids return `404`. Unexpected failures
+return `500`.
 
 ## Study management (outside session)
 

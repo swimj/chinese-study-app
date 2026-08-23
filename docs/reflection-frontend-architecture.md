@@ -107,9 +107,11 @@ Done are durable and advance the pager; Done leaves Help with no learner-facing
 undo. Prev/Next are ephemeral. Compact pager chrome stays above the reading
 pane with the target / typed-response identity line. Item quality chips, handle
 selection, reset, and Accept / Defer / Dismiss sit together below the
-pane. Explanation-only cards use that same toolbar: Handle, Reset, Defer, and
-Dismiss stay visible and disabled, and Accept marks the Help inbox item Done.
-Help does not show diagnosis tags or a dedicated dismissal-note field;
+pane. Explanation-only cards use that same toolbar. Handle is enabled so the
+learner can pick a registered operation and edit it in place; Reset clears that
+draft; Defer stays disabled; Accept authorizes the draft when one is present
+and otherwise marks the Help inbox item Done; Dismiss marks Done without
+applying a draft. Help does not show diagnosis tags or a dedicated dismissal-note field;
 dismiss records a null reason and the quality note remains the single note
 surface. Evidence, explanation, questions, rationale, and the operation editor
 scroll inside the pane. Production evidence is a quiet tested-cue line
@@ -191,10 +193,13 @@ action with a concise generating/result indicator, appends a new concluded run,
 and opens the resulting artifact on success. Older run rows created before
 bundle retention remain visible without a retry action.
 
-The surface intentionally has no generic JSON editor, manual invocation
-workbench, or different-kind replacement flow. By session may show a compact
-no-durable-change gist for observability; that is not a learner correctness
-score or a replacement for immutable artifact history.
+The surface intentionally has no generic JSON editor or standalone manual
+workbench. Explanation-only Help cards can still select a registered handle and
+authorize a `manual` invocation against that item's evidence, using the same
+editors as proposal review. Different-kind replacement remains available on
+proposal cards. By session may show a compact no-durable-change gist for
+observability; that is not a learner correctness score or a replacement for
+immutable artifact history.
 
 ## Ownership boundaries
 

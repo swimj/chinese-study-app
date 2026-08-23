@@ -12,6 +12,7 @@ import type {
   ReflectionInputItemV1,
   ReflectionInputItemV2,
   ReflectionItemV3,
+  ReflectionItemV4,
   SessionReflectionBundle,
   SessionReflectionBundleV1,
   SessionReflectionBundleV2,
@@ -54,6 +55,7 @@ import {
 import {
   ensureReflectionHelpInboxSchema,
   listReflectionHelpInboxForArtifact,
+  markReflectionHelpInboxDone,
   seedReflectionHelpInboxWithoutTransaction,
   validateReflectionHelpInboxSchema,
 } from './reflection-help-inbox.ts';
@@ -242,6 +244,18 @@ export type ReplaceReflectionProposalInput = {
 
 export type ReplaceReflectionProposalResult = {
   review: ProposalReviewStatus;
+  invocation: OperationInvocationStatus;
+};
+
+export type AuthorizeManualReflectionOperationInput = {
+  artifactId: string;
+  itemId: string;
+  operation: ReflectionOperation;
+  invocationId?: string;
+  createdAt?: string;
+};
+
+export type AuthorizeManualReflectionOperationResult = {
   invocation: OperationInvocationStatus;
 };
 
@@ -1384,6 +1398,37 @@ export function supersedeReflectionProposal(
   });
 }
 
+function requireRegisteredOperationForEvidence(
+  operation: ReflectionOperation,
+  evidenceItem: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4,
+): NonNullable<ReturnType<typeof getReflectionOperationRegistration>> {
+  const itemValidationErrors = validateReflectionOperation(operation, {
+    allowedWordIds: visibleWordIds(evidenceItem),
+    evidenceItemId: evidenceItem.itemId,
+  });
+  if ('servedCue' in evidenceItem) {
+    itemValidationErrors.push(...validateReflectionOperationEvidenceContext(
+      operation,
+      evidenceItem,
+      '$',
+    ));
+  }
+  if (itemValidationErrors.length > 0) {
+    throw new Error(
+      `Cannot authorize reflection operation outside its evidence item:\n`
+      + itemValidationErrors.join('\n'),
+    );
+  }
+  assertWordReferencesExist(operation);
+  const registration = getReflectionOperationRegistration(operation.kind, operation.version);
+  if (!registration) {
+    throw new Error(
+      `No reflection operation registration for ${operation.kind}@${operation.version}.`,
+    );
+  }
+  return registration;
+}
+
 export function acceptReflectionProposal(
   input: AcceptReflectionProposalInput,
 ): AcceptReflectionProposalResult {
@@ -1405,37 +1450,11 @@ export function acceptReflectionProposal(
       'accepted',
     );
     const { proposal: originalProposal, evidenceItem } = originalProposalContextForReview(reviewRow);
-    const itemValidationErrors = validateReflectionOperation(input.operation, {
-      allowedWordIds: visibleWordIds(evidenceItem),
-      evidenceItemId: evidenceItem.itemId,
-    });
-    if ('servedCue' in evidenceItem) {
-      itemValidationErrors.push(...validateReflectionOperationEvidenceContext(
-        input.operation,
-        evidenceItem,
-        '$',
-      ));
-    }
-    if (itemValidationErrors.length > 0) {
-      throw new Error(
-        `Cannot authorize reflection operation outside its evidence item:\n`
-        + itemValidationErrors.join('\n'),
-      );
-    }
-    assertWordReferencesExist(input.operation);
+    const registration = requireRegisteredOperationForEvidence(input.operation, evidenceItem);
     const acceptanceMode = classifyProposalAcceptance(
       originalProposal.operation,
       input.operation,
     );
-    const registration = getReflectionOperationRegistration(
-      input.operation.kind,
-      input.operation.version,
-    );
-    if (!registration) {
-      throw new Error(
-        `No reflection operation registration for ${input.operation.kind}@${input.operation.version}.`,
-      );
-    }
     const initialApplication: OperationApplicationState = registration.applySupport === 'supported'
       ? { kind: 'pending' }
       : { kind: 'unsupported', reason: unsupportedApplicationReason(input.operation) };
@@ -1521,33 +1540,7 @@ export function replaceReflectionProposal(
     ) {
       throw new Error('A replacement proposal must change operation kind or version.');
     }
-    const itemValidationErrors = validateReflectionOperation(input.operation, {
-      allowedWordIds: visibleWordIds(evidenceItem),
-      evidenceItemId: evidenceItem.itemId,
-    });
-    if ('servedCue' in evidenceItem) {
-      itemValidationErrors.push(...validateReflectionOperationEvidenceContext(
-        input.operation,
-        evidenceItem,
-        '$',
-      ));
-    }
-    if (itemValidationErrors.length > 0) {
-      throw new Error(
-        `Cannot authorize reflection operation outside its evidence item:\n`
-        + itemValidationErrors.join('\n'),
-      );
-    }
-    assertWordReferencesExist(input.operation);
-    const registration = getReflectionOperationRegistration(
-      input.operation.kind,
-      input.operation.version,
-    );
-    if (!registration) {
-      throw new Error(
-        `No reflection operation registration for ${input.operation.kind}@${input.operation.version}.`,
-      );
-    }
+    const registration = requireRegisteredOperationForEvidence(input.operation, evidenceItem);
     const initialApplication: OperationApplicationState = registration.applySupport === 'supported'
       ? { kind: 'pending' }
       : { kind: 'unsupported', reason: unsupportedApplicationReason(input.operation) };
@@ -1616,6 +1609,87 @@ export function replaceReflectionProposal(
 
   const review = mapProposalReviewRow(requireProposalReviewRow(input.proposalId));
   return { review, invocation: getReflectionInvocation(invocationId) };
+}
+
+export function authorizeManualReflectionOperation(
+  input: AuthorizeManualReflectionOperationInput,
+): AuthorizeManualReflectionOperationResult {
+  const createdAt = input.createdAt ?? new Date().toISOString();
+  const invocationId = input.invocationId ?? randomUUID();
+  assertIsoTimestamp(createdAt, 'invocation creation timestamp');
+  assertNonEmpty(invocationId, 'invocation id');
+  assertNonEmpty(input.artifactId, 'artifact id');
+  assertNonEmpty(input.itemId, 'item id');
+  const operationErrors = validateReflectionOperation(input.operation);
+  if (operationErrors.length > 0) {
+    throw new Error(`Cannot authorize invalid reflection operation:\n${operationErrors.join('\n')}`);
+  }
+
+  const database = getDb();
+  database.exec('BEGIN IMMEDIATE');
+  try {
+    const artifact = getReflectionArtifactDetail(input.artifactId);
+    const itemResult = artifact.result.itemResults.find((item) => item.itemId === input.itemId);
+    const evidenceItem = artifact.evidenceBundle.items.find((item) => item.itemId === input.itemId);
+    if (!itemResult || !evidenceItem) {
+      throw new Error('Reflection item not found.');
+    }
+    if (itemResult.proposals.length > 0) {
+      throw new Error(
+        'Manual authorization is only available for explanation-only reflection items.',
+      );
+    }
+    const registration = requireRegisteredOperationForEvidence(input.operation, evidenceItem);
+    const initialApplication: OperationApplicationState = registration.applySupport === 'supported'
+      ? { kind: 'pending' }
+      : { kind: 'unsupported', reason: unsupportedApplicationReason(input.operation) };
+    const applicationColumns = applicationStateColumns(initialApplication);
+
+    database.prepare(`
+      INSERT INTO reflection_operation_invocations (
+        invocation_id,
+        created_at,
+        origin_kind,
+        origin_proposal_id,
+        origin_superseded_proposal_id,
+        operation_kind,
+        operation_version,
+        operation_json,
+        application_state,
+        application_updated_at,
+        unsupported_reason,
+        applied_at,
+        application_error,
+        stale_reason,
+        effect_refs_json,
+        satisfying_effect_refs_json
+      ) VALUES (?, ?, 'manual', NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      invocationId,
+      createdAt,
+      input.operation.kind,
+      input.operation.version,
+      JSON.stringify(input.operation),
+      initialApplication.kind,
+      createdAt,
+      applicationColumns.unsupportedReason,
+      applicationColumns.appliedAt,
+      applicationColumns.applicationError,
+      applicationColumns.staleReason,
+      applicationColumns.effectRefsJson,
+      applicationColumns.satisfyingEffectRefsJson,
+    );
+    markReflectionHelpInboxDone({
+      artifactId: input.artifactId,
+      itemId: input.itemId,
+    });
+    database.exec('COMMIT');
+  } catch (error) {
+    database.exec('ROLLBACK');
+    throw error;
+  }
+
+  return { invocation: getReflectionInvocation(invocationId) };
 }
 
 export function getReflectionInvocation(
@@ -1809,7 +1883,7 @@ function requireProposalReviewRow(proposalId: string): ProposalReviewRow {
 
 function originalProposalContextForReview(row: ProposalReviewRow): {
   proposal: ReflectionProposalV1;
-  evidenceItem: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3;
+  evidenceItem: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4;
 } {
   const artifactRow = getDb().prepare(`
     SELECT ${artifactColumns.join(', ')}
@@ -2876,7 +2950,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function visibleWordIds(item: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3): Set<string> {
+function visibleWordIds(
+  item: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4,
+): Set<string> {
   const wordIds = new Set<string>();
   if (item.targetWord !== null) {
     wordIds.add(item.targetWord.wordId);
