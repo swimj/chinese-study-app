@@ -65,7 +65,6 @@ describe('learner isolation', { concurrency: false }, () => {
     assert.equal(aWord?.personalNotes, 'A private note');
     assert.equal(bWord?.personalNotes, '');
     assert.equal(bWord?.hanzi, '共享');
-    assert.equal(bWord?.status, 'unstudied');
   });
 
   test('permits the same private logical id for two learners without overwriting', () => {

@@ -396,11 +396,6 @@ still show the item.
 | --- | --- | --- |
 | POST | `/api/study-management/production/suppress` | `study-management` |
 
-Live bad-prompt reporting is retired. Existing `study_content_feedback` rows
-are only an input to the explicit SWI-47 upgrade, which converts active reports
-into learner-owned prompt exclusions with explicit migration provenance and
-drops the legacy table. There is no live compatibility storage or write path.
-
 ## Contrast clusters and intake (retired HTTP)
 
 Contrast-cluster management routes (`/api/contrast-clusters*`,
