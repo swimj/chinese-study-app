@@ -71,10 +71,15 @@ export const REFLECTION_MODEL_ARMS = [
       ...OPENROUTER,
       modelConfig: 'claude-sonnet-5',
       providerModel: 'anthropic/claude-sonnet-5',
-      // This arm is only useful when OpenRouter can honor the strict V7
-      // response schema; do not fall back to JSON-object prompting.
+      // This arm is only useful through Anthropic's native structured-output
+      // path. Other OpenRouter endpoints have returned fenced, legacy-shaped
+      // JSON despite accepting the strict response_format request.
       additionalRequestBody: {
-        provider: { require_parameters: true },
+        provider: {
+          order: ['anthropic'],
+          allow_fallbacks: false,
+          require_parameters: true,
+        },
       },
     } satisfies ReflectionProviderConfig,
   },

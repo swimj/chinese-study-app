@@ -316,7 +316,7 @@ describe('production Luna reflection provider', () => {
     assert.equal(serialized.includes('must-not-be-returned'), false);
   });
 
-  test('requires a schema-capable OpenRouter endpoint for the Claude arm', async () => {
+  test('pins the Claude arm to Anthropic native schema output', async () => {
     const capture: CapturedRequest[] = [];
     const arm = REFLECTION_MODEL_ARMS.find((candidate) => (
       candidate.choice === 'openrouter:claude-sonnet-5'
@@ -340,7 +340,11 @@ describe('production Luna reflection provider', () => {
         schema: sessionReflectionResultV7WireSchema,
       },
     });
-    assert.deepEqual(request.body.provider, { require_parameters: true });
+    assert.deepEqual(request.body.provider, {
+      order: ['anthropic'],
+      allow_fallbacks: false,
+      require_parameters: true,
+    });
   });
 
   test('retains a non-negative provider-reported request cost', async () => {
