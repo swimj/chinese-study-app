@@ -178,6 +178,49 @@ We recommend keeping study data outside the cloned repo, even though this versio
 - Use `study` mode in the stable clone, pointing at an explicit external data directory.
 - Treat upgrades into the study clone like releases: update code, restart the app, and keep the same study data directory.
 
+### Clerk development fixture
+
+The normal local dogfood commands remain Clerk-free. To exercise the
+authenticated hosted path without touching dogfood data, create an ignored
+environment file such as `.env.clerk-local` containing:
+
+```bash
+CLERK_PUBLISHABLE_KEY=pk_test_...
+CLERK_SECRET_KEY=sk_test_...
+CLERK_AUTHORIZED_PARTY=http://localhost:4175
+VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
+```
+
+Create a Clerk **development** instance in invite-only mode, add
+`http://localhost:4175` as an allowed origin, then run the fixture on separate
+ports and with its own disposable database:
+
+```bash
+set -a
+source .env.clerk-local
+set +a
+npm run dev:clerk:backend
+
+# In another terminal with the same environment loaded:
+npm run dev:clerk:frontend
+```
+
+For the two-user fixture, make both Clerk accounts active before signing in:
+
+- To exercise the intended invite-only flow, invite two addresses with real
+  inboxes (for example, Mozilla Relay addresses), open each invitation's
+  **Accept invitation** link, and finish sign-up.
+- To make fixture accounts quickly, use Clerk Dashboard → **Users** →
+  **Create user** twice and assign credentials you know.
+
+An address containing `+clerk_test` is useful only for Clerk's normal
+email-code verification flow (use code `424242`); it does not provide an inbox
+for accepting an invitation. Each active user's first authenticated request
+creates a stable local learner mapping. They share only the fixture's lexical
+corpus; all study, notes, sessions, and reflection records remain separate.
+The fixture database is `data/clerk-dev/app.db`; it is not a source or
+destination for the later dogfood migration.
+
 ## Data Layout
 
 - Backend entrypoint: [`server/index.ts`](/Users/jw/dev/chinese-study-app/server/index.ts)

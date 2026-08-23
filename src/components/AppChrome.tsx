@@ -15,6 +15,7 @@ export function AppChrome({
   onOpenPriorityPage,
   onOpenReflectionsPage,
   onOpenContentPage,
+  onSignOut,
 }: {
   currentPage: AppPageKey;
   error: string | null;
@@ -28,6 +29,7 @@ export function AppChrome({
   onOpenPriorityPage: () => void;
   onOpenReflectionsPage: () => void;
   onOpenContentPage: () => void;
+  onSignOut?: () => Promise<void>;
 }) {
   const navigationLoading = priorityPageLoading || reflectionPageLoading || contentPageLoading;
 
@@ -79,6 +81,11 @@ export function AppChrome({
           >
             {contentPageLoading ? 'Loading content...' : 'Content'}
           </button>
+          {onSignOut ? (
+            <button type="button" className="nav-tab" onClick={() => void onSignOut()}>
+              Sign out
+            </button>
+          ) : null}
         </div>
       </nav>
 

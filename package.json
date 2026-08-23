@@ -6,6 +6,8 @@
   "scripts": {
     "dev:frontend": "vite",
     "dev:backend": "node --import tsx server/index.ts --mode=dev --seed-data=server/seeds/mandarin-dev.json",
+    "dev:clerk:backend": "APP_AUTH_MODE=clerk PORT=5176 APP_DATA_DIR=data/clerk-dev node --import tsx server/index.ts --mode=dev --seed-data=server/seeds/mandarin-dev.json",
+    "dev:clerk:frontend": "VITE_AUTH_MODE=clerk VITE_API_BASE=http://localhost:5176 vite --port 4175",
     "dev:french:frontend": "VITE_STUDY_PROFILE=french vite",
     "dev:french:backend": "node --import tsx server/index.ts --mode=dev --study-profile=french --data-dir=data/french-dev --seed-data=server/seeds/french-dev.json",
     "study:backend": "node --import tsx server/index.ts --mode=study",

@@ -2,9 +2,11 @@ import path from 'node:path';
 
 type AppMode = 'dev' | 'study';
 type StudyProfile = 'mandarin' | 'french';
+type AuthMode = 'trusted_local' | 'clerk';
 
 type AppConfig = {
   mode: AppMode;
+  authMode: AuthMode;
   studyProfile: StudyProfile;
   learnerId: string;
   dataDir: string;
@@ -19,18 +21,20 @@ type AppConfigOptions = {
   modeOverride?: AppMode;
 };
 
-export type { AppConfig, AppMode, StudyProfile };
+export type { AppConfig, AppMode, AuthMode, StudyProfile };
 
 export function getAppConfig(options: AppConfigOptions = {}): AppConfig {
   const args = new Map(process.argv.slice(2).map(parseArg).filter((entry): entry is [string, string] => entry !== null));
 
   const mode = options.modeOverride ?? parseMode(args.get('mode') ?? process.env.APP_MODE ?? 'dev');
+  const authMode = parseAuthMode(args.get('auth-mode') ?? process.env.APP_AUTH_MODE ?? 'trusted_local');
   const studyProfile = parseStudyProfile(args.get('study-profile') ?? process.env.APP_STUDY_PROFILE ?? 'mandarin');
   const learnerId = parseLearnerId(
     args.get('learner-id')
       ?? process.env.APP_LEARNER_ID
       ?? (process.env.NODE_TEST_CONTEXT ? 'test-learner' : mode === 'dev' ? 'dev-learner' : ''),
     mode,
+    authMode,
   );
   const rawDataDir = args.get('data-dir') ?? process.env.APP_DATA_DIR;
   const rawSeedDataPath = args.get('seed-data') ?? process.env.APP_SEED_DATA_PATH;
@@ -66,6 +70,7 @@ export function getAppConfig(options: AppConfigOptions = {}): AppConfig {
 
   return {
     mode,
+    authMode,
     studyProfile,
     learnerId,
     dataDir,
@@ -77,16 +82,25 @@ export function getAppConfig(options: AppConfigOptions = {}): AppConfig {
   };
 }
 
-function parseLearnerId(value: string, mode: AppMode): string {
+function parseLearnerId(value: string, mode: AppMode, authMode: AuthMode): string {
   const learnerId = value.trim();
   if (learnerId.length > 0) {
     return learnerId;
+  }
+
+  if (authMode === 'clerk') {
+    return '';
   }
 
   throw new Error(
     `${mode === 'study' ? 'Study' : 'Dev'} mode requires an explicit learner id. `
       + 'Pass --learner-id=<stable-id> or set APP_LEARNER_ID.',
   );
+}
+
+function parseAuthMode(value: string): AuthMode {
+  if (value === 'trusted_local' || value === 'clerk') return value;
+  throw new Error(`Invalid auth mode: ${value}. Expected "trusted_local" or "clerk".`);
 }
 
 function parseMode(value: string): AppMode {

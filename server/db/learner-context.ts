@@ -13,7 +13,8 @@ export function runWithLearnerId<T>(learnerId: string, operation: () => T): T {
 }
 
 export function requireLearnerId(): string {
-  const learnerId = learnerContext.getStore() ?? config.learnerId;
+  const learnerId = learnerContext.getStore()
+    ?? (config.authMode === 'trusted_local' ? config.learnerId : '');
   if (learnerId.trim().length === 0) {
     throw new Error('Learner context is required');
   }

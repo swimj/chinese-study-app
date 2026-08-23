@@ -28,7 +28,7 @@ import { ContentDiagnosticsPage } from './pages/ContentDiagnosticsPage';
 
 const APP_VERSION = __APP_VERSION__;
 
-function App() {
+function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
   const [currentPage, setCurrentPage] = useState<AppPageKey>('home');
   const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +112,7 @@ function App() {
       onOpenPriorityPage={() => void priorityPage.openPage()}
       onOpenReflectionsPage={() => void reflectionPage.openPage()}
       onOpenContentPage={() => void contentPage.openPage()}
+      onSignOut={onSignOut}
     >
       {currentPage === 'home' ? (
         <HomePage
