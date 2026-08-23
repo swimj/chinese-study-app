@@ -73,6 +73,7 @@ describe('legacy bad-prompt migration', () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-legacy-upgrade-'));
     const dbPath = path.join(dataDir, 'app.db');
     const db = createLegacyFixture(dbPath);
+    addNonLatinDefinitionFeedback(db);
     const dueBefore = readDueDate(db, 'definition-active');
     db.close();
 
@@ -313,6 +314,27 @@ function insertFeedback(db: DatabaseSync, row: {
     row.id, row.createdAt, row.targetType, row.targetId, row.targetWordId,
     row.actionKind, row.action, row.note,
   );
+}
+
+function addNonLatinDefinitionFeedback(db: DatabaseSync): void {
+  db.exec(`
+    INSERT INTO words VALUES
+      ('cw:讨论:tǎo_lùn', '讨论', NULL, 'tǎo_lùn', 'discuss', '["discuss"]', '', '[]', 'review', 0, '2026-01-01T00:00:00.000Z', 0, NULL, NULL),
+      ('cw:譬如:pì_rú', '譬如', NULL, 'pì_rú', 'for example', '["for example"]', '', '[]', 'review', 0, '2026-01-01T00:00:00.000Z', 0, NULL, NULL);
+    INSERT INTO word_meanings VALUES
+      ('non-latin-discuss-meaning', 'cw:讨论:tǎo_lùn', 0, 'discuss', 0, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'),
+      ('non-latin-for-example-meaning', 'cw:譬如:pì_rú', 0, 'for example', 0, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+  `);
+  insertFeedback(db, {
+    id: 'non-latin-discuss-report', createdAt: '2026-01-05T00:00:00.000Z',
+    targetType: 'generated_prompt', targetId: 'definition_based_production',
+    targetWordId: 'cw:讨论:tǎo_lùn', actionKind: 'production', action: 'reported', note: '',
+  });
+  insertFeedback(db, {
+    id: 'non-latin-for-example-report', createdAt: '2026-01-05T00:01:00.000Z',
+    targetType: 'generated_prompt', targetId: 'definition_based_production',
+    targetWordId: 'cw:譬如:pì_rú', actionKind: 'production', action: 'reported', note: '',
+  });
 }
 
 function readDueDate(db: DatabaseSync, wordId: string): string | null {

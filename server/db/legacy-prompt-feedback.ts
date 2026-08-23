@@ -259,5 +259,11 @@ function contrastPromptMatches(db: DatabaseSync, promptId: string, wordId: strin
 }
 
 function byTarget(left: LegacyPromptExclusionCandidate, right: LegacyPromptExclusionCandidate): number {
-  return left.targetId.localeCompare(right.targetId) || left.targetWordId.localeCompare(right.targetWordId);
+  return binaryCompare(left.targetId, right.targetId) || binaryCompare(left.targetWordId, right.targetWordId);
+}
+
+function binaryCompare(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }
