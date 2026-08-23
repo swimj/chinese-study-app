@@ -2369,9 +2369,11 @@ export function dismissWordFromStudy(wordId: string): void {
 export function initializeDatabase() {
   if (!dbExistedOnStartup) {
     createSchema();
-    bootstrapLearner({ learnerId: config.learnerId });
     recordLearnerOwnershipSchema();
-    ensureDefaultDailyNewWordLimit();
+    if (config.authMode === 'trusted_local') {
+      bootstrapLearner({ learnerId: config.learnerId });
+      ensureDefaultDailyNewWordLimit();
+    }
     seedDatabase();
     backfillContrastClusterMemberEligibility();
     return;
@@ -2387,7 +2389,9 @@ export function initializeDatabase() {
     installLearnerScopedCompatibilityViews();
     installLearnerOwnershipGuards();
     validateSchema();
-    assertLearnerExists(config.learnerId);
+    if (config.authMode === 'trusted_local') {
+      assertLearnerExists(config.learnerId);
+    }
     ensureIndexes();
     seedEmptyDevDatabase();
     backfillContrastClusterMemberEligibility();
@@ -3018,9 +3022,11 @@ function rebuildDevDatabase(error: unknown) {
   setDb(openDatabase(dbPath));
   installLearnerContextSqlFunction();
   createSchema();
-  bootstrapLearner({ learnerId: config.learnerId });
   recordLearnerOwnershipSchema();
-  ensureDefaultDailyNewWordLimit();
+  if (config.authMode === 'trusted_local') {
+    bootstrapLearner({ learnerId: config.learnerId });
+    ensureDefaultDailyNewWordLimit();
+  }
   seedDatabase();
 }
 
@@ -3032,7 +3038,7 @@ function seedEmptyDevDatabase() {
   const counts = getDb()
     .prepare(`
       SELECT
-        (SELECT COUNT(*) FROM words) AS word_count
+        (SELECT COUNT(*) FROM lexical_words) AS word_count
     `)
     .get() as { word_count: number };
 
@@ -3592,6 +3598,11 @@ function seedDatabase() {
 
   const seedData = withDevContrastSeedData(readSeedData() ?? buildSampleSeedData());
 
+  if (config.authMode === 'clerk') {
+    seedSharedDevelopmentFixtureData(seedData);
+    return;
+  }
+
   const insertWord = getDb().prepare(`
     INSERT INTO words (
       id,
@@ -3772,6 +3783,55 @@ function seedDatabase() {
       );
     }
 
+    getDb().exec('COMMIT');
+  } catch (error) {
+    getDb().exec('ROLLBACK');
+    throw error;
+  }
+}
+
+/**
+ * Clerk development runs need a corpus but must not prepopulate any learner's
+ * private state. Fresh authenticated learners read the lexical defaults from
+ * the shared tables and acquire their own state only as they study.
+ */
+function seedSharedDevelopmentFixtureData(seedData: SeedData) {
+  const insertWord = getDb().prepare(`
+    INSERT OR IGNORE INTO lexical_words (
+      id, hanzi, traditional, pinyin, meaning, meanings_json, examples_json, priority, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const insertMeaning = getDb().prepare(`
+    INSERT OR IGNORE INTO lexical_word_meanings (
+      id, word_id, position, text, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  getDb().exec('BEGIN');
+  try {
+    for (const word of seedData.words) {
+      insertWord.run(
+        word.id,
+        word.hanzi,
+        word.traditional,
+        word.pinyin,
+        word.meaning,
+        JSON.stringify(word.meanings),
+        JSON.stringify(word.examples),
+        word.priority,
+        word.createdAt,
+      );
+    }
+    for (const meaning of seedData.wordMeanings) {
+      insertMeaning.run(
+        meaning.id,
+        meaning.wordId,
+        meaning.position,
+        meaning.text,
+        meaning.createdAt,
+        meaning.updatedAt,
+      );
+    }
     getDb().exec('COMMIT');
   } catch (error) {
     getDb().exec('ROLLBACK');

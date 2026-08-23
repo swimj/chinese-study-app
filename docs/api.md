@@ -4,6 +4,17 @@ Routes are defined in [server/index.ts](../server/index.ts). Frontend client: [s
 
 Base URL: `http://localhost:5174` (override with `VITE_API_BASE`).
 
+## Authentication
+
+Normal local dogfood uses `APP_AUTH_MODE=trusted_local` (the default) and its
+configured `APP_LEARNER_ID`. The hosted-style path uses `APP_AUTH_MODE=clerk`:
+every API route requires a verified Clerk session, derives the learner from the
+server-side Clerk-subject mapping, and returns `401 AUTH_REQUIRED` or
+`403 ACCOUNT_DISABLED` before domain work when applicable. Clients never send
+a learner id. The frontend obtains a short-lived Clerk session token and sends
+it as a bearer token; local setup is documented in the README's Clerk fixture
+section.
+
 ## Content diagnostics
 
 | Method | Path | Handler domain |

@@ -1,6 +1,8 @@
 import { getDb } from './connection.ts';
+import { randomUUID } from 'node:crypto';
 
 export const LOCAL_AUTH_PROVIDER = 'trusted_local';
+export const CLERK_AUTH_PROVIDER = 'clerk';
 export const LEARNER_OWNERSHIP_MIGRATION_ID = 'swi_47_learner_ownership_v1';
 
 export function ensureIdentitySchema(): void {
@@ -95,6 +97,61 @@ export function resolveLearnerId(provider: string, providerSubject: string): str
   return row?.learner_id ?? null;
 }
 
+export class DisabledLearnerError extends Error {
+  constructor() {
+    super('Account disabled.');
+    this.name = 'DisabledLearnerError';
+  }
+}
+
+/**
+ * Resolves one external subject to its stable learner identity, creating that
+ * local identity only for a verified first sign-in. The immediate transaction
+ * makes concurrent first requests converge on one mapping.
+ */
+export function resolveOrBootstrapExternalLearner({
+  provider,
+  providerSubject,
+}: {
+  provider: string;
+  providerSubject: string;
+}): string {
+  const normalizedProvider = provider.trim();
+  const normalizedSubject = providerSubject.trim();
+  if (normalizedProvider.length === 0) throw new Error('Expected non-empty auth provider');
+  if (normalizedSubject.length === 0) throw new Error('Expected non-empty provider subject');
+
+  getDb().exec('BEGIN IMMEDIATE');
+  try {
+    const existingLearnerId = resolveLearnerId(normalizedProvider, normalizedSubject);
+    if (existingLearnerId !== null) {
+      assertLearnerExists(existingLearnerId);
+      getDb().exec('COMMIT');
+      return existingLearnerId;
+    }
+
+    const learnerId = `learner_${randomUUID()}`;
+    const createdAt = new Date().toISOString();
+    getDb().prepare(`
+      INSERT INTO learners (learner_id, display_name, created_at, disabled_at)
+      VALUES (?, 'Learner', ?, NULL)
+    `).run(learnerId, createdAt);
+    getDb().prepare(`
+      INSERT INTO learner_auth_mappings (provider, provider_subject, learner_id, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run(normalizedProvider, normalizedSubject, learnerId, createdAt);
+    getDb().prepare(`
+      INSERT INTO learner_settings (learner_id, setting_key, value_json, updated_at)
+      VALUES (?, 'daily_new_word_limit', '10', ?)
+    `).run(learnerId, createdAt);
+    getDb().exec('COMMIT');
+    return learnerId;
+  } catch (error) {
+    getDb().exec('ROLLBACK');
+    throw error;
+  }
+}
+
 export function hasIdentitySchema(): boolean {
   const row = getDb().prepare(`
     SELECT 1 AS present
@@ -120,13 +177,25 @@ export function hasLearnerOwnershipSchema(): boolean {
 
 export function assertLearnerExists(learnerId: string): void {
   const row = getDb().prepare(`
-    SELECT 1 AS present
+    SELECT disabled_at
     FROM learners
-    WHERE learner_id = ? AND disabled_at IS NULL
-  `).get(learnerId) as { present: number } | undefined;
-  if (row?.present !== 1) {
+    WHERE learner_id = ?
+  `).get(learnerId) as { disabled_at: string | null } | undefined;
+  if (!row) {
     throw new Error(
       `Configured learner "${learnerId}" does not exist. Bootstrap it explicitly before starting the app.`,
     );
+  }
+  if (row.disabled_at !== null) throw new DisabledLearnerError();
+}
+
+export function setLearnerDisabled(learnerId: string, disabled: boolean, at = new Date().toISOString()): void {
+  const result = getDb().prepare(`
+    UPDATE learners
+    SET disabled_at = ?
+    WHERE learner_id = ?
+  `).run(disabled ? at : null, learnerId);
+  if (result.changes !== 1) {
+    throw new Error(`Learner "${learnerId}" does not exist.`);
   }
 }

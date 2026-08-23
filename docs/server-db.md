@@ -159,8 +159,11 @@ below the HTTP layer.
 
 `learners` is the stable local identity. `learner_auth_mappings` keeps provider
 subjects separate, including the current `trusted_local` mapping used for
-dogfood without Clerk. Every request runs under the configured learner context;
-SQLite views and triggers apply that context to private reads and writes.
+dogfood without Clerk. In `APP_AUTH_MODE=clerk`, the Express boundary verifies
+the Clerk principal, resolves or transactionally creates its `clerk` mapping,
+rejects disabled learners, then establishes that learner context for the
+request. Every request runs under its resolved learner context; SQLite views
+and triggers apply that context to private reads and writes.
 
 Lexical content lives in shared `lexical_words` and
 `lexical_word_meanings`. Learner lifecycle/notes and meaning visibility live in
@@ -180,9 +183,11 @@ state stay in `learner_owned_*` tables.
 [`server/db.ts`](../server/db.ts) runs:
 
 1. `initDbConnection()` — reads current `APP_*` env and opens `app.db`
-2. `initializeDatabase()` — creates a fresh schema and trusted-local learner,
-   or validates the SWI-47 ownership marker before installing scoped views,
-   guards, indexes, and any dev seed
+2. `initializeDatabase()` — creates a fresh schema and, in trusted-local mode,
+   its configured learner; Clerk mode instead starts with no learner and
+   bootstraps one after verified first sign-in. Existing databases validate the
+   SWI-47 ownership marker before scoped views, guards, indexes, and any dev
+   seed are installed.
 
 Tests that dynamic-import `server/db.ts?test=…` rely on this running once per import URL.
 

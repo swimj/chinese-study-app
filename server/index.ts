@@ -1,6 +1,7 @@
 import cors from 'cors';
 import express, { type Response } from 'express';
 import { pathToFileURL } from 'node:url';
+import { createClerkRequestAuthentication, type ProviderSubjectResolver } from './authentication.ts';
 import {
   acceptReflectionProposal,
   acceptIntakeTriageAssessment,
@@ -91,6 +92,7 @@ export type CreateAppOptions = {
   reflectionGenerationService?: InitialReflectionGenerationService;
   reflectionLifecycleLogger?: ReflectionLifecycleLogger;
   intakeTriageGenerationService?: IntakeTriageGenerationService;
+  resolveClerkProviderSubject?: ProviderSubjectResolver;
 };
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -105,9 +107,18 @@ export function createApp(options: CreateAppOptions = {}) {
   const intakeTriageGenerationService = options.intakeTriageGenerationService
     ?? createIntakeTriageGenerationService();
 
-  app.use(cors());
+  app.use(cors(dbConfig.authMode === 'clerk'
+    ? {
+        origin: process.env.CLERK_AUTHORIZED_PARTY,
+        allowedHeaders: ['Authorization', 'Content-Type'],
+      }
+    : undefined));
   app.use(express.json());
-  app.use((_req, _res, next) => runWithLearnerId(dbConfig.learnerId, next));
+  if (dbConfig.authMode === 'trusted_local') {
+    app.use((_req, _res, next) => runWithLearnerId(dbConfig.learnerId, next));
+  } else {
+    app.use(...createClerkRequestAuthentication(options.resolveClerkProviderSubject));
+  }
 
   app.get('/api/content-diagnostics', (req, res) => {
     const kind = req.query?.kind;

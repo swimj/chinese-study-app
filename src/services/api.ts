@@ -41,6 +41,23 @@ import type {
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:5174';
 
+type ApiAuthenticationTokenProvider = () => Promise<string | null>;
+
+let apiAuthenticationTokenProvider: ApiAuthenticationTokenProvider | null = null;
+
+export function setApiAuthenticationTokenProvider(provider: ApiAuthenticationTokenProvider | null): void {
+  apiAuthenticationTokenProvider = provider;
+}
+
+async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const token = await apiAuthenticationTokenProvider?.() ?? null;
+  if (!token) return fetch(input, init);
+
+  const headers = new Headers(init.headers);
+  headers.set('Authorization', `Bearer ${token}`);
+  return fetch(input, { ...init, headers });
+}
+
 type BackendStatus = {
   status: string;
   time: string;
@@ -218,7 +235,7 @@ export async function fetchContentDiagnostics(
   query: string,
 ): Promise<ContentDiagnosticsResponse> {
   const params = new URLSearchParams({ kind, q: query, limit: '50' });
-  const response = await fetch(`${API_BASE}/api/content-diagnostics?${params.toString()}`);
+  const response = await apiFetch(`${API_BASE}/api/content-diagnostics?${params.toString()}`);
   if (!response.ok) {
     throw new Error('Failed to load content diagnostics');
   }
@@ -243,7 +260,7 @@ type PriorityWordsResponse = {
 
 export async function fetchSessionPayload(): Promise<SessionPayload> {
   const studyDayKey = getCurrentStudyDayKey();
-  const response = await fetch(`${API_BASE}/api/session-payload?studyDayKey=${encodeURIComponent(studyDayKey)}`);
+  const response = await apiFetch(`${API_BASE}/api/session-payload?studyDayKey=${encodeURIComponent(studyDayKey)}`);
   if (!response.ok) {
     throw new Error('Failed to load session payload');
   }
@@ -253,7 +270,7 @@ export async function fetchSessionPayload(): Promise<SessionPayload> {
 
 export async function fetchStatus(): Promise<BackendStatus> {
   const studyDayKey = getCurrentStudyDayKey();
-  const response = await fetch(`${API_BASE}/api/status?studyDayKey=${encodeURIComponent(studyDayKey)}`);
+  const response = await apiFetch(`${API_BASE}/api/status?studyDayKey=${encodeURIComponent(studyDayKey)}`);
   if (!response.ok) {
     throw new Error('Failed to load backend status');
   }
@@ -261,7 +278,7 @@ export async function fetchStatus(): Promise<BackendStatus> {
 }
 
 export async function updateDailyNewWordLimit(dailyNewWordLimit: number): Promise<LearningPolicyResponse> {
-  const response = await fetch(`${API_BASE}/api/learning-policy/daily-new-word-limit`, {
+  const response = await apiFetch(`${API_BASE}/api/learning-policy/daily-new-word-limit`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -292,7 +309,7 @@ export async function recordAcceptedReviewAttemptBatch({
     terminalRating: 'hard' | 'good' | 'easy' | null;
   };
 }): Promise<void> {
-  const response = await fetch(`${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/accepted-review-attempt-batch`, {
+  const response = await apiFetch(`${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/accepted-review-attempt-batch`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -314,7 +331,7 @@ export async function recordAcceptedContrastSelectionAttempt({
   event: StudyAttemptEvent;
   commitIntent: ContrastSelectionCommitIntent;
 }): Promise<void> {
-  const response = await fetch(`${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/accepted-contrast-selection-attempt`, {
+  const response = await apiFetch(`${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/accepted-contrast-selection-attempt`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -344,7 +361,7 @@ export async function recordStudyManagementAction({
   contentRef: StudyContentRef | null;
   managementAction: StudyManagementActionKind;
 }): Promise<StudyEvent> {
-  const response = await fetch(`${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/manage-study-action`, {
+  const response = await apiFetch(`${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/manage-study-action`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -379,7 +396,7 @@ export async function recordReviewSessionSummary({
   failedReviewActionCount: number;
   activeDurationMs: number;
 }): Promise<void> {
-  const response = await fetch(`${API_BASE}/api/review-session-summaries`, {
+  const response = await apiFetch(`${API_BASE}/api/review-session-summaries`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -405,7 +422,7 @@ export async function generateSessionReflection({
   sessionId: string;
   evidence: unknown;
 }): Promise<GenerateSessionReflectionResult> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/reflections`,
     {
       method: 'POST',
@@ -426,7 +443,7 @@ export async function generateSessionReflection({
 export async function fetchReflectionArtifacts(
   review: 'open' | 'all',
 ): Promise<ReflectionArtifactSummaryDto[]> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE}/api/reflection-artifacts?review=${encodeURIComponent(review)}`,
   );
   if (!response.ok) {
@@ -438,7 +455,7 @@ export async function fetchReflectionArtifacts(
 }
 
 export async function fetchReflectionGenerationRuns(): Promise<ReflectionGenerationRunDto[]> {
-  const response = await fetch(`${API_BASE}/api/reflection-generation-runs`);
+  const response = await apiFetch(`${API_BASE}/api/reflection-generation-runs`);
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to load reflection generation runs'));
   }
@@ -450,7 +467,7 @@ export async function retryReflectionGenerationRun(
   runId: string,
   model?: ReflectionModelChoice,
 ): Promise<GenerateSessionReflectionResult> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE}/api/reflection-generation-runs/${encodeURIComponent(runId)}/retry`,
     {
       method: 'POST',
@@ -467,7 +484,7 @@ export async function retryReflectionGenerationRun(
 export async function fetchReflectionArtifactDetail(
   artifactId: string,
 ): Promise<ReflectionArtifactDetailDto> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE}/api/reflection-artifacts/${encodeURIComponent(artifactId)}`,
   );
   if (!response.ok) {
@@ -481,7 +498,7 @@ export async function reviewReflectionProposal(
   proposalId: string,
   request: ReviewProposalRequest,
 ): Promise<unknown> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE}/api/reflection-proposals/${encodeURIComponent(proposalId)}/review`,
     {
       method: 'POST',
@@ -501,7 +518,7 @@ export async function reviewReflectionProposal(
 export async function withdrawReflectionAuthorization(
   invocationId: string,
 ): Promise<unknown> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE}/api/reflection-invocations/${encodeURIComponent(invocationId)}/withdraw-authorization`,
     {
       method: 'POST',
@@ -523,7 +540,7 @@ export async function withdrawReflectionAuthorization(
 export async function upsertReflectionQuality(
   request: UpsertReflectionQualityRequest,
 ): Promise<ReflectionQualityItemTags> {
-  const response = await fetch(`${API_BASE}/api/reflection-quality`, {
+  const response = await apiFetch(`${API_BASE}/api/reflection-quality`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
@@ -537,7 +554,7 @@ export async function upsertReflectionQuality(
 export async function clearReflectionQuality(
   request: ClearReflectionQualityRequest,
 ): Promise<{ cleared: boolean }> {
-  const response = await fetch(`${API_BASE}/api/reflection-quality`, {
+  const response = await apiFetch(`${API_BASE}/api/reflection-quality`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
@@ -549,7 +566,7 @@ export async function clearReflectionQuality(
 }
 
 export async function fetchReflectionQualityStats(): Promise<ReflectionQualityStatsDto> {
-  const response = await fetch(`${API_BASE}/api/reflection-quality-stats`);
+  const response = await apiFetch(`${API_BASE}/api/reflection-quality-stats`);
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to load reflection quality stats'));
   }
@@ -557,7 +574,7 @@ export async function fetchReflectionQualityStats(): Promise<ReflectionQualitySt
 }
 
 export async function fetchReflectionHelpInbox(): Promise<{ entries: ReflectionHelpInboxEntry[] }> {
-  const response = await fetch(`${API_BASE}/api/reflection-help-inbox`);
+  const response = await apiFetch(`${API_BASE}/api/reflection-help-inbox`);
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to load reflection help inbox'));
   }
@@ -567,7 +584,7 @@ export async function fetchReflectionHelpInbox(): Promise<{ entries: ReflectionH
 export async function markReflectionHelpInboxDone(
   request: MarkReflectionHelpInboxDoneRequest,
 ): Promise<{ done: boolean }> {
-  const response = await fetch(`${API_BASE}/api/reflection-help-inbox`, {
+  const response = await apiFetch(`${API_BASE}/api/reflection-help-inbox`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
@@ -598,7 +615,7 @@ export async function authorizeManualReflectionOperation(
 }
 
 export async function completeLearningSession(wordId: string, success: boolean): Promise<Word> {
-  const response = await fetch(`${API_BASE}/api/words/${wordId}/complete-learning-session`, {
+  const response = await apiFetch(`${API_BASE}/api/words/${wordId}/complete-learning-session`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -615,7 +632,7 @@ export async function completeLearningSession(wordId: string, success: boolean):
 
 export async function completeUnstudiedSession(wordId: string): Promise<Word> {
   const studyDayKey = getCurrentStudyDayKey();
-  const response = await fetch(`${API_BASE}/api/words/${wordId}/complete-unstudied-session`, {
+  const response = await apiFetch(`${API_BASE}/api/words/${wordId}/complete-unstudied-session`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -631,7 +648,7 @@ export async function completeUnstudiedSession(wordId: string): Promise<Word> {
 }
 
 export async function dismissWordFromStudy(wordId: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/api/words/${wordId}/dismiss`, {
+  const response = await apiFetch(`${API_BASE}/api/words/${wordId}/dismiss`, {
     method: 'POST',
   });
 
@@ -641,7 +658,7 @@ export async function dismissWordFromStudy(wordId: string): Promise<void> {
 }
 
 export async function updateWordPersonalNotes(wordId: string, personalNotes: string): Promise<Word> {
-  const response = await fetch(`${API_BASE}/api/words/${wordId}/personal-notes`, {
+  const response = await apiFetch(`${API_BASE}/api/words/${wordId}/personal-notes`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -657,7 +674,7 @@ export async function updateWordPersonalNotes(wordId: string, personalNotes: str
 }
 
 export async function fetchUnstudiedPriorityWords(): Promise<PriorityWordsResponse> {
-  const response = await fetch(`${API_BASE}/api/priority/unstudied`);
+  const response = await apiFetch(`${API_BASE}/api/priority/unstudied`);
   if (!response.ok) {
     throw new Error('Failed to load unstudied priority words');
   }
@@ -665,7 +682,7 @@ export async function fetchUnstudiedPriorityWords(): Promise<PriorityWordsRespon
 }
 
 export async function fetchTopUnstudiedPriorityWords(limit = 50): Promise<IntakeTriagePriorityWordsResponse> {
-  const response = await fetch(`${API_BASE}/api/priority/unstudied/top?limit=${encodeURIComponent(limit)}`);
+  const response = await apiFetch(`${API_BASE}/api/priority/unstudied/top?limit=${encodeURIComponent(limit)}`);
   if (!response.ok) {
     throw new Error('Failed to load top unstudied priority words');
   }
@@ -673,7 +690,7 @@ export async function fetchTopUnstudiedPriorityWords(limit = 50): Promise<Intake
 }
 
 export async function runIntakeTriageAdvisor(): Promise<IntakeTriageRunReceipt> {
-  const response = await fetch(`${API_BASE}/api/intake-triage/runs`, { method: 'POST' });
+  const response = await apiFetch(`${API_BASE}/api/intake-triage/runs`, { method: 'POST' });
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to run intake advisor'));
   }
@@ -681,7 +698,7 @@ export async function runIntakeTriageAdvisor(): Promise<IntakeTriageRunReceipt> 
 }
 
 export async function acceptIntakeTriageAssessment(assessmentId: string): Promise<void> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE}/api/intake-triage/assessments/${encodeURIComponent(assessmentId)}/accept`,
     { method: 'POST' },
   );
@@ -691,7 +708,7 @@ export async function acceptIntakeTriageAssessment(assessmentId: string): Promis
 }
 
 export async function dismissIntakeTriageAssessment(assessmentId: string): Promise<void> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE}/api/intake-triage/assessments/${encodeURIComponent(assessmentId)}/dismiss`,
     { method: 'POST' },
   );
@@ -704,7 +721,7 @@ export async function addUnstudiedPriorityByHanzi(
   hanzi: string,
   requiredForNextSession = false,
 ): Promise<AddPriorityByHanziResponse> {
-  const response = await fetch(`${API_BASE}/api/priority/unstudied/add-by-hanzi`, {
+  const response = await apiFetch(`${API_BASE}/api/priority/unstudied/add-by-hanzi`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -720,7 +737,7 @@ export async function addUnstudiedPriorityByHanzi(
 }
 
 export async function updateWordUserPriority(wordId: string, patch: UserPriorityPatch): Promise<PriorityWord> {
-  const response = await fetch(`${API_BASE}/api/words/${wordId}/user-priority`, {
+  const response = await apiFetch(`${API_BASE}/api/words/${wordId}/user-priority`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -736,7 +753,7 @@ export async function updateWordUserPriority(wordId: string, patch: UserPriority
 }
 
 export async function fetchWordMeanings(wordId: string): Promise<WordMeaning[]> {
-  const response = await fetch(`${API_BASE}/api/words/${wordId}/meanings`);
+  const response = await apiFetch(`${API_BASE}/api/words/${wordId}/meanings`);
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to load word meanings'));
   }
@@ -749,7 +766,7 @@ export async function updateWordMeaningVisibility(
   meaningId: string,
   showOnProductionPrompt: boolean,
 ): Promise<WordMeaning[]> {
-  const response = await fetch(`${API_BASE}/api/words/${wordId}/meanings/${meaningId}`, {
+  const response = await apiFetch(`${API_BASE}/api/words/${wordId}/meanings/${meaningId}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
