@@ -578,6 +578,12 @@ export type MarkReflectionHelpInboxDoneRequest = {
   itemId: string;
 };
 
+export type AuthorizeManualReflectionOperationRequest = {
+  artifactId: string;
+  itemId: string;
+  operation: ReflectionOperation;
+};
+
 export type ReviewProposalRequest =
   | { action: 'defer' }
   | {

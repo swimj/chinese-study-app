@@ -32,6 +32,7 @@ import type {
   UpsertReflectionQualityRequest,
   ClearReflectionQualityRequest,
   MarkReflectionHelpInboxDoneRequest,
+  AuthorizeManualReflectionOperationRequest,
 } from '../domain/reflection';
 import type {
   ContentDiagnosticKind,
@@ -205,6 +206,9 @@ export type ReflectionReviewApi = {
   markHelpInboxDone: (
     request: MarkReflectionHelpInboxDoneRequest,
   ) => Promise<{ done: boolean }>;
+  authorizeManualOperation: (
+    request: AuthorizeManualReflectionOperationRequest,
+  ) => Promise<unknown>;
 };
 
 export type { BackendStatus };
@@ -570,6 +574,25 @@ export async function markReflectionHelpInboxDone(
   });
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to mark reflection help inbox item done'));
+  }
+  return response.json();
+}
+
+export async function authorizeManualReflectionOperation(
+  request: AuthorizeManualReflectionOperationRequest,
+): Promise<unknown> {
+  const response = await fetch(
+    `${API_BASE}/api/reflection-artifacts/${encodeURIComponent(request.artifactId)}/items/${encodeURIComponent(request.itemId)}/manual-invocations`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ operation: request.operation }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(
+      await readApiErrorMessage(response, 'Failed to authorize manual reflection operation'),
+    );
   }
   return response.json();
 }

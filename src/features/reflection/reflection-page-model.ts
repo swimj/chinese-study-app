@@ -1003,6 +1003,23 @@ export function createReplacementOperation(
   }
 }
 
+export function createManualOperation(
+  kind: ReflectionOperation['kind'],
+  version: number,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
+): ReflectionOperation {
+  return createReplacementOperation(
+    kind,
+    version,
+    {
+      kind: 'suppress_definition_production',
+      version: 1,
+      wordId: evidence?.targetWord?.wordId ?? '',
+    },
+    evidence,
+  );
+}
+
 export function reflectionOperationLabel(operation: ReflectionOperation): string {
   switch (operation.kind) {
     case 'suppress_definition_production':

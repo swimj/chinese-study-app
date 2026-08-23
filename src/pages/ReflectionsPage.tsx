@@ -27,6 +27,7 @@ import {
   legacyReflectionUnhandledNeeds,
   reflectionLearnerFeedback,
   cloneReflectionOperation,
+  createManualOperation,
   createReplacementOperation,
   getOperationDraftState,
   reflectionOperationLabel,
@@ -266,10 +267,15 @@ function HelpExplanationCard({
   controller: ReflectionPageController;
   scrollRef: RefObject<HTMLDivElement>;
 }) {
+  const [draft, setDraft] = useState<ReflectionOperation | null>(null);
   const submitting = controller.submittingHelpInboxItemKey === qualityItemKey(
     card.artifact.artifactId,
     card.result.itemId,
   );
+  const draftState = draft === null
+    ? null
+    : getOperationDraftState(draft, draft, card.evidence);
+
   return (
     <>
       <div className="reflection-help-scroll" ref={scrollRef}>
@@ -285,6 +291,14 @@ function HelpExplanationCard({
               title: question.question,
               detail: question.reason,
             }))}
+          />
+        ) : null}
+        {draftState?.applySupport === 'unsupported' ? <SupportNotice /> : null}
+        {draft !== null ? (
+          <ReflectionOperationEditor
+            operation={draft}
+            evidence={card.evidence}
+            onChange={setDraft}
           />
         ) : null}
       </div>
@@ -306,25 +320,56 @@ function HelpExplanationCard({
             onClear={controller.clearQuality}
           />
         </div>
+        {draftState !== null && draftState.validationErrors.length > 0 ? (
+          <div className="reflection-validation" role="alert">
+            <strong>Fix before accepting:</strong>
+            <ul>
+              {draftState.validationErrors.map((error) => <li key={error}>{error}</li>)}
+            </ul>
+          </div>
+        ) : null}
         <HelpReviewToolbar
           submitting={submitting}
-          handleValue=""
-          handleDisabled
-          onHandleChange={() => undefined}
-          resetDisabled
-          onReset={() => undefined}
+          handleValue={draft === null ? '' : `${draft.kind}@${draft.version}`}
+          handleDisabled={submitting}
+          onHandleChange={(value) => {
+            const [kind, versionText] = value.split('@');
+            setDraft(createManualOperation(
+              kind as ReflectionOperation['kind'],
+              Number(versionText),
+              card.evidence,
+            ));
+          }}
+          resetDisabled={submitting || draft === null}
+          onReset={() => setDraft(null)}
           deferDisabled
           onDefer={() => undefined}
-          acceptDisabled={submitting}
+          acceptDisabled={
+            submitting
+            || (draftState !== null && draftState.validationErrors.length > 0)
+          }
           acceptLabel={submitting ? 'Saving...' : 'Accept'}
           onAccept={() => {
+            if (draft === null) {
+              void controller.markHelpInboxDone({
+                artifactId: card.artifact.artifactId,
+                itemId: card.result.itemId,
+              }).catch(() => undefined);
+              return;
+            }
+            void controller.authorizeManualOperation({
+              artifactId: card.artifact.artifactId,
+              itemId: card.result.itemId,
+              operation: draft,
+            }).catch(() => undefined);
+          }}
+          dismissDisabled={submitting || draft === null}
+          onDismiss={() => {
             void controller.markHelpInboxDone({
               artifactId: card.artifact.artifactId,
               itemId: card.result.itemId,
             }).catch(() => undefined);
           }}
-          dismissDisabled
-          onDismiss={() => undefined}
         />
       </div>
     </>

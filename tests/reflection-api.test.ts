@@ -605,6 +605,49 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     })).status, 404);
   });
 
+  test('authorizes a manual operation from an explanation-only Help item', async () => {
+    const informational = materializeInformational('inbox-api-manual').artifact;
+    const withProposals = materialize('inbox-api-manual-proposal', suppressOperation('target')).artifact;
+    const response = await request(
+      `/api/reflection-artifacts/${informational.artifactId}/items/item-1/manual-invocations`,
+      {
+        method: 'POST',
+        body: { operation: suppressOperation('target') },
+      },
+    );
+
+    assert.equal(response.status, 200);
+    const payload = response.json as {
+      invocation: { origin: { kind: string }; operation: { kind: string } };
+      application: { state: { kind: string } };
+    };
+    assert.equal(payload.invocation.origin.kind, 'manual');
+    assert.equal(payload.invocation.operation.kind, 'suppress_definition_production');
+    assert.equal(payload.application.state.kind, 'applied');
+
+    const after = await request(`/api/reflection-artifacts/${informational.artifactId}`);
+    assert.equal((after.json as { helpInbox: unknown[] }).helpInbox.length, 0);
+
+    assert.equal((await request(
+      `/api/reflection-artifacts/${withProposals.artifactId}/items/item-1/manual-invocations`,
+      {
+        method: 'POST',
+        body: { operation: suppressOperation('target') },
+      },
+    )).status, 400);
+    assert.equal((await request(
+      `/api/reflection-artifacts/missing/items/item-1/manual-invocations`,
+      {
+        method: 'POST',
+        body: { operation: suppressOperation('target') },
+      },
+    )).status, 404);
+    assert.equal((await request(
+      `/api/reflection-artifacts/${informational.artifactId}/items/item-1/manual-invocations`,
+      { method: 'POST', body: { extra: true, operation: suppressOperation('target') } },
+    )).status, 400);
+  });
+
   test('replaces a proposal with a different handle and applies the replacement lifecycle', async () => {
     const artifact = materialize('replacement-session', suppressOperation('target')).artifact;
     const proposalId = artifact.proposals[0]!.review.proposalId;

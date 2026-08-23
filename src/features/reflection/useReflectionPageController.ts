@@ -6,6 +6,7 @@ import type {
   UpsertReflectionQualityRequest,
   ClearReflectionQualityRequest,
   MarkReflectionHelpInboxDoneRequest,
+  AuthorizeManualReflectionOperationRequest,
 } from '../../domain/reflection';
 import type { ReflectionModelChoice } from '../../services/api';
 import type {
@@ -49,6 +50,9 @@ export type ReflectionPageController = {
   upsertQuality: (request: UpsertReflectionQualityRequest) => Promise<void>;
   clearQuality: (request: ClearReflectionQualityRequest) => Promise<void>;
   markHelpInboxDone: (request: MarkReflectionHelpInboxDoneRequest) => Promise<void>;
+  authorizeManualOperation: (
+    request: AuthorizeManualReflectionOperationRequest,
+  ) => Promise<void>;
 };
 
 export function qualityItemKey(artifactId: string, itemId: string): string {
@@ -372,6 +376,33 @@ export function useReflectionPageController({
     }
   }
 
+  async function authorizeManualOperation(
+    request: AuthorizeManualReflectionOperationRequest,
+  ): Promise<void> {
+    const key = qualityItemKey(request.artifactId, request.itemId);
+    setSubmittingHelpInboxItemKey(key);
+    setError(null);
+    try {
+      await requireApi().authorizeManualOperation(request);
+      try {
+        void Promise.resolve(onAcceptedProposal?.()).catch(() => undefined);
+      } catch {
+        // The operation is already authorized. Cache refresh failure must not make it retryable.
+      }
+      await loadListsAndDetail(
+        selectedArtifact?.artifactId ?? null,
+        new Set([request.artifactId]),
+      );
+    } catch (error) {
+      setError(
+        error instanceof Error ? error.message : 'Failed to authorize manual reflection operation',
+      );
+      throw error;
+    } finally {
+      setSubmittingHelpInboxItemKey(null);
+    }
+  }
+
   return {
     isLoading,
     openArtifacts,
@@ -408,5 +439,6 @@ export function useReflectionPageController({
     upsertQuality,
     clearQuality,
     markHelpInboxDone,
+    authorizeManualOperation,
   };
 }

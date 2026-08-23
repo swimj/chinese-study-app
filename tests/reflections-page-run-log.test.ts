@@ -37,6 +37,7 @@ describe('reflection run log presentation', () => {
       upsertQuality: async () => {},
       clearQuality: async () => {},
       markHelpInboxDone: async () => {},
+      authorizeManualOperation: async () => {},
     };
 
     const markup = renderToStaticMarkup(createElement(ReflectionsPage, { controller }));
@@ -53,6 +54,7 @@ describe('reflection run log presentation', () => {
       }),
     }));
     assert.match(markup, /aria-label="Handle"/);
+    assert.doesNotMatch(markup, /disabled=""[^>]*aria-label="Handle"/);
     assert.match(markup, /disabled=""[^>]*>Reset</);
     assert.match(markup, /disabled=""[^>]*>Defer</);
     assert.match(markup, /disabled=""[^>]*>Dismiss</);
@@ -185,6 +187,7 @@ function idleController(
     upsertQuality: async () => {},
     clearQuality: async () => {},
     markHelpInboxDone: async () => {},
+    authorizeManualOperation: async () => {},
     ...overrides,
   };
 }
