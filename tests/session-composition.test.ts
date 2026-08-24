@@ -85,6 +85,14 @@ describe('session composition', { concurrency: false }, () => {
       DROP TRIGGER IF EXISTS production_cue_accepted_words_no_delete;
       DROP TRIGGER IF EXISTS production_cues_no_delete;
       DROP TRIGGER IF EXISTS production_cue_supplements_no_delete;
+      DROP TRIGGER IF EXISTS shared_content_publication_events_no_delete;
+      DROP TRIGGER IF EXISTS shared_content_publications_no_delete;
+      DROP TRIGGER IF EXISTS shared_content_publication_provenance_no_delete;
+      DROP TRIGGER IF EXISTS shared_content_reports_no_delete;
+      DELETE FROM shared_content_publication_events;
+      DELETE FROM shared_content_reports;
+      DELETE FROM shared_content_publication_provenance;
+      DELETE FROM shared_content_publications;
       DELETE FROM production_cue_evidence_projection;
       DELETE FROM production_recheck_demands;
       DELETE FROM production_cue_evidence_records;
@@ -115,6 +123,7 @@ describe('session composition', { concurrency: false }, () => {
       DELETE FROM words;
     `);
     dbModule.ensureProductionCueSchema();
+    dbModule.ensureSharedContentSchema();
   });
 
   after(() => {
@@ -277,6 +286,49 @@ describe('session composition', { concurrency: false }, () => {
       supplement: null,
       recheckDemandId: null,
     });
+  });
+
+  test('uniformly samples eligible shared publications and freezes exact cue content', () => {
+    insertWord({
+      id: 'shared-cue-word',
+      hanzi: '共',
+      pinyin: 'gong',
+      meaning: 'shared',
+      examples: [],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(96),
+    });
+    insertWordStudyAdmissionState('shared-cue-word', null);
+    insertWordSkillState({
+      wordId: 'shared-cue-word',
+      skillId: 'production',
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(48),
+      nextDueAt: isoHoursAgo(24),
+    });
+    insertSharedProductionCue({
+      wordId: 'shared-cue-word',
+      cueId: 'shared-cue-a',
+      publicationId: 'shared-publication-a',
+      text: 'first shared cue',
+    });
+    insertSharedProductionCue({
+      wordId: 'shared-cue-word',
+      cueId: 'shared-cue-b',
+      publicationId: 'shared-publication-b',
+      text: 'second shared cue',
+    });
+
+    const first = dbModule.getSessionPayload(studyDayKey, { random: () => 0 })
+      .buckets.review[0];
+    const second = dbModule.getSessionPayload(studyDayKey, { random: () => 0.999 })
+      .buckets.review[0];
+
+    assert.equal(first?.production?.cueId, 'shared-cue-a');
+    assert.equal(first?.production?.text, 'first shared cue');
+    assert.equal(second?.production?.cueId, 'shared-cue-b');
+    assert.equal(second?.production?.text, 'second shared cue');
   });
 
   test('serves fallback reinforcement as a separate post-reveal supplement snapshot', () => {
@@ -2028,6 +2080,36 @@ function insertProductionCue({
       cue_id, active, latest_lifecycle_event_id, updated_at
     ) VALUES (?, ?, ?, ?)
   `).run(cueId, active ? 1 : 0, eventId, isoHoursAgo(1));
+}
+
+function insertSharedProductionCue({
+  wordId,
+  cueId,
+  publicationId,
+  text,
+}: {
+  wordId: string;
+  cueId: string;
+  publicationId: string;
+  text: string;
+}) {
+  const taskId = `production-task:${wordId}:default_production`;
+  sqlite.prepare(`
+    INSERT INTO scoped_production_cues (
+      cue_id, task_id, cue_type, cue_text, created_at, origin_kind,
+      origin_invocation_id, content_scope, owner_learner_id
+    ) VALUES (?, ?, 'minimal_context', ?, ?, 'manual', NULL, 'shared', NULL)
+  `).run(cueId, taskId, text, isoHoursAgo(1));
+  sqlite.prepare(`
+    INSERT INTO scoped_production_cue_accepted_words (cue_id, word_id, position)
+    VALUES (?, ?, 0)
+  `).run(cueId, wordId);
+  sqlite.prepare(`
+    INSERT INTO shared_content_publications (
+      publication_id, content_kind, content_id, learning_purpose_key,
+      publication_status, published_at, status_updated_at
+    ) VALUES (?, 'production_cue', ?, ?, 'shared_trial', ?, ?)
+  `).run(publicationId, cueId, taskId, isoHoursAgo(1), isoHoursAgo(1));
 }
 
 function insertProjectedProductionAttempt(wordId: string) {

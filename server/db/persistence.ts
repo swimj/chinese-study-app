@@ -582,12 +582,15 @@ function resolveUnstudiedPriorityWordIdsByTarget(targetText: string): Array<{ id
   });
 }
 
-export function getSessionPayload(studyDayKey: string): SessionPayload {
+export function getSessionPayload(
+  studyDayKey: string,
+  options: { random?: () => number } = {},
+): SessionPayload {
   assertStudyDayKey(studyDayKey);
   ensureAcceptedReviewAttemptEventsProjectedBeforeSessionComposition();
 
   return {
-    buckets: getSessionItemBucketsWithWords(studyDayKey),
+    buckets: getSessionItemBucketsWithWords(studyDayKey, options.random ?? Math.random),
     productionAnswerWords: getWords().map((word) => ({
       wordId: word.id,
       hanzi: word.hanzi,
@@ -5026,11 +5029,14 @@ function isContentRef(value: unknown): value is StudyContentRef {
     && value.id.length > 0;
 }
 
-function getSessionItemBucketsWithWords(studyDayKey: string): SessionStudyItemBuckets {
+function getSessionItemBucketsWithWords(
+  studyDayKey: string,
+  random: () => number,
+): SessionStudyItemBuckets {
   const now = new Date().toISOString();
   const today = getTodayKey();
   const remainingDailyNewWordSlots = getRemainingDailyNewWordSlots(studyDayKey);
-  const reviewRows = getReviewSessionStudyItems(now);
+  const reviewRows = getReviewSessionStudyItems(now, random);
 
   const learningRows = getDb()
     .prepare(`
@@ -5154,7 +5160,7 @@ function getAdmittedUnstudiedWords(remainingDailyNewWordSlots: number, studyDayK
   });
 }
 
-function getReviewSessionStudyItems(now: string): SessionStudyItem[] {
+function getReviewSessionStudyItems(now: string, random: () => number): SessionStudyItem[] {
   const rows = getDb()
     .prepare(`
       SELECT
@@ -5208,7 +5214,12 @@ function getReviewSessionStudyItems(now: string): SessionStudyItem[] {
       continue;
     }
 
-    const content = getReviewSkillContentIfAvailable(row, blockedContrastPromptIds, pendingRecheck?.demandId ?? null);
+    const content = getReviewSkillContentIfAvailable(
+      row,
+      blockedContrastPromptIds,
+      pendingRecheck?.demandId ?? null,
+      random,
+    );
     if (content === undefined) {
       continue;
     }
@@ -5310,6 +5321,7 @@ function getReviewSkillContentIfAvailable(
   row: ReviewSessionItemWithSkillRow,
   blockedContrastPromptIds: Set<string>,
   recheckDemandId: string | null,
+  random: () => number,
 ): {
   contentRef: StudyContentRef | null;
   contrastSelection: ContrastSelectionContent | null;
@@ -5319,7 +5331,11 @@ function getReviewSkillContentIfAvailable(
     if (row.skill_relevance_state !== 'normal') {
       return undefined;
     }
-    const contrastSelection = getEligibleContrastSelectionContentForScheduledWord(row.id, blockedContrastPromptIds);
+    const contrastSelection = getEligibleContrastSelectionContentForScheduledWord(
+      row.id,
+      blockedContrastPromptIds,
+      random,
+    );
     return contrastSelection === null
       ? undefined
       : {
@@ -5330,7 +5346,7 @@ function getReviewSkillContentIfAvailable(
   }
 
   if (row.skill_id === 'production') {
-    const cue = randomArrayElement(getActiveProductionCuesForWord(row.id));
+    const cue = randomArrayElement(getActiveProductionCuesForWord(row.id), random);
     if (cue) {
       const supplement = getProductionCueSupplement(cue.taskId, cue.cueId);
       return {
@@ -5421,9 +5437,10 @@ function getGeneratedPromptFeedbackState(): GeneratedPromptFeedbackState {
 function getEligibleContrastSelectionContentForScheduledWord(
   wordId: string,
   blockedContrastPromptIds: Set<string>,
+  random: () => number,
 ): ContrastSelectionContent | null {
   const candidates = getEligibleContrastDistractorPromptCandidatesForScheduledWord(wordId, blockedContrastPromptIds);
-  const selectedCandidate = randomArrayElement(candidates);
+  const selectedCandidate = randomArrayElement(candidates, random);
 
   if (!selectedCandidate) {
     return null;
@@ -5431,7 +5448,7 @@ function getEligibleContrastSelectionContentForScheduledWord(
 
   const scheduledPromptRows = selectedCandidate.candidatePrompts.filter((prompt) => prompt.targetWordId === wordId);
   const distractorPromptRows = selectedCandidate.candidatePrompts.filter((prompt) => prompt.targetWordId === selectedCandidate.distractorWordId);
-  const selectedPrompt = randomArrayElement(selectedCandidate.candidatePrompts);
+  const selectedPrompt = randomArrayElement(selectedCandidate.candidatePrompts, random);
 
   if (!selectedPrompt) {
     return null;
@@ -5468,12 +5485,16 @@ function getEligibleContrastSelectionContentForScheduledWord(
   };
 }
 
-function randomArrayElement<T>(values: T[]): T | undefined {
+function randomArrayElement<T>(values: T[], random: () => number): T | undefined {
   if (values.length === 0) {
     return undefined;
   }
 
-  return values[Math.floor(Math.random() * values.length)];
+  const sample = random();
+  if (!Number.isFinite(sample) || sample < 0 || sample >= 1) {
+    throw new Error('Session composition random source must return a finite value in [0, 1).');
+  }
+  return values[Math.floor(sample * values.length)];
 }
 
 type ContrastPromptCandidate = {

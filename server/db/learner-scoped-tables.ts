@@ -26,9 +26,7 @@ const mutableColumnsByTable: Readonly<Record<string, readonly string[]>> = {
   ],
   production_recheck_demands: ['consumed_at', 'consumed_by_attempt_id', 'replacement_demand_id'],
   shared_content_publication_provenance: [],
-  shared_content_reports: [
-    'resolution', 'resolved_at', 'resolved_by_operator_id',
-  ],
+  shared_content_reports: [],
   intake_triage_runs: [],
   intake_triage_assessments: [],
   intake_triage_assessment_dispositions: [],
@@ -42,6 +40,7 @@ const immutableErrorByTable: Readonly<Record<string, string>> = {
   reflection_help_inbox: 'reflection help inbox entries are immutable',
   production_cue_lifecycle_events: 'production cue lifecycle events are immutable',
   shared_content_publication_provenance: 'shared content publication provenance is immutable',
+  shared_content_reports: 'shared content reports are immutable through learner paths',
   intake_triage_runs: 'intake triage runs are immutable',
   intake_triage_assessments: 'intake triage assessments are immutable',
   intake_triage_assessment_dispositions: 'intake triage dispositions are immutable',
@@ -135,6 +134,9 @@ function installLearnerScopedCompatibilityView(logicalName: string): void {
       SET ${updateColumns.map((column) => `${column.name} = NEW.${column.name}`).join(', ')}
       WHERE learner_id = current_learner_id() AND ${rowMatch};`;
 
+  // Reinstall the update trigger so additive schema waves can tighten the
+  // mutable-column policy for an already-initialized compatibility view.
+  getDb().exec(`DROP TRIGGER IF EXISTS ${logicalName}_scoped_update;`);
   getDb().exec(`
     CREATE VIEW IF NOT EXISTS ${logicalName} AS
     SELECT ${columnList}

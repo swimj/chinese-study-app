@@ -7,7 +7,7 @@ Status: accepted current build-wave boundary (2026-08-19).
 Run an invite-only hosted Mandarin beta for a small trusted cohort:
 
 ```text
-invite-only account and shared versioned Mandarin content
+invite-only account and shared Mandarin content
   -> isolated learner state and a concierge-assisted start
   -> repeated desktop study through the current core learning loop
   -> normal optional post-session reflection with explicit authorization

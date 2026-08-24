@@ -37,6 +37,8 @@ import {
   recordAcceptedReviewAttemptBatch,
   recordReviewSessionSummary,
   recordStudyManagementAction,
+  getSharedContentPublicationForContent,
+  reportSharedContentPublication,
   searchWords,
   suppressProductionForWordOutsideSession,
   updateWordMeaningVisibility,
@@ -462,6 +464,47 @@ export function createApp(options: CreateAppOptions = {}) {
       }
 
       res.status(500).json({ error: 'Failed to record study management action' });
+    }
+  });
+
+  app.post('/api/shared-content/production-cues/:cueId/reports', (req, res) => {
+    const cueId = req.params.cueId?.trim();
+    const category = req.body?.category;
+    const note = req.body?.note ?? null;
+    if (!cueId) {
+      res.status(400).json({ error: 'Expected non-empty shared production cue id' });
+      return;
+    }
+    if (!['incorrect', 'misleading', 'unsafe', 'other'].includes(category)) {
+      res.status(400).json({ error: 'Invalid shared content report category' });
+      return;
+    }
+    if (note !== null && typeof note !== 'string') {
+      res.status(400).json({ error: 'Expected shared content report note to be a string or null' });
+      return;
+    }
+    try {
+      const publication = getSharedContentPublicationForContent('production_cue', cueId);
+      if (!publication) {
+        res.status(404).json({ error: `Shared production cue ${cueId} does not exist.` });
+        return;
+      }
+      const report = reportSharedContentPublication({
+        publicationId: publication.publicationId,
+        category,
+        note,
+      });
+      res.status(201).json(report);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Invalid shared content report category.') {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      if (error instanceof Error && error.message.startsWith('Retired shared content publication ')) {
+        res.status(409).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to report shared content' });
     }
   });
 
