@@ -50,8 +50,16 @@ describe('reflection application adapters', { concurrency: false }, () => {
       DROP TRIGGER IF EXISTS production_cue_accepted_words_no_delete;
       DROP TRIGGER IF EXISTS production_cue_lifecycle_events_no_delete;
       DROP TRIGGER IF EXISTS production_cue_evidence_records_no_delete;
+      DROP TRIGGER IF EXISTS shared_content_publication_events_no_delete;
+      DROP TRIGGER IF EXISTS shared_content_publications_no_delete;
+      DROP TRIGGER IF EXISTS shared_content_publication_provenance_no_delete;
+      DROP TRIGGER IF EXISTS shared_content_reports_no_delete;
       PRAGMA defer_foreign_keys = ON;
       BEGIN;
+      DELETE FROM shared_content_publication_events;
+      DELETE FROM shared_content_reports;
+      DELETE FROM shared_content_publication_provenance;
+      DELETE FROM shared_content_publications;
       DELETE FROM production_cue_evidence_projection;
       DELETE FROM production_cue_evidence_records;
       DELETE FROM production_cue_activation_state;
@@ -75,6 +83,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
       COMMIT;
     `);
     dbModule.ensureProductionCueSchema();
+    dbModule.ensureSharedContentSchema();
     insertWord('target', '目标');
     insertWord('alternate', '替代');
   });

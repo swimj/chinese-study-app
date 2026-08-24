@@ -814,6 +814,29 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     assert.equal(dbModule.getWordSkillRelevance('alternate', 'production')?.relevanceState, 'suppressed');
     assert.deepEqual(indexModule.recoverPendingReflectionApplicationsAtStartup(), []);
   });
+
+  test('validates shared-content reports and hides missing cues behind 404', async () => {
+    assert.deepEqual(
+      await request('/api/shared-content/production-cues/missing-cue/reports', {
+        method: 'POST',
+        body: { category: 'not-a-category' },
+      }),
+      {
+        status: 400,
+        json: { error: 'Invalid shared content report category' },
+      },
+    );
+    assert.deepEqual(
+      await request('/api/shared-content/production-cues/missing-cue/reports', {
+        method: 'POST',
+        body: { category: 'incorrect', note: 'Private report' },
+      }),
+      {
+        status: 404,
+        json: { error: 'Shared production cue missing-cue does not exist.' },
+      },
+    );
+  });
 });
 
 async function request(

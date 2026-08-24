@@ -383,6 +383,39 @@ export async function recordStudyManagementAction({
   return response.json();
 }
 
+export type SharedContentReport = {
+  reportId: string;
+  publicationId: string;
+  category: 'incorrect' | 'misleading' | 'unsafe' | 'other';
+  note: string | null;
+  createdAt: string;
+  resolution: 'open' | 'quarantined' | 'dismissed';
+  resolvedAt: string | null;
+};
+
+export async function reportSharedProductionCue({
+  cueId,
+  category,
+  note = null,
+}: {
+  cueId: string;
+  category: SharedContentReport['category'];
+  note?: string | null;
+}): Promise<SharedContentReport> {
+  const response = await apiFetch(
+    `${API_BASE}/api/shared-content/production-cues/${encodeURIComponent(cueId)}/reports`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category, note }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to report shared content'));
+  }
+  return response.json();
+}
+
 export async function recordReviewSessionSummary({
   sessionId,
   completedAt,

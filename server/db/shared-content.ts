@@ -37,6 +37,12 @@ export type SharedContentReport = {
   resolvedAt: string | null;
 };
 
+export type OperatorSharedContentReport = SharedContentReport & {
+  reportingLearnerId: string;
+  contentKind: SharedContentKind;
+  contentId: string;
+};
+
 type SharedContentPublicationRow = {
   publication_id: string;
   content_kind: string;
@@ -61,6 +67,9 @@ type SourceCueRow = {
 };
 
 export function ensureSharedContentSchema(): void {
+  const invocationsTable = learnerScopedStorageTableName('reflection_operation_invocations');
+  const provenanceTable = learnerScopedStorageTableName('shared_content_publication_provenance');
+  const reportsTable = learnerScopedStorageTableName('shared_content_reports');
   getDb().exec(`
     CREATE TABLE IF NOT EXISTS shared_content_publications (
       publication_id TEXT PRIMARY KEY,
@@ -104,7 +113,9 @@ export function ensureSharedContentSchema(): void {
       source_invocation_id TEXT NOT NULL,
       authorized_at TEXT NOT NULL,
       PRIMARY KEY (learner_id, publication_id),
-      UNIQUE (learner_id, source_content_id)
+      UNIQUE (learner_id, source_content_id),
+      FOREIGN KEY (source_invocation_id)
+        REFERENCES ${invocationsTable}(invocation_id) ON DELETE RESTRICT
     );
 
     CREATE TABLE IF NOT EXISTS shared_content_reports (
@@ -142,6 +153,21 @@ export function ensureSharedContentSchema(): void {
       SELECT RAISE(ABORT, 'shared content publications cannot be deleted');
     END;
 
+    CREATE TRIGGER IF NOT EXISTS shared_content_publications_status_transition_guard
+    BEFORE UPDATE OF publication_status, status_updated_at
+    ON shared_content_publications
+    WHEN NOT EXISTS (
+      SELECT 1
+      FROM shared_content_publication_events AS event
+      WHERE event.publication_id = OLD.publication_id
+        AND event.from_status = OLD.publication_status
+        AND event.to_status = NEW.publication_status
+        AND event.occurred_at = NEW.status_updated_at
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'shared content status changes require an attributable publication event');
+    END;
+
     CREATE TRIGGER IF NOT EXISTS shared_content_publication_events_immutable
     BEFORE UPDATE ON shared_content_publication_events
     BEGIN
@@ -152,6 +178,42 @@ export function ensureSharedContentSchema(): void {
     BEFORE DELETE ON shared_content_publication_events
     BEGIN
       SELECT RAISE(ABORT, 'shared content publication events cannot be deleted');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS shared_content_publication_provenance_no_delete
+    BEFORE DELETE ON ${provenanceTable}
+    BEGIN
+      SELECT RAISE(ABORT, 'shared content publication provenance cannot be deleted');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS shared_content_reports_no_delete
+    BEFORE DELETE ON ${reportsTable}
+    BEGIN
+      SELECT RAISE(ABORT, 'shared content reports cannot be deleted');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS shared_content_publication_provenance_same_learner_invocation
+    BEFORE INSERT ON ${provenanceTable}
+    WHEN NOT EXISTS (
+      SELECT 1
+      FROM ${invocationsTable} AS invocation
+      WHERE invocation.invocation_id = NEW.source_invocation_id
+        AND invocation.learner_id = NEW.learner_id
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'shared content publication must reference a same-learner invocation');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS reflection_operation_invocations_published_no_delete
+    BEFORE DELETE ON ${invocationsTable}
+    WHEN EXISTS (
+      SELECT 1
+      FROM ${provenanceTable} AS provenance
+      WHERE provenance.learner_id = OLD.learner_id
+        AND provenance.source_invocation_id = OLD.invocation_id
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'an invocation with shared publication provenance cannot be deleted');
     END;
 
     CREATE INDEX IF NOT EXISTS idx_shared_content_publications_eligibility
@@ -335,8 +397,12 @@ export function reportSharedContentPublication(input: {
 }): SharedContentReport {
   const createdAt = input.createdAt ?? new Date().toISOString();
   assertCanonicalIsoTimestamp(createdAt, 'Shared content report time');
-  if (!getSharedContentPublication(input.publicationId)) {
+  const publication = getSharedContentPublication(input.publicationId);
+  if (!publication) {
     throw new Error(`Shared content publication ${input.publicationId} does not exist.`);
+  }
+  if (publication.publicationStatus === 'retired') {
+    throw new Error(`Retired shared content publication ${input.publicationId} is not reportable.`);
   }
   if (!['incorrect', 'misleading', 'unsafe', 'other'].includes(input.category)) {
     throw new Error('Invalid shared content report category.');
@@ -363,6 +429,74 @@ export function getSharedContentReport(reportId: string): SharedContentReport | 
   const row = getDb().prepare(`
     SELECT report_id, publication_id, category, note, created_at, resolution, resolved_at
     FROM shared_content_reports
+    WHERE report_id = ?
+  `).get(reportId) as {
+    report_id: string;
+    publication_id: string;
+    category: SharedContentReport['category'];
+    note: string | null;
+    created_at: string;
+    resolution: SharedContentReport['resolution'];
+    resolved_at: string | null;
+  } | undefined;
+  return row ? {
+    reportId: row.report_id,
+    publicationId: row.publication_id,
+    category: row.category,
+    note: row.note,
+    createdAt: row.created_at,
+    resolution: row.resolution,
+    resolvedAt: row.resolved_at,
+  } : null;
+}
+
+export function listOpenSharedContentReportsForOperator(): OperatorSharedContentReport[] {
+  const reportsTable = learnerScopedStorageTableName('shared_content_reports');
+  return (getDb().prepare(`
+    SELECT
+      report.report_id, report.learner_id, report.publication_id, report.category,
+      report.note, report.created_at, report.resolution, report.resolved_at,
+      publication.content_kind, publication.content_id
+    FROM ${reportsTable} AS report
+    JOIN shared_content_publications AS publication
+      ON publication.publication_id = report.publication_id
+    WHERE report.resolution = 'open'
+    ORDER BY report.created_at ASC, report.report_id ASC
+  `).all() as Array<{
+    report_id: string;
+    learner_id: string;
+    publication_id: string;
+    category: SharedContentReport['category'];
+    note: string | null;
+    created_at: string;
+    resolution: 'open';
+    resolved_at: null;
+    content_kind: string;
+    content_id: string;
+  }>).map((row) => {
+    if (!isSharedContentKind(row.content_kind)) {
+      throw new Error(`Unknown shared content kind ${row.content_kind}.`);
+    }
+    return {
+      reportId: row.report_id,
+      reportingLearnerId: row.learner_id,
+      publicationId: row.publication_id,
+      category: row.category,
+      note: row.note,
+      createdAt: row.created_at,
+      resolution: row.resolution,
+      resolvedAt: row.resolved_at,
+      contentKind: row.content_kind,
+      contentId: row.content_id,
+    };
+  });
+}
+
+function getOperatorSharedContentReport(reportId: string): SharedContentReport | null {
+  const reportsTable = learnerScopedStorageTableName('shared_content_reports');
+  const row = getDb().prepare(`
+    SELECT report_id, publication_id, category, note, created_at, resolution, resolved_at
+    FROM ${reportsTable}
     WHERE report_id = ?
   `).get(reportId) as {
     report_id: string;
@@ -423,6 +557,19 @@ export function quarantineSharedContentPublicationFromReport(input: {
     if (report.resolution === 'dismissed') {
       throw new Error(`Shared content report ${input.reportId} was already dismissed.`);
     }
+    const current = getSharedContentPublication(report.publication_id);
+    if (!current) throw new Error(`Shared content publication ${report.publication_id} does not exist.`);
+    if (current.publicationStatus === 'retired') {
+      resolveSharedContentReportWithoutTransaction({
+        reportsTable,
+        learnerId: report.learner_id,
+        reportId: input.reportId,
+        resolution: 'dismissed',
+        operatorId,
+        resolvedAt: occurredAt,
+      });
+      return current;
+    }
     const publication = transitionSharedContentPublicationWithoutTransaction({
       publicationId: report.publication_id,
       toStatus: 'quarantined',
@@ -431,13 +578,71 @@ export function quarantineSharedContentPublicationFromReport(input: {
       reason: 'operator quarantine after private learner report',
       occurredAt,
     });
-    getDb().prepare(`
-      UPDATE ${reportsTable}
-      SET resolution = 'quarantined', resolved_at = ?, resolved_by_operator_id = ?
-      WHERE learner_id = ? AND report_id = ? AND resolution = 'open'
-    `).run(occurredAt, operatorId, report.learner_id, input.reportId);
+    resolveSharedContentReportWithoutTransaction({
+      reportsTable,
+      learnerId: report.learner_id,
+      reportId: input.reportId,
+      resolution: 'quarantined',
+      operatorId,
+      resolvedAt: occurredAt,
+    });
     return publication;
   });
+}
+
+export function dismissSharedContentReport(input: {
+  reportId: string;
+  operatorId: string;
+  occurredAt?: string;
+}): SharedContentReport {
+  const occurredAt = input.occurredAt ?? new Date().toISOString();
+  const operatorId = requireNonEmpty(input.operatorId, 'operator id');
+  assertCanonicalIsoTimestamp(occurredAt, 'Shared report dismissal time');
+  return inImmediateTransaction(() => {
+    const reportsTable = learnerScopedStorageTableName('shared_content_reports');
+    const report = getDb().prepare(`
+      SELECT learner_id, resolution
+      FROM ${reportsTable}
+      WHERE report_id = ?
+    `).get(input.reportId) as { learner_id: string; resolution: string } | undefined;
+    if (!report) throw new Error(`Shared content report ${input.reportId} does not exist.`);
+    if (report.resolution !== 'open') {
+      throw new Error(`Shared content report ${input.reportId} is already resolved.`);
+    }
+    resolveSharedContentReportWithoutTransaction({
+      reportsTable,
+      learnerId: report.learner_id,
+      reportId: input.reportId,
+      resolution: 'dismissed',
+      operatorId,
+      resolvedAt: occurredAt,
+    });
+    return getOperatorSharedContentReport(input.reportId)!;
+  });
+}
+
+function resolveSharedContentReportWithoutTransaction(input: {
+  reportsTable: string;
+  learnerId: string;
+  reportId: string;
+  resolution: 'quarantined' | 'dismissed';
+  operatorId: string;
+  resolvedAt: string;
+}): void {
+  const result = getDb().prepare(`
+    UPDATE ${input.reportsTable}
+    SET resolution = ?, resolved_at = ?, resolved_by_operator_id = ?
+    WHERE learner_id = ? AND report_id = ? AND resolution = 'open'
+  `).run(
+    input.resolution,
+    input.resolvedAt,
+    input.operatorId,
+    input.learnerId,
+    input.reportId,
+  );
+  if (result.changes !== 1) {
+    throw new Error(`Shared content report ${input.reportId} changed during resolution.`);
+  }
 }
 
 export function isEligibleSharedPublicationStatus(
@@ -461,11 +666,6 @@ function transitionSharedContentPublicationWithoutTransaction(input: {
   if (current.publicationStatus === 'retired') {
     throw new Error(`Retired shared content publication ${input.publicationId} is terminal.`);
   }
-  getDb().prepare(`
-    UPDATE shared_content_publications
-    SET publication_status = ?, status_updated_at = ?
-    WHERE publication_id = ? AND publication_status = ?
-  `).run(input.toStatus, input.occurredAt, input.publicationId, current.publicationStatus);
   appendPublicationEvent({
     publicationId: input.publicationId,
     fromStatus: current.publicationStatus,
@@ -475,6 +675,14 @@ function transitionSharedContentPublicationWithoutTransaction(input: {
     reason: input.reason,
     occurredAt: input.occurredAt,
   });
+  const result = getDb().prepare(`
+    UPDATE shared_content_publications
+    SET publication_status = ?, status_updated_at = ?
+    WHERE publication_id = ? AND publication_status = ?
+  `).run(input.toStatus, input.occurredAt, input.publicationId, current.publicationStatus);
+  if (result.changes !== 1) {
+    throw new Error(`Shared content publication ${input.publicationId} changed during disposition.`);
+  }
   return getSharedContentPublication(input.publicationId)!;
 }
 

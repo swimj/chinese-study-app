@@ -878,7 +878,12 @@ export function applyProductionCueRepairWithoutTransaction(
   for (const change of operation.changes) {
     switch (change.kind) {
       case 'create':
-        causedEffectRefs.push(...createCue(change.cue, operation.taskId, invocationId, appliedAt));
+        causedEffectRefs.push(...createCue(
+          change.cue,
+          operation.taskId,
+          invocationId,
+          appliedAt,
+        ));
         break;
       case 'replace': {
         causedEffectRefs.push(appendLifecycleEvent(

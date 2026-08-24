@@ -254,7 +254,7 @@ action directly overwrite a shared content artifact. A generated repair can be a
 service-level candidate with private source evidence, become active for its
 source learner immediately after authorization, and later become available to
 other learners through a lightweight publication gate. Historical attempts
-continue to reference the exact version served.
+continue to reference the exact immutable content served.
 
 The open design question is therefore not simply “private or shared by
 default.” It is: which generated outputs may enter a shared candidate pool,

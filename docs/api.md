@@ -30,6 +30,19 @@ members and prompts; durable production-cue items include their anchor and
 accepted words, lifecycle state, provenance, and current evidence projection.
 It does not expose a content mutation path.
 
+## Shared content reports
+
+| Method | Path | Handler domain |
+| --- | --- | --- |
+| POST | `/api/shared-content/production-cues/:cueId/reports` | Learner-private shared-content report |
+
+The JSON body contains `category` (`incorrect`, `misleading`, `unsafe`, or
+`other`) and an optional string `note`. The authenticated learner is derived at
+the request boundary; clients never submit a learner id. A report is private,
+idempotent per learner and published cue, and does not itself change shared
+eligibility. Operator quarantine is a separate backend command and is not
+exposed as a learner-controlled HTTP endpoint.
+
 ## Status
 
 | Method | Path | Handler domain |

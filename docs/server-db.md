@@ -173,10 +173,33 @@ does not need a simultaneous rewrite.
 
 Contrast artifacts and production cues/supplements use physical `scoped_*`
 tables. Normal app writes create `learner` scope owned by the current learner;
-`shared` rows are readable but immutable through learner paths. Publication is
-deliberately not inferred from reflection provenance and remains a later
-service operation. Private cue lifecycle, evidence, activation, and recheck
-state stay in `learner_owned_*` tables.
+`shared` rows are readable but immutable through learner paths. A validated,
+learner-authorized `repair_production_cue@2` creation is the narrow publication
+seam: the immutable cue and accepted-answer space are promoted to shared scope,
+while the authorizing invocation stays linked through the learner-private
+`shared_content_publication_provenance` table.
+
+`shared_content_publications` gives each immutable shared content item an
+addressable publication record with its learning purpose and current
+`shared_trial | available | quarantined | retired` disposition.
+`shared_content_publication_events` is the append-only audit log. Only
+`shared_trial` and `available` publications are eligible for serving. A repair
+creates distinct attributable content; replacement does not imply lineage or
+automatically retire the prior publication. Private cue lifecycle, evidence,
+activation, recheck state, publication provenance, and reports stay in
+`learner_owned_*` tables. Reporting does not itself quarantine content; the
+registered operator queue reads open reports from their physical learner-owned rows, and the
+registered operator command records the separate quarantine disposition and
+resolves the private report. Operators can also dismiss a report without
+changing content; a still-open report whose publication has already retired is
+dismissed when handled because the content is no longer eligible. Neither
+operator surface is a learner HTTP route.
+
+Session composition samples uniformly among eligible cues for a production
+task. Its random source is injectable for tests. The frozen production
+exercise and attempt metadata include the exact cue reference, cue text, and
+accepted-answer ids. Attempts do not carry publication ids; later quarantine
+or retirement therefore cannot rewrite historical evidence.
 
 ## Init order
 
