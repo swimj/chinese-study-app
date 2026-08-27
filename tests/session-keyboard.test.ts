@@ -40,9 +40,10 @@ function createContext(overrides: Partial<SessionKeyboardContext> = {}): Session
   };
 }
 
-function key(value: string, extras: Partial<{ isComposing: boolean; keyCode: number; shiftKey: boolean }> = {}) {
+function key(value: string, extras: Partial<{ code: string; isComposing: boolean; keyCode: number; shiftKey: boolean }> = {}) {
   return {
     key: value,
+    code: extras.code,
     isComposing: extras.isComposing ?? false,
     keyCode: extras.keyCode ?? 0,
     shiftKey: extras.shiftKey,
@@ -160,6 +161,7 @@ describe('session keyboard contract', () => {
   test('question mark opens the shortcut guide from any active session surface', () => {
     assert.equal(isShortcutGuideToggleKey({ key: '?' }), true);
     assert.equal(isShortcutGuideToggleKey({ key: '/', shiftKey: true }), true);
+    assert.equal(isShortcutGuideToggleKey({ key: 'Unidentified', code: 'Slash', shiftKey: true }), true);
     assert.equal(isShortcutGuideToggleKey({ key: '/' }), false);
     assert.equal(isShortcutGuideToggleKey({ key: 'Escape' }), false);
 
@@ -173,6 +175,10 @@ describe('session keyboard contract', () => {
 
     assert.deepEqual(resolveSessionKey(key('?'), createContext()), { type: 'toggle_shortcut_guide' });
     assert.deepEqual(resolveSessionKey(key('/', { shiftKey: true }), createContext()), { type: 'toggle_shortcut_guide' });
+    assert.deepEqual(
+      resolveSessionKey(key('Unidentified', { code: 'Slash', shiftKey: true }), createContext()),
+      { type: 'toggle_shortcut_guide' },
+    );
     assert.deepEqual(resolveSessionKey(key('?'), production), { type: 'toggle_shortcut_guide' });
     assert.deepEqual(resolveSessionKey(key('?'), contrast), { type: 'toggle_shortcut_guide' });
     assert.deepEqual(resolveSessionKey(key('?'), rating), { type: 'toggle_shortcut_guide' });
