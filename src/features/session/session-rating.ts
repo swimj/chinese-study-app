@@ -1,33 +1,37 @@
 import type { ReviewRating, Word } from '../../types';
 import type { SessionStudyItem } from '../../domain/study-actions';
 
+export type RatingShortcutKey = '1' | '2' | '3' | '4';
+
 export type RatingOption = {
   value: ReviewRating;
   label: string;
   note: string;
+  shortcutKey: RatingShortcutKey;
+  isDefault: boolean;
 };
 
 const REVIEW_RATING_OPTIONS: RatingOption[] = [
-  { value: 'forgot', label: 'Forgot', note: 'Counts as a failure and may trigger same-session reinforcement.' },
-  { value: 'hard', label: 'Hard', note: 'Successful recall with effort.' },
-  { value: 'good', label: 'Good', note: 'Successful recall with normal confidence.' },
-  { value: 'easy', label: 'Easy', note: 'Successful recall with strong confidence.' },
+  { value: 'forgot', label: 'Forgot', note: 'Counts as a failure and may trigger same-session reinforcement.', shortcutKey: '1', isDefault: false },
+  { value: 'hard', label: 'Hard', note: 'Successful recall with effort.', shortcutKey: '2', isDefault: false },
+  { value: 'good', label: 'Good', note: 'Successful recall with normal confidence.', shortcutKey: '3', isDefault: true },
+  { value: 'easy', label: 'Easy', note: 'Successful recall with strong confidence.', shortcutKey: '4', isDefault: false },
 ];
 
 const REVIEW_REINFORCEMENT_OPTIONS: RatingOption[] = [
-  { value: 'forgot', label: 'No', note: 'Still missed recall. Increments lapse count.' },
-  { value: 'good', label: 'Yes', note: 'Correct recall. Advances reinforcement streak.' },
+  { value: 'forgot', label: 'Still missed', note: 'Still missed recall. Increments lapse count.', shortcutKey: '1', isDefault: false },
+  { value: 'good', label: 'Recalled it', note: 'Correct recall. Advances reinforcement streak.', shortcutKey: '2', isDefault: true },
 ];
 
 const CONTRAST_SELECTION_OPTIONS: RatingOption[] = [
-  { value: 'hard', label: 'Hard', note: 'I had to work for the distinction.' },
-  { value: 'good', label: 'Good', note: 'The distinction felt usable.' },
-  { value: 'easy', label: 'Easy', note: 'The right choice felt obvious.' },
+  { value: 'hard', label: 'Hard', note: 'I had to work for the distinction.', shortcutKey: '2', isDefault: false },
+  { value: 'good', label: 'Good', note: 'The distinction felt usable.', shortcutKey: '3', isDefault: true },
+  { value: 'easy', label: 'Easy', note: 'The right choice felt obvious.', shortcutKey: '4', isDefault: false },
 ];
 
 const BINARY_RECALL_OPTIONS: RatingOption[] = [
-  { value: 'forgot', label: 'Forgot', note: 'Did not recall it correctly.' },
-  { value: 'good', label: 'Good', note: 'Correct recall.' },
+  { value: 'forgot', label: 'Forgot', note: 'Did not recall it correctly.', shortcutKey: '1', isDefault: false },
+  { value: 'good', label: 'Good', note: 'Correct recall.', shortcutKey: '2', isDefault: true },
 ];
 
 export function getActiveRatingOptions({
@@ -48,6 +52,10 @@ export function getActiveRatingOptions({
   }
 
   return reviewInReinforcement ? REVIEW_REINFORCEMENT_OPTIONS : REVIEW_RATING_OPTIONS;
+}
+
+export function getDefaultRating(ratingOptions: RatingOption[]): ReviewRating | null {
+  return ratingOptions.find((option) => option.isDefault)?.value ?? null;
 }
 
 export function getRatingForKey(key: string, ratingOptions: RatingOption[]) {

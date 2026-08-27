@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode, type RefObject } from 'react';
+import { useRef, useState, type ReactNode, type RefObject } from 'react';
 import { MeaningList } from '../../components/MeaningList';
 import type {
   LearningWordProgress,
@@ -13,6 +13,13 @@ import type { RatingOption } from './session-rating';
 import type { SessionSummary } from './session-summary';
 import type { SessionFinalizationState } from './session-finalization';
 import { getStudySessionPanelView } from './session-selectors';
+import {
+  getSessionPrimaryAction,
+  getSessionShortcutGuide,
+  type SessionKeyboardContext,
+  type SessionKeyCommand,
+} from './session-keyboard';
+import { useSessionDialogFocus } from './session-dialog-focus';
 import { SessionSummaryPanel } from './SessionSummaryPanel';
 import { formatIntervalHours } from '../../lib/format-interval';
 
@@ -190,23 +197,23 @@ export function StudySessionPanel({
   );
   const sessionEndDisabled = sessionPhase === 'draining' || personalNotesEditorOpen;
   const sessionEndLabel = sessionPhase === 'draining' ? 'Session draining' : 'End session';
-
-  useEffect(() => {
-    if (!shortcutsOpen) {
-      return;
-    }
-
-    function blockSessionKeys(event: KeyboardEvent) {
-      if (event.key === 'Escape' || event.key.toLowerCase() === 'k') {
-        setShortcutsOpen(false);
-      }
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    }
-
-    window.addEventListener('keydown', blockSessionKeys, { capture: true });
-    return () => window.removeEventListener('keydown', blockSessionKeys, { capture: true });
-  }, [shortcutsOpen]);
+  const keyboardContext = createSessionKeyboardContext({
+    sessionStarted,
+    productionRequiresHanziInput,
+    answerRevealed,
+    productionAwaitingNext,
+    personalNotesEditorOpen,
+    contrastAwaitingNext,
+    unstudiedIntro: activeWord?.status === 'unstudied' && !(activeUnstudiedProgress?.introComplete ?? false),
+    contrastSelectionActive: activeItem?.actionKind === 'contrast_selection',
+    contrastHasSelection: contrastSelectedWordId !== null,
+    ratingAvailable: showRatingButtons,
+    hasUndo,
+    hasActiveWord: activeWord !== null,
+    ratingOptions: activeRatingOptions,
+  });
+  const primaryAction = getSessionPrimaryAction(keyboardContext);
+  const shortcutGuide = getSessionShortcutGuide(keyboardContext, { includeDialogClose: shortcutsOpen });
 
   return (
     <div className={sessionStarted ? 'panel study-session-panel session-panel-active' : 'panel study-session-panel'}>
@@ -263,12 +270,21 @@ export function StudySessionPanel({
               </span>
               <span className="prompt-meta">{frozenProductionCard.example}</span>
             </div>
-            <p className="notes">{studyProfile.labels.targetRecallIncorrect} This item was recorded as Forgot.</p>
+            {frozenProductionCard.attemptedHanzi ? (
+              <div className="answer-block">
+                <span className="prompt-label">Your response</span>
+                <strong className="answer-value">{frozenProductionCard.attemptedHanzi}</strong>
+                <p className="notes">{studyProfile.labels.targetRecallIncorrect} This item was recorded as Forgot.</p>
+              </div>
+            ) : (
+              <p className="notes">No clue. This item was recorded as Forgot.</p>
+            )}
           </div>
           <div className="session-action-bar">
             <SessionActionSection>
               <button type="button" onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen}>
                 Next
+                <ShortcutHint shortcut={shortcutFor(primaryAction, 'continue_after_auto_forgot')} />
               </button>
               <UndoButton
                 hasUndo={hasUndo}
@@ -328,6 +344,7 @@ export function StudySessionPanel({
             <SessionActionSection>
               <button type="button" onClick={onContinueAfterAutoContrastForgot} disabled={personalNotesEditorOpen}>
                 Next
+                <ShortcutHint shortcut={shortcutFor(primaryAction, 'continue_after_auto_forgot')} />
               </button>
               <UndoButton
                 hasUndo={hasUndo}
@@ -401,6 +418,7 @@ export function StudySessionPanel({
                 disabled={personalNotesEditorOpen}
               >
                 Begin recall drills
+                <ShortcutHint shortcut={shortcutFor(primaryAction, 'begin_unstudied_drill')} />
               </button>
               <UndoButton
                 hasUndo={hasUndo}
@@ -597,14 +615,36 @@ export function StudySessionPanel({
           <div className="session-action-bar">
             <SessionActionSection>
               {activeItem.actionKind === 'contrast_selection' && !showRatingButtons ? (
-                <span className="prompt-meta session-action-hint">Choose an option to continue.</span>
+                <div className="rating-grid">
+                  <p className="prompt-meta session-action-hint">
+                    {contrastSelectedWordId
+                      ? 'Confirm the selected choice to continue.'
+                      : 'Press 1 or 2 to preview a choice, then confirm. Clicking a choice confirms it immediately.'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (contrastSelectedWordId) {
+                        onSelectContrastChoice(contrastSelectedWordId);
+                      }
+                    }}
+                    disabled={
+                      contrastSelectedWordId === null
+                      || submittingRating !== null
+                      || personalNotesEditorOpen
+                    }
+                  >
+                    Confirm selection
+                    <ShortcutHint shortcut={shortcutFor(primaryAction, 'confirm_contrast')} />
+                  </button>
+                </div>
               ) : showRatingButtons ? (
                 <div className="rating-grid">
                   {activeRatingOptions.map((option) => (
                     <button
                     key={option.value}
                     type="button"
-                    className="rating-button"
+                    className={option.isDefault ? 'rating-button is-default' : 'rating-button'}
                     title={option.note}
                     onClick={() =>
                         onRate(option.value, {
@@ -613,7 +653,11 @@ export function StudySessionPanel({
                       }
                       disabled={submittingRating !== null || personalNotesEditorOpen}
                     >
-                      <strong>{option.label}</strong>
+                      <strong>
+                        {option.label}
+                        <ShortcutHint shortcut={option.shortcutKey} />
+                        {option.isDefault ? <ShortcutHint shortcut="Space" /> : null}
+                      </strong>
                       <span>{option.note}</span>
                     </button>
                   ))}
@@ -626,6 +670,7 @@ export function StudySessionPanel({
                     disabled={submittingRating !== null || personalNotesEditorOpen}
                   >
                     {studyProfile.labels.submitProductionInput}
+                    <ShortcutHint shortcut={shortcutFor(primaryAction, 'submit_production')} />
                   </button>
                   <button
                     type="button"
@@ -643,6 +688,7 @@ export function StudySessionPanel({
               ) : (
                 <button type="button" onClick={onRevealAnswer} disabled={personalNotesEditorOpen}>
                   Reveal answer
+                  <ShortcutHint shortcut={shortcutFor(primaryAction, 'reveal')} />
                 </button>
               )}
               <UndoButton
@@ -683,7 +729,12 @@ export function StudySessionPanel({
         </div>
         ) : null}
       </div>
-      {shortcutsOpen ? <KeyboardShortcutsOverlay onClose={() => setShortcutsOpen(false)} /> : null}
+      {shortcutsOpen ? (
+        <KeyboardShortcutsOverlay
+          sections={shortcutGuide}
+          onClose={() => setShortcutsOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -707,60 +758,64 @@ function KeyboardGuideButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-function KeyboardShortcutsOverlay({ onClose }: { onClose: () => void }) {
+function KeyboardShortcutsOverlay({
+  sections,
+  onClose,
+}: {
+  sections: ReturnType<typeof getSessionShortcutGuide>;
+  onClose: () => void;
+}) {
+  const containerRef = useRef<HTMLElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  useSessionDialogFocus({
+    open: true,
+    containerRef,
+    initialFocusRef: closeButtonRef,
+    onClose,
+    isolateSessionKeys: true,
+  });
+
   return (
     <div className="keyboard-shortcuts-backdrop" role="presentation" onClick={onClose}>
       <section
+        ref={containerRef}
         className="keyboard-shortcuts-card"
         role="dialog"
         aria-modal="true"
-        aria-label="Keyboard shortcuts"
+        aria-labelledby="keyboard-shortcuts-title"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="keyboard-shortcuts-heading">
-          <h3>Keyboard shortcuts</h3>
-          <button type="button" className="secondary-button" onClick={onClose}>
+          <h3 id="keyboard-shortcuts-title">Keyboard shortcuts</h3>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            className="secondary-button"
+            onClick={onClose}
+          >
             Close
+            <ShortcutHint shortcut="Escape" />
           </button>
         </div>
-        <dl className="keyboard-shortcuts-list">
-          <div>
-            <dt>Space</dt>
-            <dd>Default advance (reveal answer, rate &#39;Good&#39;, or advance)</dd>
-          </div>
-          <div>
-            <dt>1</dt>
-            <dd>Rate &#39;Forgot&#39;</dd>
-          </div>
-          <div>
-            <dt>2</dt>
-            <dd>Rate &#39;Hard&#39;</dd>
-          </div>
-          <div>
-            <dt>3</dt>
-            <dd>Rate &#39;Good&#39;</dd>
-          </div>
-          <div>
-            <dt>4</dt>
-            <dd>Rate &#39;Easy&#39;</dd>
-          </div>
-          <div>
-            <dt>u</dt>
-            <dd>Undo the last rating (unavailable in some cases)</dd>
-          </div>
-          <div>
-            <dt>e</dt>
-            <dd>Open personal notes editor</dd>
-          </div>
-          <div>
-            <dt>Control-Enter</dt>
-            <dd>Save personal notes</dd>
-          </div>
-          <div>
-            <dt>Escape / K</dt>
-            <dd>Close overlay guide.</dd>
-          </div>
-        </dl>
+        {sections.map((section) => (
+          <section key={section.title} className="keyboard-shortcuts-section">
+            <h4 className="keyboard-shortcuts-section-title">{section.title}</h4>
+            <dl className="keyboard-shortcuts-list">
+              {section.rows.map((row) => (
+                <div
+                  key={`${section.title}-${row.key}-${row.description}`}
+                  className={row.available ? undefined : 'is-unavailable'}
+                >
+                  <dt>{row.key}</dt>
+                  <dd>
+                    {row.description}
+                    {row.available ? null : ' (unavailable)'}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ))}
       </section>
     </div>
   );
@@ -791,7 +846,7 @@ function ContrastSelectionDrill({
   return (
     <div className="stack">
       <div className="contrast-choice-grid">
-        {contrastSelection.choices.map((choice) => {
+        {contrastSelection.choices.map((choice, index) => {
           const isSelected = choice.word.id === selectedWordId;
           const isTarget = choice.word.id === contrastSelection.promptTargetWordId;
           const className = [
@@ -806,9 +861,11 @@ function ContrastSelectionDrill({
               key={choice.word.id}
               type="button"
               className={className}
+              aria-pressed={isSelected}
               onClick={() => onSelectChoice(choice.word.id)}
               disabled={disabled || answerRevealed}
             >
+              <span className="contrast-choice-index" aria-hidden="true">{index + 1}</span>
               <strong>{choice.word.hanzi}</strong>
             </button>
           );
@@ -865,8 +922,10 @@ function UndoButton({
       className="secondary-button"
       onClick={onUndoLastRating}
       disabled={submittingRating !== null || personalNotesEditorOpen}
+      aria-label="Undo last rating"
     >
-      Undo last rating
+      Undo
+      <ShortcutHint shortcut="U" />
     </button>
   );
 }
@@ -924,6 +983,7 @@ function CardActions({
         disabled={personalNotesEditorSaving}
       >
         Edit notes
+        <ShortcutHint shortcut="E" />
       </button>
     </div>
   );
@@ -1008,4 +1068,71 @@ function ManageStudyPanel({
       </div>
     </div>
   );
+}
+
+function ShortcutHint({ shortcut }: { shortcut: string | null | undefined }) {
+  if (!shortcut) {
+    return null;
+  }
+
+  return <kbd className="session-shortcut-hint">{shortcut}</kbd>;
+}
+
+function shortcutFor(
+  primaryAction: ReturnType<typeof getSessionPrimaryAction>,
+  command: SessionKeyCommand['type'],
+) {
+  return primaryAction?.command === command ? primaryAction.shortcut : null;
+}
+
+function createSessionKeyboardContext({
+  sessionStarted,
+  productionRequiresHanziInput,
+  answerRevealed,
+  productionAwaitingNext,
+  personalNotesEditorOpen,
+  contrastAwaitingNext,
+  unstudiedIntro,
+  contrastSelectionActive,
+  contrastHasSelection,
+  ratingAvailable,
+  hasUndo,
+  hasActiveWord,
+  ratingOptions,
+}: {
+  sessionStarted: boolean;
+  productionRequiresHanziInput: boolean;
+  answerRevealed: boolean;
+  productionAwaitingNext: boolean;
+  personalNotesEditorOpen: boolean;
+  contrastAwaitingNext: boolean;
+  unstudiedIntro: boolean;
+  contrastSelectionActive: boolean;
+  contrastHasSelection: boolean;
+  ratingAvailable: boolean;
+  hasUndo: boolean;
+  hasActiveWord: boolean;
+  ratingOptions: RatingOption[];
+}): SessionKeyboardContext {
+  return {
+    sessionStarted,
+    isEditableTarget: false,
+    productionInputActive:
+      sessionStarted &&
+      productionRequiresHanziInput &&
+      !answerRevealed &&
+      !productionAwaitingNext &&
+      !personalNotesEditorOpen,
+    productionAwaitingNext,
+    contrastAwaitingNext,
+    unstudiedIntro,
+    productionRequiresHanziInput,
+    contrastSelectionActive,
+    contrastHasSelection,
+    answerRevealed,
+    ratingAvailable,
+    hasUndo,
+    hasActiveWord,
+    ratingOptions,
+  };
 }

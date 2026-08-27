@@ -1,4 +1,5 @@
-import type { RefObject } from 'react';
+import { useRef, type RefObject } from 'react';
+import { useSessionDialogFocus } from './session-dialog-focus';
 
 export function PersonalNotesEditorOverlay({
   inputRef,
@@ -19,11 +20,26 @@ export function PersonalNotesEditorOverlay({
   onCancel: () => void;
   onSave: () => void;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  useSessionDialogFocus({
+    open: true,
+    containerRef,
+    initialFocusRef: inputRef,
+    onClose: onCancel,
+    closeEnabled: !isSaving,
+  });
+
   return (
-    <div className="definition-editor-overlay" role="dialog" aria-modal="true" aria-label="Edit personal notes">
+    <div
+      ref={containerRef}
+      className="definition-editor-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Edit personal notes"
+    >
       <div className="definition-editor-header">
         <strong>Edit personal notes</strong>
-        <span className="notes">Applies immediately and persists to backend.</span>
+        <span className="notes">Applies immediately and persists to backend. Escape closes. Control-Enter saves.</span>
       </div>
       <textarea
         ref={inputRef}
@@ -31,12 +47,6 @@ export function PersonalNotesEditorOverlay({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === 'Escape' && !isSaving) {
-            event.preventDefault();
-            onCancel();
-            return;
-          }
-
           if (event.key === 'Enter' && event.ctrlKey && canSubmit) {
             event.preventDefault();
             onSave();
