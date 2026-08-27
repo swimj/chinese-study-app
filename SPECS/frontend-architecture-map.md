@@ -34,6 +34,8 @@ src/
       StudySessionPanel.tsx       # active/completed session UI
       SessionSummaryPanel.tsx     # completed session summary UI
       PersonalNotesEditorOverlay.tsx
+      session-keyboard.ts         # state-to-action/shortcut descriptors + key resolution
+      session-dialog-focus.ts     # session dialog focus trap, Escape, restoration
       session-finalization.ts     # explicit Finish/Close and best-effort reflection states
       session-reflection-evidence.ts # typed production evidence accumulator + Undo snapshots
       session-commit.ts           # deferred durable commit adapter
@@ -115,7 +117,9 @@ bounded server-side selection and result loading.
 - production Hanzi input flow
 - personal notes editor state
 - active word meaning loading and visibility updates
-- keyboard shortcuts and focus effects
+- keyboard shortcuts and focus effects, using `session-keyboard.ts` as the
+  shared state-to-action/shortcut description so the panel and controller
+  cannot drift
 
 The hook returns:
 

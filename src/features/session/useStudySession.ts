@@ -47,9 +47,10 @@ import {
 } from './session-summary';
 import {
   getActiveRatingOptions,
-  getRatingForKey,
+  getDefaultRating,
   type RatingOption,
 } from './session-rating';
+import { resolveSessionKey } from './session-keyboard';
 import {
   getActiveAnswerPinyin,
   getActiveAnswerText,
@@ -1468,124 +1469,94 @@ export function useStudySession({
         return;
       }
 
-      if (event.key === 'Escape' && productionSubmissionInputActive) {
-        event.preventDefault();
-        if (document.activeElement === productionHanziInputRef.current) {
-          productionHanziInputRef.current?.blur();
-        } else {
-          productionHanziInputRef.current?.focus();
-        }
-        return;
-      }
+      const command = resolveSessionKey(
+        {
+          key: event.key,
+          isComposing: event.isComposing,
+          keyCode: event.keyCode,
+        },
+        {
+          sessionStarted: true,
+          isEditableTarget: isEditableKeyboardTarget(event.target),
+          productionInputActive: productionSubmissionInputActive,
+          productionAwaitingNext,
+          contrastAwaitingNext,
+          unstudiedIntro: activeWord?.status === 'unstudied' && !activeUnstudiedProgress?.introComplete,
+          productionRequiresHanziInput,
+          contrastSelectionActive,
+          contrastHasSelection: contrastSelectedWordId !== null,
+          answerRevealed,
+          ratingAvailable: answerRevealed && !productionAwaitingNext && !contrastAwaitingNext,
+          hasUndo: lastUndoSnapshot !== null,
+          hasActiveWord: activeWord !== null,
+          ratingOptions: activeRatingOptions,
+        },
+      );
 
-      const target = event.target;
-      if (
-        target instanceof HTMLElement &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT' ||
-          target.isContentEditable)
-      ) {
-        return;
-      }
-
-      if ((event.key === 'e' || event.key === 'E') && activeWord) {
-        event.preventDefault();
-        handleOpenPersonalNotesEditor();
-        return;
-      }
-
-      if (event.key === ' ') {
-        event.preventDefault();
-
-        if (productionAwaitingNext) {
-          handleContinueAfterAutoForgot();
-          return;
-        }
-
-        if (contrastAwaitingNext) {
-          handleContinueAfterAutoContrastForgot();
-          return;
-        }
-
-        if (activeWord?.status === 'unstudied' && !activeUnstudiedProgress?.introComplete) {
-          handleBeginUnstudiedDrill(activeWord.id);
-          return;
-        }
-
-        if (productionRequiresHanziInput && !answerRevealed) {
-          return;
-        }
-
-        if (contrastSelectionActive && !answerRevealed) {
-          return;
-        }
-
-        if (!answerRevealed) {
-          setAnswerRevealed(true);
-          return;
-        }
-
-        if (activeWord) {
-          void handleRate('good', {
-            restoreUi: productionRequiresHanziInput ? 'production-input' : 'revealed',
-          });
-        }
-        return;
-      }
-
-      if (contrastSelectionActive && !answerRevealed) {
-        if (event.key === '1' || event.key === '2') {
-          const choiceIndex = Number(event.key) - 1;
-          const choiceWordId = activeItem?.contrastSelection?.choices[choiceIndex]?.word.id;
-          if (!choiceWordId) {
-            return;
-          }
-
-          event.preventDefault();
-          handlePreviewContrastChoice(choiceWordId);
-          return;
-        }
-
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          if (!contrastSelectedWordId) {
-            return;
-          }
-
-          void handleSelectContrastChoice(contrastSelectedWordId);
-          return;
-        }
-      }
-
-      if ((event.key === 'z' || event.key === 'Z') && lastUndoSnapshot) {
-        event.preventDefault();
-        handleUndoLastRating();
-        return;
-      }
-
-      if (productionAwaitingNext || contrastAwaitingNext) {
-        return;
-      }
-
-      if (!answerRevealed) {
-        return;
-      }
-
-      const nextRating = getRatingForKey(event.key, activeRatingOptions);
-      if (!nextRating) {
-        return;
-      }
-
-      const ratingAllowed = activeRatingOptions.some((option) => option.value === nextRating);
-      if (!ratingAllowed) {
+      if (!command) {
         return;
       }
 
       event.preventDefault();
-      void handleRate(nextRating, {
-        restoreUi: productionRequiresHanziInput ? 'production-input' : 'revealed',
-      });
+
+      switch (command.type) {
+        case 'toggle_production_input_focus':
+          if (document.activeElement === productionHanziInputRef.current) {
+            productionHanziInputRef.current?.blur();
+          } else {
+            productionHanziInputRef.current?.focus();
+          }
+          return;
+        case 'submit_production':
+          void handleSubmitProductionHanzi();
+          return;
+        case 'open_notes':
+          handleOpenPersonalNotesEditor();
+          return;
+        case 'reveal':
+          setAnswerRevealed(true);
+          return;
+        case 'begin_unstudied_drill':
+          if (activeWord) {
+            handleBeginUnstudiedDrill(activeWord.id);
+          }
+          return;
+        case 'continue_after_auto_forgot':
+          if (productionAwaitingNext) {
+            handleContinueAfterAutoForgot();
+          } else if (contrastAwaitingNext) {
+            handleContinueAfterAutoContrastForgot();
+          }
+          return;
+        case 'rate_default': {
+          const defaultRating = getDefaultRating(activeRatingOptions);
+          if (defaultRating && activeWord) {
+            void handleRate(defaultRating, {
+              restoreUi: productionRequiresHanziInput ? 'production-input' : 'revealed',
+            });
+          }
+          return;
+        }
+        case 'preview_contrast': {
+          const choiceWordId = activeItem?.contrastSelection?.choices[command.choiceIndex]?.word.id;
+          if (choiceWordId) {
+            handlePreviewContrastChoice(choiceWordId);
+          }
+          return;
+        }
+        case 'confirm_contrast':
+          if (contrastSelectedWordId) {
+            void handleSelectContrastChoice(contrastSelectedWordId);
+          }
+          return;
+        case 'undo':
+          handleUndoLastRating();
+          return;
+        case 'rate':
+          void handleRate(command.rating, {
+            restoreUi: productionRequiresHanziInput ? 'production-input' : 'revealed',
+          });
+      }
     }
 
     window.addEventListener('keydown', handleKeyDown);
@@ -1721,6 +1692,16 @@ export function useStudySession({
       onSave: () => void handleSavePersonalNotesEditor(),
     },
   };
+}
+
+function isEditableKeyboardTarget(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    (target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.tagName === 'SELECT' ||
+      target.isContentEditable)
+  );
 }
 
 function formatElapsedTime(elapsedMs: number) {
