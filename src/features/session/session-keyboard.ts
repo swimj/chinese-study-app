@@ -27,6 +27,7 @@ export type SessionKeyCommand =
 
 export type SessionKeyEvent = {
   key: string;
+  code?: string;
   isComposing: boolean;
   keyCode: number;
   shiftKey?: boolean;
@@ -80,8 +81,11 @@ export function isEditableKeyboardTarget(target: EventTarget | null) {
   );
 }
 
-export function isShortcutGuideToggleKey(event: { key: string; shiftKey?: boolean }) {
-  return event.key === '?' || (event.shiftKey === true && event.key === '/');
+export function isShortcutGuideToggleKey(event: { key: string; code?: string; shiftKey?: boolean }) {
+  return event.key === '?' || (
+    event.shiftKey === true
+    && (event.key === '/' || event.code === 'Slash')
+  );
 }
 
 export function getSessionInteractionKind(context: SessionKeyboardContext): SessionInteractionKind {

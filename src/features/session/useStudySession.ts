@@ -1476,13 +1476,14 @@ export function useStudySession({
     }
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented || submittingRating !== null || personalNotesEditorOpen) {
+      if (event.defaultPrevented || shortcutGuideOpen || submittingRating !== null || personalNotesEditorOpen) {
         return;
       }
 
       const command = resolveSessionKey(
         {
           key: event.key,
+          code: event.code,
           isComposing: event.isComposing,
           keyCode: event.keyCode,
           shiftKey: event.shiftKey,
@@ -1584,8 +1585,8 @@ export function useStudySession({
       }
     }
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
   }, [
     activeRatingOptions,
     activeItem,
