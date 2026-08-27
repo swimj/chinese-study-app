@@ -2392,6 +2392,7 @@ export function initializeDatabase() {
         `Database at ${dbPath} predates learner ownership. Run the explicit SWI-47 legacy upgrade before starting it.`,
       );
     }
+    ensureReflectionSchema();
     ensureSharedContentSchema();
     installScopedContentCompatibilityViews();
     installLearnerScopedCompatibilityViews();

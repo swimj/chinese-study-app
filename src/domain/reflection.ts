@@ -1,5 +1,7 @@
 export type StudyProfileV0 = 'mandarin' | 'french';
 
+export const SYNTHETIC_REFLECTION_ATTEMPT_ID_PREFIX = 'synthetic-reflection-attempt:';
+
 export type ReflectionWordSnapshotV1 = {
   wordId: string;
   hanzi: string;
@@ -1605,6 +1607,9 @@ export function normalizeSessionReflectionResultV7(
     itemResults: value.itemResults.map((itemResult) => {
       const item = bundle.items.find((candidate) => candidate.itemId === itemResult.itemId);
       const sourceAttemptId = item?.sourceAttemptId ?? '';
+      const omitSourceAttemptJudgments = sourceAttemptId.startsWith(
+        SYNTHETIC_REFLECTION_ATTEMPT_ID_PREFIX,
+      );
       return {
         ...itemResult,
         proposals: itemResult.proposals.map((proposal) => ({
@@ -1614,10 +1619,12 @@ export function normalizeSessionReflectionResultV7(
                 ...proposal.operation,
                 version: 2,
                 taskId: `production-task:${proposal.operation.wordId}:default_production`,
-                sourceAttemptJudgments: proposal.operation.sourceAttemptJudgments.map((judgment) => ({
-                  ...judgment,
-                  sourceAttemptId,
-                })),
+                sourceAttemptJudgments: omitSourceAttemptJudgments
+                  ? []
+                  : proposal.operation.sourceAttemptJudgments.map((judgment) => ({
+                      ...judgment,
+                      sourceAttemptId,
+                    })),
               }
             : proposal.operation.kind === 'add_production_cue_supplement'
               ? {

@@ -78,7 +78,7 @@ const unsupportedApplicationReason = (operation: ReflectionOperation) => (
 type MaterializeReflectionArtifactBase = {
   artifactId?: string;
   sourceRunId?: string;
-  sourceSessionId: string;
+  sourceSessionId: string | null;
   reflectionFlowVersion: string;
   generatedAt: string;
   provider: string;
@@ -101,7 +101,7 @@ export type ReflectionGenerationRunState = 'succeeded' | 'failed';
 
 export type ReflectionGenerationRunRecord = {
   runId: string;
-  sourceSessionId: string;
+  sourceSessionId: string | null;
   reflectionFlowVersion: string;
   startedAt: string;
   completedAt: string;
@@ -141,7 +141,7 @@ export type RecordReflectionGenerationRunInput = Omit<
 
 export type ReflectionGenerationRetrySource = {
   runId: string;
-  sourceSessionId: string;
+  sourceSessionId: string | null;
   reflectionFlowVersion: string;
   model: string;
   eligibleItemCount: number;
@@ -173,7 +173,7 @@ export type ReflectionGenerationRetrySource = {
  */
 export type ReflectionArtifactRecord = {
   artifactId: string;
-  sourceSessionId: string;
+  sourceSessionId: string | null;
   sourceRunId: string | null;
   reflectionFlowVersion: string;
   generatedAt: string;
@@ -267,7 +267,7 @@ export type SupersedeReflectionProposalInput = {
 
 type ArtifactRow = {
   artifact_id: string;
-  source_session_id: string;
+  source_session_id: string | null;
   source_run_id: string | null;
   reflection_flow_version: string;
   generated_at: string;
@@ -282,7 +282,7 @@ type ArtifactRow = {
 
 type ReflectionGenerationRunRow = {
   run_id: string;
-  source_session_id: string;
+  source_session_id: string | null;
   reflection_flow_version: string;
   started_at: string;
   completed_at: string;
@@ -437,14 +437,16 @@ const invocationColumns = [
 ] as const;
 
 export function ensureReflectionSchema(): void {
+  migrateReflectionSourceSessionsNullable();
   if (learnerScopedStorageTableName('reflection_artifacts') !== 'reflection_artifacts') {
+    ensureReflectionIndexes();
     return;
   }
   getDb().exec(`
     CREATE TABLE IF NOT EXISTS reflection_artifacts (
       artifact_id TEXT PRIMARY KEY,
       learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
-      source_session_id TEXT NOT NULL,
+      source_session_id TEXT,
       source_run_id TEXT,
       reflection_flow_version TEXT NOT NULL,
       generated_at TEXT NOT NULL,
@@ -460,7 +462,7 @@ export function ensureReflectionSchema(): void {
     CREATE TABLE IF NOT EXISTS reflection_generation_runs (
       run_id TEXT PRIMARY KEY,
       learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
-      source_session_id TEXT NOT NULL,
+      source_session_id TEXT,
       reflection_flow_version TEXT NOT NULL,
       started_at TEXT NOT NULL,
       completed_at TEXT NOT NULL,
@@ -750,6 +752,86 @@ export function ensureReflectionSchema(): void {
   ensureReflectionHelpInboxSchema();
 }
 
+function migrateReflectionSourceSessionsNullable(): void {
+  const tableNames = ['reflection_artifacts', 'reflection_generation_runs'] as const;
+  const migrations = tableNames.flatMap((logicalName) => {
+    const storageName = learnerScopedStorageTableName(logicalName);
+    const columns = getDb().prepare(`PRAGMA table_info(${storageName})`).all() as Array<{
+      name: string;
+      notnull: number;
+    }>;
+    const sourceSession = columns.find((column) => column.name === 'source_session_id');
+    return sourceSession?.notnull === 1 ? [{ logicalName, storageName }] : [];
+  });
+  if (migrations.length === 0) return;
+
+  const foreignKeysEnabled = (getDb().prepare('PRAGMA foreign_keys').get() as {
+    foreign_keys: number;
+  }).foreign_keys === 1;
+  getDb().exec('PRAGMA foreign_keys = OFF;');
+  try {
+    getDb().exec('BEGIN IMMEDIATE;');
+    for (const { logicalName, storageName } of migrations) {
+      if (storageName !== logicalName) dropLearnerScopedCompatibilityView(logicalName);
+      dropTriggersReferencingTable(storageName);
+    }
+    for (const { storageName } of migrations) rebuildReflectionTableWithNullableSource(storageName);
+    getDb().exec('COMMIT;');
+  } catch (error) {
+    getDb().exec('ROLLBACK;');
+    throw error;
+  } finally {
+    if (foreignKeysEnabled) getDb().exec('PRAGMA foreign_keys = ON;');
+  }
+}
+
+function dropTriggersReferencingTable(tableName: string): void {
+  const triggers = getDb().prepare(`
+    SELECT name
+    FROM sqlite_master
+    WHERE type = 'trigger'
+      AND (tbl_name = ? OR instr(COALESCE(sql, ''), ?) > 0)
+  `).all(tableName, tableName) as Array<{ name: string }>;
+  for (const trigger of triggers) getDb().exec(`DROP TRIGGER ${trigger.name};`);
+}
+
+function dropLearnerScopedCompatibilityView(logicalName: string): void {
+  for (const suffix of ['insert', 'update', 'delete']) {
+    getDb().exec(`DROP TRIGGER IF EXISTS ${logicalName}_scoped_${suffix};`);
+  }
+  getDb().exec(`DROP VIEW IF EXISTS ${logicalName};`);
+}
+
+function rebuildReflectionTableWithNullableSource(tableName: string): void {
+  const row = getDb().prepare(`
+    SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?
+  `).get(tableName) as { sql: string } | undefined;
+  if (!row) throw new Error(`Cannot migrate missing reflection table ${tableName}.`);
+
+  const replacementName = `${tableName}_nullable_source_rebuild`;
+  const createSql = row.sql
+    .replace(
+      /^CREATE TABLE\s+(?:"[^"]+"|[^\s(]+)/i,
+      `CREATE TABLE ${replacementName}`,
+    )
+    .replace('source_session_id TEXT NOT NULL', 'source_session_id TEXT');
+  if (createSql === row.sql || createSql.includes('source_session_id TEXT NOT NULL')) {
+    throw new Error(`Cannot migrate reflection source-session column for ${tableName}.`);
+  }
+  const columns = (getDb().prepare(`PRAGMA table_info(${tableName})`).all() as Array<{
+    name: string;
+  }>).map((column) => column.name);
+  const columnList = columns.join(', ');
+  getDb().exec(`DROP TABLE IF EXISTS ${replacementName};`);
+  getDb().exec(createSql);
+  getDb().exec(`
+    INSERT INTO ${replacementName} (${columnList})
+    SELECT ${columnList} FROM ${tableName};
+  `);
+  getDb().exec(`DROP TABLE ${tableName};`);
+  getDb().exec(`ALTER TABLE ${replacementName} RENAME TO ${tableName};`);
+}
+
 function migrateReflectionArtifactsForMultipleCandidates(): void {
   const columns = getDb().prepare('PRAGMA table_info(reflection_artifacts)').all() as Array<{ name: string }>;
   if (columns.some((column) => column.name === 'source_run_id')) return;
@@ -905,13 +987,16 @@ export function validateReflectionSchema(): void {
 export function materializeReflectionArtifact(
   input: MaterializeReflectionArtifactInput,
 ): MaterializeReflectionArtifactResult {
-  assertNonEmpty(input.sourceSessionId, 'source session id');
+  if (input.sourceSessionId !== null) assertNonEmpty(input.sourceSessionId, 'source session id');
   assertNonEmpty(input.reflectionFlowVersion, 'reflection flow version');
   assertNonEmpty(input.provider, 'provider');
   assertNonEmpty(input.model, 'model');
   assertNonEmpty(input.promptVersion, 'prompt version');
   assertIsoTimestamp(input.generatedAt, 'generation timestamp');
-  if (input.evidenceBundle.session.sessionId !== input.sourceSessionId) {
+  if (
+    input.sourceSessionId !== null
+    && input.evidenceBundle.session.sessionId !== input.sourceSessionId
+  ) {
     throw new Error('Reflection evidence session does not match the source session id.');
   }
   if (
@@ -1163,7 +1248,9 @@ export function recordReflectionGenerationRun(
 ): ReflectionGenerationRunRecord {
   const runId = input.runId ?? randomUUID();
   assertNonEmpty(runId, 'reflection generation run id');
-  assertNonEmpty(input.sourceSessionId, 'reflection generation run source session id');
+  if (input.sourceSessionId !== null) {
+    assertNonEmpty(input.sourceSessionId, 'reflection generation run source session id');
+  }
   assertNonEmpty(input.reflectionFlowVersion, 'reflection generation run flow version');
   assertIsoTimestamp(input.startedAt, 'reflection generation run start time');
   assertIsoTimestamp(input.completedAt, 'reflection generation run completion time');
@@ -1182,7 +1269,10 @@ export function recordReflectionGenerationRun(
   if (input.includedItemCount > input.eligibleItemCount) {
     throw new Error('Included reflection evidence item count cannot exceed eligible item count.');
   }
-  if (input.evidenceBundle.session.sessionId !== input.sourceSessionId) {
+  if (
+    input.sourceSessionId !== null
+    && input.evidenceBundle.session.sessionId !== input.sourceSessionId
+  ) {
     throw new Error('Reflection generation run source session does not match its evidence bundle.');
   }
   if (
@@ -1322,7 +1412,10 @@ export function getReflectionGenerationRetrySource(
   } catch (error) {
     throw corruptionError(error instanceof Error ? error.message : String(error));
   }
-  if (evidenceBundle.session.sessionId !== row.source_session_id) {
+  if (
+    row.source_session_id !== null
+    && evidenceBundle.session.sessionId !== row.source_session_id
+  ) {
     throw corruptionError(
       `reflection generation run ${row.run_id} source session does not match its evidence`,
     );
@@ -2019,7 +2112,10 @@ function mapArtifactRow(row: ArtifactRow): ReflectionArtifactRecord {
   ) {
     throw corruptionError(`artifact ${row.artifact_id} schema metadata does not match its JSON`);
   }
-  if (row.source_session_id !== evidenceBundle.session.sessionId) {
+  if (
+    row.source_session_id !== null
+    && row.source_session_id !== evidenceBundle.session.sessionId
+  ) {
     throw corruptionError(`artifact ${row.artifact_id} source session does not match its evidence`);
   }
   return {

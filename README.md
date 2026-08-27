@@ -169,6 +169,29 @@ npm run check:legacy-learner-upgrade -- \
   --learner-id=dogfood-local
 ```
 
+After upgrade, migrated legacy definition-fallback exclusions can be reviewed
+through the normal reflection and Help workflow. First make a recoverable
+`app.db` backup and inspect the dry-run report:
+
+```bash
+npm run remediate:legacy-prompts -- \
+  --data-dir="$HOME/path/to/chinese-study-data" \
+  --learner-id=dogfood-local
+```
+
+With reflection provider credentials available, apply the reported batches:
+
+```bash
+npm run remediate:legacy-prompts -- \
+  --data-dir="$HOME/path/to/chinese-study-data" \
+  --learner-id=dogfood-local \
+  --apply=true
+```
+
+Apply mode leaves every prompt exclusion unchanged, skips contrast-prompt
+exclusions for manual handling, and safely skips definition words already
+materialized by an earlier successful run.
+
 We recommend keeping study data outside the cloned repo, even though this version does not enforce that.
 
 ## Recommended Workflow
