@@ -10,6 +10,7 @@ import {
   getSessionPrimaryAction,
   getSessionShortcutGuide,
   isAdvertisedUndoKey,
+  isShortcutGuideToggleKey,
   isUndoKey,
   resolveSessionKey,
   type SessionKeyboardContext,
@@ -155,6 +156,12 @@ describe('session keyboard contract', () => {
     assert.equal(resolveSessionKey(key('u'), createContext({ hasUndo: false })), null);
   });
 
+  test('question mark toggles the shortcut guide', () => {
+    assert.equal(isShortcutGuideToggleKey('?'), true);
+    assert.equal(isShortcutGuideToggleKey('/'), false);
+    assert.equal(isShortcutGuideToggleKey('Escape'), false);
+  });
+
   test('guide rows stay state-aware and do not advertise unavailable actions as active', () => {
     const production = createContext({
       productionInputActive: true,
@@ -168,6 +175,7 @@ describe('session keyboard contract', () => {
     assert.ok(thisCard?.rows.some((row) => row.key === 'Enter' && row.available));
     assert.ok(thisCard?.rows.some((row) => row.key === 'Escape' && row.description.includes('answer field')));
     assert.equal(session?.rows.find((row) => row.key === 'U')?.available, false);
+    assert.equal(session?.rows.find((row) => row.key === '?')?.available, true);
     assert.equal(dialog?.rows[0]?.key, 'Escape');
     assert.equal(dialog?.rows[0]?.description.includes('Close'), true);
   });

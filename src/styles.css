@@ -335,7 +335,6 @@ button:hover {
 .session-shortcut-hint {
   display: inline-flex;
   align-items: center;
-  margin-left: 0.4rem;
   padding: 0.08rem 0.38rem;
   border: 1px solid rgba(148, 163, 184, 0.38);
   border-radius: 0.35rem;
@@ -343,8 +342,32 @@ button:hover {
   font-size: 0.72em;
   letter-spacing: 0.04em;
   color: rgba(226, 232, 240, 0.88);
-  background: rgba(15, 23, 42, 0.4);
-  vertical-align: middle;
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.session-shortcut-hints {
+  position: absolute;
+  top: 0.2rem;
+  right: 0.3rem;
+  z-index: 1;
+  display: flex;
+  gap: 0.25rem;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.session-shortcut-hint.is-persistent {
+  margin-left: 0.4rem;
+}
+
+.session-action-bar button,
+.keyboard-guide-button {
+  position: relative;
+}
+
+.session-action-bar button:hover .session-shortcut-hints,
+.session-action-bar button:focus-visible .session-shortcut-hints {
+  opacity: 1;
 }
 
 .study-session-panel button:focus-visible,

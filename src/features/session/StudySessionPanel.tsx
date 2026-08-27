@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { MeaningList } from '../../components/MeaningList';
 import type {
   LearningWordProgress,
@@ -16,6 +16,9 @@ import { getStudySessionPanelView } from './session-selectors';
 import {
   getSessionPrimaryAction,
   getSessionShortcutGuide,
+  isEditableKeyboardTarget,
+  isImeComposingEvent,
+  isShortcutGuideToggleKey,
   type SessionKeyboardContext,
   type SessionKeyCommand,
 } from './session-keyboard';
@@ -214,6 +217,28 @@ export function StudySessionPanel({
   });
   const primaryAction = getSessionPrimaryAction(keyboardContext);
   const shortcutGuide = getSessionShortcutGuide(keyboardContext, { includeDialogClose: shortcutsOpen });
+
+  useEffect(() => {
+    if (!sessionStarted || shortcutsOpen || personalNotesEditorOpen) {
+      return;
+    }
+
+    function handleShortcutGuideToggle(event: KeyboardEvent) {
+      if (event.defaultPrevented || isImeComposingEvent(event) || isEditableKeyboardTarget(event.target)) {
+        return;
+      }
+
+      if (!isShortcutGuideToggleKey(event.key)) {
+        return;
+      }
+
+      event.preventDefault();
+      setShortcutsOpen(true);
+    }
+
+    window.addEventListener('keydown', handleShortcutGuideToggle);
+    return () => window.removeEventListener('keydown', handleShortcutGuideToggle);
+  }, [personalNotesEditorOpen, sessionStarted, shortcutsOpen]);
 
   return (
     <div className={sessionStarted ? 'panel study-session-panel session-panel-active' : 'panel study-session-panel'}>
@@ -655,8 +680,7 @@ export function StudySessionPanel({
                     >
                       <strong>
                         {option.label}
-                        <ShortcutHint shortcut={option.shortcutKey} />
-                        {option.isDefault ? <ShortcutHint shortcut="Space" /> : null}
+                        <ShortcutHint shortcuts={[option.shortcutKey, option.isDefault ? 'Space' : null]} />
                       </strong>
                       <span>{option.note}</span>
                     </button>
@@ -754,6 +778,7 @@ function KeyboardGuideButton({ onClick }: { onClick: () => void }) {
     >
       <span aria-hidden="true">⌨</span>
       <span>Shortcuts</span>
+      <ShortcutHint shortcut="?" />
     </button>
   );
 }
@@ -773,6 +798,7 @@ function KeyboardShortcutsOverlay({
     initialFocusRef: closeButtonRef,
     onClose,
     isolateSessionKeys: true,
+    alsoCloseOn: ['?'],
   });
 
   return (
@@ -794,7 +820,7 @@ function KeyboardShortcutsOverlay({
             onClick={onClose}
           >
             Close
-            <ShortcutHint shortcut="Escape" />
+            <ShortcutHint shortcut="Escape" persist />
           </button>
         </div>
         {sections.map((section) => (
@@ -1070,12 +1096,31 @@ function ManageStudyPanel({
   );
 }
 
-function ShortcutHint({ shortcut }: { shortcut: string | null | undefined }) {
-  if (!shortcut) {
+function ShortcutHint({
+  shortcut,
+  shortcuts,
+  persist = false,
+}: {
+  shortcut?: string | null;
+  shortcuts?: Array<string | null | undefined>;
+  persist?: boolean;
+}) {
+  const keys = (shortcuts ?? [shortcut]).filter((key): key is string => Boolean(key));
+  if (keys.length === 0) {
     return null;
   }
 
-  return <kbd className="session-shortcut-hint">{shortcut}</kbd>;
+  if (persist) {
+    return <kbd className="session-shortcut-hint is-persistent">{keys[0]}</kbd>;
+  }
+
+  return (
+    <span className="session-shortcut-hints">
+      {keys.map((key) => (
+        <kbd key={key} className="session-shortcut-hint">{key}</kbd>
+      ))}
+    </span>
+  );
 }
 
 function shortcutFor(

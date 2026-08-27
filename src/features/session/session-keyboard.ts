@@ -68,6 +68,20 @@ export function isImeComposingEvent(event: SessionKeyEvent) {
   return event.isComposing || event.keyCode === 229;
 }
 
+export function isEditableKeyboardTarget(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    (target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.tagName === 'SELECT' ||
+      target.isContentEditable)
+  );
+}
+
+export function isShortcutGuideToggleKey(key: string) {
+  return key === '?';
+}
+
 export function getSessionInteractionKind(context: SessionKeyboardContext): SessionInteractionKind {
   if (!context.sessionStarted) {
     return 'inactive';
@@ -144,6 +158,11 @@ export function getSessionShortcutGuide(
       key: 'E',
       description: 'Open personal notes',
       available: context.hasActiveWord,
+    },
+    {
+      key: '?',
+      description: 'Open or close the shortcut guide',
+      available: true,
     },
   ];
 
