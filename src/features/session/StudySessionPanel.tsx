@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useRef, useState, type ReactNode, type RefObject } from 'react';
 import { MeaningList } from '../../components/MeaningList';
 import type {
   LearningWordProgress,
@@ -16,9 +16,6 @@ import { getStudySessionPanelView } from './session-selectors';
 import {
   getSessionPrimaryAction,
   getSessionShortcutGuide,
-  isEditableKeyboardTarget,
-  isImeComposingEvent,
-  isShortcutGuideToggleKey,
   type SessionKeyboardContext,
   type SessionKeyCommand,
 } from './session-keyboard';
@@ -117,6 +114,9 @@ export function StudySessionPanel({
   onToggleLearnerRequestedReview,
   onToggleFrozenProductionLearnerRequestedReview,
   onRate,
+  shortcutGuideOpen,
+  onOpenShortcutGuide,
+  onCloseShortcutGuide,
 }: {
   sessionStarted: boolean;
   sessionPhase: BucketSessionState['phase'] | null;
@@ -180,9 +180,11 @@ export function StudySessionPanel({
   onToggleLearnerRequestedReview: () => void;
   onToggleFrozenProductionLearnerRequestedReview: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
+  shortcutGuideOpen: boolean;
+  onOpenShortcutGuide: () => void;
+  onCloseShortcutGuide: () => void;
 }) {
   const productionFormId = 'production-hanzi-input-form';
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const panelView = getStudySessionPanelView({
     sessionStarted,
     sessionCompletedWithSummary: sessionPhase === 'completed' && sessionSummary !== null,
@@ -216,34 +218,12 @@ export function StudySessionPanel({
     ratingOptions: activeRatingOptions,
   });
   const primaryAction = getSessionPrimaryAction(keyboardContext);
-  const shortcutGuide = getSessionShortcutGuide(keyboardContext, { includeDialogClose: shortcutsOpen });
-
-  useEffect(() => {
-    if (!sessionStarted || shortcutsOpen || personalNotesEditorOpen) {
-      return;
-    }
-
-    function handleShortcutGuideToggle(event: KeyboardEvent) {
-      if (event.defaultPrevented || isImeComposingEvent(event) || isEditableKeyboardTarget(event.target)) {
-        return;
-      }
-
-      if (!isShortcutGuideToggleKey(event.key)) {
-        return;
-      }
-
-      event.preventDefault();
-      setShortcutsOpen(true);
-    }
-
-    window.addEventListener('keydown', handleShortcutGuideToggle);
-    return () => window.removeEventListener('keydown', handleShortcutGuideToggle);
-  }, [personalNotesEditorOpen, sessionStarted, shortcutsOpen]);
+  const shortcutGuide = getSessionShortcutGuide(keyboardContext, { includeDialogClose: shortcutGuideOpen });
 
   return (
     <div className={sessionStarted ? 'panel study-session-panel session-panel-active' : 'panel study-session-panel'}>
       <h2>Study session</h2>
-      <div className={shortcutsOpen ? 'session-interaction-surface is-paused' : 'session-interaction-surface'}>
+      <div className={shortcutGuideOpen ? 'session-interaction-surface is-paused' : 'session-interaction-surface'}>
         {panelView === 'not_started' ? (
           <p className="notes">Start the session to freeze the current session snapshot into frontend state.</p>
         ) : panelView === 'frozen_production' && frozenProductionCard ? (
@@ -339,7 +319,7 @@ export function StudySessionPanel({
               <button type="button" className="secondary-button" onClick={onEndSession} disabled={sessionEndDisabled}>
                 {sessionEndLabel}
               </button>
-              <KeyboardGuideButton onClick={() => setShortcutsOpen(true)} />
+              <KeyboardGuideButton onClick={onOpenShortcutGuide} />
             </SessionActionSection>
           </div>
         </div>
@@ -382,7 +362,7 @@ export function StudySessionPanel({
               <button type="button" className="secondary-button" onClick={onEndSession} disabled={sessionEndDisabled}>
                 {sessionEndLabel}
               </button>
-              <KeyboardGuideButton onClick={() => setShortcutsOpen(true)} />
+              <KeyboardGuideButton onClick={onOpenShortcutGuide} />
             </SessionActionSection>
           </div>
         </div>
@@ -408,7 +388,7 @@ export function StudySessionPanel({
                     ? 'Finishing...'
                     : 'Finish session'}
               </button>
-              <KeyboardGuideButton onClick={() => setShortcutsOpen(true)} />
+              <KeyboardGuideButton onClick={onOpenShortcutGuide} />
               <UndoButton
                 hasUndo={hasUndo && sessionFinalization.kind === 'unfinalized'}
                 submittingRating={submittingRating}
@@ -467,7 +447,7 @@ export function StudySessionPanel({
               <button type="button" className="secondary-button" onClick={onEndSession} disabled={sessionEndDisabled}>
                 {sessionEndLabel}
               </button>
-              <KeyboardGuideButton onClick={() => setShortcutsOpen(true)} />
+              <KeyboardGuideButton onClick={onOpenShortcutGuide} />
             </SessionActionSection>
           </div>
         </div>
@@ -487,7 +467,7 @@ export function StudySessionPanel({
               <button type="button" onClick={onEndSession}>
                 Back to overview
               </button>
-              <KeyboardGuideButton onClick={() => setShortcutsOpen(true)} />
+              <KeyboardGuideButton onClick={onOpenShortcutGuide} />
             </SessionActionSection>
           </div>
         </div>
@@ -747,16 +727,16 @@ export function StudySessionPanel({
               <button type="button" className="secondary-button" onClick={onEndSession} disabled={sessionEndDisabled}>
                 {sessionEndLabel}
               </button>
-              <KeyboardGuideButton onClick={() => setShortcutsOpen(true)} />
+              <KeyboardGuideButton onClick={onOpenShortcutGuide} />
             </SessionActionSection>
           </div>
         </div>
         ) : null}
       </div>
-      {shortcutsOpen ? (
+      {shortcutGuideOpen ? (
         <KeyboardShortcutsOverlay
           sections={shortcutGuide}
-          onClose={() => setShortcutsOpen(false)}
+          onClose={onCloseShortcutGuide}
         />
       ) : null}
     </div>

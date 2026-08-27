@@ -88,6 +88,9 @@ export function HomePage({
   onToggleLearnerRequestedReview,
   onToggleFrozenProductionLearnerRequestedReview,
   onRate,
+  shortcutGuideOpen,
+  onOpenShortcutGuide,
+  onCloseShortcutGuide,
 }: {
   backendStatus: BackendStatus | null;
   onSaveDailyNewWordLimit: (dailyNewWordLimit: number) => Promise<void>;
@@ -156,6 +159,9 @@ export function HomePage({
   onToggleLearnerRequestedReview: () => void;
   onToggleFrozenProductionLearnerRequestedReview: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
+  shortcutGuideOpen: boolean;
+  onOpenShortcutGuide: () => void;
+  onCloseShortcutGuide: () => void;
 }) {
   const [sessionSettingsOpen, setSessionSettingsOpen] = useState(false);
   const [sessionSettingsSaving, setSessionSettingsSaving] = useState(false);
@@ -271,6 +277,9 @@ export function HomePage({
             onToggleLearnerRequestedReview={onToggleLearnerRequestedReview}
             onToggleFrozenProductionLearnerRequestedReview={onToggleFrozenProductionLearnerRequestedReview}
             onRate={onRate}
+            shortcutGuideOpen={shortcutGuideOpen}
+            onOpenShortcutGuide={onOpenShortcutGuide}
+            onCloseShortcutGuide={onCloseShortcutGuide}
           />
         )}
       </div>

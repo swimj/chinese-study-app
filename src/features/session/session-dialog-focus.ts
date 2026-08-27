@@ -1,5 +1,5 @@
 import { useEffect, useRef, type RefObject } from 'react';
-import { isImeComposingEvent } from './session-keyboard';
+import { isImeComposingEvent, isShortcutGuideToggleKey } from './session-keyboard';
 
 const FOCUSABLE_SELECTOR = [
   'button:not([disabled])',
@@ -60,7 +60,10 @@ export function useSessionDialogFocus({
         return;
       }
 
-      if (event.key === 'Escape' || alsoCloseOnRef.current.includes(event.key)) {
+      if (
+        event.key === 'Escape'
+        || (alsoCloseOnRef.current.includes('?') && isShortcutGuideToggleKey(event))
+      ) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();

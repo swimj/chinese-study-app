@@ -40,11 +40,12 @@ function createContext(overrides: Partial<SessionKeyboardContext> = {}): Session
   };
 }
 
-function key(value: string, extras: Partial<{ isComposing: boolean; keyCode: number }> = {}) {
+function key(value: string, extras: Partial<{ isComposing: boolean; keyCode: number; shiftKey: boolean }> = {}) {
   return {
     key: value,
     isComposing: extras.isComposing ?? false,
     keyCode: extras.keyCode ?? 0,
+    shiftKey: extras.shiftKey,
   };
 }
 
@@ -156,10 +157,27 @@ describe('session keyboard contract', () => {
     assert.equal(resolveSessionKey(key('u'), createContext({ hasUndo: false })), null);
   });
 
-  test('question mark toggles the shortcut guide', () => {
-    assert.equal(isShortcutGuideToggleKey('?'), true);
-    assert.equal(isShortcutGuideToggleKey('/'), false);
-    assert.equal(isShortcutGuideToggleKey('Escape'), false);
+  test('question mark opens the shortcut guide from any active session surface', () => {
+    assert.equal(isShortcutGuideToggleKey({ key: '?' }), true);
+    assert.equal(isShortcutGuideToggleKey({ key: '/', shiftKey: true }), true);
+    assert.equal(isShortcutGuideToggleKey({ key: '/' }), false);
+    assert.equal(isShortcutGuideToggleKey({ key: 'Escape' }), false);
+
+    const production = createContext({
+      isEditableTarget: true,
+      productionInputActive: true,
+      productionRequiresHanziInput: true,
+    });
+    const contrast = createContext({ contrastSelectionActive: true });
+    const rating = createContext({ answerRevealed: true, ratingAvailable: true });
+
+    assert.deepEqual(resolveSessionKey(key('?'), createContext()), { type: 'toggle_shortcut_guide' });
+    assert.deepEqual(resolveSessionKey(key('/', { shiftKey: true }), createContext()), { type: 'toggle_shortcut_guide' });
+    assert.deepEqual(resolveSessionKey(key('?'), production), { type: 'toggle_shortcut_guide' });
+    assert.deepEqual(resolveSessionKey(key('?'), contrast), { type: 'toggle_shortcut_guide' });
+    assert.deepEqual(resolveSessionKey(key('?'), rating), { type: 'toggle_shortcut_guide' });
+    assert.equal(resolveSessionKey(key('?', { isComposing: true }), createContext()), null);
+    assert.equal(resolveSessionKey(key('/'), createContext()), null);
   });
 
   test('guide rows stay state-aware and do not advertise unavailable actions as active', () => {

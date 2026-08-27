@@ -202,6 +202,9 @@ export type StudySessionHomePageProps = {
   onToggleLearnerRequestedReview: () => void;
   onToggleFrozenProductionLearnerRequestedReview: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
+  shortcutGuideOpen: boolean;
+  onOpenShortcutGuide: () => void;
+  onCloseShortcutGuide: () => void;
 };
 
 export type PersonalNotesEditorController = {
@@ -256,6 +259,7 @@ export function useStudySession({
   const [contrastSelectedWordId, setContrastSelectedWordId] = useState<string | null>(null);
   const [frozenProductionCard, setFrozenProductionCard] = useState<FrozenProductionCard | null>(null);
   const [frozenContrastCard, setFrozenContrastCard] = useState<FrozenContrastCard | null>(null);
+  const [shortcutGuideOpen, setShortcutGuideOpen] = useState(false);
   const personalNotesEditorInputRef = useRef<HTMLTextAreaElement | null>(null);
   const productionHanziInputRef = useRef<HTMLInputElement | null>(null);
   const activeSessionClockRef = useRef<ActiveSessionClock | null>(null);
@@ -1420,6 +1424,12 @@ export function useStudySession({
   }, [sessionState?.phase, sessionSummary?.completedAt]);
 
   useEffect(() => {
+    if (!sessionStarted) {
+      setShortcutGuideOpen(false);
+    }
+  }, [sessionStarted]);
+
+  useEffect(() => {
     if (!personalNotesEditorOpen) {
       return;
     }
@@ -1475,6 +1485,7 @@ export function useStudySession({
           key: event.key,
           isComposing: event.isComposing,
           keyCode: event.keyCode,
+          shiftKey: event.shiftKey,
         },
         {
           sessionStarted: true,
@@ -1564,6 +1575,12 @@ export function useStudySession({
           void handleRate(command.rating, {
             restoreUi: productionRequiresHanziInput ? 'production-input' : 'revealed',
           });
+          return;
+        case 'toggle_shortcut_guide':
+          if (!shortcutGuideOpen) {
+            setShortcutGuideOpen(true);
+          }
+          return;
       }
     }
 
@@ -1587,6 +1604,7 @@ export function useStudySession({
     personalNotesEditorOpen,
     sessionStarted,
     sessionState,
+    shortcutGuideOpen,
     submittingRating,
   ]);
 
@@ -1687,6 +1705,9 @@ export function useStudySession({
         setSessionNow(new Date().toISOString());
       },
       onRate: (rating, options) => void handleRate(rating, options),
+      shortcutGuideOpen,
+      onOpenShortcutGuide: () => setShortcutGuideOpen(true),
+      onCloseShortcutGuide: () => setShortcutGuideOpen(false),
     },
     personalNotesEditor: {
       open: personalNotesEditorOpen,
