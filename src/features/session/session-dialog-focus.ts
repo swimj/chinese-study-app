@@ -23,6 +23,7 @@ export function useSessionDialogFocus({
   onClose,
   closeEnabled = true,
   isolateSessionKeys = false,
+  alsoCloseOn = [],
 }: {
   open: boolean;
   containerRef: RefObject<HTMLElement | null>;
@@ -30,6 +31,7 @@ export function useSessionDialogFocus({
   onClose: () => void;
   closeEnabled?: boolean;
   isolateSessionKeys?: boolean;
+  alsoCloseOn?: string[];
 }) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -37,6 +39,8 @@ export function useSessionDialogFocus({
   closeEnabledRef.current = closeEnabled;
   const isolateSessionKeysRef = useRef(isolateSessionKeys);
   isolateSessionKeysRef.current = isolateSessionKeys;
+  const alsoCloseOnRef = useRef(alsoCloseOn);
+  alsoCloseOnRef.current = alsoCloseOn;
 
   useEffect(() => {
     if (!open) {
@@ -56,7 +60,7 @@ export function useSessionDialogFocus({
         return;
       }
 
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' || alsoCloseOnRef.current.includes(event.key)) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();

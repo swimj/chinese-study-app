@@ -50,7 +50,7 @@ import {
   getDefaultRating,
   type RatingOption,
 } from './session-rating';
-import { resolveSessionKey } from './session-keyboard';
+import { resolveSessionKey, isEditableKeyboardTarget } from './session-keyboard';
 import {
   getActiveAnswerPinyin,
   getActiveAnswerText,
@@ -791,8 +791,9 @@ export function useStudySession({
       return;
     }
 
+    const typedResponse = productionHanziInputRef.current?.value ?? productionHanziInput;
     const submittedHanzi = normalizeProductionAnswer(
-      productionHanziInput,
+      typedResponse,
       studyProfile.defaultProductionMatchOptions,
     );
     if (submittedHanzi.length === 0) {
@@ -816,7 +817,7 @@ export function useStudySession({
       let resolution: ProductionResponseResolution;
       if (activeWord.status === 'review') {
         resolution = resolveSessionProductionResponse({
-          submittedText: productionHanziInput,
+          submittedText: typedResponse,
           anchorWordId: activeWord.id,
           production: activeItem.production,
           answerWords: productionAnswerWordsRef.current,
@@ -827,7 +828,7 @@ export function useStudySession({
           studyProfile.defaultProductionMatchOptions,
         );
         resolution = {
-          submittedText: productionHanziInput,
+          submittedText: typedResponse,
           submittedWordId: accepted ? activeWord.id : null,
           result: accepted ? 'accepted_anchor' : 'rejected',
         };
@@ -836,7 +837,7 @@ export function useStudySession({
 
       if (isCorrect) {
         setProductionHanziError(null);
-        setProductionSubmittedResponse(productionHanziInput);
+        setProductionSubmittedResponse(typedResponse);
         setProductionResponseResolution(resolution);
         setProductionUiPhase('await-rating');
         setAnswerRevealed(true);
@@ -846,7 +847,7 @@ export function useStudySession({
         stateAtResponse: sessionState,
         itemAtResponse: activeItem,
         wordAtResponse: activeWord,
-        response: productionHanziInput,
+        response: typedResponse,
         resolution: activeWord.status === 'review' ? resolution : null,
         attemptedHanzi: submittedHanzi,
       });
@@ -1497,6 +1498,13 @@ export function useStudySession({
         return;
       }
 
+      if (
+        command.type === 'submit_production'
+        && event.target === productionHanziInputRef.current
+      ) {
+        return;
+      }
+
       event.preventDefault();
 
       switch (command.type) {
@@ -1692,16 +1700,6 @@ export function useStudySession({
       onSave: () => void handleSavePersonalNotesEditor(),
     },
   };
-}
-
-function isEditableKeyboardTarget(target: EventTarget | null) {
-  return (
-    target instanceof HTMLElement &&
-    (target.tagName === 'INPUT' ||
-      target.tagName === 'TEXTAREA' ||
-      target.tagName === 'SELECT' ||
-      target.isContentEditable)
-  );
 }
 
 function formatElapsedTime(elapsedMs: number) {
