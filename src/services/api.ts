@@ -107,7 +107,7 @@ export type ReflectionTokenUsageDto = {
 
 export type ReflectionGenerationRunDto = {
   runId: string;
-  sourceSessionId: string;
+  sourceSessionId: string | null;
   reflectionFlowVersion: string;
   startedAt: string;
   completedAt: string;
@@ -140,7 +140,7 @@ export type ReflectionGenerationRunDto = {
 
 export type ReflectionArtifactSummaryDto = {
   artifactId: string;
-  sourceSessionId: string;
+  sourceSessionId: string | null;
   sourceRunId: string | null;
   reflectionFlowVersion: string;
   generatedAt: string;
@@ -171,7 +171,7 @@ export type ReflectionProposalDetailDto = {
 
 export type ReflectionArtifactDetailDto = {
   artifactId: string;
-  sourceSessionId: string;
+  sourceSessionId: string | null;
   sourceRunId: string | null;
   reflectionFlowVersion: string;
   generatedAt: string;

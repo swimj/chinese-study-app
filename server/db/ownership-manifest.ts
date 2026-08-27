@@ -181,14 +181,14 @@ function reflectionEntries(): DurableOwnershipEntry[] {
   return [
     privateEntry(
       'learner_owned_reflection_artifacts',
-      'learner plus source study session',
-      'assign to and enforce the source session learner',
+      'direct learner root plus optional source study session',
+      'assign session-backed artifacts to the source learner; retain direct learner ownership for sessionless utility artifacts',
       'append-only successful provider artifact',
     ),
     privateEntry(
       'learner_owned_reflection_generation_runs',
-      'learner plus source study session',
-      'assign to and enforce the source session learner',
+      'direct learner root plus optional source study session',
+      'assign session-backed runs to the source learner; retain direct learner ownership for sessionless utility runs',
       'append-only provider attempt and retry basis',
     ),
     privateEntry(

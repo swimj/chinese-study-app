@@ -43,6 +43,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `dev-db-bootstrap.test.ts` | Dev DB bootstrap | Dynamic `server/db.ts` |
 | `learner-isolation.test.ts` | Shared lexical visibility, private overlays/content, duplicate private ids, cross-owner references | Dynamic `server/db.ts` + raw scoped connection |
 | `legacy-prompt-feedback-migration.test.ts` | Report-only bad-prompt inventory, full legacy learner upgrade, and backup-vs-upgrade critical-state comparison | Upgrade persistence + CLI |
+| `legacy-prompt-remediation.test.ts` | SWI-39 synthetic V4 batching, sessionless run/artifact persistence, Help seeding, dry-run/apply, and rerun idempotence | Remediation CLI library + reflection generation/store |
 | `study-profile.test.ts` | Study profile helpers | `src/study-profile.ts` |
 | `canonical-words.test.ts` | Canonical wordlist scripts | `scripts/lib/canonical-words.ts` |
 | `cc-cedict.test.ts` | CC-CEDICT parsing | `scripts/lib/cc-cedict.ts` |

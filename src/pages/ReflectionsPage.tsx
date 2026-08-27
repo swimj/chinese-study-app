@@ -626,13 +626,19 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
           <>
             <section className="panel reflection-artifact-header">
               <div>
-                <p className="reflection-eyebrow">Source session</p>
+                <p className="reflection-eyebrow">
+                  {controller.selectedArtifact.sourceSessionId === null
+                    ? 'Legacy prompt remediation'
+                    : 'Source session'}
+                </p>
                 <h2>{formatDateTime(
                   controller.selectedArtifact.evidenceBundle.session.endedAt
                     ?? controller.selectedArtifact.generatedAt,
                 )}</h2>
                 <p className="notes reflection-long-metadata">
-                  Session {controller.selectedArtifact.sourceSessionId}
+                  {controller.selectedArtifact.sourceSessionId === null
+                    ? 'Sessionless reflection'
+                    : `Session ${controller.selectedArtifact.sourceSessionId}`}
                   {' · '}
                   {controller.selectedArtifact.sourceRunId === null
                     ? 'legacy run'

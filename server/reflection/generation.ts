@@ -46,6 +46,10 @@ export type InitialReflectionGenerationResult = {
   status: 'created' | 'existing';
 };
 
+export type PreparedReflectionGenerationResult = InitialReflectionGenerationResult & {
+  runId: string;
+};
+
 export { isReflectionModelChoice, type ReflectionModelChoice } from './model-arms.ts';
 
 export function choiceForStoredModel(model: string): ReflectionModelChoice | null {
@@ -102,6 +106,45 @@ export type InitialReflectionGenerationDependencies = {
   lifecycleLogger?: ReflectionLifecycleLogger;
   providerDiagnosticSink?: ReflectionProviderDiagnosticSink;
 };
+
+export type PreparedReflectionGenerationInput = {
+  sourceSessionId: string | null;
+  builtBundle: InitialReflectionBundleBuild;
+  provider: LunaReflectionProvider;
+  generatedAt?: string;
+  runId?: string;
+  now?: () => string;
+  materializeArtifact?: typeof materializeReflectionArtifact;
+  recordRun?: (input: RecordReflectionGenerationRunInput) => void;
+  lifecycleLogger?: ReflectionLifecycleLogger;
+};
+
+/**
+ * Runs the normal provider/materialization lifecycle for a caller-owned,
+ * already validated bundle. This is intentionally narrower than a second
+ * generation service: the caller owns evidence construction and selection,
+ * while runs, artifacts, Help, retry provenance, and application stay on the
+ * ordinary reflection path.
+ */
+export async function generatePreparedReflectionBundle(
+  input: PreparedReflectionGenerationInput,
+): Promise<PreparedReflectionGenerationResult> {
+  const now = input.now ?? (() => new Date().toISOString());
+  const generatedAt = input.generatedAt ?? now();
+  const runId = input.runId ?? randomUUID();
+  const result = await generateBundleAndMaterialize({
+    sourceSessionId: input.sourceSessionId,
+    builtBundle: input.builtBundle,
+    generatedAt,
+    provider: input.provider,
+    materializeArtifact: input.materializeArtifact ?? materializeReflectionArtifact,
+    recordRun: input.recordRun ?? recordReflectionGenerationRun,
+    now,
+    lifecycleLogger: input.lifecycleLogger,
+    runId,
+  });
+  return { ...result, runId };
+}
 
 /**
  * Creates one local generation coordinator. Concurrent requests for the same
@@ -248,29 +291,30 @@ export function createInitialReflectionGenerationService(
         throw new RetiredReflectionSourceModelError(retrySource.model);
       }
       const retryStartedAt = Date.now();
+      const lifecycleSessionId = retrySource.evidenceBundle.session.sessionId;
       lifecycleLogger?.emit({
         event: 'reflection.generation_requested',
-        sessionId: retrySource.sourceSessionId,
+        sessionId: lifecycleSessionId,
       });
       try {
         const result = await generateBundleAndMaterialize({
-              sessionId: retrySource.sourceSessionId,
-              builtBundle: {
-                bundle: retrySource.evidenceBundle,
-                eligibleItemCount: retrySource.eligibleItemCount,
-                includedItemCount: retrySource.includedItemCount,
-              },
-              generatedAt: now(),
-              provider: selectProvider(selectedChoice),
-              materializeArtifact,
-              recordRun,
-              now,
-              lifecycleLogger,
-              runId: randomUUID(),
-            });
+          sourceSessionId: retrySource.sourceSessionId,
+          builtBundle: {
+            bundle: retrySource.evidenceBundle,
+            eligibleItemCount: retrySource.eligibleItemCount,
+            includedItemCount: retrySource.includedItemCount,
+          },
+          generatedAt: now(),
+          provider: selectProvider(selectedChoice),
+          materializeArtifact,
+          recordRun,
+          now,
+          lifecycleLogger,
+          runId: randomUUID(),
+        });
         lifecycleLogger?.emit({
           event: 'reflection.generation_succeeded',
-          sessionId: retrySource.sourceSessionId,
+          sessionId: lifecycleSessionId,
           artifactId: result.artifactId,
           proposalCount: result.proposalCount,
           status: result.status,
@@ -280,7 +324,7 @@ export function createInitialReflectionGenerationService(
       } catch (error) {
         lifecycleLogger?.emit({
           event: 'reflection.generation_failed',
-          sessionId: retrySource.sourceSessionId,
+          sessionId: lifecycleSessionId,
           failure: error instanceof LunaReflectionProviderError ? 'provider' : 'internal',
           code: error instanceof LunaReflectionProviderError ? error.code : null,
           clientRequestId: error instanceof LunaReflectionProviderError
@@ -316,7 +360,7 @@ async function generateAndMaterialize(input: {
     input.generatedAt,
   );
   return generateBundleAndMaterialize({
-    sessionId: input.sessionId,
+    sourceSessionId: input.sessionId,
     builtBundle,
     generatedAt: input.generatedAt,
     provider: input.provider,
@@ -329,7 +373,7 @@ async function generateAndMaterialize(input: {
 }
 
 async function generateBundleAndMaterialize(input: {
-  sessionId: string;
+  sourceSessionId: string | null;
   builtBundle: InitialReflectionBundleBuild;
   generatedAt: string;
   provider: LunaReflectionProvider;
@@ -343,9 +387,10 @@ async function generateBundleAndMaterialize(input: {
 }): Promise<InitialReflectionGenerationResult> {
   const builtBundle = input.builtBundle;
   const { bundle } = builtBundle;
+  const lifecycleSessionId = bundle.session.sessionId;
   input.lifecycleLogger?.emit({
     event: 'reflection.provider_started',
-    sessionId: input.sessionId,
+    sessionId: lifecycleSessionId,
     evidenceItemCount: bundle.items.length,
   });
   let artifactMaterialized = false;
@@ -355,7 +400,7 @@ async function generateBundleAndMaterialize(input: {
     generatedMetadata = generated.metadata;
     const materialized: MaterializeReflectionArtifactResult = input.materializeArtifact({
       sourceRunId: input.runId,
-      sourceSessionId: input.sessionId,
+      sourceSessionId: input.sourceSessionId,
       reflectionFlowVersion: INITIAL_REFLECTION_FLOW_VERSION,
       generatedAt: input.generatedAt,
       provider: generated.metadata.provider,
@@ -368,7 +413,7 @@ async function generateBundleAndMaterialize(input: {
     try {
       input.recordRun(runRecordInput({
         runId: input.runId,
-        sessionId: input.sessionId,
+        sourceSessionId: input.sourceSessionId,
         startedAt: input.generatedAt,
         completedAt: input.now(),
         metadata: generated.metadata,
@@ -389,7 +434,7 @@ async function generateBundleAndMaterialize(input: {
       try {
         input.recordRun(runRecordInput({
           runId: input.runId,
-          sessionId: input.sessionId,
+          sourceSessionId: input.sourceSessionId,
           startedAt: input.generatedAt,
           completedAt: input.now(),
           metadata: failureMetadata(error, generatedMetadata),
@@ -410,7 +455,7 @@ async function generateBundleAndMaterialize(input: {
 
 function runRecordInput(input: {
   runId: string;
-  sessionId: string;
+  sourceSessionId: string | null;
   startedAt: string;
   completedAt: string;
   metadata: LunaReflectionRunMetadata;
@@ -430,7 +475,7 @@ function runRecordInput(input: {
   });
   return {
     runId: input.runId,
-    sourceSessionId: input.sessionId,
+    sourceSessionId: input.sourceSessionId,
     reflectionFlowVersion: INITIAL_REFLECTION_FLOW_VERSION,
     startedAt: input.startedAt,
     completedAt: input.completedAt,

@@ -50,7 +50,7 @@ Reflection uses six SQLite tables initialized and validated from
 
 | Table | Responsibility |
 | --- | --- |
-| `reflection_artifacts` | Generate-once evidence/result provenance, unique by source session and reflection-flow version |
+| `reflection_artifacts` | Immutable successful evidence/result provenance with an optional source session |
 | `reflection_generation_runs` | Append-only provider-attempt log, including the exact validated bundle used for retry, failed/truncated attempts, normalized usage, and a persisted price snapshot |
 | `reflection_proposal_reviews` | One mutable review status for each immutable `(artifact, item, proposal index)` locator |
 | `reflection_operation_invocations` | Immutable authorized operation plus its mutable application status, effects, and non-effect reason |
@@ -59,8 +59,10 @@ Reflection uses six SQLite tables initialized and validated from
 
 Artifacts preserve the exact bounded bundle, validated result, generation time,
 provider/model/prompt metadata, and schema versions. Same-owner guards require
-the source study session and private provenance chain to belong to the artifact
-learner. Triggers prevent artifact updates, proposal-identity rewrites, and
+a non-null source study session and every private provenance link to belong to
+the artifact learner. The SWI-39 dogfood utility is the narrow sessionless path:
+its source session is null while its V4 bundle retains synthetic shape-only
+identifiers. Triggers prevent artifact updates, proposal-identity rewrites, and
 invocation-authorization rewrites.
 
 The public SQL names above are current-learner views. Their physical tables use
@@ -87,10 +89,9 @@ Migration adds these columns if absent; nulls are the truthful limited-
 diagnostics state for legacy rows. Diagnostics are observability only and never
 materialize reflection artifacts.
 
-Materialization and proposal-row seeding are one transaction. The
-`(source_session_id, reflection_flow_version)` unique key implements durable
-generation idempotency. Acceptance atomically records exact/revised review
-disposition, immutable operation authorization, and its application state.
+Materialization and proposal-row seeding are one transaction. Acceptance
+atomically records exact/revised review disposition, immutable operation
+authorization, and its application state.
 Application is idempotent by invocation id: after application is terminal,
 later calls return its recorded status without duplicating effects.
 
