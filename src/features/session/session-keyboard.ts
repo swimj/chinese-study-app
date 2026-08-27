@@ -22,12 +22,14 @@ export type SessionKeyCommand =
   | { type: 'preview_contrast'; choiceIndex: 0 | 1 }
   | { type: 'confirm_contrast' }
   | { type: 'undo' }
-  | { type: 'rate'; rating: ReviewRating };
+  | { type: 'rate'; rating: ReviewRating }
+  | { type: 'toggle_shortcut_guide' };
 
 export type SessionKeyEvent = {
   key: string;
   isComposing: boolean;
   keyCode: number;
+  shiftKey?: boolean;
 };
 
 export type SessionKeyboardContext = {
@@ -78,8 +80,8 @@ export function isEditableKeyboardTarget(target: EventTarget | null) {
   );
 }
 
-export function isShortcutGuideToggleKey(key: string) {
-  return key === '?';
+export function isShortcutGuideToggleKey(event: { key: string; shiftKey?: boolean }) {
+  return event.key === '?' || (event.shiftKey === true && event.key === '/');
 }
 
 export function getSessionInteractionKind(context: SessionKeyboardContext): SessionInteractionKind {
@@ -196,8 +198,12 @@ export function resolveSessionKey(
   }
 
   const composing = isImeComposingEvent(event);
-  if (composing && (event.key === 'Escape' || event.key === 'Enter')) {
+  if (composing && (event.key === 'Escape' || event.key === 'Enter' || isShortcutGuideToggleKey(event))) {
     return null;
+  }
+
+  if (isShortcutGuideToggleKey(event)) {
+    return { type: 'toggle_shortcut_guide' };
   }
 
   if (event.key === 'Escape' && context.productionInputActive) {
