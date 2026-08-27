@@ -14,22 +14,28 @@ WHERE id IN (
   WHERE cluster_id LIKE 'seed-contrast-%'
 );
 
-INSERT INTO word_study_admission_state (
+-- Learner-owned scheduler tables are exposed through current-learner views for
+-- normal application writes. SQLite cannot UPSERT those views, so this setup
+-- seed writes the backing tables and establishes ownership explicitly.
+INSERT INTO learner_owned_word_study_admission_state (
+  learner_id,
   word_id,
   study_phase,
   earliest_next_study_at
 )
 SELECT DISTINCT
+  current_learner_id(),
   word_id,
   'review',
   NULL
 FROM contrast_cluster_members
 WHERE cluster_id LIKE 'seed-contrast-%'
-ON CONFLICT(word_id) DO UPDATE SET
+ON CONFLICT(learner_id, word_id) DO UPDATE SET
   study_phase = excluded.study_phase,
   earliest_next_study_at = excluded.earliest_next_study_at;
 
-INSERT INTO word_skill_state (
+INSERT INTO learner_owned_word_skill_state (
+  learner_id,
   word_id,
   skill_id,
   enabled,
@@ -39,6 +45,7 @@ INSERT INTO word_skill_state (
   ease_factor
 )
 SELECT DISTINCT
+  current_learner_id(),
   word_id,
   'contextual_selection',
   1,
@@ -48,14 +55,15 @@ SELECT DISTINCT
   2.5
 FROM contrast_cluster_members
 WHERE cluster_id LIKE 'seed-contrast-%'
-ON CONFLICT(word_id, skill_id) DO UPDATE SET
+ON CONFLICT(learner_id, word_id, skill_id) DO UPDATE SET
   enabled = excluded.enabled,
   interval_hours = excluded.interval_hours,
   last_studied_at = excluded.last_studied_at,
   next_due_at = excluded.next_due_at,
   ease_factor = excluded.ease_factor;
 
-INSERT INTO word_skill_relevance (
+INSERT INTO learner_owned_word_skill_relevance (
+  learner_id,
   word_id,
   skill_id,
   relevance_state,
@@ -63,6 +71,7 @@ INSERT INTO word_skill_relevance (
   source_event_id
 )
 SELECT DISTINCT
+  current_learner_id(),
   word_id,
   'contextual_selection',
   'normal',
@@ -70,7 +79,7 @@ SELECT DISTINCT
   NULL
 FROM contrast_cluster_members
 WHERE cluster_id LIKE 'seed-contrast-%'
-ON CONFLICT(word_id, skill_id) DO UPDATE SET
+ON CONFLICT(learner_id, word_id, skill_id) DO UPDATE SET
   relevance_state = excluded.relevance_state,
   updated_at = excluded.updated_at,
   source_event_id = excluded.source_event_id;
