@@ -453,7 +453,6 @@ Contrast-cluster management routes (`/api/contrast-clusters*`,
 (`/api/contrast-intake/*`) are retired. Cluster/prompt creation for study now
 goes through reflection `create_contrast_cluster` application and persistence
 primitives. The vestigial `contrast_candidate_intake` table and reader are
-retired; the explicit SWI-47 upgrade accounts for legacy rows before dropping
-the table.
+retired; pre-SWI-47 databases are no longer supported by current builds.
 
 Domain column matches [server-db.md](./server-db.md) modules.

@@ -60,8 +60,6 @@ describe('contrast content model', { concurrency: false }, () => {
   beforeEach(() => {
     sqlite.exec(`
       DROP TRIGGER IF EXISTS fail_contextual_relevance_insert;
-      DELETE FROM contrast_prompt_exclusions;
-      DELETE FROM definition_fallback_exclusions;
       DELETE FROM word_skill_relevance;
       DELETE FROM study_events;
       DELETE FROM contrast_prompts;
@@ -383,44 +381,27 @@ describe('contrast content model', { concurrency: false }, () => {
     assert.deepEqual(dbModule.getContrastPromptsForCluster('cluster-cascade'), []);
   });
 
-  test('projects production suppression and bad production prompt flags onto cluster members', () => {
+  test('projects production suppression onto cluster members', () => {
     insertWord(createWord({ id: 'suppressed-word', hanzi: '严肃' }));
-    insertWord(createWord({ id: 'bad-prompt-word', hanzi: '严格' }));
     insertWord(createWord({ id: 'normal-word', hanzi: '庄重' }));
 
     dbModule.createContrastCluster({
       id: 'cluster-flags',
-      title: '严肃 / 严格 / 庄重',
+      title: '严肃 / 庄重',
     });
     dbModule.addContrastClusterMember({ clusterId: 'cluster-flags', wordId: 'suppressed-word', displayOrder: 1 });
-    dbModule.addContrastClusterMember({ clusterId: 'cluster-flags', wordId: 'bad-prompt-word', displayOrder: 2 });
-    dbModule.addContrastClusterMember({ clusterId: 'cluster-flags', wordId: 'normal-word', displayOrder: 3 });
+    dbModule.addContrastClusterMember({ clusterId: 'cluster-flags', wordId: 'normal-word', displayOrder: 2 });
 
     dbModule.suppressProductionForWordOutsideSession({ targetWordId: 'suppressed-word' });
-    sqlite.prepare(`
-      INSERT INTO definition_fallback_exclusions (
-        learner_id, word_id, origin, source_feedback_ids_json, migration_id, created_at, note
-      ) VALUES ('test-learner', ?, 'legacy_bad_prompt_migration', '["legacy-bad-prompt-feedback"]', NULL, ?, ?)
-    `).run(
-      'bad-prompt-word',
-      '2026-05-10T00:00:00.000Z',
-      'Definition too broad.',
-    );
 
     const cluster = dbModule.getContrastClusterContent().find((candidate) => candidate.id === 'cluster-flags');
     assert.ok(cluster);
 
     const suppressedMember = cluster.members.find((member) => member.wordId === 'suppressed-word');
     assert.equal(suppressedMember?.productionSuppressed, true);
-    assert.equal(suppressedMember?.badProductionPromptReported, false);
-
-    const badPromptMember = cluster.members.find((member) => member.wordId === 'bad-prompt-word');
-    assert.equal(badPromptMember?.productionSuppressed, false);
-    assert.equal(badPromptMember?.badProductionPromptReported, true);
 
     const normalMember = cluster.members.find((member) => member.wordId === 'normal-word');
     assert.equal(normalMember?.productionSuppressed, false);
-    assert.equal(normalMember?.badProductionPromptReported, false);
   });
 });
 

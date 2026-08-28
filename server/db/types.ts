@@ -64,18 +64,8 @@ export type ContrastClusterContent = ContrastCluster & {
   members: Array<ContrastClusterMember & {
     word: Word;
     productionSuppressed: boolean;
-    badProductionPromptReported: boolean;
   }>;
-  prompts: ContrastPromptContent[];
-};
-
-export type ContrastPromptContent = ContrastPrompt & {
-  feedback: {
-    flagged: boolean;
-    badPromptCount: number;
-    latestBadPromptAt: string | null;
-    notes: string[];
-  };
+  prompts: ContrastPrompt[];
 };
 
 export type ReviewRating = 'forgot' | 'hard' | 'good' | 'easy';
@@ -233,19 +223,6 @@ export type WordSkillRelevanceRow = {
   source_event_id: string | null;
 };
 
-export type StudyContentFeedback = {
-  id: string;
-  createdAt: string;
-  targetType: 'generated_prompt' | 'contrast_prompt';
-  targetId: string;
-  targetWordId: string;
-  actionKind: StudyActionKind;
-  feedbackType: 'bad_prompt';
-  feedbackAction: 'reported' | 'resolved';
-  sourceEventId: string | null;
-  note: string;
-};
-
 export type RecordStudyManagementActionInput = {
   sessionId: string;
   sessionActionId: string;
@@ -367,10 +344,8 @@ export type {
   ContrastClusterContent,
   ContrastClusterMember,
   ContrastPrompt,
-  ContrastPromptContent,
   PriorityWord,
   PriorityWordsPayload,
-  StudyContentFeedback,
   StudyEvent,
   StudyManagementActionKind,
   StudySchedulerStateInvariantViolation,

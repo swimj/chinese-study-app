@@ -134,63 +134,9 @@ Typed production answers use the French profile's forgiving default normalizatio
 
 On a brand-new empty study database, the configured learner is bootstrapped
 with a `trusted_local` identity mapping; no Clerk registration is involved.
-Existing databases from before SWI-47 are never silently rewritten at startup.
-Inspect one first (the default is report-only):
-
-```bash
-npm run upgrade:legacy-learner -- \
-  --data-dir="$HOME/path/to/chinese-study-data" \
-  --learner-id=dogfood-local
-```
-
-After checking the report, apply the validated replacement:
-
-```bash
-npm run upgrade:legacy-learner -- \
-  --data-dir="$HOME/path/to/chinese-study-data" \
-  --learner-id=dogfood-local \
-  --apply=true
-```
-
-Apply mode makes a timestamped `app.db.pre-swi-47-*` backup, builds and
-validates a fresh tenant-aware database, preserves scheduler due dates, and
-converts active legacy bad-prompt reports into provenance-marked prompt
-exclusions. Before cutover it compares every legacy scheduler and admission
-row by logical key, plus exact corpus and learner priorities, learner word
-state, meaning visibility, production suppression, and migrated bad-prompt
-sets. The original database is replaced only after validation succeeds.
-
-The same comparison can be rerun later against the timestamped backup:
-
-```bash
-npm run check:legacy-learner-upgrade -- \
-  --legacy-db="$HOME/path/to/chinese-study-data/app.db.pre-swi-47-<timestamp>" \
-  --upgraded-db="$HOME/path/to/chinese-study-data/app.db" \
-  --learner-id=dogfood-local
-```
-
-After upgrade, migrated legacy definition-fallback exclusions can be reviewed
-through the normal reflection and Help workflow. First make a recoverable
-`app.db` backup and inspect the dry-run report:
-
-```bash
-npm run remediate:legacy-prompts -- \
-  --data-dir="$HOME/path/to/chinese-study-data" \
-  --learner-id=dogfood-local
-```
-
-With reflection provider credentials available, apply the reported batches:
-
-```bash
-npm run remediate:legacy-prompts -- \
-  --data-dir="$HOME/path/to/chinese-study-data" \
-  --learner-id=dogfood-local \
-  --apply=true
-```
-
-Apply mode leaves every prompt exclusion unchanged, skips contrast-prompt
-exclusions for manual handling, and safely skips definition words already
-materialized by an earlier successful run.
+Databases from before the SWI-47 learner-ownership boundary are no longer
+supported by current builds; the sole dogfood database has completed that
+one-time migration.
 
 We recommend keeping study data outside the cloned repo, even though this version does not enforce that.
 

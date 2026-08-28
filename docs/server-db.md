@@ -14,7 +14,7 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`reflection-quality.ts`](../server/db/reflection-quality.ts) | Dogfood item quality-tag overlay, upsert-by-item, and model-arm stats joins |
 | [`reflection-help-inbox.ts`](../server/db/reflection-help-inbox.ts) | Open explanation-only Help inbox rows, keyed by `(artifact_id, item_id)`; Done deletes the row |
 | [`intake-triage.ts`](../server/db/intake-triage.ts) | Immutable advisor runs and assessments, learner dispositions, fresh annotation reads, and atomic accepted effects |
-| [`domain-commands.ts`](../server/db/domain-commands.ts) | Shared transaction-aware domain commands used by reflection and legacy/manual paths; definition-production suppression and contextual-selection eligibility |
+| [`domain-commands.ts`](../server/db/domain-commands.ts) | Shared transaction-aware domain commands used by reflection and manual paths; definition-production suppression and contextual-selection eligibility |
 | [`production-cues.ts`](../server/db/production-cues.ts) | Default production tasks, immutable cue/lifecycle/evidence state, one immutable post-reveal supplement per definition cue or fallback, production recheck demands, and cue/supplement application adapters |
 | [`schema.ts`](../server/db/schema.ts) | Re-exports `applyProductionContrastExerciseSeed` and `initializeDatabase` for init ordering |
 | [`ownership-manifest.ts`](../server/db/ownership-manifest.ts) | Auditable ownership, enforcement, history, migration, and lifecycle classification for every durable application table |
@@ -23,9 +23,6 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`learner-scoped-tables.ts`](../server/db/learner-scoped-tables.ts) | Physical learner-owned tables plus current-learner compatibility views/triggers |
 | [`scoped-content-tables.ts`](../server/db/scoped-content-tables.ts) | Learner/shared scope filtering and write boundaries for contrast and production content |
 | [`learner-ownership-guards.ts`](../server/db/learner-ownership-guards.ts) | Same-owner private references and accessible-cue enforcement beneath HTTP |
-| [`prompt-exclusions.ts`](../server/db/prompt-exclusions.ts) | Narrow learner-owned definition-fallback and contrast-prompt exclusions |
-| [`legacy-learner-upgrade.ts`](../server/db/legacy-learner-upgrade.ts) | Validated copy from an implicit-single-learner database into a fresh SWI-47 schema |
-| [`legacy-upgrade-validation.ts`](../server/db/legacy-upgrade-validation.ts) | Exact backup-vs-upgrade comparison for critical scheduler, priority, learner state, and suppression surfaces |
 | [`index.ts`](../server/db/index.ts) | Internal re-export barrel |
 
 Domain-oriented re-export shims (navigation only; implementation stays in `persistence.ts`):
@@ -60,9 +57,9 @@ Reflection uses six SQLite tables initialized and validated from
 Artifacts preserve the exact bounded bundle, validated result, generation time,
 provider/model/prompt metadata, and schema versions. Same-owner guards require
 a non-null source study session and every private provenance link to belong to
-the artifact learner. The SWI-39 dogfood utility is the narrow sessionless path:
-its source session is null while its V4 bundle retains synthetic shape-only
-identifiers. Triggers prevent artifact updates, proposal-identity rewrites, and
+the artifact learner. Completed one-time remediation artifacts have a null
+source session while their V4 bundles retain synthetic shape-only identifiers.
+Triggers prevent artifact updates, proposal-identity rewrites, and
 invocation-authorization rewrites.
 
 The public SQL names above are current-learner views. Their physical tables use
@@ -226,18 +223,9 @@ reads as the current default of `10`. This setting is independent of
 `daily_new_word_intake.new_study_count`, the per-UTC-day counter incremented
 only when an unstudied word is completed.
 
-Legacy single-learner databases are not mutated during startup. Run
-`npm run upgrade:legacy-learner -- --data-dir=/absolute/path --learner-id=<id>`
-to inspect one, then repeat with `--apply=true`. Apply mode backs up the source,
-copies shared and private data into a freshly initialized target, reconstructs
-legacy normalized meanings, converts active bad-prompt reports to narrow
-provenance-marked exclusions, validates row counts and foreign keys, validates
-a normal startup, and then compares every legacy scheduler and admission row by
-logical key, plus exact priority, learner-word-state, meaning-visibility,
-production-suppression, and migrated bad-prompt sets. Only then does it replace
-`app.db`. The comparison records a row count and SHA-256 digest for every
-surface and can be rerun against the timestamped backup with
-`npm run check:legacy-learner-upgrade`.
+Legacy single-learner databases are not mutated during startup and are no
+longer supported. The sole dogfood database completed the one-time SWI-47
+learner-ownership migration before its import tooling was retired.
 
 ## Primary tests by area
 

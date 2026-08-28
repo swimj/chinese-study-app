@@ -86,8 +86,6 @@ describe('session completion', { concurrency: false }, () => {
       DELETE FROM production_cue_lifecycle_events;
       DELETE FROM scoped_production_cue_accepted_words;
       DELETE FROM scoped_production_cues;
-      DELETE FROM contrast_prompt_exclusions;
-      DELETE FROM definition_fallback_exclusions;
       DELETE FROM word_skill_relevance;
       DELETE FROM study_attempt_events;
       DELETE FROM study_sessions;

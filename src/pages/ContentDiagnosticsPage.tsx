@@ -184,7 +184,6 @@ function ClusterDetail({ item }: { item: ContrastClusterDiagnosticItem }) {
             <strong>{prompt.promptText}</strong>
             <code>{prompt.id}</code>
             {prompt.explanation ? <span>{prompt.explanation}</span> : null}
-            {prompt.flagged ? <span className="content-warning">Flagged as a bad prompt</span> : null}
           </div>
         ))}
       </section>

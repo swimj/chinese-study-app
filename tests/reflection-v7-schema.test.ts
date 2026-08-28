@@ -5,6 +5,7 @@ import {
   sessionReflectionResultV7WireSchema,
 } from '../src/domain/reflection-result-schema.ts';
 import {
+  SYNTHETIC_REFLECTION_ATTEMPT_ID_PREFIX,
   normalizeSessionReflectionResultV7,
   validateSessionReflectionResultV7,
   type SessionReflectionBundleV4,
@@ -86,6 +87,45 @@ describe('session reflection V7 result schema', () => {
       taskId: 'production-task:baobi:default_production',
       cueId: null,
     });
+  });
+
+  test('keeps synthetic remediation cue changes without inventing attempt judgments', () => {
+    const syntheticBundle = structuredClone(bundle);
+    syntheticBundle.items[0]!.sourceAttemptId =
+      `${SYNTHETIC_REFLECTION_ATTEMPT_ID_PREFIX}legacy-remediation:baobi`;
+    const wire: SessionReflectionResultV7Wire = {
+      schemaVersion: 'session_reflection_result.v7',
+      itemResults: [{
+        itemId: 'item-1',
+        diagnosisTags: ['production_cue_overloaded'],
+        learnerExplanation: 'The fallback cue is too broad.',
+        proposals: [{
+          proposalGroupKey: null,
+          rationale: 'Use a narrower durable cue.',
+          operation: {
+            kind: 'repair_production_cue',
+            wordId: 'baobi',
+            changes: [{
+              kind: 'create',
+              cue: {
+                cueType: 'minimal_context',
+                text: 'Knowingly shielding a wrongdoer',
+                acceptedWordIds: ['baobi'],
+              },
+            }],
+            sourceAttemptJudgments: [{ kind: 'misleading_or_overloaded_cue' }],
+          },
+        }],
+        questions: [],
+      }],
+    };
+
+    const normalized = normalizeSessionReflectionResultV7(wire, syntheticBundle);
+    const operation = normalized.itemResults[0]?.proposals[0]?.operation;
+    assert.equal(operation?.kind, 'repair_production_cue');
+    assert(operation?.kind === 'repair_production_cue' && operation.version === 2);
+    assert.equal(operation.changes[0]?.kind, 'create');
+    assert.deepEqual(operation.sourceAttemptJudgments, []);
   });
 
   test('rejects hidden attachment ids, non-definition evidence, existing supplements, and targetless examples', () => {

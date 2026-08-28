@@ -46,10 +46,6 @@ export type InitialReflectionGenerationResult = {
   status: 'created' | 'existing';
 };
 
-export type PreparedReflectionGenerationResult = InitialReflectionGenerationResult & {
-  runId: string;
-};
-
 export { isReflectionModelChoice, type ReflectionModelChoice } from './model-arms.ts';
 
 export function choiceForStoredModel(model: string): ReflectionModelChoice | null {
@@ -106,45 +102,6 @@ export type InitialReflectionGenerationDependencies = {
   lifecycleLogger?: ReflectionLifecycleLogger;
   providerDiagnosticSink?: ReflectionProviderDiagnosticSink;
 };
-
-export type PreparedReflectionGenerationInput = {
-  sourceSessionId: string | null;
-  builtBundle: InitialReflectionBundleBuild;
-  provider: LunaReflectionProvider;
-  generatedAt?: string;
-  runId?: string;
-  now?: () => string;
-  materializeArtifact?: typeof materializeReflectionArtifact;
-  recordRun?: (input: RecordReflectionGenerationRunInput) => void;
-  lifecycleLogger?: ReflectionLifecycleLogger;
-};
-
-/**
- * Runs the normal provider/materialization lifecycle for a caller-owned,
- * already validated bundle. This is intentionally narrower than a second
- * generation service: the caller owns evidence construction and selection,
- * while runs, artifacts, Help, retry provenance, and application stay on the
- * ordinary reflection path.
- */
-export async function generatePreparedReflectionBundle(
-  input: PreparedReflectionGenerationInput,
-): Promise<PreparedReflectionGenerationResult> {
-  const now = input.now ?? (() => new Date().toISOString());
-  const generatedAt = input.generatedAt ?? now();
-  const runId = input.runId ?? randomUUID();
-  const result = await generateBundleAndMaterialize({
-    sourceSessionId: input.sourceSessionId,
-    builtBundle: input.builtBundle,
-    generatedAt,
-    provider: input.provider,
-    materializeArtifact: input.materializeArtifact ?? materializeReflectionArtifact,
-    recordRun: input.recordRun ?? recordReflectionGenerationRun,
-    now,
-    lifecycleLogger: input.lifecycleLogger,
-    runId,
-  });
-  return { ...result, runId };
-}
 
 /**
  * Creates one local generation coordinator. Concurrent requests for the same
