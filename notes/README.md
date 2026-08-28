@@ -82,7 +82,6 @@ portfolio-disposition pattern as Linear.
 
 | Note | Type | Retire by |
 | --- | --- | --- |
-| [2026-08-27-swi-39-legacy-prompt-remediation.md](active/2026-08-27-swi-39-legacy-prompt-remediation.md) | task-spec | when SWI-39 is implemented and its dogfood run is reviewed |
 | [2026-08-23-swi-43-beta-interaction-brief.md](active/2026-08-23-swi-43-beta-interaction-brief.md) | work-bundle | when SWI-43 is dispositioned and the first implementation slice is accepted or declined |
 | [2026-08-16-swi-42-service-boundary-design.md](active/2026-08-16-swi-42-service-boundary-design.md) | work-bundle | when SWI-42 is dispositioned and the steel thread is dispatched |
 | [2026-08-14-meta-project-direction-todo.md](active/2026-08-14-meta-project-direction-todo.md) | work-bundle | 2026-09-14 |

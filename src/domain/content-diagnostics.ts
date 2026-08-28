@@ -34,7 +34,6 @@ export type ContrastClusterDiagnosticItem = {
     targetWordId: string;
     promptText: string;
     explanation: string;
-    flagged: boolean;
   }>;
 };
 

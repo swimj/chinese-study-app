@@ -47,8 +47,6 @@ describe('study management relevance events', { concurrency: false }, () => {
 
   beforeEach(() => {
     sqlite.exec(`
-      DELETE FROM contrast_prompt_exclusions;
-      DELETE FROM definition_fallback_exclusions;
       DELETE FROM contrast_prompts;
       DELETE FROM contrast_cluster_members;
       DELETE FROM contrast_clusters;
@@ -67,7 +65,7 @@ describe('study management relevance events', { concurrency: false }, () => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
-  test('creates study-event, skill relevance, and purpose-specific prompt exclusion tables', () => {
+  test('creates current study-management tables without retired prompt exclusions', () => {
     assertTableHasColumns('study_events', [
       'id',
       'occurred_at',
@@ -90,27 +88,11 @@ describe('study management relevance events', { concurrency: false }, () => {
       'updated_at',
       'source_event_id',
     ]);
-
-    assertTableHasColumns('definition_fallback_exclusions', [
-      'learner_id',
-      'word_id',
-      'origin',
-      'source_feedback_ids_json',
-      'migration_id',
-      'created_at',
-      'note',
-    ]);
-
-    assertTableHasColumns('contrast_prompt_exclusions', [
-      'learner_id',
-      'prompt_id',
-      'target_word_id',
-      'origin',
-      'source_feedback_ids_json',
-      'migration_id',
-      'created_at',
-      'note',
-    ]);
+    for (const tableName of ['definition_fallback_exclusions', 'contrast_prompt_exclusions']) {
+      assert.equal(sqlite.prepare(`
+        SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?
+      `).get(tableName), undefined);
+    }
   });
 
   test('suppresses production outside session without creating study events', () => {
@@ -146,55 +128,6 @@ describe('study management relevance events', { concurrency: false }, () => {
     );
   });
 
-  test('keeps legacy bad-prompt feedback readable without a live write path', () => {
-    insertWord({ id: 'target-word', hanzi: '恰当', status: 'review' });
-    insertLegacyFeedback({
-      id: 'legacy-definition-feedback',
-      targetType: 'generated_prompt',
-      targetId: 'definition_based_production',
-      targetWordId: 'target-word',
-      actionKind: 'production',
-      note: 'Too broad.',
-    });
-
-    const feedback = dbModule.getStudyContentFeedback().at(-1);
-    assert.equal(feedback.targetType, 'generated_prompt');
-    assert.equal(feedback.targetId, 'definition_based_production');
-    assert.equal(feedback.targetWordId, 'target-word');
-    assert.equal(feedback.sourceEventId, null);
-  });
-
-  test('exposes unresolved bad prompt feedback on contrast cluster content', () => {
-    insertWord({ id: 'target-word', hanzi: '恰当', status: 'review' });
-    insertWord({ id: 'sibling-word', hanzi: '适当', status: 'review' });
-    dbModule.createContrastCluster({ id: 'cluster-1', title: '恰当 / 适当' });
-    dbModule.addContrastClusterMember({ clusterId: 'cluster-1', wordId: 'target-word' });
-    dbModule.addContrastClusterMember({ clusterId: 'cluster-1', wordId: 'sibling-word' });
-    const prompt = dbModule.createContrastPrompt({
-      id: 'contrast-prompt-1',
-      clusterId: 'cluster-1',
-      targetWordId: 'target-word',
-      promptText: '这个例子很____。',
-    });
-
-    insertLegacyFeedback({
-      id: 'legacy-contrast-feedback',
-      targetType: 'contrast_prompt',
-      targetId: prompt.id,
-      targetWordId: 'target-word',
-      actionKind: 'contrast_selection',
-      note: 'Wrong target.',
-    });
-
-    const [cluster] = dbModule.getContrastClusterContent();
-    const [promptContent] = cluster?.prompts ?? [];
-    assert.equal(promptContent?.id, prompt.id);
-    assert.equal(promptContent?.feedback.flagged, true);
-    assert.equal(promptContent?.feedback.badPromptCount, 1);
-    assert.equal(promptContent?.feedback.notes[0], 'Wrong target.');
-    assert.match(promptContent?.feedback.latestBadPromptAt ?? '', /^\d{4}-\d{2}-\d{2}T/);
-  });
-
   test('keeps skill management limited to review words initially', () => {
     insertWord({ id: 'learning-word', hanzi: '测试', status: 'learning' });
 
@@ -212,41 +145,6 @@ describe('study management relevance events', { concurrency: false }, () => {
     );
   });
 });
-
-function insertLegacyFeedback({
-  id,
-  targetType,
-  targetId,
-  targetWordId,
-  actionKind,
-  note,
-}: {
-  id: string;
-  targetType: 'generated_prompt' | 'contrast_prompt';
-  targetId: string;
-  targetWordId: string;
-  actionKind: 'production' | 'contrast_selection';
-  note: string;
-}) {
-  if (targetType === 'generated_prompt') {
-    assert.equal(targetId, 'definition_based_production');
-    assert.equal(actionKind, 'production');
-    sqlite.prepare(`
-      INSERT INTO definition_fallback_exclusions (
-        learner_id, word_id, origin, source_feedback_ids_json, migration_id, created_at, note
-      ) VALUES ('test-learner', ?, 'legacy_bad_prompt_migration', ?, NULL, ?, ?)
-    `).run(targetWordId, JSON.stringify([id]), '2026-05-10T00:00:00.000Z', note);
-    return;
-  }
-
-  assert.equal(actionKind, 'contrast_selection');
-  sqlite.prepare(`
-    INSERT INTO contrast_prompt_exclusions (
-      learner_id, prompt_id, target_word_id, origin, source_feedback_ids_json,
-      migration_id, created_at, note
-    ) VALUES ('test-learner', ?, ?, 'legacy_bad_prompt_migration', ?, NULL, ?, ?)
-  `).run(targetId, targetWordId, JSON.stringify([id]), '2026-05-10T00:00:00.000Z', note);
-}
 
 function insertWord({
   id,

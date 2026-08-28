@@ -80,11 +80,6 @@ import {
 } from './identity.ts';
 import { installLearnerContextSqlFunction, requireLearnerId } from './learner-context.ts';
 import {
-  ensurePromptExclusionSchema,
-  getContrastPromptExclusions,
-  getDefinitionFallbackExclusions,
-} from './prompt-exclusions.ts';
-import {
   installLearnerScopedCompatibilityViews,
   learnerScopedStorageTableName,
 } from './learner-scoped-tables.ts';
@@ -984,8 +979,6 @@ export function getContrastClusterContent(): ContrastClusterContent[] {
       .filter((row) => row.skillId === 'production' && row.relevanceState === 'suppressed')
       .map((row) => row.wordId),
   );
-  const badProductionPromptWordIds = getGeneratedPromptFeedbackState().badDefinitionBasedProductionPromptWordIds;
-
   return getContrastClusters().map((cluster) => ({
     ...cluster,
     members: getContrastClusterMembers(cluster.id).map((member) => {
@@ -998,71 +991,10 @@ export function getContrastClusterContent(): ContrastClusterContent[] {
         ...member,
         word,
         productionSuppressed: productionSuppressedWordIds.has(member.wordId),
-        badProductionPromptReported: badProductionPromptWordIds.has(member.wordId),
       };
     }),
-    prompts: getContrastPromptContentForCluster(cluster.id),
+    prompts: getContrastPromptsForCluster(cluster.id),
   }));
-}
-
-function getContrastPromptContentForCluster(clusterId: string): ContrastPromptContent[] {
-  const feedbackByPromptId = getContrastPromptFeedbackSummariesByPromptId();
-
-  return getContrastPromptsForCluster(clusterId).map((prompt) => {
-    const feedback = feedbackByPromptId.get(prompt.id) ?? createEmptyContrastPromptFeedbackSummary();
-    return {
-      ...prompt,
-      feedback,
-    };
-  });
-}
-
-type ContrastPromptFeedbackSummary = ContrastPromptContent['feedback'];
-
-function createEmptyContrastPromptFeedbackSummary(): ContrastPromptFeedbackSummary {
-  return {
-    flagged: false,
-    badPromptCount: 0,
-    latestBadPromptAt: null,
-    notes: [],
-  };
-}
-
-function getContrastPromptFeedbackSummariesByPromptId(): Map<string, ContrastPromptFeedbackSummary> {
-  const feedbackByPromptId = new Map<string, ContrastPromptFeedbackSummary>();
-
-  for (const feedback of getStudyContentFeedback()) {
-    if (feedback.targetType !== 'contrast_prompt' || feedback.feedbackType !== 'bad_prompt') {
-      continue;
-    }
-
-    if (feedback.feedbackAction === 'resolved') {
-      feedbackByPromptId.set(feedback.targetId, createEmptyContrastPromptFeedbackSummary());
-      continue;
-    }
-
-    const summary = feedbackByPromptId.get(feedback.targetId) ?? createEmptyContrastPromptFeedbackSummary();
-    feedbackByPromptId.set(feedback.targetId, {
-      flagged: true,
-      badPromptCount: summary.badPromptCount + 1,
-      latestBadPromptAt: feedback.createdAt,
-      notes: feedback.note.length > 0 ? [...summary.notes, feedback.note] : summary.notes,
-    });
-  }
-
-  return feedbackByPromptId;
-}
-
-function getBlockedContrastPromptIds(): Set<string> {
-  const blockedPromptIds = new Set<string>();
-
-  for (const [promptId, feedback] of getContrastPromptFeedbackSummariesByPromptId()) {
-    if (feedback.flagged) {
-      blockedPromptIds.add(promptId);
-    }
-  }
-
-  return blockedPromptIds;
 }
 
 export function updateContrastPrompt({
@@ -1220,35 +1152,6 @@ export function getWordSkillRelevanceRows(): WordSkillRelevance[] {
     .all() as WordSkillRelevanceRow[];
 
   return rows.map(mapWordSkillRelevanceRow);
-}
-
-export function getStudyContentFeedback(): StudyContentFeedback[] {
-  return [
-    ...getDefinitionFallbackExclusions().map((exclusion): StudyContentFeedback => ({
-      id: `definition-exclusion:${exclusion.learnerId}:${exclusion.wordId}`,
-      createdAt: exclusion.createdAt,
-      targetType: 'generated_prompt',
-      targetId: 'definition_based_production',
-      targetWordId: exclusion.wordId,
-      actionKind: 'production',
-      feedbackType: 'bad_prompt',
-      feedbackAction: 'reported',
-      sourceEventId: null,
-      note: exclusion.note,
-    })),
-    ...getContrastPromptExclusions().map((exclusion): StudyContentFeedback => ({
-      id: `contrast-exclusion:${exclusion.learnerId}:${exclusion.promptId}`,
-      createdAt: exclusion.createdAt,
-      targetType: 'contrast_prompt',
-      targetId: exclusion.promptId,
-      targetWordId: exclusion.targetWordId,
-      actionKind: 'contrast_selection',
-      feedbackType: 'bad_prompt',
-      feedbackAction: 'reported',
-      sourceEventId: null,
-      note: exclusion.note,
-    })),
-  ].sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
 }
 
 export function recordStudyManagementAction(input: RecordStudyManagementActionInput): StudyEvent {
@@ -2389,7 +2292,7 @@ export function initializeDatabase() {
   try {
     if (!hasLearnerOwnershipSchema()) {
       throw new Error(
-        `Database at ${dbPath} predates learner ownership. Run the explicit SWI-47 legacy upgrade before starting it.`,
+        `Database at ${dbPath} predates learner ownership and is no longer supported by this build.`,
       );
     }
     ensureReflectionSchema();
@@ -2586,7 +2489,6 @@ function applyLightweightSchemaMigrations() {
         ON DELETE CASCADE
     );
   `);
-  ensurePromptExclusionSchema();
   ensureReflectionSchema();
   ensureProductionCueSchema();
   ensureSharedContentSchema();
@@ -3382,8 +3284,6 @@ function createSchema() {
         ON DELETE CASCADE
     );
   `);
-
-  ensurePromptExclusionSchema();
 
   ensureReflectionSchema();
   ensureProductionCueSchema();
@@ -5203,8 +5103,6 @@ function getReviewSessionStudyItems(now: string, random: () => number): SessionS
     .all() as ReviewSessionItemWithSkillRow[];
 
   const bestCandidateByWordId = new Map<string, ReviewSessionItemCandidate>();
-  const generatedPromptFeedback = getGeneratedPromptFeedbackState();
-  const blockedContrastPromptIds = getBlockedContrastPromptIds();
 
   for (const row of rows) {
     const pendingRecheck = row.skill_id === 'production'
@@ -5217,7 +5115,6 @@ function getReviewSessionStudyItems(now: string, random: () => number): SessionS
 
     const content = getReviewSkillContentIfAvailable(
       row,
-      blockedContrastPromptIds,
       pendingRecheck?.demandId ?? null,
       random,
     );
@@ -5227,7 +5124,6 @@ function getReviewSessionStudyItems(now: string, random: () => number): SessionS
 
     if (!isReviewSkillCandidateAllowedByRelevancePolicy(
       row,
-      generatedPromptFeedback,
       content.production?.cueId !== null && content.production?.cueId !== undefined,
     )) {
       continue;
@@ -5300,27 +5196,13 @@ function dedupeContrastChoiceSets(candidates: ReviewSessionItemCandidate[]): Rev
 
 function isReviewSkillCandidateAllowedByRelevancePolicy(
   row: ReviewSessionItemWithSkillRow,
-  generatedPromptFeedback: GeneratedPromptFeedbackState,
   hasDurableProductionCue: boolean,
 ) {
-  if (row.skill_relevance_state === 'suppressed' && !hasDurableProductionCue) {
-    return false;
-  }
-
-  if (
-    row.skill_id === 'production'
-    && !hasDurableProductionCue
-    && generatedPromptFeedback.badDefinitionBasedProductionPromptWordIds.has(row.id)
-  ) {
-    return false;
-  }
-
-  return true;
+  return row.skill_relevance_state !== 'suppressed' || hasDurableProductionCue;
 }
 
 function getReviewSkillContentIfAvailable(
   row: ReviewSessionItemWithSkillRow,
-  blockedContrastPromptIds: Set<string>,
   recheckDemandId: string | null,
   random: () => number,
 ): {
@@ -5334,7 +5216,6 @@ function getReviewSkillContentIfAvailable(
     }
     const contrastSelection = getEligibleContrastSelectionContentForScheduledWord(
       row.id,
-      blockedContrastPromptIds,
       random,
     );
     return contrastSelection === null
@@ -5406,41 +5287,11 @@ function getReviewSkillContentIfAvailable(
   };
 }
 
-type GeneratedPromptFeedbackState = {
-  badDefinitionBasedProductionPromptWordIds: Set<string>;
-};
-
-function getGeneratedPromptFeedbackState(): GeneratedPromptFeedbackState {
-  const badDefinitionBasedProductionPromptWordIds = new Set<string>();
-
-  for (const feedback of getStudyContentFeedback()) {
-    if (
-      feedback.targetType !== 'generated_prompt' ||
-      feedback.targetId !== 'definition_based_production' ||
-      feedback.actionKind !== 'production' ||
-      feedback.feedbackType !== 'bad_prompt'
-    ) {
-      continue;
-    }
-
-    if (feedback.feedbackAction === 'reported') {
-      badDefinitionBasedProductionPromptWordIds.add(feedback.targetWordId);
-    } else {
-      badDefinitionBasedProductionPromptWordIds.delete(feedback.targetWordId);
-    }
-  }
-
-  return {
-    badDefinitionBasedProductionPromptWordIds,
-  };
-}
-
 function getEligibleContrastSelectionContentForScheduledWord(
   wordId: string,
-  blockedContrastPromptIds: Set<string>,
   random: () => number,
 ): ContrastSelectionContent | null {
-  const candidates = getEligibleContrastDistractorPromptCandidatesForScheduledWord(wordId, blockedContrastPromptIds);
+  const candidates = getEligibleContrastDistractorPromptCandidatesForScheduledWord(wordId);
   const selectedCandidate = randomArrayElement(candidates, random);
 
   if (!selectedCandidate) {
@@ -5515,7 +5366,6 @@ type ContrastDistractorPromptCandidate = {
 
 function getEligibleContrastDistractorPromptCandidatesForScheduledWord(
   wordId: string,
-  blockedPromptIds: Set<string>,
 ): ContrastDistractorPromptCandidate[] {
   const rows = getDb()
     .prepare(`
@@ -5573,8 +5423,7 @@ function getEligibleContrastDistractorPromptCandidatesForScheduledWord(
       row.prompt_id &&
       row.prompt_target_word_id &&
       row.prompt_text !== null &&
-      row.explanation !== null &&
-      !blockedPromptIds.has(row.prompt_id)
+      row.explanation !== null
     ) {
       candidate.candidatePrompts.push({
         id: row.prompt_id,

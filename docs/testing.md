@@ -26,7 +26,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `reflection-generation.test.ts` | Prelookup idempotency, provider/materialization/run metadata, included/eligible counts, in-process coalescing, exact saved-bundle failure retry | `server/reflection/generation.ts` with injected dependencies |
 | `reflection-generation-isolation.test.ts` | Real enrichment/provider failures preserve completed session, summary, and attempt state while recording available run usage | Reflection generation stack + temporary SQLite |
 | `reflection-run-pricing.test.ts` | Pinned token-category pricing math, partial usage handling, and unknown-rate unavailability | `server/reflection/run-pricing.ts` |
-| `reflection-store.test.ts` | Seven-table schema, retained failed-run bundles/retryability, immutable run-price reconstruction, atomic artifact/review persistence, queue/detail, review/invocation lifecycle | Dynamic `server/db.ts` |
+| `reflection-store.test.ts` | Seven-table schema, session-backed and sessionless provenance, retained failed-run bundles/retryability, immutable run-price reconstruction, atomic artifact/review persistence, queue/detail, review/invocation lifecycle | Dynamic `server/db.ts` |
 | `reflection-application.test.ts` | Suppression/contrast adapters, effect attribution, already/stale/failed/unsupported outcomes, recovery | Dynamic `server/db.ts` |
 | `reflection-persistence-reload.test.ts` | Queue/detail/review/application/effect reconstruction across fresh Node processes | Shared temporary `APP_DATA_DIR` |
 | `reflection-api.test.ts` | Generation statuses/errors, queue/detail, compact generation run log/retry, strict independent proposal review, quality tag upsert/stats, Help inbox Done, explanation-only manual authorization, apply/withdraw, startup recovery | `server/index.ts` registered Express route handlers + temporary SQLite |
@@ -43,8 +43,6 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `word-meanings.test.ts` | Word meanings CRUD | Dynamic `server/db.ts` |
 | `dev-db-bootstrap.test.ts` | Dev DB bootstrap | Dynamic `server/db.ts` |
 | `learner-isolation.test.ts` | Shared lexical visibility, private overlays/content, duplicate private ids, cross-owner references | Dynamic `server/db.ts` + raw scoped connection |
-| `legacy-prompt-feedback-migration.test.ts` | Report-only bad-prompt inventory, full legacy learner upgrade, and backup-vs-upgrade critical-state comparison | Upgrade persistence + CLI |
-| `legacy-prompt-remediation.test.ts` | SWI-39 synthetic V4 batching, sessionless run/artifact persistence, Help seeding, dry-run/apply, and rerun idempotence | Remediation CLI library + reflection generation/store |
 | `study-profile.test.ts` | Study profile helpers | `src/study-profile.ts` |
 | `canonical-words.test.ts` | Canonical wordlist scripts | `scripts/lib/canonical-words.ts` |
 | `cc-cedict.test.ts` | CC-CEDICT parsing | `scripts/lib/cc-cedict.ts` |

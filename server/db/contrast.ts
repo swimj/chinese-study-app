@@ -12,5 +12,4 @@ export {
   deleteContrastPrompt,
   getContrastClusterContent,
   updateContrastPrompt,
-  getStudyContentFeedback,
 } from './persistence.ts';

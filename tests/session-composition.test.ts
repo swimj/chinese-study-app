@@ -102,8 +102,6 @@ describe('session composition', { concurrency: false }, () => {
       DELETE FROM scoped_production_cue_supplements;
       DELETE FROM scoped_production_cues;
       DELETE FROM reflection_operation_invocations;
-      DELETE FROM contrast_prompt_exclusions;
-      DELETE FROM definition_fallback_exclusions;
       DELETE FROM word_skill_relevance;
       DELETE FROM study_events;
       DELETE FROM study_attempt_events;
@@ -235,7 +233,7 @@ describe('session composition', { concurrency: false }, () => {
     ]);
   });
 
-  test('serves the exact active production cue and lets it supersede legacy fallback suppression', () => {
+  test('serves the exact active production cue for an otherwise suppressed skill', () => {
     insertWord({
       id: 'cue-word',
       hanzi: '辨',
@@ -255,7 +253,6 @@ describe('session composition', { concurrency: false }, () => {
       nextDueAt: isoHoursAgo(24),
     });
     insertWordSkillRelevance('cue-word', 'production', 'suppressed');
-    insertBadProductionPromptFeedback('cue-word');
     insertProductionCue({
       wordId: 'cue-word',
       cueId: 'cue-active',
@@ -524,30 +521,6 @@ describe('session composition', { concurrency: false }, () => {
       nextDueAt: isoHoursAgo(48),
     });
     insertWordSkillRelevance('suppressed-production-word', 'production', 'suppressed');
-
-    assert.deepEqual(getSessionItemIds(dbModule), []);
-  });
-
-  test('does not schedule bad definition-based production prompts as replacement busywork', () => {
-    insertWord({
-      id: 'bad-production-prompt-word',
-      hanzi: '泛',
-      pinyin: 'fan',
-      meaning: 'broad',
-      examples: ['这个说法很泛。'],
-      status: 'review',
-      priority: 100,
-      createdAt: isoHoursAgo(96),
-    });
-    insertWordStudyAdmissionState('bad-production-prompt-word', null);
-    insertWordSkillState({
-      wordId: 'bad-production-prompt-word',
-      skillId: 'production',
-      intervalHours: 24,
-      lastStudiedAt: isoHoursAgo(72),
-      nextDueAt: isoHoursAgo(48),
-    });
-    insertBadProductionPromptFeedback('bad-production-prompt-word');
 
     assert.deepEqual(getSessionItemIds(dbModule), []);
   });
@@ -950,103 +923,6 @@ describe('session composition', { concurrency: false }, () => {
     insertWordSkillRelevance('context-no-content-word', 'contextual_selection', 'normal');
 
     assert.deepEqual(getSessionItemIds(dbModule), []);
-  });
-
-  test('does not schedule contextual selection when all usable contrast prompts are suppressed', () => {
-    insertWord({
-      id: 'context-suppressed-prompt-word',
-      hanzi: '适当',
-      pinyin: 'shi dang',
-      meaning: 'suitable',
-      examples: ['要适当休息。'],
-      status: 'review',
-      priority: 100,
-      createdAt: isoHoursAgo(120),
-    });
-    insertWord({
-      id: 'context-suppressed-sibling-word',
-      hanzi: '恰当',
-      pinyin: 'qia dang',
-      meaning: 'appropriate',
-      examples: ['表达很恰当。'],
-      status: 'review',
-      priority: 100,
-      createdAt: isoHoursAgo(120),
-    });
-    insertWordStudyAdmissionState('context-suppressed-prompt-word', null);
-    insertWordSkillState({
-      wordId: 'context-suppressed-prompt-word',
-      skillId: 'contextual_selection',
-      intervalHours: 24,
-      lastStudiedAt: isoHoursAgo(72),
-      nextDueAt: isoHoursAgo(48),
-    });
-    insertWordSkillRelevance('context-suppressed-prompt-word', 'contextual_selection', 'normal');
-    insertContrastContent({
-      clusterId: 'cluster-appropriate',
-      scheduledWordId: 'context-suppressed-prompt-word',
-      siblingWordId: 'context-suppressed-sibling-word',
-      promptId: 'prompt-suppressed-contrast',
-      promptTargetWordId: 'context-suppressed-prompt-word',
-    });
-    insertBadContrastPromptFeedback({
-      promptId: 'prompt-suppressed-contrast',
-      targetWordId: 'context-suppressed-prompt-word',
-    });
-
-    assert.deepEqual(getSessionItemIds(dbModule), []);
-  });
-
-  test('schedules contextual selection again after bad contrast prompt feedback is resolved', () => {
-    insertWord({
-      id: 'context-resolved-prompt-word',
-      hanzi: '适当',
-      pinyin: 'shi dang',
-      meaning: 'suitable',
-      examples: ['要适当休息。'],
-      status: 'review',
-      priority: 100,
-      createdAt: isoHoursAgo(120),
-    });
-    insertWord({
-      id: 'context-resolved-sibling-word',
-      hanzi: '恰当',
-      pinyin: 'qia dang',
-      meaning: 'appropriate',
-      examples: ['表达很恰当。'],
-      status: 'review',
-      priority: 100,
-      createdAt: isoHoursAgo(120),
-    });
-    insertWordStudyAdmissionState('context-resolved-prompt-word', null);
-    insertWordSkillState({
-      wordId: 'context-resolved-prompt-word',
-      skillId: 'contextual_selection',
-      intervalHours: 24,
-      lastStudiedAt: isoHoursAgo(72),
-      nextDueAt: isoHoursAgo(48),
-    });
-    insertWordSkillRelevance('context-resolved-prompt-word', 'contextual_selection', 'normal');
-    insertContrastContent({
-      clusterId: 'cluster-resolved-appropriate',
-      scheduledWordId: 'context-resolved-prompt-word',
-      siblingWordId: 'context-resolved-sibling-word',
-      promptId: 'prompt-resolved-contrast',
-      promptTargetWordId: 'context-resolved-prompt-word',
-    });
-    insertBadContrastPromptFeedback({
-      promptId: 'prompt-resolved-contrast',
-      targetWordId: 'context-resolved-prompt-word',
-    });
-
-    sqlite.prepare(`
-      DELETE FROM contrast_prompt_exclusions
-      WHERE learner_id = 'test-learner' AND prompt_id = ?
-    `).run(
-      'prompt-resolved-contrast',
-    );
-
-    assert.deepEqual(getSessionItemIds(dbModule), ['review/context-resolved-prompt-word/contextual_selection']);
   });
 
   test('suppresses review skills when urgency is below threshold', () => {
@@ -2305,40 +2181,6 @@ function insertWordSkillRelevance(
       updated_at = excluded.updated_at,
       source_event_id = excluded.source_event_id
   `).run(wordId, skillId, relevanceState, '2026-05-10T00:00:00.000Z');
-}
-
-function insertBadProductionPromptFeedback(wordId: string) {
-  sqlite.prepare(`
-    INSERT INTO definition_fallback_exclusions (
-      learner_id, word_id, origin, source_feedback_ids_json, migration_id, created_at, note
-    ) VALUES ('test-learner', ?, 'legacy_bad_prompt_migration', ?, NULL, ?, ?)
-  `).run(
-    wordId,
-    JSON.stringify([`bad-production-prompt-${wordId}`]),
-    '2026-05-10T00:00:00.000Z',
-    'Definition-based production prompt was marked bad.',
-  );
-}
-
-function insertBadContrastPromptFeedback({
-  promptId,
-  targetWordId,
-}: {
-  promptId: string;
-  targetWordId: string;
-}) {
-  sqlite.prepare(`
-    INSERT INTO contrast_prompt_exclusions (
-      learner_id, prompt_id, target_word_id, origin, source_feedback_ids_json,
-      migration_id, created_at, note
-    ) VALUES ('test-learner', ?, ?, 'legacy_bad_prompt_migration', ?, NULL, ?, ?)
-  `).run(
-    promptId,
-    targetWordId,
-    JSON.stringify([`bad-contrast-prompt-${promptId}`]),
-    '2026-05-10T00:00:00.000Z',
-    'Contrast prompt was marked bad.',
-  );
 }
 
 function insertContrastContent({

@@ -8,7 +8,6 @@ import type {
 import type { ProductionCueType } from '../../src/domain/study-actions.ts';
 import type { Word, WordRow, WordStatus } from './types.ts';
 import { getDb } from './connection.ts';
-import { requireLearnerId } from './learner-context.ts';
 
 const DEFAULT_DIAGNOSTIC_LIMIT = 50;
 const MAX_DIAGNOSTIC_LIMIT = 50;
@@ -27,7 +26,6 @@ type ClusterPromptDiagnosticRow = {
   target_word_id: string;
   prompt_text: string;
   explanation: string;
-  latest_feedback_action: string | null;
 };
 
 type WordConnectionRow = {
@@ -246,16 +244,11 @@ function searchClusterDiagnostics(query: string, limit: number): ContrastCluster
         contrast_prompts.cluster_id,
         contrast_prompts.target_word_id,
         contrast_prompts.prompt_text,
-        contrast_prompts.explanation,
-        CASE WHEN contrast_prompt_exclusions.prompt_id IS NULL THEN NULL ELSE 'reported' END
-          AS latest_feedback_action
+        contrast_prompts.explanation
       FROM contrast_prompts
-      LEFT JOIN contrast_prompt_exclusions
-        ON contrast_prompt_exclusions.prompt_id = contrast_prompts.id
-       AND contrast_prompt_exclusions.learner_id = ?
       WHERE contrast_prompts.cluster_id IN (__IDS__)
       ORDER BY contrast_prompts.cluster_id ASC, contrast_prompts.id ASC
-    `, [requireLearnerId()]),
+    `),
     (row) => row.cluster_id,
   );
 
@@ -274,7 +267,6 @@ function searchClusterDiagnostics(query: string, limit: number): ContrastCluster
       targetWordId: prompt.target_word_id,
       promptText: prompt.prompt_text,
       explanation: prompt.explanation,
-      flagged: prompt.latest_feedback_action === 'reported',
     })),
   }));
 }

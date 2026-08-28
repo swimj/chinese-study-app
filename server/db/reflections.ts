@@ -437,7 +437,6 @@ const invocationColumns = [
 ] as const;
 
 export function ensureReflectionSchema(): void {
-  migrateReflectionSourceSessionsNullable();
   if (learnerScopedStorageTableName('reflection_artifacts') !== 'reflection_artifacts') {
     ensureReflectionIndexes();
     return;
@@ -750,86 +749,6 @@ export function ensureReflectionSchema(): void {
   ensureReflectionIndexes();
   ensureReflectionQualitySchema();
   ensureReflectionHelpInboxSchema();
-}
-
-function migrateReflectionSourceSessionsNullable(): void {
-  const tableNames = ['reflection_artifacts', 'reflection_generation_runs'] as const;
-  const migrations = tableNames.flatMap((logicalName) => {
-    const storageName = learnerScopedStorageTableName(logicalName);
-    const columns = getDb().prepare(`PRAGMA table_info(${storageName})`).all() as Array<{
-      name: string;
-      notnull: number;
-    }>;
-    const sourceSession = columns.find((column) => column.name === 'source_session_id');
-    return sourceSession?.notnull === 1 ? [{ logicalName, storageName }] : [];
-  });
-  if (migrations.length === 0) return;
-
-  const foreignKeysEnabled = (getDb().prepare('PRAGMA foreign_keys').get() as {
-    foreign_keys: number;
-  }).foreign_keys === 1;
-  getDb().exec('PRAGMA foreign_keys = OFF;');
-  try {
-    getDb().exec('BEGIN IMMEDIATE;');
-    for (const { logicalName, storageName } of migrations) {
-      if (storageName !== logicalName) dropLearnerScopedCompatibilityView(logicalName);
-      dropTriggersReferencingTable(storageName);
-    }
-    for (const { storageName } of migrations) rebuildReflectionTableWithNullableSource(storageName);
-    getDb().exec('COMMIT;');
-  } catch (error) {
-    getDb().exec('ROLLBACK;');
-    throw error;
-  } finally {
-    if (foreignKeysEnabled) getDb().exec('PRAGMA foreign_keys = ON;');
-  }
-}
-
-function dropTriggersReferencingTable(tableName: string): void {
-  const triggers = getDb().prepare(`
-    SELECT name
-    FROM sqlite_master
-    WHERE type = 'trigger'
-      AND (tbl_name = ? OR instr(COALESCE(sql, ''), ?) > 0)
-  `).all(tableName, tableName) as Array<{ name: string }>;
-  for (const trigger of triggers) getDb().exec(`DROP TRIGGER ${trigger.name};`);
-}
-
-function dropLearnerScopedCompatibilityView(logicalName: string): void {
-  for (const suffix of ['insert', 'update', 'delete']) {
-    getDb().exec(`DROP TRIGGER IF EXISTS ${logicalName}_scoped_${suffix};`);
-  }
-  getDb().exec(`DROP VIEW IF EXISTS ${logicalName};`);
-}
-
-function rebuildReflectionTableWithNullableSource(tableName: string): void {
-  const row = getDb().prepare(`
-    SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?
-  `).get(tableName) as { sql: string } | undefined;
-  if (!row) throw new Error(`Cannot migrate missing reflection table ${tableName}.`);
-
-  const replacementName = `${tableName}_nullable_source_rebuild`;
-  const createSql = row.sql
-    .replace(
-      /^CREATE TABLE\s+(?:"[^"]+"|[^\s(]+)/i,
-      `CREATE TABLE ${replacementName}`,
-    )
-    .replace('source_session_id TEXT NOT NULL', 'source_session_id TEXT');
-  if (createSql === row.sql || createSql.includes('source_session_id TEXT NOT NULL')) {
-    throw new Error(`Cannot migrate reflection source-session column for ${tableName}.`);
-  }
-  const columns = (getDb().prepare(`PRAGMA table_info(${tableName})`).all() as Array<{
-    name: string;
-  }>).map((column) => column.name);
-  const columnList = columns.join(', ');
-  getDb().exec(`DROP TABLE IF EXISTS ${replacementName};`);
-  getDb().exec(createSql);
-  getDb().exec(`
-    INSERT INTO ${replacementName} (${columnList})
-    SELECT ${columnList} FROM ${tableName};
-  `);
-  getDb().exec(`DROP TABLE ${tableName};`);
-  getDb().exec(`ALTER TABLE ${replacementName} RENAME TO ${tableName};`);
 }
 
 function migrateReflectionArtifactsForMultipleCandidates(): void {

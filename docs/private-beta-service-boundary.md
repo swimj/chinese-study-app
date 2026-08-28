@@ -54,7 +54,7 @@ and a self-service recovery product are outside this beta contract.
 
 ## Durable Ownership Inventory
 
-The current schema has 42 steady-state application tables. Temporary migration
+The current schema has 44 steady-state application tables. Temporary migration
 tables and SQLite internals are excluded. Existing mixed tables must be split
 or given an equivalently explicit ownership/scope boundary before real hosted
 learner data is accepted.
@@ -110,11 +110,12 @@ interpret the historical event; they do not carry publication identity.
 
 `contrast_candidate_intake` was a vestigial local experiment and is retired
 rather than tenant-adapted. The polymorphic `study_content_feedback` log is
-replaced by narrow learner-owned definition-fallback and
-contrast-prompt exclusion state. Migration preserves active bad-prompt intent,
-its useful note, and explicit legacy origin without conflating it with general
-production suppression; resolved history remains in the migration validation
-report. SWI-49 owns later shared-artifact reporting and quarantine.
+retired rather than tenant-adapted. Its active legacy bad-prompt cases were
+processed once through reflection and Help before the temporary exclusion
+state was removed. Going forward, bad production prompts are repaired through
+durable production cues; bad contrast content is repaired or deleted through
+the ordinary content lifecycle. SWI-49 owns shared-artifact reporting and
+quarantine.
 
 The former `app_metadata` keyspace is replaced by `learner_settings`,
 `schema_migrations`, and `content_imports`. Release and migration ledgers are
@@ -216,16 +217,16 @@ normalizing loss.
 
 ## Dogfood Migration Contract
 
-The primary dogfood database is the only required legacy import. External beta
-learners start fresh.
+The primary dogfood database was the only required legacy source. Its local
+SWI-47 learner-ownership upgrade is complete and current builds do not retain
+that one-time importer. External beta learners start fresh.
 
-Rehearse a deterministic, versioned, transactional migration on recoverable
-copies. It assigns the dogfood learner, separates shared and private data,
-preserves immutable history and served snapshots, scopes metadata, and emits a
-machine-readable validation report. Cutover stops local writes, takes a final
-backup, imports and validates, and establishes the hosted service as sole
-writer. The original remains read-only through initial verification; there is
-no dual-write period.
+A later hosted cutover still rehearses its deterministic, versioned,
+transactional migration on recoverable copies. It preserves immutable history
+and served snapshots, scopes metadata, and emits a machine-readable validation
+report. Cutover stops local writes, takes a final backup, imports and validates,
+and establishes the hosted service as sole writer. The original remains
+read-only through initial verification; there is no dual-write period.
 
 Imported corpus content becomes `available`. Active reusable custom cues,
 clusters, and prompts become `shared_trial` after a one-time authorization and
@@ -233,9 +234,10 @@ sanitization check. Inactive/replaced content retains truthful history. All
 learner evidence, responses, scheduling, priorities, suppressions, feedback,
 and authorization history remains owned by the dogfood learner.
 
-Historical bad-prompt cleanup is a separate idempotent, agent-assisted proposal
-workflow with operator review. Nondeterministic model judgment never runs
-inside the deterministic migration.
+Historical bad-prompt cleanup completed once through sessionless reflection and
+operator review. Its importer, exclusion workaround, and remediation command
+are retired; its immutable reflection artifacts remain readable.
+Nondeterministic model judgment never runs inside a deterministic migration.
 
 ## Operational Trust
 

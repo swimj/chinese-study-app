@@ -78,16 +78,6 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
   },
   ...privateWordStateEntries(),
   ...studyHistoryEntries(),
-  privateEntry(
-    'definition_fallback_exclusions',
-    'learner plus shared word',
-    'fold active legacy definition feedback into explicit exclusions with migration provenance',
-  ),
-  privateEntry(
-    'contrast_prompt_exclusions',
-    'learner plus scoped contrast prompt',
-    'fold active legacy contrast feedback into explicit exclusions with migration provenance',
-  ),
   ...contrastContentEntries(),
   ...reflectionEntries(),
   ...productionEntries(),

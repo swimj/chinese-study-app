@@ -219,6 +219,53 @@ describe('reflection durable store', { concurrency: false }, () => {
     assert.equal(dbModule.listReflectionGenerationRuns()[0]?.retryable, true);
   });
 
+  test('retains sessionless remediation artifacts and exact-bundle retry provenance', () => {
+    const input = materializationInputV2('synthetic-remediation-session');
+    input.sourceSessionId = null;
+    sqlite.prepare('DELETE FROM study_sessions WHERE id = ?').run('synthetic-remediation-session');
+
+    const materialized = dbModule.materializeReflectionArtifact(input);
+    assert.equal(materialized.artifact.sourceSessionId, null);
+    assert.equal(
+      dbModule.getReflectionArtifactDetail(materialized.artifact.artifactId).sourceSessionId,
+      null,
+    );
+
+    dbModule.recordReflectionGenerationRun({
+      runId: 'sessionless-failed-run',
+      sourceSessionId: null,
+      reflectionFlowVersion: 'initial_post_session_reflection.v1',
+      startedAt: generatedAt,
+      completedAt: updatedAt,
+      provider: 'openai',
+      model: 'gpt-5.6-luna-high',
+      providerModel: 'gpt-5.6-luna',
+      promptVersion: 'reflection-v8',
+      responseId: null,
+      finishReason: null,
+      state: 'failed',
+      failureCode: 'upstream_failure',
+      eligibleItemCount: 1,
+      includedItemCount: 1,
+      usage: {
+        inputTokens: null,
+        cachedInputTokens: null,
+        cacheWriteInputTokens: null,
+        outputTokens: null,
+        reasoningTokens: null,
+        totalTokens: null,
+      },
+      pricingSnapshotId: null,
+      pricingAsOf: null,
+      pricingBasis: null,
+      estimatedCostUsd: null,
+      evidenceBundle: input.evidenceBundle,
+    });
+    const retry = dbModule.getReflectionGenerationRetrySource('sessionless-failed-run');
+    assert.equal(retry.sourceSessionId, null);
+    assert.deepEqual(retry.evidenceBundle, input.evidenceBundle);
+  });
+
   test('atomically materializes immutable JSON and exactly one pending row per proposal', () => {
     const input = materializationInput('session-one', suppressOperation('target'));
     input.result.itemResults.push(informationalResult('info'));

@@ -1,6 +1,6 @@
 # SWI-39 legacy prompt remediation
 
-status: active
+status: archived
 type: task-spec
 created: 2026-08-27
 retire-when: SWI-39 is implemented and its dogfood run is reviewed
@@ -88,3 +88,9 @@ truthfully active.
 - `npm run build`.
 - Before a real dogfood apply, make a recoverable database backup and inspect
   the dry-run report.
+
+## Disposition
+
+The sole dogfood database completed the remediation successfully on 2026-08-28.
+The temporary exclusion state and one-time operator path were then retired;
+durable sessionless reflection artifacts remain readable and retryable.
