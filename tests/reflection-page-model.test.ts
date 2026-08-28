@@ -486,6 +486,95 @@ describe('reflection page model', () => {
     assert.equal(revisedState.applySupport, 'supported');
     assert.match(revisedState.validationErrors.join('\n'), /must be admitted/);
 
+    const clearedCreate = reduceReflectionOperationDraft({
+      ...cue,
+      changes: [{
+        kind: 'create',
+        cue: {
+          cueType: 'minimal_context',
+          text: 'A created shared cue',
+          acceptedWordIds: ['target', 'alternate'],
+        },
+      }],
+      sourceAttemptJudgments: [{
+        kind: 'accepted_answer_space_omission',
+        sourceAttemptId: 'attempt-1',
+        submittedWordId: 'alternate',
+      }],
+    }, {
+      type: 'update_v2_create_cue',
+      changeIndex: 0,
+      patch: { acceptedWordIds: ['target'] },
+    });
+    assert.equal(clearedCreate.kind, 'repair_production_cue');
+    assert.equal(clearedCreate.kind === 'repair_production_cue' && clearedCreate.version, 2);
+    if (clearedCreate.kind === 'repair_production_cue' && clearedCreate.version === 2) {
+      assert.deepEqual(clearedCreate.sourceAttemptJudgments, []);
+      assert.deepEqual(
+        clearedCreate.changes[0]?.kind === 'create'
+          ? clearedCreate.changes[0].cue.acceptedWordIds
+          : null,
+        ['target'],
+      );
+    }
+    assert.deepEqual(
+      getOperationDraftState(cue, clearedCreate, fallbackEvidence()).validationErrors,
+      [],
+    );
+
+    const splitReplace = reduceReflectionOperationDraft({
+      ...cue,
+      changes: [{
+        kind: 'replace',
+        cueId: 'cue-1',
+        replacements: [
+          {
+            cueType: 'minimal_context',
+            text: 'Target-only cue',
+            acceptedWordIds: ['target', 'alternate'],
+          },
+          {
+            cueType: 'circumstance',
+            text: 'Shared circumstance',
+            acceptedWordIds: ['target', 'alternate'],
+          },
+        ],
+      }],
+      sourceAttemptJudgments: [{
+        kind: 'accepted_answer_space_omission',
+        sourceAttemptId: 'attempt-1',
+        submittedWordId: 'alternate',
+      }],
+    }, {
+      type: 'update_v2_replacement',
+      changeIndex: 0,
+      replacementIndex: 0,
+      patch: { acceptedWordIds: ['target'] },
+    });
+    assert.equal(splitReplace.kind === 'repair_production_cue' && splitReplace.version, 2);
+    if (splitReplace.kind === 'repair_production_cue' && splitReplace.version === 2) {
+      assert.deepEqual(splitReplace.sourceAttemptJudgments, [{
+        kind: 'accepted_answer_space_omission',
+        sourceAttemptId: 'attempt-1',
+        submittedWordId: 'alternate',
+      }]);
+    }
+
+    const clearedReplace = reduceReflectionOperationDraft(splitReplace, {
+      type: 'update_v2_replacement',
+      changeIndex: 0,
+      replacementIndex: 1,
+      patch: { acceptedWordIds: ['target'] },
+    });
+    assert.equal(clearedReplace.kind === 'repair_production_cue' && clearedReplace.version, 2);
+    if (clearedReplace.kind === 'repair_production_cue' && clearedReplace.version === 2) {
+      assert.deepEqual(clearedReplace.sourceAttemptJudgments, []);
+    }
+    assert.deepEqual(
+      getOperationDraftState(cue, clearedReplace, v2Evidence()).validationErrors,
+      [],
+    );
+
     const wrongCue = structuredClone(cue);
     assert.equal(wrongCue.changes[0]?.kind, 'replace');
     if (wrongCue.changes[0]?.kind === 'replace') wrongCue.changes[0].cueId = 'other-cue';
@@ -749,6 +838,17 @@ function v2Evidence(): ProductionMistakeReflectionItemV2 {
       meanings: ['alternate'],
     },
     responseKind: 'matched_known_word',
+  };
+}
+
+function fallbackEvidence(): ProductionMistakeReflectionItemV2 {
+  const evidence = v2Evidence();
+  return {
+    ...evidence,
+    servedCue: {
+      ...evidence.servedCue,
+      cueId: null,
+    },
   };
 }
 

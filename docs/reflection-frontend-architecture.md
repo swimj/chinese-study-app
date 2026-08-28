@@ -148,7 +148,9 @@ accepted proposal. Word fields for contrast members and suppression/alternate
 targets remain evidence comboboxes showing `hanzi · pinyin` surface labels; they
 do not offer global content-diagnostics search. V2 cue accepted words are
 toggle chips for the attempt's visible words, populated from the proposal and
-green when accepted. V2 cue repair hides the restated target-word field, source-attempt
+green when accepted. Clearing a submitted-response chip from every created or
+replacement accepted set drops a hidden `accepted_answer_space_omission`
+judgment so the target-only cue remains authorizable. V2 cue repair hides the restated target-word field, source-attempt
 judgments, production task ids, and raw cue ids. Cue lifecycle changes render
 as a compact list of cue texts (kind via color); a row expands for editing,
 replace's cue-to-be-replaced appears only in that detail, and rows can be

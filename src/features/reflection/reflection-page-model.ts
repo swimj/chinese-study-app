@@ -690,7 +690,7 @@ export function reduceReflectionOperationDraft(
         }),
       );
     case 'add_v2_cue_change':
-      return editRepairCueV2(operation, action.type, (current) => ({
+      return editRepairCueV2Changes(operation, action.type, (current) => ({
         ...current,
         changes: [...current.changes, {
           kind: 'create',
@@ -698,12 +698,12 @@ export function reduceReflectionOperationDraft(
         }],
       }));
     case 'remove_v2_cue_change':
-      return editRepairCueV2(operation, action.type, (current) => ({
+      return editRepairCueV2Changes(operation, action.type, (current) => ({
         ...current,
         changes: removeAt(current.changes, action.index, 'V2 cue change'),
       }));
     case 'set_v2_cue_change_kind':
-      return editRepairCueV2(operation, action.type, (current) => ({
+      return editRepairCueV2Changes(operation, action.type, (current) => ({
         ...current,
         changes: updateAt(
           current.changes,
@@ -732,7 +732,7 @@ export function reduceReflectionOperationDraft(
         ),
       }));
     case 'update_v2_create_cue':
-      return editRepairCueV2(operation, action.type, (current) => ({
+      return editRepairCueV2Changes(operation, action.type, (current) => ({
         ...current,
         changes: updateAt(
           current.changes,
@@ -747,7 +747,7 @@ export function reduceReflectionOperationDraft(
         ),
       }));
     case 'add_v2_replacement':
-      return editRepairCueV2(operation, action.type, (current) => ({
+      return editRepairCueV2Changes(operation, action.type, (current) => ({
         ...current,
         changes: updateAt(
           current.changes,
@@ -765,7 +765,7 @@ export function reduceReflectionOperationDraft(
         ),
       }));
     case 'remove_v2_replacement':
-      return editRepairCueV2(operation, action.type, (current) => ({
+      return editRepairCueV2Changes(operation, action.type, (current) => ({
         ...current,
         changes: updateAt(
           current.changes,
@@ -787,7 +787,7 @@ export function reduceReflectionOperationDraft(
         ),
       }));
     case 'update_v2_replacement':
-      return editRepairCueV2(operation, action.type, (current) => ({
+      return editRepairCueV2Changes(operation, action.type, (current) => ({
         ...current,
         changes: updateAt(
           current.changes,
@@ -1101,6 +1101,45 @@ function editRepairCueV2(
     );
   }
   return update(operation);
+}
+
+function editRepairCueV2Changes(
+  operation: ReflectionOperation,
+  actionType: string,
+  update: (current: RepairProductionCueOperationV2) => RepairProductionCueOperationV2,
+): RepairProductionCueOperationV2 {
+  return dropUnadmittedAcceptedAnswerJudgments(
+    editRepairCueV2(operation, actionType, update),
+  );
+}
+
+function dropUnadmittedAcceptedAnswerJudgments(
+  operation: RepairProductionCueOperationV2,
+): RepairProductionCueOperationV2 {
+  const admittedWordIds = authoredAcceptedWordIds(operation.changes);
+  const sourceAttemptJudgments = operation.sourceAttemptJudgments.filter((judgment) => (
+    judgment.kind !== 'accepted_answer_space_omission'
+    || admittedWordIds.has(judgment.submittedWordId)
+  ));
+  if (sourceAttemptJudgments.length === operation.sourceAttemptJudgments.length) {
+    return operation;
+  }
+  return { ...operation, sourceAttemptJudgments };
+}
+
+function authoredAcceptedWordIds(changes: ProductionCueChangeV2[]): Set<string> {
+  const wordIds = new Set<string>();
+  for (const change of changes) {
+    const drafts = change.kind === 'create'
+      ? [change.cue]
+      : change.kind === 'replace'
+        ? change.replacements
+        : [];
+    for (const draft of drafts) {
+      for (const wordId of draft.acceptedWordIds) wordIds.add(wordId);
+    }
+  }
+  return wordIds;
 }
 
 function emptyProductionCueDraftV2(wordId: string): ProductionCueDraftV2 {
