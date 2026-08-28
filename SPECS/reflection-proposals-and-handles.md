@@ -501,12 +501,16 @@ The behavioral contract is:
 Validation requires at least one change, allows a cue id in at most one change,
 requires at least one replacement for `replace`, and resolves the word, task,
 referenced cues, accepted words, and any source attempt against current state.
-Every referenced cue must belong to the named task. An accepted-answer-space
-judgment must identify the durable submitted word and admit it in the new answer
-space. For a durable served cue, that judgment must replace the exact cue; for
-the meaning-derived fallback, it may create the first durable cue. A misleading
-or overloaded judgment must likewise repair the exact served cue or create a
-durable cue for fallback evidence.
+Every referenced cue must belong to the named task. A cue draft's accepted set
+must include the task word; it need not include the submitted response. An
+accepted-answer-space judgment is the claim that that response belongs in the
+new answer space: it must identify the durable submitted word and admit it in a
+created or replacement cue. For a durable served cue, that judgment must replace
+the exact cue; for the meaning-derived fallback, it may create the first durable
+cue. If the learner revises the accepted set so the submitted word is no longer
+admitted, the review editor drops that now-inconsistent judgment rather than
+blocking authorization. A misleading or overloaded judgment must likewise repair
+the exact served cue or create a durable cue for fallback evidence.
 
 Application activates every created or replacement cue immediately and records
 created cues, lifecycle events, and later cue-evidence judgments through the
@@ -895,10 +899,15 @@ change is not enough to claim satisfaction or borrow its effect attribution.
 Generated content inside an operation remains editable before authorization.
 For contrast creation this includes title, cluster note, member nuance notes,
 prompt targets, prompt text, and explanations. For V2 cue repair it includes
-the cue lifecycle changes, draft cue types and text, accepted-word sets, and
-optional source-attempt judgments. For a cue supplement it includes the English
-frame, full example sentence, and translation; changing any of those fields
-creates a revised invocation without changing the exact evidence attachment.
+the cue lifecycle changes, draft cue types and text, and accepted-word sets.
+Source-attempt judgments stay in the authorized payload; the compact editor
+keeps them consistent with the visible accepted sets rather than exposing them
+as a separate field. Clearing the submitted response from every created or
+replacement accepted set drops a now-inconsistent
+`accepted_answer_space_omission` judgment. For a cue supplement the editable
+fields are the English frame, full example sentence, and translation; changing
+any of those fields creates a revised invocation without changing the exact
+evidence attachment.
 
 Editing generated content does not rewrite the artifact. Accepting an edited
 payload creates a revised invocation. The review system may assess diagnosis,
