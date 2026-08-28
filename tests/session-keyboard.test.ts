@@ -179,7 +179,8 @@ describe('session keyboard contract', () => {
       resolveSessionKey(key('Unidentified', { code: 'Slash', shiftKey: true }), createContext()),
       { type: 'toggle_shortcut_guide' },
     );
-    assert.deepEqual(resolveSessionKey(key('?'), production), { type: 'toggle_shortcut_guide' });
+    assert.equal(resolveSessionKey(key('?'), production), null);
+    assert.equal(resolveSessionKey(key('/', { shiftKey: true }), production), null);
     assert.deepEqual(resolveSessionKey(key('?'), contrast), { type: 'toggle_shortcut_guide' });
     assert.deepEqual(resolveSessionKey(key('?'), rating), { type: 'toggle_shortcut_guide' });
     assert.equal(resolveSessionKey(key('?', { isComposing: true }), createContext()), null);
