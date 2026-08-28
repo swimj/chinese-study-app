@@ -206,6 +206,10 @@ export function resolveSessionKey(
     return null;
   }
 
+  if (context.isEditableTarget && isShortcutGuideToggleKey(event)) {
+    return null;
+  }
+
   if (isShortcutGuideToggleKey(event)) {
     return { type: 'toggle_shortcut_guide' };
   }
