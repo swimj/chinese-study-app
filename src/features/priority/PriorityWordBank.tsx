@@ -156,16 +156,21 @@ export function PriorityWordBank({
   }
 
   function handleDragEnd() {
+    finishDrag();
+  }
+
+  function finishDrag() {
     setDraggingWordIds([]);
     setDropSection(null);
-    window.setTimeout(() => {
-      didDragRef.current = false;
-    }, 0);
+    didDragRef.current = false;
   }
 
   async function handleDrop(section: PriorityBankSection, event: React.DragEvent<HTMLElement>) {
     event.preventDefault();
-    setDropSection(null);
+    // Moving between sections updates rows optimistically, which can unmount
+    // the drag source before its dragend handler runs. Clear this state here
+    // as well so the moved chip can show its hover popover in the new section.
+    finishDrag();
     const raw = event.dataTransfer.getData(PRIORITY_CHIP_DRAG_MIME)
       || event.dataTransfer.getData('text/plain');
     if (!raw) {
