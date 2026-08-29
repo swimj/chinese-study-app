@@ -91,41 +91,21 @@ export function PriorityWordBank({
     setRangeAnchorId(next.rangeAnchorId);
   }
 
-  function handleChipMouseDown(
-    event: React.MouseEvent<HTMLButtonElement>,
-    wordId: string,
-    sectionIds: string[],
-  ) {
-    if (event.button !== 0) {
-      return;
-    }
-
-    const mode = event.shiftKey ? 'range' : event.metaKey || event.ctrlKey ? 'toggle' : 'replace';
-    if (mode !== 'replace' || !selectedWordIds.includes(wordId)) {
-      applySelection(nextChipSelection({
-        selectedIds: selectedWordIds,
-        orderedIds: sectionIds,
-        targetId: wordId,
-        mode,
-        rangeAnchorId,
-      }));
-    }
-  }
-
   function handleChipClick(
     event: React.MouseEvent<HTMLButtonElement>,
     wordId: string,
     sectionIds: string[],
   ) {
-    if (didDragRef.current || event.shiftKey || event.metaKey || event.ctrlKey) {
+    if (didDragRef.current) {
       return;
     }
 
+    const mode = event.shiftKey ? 'range' : event.metaKey || event.ctrlKey ? 'toggle' : 'replace';
     applySelection(nextChipSelection({
       selectedIds: selectedWordIds,
       orderedIds: sectionIds,
       targetId: wordId,
-      mode: 'replace',
+      mode,
       rangeAnchorId,
     }));
   }
@@ -266,7 +246,6 @@ export function PriorityWordBank({
         emptyCopy="Drag chips here to move them to top."
         chipRefs={chipRefs}
         onSectionMouseDown={handleSectionMouseDown}
-        onChipMouseDown={handleChipMouseDown}
         onChipClick={handleChipClick}
         onChipMouseEnter={schedulePopover}
         onChipMouseLeave={scheduleHidePopover}
@@ -289,7 +268,6 @@ export function PriorityWordBank({
         emptyCopy="Add matches below, or drag chips here from top."
         chipRefs={chipRefs}
         onSectionMouseDown={handleSectionMouseDown}
-        onChipMouseDown={handleChipMouseDown}
         onChipClick={handleChipClick}
         onChipMouseEnter={schedulePopover}
         onChipMouseLeave={scheduleHidePopover}
@@ -331,7 +309,6 @@ function PriorityBankSection({
   emptyCopy,
   chipRefs,
   onSectionMouseDown,
-  onChipMouseDown,
   onChipClick,
   onChipMouseEnter,
   onChipMouseLeave,
@@ -353,11 +330,6 @@ function PriorityBankSection({
   emptyCopy: string;
   chipRefs: React.MutableRefObject<Record<string, HTMLButtonElement | null>>;
   onSectionMouseDown: (event: React.MouseEvent<HTMLElement>) => void;
-  onChipMouseDown: (
-    event: React.MouseEvent<HTMLButtonElement>,
-    wordId: string,
-    sectionIds: string[],
-  ) => void;
   onChipClick: (
     event: React.MouseEvent<HTMLButtonElement>,
     wordId: string,
@@ -441,7 +413,6 @@ function PriorityBankSection({
                 ref={(element) => {
                   chipRefs.current[wordId] = element;
                 }}
-                onMouseDown={(event) => onChipMouseDown(event, wordId, sectionIds)}
                 onClick={(event) => onChipClick(event, wordId, sectionIds)}
                 onMouseEnter={(event) => onChipMouseEnter(wordId, event.currentTarget)}
                 onMouseLeave={onChipMouseLeave}
