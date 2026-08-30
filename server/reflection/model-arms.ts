@@ -1,10 +1,10 @@
 import type { ReflectionProviderConfig } from './luna-provider.ts';
 
 /**
- * The complete comparison-arm registry.  It intentionally contains disabled
- * dogfood arms: registration never sends learner data or requires credentials.
- * Each arm uses the fixed reflection prompt and strict V7 validator supplied
- * by createReflectionProvider.
+ * The complete comparison-arm registry. Registration never sends learner data
+ * or requires credentials. Each arm uses the fixed reflection prompt and
+ * strict V7 validator supplied by createReflectionProvider. Arms with
+ * enabledByDefault enter the initial-generation random pool.
  */
 const OPENROUTER = {
   provider: 'openrouter',
@@ -34,13 +34,6 @@ export const REFLECTION_MODEL_ARMS = [
     config: null,
   },
   {
-    choice: 'dashscope:qwen3.8-max',
-    label: 'Qwen3.8-Max',
-    enabledByDefault: true,
-    dogfoodSelectionWeight: 1,
-    config: null,
-  },
-  {
     choice: 'openrouter:gemini-3.6-flash',
     label: 'Gemini 3.6 Flash',
     enabledByDefault: true,
@@ -49,17 +42,6 @@ export const REFLECTION_MODEL_ARMS = [
       ...OPENROUTER,
       modelConfig: 'gemini-3.6-flash',
       providerModel: 'google/gemini-3.6-flash',
-    } satisfies ReflectionProviderConfig,
-  },
-  {
-    choice: 'openrouter:deepseek-v4-pro',
-    label: 'DeepSeek V4 Pro',
-    enabledByDefault: true,
-    dogfoodSelectionWeight: 1,
-    config: {
-      ...OPENROUTER,
-      modelConfig: 'deepseek-v4-pro',
-      providerModel: 'deepseek/deepseek-v4-pro',
     } satisfies ReflectionProviderConfig,
   },
   {
@@ -86,8 +68,8 @@ export const REFLECTION_MODEL_ARMS = [
   {
     choice: 'openai:gpt-5.6-terra-high',
     label: 'GPT-5.6 Terra high',
-    enabledByDefault: false,
-    dogfoodSelectionWeight: 0,
+    enabledByDefault: true,
+    dogfoodSelectionWeight: 1,
     config: {
       provider: 'openai',
       modelConfig: 'gpt-5.6-terra-high',

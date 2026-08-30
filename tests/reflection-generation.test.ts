@@ -359,7 +359,7 @@ describe('initial reflection generation orchestration', () => {
     assert.equal(recordedRun?.responseId, 'response-1');
   });
 
-  test('routes the initial run across six comparison arms with equal probability', async () => {
+  test('routes the initial run across five comparison arms with equal probability', async () => {
     const selected: string[] = [];
     const makeArm = (label: string) => ({
       async generate() {
@@ -373,14 +373,13 @@ describe('initial reflection generation orchestration', () => {
       buildBundle: () => bundle(),
       provider: makeArm('luna'),
       glmProvider: makeArm('glm'),
-      qwen38MaxProvider: makeArm('qwen38'),
       comparisonProviders: {
         'openrouter:gemini-3.6-flash': makeArm('gemini'),
-        'openrouter:deepseek-v4-pro': makeArm('deepseek'),
         'openrouter:claude-sonnet-5': makeArm('claude'),
+        'openai:gpt-5.6-terra-high': makeArm('terra'),
       },
       random: () => {
-        const values = [0, 0.17, 0.34, 0.5, 0.67, 0.84];
+        const values = [0, 0.2, 0.4, 0.6, 0.8];
         return values[randomCalls++]!;
       },
       materializeArtifact: () => ({
@@ -390,10 +389,10 @@ describe('initial reflection generation orchestration', () => {
       recordRun: () => {},
     });
 
-    for (let index = 0; index < 6; index += 1) {
+    for (let index = 0; index < 5; index += 1) {
       await service.generate(`session-${index}`, {});
     }
-    assert.deepEqual(selected, ['luna', 'glm', 'qwen38', 'gemini', 'deepseek', 'claude']);
+    assert.deepEqual(selected, ['luna', 'glm', 'gemini', 'claude', 'terra']);
   });
 
   test('refuses same-model retry when the stored model is no longer a current choice', async () => {
@@ -421,7 +420,6 @@ describe('initial reflection generation orchestration', () => {
       },
       provider: makeArm('luna'),
       glmProvider: makeArm('glm'),
-      qwen38MaxProvider: makeArm('qwen38'),
       materializeArtifact: () => ({
         created: true,
         artifact: artifactDetail('artifact', 1),
