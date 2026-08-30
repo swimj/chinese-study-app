@@ -15,7 +15,8 @@ How documentation in this repo is classified and where to start.
    - [SPECS/reflection-proposals-and-handles.md](../SPECS/reflection-proposals-and-handles.md)
 5. [architecture.md](./architecture.md) — system map (navigation only)
 6. [private-beta-service-boundary.md](./private-beta-service-boundary.md) — accepted hosted-beta ownership, identity, persistence, release, and trust contract
-7. Relevant tests — see [testing.md](./testing.md)
+7. [hosted-dogfood-shared-trial-policy.md](./hosted-dogfood-shared-trial-policy.md) — one-time shared-trial backfill used at the hosted dogfood cutover
+8. Relevant tests — see [testing.md](./testing.md)
 
 ## Doc classes
 

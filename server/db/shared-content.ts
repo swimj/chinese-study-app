@@ -5,6 +5,7 @@ import { requireLearnerId } from './learner-context.ts';
 import { scopedContentStorageTableName } from './scoped-content-tables.ts';
 
 export const ELIGIBLE_SHARED_PUBLICATION_STATES = ['shared_trial', 'available'] as const;
+export const DOGFOOD_SHARED_TRIAL_BACKFILL_REASON = 'one-time dogfood shared-trial backfill';
 
 export type SharedPublicationStatus =
   | 'shared_trial'
@@ -64,6 +65,14 @@ type SourceCueRow = {
   owner_learner_id: string | null;
   content_scope: string;
   active: number | null;
+};
+
+export type DogfoodSharedTrialBackfillReport = {
+  learnerId: string;
+  publishedAt: string;
+  contrastClusterIds: string[];
+  productionCueIds: string[];
+  productionCueSupplementIds: string[];
 };
 
 export function ensureSharedContentSchema(): void {
@@ -243,6 +252,103 @@ export function validateSharedContentSchema(): void {
     'report_id', 'publication_id', 'category', 'note', 'created_at', 'resolution',
     'resolved_at', 'resolved_by_operator_id',
   ]);
+}
+
+/**
+ * Reports the active, learner-owned generated content that the one-time
+ * dogfood launch policy will publish. Call within the dogfood learner context.
+ */
+export function inspectDogfoodSharedTrialBackfill(input: {
+  publishedAt: string;
+}): DogfoodSharedTrialBackfillReport {
+  assertCanonicalIsoTimestamp(input.publishedAt, 'Dogfood shared-trial publication time');
+  const learnerId = requireLearnerId();
+  return {
+    learnerId,
+    publishedAt: input.publishedAt,
+    contrastClusterIds: unpublishedLearnerContrastClusterIds(learnerId),
+    productionCueIds: unpublishedActiveLearnerProductionCueIds(learnerId),
+    productionCueSupplementIds: unpublishedActiveLearnerProductionCueSupplementIds(learnerId),
+  };
+}
+
+/**
+ * Applies the explicit one-time launch authorization for existing dogfood
+ * content. It is idempotent: already-published and inactive content is left
+ * untouched.
+ */
+export function backfillDogfoodSharedTrialContent(input: {
+  publishedAt: string;
+}): DogfoodSharedTrialBackfillReport {
+  const report = inspectDogfoodSharedTrialBackfill(input);
+  const contrastTable = scopedContentStorageTableName('contrast_clusters');
+  const cueTable = scopedContentStorageTableName('production_cues');
+  const supplementTable = scopedContentStorageTableName('production_cue_supplements');
+
+  return inImmediateTransaction(() => {
+    for (const clusterId of report.contrastClusterIds) {
+      insertDogfoodSharedTrialPublication({
+        contentKind: 'contrast_cluster',
+        contentId: clusterId,
+        learningPurposeKey: `contrast-cluster:${clusterId}`,
+        learnerId: report.learnerId,
+        publishedAt: report.publishedAt,
+      });
+      const result = getDb().prepare(`
+        UPDATE ${contrastTable}
+        SET content_scope = 'shared', owner_learner_id = NULL
+        WHERE id = ? AND content_scope = 'learner' AND owner_learner_id = ?
+      `).run(clusterId, report.learnerId);
+      if (result.changes !== 1) throw new Error(`Contrast cluster ${clusterId} changed during shared-trial backfill.`);
+    }
+
+    for (const cueId of report.productionCueIds) {
+      const task = getDb().prepare(`
+        SELECT task_id FROM ${cueTable}
+        WHERE cue_id = ? AND content_scope = 'learner' AND owner_learner_id = ?
+      `).get(cueId, report.learnerId) as { task_id: string } | undefined;
+      if (!task) throw new Error(`Production cue ${cueId} changed during shared-trial backfill.`);
+      insertDogfoodSharedTrialPublication({
+        contentKind: 'production_cue',
+        contentId: cueId,
+        learningPurposeKey: task.task_id,
+        learnerId: report.learnerId,
+        publishedAt: report.publishedAt,
+      });
+      const result = getDb().prepare(`
+        UPDATE ${cueTable}
+        SET content_scope = 'shared',
+            owner_learner_id = NULL,
+            origin_kind = 'manual',
+            origin_invocation_id = NULL
+        WHERE cue_id = ? AND content_scope = 'learner' AND owner_learner_id = ?
+      `).run(cueId, report.learnerId);
+      if (result.changes !== 1) throw new Error(`Production cue ${cueId} changed during shared-trial backfill.`);
+    }
+
+    for (const supplementId of report.productionCueSupplementIds) {
+      const task = getDb().prepare(`
+        SELECT task_id FROM ${supplementTable}
+        WHERE supplement_id = ? AND content_scope = 'learner' AND owner_learner_id = ?
+      `).get(supplementId, report.learnerId) as { task_id: string } | undefined;
+      if (!task) throw new Error(`Production cue supplement ${supplementId} changed during shared-trial backfill.`);
+      insertDogfoodSharedTrialPublication({
+        contentKind: 'production_cue_supplement',
+        contentId: supplementId,
+        learningPurposeKey: task.task_id,
+        learnerId: report.learnerId,
+        publishedAt: report.publishedAt,
+      });
+      const result = getDb().prepare(`
+        UPDATE ${supplementTable}
+        SET content_scope = 'shared', owner_learner_id = NULL, origin_invocation_id = NULL
+        WHERE supplement_id = ? AND content_scope = 'learner' AND owner_learner_id = ?
+      `).run(supplementId, report.learnerId);
+      if (result.changes !== 1) throw new Error(`Production cue supplement ${supplementId} changed during shared-trial backfill.`);
+    }
+
+    return report;
+  });
 }
 
 export function publishAuthorizedProductionCueWithoutTransaction(input: {
@@ -744,12 +850,110 @@ function assertReusableProductionCue(cue: SourceCueRow): void {
   }
 }
 
+function unpublishedLearnerContrastClusterIds(learnerId: string): string[] {
+  const clusterTable = scopedContentStorageTableName('contrast_clusters');
+  return (getDb().prepare(`
+    SELECT cluster.id
+    FROM ${clusterTable} AS cluster
+    LEFT JOIN shared_content_publications AS publication
+      ON publication.content_kind = 'contrast_cluster' AND publication.content_id = cluster.id
+    WHERE cluster.content_scope = 'learner'
+      AND cluster.owner_learner_id = ?
+      AND publication.publication_id IS NULL
+    ORDER BY cluster.id ASC
+  `).all(learnerId) as Array<{ id: string }>).map((row) => row.id);
+}
+
+function unpublishedActiveLearnerProductionCueIds(learnerId: string): string[] {
+  const cueTable = scopedContentStorageTableName('production_cues');
+  const activationTable = learnerScopedStorageTableName('production_cue_activation_state');
+  return (getDb().prepare(`
+    SELECT cue.cue_id
+    FROM ${cueTable} AS cue
+    LEFT JOIN ${activationTable} AS activation
+      ON activation.learner_id = ? AND activation.cue_id = cue.cue_id
+    LEFT JOIN shared_content_publications AS publication
+      ON publication.content_kind = 'production_cue' AND publication.content_id = cue.cue_id
+    WHERE cue.content_scope = 'learner'
+      AND cue.owner_learner_id = ?
+      AND COALESCE(activation.active, 0) = 1
+      AND publication.publication_id IS NULL
+    ORDER BY cue.cue_id ASC
+  `).all(learnerId, learnerId) as Array<{ cue_id: string }>).map((row) => row.cue_id);
+}
+
+function unpublishedActiveLearnerProductionCueSupplementIds(learnerId: string): string[] {
+  const supplementTable = scopedContentStorageTableName('production_cue_supplements');
+  const cueTable = scopedContentStorageTableName('production_cues');
+  const activationTable = learnerScopedStorageTableName('production_cue_activation_state');
+  return (getDb().prepare(`
+    SELECT supplement.supplement_id
+    FROM ${supplementTable} AS supplement
+    LEFT JOIN ${cueTable} AS cue ON cue.cue_id = supplement.cue_id
+    LEFT JOIN ${activationTable} AS activation
+      ON activation.learner_id = ? AND activation.cue_id = cue.cue_id
+    LEFT JOIN shared_content_publications AS publication
+      ON publication.content_kind = 'production_cue_supplement'
+      AND publication.content_id = supplement.supplement_id
+    WHERE supplement.content_scope = 'learner'
+      AND supplement.owner_learner_id = ?
+      AND publication.publication_id IS NULL
+      AND (
+        supplement.cue_id IS NULL
+        OR (
+          cue.content_scope = 'shared'
+          OR (
+            cue.content_scope = 'learner'
+            AND cue.owner_learner_id = ?
+            AND COALESCE(activation.active, 0) = 1
+          )
+        )
+      )
+    ORDER BY supplement.supplement_id ASC
+  `).all(learnerId, learnerId, learnerId) as Array<{ supplement_id: string }>).map((row) => row.supplement_id);
+}
+
+function insertDogfoodSharedTrialPublication(input: {
+  contentKind: SharedContentKind;
+  contentId: string;
+  learningPurposeKey: string;
+  learnerId: string;
+  publishedAt: string;
+}): void {
+  const publicationId = randomUUID();
+  getDb().prepare(`
+    INSERT INTO shared_content_publications (
+      publication_id, content_kind, content_id, learning_purpose_key,
+      publication_status, published_at, status_updated_at
+    ) VALUES (?, ?, ?, ?, 'shared_trial', ?, ?)
+  `).run(
+    publicationId,
+    input.contentKind,
+    input.contentId,
+    input.learningPurposeKey,
+    input.publishedAt,
+    input.publishedAt,
+  );
+  appendPublicationEvent({
+    publicationId,
+    fromStatus: null,
+    toStatus: 'shared_trial',
+    actorKind: 'source_authorization',
+    actorId: input.learnerId,
+    reason: DOGFOOD_SHARED_TRIAL_BACKFILL_REASON,
+    occurredAt: input.publishedAt,
+  });
+}
+
 function installProductionCuePublicationTransitionGuards(): void {
   const cueTable = scopedContentStorageTableName('production_cues');
+  const supplementTable = scopedContentStorageTableName('production_cue_supplements');
   const provenanceTable = learnerScopedStorageTableName('shared_content_publication_provenance');
   getDb().exec(`
     DROP TRIGGER IF EXISTS production_cues_immutable;
     DROP TRIGGER IF EXISTS production_cues_publication_transition;
+    DROP TRIGGER IF EXISTS production_cue_supplements_immutable;
+    DROP TRIGGER IF EXISTS production_cue_supplements_publication_transition;
 
     CREATE TRIGGER production_cues_immutable
     BEFORE UPDATE OF cue_id, task_id, cue_type, cue_text, created_at
@@ -781,9 +985,60 @@ function installProductionCuePublicationTransitionGuards(): void {
           AND publication.content_kind = 'production_cue'
           AND publication.content_id = OLD.cue_id
       )
+      OR EXISTS (
+        SELECT 1
+        FROM shared_content_publications AS publication
+        JOIN shared_content_publication_events AS event
+          ON event.publication_id = publication.publication_id
+        WHERE publication.content_kind = 'production_cue'
+          AND publication.content_id = OLD.cue_id
+          AND publication.publication_status = 'shared_trial'
+          AND event.from_status IS NULL
+          AND event.to_status = 'shared_trial'
+          AND event.actor_kind = 'source_authorization'
+          AND event.actor_id = OLD.owner_learner_id
+          AND event.reason = '${DOGFOOD_SHARED_TRIAL_BACKFILL_REASON}'
+      )
     )
     BEGIN
       SELECT RAISE(ABORT, 'production cue scope changes require authorized publication');
+    END;
+
+    CREATE TRIGGER production_cue_supplements_immutable
+    BEFORE UPDATE OF
+      supplement_id, task_id, cue_id, english_frame, example_sentence,
+      example_translation, created_at
+    ON ${supplementTable}
+    BEGIN
+      SELECT RAISE(ABORT, 'production cue supplements are immutable');
+    END;
+
+    CREATE TRIGGER production_cue_supplements_publication_transition
+    BEFORE UPDATE OF origin_invocation_id, content_scope, owner_learner_id
+    ON ${supplementTable}
+    WHEN NOT (
+      OLD.content_scope = 'learner'
+      AND OLD.owner_learner_id = current_learner_id()
+      AND NEW.content_scope = 'shared'
+      AND NEW.owner_learner_id IS NULL
+      AND NEW.origin_invocation_id IS NULL
+      AND EXISTS (
+        SELECT 1
+        FROM shared_content_publications AS publication
+        JOIN shared_content_publication_events AS event
+          ON event.publication_id = publication.publication_id
+        WHERE publication.content_kind = 'production_cue_supplement'
+          AND publication.content_id = OLD.supplement_id
+          AND publication.publication_status = 'shared_trial'
+          AND event.from_status IS NULL
+          AND event.to_status = 'shared_trial'
+          AND event.actor_kind = 'source_authorization'
+          AND event.actor_id = OLD.owner_learner_id
+          AND event.reason = '${DOGFOOD_SHARED_TRIAL_BACKFILL_REASON}'
+      )
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'production cue supplement scope changes require authorized publication');
     END;
   `);
 }

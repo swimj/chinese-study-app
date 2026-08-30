@@ -15,6 +15,7 @@
     "build:canonical-wordlist": "node --import tsx scripts/build-canonical-wordlist.ts",
     "check:study-scheduler-state": "node --import tsx scripts/check-study-scheduler-state.ts",
     "report:word": "node --import tsx scripts/report-word.ts",
+    "backfill:dogfood-shared-trial": "node --import tsx scripts/backfill-dogfood-shared-trial.ts",
     "spike:llm": "node --import tsx spikes/llm-provider/runner/cli.ts",
     "spike:llm:env": "node --env-file=.env --import tsx spikes/llm-provider/runner/cli.ts",
     "spike:llm:view": "node --import tsx spikes/llm-provider/viewer/server.ts",
