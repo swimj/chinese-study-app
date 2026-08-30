@@ -38,7 +38,6 @@ import {
   type ReflectionGenerationRunDto,
   type ReflectionProposalPresentation,
   type ReflectionProposalDetailDto,
-  type ReflectionProposalQueueKind,
   type ReflectionHelpCard,
 } from '../features/reflection/reflection-page-model';
 
@@ -75,7 +74,7 @@ function sourceModelIsCurrentlyAvailable(storedModel: string): boolean {
   return REFLECTION_RETRY_MODEL_OPTIONS.some((option) => option.model.endsWith(`:${storedModel}`));
 }
 
-type ReflectionView = 'help' | ReflectionProposalQueueKind | 'sessions' | 'usage' | 'quality';
+type ReflectionView = 'help' | 'deferred' | 'sessions' | 'usage' | 'quality';
 
 export function ReflectionsPage({
   controller,
@@ -84,18 +83,10 @@ export function ReflectionsPage({
 }) {
   const [view, setView] = useState<ReflectionView>('help');
   const helpCards = buildReflectionHelpCards(controller.artifactDetails);
-  const proposalQueues = {
-    deferred: buildReflectionProposalPresentations(controller.artifactDetails, 'deferred'),
-    unapplied: buildReflectionProposalPresentations(controller.artifactDetails, 'unapplied'),
-  };
+  const deferredProposals = buildReflectionProposalPresentations(controller.artifactDetails);
   const views: Array<{ key: ReflectionView; label: string; count?: number }> = [
     { key: 'help', label: 'Help', count: helpCards.length },
-    { key: 'deferred', label: 'Deferred', count: proposalQueues.deferred.length },
-    {
-      key: 'unapplied',
-      label: 'Pending',
-      count: proposalQueues.unapplied.length,
-    },
+    { key: 'deferred', label: 'Deferred', count: deferredProposals.length },
     { key: 'sessions', label: 'By session' },
     { key: 'usage', label: 'Run meta' },
     { key: 'quality', label: 'Quality' },
@@ -156,8 +147,7 @@ export function ReflectionsPage({
           <HelpQueueView cards={helpCards} controller={controller} />
         ) : (
           <ProposalQueueView
-            kind={view}
-            proposals={proposalQueues[view]}
+            proposals={deferredProposals}
             controller={controller}
           />
         )}
@@ -489,30 +479,17 @@ function HelpProposalCard({
 }
 
 function ProposalQueueView({
-  kind,
   proposals,
   controller,
 }: {
-  kind: ReflectionProposalQueueKind;
   proposals: ReflectionProposalPresentation[];
   controller: ReflectionPageController;
 }) {
-  const copy = {
-    deferred: {
-      title: 'Deferred proposals',
-      empty: 'No proposals are deferred.',
-    },
-    unapplied: {
-      title: 'Pending / unsupported authorizations',
-      empty: 'No accepted authorizations are pending or unsupported.',
-    },
-  }[kind];
-
   return (
     <main className="reflection-queue">
       <header className="reflection-queue-heading">
         <div>
-          <h2>{copy.title}</h2>
+          <h2>Deferred proposals</h2>
           <p className="notes">
             {proposals.length} proposal{proposals.length === 1 ? '' : 's'} across recent reflections
           </p>
@@ -521,7 +498,7 @@ function ProposalQueueView({
       {proposals.length === 0 ? (
         <section className="panel reflection-empty-state">
           <h2>All clear</h2>
-          <p className="notes">{copy.empty}</p>
+          <p className="notes">No proposals are deferred.</p>
         </section>
       ) : proposals.map((presentation) => (
         <article

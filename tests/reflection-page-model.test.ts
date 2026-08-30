@@ -139,22 +139,22 @@ describe('reflection page model', () => {
     assert.deepEqual(listQualityPromptVersions(arms), ['reflection-v6', 'reflection-v7']);
   });
 
-  test('builds proposal queues by actionable lifecycle state without session grouping', () => {
+  test('builds the deferred proposal queue without mixing in pending or accepted reviews', () => {
     const openDetail = artifactDetail();
     openDetail.proposals[1].review.disposition = { kind: 'deferred' };
-    const unappliedDetail = artifactDetail();
-    unappliedDetail.artifactId = 'unapplied-artifact';
-    unappliedDetail.proposals[0].review.disposition = {
+    const acceptedDetail = artifactDetail();
+    acceptedDetail.artifactId = 'accepted-artifact';
+    acceptedDetail.proposals[0].review.disposition = {
       kind: 'accepted',
       acceptanceMode: 'exact',
       acceptedInvocationId: 'invocation-a',
     };
-    unappliedDetail.proposals[0].invocation = {
+    acceptedDetail.proposals[0].invocation = {
       invocation: {
         invocationId: 'invocation-a',
         createdAt: '2026-07-29T12:01:00.000Z',
         origin: { kind: 'proposal_acceptance', proposalId: 'proposal-a' },
-        operation: unappliedDetail.proposals[0].proposal.operation,
+        operation: acceptedDetail.proposals[0].proposal.operation,
       },
       application: {
         invocationId: 'invocation-a',
@@ -162,17 +162,12 @@ describe('reflection page model', () => {
         state: { kind: 'unsupported', reason: 'Not implemented yet.' },
       },
     };
-    unappliedDetail.proposals[1].review.disposition = { kind: 'dismissed', reason: null };
+    acceptedDetail.proposals[1].review.disposition = { kind: 'dismissed', reason: null };
 
     assert.deepEqual(
-      buildReflectionProposalPresentations([openDetail, unappliedDetail], 'deferred')
+      buildReflectionProposalPresentations([openDetail, acceptedDetail])
         .map((entry) => entry.proposal.review.proposalId),
       ['proposal-b'],
-    );
-    assert.deepEqual(
-      buildReflectionProposalPresentations([openDetail, unappliedDetail], 'unapplied')
-        .map((entry) => entry.artifact.artifactId),
-      ['unapplied-artifact'],
     );
   });
 
