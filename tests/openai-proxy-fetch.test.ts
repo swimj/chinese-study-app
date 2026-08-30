@@ -30,7 +30,7 @@ describe('local provider proxy fetch', () => {
     try {
       const address = server.address();
       assert.ok(address && typeof address === 'object');
-      const providerFetch = fetchImplementationForProvider('dashscope', 500);
+      const providerFetch = fetchImplementationForProvider('zai', 500);
       await assert.rejects(
         providerFetch(`http://127.0.0.1:${address.port}`),
         (error: unknown) => (

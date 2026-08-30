@@ -29,7 +29,6 @@ import {
 } from './luna-provider.ts';
 import { createReflectionProvider } from './luna-provider.ts';
 import { createGlmReflectionProvider } from './glm-provider.ts';
-import { createQwen38MaxReflectionProvider } from './qwen-provider.ts';
 import {
   REFLECTION_MODEL_ARMS,
   isReflectionModelChoice,
@@ -78,7 +77,6 @@ export type InitialReflectionGenerationService = {
 export type InitialReflectionGenerationDependencies = {
   provider?: LunaReflectionProvider;
   glmProvider?: LunaReflectionProvider;
-  qwen38MaxProvider?: LunaReflectionProvider;
   comparisonProviders?: Partial<Record<ReflectionModelChoice, LunaReflectionProvider>>;
   random?: () => number;
   now?: () => string;
@@ -117,9 +115,6 @@ export function createInitialReflectionGenerationService(
   const glmProvider = dependencies.glmProvider ?? createGlmReflectionProvider({
     diagnosticSink: dependencies.providerDiagnosticSink,
   });
-  const qwen38MaxProvider = dependencies.qwen38MaxProvider ?? createQwen38MaxReflectionProvider({
-    diagnosticSink: dependencies.providerDiagnosticSink,
-  });
   const random = dependencies.random ?? Math.random;
   const now = dependencies.now ?? (() => new Date().toISOString());
   const buildBundleWithMetrics = dependencies.buildBundleWithMetrics
@@ -145,7 +140,6 @@ export function createInitialReflectionGenerationService(
     ...dependencies.comparisonProviders,
     'openai:gpt-5.6-luna-high': provider,
     'zai:glm-5.3-high': glmProvider,
-    'dashscope:qwen3.8-max': qwen38MaxProvider,
   };
   for (const arm of REFLECTION_MODEL_ARMS) {
     if (arm.config !== null && configuredProviders[arm.choice] === undefined) {
@@ -171,7 +165,6 @@ export function createInitialReflectionGenerationService(
       choice === undefined
       && dependencies.provider !== undefined
       && dependencies.glmProvider === undefined
-      && dependencies.qwen38MaxProvider === undefined
       && dependencies.comparisonProviders === undefined
     ) {
       return provider;

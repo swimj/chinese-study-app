@@ -21,10 +21,6 @@ import {
   createGlmReflectionProvider,
   GLM_REFLECTION_MODEL_CONFIG,
 } from '../server/reflection/glm-provider.js';
-import {
-  createQwen38MaxReflectionProvider,
-  QWEN_3_8_MAX_REFLECTION_MODEL_CONFIG,
-} from '../server/reflection/qwen-provider.js';
 import type { JsonValue } from '../server/llm/types.js';
 import { validateJsonSchema } from '../server/llm/json-schema-validator.js';
 import {
@@ -211,33 +207,6 @@ describe('production Luna reflection provider', () => {
     assert.equal(generated.metadata.provider, 'zai');
     assert.equal(generated.metadata.modelConfig, 'glm-5.3-high');
     assert.equal(GLM_REFLECTION_MODEL_CONFIG.timeoutMs, 900_000);
-  });
-
-  test('uses DashScope JSON-object transport for Qwen3.8-Max', async () => {
-    const capture: CapturedRequest[] = [];
-    const provider = createQwen38MaxReflectionProvider({
-      environment: { DASHSCOPE_API_KEY: 'unit-test-dashscope-secret' },
-      systemPrompt: 'Production reflection system prompt.',
-      fetchImplementation: capturingFetch(responseEnvelope(JSON.stringify(validWireResult)), capture),
-    });
-
-    const generated = await provider.generate(bundle);
-
-    const request = capture[0]!;
-    assert.equal(
-      request.url,
-      'https://ws-k76i8wy95wc9oheq.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions',
-    );
-    assert.equal(request.headers.get('authorization'), 'Bearer unit-test-dashscope-secret');
-    assert.equal(request.body.model, 'qwen3.8-max');
-    assert.equal(request.body.reasoning_effort, 'high');
-    assert.equal(request.body.max_tokens, 50_000);
-    assert.deepEqual(request.body.response_format, { type: 'json_object' });
-    assert.equal(generated.metadata.provider, 'dashscope');
-    assert.equal(generated.metadata.modelConfig, 'qwen3.8-max');
-    assert.equal(generated.metadata.providerModel, 'qwen3.8-max');
-    assert.equal(QWEN_3_8_MAX_REFLECTION_MODEL_CONFIG.timeoutMs, 900_000);
-    assert.equal(QWEN_3_8_MAX_REFLECTION_MODEL_CONFIG.apiKeyEnvironmentVariable, 'DASHSCOPE_API_KEY');
   });
 
   test('sends the exact model, reasoning, auth, prompt, and strict V7 wire schema request', async () => {
@@ -437,38 +406,6 @@ describe('production Luna reflection provider', () => {
     const serializedDiagnostic = JSON.stringify(diagnostics);
     assert.equal(serializedDiagnostic.includes('super-secret-value'), false);
     assert.equal(serializedDiagnostic.includes('raw-upstream-private-response'), false);
-  });
-
-  test('retains Qwen model metadata when transport fails before a response', async () => {
-    const provider = createQwen38MaxReflectionProvider({
-      environment: { DASHSCOPE_API_KEY: 'test-only-key' },
-      systemPrompt: 'prompt',
-      fetchImplementation: (async () => {
-        throw new TypeError('fetch failed', {
-          cause: Object.assign(new Error('headers timeout'), {
-            code: 'UND_ERR_HEADERS_TIMEOUT',
-          }),
-        });
-      }) as typeof globalThis.fetch,
-    });
-
-    const error = await expectProviderError(provider.generate(bundle), 'upstream_failure');
-    assert.deepEqual(error.metadata, {
-      provider: 'dashscope',
-      modelConfig: 'qwen3.8-max',
-      providerModel: 'qwen3.8-max',
-      promptVersion: 'reflection-v8',
-      responseId: null,
-      finishReason: null,
-      usage: {
-        inputTokens: null,
-        cachedInputTokens: null,
-        cacheWriteInputTokens: null,
-        outputTokens: null,
-        reasoningTokens: null,
-        totalTokens: null,
-      },
-    });
   });
 
   test('records transport error categories and codes without messages or stacks', () => {
