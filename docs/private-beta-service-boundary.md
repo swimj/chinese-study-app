@@ -228,9 +228,11 @@ report. Cutover stops local writes, takes a final backup, imports and validates,
 and establishes the hosted service as sole writer. The original remains
 read-only through initial verification; there is no dual-write period.
 
-Imported corpus content becomes `available`. Active reusable custom cues,
-clusters, and prompts become `shared_trial` after a one-time authorization and
-sanitization check. Inactive/replaced content retains truthful history. All
+Imported corpus content becomes `available`. At the first hosted dogfood
+cutover, active reusable custom cues, clusters, prompts, and supplements become
+`shared_trial` under the blanket authorization in
+[`hosted-dogfood-shared-trial-policy.md`](./hosted-dogfood-shared-trial-policy.md).
+Inactive/replaced content retains truthful history. All
 learner evidence, responses, scheduling, priorities, suppressions, feedback,
 and authorization history remains owned by the dogfood learner.
 
