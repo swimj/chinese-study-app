@@ -182,8 +182,6 @@ export type NoDurableChangeReflectionGist = {
   questionCount: number;
 };
 
-export type ReflectionProposalQueueKind = 'deferred' | 'unapplied';
-
 export type LearnerRequestedReflectionPresentation = {
   artifact: ReflectionArtifactDetailDto;
   evidence: ReflectionInputItemV1
@@ -345,9 +343,9 @@ export function legacyReflectionUnhandledNeeds(result: ReflectionItemResult) {
   return 'unhandledNeeds' in result ? result.unhandledNeeds : [];
 }
 
+/** Deferred proposal reviews across loaded artifacts, ungrouped by session. */
 export function buildReflectionProposalPresentations(
   details: ReflectionArtifactDetailDto[],
-  kind: ReflectionProposalQueueKind,
 ): ReflectionProposalPresentation[] {
   const presentations: ReflectionProposalPresentation[] = [];
 
@@ -360,7 +358,7 @@ export function buildReflectionProposalPresentations(
     );
 
     for (const proposal of artifact.proposals) {
-      if (!proposalBelongsInQueue(proposal, kind)) continue;
+      if (proposal.review.disposition.kind !== 'deferred') continue;
       const result = resultByItemId.get(proposal.itemId);
       if (result === undefined) {
         throw new Error(
@@ -404,23 +402,6 @@ export function formatRunDuration(startedAt: string, completedAt: string): strin
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
-}
-
-function proposalBelongsInQueue(
-  proposal: ReflectionProposalDetailDto,
-  kind: ReflectionProposalQueueKind,
-): boolean {
-  switch (kind) {
-    case 'deferred':
-      return proposal.review.disposition.kind === 'deferred';
-    case 'unapplied':
-      return proposal.review.disposition.kind === 'accepted'
-        && proposal.invocation !== null
-        && (
-          proposal.invocation.application.state.kind === 'unsupported'
-          || proposal.invocation.application.state.kind === 'pending'
-        );
-  }
 }
 
 export function cloneReflectionOperation(operation: ReflectionOperation): ReflectionOperation {

@@ -115,9 +115,8 @@ applying a draft. Help does not show diagnosis tags or a dedicated dismissal-not
 dismiss records a null reason and the quality note remains the single note
 surface. Evidence, explanation, questions, rationale, and the operation editor
 scroll inside the pane. Production evidence is a quiet tested-cue line
-(truncated, expandable) rather than a second identity card. Separate
-convenience views show deferred proposals and accepted authorizations whose
-application is pending or unsupported, while **By session** retains the
+(truncated, expandable) rather than a second identity card. **Deferred** is a
+convenience view for deferred proposals, while **By session** retains the
 artifact-oriented dogfood view, including explanation items already marked
 Done. In that view, items whose results carry no proposals are summarized in a
 compact **No durable change** gist derived from the persisted evidence and
