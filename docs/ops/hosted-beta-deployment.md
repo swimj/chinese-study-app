@@ -16,7 +16,8 @@ built frontend. Local dogfood data is not part of this deployment.
    so it can access only `chinese-study-app/hosted-beta` in that bucket.
 3. Copy [`deploy/fly/fly.template.toml`](../../deploy/fly/fly.template.toml) to
    ignored `deploy/fly/.generated/fly.toml` and replace every `REPLACE_WITH_*`
-   value. The Clerk publishable key is a frontend build argument, not a secret.
+   value. The Clerk publishable key is public but is needed by both the frontend
+   build and the backend Clerk middleware; it is not a secret.
 4. Log in with `fly auth login` and AWS credentials appropriate for creating
    the bucket and IAM principal. Never commit generated configuration or keys.
 
