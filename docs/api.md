@@ -2,7 +2,19 @@
 
 Routes are defined in [server/index.ts](../server/index.ts). Frontend client: [src/services/api.ts](../src/services/api.ts).
 
-Base URL: `http://localhost:5174` (override with `VITE_API_BASE`).
+Base URL: `http://localhost:5174` in development (override with
+`VITE_API_BASE`). Production builds default to the same origin as the served
+frontend.
+
+## Public health and frontend
+
+`GET /healthz` is the only public operational endpoint. It verifies database
+access and returns `status`, persisted maintenance/provider-work flags, and the
+active provider-work count without learner data. In production, Express serves
+the built frontend and applies an SPA fallback outside `/api`; `/api/*` remains
+authenticated. Mutating API requests return `503 MAINTENANCE_MODE` while
+maintenance is active. Provider-backed requests additionally return
+`503 PROVIDER_WORK_DISABLED` when that control is off.
 
 ## Authentication
 

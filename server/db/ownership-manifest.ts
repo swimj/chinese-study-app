@@ -32,6 +32,9 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
   privateEntry('learner_settings', 'learner settings root', 'bootstrap explicit defaults for each learner'),
   operationalEntry('schema_migrations', 'database schema migration ledger'),
   operationalEntry('content_imports', 'shared content import ledger'),
+  operationalEntry('service_controls', 'hosted maintenance and provider-work controls'),
+  operationalEntry('deployment_sentinels', 'hosted persistence and restore proof markers'),
+  operationalEntry('operator_actions', 'attributable hosted administrative action ledger'),
   sharedEntry(
     'shared_content_publications',
     'immutable reusable content plus publication disposition',

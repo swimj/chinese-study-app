@@ -1,6 +1,6 @@
 import { Agent, ProxyAgent, fetch as undiciFetch, type Dispatcher } from 'undici';
 
-// Hard-coded local proxy (Clash/V2Ray-style HTTP CONNECT proxy on port 7897).
+// Local dogfood proxy (Clash/V2Ray-style HTTP CONNECT proxy on port 7897).
 export const OPENAI_PROXY_URL = 'http://127.0.0.1:7897';
 
 const DEFAULT_PROVIDER_TIMEOUT_MS = 300_000;
@@ -28,12 +28,26 @@ function proxyDispatcher(timeoutMs: number): Dispatcher {
 
 export const proxiedFetch = fetchWithDispatcher(proxyDispatcher(DEFAULT_PROVIDER_TIMEOUT_MS));
 
-/** OpenAI and OpenRouter are routed through the local proxy; other providers use direct fetch. */
+function useLocalProviderProxy(environment: NodeJS.ProcessEnv = process.env): boolean {
+  const configuredValue = environment.APP_USE_LOCAL_PROVIDER_PROXY;
+  if (configuredValue === undefined || configuredValue === 'false') {
+    return false;
+  }
+  if (configuredValue === 'true') {
+    return true;
+  }
+  throw new Error(
+    `APP_USE_LOCAL_PROVIDER_PROXY must be either "true" or "false" when set; received ${JSON.stringify(configuredValue)}`,
+  );
+}
+
+/** Providers use direct connections unless the local dogfood proxy is explicitly enabled. */
 export function fetchImplementationForProvider(
   providerId: string,
   timeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS,
 ): typeof globalThis.fetch {
-  const usesLocalProxy = providerId === 'openai' || providerId === 'openrouter';
+  const proxyEligibleProvider = providerId === 'openai' || providerId === 'openrouter';
+  const usesLocalProxy = useLocalProviderProxy() && proxyEligibleProvider;
   if (usesLocalProxy && timeoutMs === DEFAULT_PROVIDER_TIMEOUT_MS) {
     return proxiedFetch;
   }

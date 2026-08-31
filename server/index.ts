@@ -1,5 +1,8 @@
 import cors from 'cors';
-import express, { type Response } from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
+import fs from 'node:fs';
+import type { Server } from 'node:http';
+import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createClerkRequestAuthentication, type ProviderSubjectResolver } from './authentication.ts';
 import {
@@ -38,6 +41,7 @@ import {
   recordReviewSessionSummary,
   recordStudyManagementAction,
   getSharedContentPublicationForContent,
+  getHostedServiceControls,
   reportSharedContentPublication,
   searchWords,
   suppressProductionForWordOutsideSession,
@@ -49,6 +53,12 @@ import {
   withdrawReflectionInvocationAuthorization,
   type ReviewAttemptCommitIntent,
 } from './db.ts';
+import {
+  getActiveProviderWorkCount,
+  HostedProviderWorkUnavailableError,
+  MAINTENANCE_MODE_CODE,
+  runHostedProviderWork,
+} from './hosted-runtime-controls.ts';
 import { getIntakeTriagePriorityWords } from './intake-triage/evidence.ts';
 import {
   createIntakeTriageGenerationService,
@@ -87,18 +97,24 @@ import {
   type ReflectionLifecycleLogger,
 } from './reflection/lifecycle-log.ts';
 import { createFileReflectionProviderDiagnosticSink } from './reflection/provider-diagnostics.ts';
+import { closeDbConnection } from './db/connection.ts';
 
 const port = dbConfig.port;
+const defaultJsonBodyLimit = '100kb';
 
 export type CreateAppOptions = {
   reflectionGenerationService?: InitialReflectionGenerationService;
   reflectionLifecycleLogger?: ReflectionLifecycleLogger;
   intakeTriageGenerationService?: IntakeTriageGenerationService;
   resolveClerkProviderSubject?: ProviderSubjectResolver;
+  /** `undefined` follows NODE_ENV; `null` explicitly disables frontend serving. */
+  frontendDistPath?: string | null;
+  logError?: (message: string, metadata: Record<string, string>) => void;
 };
 
 export function createApp(options: CreateAppOptions = {}) {
   const app = express();
+  const frontendDistPath = resolveFrontendDistPath(options.frontendDistPath);
   const reflectionLifecycleLogger = options.reflectionLifecycleLogger
     ?? createStdoutReflectionLifecycleLogger();
   const reflectionGenerationService = options.reflectionGenerationService
@@ -109,18 +125,44 @@ export function createApp(options: CreateAppOptions = {}) {
   const intakeTriageGenerationService = options.intakeTriageGenerationService
     ?? createIntakeTriageGenerationService();
 
+  app.disable('x-powered-by');
   app.use(cors(dbConfig.authMode === 'clerk'
     ? {
         origin: process.env.CLERK_AUTHORIZED_PARTY,
         allowedHeaders: ['Authorization', 'Content-Type'],
       }
     : undefined));
-  app.use(express.json());
-  if (dbConfig.authMode === 'trusted_local') {
-    app.use((_req, _res, next) => runWithLearnerId(dbConfig.learnerId, next));
-  } else {
-    app.use(...createClerkRequestAuthentication(options.resolveClerkProviderSubject));
+  app.use(express.json({ limit: defaultJsonBodyLimit }));
+
+  // Fly health checks and browser assets must remain available without a learner session.
+  app.get('/healthz', (_req, res) => {
+    const controls = getHostedServiceControls();
+    res.json({
+      status: 'ok',
+      maintenanceMode: controls.maintenanceMode,
+      providerWorkEnabled: controls.providerWorkEnabled,
+      activeProviderWorkCount: getActiveProviderWorkCount(),
+    });
+  });
+  if (frontendDistPath) {
+    app.use(express.static(frontendDistPath, { index: false }));
   }
+
+  if (dbConfig.authMode === 'trusted_local') {
+    app.use('/api', (_req, _res, next) => runWithLearnerId(dbConfig.learnerId, next));
+  } else {
+    app.use('/api', ...createClerkRequestAuthentication(options.resolveClerkProviderSubject));
+  }
+  app.use('/api', (req, res, next) => {
+    if (
+      !['GET', 'HEAD', 'OPTIONS'].includes(req.method)
+      && getHostedServiceControls().maintenanceMode
+    ) {
+      res.status(503).json({ error: 'The service is in maintenance mode.', code: MAINTENANCE_MODE_CODE });
+      return;
+    }
+    next();
+  });
 
   app.get('/api/content-diagnostics', (req, res) => {
     const kind = req.query?.kind;
@@ -206,8 +248,9 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.post('/api/intake-triage/runs', async (_req, res) => {
     try {
-      res.status(201).json(await intakeTriageGenerationService.generate());
+      res.status(201).json(await runHostedProviderWork(() => intakeTriageGenerationService.generate()));
     } catch (error) {
+      if (handleHostedProviderWorkError(error, res)) return;
       if (error instanceof IntakeTriageGenerationError) {
         const status = error.code === 'no_candidates' || error.code === 'already_running'
           ? 409
@@ -549,7 +592,9 @@ export function createApp(options: CreateAppOptions = {}) {
     });
 
     try {
-      const result = await reflectionGenerationService.generate(sessionId, req.body, requestedModel);
+      const result = await runHostedProviderWork(
+        () => reflectionGenerationService.generate(sessionId, req.body, requestedModel),
+      );
       reflectionLifecycleLogger.emit({
         event: 'reflection.generation_succeeded',
         sessionId: normalizedSessionId,
@@ -560,6 +605,7 @@ export function createApp(options: CreateAppOptions = {}) {
       });
       res.status(result.status === 'created' ? 201 : 200).json(result);
     } catch (error) {
+      if (handleHostedProviderWorkError(error, res)) return;
       if (error instanceof ReflectionEvidenceError) {
         reflectionLifecycleLogger.emit({
           event: 'reflection.generation_failed',
@@ -637,9 +683,12 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
     try {
-      const result = await reflectionGenerationService.retry(runId.trim(), requestedModel);
+      const result = await runHostedProviderWork(
+        () => reflectionGenerationService.retry(runId.trim(), requestedModel),
+      );
       res.status(result.status === 'created' ? 201 : 200).json(result);
     } catch (error) {
+      if (handleHostedProviderWorkError(error, res)) return;
       if (isReflectionNotFoundError(error, 'Reflection generation run not found.')) {
         res.status(404).json({ error: 'Reflection generation run not found' });
         return;
@@ -1137,7 +1186,58 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
+  if (frontendDistPath) {
+    const frontendIndexPath = path.join(frontendDistPath, 'index.html');
+    app.get(/^(?!\/api(?:\/|$)).*/, (_req, res, next) => {
+      res.sendFile(frontendIndexPath, (error) => error ? next(error) : undefined);
+    });
+  }
+
+  app.use('/api', (_req, res) => {
+    res.status(404).json({ error: 'API endpoint not found' });
+  });
+
+  app.use((error: unknown, _req: Request, res: Response, next: NextFunction) => {
+    const errorName = error instanceof Error ? error.name : 'UnknownError';
+    const status = readHttpErrorStatus(error);
+    (options.logError ?? defaultErrorLogger)('Unhandled request error', { errorName, status: String(status) });
+    if (res.headersSent) {
+      next(error);
+      return;
+    }
+    res.status(status).json({
+      error: status === 400
+        ? 'Invalid JSON request body'
+        : status === 413
+          ? 'Request body too large'
+          : 'Internal server error',
+    });
+  });
+
   return app;
+}
+
+function resolveFrontendDistPath(configuredPath: string | null | undefined): string | null {
+  const resolvedPath = configuredPath === undefined
+    ? process.env.NODE_ENV === 'production' ? path.resolve(process.cwd(), 'dist') : null
+    : configuredPath === null ? null : path.resolve(configuredPath);
+  if (!resolvedPath) return null;
+
+  const indexPath = path.join(resolvedPath, 'index.html');
+  if (!fs.existsSync(indexPath)) {
+    throw new Error(`Frontend index not found at ${indexPath}`);
+  }
+  return resolvedPath;
+}
+
+function readHttpErrorStatus(error: unknown): number {
+  if (!error || typeof error !== 'object') return 500;
+  const status = 'status' in error ? error.status : undefined;
+  return status === 400 || status === 413 ? status : 500;
+}
+
+function defaultErrorLogger(message: string, metadata: Record<string, string>): void {
+  console.error(message, metadata);
 }
 
 function readStudyDayKeyFromQuery(value: unknown): string | null {
@@ -1348,6 +1448,12 @@ function handleIntakeTriageAssessmentError(error: unknown, res: Response): void 
   res.status(500).json({ error: 'Failed to update the intake assessment' });
 }
 
+function handleHostedProviderWorkError(error: unknown, res: Response): boolean {
+  if (!(error instanceof HostedProviderWorkUnavailableError)) return false;
+  res.status(503).json({ error: error.message, code: error.code });
+  return true;
+}
+
 function normalizeStudyDayKey(value: string): string | null {
   const trimmed = value.trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
@@ -1361,12 +1467,63 @@ export function recoverPendingReflectionApplicationsAtStartup() {
   return recoverPendingReflectionInvocations();
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  recoverPendingReflectionApplicationsAtStartup();
-  const app = createApp();
-  app.listen(port, () => {
-    console.log(`Backend server running at http://localhost:${port}`);
+export type StartServerOptions = {
+  host?: string;
+  port?: number;
+  app?: ReturnType<typeof createApp>;
+};
+
+export function startServer(options: StartServerOptions = {}): Server {
+  const host = options.host ?? '0.0.0.0';
+  const serverPort = options.port ?? port;
+  const app = options.app ?? createApp();
+  const server = app.listen(serverPort, host, () => {
+    console.log(`Backend server listening on http://${host}:${serverPort}`);
     console.log(`Mode: ${dbConfig.mode}`);
     console.log(`Database: ${dbConfig.dbPath}`);
   });
+  installGracefulShutdown(server);
+  return server;
+}
+
+export function installGracefulShutdown(
+  server: Server,
+  closeDatabase: () => void = closeDbConnection,
+): () => Promise<void> {
+  let shutdownPromise: Promise<void> | null = null;
+  const shutdown = () => {
+    shutdownPromise ??= new Promise<void>((resolve, reject) => {
+      server.close((serverError) => {
+        try {
+          closeDatabase();
+        } catch (databaseError) {
+          reject(databaseError);
+          return;
+        }
+        if (serverError) reject(serverError);
+        else resolve();
+      });
+    });
+    return shutdownPromise;
+  };
+  const handleSignal = () => {
+    void shutdown().catch((error: unknown) => {
+      defaultErrorLogger('Graceful shutdown failed', {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
+      process.exitCode = 1;
+    });
+  };
+  process.once('SIGTERM', handleSignal);
+  process.once('SIGINT', handleSignal);
+  server.once('close', () => {
+    process.removeListener('SIGTERM', handleSignal);
+    process.removeListener('SIGINT', handleSignal);
+  });
+  return shutdown;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  recoverPendingReflectionApplicationsAtStartup();
+  startServer();
 }

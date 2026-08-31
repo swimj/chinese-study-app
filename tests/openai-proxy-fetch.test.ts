@@ -9,28 +9,77 @@ describe('local provider proxy fetch', () => {
     assert.equal(typeof proxiedFetch, 'function');
   });
 
-  test('routes OpenAI and OpenRouter through the local proxy by default', () => {
-    assert.equal(fetchImplementationForProvider('openai'), proxiedFetch);
-    assert.equal(fetchImplementationForProvider('openrouter'), proxiedFetch);
-    assert.notEqual(fetchImplementationForProvider('zai'), globalThis.fetch);
+  test('uses direct connections for every provider when the flag is unset or false', () => {
+    const previousValue = process.env.APP_USE_LOCAL_PROVIDER_PROXY;
+    delete process.env.APP_USE_LOCAL_PROVIDER_PROXY;
+    try {
+      assert.notEqual(fetchImplementationForProvider('openai'), proxiedFetch);
+      assert.notEqual(fetchImplementationForProvider('openrouter'), proxiedFetch);
+      assert.notEqual(fetchImplementationForProvider('zai'), proxiedFetch);
+
+      process.env.APP_USE_LOCAL_PROVIDER_PROXY = 'false';
+      assert.notEqual(fetchImplementationForProvider('openai'), proxiedFetch);
+      assert.notEqual(fetchImplementationForProvider('openrouter'), proxiedFetch);
+    } finally {
+      if (previousValue === undefined) {
+        delete process.env.APP_USE_LOCAL_PROVIDER_PROXY;
+      } else {
+        process.env.APP_USE_LOCAL_PROVIDER_PROXY = previousValue;
+      }
+    }
+  });
+
+  test('routes only OpenAI and OpenRouter through the local proxy when explicitly enabled', () => {
+    const previousValue = process.env.APP_USE_LOCAL_PROVIDER_PROXY;
+    process.env.APP_USE_LOCAL_PROVIDER_PROXY = 'true';
+    try {
+      assert.equal(fetchImplementationForProvider('openai'), proxiedFetch);
+      assert.equal(fetchImplementationForProvider('openrouter'), proxiedFetch);
+      assert.notEqual(fetchImplementationForProvider('zai'), proxiedFetch);
+    } finally {
+      if (previousValue === undefined) {
+        delete process.env.APP_USE_LOCAL_PROVIDER_PROXY;
+      } else {
+        process.env.APP_USE_LOCAL_PROVIDER_PROXY = previousValue;
+      }
+    }
+  });
+
+  test('rejects invalid local proxy flag values', () => {
+    const previousValue = process.env.APP_USE_LOCAL_PROVIDER_PROXY;
+    process.env.APP_USE_LOCAL_PROVIDER_PROXY = 'TRUE';
+    try {
+      assert.throws(
+        () => fetchImplementationForProvider('openai'),
+        /APP_USE_LOCAL_PROVIDER_PROXY must be either "true" or "false"/,
+      );
+    } finally {
+      if (previousValue === undefined) {
+        delete process.env.APP_USE_LOCAL_PROVIDER_PROXY;
+      } else {
+        process.env.APP_USE_LOCAL_PROVIDER_PROXY = previousValue;
+      }
+    }
   });
 
   test('honors the provider timeout while waiting for response headers', async () => {
+    const previousValue = process.env.APP_USE_LOCAL_PROVIDER_PROXY;
+    delete process.env.APP_USE_LOCAL_PROVIDER_PROXY;
     const server = createServer((_request, response) => {
       setTimeout(() => {
         response.writeHead(200, { connection: 'close', 'content-type': 'application/json' });
         response.end('{}');
       }, 1_500);
     });
-    await new Promise<void>((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(0, '127.0.0.1', resolve);
-    });
 
     try {
+      await new Promise<void>((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', resolve);
+      });
       const address = server.address();
       assert.ok(address && typeof address === 'object');
-      const providerFetch = fetchImplementationForProvider('zai', 500);
+      const providerFetch = fetchImplementationForProvider('openai', 500);
       await assert.rejects(
         providerFetch(`http://127.0.0.1:${address.port}`),
         (error: unknown) => (
@@ -40,9 +89,16 @@ describe('local provider proxy fetch', () => {
         ),
       );
     } finally {
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => error ? reject(error) : resolve());
-      });
+      if (server.listening) {
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => error ? reject(error) : resolve());
+        });
+      }
+      if (previousValue === undefined) {
+        delete process.env.APP_USE_LOCAL_PROVIDER_PROXY;
+      } else {
+        process.env.APP_USE_LOCAL_PROVIDER_PROXY = previousValue;
+      }
     }
   });
 });
