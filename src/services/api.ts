@@ -39,7 +39,7 @@ import type {
   ContentDiagnosticsResponse,
 } from '../domain/content-diagnostics';
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:5174';
+const API_BASE = import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? 'http://localhost:5174' : '');
 
 type ApiAuthenticationTokenProvider = () => Promise<string | null>;
 

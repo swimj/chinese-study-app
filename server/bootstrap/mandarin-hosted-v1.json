@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "importId": "mandarin-hosted-bootstrap-v1",
+  "contentKind": "shared_mandarin_lexicon",
+  "sourceRef": "server/bootstrap/mandarin-hosted-v1.json",
+  "checksum": "d31a7dff1993f757ce2d99a4bf4eb50ddcbeda3bbc4803548fd99bfd8ffec04c",
+  "words": [
+    {
+      "id": "hosted-v1-适应",
+      "hanzi": "适应",
+      "traditional": "適應",
+      "pinyin": "shì yìng",
+      "meaning": "to adapt; to get used to",
+      "meanings": [{ "id": "hosted-v1-适应-m0", "text": "to adapt; to get used to" }],
+      "examples": [],
+      "priority": 80,
+      "createdAt": "2026-08-31T00:00:00.000Z"
+    },
+    {
+      "id": "hosted-v1-观察",
+      "hanzi": "观察",
+      "traditional": "觀察",
+      "pinyin": "guān chá",
+      "meaning": "to observe; to examine",
+      "meanings": [{ "id": "hosted-v1-观察-m0", "text": "to observe; to examine" }],
+      "examples": [],
+      "priority": 70,
+      "createdAt": "2026-08-31T00:00:00.000Z"
+    },
+    {
+      "id": "hosted-v1-逐渐",
+      "hanzi": "逐渐",
+      "traditional": "逐漸",
+      "pinyin": "zhú jiàn",
+      "meaning": "gradually",
+      "meanings": [{ "id": "hosted-v1-逐渐-m0", "text": "gradually" }],
+      "examples": [],
+      "priority": 60,
+      "createdAt": "2026-08-31T00:00:00.000Z"
+    },
+    {
+      "id": "hosted-v1-反而",
+      "hanzi": "反而",
+      "traditional": null,
+      "pinyin": "fǎn ér",
+      "meaning": "instead; on the contrary",
+      "meanings": [{ "id": "hosted-v1-反而-m0", "text": "instead; on the contrary" }],
+      "examples": [],
+      "priority": 50,
+      "createdAt": "2026-08-31T00:00:00.000Z"
+    },
+    {
+      "id": "hosted-v1-尽管",
+      "hanzi": "尽管",
+      "traditional": "儘管",
+      "pinyin": "jǐn guǎn",
+      "meaning": "although; despite",
+      "meanings": [{ "id": "hosted-v1-尽管-m0", "text": "although; despite" }],
+      "examples": [],
+      "priority": 40,
+      "createdAt": "2026-08-31T00:00:00.000Z"
+    },
+    {
+      "id": "hosted-v1-导致",
+      "hanzi": "导致",
+      "traditional": "導致",
+      "pinyin": "dǎo zhì",
+      "meaning": "to cause; to lead to",
+      "meanings": [{ "id": "hosted-v1-导致-m0", "text": "to cause; to lead to" }],
+      "examples": [],
+      "priority": 30,
+      "createdAt": "2026-08-31T00:00:00.000Z"
+    },
+    {
+      "id": "hosted-v1-维护",
+      "hanzi": "维护",
+      "traditional": "維護",
+      "pinyin": "wéi hù",
+      "meaning": "to maintain; to safeguard",
+      "meanings": [{ "id": "hosted-v1-维护-m0", "text": "to maintain; to safeguard" }],
+      "examples": [],
+      "priority": 20,
+      "createdAt": "2026-08-31T00:00:00.000Z"
+    },
+    {
+      "id": "hosted-v1-可靠",
+      "hanzi": "可靠",
+      "traditional": null,
+      "pinyin": "kě kào",
+      "meaning": "reliable; dependable",
+      "meanings": [{ "id": "hosted-v1-可靠-m0", "text": "reliable; dependable" }],
+      "examples": [],
+      "priority": 10,
+      "createdAt": "2026-08-31T00:00:00.000Z"
+    }
+  ]
+}

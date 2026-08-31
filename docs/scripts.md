@@ -18,6 +18,20 @@ Entry points under `scripts/`. Run with `node --import tsx scripts/<name>.ts` un
 | `npm run study:backend` | Start study-mode API |
 | `npm run backfill:dogfood-shared-trial -- --data-dir=/absolute/path --learner-id=<id>` | Report the active private generated content that will receive the one-time `shared_trial` launch backfill. Add `--apply=true` only during the hosted dogfood cutover. |
 
+## Hosted beta operations
+
+These require an explicit absolute `--data-dir` and force study/Clerk runtime
+configuration. See the [deployment runbook](./ops/hosted-beta-deployment.md).
+
+| npm command | Purpose |
+| --- | --- |
+| `npm run bootstrap:hosted:mandarin -- --data-dir=/data` | Import the checksummed shared-only Mandarin bootstrap artifact |
+| `npm run hosted:control -- --data-dir=/data --control=<maintenance\|provider-work> --enabled=<true\|false> --actor-id=<id>` | Change an attributable service control |
+| `npm run hosted:learner-control -- --data-dir=/data --learner-id=<id> --disabled=<true\|false> --actor-id=<id>` | Disable or re-enable one learner and record the operator action |
+| `npm run hosted:sentinel -- --data-dir=/data --sentinel-id=<id> --actor-id=<id>` | Add an immutable restore-proof marker |
+| `npm run hosted:inspect -- --data-dir=/data --litestream-socket=/data/litestream.sock` | Print bounded database and backup-freshness diagnostics |
+| `npm run hosted:verify-restore -- --data-dir=<isolated-dir> --sentinel-id=<id> --minimum-learners=2` | Validate an isolated restored database |
+
 ## Libraries (`scripts/lib/`)
 
 Shared Mandarin corpus parsing/build helpers — covered by

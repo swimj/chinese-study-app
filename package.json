@@ -1,7 +1,7 @@
 {
   "name": "chinese-study-app",
   "private": true,
-  "version": "2.1.0",
+  "version": "2.2.0",
   "type": "module",
   "scripts": {
     "dev:frontend": "vite",
@@ -11,6 +11,13 @@
     "dev:french:frontend": "VITE_STUDY_PROFILE=french vite",
     "dev:french:backend": "node --import tsx server/index.ts --mode=dev --study-profile=french --data-dir=data/french-dev --seed-data=server/seeds/french-dev.json",
     "study:backend": "node --import tsx server/index.ts --mode=study",
+    "start:hosted": "node --import tsx server/index.ts --mode=study --auth-mode=clerk",
+    "bootstrap:hosted:mandarin": "node --import tsx scripts/bootstrap-hosted-mandarin.ts",
+    "hosted:control": "node --import tsx scripts/set-hosted-service-control.ts",
+    "hosted:learner-control": "node --import tsx scripts/set-hosted-learner-disabled.ts",
+    "hosted:sentinel": "node --import tsx scripts/seed-deployment-sentinel.ts",
+    "hosted:inspect": "node --import tsx scripts/inspect-hosted-service.ts",
+    "hosted:verify-restore": "node --import tsx scripts/verify-hosted-restore.ts",
     "reset:dev-data": "node --import tsx server/reset-dev-db.ts --seed-data=server/seeds/mandarin-dev.json",
     "build:canonical-wordlist": "node --import tsx scripts/build-canonical-wordlist.ts",
     "check:study-scheduler-state": "node --import tsx scripts/check-study-scheduler-state.ts",
@@ -36,6 +43,7 @@
     "express": "^4.18.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "tsx": "^4.20.0",
     "undici": "^8.10.0"
   },
   "devDependencies": {
@@ -45,7 +53,6 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^5.2.0",
-    "tsx": "^4.20.0",
     "typescript": "^5.6.2",
     "vite": "^5.4.1"
   }

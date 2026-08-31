@@ -5,7 +5,7 @@ Navigation-only overview. Product rules live in `SPECS/` canonical docs.
 ## Runtime layout
 
 ```text
-Browser (Vite, :4173)
+Browser (Vite dev, :4173; Express-served build in production)
   └── src/          React UI, in-flight session state
         └── services/api.ts  → HTTP
 Express (server/index.ts, :5174)
@@ -56,6 +56,7 @@ Detail: [SPECS/frontend-architecture-map.md](../SPECS/frontend-architecture-map.
 | `APP_STUDY_PROFILE` | Backend | `mandarin` or `french` |
 | `APP_SEED_DATA_PATH` | Backend | Required in dev mode; seed JSON path |
 | `VITE_API_BASE` | Frontend | API origin (default `http://localhost:5174`) |
+| `APP_USE_LOCAL_PROVIDER_PROXY` | Backend | Exact `true` opts local OpenAI/OpenRouter calls into `127.0.0.1:7897`; hosted default is direct |
 | `VITE_STUDY_PROFILE` | Frontend | Client study profile |
 
 ## Data directories

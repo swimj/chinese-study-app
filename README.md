@@ -40,6 +40,8 @@ The current implementation includes:
   learner-authorized cue repair, and exact attempt provenance
 - stable learner identities with learner-scoped state/history, shared lexical
   content, and explicitly scoped learner/shared generated content
+- a production entrypoint that serves the frontend and API from one origin,
+  with Fly/Litestream packaging and a fresh shared-only Mandarin bootstrap
 
 ## Release Versioning
 
@@ -72,6 +74,8 @@ The current implementation includes:
 4. Open the app in your browser at `http://localhost:4173`.
 
 The frontend calls the backend at `http://localhost:5174` by default. You can override that with `VITE_API_BASE`.
+Production builds use their serving origin by default, so a separate frontend
+server and `VITE_API_BASE` are not required for the hosted beta.
 
 ## Modes and Data
 
@@ -139,6 +143,18 @@ supported by current builds; the sole dogfood database has completed that
 one-time migration.
 
 We recommend keeping study data outside the cloned repo, even though this version does not enforce that.
+
+### Hosted beta
+
+The bounded hosted deployment uses Clerk auth, one Fly Machine and encrypted
+volume, and Litestream replication to versioned S3. It starts from a small
+checksummed shared Mandarin artifact and never imports local dogfood data. See
+the [hosted beta deployment and recovery runbook](docs/ops/hosted-beta-deployment.md).
+
+Provider traffic is direct by default. Set `APP_USE_LOCAL_PROVIDER_PROXY=true`
+only for local dogfood that needs the proxy at `127.0.0.1:7897`; the switch
+affects the existing OpenAI and OpenRouter transports and preserves every model
+provider in the hosted pool.
 
 ## Recommended Workflow
 

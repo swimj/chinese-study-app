@@ -23,7 +23,11 @@ export const config: AppConfig = new Proxy({} as AppConfig, {
 
 export function openDatabase(targetPath: string): DatabaseSync {
   const database = new DatabaseSync(targetPath);
-  database.exec('PRAGMA foreign_keys = ON;');
+  database.exec(`
+    PRAGMA foreign_keys = ON;
+    PRAGMA journal_mode = WAL;
+    PRAGMA busy_timeout = 5000;
+  `);
   return database;
 }
 
@@ -36,6 +40,12 @@ export function getDb(): DatabaseSync {
 
 export function setDb(database: DatabaseSync): void {
   dbInstance = database;
+}
+
+export function closeDbConnection(): void {
+  if (!dbInstance) return;
+  dbInstance.close();
+  dbInstance = null;
 }
 
 export function initDbConnection(): void {

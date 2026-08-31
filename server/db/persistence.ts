@@ -24,6 +24,7 @@ import type {
 } from '../../src/domain/study-actions.ts';
 import { buildReviewSessionStudyItem, deriveReviewCommitFieldsFromAttemptEvents } from '../../src/domain/study-actions.ts';
 import { config, getDb, dbPath, seedDataPath, dbExistedOnStartup, openDatabase, setDb } from './connection.ts';
+import { ensureHostedOperationsSchema } from './hosted-operations.ts';
 import {
   ensureReflectionIndexes,
   ensureReflectionSchema,
@@ -2279,6 +2280,7 @@ export function dismissWordFromStudy(wordId: string): void {
 export function initializeDatabase() {
   if (!dbExistedOnStartup) {
     createSchema();
+    ensureHostedOperationsSchema();
     recordLearnerOwnershipSchema();
     if (config.authMode === 'trusted_local') {
       bootstrapLearner({ learnerId: config.learnerId });
@@ -2295,6 +2297,7 @@ export function initializeDatabase() {
         `Database at ${dbPath} predates learner ownership and is no longer supported by this build.`,
       );
     }
+    ensureHostedOperationsSchema();
     ensureReflectionSchema();
     ensureSharedContentSchema();
     installScopedContentCompatibilityViews();
@@ -2934,6 +2937,7 @@ function rebuildDevDatabase(error: unknown) {
   setDb(openDatabase(dbPath));
   installLearnerContextSqlFunction();
   createSchema();
+  ensureHostedOperationsSchema();
   recordLearnerOwnershipSchema();
   if (config.authMode === 'trusted_local') {
     bootstrapLearner({ learnerId: config.learnerId });

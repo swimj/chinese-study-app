@@ -14,3 +14,4 @@ artifacts/*
 *.tsbuildinfo
 spikes/hosted-beta-platform/.generated/
 spikes/hosted-beta-platform/evidence/private/
+deploy/fly/.generated/

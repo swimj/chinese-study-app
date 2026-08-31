@@ -2,6 +2,19 @@
 
 Casual notes for people using the app before there is a real release process.
 
+## 2.2.0 — hosted beta steel thread
+
+- Added a single-origin production runtime for the React frontend and Express
+  API, with public health checks and graceful shutdown.
+- Added Fly packaging for one persistent SQLite Machine and continuous
+  Litestream replication to independently owned S3 storage.
+- Added a strict shared-only Mandarin bootstrap plus maintenance,
+  provider-work, learner-disablement, diagnostics, sentinel, and isolated
+  restore commands.
+- Provider connections are direct by default. Local OpenAI and OpenRouter proxy
+  routing now requires the explicit `APP_USE_LOCAL_PROVIDER_PROXY=true` flag;
+  all existing provider arms remain available when hosted.
+
 ## 2026-05-24 to 2026-05-28
 
 This update is mostly about making the app better at the exact kind of study that gets annoying in real life: words that are technically "known" but easy to confuse with nearby words.
