@@ -4,7 +4,8 @@ kill_signal = "SIGTERM"
 kill_timeout = "60s"
 
 [build]
-  dockerfile = "deploy/fly/Dockerfile"
+  # This template is copied to deploy/fly/.generated/fly.toml before use.
+  dockerfile = "../../../deploy/fly/Dockerfile"
 
 [build.args]
   VITE_CLERK_PUBLISHABLE_KEY = "REPLACE_WITH_CLERK_PUBLISHABLE_KEY"
@@ -15,6 +16,7 @@ kill_timeout = "60s"
   APP_MODE = "study"
   APP_STUDY_PROFILE = "mandarin"
   APP_USE_LOCAL_PROVIDER_PROXY = "false"
+  CLERK_PUBLISHABLE_KEY = "REPLACE_WITH_CLERK_PUBLISHABLE_KEY"
   CLERK_AUTHORIZED_PARTY = "https://REPLACE_WITH_APP_NAME.fly.dev"
   LITESTREAM_BUCKET = "REPLACE_WITH_VERSIONED_BACKUP_BUCKET"
   LITESTREAM_REGION = "ap-southeast-1"
