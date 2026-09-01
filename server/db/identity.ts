@@ -97,6 +97,66 @@ export function resolveLearnerId(provider: string, providerSubject: string): str
   return row?.learner_id ?? null;
 }
 
+export function bindExternalLearnerIdentity({
+  provider,
+  providerSubject,
+  learnerId,
+  createdAt = new Date().toISOString(),
+}: {
+  provider: string;
+  providerSubject: string;
+  learnerId: string;
+  createdAt?: string;
+}): 'bound' | 'already_bound' {
+  const normalizedProvider = provider.trim();
+  const normalizedSubject = providerSubject.trim();
+  const normalizedLearnerId = learnerId.trim();
+  if (normalizedProvider.length === 0) throw new Error('Expected non-empty auth provider');
+  if (normalizedSubject.length === 0) throw new Error('Expected non-empty provider subject');
+  if (normalizedLearnerId.length === 0) throw new Error('Expected non-empty learner id');
+
+  getDb().exec('BEGIN IMMEDIATE');
+  try {
+    assertLearnerExists(normalizedLearnerId);
+    const subjectMapping = getDb().prepare(`
+      SELECT learner_id
+      FROM learner_auth_mappings
+      WHERE provider = ? AND provider_subject = ?
+    `).get(normalizedProvider, normalizedSubject) as { learner_id: string } | undefined;
+    if (subjectMapping && subjectMapping.learner_id !== normalizedLearnerId) {
+      throw new Error(
+        `Auth subject is already bound to learner "${subjectMapping.learner_id}".`,
+      );
+    }
+
+    const learnerMapping = getDb().prepare(`
+      SELECT provider_subject
+      FROM learner_auth_mappings
+      WHERE provider = ? AND learner_id = ?
+    `).get(normalizedProvider, normalizedLearnerId) as { provider_subject: string } | undefined;
+    if (learnerMapping && learnerMapping.provider_subject !== normalizedSubject) {
+      throw new Error(
+        `Learner "${normalizedLearnerId}" is already bound to another ${normalizedProvider} subject.`,
+      );
+    }
+
+    if (subjectMapping) {
+      getDb().exec('COMMIT');
+      return 'already_bound';
+    }
+
+    getDb().prepare(`
+      INSERT INTO learner_auth_mappings (provider, provider_subject, learner_id, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run(normalizedProvider, normalizedSubject, normalizedLearnerId, createdAt);
+    getDb().exec('COMMIT');
+    return 'bound';
+  } catch (error) {
+    getDb().exec('ROLLBACK');
+    throw error;
+  }
+}
+
 export class DisabledLearnerError extends Error {
   constructor() {
     super('Account disabled.');
