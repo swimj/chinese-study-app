@@ -1,3 +1,4 @@
+import { normalizeProductionAnswerForProfile } from '../study-profile';
 import type {
   ProductionAnswerWord,
   ProductionExerciseSnapshot,
@@ -65,5 +66,5 @@ export function resolveProductionResponse({
 }
 
 function normalizeHanziAnswer(value: string): string {
-  return value.trim().replace(/\s+/g, '');
+  return normalizeProductionAnswerForProfile(value, 'mandarin');
 }

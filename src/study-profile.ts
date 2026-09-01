@@ -7,6 +7,7 @@ export type ProductionMatchOptions = {
   trimEdgePunctuation: boolean;
   collapseWhitespace: boolean;
   removeWhitespace: boolean;
+  removePunctuation: boolean;
   ignoreHyphenSpacing: boolean;
 };
 
@@ -35,6 +36,7 @@ const exactProductionMatchOptions: ProductionMatchOptions = {
   trimEdgePunctuation: false,
   collapseWhitespace: false,
   removeWhitespace: true,
+  removePunctuation: true,
   ignoreHyphenSpacing: false,
 };
 
@@ -45,6 +47,7 @@ const forgivingFrenchProductionMatchOptions: ProductionMatchOptions = {
   trimEdgePunctuation: true,
   collapseWhitespace: true,
   removeWhitespace: false,
+  removePunctuation: false,
   ignoreHyphenSpacing: false,
 };
 
@@ -127,6 +130,10 @@ function normalizeProductionAnswerWithProfile(
 
   if (options.ignoreHyphenSpacing) {
     normalized = normalized.replace(/\s*[-‐‑‒–—]\s*/g, ' ');
+  }
+
+  if (options.removePunctuation) {
+    normalized = normalized.replace(/[\p{P}\p{S}]+/gu, '');
   }
 
   if (options.removeWhitespace) {

@@ -11,10 +11,19 @@ import {
 } from '../src/domain/production-response.ts';
 
 describe('study profile production matching', () => {
-  test('mandarin defaults preserve current whitespace-insensitive target matching', () => {
+  test('mandarin defaults ignore whitespace, commas, and other symbols', () => {
     const options = studyProfiles.mandarin.defaultProductionMatchOptions;
 
     assert.equal(normalizeProductionAnswer(' 学 习 ', options), '学习');
+    assert.equal(
+      normalizeProductionAnswer('吃一堑长一智', options),
+      normalizeProductionAnswer('吃一堑,长一智', options),
+    );
+    assert.equal(
+      normalizeProductionAnswer('吃一堑长一智', options),
+      normalizeProductionAnswer('吃一堑，长一智。', options),
+    );
+    assert.equal(normalizeProductionAnswer('“学习”', options), '学习');
     assert.notEqual(normalizeProductionAnswer('學習', options), normalizeProductionAnswer('学习', options));
   });
 
@@ -135,6 +144,29 @@ describe('production response resolution', () => {
       acceptedWordIds: ['anchor'],
       answerWords,
     }).submittedWordId, null);
+  });
+
+  test('accepts a saying without the corpus comma or surrounding symbols', () => {
+    const sayingWords = [
+      { wordId: 'saying', hanzi: '吃一堑,长一智', traditional: '吃一塹，長一智' },
+    ];
+
+    assert.deepEqual(resolveProductionResponse({
+      submittedText: '吃一堑长一智',
+      anchorWordId: 'saying',
+      acceptedWordIds: ['saying'],
+      answerWords: sayingWords,
+    }), {
+      submittedText: '吃一堑长一智',
+      submittedWordId: 'saying',
+      result: 'accepted_anchor',
+    });
+    assert.equal(resolveProductionResponse({
+      submittedText: '吃一塹長一智',
+      anchorWordId: 'saying',
+      acceptedWordIds: ['saying'],
+      answerWords: sayingWords,
+    }).result, 'accepted_anchor');
   });
 
   test('requires a frozen snapshot for review production resolution', () => {
