@@ -2,6 +2,22 @@
 
 Casual notes for people using the app before there is a real release process.
 
+## 2.3.0 — hosted dogfood cutover
+
+- Added a coherent offline preparation path that preserves the local source,
+  binds the existing dogfood learner to one explicit Clerk subject, and applies
+  the accepted one-time `shared_trial` publication policy on the copy.
+- Added a hashed, machine-readable cutover manifest with integrity,
+  foreign-key, ownership, identity, control-state, and representative-count
+  validation.
+- Added stopped-process promotion that replaces the disposable hosted fixture
+  database atomically while retaining the previous database as rollback.
+- Kept the legacy contrast-eligibility startup repair scoped to trusted-local
+  mode so a clustered dogfood database can start under request-scoped Clerk
+  identity without inventing a global learner.
+- Documented the human checkpoints, staged Fly Volume upload, same-image
+  restart, personal smoke test, and post-cutover isolated restore proof.
+
 ## 2.2.0 — hosted beta steel thread
 
 - Added a single-origin production runtime for the React frontend and Express

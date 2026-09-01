@@ -2819,6 +2819,11 @@ function hasContrastClusterMembership(wordId: string): boolean {
 }
 
 function backfillContrastClusterMemberEligibility(): void {
+  // This repair predates authenticated learner contexts and applies only to
+  // the one configured trusted-local learner. Hosted databases prepare legacy
+  // dogfood eligibility before cutover; Clerk startup must not invent a global
+  // learner or grant cluster eligibility across accounts.
+  if (config.authMode !== 'trusted_local') return;
   const rows = getDb().prepare(`
     SELECT DISTINCT word_id
     FROM contrast_cluster_members

@@ -47,6 +47,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `canonical-words.test.ts` | Canonical wordlist scripts | `scripts/lib/canonical-words.ts` |
 | `cc-cedict.test.ts` | CC-CEDICT parsing | `scripts/lib/cc-cedict.ts` |
 | `subtlex.test.ts` | SUBTLEX parsing | `scripts/lib/subtlex.ts` |
+| `hosted-dogfood-cutover.test.ts` | Coherent offline dogfood preparation, strict Clerk binding, manifest validation, source preservation, stopped-process promotion, and retained fixture rollback | Hosted dogfood cutover scripts and library |
 
 ## When changing…
 

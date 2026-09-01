@@ -51,6 +51,45 @@ describe('learner identity bootstrap', { concurrency: false }, () => {
       'second-learner',
     );
   });
+
+  test('binds an external subject without replacing either side of an existing identity', () => {
+    assert.equal(dbModule.bindExternalLearnerIdentity({
+      provider: dbModule.CLERK_AUTH_PROVIDER,
+      providerSubject: 'clerk-dogfood',
+      learnerId: 'dogfood-owner',
+      createdAt: '2026-09-01T08:00:00.000Z',
+    }), 'bound');
+    assert.equal(dbModule.bindExternalLearnerIdentity({
+      provider: dbModule.CLERK_AUTH_PROVIDER,
+      providerSubject: 'clerk-dogfood',
+      learnerId: 'dogfood-owner',
+      createdAt: '2026-09-01T08:01:00.000Z',
+    }), 'already_bound');
+    assert.equal(
+      dbModule.resolveLearnerId(dbModule.LOCAL_AUTH_PROVIDER, 'dogfood-owner'),
+      'dogfood-owner',
+    );
+
+    assert.equal(dbModule.bindExternalLearnerIdentity({
+      provider: dbModule.CLERK_AUTH_PROVIDER,
+      providerSubject: 'clerk-second',
+      learnerId: 'second-learner',
+    }), 'bound');
+    assert.throws(() => dbModule.bindExternalLearnerIdentity({
+      provider: dbModule.CLERK_AUTH_PROVIDER,
+      providerSubject: 'clerk-second',
+      learnerId: 'dogfood-owner',
+    }), /already bound to learner "second-learner"/);
+    assert.throws(() => dbModule.bindExternalLearnerIdentity({
+      provider: dbModule.CLERK_AUTH_PROVIDER,
+      providerSubject: 'another-dogfood-subject',
+      learnerId: 'dogfood-owner',
+    }), /already bound to another clerk subject/);
+    assert.equal(
+      dbModule.resolveLearnerId(dbModule.CLERK_AUTH_PROVIDER, 'clerk-dogfood'),
+      'dogfood-owner',
+    );
+  });
 });
 
 function restoreEnv(name: string, value: string | undefined) {
