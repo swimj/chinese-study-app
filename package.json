@@ -15,6 +15,7 @@
     "bootstrap:hosted:mandarin": "node --import tsx scripts/bootstrap-hosted-mandarin.ts",
     "hosted:control": "node --import tsx scripts/set-hosted-service-control.ts",
     "hosted:learner-control": "node --import tsx scripts/set-hosted-learner-disabled.ts",
+    "hosted:provision-review-test": "node --import tsx scripts/provision-hosted-beta-review-test.ts",
     "hosted:sentinel": "node --import tsx scripts/seed-deployment-sentinel.ts",
     "hosted:inspect": "node --import tsx scripts/inspect-hosted-service.ts",
     "hosted:verify-restore": "node --import tsx scripts/verify-hosted-restore.ts",
