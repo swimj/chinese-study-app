@@ -81,10 +81,12 @@ export function ReflectionsPage({
 }) {
   const [view, setView] = useState<ReflectionView>('help');
   const helpCards = buildReflectionHelpCards(controller.artifactDetails);
-  const deferredProposals = buildReflectionProposalPresentations(controller.artifactDetails);
+  const deferredCards = toDeferredHelpCards(
+    buildReflectionProposalPresentations(controller.artifactDetails),
+  );
   const views: Array<{ key: ReflectionView; label: string; count?: number }> = [
     { key: 'help', label: 'Help', count: helpCards.length },
-    { key: 'deferred', label: 'Deferred', count: deferredProposals.length },
+    { key: 'deferred', label: 'Deferred', count: deferredCards.length },
     { key: 'sessions', label: 'By session' },
     { key: 'usage', label: 'Run meta' },
     { key: 'quality', label: 'Quality' },
@@ -142,11 +144,21 @@ export function ReflectionsPage({
         ) : view === 'quality' ? (
           <QualityStatsView stats={controller.qualityStats} />
         ) : view === 'help' ? (
-          <HelpQueueView cards={helpCards} controller={controller} />
-        ) : (
-          <ProposalQueueView
-            proposals={deferredProposals}
+          <HelpQueueView
+            key="help"
+            cards={helpCards}
             controller={controller}
+            emptyCopy="No remaining session help to review. Explanation-only cards you marked Done stay in By session."
+            itemLabel="help card"
+          />
+        ) : (
+          <HelpQueueView
+            key="deferred"
+            cards={deferredCards}
+            controller={controller}
+            emptyCopy="No proposals are deferred."
+            itemLabel="deferred card"
+            deferLocked
           />
         )}
       </div>
@@ -154,12 +166,28 @@ export function ReflectionsPage({
   );
 }
 
+function toDeferredHelpCards(
+  presentations: ReflectionProposalPresentation[],
+): Array<Extract<ReflectionHelpCard, { kind: 'proposal' }>> {
+  return presentations.map((presentation) => ({
+    kind: 'proposal',
+    cardKey: `proposal:${presentation.proposal.review.proposalId}`,
+    ...presentation,
+  }));
+}
+
 function HelpQueueView({
   cards,
   controller,
+  emptyCopy,
+  itemLabel,
+  deferLocked = false,
 }: {
   cards: ReflectionHelpCard[];
   controller: ReflectionPageController;
+  emptyCopy: string;
+  itemLabel: string;
+  deferLocked?: boolean;
 }) {
   const [index, setIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -180,16 +208,14 @@ function HelpQueueView({
     return (
       <main className="reflection-help-shell is-empty">
         <section className="panel reflection-empty-state">
-          <p className="notes">
-            No remaining session help to review. Explanation-only cards you marked Done stay in By session.
-          </p>
+          <p className="notes">{emptyCopy}</p>
         </section>
       </main>
     );
   }
 
   if (card === null) {
-    throw new Error('Invariant violated: help queue has cards but no current card.');
+    throw new Error(`Invariant violated: ${itemLabel} queue has cards but no current card.`);
   }
 
   const sessionDate = formatCompactDateTime(
@@ -204,7 +230,7 @@ function HelpQueueView({
             type="button"
             className="secondary-button reflection-help-pager-button"
             disabled={safeIndex === 0}
-            aria-label="Previous help card"
+            aria-label={`Previous ${itemLabel}`}
             onClick={() => setIndex((current) => Math.max(0, current - 1))}
           >
             ‹
@@ -216,7 +242,7 @@ function HelpQueueView({
             type="button"
             className="secondary-button reflection-help-pager-button"
             disabled={safeIndex >= cards.length - 1}
-            aria-label="Next help card"
+            aria-label={`Next ${itemLabel}`}
             onClick={() => setIndex((current) => Math.min(cards.length - 1, current + 1))}
           >
             ›
@@ -240,6 +266,7 @@ function HelpQueueView({
           card={card}
           controller={controller}
           scrollRef={scrollRef}
+          deferLocked={deferLocked}
         />
       )}
     </main>
@@ -368,10 +395,12 @@ function HelpProposalCard({
   card,
   controller,
   scrollRef,
+  deferLocked = false,
 }: {
   card: Extract<ReflectionHelpCard, { kind: 'proposal' }>;
   controller: ReflectionPageController;
   scrollRef: RefObject<HTMLDivElement>;
+  deferLocked?: boolean;
 }) {
   const original = card.proposal.proposal.operation;
   const [draft, setDraft] = useState(() => cloneReflectionOperation(original));
@@ -446,8 +475,10 @@ function HelpProposalCard({
           }}
           resetDisabled={submitting || draftState.acceptanceMode === 'exact'}
           onReset={() => setDraft(cloneReflectionOperation(original))}
-          deferDisabled={submitting}
+          deferDisabled={deferLocked || submitting}
+          deferTitle={deferLocked ? 'Already deferred' : undefined}
           onDefer={() => {
+            if (deferLocked) return;
             void controller.deferProposal(card.proposal.review.proposalId).catch(() => undefined);
           }}
           acceptDisabled={submitting || draftState.validationErrors.length > 0}
@@ -473,89 +504,6 @@ function HelpProposalCard({
         />
       </div>
     </>
-  );
-}
-
-function ProposalQueueView({
-  proposals,
-  controller,
-}: {
-  proposals: ReflectionProposalPresentation[];
-  controller: ReflectionPageController;
-}) {
-  return (
-    <main className="reflection-queue">
-      <header className="reflection-queue-heading">
-        <div>
-          <h2>Deferred proposals</h2>
-          <p className="notes">
-            {proposals.length} proposal{proposals.length === 1 ? '' : 's'} across recent reflections
-          </p>
-        </div>
-      </header>
-      {proposals.length === 0 ? (
-        <section className="panel reflection-empty-state">
-          <h2>All clear</h2>
-          <p className="notes">No proposals are deferred.</p>
-        </section>
-      ) : proposals.map((presentation) => (
-        <article
-          className="panel reflection-queue-card"
-          key={presentation.proposal.review.proposalId}
-        >
-          <header className="reflection-item-heading">
-            <div>
-              <p className="reflection-eyebrow">
-                {formatDateTime(
-                  presentation.artifact.evidenceBundle.session.endedAt
-                    ?? presentation.artifact.generatedAt,
-                )}
-              </p>
-              <ItemIdentityHeading evidence={presentation.evidence} />
-            </div>
-            <div className="reflection-tag-list">
-              {presentation.result.diagnosisTags.map((tag) => (
-                <span className="reflection-tag" key={tag}>{humanize(tag)}</span>
-              ))}
-            </div>
-          </header>
-          <EvidenceView evidence={presentation.evidence} />
-          {presentation.result.learnerExplanation !== null ? (
-            <section className="reflection-analysis">
-              <p>{presentation.result.learnerExplanation}</p>
-            </section>
-          ) : null}
-          <ProposalCard
-            proposal={presentation.proposal}
-            evidence={presentation.evidence}
-            qualityArtifactId={presentation.artifact.artifactId}
-            qualityItemId={presentation.result.itemId}
-            qualityAnnotation={findQualityItemTags(
-              presentation.artifact.qualityItemTags,
-              presentation.artifact.artifactId,
-              presentation.result.itemId,
-            )}
-            qualitySubmitting={
-              controller.submittingQualityItemKey === qualityItemKey(
-                presentation.artifact.artifactId,
-                presentation.result.itemId,
-              )
-            }
-            submitting={
-              controller.submittingProposalId === presentation.proposal.review.proposalId
-            }
-            withdrawingInvocationId={controller.withdrawingInvocationId}
-            onDefer={controller.deferProposal}
-            onDismiss={controller.dismissProposal}
-            onAccept={controller.acceptProposal}
-            onReplace={controller.replaceProposal}
-            onWithdraw={controller.withdrawAuthorization}
-            onUpsertQuality={controller.upsertQuality}
-            onClearQuality={controller.clearQuality}
-          />
-        </article>
-      ))}
-    </main>
   );
 }
 
@@ -1998,6 +1946,7 @@ function HelpReviewToolbar({
   resetDisabled,
   onReset,
   deferDisabled,
+  deferTitle,
   onDefer,
   acceptDisabled,
   acceptLabel,
@@ -2012,6 +1961,7 @@ function HelpReviewToolbar({
   resetDisabled: boolean;
   onReset: () => void;
   deferDisabled: boolean;
+  deferTitle?: string;
   onDefer: () => void;
   acceptDisabled: boolean;
   acceptLabel: string;
@@ -2038,6 +1988,7 @@ function HelpReviewToolbar({
         type="button"
         className="secondary-button"
         disabled={deferDisabled || submitting}
+        title={deferTitle}
         onClick={onDefer}
       >
         Defer
