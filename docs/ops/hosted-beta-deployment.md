@@ -75,6 +75,25 @@ sign-in again. Confirm that one user cannot see the other's notes, priorities,
 session history, or reflections. Exercise all five model arms once; a failure
 in one arm must remain attributable and must not prevent another arm working.
 
+### Provision a reflection test card for a dummy learner
+
+For beta smoke testing only, the operator can prepare one untouched shared word
+as a due **production** review card for one named dummy learner. This creates
+private learner state only, does not modify shared content, refuses to overwrite
+existing progress, and records an attributable operator action. It is not an
+HTTP endpoint or a general-purpose state editor.
+
+```bash
+fly ssh console --app <app-name> --command \
+  'npm run hosted:provision-review-test -- --data-dir=/data --learner-id=<id> --actor-id=<operator>'
+```
+
+Sign in as that learner, complete the production card with an intentionally
+incorrect response (or select **Ask reflection to review**), finish the
+session, and exercise the generated reflection. Preserve the command JSON and
+the learner/word pair as beta test evidence. A second request for the same
+learner/word fails rather than altering real progress.
+
 ## Release and maintenance controls
 
 For a schema-changing release, stop new provider work, then stop writes. The

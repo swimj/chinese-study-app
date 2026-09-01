@@ -10,6 +10,7 @@ type DbModule = typeof import('../server/db.ts');
 
 let dataDir = '';
 let dbModule: DbModule;
+let bootstrapArtifact: unknown;
 
 describe('hosted operational controls', { concurrency: false }, () => {
   before(async () => {
@@ -22,6 +23,8 @@ describe('hosted operational controls', { concurrency: false }, () => {
       process.env.APP_AUTH_MODE = 'clerk';
       process.env.APP_DATA_DIR = dataDir;
       dbModule = await import(`${pathToFileURL(path.resolve('server/db.ts')).href}?hosted-ops=${Date.now()}`);
+      bootstrapArtifact = JSON.parse(fs.readFileSync('server/bootstrap/mandarin-hosted-v1.json', 'utf8'));
+      dbModule.importSharedMandarinBootstrap(bootstrapArtifact);
     } finally {
       restoreEnv('APP_MODE', previousMode);
       restoreEnv('APP_AUTH_MODE', previousAuthMode);
@@ -83,6 +86,48 @@ describe('hosted operational controls', { concurrency: false }, () => {
     assert.equal(action.actorId, 'operator-test');
     assert.throws(() => dbModule.assertLearnerExists('learner-to-disable'), /disabled/i);
     assert.equal(dbModule.getHostedOperationalDiagnostics().operatorActionCount, 1);
+  });
+
+  test('provisions one untouched shared word as an immediately due private production review', () => {
+    dbModule.bootstrapLearner({ learnerId: 'learner-review-test' });
+    const action = dbModule.provisionHostedBetaReviewTest({
+      learnerId: 'learner-review-test',
+      actorId: 'operator-test',
+      createdAt: '2026-08-31T08:03:00.000Z',
+    });
+    assert.equal(action.wordId, 'hosted-v1-适应');
+    dbModule.runWithLearnerId('learner-review-test', () => {
+      const word = dbModule.getWords().find((candidate) => candidate.id === action.wordId);
+      assert.equal(word?.status, 'review');
+      assert.deepEqual(dbModule.getWordSkillStates().filter((state) => state.wordId === action.wordId), [
+        {
+          wordId: action.wordId,
+          skillId: 'production',
+          enabled: true,
+          intervalHours: 24,
+          lastStudiedAt: '2026-08-30T08:03:00.000Z',
+          nextDueAt: '2026-08-31T08:03:00.000Z',
+          easeFactor: 2.5,
+        },
+        {
+          wordId: action.wordId,
+          skillId: 'recognition',
+          enabled: false,
+          intervalHours: 24,
+          lastStudiedAt: '2026-08-30T08:03:00.000Z',
+          nextDueAt: '2026-08-31T08:03:00.000Z',
+          easeFactor: 2.5,
+        },
+      ]);
+      const session = dbModule.getSessionPayload('2026-08-31', { random: () => 0 });
+      assert.equal(session.buckets.review.length, 1);
+      assert.equal(session.buckets.review[0]?.actionKind, 'production');
+    });
+    assert.throws(() => dbModule.provisionHostedBetaReviewTest({
+      learnerId: 'learner-review-test',
+      actorId: 'operator-test',
+      wordId: action.wordId,
+    }), /already has study state/);
   });
 });
 
