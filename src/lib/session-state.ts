@@ -655,7 +655,7 @@ function buildProductionAttemptMetadata(
   }
   if (
     resolution.responseKind === 'no_clue'
-    && (response !== null || resolution.submittedText !== null || resolution.submittedWordId !== null)
+    && (response !== null || resolution.submittedText !== null)
   ) {
     throw new Error('Session invariant violated: no-clue production evidence must not contain a response.');
   }
@@ -669,11 +669,11 @@ function buildProductionAttemptMetadata(
       cueType: production.cueType,
       text: production.text,
       acceptedWordIds: [...production.acceptedWordIds],
+      acceptedAnswers: production.acceptedAnswers.map((word) => ({ ...word })),
       supplement: production.supplement == null ? null : { ...production.supplement },
       anchorWordId: item.targetWordId,
       ...(resolution.responseKind === 'no_clue' ? { responseKind: 'no_clue' } : {}),
       submittedText: resolution.submittedText,
-      submittedWordId: resolution.submittedWordId,
       result: resolution.result,
       recheckDemandId: production.recheckDemandId,
     },

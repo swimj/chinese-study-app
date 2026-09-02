@@ -3,7 +3,7 @@ import type {
   SessionStudyItemBuckets,
   StudySkillId,
 } from '../domain/study-actions';
-import { buildWordLifecycleSessionStudyItems } from '../domain/study-actions';
+import { buildWordLifecycleSessionStudyItems, cloneProductionExerciseSnapshot } from '../domain/study-actions';
 import type { Word } from '../types';
 
 // Live sessions seed from sessionId. This fallback keeps scheduler unit tests
@@ -253,10 +253,7 @@ function cloneSessionStudyItem(item: SessionStudyItem): SessionStudyItem {
     sampledSkillIds: [...item.sampledSkillIds],
     contentRef: item.contentRef ? { ...item.contentRef } : null,
     production: item.production
-      ? {
-          ...item.production,
-          acceptedWordIds: [...item.production.acceptedWordIds],
-        }
+      ? cloneProductionExerciseSnapshot(item.production)
       : null,
     word: cloneWord(item.word),
     contrastSelection: item.contrastSelection

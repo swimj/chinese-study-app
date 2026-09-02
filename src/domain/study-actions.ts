@@ -32,6 +32,7 @@ export type ProductionExerciseSnapshot = {
   cueType: ProductionCueType;
   text: string;
   acceptedWordIds: string[];
+  acceptedAnswers: ProductionAnswerWord[];
   supplement: ProductionCueSupplementSnapshot | null;
   recheckDemandId: string | null;
 };
@@ -46,15 +47,24 @@ export type ProductionResponseResolution =
   | {
       responseKind?: 'typed';
       submittedText: string;
-      submittedWordId: string | null;
       result: ProductionAttemptResult;
     }
   | {
       responseKind: 'no_clue';
       submittedText: null;
-      submittedWordId: null;
       result: 'rejected';
     };
+
+export function cloneProductionExerciseSnapshot(
+  production: ProductionExerciseSnapshot,
+): ProductionExerciseSnapshot {
+  return {
+    ...production,
+    acceptedWordIds: [...production.acceptedWordIds],
+    acceptedAnswers: production.acceptedAnswers.map((word) => ({ ...word })),
+    supplement: production.supplement == null ? null : { ...production.supplement },
+  };
+}
 
 export type ContrastCluster = {
   id: string;

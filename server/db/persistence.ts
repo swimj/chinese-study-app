@@ -12,6 +12,7 @@ import type {
   SessionStudyItem,
   SessionStudyItemBuckets,
   ProductionExerciseSnapshot,
+  ProductionAnswerWord,
   StudyAttemptEvent,
   StudyAttemptOutcome,
   StudyActionKind,
@@ -23,7 +24,11 @@ import type {
   WordSkillRelevanceState,
 } from '../../src/domain/study-actions.ts';
 import { buildReviewSessionStudyItem, deriveReviewCommitFieldsFromAttemptEvents } from '../../src/domain/study-actions.ts';
-import { config, getDb, dbPath, seedDataPath, dbExistedOnStartup, openDatabase, setDb } from './connection.ts';
+import {
+  deriveAcceptedSubmittedWordId,
+  resolveUniqueOutOfSetWordId,
+} from '../../src/domain/production-response.ts';
+import { config, getConfig, getDb, dbPath, seedDataPath, dbExistedOnStartup, openDatabase, setDb } from './connection.ts';
 import { ensureHostedOperationsSchema } from './hosted-operations.ts';
 import {
   ensureReflectionIndexes,
@@ -587,11 +592,6 @@ export function getSessionPayload(
 
   return {
     buckets: getSessionItemBucketsWithWords(studyDayKey, options.random ?? Math.random),
-    productionAnswerWords: getWords().map((word) => ({
-      wordId: word.id,
-      hanzi: word.hanzi,
-      traditional: word.traditional,
-    })),
   };
 }
 
@@ -1297,7 +1297,11 @@ export function recordAcceptedReviewAttemptBatch({
   const reviewedAt = new Date().toISOString();
   const productionAttempts = events
     .filter((event) => event.actionKind === 'production')
-    .map((event) => ({ event, evidence: parseProductionAttemptEvidence(event) }));
+    .map((event) => assignProductionSubmittedWordId(event));
+  const eventsToStore = events.map((event) => {
+    const assigned = productionAttempts.find((attempt) => attempt.event.id === event.id);
+    return assigned?.event ?? event;
+  });
   const terminalProductionAttempt = productionAttempts.at(-1) ?? null;
   const recheckDemandId = assertProductionAttemptRecheckDemandCoherence(productionAttempts);
   const servedRecheck = recheckDemandId === null ? null : getProductionRecheckDemand(recheckDemandId);
@@ -1326,8 +1330,8 @@ export function recordAcceptedReviewAttemptBatch({
   getDb().exec('BEGIN');
 
   try {
-    ensureStudySessionExistsWithoutTransaction(sessionId, events[0]?.occurredAt ?? reviewedAt);
-    insertStudyAttemptEventsWithoutTransaction(events);
+    ensureStudySessionExistsWithoutTransaction(sessionId, eventsToStore[0]?.occurredAt ?? reviewedAt);
+    insertStudyAttemptEventsWithoutTransaction(eventsToStore);
     for (const { event, evidence } of productionAttempts) {
       appendProductionCueAttemptEvidenceWithoutTransaction({
         occurredAt: event.occurredAt,
@@ -1345,7 +1349,7 @@ export function recordAcceptedReviewAttemptBatch({
       && terminalProductionAttempt.evidence.result === 'accepted_non_anchor';
     if (!preserveAnchorScheduler) {
       projectReviewAttemptEventsWithoutTransaction({
-        events,
+        events: eventsToStore,
         failureCount: derivedCommitFields.failureCount,
         terminalRating: derivedCommitFields.terminalRating,
         reviewedAt,
@@ -1373,7 +1377,7 @@ export function recordAcceptedReviewAttemptBatch({
         }
       }
     }
-    markStudyAttemptEventsProjectedWithoutTransaction(events.map((event) => event.id), reviewedAt);
+    markStudyAttemptEventsProjectedWithoutTransaction(eventsToStore.map((event) => event.id), reviewedAt);
 
     getDb().exec('COMMIT');
   } catch (error) {
@@ -1382,7 +1386,7 @@ export function recordAcceptedReviewAttemptBatch({
   }
 
   return {
-    events: getStudyAttemptEventsForSession(sessionId).filter((event) => events.some((input) => input.id === event.id)),
+    events: getStudyAttemptEventsForSession(sessionId).filter((event) => eventsToStore.some((input) => input.id === event.id)),
   };
 }
 
@@ -1402,7 +1406,6 @@ function parseProductionAttemptEvidence(event: StudyAttemptEvent): ParsedProduct
     production === null
     || typeof production.taskId !== 'string'
     || (production.cueId !== null && typeof production.cueId !== 'string')
-    || (production.submittedWordId !== null && typeof production.submittedWordId !== 'string')
     || !isProductionCueAttemptResult(production.result)
     || (production.recheckDemandId !== null && typeof production.recheckDemandId !== 'string')
     || !Array.isArray(production.acceptedWordIds)
@@ -1417,28 +1420,150 @@ function parseProductionAttemptEvidence(event: StudyAttemptEvent): ParsedProduct
     production.submittedText !== event.response
     || (responseKind === 'no_clue'
       && (event.response !== null
-        || production.submittedWordId !== null
         || production.result !== 'rejected'
         || event.outcome !== 'incorrect'
         || event.rating !== 'forgot'))
-    || !isProductionAttemptResultCoherent(
+    || (production.result === 'rejected'
+      && (event.outcome !== 'incorrect' || event.rating !== 'forgot'))
+  ) {
+    throw new Error(`Production attempt ${event.id} has an inconsistent normalized response result.`);
+  }
+  const submittedWordId = deriveProductionSubmittedWordId({
+    event,
+    acceptedWordIds: production.acceptedWordIds,
+    result: production.result,
+    responseKind,
+    submittedText: production.submittedText,
+  });
+  if (
+    !isProductionAttemptResultCoherent(
       production.result,
-      production.submittedWordId,
+      submittedWordId,
       event.targetWordId,
       production.acceptedWordIds,
     )
-    || (production.result === 'rejected'
-      && (event.outcome !== 'incorrect' || event.rating !== 'forgot'))
   ) {
     throw new Error(`Production attempt ${event.id} has an inconsistent normalized response result.`);
   }
   return {
     taskId: production.taskId,
     cueId: production.cueId,
-    submittedWordId: production.submittedWordId,
+    submittedWordId,
     result: production.result,
     recheckDemandId: production.recheckDemandId,
     responseKind,
+  };
+}
+
+function assignProductionSubmittedWordId(
+  event: StudyAttemptEvent,
+): { event: StudyAttemptEvent; evidence: ParsedProductionAttemptEvidence } {
+  const evidence = parseProductionAttemptEvidence(event);
+  const production = isPlainRecord(event.metadata.production) ? event.metadata.production : null;
+  if (production === null) {
+    throw new Error(`Production attempt ${event.id} has invalid production evidence metadata.`);
+  }
+  return {
+    event: {
+      ...event,
+      metadata: {
+        ...event.metadata,
+        production: {
+          ...production,
+          submittedWordId: evidence.submittedWordId,
+        },
+      },
+    },
+    evidence,
+  };
+}
+
+function deriveProductionSubmittedWordId({
+  event,
+  acceptedWordIds,
+  result,
+  responseKind,
+  submittedText,
+}: {
+  event: StudyAttemptEvent;
+  acceptedWordIds: string[];
+  result: ProductionCueAttemptResultV0;
+  responseKind: 'typed' | 'no_clue';
+  submittedText: unknown;
+}): string | null {
+  if (responseKind === 'no_clue') {
+    return null;
+  }
+  if (typeof submittedText !== 'string') {
+    throw new Error(`Production attempt ${event.id} has invalid production evidence metadata.`);
+  }
+  const profileId = getConfig().studyProfile;
+  const acceptedAnswers = getProductionAnswerWordsByIds(acceptedWordIds);
+  const acceptedSubmittedWordId = deriveAcceptedSubmittedWordId({
+    result,
+    submittedText,
+    anchorWordId: event.targetWordId,
+    acceptedAnswers,
+    profileId,
+  });
+  if (result !== 'rejected') {
+    return acceptedSubmittedWordId;
+  }
+  return resolveUniqueOutOfSetWordId({
+    submittedText,
+    catalogWords: getCatalogProductionAnswerWords(),
+    acceptedWordIds,
+    profileId,
+  });
+}
+
+function getProductionAnswerWordsByIds(wordIds: readonly string[]): ProductionAnswerWord[] {
+  if (wordIds.length === 0) {
+    throw new Error('Expected at least one accepted production word id.');
+  }
+  const uniqueIds = [...new Set(wordIds)];
+  const placeholders = uniqueIds.map(() => '?').join(', ');
+  const rows = getDb()
+    .prepare(`
+      SELECT id, hanzi, traditional
+      FROM lexical_words
+      WHERE id IN (${placeholders})
+    `)
+    .all(...uniqueIds) as Array<{ id: string; hanzi: string; traditional: string | null }>;
+  const wordsById = new Map(rows.map((row) => [row.id, row]));
+  return wordIds.map((wordId) => {
+    const row = wordsById.get(wordId);
+    if (!row) {
+      throw new Error(`Production accepted word "${wordId}" is missing from the catalog.`);
+    }
+    return {
+      wordId: row.id,
+      hanzi: row.hanzi,
+      traditional: row.traditional,
+    };
+  });
+}
+
+function getCatalogProductionAnswerWords(): ProductionAnswerWord[] {
+  const rows = getDb()
+    .prepare(`
+      SELECT id, hanzi, traditional
+      FROM lexical_words
+    `)
+    .all() as Array<{ id: string; hanzi: string; traditional: string | null }>;
+  return rows.map((row) => ({
+    wordId: row.id,
+    hanzi: row.hanzi,
+    traditional: row.traditional,
+  }));
+}
+
+function freezeProductionExerciseSnapshot(
+  production: Omit<ProductionExerciseSnapshot, 'acceptedAnswers'>,
+): ProductionExerciseSnapshot {
+  return {
+    ...production,
+    acceptedAnswers: getProductionAnswerWordsByIds(production.acceptedWordIds),
   };
 }
 
@@ -5243,7 +5368,7 @@ function getReviewSkillContentIfAvailable(
       return {
         contentRef: { type: 'production_cue', taskId: cue.taskId, cueId: cue.cueId },
         contrastSelection: null,
-        production: {
+        production: freezeProductionExerciseSnapshot({
           taskId: cue.taskId,
           cueId: cue.cueId,
           cueType: cue.cueType,
@@ -5256,7 +5381,7 @@ function getReviewSkillContentIfAvailable(
             exampleTranslation: supplement.exampleTranslation,
           },
           recheckDemandId,
-        },
+        }),
       };
     }
 
@@ -5272,7 +5397,7 @@ function getReviewSkillContentIfAvailable(
     return {
       contentRef: null,
       contrastSelection: null,
-      production: {
+      production: freezeProductionExerciseSnapshot({
         taskId,
         cueId: null,
         cueType: 'definition_gloss',
@@ -5285,7 +5410,7 @@ function getReviewSkillContentIfAvailable(
           exampleTranslation: supplement.exampleTranslation,
         },
         recheckDemandId,
-      },
+      }),
     };
   }
 

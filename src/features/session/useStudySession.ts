@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { ReviewRating, Word, WordMeaning } from '../../types';
 import type {
-  ProductionAnswerWord,
   ProductionResponseResolution,
   SessionStudyItem,
 } from '../../domain/study-actions';
@@ -272,7 +271,6 @@ export function useStudySession({
   );
   const pendingReflectionSupplementRef = useRef<unknown>(null);
   const activeSessionIdRef = useRef<string | null>(null);
-  const productionAnswerWordsRef = useRef<ProductionAnswerWord[]>([]);
   const [sessionFinalization, setSessionFinalization] = useState<SessionFinalizationState>(
     createSessionFinalizationState,
   );
@@ -540,11 +538,6 @@ export function useStudySession({
         supportsVisibilityApi: typeof document !== 'undefined' && 'visibilityState' in document,
       });
       setSessionState(createBucketSessionState({ buckets: sessionPayload.buckets, sessionId }));
-      productionAnswerWordsRef.current = sessionPayload.productionAnswerWords.map((word) => ({
-        wordId: word.wordId,
-        hanzi: word.hanzi,
-        traditional: word.traditional,
-      }));
       resetSessionScopedUi();
       setPendingSessionCommit(null);
       setLastUndoSnapshot(null);
@@ -829,7 +822,7 @@ export function useStudySession({
           submittedText: typedResponse,
           anchorWordId: activeWord.id,
           production: activeItem.production,
-          answerWords: productionAnswerWordsRef.current,
+          profileId: studyProfile.id,
         });
       } else {
         const accepted = submittedHanzi === normalizeProductionAnswer(
@@ -838,7 +831,6 @@ export function useStudySession({
         );
         resolution = {
           submittedText: typedResponse,
-          submittedWordId: accepted ? activeWord.id : null,
           result: accepted ? 'accepted_anchor' : 'rejected',
         };
       }
@@ -899,7 +891,6 @@ export function useStudySession({
           ? {
               responseKind: 'no_clue',
               submittedText: null,
-              submittedWordId: null,
               result: 'rejected',
             }
           : null,

@@ -6,8 +6,9 @@ import {
   type ProductionMatchOptions,
 } from '../src/study-profile.ts';
 import {
-  resolveProductionResponse,
+  resolveAcceptedProductionResponse,
   resolveSessionProductionResponse,
+  resolveUniqueOutOfSetWordId,
 } from '../src/domain/production-response.ts';
 
 describe('study profile production matching', () => {
@@ -61,111 +62,111 @@ describe('study profile production matching', () => {
 });
 
 describe('production response resolution', () => {
-  const answerWords = [
+  const acceptedAnswers = [
     { wordId: 'anchor', hanzi: '学习', traditional: '學習' },
     { wordId: 'other', hanzi: '研习', traditional: '研習' },
     { wordId: 'homograph-a', hanzi: '行', traditional: '行' },
     { wordId: 'homograph-b', hanzi: '行', traditional: null },
-    { wordId: 'traditional-collision', hanzi: '學習', traditional: null },
-    { wordId: 'outside', hanzi: '外', traditional: null },
   ];
 
   test('resolves anchor, accepted non-anchor, and traditional forms while preserving raw text', () => {
-    assert.deepEqual(resolveProductionResponse({
+    assert.deepEqual(resolveAcceptedProductionResponse({
       submittedText: ' 學 習 ',
       anchorWordId: 'anchor',
-      acceptedWordIds: ['anchor', 'other'],
-      answerWords,
+      acceptedAnswers,
     }), {
       submittedText: ' 學 習 ',
-      submittedWordId: 'anchor',
       result: 'accepted_anchor',
     });
-    assert.deepEqual(resolveProductionResponse({
+    assert.equal(resolveAcceptedProductionResponse({
       submittedText: '研习',
       anchorWordId: 'anchor',
-      acceptedWordIds: ['anchor', 'other'],
-      answerWords,
+      acceptedAnswers,
     }).result, 'accepted_non_anchor');
   });
 
   test('accepts an anchor even when an unaccepted word has the same canonical form', () => {
-    assert.deepEqual(resolveProductionResponse({
+    assert.deepEqual(resolveAcceptedProductionResponse({
       submittedText: '行',
       anchorWordId: 'homograph-a',
-      acceptedWordIds: ['homograph-a'],
-      answerWords,
+      acceptedAnswers: [acceptedAnswers[2]!],
     }), {
       submittedText: '行',
-      submittedWordId: 'homograph-a',
       result: 'accepted_anchor',
     });
-    assert.equal(resolveProductionResponse({
+    assert.equal(resolveAcceptedProductionResponse({
       submittedText: '學習',
       anchorWordId: 'anchor',
-      acceptedWordIds: ['anchor'],
-      answerWords,
+      acceptedAnswers: [acceptedAnswers[0]!],
     }).result, 'accepted_anchor');
   });
 
   test('accepts a matching non-anchor and uses accepted-set order for the rare tie', () => {
-    assert.deepEqual(resolveProductionResponse({
+    assert.deepEqual(resolveAcceptedProductionResponse({
       submittedText: '行',
       anchorWordId: 'anchor',
-      acceptedWordIds: ['anchor', 'homograph-b'],
-      answerWords,
+      acceptedAnswers: [acceptedAnswers[0]!, acceptedAnswers[3]!],
     }), {
       submittedText: '行',
-      submittedWordId: 'homograph-b',
       result: 'accepted_non_anchor',
     });
-    assert.equal(resolveProductionResponse({
+    assert.equal(resolveAcceptedProductionResponse({
       submittedText: '行',
       anchorWordId: 'anchor',
-      acceptedWordIds: ['anchor', 'homograph-b', 'homograph-a'],
-      answerWords,
-    }).submittedWordId, 'homograph-b');
+      acceptedAnswers: [acceptedAnswers[0]!, acceptedAnswers[3]!, acceptedAnswers[2]!],
+    }).result, 'accepted_non_anchor');
   });
 
-  test('retains a unique known out-of-set word and rejects unknown text', () => {
-    assert.deepEqual(resolveProductionResponse({
+  test('rejects unknown text against the accepted set only', () => {
+    assert.deepEqual(resolveAcceptedProductionResponse({
       submittedText: '外',
       anchorWordId: 'anchor',
-      acceptedWordIds: ['anchor'],
-      answerWords,
+      acceptedAnswers: [acceptedAnswers[0]!],
     }), {
       submittedText: '外',
-      submittedWordId: 'outside',
       result: 'rejected',
     });
-    assert.equal(resolveProductionResponse({
-      submittedText: '未知',
-      anchorWordId: 'anchor',
+  });
+
+  test('retains a unique known out-of-set word and leaves ambiguous or unknown text unresolved', () => {
+    const catalogWords = [
+      ...acceptedAnswers,
+      { wordId: 'outside', hanzi: '外', traditional: null },
+    ];
+    assert.equal(resolveUniqueOutOfSetWordId({
+      submittedText: '外',
+      catalogWords,
       acceptedWordIds: ['anchor'],
-      answerWords,
-    }).submittedWordId, null);
+    }), 'outside');
+    assert.equal(resolveUniqueOutOfSetWordId({
+      submittedText: '未知',
+      catalogWords,
+      acceptedWordIds: ['anchor'],
+    }), null);
+    assert.equal(resolveUniqueOutOfSetWordId({
+      submittedText: '行',
+      catalogWords,
+      acceptedWordIds: ['anchor'],
+    }), null);
   });
 
   test('accepts a saying without the corpus comma or surrounding symbols', () => {
-    const sayingWords = [
+    const sayingAnswers = [
       { wordId: 'saying', hanzi: '吃一堑,长一智', traditional: '吃一塹，長一智' },
     ];
 
-    assert.deepEqual(resolveProductionResponse({
+    assert.deepEqual(resolveAcceptedProductionResponse({
       submittedText: '吃一堑长一智',
       anchorWordId: 'saying',
-      acceptedWordIds: ['saying'],
-      answerWords: sayingWords,
+      acceptedAnswers: sayingAnswers,
     }), {
       submittedText: '吃一堑长一智',
-      submittedWordId: 'saying',
       result: 'accepted_anchor',
     });
-    assert.equal(resolveProductionResponse({
+    assert.equal(resolveAcceptedProductionResponse({
       submittedText: '吃一塹長一智',
       anchorWordId: 'saying',
-      acceptedWordIds: ['saying'],
-      answerWords: sayingWords,
+      acceptedAnswers: sayingAnswers,
     }).result, 'accepted_anchor');
   });
 
@@ -175,7 +176,6 @@ describe('production response resolution', () => {
         submittedText: '行',
         anchorWordId: 'homograph-a',
         production: null,
-        answerWords,
       }),
       /requires a frozen production snapshot/,
     );

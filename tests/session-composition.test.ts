@@ -280,6 +280,7 @@ describe('session composition', { concurrency: false }, () => {
       cueType: 'minimal_context',
       text: 'To tell two close possibilities apart',
       acceptedWordIds: ['cue-word'],
+      acceptedAnswers: [{ wordId: 'cue-word', hanzi: '辨', traditional: null }],
       supplement: null,
       recheckDemandId: null,
     });
@@ -1662,7 +1663,7 @@ describe('session composition', { concurrency: false }, () => {
     assert.equal(afterCompletionIds.includes(`unstudied/${words[dailyNewWordLimit].id}`), false);
   });
 
-  test('session payload keeps current buckets and includes the full canonical answer catalog', () => {
+  test('session payload keeps current buckets and does not ship the shared catalog for production matching', () => {
     insertWord({
       id: 'payload-review-word',
       hanzi: '走',
@@ -1748,13 +1749,13 @@ describe('session composition', { concurrency: false }, () => {
     ]);
     assert.deepEqual(payload.buckets.learning.map((word) => word.id), ['payload-learning-word']);
     assert.deepEqual(payload.buckets.unstudied.map((word) => word.id), []);
-    assert.deepEqual(
-      payload.productionAnswerWords.find((word) => word.wordId === 'payload-excluded-word'),
-      {
-        wordId: 'payload-excluded-word',
-        hanzi: '坐',
-        traditional: '坐傳',
-      },
+    assert.equal(
+      'productionAnswerWords' in payload,
+      false,
+    );
+    assert.equal(
+      JSON.stringify(payload).includes('payload-excluded-word'),
+      false,
     );
   });
 

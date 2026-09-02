@@ -128,6 +128,8 @@ describe('session selectors', () => {
           cueType: 'minimal_context',
           text: 'The exact served cue',
           acceptedWordIds: ['cue-word'],
+          acceptedAnswers: [{ wordId: 'cue-word', hanzi: '字', traditional: null }],
+          supplement: null,
           recheckDemandId: null,
         },
       },
