@@ -223,6 +223,7 @@ export type StudySessionController = {
   sessionStarted: boolean;
   prefetchSession: () => Promise<void>;
   refreshSessionPrefetch: () => Promise<void>;
+  invalidateSessionPrefetch: () => void;
   homePageProps: StudySessionHomePageProps;
   personalNotesEditor: PersonalNotesEditorController;
 };
@@ -295,9 +296,13 @@ export function useStudySession({
   }
 
   async function refreshSessionPrefetch(): Promise<void> {
+    invalidateSessionPrefetch();
+    await ensureSessionPrefetch(syncSessionPrefetchState);
+  }
+
+  function invalidateSessionPrefetch(): void {
     resetSessionPrefetchCache();
     syncSessionPrefetchState();
-    await ensureSessionPrefetch(syncSessionPrefetchState);
   }
 
   const displayedSessionItemCount = sessionStarted
@@ -1613,6 +1618,7 @@ export function useStudySession({
     sessionStarted,
     prefetchSession,
     refreshSessionPrefetch,
+    invalidateSessionPrefetch,
     homePageProps: {
       sessionPrefetch,
       sessionStarted,
