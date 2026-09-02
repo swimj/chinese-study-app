@@ -105,12 +105,16 @@ export const INITIAL_OPENROUTER_CLAUDE_SONNET_5_PRICING: ReflectionRunPricingSna
   inputPerMillionUsd: 2, cachedInputPerMillionUsd: 0.2, cacheWriteInputPerMillionUsd: 0,
   outputPerMillionUsd: 10,
 };
+// Standard short-context list prices from the 2026-07-30 Luna/Terra cut,
+// verified 2026-09-02 against OpenAI's pricing page. The 2026-08-18 pin still
+// had launch rates ($2.50 / $15). These are current list prices, not the later
+// GPT-5.6 Sol promotional window.
 export const INITIAL_TERRA_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricingSnapshot = {
-  id: 'openai-gpt-5.6-terra-standard-short-context-2026-08-18',
-  pricingAsOf: '2026-08-18', provider: 'openai', providerModel: 'gpt-5.6-terra',
+  id: 'openai-gpt-5.6-terra-standard-short-context-2026-09-02',
+  pricingAsOf: '2026-09-02', provider: 'openai', providerModel: 'gpt-5.6-terra',
   serviceTier: 'standard', contextBand: 'short', currency: 'USD',
-  inputPerMillionUsd: 2.5, cachedInputPerMillionUsd: 0.25, cacheWriteInputPerMillionUsd: 3.125,
-  outputPerMillionUsd: 15,
+  inputPerMillionUsd: 2, cachedInputPerMillionUsd: 0.2, cacheWriteInputPerMillionUsd: 2.5,
+  outputPerMillionUsd: 12,
 };
 
 export type ReflectionRunCostEstimate = {
