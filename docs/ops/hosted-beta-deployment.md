@@ -1,7 +1,7 @@
 # Hosted beta deployment and recovery
 
 This is the operator runbook for the first invite-only Mandarin deployment.
-The supported shape is one Fly Machine in `sin`, one encrypted Fly Volume at
+The supported shape is one 1 GB Fly Machine in `sin`, one encrypted Fly Volume at
 `/data`, Clerk authentication, and Litestream replication to a private,
 versioned S3 bucket. The application container serves both the API and the
 built frontend. Initial bring-up uses disposable shared content and learners.
@@ -95,6 +95,35 @@ incorrect response (or select **Ask reflection to review**), finish the
 session, and exercise the generated reflection. Preserve the command JSON and
 the learner/word pair as beta test evidence. A second request for the same
 learner/word fails rather than altering real progress.
+
+### Recover one captured reflection completion
+
+If a provider completion was captured externally after the Machine died before
+the app persisted it, this narrow operator command can import it through the
+normal immutable artifact writer. It accepts only a V4 evidence bundle and V7
+response, runs the same structural and domain checks as the production
+provider path, and creates Help Inbox entries only for result items that have
+no proposal. It is idempotent for the exact same payload and refuses to replace
+a different artifact for that session.
+
+Upload the two JSON files to a node-writable, non-live path first. With
+provider work disabled and maintenance enabled, run:
+
+```bash
+fly ssh console --app <app-name> --command \
+  'npm run hosted:recover-reflection-completion -- \
+    --data-dir=/data \
+    --learner-id=<learner-id> \
+    --bundle-path=/data/recovery/<bundle>.json \
+    --result-path=/data/recovery/<result>.json \
+    --provider=openai \
+    --model=gpt-5.6-terra-high \
+    --prompt-version=reflection-v8'
+```
+
+Record only the returned summary (`artifactId`, proposal count, and Help Inbox
+count); do not put the learner bundle or provider response into shell history,
+logs, or the repository.
 
 ## Release and maintenance controls
 

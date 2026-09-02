@@ -97,14 +97,14 @@ export type MaterializeReflectionArtifactInput = MaterializeReflectionArtifactBa
   | { evidenceBundle: SessionReflectionBundleV3; result: SessionReflectionResultV7 }
 );
 
-export type ReflectionGenerationRunState = 'succeeded' | 'failed';
+export type ReflectionGenerationRunState = 'in_flight' | 'succeeded' | 'failed';
 
 export type ReflectionGenerationRunRecord = {
   runId: string;
   sourceSessionId: string | null;
   reflectionFlowVersion: string;
   startedAt: string;
-  completedAt: string;
+  completedAt: string | null;
   provider: string;
   model: string;
   providerModel: string;
@@ -144,6 +144,21 @@ export type ReflectionGenerationRetrySource = {
   sourceSessionId: string | null;
   reflectionFlowVersion: string;
   model: string;
+  eligibleItemCount: number;
+  includedItemCount: number;
+  evidenceBundle: SessionReflectionBundle;
+};
+
+export type StartReflectionGenerationRunInput = {
+  runId: string;
+  sourceSessionId: string | null;
+  reflectionFlowVersion: string;
+  startedAt: string;
+  provider: string;
+  model: string;
+  providerModel: string;
+  promptVersion: string;
+  clientRequestId: string;
   eligibleItemCount: number;
   includedItemCount: number;
   evidenceBundle: SessionReflectionBundle;
@@ -437,6 +452,7 @@ const invocationColumns = [
 ] as const;
 
 export function ensureReflectionSchema(): void {
+  ensureReflectionGenerationRunStartSchema();
   if (learnerScopedStorageTableName('reflection_artifacts') !== 'reflection_artifacts') {
     ensureReflectionIndexes();
     return;
@@ -749,6 +765,28 @@ export function ensureReflectionSchema(): void {
   ensureReflectionIndexes();
   ensureReflectionQualitySchema();
   ensureReflectionHelpInboxSchema();
+}
+
+function ensureReflectionGenerationRunStartSchema(): void {
+  getDb().exec(`
+    CREATE TABLE IF NOT EXISTS reflection_generation_run_starts (
+      run_id TEXT PRIMARY KEY,
+      learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
+      source_session_id TEXT,
+      reflection_flow_version TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      provider_model TEXT NOT NULL,
+      prompt_version TEXT NOT NULL,
+      client_request_id TEXT NOT NULL,
+      eligible_item_count INTEGER NOT NULL CHECK (eligible_item_count >= 0),
+      included_item_count INTEGER NOT NULL CHECK (included_item_count >= 0 AND included_item_count <= eligible_item_count),
+      evidence_bundle_json TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_reflection_generation_run_starts_started
+      ON ${learnerScopedStorageTableName('reflection_generation_run_starts')}(started_at DESC, run_id ASC);
+  `);
 }
 
 function migrateReflectionArtifactsForMultipleCandidates(): void {
@@ -1279,18 +1317,67 @@ export function recordReflectionGenerationRun(
   return getReflectionGenerationRun(runId);
 }
 
+/** Durable evidence that a selected provider was about to receive this bundle. */
+export function startReflectionGenerationRun(input: StartReflectionGenerationRunInput): void {
+  assertNonEmpty(input.runId, 'reflection generation run id');
+  if (input.sourceSessionId !== null) assertNonEmpty(input.sourceSessionId, 'reflection generation run source session id');
+  assertNonEmpty(input.reflectionFlowVersion, 'reflection generation run flow version');
+  assertIsoTimestamp(input.startedAt, 'reflection generation run start time');
+  assertNonEmpty(input.provider, 'reflection generation run provider');
+  assertNonEmpty(input.model, 'reflection generation run model');
+  assertNonEmpty(input.providerModel, 'reflection generation run provider model');
+  assertNonEmpty(input.promptVersion, 'reflection generation run prompt version');
+  assertNonEmpty(input.clientRequestId, 'reflection generation client request id');
+  assertCount(input.eligibleItemCount, 'eligible reflection evidence item count');
+  assertCount(input.includedItemCount, 'included reflection evidence item count');
+  if (input.includedItemCount > input.eligibleItemCount) throw new Error('Included reflection evidence item count cannot exceed eligible item count.');
+  if (input.sourceSessionId !== null && input.evidenceBundle.session.sessionId !== input.sourceSessionId) throw new Error('Reflection generation run source session does not match its evidence bundle.');
+  parseStoredSessionReflectionBundle(input.evidenceBundle);
+  getDb().prepare(`
+    INSERT INTO reflection_generation_run_starts (
+      run_id, source_session_id, reflection_flow_version, started_at,
+      provider, model, provider_model, prompt_version, client_request_id,
+      eligible_item_count, included_item_count, evidence_bundle_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    input.runId, input.sourceSessionId, input.reflectionFlowVersion, input.startedAt,
+    input.provider, input.model, input.providerModel, input.promptVersion, input.clientRequestId,
+    input.eligibleItemCount, input.includedItemCount, JSON.stringify(input.evidenceBundle),
+  );
+}
+
 export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRunRecord[] {
   if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
     throw new Error('Reflection generation run list limit must be an integer from 1 to 200.');
   }
-  const rows = getDb().prepare(`
+  const activeRows = getDb().prepare(`
+    SELECT starts.* FROM reflection_generation_run_starts AS starts
+    WHERE NOT EXISTS (SELECT 1 FROM reflection_generation_runs AS runs WHERE runs.run_id = starts.run_id)
+    ORDER BY starts.started_at DESC, starts.run_id ASC LIMIT ?
+  `).all(limit) as Array<{
+    run_id: string; source_session_id: string | null; reflection_flow_version: string;
+    started_at: string; provider: string; model: string; provider_model: string; prompt_version: string;
+    client_request_id: string; eligible_item_count: number; included_item_count: number;
+  }>;
+  const inFlight = activeRows.map((row): ReflectionGenerationRunRecord => ({
+    runId: row.run_id, sourceSessionId: row.source_session_id, reflectionFlowVersion: row.reflection_flow_version,
+    startedAt: row.started_at, completedAt: null, provider: row.provider, model: row.model,
+    providerModel: row.provider_model, promptVersion: row.prompt_version, responseId: null,
+    clientRequestId: row.client_request_id, finishReason: null, bundleSchemaVersion: 'session_reflection_bundle.v4',
+    resultSchemaVersion: 'session_reflection_result.v7', diagnostic: null, state: 'in_flight', failureCode: null,
+    eligibleItemCount: row.eligible_item_count, includedItemCount: row.included_item_count,
+    usage: { inputTokens: null, cachedInputTokens: null, cacheWriteInputTokens: null, outputTokens: null, reasoningTokens: null, totalTokens: null },
+    pricingSnapshotId: null, pricingAsOf: null, pricingBasis: null, estimatedCostUsd: null, retryable: false,
+  }));
+  if (inFlight.length >= limit) return inFlight;
+  const concludedRows = getDb().prepare(`
     SELECT ${reflectionGenerationRunColumns.map((column) => `runs.${column}`).join(', ')},
       CASE WHEN runs.evidence_bundle_json IS NOT NULL THEN 1 ELSE 0 END AS retryable
     FROM reflection_generation_runs AS runs
     ORDER BY completed_at DESC, run_id ASC
     LIMIT ?
-  `).all(limit) as unknown as ReflectionGenerationRunRow[];
-  return rows.map(mapReflectionGenerationRunRow);
+  `).all(limit - inFlight.length) as unknown as ReflectionGenerationRunRow[];
+  return [...inFlight, ...concludedRows.map(mapReflectionGenerationRunRow)];
 }
 
 function getReflectionGenerationRun(runId: string): ReflectionGenerationRunRecord {

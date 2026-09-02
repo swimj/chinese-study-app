@@ -22,6 +22,7 @@ const sameOwnerReferences: readonly SameOwnerReference[] = [
     'run_id',
     { allowsForwardReference: true },
   ),
+  reference('learner_owned_reflection_generation_run_starts', 'source_session_id', 'learner_owned_study_sessions', 'id'),
   reference('learner_owned_reflection_generation_runs', 'source_session_id', 'learner_owned_study_sessions', 'id'),
   reference('learner_owned_reflection_proposal_reviews', 'artifact_id', 'learner_owned_reflection_artifacts', 'artifact_id'),
   reference('learner_owned_reflection_proposal_reviews', 'accepted_invocation_id', 'learner_owned_reflection_operation_invocations', 'invocation_id'),

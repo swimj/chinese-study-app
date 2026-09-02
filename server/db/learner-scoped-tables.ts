@@ -4,6 +4,7 @@ const PHYSICAL_PREFIX = 'learner_owned_';
 
 const mutableColumnsByTable: Readonly<Record<string, readonly string[]>> = {
   reflection_artifacts: [],
+  reflection_generation_run_starts: [],
   reflection_generation_runs: [],
   reflection_proposal_reviews: [
     'disposition', 'updated_at', 'acceptance_mode', 'accepted_invocation_id',
@@ -34,6 +35,7 @@ const mutableColumnsByTable: Readonly<Record<string, readonly string[]>> = {
 
 const immutableErrorByTable: Readonly<Record<string, string>> = {
   reflection_artifacts: 'reflection artifacts are immutable',
+  reflection_generation_run_starts: 'reflection generation run starts are immutable',
   reflection_generation_runs: 'reflection generation runs are immutable',
   reflection_proposal_reviews: 'reflection proposal identity is immutable',
   reflection_operation_invocations: 'reflection invocation authorization is immutable',
@@ -57,6 +59,7 @@ export const learnerScopedCompatibilityTables = [
   'study_events',
   'word_skill_relevance',
   'reflection_artifacts',
+  'reflection_generation_run_starts',
   'reflection_generation_runs',
   'reflection_proposal_reviews',
   'reflection_operation_invocations',

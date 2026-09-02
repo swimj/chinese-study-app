@@ -225,13 +225,14 @@ describe('production Luna reflection provider', () => {
       ),
     });
 
-    const generated = await provider.generate(bundle);
+    const generated = await provider.generate(bundle, { clientRequestId: 'reflection-run-123' });
 
     assert.equal(capture.length, 1);
     const request = capture[0]!;
     assert.equal(request.url, 'https://openai.example.test/custom/v1/chat/completions');
     assert.equal(request.url.includes('7897'), false);
     assert.equal(request.headers.get('authorization'), 'Bearer unit-test-secret');
+    assert.equal(request.headers.get('x-client-request-id'), 'reflection-run-123');
     assert.deepEqual(request.body.messages, [
       { role: 'system', content: 'Production reflection system prompt.' },
       { role: 'user', content: JSON.stringify(bundle) },
