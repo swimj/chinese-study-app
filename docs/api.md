@@ -135,8 +135,8 @@ translated annotations attached to priority words.
 | GET | `/api/session-payload` | `session-composition` |
 
 The session payload contains the three study-item buckets. Review production
-items freeze their selected durable cue or meaning-derived fallback, accepted-word
-ids, the corresponding canonical `{ wordId, hanzi, traditional }` forms used for
+items freeze their selected durable cue or meaning-derived fallback, the canonical
+`{ wordId, hanzi, traditional }` rows whose ids define the accepted set used for
 client grading, and nullable recheck-demand id. Unstudied membership is the
 experimental dual-pool admitted set from
 [`SPECS/study-action-model.md`](../SPECS/study-action-model.md#experimental-dual-pool-unstudied-admission)
