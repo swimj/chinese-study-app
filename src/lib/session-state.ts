@@ -668,7 +668,7 @@ function buildProductionAttemptMetadata(
       cueId: production.cueId,
       cueType: production.cueType,
       text: production.text,
-      acceptedWordIds: [...production.acceptedWordIds],
+      acceptedWordIds: production.acceptedAnswers.map((word) => word.wordId),
       acceptedAnswers: production.acceptedAnswers.map((word) => ({ ...word })),
       supplement: production.supplement == null ? null : { ...production.supplement },
       anchorWordId: item.targetWordId,

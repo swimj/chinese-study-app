@@ -6,6 +6,8 @@ import {
   type ProductionMatchOptions,
 } from '../src/study-profile.ts';
 import {
+  buildProductionAnswerLookup,
+  deriveAcceptedSubmittedWordId,
   resolveAcceptedProductionResponse,
   resolveSessionProductionResponse,
   resolveUniqueOutOfSetWordId,
@@ -133,21 +135,31 @@ describe('production response resolution', () => {
       ...acceptedAnswers,
       { wordId: 'outside', hanzi: '外', traditional: null },
     ];
+    const answerLookup = buildProductionAnswerLookup(catalogWords);
     assert.equal(resolveUniqueOutOfSetWordId({
       submittedText: '外',
-      catalogWords,
+      answerLookup,
       acceptedWordIds: ['anchor'],
     }), 'outside');
     assert.equal(resolveUniqueOutOfSetWordId({
       submittedText: '未知',
-      catalogWords,
+      answerLookup,
       acceptedWordIds: ['anchor'],
     }), null);
     assert.equal(resolveUniqueOutOfSetWordId({
       submittedText: '行',
-      catalogWords,
+      answerLookup,
       acceptedWordIds: ['anchor'],
     }), null);
+  });
+
+  test('server attribution rejects a non-anchor result when the anchor also matches', () => {
+    assert.throws(() => deriveAcceptedSubmittedWordId({
+      result: 'accepted_non_anchor',
+      submittedText: '行',
+      anchorWordId: 'homograph-a',
+      acceptedAnswers: [acceptedAnswers[2]!, acceptedAnswers[3]!],
+    }), /does not match the frozen accepted-answer forms/);
   });
 
   test('accepts a saying without the corpus comma or surrounding symbols', () => {

@@ -279,7 +279,6 @@ describe('session composition', { concurrency: false }, () => {
       cueId: 'cue-active',
       cueType: 'minimal_context',
       text: 'To tell two close possibilities apart',
-      acceptedWordIds: ['cue-word'],
       acceptedAnswers: [{ wordId: 'cue-word', hanzi: '辨', traditional: null }],
       supplement: null,
       recheckDemandId: null,

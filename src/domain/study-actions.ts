@@ -31,7 +31,6 @@ export type ProductionExerciseSnapshot = {
   cueId: string | null;
   cueType: ProductionCueType;
   text: string;
-  acceptedWordIds: string[];
   acceptedAnswers: ProductionAnswerWord[];
   supplement: ProductionCueSupplementSnapshot | null;
   recheckDemandId: string | null;
@@ -60,7 +59,6 @@ export function cloneProductionExerciseSnapshot(
 ): ProductionExerciseSnapshot {
   return {
     ...production,
-    acceptedWordIds: [...production.acceptedWordIds],
     acceptedAnswers: production.acceptedAnswers.map((word) => ({ ...word })),
     supplement: production.supplement == null ? null : { ...production.supplement },
   };

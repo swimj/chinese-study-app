@@ -24,9 +24,12 @@ import type {
   WordSkillRelevanceState,
 } from '../../src/domain/study-actions.ts';
 import { buildReviewSessionStudyItem, deriveReviewCommitFieldsFromAttemptEvents } from '../../src/domain/study-actions.ts';
+import type { StudyProfileId } from '../../src/study-profile.ts';
 import {
+  buildProductionAnswerLookup,
   deriveAcceptedSubmittedWordId,
   resolveUniqueOutOfSetWordId,
+  type ProductionAnswerLookup,
 } from '../../src/domain/production-response.ts';
 import { config, getConfig, getDb, dbPath, seedDataPath, dbExistedOnStartup, openDatabase, setDb } from './connection.ts';
 import { ensureHostedOperationsSchema } from './hosted-operations.ts';
@@ -93,11 +96,20 @@ import {
   installScopedContentCompatibilityViews,
   scopedContentStorageTableName,
 } from './scoped-content-tables.ts';
+
 import { installLearnerOwnershipGuards } from './learner-ownership-guards.ts';
 import {
   ensureSharedContentSchema,
   validateSharedContentSchema,
 } from './shared-content.ts';
+
+// Shared lexical content is loaded before requests and remains immutable while a
+// connection is active. Keying by connection also prevents tests and database
+// replacement from reusing a lookup built for another corpus.
+const productionAnswerLookupCache = new WeakMap<
+  DatabaseSync,
+  Map<StudyProfileId, ProductionAnswerLookup>
+>();
 
 export function applyProductionContrastExerciseSeed() {
   if (!config.seedSampleData || !config.includeDevContrastSeed || config.studyProfile !== 'mandarin') {
@@ -1511,7 +1523,7 @@ function deriveProductionSubmittedWordId({
   }
   return resolveUniqueOutOfSetWordId({
     submittedText,
-    catalogWords: getCatalogProductionAnswerWords(),
+    answerLookup: getCatalogProductionAnswerLookup(profileId),
     acceptedWordIds,
     profileId,
   });
@@ -1544,26 +1556,39 @@ function getProductionAnswerWordsByIds(wordIds: readonly string[]): ProductionAn
   });
 }
 
-function getCatalogProductionAnswerWords(): ProductionAnswerWord[] {
-  const rows = getDb()
+function getCatalogProductionAnswerLookup(profileId: StudyProfileId): ProductionAnswerLookup {
+  const database = getDb();
+  let lookupByProfile = productionAnswerLookupCache.get(database);
+  if (!lookupByProfile) {
+    lookupByProfile = new Map();
+    productionAnswerLookupCache.set(database, lookupByProfile);
+  }
+  const cachedLookup = lookupByProfile.get(profileId);
+  if (cachedLookup) return cachedLookup;
+
+  const rows = database
     .prepare(`
       SELECT id, hanzi, traditional
       FROM lexical_words
     `)
     .all() as Array<{ id: string; hanzi: string; traditional: string | null }>;
-  return rows.map((row) => ({
+  const answerWords = rows.map((row) => ({
     wordId: row.id,
     hanzi: row.hanzi,
     traditional: row.traditional,
   }));
+  const lookup = buildProductionAnswerLookup(answerWords, profileId);
+  lookupByProfile.set(profileId, lookup);
+  return lookup;
 }
 
 function freezeProductionExerciseSnapshot(
-  production: Omit<ProductionExerciseSnapshot, 'acceptedAnswers'>,
+  production: Omit<ProductionExerciseSnapshot, 'acceptedAnswers'> & { acceptedWordIds: string[] },
 ): ProductionExerciseSnapshot {
+  const { acceptedWordIds, ...snapshot } = production;
   return {
-    ...production,
-    acceptedAnswers: getProductionAnswerWordsByIds(production.acceptedWordIds),
+    ...snapshot,
+    acceptedAnswers: getProductionAnswerWordsByIds(acceptedWordIds),
   };
 }
 
