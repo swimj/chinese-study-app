@@ -508,6 +508,99 @@ describe('session completion', { concurrency: false }, () => {
     assert.equal(dbModule.getPendingProductionRecheckForWord('no-clue-production'), null);
   });
 
+  test('commit derives submittedWordId for unique out-of-set text and leaves ambiguous matches unresolved', () => {
+    insertWord({
+      id: 'lookup-anchor',
+      hanzi: '锚',
+      pinyin: 'mao',
+      meaning: 'anchor',
+      examples: [],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(96),
+    });
+    insertWord({
+      id: 'lookup-outside',
+      hanzi: '外',
+      pinyin: 'wai',
+      meaning: 'outside',
+      examples: [],
+      status: 'unstudied',
+      priority: 10,
+      createdAt: isoHoursAgo(96),
+    });
+    insertWord({
+      id: 'lookup-homograph-a',
+      hanzi: '行',
+      pinyin: 'xing',
+      meaning: 'go',
+      examples: [],
+      status: 'unstudied',
+      priority: 9,
+      createdAt: isoHoursAgo(96),
+    });
+    insertWord({
+      id: 'lookup-homograph-b',
+      hanzi: '行',
+      pinyin: 'hang',
+      meaning: 'row',
+      examples: [],
+      status: 'unstudied',
+      priority: 8,
+      createdAt: isoHoursAgo(96),
+    });
+    insertWordStudyAdmissionState('lookup-anchor', isoHoursAgo(1));
+    insertWordSkillState('lookup-anchor', 'production', {
+      intervalHours: 24,
+      lastStudiedAt: isoHoursAgo(48),
+      nextDueAt: isoHoursAgo(24),
+      easeFactor: 2.5,
+    });
+    insertProductionCue({
+      wordId: 'lookup-anchor',
+      cueId: 'lookup-cue',
+      text: 'Type the anchor',
+      acceptedWordIds: ['lookup-anchor'],
+    });
+
+    const uniqueAttemptId = commitProductionAttempt({
+      anchorWordId: 'lookup-anchor',
+      cueId: 'lookup-cue',
+      cueText: 'Type the anchor',
+      acceptedWordIds: ['lookup-anchor'],
+      submittedText: '外',
+      submittedWordId: 'lookup-anchor',
+      result: 'rejected',
+      recheckDemandId: null,
+      attemptKey: 'unique-outside',
+    });
+    assert.equal(fetchAttemptSubmittedWordId(uniqueAttemptId), 'lookup-outside');
+
+    const unknownAttemptId = commitProductionAttempt({
+      anchorWordId: 'lookup-anchor',
+      cueId: 'lookup-cue',
+      cueText: 'Type the anchor',
+      acceptedWordIds: ['lookup-anchor'],
+      submittedText: '未知',
+      result: 'rejected',
+      recheckDemandId: null,
+      attemptKey: 'unknown-text',
+    });
+    assert.equal(fetchAttemptSubmittedWordId(unknownAttemptId), null);
+
+    const ambiguousAttemptId = commitProductionAttempt({
+      anchorWordId: 'lookup-anchor',
+      cueId: 'lookup-cue',
+      cueText: 'Type the anchor',
+      acceptedWordIds: ['lookup-anchor'],
+      submittedText: '行',
+      result: 'rejected',
+      recheckDemandId: null,
+      attemptKey: 'ambiguous-homograph',
+    });
+    assert.equal(fetchAttemptSubmittedWordId(ambiguousAttemptId), null);
+  });
+
   test('production reconciliation preserves clean alternate responses and consumes one-shot rechecks', () => {
     insertWord({
       id: 'alternate-anchor',
@@ -1692,68 +1785,96 @@ function commitProductionAttempt({
   submittedWordId,
   result,
   recheckDemandId,
+  attemptKey,
 }: {
   anchorWordId: string;
   cueId: string;
   cueText: string;
   acceptedWordIds: string[];
   submittedText: string;
-  submittedWordId: string | null;
+  submittedWordId?: string | null;
   result: 'accepted_anchor' | 'accepted_non_anchor' | 'rejected';
   recheckDemandId: string | null;
+  attemptKey?: string;
 }) {
-  const suffix = recheckDemandId ?? result;
+  const suffix = attemptKey ?? recheckDemandId ?? result;
   const sessionActionId = recheckDemandId === null
     ? `review/${anchorWordId}/production/${suffix}`
     : `review/${anchorWordId}/production/recheck/${suffix}`;
   const sessionId = `${sessionActionId}-session`;
-  const attemptId = `${sessionActionId}-attempt-1`;
+  const covering = result === 'rejected';
+  const productionWord = covering
+    ? dbModule.getWords().find((word) => word.id === anchorWordId) ?? fail(`Missing production word ${anchorWordId}`)
+    : null;
+  const attemptSpecs = covering
+    ? [
+        { submittedText, result, submittedWordId },
+        { submittedText: productionWord!.hanzi, result: 'accepted_anchor' as const },
+        { submittedText: productionWord!.hanzi, result: 'accepted_anchor' as const },
+        { submittedText: productionWord!.hanzi, result: 'accepted_anchor' as const },
+      ]
+    : [{ submittedText, result, submittedWordId }];
   dbModule.recordAcceptedReviewAttemptBatch({
     sessionId,
-    events: [{
-      id: attemptId,
-      occurredAt: new Date().toISOString(),
-      sessionId,
-      sessionActionId,
-      sessionEventSequence: 1,
-      actionAttemptSequence: 1,
-      actionKind: 'production',
-      targetWordId: anchorWordId,
-      sampledSkillIds: ['production'],
-      response: submittedText,
-      outcome: result === 'rejected' ? 'incorrect' : 'correct',
-      rating: result === 'rejected' ? 'forgot' : 'good',
-      contentRef: {
-        type: 'production_cue',
-        taskId: `production-task:${anchorWordId}:default_production`,
-        cueId,
-      },
-      metadata: {
-        production: {
+    events: attemptSpecs.map((attempt, index) => {
+      const sequence = index + 1;
+      const rejected = attempt.result === 'rejected';
+      return {
+        id: `${sessionActionId}-attempt-${sequence}`,
+        occurredAt: new Date().toISOString(),
+        sessionId,
+        sessionActionId,
+        sessionEventSequence: sequence,
+        actionAttemptSequence: sequence,
+        actionKind: 'production',
+        targetWordId: anchorWordId,
+        sampledSkillIds: ['production'],
+        response: attempt.submittedText,
+        outcome: rejected ? 'incorrect' : 'correct',
+        rating: rejected ? 'forgot' : 'good',
+        contentRef: {
+          type: 'production_cue',
           taskId: `production-task:${anchorWordId}:default_production`,
           cueId,
-          cueType: 'minimal_context',
-          text: cueText,
-          acceptedWordIds,
-          anchorWordId,
-          submittedText,
-          submittedWordId,
-          result,
-          recheckDemandId,
         },
-      },
-    }],
+        metadata: {
+          production: {
+            taskId: `production-task:${anchorWordId}:default_production`,
+            cueId,
+            cueType: 'minimal_context',
+            text: cueText,
+            acceptedWordIds,
+            anchorWordId,
+            submittedText: attempt.submittedText,
+            ...('submittedWordId' in attempt && attempt.submittedWordId !== undefined
+              ? { submittedWordId: attempt.submittedWordId }
+              : {}),
+            result: attempt.result,
+            recheckDemandId,
+          },
+        },
+      };
+    }),
     commitIntent: {
       type: 'commit-review-action-session',
       sessionActionId,
       targetWordId: anchorWordId,
       actionKind: 'production',
       sampledSkillIds: ['production'],
-      failureCount: result === 'rejected' ? 1 : 0,
-      terminalRating: result === 'rejected' ? null : 'good',
+      failureCount: covering ? 1 : 0,
+      terminalRating: covering ? null : 'good',
     },
   });
-  return attemptId;
+  return `${sessionActionId}-attempt-1`;
+}
+
+function fetchAttemptSubmittedWordId(attemptId: string): string | null {
+  const row = sqlite.prepare(`
+    SELECT submitted_word_id
+    FROM production_cue_evidence_records
+    WHERE source_attempt_id = ?
+  `).get(attemptId) as { submitted_word_id: string | null } | undefined;
+  return row?.submitted_word_id ?? null;
 }
 
 function insertWord(record: WordRecord) {

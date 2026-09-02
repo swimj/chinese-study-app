@@ -11,7 +11,6 @@ import type {
 import type {
   ContrastSelectionCommitIntent,
   SessionStudyItemBuckets,
-  ProductionAnswerWord,
   StudyAttemptEvent,
   StudyContentRef,
   StudyManagementActionKind,
@@ -78,7 +77,6 @@ type LearningPolicyResponse = {
 
 export type SessionPayload = {
   buckets: SessionStudyItemBuckets;
-  productionAnswerWords: ProductionAnswerWord[];
 };
 
 export type GenerateSessionReflectionResult = {

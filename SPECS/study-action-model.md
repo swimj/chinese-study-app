@@ -287,15 +287,18 @@ These demands are a temporary "check again soon" class, not cue schedule state.
 They do not make cues independently scheduled SRS objects and must not be
 promoted into cue semantics or a broader scheduling redesign.
 
-Response resolution uses the session-frozen Chinese word catalog. Only the
-canonical Hanzi and non-null traditional form participate; lookup aliases do
-not. If the response matches any word in the served accepted set, it is
-accepted even when an unaccepted catalog word shares that form. The anchor wins
-an accepted tie; otherwise the first matching id in the frozen accepted-set
-order is recorded as the accepted non-anchor. This deterministic attribution is
-a known rare V0 gap: it does not infer which same-form word the learner meant.
-When no accepted word matches, a unique known out-of-set word id is retained;
-multiple out-of-set matches and unknown text remain unresolved and rejected.
+Response resolution uses the session-frozen accepted-answer snapshot on the
+served production action. Only the canonical Hanzi and non-null traditional
+form participate; lookup aliases do not. If the response matches any word in
+the served accepted set, it is accepted even when an unaccepted catalog word
+shares that form. The anchor wins an accepted tie; otherwise the first matching
+id in the frozen accepted-set order is recorded as the accepted non-anchor.
+This deterministic attribution is a known rare V0 gap: it does not infer which
+same-form word the learner meant. When no accepted word matches, the durable
+commit may attach a unique known out-of-set word id by best-effort catalog
+lookup; multiple out-of-set matches and unknown text remain unresolved and
+rejected. That catalog lookup is not part of the session payload and does not
+freeze the whole lexicon in the client.
 
 Legacy bad-prompt and definition-production suppression state continues to
 govern the meaning-derived fallback and is not cleared by cue application. A

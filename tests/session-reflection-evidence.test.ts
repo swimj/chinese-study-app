@@ -42,7 +42,6 @@ describe('completed-session reflection evidence', () => {
       response: '  生字原样  ',
       productionResponse: {
         submittedText: '  生字原样  ',
-        submittedWordId: null,
         result: 'rejected',
       },
     });
@@ -59,10 +58,10 @@ describe('completed-session reflection evidence', () => {
         cueType: 'definition_gloss',
         text: 'target',
         acceptedWordIds: ['review-word'],
+        acceptedAnswers: [{ wordId: 'review-word', hanzi: '目标', traditional: null }],
         supplement: null,
         anchorWordId: 'review-word',
         submittedText: '  生字原样  ',
-        submittedWordId: null,
         result: 'rejected',
         recheckDemandId: null,
       },
@@ -76,7 +75,6 @@ describe('completed-session reflection evidence', () => {
         response,
         productionResponse: {
           submittedText: response,
-          submittedWordId: item.targetWordId,
           result: 'accepted_anchor',
         },
       });
@@ -109,7 +107,6 @@ describe('completed-session reflection evidence', () => {
       productionResponse: {
         responseKind: 'no_clue',
         submittedText: null,
-        submittedWordId: null,
         result: 'rejected',
       },
     });
@@ -124,11 +121,11 @@ describe('completed-session reflection evidence', () => {
       cueType: 'definition_gloss',
       text: 'target',
       acceptedWordIds: ['review-word'],
+      acceptedAnswers: [{ wordId: 'review-word', hanzi: '目标', traditional: null }],
       supplement: null,
       anchorWordId: 'review-word',
       responseKind: 'no_clue',
       submittedText: null,
-      submittedWordId: null,
       result: 'rejected',
       recheckDemandId: null,
     });
@@ -142,7 +139,6 @@ describe('completed-session reflection evidence', () => {
         response: '目标',
         productionResponse: {
           submittedText: '目标',
-          submittedWordId: item.targetWordId,
           result: 'accepted_anchor',
         },
       });
@@ -174,7 +170,6 @@ describe('completed-session reflection evidence', () => {
       response: '目标',
       productionResponse: {
         submittedText: '目标',
-        submittedWordId: item.targetWordId,
         result: 'accepted_anchor',
       },
     });
@@ -280,6 +275,8 @@ describe('completed-session reflection evidence', () => {
         cueType: 'circumstance',
         text: 'When choosing a target under uncertain conditions',
         acceptedWordIds: ['review-word'],
+        acceptedAnswers: [{ wordId: 'review-word', hanzi: '目标', traditional: null }],
+        supplement: null,
         recheckDemandId: null,
       },
     };
@@ -356,7 +353,6 @@ describe('completed-session reflection evidence', () => {
       productionResponse: {
         responseKind: 'no_clue',
         submittedText: null,
-        submittedWordId: null,
         result: 'rejected',
       },
     });
@@ -486,6 +482,8 @@ function createStudyItem({
           cueType: 'definition_gloss',
           text: word.meaning,
           acceptedWordIds: [word.id],
+          acceptedAnswers: [{ wordId: word.id, hanzi: word.hanzi, traditional: word.traditional }],
+          supplement: null,
           recheckDemandId: null,
         }
       : null,

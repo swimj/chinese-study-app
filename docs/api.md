@@ -134,14 +134,18 @@ translated annotations attached to priority words.
 | --- | --- | --- |
 | GET | `/api/session-payload` | `session-composition` |
 
-The session payload contains the three study-item buckets plus a frozen
-production answer catalog of canonical `{ wordId, hanzi, traditional }` rows.
-Unstudied membership is the experimental dual-pool admitted set from
+The session payload contains the three study-item buckets. Review production
+items freeze their selected durable cue or meaning-derived fallback, accepted-word
+ids, the corresponding canonical `{ wordId, hanzi, traditional }` forms used for
+client grading, and nullable recheck-demand id. Unstudied membership is the
+experimental dual-pool admitted set from
 [`SPECS/study-action-model.md`](../SPECS/study-action-model.md#experimental-dual-pool-unstudied-admission)
 (stash/diet split of remaining daily new-word quota, plus require bypass).
-Review production items also freeze their selected durable cue or meaning-
-derived fallback, accepted-word ids, and nullable recheck-demand id. The
-nullable `traditional` form is canonical content; lookup aliases are excluded.
+The nullable `traditional` form is canonical content; lookup aliases are excluded.
+Typed production grading uses only that frozen accepted-answer snapshot. The
+server derives `submittedWordId` at commit: accepted results from the frozen
+accepted set, and rejected typed responses from a best-effort unique catalog
+match. The payload does not include the shared word catalog.
 
 ## Study sessions and attempts
 
