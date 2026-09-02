@@ -19,6 +19,9 @@ export type RunCostEstimate = {
   pricing: RunPricingSnapshot;
 };
 
+// Standard short-context list prices from the 2026-07-30 Luna/Terra cut.
+// Re-verified 2026-09-02 against OpenAI's pricing page; rates unchanged.
+// These are current list prices, not the later GPT-5.6 Sol promotional window.
 export const LUNA_STANDARD_SHORT_CONTEXT_PRICING: RunPricingSnapshot = {
   id: 'openai-gpt-5.6-luna-standard-short-context-2026-07-30',
   pricingAsOf: '2026-07-30',

@@ -37,6 +37,30 @@ describe('initial reflection run pricing', () => {
     });
   });
 
+  test('prices Terra from the pinned September 2 list, not the August 18 launch-rate pin', () => {
+    assert.deepEqual(estimateInitialReflectionRunCost({
+      provider: 'openai',
+      providerModel: 'gpt-5.6-terra',
+      usage: completeUsage,
+    }), {
+      // 600k*2 + 400k*0.2 + 200k*2.5 + 200k*12 = 1200+80+500+2400 = 4180 / 1e6
+      estimatedCostUsd: 4.18,
+      pricing: {
+        id: 'openai-gpt-5.6-terra-standard-short-context-2026-09-02',
+        pricingAsOf: '2026-09-02',
+        provider: 'openai',
+        providerModel: 'gpt-5.6-terra',
+        serviceTier: 'standard',
+        contextBand: 'short',
+        currency: 'USD',
+        inputPerMillionUsd: 2,
+        cachedInputPerMillionUsd: 0.2,
+        cacheWriteInputPerMillionUsd: 2.5,
+        outputPerMillionUsd: 12,
+      },
+    });
+  });
+
   test('prices DashScope Qwen arms from the pinned August 15 International snapshots', () => {
     assert.deepEqual(estimateInitialReflectionRunCost({
       provider: 'dashscope',
