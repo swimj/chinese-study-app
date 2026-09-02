@@ -9,8 +9,10 @@ import {
   INITIAL_REFLECTION_FLOW_VERSION,
   materializeReflectionArtifact,
   recordReflectionGenerationRun,
+  startReflectionGenerationRun,
   type MaterializeReflectionArtifactResult,
   type RecordReflectionGenerationRunInput,
+  type StartReflectionGenerationRunInput,
   type ReflectionArtifactDetail,
   type ReflectionGenerationRetrySource,
 } from '../db/reflections.ts';
@@ -26,9 +28,11 @@ import {
   LunaReflectionProviderError,
   type LunaReflectionProvider,
   type LunaReflectionRunMetadata,
+  type ReflectionProviderConfig,
 } from './luna-provider.ts';
 import { createReflectionProvider } from './luna-provider.ts';
 import { createGlmReflectionProvider } from './glm-provider.ts';
+import { GLM_REFLECTION_MODEL_CONFIG } from './glm-provider.ts';
 import {
   REFLECTION_MODEL_ARMS,
   isReflectionModelChoice,
@@ -53,6 +57,16 @@ export function choiceForStoredModel(model: string): ReflectionModelChoice | nul
     return separator >= 0 && choice.slice(separator + 1) === model;
   });
   return match ?? null;
+}
+
+function reflectionProviderConfigForChoice(choice: ReflectionModelChoice): ReflectionProviderConfig {
+  if (choice === 'openai:gpt-5.6-luna-high') return LUNA_REFLECTION_MODEL_CONFIG;
+  if (choice === 'zai:glm-5.3-high') return GLM_REFLECTION_MODEL_CONFIG;
+  const arm = REFLECTION_MODEL_ARMS.find((candidate) => candidate.choice === choice);
+  if (arm?.config === null || arm === undefined) {
+    throw new Error(`Unsupported reflection model choice: ${choice}`);
+  }
+  return arm.config;
 }
 
 export class RetiredReflectionSourceModelError extends Error {
@@ -97,6 +111,7 @@ export type InitialReflectionGenerationDependencies = {
   getRetrySource?: (runId: string) => ReflectionGenerationRetrySource;
   materializeArtifact?: typeof materializeReflectionArtifact;
   recordRun?: (input: RecordReflectionGenerationRunInput) => void;
+  startRun?: (input: StartReflectionGenerationRunInput) => void;
   lifecycleLogger?: ReflectionLifecycleLogger;
   providerDiagnosticSink?: ReflectionProviderDiagnosticSink;
 };
@@ -134,6 +149,12 @@ export function createInitialReflectionGenerationService(
   const materializeArtifact = dependencies.materializeArtifact
     ?? materializeReflectionArtifact;
   const recordRun = dependencies.recordRun ?? recordReflectionGenerationRun;
+  // Unit orchestrator fixtures intentionally replace persistence boundaries;
+  // keep their synthetic providers free of an initialized SQLite database.
+  const startRun = dependencies.startRun
+    ?? (dependencies.recordRun === undefined && dependencies.materializeArtifact === undefined
+      ? startReflectionGenerationRun
+      : (() => {}));
   const lifecycleLogger = dependencies.lifecycleLogger;
   const inFlight = new Map<string, Promise<InitialReflectionGenerationResult>>();
   const configuredProviders: Partial<Record<ReflectionModelChoice, LunaReflectionProvider>> = {
@@ -159,7 +180,10 @@ export function createInitialReflectionGenerationService(
     REFLECTION_MODEL_ARMS.find((candidate) => candidate.choice === arm.choice)!.enabledByDefault
   ));
 
-  function selectProvider(choice: ReflectionModelChoice | undefined): LunaReflectionProvider {
+  function selectProvider(choice: ReflectionModelChoice | undefined): {
+    provider: LunaReflectionProvider;
+    config: ReflectionProviderConfig;
+  } {
     // Tests that inject only the Luna provider keep deterministic single-arm behavior.
     if (
       choice === undefined
@@ -167,17 +191,18 @@ export function createInitialReflectionGenerationService(
       && dependencies.glmProvider === undefined
       && dependencies.comparisonProviders === undefined
     ) {
-      return provider;
+      return { provider, config: LUNA_REFLECTION_MODEL_CONFIG };
     }
     if (choice !== undefined) {
       const selected = comparisonArms.find((arm) => arm.choice === choice);
       if (selected === undefined) {
         throw new Error(`Unsupported reflection model choice: ${choice}`);
       }
-      return selected.provider;
+        return { provider: selected.provider, config: reflectionProviderConfigForChoice(choice) };
     }
     const index = Math.floor(random() * defaultComparisonArms.length);
-    return defaultComparisonArms[index]!.provider;
+    const selected = defaultComparisonArms[index]!;
+    return { provider: selected.provider, config: reflectionProviderConfigForChoice(selected.choice) };
   }
 
   async function runCoalesced(
@@ -216,13 +241,16 @@ export function createInitialReflectionGenerationService(
         sessionId: normalizedSessionId,
         evidenceSupplement,
         generatedAt,
-        provider: selectedProvider,
+        provider: selectedProvider.provider,
+        providerConfig: selectedProvider.config,
         buildBundleWithMetrics,
         materializeArtifact,
         recordRun,
+        startRun,
         now,
         lifecycleLogger,
         runId: randomUUID(),
+        clientRequestId: randomUUID(),
       }));
     },
 
@@ -255,12 +283,15 @@ export function createInitialReflectionGenerationService(
             includedItemCount: retrySource.includedItemCount,
           },
           generatedAt: now(),
-          provider: selectProvider(selectedChoice),
+          provider: selectProvider(selectedChoice).provider,
+          providerConfig: reflectionProviderConfigForChoice(selectedChoice),
           materializeArtifact,
           recordRun,
+          startRun,
           now,
           lifecycleLogger,
           runId: randomUUID(),
+          clientRequestId: randomUUID(),
         });
         lifecycleLogger?.emit({
           event: 'reflection.generation_succeeded',
@@ -293,6 +324,7 @@ async function generateAndMaterialize(input: {
   evidenceSupplement: unknown;
   generatedAt: string;
   provider: LunaReflectionProvider;
+  providerConfig: ReflectionProviderConfig;
   buildBundleWithMetrics: NonNullable<
     InitialReflectionGenerationDependencies['buildBundleWithMetrics']
   >;
@@ -300,9 +332,11 @@ async function generateAndMaterialize(input: {
     InitialReflectionGenerationDependencies['materializeArtifact']
   >;
   recordRun: NonNullable<InitialReflectionGenerationDependencies['recordRun']>;
+  startRun: NonNullable<InitialReflectionGenerationDependencies['startRun']>;
   now: () => string;
   lifecycleLogger: ReflectionLifecycleLogger | undefined;
   runId: string;
+  clientRequestId: string;
 }): Promise<InitialReflectionGenerationResult> {
   const builtBundle = input.buildBundleWithMetrics(
     input.sessionId,
@@ -314,11 +348,14 @@ async function generateAndMaterialize(input: {
     builtBundle,
     generatedAt: input.generatedAt,
     provider: input.provider,
+    providerConfig: input.providerConfig,
     materializeArtifact: input.materializeArtifact,
     recordRun: input.recordRun,
+    startRun: input.startRun,
     now: input.now,
     lifecycleLogger: input.lifecycleLogger,
     runId: input.runId,
+    clientRequestId: input.clientRequestId,
   });
 }
 
@@ -327,17 +364,34 @@ async function generateBundleAndMaterialize(input: {
   builtBundle: InitialReflectionBundleBuild;
   generatedAt: string;
   provider: LunaReflectionProvider;
+  providerConfig: ReflectionProviderConfig;
   materializeArtifact: NonNullable<
     InitialReflectionGenerationDependencies['materializeArtifact']
   >;
   recordRun: NonNullable<InitialReflectionGenerationDependencies['recordRun']>;
+  startRun: NonNullable<InitialReflectionGenerationDependencies['startRun']>;
   now: () => string;
   lifecycleLogger: ReflectionLifecycleLogger | undefined;
   runId: string;
+  clientRequestId: string;
 }): Promise<InitialReflectionGenerationResult> {
   const builtBundle = input.builtBundle;
   const { bundle } = builtBundle;
   const lifecycleSessionId = bundle.session.sessionId;
+  input.startRun({
+    runId: input.runId,
+    sourceSessionId: input.sourceSessionId,
+    reflectionFlowVersion: INITIAL_REFLECTION_FLOW_VERSION,
+    startedAt: input.generatedAt,
+    provider: input.providerConfig.provider,
+    model: input.providerConfig.modelConfig,
+    providerModel: input.providerConfig.providerModel,
+    promptVersion: input.providerConfig.promptVersion,
+    clientRequestId: input.clientRequestId,
+    eligibleItemCount: builtBundle.eligibleItemCount,
+    includedItemCount: builtBundle.includedItemCount,
+    evidenceBundle: bundle,
+  });
   input.lifecycleLogger?.emit({
     event: 'reflection.provider_started',
     sessionId: lifecycleSessionId,
@@ -346,7 +400,7 @@ async function generateBundleAndMaterialize(input: {
   let artifactMaterialized = false;
   let generatedMetadata: LunaReflectionRunMetadata | null = null;
   try {
-    const generated = await input.provider.generate(bundle);
+    const generated = await input.provider.generate(bundle, { clientRequestId: input.clientRequestId });
     generatedMetadata = generated.metadata;
     const materialized: MaterializeReflectionArtifactResult = input.materializeArtifact({
       sourceRunId: input.runId,
@@ -373,6 +427,7 @@ async function generateBundleAndMaterialize(input: {
         eligibleItemCount: builtBundle.eligibleItemCount,
         includedItemCount: builtBundle.includedItemCount,
         evidenceBundle: bundle,
+        clientRequestId: input.clientRequestId,
       }));
     } catch {
       // A successful immutable artifact remains a success if optional dogfood
@@ -394,6 +449,7 @@ async function generateBundleAndMaterialize(input: {
           eligibleItemCount: builtBundle.eligibleItemCount,
           includedItemCount: builtBundle.includedItemCount,
           evidenceBundle: bundle,
+          clientRequestId: input.clientRequestId,
         }));
       } catch {
         // Run logging must not turn a reflection/provider failure into a study failure.
@@ -415,6 +471,7 @@ function runRecordInput(input: {
   eligibleItemCount: number;
   includedItemCount: number;
   evidenceBundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4;
+  clientRequestId: string;
 }): RecordReflectionGenerationRunInput {
   const estimate = estimateInitialReflectionRunCost({
     provider: input.metadata.provider,
@@ -434,9 +491,7 @@ function runRecordInput(input: {
     providerModel: input.metadata.providerModel,
     promptVersion: input.metadata.promptVersion,
     responseId: input.metadata.responseId,
-    clientRequestId: input.error instanceof LunaReflectionProviderError
-      ? input.error.clientRequestId
-      : null,
+    clientRequestId: input.clientRequestId,
     finishReason: input.metadata.finishReason,
     bundleSchemaVersion: input.evidenceBundle.schemaVersion,
     resultSchemaVersion: 'session_reflection_result.v7',

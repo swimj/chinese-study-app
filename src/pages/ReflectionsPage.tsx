@@ -806,7 +806,7 @@ export function TokenUsageView({
                   />
                 </div>
                 <div className="reflection-run-identity">
-                  <strong>{formatDateTime(run.completedAt)}</strong>
+                  <strong>{formatDateTime(run.completedAt ?? run.startedAt)}</strong>
                   <span>{run.provider}/{run.model}</span>
                   <span>
                     {run.includedItemCount}/{run.eligibleItemCount} items
@@ -820,7 +820,7 @@ export function TokenUsageView({
                     result {run.resultSchemaVersion ?? 'unknown'}
                   </span>
                 </div>
-                <span>{formatRunDuration(run.startedAt, run.completedAt)}</span>
+                <span>{run.completedAt === null ? '—' : formatRunDuration(run.startedAt, run.completedAt)}</span>
                 <span>{formatTokenCount(run.usage.inputTokens)}</span>
                 <span>{formatTokenCount(run.usage.cachedInputTokens)}</span>
                 <span>{formatTokenCount(run.usage.outputTokens)}</span>
@@ -905,6 +905,9 @@ function RunStatusControl({
         onRetry={onRetry}
       />
     );
+  }
+  if (run.state === 'in_flight') {
+    return <span className="reflection-state-pill state-generating" role="status">In flight…</span>;
   }
   return run.state === 'succeeded'
     ? <StatusIcon kind="success" label="Reflection generation succeeded" />

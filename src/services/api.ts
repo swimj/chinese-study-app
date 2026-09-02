@@ -108,7 +108,7 @@ export type ReflectionGenerationRunDto = {
   sourceSessionId: string | null;
   reflectionFlowVersion: string;
   startedAt: string;
-  completedAt: string;
+  completedAt: string | null;
   provider: string;
   model: string;
   providerModel: string;
@@ -118,7 +118,7 @@ export type ReflectionGenerationRunDto = {
   finishReason: string | null;
   bundleSchemaVersion: string | null;
   resultSchemaVersion: string | null;
-  state: 'succeeded' | 'failed';
+  state: 'in_flight' | 'succeeded' | 'failed';
   failureCode: string | null;
   eligibleItemCount: number;
   includedItemCount: number;

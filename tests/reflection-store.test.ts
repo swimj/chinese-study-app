@@ -55,6 +55,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       DELETE FROM reflection_proposal_reviews;
       DELETE FROM reflection_operation_invocations;
       DELETE FROM reflection_generation_runs;
+      DELETE FROM reflection_generation_run_starts;
       DELETE FROM reflection_artifacts;
       DELETE FROM study_sessions;
       DELETE FROM words;
@@ -69,7 +70,7 @@ describe('reflection durable store', { concurrency: false }, () => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
-  test('initializes and validates the seven-table reflection schema', () => {
+  test('initializes and validates the eight-table reflection schema', () => {
     assert.doesNotThrow(() => dbModule.validateReflectionSchema());
     const tables = sqlite.prepare(`
       SELECT name
@@ -80,6 +81,7 @@ describe('reflection durable store', { concurrency: false }, () => {
     `).all() as Array<{ name: string }>;
     assert.deepEqual(tables.map((row) => row.name), [
       'learner_owned_reflection_artifacts',
+      'learner_owned_reflection_generation_run_starts',
       'learner_owned_reflection_generation_runs',
       'learner_owned_reflection_help_inbox',
       'learner_owned_reflection_operation_invocations',
@@ -167,6 +169,113 @@ describe('reflection durable store', { concurrency: false }, () => {
       retryable: true,
     });
     assert.deepEqual(dbModule.listReflectionGenerationRuns(), [recorded]);
+  });
+
+  test('lists a durable in-flight provider hand-off until its terminal run is recorded', () => {
+    materializationInput('in-flight-session', suppressOperation('target'));
+    dbModule.startReflectionGenerationRun({
+      runId: 'in-flight-run',
+      sourceSessionId: 'in-flight-session',
+      reflectionFlowVersion: 'initial_post_session_reflection.v2',
+      startedAt: generatedAt,
+      provider: 'openai',
+      model: 'gpt-5.6-terra-high',
+      providerModel: 'gpt-5.6-terra',
+      promptVersion: 'reflection-v8',
+      clientRequestId: 'provider-request-1',
+      eligibleItemCount: 3,
+      includedItemCount: 2,
+      evidenceBundle: bundle('in-flight-session'),
+    });
+
+    assert.deepEqual(dbModule.listReflectionGenerationRuns(), [
+      {
+        runId: 'in-flight-run',
+        sourceSessionId: 'in-flight-session',
+        reflectionFlowVersion: 'initial_post_session_reflection.v2',
+        startedAt: generatedAt,
+        completedAt: null,
+        provider: 'openai',
+        model: 'gpt-5.6-terra-high',
+        providerModel: 'gpt-5.6-terra',
+        promptVersion: 'reflection-v8',
+        responseId: null,
+        clientRequestId: 'provider-request-1',
+        finishReason: null,
+        bundleSchemaVersion: 'session_reflection_bundle.v4',
+        resultSchemaVersion: 'session_reflection_result.v7',
+        diagnostic: null,
+        state: 'in_flight',
+        failureCode: null,
+        eligibleItemCount: 3,
+        includedItemCount: 2,
+        usage: {
+          inputTokens: null,
+          cachedInputTokens: null,
+          cacheWriteInputTokens: null,
+          outputTokens: null,
+          reasoningTokens: null,
+          totalTokens: null,
+        },
+        pricingSnapshotId: null,
+        pricingAsOf: null,
+        pricingBasis: null,
+        estimatedCostUsd: null,
+        retryable: false,
+      },
+    ]);
+  });
+
+  test('prioritizes in-flight provider hand-offs over concluded history within the requested limit', () => {
+    dbModule.recordReflectionGenerationRun({
+      runId: 'concluded-history',
+      sourceSessionId: null,
+      reflectionFlowVersion: 'initial_post_session_reflection.v1',
+      startedAt: generatedAt,
+      completedAt: updatedAt,
+      provider: 'openai',
+      model: 'gpt-5.6-luna-high',
+      providerModel: 'gpt-5.6-luna',
+      promptVersion: 'reflection-v2',
+      responseId: 'response-history',
+      finishReason: 'stop',
+      state: 'succeeded',
+      failureCode: null,
+      eligibleItemCount: 1,
+      includedItemCount: 1,
+      usage: {
+        inputTokens: 10,
+        cachedInputTokens: 0,
+        cacheWriteInputTokens: null,
+        outputTokens: 5,
+        reasoningTokens: null,
+        totalTokens: 15,
+      },
+      pricingSnapshotId: null,
+      pricingAsOf: null,
+      pricingBasis: null,
+      estimatedCostUsd: null,
+      evidenceBundle: bundle('concluded-history'),
+    });
+    dbModule.startReflectionGenerationRun({
+      runId: 'active-hand-off',
+      sourceSessionId: null,
+      reflectionFlowVersion: 'initial_post_session_reflection.v2',
+      startedAt: updatedAt,
+      provider: 'openai',
+      model: 'gpt-5.6-terra-high',
+      providerModel: 'gpt-5.6-terra',
+      promptVersion: 'reflection-v8',
+      clientRequestId: 'provider-request-active',
+      eligibleItemCount: 1,
+      includedItemCount: 1,
+      evidenceBundle: bundle('active-hand-off'),
+    });
+
+    assert.deepEqual(
+      dbModule.listReflectionGenerationRuns(1).map((run) => run.runId),
+      ['active-hand-off'],
+    );
   });
 
   test('retains failed-run evidence for retry until an artifact exists', () => {

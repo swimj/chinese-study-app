@@ -100,7 +100,8 @@ describe('initial reflection generation orchestration', () => {
       evidenceBundle,
       result: result(),
     });
-    const { runId: _runId, ...recordedRunWithoutId } = recordedRun!;
+    assert.match(recordedRun!.clientRequestId ?? '', /^[0-9a-f-]{36}$/);
+    const { runId: _runId, clientRequestId: _clientRequestId, ...recordedRunWithoutId } = recordedRun!;
     assert.deepEqual(recordedRunWithoutId, {
       sourceSessionId: 'session-1',
       reflectionFlowVersion: 'initial_post_session_reflection.v2',
@@ -111,7 +112,6 @@ describe('initial reflection generation orchestration', () => {
       providerModel: 'gpt-5.6-luna',
       promptVersion: 'reflection-v3',
       responseId: 'response-1',
-      clientRequestId: null,
       finishReason: 'stop',
       bundleSchemaVersion: 'session_reflection_bundle.v2',
       resultSchemaVersion: 'session_reflection_result.v7',
@@ -146,6 +146,34 @@ describe('initial reflection generation orchestration', () => {
       estimatedCostUsd: 0.000008,
       evidenceBundle,
     });
+  });
+
+  test('records the selected provider hand-off before making the provider call', async () => {
+    const evidenceBundle = bundle();
+    let started: RecordReflectionGenerationRunInput | null = null;
+    let providerRequestId: string | undefined;
+    const service = createInitialReflectionGenerationService({
+      now: () => generatedAt,
+      buildBundle: () => evidenceBundle,
+      startRun: (input) => { started = input as unknown as RecordReflectionGenerationRunInput; },
+      provider: {
+        async generate(_bundle, options) {
+          providerRequestId = options?.clientRequestId;
+          return providerSuccess();
+        },
+      },
+      materializeArtifact: () => ({ created: true, artifact: artifactDetail('created-artifact', 0) }),
+      recordRun: () => {},
+    });
+
+    await service.generate('session-1', { evidence: true });
+
+    assert.equal(started?.sourceSessionId, 'session-1');
+    assert.equal(started?.provider, 'openai');
+    assert.equal(started?.model, 'gpt-5.6-luna-high');
+    assert.equal(started?.evidenceBundle, evidenceBundle);
+    assert.equal(started?.clientRequestId, providerRequestId);
+    assert.match(providerRequestId ?? '', /^[0-9a-f-]{36}$/);
   });
 
   test('retries a failed durable run from its exact saved bundle', async () => {

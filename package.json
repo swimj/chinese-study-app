@@ -16,6 +16,7 @@
     "hosted:control": "node --import tsx scripts/set-hosted-service-control.ts",
     "hosted:learner-control": "node --import tsx scripts/set-hosted-learner-disabled.ts",
     "hosted:provision-review-test": "node --import tsx scripts/provision-hosted-beta-review-test.ts",
+    "hosted:recover-reflection-completion": "node --import tsx scripts/recover-reflection-completion.ts",
     "hosted:prepare-dogfood": "node --import tsx scripts/prepare-hosted-dogfood-cutover.ts",
     "hosted:promote-dogfood": "node --import tsx scripts/promote-hosted-dogfood-cutover.ts",
     "hosted:sentinel": "node --import tsx scripts/seed-deployment-sentinel.ts",

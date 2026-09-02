@@ -124,6 +124,7 @@ export type LunaReflectionSuccess = {
 export type LunaReflectionProvider = {
   generate(
     bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4,
+    options?: { clientRequestId?: string },
   ): Promise<LunaReflectionSuccess>;
 };
 
@@ -191,6 +192,7 @@ export function createReflectionProvider(
   return {
     async generate(
       bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4,
+      requestOptions: { clientRequestId?: string } = {},
     ): Promise<LunaReflectionSuccess> {
       // Read credentials at call time so importing or constructing the service
       // never requires secrets and local configuration can be supplied later.
@@ -204,7 +206,7 @@ export function createReflectionProvider(
         ? null
         : configuredValue(environment[config.baseUrlEnvironmentVariable]);
       const systemPrompt = options.systemPrompt ?? await loadProductionPrompt();
-      const clientRequestId = randomUUID();
+      const clientRequestId = requestOptions.clientRequestId ?? randomUUID();
 
       let providerResult;
       try {

@@ -56,6 +56,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       DELETE FROM reflection_proposal_reviews;
       DELETE FROM reflection_operation_invocations;
       DELETE FROM reflection_generation_runs;
+      DELETE FROM reflection_generation_run_starts;
       DELETE FROM reflection_artifacts;
       DELETE FROM review_session_summaries;
       DELETE FROM study_attempt_events;
