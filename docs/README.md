@@ -43,6 +43,7 @@ When a map doc and code disagree, fix the map in the same change as the code (or
 - [server-db.md](./server-db.md) — `server/db/` module map
 - [scripts.md](./scripts.md) — maintenance scripts catalog
 - [ops/hosted-beta-deployment.md](./ops/hosted-beta-deployment.md) — Fly deploy, Clerk/S3 setup, maintenance, backup, and restore runbook
+- [ops/hosted-observability.md](./ops/hosted-observability.md) — private Fly/Grafana performance dashboard and metrics runbook
 - [reflection-frontend-architecture.md](./reflection-frontend-architecture.md) — feature-specific session-finalization, evidence, and review-UI map
 
 ## Development and review workflows

@@ -17,6 +17,7 @@ FROM node:22-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
 ARG APP_REVISION=unknown
+ENV APP_REVISION=$APP_REVISION
 LABEL org.opencontainers.image.revision=$APP_REVISION
 
 COPY --from=litestream /usr/local/bin/litestream /usr/local/bin/litestream
@@ -31,5 +32,5 @@ COPY --from=frontend-build /app/dist ./dist
 RUN mkdir -p /data && chown -R node:node /app /data
 USER node
 
-EXPOSE 5174
+EXPOSE 5174 9091
 CMD ["litestream", "replicate", "-config", "/app/deploy/fly/litestream.yml", "-exec", "npm run start:hosted"]

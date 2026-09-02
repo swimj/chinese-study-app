@@ -11,6 +11,8 @@ Browser (Vite dev, :4173; Express-served build in production)
 Express (server/index.ts, :5174)
   └── server/db.ts (barrel) → server/db/*
         └── SQLite app.db (APP_DATA_DIR or data/)
+Private metrics listener (server/observability.ts, :9091 hosted only)
+  └── Fly Prometheus → Fly managed Grafana operator view
 ```
 
 ## Ownership boundaries
@@ -42,6 +44,7 @@ Detail: [SPECS/frontend-architecture-map.md](../SPECS/frontend-architecture-map.
 | --- | --- |
 | `index.ts` | Express app, route handlers (thin) |
 | `config.ts` | `APP_MODE`, learner id, data dir, study profile, port |
+| `observability.ts`, `hosted-observability.ts` | Content-free HTTP/runtime/SQLite/backup metrics and private Prometheus listener |
 | `db.ts` | Barrel: init DB on import, re-export `server/db/*` |
 | `db/` | Split persistence and domain logic — see [server-db.md](./server-db.md) |
 | `reset-dev-db.ts` | Dev data reset entrypoint |
@@ -57,6 +60,7 @@ Detail: [SPECS/frontend-architecture-map.md](../SPECS/frontend-architecture-map.
 | `APP_SEED_DATA_PATH` | Backend | Required in dev mode; seed JSON path |
 | `VITE_API_BASE` | Frontend | API origin (default `http://localhost:5174`) |
 | `APP_USE_LOCAL_PROVIDER_PROXY` | Backend | Exact `true` opts local OpenAI/OpenRouter calls into `127.0.0.1:7897`; hosted default is direct |
+| `APP_METRICS_PORT` | Backend | Optional private Prometheus listener; hosted Fly config uses `9091` |
 | `VITE_STUDY_PROFILE` | Frontend | Client study profile |
 
 ## Data directories

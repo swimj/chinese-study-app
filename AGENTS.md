@@ -54,6 +54,7 @@ When code and spec conflict, treat the spec as intended behavior and update code
 | `APP_DATA_DIR` | Backend | Directory containing `app.db` |
 | `APP_LEARNER_ID` | Backend | Stable learner id; required in study mode unless `--learner-id` is supplied |
 | `APP_STUDY_PROFILE` | Backend | `mandarin` or `french` |
+| `APP_METRICS_PORT` | Backend | Optional private Prometheus listener; hosted Fly config uses `9091` |
 | `APP_SEED_DATA_PATH` | Backend | Required in dev mode; seed JSON path |
 | `PORT` | Backend | API port (default `5174`) |
 | `VITE_API_BASE` | Frontend | API origin (default `http://localhost:5174`) |
