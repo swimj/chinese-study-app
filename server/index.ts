@@ -98,6 +98,13 @@ import {
 } from './reflection/lifecycle-log.ts';
 import { createFileReflectionProviderDiagnosticSink } from './reflection/provider-diagnostics.ts';
 import { closeDbConnection } from './db/connection.ts';
+import {
+  createServiceMetrics,
+  readMetricsPort,
+  startMetricsServer,
+  type ServiceMetrics,
+} from './observability.ts';
+import { readServiceOperationalMetrics } from './hosted-observability.ts';
 
 const port = dbConfig.port;
 const defaultJsonBodyLimit = '100kb';
@@ -110,6 +117,7 @@ export type CreateAppOptions = {
   /** `undefined` follows NODE_ENV; `null` explicitly disables frontend serving. */
   frontendDistPath?: string | null;
   logError?: (message: string, metadata: Record<string, string>) => void;
+  serviceMetrics?: ServiceMetrics | null;
 };
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -126,6 +134,7 @@ export function createApp(options: CreateAppOptions = {}) {
     ?? createIntakeTriageGenerationService();
 
   app.disable('x-powered-by');
+  if (options.serviceMetrics) app.use(options.serviceMetrics.requestMiddleware);
   app.use(cors(dbConfig.authMode === 'clerk'
     ? {
         origin: process.env.CLERK_AUTHORIZED_PARTY,
@@ -1471,6 +1480,8 @@ export type StartServerOptions = {
   host?: string;
   port?: number;
   app?: ReturnType<typeof createApp>;
+  additionalServers?: Server[];
+  closeDatabase?: () => void;
 };
 
 export function startServer(options: StartServerOptions = {}): Server {
@@ -1482,18 +1493,23 @@ export function startServer(options: StartServerOptions = {}): Server {
     console.log(`Mode: ${dbConfig.mode}`);
     console.log(`Database: ${dbConfig.dbPath}`);
   });
-  installGracefulShutdown(server);
+  installGracefulShutdown(
+    server,
+    options.closeDatabase ?? closeDbConnection,
+    options.additionalServers ?? [],
+  );
   return server;
 }
 
 export function installGracefulShutdown(
   server: Server,
   closeDatabase: () => void = closeDbConnection,
+  additionalServers: Server[] = [],
 ): () => Promise<void> {
   let shutdownPromise: Promise<void> | null = null;
   const shutdown = () => {
     shutdownPromise ??= new Promise<void>((resolve, reject) => {
-      server.close((serverError) => {
+      closeServers([server, ...additionalServers], (serverError) => {
         try {
           closeDatabase();
         } catch (databaseError) {
@@ -1523,7 +1539,40 @@ export function installGracefulShutdown(
   return shutdown;
 }
 
+function closeServers(servers: Server[], done: (error?: Error) => void): void {
+  const listeningServers = servers.filter((server) => server.listening);
+  if (listeningServers.length === 0) {
+    done();
+    return;
+  }
+  let remaining = listeningServers.length;
+  let firstError: Error | undefined;
+  for (const server of listeningServers) {
+    server.close((error) => {
+      firstError ??= error;
+      remaining -= 1;
+      if (remaining === 0) done(firstError);
+    });
+  }
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   recoverPendingReflectionApplicationsAtStartup();
-  startServer();
+  const serviceMetrics = createServiceMetrics();
+  const metricsPort = readMetricsPort(process.env.APP_METRICS_PORT);
+  const metricsServer = metricsPort === null
+    ? null
+    : startMetricsServer({
+        metrics: serviceMetrics,
+        port: metricsPort,
+        readOperationalMetrics: () => readServiceOperationalMetrics(),
+      });
+  startServer({
+    app: createApp({ serviceMetrics }),
+    additionalServers: metricsServer ? [metricsServer] : [],
+    closeDatabase: () => {
+      serviceMetrics.dispose();
+      closeDbConnection();
+    },
+  });
 }

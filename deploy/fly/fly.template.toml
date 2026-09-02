@@ -14,6 +14,7 @@ kill_timeout = "60s"
   APP_AUTH_MODE = "clerk"
   APP_DATA_DIR = "/data"
   APP_MODE = "study"
+  APP_METRICS_PORT = "9091"
   APP_STUDY_PROFILE = "mandarin"
   APP_USE_LOCAL_PROVIDER_PROXY = "false"
   CLERK_PUBLISHABLE_KEY = "REPLACE_WITH_CLERK_PUBLISHABLE_KEY"
@@ -40,6 +41,10 @@ kill_timeout = "60s"
     grace_period = "45s"
     method = "GET"
     path = "/healthz"
+
+[metrics]
+  port = 9091
+  path = "/metrics"
 
 [[vm]]
   size = "shared-cpu-1x"

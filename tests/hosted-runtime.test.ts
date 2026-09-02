@@ -92,6 +92,11 @@ describe('hosted application runtime', { concurrency: false }, () => {
     assert.equal(await navigation.text(), '<main>hosted app</main>');
     assert.equal(authenticationCount, 0);
 
+    const publicMetricsPath = await fetch(`${baseUrl}/metrics`);
+    assert.equal(publicMetricsPath.status, 200);
+    assert.equal(await publicMetricsPath.text(), '<main>hosted app</main>');
+    assert.equal(authenticationCount, 0);
+
     const api = await fetch(`${baseUrl}/api/not-real`);
     assert.equal(api.status, 404);
     assert.deepEqual(await api.json(), { error: 'API endpoint not found' });
@@ -169,18 +174,24 @@ describe('hosted application runtime', { concurrency: false }, () => {
 
   test('closes the HTTP server and database hook through one idempotent shutdown', async () => {
     const disposableServer = createServer((_req, response) => response.end());
+    const additionalServer = createServer((_req, response) => response.end());
     await new Promise<void>((resolve, reject) => {
       disposableServer.listen(0, '127.0.0.1', resolve);
       disposableServer.once('error', reject);
     });
+    await new Promise<void>((resolve, reject) => {
+      additionalServer.listen(0, '127.0.0.1', resolve);
+      additionalServer.once('error', reject);
+    });
     let databaseCloseCount = 0;
     const shutdown = indexModule.installGracefulShutdown(disposableServer, () => {
       databaseCloseCount += 1;
-    });
+    }, [additionalServer]);
 
     await Promise.all([shutdown(), shutdown()]);
 
     assert.equal(disposableServer.listening, false);
+    assert.equal(additionalServer.listening, false);
     assert.equal(databaseCloseCount, 1);
   });
 });
