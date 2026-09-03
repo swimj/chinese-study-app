@@ -68,7 +68,6 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     async function loadData() {
       try {
         await reloadDashboard();
-        void studySession.prefetchSession().catch(() => undefined);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error');
       }
@@ -76,6 +75,16 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
 
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (currentPage !== 'home' || studySession.sessionStarted) {
+      return;
+    }
+
+    // Proposal acceptance only invalidates the cache. Prefetch when Home is
+    // shown, which is when the learner may start a session.
+    void studySession.prefetchSession().catch(() => undefined);
+  }, [currentPage, studySession.sessionStarted]);
 
   async function reloadDashboard() {
     const statusResponse = await fetchStatus();
