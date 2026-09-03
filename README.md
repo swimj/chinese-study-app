@@ -4,12 +4,12 @@ A Mandarin study app currently built for a local-browser-first PoC workflow, wit
 
 ## Architecture Direction
 
-The implemented architecture is optimized for fast product iteration on one
-machine, but the accepted current build wave is an invite-only hosted Mandarin
-beta. Local dogfood remains the trusted product-validation environment while a
-hosted implementation steel thread introduces account identity, explicit
-learner ownership, shared content, migration, release, recovery, and bounded
-support access.
+The implementation still supports fast local iteration, but the primary
+dogfood history now runs in the invite-only hosted Mandarin service. The
+accepted beta boundary includes explicit learner ownership, shared content,
+Clerk identity, Fly/Litestream operation, and deterministic dogfood cutover.
+The current build wave is making releases, recovery, and bounded support
+repeatable before widening beyond operator-controlled use.
 
 See [`STABILITY_FRONTIER.md`](./STABILITY_FRONTIER.md) for the accepted outcome,
 non-goals, and advancement test, and

@@ -1,7 +1,8 @@
 # Hosted-Beta Implementation Steel Thread
 
-Status: accepted implementation plan (2026-08-19); dispatch remains controlled
-through Linear.
+Status: accepted implementation plan (2026-08-19). Slices through hosted
+dogfood cutover are complete; the intentional release and recovery proof
+remains tracked by SWI-51. Dispatch remains controlled through Linear.
 
 This plan converts the accepted
 [`private-beta service boundary`](../docs/private-beta-service-boundary.md) into

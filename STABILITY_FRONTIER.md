@@ -1,64 +1,85 @@
 # Current Stability Frontier
 
-Status: accepted current build-wave boundary (2026-08-19).
+Status: accepted current build-wave boundary (2026-09-03).
 
 ## Near-term product outcome
 
-Run an invite-only hosted Mandarin beta for a small trusted cohort:
+Turn the live hosted Mandarin dogfood service into a deliberately releasable,
+recoverable, and supportable private beta, then invite a small trusted cohort:
 
 ```text
-invite-only account and shared Mandarin content
-  -> isolated learner state and a concierge-assisted start
-  -> repeated desktop study through the current core learning loop
-  -> normal optional post-session reflection with explicit authorization
-  -> intentional releases that preserve history
-  -> recoverable data and bounded operator support
+hosted dogfood history and a separate test identity
+  -> identified, rehearsed releases over valued data
+  -> recoverable upgrades and bounded diagnosis
+  -> concierge-assisted invitation of trusted learners
+  -> repeated desktop study and normal optional reflection
+  -> feedback that primarily tests learning value
 ```
 
-The target cohort is roughly three to eight trusted, serious
+The target cohort remains roughly three to eight trusted, serious
 intermediate-or-beyond learners who are compatible with the current corpus and
-typed-production model. The outcome is not a public launch, universal
-onboarding system, or broad curriculum. It is a credible service in which early
-users can study safely enough that their feedback primarily tests learning
-value rather than local-installation friction or data fragility.
+typed-production model. The service is now real: the primary dogfood history
+runs on Fly, and a separate test identity has exercised the intended isolation
+boundary. That is credible evidence for the mechanism, not yet evidence from
+independent beta users or proof that every operational path is mature.
+
+The outcome is not a public launch, universal onboarding system, or broad
+curriculum. It is a small service whose releases and failures can be understood
+well enough that early-user feedback is not dominated by improvised deployment,
+data-recovery anxiety, or unexplained prototype friction.
 
 ## Current gap and focus
 
-The bounded reflection and production-cue repair loop has met the prior
-advancement test. New reflection can propose V2 cue changes; the learner can
-review, revise, and authorize them; supported application preserves immutable
-cue and attempt provenance; and later study actions serve active cues using
-their exact snapshotted answer spaces. The durable behavior is owned by
-[`SPECS/session-reflection-generation.md`](SPECS/session-reflection-generation.md),
-[`SPECS/reflection-proposals-and-handles.md`](SPECS/reflection-proposals-and-handles.md),
-and [`SPECS/study-action-model.md`](SPECS/study-action-model.md).
+The hosted-beta steel thread has advanced through real-app deployment, explicit
+learner ownership, Clerk-backed identity, shared-content publication, primary
+dogfood migration, and hosted cutover. The deployed service contract is owned
+by
+[`docs/private-beta-service-boundary.md`](docs/private-beta-service-boundary.md);
+the current operational baseline is recorded in
+[`docs/ops/hosted-beta-deployment.md`](docs/ops/hosted-beta-deployment.md), and
+performance observation is recorded in
+[`docs/ops/hosted-observability.md`](docs/ops/hosted-observability.md).
+[`PLANS/hosted-beta-implementation-steel-thread.md`](PLANS/hosted-beta-implementation-steel-thread.md)
+is now useful as historical sequencing and proof context; SWI-51 owns its one
+remaining release-and-recovery gate rather than reopening the earlier slices.
 
-The application is still a local, implicit-single-learner system, but the
-private-beta service boundary is now accepted. The next focused work is the
-hosted-beta implementation steel thread: make learner ownership unskippable,
-prove the provisional platform package with disposable data, bring up a fresh
-invited learner, implement the shared-content loop, migrate the primary
-dogfood history, and exercise one intentional release plus independent restore.
-The detailed authority is
-[`docs/private-beta-service-boundary.md`](docs/private-beta-service-boundary.md)
-and the ordered proof gates are
-[`PLANS/hosted-beta-implementation-steel-thread.md`](PLANS/hosted-beta-implementation-steel-thread.md).
-Linear remains authoritative for selection and dispatch.
+The next intended Focus is
+[SWI-51](https://linear.app/swimj/issue/SWI-51/define-and-prove-hosted-versioning-upgrade-release-rollback-and):
+define and prove the release identity, compatibility, upgrade, rollback versus
+fix-forward, and recovery contract on the real service. Several application
+updates have already been deployed successfully, but through operator- and
+agent-guided best effort rather than one accepted repeatable release procedure.
+SWI-51 should make the safe path explicit without expanding into zero-downtime
+delivery or a general CI/CD platform. Linear remains authoritative for when the
+task is actually declared in flight.
 
-A steady-state desktop UX audit and interaction brief may proceed
-asynchronously if portfolio capacity permits. It should improve density,
-scrolling, keyboard flow, focus behavior, and interaction consistency while
-preserving the current broad page model unless evidence shows that model itself
-is the recurring problem.
+Early hosted use has exposed operational and performance problems that local
+dogfood could mask. Bounded route/process/storage observability machinery,
+reflection recovery diagnostics, and session-payload latency fixes have landed.
+One study commit failure could not be diagnosed after the fact because its
+caught error was not logged;
+[SWI-59](https://linear.app/swimj/issue/SWI-59/make-hosted-study-commit-failures-attributable)
+owns that narrow follow-up. These signals justify an operational feedback loop,
+not a speculative infrastructure rewrite or broad observability program.
 
 ## Settled enough to build against
 
 - The first hosted beta is Mandarin-only. French remains retired experimentation
   rather than a compatibility or launch promise.
-- The first cohort is invite-only and intentionally narrow. External learners
-  start from fresh beta state; generalized import is not required. Migration of
-  the primary dogfood history into its hosted account is the required proof
-  that valuable existing data can move safely.
+- The service currently runs the built frontend and Express API from one origin
+  on one 1 GB Fly Machine in Singapore, with one encrypted Volume, one shared
+  SQLite database, Clerk authentication, and Litestream replication to
+  independently owned versioned object storage. This is the tested beta
+  topology, not a permanent platform claim.
+- The primary dogfood history has been deterministically migrated and cut over
+  to its hosted learner identity. Hosted state is the active valued history;
+  the preserved local source is a recovery artifact, not an alternate writer.
+- A separate test identity has signed into the same service and observed an
+  isolated fresh learner view. The ownership manifest, persistence guards, and
+  negative tests remain the stronger contract; the manual check does not claim
+  independent security validation or multi-user operating experience.
+- The first external cohort is invite-only and intentionally narrow. External
+  learners start from fresh beta state; generalized import is not required.
 - Reflection is a normal default beta feature, not a hidden experiment. Using
   it remains optional; failure remains outside session correctness; and no
   proposed durable effect occurs without explicit learner authorization and
@@ -85,27 +106,18 @@ is the recurring problem.
   normally enters `shared_trial` after source-learner authorization and
   sanitization, while source evidence and all learner state remain private.
   Eligible content is initially selected uniformly at random.
-- One service and one shared embedded SQLite database is the accepted beta
-  topology. Every private row and cross-reference has explicit learner
-  ownership. Postgres is reconsidered from observed contention, scaling,
-  recovery, or operational needs rather than assumed merely because hosting is
-  involved.
 - One externally authenticated account maps to one stable local learner
   identity. The server derives request identity; clients never choose a learner
   id; authorization is enforced below HTTP handlers; and support uses a
   distinct attributable principal.
-- Planned downtime is acceptable. Schema-changing releases quiesce writes,
-  take a pre-release backup, run a rehearsed versioned migration, smoke two
-  identities, and reopen only after the gate passes. Independent backups target
-  at most approximately one hour of acknowledged data loss and must be proven
-  by restore.
-- The primary dogfood database is the only required legacy import. Migration is
-  deterministic, rehearsed on recoverable copies, validates shared/private
-  classification and provenance, and has no dual-write period. Historical
-  bad-prompt model judgment runs separately from the migration.
-- Release, migration, rollback, backup, restore, and supportability constrain
-  the first hosted persistence design. They are not cleanup work to add after
-  beta data accumulates.
+- Planned downtime is acceptable. Schema-changing releases will quiesce writes
+  and provider work, take an identified pre-release recovery point, run a
+  rehearsed versioned migration, smoke both identities, and reopen only after
+  the gate passes. SWI-51 owns the exact repeatable mechanism and compatibility
+  policy; the operational principle is already settled.
+- Independent Litestream backup and isolated restore are part of the beta
+  design, not post-launch cleanup. Backup freshness approaching one hour is a
+  stop-writes condition until investigated.
 - Production tasks and cues remain content beneath word-based scheduling, not
   independently scheduled SRS objects. Served actions and accepted attempt
   evidence preserve the exact task, cue or fallback, answer space, response,
@@ -113,25 +125,50 @@ is the recurring problem.
 - Provider credentials and calls remain on the backend. Model output remains
   untrusted proposal input subject to strict validation, bounded resource
   exposure, explicit authorization, and registered application adapters.
+- Ordinary hosted metrics and logs are content-free. Route, process, SQLite,
+  WAL, backup, provider-work, and deployment observations may be retained for
+  bounded operations; learner answers, notes, prompts, generated output,
+  credentials, and raw identifiers do not belong in ordinary telemetry.
+- Canonical learning and reflection behavior remains in
+  [`SPECS/learning-review-model.md`](SPECS/learning-review-model.md),
+  [`SPECS/session-covering-criteria.md`](SPECS/session-covering-criteria.md),
+  [`SPECS/study-action-model.md`](SPECS/study-action-model.md),
+  [`SPECS/session-reflection-generation.md`](SPECS/session-reflection-generation.md),
+  and
+  [`SPECS/reflection-proposals-and-handles.md`](SPECS/reflection-proposals-and-handles.md).
 
-## Provisional implementation choices and proof gates
+## Purposely unsettled boundaries
 
-- Use one Fly.io Machine and encrypted Volume in Singapore or Tokyo, with
-  Litestream continuously replicating SQLite WAL changes to independent
-  S3-compatible storage. Fly local storage is unreplicated and release commands
-  cannot mount the Volume, so the spike must prove persistence, controlled
-  migration, WAL replication, independent restore, and metrics. Railway is the
-  named hosting fallback.
-- Use Clerk restricted-mode invitations and sessions mapped to local learner
-  identities. The spike must prove invite restriction, sign-in/out,
-  revocation, and local disablement. WorkOS AuthKit is the named auth fallback.
-- Retain the current OpenAI reflection path under no-training-by-default terms,
-  bounded retention, explicit learner disclosure, cost/resource limits,
-  content-free ordinary logs, and a kill switch.
-- No real learner data enters the service until explicit ownership and
-  adversarial two-learner isolation tests cover the complete durable-object
-  graph. A backup does not satisfy the recovery gate until an isolated restore
-  has succeeded.
+- **Release truth and recovery:** SWI-51 must settle how app, schema, migration,
+  shared-content/bootstrap, and material configuration identity are reported;
+  which combinations may run; how partial migrations fail closed; and when
+  application rollback, schema reversal, backup restore, or fix-forward is
+  safe. Existing manual updates are evidence for the workflow, not its accepted
+  contract.
+- **Operational diagnosis:** aggregate hosted metrics are available in the
+  deployed code and operator runbook, but routine application failures are not
+  uniformly attributable. Add targeted safe correlation and diagnostics from
+  observed incidents; do not adopt broad distributed tracing or retain learner
+  content by default.
+- **Multi-user confidence:** the test identity demonstrates the intended
+  isolation illusion under operator control. Confidence must now come from
+  repeated negative tests, post-release smoke, and actual trusted-user use—not
+  from assuming that one manual check exhausts the ownership graph.
+- **Support and recovery practice:** invite, disablement, inspection,
+  maintenance, backup, cutover, and restore commands exist, but routine support
+  and release evidence still depend too much on expert interpretation. Accept
+  the minimum runbook-backed operator workflow before widening the cohort;
+  defer a general admin product.
+- **Learner-facing beta quality:** the first active-session keyboard and action
+  coherence slice has landed, while broader density, navigation, and polish
+  remain open. Hosted use should continue surfacing reliability, latency,
+  reflection-correctability, and desktop-interaction problems. Fix concrete
+  blockers and high-leverage friction without turning launch preparation into
+  prompt perfection, a comprehensive redesign, or a broad new learning-model
+  wave.
+- **Scaling boundary:** the current single-Machine SQLite topology remains the
+  default. Reconsider it only from observed contention, availability,
+  operational fan-out, recovery, or cohort-growth evidence.
 
 ## Invariants and constraints
 
@@ -157,13 +194,16 @@ is the recurring problem.
   a model provider must follow an explicit beta disclosure and the existing
   bounded evidence contract.
 - Migration and upgrade paths must preserve learner history and provenance or
-  fail loudly before destructive partial application. The dogfood migration
-  runs against a recoverable copy until the hosted result is verified.
+  fail loudly before destructive partial application. The hosted dogfood state
+  is now valued production-like data, not a disposable deployment fixture.
 - A release is intentional and identifiable. Schema compatibility, deploy
   ordering, rollback limits, and recovery steps are defined before the release
   can carry valued beta data.
 - Backup is not considered complete until restore has been exercised against a
   representative beta dataset.
+- Never restore blindly over live state after writes reopen. State the recovery
+  point and acknowledged activity that would be lost, then choose an explicit
+  restore or fix-forward path.
 - Operator support access is bounded by an accepted support model. Routine
   diagnosis and recovery must not depend on improvised production-database
   edits; any exceptional repair mechanism must be deliberate, attributable,
@@ -194,38 +234,43 @@ is the recurring problem.
   eliminating every dismissible low-quality suggestion before launch.
 - Broad new exercise types or core learning-model expansion unless evidence
   shows that the bounded beta loop cannot function without them.
-- Large-scale observability, enterprise operations, or infrastructure designed
-  for an unproven public-user load.
+- Zero-downtime or multi-instance releases, fully automated CI/CD, large-scale
+  observability, enterprise operations, or infrastructure designed for an
+  unproven public-user load.
 - Automatic model authority over study state, content state, account state, or
   shared publication without the required learner authorization and local
   validation.
 
 ## Frontier advancement test
 
-The frontier advances after the private beta operates as a real service, not
-merely when hosting code merges:
+The frontier advances when the live hosted service is deliberately operable
+over valued data and ready for the first real cohort, not merely because more
+updates have happened to deploy successfully:
 
-1. At least two accounts can sign in to the same accepted beta system, and
-   isolation tests plus observed behavior show that their private learner data,
-   evidence, reflections, and provider requests do not cross.
-2. A non-developer learner can be concierge-onboarded, complete the supported
-   desktop study loop repeatedly, use or skip post-session reflection, and
-   return later without developer intervention to reconstruct state.
-3. Reflection remains safe and non-blocking under provider failure and invalid
-   output, and durable model-proposed effects still require explicit learner
-   authorization and truthful application.
-4. The primary dogfood history is migrated into its hosted account with
-   representative scheduling, attempt, reflection, cue, and provenance state
-   intact, then survives at least one intentional application/schema release.
-5. Backup and restore are exercised successfully against representative beta
-   data, with release and recovery steps recorded well enough to repeat.
-6. Routine account recovery and study/reflection diagnosis can be performed
-   through bounded support access and documented procedures rather than
-   improvised production-database edits.
-7. The supported desktop core loop has coherent density, scrolling, keyboard,
-   focus, and interaction behavior sufficient that first-cohort feedback can
-   evaluate the learning product rather than being dominated by prototype UI
-   friction.
+1. The running service reports sufficient app, schema, migration,
+   shared-content/bootstrap, and material configuration identity to explain
+   what is deployed and reject an incompatible or ambiguous startup state.
+2. SWI-51's maintenance, preflight, backup, migration, deploy, two-identity
+   smoke, and reopen sequence is recorded and exercised through one harmless
+   schema-bearing release over the migrated dogfood history.
+3. Rollback versus fix-forward limits are stated before reopening, and an
+   independent restore of post-release representative data succeeds in an
+   isolated target with the expected release identity and learner histories.
+4. Repeated tests and post-release observation show that the dogfood and test
+   identities cannot cross private state, reflection evidence, durable effects,
+   or provider work. Shared-content references continue to confer no private
+   access.
+5. Routine study, reflection, backup, and deployment failures are diagnosable
+   through bounded content-free identifiers, metrics, and documented operator
+   procedures. A failure that blocks continued study must not remain
+   permanently opaque merely because the process stayed alive.
+6. At least one non-developer trusted learner can be concierge-onboarded,
+   complete the supported desktop study loop repeatedly, use or skip normal
+   reflection, and return later without developer intervention to reconstruct
+   state.
+7. The supported desktop loop is coherent enough that first-cohort feedback can
+   evaluate learning value rather than being dominated by avoidable latency,
+   broken interaction flow, deployment fragility, or data-recovery uncertainty.
 
 # How To Interpret And Evolve The Frontier
 

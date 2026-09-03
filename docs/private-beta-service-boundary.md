@@ -221,15 +221,15 @@ The primary dogfood database was the only required legacy source. Its local
 SWI-47 learner-ownership upgrade is complete and current builds do not retain
 that one-time importer. External beta learners start fresh.
 
-A later hosted cutover still rehearses its deterministic, versioned,
-transactional migration on recoverable copies. It preserves immutable history
-and served snapshots, scopes metadata, and emits a machine-readable validation
-report. Cutover stops local writes, takes a final backup, imports and validates,
-and establishes the hosted service as sole writer. The original remains
-read-only through initial verification; there is no dual-write period.
+The hosted cutover rehearsed its deterministic, versioned, transactional
+migration on recoverable copies. It preserved immutable history and served
+snapshots, scoped metadata, and emitted a machine-readable validation report.
+Cutover stopped local writes, took a final backup, imported and validated the
+prepared database, and established the hosted service as sole writer. The
+original remains a preserved recovery artifact; there is no dual-write period.
 
-Imported corpus content becomes `available`. At the first hosted dogfood
-cutover, active reusable custom cues, clusters, prompts, and supplements become
+Imported corpus content becomes `available`. At the hosted dogfood cutover,
+active reusable custom cues, clusters, prompts, and supplements became
 `shared_trial` under the blanket authorization in
 [`hosted-dogfood-shared-trial-policy.md`](./hosted-dogfood-shared-trial-policy.md).
 Inactive/replaced content retains truthful history. All
@@ -262,9 +262,10 @@ Nondeterministic model judgment never runs inside a deterministic migration.
   disclosed retention policy. Define a launch-grade privacy, export, deletion,
   and analytics contract before widening the cohort.
 
-## Provisional Vendor Package
+## Current Hosted Package
 
-The selected package is provisional until the platform spike proves it:
+The platform spike, real-app deployment, and hosted dogfood cutover established
+this package as the current beta wave decision:
 
 - one Fly.io Machine in Singapore or Tokyo, with one encrypted Fly Volume;
 - SQLite in WAL mode and Litestream replication to independent, encrypted,
@@ -278,12 +279,13 @@ cannot mount it. Therefore migrations use a controlled maintenance/startup or
 attached-Machine path, and autoscaling/autostop remain off unless proven
 compatible with the single-writer and continuous-backup contract.
 
-The spike must prove invite restriction, sign-in/out and revocation, local
-disablement, volume persistence across deploys, WAL/Litestream behavior,
-independent point-in-time restore, controlled migration/rollback, and required
-metrics. If Fly fails, use Railway while preserving independent backup. If
-Clerk fails, use WorkOS AuthKit. Switching either does not reopen this service
-contract.
+The disposable spike and real-app work exercised invite restriction, sign-in,
+sign-out and revocation, local disablement, volume persistence,
+WAL/Litestream behavior, independent restore, controlled migration, and bounded
+metrics. Fly and Clerk remain wave choices rather than permanent invariants. If
+operational evidence invalidates Fly, use Railway while preserving independent
+backup; if it invalidates Clerk, use WorkOS AuthKit. Switching either does not
+reopen this service contract.
 
 ## Acceptance Scenarios
 
