@@ -44,6 +44,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `dev-db-bootstrap.test.ts` | Dev DB bootstrap | Dynamic `server/db.ts` |
 | `learner-isolation.test.ts` | Shared lexical visibility, private overlays/content, duplicate private ids, cross-owner references | Dynamic `server/db.ts` + raw scoped connection |
 | `study-profile.test.ts` | Study profile helpers | `src/study-profile.ts` |
+| `clerk-auth-gate.test.ts` | Clerk loading vs sign-in vs app gate; loading markup never uses the sign-in heading | `src/auth/clerk-auth-gate.ts`, `ClerkAuthGateViews.tsx` |
 | `canonical-words.test.ts` | Canonical wordlist scripts | `scripts/lib/canonical-words.ts` |
 | `cc-cedict.test.ts` | CC-CEDICT parsing | `scripts/lib/cc-cedict.ts` |
 | `subtlex.test.ts` | SUBTLEX parsing | `scripts/lib/subtlex.ts` |
@@ -60,6 +61,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | Study management / suppression | `study-management.test.ts` |
 | Priority / aliases | `user-priority.test.ts`, `priority-aliases.test.ts` |
 | Frontend session state only | `session-selectors.test.ts`, `session-bucket-state.test.ts`, `session-keyboard.test.ts` |
+| Clerk frontend session gate | `clerk-auth-gate.test.ts` |
 | Reflection contracts / validation | `reflection-domain.test.ts`, `reflection-evidence-validation.test.ts`, `reflection-v7-schema.test.ts` |
 | Reflection evidence / finalization | `session-reflection-evidence.test.ts`, `session-finalization.test.ts`, `reflection-evidence-enrichment.test.ts` |
 | Reflection provider / generation | `reflection-provider.test.ts`, `reflection-generation.test.ts`, `reflection-generation-isolation.test.ts` |

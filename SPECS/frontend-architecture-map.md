@@ -17,6 +17,11 @@ src/
   types.ts                        # shared frontend API/domain DTO types
   study-profile.ts                # mandarin vs french client profile
 
+  auth/
+    ClerkAuthenticationBoundary.tsx  # Clerk session gate around App
+    ClerkAuthGateViews.tsx           # loading chrome and signed-out sign-in panel
+    clerk-auth-gate.ts               # loading vs sign-in vs app phase resolver
+
   components/
     AppChrome.tsx                 # nav (home, priority, reflections, content), version, errors
     MeaningList.tsx               # shared meaning list rendering
@@ -74,6 +79,10 @@ src/
 ```
 
 ## Mental Model
+
+`main.tsx` wraps `App` in `ClerkAuthenticationBoundary`. Clerk startup is a
+loading state, not a signed-out state: the sign-in heading stays hidden until
+Clerk reports no session.
 
 `App.tsx` is intentionally thin. It owns only cross-page concerns:
 
