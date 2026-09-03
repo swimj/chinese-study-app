@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { setApiAuthenticationTokenProvider } from '../services/api';
+import { resolveClerkAuthGatePhase } from './clerk-auth-gate';
+import { ClerkAuthLoadingView, ClerkAuthSignInView } from './ClerkAuthGateViews';
 
 type ClerkSession = {
   getToken(): Promise<string | null>;
@@ -21,20 +23,23 @@ declare global {
   }
 }
 
-const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-const enabled = import.meta.env.VITE_AUTH_MODE === 'clerk';
+const publishableKey = import.meta.env?.VITE_CLERK_PUBLISHABLE_KEY;
+const enabled = import.meta.env?.VITE_AUTH_MODE === 'clerk';
 
 export function ClerkAuthenticationBoundary({ children }: { children: (signOut?: () => Promise<void>) => ReactNode }) {
   const signInTarget = useRef<HTMLDivElement>(null);
   const [client, setClient] = useState<ClerkClient | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [clerkReady, setClerkReady] = useState(false);
+  const [signedIn, setSignedIn] = useState(false);
+  const [error, setError] = useState<string | null>(() => (
+    enabled && !publishableKey
+      ? 'VITE_CLERK_PUBLISHABLE_KEY is required when VITE_AUTH_MODE=clerk.'
+      : null
+  ));
 
   useEffect(() => {
     if (!enabled) return;
-    if (!publishableKey) {
-      setError('VITE_CLERK_PUBLISHABLE_KEY is required when VITE_AUTH_MODE=clerk.');
-      return;
-    }
+    if (!publishableKey) return;
 
     let removeListener: (() => void) | null = null;
     let cancelled = false;
@@ -51,19 +56,18 @@ export function ClerkAuthenticationBoundary({ children }: { children: (signOut?:
       if (cancelled) return;
 
       const updateSession = () => {
-        if (!loadedClient.user || !loadedClient.session) return;
-        setApiAuthenticationTokenProvider(() => loadedClient.session?.getToken() ?? Promise.resolve(null));
+        const hasSession = Boolean(loadedClient.user && loadedClient.session);
+        if (hasSession) {
+          setApiAuthenticationTokenProvider(() => loadedClient.session?.getToken() ?? Promise.resolve(null));
+        } else {
+          setApiAuthenticationTokenProvider(null);
+        }
         setClient(loadedClient);
+        setClerkReady(true);
+        setSignedIn(hasSession);
       };
       removeListener = loadedClient.addListener(updateSession);
       updateSession();
-      if (!loadedClient.user && signInTarget.current) {
-        loadedClient.mountSignIn(signInTarget.current, {
-          forceRedirectUrl: origin,
-          signUpForceRedirectUrl: origin,
-          signUpFallbackRedirectUrl: origin,
-        });
-      }
     }).catch((reason: unknown) => {
       if (!cancelled) setError(reason instanceof Error ? reason.message : 'Unable to initialize Clerk.');
     });
@@ -75,20 +79,24 @@ export function ClerkAuthenticationBoundary({ children }: { children: (signOut?:
     };
   }, []);
 
-  if (!enabled) return <>{children()}</>;
-  if (client) {
-    return <>{children(() => client.signOut({ redirectUrl: window.location.origin }))}</>;
-  }
+  useEffect(() => {
+    if (!client || signedIn || error || !signInTarget.current) return;
+    const origin = window.location.origin;
+    client.mountSignIn(signInTarget.current, {
+      forceRedirectUrl: origin,
+      signUpForceRedirectUrl: origin,
+      signUpFallbackRedirectUrl: origin,
+    });
+  }, [client, signedIn, error]);
 
-  return (
-    <main className="container">
-      <section className="panel">
-        <h1>Sign in to study</h1>
-        {error ? <p className="notes">{error}</p> : <p className="notes">Loading secure sign-in…</p>}
-        <div ref={signInTarget} />
-      </section>
-    </main>
-  );
+  const phase = resolveClerkAuthGatePhase({ enabled, clerkReady, signedIn, error });
+  if (phase === 'app') {
+    return <>{children(enabled && client ? () => client.signOut({ redirectUrl: window.location.origin }) : undefined)}</>;
+  }
+  if (phase === 'loading') {
+    return <ClerkAuthLoadingView />;
+  }
+  return <ClerkAuthSignInView error={error} signInTargetRef={signInTarget} />;
 }
 
 async function loadClerkClient(key: string): Promise<ClerkClient> {
