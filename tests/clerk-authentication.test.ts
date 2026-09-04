@@ -65,6 +65,34 @@ describe('Clerk learner authentication', { concurrency: false }, () => {
     assert.notEqual(a, b);
   });
 
+  test('accepts backend-minted session claims that omit azp and rejects a mismatched origin', () => {
+    const party = 'https://chinese-study-beta-swimj.fly.dev';
+    assert.equal(
+      authenticationModule.clerkUserIdFromAuth({ userId: 'user_smoke' }, party),
+      'user_smoke',
+    );
+    assert.equal(
+      authenticationModule.clerkUserIdFromAuth({ userId: 'user_smoke', sessionClaims: {} }, party),
+      'user_smoke',
+    );
+    assert.equal(
+      authenticationModule.clerkUserIdFromAuth({ userId: 'user_smoke', sessionClaims: { azp: '' } }, party),
+      'user_smoke',
+    );
+    assert.equal(
+      authenticationModule.clerkUserIdFromAuth({ userId: 'user_browser', sessionClaims: { azp: party } }, party),
+      'user_browser',
+    );
+    assert.equal(
+      authenticationModule.clerkUserIdFromAuth({
+        userId: 'user_browser',
+        sessionClaims: { azp: 'https://other.example' },
+      }, party),
+      null,
+    );
+    assert.equal(authenticationModule.clerkUserIdFromAuth({ userId: null }, party), null);
+  });
+
   test('rejects unauthenticated and disabled Clerk subjects before private work', () => {
     const unauthenticated = invokeForSubject(null, () => {
       throw new Error('private work must not run');

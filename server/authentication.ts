@@ -17,12 +17,28 @@ export function createClerkRequestAuthentication(
     requireEnvironmentVariable('CLERK_SECRET_KEY');
     const authorizedParty = parseAuthorizedParty(requireEnvironmentVariable('CLERK_AUTHORIZED_PARTY'));
     return [
-      clerkMiddleware({ publishableKey, authorizedParties: [authorizedParty] }),
-      createLearnerContextMiddleware(resolveProviderSubject),
+      // Do not pass authorizedParties to clerkMiddleware. Backend-minted session
+      // JWTs (hosted:smoke) have no azp, and Clerk rejects a missing azp when
+      // that option is set. Origin checking for tokens that do include azp is
+      // in clerkUserIdFromAuth.
+      clerkMiddleware({ publishableKey }),
+      createLearnerContextMiddleware((request) => clerkUserIdFromAuth(getAuth(request), authorizedParty)),
     ];
   }
 
   return [createLearnerContextMiddleware(resolveProviderSubject)];
+}
+
+export function clerkUserIdFromAuth(
+  auth: { userId?: string | null; sessionClaims?: { azp?: unknown } | null },
+  authorizedParty: string,
+): string | null {
+  const userId = auth.userId?.trim() ?? '';
+  if (!userId) return null;
+  const azp = auth.sessionClaims?.azp;
+  if (azp == null || azp === '') return userId;
+  if (typeof azp !== 'string' || azp !== authorizedParty) return null;
+  return userId;
 }
 
 export function createLearnerContextMiddleware(
