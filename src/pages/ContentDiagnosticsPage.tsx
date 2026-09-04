@@ -6,6 +6,7 @@ import type {
   ContrastClusterDiagnosticItem,
   ProductionCueDiagnosticItem,
   WordDiagnosticItem,
+  WordDiagnosticSupplement,
 } from '../domain/content-diagnostics';
 import { MeaningList } from '../components/MeaningList';
 
@@ -146,6 +147,19 @@ function WordDetail({ item }: { item: WordDiagnosticItem }) {
       </section>
       {word.personalNotes ? <DetailText label="Personal notes" value={word.personalNotes} /> : null}
       <section className="content-detail-section">
+        <h3>Supplemental info</h3>
+        {item.productionCueSupplements.length === 0 ? (
+          <p className="notes">No post-reveal production supplement.</p>
+        ) : item.productionCueSupplements.map((supplement) => (
+          <div className="content-connection" key={supplement.supplementId}>
+            <strong>{supplement.englishFrame}</strong>
+            <span>{supplement.exampleSentence}</span>
+            <span>{supplement.exampleTranslation}</span>
+            <code>{supplementAttachmentLabel(supplement)}</code>
+          </div>
+        ))}
+      </section>
+      <section className="content-detail-section">
         <h3>Connected content</h3>
         <p>{item.contrastClusters.length} contrast cluster{item.contrastClusters.length === 1 ? '' : 's'}</p>
         {item.contrastClusters.map((cluster) => (
@@ -259,9 +273,17 @@ function itemLabel(item: ContentDiagnosticItem): string {
 }
 
 function itemSummary(item: ContentDiagnosticItem): string {
-  if (item.kind === 'word') return `${item.word.status} · ${item.word.meaning}`;
+  if (item.kind === 'word') {
+    const supplementNote = item.productionCueSupplements.length > 0 ? ' · has supplement' : '';
+    return `${item.word.status} · ${item.word.meaning}${supplementNote}`;
+  }
   if (item.kind === 'contrast_cluster') return `${item.members.length} members · ${item.prompts.length} prompts`;
   return `${item.active ? 'active' : 'inactive'} · ${item.anchorWord.hanzi} · ${humanize(item.cueType)}`;
+}
+
+function supplementAttachmentLabel(supplement: WordDiagnosticSupplement): string {
+  if (supplement.cueId === null) return 'Meaning-derived fallback';
+  return `${supplement.cueType ? humanize(supplement.cueType) : 'cue'} · ${supplement.cueId}`;
 }
 
 function humanize(value: string): string {

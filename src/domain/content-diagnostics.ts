@@ -1,7 +1,13 @@
-import type { ProductionCueType } from './study-actions';
+import type { ProductionCueSupplementSnapshot, ProductionCueType } from './study-actions';
 import type { Word } from '../types';
 
 export type ContentDiagnosticKind = 'word' | 'contrast_cluster' | 'production_cue';
+
+export type WordDiagnosticSupplement = ProductionCueSupplementSnapshot & {
+  cueId: string | null;
+  cueType: ProductionCueType | null;
+  createdAt: string;
+};
 
 export type WordDiagnosticItem = {
   kind: 'word';
@@ -17,6 +23,7 @@ export type WordDiagnosticItem = {
     cueCount: number;
     activeCueCount: number;
   } | null;
+  productionCueSupplements: WordDiagnosticSupplement[];
 };
 
 export type ContrastClusterDiagnosticItem = {

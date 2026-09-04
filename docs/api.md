@@ -37,7 +37,10 @@ The diagnostic query requires non-empty `q` input and applies the bound in SQL
 before hydrating the selected records. It returns only the selected kind and a
 `hasMore` signal; it does not read or count the corpus before a user query.
 Word items include
-cluster membership and production-task cue counts; cluster items include
+cluster membership, production-task cue counts, and any post-reveal production
+cue supplements (english frame, example sentence, translation, and whether
+the supplement is attached to a durable cue or the meaning-derived fallback);
+cluster items include
 members and prompts; durable production-cue items include their anchor and
 accepted words, lifecycle state, provenance, and current evidence projection.
 It does not expose a content mutation path.
