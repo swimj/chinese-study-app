@@ -2,6 +2,15 @@
 
 Casual notes for people using the app before there is a real release process.
 
+## Unreleased — app-only hosted upgrade pipeline
+
+- Added `hosted:upgrade`, a single operator-confirmed command that quiesces the
+  hosted dogfood service, forces a Litestream sync, deploys the selected Git
+  commit with a baked `APP_REVISION`, confirms identity, runs a read-only Clerk
+  smoke, and reopens. A failed run leaves writes and provider work disabled.
+- `hosted:inspect` now reports the baked app version and source revision.
+  Hosted images refuse to build when `APP_REVISION` is missing or `unknown`.
+
 ## 2.3.0 — hosted dogfood cutover
 
 - Added a coherent offline preparation path that preserves the local source,

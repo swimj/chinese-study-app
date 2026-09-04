@@ -57,6 +57,9 @@ When code and spec conflict, treat the spec as intended behavior and update code
 | `APP_METRICS_PORT` | Backend | Optional private Prometheus listener; hosted Fly config uses `9091` |
 | `APP_SEED_DATA_PATH` | Backend | Required in dev mode; seed JSON path |
 | `PORT` | Backend | API port (default `5174`) |
+| `APP_REVISION` | Image build | Exact Git commit baked into a hosted image; required, never left `unknown` |
+| `APP_SMOKE_CLERK_USER_ID` | Hosted | Clerk `user_…` id for `hosted:smoke`; protected hosted configuration |
+| `APP_SMOKE_CLERK_EMAIL` | Hosted | Optional resolver for that smoke user when the `user_…` id is not yet set |
 | `VITE_API_BASE` | Frontend | API origin (default `http://localhost:5174`) |
 | `VITE_STUDY_PROFILE` | Frontend | Client study profile (`mandarin` / `french`) |
 

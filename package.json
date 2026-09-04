@@ -21,6 +21,8 @@
     "hosted:promote-dogfood": "node --import tsx scripts/promote-hosted-dogfood-cutover.ts",
     "hosted:sentinel": "node --import tsx scripts/seed-deployment-sentinel.ts",
     "hosted:inspect": "node --import tsx scripts/inspect-hosted-service.ts",
+    "hosted:smoke": "node --import tsx scripts/smoke-hosted-service.ts",
+    "hosted:upgrade": "node --import tsx scripts/upgrade-hosted-service.ts",
     "hosted:verify-restore": "node --import tsx scripts/verify-hosted-restore.ts",
     "reset:dev-data": "node --import tsx server/reset-dev-db.ts --seed-data=server/seeds/mandarin-dev.json",
     "build:canonical-wordlist": "node --import tsx scripts/build-canonical-wordlist.ts",
