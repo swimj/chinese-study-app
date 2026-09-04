@@ -112,7 +112,7 @@ type ProductionCueRow = {
   active: number;
 };
 
-type ProductionCueSupplementRow = {
+export type ProductionCueSupplementRow = {
   supplement_id: string;
   task_id: string;
   cue_id: string | null;
@@ -1591,7 +1591,7 @@ function mapCueRow(row: ProductionCueRow): ProductionCueEntryV0 {
   };
 }
 
-function mapProductionCueSupplementRow(
+export function mapProductionCueSupplementRow(
   row: ProductionCueSupplementRow,
 ): ProductionCueSupplementEntryV1 {
   return {

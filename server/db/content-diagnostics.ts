@@ -4,10 +4,15 @@ import type {
   ContrastClusterDiagnosticItem,
   ProductionCueDiagnosticItem,
   WordDiagnosticItem,
+  WordDiagnosticSupplement,
 } from '../../src/domain/content-diagnostics.ts';
 import type { ProductionCueType } from '../../src/domain/study-actions.ts';
 import type { Word, WordRow, WordStatus } from './types.ts';
 import { getDb } from './connection.ts';
+import {
+  mapProductionCueSupplementRow,
+  type ProductionCueSupplementRow,
+} from './production-cues.ts';
 
 const DEFAULT_DIAGNOSTIC_LIMIT = 50;
 const MAX_DIAGNOSTIC_LIMIT = 50;
@@ -157,6 +162,29 @@ function searchWordDiagnostics(query: string, limit: number): WordDiagnosticItem
     WHERE production_tasks.word_id IN (__IDS__)
     GROUP BY production_tasks.word_id, production_tasks.task_id
   `).map((row) => [row.word_id, row]));
+  const supplementsByWordId = groupBy(
+    selectForIds<ProductionCueSupplementRow & { word_id: string; cue_type: string | null }>(wordIds, 'word_id', `
+      SELECT
+        production_tasks.word_id,
+        production_cue_supplements.supplement_id,
+        production_cue_supplements.task_id,
+        production_cue_supplements.cue_id,
+        production_cues.cue_type,
+        production_cue_supplements.english_frame,
+        production_cue_supplements.example_sentence,
+        production_cue_supplements.example_translation,
+        production_cue_supplements.created_at,
+        production_cue_supplements.origin_invocation_id
+      FROM production_cue_supplements
+      JOIN production_tasks ON production_tasks.task_id = production_cue_supplements.task_id
+      LEFT JOIN production_cues ON production_cues.cue_id = production_cue_supplements.cue_id
+      WHERE production_tasks.word_id IN (__IDS__)
+      ORDER BY
+        production_cue_supplements.created_at ASC,
+        production_cue_supplements.supplement_id ASC
+    `),
+    (row) => row.word_id,
+  );
 
   return rows.map((row) => {
     const task = taskByWordId.get(row.id) ?? null;
@@ -174,6 +202,7 @@ function searchWordDiagnostics(query: string, limit: number): WordDiagnosticItem
         cueCount: task.cue_count,
         activeCueCount: task.active_cue_count,
       } : null,
+      productionCueSupplements: (supplementsByWordId.get(row.id) ?? []).map(mapWordSupplementRow),
     };
   });
 }
@@ -461,6 +490,29 @@ function parseMeanings(value: string, fallback: string): string[] {
 
 function escapeLikePattern(value: string): string {
   return value.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_');
+}
+
+function mapWordSupplementRow(
+  row: ProductionCueSupplementRow & { cue_type: string | null },
+): WordDiagnosticSupplement {
+  const supplement = mapProductionCueSupplementRow(row);
+  return {
+    supplementId: supplement.supplementId,
+    englishFrame: supplement.englishFrame,
+    exampleSentence: supplement.exampleSentence,
+    exampleTranslation: supplement.exampleTranslation,
+    cueId: supplement.cueId,
+    cueType: parseOptionalCueType(row.cue_id, row.cue_type),
+    createdAt: supplement.createdAt,
+  };
+}
+
+function parseOptionalCueType(cueId: string | null, cueType: string | null): ProductionCueType | null {
+  if (cueType === null) return null;
+  if (!isProductionCueType(cueType)) {
+    throw new Error(`Production cue ${cueId} has unknown type ${cueType}.`);
+  }
+  return cueType;
 }
 
 function isProductionCueType(value: string): value is ProductionCueType {
