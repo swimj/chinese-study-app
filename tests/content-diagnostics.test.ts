@@ -85,6 +85,19 @@ describe('content diagnostics', { concurrency: false }, () => {
       cueCount: 1,
       activeCueCount: 1,
     });
+    assert.deepEqual(words.items[0]?.productionCueSupplements, [{
+      supplementId: 'check-supplement',
+      cueId: null,
+      cueType: null,
+      englishFrame: 'A classroom check of understanding.',
+      exampleSentence: '老师要考查学生对课文的理解。',
+      exampleTranslation: 'The teacher wants to check student understanding of the text.',
+      createdAt: '2026-08-03T00:00:00.000Z',
+    }]);
+
+    const inspect = dbModule.getContentDiagnostics({ kind: 'word', query: '考察' });
+    assert.equal(inspect.items[0]?.kind, 'word');
+    assert.deepEqual(inspect.items[0]?.productionCueSupplements, []);
 
     const clusters = dbModule.getContentDiagnostics({ kind: 'contrast_cluster', query: 'inspect' });
     assert.equal(clusters.hasMore, false);
@@ -138,6 +151,16 @@ function insertCue() {
       cue_id, attempt_count, accepted_anchor_count, accepted_non_anchor_count,
       rejected_count, active_judgment_count, updated_at
     ) VALUES ('check-cue', 3, 1, 1, 1, 0, '2026-08-08T00:00:00.000Z');
+    INSERT INTO production_cue_supplements (
+      supplement_id, task_id, cue_id, english_frame, example_sentence,
+      example_translation, created_at, origin_invocation_id
+    ) VALUES (
+      'check-supplement', 'production-task:check:default_production', NULL,
+      'A classroom check of understanding.',
+      '老师要考查学生对课文的理解。',
+      'The teacher wants to check student understanding of the text.',
+      '2026-08-03T00:00:00.000Z', NULL
+    );
   `);
 }
 

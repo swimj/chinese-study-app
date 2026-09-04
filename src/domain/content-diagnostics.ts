@@ -3,6 +3,16 @@ import type { Word } from '../types';
 
 export type ContentDiagnosticKind = 'word' | 'contrast_cluster' | 'production_cue';
 
+export type WordDiagnosticSupplement = {
+  supplementId: string;
+  cueId: string | null;
+  cueType: ProductionCueType | null;
+  englishFrame: string;
+  exampleSentence: string;
+  exampleTranslation: string;
+  createdAt: string;
+};
+
 export type WordDiagnosticItem = {
   kind: 'word';
   id: string;
@@ -17,6 +27,7 @@ export type WordDiagnosticItem = {
     cueCount: number;
     activeCueCount: number;
   } | null;
+  productionCueSupplements: WordDiagnosticSupplement[];
 };
 
 export type ContrastClusterDiagnosticItem = {
