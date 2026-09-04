@@ -9,6 +9,9 @@ kill_timeout = "60s"
 
 [build.args]
   VITE_CLERK_PUBLISHABLE_KEY = "REPLACE_WITH_CLERK_PUBLISHABLE_KEY"
+  # APP_REVISION is supplied at deploy time by hosted:upgrade:
+  #   fly deploy --build-arg APP_REVISION=<full-git-sha>
+  # Do not put a placeholder revision here.
 
 [env]
   APP_AUTH_MODE = "clerk"
@@ -22,6 +25,10 @@ kill_timeout = "60s"
   LITESTREAM_BUCKET = "REPLACE_WITH_VERSIONED_BACKUP_BUCKET"
   LITESTREAM_REGION = "ap-southeast-1"
   PORT = "5174"
+  # Hosted app-only upgrade smoke identity. Prefer the Clerk user_ id; the
+  # email is only a resolver for that id. Do not put a password here.
+  # APP_SMOKE_CLERK_USER_ID = "user_REPLACE_ME"
+  # APP_SMOKE_CLERK_EMAIL = "REPLACE_WITH_SMOKE_EMAIL"
 
 [mounts]
   source = "app_data"

@@ -16,7 +16,8 @@ FROM node:22-bookworm-slim
 
 WORKDIR /app
 ENV NODE_ENV=production
-ARG APP_REVISION=unknown
+ARG APP_REVISION
+RUN test -n "$APP_REVISION" && test "$APP_REVISION" != "unknown"
 ENV APP_REVISION=$APP_REVISION
 LABEL org.opencontainers.image.revision=$APP_REVISION
 

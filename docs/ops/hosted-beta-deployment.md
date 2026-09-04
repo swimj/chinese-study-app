@@ -125,6 +125,72 @@ Record only the returned summary (`artifactId`, proposal count, and Help Inbox
 count); do not put the learner bundle or provider response into shell history,
 logs, or the repository.
 
+## Application-only upgrade
+
+Use this path only when the target release has **all** of these properties:
+
+- no SQLite schema migration, data migration, content import, or intentionally
+  changed persistent-data interpretation;
+- backward-compatible backend and frontend/API behavior for a browser tab that
+  still has the previously served frontend loaded;
+- no compatibility-affecting runtime configuration change beyond settings
+  already understood to be safe for the current service; and
+- one Fly Machine and one mounted `/data` volume, accepting a short stop/start
+  interruption.
+
+If any condition is false, stop. Do not stretch this pipeline with an ad-hoc
+exception.
+
+The command is operator-launched from a clean checkout of the intended commit.
+It validates arguments before any live mutation, then drives quiesce, backup
+sync, `fly deploy --remote-only`, identity confirmation, read-only smoke, and
+reopen without waiting between stages. Terminal JSON is ephemeral caller output,
+not a retained evidence ledger.
+
+### Smoke account
+
+The designated smoke account is the pre-existing Clerk user
+`x6nscl63n@mozmail.com`. It must already map to a hosted learner; first-time
+authentication bootstraps a learner even on GET and would violate the no-write
+boundary. A password is not used: `hosted:smoke` mints a short-lived Clerk
+session with `CLERK_SECRET_KEY` and revokes it. Never print the token.
+
+Protected hosted configuration, in ignored
+`deploy/fly/.generated/fly.toml` `[env]` or a Fly secret:
+
+- prefer `APP_SMOKE_CLERK_USER_ID=user_…`
+- `APP_SMOKE_CLERK_EMAIL` is only a resolver for that id
+
+A `fly secrets set` of a new variable restarts the Machine; putting the values
+in the generated Fly env applies them on the next deploy, which this command
+performs.
+
+### Run the command
+
+From the intended commit, with a prepared generated Fly config and an
+authenticated Fly CLI:
+
+```bash
+git rev-parse HEAD
+npm run hosted:upgrade -- \
+  --app=<app-name> \
+  --actor-id=<operator> \
+  --confirm-source-revision=<full-40-character-sha> \
+  --confirm-eligible-release=true
+```
+
+`--confirm-source-revision` must match `HEAD`. Image-source paths must be
+clean. The command supplies `APP_REVISION` as a Docker build arg, so a manual
+`fly deploy` without that arg will fail closed.
+
+`hosted:inspect` reports the baked app version and source revision. Public
+`/healthz` stays a small health endpoint.
+
+If any stage from quiescence onward fails, the command exits non-zero, emits
+the failed stage and best-known running identity, and **does not reopen**.
+Investigate, fix forward, or restore service manually. This slice has no
+automatic rollback.
+
 ## Release and maintenance controls
 
 For a schema-changing release, stop new provider work, then stop writes. The
@@ -324,9 +390,10 @@ that would be lost.
 
 ## Backup and isolated restore proof
 
-`npm run hosted:inspect` reports SQLite mode, bounded row counts and database
-sizes, control state, and Litestream sync age without printing credentials or
-replica coordinates. Investigate immediately if sync age approaches one hour.
+`npm run hosted:inspect` reports the baked app version and source revision,
+SQLite mode, bounded row counts and database sizes, control state, and
+Litestream sync age without printing credentials or replica coordinates.
+Investigate immediately if sync age approaches one hour.
 
 Before inviting learners, and after backup or migration changes, restore into
 an isolated path that is not the mounted live volume. Use the exact deployed
