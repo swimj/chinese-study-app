@@ -163,7 +163,18 @@ cue evidence, applies the bounded anchor scheduler response, consumes or creates
 the 48-hour one-shot recheck demand, and marks the attempt events projected as
 one atomic operation.
 
+Caught accepted-review and contrast-selection commit failures return a
+`diagnosticId` alongside the safe `error`. The frontend includes this id in its
+visible error. The server retains a private failure record keyed by that id with
+the exact parsed request, error chain, and release identity; see the hosted
+observability runbook. Successful commits emit a failure-isolated structured
+lifecycle event with stable learner/session/action/event correlations, outcome,
+rating, and elapsed time so an ambiguous retry can be paired with an earlier
+durable success.
+
 `POST /api/review-session-summaries` accepts a non-negative integer `activeDurationMs` alongside the existing completion counts. The `sessionId` upsert replaces all summary fields, including the duration.
+Caught summary persistence failures use the same diagnostic-id contract so the
+otherwise-lost completion counts and active duration remain inspectable.
 
 ## Post-session reflection
 

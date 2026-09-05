@@ -249,10 +249,15 @@ Nondeterministic model judgment never runs inside a deterministic migration.
   Zero provider retention is not required.
 - Keep credentials server-side. Bound requests, tokens, and cost, and provide a
   reflection kill switch; provider failure never blocks session correctness.
-- Ordinary logs exclude learner answers, evidence, prompts, generated output,
-  credentials, and secrets. Sensitive diagnostics are separately restricted
-  and time-bounded; use 30 days as the initial maximum unless the selected
-  provider or a concrete support need requires a shorter period.
+- Aggregate metrics and ordinary lifecycle logs exclude learner answers,
+  evidence, prompts, generated output, credentials, and secrets. A targeted
+  accepted-attempt success event may retain stable learner/session/action/event
+  ids, outcome, rating, and elapsed time so retries are attributable. A targeted
+  failure diagnostic may retain the exact affected request, learner/session
+  correlation, and full error chain when those details are needed to reconstruct
+  a broken write. Keep full-payload diagnostics private, failure-only,
+  separately inspectable, and time-bounded; use 30 days as the initial maximum
+  unless a concrete support need requires a shorter period.
 - Tell learners this is a small supported beta: the operator may inspect data
   for an explicit support purpose, but routine product discovery is expected
   to use direct feedback rather than general usage mining.
