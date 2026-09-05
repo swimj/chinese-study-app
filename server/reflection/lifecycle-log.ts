@@ -4,6 +4,7 @@ export type ReflectionLifecycleEvent =
       sessionId: string;
       completedReviewActionCount: number;
       failedReviewActionCount: number;
+      activeDurationMs: number;
     }
   | {
       event: 'reflection.generation_requested';

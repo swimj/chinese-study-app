@@ -52,6 +52,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `hosted-upgrade.test.ts` | App-only upgrade command: identity confirmation, dirty-tree refusal, deploy build-arg, smoke-failure stays closed | `scripts/lib/hosted-upgrade.ts` |
 | `hosted-smoke.test.ts` | Read-only Clerk smoke: existing-learner gate, token mint/revoke, no token leakage | `scripts/lib/hosted-smoke.ts` |
 | `observability.test.ts` | Bounded route labels, request/response histograms, private Prometheus listener, and metrics-port validation | `server/observability.ts` |
+| `study-commit-diagnostics.test.ts` | Success/failure correlation, exact private payload/error retention, 30-day pruning, diagnostic-id responses, contrast routing, and logging isolation | `server/study-commit-diagnostics.ts`, study-commit API handlers |
 
 ## When changing…
 
@@ -72,6 +73,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | Schema or bootstrap | `dev-db-bootstrap.test.ts` + any db-touching tests above |
 | Hosted metrics / Grafana export | `observability.test.ts`, `hosted-runtime.test.ts` |
 | Hosted app-only upgrade pipeline | `hosted-upgrade.test.ts`, `hosted-smoke.test.ts` |
+| Hosted study-commit failures | `study-commit-diagnostics.test.ts` |
 
 Tests that dynamic-import `server/db.ts` set `APP_MODE=study` and
 `APP_DATA_DIR` to a temp directory before import. Node's test context selects
@@ -100,7 +102,8 @@ credentials are logged. The events are:
 | `reflection.generation_failed` | The endpoint failed; `failure` is `invalid_evidence`, `provider`, or `internal`, and `code` is a safe reflection error code when available. Provider failures also include `clientRequestId`. |
 
 Every event includes `at` and `sessionId`; completion/failure events include
-`elapsedMs`. In a manual run, read the terminal running
+`elapsedMs`, and `reflection.summary_recorded` includes the submitted
+`activeDurationMs`. In a manual run, read the terminal running
 `dev:reflection:backend`. A timeout should produce `provider_started`, followed
 about 180 seconds later by `generation_failed` with `failure: "provider"` and
 `code: "upstream_failure"`.

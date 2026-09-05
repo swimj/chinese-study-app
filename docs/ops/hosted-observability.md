@@ -32,8 +32,63 @@ learner, word, session, artifact, invocation, provider request, exception
 message, or arbitrary URL. New label dimensions require an explicit bounded
 cardinality and privacy review.
 
+That restriction applies to aggregate metrics, not to failure records whose
+purpose is reconstructing one broken write. A failed accepted-review attempt,
+contrast-selection attempt, or completed-session summary writes a private
+diagnostic record containing the exact parsed request body, server-derived
+learner id, session/action/event/word ids, response status, full error message,
+stack and cause chain, and runtime release identity. Those details are
+deliberately retained because omitting them makes deterministic commit failures
+impossible to diagnose after the browser session is gone. Authorization headers,
+credentials, cookies, and unrelated request headers are never recorded.
+
 Fly adds its own `app`, `instance`, `host`, and `region` labels when scraping.
 Do not emit those labels from the application.
+
+## Diagnose a failed study commit
+
+Every successful accepted-review or contrast-selection commit emits a compact
+`study_commit.succeeded` JSON event. It includes learner/session/action/word and
+event-id correlations, the submitted outcome and rating, and elapsed time. This
+makes an ambiguous retry diagnosable: an operator can tell whether the same
+event id was already committed before a later request failed.
+
+Every caught study-commit failure receives a UUID diagnostic id. The API returns
+that id to the frontend, which includes it in the visible error. The process also
+writes:
+
+- one compact `study_commit.failed` JSON event to stderr for immediate `fly logs`
+  inspection; and
+- one complete line in `/data/study-commit-diagnostics.jsonl`, on the attached
+  volume beside `app.db`.
+
+The compact failure event includes the diagnostic id, route/status, elapsed
+time, learner, session, action, event and target-word correlations, plus the
+exact error name, message, code and related scalar details. It omits the attempt
+response and full body.
+The sidecar contains the complete diagnostic, including the submitted payload
+and stack.
+
+Read recent records without opening or copying the database:
+
+```bash
+fly ssh console --app <app-name> --command \
+  'npm run --silent hosted:inspect-study-commits -- --data-dir=/data --limit=20'
+```
+
+If the learner supplied a diagnostic id, select that record directly:
+
+```bash
+fly ssh console --app <app-name> --command \
+  'npm run --silent hosted:inspect-study-commits -- --data-dir=/data --diagnostic-id=<id>'
+```
+
+The file is failure-only and survives an application restart, but it is not part
+of the SQLite/Litestream backup stream. Treat it as private operational evidence
+and inspect or preserve it before replacing the Machine or volume. On the first
+failed write of each UTC day, the application removes valid records older than
+30 days. Malformed lines are preserved for manual diagnosis rather than silently
+discarded.
 
 ## Deploy and open the admin view
 
