@@ -812,9 +812,11 @@ export async function updateWordMeaningVisibility(
 
 async function readApiErrorMessage(response: Response, fallbackMessage: string) {
   try {
-    const payload = (await response.json()) as { error?: unknown };
+    const payload = (await response.json()) as { error?: unknown; diagnosticId?: unknown };
     if (typeof payload.error === 'string' && payload.error.length > 0) {
-      return payload.error;
+      return typeof payload.diagnosticId === 'string' && payload.diagnosticId.length > 0
+        ? `${payload.error} Diagnostic ID: ${payload.diagnosticId}`
+        : payload.error;
     }
   } catch {
     // no-op: fallback below

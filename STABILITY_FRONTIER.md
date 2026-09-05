@@ -125,10 +125,14 @@ not a speculative infrastructure rewrite or broad observability program.
 - Provider credentials and calls remain on the backend. Model output remains
   untrusted proposal input subject to strict validation, bounded resource
   exposure, explicit authorization, and registered application adapters.
-- Ordinary hosted metrics and logs are content-free. Route, process, SQLite,
-  WAL, backup, provider-work, and deployment observations may be retained for
-  bounded operations; learner answers, notes, prompts, generated output,
-  credentials, and raw identifiers do not belong in ordinary telemetry.
+- Aggregate hosted metrics and ordinary lifecycle logs are content-free. Route,
+  process, SQLite, WAL, backup, provider-work, and deployment observations may
+  be retained for bounded operations. Accepted-attempt success events may carry
+  stable learner/session/action/event ids, outcome, rating, and elapsed time so
+  retries are attributable. Targeted failure-only diagnostics may retain the
+  exact affected request, raw learner/session correlations, and full error chain
+  when required to reconstruct a broken write; credentials and unrelated
+  request headers never belong there.
 - Canonical learning and reflection behavior remains in
   [`SPECS/learning-review-model.md`](SPECS/learning-review-model.md),
   [`SPECS/session-covering-criteria.md`](SPECS/session-covering-criteria.md),
@@ -149,7 +153,7 @@ not a speculative infrastructure rewrite or broad observability program.
   deployed code and operator runbook, but routine application failures are not
   uniformly attributable. Add targeted safe correlation and diagnostics from
   observed incidents; do not adopt broad distributed tracing or retain learner
-  content by default.
+  content outside targeted failure records by default.
 - **Multi-user confidence:** the test identity demonstrates the intended
   isolation illusion under operator control. Confidence must now come from
   repeated negative tests, post-release smoke, and actual trusted-user use—not
@@ -261,9 +265,10 @@ updates have happened to deploy successfully:
    or provider work. Shared-content references continue to confer no private
    access.
 5. Routine study, reflection, backup, and deployment failures are diagnosable
-   through bounded content-free identifiers, metrics, and documented operator
-   procedures. A failure that blocks continued study must not remain
-   permanently opaque merely because the process stayed alive.
+   through aggregate metrics, targeted private failure records, stable
+   correlation identifiers, and documented operator procedures. A failure that
+   blocks continued study must not remain permanently opaque merely because the
+   process stayed alive.
 6. At least one non-developer trusted learner can be concierge-onboarded,
    complete the supported desktop study loop repeatedly, use or skip normal
    reflection, and return later without developer intervention to reconstruct

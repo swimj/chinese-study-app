@@ -30,6 +30,7 @@ import {
   listReflectionGenerationRuns,
   listReflectionHelpInbox,
   recoverPendingReflectionInvocations,
+  requireLearnerId,
   runWithLearnerId,
   getSessionActiveTimeMetrics,
   getSessionPayload,
@@ -105,6 +106,13 @@ import {
   type ServiceMetrics,
 } from './observability.ts';
 import { readServiceOperationalMetrics } from './hosted-observability.ts';
+import {
+  createStudyCommitDiagnosticSink,
+  describeStudyCommitFailure,
+  describeStudyCommitSuccess,
+  type StudyCommitDiagnosticSink,
+  type StudyCommitRoute,
+} from './study-commit-diagnostics.ts';
 
 const port = dbConfig.port;
 const defaultJsonBodyLimit = '100kb';
@@ -118,6 +126,7 @@ export type CreateAppOptions = {
   frontendDistPath?: string | null;
   logError?: (message: string, metadata: Record<string, string>) => void;
   serviceMetrics?: ServiceMetrics | null;
+  studyCommitDiagnosticSink?: StudyCommitDiagnosticSink;
 };
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -132,6 +141,8 @@ export function createApp(options: CreateAppOptions = {}) {
     });
   const intakeTriageGenerationService = options.intakeTriageGenerationService
     ?? createIntakeTriageGenerationService();
+  const studyCommitDiagnosticSink = options.studyCommitDiagnosticSink
+    ?? createStudyCommitDiagnosticSink(dbConfig.dataDir);
 
   app.disable('x-powered-by');
   if (options.serviceMetrics) app.use(options.serviceMetrics.requestMiddleware);
@@ -379,15 +390,22 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
 
+    const commitStartedAtMs = Date.now();
     try {
       recordAcceptedReviewAttemptBatch({
         sessionId: sessionId.trim(),
         events: events as StudyAttemptEvent[],
         commitIntent: commitIntent as ReviewAttemptCommitIntent,
       });
+      recordStudyCommitSuccessSafely({
+        sink: studyCommitDiagnosticSink,
+        route: '/api/study-sessions/:sessionId/accepted-review-attempt-batch',
+        request: req,
+        elapsedMs: Date.now() - commitStartedAtMs,
+      });
       res.status(204).send();
     } catch (error) {
-      if (
+      const isClientError =
         error instanceof Error &&
         (error.message.startsWith('Expected ') ||
           error.message.startsWith('Invalid ') ||
@@ -395,13 +413,19 @@ export function createApp(options: CreateAppOptions = {}) {
           error.message.startsWith('Accepted attempt') ||
           error.message.startsWith('Review attempt') ||
           error.message.startsWith('Study attempt') ||
-          error.message.startsWith('Word skill state not found'))
-      ) {
-        res.status(400).json({ error: error.message });
-        return;
-      }
-
-      res.status(500).json({ error: 'Failed to record accepted review attempt batch' });
+          error.message.startsWith('Word skill state not found'));
+      respondWithStudyCommitFailure({
+        sink: studyCommitDiagnosticSink,
+        route: '/api/study-sessions/:sessionId/accepted-review-attempt-batch',
+        request: req,
+        response: res,
+        error,
+        elapsedMs: Date.now() - commitStartedAtMs,
+        responseStatus: isClientError ? 400 : 500,
+        publicError: isClientError
+          ? error.message
+          : 'Failed to record accepted review attempt batch',
+      });
     }
   });
 
@@ -425,27 +449,40 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
 
+    const commitStartedAtMs = Date.now();
     try {
       recordAcceptedContrastSelectionAttempt({
         sessionId: sessionId.trim(),
         event: event as StudyAttemptEvent,
         commitIntent: commitIntent as ContrastSelectionCommitIntent,
       });
+      recordStudyCommitSuccessSafely({
+        sink: studyCommitDiagnosticSink,
+        route: '/api/study-sessions/:sessionId/accepted-contrast-selection-attempt',
+        request: req,
+        elapsedMs: Date.now() - commitStartedAtMs,
+      });
       res.status(204).send();
     } catch (error) {
-      if (
+      const isClientError =
         error instanceof Error &&
         (error.message.startsWith('Expected ') ||
           error.message.startsWith('Invalid ') ||
           error.message.startsWith('Accepted contrast') ||
           error.message.startsWith('Study attempt') ||
-          error.message.startsWith('Word skill state not found'))
-      ) {
-        res.status(400).json({ error: error.message });
-        return;
-      }
-
-      res.status(500).json({ error: 'Failed to record accepted contrast selection attempt' });
+          error.message.startsWith('Word skill state not found'));
+      respondWithStudyCommitFailure({
+        sink: studyCommitDiagnosticSink,
+        route: '/api/study-sessions/:sessionId/accepted-contrast-selection-attempt',
+        request: req,
+        response: res,
+        error,
+        elapsedMs: Date.now() - commitStartedAtMs,
+        responseStatus: isClientError ? 400 : 500,
+        publicError: isClientError
+          ? error.message
+          : 'Failed to record accepted contrast selection attempt',
+      });
     }
   });
 
@@ -1003,6 +1040,7 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
 
+    const commitStartedAtMs = Date.now();
     try {
       recordReviewSessionSummary({
         sessionId,
@@ -1011,27 +1049,38 @@ export function createApp(options: CreateAppOptions = {}) {
         failedReviewActionCount,
         activeDurationMs,
       });
-      reflectionLifecycleLogger.emit({
-        event: 'reflection.summary_recorded',
-        sessionId: sessionId.trim(),
-        completedReviewActionCount,
-        failedReviewActionCount,
-      });
+      try {
+        reflectionLifecycleLogger.emit({
+          event: 'reflection.summary_recorded',
+          sessionId: sessionId.trim(),
+          completedReviewActionCount,
+          failedReviewActionCount,
+          activeDurationMs,
+        });
+      } catch {
+        // Observability must not turn a durable summary into a failed response.
+      }
       res.status(204).end();
     } catch (error) {
-      if (
+      const isClientError =
         error instanceof Error &&
         (error.message === 'Expected non-empty session id' ||
           error.message === 'Expected non-negative integer completedReviewActionCount' ||
           error.message === 'Expected non-negative integer failedReviewActionCount' ||
           error.message === 'Expected non-negative integer activeDurationMs' ||
-          error.message === 'Expected failedReviewActionCount to be less than or equal to completedReviewActionCount')
-      ) {
-        res.status(400).json({ error: error.message });
-        return;
-      }
-
-      res.status(500).json({ error: 'Failed to record review session summary' });
+          error.message === 'Expected failedReviewActionCount to be less than or equal to completedReviewActionCount');
+      respondWithStudyCommitFailure({
+        sink: studyCommitDiagnosticSink,
+        route: '/api/review-session-summaries',
+        request: req,
+        response: res,
+        error,
+        elapsedMs: Date.now() - commitStartedAtMs,
+        responseStatus: isClientError ? 400 : 500,
+        publicError: isClientError
+          ? error.message
+          : 'Failed to record review session summary',
+      });
     }
   });
 
@@ -1224,6 +1273,85 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   return app;
+}
+
+function respondWithStudyCommitFailure({
+  sink,
+  route,
+  request,
+  response,
+  error,
+  elapsedMs,
+  responseStatus,
+  publicError,
+}: {
+  sink: StudyCommitDiagnosticSink;
+  route: StudyCommitRoute;
+  request: Request;
+  response: Response;
+  error: unknown;
+  elapsedMs: number;
+  responseStatus: 400 | 500;
+  publicError: string;
+}): void {
+  const diagnostic = describeStudyCommitFailure({
+    route,
+    responseStatus,
+    learnerId: readDiagnosticLearnerId(),
+    params: { ...request.params },
+    body: request.body,
+    error,
+    elapsedMs,
+  });
+  studyCommitDiagnosticRecordSafely(sink, diagnostic);
+  response.status(responseStatus).json({
+    error: publicError,
+    diagnosticId: diagnostic.diagnosticId,
+  });
+}
+
+function recordStudyCommitSuccessSafely({
+  sink,
+  route,
+  request,
+  elapsedMs,
+}: {
+  sink: StudyCommitDiagnosticSink;
+  route: Exclude<StudyCommitRoute, '/api/review-session-summaries'>;
+  request: Request;
+  elapsedMs: number;
+}): void {
+  if (!sink.recordSuccess) return;
+  try {
+    sink.recordSuccess(describeStudyCommitSuccess({
+      route,
+      learnerId: readDiagnosticLearnerId(),
+      params: { ...request.params },
+      body: request.body,
+      elapsedMs,
+    }));
+  } catch {
+    // Observability must not turn a durable commit into a failed response.
+  }
+}
+
+function readDiagnosticLearnerId(): string | null {
+  try {
+    return requireLearnerId();
+  } catch {
+    return null;
+  }
+}
+
+function studyCommitDiagnosticRecordSafely(
+  sink: StudyCommitDiagnosticSink,
+  diagnostic: ReturnType<typeof describeStudyCommitFailure>,
+): void {
+  try {
+    sink.record(diagnostic);
+  } catch {
+    // Diagnostics must not replace the study-commit response.
+  }
 }
 
 function resolveFrontendDistPath(configuredPath: string | null | undefined): string | null {

@@ -32,6 +32,7 @@ configuration. See the [deployment runbook](./ops/hosted-beta-deployment.md).
 | `npm run hosted:promote-dogfood -- --data-dir=/data --incoming-db=<staged-db> --manifest=<staged-manifest> ...` | Validate a staged dogfood copy and atomically replace the disposable hosted database only while the normal process is stopped |
 | `npm run hosted:sentinel -- --data-dir=/data --sentinel-id=<id> --actor-id=<id>` | Add an immutable restore-proof marker |
 | `npm run hosted:inspect -- --data-dir=/data --litestream-socket=/data/litestream.sock` | Print bounded database and backup-freshness diagnostics |
+| `npm run hosted:inspect-study-commits -- --data-dir=/data --limit=20` | Read recent private study-commit failure records; optionally select one with `--diagnostic-id=<id>` |
 | `npm run hosted:verify-restore -- --data-dir=<isolated-dir> --sentinel-id=<id> --minimum-learners=2` | Validate an isolated restored database |
 
 ## Libraries (`scripts/lib/`)
