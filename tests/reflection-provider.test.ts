@@ -11,12 +11,10 @@ import type {
 } from '../src/domain/reflection.js';
 import {
   createLunaReflectionProvider,
-  createReflectionProvider,
   LUNA_REFLECTION_MODEL_CONFIG,
   LUNA_REFLECTION_PROMPT_VERSION,
   LunaReflectionProviderError,
 } from '../server/reflection/luna-provider.js';
-import { REFLECTION_MODEL_ARMS } from '../server/reflection/model-arms.ts';
 import {
   createGlmReflectionProvider,
   GLM_REFLECTION_MODEL_CONFIG,
@@ -284,37 +282,6 @@ describe('production Luna reflection provider', () => {
     assert.equal(serialized.includes('unit-test-secret'), false);
     assert.equal(serialized.includes('transportDebug'), false);
     assert.equal(serialized.includes('must-not-be-returned'), false);
-  });
-
-  test('pins the Claude arm to Anthropic native schema output', async () => {
-    const capture: CapturedRequest[] = [];
-    const arm = REFLECTION_MODEL_ARMS.find((candidate) => (
-      candidate.choice === 'openrouter:claude-sonnet-5'
-    ));
-    assert.ok(arm?.config);
-    const provider = createReflectionProvider(arm.config, {
-      environment: { OPENROUTER_API_KEY: 'unit-test-openrouter-secret' },
-      systemPrompt: 'Production reflection system prompt.',
-      fetchImplementation: capturingFetch(responseEnvelope(JSON.stringify(validWireResult)), capture),
-    });
-
-    await provider.generate(bundle);
-
-    const request = capture[0]!;
-    assert.equal(request.url, 'https://openrouter.ai/api/v1/chat/completions');
-    assert.deepEqual(request.body.response_format, {
-      type: 'json_schema',
-      json_schema: {
-        name: SESSION_REFLECTION_RESULT_V7_WIRE_SCHEMA_NAME,
-        strict: true,
-        schema: sessionReflectionResultV7WireSchema,
-      },
-    });
-    assert.deepEqual(request.body.provider, {
-      order: ['anthropic'],
-      allow_fallbacks: false,
-      require_parameters: true,
-    });
   });
 
   test('retains a non-negative provider-reported request cost', async () => {

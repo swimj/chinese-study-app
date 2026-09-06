@@ -89,7 +89,6 @@ export type ReflectionModelChoice =
   | 'openai:gpt-5.6-luna-high'
   | 'zai:glm-5.3-high'
   | 'openrouter:gemini-3.6-flash'
-  | 'openrouter:claude-sonnet-5'
   | 'openai:gpt-5.6-terra-high';
 
 export type ReflectionTokenUsageDto = {

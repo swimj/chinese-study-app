@@ -44,8 +44,8 @@ LITESTREAM_ACCESS_KEY_ID
 LITESTREAM_SECRET_ACCESS_KEY
 ```
 
-All five configured model arms remain available: the two OpenAI arms use
-`OPENAI_API_KEY`, GLM uses `ZAI_API_KEY`, and the Gemini and Claude arms use
+All four configured model arms remain available: the two OpenAI arms use
+`OPENAI_API_KEY`, GLM uses `ZAI_API_KEY`, and Gemini uses
 `OPENROUTER_API_KEY`. Hosted provider calls are direct. Do not enable
 `APP_USE_LOCAL_PROVIDER_PROXY`; that switch exists only for local dogfood.
 
