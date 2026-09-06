@@ -45,27 +45,6 @@ export const REFLECTION_MODEL_ARMS = [
     } satisfies ReflectionProviderConfig,
   },
   {
-    choice: 'openrouter:claude-sonnet-5',
-    label: 'Claude Sonnet 5',
-    enabledByDefault: true,
-    dogfoodSelectionWeight: 1,
-    config: {
-      ...OPENROUTER,
-      modelConfig: 'claude-sonnet-5',
-      providerModel: 'anthropic/claude-sonnet-5',
-      // This arm is only useful through Anthropic's native structured-output
-      // path. Other OpenRouter endpoints have returned fenced, legacy-shaped
-      // JSON despite accepting the strict response_format request.
-      additionalRequestBody: {
-        provider: {
-          order: ['anthropic'],
-          allow_fallbacks: false,
-          require_parameters: true,
-        },
-      },
-    } satisfies ReflectionProviderConfig,
-  },
-  {
     choice: 'openai:gpt-5.6-terra-high',
     label: 'GPT-5.6 Terra high',
     enabledByDefault: true,

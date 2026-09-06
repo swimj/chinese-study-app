@@ -3,17 +3,16 @@ import { describe, test } from 'node:test';
 import { REFLECTION_MODEL_ARMS, isReflectionModelChoice } from '../server/reflection/model-arms.ts';
 
 describe('reflection comparison-arm registry', () => {
-  test('registers five equally weighted default comparison arms', () => {
+  test('registers four equally weighted default comparison arms', () => {
     const choices = REFLECTION_MODEL_ARMS.map((arm) => arm.choice);
     assert.deepEqual(choices, [
       'openai:gpt-5.6-luna-high',
       'zai:glm-5.3-high',
       'openrouter:gemini-3.6-flash',
-      'openrouter:claude-sonnet-5',
       'openai:gpt-5.6-terra-high',
     ]);
-    assert.equal(isReflectionModelChoice('openrouter:claude-sonnet-5'), true);
     assert.equal(isReflectionModelChoice('openai:gpt-5.6-terra-high'), true);
+    assert.equal(isReflectionModelChoice('openrouter:claude-sonnet-5'), false);
     assert.equal(isReflectionModelChoice('dashscope:qwen3.8-max'), false);
     assert.equal(isReflectionModelChoice('openrouter:deepseek-v4-pro'), false);
     assert.equal(isReflectionModelChoice('openrouter:grok-4.5'), false);
@@ -23,7 +22,6 @@ describe('reflection comparison-arm registry', () => {
         'openai:gpt-5.6-luna-high',
         'zai:glm-5.3-high',
         'openrouter:gemini-3.6-flash',
-        'openrouter:claude-sonnet-5',
         'openai:gpt-5.6-terra-high',
       ],
     );
@@ -34,22 +32,9 @@ describe('reflection comparison-arm registry', () => {
     );
   });
 
-  test('pins Claude to Anthropic for native JSON-schema output', () => {
-    const claudeArm = REFLECTION_MODEL_ARMS.find((arm) => (
-      arm.choice === 'openrouter:claude-sonnet-5'
-    ));
-    assert.deepEqual(claudeArm?.config?.additionalRequestBody, {
-      provider: {
-        order: ['anthropic'],
-        allow_fallbacks: false,
-        require_parameters: true,
-      },
-    });
-
+  test('does not pin OpenRouter arms to one upstream host', () => {
     for (const arm of REFLECTION_MODEL_ARMS) {
-      if (!arm.choice.startsWith('openrouter:') || arm.choice === 'openrouter:claude-sonnet-5') {
-        continue;
-      }
+      if (!arm.choice.startsWith('openrouter:')) continue;
       assert.equal(arm.config?.additionalRequestBody, undefined);
     }
   });

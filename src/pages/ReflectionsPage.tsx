@@ -64,7 +64,6 @@ const REFLECTION_RETRY_MODEL_OPTIONS: ReadonlyArray<Omit<ReflectionRetryMenuOpti
   { id: 'openai:gpt-5.6-luna-high', label: 'Luna high', model: 'openai:gpt-5.6-luna-high' },
   { id: 'zai:glm-5.3-high', label: 'GLM-5.3 high', model: 'zai:glm-5.3-high' },
   { id: 'openrouter:gemini-3.6-flash', label: 'Gemini 3.6 Flash', model: 'openrouter:gemini-3.6-flash' },
-  { id: 'openrouter:claude-sonnet-5', label: 'Claude Sonnet 5', model: 'openrouter:claude-sonnet-5' },
   { id: 'openai:gpt-5.6-terra-high', label: 'GPT-5.6 Terra high', model: 'openai:gpt-5.6-terra-high' },
 ];
 
