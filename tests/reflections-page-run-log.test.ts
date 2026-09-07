@@ -45,7 +45,8 @@ describe('reflection run log presentation', () => {
     assert.match(markup, /No remaining session help to review/);
     assert.match(markup, /reflection-view-rail/);
     assert.match(markup, />Help</);
-    assert.match(markup, />Deferred</);
+    assert.match(markup, />Second opinion</);
+    assert.match(markup, /Show deferred proposals \(0\)/);
     assert.doesNotMatch(markup, />Pending</);
     assert.doesNotMatch(markup, /Review the help you asked for/);
   });

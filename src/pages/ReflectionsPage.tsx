@@ -71,7 +71,7 @@ function sourceModelIsCurrentlyAvailable(storedModel: string): boolean {
   return REFLECTION_RETRY_MODEL_OPTIONS.some((option) => option.model.endsWith(`:${storedModel}`));
 }
 
-type ReflectionView = 'help' | 'deferred' | 'sessions' | 'usage' | 'quality';
+type ReflectionView = 'help' | 'second-opinion' | 'sessions' | 'usage' | 'quality';
 
 export function ReflectionsPage({
   controller,
@@ -79,13 +79,17 @@ export function ReflectionsPage({
   controller: ReflectionPageController;
 }) {
   const [view, setView] = useState<ReflectionView>('help');
+  const [showDeferredInHelp, setShowDeferredInHelp] = useState(false);
   const helpCards = buildReflectionHelpCards(controller.artifactDetails);
   const deferredCards = toDeferredHelpCards(
     buildReflectionProposalPresentations(controller.artifactDetails),
   );
+  const displayedHelpCards = showDeferredInHelp
+    ? [...helpCards, ...deferredCards]
+    : helpCards;
   const views: Array<{ key: ReflectionView; label: string; count?: number }> = [
     { key: 'help', label: 'Help', count: helpCards.length },
-    { key: 'deferred', label: 'Deferred', count: deferredCards.length },
+    { key: 'second-opinion', label: 'Second opinion', count: deferredCards.length },
     { key: 'sessions', label: 'By session' },
     { key: 'usage', label: 'Run meta' },
     { key: 'quality', label: 'Quality' },
@@ -143,13 +147,23 @@ export function ReflectionsPage({
         ) : view === 'quality' ? (
           <QualityStatsView stats={controller.qualityStats} />
         ) : view === 'help' ? (
-          <HelpQueueView
-            key="help"
-            cards={helpCards}
-            controller={controller}
-            emptyCopy="No remaining session help to review. Explanation-only cards you marked Done stay in By session."
-            itemLabel="help card"
-          />
+          <>
+            <label className="reflection-help-deferred-toggle">
+              <input
+                type="checkbox"
+                checked={showDeferredInHelp}
+                onChange={(event) => setShowDeferredInHelp(event.target.checked)}
+              />
+              Show deferred proposals ({deferredCards.length})
+            </label>
+            <HelpQueueView
+              key={showDeferredInHelp ? 'help-with-deferred' : 'help'}
+              cards={displayedHelpCards}
+              controller={controller}
+              emptyCopy="No remaining session help to review. Explanation-only cards you marked Done stay in By session."
+              itemLabel="help card"
+            />
+          </>
         ) : (
           <DeferredSecondOpinionQueue cards={deferredCards} controller={controller} />
         )}
@@ -166,7 +180,20 @@ function DeferredSecondOpinionQueue({
   controller: ReflectionPageController;
 }) {
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const selectionInitialized = useRef(false);
   const [model, setModel] = useState<ReflectionModelChoice>('openai:gpt-5.6-luna-high');
+  const cardIds = cards.map((card) => card.proposal.review.proposalId).join('\u0000');
+  useEffect(() => {
+    const availableIds = new Set(cardIds.length === 0 ? [] : cardIds.split('\u0000'));
+    setSelectedIds((current) => {
+      if (!selectionInitialized.current) {
+        if (availableIds.size === 0) return current;
+        selectionInitialized.current = true;
+        return availableIds;
+      }
+      return new Set([...current].filter((id) => availableIds.has(id)));
+    });
+  }, [cardIds]);
   const selectedCount = [...selectedIds].filter((id) => cards.some(
     (card) => card.proposal.review.proposalId === id,
   )).length;
@@ -176,7 +203,7 @@ function DeferredSecondOpinionQueue({
     return (
       <main className="reflection-help-shell is-empty">
         <section className="panel reflection-empty-state">
-          <p className="notes">No proposals are deferred.</p>
+          <p className="notes">No deferred proposals are available for a second opinion.</p>
         </section>
       </main>
     );
@@ -185,10 +212,11 @@ function DeferredSecondOpinionQueue({
   return (
     <main className="reflection-help-shell">
       <section className="panel reflection-deferred-second-opinion">
-        <h2>Get a second opinion</h2>
+        <h2>Build a second-opinion bundle</h2>
         <p className="notes">
-          This reflects again on the original study evidence. A successful result replaces only
-          the selected deferred proposals in active review.
+          Start with every deferred proposal selected, then prune or re-add entries. This reflects
+          again on the original study evidence. A successful result replaces only the selected
+          deferred proposals in active review.
         </p>
         <label>
           <input
@@ -216,11 +244,12 @@ function DeferredSecondOpinionQueue({
           {generating ? 'Getting second opinion...' : `Get a second opinion (${selectedCount})`}
         </button>
       </section>
-      <section className="reflection-deferred-selection-list" aria-label="Deferred proposals">
+      <section className="reflection-deferred-selection-list" aria-label="Second-opinion bundle selection">
         {cards.map((card) => {
           const proposalId = card.proposal.review.proposalId;
           return (
-            <label className="panel reflection-deferred-selection" key={proposalId}>
+            <article className="panel reflection-deferred-selection" key={proposalId}>
+              <label className="reflection-deferred-selection-summary">
               <input
                 type="checkbox"
                 checked={selectedIds.has(proposalId)}
@@ -235,18 +264,16 @@ function DeferredSecondOpinionQueue({
                 <ItemIdentityHeading evidence={card.evidence} />
                 <span>{reflectionOperationLabel(card.proposal.proposal.operation)}</span>
               </span>
-            </label>
+              </label>
+              <details className="reflection-deferred-selection-details">
+                <summary>Proposal details</summary>
+                <p>{reflectionLearnerFeedback(card.result)}</p>
+                <p>{card.proposal.proposal.rationale}</p>
+              </details>
+            </article>
           );
         })}
       </section>
-      <HelpQueueView
-        cards={cards}
-        controller={controller}
-        emptyCopy="No proposals are deferred."
-        itemLabel="deferred card"
-        deferLocked
-        embedded
-      />
     </main>
   );
 }
@@ -266,22 +293,18 @@ function HelpQueueView({
   controller,
   emptyCopy,
   itemLabel,
-  deferLocked = false,
-  embedded = false,
 }: {
   cards: ReflectionHelpCard[];
   controller: ReflectionPageController;
   emptyCopy: string;
   itemLabel: string;
-  deferLocked?: boolean;
-  embedded?: boolean;
 }) {
   const [index, setIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const safeIndex = cards.length === 0 ? 0 : Math.min(index, cards.length - 1);
   const card = cards[safeIndex] ?? null;
   const cardKey = card?.cardKey ?? 'empty';
-  const Shell = embedded ? 'div' : 'main';
+  const Shell = 'main';
 
   useEffect(() => {
     setIndex((current) => (cards.length === 0 ? 0 : Math.min(current, cards.length - 1)));
@@ -356,7 +379,6 @@ function HelpQueueView({
           card={card}
           controller={controller}
           scrollRef={scrollRef}
-          deferLocked={deferLocked}
         />
       )}
     </Shell>
@@ -485,16 +507,15 @@ function HelpProposalCard({
   card,
   controller,
   scrollRef,
-  deferLocked = false,
 }: {
   card: Extract<ReflectionHelpCard, { kind: 'proposal' }>;
   controller: ReflectionPageController;
   scrollRef: RefObject<HTMLDivElement>;
-  deferLocked?: boolean;
 }) {
   const original = card.proposal.proposal.operation;
   const [draft, setDraft] = useState(() => cloneReflectionOperation(original));
   const submitting = controller.submittingProposalId === card.proposal.review.proposalId;
+  const alreadyDeferred = card.proposal.review.disposition.kind === 'deferred';
   const draftState = getOperationDraftState(original, draft, card.evidence);
 
   return (
@@ -565,10 +586,10 @@ function HelpProposalCard({
           }}
           resetDisabled={submitting || draftState.acceptanceMode === 'exact'}
           onReset={() => setDraft(cloneReflectionOperation(original))}
-          deferDisabled={deferLocked || submitting}
-          deferTitle={deferLocked ? 'Already deferred' : undefined}
+          deferDisabled={alreadyDeferred || submitting}
+          deferTitle={alreadyDeferred ? 'Already deferred' : undefined}
           onDefer={() => {
-            if (deferLocked) return;
+            if (alreadyDeferred) return;
             void controller.deferProposal(card.proposal.review.proposalId).catch(() => undefined);
           }}
           acceptDisabled={submitting || draftState.validationErrors.length > 0}
