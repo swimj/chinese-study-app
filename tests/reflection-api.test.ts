@@ -283,22 +283,12 @@ describe('reflection HTTP API', { concurrency: false }, () => {
 
   test('isolates an unreadable artifact instead of failing the artifact list', async () => {
     const artifact = materialize('unreadable-session', suppressOperation('target')).artifact;
-    sqlite.exec('DROP TRIGGER reflection_artifacts_immutable;');
-    try {
-      sqlite.prepare(`
-        UPDATE learner_owned_reflection_artifacts
-        SET result_json = '{}'
-        WHERE learner_id = 'test-learner' AND artifact_id = ?
-      `).run(artifact.artifactId);
-    } finally {
-      sqlite.exec(`
-        CREATE TRIGGER reflection_artifacts_immutable
-        BEFORE UPDATE ON learner_owned_reflection_artifacts
-        BEGIN
-          SELECT RAISE(ABORT, 'reflection artifacts are immutable');
-        END;
-      `);
-    }
+    // Intentionally bypass the immutable learner view to simulate corrupted storage.
+    sqlite.prepare(`
+      UPDATE learner_owned_reflection_artifacts
+      SET result_json = '{}'
+      WHERE learner_id = 'test-learner' AND artifact_id = ?
+    `).run(artifact.artifactId);
 
     const response = await request('/api/reflection-artifacts?review=all');
     assert.equal(response.status, 200);

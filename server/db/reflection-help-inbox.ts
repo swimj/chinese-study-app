@@ -35,14 +35,9 @@ type HelpInboxRow = {
  * explanation-only items from those artifacts stay out of Help. Historical
  * backfill is intentionally not performed.
  */
-export function ensureReflectionHelpInboxSchema(): void {
-  if (learnerScopedStorageTableName('reflection_help_inbox') !== 'reflection_help_inbox') {
-    return;
-  }
+export function createReflectionHelpInboxSchema(): void {
   getDb().exec(`
-    DROP TABLE IF EXISTS reflection_item_presentation;
-
-    CREATE TABLE IF NOT EXISTS reflection_help_inbox (
+    CREATE TABLE reflection_help_inbox (
       inbox_id TEXT PRIMARY KEY,
       learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       artifact_id TEXT NOT NULL
@@ -51,10 +46,10 @@ export function ensureReflectionHelpInboxSchema(): void {
       opened_at TEXT NOT NULL
     );
 
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_reflection_help_inbox_item
+    CREATE UNIQUE INDEX idx_reflection_help_inbox_item
       ON reflection_help_inbox(artifact_id, item_id);
 
-    CREATE INDEX IF NOT EXISTS idx_reflection_help_inbox_artifact
+    CREATE INDEX idx_reflection_help_inbox_artifact
       ON reflection_help_inbox(artifact_id);
   `);
 }

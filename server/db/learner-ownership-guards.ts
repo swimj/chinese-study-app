@@ -44,7 +44,7 @@ const sameOwnerReferences: readonly SameOwnerReference[] = [
   reference('learner_owned_intake_triage_assessment_dispositions', 'assessment_id', 'learner_owned_intake_triage_assessments', 'assessment_id'),
 ];
 
-export function installLearnerOwnershipGuards(): void {
+export function createLearnerOwnershipGuards(): void {
   for (const item of sameOwnerReferences) installSameOwnerReference(item);
   installScopedCueAccessGuards();
   installPrivateProductionProvenanceGuards();
@@ -66,21 +66,14 @@ function installSameOwnerReference(item: SameOwnerReference): void {
       )`
     : `NEW.${item.childReferenceColumn} IS NOT NULL AND NOT ${matchingOwner}`;
 
-  // These definitions are part of the active schema contract, rather than a
-  // one-time migration. Recreate them so a restarted upgraded database gets
-  // the current predicate too.
   getDb().exec(`
-    DROP TRIGGER IF EXISTS ${baseName}_insert;
-    DROP TRIGGER IF EXISTS ${baseName}_update;
-  `);
-  getDb().exec(`
-    CREATE TRIGGER IF NOT EXISTS ${baseName}_insert
+    CREATE TRIGGER ${baseName}_insert
     BEFORE INSERT ON ${item.childTable}
     WHEN ${predicate}
     BEGIN
       SELECT RAISE(ABORT, 'cross-learner private reference');
     END;
-    CREATE TRIGGER IF NOT EXISTS ${baseName}_update
+    CREATE TRIGGER ${baseName}_update
     BEFORE UPDATE OF learner_id, ${item.childReferenceColumn} ON ${item.childTable}
     WHEN ${predicate}
     BEGIN
@@ -104,11 +97,11 @@ function installScopedCueAccessGuards(): void {
         AND (cue.content_scope = 'shared' OR cue.owner_learner_id = NEW.learner_id)
     )`;
     getDb().exec(`
-      CREATE TRIGGER IF NOT EXISTS ${triggerBase}_insert
+      CREATE TRIGGER ${triggerBase}_insert
       BEFORE INSERT ON ${childTable}
       WHEN ${predicate}
       BEGIN SELECT RAISE(ABORT, 'production cue is not accessible to learner'); END;
-      CREATE TRIGGER IF NOT EXISTS ${triggerBase}_update
+      CREATE TRIGGER ${triggerBase}_update
       BEFORE UPDATE OF learner_id, cue_id ON ${childTable}
       WHEN ${predicate}
       BEGIN SELECT RAISE(ABORT, 'production cue is not accessible to learner'); END;
@@ -118,7 +111,7 @@ function installScopedCueAccessGuards(): void {
 
 function installPrivateProductionProvenanceGuards(): void {
   getDb().exec(`
-    CREATE TRIGGER IF NOT EXISTS scoped_production_cues_invocation_owner_insert
+    CREATE TRIGGER scoped_production_cues_invocation_owner_insert
     BEFORE INSERT ON scoped_production_cues
     WHEN NEW.origin_invocation_id IS NOT NULL AND NOT EXISTS (
       SELECT 1 FROM learner_owned_reflection_operation_invocations AS invocation
@@ -127,7 +120,7 @@ function installPrivateProductionProvenanceGuards(): void {
     )
     BEGIN SELECT RAISE(ABORT, 'production cue provenance crosses learner boundary'); END;
 
-    CREATE TRIGGER IF NOT EXISTS scoped_production_supplements_invocation_owner_insert
+    CREATE TRIGGER scoped_production_supplements_invocation_owner_insert
     BEFORE INSERT ON scoped_production_cue_supplements
     WHEN NEW.origin_invocation_id IS NOT NULL AND NOT EXISTS (
       SELECT 1 FROM learner_owned_reflection_operation_invocations AS invocation

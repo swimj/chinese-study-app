@@ -49,13 +49,9 @@ export type ReflectionQualityStats = {
   arms: ReflectionQualityArmStats[];
 };
 
-export function ensureReflectionQualitySchema(): void {
-  if (learnerScopedStorageTableName('reflection_quality_annotations') !== 'reflection_quality_annotations') {
-    return;
-  }
-  dropLegacyQualityAnnotationTableIfNeeded();
+export function createReflectionQualitySchema(): void {
   getDb().exec(`
-    CREATE TABLE IF NOT EXISTS reflection_quality_annotations (
+    CREATE TABLE reflection_quality_annotations (
       annotation_id TEXT PRIMARY KEY,
       learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       artifact_id TEXT NOT NULL
@@ -67,10 +63,10 @@ export function ensureReflectionQualitySchema(): void {
       updated_at TEXT NOT NULL
     );
 
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_reflection_quality_item
+    CREATE UNIQUE INDEX idx_reflection_quality_item
       ON reflection_quality_annotations(artifact_id, item_id);
 
-    CREATE INDEX IF NOT EXISTS idx_reflection_quality_artifact
+    CREATE INDEX idx_reflection_quality_artifact
       ON reflection_quality_annotations(artifact_id);
   `);
 }
@@ -324,20 +320,6 @@ function emptyTagCounts(): Record<ReflectionQualityTag, number> {
     inconsistent: 0,
     other: 0,
   };
-}
-
-function dropLegacyQualityAnnotationTableIfNeeded(): void {
-  const columns = getDb().prepare(`
-    PRAGMA table_info(reflection_quality_annotations)
-  `).all() as Array<{ name: string }>;
-  if (columns.length === 0) return;
-  const names = new Set(columns.map((column) => column.name));
-  const isLegacy = names.has('polarity')
-    || names.has('subject_kind')
-    || names.has('reason_code')
-    || !names.has('tags_json');
-  if (!isLegacy) return;
-  getDb().exec('DROP TABLE reflection_quality_annotations;');
 }
 
 function resolveItem(artifactId: string, itemId: string): void {

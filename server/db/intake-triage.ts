@@ -57,10 +57,9 @@ export class IntakeTriageAssessmentError extends Error {
   }
 }
 
-export function ensureIntakeTriageSchema(): void {
-  if (learnerScopedStorageTableName('intake_triage_runs') !== 'intake_triage_runs') return;
+export function createIntakeTriageSchema(): void {
   getDb().exec(`
-    CREATE TABLE IF NOT EXISTS intake_triage_runs (
+    CREATE TABLE intake_triage_runs (
       run_id TEXT PRIMARY KEY,
       learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       started_at TEXT NOT NULL,
@@ -90,7 +89,7 @@ export function ensureIntakeTriageSchema(): void {
       )
     );
 
-    CREATE TABLE IF NOT EXISTS intake_triage_assessments (
+    CREATE TABLE intake_triage_assessments (
       assessment_id TEXT PRIMARY KEY,
       learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       run_id TEXT NOT NULL REFERENCES intake_triage_runs(run_id) ON DELETE CASCADE,
@@ -104,7 +103,7 @@ export function ensureIntakeTriageSchema(): void {
       UNIQUE(run_id, word_id)
     );
 
-    CREATE TABLE IF NOT EXISTS intake_triage_assessment_dispositions (
+    CREATE TABLE intake_triage_assessment_dispositions (
       learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       assessment_id TEXT PRIMARY KEY REFERENCES intake_triage_assessments(assessment_id) ON DELETE CASCADE,
       disposition TEXT NOT NULL CHECK (disposition IN ('accepted', 'dismissed')),
@@ -118,19 +117,19 @@ export function ensureIntakeTriageSchema(): void {
       )
     );
 
-    CREATE TRIGGER IF NOT EXISTS intake_triage_runs_no_update
+    CREATE TRIGGER intake_triage_runs_no_update
     BEFORE UPDATE ON intake_triage_runs
     BEGIN
       SELECT RAISE(ABORT, 'intake triage runs are immutable');
     END;
 
-    CREATE TRIGGER IF NOT EXISTS intake_triage_assessments_no_update
+    CREATE TRIGGER intake_triage_assessments_no_update
     BEFORE UPDATE ON intake_triage_assessments
     BEGIN
       SELECT RAISE(ABORT, 'intake triage assessments are immutable');
     END;
 
-    CREATE TRIGGER IF NOT EXISTS intake_triage_dispositions_no_update
+    CREATE TRIGGER intake_triage_dispositions_no_update
     BEFORE UPDATE ON intake_triage_assessment_dispositions
     BEGIN
       SELECT RAISE(ABORT, 'intake triage dispositions are immutable');
@@ -138,11 +137,11 @@ export function ensureIntakeTriageSchema(): void {
   `);
 }
 
-export function ensureIntakeTriageIndexes(): void {
+export function createIntakeTriageIndexes(): void {
   getDb().exec(`
-    CREATE INDEX IF NOT EXISTS idx_intake_triage_runs_completed
+    CREATE INDEX idx_intake_triage_runs_completed
       ON ${learnerScopedStorageTableName('intake_triage_runs')}(completed_at DESC, run_id ASC);
-    CREATE INDEX IF NOT EXISTS idx_intake_triage_assessments_word
+    CREATE INDEX idx_intake_triage_assessments_word
       ON ${learnerScopedStorageTableName('intake_triage_assessments')}(word_id, created_at DESC, assessment_id ASC);
   `);
 }
