@@ -151,19 +151,14 @@ export type SessionReflectionBundleV4 = {
 };
 
 /**
- * A deliberately curated, non-session reflection request. The item evidence is
- * still the immutable V4 evidence captured for its original study session;
- * `session` names this request only so the existing prompt envelope remains
- * stable. It is never persisted as `sourceSessionId`.
+ * A deliberately curated, non-session reflection request. It is the provider
+ * wire format for a cross-session second opinion, so it contains only the
+ * immutable evidence the provider should reason from. Selection provenance is
+ * retained privately with the generation run rather than sent to the model.
  */
-export type DeferredSecondOpinionBundleV1 = {
-  schemaVersion: 'deferred_second_opinion_bundle.v1';
+export type CuratedReflectionBundleV1 = {
+  schemaVersion: 'curated_reflection_bundle.v1';
   generatedAt: string;
-  session: SessionReflectionBundleV1['session'];
-  source: {
-    kind: 'deferred_second_opinion';
-    proposalIds: string[];
-  };
   items: ReflectionItemV4[];
 };
 
@@ -172,7 +167,7 @@ export type SessionReflectionBundle =
   | SessionReflectionBundleV2
   | SessionReflectionBundleV3
   | SessionReflectionBundleV4
-  | DeferredSecondOpinionBundleV1;
+  | CuratedReflectionBundleV1;
 
 export type ReflectionDiagnosisTagV1 =
   | 'valid_or_near_valid_alternate'
@@ -539,7 +534,7 @@ export type ReflectionQualityTag =
   | 'other';
 
 /** Prompt version currently used by live reflection generation arms. */
-export const CURRENT_REFLECTION_PROMPT_VERSION = 'reflection-v8' as const;
+export const CURRENT_REFLECTION_PROMPT_VERSION = 'reflection-v9' as const;
 
 export const REFLECTION_QUALITY_TAGS = [
   'praise',
@@ -1251,7 +1246,7 @@ export function validateSessionReflectionResultV6(
 
 export function validateSessionReflectionResultV7(
   value: unknown,
-  bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4 | DeferredSecondOpinionBundleV1,
+  bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4 | CuratedReflectionBundleV1,
 ): string[] {
   return validateSessionReflectionResultVersion(
     value,

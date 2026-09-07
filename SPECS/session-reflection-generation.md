@@ -210,7 +210,10 @@ evidence items as initial reflection; an over-limit request is rejected rather
 than truncated or partitioned automatically.
 
 The composed envelope is versioned separately from a session bundle and has no
-source-session id. It retains selected proposal ids and remaps provider item
+source-session id. Private generation-run provenance retains selected proposal
+ids, while the provider envelope contains only its version, generation time,
+and remapped original evidence items. It never fabricates a session or sends
+prior proposal/review identifiers. It remaps provider item
 ids to avoid collisions between original artifacts. Model/provider/run/result
 validation is otherwise the ordinary V7 flow. A provider or validation failure
 leaves every selected original deferred. On successful durable materialization,

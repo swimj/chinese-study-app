@@ -18,7 +18,7 @@ import type {
   SessionReflectionBundleV2,
   SessionReflectionBundleV3,
   SessionReflectionBundleV4,
-  DeferredSecondOpinionBundleV1,
+  CuratedReflectionBundleV1,
   SessionReflectionResult,
   SessionReflectionResultV4,
   SessionReflectionResultV5,
@@ -43,7 +43,7 @@ import {
 import { parseStoredSessionReflectionBundle } from '../../src/domain/reflection-evidence.ts';
 import type { NormalizedTokenUsage } from '../llm/types.ts';
 import type { ReflectionGenerationDiagnostic } from '../reflection/run-diagnostics.ts';
-import { dbPath, getConfig, getDb } from './connection.ts';
+import { dbPath, getDb } from './connection.ts';
 import {
   learnerScopedStorageTableName,
   physicalLearnerTableName,
@@ -105,7 +105,11 @@ export type MaterializeReflectionArtifactInput = MaterializeReflectionArtifactBa
   | { evidenceBundle: SessionReflectionBundleV4; result: SessionReflectionResultV7 }
   | { evidenceBundle: SessionReflectionBundleV2; result: SessionReflectionResultV7 }
   | { evidenceBundle: SessionReflectionBundleV3; result: SessionReflectionResultV7 }
-  | { evidenceBundle: DeferredSecondOpinionBundleV1; result: SessionReflectionResultV7 }
+  | {
+      evidenceBundle: CuratedReflectionBundleV1;
+      result: SessionReflectionResultV7;
+      sourceProposalIds: string[];
+    }
 );
 
 export type ReflectionGenerationRunState = 'in_flight' | 'succeeded' | 'failed';
@@ -148,6 +152,7 @@ export type RecordReflectionGenerationRunInput = Omit<
   resultSchemaVersion?: string | null;
   diagnostic?: ReflectionGenerationDiagnostic | null;
   evidenceBundle: SessionReflectionBundle;
+  sourceProposalIds?: string[] | null;
 };
 
 export type ReflectionGenerationRetrySource = {
@@ -158,6 +163,7 @@ export type ReflectionGenerationRetrySource = {
   eligibleItemCount: number;
   includedItemCount: number;
   evidenceBundle: SessionReflectionBundle;
+  sourceProposalIds?: string[];
 };
 
 export type StartReflectionGenerationRunInput = {
@@ -173,6 +179,7 @@ export type StartReflectionGenerationRunInput = {
   eligibleItemCount: number;
   includedItemCount: number;
   evidenceBundle: SessionReflectionBundle;
+  sourceProposalIds?: string[] | null;
 };
 
 /**
@@ -337,6 +344,7 @@ type ReflectionGenerationRunRow = {
   pricing_basis_json: string | null;
   estimated_cost_usd: number | null;
   evidence_bundle_json: string | null;
+  source_proposal_ids_json: string | null;
   retryable: number;
 };
 
@@ -422,6 +430,7 @@ const reflectionGenerationRunColumns = [
   'pricing_basis_json',
   'estimated_cost_usd',
   'evidence_bundle_json',
+  'source_proposal_ids_json',
   'diagnostic_json',
 ] as const;
 
@@ -465,6 +474,7 @@ const invocationColumns = [
 export function ensureReflectionSchema(): void {
   ensureReflectionGenerationRunStartSchema();
   if (learnerScopedStorageTableName('reflection_artifacts') !== 'reflection_artifacts') {
+    ensureReflectionGenerationRunSourceProposalIdsColumn();
     ensureReflectionIndexes();
     return;
   }
@@ -525,6 +535,7 @@ export function ensureReflectionSchema(): void {
         estimated_cost_usd IS NULL OR estimated_cost_usd >= 0
       ),
       evidence_bundle_json TEXT,
+      source_proposal_ids_json TEXT,
       CHECK (
         (state = 'succeeded' AND failure_code IS NULL)
         OR (state = 'failed' AND failure_code IS NOT NULL)
@@ -793,7 +804,8 @@ function ensureReflectionGenerationRunStartSchema(): void {
       client_request_id TEXT NOT NULL,
       eligible_item_count INTEGER NOT NULL CHECK (eligible_item_count >= 0),
       included_item_count INTEGER NOT NULL CHECK (included_item_count >= 0 AND included_item_count <= eligible_item_count),
-      evidence_bundle_json TEXT NOT NULL
+      evidence_bundle_json TEXT NOT NULL,
+      source_proposal_ids_json TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_reflection_generation_run_starts_started
       ON ${learnerScopedStorageTableName('reflection_generation_run_starts')}(started_at DESC, run_id ASC);
@@ -858,6 +870,19 @@ function ensureReflectionGenerationRunDiagnosticColumns(): void {
     if (!columns.some((column) => column.name === name)) {
       getDb().exec(`ALTER TABLE reflection_generation_runs ADD COLUMN ${name} TEXT`);
     }
+  }
+}
+
+function ensureReflectionGenerationRunSourceProposalIdsColumn(): void {
+  const runsTable = learnerScopedStorageTableName('reflection_generation_runs');
+  const startsTable = learnerScopedStorageTableName('reflection_generation_run_starts');
+  const columns = getDb().prepare(`PRAGMA table_info(${runsTable})`).all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === 'source_proposal_ids_json')) {
+    getDb().exec(`ALTER TABLE ${runsTable} ADD COLUMN source_proposal_ids_json TEXT`);
+  }
+  const startColumns = getDb().prepare(`PRAGMA table_info(${startsTable})`).all() as Array<{ name: string }>;
+  if (!startColumns.some((column) => column.name === 'source_proposal_ids_json')) {
+    getDb().exec(`ALTER TABLE ${startsTable} ADD COLUMN source_proposal_ids_json TEXT`);
   }
 }
 
@@ -961,7 +986,10 @@ export function materializeReflectionArtifact(
   assertNonEmpty(input.model, 'model');
   assertNonEmpty(input.promptVersion, 'prompt version');
   assertIsoTimestamp(input.generatedAt, 'generation timestamp');
-  if (input.sourceSessionId !== null && input.evidenceBundle.session.sessionId !== input.sourceSessionId) {
+  if (
+    input.sourceSessionId !== null
+    && (!('session' in input.evidenceBundle) || input.evidenceBundle.session.sessionId !== input.sourceSessionId)
+  ) {
     throw new Error('Reflection evidence session does not match the source session id.');
   }
   if (
@@ -974,10 +1002,11 @@ export function materializeReflectionArtifact(
   }
   if (
     input.reflectionFlowVersion === DEFERRED_SECOND_OPINION_FLOW_VERSION
-    && input.evidenceBundle.schemaVersion !== 'deferred_second_opinion_bundle.v1'
+    && input.evidenceBundle.schemaVersion !== 'curated_reflection_bundle.v1'
   ) {
     throw new Error('The deferred second-opinion flow requires a curated deferred evidence bundle.');
   }
+  assertCuratedSourceProposalProvenance(input.evidenceBundle, input.sourceProposalIds);
   const validationErrors = validateReflectionArtifactPair(input.result, input.evidenceBundle);
   if (validationErrors.length > 0) {
     throw new Error(`Cannot materialize invalid reflection result:\n${validationErrors.join('\n')}`);
@@ -1052,8 +1081,11 @@ export function materializeReflectionArtifact(
         explanationItemIds,
         input.generatedAt,
       );
-      if (input.evidenceBundle.schemaVersion === 'deferred_second_opinion_bundle.v1') {
-        const selection = input.evidenceBundle.source.proposalIds;
+      if (input.evidenceBundle.schemaVersion === 'curated_reflection_bundle.v1') {
+        const selection = input.sourceProposalIds;
+        if (selection === undefined || selection.length === 0) {
+          throw new DeferredSecondOpinionError('Second-opinion selection provenance is required.');
+        }
         const placeholders = selection.map(() => '?').join(', ');
         const eligible = database.prepare(`
           SELECT proposal_id
@@ -1261,7 +1293,7 @@ export function recordReflectionGenerationRun(
   }
   if (
     input.sourceSessionId !== null
-    && input.evidenceBundle.session.sessionId !== input.sourceSessionId
+    && (!('session' in input.evidenceBundle) || input.evidenceBundle.session.sessionId !== input.sourceSessionId)
   ) {
     throw new Error('Reflection generation run source session does not match its evidence bundle.');
   }
@@ -1273,6 +1305,7 @@ export function recordReflectionGenerationRun(
   ) {
     throw new Error('The current reflection flow requires a V2, V3, or V4 retained evidence bundle.');
   }
+  assertCuratedSourceProposalProvenance(input.evidenceBundle, input.sourceProposalIds);
   parseStoredSessionReflectionBundle(input.evidenceBundle);
   assertNormalizedUsage(input.usage);
   if (input.estimatedCostUsd !== null && (!Number.isFinite(input.estimatedCostUsd)
@@ -1301,8 +1334,8 @@ export function recordReflectionGenerationRun(
       state, failure_code, eligible_item_count, included_item_count,
       input_tokens, cached_input_tokens, cache_write_input_tokens, output_tokens,
       reasoning_tokens, total_tokens, pricing_snapshot_id, pricing_as_of,
-      pricing_basis_json, estimated_cost_usd, evidence_bundle_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      pricing_basis_json, estimated_cost_usd, evidence_bundle_json, source_proposal_ids_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     runId,
     input.sourceSessionId,
@@ -1322,10 +1355,10 @@ export function recordReflectionGenerationRun(
         input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v2'
         || input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v3'
         || input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v4'
-        || input.evidenceBundle.schemaVersion === 'deferred_second_opinion_bundle.v1'
+        || input.evidenceBundle.schemaVersion === 'curated_reflection_bundle.v1'
       )
         ? (input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v4'
-          || input.evidenceBundle.schemaVersion === 'deferred_second_opinion_bundle.v1')
+          || input.evidenceBundle.schemaVersion === 'curated_reflection_bundle.v1')
           ? 'session_reflection_result.v7'
           : 'session_reflection_result.v6'
         : 'session_reflection_result.v4'
@@ -1348,6 +1381,9 @@ export function recordReflectionGenerationRun(
     input.pricingBasis === null ? null : JSON.stringify(input.pricingBasis),
     input.estimatedCostUsd,
     JSON.stringify(input.evidenceBundle),
+    input.sourceProposalIds === undefined || input.sourceProposalIds === null
+      ? null
+      : JSON.stringify(input.sourceProposalIds),
   );
   return getReflectionGenerationRun(runId);
 }
@@ -1366,18 +1402,23 @@ export function startReflectionGenerationRun(input: StartReflectionGenerationRun
   assertCount(input.eligibleItemCount, 'eligible reflection evidence item count');
   assertCount(input.includedItemCount, 'included reflection evidence item count');
   if (input.includedItemCount > input.eligibleItemCount) throw new Error('Included reflection evidence item count cannot exceed eligible item count.');
-  if (input.sourceSessionId !== null && input.evidenceBundle.session.sessionId !== input.sourceSessionId) throw new Error('Reflection generation run source session does not match its evidence bundle.');
+  if (input.sourceSessionId !== null
+    && (!('session' in input.evidenceBundle) || input.evidenceBundle.session.sessionId !== input.sourceSessionId)) throw new Error('Reflection generation run source session does not match its evidence bundle.');
   parseStoredSessionReflectionBundle(input.evidenceBundle);
+  assertCuratedSourceProposalProvenance(input.evidenceBundle, input.sourceProposalIds);
   getDb().prepare(`
     INSERT INTO reflection_generation_run_starts (
       run_id, source_session_id, reflection_flow_version, started_at,
       provider, model, provider_model, prompt_version, client_request_id,
-      eligible_item_count, included_item_count, evidence_bundle_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      eligible_item_count, included_item_count, evidence_bundle_json, source_proposal_ids_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     input.runId, input.sourceSessionId, input.reflectionFlowVersion, input.startedAt,
     input.provider, input.model, input.providerModel, input.promptVersion, input.clientRequestId,
     input.eligibleItemCount, input.includedItemCount, JSON.stringify(input.evidenceBundle),
+    input.sourceProposalIds === undefined || input.sourceProposalIds === null
+      ? null
+      : JSON.stringify(input.sourceProposalIds),
   );
 }
 
@@ -1455,7 +1496,7 @@ export function getReflectionGenerationRetrySource(
   }
   if (
     row.source_session_id !== null
-    && evidenceBundle.session.sessionId !== row.source_session_id
+    && (!('session' in evidenceBundle) || evidenceBundle.session.sessionId !== row.source_session_id)
   ) {
     throw corruptionError(
       `reflection generation run ${row.run_id} source session does not match its evidence`,
@@ -1469,7 +1510,39 @@ export function getReflectionGenerationRetrySource(
     eligibleItemCount: row.eligible_item_count,
     includedItemCount: row.included_item_count,
     evidenceBundle,
+    ...(row.source_proposal_ids_json === null
+      ? {}
+      : { sourceProposalIds: parseSourceProposalIds(row.source_proposal_ids_json, row.run_id) }),
   };
+}
+
+function parseSourceProposalIds(value: string, runId: string): string[] {
+  const parsed = parseJson(value, `reflection generation run ${runId} source proposal ids`);
+  if (!Array.isArray(parsed) || parsed.some((id) => typeof id !== 'string' || id.trim().length === 0)) {
+    throw corruptionError(`reflection generation run ${runId} source proposal ids are invalid`);
+  }
+  return parsed;
+}
+
+function assertCuratedSourceProposalProvenance(
+  bundle: SessionReflectionBundle,
+  sourceProposalIds: string[] | null | undefined,
+): void {
+  if (bundle.schemaVersion !== 'curated_reflection_bundle.v1') {
+    if (sourceProposalIds !== null && sourceProposalIds !== undefined) {
+      throw new Error('Only curated reflection bundles may retain proposal selection provenance.');
+    }
+    return;
+  }
+  if (sourceProposalIds === null || sourceProposalIds === undefined || sourceProposalIds.length === 0) {
+    throw new Error('Curated reflection bundles require selected proposal provenance.');
+  }
+  const unique = new Set<string>();
+  for (const proposalId of sourceProposalIds) {
+    assertNonEmpty(proposalId, 'selected source proposal id');
+    if (unique.has(proposalId)) throw new Error('Selected source proposal ids must be unique.');
+    unique.add(proposalId);
+  }
 }
 
 export function deferReflectionProposal(
@@ -1494,7 +1567,7 @@ export function deferReflectionProposal(
 export function buildDeferredSecondOpinionBundle(
   proposalIds: string[],
   generatedAt = new Date().toISOString(),
-): DeferredSecondOpinionBundleV1 {
+): { bundle: CuratedReflectionBundleV1; sourceProposalIds: string[] } {
   const normalizedProposalIds = [...new Set(proposalIds.map((proposalId) => proposalId.trim()))].sort();
   if (normalizedProposalIds.length === 0) {
     throw new DeferredSecondOpinionError('Select at least one deferred proposal.');
@@ -1543,20 +1616,13 @@ export function buildDeferredSecondOpinionBundle(
     ...item,
     itemId: `${requestId}:item:${index + 1}`,
   }));
-  const bundle: DeferredSecondOpinionBundleV1 = {
-    schemaVersion: 'deferred_second_opinion_bundle.v1',
+  const bundle: CuratedReflectionBundleV1 = {
+    schemaVersion: 'curated_reflection_bundle.v1',
     generatedAt,
-    session: {
-      sessionId: requestId,
-      startedAt: null,
-      endedAt: generatedAt,
-      studyProfile: getConfig().studyProfile,
-    },
-    source: { kind: 'deferred_second_opinion', proposalIds: normalizedProposalIds },
     items,
   };
   parseStoredSessionReflectionBundle(bundle);
-  return bundle;
+  return { bundle, sourceProposalIds: normalizedProposalIds };
 }
 
 export function dismissReflectionProposal(
@@ -2228,7 +2294,7 @@ function mapArtifactRow(row: ArtifactRow): ReflectionArtifactRecord {
   }
   if (
     row.source_session_id !== null
-    && row.source_session_id !== evidenceBundle.session.sessionId
+    && (!('session' in evidenceBundle) || row.source_session_id !== evidenceBundle.session.sessionId)
   ) {
     throw corruptionError(`artifact ${row.artifact_id} source session does not match its evidence`);
   }
@@ -2290,7 +2356,7 @@ function validateReflectionArtifactPair(
     return validateSessionReflectionResultV7(result, evidenceBundle);
   }
   if (
-    evidenceBundle.schemaVersion === 'deferred_second_opinion_bundle.v1'
+    evidenceBundle.schemaVersion === 'curated_reflection_bundle.v1'
     && result.schemaVersion === 'session_reflection_result.v7'
   ) {
     return validateSessionReflectionResultV7(result, evidenceBundle);

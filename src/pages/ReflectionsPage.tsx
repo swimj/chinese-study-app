@@ -307,7 +307,9 @@ function HelpQueueView({
   }
 
   const sessionDate = formatCompactDateTime(
-    card.artifact.evidenceBundle.session.endedAt ?? card.artifact.generatedAt,
+    ('session' in card.artifact.evidenceBundle
+      ? card.artifact.evidenceBundle.session.endedAt
+      : null) ?? card.artifact.generatedAt,
   );
 
   return (
@@ -639,16 +641,17 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
               <div>
                 <p className="reflection-eyebrow">
                   {controller.selectedArtifact.sourceSessionId === null
-                    ? 'Legacy prompt remediation'
+                    ? 'Curated reflection batch'
                     : 'Source session'}
                 </p>
                 <h2>{formatDateTime(
-                  controller.selectedArtifact.evidenceBundle.session.endedAt
-                    ?? controller.selectedArtifact.generatedAt,
+                  ('session' in controller.selectedArtifact.evidenceBundle
+                    ? controller.selectedArtifact.evidenceBundle.session.endedAt
+                    : null) ?? controller.selectedArtifact.generatedAt,
                 )}</h2>
                 <p className="notes reflection-long-metadata">
                   {controller.selectedArtifact.sourceSessionId === null
-                    ? 'Sessionless reflection'
+                    ? 'Curated non-session reflection'
                     : `Session ${controller.selectedArtifact.sourceSessionId}`}
                   {' · '}
                   {controller.selectedArtifact.sourceRunId === null
