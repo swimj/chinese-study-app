@@ -151,17 +151,103 @@ export function ReflectionsPage({
             itemLabel="help card"
           />
         ) : (
-          <HelpQueueView
-            key="deferred"
-            cards={deferredCards}
-            controller={controller}
-            emptyCopy="No proposals are deferred."
-            itemLabel="deferred card"
-            deferLocked
-          />
+          <DeferredSecondOpinionQueue cards={deferredCards} controller={controller} />
         )}
       </div>
     </section>
+  );
+}
+
+function DeferredSecondOpinionQueue({
+  cards,
+  controller,
+}: {
+  cards: Array<Extract<ReflectionHelpCard, { kind: 'proposal' }>>;
+  controller: ReflectionPageController;
+}) {
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const [model, setModel] = useState<ReflectionModelChoice>('openai:gpt-5.6-luna-high');
+  const selectedCount = [...selectedIds].filter((id) => cards.some(
+    (card) => card.proposal.review.proposalId === id,
+  )).length;
+  const generating = controller.deferredSecondOpinionStatus === 'generating';
+
+  if (cards.length === 0) {
+    return (
+      <main className="reflection-help-shell is-empty">
+        <section className="panel reflection-empty-state">
+          <p className="notes">No proposals are deferred.</p>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="reflection-help-shell">
+      <section className="panel reflection-deferred-second-opinion">
+        <h2>Get a second opinion</h2>
+        <p className="notes">
+          This reflects again on the original study evidence. A successful result replaces only
+          the selected deferred proposals in active review.
+        </p>
+        <label>
+          <input
+            type="checkbox"
+            checked={selectedCount === cards.length}
+            onChange={(event) => setSelectedIds(event.target.checked
+              ? new Set(cards.map((card) => card.proposal.review.proposalId))
+              : new Set())}
+          />
+          Select all ({cards.length})
+        </label>
+        <label>
+          Model
+          <select value={model} onChange={(event) => setModel(event.target.value as ReflectionModelChoice)}>
+            {REFLECTION_RETRY_MODEL_OPTIONS.map((option) => (
+              <option key={option.model} value={option.model}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={selectedCount === 0 || generating}
+          onClick={() => void controller.generateDeferredSecondOpinion([...selectedIds], model).catch(() => undefined)}
+        >
+          {generating ? 'Getting second opinion...' : `Get a second opinion (${selectedCount})`}
+        </button>
+      </section>
+      <section className="reflection-deferred-selection-list" aria-label="Deferred proposals">
+        {cards.map((card) => {
+          const proposalId = card.proposal.review.proposalId;
+          return (
+            <label className="panel reflection-deferred-selection" key={proposalId}>
+              <input
+                type="checkbox"
+                checked={selectedIds.has(proposalId)}
+                onChange={(event) => setSelectedIds((current) => {
+                  const next = new Set(current);
+                  if (event.target.checked) next.add(proposalId);
+                  else next.delete(proposalId);
+                  return next;
+                })}
+              />
+              <span>
+                <ItemIdentityHeading evidence={card.evidence} />
+                <span>{reflectionOperationLabel(card.proposal.proposal.operation)}</span>
+              </span>
+            </label>
+          );
+        })}
+      </section>
+      <HelpQueueView
+        cards={cards}
+        controller={controller}
+        emptyCopy="No proposals are deferred."
+        itemLabel="deferred card"
+        deferLocked
+        embedded
+      />
+    </main>
   );
 }
 
@@ -181,18 +267,21 @@ function HelpQueueView({
   emptyCopy,
   itemLabel,
   deferLocked = false,
+  embedded = false,
 }: {
   cards: ReflectionHelpCard[];
   controller: ReflectionPageController;
   emptyCopy: string;
   itemLabel: string;
   deferLocked?: boolean;
+  embedded?: boolean;
 }) {
   const [index, setIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const safeIndex = cards.length === 0 ? 0 : Math.min(index, cards.length - 1);
   const card = cards[safeIndex] ?? null;
   const cardKey = card?.cardKey ?? 'empty';
+  const Shell = embedded ? 'div' : 'main';
 
   useEffect(() => {
     setIndex((current) => (cards.length === 0 ? 0 : Math.min(current, cards.length - 1)));
@@ -205,11 +294,11 @@ function HelpQueueView({
 
   if (cards.length === 0) {
     return (
-      <main className="reflection-help-shell is-empty">
+      <Shell className="reflection-help-shell is-empty">
         <section className="panel reflection-empty-state">
           <p className="notes">{emptyCopy}</p>
         </section>
-      </main>
+      </Shell>
     );
   }
 
@@ -222,7 +311,7 @@ function HelpQueueView({
   );
 
   return (
-    <main className="reflection-help-shell">
+    <Shell className="reflection-help-shell">
       <header className="reflection-help-chrome">
         <div className="reflection-help-pager">
           <button
@@ -268,7 +357,7 @@ function HelpQueueView({
           deferLocked={deferLocked}
         />
       )}
-    </main>
+    </Shell>
   );
 }
 

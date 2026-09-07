@@ -11,6 +11,7 @@ import {
   type SessionReflectionBundleV4,
   type SessionReflectionBundleV2,
   type SessionReflectionBundleV3,
+  type DeferredSecondOpinionBundleV1,
   type SessionReflectionResultV7,
   type SessionReflectionResultV7Wire,
 } from '../../src/domain/reflection.js';
@@ -123,7 +124,7 @@ export type LunaReflectionSuccess = {
 
 export type LunaReflectionProvider = {
   generate(
-    bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4,
+    bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4 | DeferredSecondOpinionBundleV1,
     options?: { clientRequestId?: string },
   ): Promise<LunaReflectionSuccess>;
 };
@@ -191,7 +192,7 @@ export function createReflectionProvider(
 
   return {
     async generate(
-      bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4,
+      bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4 | DeferredSecondOpinionBundleV1,
       requestOptions: { clientRequestId?: string } = {},
     ): Promise<LunaReflectionSuccess> {
       // Read credentials at call time so importing or constructing the service

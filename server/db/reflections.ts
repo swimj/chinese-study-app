@@ -18,6 +18,7 @@ import type {
   SessionReflectionBundleV2,
   SessionReflectionBundleV3,
   SessionReflectionBundleV4,
+  DeferredSecondOpinionBundleV1,
   SessionReflectionResult,
   SessionReflectionResultV4,
   SessionReflectionResultV5,
@@ -42,7 +43,7 @@ import {
 import { parseStoredSessionReflectionBundle } from '../../src/domain/reflection-evidence.ts';
 import type { NormalizedTokenUsage } from '../llm/types.ts';
 import type { ReflectionGenerationDiagnostic } from '../reflection/run-diagnostics.ts';
-import { dbPath, getDb } from './connection.ts';
+import { dbPath, getConfig, getDb } from './connection.ts';
 import {
   learnerScopedStorageTableName,
   physicalLearnerTableName,
@@ -70,6 +71,15 @@ import {
 } from './production-cues.ts';
 
 export const INITIAL_REFLECTION_FLOW_VERSION = 'initial_post_session_reflection.v2';
+export const DEFERRED_SECOND_OPINION_FLOW_VERSION = 'deferred_second_opinion.v1';
+export const DEFERRED_SECOND_OPINION_MAX_EVIDENCE_ITEMS = 25;
+
+export class DeferredSecondOpinionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DeferredSecondOpinionError';
+  }
+}
 
 const unsupportedApplicationReason = (operation: ReflectionOperation) => (
   `No faithful application adapter is available for ${operation.kind}@${operation.version}.`
@@ -95,6 +105,7 @@ export type MaterializeReflectionArtifactInput = MaterializeReflectionArtifactBa
   | { evidenceBundle: SessionReflectionBundleV4; result: SessionReflectionResultV7 }
   | { evidenceBundle: SessionReflectionBundleV2; result: SessionReflectionResultV7 }
   | { evidenceBundle: SessionReflectionBundleV3; result: SessionReflectionResultV7 }
+  | { evidenceBundle: DeferredSecondOpinionBundleV1; result: SessionReflectionResultV7 }
 );
 
 export type ReflectionGenerationRunState = 'in_flight' | 'succeeded' | 'failed';
@@ -950,10 +961,7 @@ export function materializeReflectionArtifact(
   assertNonEmpty(input.model, 'model');
   assertNonEmpty(input.promptVersion, 'prompt version');
   assertIsoTimestamp(input.generatedAt, 'generation timestamp');
-  if (
-    input.sourceSessionId !== null
-    && input.evidenceBundle.session.sessionId !== input.sourceSessionId
-  ) {
+  if (input.sourceSessionId !== null && input.evidenceBundle.session.sessionId !== input.sourceSessionId) {
     throw new Error('Reflection evidence session does not match the source session id.');
   }
   if (
@@ -963,6 +971,12 @@ export function materializeReflectionArtifact(
     && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v4'
   ) {
     throw new Error('The current reflection flow requires a V2, V3, or V4 evidence bundle.');
+  }
+  if (
+    input.reflectionFlowVersion === DEFERRED_SECOND_OPINION_FLOW_VERSION
+    && input.evidenceBundle.schemaVersion !== 'deferred_second_opinion_bundle.v1'
+  ) {
+    throw new Error('The deferred second-opinion flow requires a curated deferred evidence bundle.');
   }
   const validationErrors = validateReflectionArtifactPair(input.result, input.evidenceBundle);
   if (validationErrors.length > 0) {
@@ -1038,6 +1052,25 @@ export function materializeReflectionArtifact(
         explanationItemIds,
         input.generatedAt,
       );
+      if (input.evidenceBundle.schemaVersion === 'deferred_second_opinion_bundle.v1') {
+        const selection = input.evidenceBundle.source.proposalIds;
+        const placeholders = selection.map(() => '?').join(', ');
+        const eligible = database.prepare(`
+          SELECT proposal_id
+          FROM reflection_proposal_reviews
+          WHERE proposal_id IN (${placeholders}) AND disposition = 'deferred'
+        `).all(...selection) as Array<{ proposal_id: string }>;
+        if (eligible.length !== selection.length) {
+          throw new DeferredSecondOpinionError(
+            'One or more selected deferred proposals were already resolved.',
+          );
+        }
+        database.prepare(`
+          UPDATE reflection_proposal_reviews
+          SET disposition = 'dismissed', dismissal_reason = 'requested_second_opinion', updated_at = ?
+          WHERE proposal_id IN (${placeholders}) AND disposition = 'deferred'
+        `).run(input.generatedAt, ...selection);
+      }
       created = true;
       database.exec('COMMIT');
     }
@@ -1289,8 +1322,10 @@ export function recordReflectionGenerationRun(
         input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v2'
         || input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v3'
         || input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v4'
+        || input.evidenceBundle.schemaVersion === 'deferred_second_opinion_bundle.v1'
       )
-        ? input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v4'
+        ? (input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v4'
+          || input.evidenceBundle.schemaVersion === 'deferred_second_opinion_bundle.v1')
           ? 'session_reflection_result.v7'
           : 'session_reflection_result.v6'
         : 'session_reflection_result.v4'
@@ -1449,6 +1484,79 @@ export function deferReflectionProposal(
       WHERE proposal_id = ?
     `).run(updatedAt, proposalId);
   });
+}
+
+/**
+ * Resolves learner-owned deferred proposals to their immutable source items.
+ * The returned envelope intentionally contains no earlier proposal text or
+ * review disposition; the provider sees only the original evidence again.
+ */
+export function buildDeferredSecondOpinionBundle(
+  proposalIds: string[],
+  generatedAt = new Date().toISOString(),
+): DeferredSecondOpinionBundleV1 {
+  const normalizedProposalIds = [...new Set(proposalIds.map((proposalId) => proposalId.trim()))].sort();
+  if (normalizedProposalIds.length === 0) {
+    throw new DeferredSecondOpinionError('Select at least one deferred proposal.');
+  }
+  if (normalizedProposalIds.some((proposalId) => proposalId.length === 0)) {
+    throw new DeferredSecondOpinionError('Selected proposal ids must be non-empty.');
+  }
+  const placeholders = normalizedProposalIds.map(() => '?').join(', ');
+  const rows = getDb().prepare(`
+    SELECT proposal_id, artifact_id, item_id
+    FROM reflection_proposal_reviews
+    WHERE proposal_id IN (${placeholders}) AND disposition = 'deferred'
+  `).all(...normalizedProposalIds) as Array<{ proposal_id: string; artifact_id: string; item_id: string }>;
+  if (rows.length !== normalizedProposalIds.length) {
+    throw new DeferredSecondOpinionError(
+      'Every selected proposal must still be deferred and available for a second opinion.',
+    );
+  }
+
+  const sourceItems = new Map<string, ReflectionItemV4>();
+  for (const row of rows) {
+    const artifact = getReflectionArtifactDetail(row.artifact_id);
+    const item = artifact.evidenceBundle.items.find((candidate) => candidate.itemId === row.item_id);
+    if (item === undefined) {
+      throw new DeferredSecondOpinionError('A selected proposal no longer has usable retained evidence.');
+    }
+    if (!('servedCue' in item)) {
+      throw new DeferredSecondOpinionError('A selected proposal no longer has usable retained evidence.');
+    }
+    sourceItems.set(`${row.artifact_id}\u0000${row.item_id}`, {
+      ...item,
+      servedCue: {
+        ...item.servedCue,
+        supplement: item.servedCue.supplement ?? null,
+      },
+    });
+  }
+  if (sourceItems.size > DEFERRED_SECOND_OPINION_MAX_EVIDENCE_ITEMS) {
+    throw new DeferredSecondOpinionError(
+      `Select at most ${DEFERRED_SECOND_OPINION_MAX_EVIDENCE_ITEMS} distinct evidence items for one second opinion.`,
+    );
+  }
+
+  const requestId = randomUUID();
+  const items = [...sourceItems.values()].map((item, index) => ({
+    ...item,
+    itemId: `${requestId}:item:${index + 1}`,
+  }));
+  const bundle: DeferredSecondOpinionBundleV1 = {
+    schemaVersion: 'deferred_second_opinion_bundle.v1',
+    generatedAt,
+    session: {
+      sessionId: requestId,
+      startedAt: null,
+      endedAt: generatedAt,
+      studyProfile: getConfig().studyProfile,
+    },
+    source: { kind: 'deferred_second_opinion', proposalIds: normalizedProposalIds },
+    items,
+  };
+  parseStoredSessionReflectionBundle(bundle);
+  return bundle;
 }
 
 export function dismissReflectionProposal(
@@ -2177,6 +2285,12 @@ function validateReflectionArtifactPair(
   }
   if (
     evidenceBundle.schemaVersion === 'session_reflection_bundle.v4'
+    && result.schemaVersion === 'session_reflection_result.v7'
+  ) {
+    return validateSessionReflectionResultV7(result, evidenceBundle);
+  }
+  if (
+    evidenceBundle.schemaVersion === 'deferred_second_opinion_bundle.v1'
     && result.schemaVersion === 'session_reflection_result.v7'
   ) {
     return validateSessionReflectionResultV7(result, evidenceBundle);

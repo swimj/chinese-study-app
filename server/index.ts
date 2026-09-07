@@ -15,6 +15,7 @@ import {
   completeLearningWordSession,
   completeUnstudiedWordSession,
   deferReflectionProposal,
+  DeferredSecondOpinionError,
   dismissWordFromStudy,
   dismissReflectionProposal,
   dismissIntakeTriageAssessment,
@@ -761,6 +762,39 @@ export function createApp(options: CreateAppOptions = {}) {
         return;
       }
       res.status(500).json({ error: 'Failed to retry reflection generation' });
+    }
+  });
+
+  app.post('/api/deferred-reflection-second-opinions', async (req, res) => {
+    const proposalIds = req.body?.proposalIds;
+    const requestedModel = req.body?.model;
+    if (!Array.isArray(proposalIds) || !proposalIds.every((proposalId) => typeof proposalId === 'string')) {
+      res.status(400).json({ error: 'Expected an array of selected reflection proposal ids' });
+      return;
+    }
+    if (!isReflectionModelChoice(requestedModel)) {
+      res.status(400).json({ error: 'Choose a supported reflection model for the second opinion' });
+      return;
+    }
+    try {
+      const result = await runHostedProviderWork(
+        () => reflectionGenerationService.generateDeferredSecondOpinion(proposalIds, requestedModel),
+      );
+      res.status(result.status === 'created' ? 201 : 200).json(result);
+    } catch (error) {
+      if (handleHostedProviderWorkError(error, res)) return;
+      if (error instanceof DeferredSecondOpinionError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      if (error instanceof LunaReflectionProviderError) {
+        res.status(error.code === 'missing_config' ? 503 : 502).json({
+          error: error.message,
+          code: error.code,
+        });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to generate a second opinion' });
     }
   });
 

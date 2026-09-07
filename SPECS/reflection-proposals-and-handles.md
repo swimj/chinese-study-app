@@ -132,6 +132,16 @@ applied, failed, stale, already satisfied, or withdrawn.
 A fully user-authored operation has an invocation and application status
 without a fabricated reflection proposal.
 
+### Deferred second-opinion retirement
+
+Deferred proposals can be selected for one fresh reflection over their original
+evidence. Successful materialization retires only the selected originals; it
+does not accept, authorize, apply, compare, or otherwise reconcile either old
+or new advice. The first implementation represents retirement as a dismissed
+review with dismissal reason `requested_second_opinion`. This reason means the
+learner requested a replacement reading, not that they judged the proposal
+poor. Explicit dismissals retain their ordinary learner-entered reason.
+
 ## 3. Reflection Result Contract
 
 The result contract includes only fields with an identified reflection,
