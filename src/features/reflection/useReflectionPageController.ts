@@ -35,10 +35,15 @@ export type ReflectionPageController = {
     runId: string;
     state: 'generating' | 'succeeded' | 'failed';
   } | null;
+  deferredSecondOpinionStatus: 'generating' | 'failed' | null;
   openPage: () => Promise<void>;
   refresh: () => Promise<void>;
   selectArtifact: (artifactId: string) => Promise<void>;
   retryGenerationRun: (runId: string, model?: ReflectionModelChoice) => Promise<void>;
+  generateDeferredSecondOpinion: (
+    proposalIds: string[],
+    model: ReflectionModelChoice,
+  ) => Promise<void>;
   deferProposal: (proposalId: string) => Promise<void>;
   dismissProposal: (
     proposalId: string,
@@ -88,6 +93,9 @@ export function useReflectionPageController({
   const [submittingHelpInboxItemKey, setSubmittingHelpInboxItemKey] = useState<string | null>(null);
   const [generationRetryStatus, setGenerationRetryStatus] = useState<
     ReflectionPageController['generationRetryStatus']
+  >(null);
+  const [deferredSecondOpinionStatus, setDeferredSecondOpinionStatus] = useState<
+    ReflectionPageController['deferredSecondOpinionStatus']
   >(null);
 
   function requireApi(): ReflectionReviewApi {
@@ -240,6 +248,24 @@ export function useReflectionPageController({
 
   async function retryGenerationRun(runId: string, model?: ReflectionModelChoice): Promise<void> {
     await runGenerationAttempt(runId, () => requireApi().retryGenerationRun(runId, model));
+  }
+
+  async function generateDeferredSecondOpinion(
+    proposalIds: string[],
+    model: ReflectionModelChoice,
+  ): Promise<void> {
+    if (deferredSecondOpinionStatus === 'generating') return;
+    setDeferredSecondOpinionStatus('generating');
+    setError(null);
+    try {
+      const result = await requireApi().generateDeferredSecondOpinion(proposalIds, model);
+      await loadListsAndDetail(result.artifactId);
+      setDeferredSecondOpinionStatus(null);
+    } catch (error) {
+      setDeferredSecondOpinionStatus('failed');
+      setError(error instanceof Error ? error.message : 'Failed to generate a second opinion');
+      throw error;
+    }
   }
 
   async function runGenerationAttempt(
@@ -418,10 +444,12 @@ export function useReflectionPageController({
     submittingQualityItemKey,
     submittingHelpInboxItemKey,
     generationRetryStatus,
+    deferredSecondOpinionStatus,
     openPage,
     refresh,
     selectArtifact,
     retryGenerationRun,
+    generateDeferredSecondOpinion,
     deferProposal: (proposalId) => reviewProposal(proposalId, { action: 'defer' }),
     dismissProposal: (proposalId, reason) => reviewProposal(proposalId, {
       action: 'dismiss',

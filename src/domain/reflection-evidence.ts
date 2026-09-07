@@ -12,6 +12,7 @@ import type {
   SessionReflectionBundleV2,
   SessionReflectionBundleV3,
   SessionReflectionBundleV4,
+  DeferredSecondOpinionBundleV1,
 } from './reflection';
 
 export type ProductionMistakeCueEvidenceV1 = Omit<ReflectionCueSnapshotV0, 'cueType'> & {
@@ -351,6 +352,35 @@ export function parseSessionReflectionBundleV4(value: unknown): SessionReflectio
   return value as SessionReflectionBundleV4;
 }
 
+export function parseDeferredSecondOpinionBundleV1(value: unknown): DeferredSecondOpinionBundleV1 {
+  if (!isRecord(value)) throw new Error('Invalid deferred second-opinion bundle V1');
+  const { source, ...sessionBundle } = value;
+  const errors = validateSessionReflectionBundleV4({
+    ...sessionBundle,
+    schemaVersion: 'session_reflection_bundle.v4',
+  });
+  errors.push(...validateObjectFields(source, ['kind', 'proposalIds'], '$.source'));
+  if (!isRecord(source)) {
+    throw new Error(`Invalid deferred second-opinion bundle V1:\n${errors.join('\n')}`);
+  }
+  if (value.schemaVersion !== 'deferred_second_opinion_bundle.v1') {
+    errors.push('$.schemaVersion: expected deferred_second_opinion_bundle.v1');
+  }
+  if (source.kind !== 'deferred_second_opinion') {
+    errors.push('$.source.kind: expected deferred_second_opinion');
+  }
+  if (!Array.isArray(source.proposalIds) || source.proposalIds.length === 0) {
+    errors.push('$.source.proposalIds: expected a non-empty array');
+  } else {
+    const ids = new Set<string>();
+    source.proposalIds.forEach((proposalId, index) => {
+      errors.push(...validateUniqueId(proposalId, `$.source.proposalIds[${index}]`, ids, 'proposal id'));
+    });
+  }
+  if (errors.length > 0) throw new Error(`Invalid deferred second-opinion bundle V1:\n${errors.join('\n')}`);
+  return value as DeferredSecondOpinionBundleV1;
+}
+
 export function parseStoredSessionReflectionBundle(value: unknown): SessionReflectionBundle {
   if (isRecord(value) && value.schemaVersion === 'session_reflection_bundle.v2') {
     return parseSessionReflectionBundleV2(value);
@@ -360,6 +390,9 @@ export function parseStoredSessionReflectionBundle(value: unknown): SessionRefle
   }
   if (isRecord(value) && value.schemaVersion === 'session_reflection_bundle.v4') {
     return parseSessionReflectionBundleV4(value);
+  }
+  if (isRecord(value) && value.schemaVersion === 'deferred_second_opinion_bundle.v1') {
+    return parseDeferredSecondOpinionBundleV1(value);
   }
   return parseSessionReflectionBundle(value);
 }

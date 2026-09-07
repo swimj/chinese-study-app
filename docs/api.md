@@ -176,6 +176,7 @@ Request/result types live in
 | Method | Path | Purpose |
 | --- | --- | --- |
 | POST | `/api/study-sessions/:sessionId/reflections` | Generate or return the session's initial reflection |
+| POST | `/api/deferred-reflection-second-opinions` | Generate a selected deferred-proposal second opinion |
 | GET | `/api/reflection-artifacts?review=open\|all` | Load the unresolved queue or recent history |
 | GET | `/api/reflection-generation-runs` | Load the compact dogfood log of concluded provider attempts |
 | POST | `/api/reflection-generation-runs/:runId/retry` | Retry a failed run from its saved bounded evidence bundle |

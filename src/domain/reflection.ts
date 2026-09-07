@@ -150,11 +150,29 @@ export type SessionReflectionBundleV4 = {
   items: ReflectionItemV4[];
 };
 
+/**
+ * A deliberately curated, non-session reflection request. The item evidence is
+ * still the immutable V4 evidence captured for its original study session;
+ * `session` names this request only so the existing prompt envelope remains
+ * stable. It is never persisted as `sourceSessionId`.
+ */
+export type DeferredSecondOpinionBundleV1 = {
+  schemaVersion: 'deferred_second_opinion_bundle.v1';
+  generatedAt: string;
+  session: SessionReflectionBundleV1['session'];
+  source: {
+    kind: 'deferred_second_opinion';
+    proposalIds: string[];
+  };
+  items: ReflectionItemV4[];
+};
+
 export type SessionReflectionBundle =
   | SessionReflectionBundleV1
   | SessionReflectionBundleV2
   | SessionReflectionBundleV3
-  | SessionReflectionBundleV4;
+  | SessionReflectionBundleV4
+  | DeferredSecondOpinionBundleV1;
 
 export type ReflectionDiagnosisTagV1 =
   | 'valid_or_near_valid_alternate'
@@ -1233,7 +1251,7 @@ export function validateSessionReflectionResultV6(
 
 export function validateSessionReflectionResultV7(
   value: unknown,
-  bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4,
+  bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4 | DeferredSecondOpinionBundleV1,
 ): string[] {
   return validateSessionReflectionResultVersion(
     value,

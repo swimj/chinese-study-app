@@ -205,6 +205,10 @@ export type ReflectionReviewApi = {
   listArtifacts: (review: 'open' | 'all') => Promise<ReflectionArtifactSummaryDto[]>;
   listGenerationRuns: () => Promise<ReflectionGenerationRunDto[]>;
   retryGenerationRun: (runId: string, model?: ReflectionModelChoice) => Promise<GenerateSessionReflectionResult>;
+  generateDeferredSecondOpinion: (
+    proposalIds: string[],
+    model: ReflectionModelChoice,
+  ) => Promise<GenerateSessionReflectionResult>;
   getArtifact: (artifactId: string) => Promise<ReflectionArtifactDetailDto>;
   reviewProposal: (
     proposalId: string,
@@ -505,6 +509,21 @@ export async function retryReflectionGenerationRun(
   );
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to retry reflection generation'));
+  }
+  return response.json();
+}
+
+export async function generateDeferredReflectionSecondOpinion(
+  proposalIds: string[],
+  model: ReflectionModelChoice,
+): Promise<GenerateSessionReflectionResult> {
+  const response = await apiFetch(`${API_BASE}/api/deferred-reflection-second-opinions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ proposalIds, model }),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to generate a second opinion'));
   }
   return response.json();
 }

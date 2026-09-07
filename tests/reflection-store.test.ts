@@ -619,6 +619,44 @@ describe('reflection durable store', { concurrency: false }, () => {
     );
   });
 
+  test('creates a sessionless curated bundle and retires only its selected deferred original on success', () => {
+    const source = dbModule.materializeReflectionArtifact(materializationInputV2('second-opinion-source'));
+    const originalProposalId = source.artifact.proposals[0]!.review.proposalId;
+    dbModule.deferReflectionProposal(originalProposalId, updatedAt);
+
+    const bundle = dbModule.buildDeferredSecondOpinionBundle([originalProposalId], appliedAt);
+    assert.equal(bundle.schemaVersion, 'deferred_second_opinion_bundle.v1');
+    assert.equal(bundle.items.length, 1);
+    assert.notEqual(bundle.items[0]!.itemId, 'item');
+    assert.deepEqual(bundle.source.proposalIds, [originalProposalId]);
+
+    const replacement = dbModule.materializeReflectionArtifact({
+      sourceSessionId: null,
+      reflectionFlowVersion: dbModule.DEFERRED_SECOND_OPINION_FLOW_VERSION,
+      generatedAt: appliedAt,
+      provider: 'openai',
+      model: 'gpt-5.6-luna-high',
+      promptVersion: 'reflection-v8',
+      evidenceBundle: bundle,
+      result: {
+        schemaVersion: 'session_reflection_result.v7',
+        itemResults: [{
+          itemId: bundle.items[0]!.itemId,
+          diagnosisTags: ['ordinary_retrieval_noise'],
+          learnerExplanation: 'No additional intervention is needed.',
+          proposals: [],
+          questions: [],
+        }],
+      },
+    });
+
+    assert.equal(replacement.artifact.sourceSessionId, null);
+    assert.deepEqual(
+      dbModule.getReflectionArtifactDetail(source.artifact.artifactId).proposals[0]?.review.disposition,
+      { kind: 'dismissed', reason: 'requested_second_opinion' },
+    );
+  });
+
   test('authorizes exact and revised supported operations as immutable pending invocations', () => {
     const exactArtifact = dbModule.materializeReflectionArtifact(
       materializationInput('exact-session', suppressOperation('target')),
