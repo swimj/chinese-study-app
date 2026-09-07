@@ -181,7 +181,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       provider: 'openai',
       model: 'gpt-5.6-terra-high',
       providerModel: 'gpt-5.6-terra',
-      promptVersion: 'reflection-v8',
+      promptVersion: 'reflection-v9',
       clientRequestId: 'provider-request-1',
       eligibleItemCount: 3,
       includedItemCount: 2,
@@ -198,7 +198,7 @@ describe('reflection durable store', { concurrency: false }, () => {
         provider: 'openai',
         model: 'gpt-5.6-terra-high',
         providerModel: 'gpt-5.6-terra',
-        promptVersion: 'reflection-v8',
+        promptVersion: 'reflection-v9',
         responseId: null,
         clientRequestId: 'provider-request-1',
         finishReason: null,
@@ -265,7 +265,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       provider: 'openai',
       model: 'gpt-5.6-terra-high',
       providerModel: 'gpt-5.6-terra',
-      promptVersion: 'reflection-v8',
+      promptVersion: 'reflection-v9',
       clientRequestId: 'provider-request-active',
       eligibleItemCount: 1,
       includedItemCount: 1,
@@ -349,7 +349,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v8',
+      promptVersion: 'reflection-v9',
       responseId: null,
       finishReason: null,
       state: 'failed',
@@ -624,11 +624,13 @@ describe('reflection durable store', { concurrency: false }, () => {
     const originalProposalId = source.artifact.proposals[0]!.review.proposalId;
     dbModule.deferReflectionProposal(originalProposalId, updatedAt);
 
-    const bundle = dbModule.buildDeferredSecondOpinionBundle([originalProposalId], appliedAt);
-    assert.equal(bundle.schemaVersion, 'deferred_second_opinion_bundle.v1');
+    const { bundle, sourceProposalIds } = dbModule.buildDeferredSecondOpinionBundle([originalProposalId], appliedAt);
+    assert.equal(bundle.schemaVersion, 'curated_reflection_bundle.v1');
     assert.equal(bundle.items.length, 1);
     assert.notEqual(bundle.items[0]!.itemId, 'item');
-    assert.deepEqual(bundle.source.proposalIds, [originalProposalId]);
+    assert.equal('session' in bundle, false);
+    assert.equal('source' in bundle, false);
+    assert.deepEqual(sourceProposalIds, [originalProposalId]);
 
     const replacement = dbModule.materializeReflectionArtifact({
       sourceSessionId: null,
@@ -636,8 +638,9 @@ describe('reflection durable store', { concurrency: false }, () => {
       generatedAt: appliedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
-      promptVersion: 'reflection-v8',
+      promptVersion: 'reflection-v9',
       evidenceBundle: bundle,
+      sourceProposalIds,
       result: {
         schemaVersion: 'session_reflection_result.v7',
         itemResults: [{

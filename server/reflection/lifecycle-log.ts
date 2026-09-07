@@ -8,16 +8,16 @@ export type ReflectionLifecycleEvent =
     }
   | {
       event: 'reflection.generation_requested';
-      sessionId: string;
+      sessionId: string | null;
     }
   | {
       event: 'reflection.provider_started';
-      sessionId: string;
+      sessionId: string | null;
       evidenceItemCount: number;
     }
   | {
       event: 'reflection.generation_succeeded';
-      sessionId: string;
+      sessionId: string | null;
       artifactId: string;
       proposalCount: number;
       status: 'created' | 'existing';
@@ -25,7 +25,7 @@ export type ReflectionLifecycleEvent =
     }
   | {
       event: 'reflection.generation_failed';
-      sessionId: string;
+      sessionId: string | null;
       failure: 'invalid_evidence' | 'provider' | 'internal';
       code: string | null;
       clientRequestId: string | null;

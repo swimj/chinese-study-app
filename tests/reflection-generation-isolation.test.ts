@@ -108,7 +108,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v8',
+      promptVersion: 'reflection-v9',
       responseId: null,
       clientRequestId: run.clientRequestId,
       finishReason: null,

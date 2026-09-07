@@ -2,7 +2,7 @@ import type {
   SessionReflectionBundleV2,
   SessionReflectionBundleV3,
   SessionReflectionBundleV4,
-  DeferredSecondOpinionBundleV1,
+  CuratedReflectionBundleV1,
 } from '../../src/domain/reflection.ts';
 import {
   getReflectionGenerationRetrySource,
@@ -111,7 +111,10 @@ export type InitialReflectionGenerationDependencies = {
     supplement: unknown,
     generatedAt: string,
   ) => InitialReflectionBundleBuild;
-  buildDeferredBundle?: (proposalIds: string[], generatedAt: string) => DeferredSecondOpinionBundleV1;
+  buildDeferredBundle?: (proposalIds: string[], generatedAt: string) => {
+    bundle: CuratedReflectionBundleV1;
+    sourceProposalIds: string[];
+  };
   findExistingArtifact?: (
     sessionId: string,
     reflectionFlowVersion: string,
@@ -265,13 +268,14 @@ export function createInitialReflectionGenerationService(
 
     async retry(runId: string, model?: ReflectionModelChoice): Promise<InitialReflectionGenerationResult> {
       const retrySource = getRetrySource(runId);
-      if (retrySource.reflectionFlowVersion !== INITIAL_REFLECTION_FLOW_VERSION) {
+      if (retrySource.reflectionFlowVersion !== INITIAL_REFLECTION_FLOW_VERSION
+        && retrySource.reflectionFlowVersion !== DEFERRED_SECOND_OPINION_FLOW_VERSION) {
         throw new Error('Reflection generation run is not retryable by the current flow.');
       }
       if (retrySource.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v2'
         && retrySource.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v3'
         && retrySource.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v4'
-        && retrySource.evidenceBundle.schemaVersion !== 'deferred_second_opinion_bundle.v1') {
+        && retrySource.evidenceBundle.schemaVersion !== 'curated_reflection_bundle.v1') {
         throw new Error('The current reflection flow cannot retry this evidence bundle.');
       }
       const selectedChoice = model ?? choiceForStoredModel(retrySource.model);
@@ -279,7 +283,9 @@ export function createInitialReflectionGenerationService(
         throw new RetiredReflectionSourceModelError(retrySource.model);
       }
       const retryStartedAt = Date.now();
-      const lifecycleSessionId = retrySource.evidenceBundle.session.sessionId;
+      const lifecycleSessionId = 'session' in retrySource.evidenceBundle
+        ? retrySource.evidenceBundle.session.sessionId
+        : null;
       lifecycleLogger?.emit({
         event: 'reflection.generation_requested',
         sessionId: lifecycleSessionId,
@@ -293,6 +299,7 @@ export function createInitialReflectionGenerationService(
             eligibleItemCount: retrySource.eligibleItemCount,
             includedItemCount: retrySource.includedItemCount,
           },
+          sourceProposalIds: retrySource.sourceProposalIds ?? undefined,
           generatedAt: now(),
           provider: selectProvider(selectedChoice).provider,
           providerConfig: reflectionProviderConfigForChoice(selectedChoice),
@@ -336,16 +343,17 @@ export function createInitialReflectionGenerationService(
       const key = `deferred-second-opinion\u0000${normalizedProposalIds.join('\u0000')}\u0000${model}`;
       return runCoalesced(key, () => {
         const generatedAt = now();
-        const bundle = buildDeferredBundle(normalizedProposalIds, generatedAt);
+        const deferred = buildDeferredBundle(normalizedProposalIds, generatedAt);
         const selectedProvider = selectProvider(model);
         return generateBundleAndMaterialize({
           sourceSessionId: null,
           reflectionFlowVersion: DEFERRED_SECOND_OPINION_FLOW_VERSION,
           builtBundle: {
-            bundle,
-            eligibleItemCount: bundle.items.length,
-            includedItemCount: bundle.items.length,
+            bundle: deferred.bundle,
+            eligibleItemCount: deferred.bundle.items.length,
+            includedItemCount: deferred.bundle.items.length,
           },
+          sourceProposalIds: deferred.sourceProposalIds,
           generatedAt,
           provider: selectedProvider.provider,
           providerConfig: selectedProvider.config,
@@ -407,7 +415,7 @@ async function generateBundleAndMaterialize(input: {
   sourceSessionId: string | null;
   reflectionFlowVersion: string;
   builtBundle: {
-    bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4 | DeferredSecondOpinionBundleV1;
+    bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4 | CuratedReflectionBundleV1;
     eligibleItemCount: number;
     includedItemCount: number;
   };
@@ -423,10 +431,11 @@ async function generateBundleAndMaterialize(input: {
   lifecycleLogger: ReflectionLifecycleLogger | undefined;
   runId: string;
   clientRequestId: string;
+  sourceProposalIds?: string[];
 }): Promise<InitialReflectionGenerationResult> {
   const builtBundle = input.builtBundle;
   const { bundle } = builtBundle;
-  const lifecycleSessionId = bundle.session.sessionId;
+  const lifecycleSessionId = 'session' in bundle ? bundle.session.sessionId : null;
   input.startRun({
     runId: input.runId,
     sourceSessionId: input.sourceSessionId,
@@ -440,6 +449,7 @@ async function generateBundleAndMaterialize(input: {
     eligibleItemCount: builtBundle.eligibleItemCount,
     includedItemCount: builtBundle.includedItemCount,
     evidenceBundle: bundle,
+    ...(input.sourceProposalIds === undefined ? {} : { sourceProposalIds: input.sourceProposalIds }),
   });
   input.lifecycleLogger?.emit({
     event: 'reflection.provider_started',
@@ -461,6 +471,7 @@ async function generateBundleAndMaterialize(input: {
       promptVersion: generated.metadata.promptVersion,
       evidenceBundle: bundle,
       result: generated.result,
+      ...(input.sourceProposalIds === undefined ? {} : { sourceProposalIds: input.sourceProposalIds }),
     });
     artifactMaterialized = true;
     try {
@@ -478,6 +489,7 @@ async function generateBundleAndMaterialize(input: {
         includedItemCount: builtBundle.includedItemCount,
         evidenceBundle: bundle,
         clientRequestId: input.clientRequestId,
+        sourceProposalIds: input.sourceProposalIds,
       }));
     } catch {
       // A successful immutable artifact remains a success if optional dogfood
@@ -501,6 +513,7 @@ async function generateBundleAndMaterialize(input: {
           includedItemCount: builtBundle.includedItemCount,
           evidenceBundle: bundle,
           clientRequestId: input.clientRequestId,
+          sourceProposalIds: input.sourceProposalIds,
         }));
       } catch {
         // Run logging must not turn a reflection/provider failure into a study failure.
@@ -522,8 +535,9 @@ function runRecordInput(input: {
   error: unknown;
   eligibleItemCount: number;
   includedItemCount: number;
-  evidenceBundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4 | DeferredSecondOpinionBundleV1;
+  evidenceBundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4 | CuratedReflectionBundleV1;
   clientRequestId: string;
+  sourceProposalIds?: string[];
 }): RecordReflectionGenerationRunInput {
   const estimate = estimateInitialReflectionRunCost({
     provider: input.metadata.provider,
@@ -560,6 +574,7 @@ function runRecordInput(input: {
     pricingBasis: estimate?.pricing ?? null,
     estimatedCostUsd: estimate?.estimatedCostUsd ?? null,
     evidenceBundle: input.evidenceBundle,
+    ...(input.sourceProposalIds === undefined ? {} : { sourceProposalIds: input.sourceProposalIds }),
   };
 }
 

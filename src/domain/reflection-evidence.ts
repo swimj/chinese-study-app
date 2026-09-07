@@ -12,7 +12,7 @@ import type {
   SessionReflectionBundleV2,
   SessionReflectionBundleV3,
   SessionReflectionBundleV4,
-  DeferredSecondOpinionBundleV1,
+  CuratedReflectionBundleV1,
 } from './reflection';
 
 export type ProductionMistakeCueEvidenceV1 = Omit<ReflectionCueSnapshotV0, 'cueType'> & {
@@ -352,33 +352,21 @@ export function parseSessionReflectionBundleV4(value: unknown): SessionReflectio
   return value as SessionReflectionBundleV4;
 }
 
-export function parseDeferredSecondOpinionBundleV1(value: unknown): DeferredSecondOpinionBundleV1 {
-  if (!isRecord(value)) throw new Error('Invalid deferred second-opinion bundle V1');
-  const { source, ...sessionBundle } = value;
+export function parseCuratedReflectionBundleV1(value: unknown): CuratedReflectionBundleV1 {
+  if (!isRecord(value)) throw new Error('Invalid curated reflection bundle V1');
+  const { items, ...envelope } = value;
   const errors = validateSessionReflectionBundleV4({
-    ...sessionBundle,
+    generatedAt: value.generatedAt,
+    session: { sessionId: 'validation-only', startedAt: null, endedAt: null, studyProfile: 'mandarin' },
+    items,
     schemaVersion: 'session_reflection_bundle.v4',
   });
-  errors.push(...validateObjectFields(source, ['kind', 'proposalIds'], '$.source'));
-  if (!isRecord(source)) {
-    throw new Error(`Invalid deferred second-opinion bundle V1:\n${errors.join('\n')}`);
+  errors.push(...validateObjectFields(envelope, ['schemaVersion', 'generatedAt'], '$'));
+  if (value.schemaVersion !== 'curated_reflection_bundle.v1') {
+    errors.push('$.schemaVersion: expected curated_reflection_bundle.v1');
   }
-  if (value.schemaVersion !== 'deferred_second_opinion_bundle.v1') {
-    errors.push('$.schemaVersion: expected deferred_second_opinion_bundle.v1');
-  }
-  if (source.kind !== 'deferred_second_opinion') {
-    errors.push('$.source.kind: expected deferred_second_opinion');
-  }
-  if (!Array.isArray(source.proposalIds) || source.proposalIds.length === 0) {
-    errors.push('$.source.proposalIds: expected a non-empty array');
-  } else {
-    const ids = new Set<string>();
-    source.proposalIds.forEach((proposalId, index) => {
-      errors.push(...validateUniqueId(proposalId, `$.source.proposalIds[${index}]`, ids, 'proposal id'));
-    });
-  }
-  if (errors.length > 0) throw new Error(`Invalid deferred second-opinion bundle V1:\n${errors.join('\n')}`);
-  return value as DeferredSecondOpinionBundleV1;
+  if (errors.length > 0) throw new Error(`Invalid curated reflection bundle V1:\n${errors.join('\n')}`);
+  return value as CuratedReflectionBundleV1;
 }
 
 export function parseStoredSessionReflectionBundle(value: unknown): SessionReflectionBundle {
@@ -391,8 +379,8 @@ export function parseStoredSessionReflectionBundle(value: unknown): SessionRefle
   if (isRecord(value) && value.schemaVersion === 'session_reflection_bundle.v4') {
     return parseSessionReflectionBundleV4(value);
   }
-  if (isRecord(value) && value.schemaVersion === 'deferred_second_opinion_bundle.v1') {
-    return parseDeferredSecondOpinionBundleV1(value);
+  if (isRecord(value) && value.schemaVersion === 'curated_reflection_bundle.v1') {
+    return parseCuratedReflectionBundleV1(value);
   }
   return parseSessionReflectionBundle(value);
 }
