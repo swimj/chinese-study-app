@@ -32,6 +32,7 @@ import {
   type ProductionAnswerLookup,
 } from '../../src/domain/production-response.ts';
 import { config, getConfig, getDb, dbPath, seedDataPath, dbExistedOnStartup } from './connection.ts';
+import { assertSchemaCurrent, migrateDatabase } from './migrations.ts';
 import { createHostedOperationsSchema } from './hosted-operations.ts';
 import {
   createReflectionIndexes,
@@ -82,7 +83,6 @@ import {
 } from './unstudied-admission.ts';
 import {
   assertLearnerExists,
-  hasLearnerOwnershipSchema,
   bootstrapLearner,
   createIdentitySchema,
   recordLearnerOwnershipSchema,
@@ -2432,6 +2432,7 @@ export function initializeDatabase() {
     createSchema();
     createHostedOperationsSchema();
     recordLearnerOwnershipSchema();
+    migrateDatabase(getDb());
     if (config.authMode === 'trusted_local') {
       bootstrapLearner({ learnerId: config.learnerId });
       ensureDefaultDailyNewWordLimit();
@@ -2441,9 +2442,7 @@ export function initializeDatabase() {
     return;
   }
 
-  if (!hasLearnerOwnershipSchema()) {
-    throw new Error(`Database at ${dbPath} predates learner ownership and is no longer supported by this build.`);
-  }
+  assertSchemaCurrent(getDb());
   validateSchema();
   if (config.authMode === 'trusted_local') {
     assertLearnerExists(config.learnerId);
