@@ -163,7 +163,7 @@ provider in the hosted pool.
 - Keep one clone of the repo for development and another for your stable study use.
 - Use `dev` mode in the development clone.
 - Use `study` mode in the stable clone, pointing at an explicit external data directory.
-- Treat upgrades into the study clone like releases: update code, restart the app, and keep the same study data directory.
+- Treat upgrades into the study clone like releases: stop the app, back up the database, run the target release’s explicit [schema migration command](docs/ops/schema-migrations.md), then restart using the same study data directory.
 
 ### Clerk development fixture
 

@@ -207,6 +207,10 @@ fly ssh console --app <app-name> --command \
   'litestream sync -wait -timeout 60 -socket /data/litestream.sock -json /data/app.db'
 ```
 
+For schema-changing releases, including initial migration baseline adoption,
+follow the [offline migration procedure](schema-migrations.md). The app-only
+`hosted:upgrade` command cannot perform these releases.
+
 Create an attributable marker before an important release, record its id in
 the release evidence, deploy, inspect, and smoke-test. Reopen writes first and
 provider work last:

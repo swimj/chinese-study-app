@@ -206,12 +206,12 @@ or retirement therefore cannot rewrite historical evidence.
 [`server/db.ts`](../server/db.ts) runs:
 
 1. `initDbConnection()` — reads current `APP_*` env and opens `app.db`
-2. `initializeDatabase()` — creates a fresh schema with strict, once-only
-   constructors. Trusted-local mode bootstraps its configured learner; Clerk
-   mode creates learners after verified first sign-in. Existing databases must
-   have the learner ownership marker and pass schema validation; startup does
-   not recreate schema objects. Explicit versioned migration infrastructure
-   follows in the next change.
+2. `initializeDatabase()` — creates a fresh baseline schema and applies shipped
+   versioned migrations. Fresh-only `create…` constructors use strict SQL and
+   create each object once; they are never repair or upgrade entrypoints. Trusted-local mode bootstraps its configured learner;
+   Clerk mode creates learners after verified first sign-in. Existing databases
+   must already have the exact current migration ledger and schema fingerprint;
+   startup validates them without installing schema objects or running backfills.
 
 Tests that dynamic-import `server/db.ts?test=…` rely on this running once per import URL.
 
