@@ -85,6 +85,7 @@ portfolio-disposition pattern as Linear.
 | [2026-09-04-swi-51-app-only-upgrade-pipeline.md](active/2026-09-04-swi-51-app-only-upgrade-pipeline.md) | work-bundle | when the first app-only upgrade pipeline is dispositioned |
 | [2026-09-04-swi-51-release-maturity-map.md](active/2026-09-04-swi-51-release-maturity-map.md) | work-bundle | when SWI-51's accepted contract graduates |
 | [2026-09-03-swi-51-hosted-release-design.md](active/2026-09-03-swi-51-hosted-release-design.md) | work-bundle | when SWI-51 is dispositioned and its accepted release contract has graduated |
+| [2026-09-01-swi-43-ui-experience-interview.md](active/2026-09-01-swi-43-ui-experience-interview.md) | research | when interview notes are captured and later synthesized into SWI-43 / the 2026-08-23 brief |
 | [2026-08-23-swi-43-beta-interaction-brief.md](active/2026-08-23-swi-43-beta-interaction-brief.md) | work-bundle | when SWI-43 is dispositioned and the first implementation slice is accepted or declined |
 | [2026-08-16-swi-42-service-boundary-design.md](active/2026-08-16-swi-42-service-boundary-design.md) | work-bundle | when SWI-42 is dispositioned and the steel thread is dispatched |
 | [2026-08-14-meta-project-direction-todo.md](active/2026-08-14-meta-project-direction-todo.md) | work-bundle | 2026-09-14 |
