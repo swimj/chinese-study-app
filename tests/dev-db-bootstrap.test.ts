@@ -24,7 +24,7 @@ function registerPersistedLearnerContext(sqlite: DatabaseSync): void {
 }
 
 describe('dev database bootstrap', { concurrency: false }, () => {
-  test('rebuilds an invalid dev database from the checked-in mandarin dev seed fixture', async () => {
+  test('creates a fresh dev database from the checked-in mandarin dev seed fixture', async () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-dev-bootstrap-'));
     const dbPath = path.join(dataDir, 'app.db');
     const sourceSeedPath = path.resolve('server/seeds/mandarin-dev.json');
@@ -32,8 +32,6 @@ describe('dev database bootstrap', { concurrency: false }, () => {
       words: Array<{ id: string }>;
     };
     const reviewWordCount = seedData.words.length;
-
-    fs.writeFileSync(dbPath, '');
 
     const previousMode = process.env.APP_MODE;
     const previousDataDir = process.env.APP_DATA_DIR;
@@ -101,7 +99,7 @@ describe('dev database bootstrap', { concurrency: false }, () => {
       const backupFiles = fs
         .readdirSync(dataDir)
         .filter((entry) => entry.startsWith('app.db.invalid-backup-'));
-      assert.equal(backupFiles.length, 1);
+      assert.equal(backupFiles.length, 0);
     } finally {
       if (previousMode === undefined) {
         delete process.env.APP_MODE;
@@ -134,32 +132,14 @@ describe('dev database bootstrap', { concurrency: false }, () => {
     };
     const reviewWordCount = seedData.words.length;
 
-    const sqlite = new DatabaseSync(dbPath);
-    sqlite.exec(`
-      CREATE TABLE words (
-        id TEXT PRIMARY KEY,
-        hanzi TEXT NOT NULL,
-        traditional TEXT,
-        pinyin TEXT NOT NULL,
-        meaning TEXT NOT NULL,
-        meanings_json TEXT NOT NULL DEFAULT '[]',
-        personal_notes TEXT NOT NULL DEFAULT '',
-        examples_json TEXT NOT NULL,
-        status TEXT NOT NULL,
-        priority INTEGER NOT NULL,
-        created_at TEXT NOT NULL,
-        learning_streak INTEGER NOT NULL DEFAULT 0,
-        last_learning_success_on TEXT,
-        last_learning_covered_on TEXT
-      );
-    `);
-    sqlite.close();
-
     const previousMode = process.env.APP_MODE;
     const previousDataDir = process.env.APP_DATA_DIR;
     const previousSeedDataPath = process.env.APP_SEED_DATA_PATH;
 
     try {
+      process.env.APP_MODE = 'study';
+      process.env.APP_DATA_DIR = dataDir;
+      await import(`${pathToFileURL(path.resolve('server/db.ts')).href}?test=empty-prime-${Date.now()}`);
       process.env.APP_MODE = 'dev';
       process.env.APP_DATA_DIR = dataDir;
       process.env.APP_SEED_DATA_PATH = sourceSeedPath;
@@ -197,7 +177,7 @@ describe('dev database bootstrap', { concurrency: false }, () => {
     }
   });
 
-  test('repairs contextual eligibility for persisted cluster members without resetting scheduler history', async () => {
+  test('preserves persisted contextual eligibility without a startup backfill', async () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-cluster-backfill-'));
     const dbPath = path.join(dataDir, 'app.db');
     const previousMode = process.env.APP_MODE;
@@ -268,21 +248,17 @@ describe('dev database bootstrap', { concurrency: false }, () => {
           ease_factor: number;
         }>;
 
-        assert.equal(rows.length, 2);
+        assert.equal(rows.length, 1);
         assert.deepEqual({ ...rows[0] }, {
           word_id: 'disabled-eligibility',
-          relevance_state: 'normal',
-          enabled: 1,
+          relevance_state: 'suppressed',
+          enabled: 0,
           interval_hours: 72,
           last_studied_at: '2026-04-03T00:00:00.000Z',
           next_due_at: '2026-04-06T00:00:00.000Z',
           ease_factor: 2.1,
         });
-        assert.equal(rows[1]?.word_id, 'missing-eligibility');
-        assert.equal(rows[1]?.relevance_state, 'normal');
-        assert.equal(rows[1]?.enabled, 1);
-        assert.equal(rows[1]?.interval_hours, 6);
-        assert.equal(rows[1]?.ease_factor, 2.5);
+
       } finally {
         repaired.close();
       }

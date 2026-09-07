@@ -31,16 +31,16 @@ import {
   resolveUniqueOutOfSetWordId,
   type ProductionAnswerLookup,
 } from '../../src/domain/production-response.ts';
-import { config, getConfig, getDb, dbPath, seedDataPath, dbExistedOnStartup, openDatabase, setDb } from './connection.ts';
-import { ensureHostedOperationsSchema } from './hosted-operations.ts';
+import { config, getConfig, getDb, dbPath, seedDataPath, dbExistedOnStartup } from './connection.ts';
+import { createHostedOperationsSchema } from './hosted-operations.ts';
 import {
-  ensureReflectionIndexes,
-  ensureReflectionSchema,
+  createReflectionIndexes,
+  createReflectionSchema,
   validateReflectionSchema,
 } from './reflections.ts';
 import {
-  ensureIntakeTriageIndexes,
-  ensureIntakeTriageSchema,
+  createIntakeTriageIndexes,
+  createIntakeTriageSchema,
   validateIntakeTriageSchema,
 } from './intake-triage.ts';
 import {
@@ -53,8 +53,8 @@ import {
   appendProductionRecheckDemandWithoutTransaction,
   consumeProductionRecheckDemandWithoutTransaction,
   defaultProductionTaskId,
-  ensureProductionCueIndexes,
-  ensureProductionCueSchema,
+  createProductionCueIndexes,
+  createProductionCueSchema,
   getActiveProductionCuesForWord,
   getPendingProductionRecheckForWord,
   getProductionCueSupplement,
@@ -82,24 +82,24 @@ import {
 } from './unstudied-admission.ts';
 import {
   assertLearnerExists,
-  bootstrapLearner,
-  ensureIdentitySchema,
   hasLearnerOwnershipSchema,
+  bootstrapLearner,
+  createIdentitySchema,
   recordLearnerOwnershipSchema,
 } from './identity.ts';
-import { installLearnerContextSqlFunction, requireLearnerId } from './learner-context.ts';
+import { requireLearnerId } from './learner-context.ts';
 import {
-  installLearnerScopedCompatibilityViews,
+  createLearnerScopedCompatibilityViews,
   learnerScopedStorageTableName,
 } from './learner-scoped-tables.ts';
 import {
-  installScopedContentCompatibilityViews,
+  createScopedContentCompatibilityViews,
   scopedContentStorageTableName,
 } from './scoped-content-tables.ts';
 
-import { installLearnerOwnershipGuards } from './learner-ownership-guards.ts';
+import { createLearnerOwnershipGuards } from './learner-ownership-guards.ts';
 import {
-  ensureSharedContentSchema,
+  createSharedContentSchema,
   validateSharedContentSchema,
 } from './shared-content.ts';
 
@@ -2430,7 +2430,7 @@ export function dismissWordFromStudy(wordId: string): void {
 export function initializeDatabase() {
   if (!dbExistedOnStartup) {
     createSchema();
-    ensureHostedOperationsSchema();
+    createHostedOperationsSchema();
     recordLearnerOwnershipSchema();
     if (config.authMode === 'trusted_local') {
       bootstrapLearner({ learnerId: config.learnerId });
@@ -2441,443 +2441,14 @@ export function initializeDatabase() {
     return;
   }
 
-  try {
-    if (!hasLearnerOwnershipSchema()) {
-      throw new Error(
-        `Database at ${dbPath} predates learner ownership and is no longer supported by this build.`,
-      );
-    }
-    ensureHostedOperationsSchema();
-    ensureReflectionSchema();
-    ensureSharedContentSchema();
-    installScopedContentCompatibilityViews();
-    installLearnerScopedCompatibilityViews();
-    installLearnerOwnershipGuards();
-    validateSchema();
-    if (config.authMode === 'trusted_local') {
-      assertLearnerExists(config.learnerId);
-    }
-    ensureIndexes();
-    seedEmptyDevDatabase();
-    backfillContrastClusterMemberEligibility();
-  } catch (error) {
-    if (!shouldRebuildDevDatabase(error)) {
-      throw error;
-    }
-
-    rebuildDevDatabase(error);
-    backfillContrastClusterMemberEligibility();
+  if (!hasLearnerOwnershipSchema()) {
+    throw new Error(`Database at ${dbPath} predates learner ownership and is no longer supported by this build.`);
   }
-}
-
-function applyLightweightSchemaMigrations() {
-  const wordColumns = getDb().prepare(`PRAGMA table_info(words)`).all() as Array<{ name: string }>;
-  const hasWordsTable = wordColumns.length > 0;
-
-  if (!hasWordsTable) {
-    return;
+  validateSchema();
+  if (config.authMode === 'trusted_local') {
+    assertLearnerExists(config.learnerId);
   }
-
-  const hasMeaningsJson = wordColumns.some((column) => column.name === 'meanings_json');
-  if (!hasMeaningsJson) {
-    getDb().exec(`ALTER TABLE words ADD COLUMN meanings_json TEXT NOT NULL DEFAULT '[]'`);
-  }
-
-  const hasPersonalNotes = wordColumns.some((column) => column.name === 'personal_notes');
-  if (!hasPersonalNotes) {
-    getDb().exec(`ALTER TABLE words ADD COLUMN personal_notes TEXT NOT NULL DEFAULT ''`);
-  }
-
-  ensureDefaultDailyNewWordLimit();
-
-  getDb().exec(`
-    CREATE TABLE IF NOT EXISTS user_word_priority (
-      word_id TEXT PRIMARY KEY REFERENCES lexical_words(id) ON DELETE CASCADE,
-      bump_count INTEGER NOT NULL DEFAULT 0,
-      force_top INTEGER NOT NULL DEFAULT 0,
-      priority_tier INTEGER NOT NULL DEFAULT 0,
-      required_for_next_session INTEGER NOT NULL DEFAULT 0,
-      updated_at TEXT NOT NULL
-    );
-  `);
-
-  ensureWordLookupAliasesSchema();
-
-  getDb().exec(`
-    CREATE TABLE IF NOT EXISTS word_meanings (
-      id TEXT PRIMARY KEY,
-      word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
-      position INTEGER NOT NULL,
-      text TEXT NOT NULL,
-      show_on_production_prompt INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      UNIQUE(word_id, position)
-    );
-  `);
-
-  getDb().exec(`
-    CREATE TABLE IF NOT EXISTS daily_new_word_intake (
-      day_key TEXT PRIMARY KEY,
-      new_study_count INTEGER NOT NULL DEFAULT 0
-    );
-  `);
-
-  getDb().exec(`
-    CREATE TABLE IF NOT EXISTS word_study_admission_state (
-      word_id TEXT PRIMARY KEY REFERENCES lexical_words(id) ON DELETE CASCADE,
-      study_phase TEXT NOT NULL,
-      earliest_next_study_at TEXT
-    );
-  `);
-
-  getDb().exec(`
-    CREATE TABLE IF NOT EXISTS word_skill_state (
-      word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
-      skill_id TEXT NOT NULL,
-      enabled INTEGER NOT NULL DEFAULT 1,
-      interval_hours INTEGER NOT NULL,
-      last_studied_at TEXT NOT NULL,
-      next_due_at TEXT,
-      ease_factor REAL NOT NULL,
-      PRIMARY KEY (word_id, skill_id)
-    );
-  `);
-
-  migrateWordSkillStateLastStudiedAtNotNull();
-
-  getDb().exec(`
-    CREATE TABLE IF NOT EXISTS review_session_summaries (
-      session_id TEXT PRIMARY KEY,
-      completed_at TEXT NOT NULL,
-      day_key TEXT NOT NULL,
-      completed_count INTEGER NOT NULL,
-      failed_count INTEGER NOT NULL,
-      active_duration_ms INTEGER NOT NULL DEFAULT 0
-    );
-  `);
-  ensureReviewSessionSummariesActiveDurationSchema();
-
-  getDb().exec(`
-    CREATE TABLE IF NOT EXISTS study_sessions (
-      id TEXT PRIMARY KEY,
-      started_at TEXT NOT NULL,
-      ended_at TEXT,
-      processing_state TEXT NOT NULL,
-      processed_at TEXT
-    );
-  `);
-
-  getDb().exec(`
-    CREATE TABLE IF NOT EXISTS study_attempt_events (
-      id TEXT PRIMARY KEY,
-      occurred_at TEXT NOT NULL,
-      session_id TEXT NOT NULL REFERENCES study_sessions(id) ON DELETE CASCADE,
-      session_action_id TEXT NOT NULL,
-      session_event_sequence INTEGER NOT NULL,
-      action_attempt_sequence INTEGER NOT NULL,
-      action_kind TEXT NOT NULL,
-      target_word_id TEXT NOT NULL REFERENCES lexical_words(id),
-      sampled_skill_ids_json TEXT NOT NULL,
-      response TEXT,
-      outcome TEXT NOT NULL,
-      rating TEXT,
-      content_ref_json TEXT,
-      metadata_json TEXT NOT NULL,
-      projected_at TEXT
-    );
-  `);
-
-  getDb().exec(`
-    CREATE TABLE IF NOT EXISTS study_events (
-      id TEXT PRIMARY KEY,
-      occurred_at TEXT NOT NULL,
-      session_id TEXT REFERENCES study_sessions(id) ON DELETE CASCADE,
-      session_action_id TEXT,
-      session_event_sequence INTEGER,
-      event_type TEXT NOT NULL,
-      target_word_id TEXT REFERENCES lexical_words(id),
-      action_kind TEXT,
-      sampled_skill_ids_json TEXT NOT NULL DEFAULT '[]',
-      content_ref_json TEXT,
-      payload_json TEXT NOT NULL,
-      projected_at TEXT
-    );
-  `);
-
-  getDb().exec(`
-    CREATE TABLE IF NOT EXISTS word_skill_relevance (
-      word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
-      skill_id TEXT NOT NULL,
-      relevance_state TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      source_event_id TEXT REFERENCES study_events(id) ON DELETE SET NULL,
-      PRIMARY KEY (word_id, skill_id)
-    );
-  `);
-
-  getDb().exec(`
-    CREATE TABLE IF NOT EXISTS contrast_clusters (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      note TEXT NOT NULL DEFAULT ''
-    );
-
-    CREATE TABLE IF NOT EXISTS contrast_cluster_members (
-      cluster_id TEXT NOT NULL REFERENCES contrast_clusters(id) ON DELETE CASCADE,
-      word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
-      nuance_note TEXT NOT NULL DEFAULT '',
-      display_order INTEGER,
-      PRIMARY KEY (cluster_id, word_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS contrast_prompts (
-      id TEXT PRIMARY KEY,
-      cluster_id TEXT NOT NULL REFERENCES contrast_clusters(id) ON DELETE CASCADE,
-      target_word_id TEXT NOT NULL,
-      prompt_text TEXT NOT NULL,
-      explanation TEXT NOT NULL DEFAULT '',
-      FOREIGN KEY (cluster_id, target_word_id)
-        REFERENCES contrast_cluster_members(cluster_id, word_id)
-        ON DELETE CASCADE
-    );
-  `);
-  ensureReflectionSchema();
-  ensureProductionCueSchema();
-  ensureSharedContentSchema();
-  ensureIntakeTriageSchema();
-
-  const userPriorityColumns = getDb().prepare(`PRAGMA table_info(user_word_priority)`).all() as Array<{ name: string }>;
-  const hasPriorityTier = userPriorityColumns.some((column) => column.name === 'priority_tier');
-  if (!hasPriorityTier) {
-    getDb().exec(`ALTER TABLE user_word_priority ADD COLUMN priority_tier INTEGER NOT NULL DEFAULT 0`);
-    getDb().exec(`UPDATE user_word_priority SET priority_tier = CASE WHEN force_top != 0 THEN 1 ELSE 0 END`);
-  }
-
-  const hasRequiredForNextSession = userPriorityColumns.some((column) => column.name === 'required_for_next_session');
-  if (!hasRequiredForNextSession) {
-    getDb().exec(`ALTER TABLE user_word_priority ADD COLUMN required_for_next_session INTEGER NOT NULL DEFAULT 0`);
-  }
-
-  ensureWordLookupAliasesSchema();
-
-  getDb().exec(`
-    UPDATE user_word_priority
-    SET priority_tier = 1
-    WHERE force_top != 0
-      AND priority_tier = 0
-  `);
-
-  backfillWordMeaningsFromWords();
-}
-
-function ensureWordLookupAliasesSchema() {
-  getDb().exec(`
-    CREATE TABLE IF NOT EXISTS word_lookup_aliases (
-      alias_text TEXT NOT NULL,
-      normalized_alias TEXT NOT NULL,
-      word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
-      relation TEXT NOT NULL,
-      source TEXT NOT NULL,
-      tags_json TEXT NOT NULL DEFAULT '[]',
-      confidence REAL,
-      created_at TEXT NOT NULL,
-      PRIMARY KEY (normalized_alias, word_id, source)
-    );
-  `);
-
-  const columns = getDb().prepare(`PRAGMA table_info(word_lookup_aliases)`).all() as Array<{ name: string }>;
-  const hasTagsJson = columns.some((column) => column.name === 'tags_json');
-  if (!hasTagsJson) {
-    getDb().exec(`ALTER TABLE word_lookup_aliases ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'`);
-  }
-
-  migrateWordLookupAliasesPrimaryKey();
-}
-
-function migrateWordLookupAliasesPrimaryKey() {
-  const columns = getDb().prepare(`PRAGMA table_info(word_lookup_aliases)`).all() as Array<{ name: string; pk: number }>;
-  const primaryKeyColumns = columns
-    .filter((column) => column.pk > 0)
-    .sort((left, right) => left.pk - right.pk)
-    .map((column) => column.name);
-
-  if (primaryKeyColumns.join('\t') === 'normalized_alias\tword_id\tsource') {
-    return;
-  }
-
-  getDb().exec('BEGIN');
-
-  try {
-    getDb().exec(`
-      CREATE TABLE word_lookup_aliases_next (
-        alias_text TEXT NOT NULL,
-        normalized_alias TEXT NOT NULL,
-        word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
-        relation TEXT NOT NULL,
-        source TEXT NOT NULL,
-        tags_json TEXT NOT NULL DEFAULT '[]',
-        confidence REAL,
-        created_at TEXT NOT NULL,
-        PRIMARY KEY (normalized_alias, word_id, source)
-      );
-
-      INSERT OR IGNORE INTO word_lookup_aliases_next (
-        alias_text,
-        normalized_alias,
-        word_id,
-        relation,
-        source,
-        tags_json,
-        confidence,
-        created_at
-      )
-      SELECT
-        alias_text,
-        normalized_alias,
-        word_id,
-        relation,
-        source,
-        tags_json,
-        confidence,
-        created_at
-      FROM word_lookup_aliases
-      ORDER BY rowid ASC;
-
-      DROP TABLE word_lookup_aliases;
-      ALTER TABLE word_lookup_aliases_next RENAME TO word_lookup_aliases;
-    `);
-    getDb().exec('COMMIT');
-  } catch (error) {
-    getDb().exec('ROLLBACK');
-    throw error;
-  }
-}
-
-function migrateWordSkillStateLastStudiedAtNotNull() {
-  const columns = getDb().prepare(`PRAGMA table_info(word_skill_state)`).all() as Array<{ name: string; notnull: number; pk: number }>;
-  const lastStudiedAtColumn = columns.find((column) => column.name === 'last_studied_at');
-
-  if (!lastStudiedAtColumn || lastStudiedAtColumn.notnull === 1 || lastStudiedAtColumn.pk !== 0) {
-    return;
-  }
-
-  const nullCount = getDb()
-    .prepare(`
-      SELECT COUNT(*) AS count
-      FROM word_skill_state
-      WHERE last_studied_at IS NULL
-    `)
-    .get() as { count: number };
-
-  if (nullCount.count > 0) {
-    throw new Error(
-      `Database at ${dbPath} cannot migrate word_skill_state.last_studied_at to NOT NULL because ${nullCount.count} row(s) contain NULL.`,
-    );
-  }
-
-  getDb().exec('BEGIN');
-
-  try {
-    getDb().exec(`
-      CREATE TABLE word_skill_state_next (
-        word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
-        skill_id TEXT NOT NULL,
-        enabled INTEGER NOT NULL DEFAULT 1,
-        interval_hours INTEGER NOT NULL,
-        last_studied_at TEXT NOT NULL,
-        next_due_at TEXT,
-        ease_factor REAL NOT NULL,
-        PRIMARY KEY (word_id, skill_id)
-      );
-
-      INSERT INTO word_skill_state_next (
-        word_id,
-        skill_id,
-        enabled,
-        interval_hours,
-        last_studied_at,
-        next_due_at,
-        ease_factor
-      )
-      SELECT
-        word_id,
-        skill_id,
-        enabled,
-        interval_hours,
-        last_studied_at,
-        next_due_at,
-        ease_factor
-      FROM word_skill_state;
-
-      DROP TABLE word_skill_state;
-      ALTER TABLE word_skill_state_next RENAME TO word_skill_state;
-    `);
-
-    getDb().exec('COMMIT');
-  } catch (error) {
-    getDb().exec('ROLLBACK');
-    throw error;
-  }
-}
-
-function backfillWordMeaningsFromWords() {
-  const wordsWithoutMeanings = getDb()
-    .prepare(`
-      SELECT
-        words.id,
-        words.meaning,
-        words.meanings_json,
-        words.created_at
-      FROM words
-      WHERE NOT EXISTS (
-        SELECT 1
-        FROM word_meanings
-        WHERE word_meanings.word_id = words.id
-      )
-    `)
-    .all() as Array<{ id: string; meaning: string; meanings_json: string; created_at: string }>;
-
-  if (wordsWithoutMeanings.length === 0) {
-    return;
-  }
-
-  const insertMeaning = getDb().prepare(`
-    INSERT INTO word_meanings (
-      id,
-      word_id,
-      position,
-      text,
-      show_on_production_prompt,
-      created_at,
-      updated_at
-    )
-    VALUES (?, ?, ?, ?, 1, ?, ?)
-  `);
-
-  getDb().exec('BEGIN');
-
-  try {
-    for (const word of wordsWithoutMeanings) {
-      const meanings = parseMeaningsJson(word.meanings_json, word.meaning);
-      for (const [index, meaningText] of meanings.entries()) {
-        const timestamp = word.created_at || new Date().toISOString();
-        insertMeaning.run(
-          `${word.id}-meaning-${index + 1}`,
-          word.id,
-          index,
-          meaningText,
-          timestamp,
-          timestamp,
-        );
-      }
-    }
-
-    getDb().exec('COMMIT');
-  } catch (error) {
-    getDb().exec('ROLLBACK');
-    throw error;
-  }
+  seedEmptyDevDatabase();
 }
 
 function upsertWordStudyAdmissionState(
@@ -3061,46 +2632,6 @@ function getContrastPromptById(id: string): ContrastPrompt | null {
   return row ? mapContrastPromptRow(row) : null;
 }
 
-function shouldRebuildDevDatabase(error: unknown) {
-  if (config.mode !== 'dev') {
-    return false;
-  }
-
-  return error instanceof Error && error.message.startsWith(`Database at ${dbPath} `);
-}
-
-function rebuildDevDatabase(error: unknown) {
-  const backupPath = path.join(
-    config.dataDir,
-    `app.db.invalid-backup-${new Date().toISOString().replace(/[:.]/g, '-')}`,
-  );
-
-  getDb().close();
-
-  if (fs.existsSync(dbPath)) {
-    fs.renameSync(dbPath, backupPath);
-  }
-
-  console.warn(
-    [
-      `Dev database at ${dbPath} is invalid; rebuilding it from seed data.`,
-      error instanceof Error ? error.message : String(error),
-      `Original file backed up to ${backupPath}.`,
-    ].join(' '),
-  );
-
-  setDb(openDatabase(dbPath));
-  installLearnerContextSqlFunction();
-  createSchema();
-  ensureHostedOperationsSchema();
-  recordLearnerOwnershipSchema();
-  if (config.authMode === 'trusted_local') {
-    bootstrapLearner({ learnerId: config.learnerId });
-    ensureDefaultDailyNewWordLimit();
-  }
-  seedDatabase();
-}
-
 function seedEmptyDevDatabase() {
   if (!config.seedSampleData) {
     return;
@@ -3115,11 +2646,12 @@ function seedEmptyDevDatabase() {
 
   if (counts.word_count === 0) {
     seedDatabase();
+    backfillContrastClusterMemberEligibility();
   }
 }
 
 function createSchema() {
-  ensureIdentitySchema();
+  createIdentitySchema();
   getDb().exec(`
     CREATE TABLE lexical_words (
       id TEXT PRIMARY KEY,
@@ -3444,14 +2976,14 @@ function createSchema() {
     );
   `);
 
-  ensureReflectionSchema();
-  ensureProductionCueSchema();
-  ensureSharedContentSchema();
-  ensureIntakeTriageSchema();
-  ensureIndexes();
-  installScopedContentCompatibilityViews();
-  installLearnerScopedCompatibilityViews();
-  installLearnerOwnershipGuards();
+  createReflectionSchema();
+  createProductionCueSchema();
+  createSharedContentSchema();
+  createIntakeTriageSchema();
+  createIndexes();
+  createScopedContentCompatibilityViews();
+  createLearnerScopedCompatibilityViews();
+  createLearnerOwnershipGuards();
 }
 
 function ensureDefaultDailyNewWordLimit() {
@@ -3465,28 +2997,28 @@ function ensureDefaultDailyNewWordLimit() {
   `).run(requireLearnerId(), JSON.stringify(DEFAULT_DAILY_NEW_WORD_LIMIT), new Date().toISOString());
 }
 
-function ensureIndexes() {
+function createIndexes() {
   getDb().exec(`
-    CREATE INDEX IF NOT EXISTS idx_words_priority ON lexical_words(priority DESC, created_at ASC);
-    CREATE INDEX IF NOT EXISTS idx_word_lookup_aliases_normalized_alias ON word_lookup_aliases(normalized_alias);
-    CREATE INDEX IF NOT EXISTS idx_word_meanings_word_position ON lexical_word_meanings(word_id, position ASC);
-    CREATE INDEX IF NOT EXISTS idx_user_word_priority_force_top ON ${learnerScopedStorageTableName('user_word_priority')}(force_top DESC, updated_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_user_word_priority_tier ON ${learnerScopedStorageTableName('user_word_priority')}(priority_tier DESC, updated_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_word_study_admission_next ON ${learnerScopedStorageTableName('word_study_admission_state')}(earliest_next_study_at ASC);
-    CREATE INDEX IF NOT EXISTS idx_word_skill_state_due ON ${learnerScopedStorageTableName('word_skill_state')}(next_due_at ASC);
-    CREATE INDEX IF NOT EXISTS idx_review_session_summaries_day ON ${learnerScopedStorageTableName('review_session_summaries')}(day_key ASC);
-    CREATE INDEX IF NOT EXISTS idx_study_attempt_events_session ON ${learnerScopedStorageTableName('study_attempt_events')}(session_id ASC, session_event_sequence ASC);
-    CREATE INDEX IF NOT EXISTS idx_study_attempt_events_projected ON ${learnerScopedStorageTableName('study_attempt_events')}(projected_at ASC, session_id ASC);
-    CREATE INDEX IF NOT EXISTS idx_study_events_session ON ${learnerScopedStorageTableName('study_events')}(session_id ASC, session_event_sequence ASC);
-    CREATE INDEX IF NOT EXISTS idx_study_events_projected ON ${learnerScopedStorageTableName('study_events')}(projected_at ASC, occurred_at ASC);
-    CREATE INDEX IF NOT EXISTS idx_word_skill_relevance_state ON ${learnerScopedStorageTableName('word_skill_relevance')}(skill_id ASC, relevance_state ASC);
-    CREATE INDEX IF NOT EXISTS idx_contrast_cluster_members_word ON ${scopedContentStorageTableName('contrast_cluster_members')}(word_id ASC, cluster_id ASC);
-    CREATE INDEX IF NOT EXISTS idx_contrast_prompts_cluster_target ON ${scopedContentStorageTableName('contrast_prompts')}(cluster_id ASC, target_word_id ASC);
-    CREATE INDEX IF NOT EXISTS idx_contrast_prompts_target ON ${scopedContentStorageTableName('contrast_prompts')}(target_word_id ASC);
+    CREATE INDEX idx_words_priority ON lexical_words(priority DESC, created_at ASC);
+    CREATE INDEX idx_word_lookup_aliases_normalized_alias ON word_lookup_aliases(normalized_alias);
+    CREATE INDEX idx_word_meanings_word_position ON lexical_word_meanings(word_id, position ASC);
+    CREATE INDEX idx_user_word_priority_force_top ON ${learnerScopedStorageTableName('user_word_priority')}(force_top DESC, updated_at DESC);
+    CREATE INDEX idx_user_word_priority_tier ON ${learnerScopedStorageTableName('user_word_priority')}(priority_tier DESC, updated_at DESC);
+    CREATE INDEX idx_word_study_admission_next ON ${learnerScopedStorageTableName('word_study_admission_state')}(earliest_next_study_at ASC);
+    CREATE INDEX idx_word_skill_state_due ON ${learnerScopedStorageTableName('word_skill_state')}(next_due_at ASC);
+    CREATE INDEX idx_review_session_summaries_day ON ${learnerScopedStorageTableName('review_session_summaries')}(day_key ASC);
+    CREATE INDEX idx_study_attempt_events_session ON ${learnerScopedStorageTableName('study_attempt_events')}(session_id ASC, session_event_sequence ASC);
+    CREATE INDEX idx_study_attempt_events_projected ON ${learnerScopedStorageTableName('study_attempt_events')}(projected_at ASC, session_id ASC);
+    CREATE INDEX idx_study_events_session ON ${learnerScopedStorageTableName('study_events')}(session_id ASC, session_event_sequence ASC);
+    CREATE INDEX idx_study_events_projected ON ${learnerScopedStorageTableName('study_events')}(projected_at ASC, occurred_at ASC);
+    CREATE INDEX idx_word_skill_relevance_state ON ${learnerScopedStorageTableName('word_skill_relevance')}(skill_id ASC, relevance_state ASC);
+    CREATE INDEX idx_contrast_cluster_members_word ON ${scopedContentStorageTableName('contrast_cluster_members')}(word_id ASC, cluster_id ASC);
+    CREATE INDEX idx_contrast_prompts_cluster_target ON ${scopedContentStorageTableName('contrast_prompts')}(cluster_id ASC, target_word_id ASC);
+    CREATE INDEX idx_contrast_prompts_target ON ${scopedContentStorageTableName('contrast_prompts')}(target_word_id ASC);
   `);
-  ensureReflectionIndexes();
-  ensureProductionCueIndexes();
-  ensureIntakeTriageIndexes();
+  createReflectionIndexes();
+  createProductionCueIndexes();
+  createIntakeTriageIndexes();
 }
 
 function validateSchema() {
@@ -5999,12 +5531,5 @@ function isWordSkillRelevanceState(value: unknown): value is WordSkillRelevanceS
 function assertStudyDayKey(studyDayKey: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(studyDayKey)) {
     throw new Error('Invalid study day key');
-  }
-}
-
-function ensureReviewSessionSummariesActiveDurationSchema() {
-  const columns = getDb().prepare('PRAGMA table_info(review_session_summaries)').all() as Array<{ name: string }>;
-  if (!columns.some((column) => column.name === 'active_duration_ms')) {
-    getDb().exec('ALTER TABLE review_session_summaries ADD COLUMN active_duration_ms INTEGER NOT NULL DEFAULT 0');
   }
 }

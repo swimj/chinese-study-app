@@ -5,16 +5,16 @@ export const LOCAL_AUTH_PROVIDER = 'trusted_local';
 export const CLERK_AUTH_PROVIDER = 'clerk';
 export const LEARNER_OWNERSHIP_MIGRATION_ID = 'swi_47_learner_ownership_v1';
 
-export function ensureIdentitySchema(): void {
+export function createIdentitySchema(): void {
   getDb().exec(`
-    CREATE TABLE IF NOT EXISTS learners (
+    CREATE TABLE learners (
       learner_id TEXT PRIMARY KEY,
       display_name TEXT NOT NULL,
       created_at TEXT NOT NULL,
       disabled_at TEXT
     );
 
-    CREATE TABLE IF NOT EXISTS learner_auth_mappings (
+    CREATE TABLE learner_auth_mappings (
       provider TEXT NOT NULL,
       provider_subject TEXT NOT NULL,
       learner_id TEXT NOT NULL REFERENCES learners(learner_id) ON DELETE CASCADE,
@@ -23,7 +23,7 @@ export function ensureIdentitySchema(): void {
       UNIQUE (provider, learner_id)
     );
 
-    CREATE TABLE IF NOT EXISTS learner_settings (
+    CREATE TABLE learner_settings (
       learner_id TEXT NOT NULL REFERENCES learners(learner_id) ON DELETE CASCADE,
       setting_key TEXT NOT NULL,
       value_json TEXT NOT NULL,
@@ -31,13 +31,13 @@ export function ensureIdentitySchema(): void {
       PRIMARY KEY (learner_id, setting_key)
     );
 
-    CREATE TABLE IF NOT EXISTS schema_migrations (
+    CREATE TABLE schema_migrations (
       migration_id TEXT PRIMARY KEY,
       applied_at TEXT NOT NULL,
       details_json TEXT NOT NULL DEFAULT '{}'
     );
 
-    CREATE TABLE IF NOT EXISTS content_imports (
+    CREATE TABLE content_imports (
       import_id TEXT PRIMARY KEY,
       content_kind TEXT NOT NULL,
       source_ref TEXT NOT NULL,
@@ -45,7 +45,7 @@ export function ensureIdentitySchema(): void {
       details_json TEXT NOT NULL DEFAULT '{}'
     );
 
-    CREATE INDEX IF NOT EXISTS idx_learner_auth_mappings_learner
+    CREATE INDEX idx_learner_auth_mappings_learner
       ON learner_auth_mappings(learner_id, provider);
   `);
 }
@@ -223,7 +223,7 @@ export function hasIdentitySchema(): boolean {
 
 export function recordLearnerOwnershipSchema(appliedAt = new Date().toISOString()): void {
   getDb().prepare(`
-    INSERT OR IGNORE INTO schema_migrations (migration_id, applied_at, details_json)
+    INSERT INTO schema_migrations (migration_id, applied_at, details_json)
     VALUES (?, ?, '{"status":"complete"}')
   `).run(LEARNER_OWNERSHIP_MIGRATION_ID, appliedAt);
 }

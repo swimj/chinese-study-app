@@ -13,7 +13,6 @@ let dataDir = '';
 let sqlite: DatabaseSync;
 let dbModule: DbModule;
 let rawLearnerId = 'learner-a';
-let reinstallLearnerScopedCompatibilityViews: () => void;
 
 describe('learner isolation', { concurrency: false }, () => {
   before(async () => {
@@ -33,9 +32,7 @@ describe('learner isolation', { concurrency: false }, () => {
 
     dbModule.bootstrapLearner({ learnerId: 'learner-a', displayName: 'Learner A' });
     dbModule.bootstrapLearner({ learnerId: 'learner-b', displayName: 'Learner B' });
-    reinstallLearnerScopedCompatibilityViews = (
-      await import('../server/db/learner-scoped-tables.ts')
-    ).installLearnerScopedCompatibilityViews;
+
 
     sqlite = new DatabaseSync(path.join(dataDir, 'app.db'));
     sqlite.function('current_learner_id', () => rawLearnerId);
@@ -356,19 +353,6 @@ describe('learner isolation', { concurrency: false }, () => {
       contentKind: 'production_cue',
       contentId: replacementCueId,
     }]);
-    sqlite.exec(`
-      DROP TRIGGER shared_content_reports_scoped_update;
-      CREATE TRIGGER shared_content_reports_scoped_update
-      INSTEAD OF UPDATE ON shared_content_reports
-      BEGIN
-        UPDATE learner_owned_shared_content_reports
-        SET resolution = NEW.resolution,
-            resolved_at = NEW.resolved_at,
-            resolved_by_operator_id = NEW.resolved_by_operator_id
-        WHERE learner_id = current_learner_id() AND report_id = OLD.report_id;
-      END;
-    `);
-    reinstallLearnerScopedCompatibilityViews();
     assert.throws(
       () => sqlite.prepare(`
         UPDATE shared_content_reports

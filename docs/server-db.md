@@ -206,18 +206,20 @@ or retirement therefore cannot rewrite historical evidence.
 [`server/db.ts`](../server/db.ts) runs:
 
 1. `initDbConnection()` — reads current `APP_*` env and opens `app.db`
-2. `initializeDatabase()` — creates a fresh schema and, in trusted-local mode,
-   its configured learner; Clerk mode instead starts with no learner and
-   bootstraps one after verified first sign-in. Existing databases validate the
-   SWI-47 ownership marker before scoped views, guards, indexes, and any dev
-   seed are installed.
+2. `initializeDatabase()` — creates a fresh schema with strict, once-only
+   constructors. Trusted-local mode bootstraps its configured learner; Clerk
+   mode creates learners after verified first sign-in. Existing databases must
+   have the learner ownership marker and pass schema validation; startup does
+   not recreate schema objects. Explicit versioned migration infrastructure
+   follows in the next change.
 
 Tests that dynamic-import `server/db.ts?test=…` rely on this running once per import URL.
 
-Initialization also repairs every persisted contrast-cluster member to
-`contextual_selection` relevance `normal` with enabled scheduler state. Missing
-state is initialized as immediately due; existing scheduler history is
-preserved when a disabled row is re-enabled.
+`server/db/migrations.ts` owns the explicit offline runner and compatibility
+check. See [schema migrations](ops/schema-migrations.md) for initial adoption,
+transaction/failure behavior, and how to add future migrations. Existing
+contrast eligibility repair remains in fresh initialization and explicit dev
+seed application, rather than rewriting persisted eligibility at every restart.
 
 The `learner_settings` row keyed by `(learner_id, daily_new_word_limit)` stores
 the learner's configured non-negative integer limit as JSON. A missing row

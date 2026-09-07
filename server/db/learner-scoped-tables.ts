@@ -86,20 +86,15 @@ export function learnerScopedStorageTableName(logicalTableName: string): string 
   return objectType(physicalName) === 'table' ? physicalName : logicalTableName;
 }
 
-export function installLearnerScopedCompatibilityViews(): void {
+export function createLearnerScopedCompatibilityViews(): void {
   for (const logicalName of learnerScopedCompatibilityTables) {
-    installLearnerScopedCompatibilityView(logicalName);
+    createLearnerScopedCompatibilityView(logicalName);
   }
 }
 
-function installLearnerScopedCompatibilityView(logicalName: string): void {
+function createLearnerScopedCompatibilityView(logicalName: string): void {
   const physicalName = physicalLearnerTableName(logicalName);
-  if (objectType(physicalName) !== 'table') {
-    if (objectType(logicalName) !== 'table') {
-      throw new Error(`Expected learner-owned table "${logicalName}" before installing its scoped view`);
-    }
-    getDb().exec(`ALTER TABLE ${logicalName} RENAME TO ${physicalName}`);
-  }
+  getDb().exec(`ALTER TABLE ${logicalName} RENAME TO ${physicalName}`);
 
   const columns = getDb().prepare(`PRAGMA table_info(${physicalName})`).all() as Array<{
     name: string;
@@ -137,29 +132,26 @@ function installLearnerScopedCompatibilityView(logicalName: string): void {
       SET ${updateColumns.map((column) => `${column.name} = NEW.${column.name}`).join(', ')}
       WHERE learner_id = current_learner_id() AND ${rowMatch};`;
 
-  // Reinstall the update trigger so additive schema waves can tighten the
-  // mutable-column policy for an already-initialized compatibility view.
-  getDb().exec(`DROP TRIGGER IF EXISTS ${logicalName}_scoped_update;`);
   getDb().exec(`
-    CREATE VIEW IF NOT EXISTS ${logicalName} AS
+    CREATE VIEW ${logicalName} AS
     SELECT ${columnList}
     FROM ${physicalName}
     WHERE learner_id = current_learner_id();
 
-    CREATE TRIGGER IF NOT EXISTS ${logicalName}_scoped_insert
+    CREATE TRIGGER ${logicalName}_scoped_insert
     INSTEAD OF INSERT ON ${logicalName}
     BEGIN
       INSERT INTO ${physicalName} (learner_id, ${columnList})
       VALUES (current_learner_id(), ${newValues});
     END;
 
-    CREATE TRIGGER IF NOT EXISTS ${logicalName}_scoped_update
+    CREATE TRIGGER ${logicalName}_scoped_update
     INSTEAD OF UPDATE ON ${logicalName}
     BEGIN
       ${updateBody}
     END;
 
-    CREATE TRIGGER IF NOT EXISTS ${logicalName}_scoped_delete
+    CREATE TRIGGER ${logicalName}_scoped_delete
     INSTEAD OF DELETE ON ${logicalName}
     BEGIN
       DELETE FROM ${physicalName}

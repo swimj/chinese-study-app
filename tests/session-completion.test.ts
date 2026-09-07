@@ -73,6 +73,10 @@ describe('session completion', { concurrency: false }, () => {
   });
 
   beforeEach(() => {
+    const deleteGuards = sqlite.prepare(`
+      SELECT name, sql FROM sqlite_schema
+      WHERE type = 'trigger' AND name LIKE '%_no_delete'
+    `).all() as Array<{ name: string; sql: string }>;
     sqlite.exec(`
       DROP TRIGGER IF EXISTS production_recheck_demands_no_delete;
       DROP TRIGGER IF EXISTS production_cue_evidence_records_no_delete;
@@ -95,7 +99,12 @@ describe('session completion', { concurrency: false }, () => {
       DELETE FROM word_study_admission_state;
       DELETE FROM words;
     `);
-    dbModule.ensureProductionCueSchema();
+    for (const guard of deleteGuards) {
+      if (!sqlite.prepare('SELECT 1 FROM sqlite_schema WHERE name = ?').get(guard.name)) {
+        sqlite.exec(guard.sql);
+      }
+    }
+
   });
 
   after(() => {
