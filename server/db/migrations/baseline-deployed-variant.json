@@ -1,0 +1,11 @@
+{
+  "index:idx_reflection_artifacts_generated": "06280e1ab5331327666d6f91a715c91fb096f5caf19bf92a1baf6fe61cdafa14",
+  "index:idx_reflection_generation_runs_completed": "7c5ac53d391e41336777ba7414efbd48e78fe50bb01410c926b7dc1373528b70",
+  "table:learner_owned_shared_content_publication_provenance": "1e3b679c8146baf986aa12393107695756c72e8da2d1dd18ef4d5953707c50d2",
+  "trigger:production_cue_supplements_immutable": "9643da0aefa5e860f33c9a63e552ee3f4ef57f93452cf0c15f1ca62967130e9e",
+  "trigger:production_cue_supplements_publication_transition": "d79ae45cf2e661356f0334014c0f6e68887098db46f741ed73cf5679b21106ec",
+  "trigger:production_cues_immutable": "fe6984189beb2453d49469193ddbc386ffb11a11446507d3b49f2487987e198e",
+  "trigger:production_cues_publication_transition": "0e1dae7eee343de313b0e3f3ed941101a0a61126aaf92116079a5c4c26299454",
+  "trigger:reflection_operation_invocations_published_no_delete": "7a6cdf60d733add5ba29a393a86fcafe023d3830cc9bfb5c2f48a09d2330be13",
+  "trigger:shared_content_publication_provenance_same_learner_invocation": "5a2e14facfa889bc540dd344745564fc46965da627faaded4b2d382babe02a52"
+}

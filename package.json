@@ -10,6 +10,7 @@
     "dev:clerk:frontend": "VITE_AUTH_MODE=clerk VITE_API_BASE=http://localhost:5176 vite --port 4175",
     "dev:french:frontend": "VITE_STUDY_PROFILE=french vite",
     "dev:french:backend": "node --import tsx server/index.ts --mode=dev --study-profile=french --data-dir=data/french-dev --seed-data=server/seeds/french-dev.json",
+    "db:migrate": "node --import tsx scripts/migrate-database.ts",
     "study:backend": "node --import tsx server/index.ts --mode=study",
     "start:hosted": "node --import tsx server/index.ts --mode=study --auth-mode=clerk",
     "bootstrap:hosted:mandarin": "node --import tsx scripts/bootstrap-hosted-mandarin.ts",

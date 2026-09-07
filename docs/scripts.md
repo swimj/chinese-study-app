@@ -15,6 +15,7 @@ Entry points under `scripts/`. Run with `node --import tsx scripts/<name>.ts` un
 
 | Script / npm command | Purpose |
 | --- | --- |
+| `npm run db:migrate -- --database=/absolute/path/app.db --confirm-app-stopped=true` | Apply versioned schema migrations while the app is stopped; `--status=true` instead is read-only. See [migration runbook](ops/schema-migrations.md). |
 | `npm run study:backend` | Start study-mode API |
 | `npm run backfill:dogfood-shared-trial -- --data-dir=/absolute/path --learner-id=<id>` | Report the active private generated content that will receive the one-time `shared_trial` launch backfill. Add `--apply=true` only during the hosted dogfood cutover. |
 

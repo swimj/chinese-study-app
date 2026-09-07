@@ -31,7 +31,8 @@ import {
   resolveUniqueOutOfSetWordId,
   type ProductionAnswerLookup,
 } from '../../src/domain/production-response.ts';
-import { config, getConfig, getDb, dbPath, seedDataPath, dbExistedOnStartup, openDatabase, setDb } from './connection.ts';
+import { config, getConfig, getDb, dbPath, seedDataPath, dbExistedOnStartup } from './connection.ts';
+import { assertSchemaCurrent, migrateDatabase } from './migrations.ts';
 import { ensureHostedOperationsSchema } from './hosted-operations.ts';
 import {
   ensureReflectionIndexes,
@@ -84,10 +85,9 @@ import {
   assertLearnerExists,
   bootstrapLearner,
   ensureIdentitySchema,
-  hasLearnerOwnershipSchema,
   recordLearnerOwnershipSchema,
 } from './identity.ts';
-import { installLearnerContextSqlFunction, requireLearnerId } from './learner-context.ts';
+import { requireLearnerId } from './learner-context.ts';
 import {
   installLearnerScopedCompatibilityViews,
   learnerScopedStorageTableName,
@@ -2432,6 +2432,7 @@ export function initializeDatabase() {
     createSchema();
     ensureHostedOperationsSchema();
     recordLearnerOwnershipSchema();
+    migrateDatabase(getDb());
     if (config.authMode === 'trusted_local') {
       bootstrapLearner({ learnerId: config.learnerId });
       ensureDefaultDailyNewWordLimit();
@@ -2441,33 +2442,12 @@ export function initializeDatabase() {
     return;
   }
 
-  try {
-    if (!hasLearnerOwnershipSchema()) {
-      throw new Error(
-        `Database at ${dbPath} predates learner ownership and is no longer supported by this build.`,
-      );
-    }
-    ensureHostedOperationsSchema();
-    ensureReflectionSchema();
-    ensureSharedContentSchema();
-    installScopedContentCompatibilityViews();
-    installLearnerScopedCompatibilityViews();
-    installLearnerOwnershipGuards();
-    validateSchema();
-    if (config.authMode === 'trusted_local') {
-      assertLearnerExists(config.learnerId);
-    }
-    ensureIndexes();
-    seedEmptyDevDatabase();
-    backfillContrastClusterMemberEligibility();
-  } catch (error) {
-    if (!shouldRebuildDevDatabase(error)) {
-      throw error;
-    }
-
-    rebuildDevDatabase(error);
-    backfillContrastClusterMemberEligibility();
+  assertSchemaCurrent(getDb());
+  validateSchema();
+  if (config.authMode === 'trusted_local') {
+    assertLearnerExists(config.learnerId);
   }
+  seedEmptyDevDatabase();
 }
 
 function upsertWordStudyAdmissionState(
@@ -2651,46 +2631,6 @@ function getContrastPromptById(id: string): ContrastPrompt | null {
   return row ? mapContrastPromptRow(row) : null;
 }
 
-function shouldRebuildDevDatabase(error: unknown) {
-  if (config.mode !== 'dev') {
-    return false;
-  }
-
-  return error instanceof Error && error.message.startsWith(`Database at ${dbPath} `);
-}
-
-function rebuildDevDatabase(error: unknown) {
-  const backupPath = path.join(
-    config.dataDir,
-    `app.db.invalid-backup-${new Date().toISOString().replace(/[:.]/g, '-')}`,
-  );
-
-  getDb().close();
-
-  if (fs.existsSync(dbPath)) {
-    fs.renameSync(dbPath, backupPath);
-  }
-
-  console.warn(
-    [
-      `Dev database at ${dbPath} is invalid; rebuilding it from seed data.`,
-      error instanceof Error ? error.message : String(error),
-      `Original file backed up to ${backupPath}.`,
-    ].join(' '),
-  );
-
-  setDb(openDatabase(dbPath));
-  installLearnerContextSqlFunction();
-  createSchema();
-  ensureHostedOperationsSchema();
-  recordLearnerOwnershipSchema();
-  if (config.authMode === 'trusted_local') {
-    bootstrapLearner({ learnerId: config.learnerId });
-    ensureDefaultDailyNewWordLimit();
-  }
-  seedDatabase();
-}
-
 function seedEmptyDevDatabase() {
   if (!config.seedSampleData) {
     return;
@@ -2705,6 +2645,7 @@ function seedEmptyDevDatabase() {
 
   if (counts.word_count === 0) {
     seedDatabase();
+    backfillContrastClusterMemberEligibility();
   }
 }
 

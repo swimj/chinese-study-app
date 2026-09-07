@@ -730,12 +730,6 @@ export function ensureReflectionSchema(): void {
       )
     );
 
-    CREATE TRIGGER IF NOT EXISTS reflection_artifacts_immutable
-    BEFORE UPDATE ON reflection_artifacts
-    BEGIN
-      SELECT RAISE(ABORT, 'reflection artifacts are immutable');
-    END;
-
     CREATE TRIGGER IF NOT EXISTS reflection_proposal_identity_immutable
     BEFORE UPDATE OF proposal_id, artifact_id, item_id, proposal_index
     ON reflection_proposal_reviews
