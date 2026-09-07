@@ -48,12 +48,12 @@ import {
   physicalLearnerTableName,
 } from './learner-scoped-tables.ts';
 import {
-  ensureReflectionQualitySchema,
+  createReflectionQualitySchema,
   listReflectionQualityAnnotationsForArtifact,
   validateReflectionQualitySchema,
 } from './reflection-quality.ts';
 import {
-  ensureReflectionHelpInboxSchema,
+  createReflectionHelpInboxSchema,
   listReflectionHelpInboxForArtifact,
   markReflectionHelpInboxDone,
   seedReflectionHelpInboxWithoutTransaction,
@@ -451,14 +451,10 @@ const invocationColumns = [
   'satisfying_effect_refs_json',
 ] as const;
 
-export function ensureReflectionSchema(): void {
-  ensureReflectionGenerationRunStartSchema();
-  if (learnerScopedStorageTableName('reflection_artifacts') !== 'reflection_artifacts') {
-    ensureReflectionIndexes();
-    return;
-  }
+export function createReflectionSchema(): void {
+  createReflectionGenerationRunStartSchema();
   getDb().exec(`
-    CREATE TABLE IF NOT EXISTS reflection_artifacts (
+    CREATE TABLE reflection_artifacts (
       artifact_id TEXT PRIMARY KEY,
       learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       source_session_id TEXT,
@@ -474,7 +470,7 @@ export function ensureReflectionSchema(): void {
       result_json TEXT NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS reflection_generation_runs (
+    CREATE TABLE reflection_generation_runs (
       run_id TEXT PRIMARY KEY,
       learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       source_session_id TEXT,
@@ -526,7 +522,7 @@ export function ensureReflectionSchema(): void {
       )
     );
 
-    CREATE TABLE IF NOT EXISTS reflection_proposal_reviews (
+    CREATE TABLE reflection_proposal_reviews (
       proposal_id TEXT PRIMARY KEY,
       learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       artifact_id TEXT NOT NULL
@@ -623,7 +619,7 @@ export function ensureReflectionSchema(): void {
       )
     );
 
-    CREATE TABLE IF NOT EXISTS reflection_operation_invocations (
+    CREATE TABLE reflection_operation_invocations (
       invocation_id TEXT PRIMARY KEY,
       learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       created_at TEXT NOT NULL,
@@ -730,14 +726,14 @@ export function ensureReflectionSchema(): void {
       )
     );
 
-    CREATE TRIGGER IF NOT EXISTS reflection_proposal_identity_immutable
+    CREATE TRIGGER reflection_proposal_identity_immutable
     BEFORE UPDATE OF proposal_id, artifact_id, item_id, proposal_index
     ON reflection_proposal_reviews
     BEGIN
       SELECT RAISE(ABORT, 'reflection proposal identity is immutable');
     END;
 
-    CREATE TRIGGER IF NOT EXISTS reflection_invocation_authorization_immutable
+    CREATE TRIGGER reflection_invocation_authorization_immutable
     BEFORE UPDATE OF
       invocation_id,
       created_at,
@@ -753,17 +749,13 @@ export function ensureReflectionSchema(): void {
     END;
   `);
 
-  migrateReflectionArtifactsForMultipleCandidates();
-  ensureReflectionGenerationRunEvidenceBundleColumn();
-  ensureReflectionGenerationRunDiagnosticColumns();
-  ensureReflectionIndexes();
-  ensureReflectionQualitySchema();
-  ensureReflectionHelpInboxSchema();
+  createReflectionQualitySchema();
+  createReflectionHelpInboxSchema();
 }
 
-function ensureReflectionGenerationRunStartSchema(): void {
+function createReflectionGenerationRunStartSchema(): void {
   getDb().exec(`
-    CREATE TABLE IF NOT EXISTS reflection_generation_run_starts (
+    CREATE TABLE reflection_generation_run_starts (
       run_id TEXT PRIMARY KEY,
       learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       source_session_id TEXT,
@@ -778,86 +770,25 @@ function ensureReflectionGenerationRunStartSchema(): void {
       included_item_count INTEGER NOT NULL CHECK (included_item_count >= 0 AND included_item_count <= eligible_item_count),
       evidence_bundle_json TEXT NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_reflection_generation_run_starts_started
+    CREATE INDEX idx_reflection_generation_run_starts_started
       ON ${learnerScopedStorageTableName('reflection_generation_run_starts')}(started_at DESC, run_id ASC);
   `);
 }
 
-function migrateReflectionArtifactsForMultipleCandidates(): void {
-  const columns = getDb().prepare('PRAGMA table_info(reflection_artifacts)').all() as Array<{ name: string }>;
-  if (columns.some((column) => column.name === 'source_run_id')) return;
-
-  // SQLite cannot drop a table-level UNIQUE constraint. Rebuild only this
-  // immutable parent table, preserving its artifact IDs for proposal-review FKs.
+export function createReflectionIndexes(): void {
   getDb().exec(`
-    PRAGMA foreign_keys = OFF;
-    DROP TRIGGER IF EXISTS reflection_artifacts_immutable;
-    CREATE TABLE reflection_artifacts_rebuilt (
-      artifact_id TEXT PRIMARY KEY,
-      source_session_id TEXT NOT NULL REFERENCES study_sessions(id) ON DELETE RESTRICT,
-      source_run_id TEXT,
-      reflection_flow_version TEXT NOT NULL,
-      generated_at TEXT NOT NULL,
-      provider TEXT NOT NULL,
-      model TEXT NOT NULL,
-      prompt_version TEXT NOT NULL,
-      bundle_schema_version TEXT NOT NULL,
-      result_schema_version TEXT NOT NULL,
-      evidence_bundle_json TEXT NOT NULL,
-      result_json TEXT NOT NULL
-    );
-    INSERT INTO reflection_artifacts_rebuilt (
-      artifact_id, source_session_id, source_run_id, reflection_flow_version, generated_at,
-      provider, model, prompt_version, bundle_schema_version, result_schema_version,
-      evidence_bundle_json, result_json
-    ) SELECT
-      artifact_id, source_session_id, NULL, reflection_flow_version, generated_at,
-      provider, model, prompt_version, bundle_schema_version, result_schema_version,
-      evidence_bundle_json, result_json
-    FROM reflection_artifacts;
-    DROP TABLE reflection_artifacts;
-    ALTER TABLE reflection_artifacts_rebuilt RENAME TO reflection_artifacts;
-    CREATE TRIGGER reflection_artifacts_immutable
-    BEFORE UPDATE ON reflection_artifacts
-    BEGIN
-      SELECT RAISE(ABORT, 'reflection artifacts are immutable');
-    END;
-    PRAGMA foreign_keys = ON;
-  `);
-}
-
-function ensureReflectionGenerationRunEvidenceBundleColumn(): void {
-  const columns = getDb().prepare('PRAGMA table_info(reflection_generation_runs)').all() as Array<{
-    name: string;
-  }>;
-  if (!columns.some((column) => column.name === 'evidence_bundle_json')) {
-    getDb().exec('ALTER TABLE reflection_generation_runs ADD COLUMN evidence_bundle_json TEXT');
-  }
-}
-
-function ensureReflectionGenerationRunDiagnosticColumns(): void {
-  const columns = getDb().prepare('PRAGMA table_info(reflection_generation_runs)').all() as Array<{ name: string }>;
-  for (const name of ['client_request_id', 'bundle_schema_version', 'result_schema_version', 'diagnostic_json']) {
-    if (!columns.some((column) => column.name === name)) {
-      getDb().exec(`ALTER TABLE reflection_generation_runs ADD COLUMN ${name} TEXT`);
-    }
-  }
-}
-
-export function ensureReflectionIndexes(): void {
-  getDb().exec(`
-    CREATE INDEX IF NOT EXISTS idx_reflection_artifacts_generated
+    CREATE INDEX idx_reflection_artifacts_generated
       ON ${learnerScopedStorageTableName('reflection_artifacts')}(generated_at DESC, artifact_id ASC);
-    CREATE INDEX IF NOT EXISTS idx_reflection_generation_runs_completed
+    CREATE INDEX idx_reflection_generation_runs_completed
       ON ${learnerScopedStorageTableName('reflection_generation_runs')}(completed_at DESC, run_id ASC);
-    CREATE INDEX IF NOT EXISTS idx_reflection_proposal_reviews_open
+    CREATE INDEX idx_reflection_proposal_reviews_open
       ON ${learnerScopedStorageTableName('reflection_proposal_reviews')}(disposition, artifact_id);
-    CREATE INDEX IF NOT EXISTS idx_reflection_invocations_application
+    CREATE INDEX idx_reflection_invocations_application
       ON ${learnerScopedStorageTableName('reflection_operation_invocations')}(application_state, application_updated_at ASC);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_reflection_invocations_proposal_origin
+    CREATE UNIQUE INDEX idx_reflection_invocations_proposal_origin
       ON ${learnerScopedStorageTableName('reflection_operation_invocations')}(origin_proposal_id)
       WHERE origin_kind = 'proposal_acceptance';
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_reflection_proposal_reviews_accepted_invocation
+    CREATE UNIQUE INDEX idx_reflection_proposal_reviews_accepted_invocation
       ON ${learnerScopedStorageTableName('reflection_proposal_reviews')}(accepted_invocation_id)
       WHERE accepted_invocation_id IS NOT NULL;
   `);

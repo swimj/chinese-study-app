@@ -75,12 +75,12 @@ export type DogfoodSharedTrialBackfillReport = {
   productionCueSupplementIds: string[];
 };
 
-export function ensureSharedContentSchema(): void {
+export function createSharedContentSchema(): void {
   const invocationsTable = learnerScopedStorageTableName('reflection_operation_invocations');
   const provenanceTable = learnerScopedStorageTableName('shared_content_publication_provenance');
   const reportsTable = learnerScopedStorageTableName('shared_content_reports');
   getDb().exec(`
-    CREATE TABLE IF NOT EXISTS shared_content_publications (
+    CREATE TABLE shared_content_publications (
       publication_id TEXT PRIMARY KEY,
       content_kind TEXT NOT NULL CHECK (
         content_kind IN ('production_cue', 'contrast_cluster', 'production_cue_supplement')
@@ -95,7 +95,7 @@ export function ensureSharedContentSchema(): void {
       UNIQUE (content_kind, content_id)
     );
 
-    CREATE TABLE IF NOT EXISTS shared_content_publication_events (
+    CREATE TABLE shared_content_publication_events (
       event_id TEXT PRIMARY KEY,
       publication_id TEXT NOT NULL
         REFERENCES shared_content_publications(publication_id) ON DELETE RESTRICT,
@@ -113,7 +113,7 @@ export function ensureSharedContentSchema(): void {
       occurred_at TEXT NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS shared_content_publication_provenance (
+    CREATE TABLE shared_content_publication_provenance (
       learner_id TEXT NOT NULL DEFAULT (current_learner_id())
         REFERENCES learners(learner_id) ON DELETE CASCADE,
       publication_id TEXT NOT NULL UNIQUE
@@ -127,7 +127,7 @@ export function ensureSharedContentSchema(): void {
         REFERENCES ${invocationsTable}(invocation_id) ON DELETE RESTRICT
     );
 
-    CREATE TABLE IF NOT EXISTS shared_content_reports (
+    CREATE TABLE shared_content_reports (
       report_id TEXT NOT NULL,
       learner_id TEXT NOT NULL DEFAULT (current_learner_id())
         REFERENCES learners(learner_id) ON DELETE CASCADE,
@@ -148,7 +148,7 @@ export function ensureSharedContentSchema(): void {
       )
     );
 
-    CREATE TRIGGER IF NOT EXISTS shared_content_publications_identity_immutable
+    CREATE TRIGGER shared_content_publications_identity_immutable
     BEFORE UPDATE OF
       publication_id, content_kind, content_id, learning_purpose_key, published_at
     ON shared_content_publications
@@ -156,13 +156,13 @@ export function ensureSharedContentSchema(): void {
       SELECT RAISE(ABORT, 'shared content publication identity is immutable');
     END;
 
-    CREATE TRIGGER IF NOT EXISTS shared_content_publications_no_delete
+    CREATE TRIGGER shared_content_publications_no_delete
     BEFORE DELETE ON shared_content_publications
     BEGIN
       SELECT RAISE(ABORT, 'shared content publications cannot be deleted');
     END;
 
-    CREATE TRIGGER IF NOT EXISTS shared_content_publications_status_transition_guard
+    CREATE TRIGGER shared_content_publications_status_transition_guard
     BEFORE UPDATE OF publication_status, status_updated_at
     ON shared_content_publications
     WHEN NOT EXISTS (
@@ -177,31 +177,31 @@ export function ensureSharedContentSchema(): void {
       SELECT RAISE(ABORT, 'shared content status changes require an attributable publication event');
     END;
 
-    CREATE TRIGGER IF NOT EXISTS shared_content_publication_events_immutable
+    CREATE TRIGGER shared_content_publication_events_immutable
     BEFORE UPDATE ON shared_content_publication_events
     BEGIN
       SELECT RAISE(ABORT, 'shared content publication events are immutable');
     END;
 
-    CREATE TRIGGER IF NOT EXISTS shared_content_publication_events_no_delete
+    CREATE TRIGGER shared_content_publication_events_no_delete
     BEFORE DELETE ON shared_content_publication_events
     BEGIN
       SELECT RAISE(ABORT, 'shared content publication events cannot be deleted');
     END;
 
-    CREATE TRIGGER IF NOT EXISTS shared_content_publication_provenance_no_delete
+    CREATE TRIGGER shared_content_publication_provenance_no_delete
     BEFORE DELETE ON ${provenanceTable}
     BEGIN
       SELECT RAISE(ABORT, 'shared content publication provenance cannot be deleted');
     END;
 
-    CREATE TRIGGER IF NOT EXISTS shared_content_reports_no_delete
+    CREATE TRIGGER shared_content_reports_no_delete
     BEFORE DELETE ON ${reportsTable}
     BEGIN
       SELECT RAISE(ABORT, 'shared content reports cannot be deleted');
     END;
 
-    CREATE TRIGGER IF NOT EXISTS shared_content_publication_provenance_same_learner_invocation
+    CREATE TRIGGER shared_content_publication_provenance_same_learner_invocation
     BEFORE INSERT ON ${provenanceTable}
     WHEN NOT EXISTS (
       SELECT 1
@@ -213,7 +213,7 @@ export function ensureSharedContentSchema(): void {
       SELECT RAISE(ABORT, 'shared content publication must reference a same-learner invocation');
     END;
 
-    CREATE TRIGGER IF NOT EXISTS reflection_operation_invocations_published_no_delete
+    CREATE TRIGGER reflection_operation_invocations_published_no_delete
     BEFORE DELETE ON ${invocationsTable}
     WHEN EXISTS (
       SELECT 1
@@ -225,15 +225,15 @@ export function ensureSharedContentSchema(): void {
       SELECT RAISE(ABORT, 'an invocation with shared publication provenance cannot be deleted');
     END;
 
-    CREATE INDEX IF NOT EXISTS idx_shared_content_publications_eligibility
+    CREATE INDEX idx_shared_content_publications_eligibility
       ON shared_content_publications(
         content_kind, learning_purpose_key, publication_status, publication_id
       );
-    CREATE INDEX IF NOT EXISTS idx_shared_content_publication_events_publication
+    CREATE INDEX idx_shared_content_publication_events_publication
       ON shared_content_publication_events(publication_id, occurred_at, event_id);
   `);
 
-  installProductionCuePublicationTransitionGuards();
+  createProductionCuePublicationTransitionGuards();
 }
 
 export function validateSharedContentSchema(): void {
@@ -945,16 +945,11 @@ function insertDogfoodSharedTrialPublication(input: {
   });
 }
 
-function installProductionCuePublicationTransitionGuards(): void {
+function createProductionCuePublicationTransitionGuards(): void {
   const cueTable = scopedContentStorageTableName('production_cues');
   const supplementTable = scopedContentStorageTableName('production_cue_supplements');
   const provenanceTable = learnerScopedStorageTableName('shared_content_publication_provenance');
   getDb().exec(`
-    DROP TRIGGER IF EXISTS production_cues_immutable;
-    DROP TRIGGER IF EXISTS production_cues_publication_transition;
-    DROP TRIGGER IF EXISTS production_cue_supplements_immutable;
-    DROP TRIGGER IF EXISTS production_cue_supplements_publication_transition;
-
     CREATE TRIGGER production_cues_immutable
     BEFORE UPDATE OF cue_id, task_id, cue_type, cue_text, created_at
     ON ${cueTable}

@@ -42,6 +42,10 @@ describe('reflection application adapters', { concurrency: false }, () => {
   });
 
   beforeEach(() => {
+    const deleteGuards = sqlite.prepare(`
+      SELECT name, sql FROM sqlite_schema
+      WHERE type = 'trigger' AND name LIKE '%_no_delete'
+    `).all() as Array<{ name: string; sql: string }>;
     sqlite.exec(`
       DROP TRIGGER IF EXISTS fail_reflection_prompt_insert;
       DROP TRIGGER IF EXISTS fail_production_cue_lifecycle_insert;
@@ -82,8 +86,12 @@ describe('reflection application adapters', { concurrency: false }, () => {
       DELETE FROM words;
       COMMIT;
     `);
-    dbModule.ensureProductionCueSchema();
-    dbModule.ensureSharedContentSchema();
+    for (const guard of deleteGuards) {
+      if (!sqlite.prepare('SELECT 1 FROM sqlite_schema WHERE name = ?').get(guard.name)) {
+        sqlite.exec(guard.sql);
+      }
+    }
+
     insertWord('target', '目标');
     insertWord('alternate', '替代');
   });
@@ -93,65 +101,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
-  test('backfills default production tasks once and leaves future words to the insert trigger', () => {
-    sqlite.exec(`
-      DELETE FROM production_tasks;
-      DELETE FROM schema_migrations WHERE migration_id = 'production_tasks_backfill_v0';
-    `);
-
-    dbModule.ensureProductionCueSchema();
-
-    assert.deepEqual(
-      sqlite.prepare(`
-        SELECT task_id, word_id, task_kind, created_at
-        FROM production_tasks
-        ORDER BY word_id
-      `).all().map((row) => ({ ...row })),
-      [
-        {
-          task_id: 'production-task:alternate:default_production',
-          word_id: 'alternate',
-          task_kind: 'default_production',
-          created_at: createdAt,
-        },
-        {
-          task_id: 'production-task:target:default_production',
-          word_id: 'target',
-          task_kind: 'default_production',
-          created_at: createdAt,
-        },
-      ],
-    );
-    const marker = sqlite.prepare(`
-      SELECT applied_at, details_json
-      FROM schema_migrations
-      WHERE migration_id = 'production_tasks_backfill_v0'
-    `).get() as { applied_at: string; details_json: string };
-    assert.deepEqual(JSON.parse(marker.details_json), { status: 'complete' });
-    assert.equal(new Date(marker.applied_at).toISOString(), marker.applied_at);
-
-    sqlite.prepare(`
-      DELETE FROM schema_migrations
-      WHERE migration_id = 'production_tasks_backfill_v0'
-    `).run();
-    dbModule.ensureProductionCueSchema();
-    assert.equal(countRows('production_tasks'), 2);
-
-    sqlite.prepare(`
-      UPDATE schema_migrations
-      SET applied_at = ?
-      WHERE migration_id = 'production_tasks_backfill_v0'
-    `).run(appliedAt);
-    dbModule.ensureProductionCueSchema();
-    assert.equal(
-      (sqlite.prepare(`
-        SELECT applied_at
-        FROM schema_migrations
-        WHERE migration_id = 'production_tasks_backfill_v0'
-      `).get() as { applied_at: string }).applied_at,
-      appliedAt,
-    );
-
+  test('creates default production tasks for new words through the insert trigger', () => {
     insertWord('future', '未来');
     assert.deepEqual(dbModule.getDefaultProductionTask('future'), {
       taskId: 'production-task:future:default_production',

@@ -104,8 +104,11 @@ Add a SQL file under `server/db/migrations/` and append its definition to
 
 Use increasing four-digit ids and stable descriptive names. Never edit an
 applied file, change the frozen baseline, or add schema changes to startup
-`ensure…` functions. Existing creation helpers define the baseline for fresh
-installs; future changes belong in migrations so new and upgraded databases
+`create…` functions. Creation helpers use strict `CREATE TABLE`, `CREATE INDEX`,
+`CREATE VIEW`, and `CREATE TRIGGER` statements, with each object created once.
+Calling a constructor against an existing schema is a programming error and
+fails. Retired upgrade/rebuild helpers are not part of fresh setup. These
+creation helpers define the baseline for fresh installs; future changes belong in migrations so new and upgraded databases
 follow the same path. A migration may explicitly update persistent views,
 indexes and ownership guards when its column changes require that.
 

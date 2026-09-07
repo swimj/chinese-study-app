@@ -29,9 +29,9 @@ export type HostedRestoreValidation = {
   sentinelPresent: boolean;
 };
 
-export function ensureHostedOperationsSchema(): void {
+export function createHostedOperationsSchema(): void {
   getDb().exec(`
-    CREATE TABLE IF NOT EXISTS service_controls (
+    CREATE TABLE service_controls (
       control_key TEXT PRIMARY KEY CHECK (
         control_key IN ('maintenance_mode', 'provider_work_enabled')
       ),
@@ -40,13 +40,13 @@ export function ensureHostedOperationsSchema(): void {
       actor_id TEXT NOT NULL CHECK (length(trim(actor_id)) > 0)
     );
 
-    CREATE TABLE IF NOT EXISTS deployment_sentinels (
+    CREATE TABLE deployment_sentinels (
       sentinel_id TEXT PRIMARY KEY CHECK (length(trim(sentinel_id)) > 0),
       created_at TEXT NOT NULL,
       actor_id TEXT NOT NULL CHECK (length(trim(actor_id)) > 0)
     );
 
-    CREATE TABLE IF NOT EXISTS operator_actions (
+    CREATE TABLE operator_actions (
       action_id TEXT PRIMARY KEY CHECK (length(trim(action_id)) > 0),
       action_kind TEXT NOT NULL CHECK (action_kind IN (
         'set_learner_disabled',
@@ -58,13 +58,12 @@ export function ensureHostedOperationsSchema(): void {
       created_at TEXT NOT NULL
     );
 
-    INSERT OR IGNORE INTO service_controls (control_key, enabled, updated_at, actor_id)
+    INSERT INTO service_controls (control_key, enabled, updated_at, actor_id)
     VALUES ('maintenance_mode', 0, '1970-01-01T00:00:00.000Z', 'system_default');
 
-    INSERT OR IGNORE INTO service_controls (control_key, enabled, updated_at, actor_id)
+    INSERT INTO service_controls (control_key, enabled, updated_at, actor_id)
     VALUES ('provider_work_enabled', 1, '1970-01-01T00:00:00.000Z', 'system_default');
   `);
-  migrateOperatorActionsSchema();
 }
 
 export function getHostedServiceControls(): HostedServiceControlState {
@@ -342,40 +341,6 @@ function fileSize(path: string): number {
     return fs.statSync(path).size;
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return 0;
-    throw error;
-  }
-}
-
-function migrateOperatorActionsSchema(): void {
-  const row = getDb().prepare(`
-    SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'operator_actions'
-  `).get() as { sql: string } | undefined;
-  if (!row || row.sql.includes('provision_beta_review_test')) return;
-
-  getDb().exec('BEGIN IMMEDIATE');
-  try {
-    getDb().exec(`
-      ALTER TABLE operator_actions RENAME TO operator_actions_legacy;
-      CREATE TABLE operator_actions (
-        action_id TEXT PRIMARY KEY CHECK (length(trim(action_id)) > 0),
-        action_kind TEXT NOT NULL CHECK (action_kind IN (
-          'set_learner_disabled',
-          'provision_beta_review_test'
-        )),
-        actor_id TEXT NOT NULL CHECK (length(trim(actor_id)) > 0),
-        target_learner_id TEXT NOT NULL REFERENCES learners(learner_id),
-        details_json TEXT NOT NULL CHECK (json_valid(details_json)),
-        created_at TEXT NOT NULL
-      );
-      INSERT INTO operator_actions (
-        action_id, action_kind, actor_id, target_learner_id, details_json, created_at
-      ) SELECT action_id, action_kind, actor_id, target_learner_id, details_json, created_at
-      FROM operator_actions_legacy;
-      DROP TABLE operator_actions_legacy;
-    `);
-    getDb().exec('COMMIT');
-  } catch (error) {
-    getDb().exec('ROLLBACK');
     throw error;
   }
 }

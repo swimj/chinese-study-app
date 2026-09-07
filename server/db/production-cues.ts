@@ -161,9 +161,9 @@ export function defaultProductionTaskId(wordId: string): string {
   return `production-task:${wordId}:default_production`;
 }
 
-export function ensureProductionCueSchema(): void {
+export function createProductionCueSchema(): void {
   getDb().exec(`
-    CREATE TABLE IF NOT EXISTS production_tasks (
+    CREATE TABLE production_tasks (
       task_id TEXT PRIMARY KEY,
       word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
       task_kind TEXT NOT NULL CHECK (task_kind = 'default_production'),
@@ -171,14 +171,14 @@ export function ensureProductionCueSchema(): void {
       UNIQUE (word_id, task_kind)
     );
 
-    CREATE TRIGGER IF NOT EXISTS words_create_default_production_task
+    CREATE TRIGGER words_create_default_production_task
     AFTER INSERT ON lexical_words
     BEGIN
       INSERT OR IGNORE INTO production_tasks (task_id, word_id, task_kind, created_at)
       VALUES ('production-task:' || NEW.id || ':default_production', NEW.id, 'default_production', NEW.created_at);
     END;
 
-    CREATE TABLE IF NOT EXISTS production_cues (
+    CREATE TABLE production_cues (
       cue_id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL REFERENCES production_tasks(task_id) ON DELETE CASCADE,
       cue_type TEXT NOT NULL
@@ -200,19 +200,13 @@ export function ensureProductionCueSchema(): void {
       )
     );
 
-    CREATE TRIGGER IF NOT EXISTS production_cues_immutable
-    BEFORE UPDATE ON ${scopedStorageTable('production_cues')}
-    BEGIN
-      SELECT RAISE(ABORT, 'production cues are immutable');
-    END;
-
-    CREATE TRIGGER IF NOT EXISTS production_cues_no_delete
+    CREATE TRIGGER production_cues_no_delete
     BEFORE DELETE ON ${scopedStorageTable('production_cues')}
     BEGIN
       SELECT RAISE(ABORT, 'production cues cannot be deleted');
     END;
 
-    CREATE TABLE IF NOT EXISTS production_cue_supplements (
+    CREATE TABLE production_cue_supplements (
       supplement_id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL REFERENCES production_tasks(task_id) ON DELETE CASCADE,
       cue_id TEXT REFERENCES production_cues(cue_id) ON DELETE RESTRICT,
@@ -230,19 +224,13 @@ export function ensureProductionCueSchema(): void {
       )
     );
 
-    CREATE TRIGGER IF NOT EXISTS production_cue_supplements_immutable
-    BEFORE UPDATE ON ${scopedStorageTable('production_cue_supplements')}
-    BEGIN
-      SELECT RAISE(ABORT, 'production cue supplements are immutable');
-    END;
-
-    CREATE TRIGGER IF NOT EXISTS production_cue_supplements_no_delete
+    CREATE TRIGGER production_cue_supplements_no_delete
     BEFORE DELETE ON ${scopedStorageTable('production_cue_supplements')}
     BEGIN
       SELECT RAISE(ABORT, 'production cue supplements cannot be deleted');
     END;
 
-    CREATE TABLE IF NOT EXISTS production_cue_accepted_words (
+    CREATE TABLE production_cue_accepted_words (
       cue_id TEXT NOT NULL REFERENCES production_cues(cue_id) ON DELETE CASCADE,
       word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE RESTRICT,
       position INTEGER NOT NULL CHECK (position >= 0),
@@ -250,19 +238,19 @@ export function ensureProductionCueSchema(): void {
       UNIQUE (cue_id, position)
     );
 
-    CREATE TRIGGER IF NOT EXISTS production_cue_accepted_words_immutable
+    CREATE TRIGGER production_cue_accepted_words_immutable
     BEFORE UPDATE ON ${scopedStorageTable('production_cue_accepted_words')}
     BEGIN
       SELECT RAISE(ABORT, 'production cue accepted words are immutable');
     END;
 
-    CREATE TRIGGER IF NOT EXISTS production_cue_accepted_words_no_delete
+    CREATE TRIGGER production_cue_accepted_words_no_delete
     BEFORE DELETE ON ${scopedStorageTable('production_cue_accepted_words')}
     BEGIN
       SELECT RAISE(ABORT, 'production cue accepted words cannot be deleted');
     END;
 
-    CREATE TABLE IF NOT EXISTS production_cue_lifecycle_events (
+    CREATE TABLE production_cue_lifecycle_events (
       sequence INTEGER PRIMARY KEY AUTOINCREMENT,
       learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       event_id TEXT NOT NULL UNIQUE,
@@ -274,19 +262,19 @@ export function ensureProductionCueSchema(): void {
         REFERENCES reflection_operation_invocations(invocation_id) ON DELETE RESTRICT
     );
 
-    CREATE TRIGGER IF NOT EXISTS production_cue_lifecycle_events_immutable
+    CREATE TRIGGER production_cue_lifecycle_events_immutable
     BEFORE UPDATE ON ${scopedStorageTable('production_cue_lifecycle_events')}
     BEGIN
       SELECT RAISE(ABORT, 'production cue lifecycle events are immutable');
     END;
 
-    CREATE TRIGGER IF NOT EXISTS production_cue_lifecycle_events_no_delete
+    CREATE TRIGGER production_cue_lifecycle_events_no_delete
     BEFORE DELETE ON ${scopedStorageTable('production_cue_lifecycle_events')}
     BEGIN
       SELECT RAISE(ABORT, 'production cue lifecycle events cannot be deleted');
     END;
 
-    CREATE TABLE IF NOT EXISTS production_cue_activation_state (
+    CREATE TABLE production_cue_activation_state (
       learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       cue_id TEXT NOT NULL REFERENCES production_cues(cue_id) ON DELETE RESTRICT,
       active INTEGER NOT NULL CHECK (active IN (0, 1)),
@@ -296,7 +284,7 @@ export function ensureProductionCueSchema(): void {
       PRIMARY KEY (learner_id, cue_id)
     );
 
-    CREATE TABLE IF NOT EXISTS production_cue_evidence_records (
+    CREATE TABLE production_cue_evidence_records (
       sequence INTEGER PRIMARY KEY AUTOINCREMENT,
       learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       evidence_id TEXT NOT NULL UNIQUE,
@@ -360,7 +348,7 @@ export function ensureProductionCueSchema(): void {
       )
     );
 
-    CREATE TRIGGER IF NOT EXISTS production_cue_evidence_records_content_immutable
+    CREATE TRIGGER production_cue_evidence_records_content_immutable
     BEFORE UPDATE OF
       evidence_id,
       occurred_at,
@@ -380,13 +368,13 @@ export function ensureProductionCueSchema(): void {
     END;
 
 
-    CREATE TRIGGER IF NOT EXISTS production_cue_evidence_records_no_delete
+    CREATE TRIGGER production_cue_evidence_records_no_delete
     BEFORE DELETE ON ${scopedStorageTable('production_cue_evidence_records')}
     BEGIN
       SELECT RAISE(ABORT, 'production cue evidence cannot be deleted');
     END;
 
-    CREATE TABLE IF NOT EXISTS production_cue_evidence_projection (
+    CREATE TABLE production_cue_evidence_projection (
       learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       cue_id TEXT NOT NULL REFERENCES production_cues(cue_id) ON DELETE RESTRICT,
       attempt_count INTEGER NOT NULL,
@@ -398,7 +386,7 @@ export function ensureProductionCueSchema(): void {
       PRIMARY KEY (learner_id, cue_id)
     );
 
-    CREATE TABLE IF NOT EXISTS production_recheck_demands (
+    CREATE TABLE production_recheck_demands (
       demand_id TEXT PRIMARY KEY,
       learner_id TEXT NOT NULL DEFAULT (current_learner_id()) REFERENCES learners(learner_id) ON DELETE CASCADE,
       task_id TEXT NOT NULL REFERENCES production_tasks(task_id) ON DELETE CASCADE,
@@ -417,79 +405,60 @@ export function ensureProductionCueSchema(): void {
       )
     );
 
-    CREATE TRIGGER IF NOT EXISTS production_recheck_demands_content_immutable
+    CREATE TRIGGER production_recheck_demands_content_immutable
     BEFORE UPDATE OF demand_id, task_id, source_attempt_id, scheduled_at, due_at
     ON ${scopedStorageTable('production_recheck_demands')}
     BEGIN
       SELECT RAISE(ABORT, 'production recheck demand content is immutable');
     END;
 
-    CREATE TRIGGER IF NOT EXISTS production_recheck_demands_no_delete
+    CREATE TRIGGER production_recheck_demands_no_delete
     BEFORE DELETE ON ${scopedStorageTable('production_recheck_demands')}
     BEGIN
       SELECT RAISE(ABORT, 'production recheck demands cannot be deleted');
     END;
   `);
 
-  backfillDefaultProductionTasksOnce();
-}
-
-function backfillDefaultProductionTasksOnce(): void {
-  const marker = getDb().prepare(`
-    SELECT 1
-    FROM schema_migrations
-    WHERE migration_id = ?
-  `).get(PRODUCTION_TASKS_BACKFILL_MIGRATION_ID);
-  if (marker) return;
-
-  getDb().exec(`
-    INSERT OR IGNORE INTO production_tasks (task_id, word_id, task_kind, created_at)
-    SELECT
-      'production-task:' || words.id || ':default_production',
-      words.id,
-      'default_production',
-      words.created_at
-    FROM words;
-  `);
+  // Preserve the historical marker; new words receive tasks through the insert trigger.
   getDb().prepare(`
-    INSERT OR IGNORE INTO schema_migrations (migration_id, applied_at, details_json)
+    INSERT INTO schema_migrations (migration_id, applied_at, details_json)
     VALUES (?, ?, '{"status":"complete"}')
   `).run(PRODUCTION_TASKS_BACKFILL_MIGRATION_ID, new Date().toISOString());
 }
 
-export function ensureProductionCueIndexes(): void {
+export function createProductionCueIndexes(): void {
   getDb().exec(`
-    CREATE INDEX IF NOT EXISTS idx_production_tasks_word
+    CREATE INDEX idx_production_tasks_word
       ON production_tasks(word_id, task_kind);
-    CREATE INDEX IF NOT EXISTS idx_production_cues_task
+    CREATE INDEX idx_production_cues_task
       ON ${scopedStorageTable('production_cues')}(task_id, created_at, cue_id);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_production_cue_supplements_cue
+    CREATE UNIQUE INDEX idx_production_cue_supplements_cue
       ON ${scopedStorageTable('production_cue_supplements')}(cue_id)
       WHERE cue_id IS NOT NULL;
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_production_cue_supplements_fallback
+    CREATE UNIQUE INDEX idx_production_cue_supplements_fallback
       ON ${scopedStorageTable('production_cue_supplements')}(task_id)
       WHERE cue_id IS NULL;
-    CREATE INDEX IF NOT EXISTS idx_production_cue_accepted_words_word
+    CREATE INDEX idx_production_cue_accepted_words_word
       ON ${scopedStorageTable('production_cue_accepted_words')}(word_id, cue_id);
-    CREATE INDEX IF NOT EXISTS idx_production_cue_lifecycle_latest
+    CREATE INDEX idx_production_cue_lifecycle_latest
       ON ${scopedStorageTable('production_cue_lifecycle_events')}(cue_id, sequence DESC);
-    CREATE INDEX IF NOT EXISTS idx_production_cue_activation_active
+    CREATE INDEX idx_production_cue_activation_active
       ON ${scopedStorageTable('production_cue_activation_state')}(active, cue_id);
-    CREATE INDEX IF NOT EXISTS idx_production_cue_evidence_unprojected
+    CREATE INDEX idx_production_cue_evidence_unprojected
       ON ${scopedStorageTable('production_cue_evidence_records')}(projected_at, cue_id, sequence);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_production_cue_attempt_evidence_source
+    CREATE UNIQUE INDEX idx_production_cue_attempt_evidence_source
       ON ${scopedStorageTable('production_cue_evidence_records')}(learner_id, source_attempt_id)
       WHERE record_kind = 'attempt';
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_production_cue_judgment_invocation
+    CREATE UNIQUE INDEX idx_production_cue_judgment_invocation
       ON ${scopedStorageTable('production_cue_evidence_records')}(learner_id, invocation_id, source_attempt_id, judgment_kind)
       WHERE record_kind = 'judgment';
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_production_cue_compensation_source
+    CREATE UNIQUE INDEX idx_production_cue_compensation_source
       ON ${scopedStorageTable('production_cue_evidence_records')}(learner_id, source_evidence_id)
       WHERE record_kind = 'compensation';
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_production_recheck_pending_task
+    CREATE UNIQUE INDEX idx_production_recheck_pending_task
       ON ${scopedStorageTable('production_recheck_demands')}(learner_id, task_id)
       WHERE consumed_at IS NULL;
-    CREATE INDEX IF NOT EXISTS idx_production_recheck_due
+    CREATE INDEX idx_production_recheck_due
       ON ${scopedStorageTable('production_recheck_demands')}(due_at, task_id)
       WHERE consumed_at IS NULL;
   `);

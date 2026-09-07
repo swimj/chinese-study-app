@@ -33,15 +33,15 @@ import {
 } from '../../src/domain/production-response.ts';
 import { config, getConfig, getDb, dbPath, seedDataPath, dbExistedOnStartup } from './connection.ts';
 import { assertSchemaCurrent, migrateDatabase } from './migrations.ts';
-import { ensureHostedOperationsSchema } from './hosted-operations.ts';
+import { createHostedOperationsSchema } from './hosted-operations.ts';
 import {
-  ensureReflectionIndexes,
-  ensureReflectionSchema,
+  createReflectionIndexes,
+  createReflectionSchema,
   validateReflectionSchema,
 } from './reflections.ts';
 import {
-  ensureIntakeTriageIndexes,
-  ensureIntakeTriageSchema,
+  createIntakeTriageIndexes,
+  createIntakeTriageSchema,
   validateIntakeTriageSchema,
 } from './intake-triage.ts';
 import {
@@ -54,8 +54,8 @@ import {
   appendProductionRecheckDemandWithoutTransaction,
   consumeProductionRecheckDemandWithoutTransaction,
   defaultProductionTaskId,
-  ensureProductionCueIndexes,
-  ensureProductionCueSchema,
+  createProductionCueIndexes,
+  createProductionCueSchema,
   getActiveProductionCuesForWord,
   getPendingProductionRecheckForWord,
   getProductionCueSupplement,
@@ -84,22 +84,22 @@ import {
 import {
   assertLearnerExists,
   bootstrapLearner,
-  ensureIdentitySchema,
+  createIdentitySchema,
   recordLearnerOwnershipSchema,
 } from './identity.ts';
 import { requireLearnerId } from './learner-context.ts';
 import {
-  installLearnerScopedCompatibilityViews,
+  createLearnerScopedCompatibilityViews,
   learnerScopedStorageTableName,
 } from './learner-scoped-tables.ts';
 import {
-  installScopedContentCompatibilityViews,
+  createScopedContentCompatibilityViews,
   scopedContentStorageTableName,
 } from './scoped-content-tables.ts';
 
-import { installLearnerOwnershipGuards } from './learner-ownership-guards.ts';
+import { createLearnerOwnershipGuards } from './learner-ownership-guards.ts';
 import {
-  ensureSharedContentSchema,
+  createSharedContentSchema,
   validateSharedContentSchema,
 } from './shared-content.ts';
 
@@ -2430,7 +2430,7 @@ export function dismissWordFromStudy(wordId: string): void {
 export function initializeDatabase() {
   if (!dbExistedOnStartup) {
     createSchema();
-    ensureHostedOperationsSchema();
+    createHostedOperationsSchema();
     recordLearnerOwnershipSchema();
     migrateDatabase(getDb());
     if (config.authMode === 'trusted_local') {
@@ -2650,7 +2650,7 @@ function seedEmptyDevDatabase() {
 }
 
 function createSchema() {
-  ensureIdentitySchema();
+  createIdentitySchema();
   getDb().exec(`
     CREATE TABLE lexical_words (
       id TEXT PRIMARY KEY,
@@ -2975,14 +2975,14 @@ function createSchema() {
     );
   `);
 
-  ensureReflectionSchema();
-  ensureProductionCueSchema();
-  ensureSharedContentSchema();
-  ensureIntakeTriageSchema();
-  ensureIndexes();
-  installScopedContentCompatibilityViews();
-  installLearnerScopedCompatibilityViews();
-  installLearnerOwnershipGuards();
+  createReflectionSchema();
+  createProductionCueSchema();
+  createSharedContentSchema();
+  createIntakeTriageSchema();
+  createIndexes();
+  createScopedContentCompatibilityViews();
+  createLearnerScopedCompatibilityViews();
+  createLearnerOwnershipGuards();
 }
 
 function ensureDefaultDailyNewWordLimit() {
@@ -2996,28 +2996,28 @@ function ensureDefaultDailyNewWordLimit() {
   `).run(requireLearnerId(), JSON.stringify(DEFAULT_DAILY_NEW_WORD_LIMIT), new Date().toISOString());
 }
 
-function ensureIndexes() {
+function createIndexes() {
   getDb().exec(`
-    CREATE INDEX IF NOT EXISTS idx_words_priority ON lexical_words(priority DESC, created_at ASC);
-    CREATE INDEX IF NOT EXISTS idx_word_lookup_aliases_normalized_alias ON word_lookup_aliases(normalized_alias);
-    CREATE INDEX IF NOT EXISTS idx_word_meanings_word_position ON lexical_word_meanings(word_id, position ASC);
-    CREATE INDEX IF NOT EXISTS idx_user_word_priority_force_top ON ${learnerScopedStorageTableName('user_word_priority')}(force_top DESC, updated_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_user_word_priority_tier ON ${learnerScopedStorageTableName('user_word_priority')}(priority_tier DESC, updated_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_word_study_admission_next ON ${learnerScopedStorageTableName('word_study_admission_state')}(earliest_next_study_at ASC);
-    CREATE INDEX IF NOT EXISTS idx_word_skill_state_due ON ${learnerScopedStorageTableName('word_skill_state')}(next_due_at ASC);
-    CREATE INDEX IF NOT EXISTS idx_review_session_summaries_day ON ${learnerScopedStorageTableName('review_session_summaries')}(day_key ASC);
-    CREATE INDEX IF NOT EXISTS idx_study_attempt_events_session ON ${learnerScopedStorageTableName('study_attempt_events')}(session_id ASC, session_event_sequence ASC);
-    CREATE INDEX IF NOT EXISTS idx_study_attempt_events_projected ON ${learnerScopedStorageTableName('study_attempt_events')}(projected_at ASC, session_id ASC);
-    CREATE INDEX IF NOT EXISTS idx_study_events_session ON ${learnerScopedStorageTableName('study_events')}(session_id ASC, session_event_sequence ASC);
-    CREATE INDEX IF NOT EXISTS idx_study_events_projected ON ${learnerScopedStorageTableName('study_events')}(projected_at ASC, occurred_at ASC);
-    CREATE INDEX IF NOT EXISTS idx_word_skill_relevance_state ON ${learnerScopedStorageTableName('word_skill_relevance')}(skill_id ASC, relevance_state ASC);
-    CREATE INDEX IF NOT EXISTS idx_contrast_cluster_members_word ON ${scopedContentStorageTableName('contrast_cluster_members')}(word_id ASC, cluster_id ASC);
-    CREATE INDEX IF NOT EXISTS idx_contrast_prompts_cluster_target ON ${scopedContentStorageTableName('contrast_prompts')}(cluster_id ASC, target_word_id ASC);
-    CREATE INDEX IF NOT EXISTS idx_contrast_prompts_target ON ${scopedContentStorageTableName('contrast_prompts')}(target_word_id ASC);
+    CREATE INDEX idx_words_priority ON lexical_words(priority DESC, created_at ASC);
+    CREATE INDEX idx_word_lookup_aliases_normalized_alias ON word_lookup_aliases(normalized_alias);
+    CREATE INDEX idx_word_meanings_word_position ON lexical_word_meanings(word_id, position ASC);
+    CREATE INDEX idx_user_word_priority_force_top ON ${learnerScopedStorageTableName('user_word_priority')}(force_top DESC, updated_at DESC);
+    CREATE INDEX idx_user_word_priority_tier ON ${learnerScopedStorageTableName('user_word_priority')}(priority_tier DESC, updated_at DESC);
+    CREATE INDEX idx_word_study_admission_next ON ${learnerScopedStorageTableName('word_study_admission_state')}(earliest_next_study_at ASC);
+    CREATE INDEX idx_word_skill_state_due ON ${learnerScopedStorageTableName('word_skill_state')}(next_due_at ASC);
+    CREATE INDEX idx_review_session_summaries_day ON ${learnerScopedStorageTableName('review_session_summaries')}(day_key ASC);
+    CREATE INDEX idx_study_attempt_events_session ON ${learnerScopedStorageTableName('study_attempt_events')}(session_id ASC, session_event_sequence ASC);
+    CREATE INDEX idx_study_attempt_events_projected ON ${learnerScopedStorageTableName('study_attempt_events')}(projected_at ASC, session_id ASC);
+    CREATE INDEX idx_study_events_session ON ${learnerScopedStorageTableName('study_events')}(session_id ASC, session_event_sequence ASC);
+    CREATE INDEX idx_study_events_projected ON ${learnerScopedStorageTableName('study_events')}(projected_at ASC, occurred_at ASC);
+    CREATE INDEX idx_word_skill_relevance_state ON ${learnerScopedStorageTableName('word_skill_relevance')}(skill_id ASC, relevance_state ASC);
+    CREATE INDEX idx_contrast_cluster_members_word ON ${scopedContentStorageTableName('contrast_cluster_members')}(word_id ASC, cluster_id ASC);
+    CREATE INDEX idx_contrast_prompts_cluster_target ON ${scopedContentStorageTableName('contrast_prompts')}(cluster_id ASC, target_word_id ASC);
+    CREATE INDEX idx_contrast_prompts_target ON ${scopedContentStorageTableName('contrast_prompts')}(target_word_id ASC);
   `);
-  ensureReflectionIndexes();
-  ensureProductionCueIndexes();
-  ensureIntakeTriageIndexes();
+  createReflectionIndexes();
+  createProductionCueIndexes();
+  createIntakeTriageIndexes();
 }
 
 function validateSchema() {
