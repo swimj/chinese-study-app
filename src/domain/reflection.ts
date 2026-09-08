@@ -1613,7 +1613,7 @@ export function normalizeSessionReflectionResultV6(
 
 export function normalizeSessionReflectionResultV7(
   value: SessionReflectionResultV7Wire,
-  bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4,
+  bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4 | CuratedReflectionBundleV1,
 ): SessionReflectionResultV7 {
   return {
     schemaVersion: 'session_reflection_result.v7',

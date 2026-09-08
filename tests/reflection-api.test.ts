@@ -38,6 +38,7 @@ let secondOpinionImplementation: InitialReflectionGenerationService['generateDef
 let receivedSecondOpinionRequest: { proposalIds: string[]; model: string } | null = null;
 let receivedRetryRunId: string | null = null;
 let lifecycleEvents: ReflectionLifecycleEvent[];
+let errorLogs: Array<{ message: string; metadata: Record<string, string> }>;
 
 describe('reflection HTTP API', { concurrency: false }, () => {
   before(async () => {
@@ -80,6 +81,9 @@ describe('reflection HTTP API', { concurrency: false }, () => {
           lifecycleEvents.push(event);
         },
       },
+      logError(message, metadata) {
+        errorLogs.push({ message, metadata });
+      },
     });
   });
 
@@ -111,6 +115,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     receivedRetryRunId = null;
     receivedSecondOpinionRequest = null;
     lifecycleEvents = [];
+    errorLogs = [];
     generationImplementation = async () => ({
       artifactId: 'generated-artifact',
       proposalCount: 1,
@@ -196,6 +201,59 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     assert.deepEqual(receivedSecondOpinionRequest, {
       proposalIds: ['proposal-b', 'proposal-a'],
       model: 'openai:gpt-5.6-luna-high',
+    });
+    assert.deepEqual(lifecycleEvents.map((event) => event.event), [
+      'reflection.generation_requested',
+      'reflection.generation_succeeded',
+    ]);
+    assert.equal(lifecycleEvents[0]?.sessionId, null);
+    assert.equal(lifecycleEvents[1]?.sessionId, null);
+  });
+
+  test('correlates unexpected deferred second-opinion failures without exposing details to the learner', async () => {
+    secondOpinionImplementation = async () => {
+      throw new Error('Invalid curated reflection bundle V1: duplicate session action id');
+    };
+
+    const response = await request('/api/deferred-reflection-second-opinions', {
+      method: 'POST',
+      body: {
+        proposalIds: ['proposal-b', 'proposal-a'],
+        model: 'openai:gpt-5.6-luna-high',
+      },
+    });
+
+    assert.equal(response.status, 500);
+    const payload = response.json as { error: string; diagnosticId: string };
+    assert.equal(payload.error, 'Failed to generate a second opinion');
+    assert.match(payload.diagnosticId, /^[0-9a-f-]{36}$/);
+    assert.equal(JSON.stringify(response).includes('duplicate session action id'), false);
+    assert.deepEqual(errorLogs, [{
+      message: 'Deferred second opinion generation failed',
+      metadata: {
+        diagnosticId: payload.diagnosticId,
+        route: '/api/deferred-reflection-second-opinions',
+        status: '500',
+        elapsedMs: errorLogs[0]?.metadata.elapsedMs ?? '',
+        proposalCount: '2',
+        model: 'openai:gpt-5.6-luna-high',
+        errorName: 'Error',
+        errorMessage: 'Invalid curated reflection bundle V1: duplicate session action id',
+      },
+    }]);
+    assert.match(errorLogs[0]?.metadata.elapsedMs ?? '', /^\d+$/);
+    assert.deepEqual(lifecycleEvents.map((event) => event.event), [
+      'reflection.generation_requested',
+      'reflection.generation_failed',
+    ]);
+    assert.deepEqual(lifecycleEvents[1], {
+      event: 'reflection.generation_failed',
+      sessionId: null,
+      failure: 'internal',
+      code: 'internal_error',
+      clientRequestId: null,
+      diagnosticId: payload.diagnosticId,
+      elapsedMs: lifecycleEvents[1]?.elapsedMs,
     });
   });
 

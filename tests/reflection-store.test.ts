@@ -660,6 +660,37 @@ describe('reflection durable store', { concurrency: false }, () => {
     );
   });
 
+  test('builds one curated bundle when session-local action ids repeat across source sessions', () => {
+    const firstInput = materializationInputV2('second-opinion-cross-session-a');
+    assert.equal(firstInput.evidenceBundle.schemaVersion, 'session_reflection_bundle.v2');
+    if (firstInput.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v2') {
+      throw new Error('Expected V2 evidence fixture.');
+    }
+    firstInput.evidenceBundle.items[0]!.sourceAttemptId = 'attempt-cross-session-a';
+    const first = dbModule.materializeReflectionArtifact(firstInput);
+    const firstProposalId = first.artifact.proposals[0]!.review.proposalId;
+    dbModule.deferReflectionProposal(firstProposalId, updatedAt);
+
+    const secondInput = materializationInputV2('second-opinion-cross-session-b');
+    assert.equal(secondInput.evidenceBundle.schemaVersion, 'session_reflection_bundle.v2');
+    if (secondInput.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v2') {
+      throw new Error('Expected V2 evidence fixture.');
+    }
+    secondInput.evidenceBundle.items[0]!.sourceAttemptId = 'attempt-cross-session-b';
+    const second = dbModule.materializeReflectionArtifact(secondInput);
+    const secondProposalId = second.artifact.proposals[0]!.review.proposalId;
+    dbModule.deferReflectionProposal(secondProposalId, updatedAt);
+
+    const { bundle } = dbModule.buildDeferredSecondOpinionBundle(
+      [firstProposalId, secondProposalId],
+      appliedAt,
+    );
+
+    assert.equal(bundle.items.length, 2);
+    assert.equal(bundle.items[0]!.sessionActionId, bundle.items[1]!.sessionActionId);
+    assert.notEqual(bundle.items[0]!.itemId, bundle.items[1]!.itemId);
+  });
+
   test('authorizes exact and revised supported operations as immutable pending invocations', () => {
     const exactArtifact = dbModule.materializeReflectionArtifact(
       materializationInput('exact-session', suppressOperation('target')),
