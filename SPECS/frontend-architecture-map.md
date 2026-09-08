@@ -106,7 +106,8 @@ generation, and assessment accept/dismiss actions.
 
 `useReflectionPageController` owns the reflection page. See the
 [reflection frontend architecture map](../docs/reflection-frontend-architecture.md)
-for its loading, compact dogfood run-log, review, and application-status boundaries.
+for its loading, Refresh (full workspace reread including cached details),
+compact dogfood run-log, review, and application-status boundaries.
 
 `useContentDiagnosticsController` owns the read-only content diagnostic page:
 primitive-kind selection and explicit query submission. Opening the page and

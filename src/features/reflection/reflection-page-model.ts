@@ -412,6 +412,33 @@ export function retireSelectedDeferredProposalsAfterSecondOpinion(
   });
 }
 
+/**
+ * Refresh / mutation policy for which artifact details to fetch.
+ * `'all'` bypasses the client detail cache for every workspace-scoped artifact.
+ */
+export type ReflectionDetailReloadPolicy = ReadonlySet<string> | 'all';
+
+/**
+ * Artifact ids whose details must be fetched for the current workspace load.
+ * Dedupes open/history + help-inbox ids; reuses cache unless forced.
+ */
+export function artifactDetailIdsToFetch(params: {
+  readableArtifactIds: readonly string[];
+  inboxArtifactIds: readonly string[];
+  cachedArtifactIds: ReadonlySet<string>;
+  forceArtifactIds: ReflectionDetailReloadPolicy;
+}): string[] {
+  const { readableArtifactIds, inboxArtifactIds, cachedArtifactIds, forceArtifactIds } = params;
+  return [...readableArtifactIds, ...inboxArtifactIds].filter((artifactId, index, ids) => (
+    ids.indexOf(artifactId) === index
+    && (
+      forceArtifactIds === 'all'
+      || !cachedArtifactIds.has(artifactId)
+      || forceArtifactIds.has(artifactId)
+    )
+  ));
+}
+
 /** User-facing output tokens: total output minus reasoning, when output is known. */
 export function visibleOutputTokens(usage: {
   outputTokens: number | null;

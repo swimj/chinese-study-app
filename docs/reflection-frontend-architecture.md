@@ -85,14 +85,23 @@ reflection. Cancellation, dismissal, and management remove the request.
 `useReflectionPageController` loads the capped open and recent artifact lists,
 the Help inbox, their joined details, and the concluded-generation run log,
 preserves the selected artifact when possible, and reuses already loaded
-details. Help membership is the union of pending proposal reviews and open
-explanation inbox rows; artifact JSON is fetched to render those cards.
-Proposal review, authorization withdrawal, and Help Done reload the affected
-artifact plus both lists so queues remain coherent without a manual refresh.
-Successful deferred second opinion patches selected deferred proposals out of
-the client detail cache (matching durable `requested_second_opinion` retirement)
-and reloads lists plus the new result artifact, so the chip bank and deferred
-counts update without refetching those known source dispositions.
+details for ordinary navigation. Help membership is the union of pending
+proposal reviews and open explanation inbox rows; artifact JSON is fetched to
+render those cards. Proposal review, authorization withdrawal, and Help Done
+reload the affected artifact plus both lists so queues remain coherent without
+a manual refresh. Successful deferred second opinion patches selected deferred
+proposals out of the client detail cache (matching durable
+`requested_second_opinion` retirement) and reloads lists plus the new result
+artifact, so the chip bank and deferred counts update without refetching those
+known source dispositions.
+
+**Refresh** is a full coherent reread of the reflection workspace from the
+backend. It reloads open/history summaries, generation runs, quality stats,
+the Help inbox, **and every currently scoped artifact detail**, bypassing the
+client detail cache. Selection is preserved when that artifact remains readable.
+Refresh does not start generation or mutate review state. Use it when durable
+state may have changed outside this page's mutations (another tab, another
+device, or a stale cache after an incomplete local update).
 
 Artifact reconstruction is isolated per record. The backend lists unreadable
 artifact metadata explicitly instead of aborting the whole list, and the

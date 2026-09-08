@@ -24,6 +24,7 @@ import {
   getOperationDraftState,
   reduceReflectionOperationDraft,
   formatRunDuration,
+  artifactDetailIdsToFetch,
   retireSelectedDeferredProposalsAfterSecondOpinion,
   visibleOutputTokens,
   type ReflectionArtifactDetailDto,
@@ -211,6 +212,28 @@ describe('reflection page model', () => {
     );
     assert.equal(nextDetails[1]!.proposals[1]!.review.disposition.kind, 'pending');
     assert.equal(nextDetails[2], untouched);
+  });
+
+  test('Refresh fetches every scoped detail even when the client cache is warm', () => {
+    assert.deepEqual(
+      artifactDetailIdsToFetch({
+        readableArtifactIds: ['open-a', 'history-b'],
+        inboxArtifactIds: ['help-only', 'open-a'],
+        cachedArtifactIds: new Set(['open-a', 'history-b', 'stale-cached']),
+        forceArtifactIds: 'all',
+      }),
+      ['open-a', 'history-b', 'help-only'],
+    );
+
+    assert.deepEqual(
+      artifactDetailIdsToFetch({
+        readableArtifactIds: ['open-a', 'history-b'],
+        inboxArtifactIds: ['help-only'],
+        cachedArtifactIds: new Set(['open-a', 'history-b']),
+        forceArtifactIds: new Set(['open-a']),
+      }),
+      ['open-a', 'help-only'],
+    );
   });
 
   test('keeps learner-requested informational feedback visible without a proposal', () => {
