@@ -578,6 +578,8 @@ describe('reflection authorization and lifecycle rules', () => {
       ['deferred', 'accepted'],
       ['deferred', 'dismissed'],
       ['deferred', 'superseded'],
+      ['deferred', 'requested_second_opinion'],
+      ['dismissed', 'pending'],
     ] as const;
     for (const [from, to] of allowed) {
       assert.equal(isProposalReviewTransitionAllowed(from, to), true);
@@ -585,8 +587,9 @@ describe('reflection authorization and lifecycle rules', () => {
     }
     assert.equal(isProposalReviewTransitionAllowed('accepted', 'deferred'), false);
     assert.equal(isProposalReviewTransitionAllowed('deferred', 'pending'), false);
+    assert.equal(isProposalReviewTransitionAllowed('requested_second_opinion', 'pending'), false);
     assert.throws(
-      () => assertProposalReviewTransition('dismissed', 'accepted'),
+      () => assertProposalReviewTransition('requested_second_opinion', 'pending'),
       /Invalid proposal review transition/,
     );
   });

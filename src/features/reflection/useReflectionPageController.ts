@@ -49,6 +49,7 @@ export type ReflectionPageController = {
     proposalId: string,
     reason: string | null,
   ) => Promise<void>;
+  reopenProposal: (proposalId: string) => Promise<void>;
   acceptProposal: (proposalId: string, operation: ReflectionOperation) => Promise<void>;
   replaceProposal: (proposalId: string, operation: ReflectionOperation) => Promise<void>;
   withdrawAuthorization: (invocationId: string) => Promise<void>;
@@ -455,6 +456,7 @@ export function useReflectionPageController({
       action: 'dismiss',
       reason,
     }),
+    reopenProposal: (proposalId) => reviewProposal(proposalId, { action: 'reopen' }),
     acceptProposal: (proposalId, operation) => reviewProposal(proposalId, {
       action: 'accept',
       operation,

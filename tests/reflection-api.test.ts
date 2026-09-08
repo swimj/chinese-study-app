@@ -446,6 +446,29 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       (dismissed.json as { review: { disposition: unknown } }).review.disposition,
       { kind: 'dismissed', reason: 'Not useful.' },
     );
+    const reopened = await request(
+      `/api/reflection-proposals/${dismissedId}/review`,
+      { method: 'POST', body: { action: 'reopen' } },
+    );
+    assert.equal(reopened.status, 200);
+    assert.deepEqual(
+      (reopened.json as { review: { disposition: unknown } }).review.disposition,
+      { kind: 'pending' },
+    );
+    assert.equal(
+      (await request(`/api/reflection-proposals/${dismissedId}/review`, {
+        method: 'POST',
+        body: { action: 'reopen' },
+      })).status,
+      400,
+    );
+    assert.equal(
+      (await request(`/api/reflection-proposals/${dismissedId}/review`, {
+        method: 'POST',
+        body: { action: 'reopen', unexpected: true },
+      })).status,
+      400,
+    );
 
     const acceptedArtifact = materialize(
       'accepted-session',

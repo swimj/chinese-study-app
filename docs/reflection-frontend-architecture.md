@@ -126,7 +126,9 @@ result (word, diagnosis tags, cue/response, learner feedback), so ordinary
 forgetting and other no-action judgments stay visible without opening every
 item card. Reviewing a
 proposal removes it from the current queue when its new lifecycle state no
-longer matches that filter. Questions remain informational and do not receive
+longer matches that filter. By session can restore a learner-dismissed proposal
+to pending with **Undo dismiss**; second-opinion retirement cannot be undone.
+Questions remain informational and do not receive
 synthetic review state. Finish session returns Home; there is no post-session
 jump or Open-reflection deep link.
 

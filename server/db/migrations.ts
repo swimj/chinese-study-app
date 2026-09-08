@@ -13,6 +13,12 @@ export type SchemaMigration = { id: string; sql: string };
 export const schemaMigrations: readonly SchemaMigration[] = [{
   id: 'app_schema:0001_deferred_second_opinion',
   sql: fs.readFileSync(new URL('./migrations/0001_deferred_second_opinion.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0002_requested_second_opinion_disposition',
+  sql: fs.readFileSync(
+    new URL('./migrations/0002_requested_second_opinion_disposition.sql', import.meta.url),
+    'utf8',
+  ),
 }];
 
 function checksum(value: string): string {
@@ -90,28 +96,40 @@ export function getSchemaMigrationStatus(db: DatabaseSync, migrations = schemaMi
 
 /** Caller owns the maintenance window. The transaction serializes migration runners. */
 export function migrateDatabase(db: DatabaseSync, migrations = schemaMigrations): string[] {
+  if (db.isTransaction) {
+    throw new Error('Schema migrations cannot start inside an open transaction.');
+  }
   if ((db.prepare('PRAGMA foreign_keys').get() as { foreign_keys: number }).foreign_keys !== 1) {
     throw new Error('Schema migrations require foreign_keys=ON.');
   }
-  db.exec('BEGIN IMMEDIATE');
+  // SQLite cannot change CHECK constraints or drop a table with incoming FKs
+  // while foreign keys are enabled, and this pragma is a no-op inside a
+  // transaction. Disable them for the documented schema-change procedure;
+  // foreign_key_check after each migration remains the integrity gate.
+  db.exec('PRAGMA foreign_keys=OFF');
   try {
-    const state = readState(db, migrations);
-    const applied: string[] = [];
-    for (const migration of state.all.slice(state.applied)) {
-      let baselineVariant: 'fresh' | 'fly_3ad618b' | undefined;
-      if (migration.id === BASELINE_ID) baselineVariant = adoptBaseline(db);
-      else db.exec(migration.sql);
-      if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error(`Foreign key check failed after ${migration.id}`);
-      const integrity = db.prepare('PRAGMA quick_check').all() as Array<{ quick_check: string }>;
-      if (integrity.length !== 1 || integrity[0].quick_check !== 'ok') throw new Error(`Integrity check failed after ${migration.id}`);
-      db.prepare('INSERT INTO schema_migrations (migration_id, applied_at, details_json) VALUES (?, ?, ?)')
-        .run(migration.id, new Date().toISOString(), JSON.stringify({ checksum: checksum(migration.sql), schemaChecksum: schemaChecksum(db), ...(baselineVariant ? { baselineVariant } : {}) }));
-      applied.push(migration.id);
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const state = readState(db, migrations);
+      const applied: string[] = [];
+      for (const migration of state.all.slice(state.applied)) {
+        let baselineVariant: 'fresh' | 'fly_3ad618b' | undefined;
+        if (migration.id === BASELINE_ID) baselineVariant = adoptBaseline(db);
+        else db.exec(migration.sql);
+        if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error(`Foreign key check failed after ${migration.id}`);
+        const integrity = db.prepare('PRAGMA quick_check').all() as Array<{ quick_check: string }>;
+        if (integrity.length !== 1 || integrity[0].quick_check !== 'ok') throw new Error(`Integrity check failed after ${migration.id}`);
+        db.prepare('INSERT INTO schema_migrations (migration_id, applied_at, details_json) VALUES (?, ?, ?)')
+          .run(migration.id, new Date().toISOString(), JSON.stringify({ checksum: checksum(migration.sql), schemaChecksum: schemaChecksum(db), ...(baselineVariant ? { baselineVariant } : {}) }));
+        applied.push(migration.id);
+      }
+      db.exec('COMMIT');
+      return applied;
+    } catch (error) {
+      if (db.isTransaction) db.exec('ROLLBACK');
+      throw error;
     }
-    db.exec('COMMIT');
-    return applied;
-  } catch (error) {
-    if (db.isTransaction) db.exec('ROLLBACK');
-    throw error;
+  } finally {
+    db.exec('PRAGMA foreign_keys=ON');
   }
 }

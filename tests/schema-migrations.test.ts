@@ -12,7 +12,7 @@ import { createBaselineFixture } from './helpers/baseline-database.ts';
 let dir: string;
 let baselineSource: string;
 let source: string;
-const migration = { id: 'app_schema:0002_optional_note', sql: 'ALTER TABLE learners ADD COLUMN migration_test_note TEXT;' };
+const migration = { id: 'app_schema:0003_optional_note', sql: 'ALTER TABLE learners ADD COLUMN migration_test_note TEXT;' };
 const testMigrations = [...schemaMigrations, migration];
 function startup(databaseDir: string) {
   return spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', 'await import("./server/db.ts")'], {
@@ -107,7 +107,7 @@ test('rolls the entire pending batch and data back on SQL failure', () => {
   const { db } = copy('failure');
   try {
     const schema = snapshot(db);
-    const broken = { id: 'app_schema:0003_broken', sql: "INSERT INTO learners VALUES ('test', 'Temporary', '2026-09-07', NULL, NULL); SELECT * FROM missing_table;" };
+    const broken = { id: 'app_schema:0004_broken', sql: "INSERT INTO learners VALUES ('test', 'Temporary', '2026-09-07', NULL, NULL); SELECT * FROM missing_table;" };
     assert.throws(() => migrateDatabase(db, [...testMigrations, broken]), /missing_table/);
     assert.deepEqual(snapshot(db), schema);
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM learners').get()?.count, 0);
@@ -119,7 +119,7 @@ test('rolls the entire pending batch and data back on SQL failure', () => {
 test('rejects foreign key violations and leaves the ledger unchanged', () => {
   const { db } = copy('foreign-key');
   try {
-    const bad = { id: 'app_schema:0002_bad_reference', sql: "PRAGMA defer_foreign_keys=ON; INSERT INTO learner_auth_mappings VALUES ('test', 'subject', 'missing', '2026-09-07');" };
+    const bad = { id: 'app_schema:0003_bad_reference', sql: "PRAGMA defer_foreign_keys=ON; INSERT INTO learner_auth_mappings VALUES ('test', 'subject', 'missing', '2026-09-07');" };
     assert.throws(() => migrateDatabase(db, [...schemaMigrations, bad]), /Foreign key check failed/);
     assertSchemaCurrent(db);
   } finally { db.close(); }
@@ -141,7 +141,7 @@ test('serializes against an existing writer and rejects gaps in migration histor
     db.exec('BEGIN IMMEDIATE');
     assert.throws(() => migrateDatabase(other, testMigrations), /locked/);
     db.exec('ROLLBACK');
-    const next = { id: 'app_schema:0003_index', sql: 'CREATE INDEX idx_migration_test ON learners(migration_test_note);' };
+    const next = { id: 'app_schema:0004_index', sql: 'CREATE INDEX idx_migration_test ON learners(migration_test_note);' };
     migrateDatabase(db, [...testMigrations, next]);
     db.prepare('DELETE FROM schema_migrations WHERE migration_id = ?').run(migration.id);
     assert.throws(() => assertSchemaCurrent(db, [...testMigrations, next]), /out-of-order/);

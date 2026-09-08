@@ -797,6 +797,7 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                           withdrawingInvocationId={controller.withdrawingInvocationId}
                           onDefer={controller.deferProposal}
                           onDismiss={controller.dismissProposal}
+                          onReopen={controller.reopenProposal}
                           onAccept={controller.acceptProposal}
                           onReplace={controller.replaceProposal}
                           onWithdraw={controller.withdrawAuthorization}
@@ -1285,6 +1286,7 @@ function ProposalCard({
   withdrawingInvocationId,
   onDefer,
   onDismiss,
+  onReopen,
   onAccept,
   onReplace,
   onWithdraw,
@@ -1304,6 +1306,7 @@ function ProposalCard({
     proposalId: string,
     reason: string | null,
   ) => Promise<void>;
+  onReopen: (proposalId: string) => Promise<void>;
   onAccept: (proposalId: string, operation: ReflectionOperation) => Promise<void>;
   onReplace: (proposalId: string, operation: ReflectionOperation) => Promise<void>;
   onWithdraw: (invocationId: string) => Promise<void>;
@@ -1450,6 +1453,16 @@ function ProposalCard({
           <h5>Original operation</h5>
           <ReflectionOperationEditor operation={original} evidence={evidence} disabled />
           <ReviewOutcome disposition={proposal.review.disposition} />
+          {proposal.review.disposition.kind === 'dismissed' ? (
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={submitting}
+              onClick={() => void onReopen(proposal.review.proposalId).catch(() => undefined)}
+            >
+              Undo dismiss
+            </button>
+          ) : null}
           {invocation !== null ? (
             <>
               {proposal.review.disposition.kind === 'accepted'
@@ -1871,10 +1884,13 @@ function ProposalDispositionStatus({
       return <StatusIcon kind="failure" label="Dismissed" />;
     case 'pending':
     case 'deferred':
+    case 'requested_second_opinion':
     case 'superseded':
       return (
         <span className={`reflection-state-pill state-${disposition.kind}`}>
-          {humanize(disposition.kind)}
+          {disposition.kind === 'requested_second_opinion'
+            ? 'Requested second opinion'
+            : humanize(disposition.kind)}
         </span>
       );
   }
@@ -1907,6 +1923,8 @@ function ReviewOutcome({ disposition }: { disposition: ProposalReviewDisposition
           Dismissed{disposition.reason === null ? '.' : `: ${disposition.reason}`}
         </p>
       );
+    case 'requested_second_opinion':
+      return <p className="reflection-outcome">Requested second opinion.</p>;
     case 'superseded':
       return (
         <div className="reflection-outcome">

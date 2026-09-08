@@ -127,19 +127,12 @@ that newer disposition.
 
 Preferred historical copy is “Requested second opinion.” This describes why
 the original left active review; it does not claim the advice was wrong. The
-label is applied on successful replacement, not merely on request submission.
+disposition is applied on successful replacement, not merely on request submission.
 
 The learner loosely uses dismissal as a poor-quality signal, but also uses it
-to remove advice they no longer need. A lightweight distinction between explicit
-dismissal and second-opinion retirement is preferred when inexpensive. Reusing
-dismissal with a broader documented meaning is an acceptable implementation
-tradeoff; a new lifecycle subsystem is not justified solely to improve analysis.
-If the distinction is retained, quality analysis should keep it separate from
-explicit dismissal. Neither measure is a clean ground-truth quality label.
-
-The implementation plan must state which representation it chooses and update
-the owning canonical review contract accordingly. It must not claim the current
-strict dismissal meaning remains unchanged if dismissal is reused.
+to remove advice they no longer need. Second-opinion retirement is a distinct
+terminal review kind, not a dismissal reason, so quality analysis and learner
+undo of dismiss do not treat it as an explicit reject.
 
 Original artifacts remain stored under existing history behavior. A simple link
 from a new request to its selected sources is sufficient. No proposal ancestry
@@ -206,8 +199,8 @@ This specification defines the implemented first cut. It fits one cohesive PR
 across the existing generation and review boundaries.
 
 The implementation uses a versioned curated-source envelope, the existing
-twenty-five-item bound, and the documented `requested_second_opinion`
-dismissal reason for closure. It preserves the current prompt's evidence-item
+twenty-five-item bound, and the `requested_second_opinion` review disposition
+for closure. It preserves the current prompt's evidence-item
 semantics and needs no broader lifecycle model.
 
 Implementation must extend these canonical contracts together with code/tests:

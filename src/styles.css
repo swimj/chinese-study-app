@@ -2695,6 +2695,12 @@ button:disabled:hover {
   color: #f87171;
 }
 
+.reflection-state-pill.state-superseded,
+.reflection-state-pill.state-requested_second_opinion {
+  background: rgba(148, 163, 184, 0.18);
+  color: #cbd5e1;
+}
+
 .reflection-state-pill.state-generating {
   background: rgba(59, 130, 246, 0.18);
   color: #60a5fa;

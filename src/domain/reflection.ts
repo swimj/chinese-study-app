@@ -463,14 +463,15 @@ export type ProposalReviewDisposition =
       acceptanceMode: 'exact' | 'revised';
       acceptedInvocationId: string;
     }
-  | {
-      kind: 'dismissed';
-      reason: string | null;
-    }
-  | {
-      kind: 'superseded';
-      supersession: ProposalSupersession;
-    };
+    | {
+        kind: 'dismissed';
+        reason: string | null;
+      }
+    | { kind: 'requested_second_opinion' }
+    | {
+        kind: 'superseded';
+        supersession: ProposalSupersession;
+      };
 
 export type ProposalReviewStatus = {
   proposalId: string;
@@ -605,6 +606,7 @@ export type ReviewProposalRequest =
       action: 'dismiss';
       reason: string | null;
     }
+  | { action: 'reopen' }
   | { action: 'accept'; operation: ReflectionOperation }
   | { action: 'replace'; operation: ReflectionOperation };
 
@@ -1726,9 +1728,10 @@ const proposalReviewTransitions: Record<
   ReadonlySet<ProposalReviewDispositionKind>
 > = {
   pending: new Set(['deferred', 'accepted', 'dismissed', 'superseded']),
-  deferred: new Set(['accepted', 'dismissed', 'superseded']),
+  deferred: new Set(['accepted', 'dismissed', 'superseded', 'requested_second_opinion']),
+  dismissed: new Set(['pending']),
   accepted: new Set(),
-  dismissed: new Set(),
+  requested_second_opinion: new Set(),
   superseded: new Set(),
 };
 

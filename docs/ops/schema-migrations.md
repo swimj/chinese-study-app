@@ -114,8 +114,12 @@ indexes and ownership guards when its column changes require that.
 
 Write ordinary transactional SQLite SQL, using physical tables and explicit
 learner ids for data writes. Do not include transaction control (`BEGIN`,
-`COMMIT`, `ROLLBACK`, savepoints), disable foreign keys, use `VACUUM`, or perform
-external side effects. The runner owns one transaction around the entire pending
+`COMMIT`, `ROLLBACK`, savepoints), `PRAGMA foreign_keys`, use `VACUUM`, or perform
+external side effects. The runner disables foreign keys around the migration
+transaction because SQLite cannot alter CHECK constraints or drop a table with
+incoming foreign keys while they are enabled, and that pragma is a no-op inside
+a transaction. `PRAGMA foreign_key_check` after each migration remains the
+integrity gate. The runner owns one transaction around the entire pending
 batch, including ledger records; a failure rolls that batch back. It checks
 foreign keys and SQLite integrity before recording each migration. This first
 implementation does not support nontransactional migrations or large resumable
@@ -129,9 +133,16 @@ exercise a test-only optional column. The first application migration,
 columns to both physical reflection generation tables and updates their
 learner-scoped views and insert triggers. Existing history retains NULL
 provenance; immutable-update and learner-filtered-delete behavior is preserved.
-Fresh installations start with the frozen baseline and apply this same SQL.
-`tests/deferred-second-opinion-migration.test.ts` verifies history preservation,
-ownership, immutability, repeat execution, and fresh/upgrade equivalence.
+`0002_requested_second_opinion_disposition.sql` rebuilds
+`learner_owned_reflection_proposal_reviews` so second-opinion retirement is a
+distinct review disposition rather than a dismissed sentinel reason, and maps
+any existing sentinel rows. The current-learner view is dropped and recreated
+with the physical table. Fresh installations start with the frozen baseline
+and apply this same SQL.
+`tests/deferred-second-opinion-migration.test.ts` and
+`tests/requested-second-opinion-disposition-migration.test.ts` verify history
+preservation, ownership, immutability, repeat execution, and fresh/upgrade
+equivalence.
 
 `schema_migrations` retains historical markers. The reserved `app_schema:` id
 namespace holds the ordered migration ledger, with the migration checksum and

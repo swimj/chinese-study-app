@@ -259,6 +259,9 @@ export function getReflectionQualityStats(): ReflectionQualityStats {
     if (row.disposition === 'pending' || row.disposition === 'deferred') {
       continue;
     }
+    if (row.disposition === 'requested_second_opinion') {
+      continue;
+    }
     if (row.disposition === 'superseded' && row.supersession_source !== 'user_replacement') {
       continue;
     }

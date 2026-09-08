@@ -195,7 +195,7 @@ Request/result types live in
 | GET | `/api/reflection-generation-runs` | Load the compact dogfood log of concluded provider attempts |
 | POST | `/api/reflection-generation-runs/:runId/retry` | Retry a failed run from its saved bounded evidence bundle |
 | GET | `/api/reflection-artifacts/:artifactId` | Load immutable evidence/result plus current proposal/application statuses |
-| POST | `/api/reflection-proposals/:proposalId/review` | Defer, dismiss, or authorize one proposal |
+| POST | `/api/reflection-proposals/:proposalId/review` | Defer, dismiss, reopen, or authorize one proposal |
 | POST | `/api/reflection-invocations/:invocationId/withdraw-authorization` | Withdraw a pending or unsupported authorization |
 | PUT | `/api/reflection-quality` | Upsert the tag set on one reflection item |
 | DELETE | `/api/reflection-quality` | Clear quality tags for one reflection item |
@@ -329,14 +329,17 @@ type ReviewProposalRequest =
       action: 'dismiss';
       reason: string | null;
     }
+  | { action: 'reopen' }
   | { action: 'accept'; operation: ReflectionOperation }
   | { action: 'replace'; operation: ReflectionOperation };
 ```
 
 Dismiss `reason` is an optional freeform note on the proposal review row. Item
 quality tags are a separate overlay and are not written by dismiss.
+`reopen` returns a learner-dismissed proposal to `pending` so it re-enters Help.
+Second-opinion retirement (`requested_second_opinion`) cannot be reopened.
 
-Defer and dismiss return:
+Defer, dismiss, and reopen return:
 
 ```ts
 { review: ProposalReviewStatus; invocation: null; application: null }
@@ -408,7 +411,8 @@ none did. Missing artifact/item still return `404`.
 `GET /api/reflection-quality-stats` returns rates grouped by artifact `model`
 (model arm) and `promptVersion`. Terminal user reviews are
 `accepted` (exact/revised), `dismissed`, and `superseded` with
-`user_replacement`. Pending, deferred, and system supersession are excluded
+`user_replacement`. Pending, deferred, second-opinion retirement, and system
+supersession are excluded
 from disposition rates. Tag counts include every present item tag row (including
 items whose proposals are still open). Each arm also includes `failedRunCount`,
 `totalCostUsd` (sum of priced generation runs, including validation failures),
