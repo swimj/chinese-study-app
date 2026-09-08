@@ -278,6 +278,7 @@ describe('intake triage advisor', { concurrency: false }, () => {
 
     assert.equal(requestBody?.model, 'gpt-5.6-luna');
     assert.equal(requestBody?.reasoning_effort, 'high');
+    assert.equal(providerModule.INTAKE_TRIAGE_MODEL_CONFIG.timeoutMs, 900_000);
     assert.equal(generated.assessments[0]?.judgment, 'full_study');
     assert.equal(generated.metadata.clientRequestId, 'run-visible-1');
     assert.equal(JSON.stringify(requestBody).includes('word-1'), false);

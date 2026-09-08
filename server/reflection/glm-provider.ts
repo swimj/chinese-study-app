@@ -1,3 +1,4 @@
+import { PROVIDER_REQUEST_TIMEOUT_MS } from '../llm/types.ts';
 import {
   createReflectionProvider,
   type LunaReflectionProvider,
@@ -10,7 +11,7 @@ export const GLM_REFLECTION_MODEL_CONFIG = {
   providerModel: 'glm-5.3',
   reasoningEffort: 'high',
   maxOutputTokens: 50_000,
-  timeoutMs: 900_000,
+  timeoutMs: PROVIDER_REQUEST_TIMEOUT_MS,
   promptVersion: 'reflection-v9',
   defaultBaseUrl: 'https://api.z.ai/api/paas/v4',
   apiKeyEnvironmentVariable: 'ZAI_API_KEY',

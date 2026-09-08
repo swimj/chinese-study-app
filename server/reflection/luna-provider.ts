@@ -18,10 +18,11 @@ import {
 import type { FetchImplementation } from '../llm/http.js';
 import { validateJsonSchemaIssues } from '../llm/json-schema-validator.js';
 import { createOpenAiCompatibleAdapter } from '../llm/openai-compatible.js';
-import type { JsonValue } from '../llm/types.js';
 import { fetchImplementationForProvider } from '../llm/proxy-fetch.js';
 import {
   isOutputTruncationFinishReason,
+  PROVIDER_REQUEST_TIMEOUT_MS,
+  type JsonValue,
   type NormalizedTokenUsage,
 } from '../llm/types.js';
 import {
@@ -41,7 +42,7 @@ export const LUNA_REFLECTION_MODEL_CONFIG = {
   providerModel: 'gpt-5.6-luna',
   reasoningEffort: 'high',
   maxOutputTokens: 50_000,
-  timeoutMs: 180_000,
+  timeoutMs: PROVIDER_REQUEST_TIMEOUT_MS,
   promptVersion: 'reflection-v9',
   defaultBaseUrl: 'https://api.openai.com/v1',
   apiKeyEnvironmentVariable: 'OPENAI_API_KEY',
