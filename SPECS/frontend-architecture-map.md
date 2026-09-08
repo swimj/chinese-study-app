@@ -30,7 +30,7 @@ src/
     HomePage.tsx                  # home: overview + active session grid
     HomeOverviewPanel.tsx         # backend/session availability overview + Start session card (gear toggles SessionSettingsPanel)
     PriorityPage.tsx              # unstudied priority chip bank + triage
-    ReflectionsPage.tsx           # help/deferred pagers, artifact history/detail, and proposal-level review
+    ReflectionsPage.tsx           # help pager, second-opinion chip bank, artifact history/detail, and proposal-level review
     ContentDiagnosticsPage.tsx    # read-only primitive content browser
 
   features/

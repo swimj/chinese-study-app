@@ -172,15 +172,18 @@ export function ReflectionsPage({
   );
 }
 
-function DeferredSecondOpinionQueue({
+export function DeferredSecondOpinionQueue({
   cards,
   controller,
 }: {
   cards: Array<Extract<ReflectionHelpCard, { kind: 'proposal' }>>;
   controller: ReflectionPageController;
 }) {
-  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
-  const selectionInitialized = useRef(false);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
+    () => new Set(cards.map((card) => card.proposal.review.proposalId)),
+  );
+  const selectionInitialized = useRef(cards.length > 0);
+  const [inspectedId, setInspectedId] = useState<string | null>(null);
   const [model, setModel] = useState<ReflectionModelChoice>('openai:gpt-5.6-luna-high');
   const cardIds = cards.map((card) => card.proposal.review.proposalId).join('\u0000');
   useEffect(() => {
@@ -193,11 +196,15 @@ function DeferredSecondOpinionQueue({
       }
       return new Set([...current].filter((id) => availableIds.has(id)));
     });
+    setInspectedId((current) => (current !== null && availableIds.has(current) ? current : null));
   }, [cardIds]);
   const selectedCount = [...selectedIds].filter((id) => cards.some(
     (card) => card.proposal.review.proposalId === id,
   )).length;
   const generating = controller.deferredSecondOpinionStatus === 'generating';
+  const failed = controller.deferredSecondOpinionStatus === 'failed';
+  const allSelected = cards.length > 0 && selectedCount === cards.length;
+  const inspected = cards.find((card) => card.proposal.review.proposalId === inspectedId) ?? null;
 
   if (cards.length === 0) {
     return (
@@ -210,72 +217,161 @@ function DeferredSecondOpinionQueue({
   }
 
   return (
-    <main className="reflection-help-shell">
-      <section className="panel reflection-deferred-second-opinion">
-        <h2>Build a second-opinion bundle</h2>
-        <p className="notes">
-          Start with every deferred proposal selected, then prune or re-add entries. This reflects
-          again on the original study evidence. A successful result replaces only the selected
-          deferred proposals in active review.
-        </p>
-        <label>
-          <input
-            type="checkbox"
-            checked={selectedCount === cards.length}
-            onChange={(event) => setSelectedIds(event.target.checked
-              ? new Set(cards.map((card) => card.proposal.review.proposalId))
-              : new Set())}
-          />
-          Select all ({cards.length})
-        </label>
-        <label>
-          Model
-          <select value={model} onChange={(event) => setModel(event.target.value as ReflectionModelChoice)}>
+    <main className="reflection-help-shell reflection-second-opinion-shell">
+      <div className="reflection-second-opinion-board">
+        <div
+          className="reflection-second-opinion-chips"
+          role="list"
+          aria-label="Second-opinion bundle selection"
+        >
+          {cards.map((card) => {
+            const proposalId = card.proposal.review.proposalId;
+            const selected = selectedIds.has(proposalId);
+            const inspecting = inspectedId === proposalId;
+            const parts = secondOpinionChipParts(card);
+            return (
+              <div
+                className={
+                  selected
+                    ? 'reflection-second-opinion-chip-wrap is-selected'
+                    : 'reflection-second-opinion-chip-wrap'
+                }
+                role="listitem"
+                key={proposalId}
+              >
+                <button
+                  type="button"
+                  className="reflection-second-opinion-chip"
+                  aria-pressed={selected}
+                  disabled={generating}
+                  onClick={() => setSelectedIds((current) => {
+                    const next = new Set(current);
+                    if (next.has(proposalId)) next.delete(proposalId);
+                    else next.add(proposalId);
+                    return next;
+                  })}
+                >
+                  <span className="reflection-second-opinion-chip-word">{parts.word}</span>
+                  {parts.pinyin === null ? null : (
+                    <span className="reflection-second-opinion-chip-pinyin">{parts.pinyin}</span>
+                  )}
+                  {parts.typed === null ? null : (
+                    <span className="reflection-second-opinion-chip-typed">{parts.typed}</span>
+                  )}
+                  <span className="reflection-second-opinion-chip-op">{parts.operation}</span>
+                </button>
+                <button
+                  type="button"
+                  className={
+                    inspecting
+                      ? 'secondary-button reflection-second-opinion-chip-inspect is-active'
+                      : 'secondary-button reflection-second-opinion-chip-inspect'
+                  }
+                  aria-label={`Details for ${parts.word}`}
+                  aria-pressed={inspecting}
+                  disabled={generating}
+                  onClick={() => setInspectedId((current) => (
+                    current === proposalId ? null : proposalId
+                  ))}
+                >
+                  i
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        {inspected === null ? null : (
+          <aside className="reflection-second-opinion-inspect" aria-label="Proposal details">
+            <header className="reflection-second-opinion-inspect-head">
+              <ItemIdentityHeading evidence={inspected.evidence} />
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setInspectedId(null)}
+              >
+                Close
+              </button>
+            </header>
+            <p className="notes">{reflectionOperationLabel(inspected.proposal.proposal.operation)}</p>
+            <EvidenceView evidence={inspected.evidence} />
+            <p>{reflectionLearnerFeedback(inspected.result)}</p>
+            <p>{inspected.proposal.proposal.rationale}</p>
+          </aside>
+        )}
+      </div>
+      <div className="reflection-help-footer">
+        {failed ? (
+          <p className="notes" role="status">Second opinion failed. Try again from the rail.</p>
+        ) : null}
+        <div className="reflection-help-toolbar">
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={generating || allSelected}
+            onClick={() => setSelectedIds(new Set(cards.map((card) => card.proposal.review.proposalId)))}
+          >
+            Select all
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={generating || selectedCount === 0}
+            onClick={() => setSelectedIds(new Set())}
+          >
+            Clear
+          </button>
+          <select
+            className="reflection-handle-select"
+            aria-label="Model"
+            disabled={generating}
+            value={model}
+            onChange={(event) => setModel(event.target.value as ReflectionModelChoice)}
+          >
             {REFLECTION_RETRY_MODEL_OPTIONS.map((option) => (
               <option key={option.model} value={option.model}>{option.label}</option>
             ))}
           </select>
-        </label>
-        <button
-          type="button"
-          disabled={selectedCount === 0 || generating}
-          onClick={() => void controller.generateDeferredSecondOpinion([...selectedIds], model).catch(() => undefined)}
-        >
-          {generating ? 'Getting second opinion...' : `Get a second opinion (${selectedCount})`}
-        </button>
-      </section>
-      <section className="reflection-deferred-selection-list" aria-label="Second-opinion bundle selection">
-        {cards.map((card) => {
-          const proposalId = card.proposal.review.proposalId;
-          return (
-            <article className="panel reflection-deferred-selection" key={proposalId}>
-              <label className="reflection-deferred-selection-summary">
-              <input
-                type="checkbox"
-                checked={selectedIds.has(proposalId)}
-                onChange={(event) => setSelectedIds((current) => {
-                  const next = new Set(current);
-                  if (event.target.checked) next.add(proposalId);
-                  else next.delete(proposalId);
-                  return next;
-                })}
-              />
-              <span>
-                <ItemIdentityHeading evidence={card.evidence} />
-                <span>{reflectionOperationLabel(card.proposal.proposal.operation)}</span>
-              </span>
-              </label>
-              <details className="reflection-deferred-selection-details">
-                <summary>Proposal details</summary>
-                <p>{reflectionLearnerFeedback(card.result)}</p>
-                <p>{card.proposal.proposal.rationale}</p>
-              </details>
-            </article>
-          );
-        })}
-      </section>
+          <button
+            type="button"
+            disabled={selectedCount === 0 || generating}
+            title="Reflects again on the original study evidence. A successful result replaces only the selected deferred proposals."
+            onClick={() => void controller.generateDeferredSecondOpinion([...selectedIds], model).catch(() => undefined)}
+          >
+            {generating ? 'Getting second opinion...' : `Get a second opinion (${selectedCount})`}
+          </button>
+        </div>
+      </div>
     </main>
   );
+}
+
+function secondOpinionChipParts(
+  card: Extract<ReflectionHelpCard, { kind: 'proposal' }>,
+): { word: string; pinyin: string | null; typed: string | null; operation: string } {
+  const word = card.evidence?.targetWord ?? null;
+  return {
+    word: word?.hanzi ?? itemTitle(card.evidence),
+    pinyin: word?.pinyin ?? null,
+    typed: card.evidence?.source === 'production_mistake'
+      ? (card.evidence.rawResponse ?? 'No response')
+      : null,
+    operation: compactReflectionOperationLabel(card.proposal.proposal.operation),
+  };
+}
+
+function compactReflectionOperationLabel(operation: ReflectionOperation): string {
+  switch (operation.kind) {
+    case 'suppress_definition_production':
+      return 'Suppress';
+    case 'create_contrast_cluster':
+      return 'Contrast';
+    case 'repair_production_cue':
+      return 'Cue';
+    case 'add_production_cue_supplement':
+      return 'Context';
+    case 'accept_production_alternate':
+      return 'Alternate';
+  }
 }
 
 function toDeferredHelpCards(

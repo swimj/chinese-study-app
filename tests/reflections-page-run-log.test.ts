@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, test } from 'node:test';
 import type { SessionReflectionBundleV1, SessionReflectionResultV4 } from '../src/domain/reflection.ts';
 import type { ReflectionPageController } from '../src/features/reflection/useReflectionPageController.ts';
-import { ReflectionsPage, TokenUsageView } from '../src/pages/ReflectionsPage.tsx';
+import { ReflectionsPage, DeferredSecondOpinionQueue, TokenUsageView } from '../src/pages/ReflectionsPage.tsx';
 import type { ReflectionArtifactDetailDto } from '../src/services/api.ts';
 
 describe('reflection run log presentation', () => {
@@ -25,7 +25,9 @@ describe('reflection run log presentation', () => {
       submittingQualityItemKey: null,
       submittingHelpInboxItemKey: null,
       generationRetryStatus: null,
+      deferredSecondOpinionStatus: null,
       openPage: async () => {},
+      generateDeferredSecondOpinion: async () => {},
       refresh: async () => {},
       selectArtifact: async () => {},
       retryGenerationRun: async () => {},
@@ -65,6 +67,40 @@ describe('reflection run log presentation', () => {
     assert.match(markup, />Accept</);
     assert.doesNotMatch(markup, />Done</);
     assert.doesNotMatch(markup, /disabled=""[^>]*>Accept</);
+  });
+
+  test('second-opinion packaging uses compact chips and a Help-style bottom rail', () => {
+    const markup = renderToStaticMarkup(createElement(DeferredSecondOpinionQueue, {
+      cards: deferredSecondOpinionCards(),
+      controller: idleController(),
+    }));
+
+    assert.match(markup, /reflection-second-opinion-shell/);
+    assert.match(markup, /reflection-help-toolbar/);
+    assert.match(markup, /aria-label="Second-opinion bundle selection"/);
+    assert.match(markup, /aria-pressed="true"/);
+    assert.match(markup, />目标</);
+    assert.match(markup, />Cue</);
+    assert.match(markup, />Select all</);
+    assert.match(markup, />Clear</);
+    assert.match(markup, /aria-label="Model"/);
+    assert.match(markup, />Get a second opinion \(2\)</);
+    assert.match(markup, /aria-label="Details for 目标"/);
+    assert.doesNotMatch(markup, /Build a second-opinion bundle/);
+    assert.doesNotMatch(markup, /Start with every deferred proposal selected/);
+    assert.doesNotMatch(markup, />Proposal details</);
+  });
+
+  test('second-opinion empty state stays compact', () => {
+    const markup = renderToStaticMarkup(createElement(DeferredSecondOpinionQueue, {
+      cards: [],
+      controller: idleController(),
+    }));
+
+    assert.match(markup, /No deferred proposals are available for a second opinion/);
+    assert.match(markup, /reflection-help-shell is-empty/);
+    assert.doesNotMatch(markup, /Build a second-opinion bundle/);
+    assert.doesNotMatch(markup, /Get a second opinion/);
   });
 
   test('renders the empty dogfood state', () => {
@@ -179,7 +215,9 @@ function idleController(
     submittingQualityItemKey: null,
     submittingHelpInboxItemKey: null,
     generationRetryStatus: null,
+    deferredSecondOpinionStatus: null,
     openPage: async () => {},
+    generateDeferredSecondOpinion: async () => {},
     refresh: async () => {},
     selectArtifact: async () => {},
     retryGenerationRun: async () => {},
@@ -271,6 +309,136 @@ function explanationArtifact(): ReflectionArtifactDetailDto {
       itemId: 'informational',
       openedAt: generatedAt,
     }],
+  };
+}
+
+function deferredSecondOpinionCards(): Array<Extract<import('../src/features/reflection/reflection-page-model.ts').ReflectionHelpCard, { kind: 'proposal' }>> {
+  const first = deferredProposalArtifact('proposal-a', '目标', 'Repair the tested cue.');
+  const second = deferredProposalArtifact('proposal-b', '练习', 'Add a contrast pair.');
+  second.proposals[0].proposal = {
+    proposalGroupKey: 'contrast',
+    rationale: 'These two senses collide.',
+    operation: {
+      kind: 'create_contrast_cluster',
+      version: 1,
+      title: 'Sense split',
+      clusterNote: null,
+      members: [
+        { wordId: 'target', nuanceNote: null },
+        { wordId: 'alternate', nuanceNote: null },
+      ],
+      prompts: [],
+    },
+  };
+  return [first, second].flatMap((artifact) => (
+    artifact.proposals.map((proposal) => {
+      const result = artifact.result.itemResults[0];
+      return {
+        kind: 'proposal' as const,
+        cardKey: `proposal:${proposal.review.proposalId}`,
+        artifact,
+        evidence: artifact.evidenceBundle.items[0],
+        result,
+        proposal,
+      };
+    })
+  ));
+}
+
+function deferredProposalArtifact(
+  proposalId: string,
+  hanzi: string,
+  explanation: string,
+): ReflectionArtifactDetailDto {
+  const generatedAt = '2026-07-29T12:00:00.000Z';
+  const evidenceBundle: SessionReflectionBundleV1 = {
+    schemaVersion: 'session_reflection_bundle.v1',
+    generatedAt,
+    session: {
+      sessionId: `session-${proposalId}`,
+      startedAt: generatedAt,
+      endedAt: generatedAt,
+      studyProfile: 'mandarin',
+    },
+    items: [{
+      itemId: 'mistake',
+      source: 'production_mistake',
+      sourceActionKind: 'production',
+      sessionActionId: `action-${proposalId}`,
+      occurredAt: '2026-07-29T11:45:00.000Z',
+      targetWord: {
+        wordId: 'target',
+        hanzi,
+        pinyin: 'pinyin',
+        meanings: ['meaning'],
+      },
+      sessionNote: null,
+      existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+      cuesAsShown: [{
+        cueId: null,
+        cueType: 'definition_gloss',
+        displayOrder: 0,
+        text: 'target',
+        displayedMeanings: ['target'],
+      }],
+      rawResponse: '替代',
+      submittedWord: {
+        wordId: 'alternate',
+        hanzi: '替代',
+        pinyin: 'pinyin',
+        meanings: ['meaning'],
+      },
+      responseKind: 'matched_known_word',
+    }],
+  };
+  const result: SessionReflectionResultV4 = {
+    schemaVersion: 'session_reflection_result.v4',
+    itemResults: [{
+      itemId: 'mistake',
+      diagnosisTags: ['production_cue_overloaded'],
+      observation: explanation,
+      learnerExplanation: explanation,
+      proposals: [{
+        proposalGroupKey: 'cue',
+        rationale: explanation,
+        operation: {
+          kind: 'repair_production_cue',
+          version: 1,
+          wordId: 'target',
+          proposedCues: [{ cueType: 'definition_gloss', text: 'a tighter gloss' }],
+          repairIntent: 'narrow_to_learner_relevant_sense',
+        },
+      }],
+      questions: [],
+      unhandledNeeds: [],
+    }],
+  };
+  return {
+    artifactId: `artifact-${proposalId}`,
+    sourceSessionId: `session-${proposalId}`,
+    sourceRunId: null,
+    reflectionFlowVersion: 'initial_post_session_reflection.v1',
+    generatedAt,
+    provider: 'openai-compatible',
+    model: 'gpt-5.6-luna',
+    promptVersion: 'reflection-v2',
+    bundleSchemaVersion: evidenceBundle.schemaVersion,
+    resultSchemaVersion: result.schemaVersion,
+    evidenceBundle,
+    result,
+    proposals: [{
+      itemId: 'mistake',
+      proposalIndex: 0,
+      proposal: result.itemResults[0].proposals[0],
+      review: {
+        proposalId,
+        updatedAt: generatedAt,
+        disposition: { kind: 'deferred' },
+      },
+      invocation: null,
+    }],
+    qualityItemTags: [],
+    helpInbox: [],
   };
 }
 
