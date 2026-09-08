@@ -2429,9 +2429,7 @@ export function dismissWordFromStudy(wordId: string): void {
 
 export function initializeDatabase() {
   if (!dbExistedOnStartup) {
-    createSchema();
-    createHostedOperationsSchema();
-    recordLearnerOwnershipSchema();
+    createBaselineSchema();
     migrateDatabase(getDb());
     if (config.authMode === 'trusted_local') {
       bootstrapLearner({ learnerId: config.learnerId });
@@ -2649,7 +2647,8 @@ function seedEmptyDevDatabase() {
   }
 }
 
-function createSchema() {
+/** Frozen fresh-database baseline; callers apply versioned migrations before seeding. */
+export function createBaselineSchema() {
   createIdentitySchema();
   getDb().exec(`
     CREATE TABLE lexical_words (
@@ -2983,6 +2982,8 @@ function createSchema() {
   createScopedContentCompatibilityViews();
   createLearnerScopedCompatibilityViews();
   createLearnerOwnershipGuards();
+  createHostedOperationsSchema();
+  recordLearnerOwnershipSchema();
 }
 
 function ensureDefaultDailyNewWordLimit() {

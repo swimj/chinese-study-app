@@ -199,6 +199,30 @@ versioned generation rather than calling an exact-bundle retry.
 
 ## 6. Bounded Resource Exposure
 
+### Deferred second-opinion requests
+
+A learner may deliberately compose a non-session reflection request from one
+or more deferred proposals. The backend resolves each selection to its
+learner-owned immutable source evidence, deduplicates a shared evidence item,
+and sends no prior proposal text, disposition, later attempt, or refreshed
+content state. The current request is capped at the same twenty-five distinct
+evidence items as initial reflection; an over-limit request is rejected rather
+than truncated or partitioned automatically.
+
+The composed envelope is versioned separately from a session bundle and has no
+source-session id. Private generation-run provenance retains selected proposal
+ids, while the provider envelope contains only its version, generation time,
+and remapped original evidence items. It never fabricates a session or sends
+prior proposal/review identifiers. It remaps provider item
+ids to avoid collisions between original artifacts. Model/provider/run/result
+validation is otherwise the ordinary V7 flow. A provider or validation failure
+leaves every selected original deferred. On successful durable materialization,
+only selections that remain deferred are retired atomically. The current
+implementation records that retirement as dismissal reason
+`requested_second_opinion`; it is distinct from an explicit learner dismissal
+in product copy, but remains a documented lifecycle representation rather than
+a new proposal-state subsystem.
+
 Every reflection flow must put an explicit upper bound on model resource
 exposure. The mechanism may be a fixed evidence-item cap, deterministic
 partitioning, dynamic batching, or a later policy with equivalent safety. The

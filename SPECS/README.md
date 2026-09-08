@@ -39,6 +39,14 @@ Also see [docs/architecture.md](../docs/architecture.md), [docs/api.md](../docs/
 | --- | --- |
 | [study-db-setup.md](./study-db-setup.md) | Study-mode DB setup and restore |
 
+## Feature specifications
+
+These describe versioned feature behavior alongside the canonical contracts.
+
+| Document | Role |
+| --- | --- |
+| [deferred-reflection-second-opinion.md](./deferred-reflection-second-opinion.md) | SWI-55 implemented first cut: selected deferred evidence, chosen-model reflection, and replacement in active review without prompt changes |
+
 ## Active plans
 
 | Document | Role |

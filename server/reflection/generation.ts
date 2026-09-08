@@ -2,11 +2,14 @@ import type {
   SessionReflectionBundleV2,
   SessionReflectionBundleV3,
   SessionReflectionBundleV4,
+  CuratedReflectionBundleV1,
 } from '../../src/domain/reflection.ts';
 import {
   getReflectionGenerationRetrySource,
   getReflectionArtifactBySessionAndFlow,
   INITIAL_REFLECTION_FLOW_VERSION,
+  DEFERRED_SECOND_OPINION_FLOW_VERSION,
+  buildDeferredSecondOpinionBundle,
   materializeReflectionArtifact,
   recordReflectionGenerationRun,
   startReflectionGenerationRun,
@@ -86,6 +89,10 @@ export type InitialReflectionGenerationService = {
     model?: ReflectionModelChoice,
   ): Promise<InitialReflectionGenerationResult>;
   retry(runId: string, model?: ReflectionModelChoice): Promise<InitialReflectionGenerationResult>;
+  generateDeferredSecondOpinion(
+    proposalIds: string[],
+    model: ReflectionModelChoice,
+  ): Promise<InitialReflectionGenerationResult>;
 };
 
 export type InitialReflectionGenerationDependencies = {
@@ -104,6 +111,10 @@ export type InitialReflectionGenerationDependencies = {
     supplement: unknown,
     generatedAt: string,
   ) => InitialReflectionBundleBuild;
+  buildDeferredBundle?: (proposalIds: string[], generatedAt: string) => {
+    bundle: CuratedReflectionBundleV1;
+    sourceProposalIds: string[];
+  };
   findExistingArtifact?: (
     sessionId: string,
     reflectionFlowVersion: string,
@@ -146,6 +157,7 @@ export function createInitialReflectionGenerationService(
   const findExistingArtifact = dependencies.findExistingArtifact
     ?? getReflectionArtifactBySessionAndFlow;
   const getRetrySource = dependencies.getRetrySource ?? getReflectionGenerationRetrySource;
+  const buildDeferredBundle = dependencies.buildDeferredBundle ?? buildDeferredSecondOpinionBundle;
   const materializeArtifact = dependencies.materializeArtifact
     ?? materializeReflectionArtifact;
   const recordRun = dependencies.recordRun ?? recordReflectionGenerationRun;
@@ -256,12 +268,14 @@ export function createInitialReflectionGenerationService(
 
     async retry(runId: string, model?: ReflectionModelChoice): Promise<InitialReflectionGenerationResult> {
       const retrySource = getRetrySource(runId);
-      if (retrySource.reflectionFlowVersion !== INITIAL_REFLECTION_FLOW_VERSION) {
+      if (retrySource.reflectionFlowVersion !== INITIAL_REFLECTION_FLOW_VERSION
+        && retrySource.reflectionFlowVersion !== DEFERRED_SECOND_OPINION_FLOW_VERSION) {
         throw new Error('Reflection generation run is not retryable by the current flow.');
       }
       if (retrySource.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v2'
         && retrySource.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v3'
-        && retrySource.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v4') {
+        && retrySource.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v4'
+        && retrySource.evidenceBundle.schemaVersion !== 'curated_reflection_bundle.v1') {
         throw new Error('The current reflection flow cannot retry this evidence bundle.');
       }
       const selectedChoice = model ?? choiceForStoredModel(retrySource.model);
@@ -269,7 +283,9 @@ export function createInitialReflectionGenerationService(
         throw new RetiredReflectionSourceModelError(retrySource.model);
       }
       const retryStartedAt = Date.now();
-      const lifecycleSessionId = retrySource.evidenceBundle.session.sessionId;
+      const lifecycleSessionId = 'session' in retrySource.evidenceBundle
+        ? retrySource.evidenceBundle.session.sessionId
+        : null;
       lifecycleLogger?.emit({
         event: 'reflection.generation_requested',
         sessionId: lifecycleSessionId,
@@ -277,11 +293,13 @@ export function createInitialReflectionGenerationService(
       try {
         const result = await generateBundleAndMaterialize({
           sourceSessionId: retrySource.sourceSessionId,
+          reflectionFlowVersion: retrySource.reflectionFlowVersion,
           builtBundle: {
             bundle: retrySource.evidenceBundle,
             eligibleItemCount: retrySource.eligibleItemCount,
             includedItemCount: retrySource.includedItemCount,
           },
+          sourceProposalIds: retrySource.sourceProposalIds ?? undefined,
           generatedAt: now(),
           provider: selectProvider(selectedChoice).provider,
           providerConfig: reflectionProviderConfigForChoice(selectedChoice),
@@ -316,6 +334,39 @@ export function createInitialReflectionGenerationService(
         throw error;
       }
     },
+
+    async generateDeferredSecondOpinion(
+      proposalIds: string[],
+      model: ReflectionModelChoice,
+    ): Promise<InitialReflectionGenerationResult> {
+      const normalizedProposalIds = [...new Set(proposalIds.map((proposalId) => proposalId.trim()))].sort();
+      const key = `deferred-second-opinion\u0000${normalizedProposalIds.join('\u0000')}\u0000${model}`;
+      return runCoalesced(key, () => {
+        const generatedAt = now();
+        const deferred = buildDeferredBundle(normalizedProposalIds, generatedAt);
+        const selectedProvider = selectProvider(model);
+        return generateBundleAndMaterialize({
+          sourceSessionId: null,
+          reflectionFlowVersion: DEFERRED_SECOND_OPINION_FLOW_VERSION,
+          builtBundle: {
+            bundle: deferred.bundle,
+            eligibleItemCount: deferred.bundle.items.length,
+            includedItemCount: deferred.bundle.items.length,
+          },
+          sourceProposalIds: deferred.sourceProposalIds,
+          generatedAt,
+          provider: selectedProvider.provider,
+          providerConfig: selectedProvider.config,
+          materializeArtifact,
+          recordRun,
+          startRun,
+          now,
+          lifecycleLogger,
+          runId: randomUUID(),
+          clientRequestId: randomUUID(),
+        });
+      });
+    },
   };
 }
 
@@ -345,6 +396,7 @@ async function generateAndMaterialize(input: {
   );
   return generateBundleAndMaterialize({
     sourceSessionId: input.sessionId,
+    reflectionFlowVersion: INITIAL_REFLECTION_FLOW_VERSION,
     builtBundle,
     generatedAt: input.generatedAt,
     provider: input.provider,
@@ -361,7 +413,12 @@ async function generateAndMaterialize(input: {
 
 async function generateBundleAndMaterialize(input: {
   sourceSessionId: string | null;
-  builtBundle: InitialReflectionBundleBuild;
+  reflectionFlowVersion: string;
+  builtBundle: {
+    bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4 | CuratedReflectionBundleV1;
+    eligibleItemCount: number;
+    includedItemCount: number;
+  };
   generatedAt: string;
   provider: LunaReflectionProvider;
   providerConfig: ReflectionProviderConfig;
@@ -374,14 +431,15 @@ async function generateBundleAndMaterialize(input: {
   lifecycleLogger: ReflectionLifecycleLogger | undefined;
   runId: string;
   clientRequestId: string;
+  sourceProposalIds?: string[];
 }): Promise<InitialReflectionGenerationResult> {
   const builtBundle = input.builtBundle;
   const { bundle } = builtBundle;
-  const lifecycleSessionId = bundle.session.sessionId;
+  const lifecycleSessionId = 'session' in bundle ? bundle.session.sessionId : null;
   input.startRun({
     runId: input.runId,
     sourceSessionId: input.sourceSessionId,
-    reflectionFlowVersion: INITIAL_REFLECTION_FLOW_VERSION,
+    reflectionFlowVersion: input.reflectionFlowVersion,
     startedAt: input.generatedAt,
     provider: input.providerConfig.provider,
     model: input.providerConfig.modelConfig,
@@ -391,6 +449,7 @@ async function generateBundleAndMaterialize(input: {
     eligibleItemCount: builtBundle.eligibleItemCount,
     includedItemCount: builtBundle.includedItemCount,
     evidenceBundle: bundle,
+    ...(input.sourceProposalIds === undefined ? {} : { sourceProposalIds: input.sourceProposalIds }),
   });
   input.lifecycleLogger?.emit({
     event: 'reflection.provider_started',
@@ -405,19 +464,21 @@ async function generateBundleAndMaterialize(input: {
     const materialized: MaterializeReflectionArtifactResult = input.materializeArtifact({
       sourceRunId: input.runId,
       sourceSessionId: input.sourceSessionId,
-      reflectionFlowVersion: INITIAL_REFLECTION_FLOW_VERSION,
+      reflectionFlowVersion: input.reflectionFlowVersion,
       generatedAt: input.generatedAt,
       provider: generated.metadata.provider,
       model: generated.metadata.modelConfig,
       promptVersion: generated.metadata.promptVersion,
       evidenceBundle: bundle,
       result: generated.result,
+      ...(input.sourceProposalIds === undefined ? {} : { sourceProposalIds: input.sourceProposalIds }),
     });
     artifactMaterialized = true;
     try {
       input.recordRun(runRecordInput({
         runId: input.runId,
         sourceSessionId: input.sourceSessionId,
+        reflectionFlowVersion: input.reflectionFlowVersion,
         startedAt: input.generatedAt,
         completedAt: input.now(),
         metadata: generated.metadata,
@@ -428,6 +489,7 @@ async function generateBundleAndMaterialize(input: {
         includedItemCount: builtBundle.includedItemCount,
         evidenceBundle: bundle,
         clientRequestId: input.clientRequestId,
+        sourceProposalIds: input.sourceProposalIds,
       }));
     } catch {
       // A successful immutable artifact remains a success if optional dogfood
@@ -440,6 +502,7 @@ async function generateBundleAndMaterialize(input: {
         input.recordRun(runRecordInput({
           runId: input.runId,
           sourceSessionId: input.sourceSessionId,
+          reflectionFlowVersion: input.reflectionFlowVersion,
           startedAt: input.generatedAt,
           completedAt: input.now(),
           metadata: failureMetadata(error, generatedMetadata),
@@ -450,6 +513,7 @@ async function generateBundleAndMaterialize(input: {
           includedItemCount: builtBundle.includedItemCount,
           evidenceBundle: bundle,
           clientRequestId: input.clientRequestId,
+          sourceProposalIds: input.sourceProposalIds,
         }));
       } catch {
         // Run logging must not turn a reflection/provider failure into a study failure.
@@ -462,6 +526,7 @@ async function generateBundleAndMaterialize(input: {
 function runRecordInput(input: {
   runId: string;
   sourceSessionId: string | null;
+  reflectionFlowVersion: string;
   startedAt: string;
   completedAt: string;
   metadata: LunaReflectionRunMetadata;
@@ -470,8 +535,9 @@ function runRecordInput(input: {
   error: unknown;
   eligibleItemCount: number;
   includedItemCount: number;
-  evidenceBundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4;
+  evidenceBundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4 | CuratedReflectionBundleV1;
   clientRequestId: string;
+  sourceProposalIds?: string[];
 }): RecordReflectionGenerationRunInput {
   const estimate = estimateInitialReflectionRunCost({
     provider: input.metadata.provider,
@@ -483,7 +549,7 @@ function runRecordInput(input: {
   return {
     runId: input.runId,
     sourceSessionId: input.sourceSessionId,
-    reflectionFlowVersion: INITIAL_REFLECTION_FLOW_VERSION,
+    reflectionFlowVersion: input.reflectionFlowVersion,
     startedAt: input.startedAt,
     completedAt: input.completedAt,
     provider: input.metadata.provider,
@@ -508,6 +574,7 @@ function runRecordInput(input: {
     pricingBasis: estimate?.pricing ?? null,
     estimatedCostUsd: estimate?.estimatedCostUsd ?? null,
     evidenceBundle: input.evidenceBundle,
+    ...(input.sourceProposalIds === undefined ? {} : { sourceProposalIds: input.sourceProposalIds }),
   };
 }
 

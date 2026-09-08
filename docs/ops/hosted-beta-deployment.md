@@ -118,7 +118,7 @@ fly ssh console --app <app-name> --command \
     --result-path=/data/recovery/<result>.json \
     --provider=openai \
     --model=gpt-5.6-terra-high \
-    --prompt-version=reflection-v8'
+    --prompt-version=reflection-v9'
 ```
 
 Record only the returned summary (`artifactId`, proposal count, and Help Inbox

@@ -34,6 +34,8 @@ let receivedGenerationRequest: {
 } | null = null;
 let generationImplementation: InitialReflectionGenerationService['generate'];
 let retryImplementation: InitialReflectionGenerationService['retry'];
+let secondOpinionImplementation: InitialReflectionGenerationService['generateDeferredSecondOpinion'];
+let receivedSecondOpinionRequest: { proposalIds: string[]; model: string } | null = null;
 let receivedRetryRunId: string | null = null;
 let lifecycleEvents: ReflectionLifecycleEvent[];
 
@@ -65,6 +67,10 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       retry(runId) {
         receivedRetryRunId = runId;
         return retryImplementation(runId);
+      },
+      generateDeferredSecondOpinion(proposalIds, model) {
+        receivedSecondOpinionRequest = { proposalIds, model };
+        return secondOpinionImplementation(proposalIds, model);
       },
     };
     app = indexModule.createApp({
@@ -103,6 +109,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     insertWord('alternate', '替代');
     receivedGenerationRequest = null;
     receivedRetryRunId = null;
+    receivedSecondOpinionRequest = null;
     lifecycleEvents = [];
     generationImplementation = async () => ({
       artifactId: 'generated-artifact',
@@ -112,6 +119,11 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     retryImplementation = async () => ({
       artifactId: 'retried-artifact',
       proposalCount: 2,
+      status: 'created',
+    });
+    secondOpinionImplementation = async () => ({
+      artifactId: 'second-opinion-artifact',
+      proposalCount: 1,
       status: 'created',
     });
   });
@@ -169,6 +181,21 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       artifactId: 'existing-artifact',
       proposalCount: 2,
       status: 'existing',
+    });
+  });
+
+  test('accepts an explicit deferred second-opinion selection and model', async () => {
+    const response = await request('/api/deferred-reflection-second-opinions', {
+      method: 'POST',
+      body: {
+        proposalIds: ['proposal-b', 'proposal-a'],
+        model: 'openai:gpt-5.6-luna-high',
+      },
+    });
+    assert.equal(response.status, 201);
+    assert.deepEqual(receivedSecondOpinionRequest, {
+      proposalIds: ['proposal-b', 'proposal-a'],
+      model: 'openai:gpt-5.6-luna-high',
     });
   });
 

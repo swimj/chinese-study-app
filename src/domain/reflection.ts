@@ -150,11 +150,24 @@ export type SessionReflectionBundleV4 = {
   items: ReflectionItemV4[];
 };
 
+/**
+ * A deliberately curated, non-session reflection request. It is the provider
+ * wire format for a cross-session second opinion, so it contains only the
+ * immutable evidence the provider should reason from. Selection provenance is
+ * retained privately with the generation run rather than sent to the model.
+ */
+export type CuratedReflectionBundleV1 = {
+  schemaVersion: 'curated_reflection_bundle.v1';
+  generatedAt: string;
+  items: ReflectionItemV4[];
+};
+
 export type SessionReflectionBundle =
   | SessionReflectionBundleV1
   | SessionReflectionBundleV2
   | SessionReflectionBundleV3
-  | SessionReflectionBundleV4;
+  | SessionReflectionBundleV4
+  | CuratedReflectionBundleV1;
 
 export type ReflectionDiagnosisTagV1 =
   | 'valid_or_near_valid_alternate'
@@ -521,7 +534,7 @@ export type ReflectionQualityTag =
   | 'other';
 
 /** Prompt version currently used by live reflection generation arms. */
-export const CURRENT_REFLECTION_PROMPT_VERSION = 'reflection-v8' as const;
+export const CURRENT_REFLECTION_PROMPT_VERSION = 'reflection-v9' as const;
 
 export const REFLECTION_QUALITY_TAGS = [
   'praise',
@@ -1233,7 +1246,7 @@ export function validateSessionReflectionResultV6(
 
 export function validateSessionReflectionResultV7(
   value: unknown,
-  bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4,
+  bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4 | CuratedReflectionBundleV1,
 ): string[] {
   return validateSessionReflectionResultVersion(
     value,

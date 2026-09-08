@@ -97,8 +97,8 @@ Add a SQL file under `server/db/migrations/` and append its definition to
 
 ```ts
 {
-  id: 'app_schema:0001_add_optional_column',
-  sql: fs.readFileSync(new URL('./migrations/0001_add_optional_column.sql', import.meta.url), 'utf8'),
+  id: 'app_schema:0002_add_optional_column',
+  sql: fs.readFileSync(new URL('./migrations/0002_add_optional_column.sql', import.meta.url), 'utf8'),
 }
 ```
 
@@ -124,7 +124,14 @@ backfills.
 Test on a previous-version database containing representative rows. Assert data
 preservation, defaults/nullability, failed-migration rollback, repeated-run
 behavior, and equivalence with a fresh installation. The infrastructure tests
-exercise a test-only optional column; this release adds no application column.
+exercise a test-only optional column. The first application migration,
+`0001_deferred_second_opinion.sql`, adds nullable `source_proposal_ids_json`
+columns to both physical reflection generation tables and updates their
+learner-scoped views and insert triggers. Existing history retains NULL
+provenance; immutable-update and learner-filtered-delete behavior is preserved.
+Fresh installations start with the frozen baseline and apply this same SQL.
+`tests/deferred-second-opinion-migration.test.ts` verifies history preservation,
+ownership, immutability, repeat execution, and fresh/upgrade equivalence.
 
 `schema_migrations` retains historical markers. The reserved `app_schema:` id
 namespace holds the ordered migration ledger, with the migration checksum and
