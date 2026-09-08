@@ -115,11 +115,11 @@ applying a draft. Help does not show diagnosis tags or a dedicated dismissal-not
 dismiss records a null reason and the quality note remains the single note
 surface. Evidence, explanation, questions, rationale, and the operation editor
 scroll inside the pane. Production evidence is a quiet tested-cue line
-(truncated, expandable) rather than a second identity card. **Deferred** reuses
-that same Help pager for deferred proposals: one card at a time, the same
-chrome, reading pane, and control bar. Defer stays in the bar but is
-permanently disabled so the view state is visible without a second review
-layout. **By session** retains the artifact-oriented dogfood view, including
+(truncated, expandable) rather than a second identity card. **Second opinion**
+is a packaging surface, not a second Help pager: compact selected-by-default
+chips occupy the main viewport, drill-in details stay secondary, and Select all /
+Clear / model / Get a second opinion sit on a Help-style bottom rail.
+**By session** retains the artifact-oriented dogfood view, including
 explanation items already marked Done. In that view, items whose results carry no proposals are summarized in a
 compact **No durable change** gist derived from the persisted evidence and
 result (word, diagnosis tags, cue/response, learner feedback), so ordinary
