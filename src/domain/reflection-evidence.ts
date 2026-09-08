@@ -199,7 +199,10 @@ export function parseSessionReflectionBundle(value: unknown): SessionReflectionB
   return value as SessionReflectionBundleV1;
 }
 
-export function validateSessionReflectionBundleV2(value: unknown): string[] {
+function validateSessionReflectionBundleV2WithOptions(
+  value: unknown,
+  requireUniqueSessionActionIds: boolean,
+): string[] {
   const errors = validateObjectFields(
     value,
     ['schemaVersion', 'generatedAt', 'session', 'items'],
@@ -241,6 +244,7 @@ export function validateSessionReflectionBundleV2(value: unknown): string[] {
       ],
       itemIds,
       actionIds,
+      requireUniqueSessionActionIds,
     ));
     if (item.source !== 'production_mistake') {
       errors.push(`${path}.source: expected production_mistake`);
@@ -281,6 +285,10 @@ export function validateSessionReflectionBundleV2(value: unknown): string[] {
   return errors;
 }
 
+export function validateSessionReflectionBundleV2(value: unknown): string[] {
+  return validateSessionReflectionBundleV2WithOptions(value, true);
+}
+
 export function parseSessionReflectionBundleV2(value: unknown): SessionReflectionBundleV2 {
   const errors = validateSessionReflectionBundleV2(value);
   if (errors.length > 0) {
@@ -289,7 +297,10 @@ export function parseSessionReflectionBundleV2(value: unknown): SessionReflectio
   return value as SessionReflectionBundleV2;
 }
 
-export function validateSessionReflectionBundleV3(value: unknown): string[] {
+function validateSessionReflectionBundleV3WithOptions(
+  value: unknown,
+  requireUniqueSessionActionIds: boolean,
+): string[] {
   if (!isRecord(value)) return validateSessionReflectionBundleV2(value);
   const items = Array.isArray(value.items) ? value.items.map((item) => {
     if (!isRecord(item)) return item;
@@ -300,7 +311,10 @@ export function validateSessionReflectionBundleV3(value: unknown): string[] {
       responseKind: base.submittedWord === null ? 'unmatched_text' : 'matched_known_word',
     };
   }) : value.items;
-  const errors = validateSessionReflectionBundleV2({ ...value, schemaVersion: 'session_reflection_bundle.v2', items });
+  const errors = validateSessionReflectionBundleV2WithOptions(
+    { ...value, schemaVersion: 'session_reflection_bundle.v2', items },
+    requireUniqueSessionActionIds,
+  );
   if (value.schemaVersion !== 'session_reflection_bundle.v3') {
     errors.push('$.schemaVersion: expected session_reflection_bundle.v3');
   }
@@ -315,24 +329,34 @@ export function validateSessionReflectionBundleV3(value: unknown): string[] {
   return errors;
 }
 
+export function validateSessionReflectionBundleV3(value: unknown): string[] {
+  return validateSessionReflectionBundleV3WithOptions(value, true);
+}
+
 export function parseSessionReflectionBundleV3(value: unknown): SessionReflectionBundleV3 {
   const errors = validateSessionReflectionBundleV3(value);
   if (errors.length > 0) throw new Error(`Invalid session reflection bundle V3:\n${errors.join('\n')}`);
   return value as SessionReflectionBundleV3;
 }
 
-export function validateSessionReflectionBundleV4(value: unknown): string[] {
+function validateSessionReflectionBundleV4WithOptions(
+  value: unknown,
+  requireUniqueSessionActionIds: boolean,
+): string[] {
   if (!isRecord(value)) return validateSessionReflectionBundleV3(value);
   const items = Array.isArray(value.items) ? value.items.map((item) => {
     if (!isRecord(item) || !isRecord(item.servedCue)) return item;
     const { supplement: _supplement, ...servedCue } = item.servedCue;
     return { ...item, servedCue };
   }) : value.items;
-  const errors = validateSessionReflectionBundleV3({
-    ...value,
-    schemaVersion: 'session_reflection_bundle.v3',
-    items,
-  });
+  const errors = validateSessionReflectionBundleV3WithOptions(
+    {
+      ...value,
+      schemaVersion: 'session_reflection_bundle.v3',
+      items,
+    },
+    requireUniqueSessionActionIds,
+  );
   if (value.schemaVersion !== 'session_reflection_bundle.v4') {
     errors.push('$.schemaVersion: expected session_reflection_bundle.v4');
   }
@@ -346,6 +370,10 @@ export function validateSessionReflectionBundleV4(value: unknown): string[] {
   return errors;
 }
 
+export function validateSessionReflectionBundleV4(value: unknown): string[] {
+  return validateSessionReflectionBundleV4WithOptions(value, true);
+}
+
 export function parseSessionReflectionBundleV4(value: unknown): SessionReflectionBundleV4 {
   const errors = validateSessionReflectionBundleV4(value);
   if (errors.length > 0) throw new Error(`Invalid session reflection bundle V4:\n${errors.join('\n')}`);
@@ -355,12 +383,15 @@ export function parseSessionReflectionBundleV4(value: unknown): SessionReflectio
 export function parseCuratedReflectionBundleV1(value: unknown): CuratedReflectionBundleV1 {
   if (!isRecord(value)) throw new Error('Invalid curated reflection bundle V1');
   const { items, ...envelope } = value;
-  const errors = validateSessionReflectionBundleV4({
-    generatedAt: value.generatedAt,
-    session: { sessionId: 'validation-only', startedAt: null, endedAt: null, studyProfile: 'mandarin' },
-    items,
-    schemaVersion: 'session_reflection_bundle.v4',
-  });
+  const errors = validateSessionReflectionBundleV4WithOptions(
+    {
+      generatedAt: value.generatedAt,
+      session: { sessionId: 'validation-only', startedAt: null, endedAt: null, studyProfile: 'mandarin' },
+      items,
+      schemaVersion: 'session_reflection_bundle.v4',
+    },
+    false,
+  );
   errors.push(...validateObjectFields(envelope, ['schemaVersion', 'generatedAt'], '$'));
   if (value.schemaVersion !== 'curated_reflection_bundle.v1') {
     errors.push('$.schemaVersion: expected curated_reflection_bundle.v1');

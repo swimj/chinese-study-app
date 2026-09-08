@@ -1,5 +1,6 @@
 import cors from 'cors';
 import express, { type NextFunction, type Request, type Response } from 'express';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import type { Server } from 'node:http';
 import path from 'node:path';
@@ -776,25 +777,86 @@ export function createApp(options: CreateAppOptions = {}) {
       res.status(400).json({ error: 'Choose a supported reflection model for the second opinion' });
       return;
     }
+    const generationStartedAt = Date.now();
+    reflectionLifecycleLogger.emit({
+      event: 'reflection.generation_requested',
+      sessionId: null,
+    });
     try {
       const result = await runHostedProviderWork(
         () => reflectionGenerationService.generateDeferredSecondOpinion(proposalIds, requestedModel),
       );
+      reflectionLifecycleLogger.emit({
+        event: 'reflection.generation_succeeded',
+        sessionId: null,
+        artifactId: result.artifactId,
+        proposalCount: result.proposalCount,
+        status: result.status,
+        elapsedMs: Date.now() - generationStartedAt,
+      });
       res.status(result.status === 'created' ? 201 : 200).json(result);
     } catch (error) {
-      if (handleHostedProviderWorkError(error, res)) return;
+      if (error instanceof HostedProviderWorkUnavailableError) {
+        reflectionLifecycleLogger.emit({
+          event: 'reflection.generation_failed',
+          sessionId: null,
+          failure: 'internal',
+          code: error.code,
+          clientRequestId: null,
+          elapsedMs: Date.now() - generationStartedAt,
+        });
+        handleHostedProviderWorkError(error, res);
+        return;
+      }
       if (error instanceof DeferredSecondOpinionError) {
+        reflectionLifecycleLogger.emit({
+          event: 'reflection.generation_failed',
+          sessionId: null,
+          failure: 'invalid_evidence',
+          code: 'invalid_deferred_selection',
+          clientRequestId: null,
+          elapsedMs: Date.now() - generationStartedAt,
+        });
         res.status(400).json({ error: error.message });
         return;
       }
       if (error instanceof LunaReflectionProviderError) {
+        reflectionLifecycleLogger.emit({
+          event: 'reflection.generation_failed',
+          sessionId: null,
+          failure: 'provider',
+          code: error.code,
+          clientRequestId: error.clientRequestId,
+          elapsedMs: Date.now() - generationStartedAt,
+        });
         res.status(error.code === 'missing_config' ? 503 : 502).json({
           error: error.message,
           code: error.code,
         });
         return;
       }
-      res.status(500).json({ error: 'Failed to generate a second opinion' });
+      const diagnosticId = randomUUID();
+      const elapsedMs = Date.now() - generationStartedAt;
+      reflectionLifecycleLogger.emit({
+        event: 'reflection.generation_failed',
+        sessionId: null,
+        failure: 'internal',
+        code: 'internal_error',
+        clientRequestId: null,
+        diagnosticId,
+        elapsedMs,
+      });
+      (options.logError ?? defaultErrorLogger)('Deferred second opinion generation failed', {
+        diagnosticId,
+        route: '/api/deferred-reflection-second-opinions',
+        status: '500',
+        elapsedMs: String(elapsedMs),
+        proposalCount: String(proposalIds.length),
+        model: requestedModel,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+      res.status(500).json({ error: 'Failed to generate a second opinion', diagnosticId });
     }
   });
 

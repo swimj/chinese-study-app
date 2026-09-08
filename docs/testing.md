@@ -103,8 +103,14 @@ credentials are logged. The events are:
 
 Every event includes `at` and `sessionId`; completion/failure events include
 `elapsedMs`, and `reflection.summary_recorded` includes the submitted
-`activeDurationMs`. In a manual run, read the terminal running
-`dev:reflection:backend`. A timeout should produce `provider_started`, followed
+`activeDurationMs`. Deferred second-opinion requests use the same lifecycle
+events with a null `sessionId`; this keeps failures that occur before a durable
+generation run visible. Unexpected second-opinion failures also return a
+diagnostic id to the learner and write a correlated stderr record containing
+the exact error name/message plus bounded request metadata (model and proposal
+count, but not proposal ids or request bodies). In a manual run, read the
+terminal running `dev:reflection:backend`. A timeout should produce
+`provider_started`, followed
 about 900 seconds later by `generation_failed` with `failure: "provider"` and
 `code: "upstream_failure"`.
 

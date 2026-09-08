@@ -29,6 +29,7 @@ export type ReflectionLifecycleEvent =
       failure: 'invalid_evidence' | 'provider' | 'internal';
       code: string | null;
       clientRequestId: string | null;
+      diagnosticId?: string;
       elapsedMs: number;
     };
 
