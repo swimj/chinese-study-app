@@ -7,7 +7,7 @@ const PROCESSING_MS_PATTERN = /^\d+(?:\.\d+)?$/;
 
 export type ReflectionProviderDiagnostic = {
   at: string;
-  sessionId: string;
+  sessionId: string | null;
   clientRequestId: string;
   failureKind: 'http' | 'timeout' | 'transport';
   errorName: string;
@@ -44,7 +44,7 @@ export function createFileReflectionProviderDiagnosticSink(
 }
 
 export function describeReflectionProviderFailure(input: {
-  sessionId: string;
+  sessionId: string | null;
   clientRequestId: string;
   error: unknown;
   at?: string;

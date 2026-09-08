@@ -10,7 +10,10 @@ const deployedBaseline = { ...baseline, ...deployedOverrides };
 
 export type SchemaMigration = { id: string; sql: string };
 // Append migrations here in order. Never edit an applied migration or the baseline.
-export const schemaMigrations: readonly SchemaMigration[] = [];
+export const schemaMigrations: readonly SchemaMigration[] = [{
+  id: 'app_schema:0001_deferred_second_opinion',
+  sql: fs.readFileSync(new URL('./migrations/0001_deferred_second_opinion.sql', import.meta.url), 'utf8'),
+}];
 
 function checksum(value: string): string {
   return createHash('sha256').update(value).digest('hex');

@@ -12,6 +12,7 @@ import type {
   SessionReflectionBundleV2,
   SessionReflectionBundleV3,
   SessionReflectionBundleV4,
+  CuratedReflectionBundleV1,
 } from './reflection';
 
 export type ProductionMistakeCueEvidenceV1 = Omit<ReflectionCueSnapshotV0, 'cueType'> & {
@@ -351,6 +352,23 @@ export function parseSessionReflectionBundleV4(value: unknown): SessionReflectio
   return value as SessionReflectionBundleV4;
 }
 
+export function parseCuratedReflectionBundleV1(value: unknown): CuratedReflectionBundleV1 {
+  if (!isRecord(value)) throw new Error('Invalid curated reflection bundle V1');
+  const { items, ...envelope } = value;
+  const errors = validateSessionReflectionBundleV4({
+    generatedAt: value.generatedAt,
+    session: { sessionId: 'validation-only', startedAt: null, endedAt: null, studyProfile: 'mandarin' },
+    items,
+    schemaVersion: 'session_reflection_bundle.v4',
+  });
+  errors.push(...validateObjectFields(envelope, ['schemaVersion', 'generatedAt'], '$'));
+  if (value.schemaVersion !== 'curated_reflection_bundle.v1') {
+    errors.push('$.schemaVersion: expected curated_reflection_bundle.v1');
+  }
+  if (errors.length > 0) throw new Error(`Invalid curated reflection bundle V1:\n${errors.join('\n')}`);
+  return value as CuratedReflectionBundleV1;
+}
+
 export function parseStoredSessionReflectionBundle(value: unknown): SessionReflectionBundle {
   if (isRecord(value) && value.schemaVersion === 'session_reflection_bundle.v2') {
     return parseSessionReflectionBundleV2(value);
@@ -360,6 +378,9 @@ export function parseStoredSessionReflectionBundle(value: unknown): SessionRefle
   }
   if (isRecord(value) && value.schemaVersion === 'session_reflection_bundle.v4') {
     return parseSessionReflectionBundleV4(value);
+  }
+  if (isRecord(value) && value.schemaVersion === 'curated_reflection_bundle.v1') {
+    return parseCuratedReflectionBundleV1(value);
   }
   return parseSessionReflectionBundle(value);
 }

@@ -181,7 +181,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       provider: 'openai',
       model: 'gpt-5.6-terra-high',
       providerModel: 'gpt-5.6-terra',
-      promptVersion: 'reflection-v8',
+      promptVersion: 'reflection-v9',
       clientRequestId: 'provider-request-1',
       eligibleItemCount: 3,
       includedItemCount: 2,
@@ -198,7 +198,7 @@ describe('reflection durable store', { concurrency: false }, () => {
         provider: 'openai',
         model: 'gpt-5.6-terra-high',
         providerModel: 'gpt-5.6-terra',
-        promptVersion: 'reflection-v8',
+        promptVersion: 'reflection-v9',
         responseId: null,
         clientRequestId: 'provider-request-1',
         finishReason: null,
@@ -265,7 +265,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       provider: 'openai',
       model: 'gpt-5.6-terra-high',
       providerModel: 'gpt-5.6-terra',
-      promptVersion: 'reflection-v8',
+      promptVersion: 'reflection-v9',
       clientRequestId: 'provider-request-active',
       eligibleItemCount: 1,
       includedItemCount: 1,
@@ -349,7 +349,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v8',
+      promptVersion: 'reflection-v9',
       responseId: null,
       finishReason: null,
       state: 'failed',
@@ -616,6 +616,47 @@ describe('reflection durable store', { concurrency: false }, () => {
     assert.throws(
       () => dbModule.deferReflectionProposal(deferred.proposalId),
       /Invalid proposal review transition: dismissed -> deferred/,
+    );
+  });
+
+  test('creates a sessionless curated bundle and retires only its selected deferred original on success', () => {
+    const source = dbModule.materializeReflectionArtifact(materializationInputV2('second-opinion-source'));
+    const originalProposalId = source.artifact.proposals[0]!.review.proposalId;
+    dbModule.deferReflectionProposal(originalProposalId, updatedAt);
+
+    const { bundle, sourceProposalIds } = dbModule.buildDeferredSecondOpinionBundle([originalProposalId], appliedAt);
+    assert.equal(bundle.schemaVersion, 'curated_reflection_bundle.v1');
+    assert.equal(bundle.items.length, 1);
+    assert.notEqual(bundle.items[0]!.itemId, 'item');
+    assert.equal('session' in bundle, false);
+    assert.equal('source' in bundle, false);
+    assert.deepEqual(sourceProposalIds, [originalProposalId]);
+
+    const replacement = dbModule.materializeReflectionArtifact({
+      sourceSessionId: null,
+      reflectionFlowVersion: dbModule.DEFERRED_SECOND_OPINION_FLOW_VERSION,
+      generatedAt: appliedAt,
+      provider: 'openai',
+      model: 'gpt-5.6-luna-high',
+      promptVersion: 'reflection-v9',
+      evidenceBundle: bundle,
+      sourceProposalIds,
+      result: {
+        schemaVersion: 'session_reflection_result.v7',
+        itemResults: [{
+          itemId: bundle.items[0]!.itemId,
+          diagnosisTags: ['ordinary_retrieval_noise'],
+          learnerExplanation: 'No additional intervention is needed.',
+          proposals: [],
+          questions: [],
+        }],
+      },
+    });
+
+    assert.equal(replacement.artifact.sourceSessionId, null);
+    assert.deepEqual(
+      dbModule.getReflectionArtifactDetail(source.artifact.artifactId).proposals[0]?.review.disposition,
+      { kind: 'dismissed', reason: 'requested_second_opinion' },
     );
   });
 

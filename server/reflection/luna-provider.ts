@@ -11,6 +11,7 @@ import {
   type SessionReflectionBundleV4,
   type SessionReflectionBundleV2,
   type SessionReflectionBundleV3,
+  type CuratedReflectionBundleV1,
   type SessionReflectionResultV7,
   type SessionReflectionResultV7Wire,
 } from '../../src/domain/reflection.js';
@@ -41,14 +42,14 @@ export const LUNA_REFLECTION_MODEL_CONFIG = {
   reasoningEffort: 'high',
   maxOutputTokens: 50_000,
   timeoutMs: 180_000,
-  promptVersion: 'reflection-v8',
+  promptVersion: 'reflection-v9',
   defaultBaseUrl: 'https://api.openai.com/v1',
   apiKeyEnvironmentVariable: 'OPENAI_API_KEY',
   structuredOutputMode: 'json_schema',
   maxTokensField: 'max_completion_tokens',
   baseUrlEnvironmentVariable: 'OPENAI_BASE_URL',
 } as const;
-export const LUNA_REFLECTION_PROMPT_VERSION = 'reflection-v8' as const;
+export const LUNA_REFLECTION_PROMPT_VERSION = 'reflection-v9' as const;
 
 const productionPromptUrl = new URL('./prompts/reflection.md', import.meta.url);
 
@@ -123,7 +124,7 @@ export type LunaReflectionSuccess = {
 
 export type LunaReflectionProvider = {
   generate(
-    bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4,
+    bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4 | CuratedReflectionBundleV1,
     options?: { clientRequestId?: string },
   ): Promise<LunaReflectionSuccess>;
 };
@@ -191,7 +192,7 @@ export function createReflectionProvider(
 
   return {
     async generate(
-      bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4,
+      bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4 | CuratedReflectionBundleV1,
       requestOptions: { clientRequestId?: string } = {},
     ): Promise<LunaReflectionSuccess> {
       // Read credentials at call time so importing or constructing the service
@@ -228,7 +229,7 @@ export function createReflectionProvider(
         });
       } catch (error) {
         options.diagnosticSink?.record(describeReflectionProviderFailure({
-          sessionId: bundle.session.sessionId,
+          sessionId: 'session' in bundle ? bundle.session.sessionId : null,
           clientRequestId,
           error,
         }));

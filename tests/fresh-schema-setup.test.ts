@@ -18,6 +18,7 @@ test('fresh schema constructors reject existing objects without changing the dat
     const before = db.prepare('SELECT type, name, sql FROM sqlite_schema ORDER BY type, name').all();
     const version = db.prepare('PRAGMA schema_version').get();
     const constructors = [
+      schema.createBaselineSchema,
       schema.createIdentitySchema,
       schema.createHostedOperationsSchema,
       schema.createReflectionSchema,
