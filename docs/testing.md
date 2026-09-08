@@ -105,7 +105,7 @@ Every event includes `at` and `sessionId`; completion/failure events include
 `elapsedMs`, and `reflection.summary_recorded` includes the submitted
 `activeDurationMs`. In a manual run, read the terminal running
 `dev:reflection:backend`. A timeout should produce `provider_started`, followed
-about 180 seconds later by `generation_failed` with `failure: "provider"` and
+about 900 seconds later by `generation_failed` with `failure: "provider"` and
 `code: "upstream_failure"`.
 
 For provider failures only, the backend also appends an allowlisted local JSON

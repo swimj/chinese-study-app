@@ -13,6 +13,7 @@ import { createOpenAiCompatibleAdapter } from '../llm/openai-compatible.ts';
 import { fetchImplementationForProvider } from '../llm/proxy-fetch.ts';
 import {
   isOutputTruncationFinishReason,
+  PROVIDER_REQUEST_TIMEOUT_MS,
   type NormalizedTokenUsage,
 } from '../llm/types.ts';
 
@@ -23,7 +24,7 @@ export const INTAKE_TRIAGE_MODEL_CONFIG = {
   providerModel: 'gpt-5.6-luna',
   reasoningEffort: 'high',
   maxOutputTokens: 12_000,
-  timeoutMs: 180_000,
+  timeoutMs: PROVIDER_REQUEST_TIMEOUT_MS,
   defaultBaseUrl: 'https://api.openai.com/v1',
   apiKeyEnvironmentVariable: 'OPENAI_API_KEY',
   baseUrlEnvironmentVariable: 'OPENAI_BASE_URL',

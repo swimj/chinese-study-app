@@ -1,5 +1,8 @@
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.js';
 
+/** Shared wall-clock bound for production provider requests. */
+export const PROVIDER_REQUEST_TIMEOUT_MS = 900_000;
+
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 

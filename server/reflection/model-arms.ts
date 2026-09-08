@@ -1,3 +1,4 @@
+import { PROVIDER_REQUEST_TIMEOUT_MS } from '../llm/types.ts';
 import type { ReflectionProviderConfig } from './luna-provider.ts';
 
 /**
@@ -10,7 +11,7 @@ const OPENROUTER = {
   provider: 'openrouter',
   reasoningEffort: 'high' as const,
   maxOutputTokens: 50_000,
-  timeoutMs: 900_000,
+  timeoutMs: PROVIDER_REQUEST_TIMEOUT_MS,
   promptVersion: 'reflection-v9',
   defaultBaseUrl: 'https://openrouter.ai/api/v1',
   apiKeyEnvironmentVariable: 'OPENROUTER_API_KEY',
@@ -55,7 +56,7 @@ export const REFLECTION_MODEL_ARMS = [
       providerModel: 'gpt-5.6-terra',
       reasoningEffort: 'high',
       maxOutputTokens: 50_000,
-      timeoutMs: 180_000,
+      timeoutMs: PROVIDER_REQUEST_TIMEOUT_MS,
       promptVersion: 'reflection-v9',
       defaultBaseUrl: 'https://api.openai.com/v1',
       apiKeyEnvironmentVariable: 'OPENAI_API_KEY',

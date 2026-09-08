@@ -19,7 +19,7 @@ import {
   createGlmReflectionProvider,
   GLM_REFLECTION_MODEL_CONFIG,
 } from '../server/reflection/glm-provider.js';
-import type { JsonValue } from '../server/llm/types.js';
+import { PROVIDER_REQUEST_TIMEOUT_MS, type JsonValue } from '../server/llm/types.js';
 import { validateJsonSchema } from '../server/llm/json-schema-validator.js';
 import {
   describeReflectionProviderFailure,
@@ -204,7 +204,7 @@ describe('production Luna reflection provider', () => {
     assert.deepEqual(request.body.response_format, { type: 'json_object' });
     assert.equal(generated.metadata.provider, 'zai');
     assert.equal(generated.metadata.modelConfig, 'glm-5.3-high');
-    assert.equal(GLM_REFLECTION_MODEL_CONFIG.timeoutMs, 900_000);
+    assert.equal(GLM_REFLECTION_MODEL_CONFIG.timeoutMs, PROVIDER_REQUEST_TIMEOUT_MS);
   });
 
   test('sends the exact model, reasoning, auth, prompt, and strict V7 wire schema request', async () => {
@@ -250,6 +250,7 @@ describe('production Luna reflection provider', () => {
     assert.ok(request.signal instanceof AbortSignal);
     assert.equal(LUNA_REFLECTION_MODEL_CONFIG.modelConfig, 'gpt-5.6-luna-high');
     assert.equal(LUNA_REFLECTION_MODEL_CONFIG.providerModel, 'gpt-5.6-luna');
+    assert.equal(LUNA_REFLECTION_MODEL_CONFIG.timeoutMs, PROVIDER_REQUEST_TIMEOUT_MS);
     const wireOperation = validWireResult.itemResults[0]!.proposals[0]!.operation;
     const canonicalOperation = generated.result.itemResults[0]!.proposals[0]!.operation;
     assert.equal(wireOperation.kind, 'repair_production_cue');

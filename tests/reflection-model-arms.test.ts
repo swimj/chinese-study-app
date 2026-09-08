@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
+import { PROVIDER_REQUEST_TIMEOUT_MS } from '../server/llm/types.ts';
+import { GLM_REFLECTION_MODEL_CONFIG } from '../server/reflection/glm-provider.ts';
+import { LUNA_REFLECTION_MODEL_CONFIG } from '../server/reflection/luna-provider.ts';
 import { REFLECTION_MODEL_ARMS, isReflectionModelChoice } from '../server/reflection/model-arms.ts';
 
 describe('reflection comparison-arm registry', () => {
@@ -30,6 +33,16 @@ describe('reflection comparison-arm registry', () => {
         .filter((arm) => arm.enabledByDefault)
         .every((arm) => arm.dogfoodSelectionWeight === 1),
     );
+  });
+
+  test('uses the shared 15-minute provider timeout for every registered arm', () => {
+    assert.equal(PROVIDER_REQUEST_TIMEOUT_MS, 900_000);
+    assert.equal(LUNA_REFLECTION_MODEL_CONFIG.timeoutMs, PROVIDER_REQUEST_TIMEOUT_MS);
+    assert.equal(GLM_REFLECTION_MODEL_CONFIG.timeoutMs, PROVIDER_REQUEST_TIMEOUT_MS);
+    for (const arm of REFLECTION_MODEL_ARMS) {
+      if (arm.config === null) continue;
+      assert.equal(arm.config.timeoutMs, PROVIDER_REQUEST_TIMEOUT_MS, arm.choice);
+    }
   });
 
   test('does not pin OpenRouter arms to one upstream host', () => {
