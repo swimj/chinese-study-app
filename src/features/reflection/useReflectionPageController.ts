@@ -9,14 +9,15 @@ import type {
   AuthorizeManualReflectionOperationRequest,
 } from '../../domain/reflection';
 import type { ReflectionModelChoice } from '../../services/api';
+import { artifactDetailIdsToFetch, retireSelectedDeferredProposalsAfterSecondOpinion } from './reflection-page-model';
 import type {
   ReflectionArtifactDetailDto,
   ReflectionArtifactSummaryDto,
   ReflectionGenerationRunDto,
   ReflectionQualityStatsDto,
+  ReflectionDetailReloadPolicy,
   ReflectionReviewApi,
 } from './reflection-page-model';
-import { retireSelectedDeferredProposalsAfterSecondOpinion } from './reflection-page-model';
 
 export type ReflectionPageController = {
   isLoading: boolean;
@@ -109,7 +110,7 @@ export function useReflectionPageController({
 
   async function loadListsAndDetail(
     preferredArtifactId: string | null,
-    forceArtifactIds: ReadonlySet<string> = new Set(),
+    forceArtifactIds: ReflectionDetailReloadPolicy = new Set(),
     baseDetails: ReflectionArtifactDetailDto[] = artifactDetails,
   ): Promise<void> {
     const reviewApi = requireApi();
@@ -151,13 +152,12 @@ export function useReflectionPageController({
     for (const artifactId of nextUnreadableArtifactIds) {
       detailByArtifactId.delete(artifactId);
     }
-    const artifactIdsToLoad = [
-      ...readableArtifactIds,
-      ...inboxArtifactIds,
-    ].filter((artifactId, index, ids) => (
-      ids.indexOf(artifactId) === index
-      && (!detailByArtifactId.has(artifactId) || forceArtifactIds.has(artifactId))
-    ));
+    const artifactIdsToLoad = artifactDetailIdsToFetch({
+      readableArtifactIds,
+      inboxArtifactIds,
+      cachedArtifactIds: new Set(detailByArtifactId.keys()),
+      forceArtifactIds,
+    });
     const loadedDetails = await Promise.allSettled(
       artifactIdsToLoad.map((artifactId) => reviewApi.getArtifact(artifactId)),
     );
@@ -224,7 +224,8 @@ export function useReflectionPageController({
 
   async function refresh(): Promise<void> {
     try {
-      await runLoading(() => loadListsAndDetail(selectedArtifact?.artifactId ?? null));
+      // Full workspace reread: lists, runs, stats, help inbox, and every scoped detail.
+      await runLoading(() => loadListsAndDetail(selectedArtifact?.artifactId ?? null, 'all'));
     } catch {
       // The shared app error panel owns the visible failure.
     }
