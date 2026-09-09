@@ -51,6 +51,7 @@ These describe versioned feature behavior alongside the canonical contracts.
 
 | Document | Role |
 | --- | --- |
+| [diet-bucket-distribution.md](./diet-bucket-distribution.md) | **Draft design** — bucketed new-word diet (distribution-over-buckets vision sketch + HSK delta-tier deliverable, placement, settings surface, triage retirement) |
 | [french-compatibility-profile-plan.md](./french-compatibility-profile-plan.md) | French study profile compatibility |
 | [french-priority-alias-first-cut-plan.md](./french-priority-alias-first-cut-plan.md) | Priority alias lookup first cut |
 | [french-reading-corpus-compatibility-plan.md](./french-reading-corpus-compatibility-plan.md) | French corpus ingestion plan |
