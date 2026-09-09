@@ -322,3 +322,50 @@ describe('diet profile persistence', { concurrency: false }, () => {
     assert.throws(() => dbModule.setOperatorDietDeck('hsk2-l1', null, null), /manifest is not available/);
   });
 });
+
+describe('diet status surface', { concurrency: false }, () => {
+  let dataDir = '';
+  let sqlite: DatabaseSync;
+  let dbModule: typeof import('../server/db.ts');
+
+  before(async () => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-diet-status-'));
+    const previousMode = process.env.APP_MODE;
+    const previousDataDir = process.env.APP_DATA_DIR;
+    process.env.APP_MODE = 'study';
+    process.env.APP_DATA_DIR = dataDir;
+
+    const moduleUrl = `${pathToFileURL(path.resolve('server/db.ts')).href}?test-status=${Date.now()}`;
+    dbModule = await import(moduleUrl);
+
+    if (previousMode === undefined) delete process.env.APP_MODE;
+    else process.env.APP_MODE = previousMode;
+    if (previousDataDir === undefined) delete process.env.APP_DATA_DIR;
+    else process.env.APP_DATA_DIR = previousDataDir;
+
+    sqlite = new DatabaseSync(path.join(dataDir, 'app.db'));
+  });
+
+  after(() => {
+    sqlite.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  beforeEach(() => {
+    sqlite.exec(`DELETE FROM learner_settings WHERE setting_key = 'diet_profile';`);
+  });
+
+  test('intake is required only while no profile is stored', () => {
+    assert.equal(dbModule.isDietDeckModeActive(fixtureManifest()), true);
+    assert.equal(dbModule.isDietIntakeRequired(fixtureManifest()), true);
+
+    dbModule.recordDietIntake({ answers: [], selfSelect: null }, fixtureManifest());
+    assert.equal(dbModule.isDietIntakeRequired(fixtureManifest()), false);
+    assert.equal(dbModule.isDietDeckModeActive(fixtureManifest()), true);
+  });
+
+  test('deck mode and intake are inactive without a manifest', () => {
+    assert.equal(dbModule.isDietDeckModeActive(null), false);
+    assert.equal(dbModule.isDietIntakeRequired(null), false);
+  });
+});
