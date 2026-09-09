@@ -5,16 +5,24 @@
     "source": "test fixture (synthetic; not the real manifest)"
   },
   "decks": [
-    { "id": "hsk2-l1", "order": 0, "hsk": { "version": "2.0", "level": 1 }, "stratum": null, "size": 2 },
-    { "id": "hsk2-l2", "order": 1, "hsk": { "version": "2.0", "level": 2 }, "stratum": null, "size": 2 },
+    { "id": "hsk2-l1", "order": 0, "hsk": { "version": "2.0", "level": 1 }, "stratum": null, "size": 8 },
+    { "id": "hsk2-l2", "order": 1, "hsk": { "version": "2.0", "level": 2 }, "stratum": null, "size": 4 },
     { "id": "hsk2-l3-s1", "order": 2, "hsk": { "version": "2.0", "level": 3 }, "stratum": 1, "size": 1 },
     { "id": "beyond-hsk", "order": 3, "hsk": null, "stratum": null, "size": 1 }
   ],
   "assignments": {
     "我|wǒ": "hsk2-l1",
     "你|nǐ": "hsk2-l1",
+    "是|shì": "hsk2-l1",
+    "的|de": "hsk2-l1",
+    "也|yě": "hsk2-l1",
+    "在|zài": "hsk2-l1",
+    "他|tā": "hsk2-l1",
+    "她|tā": "hsk2-l1",
     "猫|māo": "hsk2-l2",
     "狗|gǒu": "hsk2-l2",
+    "鸟|niǎo": "hsk2-l2",
+    "鱼|yú": "hsk2-l2",
     "抽象|chōu xiàng": "hsk2-l3-s1"
   }
 }
