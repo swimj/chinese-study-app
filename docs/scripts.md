@@ -23,7 +23,8 @@ Entry points under `scripts/`. Run with `node --import tsx scripts/<name>.ts` un
 
 Most of these require an explicit absolute `--data-dir` and force study/Clerk
 runtime configuration. `hosted:upgrade` is the exception: it runs on an
-operator checkout against Fly, not against a local data directory. See the
+operator checkout against Fly, not against a local data directory. Human and
+automated terminal-driver procedures are in the
 [deployment runbook](./ops/hosted-beta-deployment.md).
 
 | npm command | Purpose |

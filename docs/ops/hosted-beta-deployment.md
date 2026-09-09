@@ -1,6 +1,10 @@
 # Hosted beta deployment and recovery
 
 This is the operator runbook for the first invite-only Mandarin deployment.
+It has complementary procedures for a human operating an interactive terminal
+and an agent or automation driving one. They use the same release command and
+release gates; the latter additionally defines how to observe a long-running
+local terminal process safely.
 The supported shape is one 1 GB Fly Machine in `sin`, one encrypted Fly Volume at
 `/data`, Clerk authentication, and Litestream replication to a private,
 versioned S3 bucket. The application container serves both the API and the
@@ -144,8 +148,8 @@ exception.
 The command is operator-launched from a clean checkout of the intended commit.
 It validates arguments before any live mutation, then drives quiesce, backup
 sync, `fly deploy --remote-only`, identity confirmation, read-only smoke, and
-reopen without waiting between stages. Terminal JSON is ephemeral caller output,
-not a retained evidence ledger.
+reopen without waiting between stages. Its terminal JSON is live, ephemeral
+caller output rather than a retained evidence ledger.
 
 ### Smoke account
 
@@ -165,7 +169,7 @@ A `fly secrets set` of a new variable restarts the Machine; putting the values
 in the generated Fly env applies them on the next deploy, which this command
 performs.
 
-### Run the command
+### Human operator procedure
 
 From the intended commit, with a prepared generated Fly config and an
 authenticated Fly CLI:
@@ -190,6 +194,35 @@ If any stage from quiescence onward fails, the command exits non-zero, emits
 the failed stage and best-known running identity, and **does not reopen**.
 Investigate, fix forward, or restore service manually. This slice has no
 automatic rollback.
+
+### Agent or automated terminal-driver procedure
+
+An agent drives the same command, but must distinguish a terminal update from
+the command's completion. The upgrade runner is a foreground local process; it
+does not become a fire-and-forget Fly job after it starts.
+
+1. Apply the same eligibility and clean-checkout checks as the human procedure,
+   then start **one** `hosted:upgrade` process.
+2. Preserve the terminal session handle returned by the execution environment.
+   A response that has partial output or a session handle but no exit status
+   means the runner is still active. It is not a failure and it is not evidence
+   that Fly has finished deploying.
+3. Poll or stream that exact session until it returns a terminal exit status.
+   Only its final `upgrade-result` says whether the runner completed, failed,
+   and reopened controls.
+4. Do not start a second upgrade merely because output is quiet, an outer tool
+   invocation has yielded, or a remote build is taking longer than expected.
+   Deploy, health, and smoke stages can legitimately take minutes.
+5. If the terminal session itself is genuinely lost before an exit status,
+   treat the release as **unknown execution state**, not failed. First perform
+   read-only reconciliation of Fly status, public `/healthz`, and hosted
+   release identity. Do not assume controls were reopened or retry the upgrade
+   until that reconciliation establishes the state and an operator chooses the
+   next recovery action.
+
+This procedure deliberately does not claim durable release history or resumable
+execution. The final terminal result is still per-invocation evidence; a lost
+local runner remains an operational recovery case.
 
 ## Release and maintenance controls
 

@@ -45,6 +45,7 @@ When code and spec conflict, treat the spec as intended behavior and update code
 | HTTP API contract | [`docs/api.md`](docs/api.md), `server/index.ts` | domain tests above + manual smoke if needed |
 | Reflection generation / evidence | `SPECS/session-reflection-generation.md`, `session-covering-criteria.md`, `docs/reflection-frontend-architecture.md` | `reflection-generation.test.ts`, `reflection-generation-isolation.test.ts`, `session-finalization.test.ts` |
 | Reflection proposals / handles | `SPECS/reflection-proposals-and-handles.md`, `SPECS/session-reflection-generation.md` | `llm-provider-runner.test.ts` plus matching lifecycle/adapter tests |
+| Hosted application-only release | [`docs/ops/hosted-beta-deployment.md`](docs/ops/hosted-beta-deployment.md), agent terminal-driver procedure | No schema/data migration; retain and poll one terminal session through its terminal exit status; never start a second upgrade while the first has unknown state |
 
 ### Environment variables
 
