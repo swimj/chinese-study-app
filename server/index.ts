@@ -21,6 +21,11 @@ import {
   dismissIntakeTriageAssessment,
   addUnstudiedUserPriorityByHanzi,
   dbConfig,
+  DietManifestUnavailableError,
+  DietProfileChangedDuringAssessmentError,
+  isDietSelfSelect,
+  nudgeDietProfile,
+  recordDietIntake,
   getLearningPolicy,
   getContentDiagnostics,
   getReflectionArtifactDetail,
@@ -55,6 +60,12 @@ import {
   withdrawReflectionInvocationAuthorization,
   type ReviewAttemptCommitIntent,
 } from './db.ts';
+import { isDietIntakePlacementAnswers } from '../src/domain/diet-intake-placement.ts';
+import {
+  createDietIntakePlacementService,
+  DietIntakePlacementAssessmentError,
+  type DietIntakePlacementService,
+} from './diet/intake-placement-service.ts';
 import {
   getActiveProviderWorkCount,
   HostedProviderWorkUnavailableError,
@@ -122,6 +133,7 @@ export type CreateAppOptions = {
   reflectionGenerationService?: InitialReflectionGenerationService;
   reflectionLifecycleLogger?: ReflectionLifecycleLogger;
   intakeTriageGenerationService?: IntakeTriageGenerationService;
+  dietIntakePlacementService?: DietIntakePlacementService;
   resolveClerkProviderSubject?: ProviderSubjectResolver;
   /** `undefined` follows NODE_ENV; `null` explicitly disables frontend serving. */
   frontendDistPath?: string | null;
@@ -142,6 +154,8 @@ export function createApp(options: CreateAppOptions = {}) {
     });
   const intakeTriageGenerationService = options.intakeTriageGenerationService
     ?? createIntakeTriageGenerationService();
+  const dietIntakePlacementService = options.dietIntakePlacementService
+    ?? createDietIntakePlacementService();
   const studyCommitDiagnosticSink = options.studyCommitDiagnosticSink
     ?? createStudyCommitDiagnosticSink(dbConfig.dataDir);
 
@@ -332,6 +346,92 @@ export function createApp(options: CreateAppOptions = {}) {
       }
 
       res.status(500).json({ error: 'Failed to add priority words by hanzi' });
+    }
+  });
+
+  // Diet profile (SPECS/diet-deck-distribution.md). Deck machinery is never
+  // user-visible; nudges are the learner's coarse steering signal and operator
+  // jumps go through scripts/set-diet-deck.ts (no HTTP endpoint).
+  app.post('/api/diet/nudge', (req, res) => {
+    const direction = req.body?.direction;
+    if (direction !== 'easier' && direction !== 'harder') {
+      res.status(400).json({ error: "Expected direction to be 'easier' or 'harder'" });
+      return;
+    }
+
+    try {
+      const result = nudgeDietProfile(direction);
+      res.json(result);
+    } catch (error) {
+      if (error instanceof DietManifestUnavailableError) {
+        res.status(409).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to nudge the diet profile' });
+    }
+  });
+
+  app.post('/api/diet/intake', (req, res) => {
+    const answers = req.body?.answers;
+    const selfSelect = req.body?.selfSelect;
+
+    if (!Array.isArray(answers)
+      || !answers.every((answer) => typeof answer === 'object' && answer !== null
+        && typeof answer.prompt === 'string' && answer.prompt.trim().length > 0
+        && typeof answer.answer === 'string' && answer.answer.trim().length > 0)) {
+      res.status(400).json({ error: 'Expected answers to be an array of non-empty { prompt, answer } strings' });
+      return;
+    }
+    if (selfSelect !== undefined && selfSelect !== null && !isDietSelfSelect(selfSelect)) {
+      res.status(400).json({ error: 'Expected selfSelect to be a valid coarse self-select value when provided' });
+      return;
+    }
+
+    try {
+      const profile = recordDietIntake({
+        answers: answers.map((answer) => ({ prompt: answer.prompt as string, answer: answer.answer as string })),
+        selfSelect: selfSelect ?? null,
+      });
+      res.status(201).json(profile);
+    } catch (error) {
+      if (error instanceof DietManifestUnavailableError) {
+        res.status(409).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to record the diet intake' });
+    }
+  });
+
+  app.post('/api/diet/intake/assess', async (req, res) => {
+    const answers = req.body?.answers;
+    if (req.body?.providerDisclosureAccepted !== true) {
+      res.status(400).json({ error: 'Expected providerDisclosureAccepted to be true' });
+      return;
+    }
+    if (!isDietIntakePlacementAnswers(answers)) {
+      res.status(400).json({ error: 'Expected one or two bounded non-empty intake answers' });
+      return;
+    }
+    try {
+      const boundedAnswers = answers.map(({ prompt, answer }) => ({ prompt, answer }));
+      const profile = await runHostedProviderWork(() => dietIntakePlacementService.assessAndApply(boundedAnswers));
+      res.status(201).json(profile);
+    } catch (error) {
+      if (handleHostedProviderWorkError(error, res)) return;
+      if (error instanceof DietManifestUnavailableError) {
+        res.status(409).json({ error: error.message });
+        return;
+      }
+      if (error instanceof DietProfileChangedDuringAssessmentError) {
+        res.status(409).json({ error: error.message, code: 'profile_changed' });
+        return;
+      }
+      if (error instanceof DietIntakePlacementAssessmentError) {
+        const status = error.code === 'invalid_input' ? 400 : error.code === 'already_running' ? 409 : 502;
+        res.status(status).json({ error: error.message, code: error.code, providerCode: error.providerCode });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to assess diet intake' });
     }
   });
 

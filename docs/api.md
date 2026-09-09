@@ -109,6 +109,63 @@ baseline, or bump-boosted effective priority.
 words with any explicit positive priority override and returns an
 `intakeTriage` annotation per word plus `analysisCandidateCount`.
 
+## Diet profile
+
+The durable contract is
+[`SPECS/diet-deck-distribution.md`](../SPECS/diet-deck-distribution.md) (§2.3,
+§2.5, §2.6). The diet profile is a versioned JSON value in the
+`learner_settings` store (`diet_profile`): deck weights, provenance
+(`intake` / `learner-nudge` / `operator`), and `updatedAt`. When unset it
+defaults to 100% weight on the first deck by manifest order. Deck machinery
+is never user-visible.
+
+| Method | Path | Handler domain |
+| --- | --- | --- |
+| POST | `/api/diet/nudge` | `diet-profile` |
+| POST | `/api/diet/intake` | `diet-profile` |
+| POST | `/api/diet/intake/assess` | `diet-placement` |
+
+`POST /api/diet/nudge` accepts `{ direction: 'easier' | 'harder' }` and shifts
+a fixed internal weight quantum from the current max-weight deck toward the
+adjacent deck (harder = successor by deck order, easier = predecessor),
+renormalized, with provenance appended. It is clamped at the ends: a nudge
+past the first/last deck is a no-op (`changed: false`, no provenance entry).
+Returns `200` with `{ profile, changed }`; `400` for an invalid direction;
+`409` when the deck manifest is unavailable on the installation.
+
+`POST /api/diet/intake` accepts
+`{ answers: Array<{ prompt: string, answer: string }>, selfSelect?: 'complete-beginner' | 'some-basics' | 'intermediate' | 'advanced-or-heritage' | null }`.
+It stores the raw natural-language answers plus the resulting initial
+placement in the diet profile. Intake answers are profile evidence, never
+study actions: no attempt events, no covering, no commits. The v1 placement
+mapping is fixed (self-select maps directly onto the deck ladder by manifest
+order; absent self-select starts on the first deck). Returns `201` with the
+stored profile; `400` for invalid input; `409` when the deck manifest is
+unavailable.
+
+`POST /api/diet/intake/assess` accepts `{ answers, providerDisclosureAccepted: true }`, where
+`answers` contains one or two exact `{ prompt, answer }` pairs (each prompt is
+at most 200 characters, each answer at most 2,000 characters, and the combined
+answer text at most 4,000 characters). The explicit flag records authorization
+to send those answers to the configured provider. On a validated response, the
+server maps its next HSK 2.0 learning level internally and atomically stores the
+resulting diet profile and intake evidence. The provider never receives deck
+configuration, learner identity, history, or corpus data. It returns `201` on
+success, `400` for invalid input or missing disclosure, `409` for a concurrent
+or stale placement, `502` for provider or output validation failure, and `503`
+when hosted provider work is disabled. It never writes study actions, attempts,
+covering, or commits. The existing manual `/api/diet/intake` route remains the
+explicit self-select/skip fallback and does not call a provider.
+
+The stored assessment retains the model's `nextLearningLevel` and rationale.
+For a reduced manifest, the internal placement may use the first available
+lower HSK 2.0 deck; the tail deck is never an intake placement target.
+An installation must retain an HSK 2.0 Level 1 deck to offer provider-assisted
+intake, because all supported next-learning levels rely on that baseline.
+
+Operator jumps (100% weight on a chosen deck, provenance actor `operator`)
+are performed with `scripts/set-diet-deck.ts`; there is no HTTP endpoint.
+
 ## Intake triage advisor
 
 The durable product contract is
