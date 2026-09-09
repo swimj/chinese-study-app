@@ -78,9 +78,24 @@ import {
 import { applyIntervalHourFuzz } from './interval-schedule.ts';
 import {
   buildUnstudiedAdmissionSeedSource,
+  planUnstudiedStashAdmission,
+  planDeckDietTargets,
   selectAdmittedUnstudiedWordIds,
+  selectDeckDietWordIds,
   type UnstudiedStashCandidate,
 } from './unstudied-admission.ts';
+import {
+  deckAssignmentKey,
+  getManifestAssignmentsByDeck,
+  getTailDeckId,
+  loadDeckManifest,
+  type DeckManifest,
+} from '../decks/manifest.ts';
+import {
+  getDietProfile,
+  getStashDietSplit,
+  resolveEffectiveDietWeights,
+} from './diet-profile.ts';
 import {
   assertLearnerExists,
   bootstrapLearner,
@@ -4693,45 +4708,27 @@ function getAdmittedUnstudiedWords(remainingDailyNewWordSlots: number, studyDayK
       overlay_updated_at: string;
     }>;
 
-  const dietRows = remainingDailyNewWordSlots === 0
-    ? []
-    : getDb()
-      .prepare(`
-        SELECT
-          words.id,
-          words.hanzi,
-          words.traditional,
-          words.pinyin,
-          words.meaning,
-          words.meanings_json,
-          words.personal_notes,
-          words.examples_json,
-          words.status,
-          words.priority,
-          words.created_at,
-          words.learning_streak,
-          words.last_learning_success_on,
-          words.last_learning_covered_on
-        FROM words
-        LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
-        WHERE words.status = 'unstudied'
-          AND user_word_priority.word_id IS NULL
-        ORDER BY words.priority DESC, words.created_at ASC, words.id ASC
-        LIMIT ?
-      `)
-      .all(remainingDailyNewWordSlots) as WordRow[];
-
   const stash: UnstudiedStashCandidate[] = stashRows.map((row) => ({
     id: row.id,
     overlayUpdatedAt: row.overlay_updated_at,
     isTop: row.priority_tier === PRIORITY_TIER_TOP,
     isRequired: row.required_for_next_session !== 0,
   }));
+  const seedSource = buildUnstudiedAdmissionSeedSource(studyDayKey, remainingDailyNewWordSlots);
+  const stashRatio = getStashDietSplit();
+  const stashPlan = planUnstudiedStashAdmission({
+    stash,
+    remainingQuota: remainingDailyNewWordSlots,
+    seedSource,
+    stashRatio,
+  });
+  const dietRows = getDietCandidateRows(stashPlan.dietDemand, seedSource);
   const admittedIds = selectAdmittedUnstudiedWordIds({
     stash,
     dietIds: dietRows.map((row) => row.id),
     remainingQuota: remainingDailyNewWordSlots,
-    seedSource: buildUnstudiedAdmissionSeedSource(studyDayKey, remainingDailyNewWordSlots),
+    seedSource,
+    stashRatio,
   });
 
   const wordsById = new Map<string, Word>();
@@ -4750,6 +4747,164 @@ function getAdmittedUnstudiedWords(remainingDailyNewWordSlots: number, studyDayK
 
     return word;
   });
+}
+
+/**
+ * Diet candidates in draw order. With a deck manifest (Mandarin only), the
+ * diet fill is a seeded weighted sample across the learner's deck
+ * distribution with composition-time spill into successor decks; the
+ * beyond-hsk tail has no manifest membership and keeps the legacy
+ * corpus-priority order as its within-expanse order. Without a manifest the
+ * legacy corpus-priority fill applies unchanged (French profile, dev seeds).
+ * SPECS/diet-deck-distribution.md §2.4.
+ */
+function getDietCandidateRows(remainingQuota: number, seedSource: string): WordRow[] {
+  if (remainingQuota === 0) {
+    return [];
+  }
+  const manifest = config.studyProfile === 'mandarin' ? loadDeckManifest() : null;
+  if (!manifest) {
+    return queryLegacyDietRows(remainingQuota);
+  }
+  return getDeckedDietRows(remainingQuota, manifest, seedSource);
+}
+
+function getDeckedDietRows(remainingQuota: number, manifest: DeckManifest, seedSource: string): WordRow[] {
+  const profile = getDietProfile(manifest);
+  if (!profile) {
+    throw new Error('Diet profile invariant violated: manifest present but no effective profile.');
+  }
+  const weights = resolveEffectiveDietWeights(profile, manifest);
+  const orderedDeckIds = manifest.decks.map((deck) => deck.id);
+  const targets = planDeckDietTargets(remainingQuota, weights, orderedDeckIds);
+
+  const orderByDeckId = new Map(manifest.decks.map((deck) => [deck.id, deck.order]));
+  const weightedOrders = [...targets.entries()]
+    .filter(([, target]) => target > 0)
+    .map(([deckId]) => {
+      const order = orderByDeckId.get(deckId);
+      if (order === undefined) {
+        throw new Error(`Deck diet invariant violated: weighted deck "${deckId}" is missing from the manifest.`);
+      }
+      return order;
+    });
+  const tailDeckId = getTailDeckId(manifest);
+  const lastWeightedOrder = weightedOrders.length > 0 ? Math.max(...weightedOrders) : -1;
+  const spillDeckIds = manifest.decks
+    .filter((deck) => deck.order > lastWeightedOrder && deck.id !== tailDeckId)
+    .map((deck) => deck.id);
+
+  const rowsById = new Map<string, WordRow>();
+  const selectedIds = selectDeckDietWordIds({
+    targets,
+    spillDeckIds,
+    seedSource,
+    limit: remainingQuota,
+    loadCandidatesForDeck: (deckId) => queryDeckDietCandidatesForDeck(manifest, deckId, rowsById),
+  });
+
+  const rows: WordRow[] = selectedIds.map((id) => {
+    const row = rowsById.get(id);
+    if (!row) {
+      throw new Error(`Deck diet invariant violated: selected word "${id}" is missing from loaded candidates.`);
+    }
+    return row;
+  });
+
+  if (rows.length < remainingQuota) {
+    rows.push(...queryLegacyDietRows(remainingQuota - rows.length, new Set(selectedIds)));
+  }
+  return rows;
+}
+
+/** Unstudied, non-overlay words belonging to one deck, loaded only when selected. */
+function queryDeckDietCandidatesForDeck(
+  manifest: DeckManifest,
+  deckId: string,
+  rowsById: Map<string, WordRow>,
+): string[] {
+  const assignmentsByDeck = getManifestAssignmentsByDeck(manifest);
+  const assignments = assignmentsByDeck.get(deckId);
+  if (!assignments) {
+    return [];
+  }
+  const hanziNeeded = new Set<string>();
+  for (const key of assignments.keys()) {
+    const hanzi = key.split('|')[0];
+    if (hanzi) {
+      hanziNeeded.add(hanzi);
+    }
+  }
+  if (hanziNeeded.size === 0) {
+    return [];
+  }
+
+  const placeholders = [...hanziNeeded].map(() => '?').join(', ');
+  const rows = getDb()
+    .prepare(`
+      SELECT
+        words.id,
+        words.hanzi,
+        words.traditional,
+        words.pinyin,
+        words.meaning,
+        words.meanings_json,
+        words.personal_notes,
+        words.examples_json,
+        words.status,
+        words.priority,
+        words.created_at,
+        words.learning_streak,
+        words.last_learning_success_on,
+        words.last_learning_covered_on
+      FROM words
+      LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
+      WHERE words.status = 'unstudied'
+        AND user_word_priority.word_id IS NULL
+        AND words.hanzi IN (${placeholders})
+    `)
+    .all(...hanziNeeded) as WordRow[];
+
+  const ids: string[] = [];
+  for (const row of rows) {
+    if (!assignments.has(deckAssignmentKey(row.hanzi, row.pinyin))) {
+      continue;
+    }
+    rowsById.set(row.id, row);
+    ids.push(row.id);
+  }
+  return ids;
+}
+
+function queryLegacyDietRows(remainingQuota: number, excludeIds?: Set<string>): WordRow[] {
+  const excluded = excludeIds && excludeIds.size > 0 ? [...excludeIds] : null;
+  const exclusionClause = excluded ? `AND words.id NOT IN (${excluded.map(() => '?').join(', ')})` : '';
+  return getDb()
+    .prepare(`
+      SELECT
+        words.id,
+        words.hanzi,
+        words.traditional,
+        words.pinyin,
+        words.meaning,
+        words.meanings_json,
+        words.personal_notes,
+        words.examples_json,
+        words.status,
+        words.priority,
+        words.created_at,
+        words.learning_streak,
+        words.last_learning_success_on,
+        words.last_learning_covered_on
+      FROM words
+      LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
+      WHERE words.status = 'unstudied'
+        AND user_word_priority.word_id IS NULL
+        ${exclusionClause}
+      ORDER BY words.priority DESC, words.created_at ASC, words.id ASC
+      LIMIT ?
+    `)
+    .all(...(excluded ?? []), remainingQuota) as WordRow[];
 }
 
 function getReviewSessionStudyItems(now: string, random: () => number): SessionStudyItem[] {

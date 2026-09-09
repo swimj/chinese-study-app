@@ -14,6 +14,14 @@ export const DEFAULT_DECK_MANIFEST_PATH = fileURLToPath(
   new URL('./mandarin-decks-v1.json', import.meta.url),
 );
 
+/**
+ * The active manifest path. APP_DECK_MANIFEST_PATH overrides the checked-in
+ * default (tests, operator experiments).
+ */
+export function defaultDeckManifestPath(): string {
+  return process.env.APP_DECK_MANIFEST_PATH ?? DEFAULT_DECK_MANIFEST_PATH;
+}
+
 export type DeckManifestHskTag = {
   version: string;
   level: number;
@@ -36,9 +44,10 @@ export type DeckManifest = {
 };
 
 const manifestCache = new Map<string, DeckManifest | null>();
+const manifestAssignmentsByDeckCache = new WeakMap<DeckManifest, Map<string, Map<string, string>>>();
 
 /** Load and cache the manifest; returns null when the file does not exist. */
-export function loadDeckManifest(filePath: string = DEFAULT_DECK_MANIFEST_PATH): DeckManifest | null {
+export function loadDeckManifest(filePath: string = defaultDeckManifestPath()): DeckManifest | null {
   if (manifestCache.has(filePath)) {
     return manifestCache.get(filePath) ?? null;
   }
@@ -152,6 +161,26 @@ export function getTailDeckId(manifest: DeckManifest): string {
 /** Join a word to its deck; words missing from assignments land in the tail deck. */
 export function getDeckIdForWord(manifest: DeckManifest, hanzi: string, pinyin: string): string {
   return manifest.assignments[deckAssignmentKey(hanzi, pinyin)] ?? getTailDeckId(manifest);
+}
+
+/**
+ * Cached manifest membership by deck. The diet admission path uses this to
+ * load one deck at a time without repeatedly scanning all assignments.
+ */
+export function getManifestAssignmentsByDeck(manifest: DeckManifest): Map<string, Map<string, string>> {
+  const cached = manifestAssignmentsByDeckCache.get(manifest);
+  if (cached) {
+    return cached;
+  }
+
+  const assignmentsByDeck = new Map<string, Map<string, string>>();
+  for (const [key, deckId] of Object.entries(manifest.assignments)) {
+    const assignments = assignmentsByDeck.get(deckId) ?? new Map<string, string>();
+    assignments.set(key, deckId);
+    assignmentsByDeck.set(deckId, assignments);
+  }
+  manifestAssignmentsByDeckCache.set(manifest, assignmentsByDeck);
+  return assignmentsByDeck;
 }
 
 function isHskTag(value: unknown): value is DeckManifestHskTag {
