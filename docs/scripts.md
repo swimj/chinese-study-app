@@ -10,6 +10,7 @@ Entry points under `scripts/`. Run with `node --import tsx scripts/<name>.ts` un
 | `npm run check:study-scheduler-state -- --mode=study --data-dir=/absolute/path --learner-id=<id>` | Report one learner's scheduler invariant issues |
 | `npm run report:word -- --data-dir=/absolute/path --learner-id=<id>` | Interactive read-only report for one learner's exact hanzi matches |
 | `scripts/build-canonical-wordlist.ts` | Build canonical wordlist artifact |
+| `npm run build:deck-manifest` | Rebuild the checked-in Mandarin HSK deck manifest from externally acquired or locally retained canonical corpus, HSK, and SUBTLEX inputs. See the [provenance and regeneration notes](../README.md#deck-manifest-provenance-and-regeneration). |
 
 ## Mutates or targets study / user data (use explicit `--data-dir`)
 
