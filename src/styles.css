@@ -230,6 +230,8 @@ button:hover {
   gap: 1rem;
   overflow: auto;
   padding-right: 0.35rem;
+  /* Keep prompt alignment stable when reveal overflow introduces a classic scrollbar. */
+  scrollbar-gutter: stable;
 }
 
 .session-card-scroll > .notes {
