@@ -137,10 +137,10 @@ without a fabricated reflection proposal.
 Deferred proposals can be selected for one fresh reflection over their original
 evidence. Successful materialization retires only the selected originals; it
 does not accept, authorize, apply, compare, or otherwise reconcile either old
-or new advice. The first implementation represents retirement as a dismissed
-review with dismissal reason `requested_second_opinion`. This reason means the
-learner requested a replacement reading, not that they judged the proposal
-poor. Explicit dismissals retain their ordinary learner-entered reason.
+or new advice. Retirement is the terminal review disposition
+`requested_second_opinion`. That kind means the learner requested a replacement
+reading, not that they judged the proposal poor. Explicit learner dismissals
+remain `dismissed` with an optional learner-entered reason.
 
 ## 3. Reflection Result Contract
 
@@ -662,6 +662,7 @@ type ProposalReviewStatus = {
         kind: 'dismissed';
         reason: string | null;
       }
+    | { kind: 'requested_second_opinion' }
     | {
         kind: 'superseded';
         supersession: ProposalSupersession;
@@ -682,19 +683,26 @@ Allowed transitions:
 
 ```text
 pending  -> deferred | accepted | dismissed | superseded
-deferred -> accepted | dismissed | superseded
+deferred -> accepted | dismissed | superseded | requested_second_opinion
+dismissed -> pending
 ```
 
 `pending` and `deferred` are unresolved. Their distinction records whether the
 user has already considered the proposal and supports different queue
 presentation.
 
-`accepted`, `dismissed`, and `superseded` are terminal historical dispositions:
+`accepted`, `dismissed`, `requested_second_opinion`, and `superseded` are
+historical dispositions. `accepted` and `superseded` remain terminal.
+`dismissed` may return to `pending` so an accidental learner dismiss can re-enter
+Help; that undo does not create an invocation or rewrite the immutable proposal.
+`requested_second_opinion` is terminal.
 
 - `accepted` means the user authorized the exact operation stored in the linked
   invocation. It does not mean an effect occurred.
-- `dismissed` is the coarse judgment that the diagnosis, intervention, drafted
-  content, or learner fit was inadequate.
+- `dismissed` is the coarse learner judgment that the diagnosis, intervention,
+  drafted content, or learner fit was inadequate.
+- `requested_second_opinion` means successful second-opinion materialization
+  retired this original from active review. It is not a quality judgment.
 - `superseded` means another proposal, user-authored replacement, or external
   state made this proposal superfluous. It must retain the satisfying source.
 
@@ -958,8 +966,9 @@ reviewing; accept/dismiss/replace neither require nor clear them.
 Tags join to artifact `model` (the fused **model arm** config id) and
 `promptVersion` at read time. Aggregating accept/exact/revised/user-replace/dismiss
 rates by model arm remains a read of existing review rows (pending, deferred, and
-non-user system supersession excluded). Tag rates count whenever a tag row is
-present. Generation routing is unchanged.
+non-user system supersession excluded). Second-opinion retirement is included in
+the terminal count but not in dismiss rates. Tag rates
+count whenever a tag row is present. Generation routing is unchanged.
 
 The operation editor must not imply apply support. A user may inspect, edit, and
 accept a well-formed unsupported operation; the resulting application state

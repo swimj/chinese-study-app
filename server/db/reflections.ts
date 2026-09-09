@@ -1008,7 +1008,7 @@ export function materializeReflectionArtifact(
         }
         database.prepare(`
           UPDATE reflection_proposal_reviews
-          SET disposition = 'dismissed', dismissal_reason = 'requested_second_opinion', updated_at = ?
+          SET disposition = 'requested_second_opinion', updated_at = ?
           WHERE proposal_id IN (${placeholders}) AND disposition = 'deferred'
         `).run(input.generatedAt, ...selection);
       }
@@ -1547,6 +1547,21 @@ export function dismissReflectionProposal(
           dismissal_reason = ?
       WHERE proposal_id = ?
     `).run(updatedAt, reason, proposalId);
+  });
+}
+
+export function reopenReflectionProposal(
+  proposalId: string,
+  updatedAt = new Date().toISOString(),
+): ProposalReviewStatus {
+  return transitionProposalReview(proposalId, 'pending', updatedAt, () => {
+    getDb().prepare(`
+      UPDATE reflection_proposal_reviews
+      SET disposition = 'pending',
+          updated_at = ?,
+          dismissal_reason = NULL
+      WHERE proposal_id = ?
+    `).run(updatedAt, proposalId);
   });
 }
 
@@ -2304,6 +2319,9 @@ function mapProposalReviewRow(row: ProposalReviewRow): ProposalReviewStatus {
       break;
     case 'dismissed':
       disposition = { kind: 'dismissed', reason: row.dismissal_reason };
+      break;
+    case 'requested_second_opinion':
+      disposition = { kind: 'requested_second_opinion' };
       break;
     case 'superseded':
       if (

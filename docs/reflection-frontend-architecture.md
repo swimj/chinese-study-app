@@ -126,7 +126,9 @@ result (word, diagnosis tags, cue/response, learner feedback), so ordinary
 forgetting and other no-action judgments stay visible without opening every
 item card. Reviewing a
 proposal removes it from the current queue when its new lifecycle state no
-longer matches that filter. Questions remain informational and do not receive
+longer matches that filter. By session can restore a learner-dismissed proposal
+to pending with **Undo dismiss**; second-opinion retirement cannot be undone.
+Questions remain informational and do not receive
 synthetic review state. Finish session returns Home; there is no post-session
 jump or Open-reflection deep link.
 
@@ -176,7 +178,8 @@ observability for the initial reflection flow, not a learner correctness signal
 or a replacement for immutable artifact history.
 
 The **Quality** view shows server-side model-arm rates derived from terminal
-proposal reviews plus item quality-tag overlays. Capture is a single tag-chip
+proposal reviews plus item quality-tag overlays. Second-opinion retirement
+counts in the terminal total but is not a dismiss. Capture is a single tag-chip
 row on each reflection item. In Help and Deferred that row sits below the
 reading pane with the review actions; on other proposal cards it remains
 immediately above accept/dismiss (and on no-proposal surfaces). Saved notes render as committed text and become editable

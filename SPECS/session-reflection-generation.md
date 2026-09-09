@@ -218,10 +218,8 @@ ids to avoid collisions between original artifacts. Model/provider/run/result
 validation is otherwise the ordinary V7 flow. A provider or validation failure
 leaves every selected original deferred. On successful durable materialization,
 only selections that remain deferred are retired atomically. The current
-implementation records that retirement as dismissal reason
-`requested_second_opinion`; it is distinct from an explicit learner dismissal
-in product copy, but remains a documented lifecycle representation rather than
-a new proposal-state subsystem.
+implementation records that retirement as the terminal review disposition
+`requested_second_opinion`; it is distinct from an explicit learner dismissal.
 
 Every reflection flow must put an explicit upper bound on model resource
 exposure. The mechanism may be a fixed evidence-item cap, deterministic

@@ -613,6 +613,21 @@ describe('reflection durable store', { concurrency: false }, () => {
       reason: 'Not useful for this learner.',
     });
     assert.deepEqual(dbModule.listReflectionArtifacts('open'), []);
+    const reopened = dbModule.reopenReflectionProposal(deferred.proposalId, appliedAt);
+    assert.deepEqual(reopened.disposition, { kind: 'pending' });
+    assert.deepEqual(
+      dbModule.listReflectionArtifacts('open').map((artifact) => artifact.sourceSessionId),
+      ['open-session'],
+    );
+    const dismissedAgain = dbModule.dismissReflectionProposal(
+      deferred.proposalId,
+      'Not useful for this learner.',
+      appliedAt,
+    );
+    assert.deepEqual(dismissedAgain.disposition, {
+      kind: 'dismissed',
+      reason: 'Not useful for this learner.',
+    });
     assert.throws(
       () => dbModule.deferReflectionProposal(deferred.proposalId),
       /Invalid proposal review transition: dismissed -> deferred/,
@@ -656,7 +671,19 @@ describe('reflection durable store', { concurrency: false }, () => {
     assert.equal(replacement.artifact.sourceSessionId, null);
     assert.deepEqual(
       dbModule.getReflectionArtifactDetail(source.artifact.artifactId).proposals[0]?.review.disposition,
-      { kind: 'dismissed', reason: 'requested_second_opinion' },
+      { kind: 'requested_second_opinion' },
+    );
+    assert.equal(
+      dbModule.getReflectionQualityStats().arms.reduce((count, arm) => count + arm.dismissCount, 0),
+      0,
+    );
+    assert.equal(
+      dbModule.getReflectionQualityStats().arms.reduce((count, arm) => count + arm.terminalReviewCount, 0),
+      1,
+    );
+    assert.throws(
+      () => dbModule.reopenReflectionProposal(originalProposalId),
+      /Invalid proposal review transition: requested_second_opinion -> pending/,
     );
   });
 

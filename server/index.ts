@@ -19,6 +19,7 @@ import {
   DeferredSecondOpinionError,
   dismissWordFromStudy,
   dismissReflectionProposal,
+  reopenReflectionProposal,
   dismissIntakeTriageAssessment,
   addUnstudiedUserPriorityByHanzi,
   dbConfig,
@@ -955,6 +956,11 @@ export function createApp(options: CreateAppOptions = {}) {
         res.json({ review, invocation: null, application: null });
         return;
       }
+      if (request.action === 'reopen') {
+        const review = reopenReflectionProposal(proposalId.trim());
+        res.json({ review, invocation: null, application: null });
+        return;
+      }
 
       const accepted = request.action === 'replace'
         ? replaceReflectionProposal({
@@ -1525,6 +1531,10 @@ function readReviewProposalRequest(value: unknown): ReviewProposalRequest | null
       }
       return { action: 'dismiss', reason: value.reason };
     }
+    case 'reopen':
+      return keys.length === 1 && keys[0] === 'action'
+        ? { action: 'reopen' }
+        : null;
     case 'accept':
     case 'replace':
       if (
