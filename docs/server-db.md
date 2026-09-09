@@ -13,7 +13,7 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`reflections.ts`](../server/db/reflections.ts) | Reflection schema validation, immutable artifact materialization, queue/detail read models, proposal review, immutable invocation authorization, application/recovery, and supported adapters |
 | [`reflection-quality.ts`](../server/db/reflection-quality.ts) | Dogfood item quality-tag overlay, upsert-by-item, and model-arm stats joins |
 | [`reflection-help-inbox.ts`](../server/db/reflection-help-inbox.ts) | Open explanation-only Help inbox rows, keyed by `(artifact_id, item_id)`; Done deletes the row |
-| [`intake-triage.ts`](../server/db/intake-triage.ts) | Immutable advisor runs and assessments, learner dispositions, fresh annotation reads, and atomic accepted effects |
+| [`intake-triage.ts`](../server/db/intake-triage.ts) | Dormant intake-triage schema creation and validation retained for database compatibility |
 | [`domain-commands.ts`](../server/db/domain-commands.ts) | Shared transaction-aware domain commands used by reflection and manual paths; definition-production suppression and contextual-selection eligibility |
 | [`production-cues.ts`](../server/db/production-cues.ts) | Default production tasks, immutable cue/lifecycle/evidence state, one immutable post-reveal supplement per definition cue or fallback, production recheck demands, and cue/supplement application adapters |
 | [`schema.ts`](../server/db/schema.ts) | Re-exports `applyProductionContrastExerciseSeed` and `initializeDatabase` for init ordering |
@@ -137,23 +137,12 @@ Generation is deliberately outside the DB module:
 Provider or evidence failure occurs before artifact materialization and never
 alters durable study attempts, completion summaries, or scheduling state.
 
-## Intake triage advisor
+## Retired intake triage storage
 
-Intake triage uses three additive tables: `intake_triage_runs` stores terminal
-provider provenance, request correlation, usage, and a versioned cost estimate;
-`intake_triage_assessments` stores the app-translated immutable per-word
-judgments and lexical fingerprints; and
-`intake_triage_assessment_dispositions` stores the learner's one accepted or
-dismissed decision. Accepted effects reuse transaction-aware domain commands
-for the sunk priority tier and definition-production suppression.
-
-Generation stays outside the DB layer in `server/intake-triage/`: `evidence.ts`
-selects the unbumped top-50 entries and reduces them to lexical provider input,
-`provider.ts` owns the fixed Luna-high prompt and strict lexical-reference
-validation and translation, and `generation.ts` coordinates one manual run. Raw provider
-requests and responses are transient rather than persisted. All three durable
-tables are learner-owned and same-owner run/assessment references are enforced
-below the HTTP layer.
+The intake-triage advisor and its generation, API, and application paths are
+retired. The three existing tables remain dormant provenance; schema creation,
+indexes, validation, and ownership classification stay in place so existing
+databases remain readable until the planned migration removes them.
 
 ## Learner and content scope
 
