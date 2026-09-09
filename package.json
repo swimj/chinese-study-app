@@ -28,6 +28,7 @@
     "hosted:verify-restore": "node --import tsx scripts/verify-hosted-restore.ts",
     "reset:dev-data": "node --import tsx server/reset-dev-db.ts --seed-data=server/seeds/mandarin-dev.json",
     "build:canonical-wordlist": "node --import tsx scripts/build-canonical-wordlist.ts",
+    "build:deck-manifest": "node --import tsx scripts/build-deck-manifest.ts",
     "check:study-scheduler-state": "node --import tsx scripts/check-study-scheduler-state.ts",
     "report:word": "node --import tsx scripts/report-word.ts",
     "backfill:dogfood-shared-trial": "node --import tsx scripts/backfill-dogfood-shared-trial.ts",

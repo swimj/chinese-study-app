@@ -16,6 +16,8 @@ export type CanonicalWord = {
   posFrequency: Array<{ pos: string; count: number }>;
   mergeStatus: 'seed' | 'cc-cedict-exact' | 'cc-cedict-neutral-fallback' | 'hack-only';
   sourceKeys: Partial<Record<SourceTag, string>>;
+  /** HSK level at which the word first appears, per version. Set by scripts/build-deck-manifest.ts. */
+  hskLevels?: { hsk20: number | null; hsk30: number | null };
 };
 
 export type CanonicalWordSeed = {
