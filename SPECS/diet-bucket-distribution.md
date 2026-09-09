@@ -149,6 +149,30 @@ Two separations remain load-bearing:
   active bucket. SUBTLEX rank survives only as (a) an ordering aid for
   optional subdivision and (b) diagnostics — never as an admission ranking.
 
+### Early artifact step: HSK tag ingestion
+
+HSK tag ingestion happens **early**, ahead of the schema and admission work,
+because it makes the deliverable concrete: real buckets can be inspected,
+sized, and sampled before any behavior changes.
+
+- Acquire parsed HSK 2.0 and 3.0 word lists as source data under
+  `data/sources/` (both are published and widely mirrored; the 3.0 list
+  comes from the finalized 2025-11 syllabus).
+- Extend the canonical wordlist build (or a sibling script) to join the tags
+  onto canonical words. Join primarily on hanzi, using pinyin where the
+  source lists provide it; the canonical primary key is
+  (hanzi, pinyinNormalized), and polyphonic homographs exist — ambiguous or
+  unmatched joins are recorded for review, never silently guessed.
+- Output: per-word bucket tags in the canonical artifact, saved locally.
+  This makes bucket sizes and samples eyeball-able and lets the subdivision
+  question (§2.11 Q1) be answered empirically before any admission or
+  schema work.
+- **Hosted propagation is explicitly deferred**: whether the hosted corpus
+  receives tags by replaying the build on Fly, uploading an artifact, or
+  regenerating the bootstrap is a separate later decision.
+- This step is independently dispatchable: it has no dependency on the diet
+  profile, admission, or UI work.
+
 ## 2.3 Learner diet profile
 
 New per-learner state: the **diet profile**. Design-level shape:
@@ -289,9 +313,10 @@ for the beta cohort.
 
 ## 2.8 Deferred
 
-- Schema changes and corpus data-import mechanics: HSK tag ingestion, hosted
-  bootstrap artifact regeneration, canonical-pipeline changes, dev seed
-  updates.
+- Schema changes and corpus data-import mechanics beyond the local HSK tag
+  artifact (§2.2): hosted bootstrap artifact regeneration, dev seed updates,
+  DB-level propagation, and the hosted distribution decision (replay the
+  build on Fly vs upload an artifact vs regenerate the bootstrap).
 - Performance-driven distribution shifts; proposal-style adaptation;
   temperature and subjectivity levers; domain/theme buckets;
   morpheme-aware bucket refinement.
@@ -324,7 +349,8 @@ Blocking implementation, not review of this document. Current leans noted
 where one exists.
 
 1. **Bucket granularity**: raw HSK deltas, or subdivide large deltas into
-   fixed-size strata? (Lean: subdivide above a size threshold.)
+   fixed-size strata? (Lean: subdivide above a size threshold. The §2.2 tag
+   artifact makes real bucket sizes concrete before deciding.)
 2. **Scaffold source**: which HSK version defines the buckets? (Lean: 2.0,
    while tagging both versions per word.)
 3. **v1 distribution shape**: strictly one active bucket, or a small fixed
