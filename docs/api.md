@@ -410,10 +410,10 @@ none did. Missing artifact/item still return `404`.
 
 `GET /api/reflection-quality-stats` returns rates grouped by artifact `model`
 (model arm) and `promptVersion`. Terminal user reviews are
-`accepted` (exact/revised), `dismissed`, and `superseded` with
-`user_replacement`. Pending, deferred, second-opinion retirement, and system
-supersession are excluded
-from disposition rates. Tag counts include every present item tag row (including
+`accepted` (exact/revised), `dismissed`, `requested_second_opinion`, and
+`superseded` with `user_replacement`. Pending, deferred, and system
+supersession are excluded from disposition rates. Second-opinion retirement
+increases the terminal denominator without counting as a dismiss. Tag counts include every present item tag row (including
 items whose proposals are still open). Each arm also includes `failedRunCount`,
 `totalCostUsd` (sum of priced generation runs, including validation failures),
 and `avgCostPerExactAcceptUsd` when both cost and exact accepts are available.

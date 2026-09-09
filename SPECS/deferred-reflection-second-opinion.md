@@ -131,8 +131,9 @@ disposition is applied on successful replacement, not merely on request submissi
 
 The learner loosely uses dismissal as a poor-quality signal, but also uses it
 to remove advice they no longer need. Second-opinion retirement is a distinct
-terminal review kind, not a dismissal reason, so quality analysis and learner
-undo of dismiss do not treat it as an explicit reject.
+terminal review kind, not a dismissal reason, so learner undo of dismiss does
+not treat it as an explicit reject. Quality rates include it in the terminal
+denominator without counting it as a dismiss.
 
 Original artifacts remain stored under existing history behavior. A simple link
 from a new request to its selected sources is sufficient. No proposal ancestry

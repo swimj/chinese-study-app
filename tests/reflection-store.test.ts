@@ -677,6 +677,10 @@ describe('reflection durable store', { concurrency: false }, () => {
       dbModule.getReflectionQualityStats().arms.reduce((count, arm) => count + arm.dismissCount, 0),
       0,
     );
+    assert.equal(
+      dbModule.getReflectionQualityStats().arms.reduce((count, arm) => count + arm.terminalReviewCount, 0),
+      1,
+    );
     assert.throws(
       () => dbModule.reopenReflectionProposal(originalProposalId),
       /Invalid proposal review transition: requested_second_opinion -> pending/,

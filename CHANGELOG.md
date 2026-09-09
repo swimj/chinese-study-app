@@ -7,7 +7,8 @@ Casual notes for people using the app before there is a real release process.
 - Learner-dismissed reflection proposals can return to pending from By session
   with Undo dismiss, so a fat-finger dismiss re-enters Help.
 - Successful second-opinion retirement is now the distinct review disposition
-  `requested_second_opinion`, not a dismissed sentinel reason.
+  `requested_second_opinion`, not a dismissed sentinel reason. Quality rates
+  count it in the terminal total without treating it as a dismiss.
 
 ## Unreleased — app-only hosted upgrade pipeline
 

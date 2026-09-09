@@ -178,7 +178,8 @@ observability for the initial reflection flow, not a learner correctness signal
 or a replacement for immutable artifact history.
 
 The **Quality** view shows server-side model-arm rates derived from terminal
-proposal reviews plus item quality-tag overlays. Capture is a single tag-chip
+proposal reviews plus item quality-tag overlays. Second-opinion retirement
+counts in the terminal total but is not a dismiss. Capture is a single tag-chip
 row on each reflection item. In Help and Deferred that row sits below the
 reading pane with the review actions; on other proposal cards it remains
 immediately above accept/dismiss (and on no-proposal surfaces). Saved notes render as committed text and become editable

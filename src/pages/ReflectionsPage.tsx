@@ -1723,7 +1723,8 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
             <h2>Model-arm quality vibe</h2>
             <p className="notes">
               Terminal user reviews plus item tag overlays. Pending, deferred, and system
-              supersession are excluded from disposition rates. Tags count whenever present.
+              supersession are excluded from disposition rates. Second-opinion retirement
+              counts in the terminal total but is not a dismiss. Tags count whenever present.
               Run cost sums priced generation attempts, including validation failures. Small
               counts are not statistical claims.
             </p>

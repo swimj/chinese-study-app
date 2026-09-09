@@ -965,8 +965,9 @@ reviewing; accept/dismiss/replace neither require nor clear them.
 
 Tags join to artifact `model` (the fused **model arm** config id) and
 `promptVersion` at read time. Aggregating accept/exact/revised/user-replace/dismiss
-rates by model arm remains a read of existing review rows (pending, deferred,
-second-opinion retirement, and non-user system supersession excluded). Tag rates
+rates by model arm remains a read of existing review rows (pending, deferred, and
+non-user system supersession excluded). Second-opinion retirement is included in
+the terminal count but not in dismiss rates. Tag rates
 count whenever a tag row is present. Generation routing is unchanged.
 
 The operation editor must not imply apply support. A user may inspect, edit, and

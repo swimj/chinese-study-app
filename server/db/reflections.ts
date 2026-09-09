@@ -1008,7 +1008,7 @@ export function materializeReflectionArtifact(
         }
         database.prepare(`
           UPDATE reflection_proposal_reviews
-          SET disposition = 'requested_second_opinion', dismissal_reason = NULL, updated_at = ?
+          SET disposition = 'requested_second_opinion', updated_at = ?
           WHERE proposal_id IN (${placeholders}) AND disposition = 'deferred'
         `).run(input.generatedAt, ...selection);
       }

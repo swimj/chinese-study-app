@@ -1,7 +1,7 @@
 -- Split second-opinion retirement out of dismissed. SQLite cannot ALTER a CHECK,
--- and this table has incoming FKs from invocations, so the runner disables
--- foreign keys around the rebuild. The current-learner view must be dropped
--- before the physical table; table-level indexes and triggers are recreated.
+-- so this rebuilds the physical review table. Incoming FKs and same-owner
+-- triggers name that table, and the current-learner view must be dropped before
+-- the table is replaced; indexes and triggers are recreated after.
 
 DROP VIEW reflection_proposal_reviews;
 
