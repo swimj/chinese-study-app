@@ -1,10 +1,14 @@
 # Diet Deck Distribution And HSK Delta Tiers
 
-Status: **draft design for review** (2026-09-09; first review round
-incorporated same day — decisions in §2.11). Not yet an implementation
-contract. Part 1 is a brief long-term vision sketch and is explicitly subject
-to change; Part 2 is the concrete deliverable. Remaining implementation
-defaults (§2.11) are provisional and revisable without re-review.
+Status: **accepted design** (drafted 2026-09-09; review decisions
+incorporated same day; accepted for implementation 2026-09-10). Part 2 is
+the implementation contract for this deliverable; Part 1 remains a vision
+sketch, explicitly subject to change. Remaining implementation defaults
+(§2.11) are provisional and revisable without re-review. Schema is
+implemented fresh-boot-first: baseline schema changes land now, and the
+migration script for existing databases is a deliberate follow-up after
+review settles the schema — the feature does not merge or release without
+it.
 
 Related authority:
 

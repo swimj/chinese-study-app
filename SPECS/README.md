@@ -51,7 +51,7 @@ These describe versioned feature behavior alongside the canonical contracts.
 
 | Document | Role |
 | --- | --- |
-| [diet-deck-distribution.md](./diet-deck-distribution.md) | **Draft design** — decked new-word diet (distribution-over-decks vision sketch + HSK delta-tier deliverable, placement intake, gut-level nudges, triage retirement) |
+| [diet-deck-distribution.md](./diet-deck-distribution.md) | **Accepted design** — decked new-word diet (distribution-over-decks vision sketch + HSK delta-tier deliverable, placement intake, gut-level nudges, triage retirement) |
 | [french-compatibility-profile-plan.md](./french-compatibility-profile-plan.md) | French study profile compatibility |
 | [french-priority-alias-first-cut-plan.md](./french-priority-alias-first-cut-plan.md) | Priority alias lookup first cut |
 | [french-reading-corpus-compatibility-plan.md](./french-reading-corpus-compatibility-plan.md) | French corpus ingestion plan |
