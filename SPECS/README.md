@@ -13,15 +13,13 @@ Behavior changes must align with these and update tests in the same change.
 | [study-action-model.md](./study-action-model.md) | Implemented scheduling architecture: study actions, word-skill state, attempt events, contrast selection, and the bounded production-task/cue model |
 | [session-reflection-generation.md](./session-reflection-generation.md) | Completed-session boundary, reflection evidence, generation attempts, failure isolation, retry, and resource bounds |
 | [reflection-proposals-and-handles.md](./reflection-proposals-and-handles.md) | Reflection result, proposal review, authorized-operation, application, provenance, and handle contracts |
-| [intake-triage-advisor.md](./intake-triage-advisor.md) | Pre-introduction advisor evidence, judgments, review actions, persistence, and triage presentation |
 
 **Layering:** `learning-review-model` defines word-status semantics;
 `study-action-model` defines how skills and actions are scheduled and projected;
 `session-covering-criteria` defines how the frontend treats items inside an
 active session; `session-reflection-generation` owns finalized evidence and
 generation; and `reflection-proposals-and-handles` owns review, authorization,
-application, and provenance after generation succeeds. `intake-triage-advisor`
-owns the separate pre-introduction language-aware triage loop.
+application, and provenance after generation succeeds.
 
 ## Architecture maps (navigation only)
 
@@ -66,6 +64,7 @@ Repo-level plans: [PLANS/](../PLANS/).
 | [archive/milestone-7-8-relevance-aware-contrast-plan.md](./archive/milestone-7-8-relevance-aware-contrast-plan.md) | **Done** — relevance-aware contrast practice (archived; gaps non-pressing) |
 | [archive/milestone-7-8-implementation-slices.md](./archive/milestone-7-8-implementation-slices.md) | **Done** — contrast/relevance implementation checklist (archived) |
 | [initial-reflection-steel-thread.md](../PLANS/initial-reflection-steel-thread.md) | **Done** — initial durable post-session reflection, proposal review, and supported application steel thread |
+| [archive/intake-triage-advisor.md](./archive/intake-triage-advisor.md) | **Retired** (2026-09-10) per `diet-deck-distribution` §2.7 — Triage subtab and advisor loop removed; accepted recognition-only suppressions persist as word-level state |
 
 ## Vision (not implementation contracts)
 

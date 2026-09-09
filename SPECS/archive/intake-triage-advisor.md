@@ -1,5 +1,16 @@
 # Intake Triage Advisor
 
+Status: **retired** (2026-09-10) per
+[`diet-deck-distribution.md`](../diet-deck-distribution.md) §2.7. The Triage
+subtab, advisor run/assessment endpoints, and generation machinery are removed.
+Accepted `recognition_only` suppressions took effect at the word level and
+persist as durable `word_skill_relevance` state; the `intake_triage_*` tables
+remain as dormant provenance (no reads/writes) pending the schema-migration
+follow-up. This document is retained as historical record of the accepted V1
+contract below.
+
+---
+
 Status: accepted V1 implementation contract (2026-08-20).
 
 ## 1. Product Outcome

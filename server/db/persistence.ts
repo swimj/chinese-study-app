@@ -315,49 +315,6 @@ export function getPrioritizedUnstudiedWords(): PriorityWordsPayload {
   };
 }
 
-export function getTopUnstudiedPriorityWords(limit: number): PriorityWordsPayload {
-  const boundedLimit = clampInteger(limit, 1, 100);
-  const rows = getDb()
-    .prepare(`
-      SELECT
-        words.id,
-        words.hanzi,
-        words.traditional,
-        words.pinyin,
-        words.meaning,
-        words.meanings_json,
-        words.personal_notes,
-        words.examples_json,
-        words.status,
-        words.priority,
-        words.created_at,
-        words.learning_streak,
-        words.last_learning_success_on,
-        words.last_learning_covered_on,
-        COALESCE(user_word_priority.bump_count, 0) AS bump_count,
-        COALESCE(user_word_priority.force_top, 0) AS force_top,
-        COALESCE(user_word_priority.priority_tier, 0) AS priority_tier,
-        COALESCE(user_word_priority.required_for_next_session, 0) AS required_for_next_session,
-        user_word_priority.updated_at AS overlay_updated_at
-      FROM words
-      LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
-      WHERE words.status = 'unstudied'
-        AND COALESCE(user_word_priority.bump_count, 0) = 0
-        AND COALESCE(user_word_priority.force_top, 0) = 0
-        AND COALESCE(user_word_priority.priority_tier, 0) = ${PRIORITY_TIER_REGULAR}
-        AND COALESCE(user_word_priority.required_for_next_session, 0) = 0
-      ORDER BY
-        words.priority DESC,
-        words.created_at ASC
-      LIMIT ?
-    `)
-    .all(boundedLimit) as PriorityWordRow[];
-
-  return {
-    words: rows.map(mapPriorityWordRow),
-  };
-}
-
 export function updateWordPersonalNotes(wordId: string, personalNotes: string): Word {
   const existingWord = getDb()
     .prepare(`

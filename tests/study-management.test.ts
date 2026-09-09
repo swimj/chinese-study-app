@@ -106,6 +106,25 @@ describe('study management relevance events', { concurrency: false }, () => {
     assert.equal(dbModule.getWordSkillRelevance('target-word', 'production')?.relevanceState, 'suppressed');
   });
 
+  test('production suppression recorded while unstudied persists as durable word-level state', () => {
+    // Retired intake-triage advisor acceptances took effect immediately at the
+    // word level; those suppressions must remain intact after the advisor loop
+    // retired (SPECS/diet-deck-distribution.md section 2.7).
+    insertWord({ id: 'legacy-suppressed-word', hanzi: '仔', status: 'unstudied' });
+    sqlite.prepare(`
+      INSERT INTO word_skill_relevance (
+        word_id, skill_id, relevance_state, updated_at, source_event_id
+      ) VALUES (?, 'production', 'suppressed', ?, NULL)
+    `).run('legacy-suppressed-word', '2026-08-20T00:00:00.000Z');
+
+    const relevance = dbModule.getWordSkillRelevance('legacy-suppressed-word', 'production');
+    assert.equal(relevance?.relevanceState, 'suppressed');
+    assert.equal(
+      (sqlite.prepare('SELECT status FROM words WHERE id = ?').get('legacy-suppressed-word') as { status: string }).status,
+      'unstudied',
+    );
+  });
+
   test('does not overwrite the provenance of production already suppressed elsewhere', () => {
     insertWord({ id: 'target-word', hanzi: '恰当', status: 'review' });
     const original = dbModule.suppressProductionForWordOutsideSession({
