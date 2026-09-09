@@ -16,6 +16,7 @@ import type {
   ReflectionQualityStatsDto,
   ReflectionReviewApi,
 } from './reflection-page-model';
+import { retireSelectedDeferredProposalsAfterSecondOpinion } from './reflection-page-model';
 
 export type ReflectionPageController = {
   isLoading: boolean;
@@ -108,6 +109,7 @@ export function useReflectionPageController({
   async function loadListsAndDetail(
     preferredArtifactId: string | null,
     forceArtifactIds: ReadonlySet<string> = new Set(),
+    baseDetails: ReflectionArtifactDetailDto[] = artifactDetails,
   ): Promise<void> {
     const reviewApi = requireApi();
     const [
@@ -143,7 +145,7 @@ export function useReflectionPageController({
         .map((artifact) => artifact.artifactId),
     );
     const detailByArtifactId = new Map(
-      artifactDetails.map((detail) => [detail.artifactId, detail]),
+      baseDetails.map((detail) => [detail.artifactId, detail]),
     );
     for (const artifactId of nextUnreadableArtifactIds) {
       detailByArtifactId.delete(artifactId);
@@ -259,7 +261,14 @@ export function useReflectionPageController({
     setError(null);
     try {
       const result = await requireApi().generateDeferredSecondOpinion(proposalIds, model);
-      await loadListsAndDetail(result.artifactId);
+      // Success already means the selected originals are retired. Patch the client
+      // cache so the chip bank / deferred counts update, then load lists + the new
+      // result without refetching those known source dispositions.
+      const retiredDetails = retireSelectedDeferredProposalsAfterSecondOpinion(
+        artifactDetails,
+        proposalIds,
+      );
+      await loadListsAndDetail(result.artifactId, new Set(), retiredDetails);
       setDeferredSecondOpinionStatus(null);
     } catch (error) {
       setDeferredSecondOpinionStatus('failed');

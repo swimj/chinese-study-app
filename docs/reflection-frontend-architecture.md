@@ -89,6 +89,10 @@ details. Help membership is the union of pending proposal reviews and open
 explanation inbox rows; artifact JSON is fetched to render those cards.
 Proposal review, authorization withdrawal, and Help Done reload the affected
 artifact plus both lists so queues remain coherent without a manual refresh.
+Successful deferred second opinion patches selected deferred proposals out of
+the client detail cache (matching durable `requested_second_opinion` retirement)
+and reloads lists plus the new result artifact, so the chip bank and deferred
+counts update without refetching those known source dispositions.
 
 Artifact reconstruction is isolated per record. The backend lists unreadable
 artifact metadata explicitly instead of aborting the whole list, and the
