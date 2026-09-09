@@ -1,10 +1,10 @@
-# Diet Bucket Distribution And HSK Delta Tiers
+# Diet Deck Distribution And HSK Delta Tiers
 
 Status: **draft design for review** (2026-09-09; first review round
 incorporated same day — decisions in §2.11). Not yet an implementation
 contract. Part 1 is a brief long-term vision sketch and is explicitly subject
-to change; Part 2 is the concrete deliverable. Remaining TBDs (§2.11) are
-implementation-level and do not block design acceptance.
+to change; Part 2 is the concrete deliverable. Remaining implementation
+defaults (§2.11) are provisional and revisable without re-review.
 
 Related authority:
 
@@ -39,28 +39,28 @@ correction, and a small, honest control surface for placing and adjusting it.
 
 ---
 
-# Part 1 — Vision sketch: the learner as a distribution over buckets
+# Part 1 — Vision sketch: the learner as a distribution over decks
 
 *This part is a foundation to build against, not a contract. It will change.*
 
-## 1.1 Buckets
+## 1.1 Decks
 
-The corpus is partitioned into broad buckets. Buckets may be externally
+The corpus is partitioned into broad decks. Decks may be externally
 meaningful (HSK tiers, a book's vocabulary, a theme or hobby domain) or
-internal-only (a precomputed similarity/clustering signal). Buckets are an
+internal-only (a precomputed similarity/clustering signal). Decks are an
 implementation abstraction expected to carry the product far; they are not
-claimed as essential permanent architecture. (Terminology: the older
-"unstudied bucket weight" of session composition is a separate sense of
-"bucket" and is unaffected.)
+claimed as essential permanent architecture. (Naming: "deck" is chosen to
+avoid collision with two existing code terms — session-composition
+*buckets* and admission *pools*. No existing code terminology changes.)
 
-Within a bucket there is no load-bearing granular rank. Buckets are the
+Within a deck there is no load-bearing granular rank. Decks are the
 largest unit the system makes promises about; word order inside them is
 declared noise.
 
 ## 1.2 The learner as a distribution
 
-Each learner is modeled as a distribution over buckets, initialized at 100%
-on their indicated (placed) bucket. The distribution shifts over time via:
+Each learner is modeled as a distribution over decks, initialized at 100%
+on their indicated (placed) deck. The distribution shifts over time via:
 
 - **explicit learner nudges** (near-term, disjoint jumps);
 - **performance evidence** (later, gradual; per this app's consent culture,
@@ -76,9 +76,9 @@ New-word and session selection, conceptually:
 
 1. **Eligibility mask** (hard, deterministic): unstudied, not sunk, daily
    caps, require-bypass. Constraints zero out mass.
-2. **Base distribution** over buckets (the learner's current distribution).
+2. **Base distribution** over decks (the learner's current distribution).
 3. **Tilts**: goals, interests, background reweight the base
-   multiplicatively. A stated exam goal is a tilt toward a target bucket set,
+   multiplicatively. A stated exam goal is a tilt toward a target deck set,
    not a queue.
 4. **Seeded sampling** within the tilted distribution.
 5. **Structure**: session composition policies shape the drawn set.
@@ -94,7 +94,7 @@ fuzzy lever for learner subjectivity.
 
 ## 1.4 Legibility
 
-Legibility lives at bucket level; freedom lives within buckets. The system
+Legibility lives at deck level; freedom lives within decks. The system
 can always tell the learner which territory they are in and how much of it
 they have covered, while which specific word surfaces today is allowed to be
 arbitrary. A sampled diet the system can narrate ("mostly your current band,
@@ -121,7 +121,7 @@ Two separations remain load-bearing:
 
 ---
 
-# Part 2 — Deliverable: HSK delta tiers as the first bucket set
+# Part 2 — Deliverable: HSK delta tiers as the first deck set
 
 ## 2.1 Scope
 
@@ -131,9 +131,9 @@ Two separations remain load-bearing:
 - Schema and corpus data-import mechanics are deliberately deferred (§2.8);
   this design settles behavior and product surface first.
 
-## 2.2 Bucket set: HSK delta tiers
+## 2.2 Deck set: HSK delta tiers
 
-- HSK word lists are cumulative; buckets are the **deltas**: L1, then L2\L1,
+- HSK word lists are cumulative; decks are the **deltas**: L1, then L2\L1,
   L3\L2, and so on, plus a beyond-HSK tail for the untagged corpus remainder.
   A learner "targeting HSK 5" wants the delta of words introduced at level 5,
   given the levels below it.
@@ -142,25 +142,25 @@ Two separations remain load-bearing:
   (finalized 2025-11: 300 / 500 / 1,000 / 2,000 / 3,600 / 5,400, plus a
   shared 7–9 advanced band). These are two independent attributes: 3.0 is
   not a superset of 2.0; words moved levels or were dropped between versions.
-- **The v1 bucket set derives from HSK 2.0** (decided, §2.11): regular exams
+- **The v1 deck set derives from HSK 2.0** (decided, §2.11): regular exams
   still run on 2.0 lists as of 2026 (3.0 remains in pilot), and any future
   user-facing HSK reporting speaks 2.0 until the official transition. The
   3.0 tags ride along for later use.
 - Delta sizes are wildly uneven (the 2.0 L6 delta is ~2,500 words; the L1
   delta is 150), so **large deltas are subdivided** into bounded strata,
-  frequency-ordered within the delta (decided, §2.11). Bounded buckets give
+  frequency-ordered within the delta (decided, §2.11). Bounded decks give
   more policy leverage later; a coarser presentation can always be layered
-  on top. What makes a good bucket — similarity, dissimilarity, other
+  on top. What makes a good deck — similarity, dissimilarity, other
   criteria, per-learner variation — is expected to be learned over time.
 - The beyond-HSK tail is **one expanse** for now (decided, §2.11).
-- **Within-bucket order: none.** Diet draws are seeded samples from the
-  active bucket. SUBTLEX rank survives only as (a) an ordering aid for
+- **Within-deck order: none.** Diet draws are seeded samples from the
+  active deck. SUBTLEX rank survives only as (a) an ordering aid for
   optional subdivision and (b) diagnostics — never as an admission ranking.
 
 ### Early artifact step: HSK tag ingestion
 
 HSK tag ingestion happens **early**, ahead of the schema and admission work,
-because it makes the deliverable concrete: real buckets can be inspected,
+because it makes the deliverable concrete: real decks can be inspected,
 sized, and sampled before any behavior changes.
 
 - Acquire parsed HSK 2.0 and 3.0 word lists as source data under
@@ -171,8 +171,8 @@ sized, and sampled before any behavior changes.
   source lists provide it; the canonical primary key is
   (hanzi, pinyinNormalized), and polyphonic homographs exist — ambiguous or
   unmatched joins are recorded for review, never silently guessed.
-- Output: per-word bucket tags in the canonical artifact, saved locally.
-  This makes bucket sizes and samples eyeball-able and lets the subdivision
+- Output: per-word deck tags in the canonical artifact, saved locally.
+  This makes deck sizes and samples eyeball-able and lets the subdivision
   question (§2.11 Q1) be answered empirically before any admission or
   schema work.
 - **Hosted propagation is explicitly deferred**: whether the hosted corpus
@@ -185,16 +185,16 @@ sized, and sampled before any behavior changes.
 
 New per-learner state: the **diet profile**. Design-level shape:
 
-- **bucket weights** — the learner's distribution over buckets, initialized
-  degenerate at 100% on the placed bucket. A **nudge** shifts a fixed weight
+- **deck weights** — the learner's distribution over decks, initialized
+  degenerate at 100% on the placed deck. A **nudge** shifts a fixed weight
   quantum (default 0.1, internal and never user-visible) toward an adjacent
-  bucket — e.g. (1, 0) → (0.9, 0.1) (decided, §2.11). Bucket references are
+  deck — e.g. (1, 0) → (0.9, 0.1) (decided, §2.11). Deck references are
   stable identities, never raw corpus ranks, so corpus rebuilds cannot
   silently reinterpret a placement;
 - **provenance** — who last moved the distribution (intake answer / learner
   nudge / operator) and when. Cheap to store now, expensive to retrofit.
 
-The representation is per-bucket weights from day one — nudges need them.
+The representation is per-deck weights from day one — nudges need them.
 What is deferred is *automatic* distribution evolution from performance
 evidence (decided, §2.11).
 
@@ -208,9 +208,9 @@ Final schema remains deferred with the data work (§2.8).
   `ORDER BY words.priority DESC LIMIT n` over unstudied words with no overlay
   (`getAdmittedUnstudiedWords`, `server/db/persistence.ts`).
 - Proposed: the diet half fills by **seeded sample** from the unstudied,
-  non-overlay words in the learner's buckets, proportional to the
-  distribution weights (uniform within a bucket). On exhaustion of the
-  weighted set, spill into successor buckets at composition time *without
+  non-overlay words in the learner's decks, proportional to the
+  distribution weights (uniform within a deck). On exhaustion of the
+  weighted set, spill into successor decks at composition time *without
   mutating the profile* (decided, §2.11 — the cleanest implementation; no
   new write path, and nudges or operator action correct residual staleness).
 - Unchanged: the 50/50 stash/diet quota split, stash semantics (tops fill
@@ -237,7 +237,7 @@ never enter the study-action pipeline (no attempt events, no covering, no
 commits). They land as diet-profile provenance (§2.3).
 
 Visibility (decided, §2.11): the learner knows they are being assessed; the
-bucket machinery itself is never exposed. After intake, sessions simply
+deck machinery itself is never exposed. After intake, sessions simply
 source their words.
 
 Intake evidence, deliberately not advanced for v1 — a mix of:
@@ -250,12 +250,12 @@ Intake evidence, deliberately not advanced for v1 — a mix of:
 
 Judgment paths, in delivery order:
 
-1. **Fixed mapping** or simple heuristics from answers to an initial bucket.
+1. **Fixed mapping** or simple heuristics from answers to an initial deck.
 2. **Operator-judged** during the concierge phase: the cohort is small and
    invite-only, so natural-language answers are immediately useful as a
    concierge artifact with zero automation.
-3. **An agent workflow** (later, once buckets exist) judging natural-language
-   answers into an initial bucket, following the intake-triage advisor
+3. **An agent workflow** (later, once decks exist) judging natural-language
+   answers into an initial deck, following the intake-triage advisor
    precedent: explicitly invoked, bounded evidence, strict output schema,
    rationale included. Frontier invariants apply — model output remains
    untrusted input under strict validation, and placement judgment is not
@@ -264,13 +264,13 @@ Judgment paths, in delivery order:
    disclosure and bounded-evidence contract.
 
 The same intake is forward-compatible with the vision: answers seed not only
-the bucket anchor but eventually goal/interest *tilts* — "I'm preparing for
-HSK 5" or "I want to read wuxia novels" compile into bucket/tilt parameters
+the deck anchor but eventually goal/interest *tilts* — "I'm preparing for
+HSK 5" or "I want to read wuxia novels" compile into deck/tilt parameters
 without exam vocabulary becoming UI furniture. V1 consumes only the placement
 signal; raw answers are retained as profile evidence.
 
 Set aside for now: a full **diagnostic first-session draw** (composing
-session 1 as word probes sampled across buckets). Recorded costs: a
+session 1 as word probes sampled across decks). Recorded costs: a
 diagnostic composition mode; probe interaction with the daily new-word cap
 and covering/commit semantics; "known on probe" lifecycle transitions are a
 `learning-review-model` question, not a diet question; and probe signal
@@ -292,28 +292,27 @@ system* and permits concierge-assisted onboarding. This intake is a minimal
 step in service of the first cohort, not an onboarding system — flagged for
 explicit human confirmation that it stays inside the boundary.
 
-## 2.6 Settings surface and gut-level feedback
+## 2.6 Feedback surface; no settings page in v1
 
-The bucket machinery is not user-visible (decided, §2.11): no bucket picker,
-no distribution controls, no HSK or bucket vocabulary in the UI.
-Consequences:
+The deck machinery is not user-visible (decided, §2.11): no deck picker, no
+distribution controls, no HSK or deck vocabulary in the UI. Consequences:
 
 - **Nudges surface where the learner's intuition lives** — in the session or
-  reflection context, not in settings: an intentionally coarse, gut-level
-  signal ("too easy / too hard") rather than language-learning
-  technicalities. Specific UI is TBD (§2.11).
-- A new **profile/settings page** (an incremental nav addition; the broad
-  page model is preserved) hosts general settings only: the daily new-word
-  limit relocates here, and display-name editing is acceptable.
-- **Disjoint jumps** (repositioning to a chosen bucket) remain available as
-  an **operator tool** for concierge correction, not as user UI.
-- Any progress presentation is at most a coarse illusion layer over the
-  buckets, and is not v1.
+  reflection context: an intentionally coarse, gut-level signal ("too easy /
+  too hard") rather than language-learning technicalities. Specific UI is a
+  provisional implementation default (§2.11).
+- **No settings page in the first deliverable.** The existing session
+  settings gear on Home (daily new-word limit) is a nice UI already and
+  stays as-is. A profile/settings page becomes warranted only if
+  longer-lived user-profile settings are ever exposed; none are in v1.
+- **Disjoint jumps** (repositioning to a chosen deck) remain available as an
+  **operator tool** for concierge correction, not as user UI.
+- A completion-percentage / strength-heuristic presentation over a word
+  group will likely come at some point, but is not critical to the app's
+  overall vision and is not v1.
 
 Keep the surface deliberately small: fewer controls to validate, clearer
-product. An optional later addition is HSK coverage reporting as a dashboard
-— order adaptively, report in exam terms — decoupling the progress narrative
-from the acquisition order. Not v1.
+product.
 
 ## 2.7 Control-surface reduction: triage retirement
 
@@ -322,7 +321,7 @@ for the beta cohort.
 
 - Rationale: triage exists to compensate for SUBTLEX ordering oddities — its
   defer / recognition-only judgments target corpus noise at the top of a
-  global frequency ranking. Bucketed diet plus placement attacks the cause
+  global frequency ranking. Decked diet plus placement attacks the cause
   rather than the symptom, and every retained control is something new users
   must learn and we must validate. Product clarity wins.
 - Recognition-only disposition (decided, §2.11): suppressions already
@@ -343,8 +342,8 @@ for the beta cohort.
   DB-level propagation, and the hosted distribution decision (replay the
   build on Fly vs upload an artifact vs regenerate the bootstrap).
 - Performance-driven distribution shifts; proposal-style adaptation;
-  temperature and subjectivity levers; domain/theme buckets;
-  morpheme-aware bucket refinement.
+  temperature and subjectivity levers; domain/theme decks;
+  morpheme-aware deck refinement.
 - HSK coverage dashboard; French profile behavior; generalized import for
   external learners (frontier non-goal).
 
@@ -352,16 +351,16 @@ for the beta cohort.
 
 - `lexical_words.priority` remains during the transition (diagnostics and
   the content-diagnostics page consume it); admission stops consuming it
-  once buckets land.
+  once decks land.
 - Existing learners (the dogfood identity) are **operator-placed** (decided,
   §2.11): the operator sets placement from knowledge of the users, trusting
   nudges to correct placement errors.
 
 ## 2.10 Test impact (when implemented)
 
-- `tests/unstudied-admission.test.ts` — diet fill becomes a seeded bucket
+- `tests/unstudied-admission.test.ts` — diet fill becomes a seeded deck
   sample instead of rank-ordered fill.
-- `tests/session-composition.test.ts` — bucket spill, seed stability /
+- `tests/session-composition.test.ts` — deck spill, seed stability /
   no-reroll, unchanged split and bypass behavior.
 - `tests/user-priority.test.ts`, `tests/priority-page-model.test.ts` —
   surface changes from §2.7.
@@ -372,19 +371,19 @@ for the beta cohort.
 
 Decisions from the 2026-09-09 review (previously open questions):
 
-1. **Subdivide.** Bounded buckets give more policy leverage later; a coarser
-   presentation can always be layered on top. What makes a good bucket —
+1. **Subdivide.** Bounded decks give more policy leverage later; a coarser
+   presentation can always be layered on top. What makes a good deck —
    similarity, dissimilarity, other criteria, per-learner variation — is
    expected to be learned over time. (The §2.2 tag artifact makes real
-   bucket sizes concrete before thresholds are chosen.)
-2. **HSK 2.0** defines the v1 bucket set; both versions remain tagged per
+   deck sizes concrete before thresholds are chosen.)
+2. **HSK 2.0** defines the v1 deck set; both versions remain tagged per
    word.
-3. **Single active bucket at initialization.** Automatic distribution
+3. **Single active deck at initialization.** Automatic distribution
    evolution is a follow-up; manual nudges (below) are in v1.
 4. **Nudge = fine-grained weight shift**, e.g. (1, 0) → (0.9, 0.1) toward an
-   adjacent bucket — a coarse bucket jump labeled "nudge" would be
+   adjacent deck — a coarse deck jump labeled "nudge" would be
    misleading. UI specifics TBD (see 10).
-5. **Buckets are not user-visible.** The learner knows they are being
+5. **Decks are not user-visible.** The learner knows they are being
    assessed at intake; afterwards sessions source their words without
    exposing machinery. The nudge is intentionally coarse, gut-level feedback
    rather than language-learning technicalities.
@@ -394,24 +393,36 @@ Decisions from the 2026-09-09 review (previously open questions):
 7. **Beyond-HSK tail: one expanse** for now.
 8. **Existing learners are operator-placed**, from the operator's knowledge
    of the users, trusting nudges to correct errors.
-9. **Settings page hosts general settings**: the daily new-word limit
-   relocates there; display-name editing is acceptable.
+9. **No settings page in v1.** The existing session-settings gear (daily
+   new-word limit) is a nice UI already and stays put; a profile/settings
+   page becomes warranted only if longer-lived user-profile settings are
+   ever exposed.
 10. **Split ratio stored, not user-visible.** Nudge feedback surfaces where
     the learner's intuition lives — the session or reflection context —
     rather than opening the app black box in settings.
-11. **Bucket-exhaustion spill**: no strong product opinion; take the
+11. **Deck-exhaustion spill**: no strong product opinion; take the
     cleanest implementation. Recorded choice: composition-time spill into
-    successor buckets without mutating the profile (no new write path);
+    successor decks without mutating the profile (no new write path);
     nudges or operator action correct residual staleness.
 12. **Placement intake: simple v1** — a few open-ended questions with fixed
-    or operator judgment; the natural-language bucket-judgment agent
+    or operator judgment; the natural-language deck-judgment agent
     workflow comes later, on the expectation that LLM text processing
     tolerates complexity a long quiz would try to reverse-engineer. The
     full diagnostic session draw remains set aside per §2.5.
 
-Remaining TBDs (implementation-level; do not block design acceptance):
+Remaining implementation defaults (provisional; owned by implementation and
+revisable without re-review):
 
-- Nudge UI specifics within the session/reflection context.
-- Subdivision size thresholds (informed by the §2.2 tag artifact).
-- Intake question wording.
-- Whether a coarse progress-illusion presentation is ever shown.
+- **Nudge UI**: a quiet too-easy / about-right / too-hard prompt at the
+  session-completion / reflection moment — where gut feel is freshest and
+  the reflection loop already lives. A mid-session affordance may follow if
+  evidence wants it.
+- **Subdivision thresholds**: target deck sizes of roughly 150–400 words;
+  HSK deltas larger than ~400 split into frequency-ordered strata of ~250.
+  Tuned against the §2.2 tag artifact's real sizes.
+- **Intake questions**: 2–3 open-ended prompts — background with the
+  language, goals ("what do you want to be able to do?") — with an optional
+  coarse self-select as fallback. Wording refined at implementation.
+- **Progress presentation**: a completion-percentage / strength heuristic
+  over a word group is expected eventually, but is not v1 and is not
+  critical to the vision.
