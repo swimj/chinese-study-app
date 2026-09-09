@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { BackendStatus } from './services/api';
+import type { BackendStatus, DietIntakeInput, DietSelfSelect } from './services/api';
 import {
   clearReflectionQuality,
   fetchReflectionArtifactDetail,
@@ -7,6 +7,9 @@ import {
   fetchReflectionGenerationRuns,
   fetchReflectionQualityStats,
   fetchStatus,
+  nudgeDiet,
+  submitDietIntake,
+  submitDietIntakeAssessment,
   reviewReflectionProposal,
   retryReflectionGenerationRun,
   generateDeferredReflectionSecondOpinion,
@@ -27,6 +30,13 @@ import { ReflectionsPage } from './pages/ReflectionsPage';
 import { useReflectionPageController } from './features/reflection/useReflectionPageController';
 import { useContentDiagnosticsController } from './features/content/useContentDiagnosticsController';
 import { ContentDiagnosticsPage } from './pages/ContentDiagnosticsPage';
+import {
+  doesDietIntakeBlockSessionStart,
+  INITIAL_DIET_INTAKE_SUBMISSION_STATE,
+  retryDietIntakeRefresh,
+  submitDietIntakePlacement,
+  type DietIntakeSubmissionState,
+} from './features/diet/diet-intake-submission';
 
 const APP_VERSION = __APP_VERSION__;
 
@@ -34,6 +44,11 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
   const [currentPage, setCurrentPage] = useState<AppPageKey>('home');
   const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dietIntakeSubmission, setDietIntakeSubmission] = useState<DietIntakeSubmissionState>(
+    INITIAL_DIET_INTAKE_SUBMISSION_STATE,
+  );
+  const [dietIntakeDrafts, setDietIntakeDrafts] = useState<Record<string, string>>({});
+  const [dietIntakeSelfSelect, setDietIntakeSelfSelect] = useState<DietSelfSelect | null>(null);
   const studySession = useStudySession({
     setError,
     onSessionEnded: reloadDashboard,
@@ -79,18 +94,52 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
   }, []);
 
   useEffect(() => {
-    if (currentPage !== 'home' || studySession.sessionStarted) {
+    if (currentPage !== 'home' || studySession.sessionStarted || doesDietIntakeBlockSessionStart(dietIntakeSubmission)) {
       return;
     }
 
     // Proposal acceptance only invalidates the cache. Prefetch when Home is
     // shown, which is when the learner may start a session.
     void studySession.prefetchSession().catch(() => undefined);
-  }, [currentPage, studySession.sessionStarted]);
+  }, [currentPage, dietIntakeSubmission, studySession.sessionStarted]);
 
   async function reloadDashboard() {
     const statusResponse = await fetchStatus();
     setBackendStatus(statusResponse);
+  }
+
+  function dietIntakePlacementDependencies(submitPlacement: () => Promise<void>) {
+    return {
+      submitPlacement,
+      ...dietIntakeRefreshDependencies(),
+    };
+  }
+
+  function dietIntakeRefreshDependencies() {
+    return {
+      invalidateSessionPrefetch: studySession.invalidateSessionPrefetch,
+      reloadDashboard,
+      refreshSessionPrefetch: studySession.refreshSessionPrefetch,
+      onStateChange: setDietIntakeSubmission,
+    };
+  }
+
+  async function submitDietIntakeAssessmentAndRefresh(input: Pick<DietIntakeInput, 'answers'>) {
+    await submitDietIntakePlacement(dietIntakePlacementDependencies(() => submitDietIntakeAssessment(input)));
+  }
+
+  async function submitManualDietIntakeAndRefresh(input: DietIntakeInput) {
+    await submitDietIntakePlacement(dietIntakePlacementDependencies(() => submitDietIntake(input)));
+  }
+
+  async function retrySavedDietIntakeRefresh() {
+    await retryDietIntakeRefresh(dietIntakeRefreshDependencies());
+  }
+
+  async function nudgeDietAndRefresh(direction: 'easier' | 'harder') {
+    await nudgeDiet(direction);
+    // A nudge shifts the diet distribution for future compositions.
+    void studySession.refreshSessionPrefetch().catch(() => undefined);
   }
 
   async function saveDailyNewWordLimit(dailyNewWordLimit: number) {
@@ -131,6 +180,16 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
         <HomePage
           backendStatus={backendStatus}
           onSaveDailyNewWordLimit={saveDailyNewWordLimit}
+          dietIntakeSubmission={dietIntakeSubmission}
+          dietIntakeDrafts={dietIntakeDrafts}
+          dietIntakeSelfSelect={dietIntakeSelfSelect}
+          onDietIntakeDraftsChange={setDietIntakeDrafts}
+          onDietIntakeSelfSelectChange={setDietIntakeSelfSelect}
+          onSubmitDietIntakeAssessment={submitDietIntakeAssessmentAndRefresh}
+          onSubmitManualDietIntake={submitManualDietIntakeAndRefresh}
+          onRetryDietIntakeRefresh={retrySavedDietIntakeRefresh}
+          dietIntakeStartBlocked={doesDietIntakeBlockSessionStart(dietIntakeSubmission)}
+          onNudgeDiet={nudgeDietAndRefresh}
           {...studySession.homePageProps}
         />
       ) : currentPage === 'priority' ? (

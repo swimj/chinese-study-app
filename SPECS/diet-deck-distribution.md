@@ -273,6 +273,12 @@ Judgment paths:
 3. **Fixed/manual mapping** through coarse self-selection or skip, which is a
    no-provider fallback and remains available independently of assessment.
 
+The learner can start only after a successful placement write has invalidated
+and refreshed any future-session prefetch. An assessment failure preserves the
+answers for retry or manual fallback. If placement succeeds but that later
+refresh fails, the learner sees a distinct refresh failure and can retry it
+without repeating the provider assessment.
+
 The same intake is forward-compatible with the vision: answers seed not only
 the deck anchor but eventually goal/interest *tilts* — "I'm preparing for
 HSK 5" or "I want to read wuxia novels" compile into deck/tilt parameters
