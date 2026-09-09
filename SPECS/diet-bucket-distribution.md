@@ -188,21 +188,52 @@ Final schema remains deferred with the data work (§2.8).
 ## 2.5 New-user placement flow
 
 There is currently no new-user flow: hosted Clerk bootstrap creates a learner
-with defaults, and local bootstrap does the same. Add one lightweight step at
-first run:
+with defaults, and local bootstrap does the same. This deliverable adds
+placement; the instrument is still open (§2.11), with two candidates:
 
-- A single self-report placement question (a few plain-language options
-  along the lines of: complete beginner / some basics / intermediate /
-  advanced or heritage background), mapping to an initial bucket.
-- Skippable; the default is the first bucket. Concierge onboarding can also
-  set placement operator-side per learner.
-- Placement is realized as the initial diet profile, so it needs the §2.3
-  setting to exist; the flow lands with the data work, not before.
+- **Instrument A — upfront self-report.** A single plain-language question at
+  first app launch (complete beginner / some basics / intermediate / advanced
+  or heritage background), mapping to an initial bucket. Skippable; the
+  default is the first bucket. Concierge onboarding can also set placement
+  operator-side per learner.
+- **Instrument B — the first session as the placement instrument.** No
+  separate question (or self-report sets only a prior): the first session is
+  composed as a *diagnostic draw*, sampling the placed bucket plus its
+  neighbors at shallow depth, and observed evidence shifts the anchor. The
+  first session is overloaded as both onboarding and calibration — there is
+  no onboarding artifact apart from the product itself.
+
+Instrument B is the more characteristic fit for the distribution model
+(self-report sets the prior; session evidence performs the first update).
+One scoping asymmetry is attractive: for a self-reported complete beginner,
+the overload is free — introductions from bucket 1 *are* the normal first
+session, so the diagnostic mode only matters for everyone above beginner.
+Its costs are real, though:
+
+- session composition needs a diagnostic-draw mode (wider bucket spread,
+  shallower per-bucket depth);
+- probe words interact with the daily new-word cap and covering/commit
+  semantics — a word demonstrated as known on a probe presumably should not
+  consume introduction budget or enter as a normal new-word commit;
+- what "known on probe" does to the word lifecycle (e.g. skipping directly
+  toward review) is a `learning-review-model` question, not a diet question
+  — flagged, not resolved here;
+- probe signal choice matters: typed production is too strict for placement
+  (it punishes readers and heritage speakers into artificially low buckets),
+  while a self-rated "do you know this word?" probe is exactly the soft
+  self-rating signal the vision notes already list as an open question.
+
+A hybrid is plausible: the self-report question sets a cheap prior, and the
+first session carries a modest diagnostic spread that can move the anchor.
+
+Placement is realized as the initial diet profile, so it needs the §2.3
+setting to exist; the flow lands with the data work, not before.
 
 Frontier note: the frontier defers a *polished self-service onboarding
-system* and permits concierge-assisted onboarding. This is one deliberate
-question in service of the first cohort, not an onboarding system — flagged
-here for explicit human confirmation that it stays inside the boundary.
+system* and permits concierge-assisted onboarding. Either instrument above is
+deliberately minimal — one question, or one calibration-colored first
+session — in service of the first cohort, not an onboarding system. Flagged
+for explicit human confirmation that this stays inside the boundary.
 
 ## 2.6 Diet and settings surface
 
@@ -299,3 +330,8 @@ where one exists.
 11. **Bucket-exhaustion spill**: automatic advance (and does that move the
     profile anchor with `system` provenance?) vs mixing the exhausted bucket
     with its successor.
+12. **Placement instrument**: upfront self-report, diagnostic first session,
+    or hybrid (self-report prior + first-session calibration draw)? Includes
+    the probe-signal and word-lifecycle questions in §2.5. (Lean: hybrid,
+    with instrument A alone as the fallback if diagnostic composition proves
+    too invasive for this deliverable.)
