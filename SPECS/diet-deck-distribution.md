@@ -252,20 +252,26 @@ Intake evidence, deliberately not advanced for v1 — a mix of:
 - optionally, a coarse self-select fallback (complete beginner / some basics
   / intermediate / advanced or heritage background).
 
-Judgment paths, in delivery order:
+Judgment paths:
 
-1. **Fixed mapping** or simple heuristics from answers to an initial deck.
+1. **Provider-assessed first pass**: on an explicitly disclosed learner
+   submission, a configured provider receives only bounded prompt/answer pairs
+   and returns a versioned next HSK 2.0 learning level (1–6) plus rationale.
+   The backend strictly validates the result, maps it to a deck internally, and
+   applies it immediately as the learner-authorized initial profile. Deck ids,
+   weights, manifest contents, learner identity, history, and corpus words are
+   never provider input. A failed, invalid, stale, or unavailable assessment
+   leaves the profile unchanged; the learner can retry or take a manual path.
+   The stored judgment keeps its selected next learning level even when a
+   reduced manifest maps placement down to the highest available lower HSK deck;
+   the tail is never a placement target.
+   Provider-assisted intake requires an HSK 2.0 Level 1 deck as the baseline
+   for every supported next-learning-level result.
 2. **Operator-judged** during the concierge phase: the cohort is small and
    invite-only, so natural-language answers are immediately useful as a
    concierge artifact with zero automation.
-3. **An agent workflow** (later, once decks exist) judging natural-language
-   answers into an initial deck, following the intake-triage advisor
-   precedent: explicitly invoked, bounded evidence, strict output schema,
-   rationale included. Frontier invariants apply — model output remains
-   untrusted input under strict validation, and placement judgment is not
-   live-session grading. The new consideration: intake answers are
-   learner-authored content, so provider calls must follow the beta
-   disclosure and bounded-evidence contract.
+3. **Fixed/manual mapping** through coarse self-selection or skip, which is a
+   no-provider fallback and remains available independently of assessment.
 
 The same intake is forward-compatible with the vision: answers seed not only
 the deck anchor but eventually goal/interest *tilts* — "I'm preparing for
@@ -408,11 +414,10 @@ Decisions from the 2026-09-09 review (previously open questions):
     cleanest implementation. Recorded choice: composition-time spill into
     successor decks without mutating the profile (no new write path);
     nudges or operator action correct residual staleness.
-12. **Placement intake: simple v1** — a few open-ended questions with fixed
-    or operator judgment; the natural-language deck-judgment agent
-    workflow comes later, on the expectation that LLM text processing
-    tolerates complexity a long quiz would try to reverse-engineer. The
-    full diagnostic session draw remains set aside per §2.5.
+12. **Placement intake: natural-language first pass** — disclosed
+    assess-and-apply submission yields a bounded, validated next learning
+    level and concise rationale; manual self-selection/skip remains available.
+    The full diagnostic session draw remains set aside per §2.5.
 
 Remaining implementation defaults (provisional; owned by implementation and
 revisable without re-review):
