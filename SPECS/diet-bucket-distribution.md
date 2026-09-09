@@ -1,9 +1,10 @@
 # Diet Bucket Distribution And HSK Delta Tiers
 
-Status: **draft design for review** (2026-09-09). Not yet an implementation
+Status: **draft design for review** (2026-09-09; first review round
+incorporated same day — decisions in §2.11). Not yet an implementation
 contract. Part 1 is a brief long-term vision sketch and is explicitly subject
-to change; Part 2 is the proposed concrete deliverable. Open questions
-(§2.11) block implementation, not review of this document.
+to change; Part 2 is the concrete deliverable. Remaining TBDs (§2.11) are
+implementation-level and do not block design acceptance.
 
 Related authority:
 
@@ -48,7 +49,9 @@ The corpus is partitioned into broad buckets. Buckets may be externally
 meaningful (HSK tiers, a book's vocabulary, a theme or hobby domain) or
 internal-only (a precomputed similarity/clustering signal). Buckets are an
 implementation abstraction expected to carry the product far; they are not
-claimed as essential permanent architecture.
+claimed as essential permanent architecture. (Terminology: the older
+"unstudied bucket weight" of session composition is a separate sense of
+"bucket" and is unaffected.)
 
 Within a bucket there is no load-bearing granular rank. Buckets are the
 largest unit the system makes promises about; word order inside them is
@@ -139,12 +142,17 @@ Two separations remain load-bearing:
   (finalized 2025-11: 300 / 500 / 1,000 / 2,000 / 3,600 / 5,400, plus a
   shared 7–9 advanced band). These are two independent attributes: 3.0 is
   not a superset of 2.0; words moved levels or were dropped between versions.
-- Regular HSK exams still run on 2.0 lists as of 2026 (3.0 remains in pilot).
-  Any user-facing HSK labeling speaks 2.0 until the official transition.
+- **The v1 bucket set derives from HSK 2.0** (decided, §2.11): regular exams
+  still run on 2.0 lists as of 2026 (3.0 remains in pilot), and any future
+  user-facing HSK reporting speaks 2.0 until the official transition. The
+  3.0 tags ride along for later use.
 - Delta sizes are wildly uneven (the 2.0 L6 delta is ~2,500 words; the L1
-  delta is 150). Optionally, large deltas are subdivided into fixed-size
-  strata, frequency-ordered within the delta, so buckets stay digestible.
-  Open question (§2.11).
+  delta is 150), so **large deltas are subdivided** into bounded strata,
+  frequency-ordered within the delta (decided, §2.11). Bounded buckets give
+  more policy leverage later; a coarser presentation can always be layered
+  on top. What makes a good bucket — similarity, dissimilarity, other
+  criteria, per-learner variation — is expected to be learned over time.
+- The beyond-HSK tail is **one expanse** for now (decided, §2.11).
 - **Within-bucket order: none.** Diet draws are seeded samples from the
   active bucket. SUBTLEX rank survives only as (a) an ordering aid for
   optional subdivision and (b) diagnostics — never as an admission ranking.
@@ -177,15 +185,18 @@ sized, and sampled before any behavior changes.
 
 New per-learner state: the **diet profile**. Design-level shape:
 
-- **active bucket anchor** — a stable bucket identity, never a raw corpus
-  rank, so corpus rebuilds cannot silently reinterpret a placement;
-- **nudge offset** — accumulated learner adjustments relative to the anchor;
-- **provenance** — who last moved it (onboarding answer / learner control /
-  system proposal) and when. Cheap to store now, expensive to retrofit.
+- **bucket weights** — the learner's distribution over buckets, initialized
+  degenerate at 100% on the placed bucket. A **nudge** shifts a fixed weight
+  quantum (default 0.1, internal and never user-visible) toward an adjacent
+  bucket — e.g. (1, 0) → (0.9, 0.1) (decided, §2.11). Bucket references are
+  stable identities, never raw corpus ranks, so corpus rebuilds cannot
+  silently reinterpret a placement;
+- **provenance** — who last moved the distribution (intake answer / learner
+  nudge / operator) and when. Cheap to store now, expensive to retrofit.
 
-The v1 distribution is degenerate (100% on the active bucket), but the
-representation must admit future per-bucket weights without a painful
-migration.
+The representation is per-bucket weights from day one — nudges need them.
+What is deferred is *automatic* distribution evolution from performance
+evidence (decided, §2.11).
 
 Storage: the `learner_settings` key-value store already exists (the
 `daily_new_word_limit` precedent); a versioned JSON value avoids new tables.
@@ -196,18 +207,20 @@ Final schema remains deferred with the data work (§2.8).
 - Today: the diet half of the 50/50 split fills by
   `ORDER BY words.priority DESC LIMIT n` over unstudied words with no overlay
   (`getAdmittedUnstudiedWords`, `server/db/persistence.ts`).
-- Proposed: the diet half fills by **seeded uniform sample** from the
-  unstudied, non-overlay words in the learner's active bucket. On bucket
-  exhaustion, spill into the next bucket.
+- Proposed: the diet half fills by **seeded sample** from the unstudied,
+  non-overlay words in the learner's buckets, proportional to the
+  distribution weights (uniform within a bucket). On exhaustion of the
+  weighted set, spill into successor buckets at composition time *without
+  mutating the profile* (decided, §2.11 — the cleanest implementation; no
+  new write path, and nudges or operator action correct residual staleness).
 - Unchanged: the 50/50 stash/diet quota split, stash semantics (tops fill
   first, seeded sample of the rest), require-bypass, sunk exclusion, the 20%
-  unstudied session bucket weight, covering criteria, and the frozen session
-  snapshot (no re-roll on reload/undo).
+  unstudied session-composition weight, covering criteria, and the frozen
+  session snapshot (no re-roll on reload/undo).
 - The admission seed extends to cover the diet draw, preserving replay
   guarantees.
 - The split ratio becomes a learner setting (same settings store), default
-  50/50. Whether v1 exposes it in the UI is an open question; bias toward
-  hidden.
+  50/50, stored but **not user-visible** in v1 (decided, §2.11).
 
 ## 2.5 New-user placement intake
 
@@ -222,6 +235,10 @@ Design line: overload the session's *interaction grammar*, not its
 *machinery*. Intake responses are profile evidence, not study actions — they
 never enter the study-action pipeline (no attempt events, no covering, no
 commits). They land as diet-profile provenance (§2.3).
+
+Visibility (decided, §2.11): the learner knows they are being assessed; the
+bucket machinery itself is never exposed. After intake, sessions simply
+source their words.
 
 Intake evidence, deliberately not advanced for v1 — a mix of:
 
@@ -275,16 +292,23 @@ system* and permits concierge-assisted onboarding. This intake is a minimal
 step in service of the first cohort, not an onboarding system — flagged for
 explicit human confirmation that it stays inside the boundary.
 
-## 2.6 Diet and settings surface
+## 2.6 Settings surface and gut-level feedback
 
-A new profile/settings page (an incremental nav addition; the broad page
-model is preserved):
+The bucket machinery is not user-visible (decided, §2.11): no bucket picker,
+no distribution controls, no HSK or bucket vocabulary in the UI.
+Consequences:
 
-- shows the current bucket in legible, plain-language terms;
-- offers a **disjoint jump** (pick a bucket) and a **nudge**
-  (adjacent-bucket move);
-- becomes the natural home for learner settings (daily new-word limit is a
-  relocation candidate; display name a possibility).
+- **Nudges surface where the learner's intuition lives** — in the session or
+  reflection context, not in settings: an intentionally coarse, gut-level
+  signal ("too easy / too hard") rather than language-learning
+  technicalities. Specific UI is TBD (§2.11).
+- A new **profile/settings page** (an incremental nav addition; the broad
+  page model is preserved) hosts general settings only: the daily new-word
+  limit relocates here, and display-name editing is acceptable.
+- **Disjoint jumps** (repositioning to a chosen bucket) remain available as
+  an **operator tool** for concierge correction, not as user UI.
+- Any progress presentation is at most a coarse illusion layer over the
+  buckets, and is not v1.
 
 Keep the surface deliberately small: fewer controls to validate, clearer
 product. An optional later addition is HSK coverage reporting as a dashboard
@@ -301,10 +325,11 @@ for the beta cohort.
   global frequency ranking. Bucketed diet plus placement attacks the cause
   rather than the symptom, and every retained control is something new users
   must learn and we must validate. Product clarity wins.
-- One behavior needs an explicit decision: accepted `recognition_only`
-  assessments durably suppress definition production for specific words.
-  Options: (a) retires with triage; (b) survives as a word-level control
-  elsewhere; (c) is re-derived from bucket placement. Flagged in §2.11.
+- Recognition-only disposition (decided, §2.11): suppressions already
+  accepted take effect at the word immediately and **persist**; the advisor
+  assessment provenance may be dropped with the retired loop. No v1 surface
+  creates new suppressions; a future surface can reintroduce the capability
+  if evidence wants it.
 - Kept: the Manage word bank (add-by-target search, top/stash, require) —
   the stash half of admission is the personal-steering pillar of the app —
   and sink/dismiss, which is cheap and a key negative signal.
@@ -328,9 +353,9 @@ for the beta cohort.
 - `lexical_words.priority` remains during the transition (diagnostics and
   the content-diagnostics page consume it); admission stops consuming it
   once buckets land.
-- Existing learners (the dogfood identity) need a one-time placement:
-  operator-set or derived from study history. Decision deferred with the
-  data work.
+- Existing learners (the dogfood identity) are **operator-placed** (decided,
+  §2.11): the operator sets placement from knowledge of the users, trusting
+  nudges to correct placement errors.
 
 ## 2.10 Test impact (when implemented)
 
@@ -343,39 +368,50 @@ for the beta cohort.
 - `tests/intake-triage.test.ts` — retirement.
 - New: placement defaulting, diet-profile round-trip, nudge/jump behavior.
 
-## 2.11 Open questions
+## 2.11 Review decisions and remaining TBDs
 
-Blocking implementation, not review of this document. Current leans noted
-where one exists.
+Decisions from the 2026-09-09 review (previously open questions):
 
-1. **Bucket granularity**: raw HSK deltas, or subdivide large deltas into
-   fixed-size strata? (Lean: subdivide above a size threshold. The §2.2 tag
-   artifact makes real bucket sizes concrete before deciding.)
-2. **Scaffold source**: which HSK version defines the buckets? (Lean: 2.0,
-   while tagging both versions per word.)
-3. **v1 distribution shape**: strictly one active bucket, or a small fixed
-   spread into the next bucket for "stretch" flavor? (Lean: single bucket;
-   within-bucket sampling already supplies randomness.)
-4. **Nudge semantics**: adjacent-bucket jumps only, or finer-grained moves?
-   (Lean: bucket-granular disjoint jumps.)
-5. **Placement wording and labeling**: do the words "HSK" appear anywhere in
-   v1 UI? (Emotional-vision concern. Lean: plain-language bucket
-   descriptions by default; exam-labeled goal mode as an opt-in later.)
-6. **Triage disposition**: full removal vs parked/hidden; and what happens
-   to recognition-only production suppression (§2.7).
-7. **Beyond-HSK tail**: one expanse, or frequency-deciled buckets?
-8. **Existing-learner placement**: operator-set vs derived from study
-   history.
-9. **Settings-page scope**: does the daily new-word limit move there?
-   Display-name editing?
-10. **Split-ratio setting**: stored-only or user-visible?
-11. **Bucket-exhaustion spill**: automatic advance (and does that move the
-    profile anchor with `system` provenance?) vs mixing the exhausted bucket
-    with its successor.
-12. **Placement intake content and judgment path**: which questions (and
-    whether any recognition checks or a self-select fallback) ship in v1;
-    fixed mapping vs operator judgment during the concierge phase; and when
-    the natural-language bucket-judgment agent workflow is worth building.
-    (Lean: 2–3 open-ended questions plus an optional coarse self-select;
-    simple/operator judgment v1; agent workflow after buckets land.) The
+1. **Subdivide.** Bounded buckets give more policy leverage later; a coarser
+   presentation can always be layered on top. What makes a good bucket —
+   similarity, dissimilarity, other criteria, per-learner variation — is
+   expected to be learned over time. (The §2.2 tag artifact makes real
+   bucket sizes concrete before thresholds are chosen.)
+2. **HSK 2.0** defines the v1 bucket set; both versions remain tagged per
+   word.
+3. **Single active bucket at initialization.** Automatic distribution
+   evolution is a follow-up; manual nudges (below) are in v1.
+4. **Nudge = fine-grained weight shift**, e.g. (1, 0) → (0.9, 0.1) toward an
+   adjacent bucket — a coarse bucket jump labeled "nudge" would be
+   misleading. UI specifics TBD (see 10).
+5. **Buckets are not user-visible.** The learner knows they are being
+   assessed at intake; afterwards sessions source their words without
+   exposing machinery. The nudge is intentionally coarse, gut-level feedback
+   rather than language-learning technicalities.
+6. **Triage retires.** Existing recognition-only production suppressions
+   persist (they take effect at the word immediately); advisor assessment
+   provenance may be dropped.
+7. **Beyond-HSK tail: one expanse** for now.
+8. **Existing learners are operator-placed**, from the operator's knowledge
+   of the users, trusting nudges to correct errors.
+9. **Settings page hosts general settings**: the daily new-word limit
+   relocates there; display-name editing is acceptable.
+10. **Split ratio stored, not user-visible.** Nudge feedback surfaces where
+    the learner's intuition lives — the session or reflection context —
+    rather than opening the app black box in settings.
+11. **Bucket-exhaustion spill**: no strong product opinion; take the
+    cleanest implementation. Recorded choice: composition-time spill into
+    successor buckets without mutating the profile (no new write path);
+    nudges or operator action correct residual staleness.
+12. **Placement intake: simple v1** — a few open-ended questions with fixed
+    or operator judgment; the natural-language bucket-judgment agent
+    workflow comes later, on the expectation that LLM text processing
+    tolerates complexity a long quiz would try to reverse-engineer. The
     full diagnostic session draw remains set aside per §2.5.
+
+Remaining TBDs (implementation-level; do not block design acceptance):
+
+- Nudge UI specifics within the session/reflection context.
+- Subdivision size thresholds (informed by the §2.2 tag artifact).
+- Intake question wording.
+- Whether a coarse progress-illusion presentation is ever shown.
