@@ -568,7 +568,7 @@ Two provenances of `unstudied` words:
 
 - **Diet:** unmanaged unstudied words with no `user_word_priority` overlay.
   Ranked by existing corpus/hardcoded `words.priority` (then `created_at`,
-  then `id`). Intake triage and the advisor remain diet-only.
+  then `id`).
 - **Stash:** any unstudied word that has a `user_word_priority` overlay
   (add-by-hanzi bump, move-to-top, require, or any other overlay write).
   Overlay membership is stash membership. Stash is **not** ranked by corpus

@@ -7,7 +7,6 @@ import { pathToFileURL } from 'node:url';
 import { createClerkRequestAuthentication, type ProviderSubjectResolver } from './authentication.ts';
 import {
   acceptReflectionProposal,
-  acceptIntakeTriageAssessment,
   replaceReflectionProposal,
   applyReflectionInvocation,
   authorizeManualReflectionOperation,
@@ -18,7 +17,6 @@ import {
   DeferredSecondOpinionError,
   dismissWordFromStudy,
   dismissReflectionProposal,
-  dismissIntakeTriageAssessment,
   addUnstudiedUserPriorityByHanzi,
   dbConfig,
   getLearningPolicy,
@@ -61,14 +59,6 @@ import {
   MAINTENANCE_MODE_CODE,
   runHostedProviderWork,
 } from './hosted-runtime-controls.ts';
-import { getIntakeTriagePriorityWords } from './intake-triage/evidence.ts';
-import {
-  createIntakeTriageGenerationService,
-  IntakeTriageGenerationError,
-  type IntakeTriageGenerationService,
-} from './intake-triage/generation.ts';
-import { INTAKE_TRIAGE_PROMPT_VERSION } from './intake-triage/provider.ts';
-import { IntakeTriageAssessmentError } from './db/intake-triage.ts';
 import type { ContentDiagnosticKind } from '../src/domain/content-diagnostics.ts';
 import type {
   ContrastSelectionCommitIntent,
@@ -121,7 +111,6 @@ const defaultJsonBodyLimit = '100kb';
 export type CreateAppOptions = {
   reflectionGenerationService?: InitialReflectionGenerationService;
   reflectionLifecycleLogger?: ReflectionLifecycleLogger;
-  intakeTriageGenerationService?: IntakeTriageGenerationService;
   resolveClerkProviderSubject?: ProviderSubjectResolver;
   /** `undefined` follows NODE_ENV; `null` explicitly disables frontend serving. */
   frontendDistPath?: string | null;
@@ -140,8 +129,6 @@ export function createApp(options: CreateAppOptions = {}) {
       lifecycleLogger: reflectionLifecycleLogger,
       providerDiagnosticSink: createFileReflectionProviderDiagnosticSink(dbConfig.dataDir),
     });
-  const intakeTriageGenerationService = options.intakeTriageGenerationService
-    ?? createIntakeTriageGenerationService();
   const studyCommitDiagnosticSink = options.studyCommitDiagnosticSink
     ?? createStudyCommitDiagnosticSink(dbConfig.dataDir);
 
@@ -255,48 +242,6 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.get('/api/priority/unstudied', (req, res) => {
     res.json(getPrioritizedUnstudiedWords());
-  });
-
-  app.get('/api/priority/unstudied/top', (req, res) => {
-    const limit = readPositiveIntegerFromQuery(req.query?.limit, 50);
-    if (limit === null) {
-      res.status(400).json({ error: 'Expected positive integer limit query parameter' });
-      return;
-    }
-
-    res.json(getIntakeTriagePriorityWords(limit));
-  });
-
-  app.post('/api/intake-triage/runs', async (_req, res) => {
-    try {
-      res.status(201).json(await runHostedProviderWork(() => intakeTriageGenerationService.generate()));
-    } catch (error) {
-      if (handleHostedProviderWorkError(error, res)) return;
-      if (error instanceof IntakeTriageGenerationError) {
-        const status = error.code === 'no_candidates' || error.code === 'already_running'
-          ? 409
-          : error.providerCode === 'missing_config' ? 503 : 502;
-        res.status(status).json({ error: error.message, code: error.providerCode ?? error.code });
-        return;
-      }
-      res.status(500).json({ error: 'Failed to run the intake advisor' });
-    }
-  });
-
-  app.post('/api/intake-triage/assessments/:id/accept', (req, res) => {
-    try {
-      res.json(acceptIntakeTriageAssessment(req.params.id, INTAKE_TRIAGE_PROMPT_VERSION));
-    } catch (error) {
-      handleIntakeTriageAssessmentError(error, res);
-    }
-  });
-
-  app.post('/api/intake-triage/assessments/:id/dismiss', (req, res) => {
-    try {
-      res.json(dismissIntakeTriageAssessment(req.params.id));
-    } catch (error) {
-      handleIntakeTriageAssessmentError(error, res);
-    }
   });
 
   app.post('/api/priority/unstudied/add-by-hanzi', (req, res) => {
@@ -1597,15 +1542,6 @@ function isReflectionQualityClientError(error: unknown): error is Error {
     || error.message.startsWith('Expected ')
       && error.message.includes('ISO-8601')
   );
-}
-
-function handleIntakeTriageAssessmentError(error: unknown, res: Response): void {
-  if (error instanceof IntakeTriageAssessmentError) {
-    const status = error.code === 'not_found' ? 404 : 409;
-    res.status(status).json({ error: error.message, code: error.code });
-    return;
-  }
-  res.status(500).json({ error: 'Failed to update the intake assessment' });
 }
 
 function handleHostedProviderWorkError(error: unknown, res: Response): boolean {
