@@ -24,6 +24,7 @@ import {
   getOperationDraftState,
   reduceReflectionOperationDraft,
   formatRunDuration,
+  retireSelectedDeferredProposalsAfterSecondOpinion,
   visibleOutputTokens,
   type ReflectionArtifactDetailDto,
 } from '../src/features/reflection/reflection-page-model.js';
@@ -169,6 +170,47 @@ describe('reflection page model', () => {
         .map((entry) => entry.proposal.review.proposalId),
       ['proposal-b'],
     );
+  });
+
+  test('retires selected deferred proposals in the client cache after second-opinion success', () => {
+    const first = artifactDetail();
+    first.artifactId = 'source-a';
+    first.proposals[0].review.disposition = { kind: 'deferred' };
+    first.proposals[1].review.disposition = { kind: 'deferred' };
+    const second = artifactDetail();
+    second.artifactId = 'source-b';
+    second.proposals[0].review.proposalId = 'proposal-c';
+    second.proposals[0].review.disposition = { kind: 'deferred' };
+    second.proposals[1].review.proposalId = 'proposal-d';
+    second.proposals[1].review.disposition = { kind: 'pending' };
+    const untouched = artifactDetail();
+    untouched.artifactId = 'source-c';
+    untouched.proposals[0].review.proposalId = 'proposal-e';
+    untouched.proposals[0].review.disposition = { kind: 'deferred' };
+    untouched.proposals[1].review.proposalId = 'proposal-f';
+    untouched.proposals[1].review.disposition = { kind: 'deferred' };
+
+    const nextDetails = retireSelectedDeferredProposalsAfterSecondOpinion(
+      [first, second, untouched],
+      ['proposal-b', 'proposal-c'],
+    );
+
+    assert.deepEqual(
+      buildReflectionProposalPresentations(nextDetails)
+        .map((entry) => entry.proposal.review.proposalId)
+        .sort(),
+      ['proposal-a', 'proposal-e', 'proposal-f'],
+    );
+    assert.deepEqual(
+      nextDetails[0]!.proposals[1]!.review.disposition,
+      { kind: 'dismissed', reason: 'requested_second_opinion' },
+    );
+    assert.deepEqual(
+      nextDetails[1]!.proposals[0]!.review.disposition,
+      { kind: 'dismissed', reason: 'requested_second_opinion' },
+    );
+    assert.equal(nextDetails[1]!.proposals[1]!.review.disposition.kind, 'pending');
+    assert.equal(nextDetails[2], untouched);
   });
 
   test('keeps learner-requested informational feedback visible without a proposal', () => {
