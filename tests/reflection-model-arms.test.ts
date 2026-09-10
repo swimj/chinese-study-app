@@ -7,6 +7,7 @@ import {
   REFLECTION_MODEL_ARMS,
   isOfferedReflectionModelChoice,
   isReflectionModelChoice,
+  LUNA_REFLECTION_MODEL_CHOICE,
 } from '../server/reflection/model-arms.ts';
 
 describe('reflection comparison-arm registry', () => {
@@ -18,6 +19,7 @@ describe('reflection comparison-arm registry', () => {
       'openrouter:gemini-3.6-flash',
       'openai:gpt-5.6-terra-high',
     ]);
+    assert.equal(LUNA_REFLECTION_MODEL_CHOICE, 'openai:gpt-5.6-luna-high');
     assert.equal(isReflectionModelChoice('openai:gpt-5.6-terra-high'), true);
     assert.equal(isReflectionModelChoice('openrouter:gemini-3.6-flash'), true);
     assert.equal(isOfferedReflectionModelChoice('openai:gpt-5.6-terra-high'), true);

@@ -240,6 +240,27 @@ dogfood observability. Price estimates must identify or preserve the rate
 snapshot used; they are operational intuition, not learning evidence or a
 correctness signal.
 
+### Daily spend cap
+
+Each learner has a provisional **$0.50 UTC-day** spend cap on persisted
+reflection generation estimates. The UTC day is taken from `completed_at`.
+Null estimates count as zero. Intake triage is out of scope.
+
+Once same-day estimated spend **surpasses** $0.50:
+
+- unselected initial generation routes only to Luna;
+- explicit non-Luna choices (retry and second opinion) are refused rather than
+  silently rewritten;
+- Luna remains available with no second cap.
+
+The run that first crosses the threshold still completes on the model that
+started. Overlapping in-flight expensive runs are not reserved against the cap.
+This is a generous beta guardrail, not a billing product.
+
+The generation-run log returns the current cap state so selectors can disable
+non-Luna arms and show when Luna-only routing resets (next UTC midnight,
+formatted in the learner's timezone).
+
 ## 7. Integration Invariants
 
 - Reflection generation never directly mutates learner, scheduling, or content
