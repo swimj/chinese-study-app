@@ -567,8 +567,13 @@ undo, and bucket weights remain unaware of diet vs stash.
 Two provenances of `unstudied` words:
 
 - **Diet:** unmanaged unstudied words with no `user_word_priority` overlay.
-  Ranked by existing corpus/hardcoded `words.priority` (then `created_at`,
-  then `id`). Intake triage and the advisor remain diet-only.
+  When the deck manifest is present (Mandarin only), diet fill is a seeded
+  weighted sample across the learner's deck distribution — see
+  [Deck-based diet fill](#deck-based-diet-fill) below and
+  [diet-deck-distribution.md](./diet-deck-distribution.md). Without a
+  manifest (French profile, older dev seeds), the legacy order applies:
+  corpus/hardcoded `words.priority` (then `created_at`, then `id`). Intake
+  triage and the advisor remain diet-only.
 - **Stash:** any unstudied word that has a `user_word_priority` overlay
   (add-by-hanzi bump, move-to-top, require, or any other overlay write).
   Overlay membership is stash membership. Stash is **not** ranked by corpus
@@ -588,18 +593,20 @@ weight are unchanged.
 
 At composition time, compute the existing remaining daily new-word cap
 (`configured limit − today's completed new-word count`). Split **that
-remaining quota** 50/50, then let existing session logic consume the
-admitted unstudied set as its candidate pool.
+remaining quota** between stash and diet by the learner's `stash_diet_split`
+setting (a stored JSON number in `learner_settings`, default `0.5`, not
+user-visible), then let existing session logic consume the admitted
+unstudied set as its candidate pool.
 
-Rounding:
+Rounding (with `r` = the stored split ratio):
 
 ```text
-stash_slots = Math.floor(remaining / 2)
+stash_slots = Math.floor(remaining * r)
 diet_slots  = remaining - stash_slots
 ```
 
-The odd leftover slot goes to diet. If `remaining` is `0`, this split admits
-nobody; require-bypass may still apply.
+With the default ratio the odd leftover slot goes to diet. If `remaining` is
+`0`, this split admits nobody; require-bypass may still apply.
 
 ### Filling the halves
 
@@ -616,9 +623,36 @@ nobody; require-bypass may still apply.
    id yet, so the RNG is seeded from `unstudied-admission:${studyDayKey}:${remainingQuota}`
    (stable for identical remaining quota on that UTC day). Tests may depend
    on that seed.
-4. If stash cannot fill `stash_slots`, leftover stash slots are filled from
-   diet in frequency order.
-5. Diet takes `diet_slots` plus any leftover stash slots, frequency-ranked.
+4. The actual selected stash contribution is determined before diet candidates
+   are loaded. If stash cannot fill `stash_slots`, diet takes its own slots
+   plus the unfilled stash slots (in the deck-mode draw order when a manifest
+   is present, else frequency order).
+
+### Deck-based diet fill
+
+Applies when the deck manifest (`server/decks/mandarin-decks-v1.json`) is
+present and the study profile is Mandarin. Otherwise the legacy
+frequency-ranked fill applies unchanged.
+
+- The learner's **diet profile** (a versioned JSON value in
+  `learner_settings` under `diet_profile`) holds per-deck weights; when
+  unset it defaults to 100% on the first deck by manifest order. Deck
+  membership comes from the manifest's word→deck assignments; words absent
+  from assignments belong to the `beyond-hsk` tail.
+- Diet demand is `remaining quota − actual selected stash count`, so stash
+  underfill is absorbed without letting a full stash distort the deck mix. It
+  is split across positively weighted decks by largest-remainder rounding, then
+  each deck contributes a **seeded uniform sample** of its unstudied,
+  non-overlay words. The per-deck draw extends the admission seed:
+  `unstudied-admission:{studyDayKey}:{remainingQuota}:deck:{deckId}`.
+- **Spill:** active, positively targeted decks are loaded first. When they
+  under-fill, successor decks are loaded one at a time in manifest order until
+  demand is met, also by seeded sample. Spill never mutates the diet profile.
+- **Tail:** the `beyond-hsk` expanse has no manifest membership; anything
+  still needed after deck spill keeps the legacy corpus-priority order
+  (`words.priority` descending, then `created_at`, then `id`).
+- Nudges, placement intake, and operator jumps own the profile writes; see
+  [diet-deck-distribution.md](./diet-deck-distribution.md).
 
 The composed unstudied admitted set is:
 

@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   buildUnstudiedAdmissionSeedSource,
+  planUnstudiedStashAdmission,
+  planDeckDietTargets,
   selectAdmittedUnstudiedWordIds,
+  selectDeckDietWordIds,
   splitRemainingUnstudiedQuota,
   type UnstudiedStashCandidate,
 } from '../server/db/unstudied-admission.ts';
@@ -68,6 +71,25 @@ describe('experimental dual-pool unstudied admission', () => {
     });
 
     assert.deepEqual(admitted, ['stash-only', 'diet-1', 'diet-2', 'diet-3']);
+  });
+
+  test('uses actual stash selection to calculate diet demand', () => {
+    const fullStash = planUnstudiedStashAdmission({
+      stash: stashWords(['stash-1', 'stash-2', 'stash-3', 'stash-4', 'stash-5']),
+      remainingQuota: 10,
+      seedSource: 'full-stash',
+    });
+    assert.equal(fullStash.selectedStashIds.length, 5);
+    assert.equal(fullStash.dietDemand, 5);
+
+    const underfilledStash = planUnstudiedStashAdmission({
+      stash: stashWords(['stash-1', 'stash-2']),
+      remainingQuota: 10,
+      stashRatio: 0.7,
+      seedSource: 'underfilled-stash',
+    });
+    assert.equal(underfilledStash.selectedStashIds.length, 2);
+    assert.equal(underfilledStash.dietDemand, 8);
   });
 
   test('diet remains frequency-ranked when stash is empty', () => {
@@ -189,6 +211,142 @@ describe('experimental dual-pool unstudied admission', () => {
     };
 
     assert.deepEqual(selectAdmittedUnstudiedWordIds(input), selectAdmittedUnstudiedWordIds(input));
+  });
+});
+
+describe('stash ratio setting', () => {
+  test('a stored ratio shifts the split', () => {
+    assert.deepEqual(splitRemainingUnstudiedQuota(10, 0.5), { stashSlots: 5, dietSlots: 5 });
+    assert.deepEqual(splitRemainingUnstudiedQuota(10, 0.8), { stashSlots: 8, dietSlots: 2 });
+    assert.deepEqual(splitRemainingUnstudiedQuota(10, 0), { stashSlots: 0, dietSlots: 10 });
+    assert.deepEqual(splitRemainingUnstudiedQuota(10, 1), { stashSlots: 10, dietSlots: 0 });
+    assert.deepEqual(splitRemainingUnstudiedQuota(5, 0.5), { stashSlots: 2, dietSlots: 3 });
+  });
+
+  test('rejects out-of-range ratios', () => {
+    assert.throws(() => splitRemainingUnstudiedQuota(10, 1.5), /\[0, 1\]/);
+    assert.throws(() => splitRemainingUnstudiedQuota(10, Number.NaN), /\[0, 1\]/);
+  });
+
+  test('the ratio flows through selection', () => {
+    const input = {
+      stash: stashWords(['s-1', 's-2', 's-3', 's-4']),
+      dietIds: ['d-1', 'd-2', 'd-3', 'd-4'],
+      remainingQuota: 4,
+      seedSource: buildUnstudiedAdmissionSeedSource('2026-01-10', 4),
+      stashRatio: 1,
+    };
+    // All four slots go to stash (non-top stash order is a seeded sample).
+    assert.deepEqual(
+      [...selectAdmittedUnstudiedWordIds(input)].sort(),
+      ['s-1', 's-2', 's-3', 's-4'],
+    );
+  });
+});
+
+describe('deck-based diet sampling', () => {
+  test('planDeckDietTargets splits demand by weight with largest-remainder rounding', () => {
+    const targets = planDeckDietTargets(5, { 'deck-a': 0.5, 'deck-b': 0.5 }, ['deck-a', 'deck-b', 'deck-c']);
+    assert.equal((targets.get('deck-a') ?? 0) + (targets.get('deck-b') ?? 0), 5);
+    assert.equal(targets.has('deck-c'), false);
+
+    const skewed = planDeckDietTargets(10, { 'deck-a': 0.9, 'deck-b': 0.1 }, ['deck-a', 'deck-b']);
+    assert.deepEqual(skewed.get('deck-a'), 9);
+    assert.deepEqual(skewed.get('deck-b'), 1);
+  });
+
+  test('planDeckDietTargets returns no targets without weights and rejects bad demand', () => {
+    assert.equal(planDeckDietTargets(5, {}, ['deck-a']).size, 0);
+    assert.throws(() => planDeckDietTargets(-1, { 'deck-a': 1 }, ['deck-a']), /non-negative integer/);
+  });
+
+  test('selectDeckDietWordIds samples within decks and spills to successors', () => {
+    const candidatesByDeck = new Map([
+      ['deck-a', ['a-1', 'a-2']],
+      ['deck-b', ['b-1', 'b-2']],
+      ['deck-c', ['c-1', 'c-2']],
+    ]);
+    const seedSource = buildUnstudiedAdmissionSeedSource('2026-01-10', 6);
+
+    // Weighted decks under-fill (2+2 available against targets 3+3): spill
+    // reaches deck-c for the remaining two.
+    const selected = selectDeckDietWordIds({
+      targets: new Map([['deck-a', 3], ['deck-b', 3]]),
+      spillDeckIds: ['deck-c'],
+      seedSource,
+      limit: 6,
+      loadCandidatesForDeck: (deckId) => candidatesByDeck.get(deckId) ?? [],
+    });
+    assert.equal(selected.length, 6);
+    assert.ok(selected.includes('c-1') && selected.includes('c-2'));
+    assert.equal(new Set(selected).size, selected.length);
+  });
+
+  test('selectDeckDietWordIds never spills past the limit and is deterministic', () => {
+    const candidatesByDeck = new Map([
+      ['deck-a', ['a-1', 'a-2', 'a-3']],
+      ['deck-b', ['b-1', 'b-2', 'b-3']],
+    ]);
+    const input = {
+      targets: new Map([['deck-a', 2]]),
+      spillDeckIds: ['deck-b'],
+      seedSource: buildUnstudiedAdmissionSeedSource('2026-01-10', 2),
+      limit: 2,
+      loadCandidatesForDeck: (deckId: string) => candidatesByDeck.get(deckId) ?? [],
+    };
+    const first = selectDeckDietWordIds(input);
+    const second = selectDeckDietWordIds(input);
+    assert.deepEqual(first, second);
+    assert.equal(first.length, 2);
+    assert.ok(first.every((id) => id.startsWith('a-')));
+  });
+
+  test('the deck draw seed extends the admission seed source', () => {
+    const candidatesByDeck = new Map([['deck-a', ['a-1', 'a-2', 'a-3', 'a-4']]]);
+    const base = {
+      targets: new Map([['deck-a', 2]]),
+      spillDeckIds: [],
+      limit: 2,
+      loadCandidatesForDeck: (deckId: string) => candidatesByDeck.get(deckId) ?? [],
+    };
+    const dayOne = selectDeckDietWordIds({ ...base, seedSource: buildUnstudiedAdmissionSeedSource('2026-01-10', 2) });
+    const dayTwo = selectDeckDietWordIds({ ...base, seedSource: buildUnstudiedAdmissionSeedSource('2026-01-11', 2) });
+    // Not a guarantee per se, but a seeded redraw across days should differ for this fixture.
+    assert.notDeepEqual(dayOne, dayTwo);
+  });
+
+  test('loads successor candidates only after active decks underfill', () => {
+    const candidatesByDeck = new Map([
+      ['deck-a', ['a-1', 'a-2']],
+      ['deck-b', ['b-1', 'b-2']],
+      ['deck-c', ['c-1', 'c-2']],
+    ]);
+    const loadCalls: string[] = [];
+    const loadCandidatesForDeck = (deckId: string): string[] => {
+      loadCalls.push(deckId);
+      return candidatesByDeck.get(deckId) ?? [];
+    };
+
+    const fullActiveDraw = selectDeckDietWordIds({
+      targets: new Map([['deck-a', 2], ['deck-b', 2]]),
+      spillDeckIds: ['deck-c'],
+      seedSource: 'active-full',
+      limit: 4,
+      loadCandidatesForDeck,
+    });
+    assert.equal(fullActiveDraw.length, 4);
+    assert.deepEqual(loadCalls, ['deck-a', 'deck-b']);
+
+    loadCalls.length = 0;
+    const exhaustedActiveDraw = selectDeckDietWordIds({
+      targets: new Map([['deck-a', 3]]),
+      spillDeckIds: ['deck-b', 'deck-c'],
+      seedSource: 'active-underfill',
+      limit: 4,
+      loadCandidatesForDeck,
+    });
+    assert.equal(exhaustedActiveDraw.length, 4);
+    assert.deepEqual(loadCalls, ['deck-a', 'deck-b']);
   });
 });
 
