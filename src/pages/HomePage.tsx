@@ -1,6 +1,11 @@
 import type { RefObject } from 'react';
 import { useEffect, useState } from 'react';
-import type { BackendStatus } from '../services/api';
+import type { BackendStatus, DietIntakeInput, DietSelfSelect } from '../services/api';
+import { DietIntakePanel } from '../features/diet/DietIntakePanel';
+import {
+  isDietIntakeSubmitting,
+  type DietIntakeSubmissionState,
+} from '../features/diet/diet-intake-submission';
 import type {
   BucketSessionState,
   LearningWordProgress,
@@ -91,6 +96,16 @@ export function HomePage({
   shortcutGuideOpen,
   onOpenShortcutGuide,
   onCloseShortcutGuide,
+  dietIntakeSubmission,
+  dietIntakeDrafts,
+  dietIntakeSelfSelect,
+  onDietIntakeDraftsChange,
+  onDietIntakeSelfSelectChange,
+  onSubmitDietIntakeAssessment,
+  onSubmitManualDietIntake,
+  onRetryDietIntakeRefresh,
+  dietIntakeStartBlocked,
+  onNudgeDiet,
 }: {
   backendStatus: BackendStatus | null;
   onSaveDailyNewWordLimit: (dailyNewWordLimit: number) => Promise<void>;
@@ -162,10 +177,19 @@ export function HomePage({
   shortcutGuideOpen: boolean;
   onOpenShortcutGuide: () => void;
   onCloseShortcutGuide: () => void;
+  dietIntakeSubmission: DietIntakeSubmissionState;
+  dietIntakeDrafts: Record<string, string>;
+  dietIntakeSelfSelect: DietSelfSelect | null;
+  onDietIntakeDraftsChange: (drafts: Record<string, string>) => void;
+  onDietIntakeSelfSelectChange: (value: DietSelfSelect | null) => void;
+  onSubmitDietIntakeAssessment: (input: Pick<DietIntakeInput, 'answers'>) => Promise<void>;
+  onSubmitManualDietIntake: (input: DietIntakeInput) => Promise<void>;
+  onRetryDietIntakeRefresh: () => Promise<void>;
+  dietIntakeStartBlocked: boolean;
+  onNudgeDiet: (direction: 'easier' | 'harder') => Promise<void>;
 }) {
   const [sessionSettingsOpen, setSessionSettingsOpen] = useState(false);
   const [sessionSettingsSaving, setSessionSettingsSaving] = useState(false);
-
   useEffect(() => {
     if (sessionStarted) {
       setSessionSettingsOpen(false);
@@ -187,6 +211,19 @@ export function HomePage({
       </header>
 
       <div className="grid home-grid">
+        {(backendStatus?.dietIntakeRequired || dietIntakeSubmission.phase === 'refreshing' || dietIntakeSubmission.phase === 'refresh-error') && !sessionStarted ? (
+          <DietIntakePanel
+            submitting={isDietIntakeSubmitting(dietIntakeSubmission)}
+            submission={dietIntakeSubmission}
+            drafts={dietIntakeDrafts}
+            selfSelect={dietIntakeSelfSelect}
+            onDraftsChange={onDietIntakeDraftsChange}
+            onSelfSelectChange={onDietIntakeSelfSelectChange}
+            onAssess={(input) => void onSubmitDietIntakeAssessment(input)}
+            onSubmitManual={(input) => void onSubmitManualDietIntake(input)}
+            onRetryRefresh={() => void onRetryDietIntakeRefresh()}
+          />
+        ) : null}
         <HomeOverviewPanel
           backendStatus={backendStatus}
           sessionPrefetch={sessionPrefetch}
@@ -197,6 +234,7 @@ export function HomePage({
           displayedSessionItemCount={displayedSessionItemCount}
           sessionSettingsOpen={sessionSettingsOpen}
           sessionSettingsSaving={sessionSettingsSaving}
+          dietIntakeStartBlocked={dietIntakeStartBlocked}
           onToggleSessionSettings={() => {
             if (!sessionSettingsSaving) {
               setSessionSettingsOpen((open) => !open);
@@ -204,6 +242,7 @@ export function HomePage({
           }}
           onStartSession={onStartSession}
           onEndSession={onEndSession}
+          onNudgeDiet={onNudgeDiet}
         />
 
         {sessionSettingsOpen && !sessionStarted ? (

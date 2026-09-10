@@ -23,6 +23,8 @@ import {
   dbConfig,
   DietManifestUnavailableError,
   DietProfileChangedDuringAssessmentError,
+  isDietDeckModeActive,
+  isDietIntakeRequired,
   isDietSelfSelect,
   nudgeDietProfile,
   recordDietIntake,
@@ -452,6 +454,8 @@ export function createApp(options: CreateAppOptions = {}) {
       wordStatusCounts: getWordStatusCounts(),
       reviewFailureRateDays: getReviewFailureRateDays(),
       sessionActiveTimeMetrics: getSessionActiveTimeMetrics(studyDayKey),
+      dietDecksActive: isDietDeckModeActive(),
+      dietIntakeRequired: isDietIntakeRequired(),
       ...getLearningPolicy(studyDayKey),
     });
   });

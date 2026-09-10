@@ -38,7 +38,7 @@ import type {
   ContentDiagnosticsResponse,
 } from '../domain/content-diagnostics';
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? 'http://localhost:5174' : '');
+const API_BASE = import.meta.env?.VITE_API_BASE ?? (import.meta.env?.DEV ? 'http://localhost:5174' : '');
 
 type ApiAuthenticationTokenProvider = () => Promise<string | null>;
 
@@ -69,6 +69,10 @@ type BackendStatus = {
   sessionActiveTimeMetrics: SessionActiveTimeMetrics;
   dailyNewWordLimit: number;
   learningCoverageDate: string;
+  /** True when deck-based diet admission is active (Mandarin profile with a manifest). */
+  dietDecksActive: boolean;
+  /** True when the learner should see the first-run placement intake (SPECS/diet-deck-distribution.md §2.5). */
+  dietIntakeRequired: boolean;
 };
 
 type LearningPolicyResponse = {
@@ -286,6 +290,65 @@ export async function updateDailyNewWordLimit(dailyNewWordLimit: number): Promis
   });
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to update daily new-word limit'));
+  }
+
+  return response.json();
+}
+
+// --- Diet profile (SPECS/diet-deck-distribution.md) --------------------------
+
+export type DietSelfSelect =
+  | 'complete-beginner'
+  | 'some-basics'
+  | 'intermediate'
+  | 'advanced-or-heritage';
+
+export type DietIntakeInput = {
+  answers: Array<{ prompt: string; answer: string }>;
+  selfSelect: DietSelfSelect | null;
+};
+
+export type DietIntakeAssessmentInput = Pick<DietIntakeInput, 'answers'>;
+
+export async function submitDietIntake(input: DietIntakeInput): Promise<void> {
+  const response = await apiFetch(`${API_BASE}/api/diet/intake`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to record the diet intake'));
+  }
+}
+
+export async function submitDietIntakeAssessment(input: DietIntakeAssessmentInput): Promise<void> {
+  const response = await apiFetch(`${API_BASE}/api/diet/intake/assess`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      answers: input.answers,
+      providerDisclosureAccepted: true,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Unable to assess and save your starting point'));
+  }
+}
+
+export async function nudgeDiet(direction: 'easier' | 'harder'): Promise<{ changed: boolean }> {
+  const response = await apiFetch(`${API_BASE}/api/diet/nudge`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ direction }),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to nudge the diet'));
   }
 
   return response.json();

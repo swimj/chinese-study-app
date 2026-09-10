@@ -1,4 +1,4 @@
-import { getDb } from './connection.ts';
+import { config, getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
 import {
   loadDeckManifest,
@@ -256,7 +256,11 @@ export function applyDietIntake(
       {
         actor: 'intake',
         at: now,
-        note: input.selfSelect ? `self-select: ${input.selfSelect}` : 'intake without self-select',
+        note: input.selfSelect
+          ? `self-select: ${input.selfSelect}`
+          : input.answers.length === 0
+            ? 'intake skipped'
+            : 'intake without self-select',
       },
     ],
     updatedAt: now,
@@ -398,6 +402,20 @@ export function getDietProfile(manifest: DeckManifest | null = loadDeckManifest(
     return null;
   }
   return createDefaultDietProfile(manifest, new Date().toISOString());
+}
+
+/** True when deck-based diet admission is active (Mandarin profile with a manifest). */
+export function isDietDeckModeActive(manifest: DeckManifest | null = loadDeckManifest()): boolean {
+  return config.studyProfile === 'mandarin' && manifest !== null;
+}
+
+/**
+ * True when the learner should see the first-run placement intake: the deck
+ * machinery is active and no diet profile has been stored yet (no intake,
+ * nudge, or operator jump has happened).
+ */
+export function isDietIntakeRequired(manifest: DeckManifest | null = loadDeckManifest()): boolean {
+  return isDietDeckModeActive(manifest) && getStoredDietProfile() === null;
 }
 
 // --- Learner/operator-facing operations -------------------------------------
