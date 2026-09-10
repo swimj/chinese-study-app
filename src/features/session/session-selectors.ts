@@ -1,6 +1,12 @@
 import type { SessionStudyItem } from '../../domain/study-actions';
 import type { Word, WordMeaning } from '../../types';
 
+export function hasServedProductionCueSupplement(
+  production: SessionStudyItem['production'] | null | undefined,
+) {
+  return production?.supplement != null;
+}
+
 export function getActiveWordPersonalNotes({
   word,
   overridesByWordId,

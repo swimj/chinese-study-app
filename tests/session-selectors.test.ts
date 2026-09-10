@@ -4,6 +4,7 @@ import {
   getPersonalNotesEditorTarget,
   getActivePrompt,
   getStudySessionPanelView,
+  hasServedProductionCueSupplement,
 } from '../src/features/session/session-selectors.ts';
 import type { Word } from '../src/types.ts';
 
@@ -136,6 +137,33 @@ describe('session selectors', () => {
       promptDisplayedMeanings: ['live changed meaning'],
       allMeanings: ['live changed meaning'],
     }), 'The exact served cue');
+  });
+
+  test('detects a served production cue supplement snapshot', () => {
+    assert.equal(hasServedProductionCueSupplement(null), false);
+    assert.equal(hasServedProductionCueSupplement({
+      taskId: 'production-task:cue-word:default_production',
+      cueId: 'cue-1',
+      cueType: 'definition_gloss',
+      text: 'to shield',
+      acceptedAnswers: [{ wordId: 'cue-word', hanzi: '包庇', traditional: null }],
+      supplement: null,
+      recheckDemandId: null,
+    }), false);
+    assert.equal(hasServedProductionCueSupplement({
+      taskId: 'production-task:cue-word:default_production',
+      cueId: 'cue-1',
+      cueType: 'definition_gloss',
+      text: 'to shield',
+      acceptedAnswers: [{ wordId: 'cue-word', hanzi: '包庇', traditional: null }],
+      supplement: {
+        supplementId: 'supplement-1',
+        englishFrame: 'knowingly shielding a wrongdoer from responsibility or discovery',
+        exampleSentence: '他明知儿子犯了罪，却包庇了他。',
+        exampleTranslation: 'He knew his son had committed a crime but shielded him.',
+      },
+      recheckDemandId: null,
+    }), true);
   });
 });
 

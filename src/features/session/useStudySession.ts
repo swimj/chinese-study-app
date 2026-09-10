@@ -58,6 +58,7 @@ import {
   getActiveReviewState,
   getActiveWordPersonalNotes,
   getPersonalNotesEditorTarget,
+  hasServedProductionCueSupplement,
   isProductionSessionItem,
   isReviewInReinforcement,
 } from './session-selectors';
@@ -118,13 +119,15 @@ type SessionUndoSnapshot = {
   reflectionEvidence: SessionReflectionEvidenceAccumulator;
 };
 
+type ProductionUiPhase = 'idle' | 'await-supplement' | 'await-rating' | 'await-next';
+
 type SessionUiSnapshot = {
   answerRevealed: boolean;
   productionHanziInput: string;
   productionHanziError: string | null;
   productionSubmittedResponse: string | null;
   productionResponseResolution: ProductionResponseResolution | null;
-  productionUiPhase: 'idle' | 'await-rating' | 'await-next';
+  productionUiPhase: ProductionUiPhase;
   frozenProductionCard: FrozenProductionCard | null;
   contrastSelectedWordId: string | null;
   frozenContrastCard: FrozenContrastCard | null;
@@ -155,6 +158,7 @@ export type StudySessionHomePageProps = {
   personalNotesEditorSaving: boolean;
   studyManagementSubmitting: boolean;
   productionAwaitingNext: boolean;
+  productionAwaitingSupplement: boolean;
   frozenProductionCard: FrozenProductionCard | null;
   contrastAwaitingNext: boolean;
   frozenContrastCard: FrozenContrastCard | null;
@@ -170,7 +174,7 @@ export type StudySessionHomePageProps = {
   activeAnswerText: string | null;
   activeMeaningRows: WordMeaning[];
   meaningVisibilitySavingKey: string | null;
-  productionRequiresHanziInput: boolean;
+  isProductionItem: boolean;
   productionAwaitingRating: boolean;
   productionHanziInput: string;
   productionHanziError: string | null;
@@ -185,6 +189,7 @@ export type StudySessionHomePageProps = {
   onRetrySessionReflection: () => void;
   onUndoLastRating: () => void;
   onContinueAfterAutoForgot: () => void;
+  onContinueAfterProductionSupplement: () => void;
   onContinueAfterAutoContrastForgot: () => void;
   onDismissCurrentWord: () => void;
   onManageStudyAction: () => void;
@@ -255,7 +260,7 @@ export function useStudySession({
   const [productionHanziError, setProductionHanziError] = useState<string | null>(null);
   const [productionSubmittedResponse, setProductionSubmittedResponse] = useState<string | null>(null);
   const [productionResponseResolution, setProductionResponseResolution] = useState<ProductionResponseResolution | null>(null);
-  const [productionUiPhase, setProductionUiPhase] = useState<'idle' | 'await-rating' | 'await-next'>('idle');
+  const [productionUiPhase, setProductionUiPhase] = useState<ProductionUiPhase>('idle');
   const [contrastSelectedWordId, setContrastSelectedWordId] = useState<string | null>(null);
   const [frozenProductionCard, setFrozenProductionCard] = useState<FrozenProductionCard | null>(null);
   const [frozenContrastCard, setFrozenContrastCard] = useState<FrozenContrastCard | null>(null);
@@ -356,13 +361,14 @@ export function useStudySession({
     reinforcementStreak: activeReviewReinforcementStreak,
     failureCount: activeReviewFailureCount,
   });
-  const productionRequiresHanziInput = isProductionSessionItem(activeItem);
+  const isProductionItem = isProductionSessionItem(activeItem);
   const contrastSelectionActive = activeItem?.actionKind === 'contrast_selection';
   const contrastAwaitingRating =
     contrastSelectionActive &&
     contrastSelectedWordId !== null &&
     contrastSelectedWordId === activeItem?.contrastSelection?.promptTargetWordId;
-  const productionAwaitingRating = productionRequiresHanziInput && productionUiPhase === 'await-rating';
+  const productionAwaitingRating = isProductionItem && productionUiPhase === 'await-rating';
+  const productionAwaitingSupplement = isProductionItem && productionUiPhase === 'await-supplement';
   const productionAwaitingNext = productionUiPhase === 'await-next' && frozenProductionCard !== null;
   const contrastAwaitingNext = frozenContrastCard !== null;
   const activeRatingOptions = getActiveRatingOptions({
@@ -377,7 +383,7 @@ export function useStudySession({
   const personalNotesEditorOpen = personalNotesEditorTargetWordId !== null;
   const productionSubmissionInputActive =
     sessionStarted &&
-    productionRequiresHanziInput &&
+    isProductionItem &&
     !answerRevealed &&
     !productionAwaitingNext &&
     !personalNotesEditorOpen;
@@ -840,7 +846,9 @@ export function useStudySession({
         setProductionHanziError(null);
         setProductionSubmittedResponse(typedResponse);
         setProductionResponseResolution(resolution);
-        setProductionUiPhase('await-rating');
+        setProductionUiPhase(
+          hasServedProductionCueSupplement(activeItem.production) ? 'await-supplement' : 'await-rating',
+        );
         setAnswerRevealed(true);
         return;
       }
@@ -983,6 +991,14 @@ export function useStudySession({
   function handleContinueAfterAutoForgot() {
     // Unmask the active card after the queue already advanced due to an incorrect hanzi submission.
     resetAnswerAndProductionUi();
+  }
+
+  function handleContinueAfterProductionSupplement() {
+    if (!productionAwaitingSupplement) {
+      return;
+    }
+
+    setProductionUiPhase('await-rating');
   }
 
   function handlePreviewContrastChoice(wordId: string) {
@@ -1372,10 +1388,13 @@ export function useStudySession({
 
     setProductionHanziInput('');
     setProductionHanziError(null);
-    if (productionUiPhase === 'await-rating' && !productionRequiresHanziInput) {
+    if (productionUiPhase === 'await-rating' && !isProductionItem) {
       setProductionUiPhase('idle');
     }
-  }, [activeItem?.sessionActionId, productionUiPhase, productionRequiresHanziInput]);
+    if (productionUiPhase === 'await-supplement' && !isProductionItem) {
+      setProductionUiPhase('idle');
+    }
+  }, [activeItem?.sessionActionId, productionUiPhase, isProductionItem]);
 
   useEffect(() => {
     if (!sessionStarted || sessionState?.phase === 'completed' || !sessionSummary) {
@@ -1434,7 +1453,7 @@ export function useStudySession({
   }, [personalNotesEditorOpen]);
 
   useEffect(() => {
-    if (!sessionStarted || !productionRequiresHanziInput || answerRevealed || productionAwaitingNext || personalNotesEditorOpen) {
+    if (!sessionStarted || !isProductionItem || answerRevealed || productionAwaitingNext || personalNotesEditorOpen) {
       return;
     }
 
@@ -1449,7 +1468,7 @@ export function useStudySession({
     answerRevealed,
     personalNotesEditorOpen,
     productionAwaitingNext,
-    productionRequiresHanziInput,
+    isProductionItem,
     sessionStarted,
   ]);
 
@@ -1489,13 +1508,14 @@ export function useStudySession({
           isEditableTarget: isEditableKeyboardTarget(event.target),
           productionInputActive: productionSubmissionInputActive,
           productionAwaitingNext,
+          productionAwaitingSupplement,
           contrastAwaitingNext,
           unstudiedIntro: activeWord?.status === 'unstudied' && !activeUnstudiedProgress?.introComplete,
-          productionRequiresHanziInput,
+          isProductionItem,
           contrastSelectionActive,
           contrastHasSelection: contrastSelectedWordId !== null,
           answerRevealed,
-          ratingAvailable: answerRevealed && !productionAwaitingNext && !contrastAwaitingNext,
+          ratingAvailable: answerRevealed && !productionAwaitingNext && !productionAwaitingSupplement && !contrastAwaitingNext,
           hasUndo: lastUndoSnapshot !== null,
           hasActiveWord: activeWord !== null,
           ratingOptions: activeRatingOptions,
@@ -1544,11 +1564,14 @@ export function useStudySession({
             handleContinueAfterAutoContrastForgot();
           }
           return;
+        case 'continue_after_supplement':
+          handleContinueAfterProductionSupplement();
+          return;
         case 'rate_default': {
           const defaultRating = getDefaultRating(activeRatingOptions);
           if (defaultRating && activeWord) {
             void handleRate(defaultRating, {
-              restoreUi: productionRequiresHanziInput ? 'production-input' : 'revealed',
+              restoreUi: isProductionItem ? 'production-input' : 'revealed',
             });
           }
           return;
@@ -1570,7 +1593,7 @@ export function useStudySession({
           return;
         case 'rate':
           void handleRate(command.rating, {
-            restoreUi: productionRequiresHanziInput ? 'production-input' : 'revealed',
+            restoreUi: isProductionItem ? 'production-input' : 'revealed',
           });
           return;
         case 'toggle_shortcut_guide':
@@ -1594,7 +1617,8 @@ export function useStudySession({
     contrastSelectionActive,
     contrastSelectedWordId,
     productionAwaitingNext,
-    productionRequiresHanziInput,
+    productionAwaitingSupplement,
+    isProductionItem,
     productionSubmissionInputActive,
     frozenProductionCard,
     lastUndoSnapshot,
@@ -1630,6 +1654,7 @@ export function useStudySession({
       personalNotesEditorSaving,
       studyManagementSubmitting,
       productionAwaitingNext,
+      productionAwaitingSupplement,
       frozenProductionCard,
       contrastAwaitingNext,
       frozenContrastCard,
@@ -1645,7 +1670,7 @@ export function useStudySession({
       activeAnswerText,
       activeMeaningRows,
       meaningVisibilitySavingKey,
-      productionRequiresHanziInput,
+      isProductionItem,
       productionAwaitingRating,
       productionHanziInput,
       productionHanziError,
@@ -1660,6 +1685,7 @@ export function useStudySession({
       onRetrySessionReflection: handleRetrySessionReflection,
       onUndoLastRating: handleUndoLastRating,
       onContinueAfterAutoForgot: handleContinueAfterAutoForgot,
+      onContinueAfterProductionSupplement: handleContinueAfterProductionSupplement,
       onContinueAfterAutoContrastForgot: handleContinueAfterAutoContrastForgot,
       onDismissCurrentWord: () => void handleDismissCurrentWord(),
       onManageStudyAction: () => void handleManageStudyAction(),

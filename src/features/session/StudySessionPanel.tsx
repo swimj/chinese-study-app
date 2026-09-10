@@ -6,13 +6,13 @@ import type {
   BucketSessionState,
   UnstudiedWordProgress,
 } from '../../lib/session-state';
-import type { SessionStudyItem } from '../../domain/study-actions';
+import type { ProductionCueSupplementSnapshot, SessionStudyItem } from '../../domain/study-actions';
 import type { ReviewRating, Word, WordMeaning } from '../../types';
 import { studyProfile } from '../../study-profile';
 import type { RatingOption } from './session-rating';
 import type { SessionSummary } from './session-summary';
 import type { SessionFinalizationState } from './session-finalization';
-import { getStudySessionPanelView } from './session-selectors';
+import { getStudySessionPanelView, hasServedProductionCueSupplement } from './session-selectors';
 import {
   getSessionPrimaryAction,
   getSessionShortcutGuide,
@@ -69,6 +69,7 @@ export function StudySessionPanel({
   personalNotesEditorSaving,
   studyManagementSubmitting,
   productionAwaitingNext,
+  productionAwaitingSupplement,
   frozenProductionCard,
   contrastAwaitingNext,
   frozenContrastCard,
@@ -84,7 +85,7 @@ export function StudySessionPanel({
   activeAnswerText,
   activeMeaningRows,
   meaningVisibilitySavingKey,
-  productionRequiresHanziInput,
+  isProductionItem,
   productionAwaitingRating,
   productionHanziInput,
   productionHanziError,
@@ -98,6 +99,7 @@ export function StudySessionPanel({
   onEndSession,
   onRetrySessionReflection,
   onContinueAfterAutoForgot,
+  onContinueAfterProductionSupplement,
   onContinueAfterAutoContrastForgot,
   onDismissCurrentWord,
   onManageStudyAction,
@@ -135,6 +137,7 @@ export function StudySessionPanel({
   personalNotesEditorSaving: boolean;
   studyManagementSubmitting: boolean;
   productionAwaitingNext: boolean;
+  productionAwaitingSupplement: boolean;
   frozenProductionCard: FrozenProductionCard | null;
   contrastAwaitingNext: boolean;
   frozenContrastCard: FrozenContrastCard | null;
@@ -150,7 +153,7 @@ export function StudySessionPanel({
   activeAnswerText: string | null;
   activeMeaningRows: WordMeaning[];
   meaningVisibilitySavingKey: string | null;
-  productionRequiresHanziInput: boolean;
+  isProductionItem: boolean;
   productionAwaitingRating: boolean;
   productionHanziInput: string;
   productionHanziError: string | null;
@@ -164,6 +167,7 @@ export function StudySessionPanel({
   onEndSession: () => void;
   onRetrySessionReflection: () => void;
   onContinueAfterAutoForgot: () => void;
+  onContinueAfterProductionSupplement: () => void;
   onContinueAfterAutoContrastForgot: () => void;
   onDismissCurrentWord: () => void;
   onManageStudyAction: () => void;
@@ -197,16 +201,19 @@ export function StudySessionPanel({
     activeUnstudiedIntroComplete: activeUnstudiedProgress?.introComplete ?? false,
   });
   const showRatingButtons = answerRevealed && (
-    (!productionRequiresHanziInput || productionAwaitingRating) &&
+    (!isProductionItem || productionAwaitingRating) &&
     (!activeItem || activeItem.actionKind !== 'contrast_selection' || contrastAwaitingRating)
   );
+  const showProductionSupplementAside =
+    answerRevealed && hasServedProductionCueSupplement(activeItem?.production);
   const sessionEndDisabled = sessionPhase === 'draining' || personalNotesEditorOpen;
   const sessionEndLabel = sessionPhase === 'draining' ? 'Session draining' : 'End session';
   const keyboardContext = createSessionKeyboardContext({
     sessionStarted,
-    productionRequiresHanziInput,
+    isProductionItem,
     answerRevealed,
     productionAwaitingNext,
+    productionAwaitingSupplement,
     personalNotesEditorOpen,
     contrastAwaitingNext,
     unstudiedIntro: activeWord?.status === 'unstudied' && !(activeUnstudiedProgress?.introComplete ?? false),
@@ -497,7 +504,7 @@ export function StudySessionPanel({
               Answered {reviewedCount} this session · {queuedCount} still queued · Unique lapse items{' '}
               {sessionSummary?.lapsedReviewActionIds.length ?? 0} · Elapsed {activeElapsedTime}
             </p>
-            <div className="prompt-block">
+            <div className={showProductionSupplementAside ? 'prompt-block is-compact' : 'prompt-block'}>
               <span className="prompt-label">Prompt</span>
               {activeItem.actionKind === 'contrast_selection' ? (
                 <>
@@ -530,10 +537,21 @@ export function StudySessionPanel({
               />
             ) : answerRevealed ? (
               <div className="answer-block">
-                <span className="prompt-label">Answer</span>
-                <span className="answer-pinyin">{activeAnswerPinyin}</span>
-                <strong className="answer-value">{activeAnswerText}</strong>
-                {activeMeaningRows.length > 0 ? (
+                {showProductionSupplementAside && activeItem.production?.supplement ? (
+                  <>
+                    <p className="production-supplement-ack">You had it.</p>
+                    <strong className="production-supplement-target">{activeAnswerText}</strong>
+                    <span className="answer-pinyin">{activeAnswerPinyin}</span>
+                    <ProductionSupplementAside supplement={activeItem.production.supplement} />
+                  </>
+                ) : (
+                  <>
+                    <span className="prompt-label">Answer</span>
+                    <span className="answer-pinyin">{activeAnswerPinyin}</span>
+                    <strong className="answer-value">{activeAnswerText}</strong>
+                  </>
+                )}
+                {productionAwaitingSupplement ? null : activeMeaningRows.length > 0 ? (
                   <div className="stack">
                     <div className="meaning-visibility-grid">
                       <div className="meaning-visibility-header">
@@ -570,27 +588,19 @@ export function StudySessionPanel({
                 ) : (
                   <MeaningList meanings={activeAllMeanings} />
                 )}
-                {activeItem.production?.supplement ? (
-                  <div className="production-supplement">
-                    <span className="prompt-label">In context</span>
-                    <span className="prompt-meta">
-                      {activeItem.production.supplement.englishFrame}
-                    </span>
-                    <span>{activeItem.production.supplement.exampleSentence}</span>
-                    <span className="prompt-meta">
-                      {activeItem.production.supplement.exampleTranslation}
-                    </span>
-                  </div>
-                ) : null}
-                {activeWordPersonalNotes.trim().length > 0 ? (
+                {productionAwaitingSupplement ? null : activeWordPersonalNotes.trim().length > 0 ? (
                   <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
                 ) : null}
-                <span className="prompt-meta">
-                  Interval {formatIntervalHours(activeItem.intervalHours)}
-                </span>
-                <span className="prompt-meta">{activeWord.examples[0]}</span>
+                {productionAwaitingSupplement ? null : (
+                  <>
+                    <span className="prompt-meta">
+                      Interval {formatIntervalHours(activeItem.intervalHours)}
+                    </span>
+                    <span className="prompt-meta">{activeWord.examples[0]}</span>
+                  </>
+                )}
               </div>
-            ) : productionRequiresHanziInput && !productionAwaitingRating ? (
+            ) : isProductionItem && !productionAwaitingRating ? (
               <form
                 id={productionFormId}
                 className="stack"
@@ -643,6 +653,15 @@ export function StudySessionPanel({
                     <ShortcutHint shortcut={shortcutFor(primaryAction, 'confirm_contrast')} />
                   </button>
                 </div>
+              ) : productionAwaitingSupplement ? (
+                <button
+                  type="button"
+                  onClick={onContinueAfterProductionSupplement}
+                  disabled={personalNotesEditorOpen}
+                >
+                  Continue
+                  <ShortcutHint shortcut={shortcutFor(primaryAction, 'continue_after_supplement')} />
+                </button>
               ) : showRatingButtons ? (
                 <div className="rating-grid">
                   {activeRatingOptions.map((option) => (
@@ -653,7 +672,7 @@ export function StudySessionPanel({
                     title={option.note}
                     onClick={() =>
                         onRate(option.value, {
-                          restoreUi: productionRequiresHanziInput ? 'production-input' : 'revealed',
+                          restoreUi: isProductionItem ? 'production-input' : 'revealed',
                         })
                       }
                       disabled={submittingRating !== null || personalNotesEditorOpen}
@@ -666,7 +685,7 @@ export function StudySessionPanel({
                     </button>
                   ))}
                 </div>
-              ) : productionRequiresHanziInput && !productionAwaitingRating ? (
+              ) : isProductionItem && !productionAwaitingRating ? (
                 <div className="rating-grid">
                   <button
                     type="submit"
@@ -1110,11 +1129,26 @@ function shortcutFor(
   return primaryAction?.command === command ? primaryAction.shortcut : null;
 }
 
+function ProductionSupplementAside({
+  supplement,
+}: {
+  supplement: ProductionCueSupplementSnapshot;
+}) {
+  return (
+    <div className="production-supplement production-supplement-aside">
+      <p className="production-supplement-frame">{supplement.englishFrame}</p>
+      <p className="production-supplement-sentence">{`「${supplement.exampleSentence}」`}</p>
+      <p className="production-supplement-translation">{supplement.exampleTranslation}</p>
+    </div>
+  );
+}
+
 function createSessionKeyboardContext({
   sessionStarted,
-  productionRequiresHanziInput,
+  isProductionItem,
   answerRevealed,
   productionAwaitingNext,
+  productionAwaitingSupplement,
   personalNotesEditorOpen,
   contrastAwaitingNext,
   unstudiedIntro,
@@ -1126,9 +1160,10 @@ function createSessionKeyboardContext({
   ratingOptions,
 }: {
   sessionStarted: boolean;
-  productionRequiresHanziInput: boolean;
+  isProductionItem: boolean;
   answerRevealed: boolean;
   productionAwaitingNext: boolean;
+  productionAwaitingSupplement: boolean;
   personalNotesEditorOpen: boolean;
   contrastAwaitingNext: boolean;
   unstudiedIntro: boolean;
@@ -1144,14 +1179,15 @@ function createSessionKeyboardContext({
     isEditableTarget: false,
     productionInputActive:
       sessionStarted &&
-      productionRequiresHanziInput &&
+      isProductionItem &&
       !answerRevealed &&
       !productionAwaitingNext &&
       !personalNotesEditorOpen,
     productionAwaitingNext,
+    productionAwaitingSupplement,
     contrastAwaitingNext,
     unstudiedIntro,
-    productionRequiresHanziInput,
+    isProductionItem,
     contrastSelectionActive,
     contrastHasSelection,
     answerRevealed,
