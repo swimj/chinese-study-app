@@ -77,6 +77,8 @@ makes a historic displayed estimate stable if later pricing tables change. New
 runs also retain the exact validated evidence bundle used for the provider call;
 failed runs can therefore be retried after the originating session UI closes.
 Legacy rows without a saved bundle remain readable but are not retryable.
+Same-UTC-day estimated spend is summed from these rows to decide whether
+unselected generation and explicit model choice must stay on Luna.
 
 Generation runs also have additive nullable columns for the provider client
 request id, bundle/result schema-version provenance, and a versioned

@@ -34,7 +34,8 @@ and ordinary result validation. It supports:
 - selection of one, several, or all eligible deferred proposals across sessions;
 - a fresh bounded reflection request containing their original evidence items;
 - explicit selection from available compatible models, with the learner's last
-  choice remembered where practical;
+  choice remembered where practical. After the daily spend cap, only Luna
+  remains selectable until the next UTC day;
 - ordinary review of fresh results;
 - automatic retirement of the selected originals from active review after
   successful generation, without requiring proposal-by-proposal reconciliation.

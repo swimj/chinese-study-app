@@ -3,7 +3,7 @@ import { describe, test } from 'node:test';
 import { PROVIDER_REQUEST_TIMEOUT_MS } from '../server/llm/types.ts';
 import { GLM_REFLECTION_MODEL_CONFIG } from '../server/reflection/glm-provider.ts';
 import { LUNA_REFLECTION_MODEL_CONFIG } from '../server/reflection/luna-provider.ts';
-import { REFLECTION_MODEL_ARMS, isReflectionModelChoice } from '../server/reflection/model-arms.ts';
+import { REFLECTION_MODEL_ARMS, LUNA_REFLECTION_MODEL_CHOICE, isReflectionModelChoice } from '../server/reflection/model-arms.ts';
 
 describe('reflection comparison-arm registry', () => {
   test('registers four equally weighted default comparison arms', () => {
@@ -14,6 +14,7 @@ describe('reflection comparison-arm registry', () => {
       'openrouter:gemini-3.6-flash',
       'openai:gpt-5.6-terra-high',
     ]);
+    assert.equal(LUNA_REFLECTION_MODEL_CHOICE, 'openai:gpt-5.6-luna-high');
     assert.equal(isReflectionModelChoice('openai:gpt-5.6-terra-high'), true);
     assert.equal(isReflectionModelChoice('openrouter:claude-sonnet-5'), false);
     assert.equal(isReflectionModelChoice('dashscope:qwen3.8-max'), false);

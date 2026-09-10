@@ -132,6 +132,8 @@ scroll inside the pane. Production evidence is a quiet tested-cue line
 is a packaging surface, not a second Help pager: compact selected-by-default
 chips occupy the main viewport, drill-in details stay secondary, and Select all /
 Clear / model / Get a second opinion sit on a Help-style bottom rail.
+When the daily spend cap has been surpassed, non-Luna model options are
+disabled and a tip names the next UTC reset in the browser timezone.
 **By session** retains the artifact-oriented dogfood view, including
 explanation items already marked Done. In that view, items whose results carry no proposals are summarized in a
 compact **No durable change** gist derived from the persisted evidence and

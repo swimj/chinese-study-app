@@ -17,6 +17,7 @@ describe('reflection run log presentation', () => {
       artifactDetails: [],
       unreadableArtifactIds: new Set([artifactId]),
       generationRuns: [],
+      spendCap: null,
       qualityStats: { arms: [] },
       selectedArtifact: null,
       selectedArtifactId: null,
@@ -92,6 +93,19 @@ describe('reflection run log presentation', () => {
     assert.doesNotMatch(markup, />Proposal details</);
   });
 
+  test('second-opinion model selector blocks non-Luna arms after the daily spend cap', () => {
+    const markup = renderToStaticMarkup(createElement(DeferredSecondOpinionQueue, {
+      cards: deferredSecondOpinionCards(),
+      controller: idleController({ spendCap: cappedSpendCap() }),
+    }));
+
+    assert.match(markup, /Luna is the only available model until/);
+    assert.match(markup, /value="openai:gpt-5.6-luna-high"/);
+    assert.doesNotMatch(markup, /value="openai:gpt-5.6-luna-high" disabled=""/);
+    assert.match(markup, /value="zai:glm-5.3-high" disabled=""/);
+    assert.match(markup, /value="openai:gpt-5.6-terra-high" disabled=""/);
+  });
+
   test('second-opinion empty state stays compact', () => {
     const markup = renderToStaticMarkup(createElement(DeferredSecondOpinionQueue, {
       cards: [],
@@ -163,6 +177,12 @@ describe('reflection run log presentation', () => {
     assert.doesNotMatch(markup, /Choose model for reflection retry/);
   });
 
+  test('run-meta view explains the Luna-only spend cap', () => {
+    const markup = renderRuns([], null, cappedSpendCap());
+    assert.match(markup, /Luna is the only available model until/);
+    assert.match(markup, /No reflection generation attempts yet/);
+  });
+
   test('replaces retry with a concise generation status', () => {
     const runs = [run({
       runId: 'failed',
@@ -208,6 +228,7 @@ function idleController(
     artifactDetails: [],
     unreadableArtifactIds: new Set(),
     generationRuns: [],
+    spendCap: null,
     qualityStats: { arms: [] },
     selectedArtifact: null,
     selectedArtifactId: null,
@@ -447,12 +468,24 @@ function deferredProposalArtifact(
 function renderRuns(
   runs: ReflectionPageController['generationRuns'],
   retryStatus: ReflectionPageController['generationRetryStatus'] = null,
+  spendCap: ReflectionPageController['spendCap'] = null,
 ): string {
   return renderToStaticMarkup(createElement(TokenUsageView, {
     runs,
+    spendCap,
     retryStatus,
     onRetry: async () => {},
   }));
+}
+
+function cappedSpendCap(): NonNullable<ReflectionPageController['spendCap']> {
+  return {
+    lunaOnly: true,
+    spentUsd: 0.62,
+    capUsd: 0.5,
+    dayKey: '2026-09-10',
+    resetsAt: '2026-09-11T00:00:00.000Z',
+  };
 }
 
 function run(overrides: {
