@@ -2085,6 +2085,18 @@ button:disabled:hover {
   min-width: 0;
 }
 
+.reflection-spend-cap-tip {
+  margin: 0;
+  color: #fbbf24;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.reflection-usage-view > .reflection-spend-cap-tip {
+  margin: 0 0 0.75rem;
+}
+
 .reflection-help-toolbar {
   display: flex;
   flex-wrap: wrap;

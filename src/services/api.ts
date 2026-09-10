@@ -91,6 +91,19 @@ export type ReflectionModelChoice =
   | 'openrouter:gemini-3.6-flash'
   | 'openai:gpt-5.6-terra-high';
 
+export type ReflectionSpendCapDto = {
+  lunaOnly: boolean;
+  spentUsd: number;
+  capUsd: number;
+  dayKey: string;
+  resetsAt: string;
+};
+
+export type ReflectionGenerationRunsResponse = {
+  runs: ReflectionGenerationRunDto[];
+  spendCap: ReflectionSpendCapDto;
+};
+
 export type ReflectionTokenUsageDto = {
   inputTokens: number | null;
   cachedInputTokens: number | null;
@@ -203,7 +216,7 @@ export type ReflectionQualityStatsDto = {
 
 export type ReflectionReviewApi = {
   listArtifacts: (review: 'open' | 'all') => Promise<ReflectionArtifactSummaryDto[]>;
-  listGenerationRuns: () => Promise<ReflectionGenerationRunDto[]>;
+  listGenerationRuns: () => Promise<ReflectionGenerationRunsResponse>;
   retryGenerationRun: (runId: string, model?: ReflectionModelChoice) => Promise<GenerateSessionReflectionResult>;
   generateDeferredSecondOpinion: (
     proposalIds: string[],
@@ -486,13 +499,13 @@ export async function fetchReflectionArtifacts(
   return payload.artifacts;
 }
 
-export async function fetchReflectionGenerationRuns(): Promise<ReflectionGenerationRunDto[]> {
+export async function fetchReflectionGenerationRuns(): Promise<ReflectionGenerationRunsResponse> {
   const response = await apiFetch(`${API_BASE}/api/reflection-generation-runs`);
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to load reflection generation runs'));
   }
-  const payload = await response.json() as { runs: ReflectionGenerationRunDto[] };
-  return payload.runs;
+  const payload = await response.json() as ReflectionGenerationRunsResponse;
+  return payload;
 }
 
 export async function retryReflectionGenerationRun(

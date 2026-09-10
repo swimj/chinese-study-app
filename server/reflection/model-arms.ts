@@ -69,6 +69,8 @@ export const REFLECTION_MODEL_ARMS = [
 
 export type ReflectionModelChoice = (typeof REFLECTION_MODEL_ARMS)[number]['choice'];
 
+export const LUNA_REFLECTION_MODEL_CHOICE = 'openai:gpt-5.6-luna-high' satisfies ReflectionModelChoice;
+
 export function isReflectionModelChoice(value: unknown): value is ReflectionModelChoice {
   return typeof value === 'string' && REFLECTION_MODEL_ARMS.some((arm) => arm.choice === value);
 }

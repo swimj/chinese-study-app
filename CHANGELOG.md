@@ -2,6 +2,13 @@
 
 Casual notes for people using the app before there is a real release process.
 
+## Unreleased — reflection daily spend cap
+
+- After a learner's persisted reflection estimates surpass $0.50 in the current
+  UTC day, new unselected reflection uses Luna only. Retry and second-opinion
+  selectors disable the other models until the next UTC midnight, shown in the
+  browser timezone.
+
 ## Unreleased — undo dismiss and second-opinion review kind
 
 - Learner-dismissed reflection proposals can return to pending from By session

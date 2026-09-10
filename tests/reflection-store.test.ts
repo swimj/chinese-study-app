@@ -171,6 +171,24 @@ describe('reflection durable store', { concurrency: false }, () => {
     assert.deepEqual(dbModule.listReflectionGenerationRuns(), [recorded]);
   });
 
+  test('sums same-UTC-day estimated spend and ignores null estimates and other days', () => {
+    materializationInput('run-session', suppressOperation('target'));
+    recordPricedRun('today-priced', '2026-09-10T08:00:00.000Z', 0.4);
+    recordPricedRun('today-more', '2026-09-10T23:59:59.000Z', 0.2);
+    recordPricedRun('previous-day', '2026-09-09T23:59:59.000Z', 9);
+    recordUnpricedRun('today-null', '2026-09-10T12:00:00.000Z');
+
+    const now = new Date('2026-09-10T15:00:00.000Z');
+    const spendCap = dbModule.getReflectionSpendCap(now);
+    assert.equal(spendCap.lunaOnly, true);
+    assert.equal(spendCap.capUsd, 0.5);
+    assert.equal(spendCap.dayKey, '2026-09-10');
+    assert.equal(spendCap.resetsAt, '2026-09-11T00:00:00.000Z');
+    assert.ok(Math.abs(spendCap.spentUsd - 0.6) < 1e-9);
+    assert.equal(dbModule.getReflectionSpendCap(new Date('2026-09-11T00:00:00.000Z')).lunaOnly, false);
+    assert.equal(dbModule.getReflectionSpendCap(new Date('2026-09-11T00:00:00.000Z')).spentUsd, 0);
+  });
+
   test('lists a durable in-flight provider hand-off until its terminal run is recorded', () => {
     materializationInput('in-flight-session', suppressOperation('target'));
     dbModule.startReflectionGenerationRun({
@@ -1204,6 +1222,80 @@ function suppressOperation(wordId: string): ReflectionOperation {
     version: 1,
     wordId,
   };
+}
+
+function recordPricedRun(runId: string, completedAt: string, estimatedCostUsd: number): void {
+  dbModule.recordReflectionGenerationRun({
+    runId,
+    sourceSessionId: 'run-session',
+    reflectionFlowVersion: 'initial_post_session_reflection.v1',
+    startedAt: completedAt,
+    completedAt,
+    provider: 'openai',
+    model: 'gpt-5.6-luna-high',
+    providerModel: 'gpt-5.6-luna',
+    promptVersion: 'reflection-v2',
+    responseId: `${runId}-response`,
+    clientRequestId: null,
+    finishReason: 'stop',
+    bundleSchemaVersion: 'session_reflection_bundle.v1',
+    resultSchemaVersion: 'session_reflection_result.v4',
+    diagnostic: null,
+    state: 'succeeded',
+    failureCode: null,
+    eligibleItemCount: 1,
+    includedItemCount: 1,
+    usage: {
+      inputTokens: 10,
+      cachedInputTokens: null,
+      cacheWriteInputTokens: null,
+      outputTokens: 5,
+      reasoningTokens: null,
+      totalTokens: 15,
+    },
+    pricingSnapshotId: 'price-v1',
+    pricingAsOf: '2026-07-30',
+    pricingBasis: { id: 'price-v1' },
+    estimatedCostUsd,
+    evidenceBundle: bundle('run-session'),
+  });
+}
+
+function recordUnpricedRun(runId: string, completedAt: string): void {
+  dbModule.recordReflectionGenerationRun({
+    runId,
+    sourceSessionId: 'run-session',
+    reflectionFlowVersion: 'initial_post_session_reflection.v1',
+    startedAt: completedAt,
+    completedAt,
+    provider: 'openai',
+    model: 'gpt-5.6-luna-high',
+    providerModel: 'gpt-5.6-luna',
+    promptVersion: 'reflection-v2',
+    responseId: `${runId}-response`,
+    clientRequestId: null,
+    finishReason: 'stop',
+    bundleSchemaVersion: 'session_reflection_bundle.v1',
+    resultSchemaVersion: 'session_reflection_result.v4',
+    diagnostic: null,
+    state: 'succeeded',
+    failureCode: null,
+    eligibleItemCount: 1,
+    includedItemCount: 1,
+    usage: {
+      inputTokens: 10,
+      cachedInputTokens: null,
+      cacheWriteInputTokens: null,
+      outputTokens: 5,
+      reasoningTokens: null,
+      totalTokens: 15,
+    },
+    pricingSnapshotId: null,
+    pricingAsOf: null,
+    pricingBasis: null,
+    estimatedCostUsd: null,
+    evidenceBundle: bundle('run-session'),
+  });
 }
 
 function insertWord(wordId: string, hanzi: string): void {

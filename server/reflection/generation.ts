@@ -38,9 +38,14 @@ import { createGlmReflectionProvider } from './glm-provider.ts';
 import { GLM_REFLECTION_MODEL_CONFIG } from './glm-provider.ts';
 import {
   REFLECTION_MODEL_ARMS,
-  isReflectionModelChoice,
+  LUNA_REFLECTION_MODEL_CHOICE,
   type ReflectionModelChoice,
 } from './model-arms.ts';
+import {
+  assertReflectionModelAllowedUnderSpendCap,
+  buildReflectionSpendCap,
+  type ReflectionSpendCap,
+} from './spend-cap.ts';
 import { randomUUID } from 'node:crypto';
 import type { ReflectionLifecycleLogger } from './lifecycle-log.ts';
 import type { ReflectionProviderDiagnosticSink } from './provider-diagnostics.ts';
@@ -53,6 +58,7 @@ export type InitialReflectionGenerationResult = {
 };
 
 export { isReflectionModelChoice, type ReflectionModelChoice } from './model-arms.ts';
+export { ReflectionSpendCapError } from './spend-cap.ts';
 
 export function choiceForStoredModel(model: string): ReflectionModelChoice | null {
   const match = REFLECTION_MODEL_ARMS.map((arm) => arm.choice).find((choice) => {
@@ -125,6 +131,7 @@ export type InitialReflectionGenerationDependencies = {
   startRun?: (input: StartReflectionGenerationRunInput) => void;
   lifecycleLogger?: ReflectionLifecycleLogger;
   providerDiagnosticSink?: ReflectionProviderDiagnosticSink;
+  getSpendCap?: () => ReflectionSpendCap;
 };
 
 /**
@@ -167,6 +174,8 @@ export function createInitialReflectionGenerationService(
     ?? (dependencies.recordRun === undefined && dependencies.materializeArtifact === undefined
       ? startReflectionGenerationRun
       : (() => {}));
+  const getSpendCap = dependencies.getSpendCap
+    ?? (() => buildReflectionSpendCap(0, new Date(now())));
   const lifecycleLogger = dependencies.lifecycleLogger;
   const inFlight = new Map<string, Promise<InitialReflectionGenerationResult>>();
   const configuredProviders: Partial<Record<ReflectionModelChoice, LunaReflectionProvider>> = {
@@ -205,12 +214,21 @@ export function createInitialReflectionGenerationService(
     ) {
       return { provider, config: LUNA_REFLECTION_MODEL_CONFIG };
     }
+    const spendCap = getSpendCap();
     if (choice !== undefined) {
+      assertReflectionModelAllowedUnderSpendCap(choice, spendCap);
       const selected = comparisonArms.find((arm) => arm.choice === choice);
       if (selected === undefined) {
         throw new Error(`Unsupported reflection model choice: ${choice}`);
       }
-        return { provider: selected.provider, config: reflectionProviderConfigForChoice(choice) };
+      return { provider: selected.provider, config: reflectionProviderConfigForChoice(choice) };
+    }
+    if (spendCap.lunaOnly) {
+      const luna = comparisonArms.find((arm) => arm.choice === LUNA_REFLECTION_MODEL_CHOICE);
+      if (luna === undefined) {
+        throw new Error('Luna is not a configured reflection comparison arm.');
+      }
+      return { provider: luna.provider, config: reflectionProviderConfigForChoice(LUNA_REFLECTION_MODEL_CHOICE) };
     }
     const index = Math.floor(random() * defaultComparisonArms.length);
     const selected = defaultComparisonArms[index]!;

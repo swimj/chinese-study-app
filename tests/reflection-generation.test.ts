@@ -11,7 +11,7 @@ import type {
   ReflectionArtifactDetail,
 } from '../server/db/reflections.ts';
 import { ReflectionEvidenceError } from '../server/reflection/evidence.ts';
-import { createInitialReflectionGenerationService, RetiredReflectionSourceModelError } from '../server/reflection/generation.ts';
+import { createInitialReflectionGenerationService, RetiredReflectionSourceModelError, ReflectionSpendCapError } from '../server/reflection/generation.ts';
 import {
   LunaReflectionProviderError,
   type LunaReflectionSuccess,
@@ -422,6 +422,112 @@ describe('initial reflection generation orchestration', () => {
     assert.deepEqual(selected, ['luna', 'glm', 'gemini', 'terra']);
   });
 
+  test('routes unselected initial generation to Luna after the daily spend cap', async () => {
+    const selected: string[] = [];
+    const makeArm = (label: string) => ({
+      async generate() {
+        selected.push(label);
+        return providerSuccess();
+      },
+    });
+    const service = createInitialReflectionGenerationService({
+      findExistingArtifact: () => null,
+      buildBundle: () => bundle(),
+      provider: makeArm('luna'),
+      glmProvider: makeArm('glm'),
+      comparisonProviders: {
+        'openrouter:gemini-3.6-flash': makeArm('gemini'),
+        'openai:gpt-5.6-terra-high': makeArm('terra'),
+      },
+      getSpendCap: () => cappedSpendCap(),
+      random: () => 0.99,
+      materializeArtifact: () => ({
+        created: true,
+        artifact: artifactDetail('capped-artifact', 1),
+      }),
+      recordRun: () => {},
+    });
+
+    assert.deepEqual(await service.generate('session-1', {}), {
+      artifactId: 'capped-artifact',
+      proposalCount: 1,
+      status: 'created',
+    });
+    assert.deepEqual(selected, ['luna']);
+  });
+
+  test('refuses an explicit non-Luna choice after the daily spend cap', async () => {
+    const selected: string[] = [];
+    const service = createInitialReflectionGenerationService({
+      findExistingArtifact: () => null,
+      buildBundle: () => bundle(),
+      provider: {
+        async generate() {
+          selected.push('luna');
+          return providerSuccess();
+        },
+      },
+      glmProvider: {
+        async generate() {
+          selected.push('glm');
+          return providerSuccess();
+        },
+      },
+      getSpendCap: () => cappedSpendCap(),
+      materializeArtifact: () => ({
+        created: true,
+        artifact: artifactDetail('blocked-artifact', 1),
+      }),
+      recordRun: () => {},
+    });
+
+    await assert.rejects(
+      () => service.generate('session-1', {}, 'zai:glm-5.3-high'),
+      ReflectionSpendCapError,
+    );
+    assert.deepEqual(selected, []);
+  });
+
+  test('allows explicit Luna after the daily spend cap', async () => {
+    const selected: string[] = [];
+    const service = createInitialReflectionGenerationService({
+      findExistingArtifact: () => null,
+      buildBundle: () => bundle(),
+      provider: {
+        async generate() {
+          selected.push('luna');
+          return providerSuccess();
+        },
+      },
+      glmProvider: {
+        async generate() {
+          selected.push('glm');
+          return providerSuccess();
+        },
+      },
+      getSpendCap: () => cappedSpendCap(),
+      getRetrySource: () => ({
+        runId: 'failed-run',
+        sourceSessionId: 'session-1',
+        reflectionFlowVersion: 'initial_post_session_reflection.v2',
+        model: 'glm-5.3-high',
+        eligibleItemCount: 1,
+        includedItemCount: 1,
+        evidenceBundle: bundle(),
+      }),
+      materializeArtifact: () => ({
+        created: true,
+        artifact: artifactDetail('luna-artifact', 1),
+      }),
+      recordRun: () => {},
+    });
+
+    await assert.rejects(() => service.retry('failed-run'), ReflectionSpendCapError);
+    await service.generate('session-1', {}, 'openai:gpt-5.6-luna-high');
+    await service.retry('failed-run', 'openai:gpt-5.6-luna-high');
+    assert.deepEqual(selected, ['luna', 'luna']);
+  });
+
   test('refuses same-model retry when the stored model is no longer a current choice', async () => {
     const selected: string[] = [];
     const makeArm = (label: string) => ({
@@ -589,5 +695,15 @@ function operation(): ReflectionOperation {
     kind: 'suppress_definition_production',
     version: 1,
     wordId: 'target',
+  };
+}
+
+function cappedSpendCap() {
+  return {
+    lunaOnly: true,
+    spentUsd: 0.62,
+    capUsd: 0.5,
+    dayKey: '2026-07-29',
+    resetsAt: '2026-07-30T00:00:00.000Z',
   };
 }
