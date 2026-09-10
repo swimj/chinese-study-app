@@ -58,7 +58,7 @@ export function HomePage({
   activeAnswerText,
   activeMeaningRows,
   meaningVisibilitySavingKey,
-  productionRequiresHanziInput,
+  isProductionItem,
   productionAwaitingRating,
   productionHanziInput,
   productionHanziError,
@@ -131,7 +131,7 @@ export function HomePage({
   activeAnswerText: string | null;
   activeMeaningRows: WordMeaning[];
   meaningVisibilitySavingKey: string | null;
-  productionRequiresHanziInput: boolean;
+  isProductionItem: boolean;
   productionAwaitingRating: boolean;
   productionHanziInput: string;
   productionHanziError: string | null;
@@ -252,7 +252,7 @@ export function HomePage({
             activeAnswerText={activeAnswerText}
             activeMeaningRows={activeMeaningRows}
             meaningVisibilitySavingKey={meaningVisibilitySavingKey}
-            productionRequiresHanziInput={productionRequiresHanziInput}
+            isProductionItem={isProductionItem}
             productionAwaitingRating={productionAwaitingRating}
             productionHanziInput={productionHanziInput}
             productionHanziError={productionHanziError}

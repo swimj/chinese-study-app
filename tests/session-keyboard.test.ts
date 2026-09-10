@@ -25,7 +25,7 @@ function createContext(overrides: Partial<SessionKeyboardContext> = {}): Session
     productionAwaitingSupplement: false,
     contrastAwaitingNext: false,
     unstudiedIntro: false,
-    productionRequiresHanziInput: false,
+    isProductionItem: false,
     contrastSelectionActive: false,
     contrastHasSelection: false,
     answerRevealed: false,
@@ -66,7 +66,7 @@ describe('session keyboard contract', () => {
   test('typed production submits with Enter and toggles field focus with Escape', () => {
     const context = createContext({
       productionInputActive: true,
-      productionRequiresHanziInput: true,
+      isProductionItem: true,
       isEditableTarget: true,
     });
     assert.equal(getSessionInteractionKind(context), 'production_input');
@@ -84,7 +84,7 @@ describe('session keyboard contract', () => {
   test('typed production Enter still submits after the field is unfocused', () => {
     const context = createContext({
       productionInputActive: true,
-      productionRequiresHanziInput: true,
+      isProductionItem: true,
       isEditableTarget: false,
     });
     assert.deepEqual(resolveSessionKey(key('Enter'), context), { type: 'submit_production' });
@@ -93,7 +93,7 @@ describe('session keyboard contract', () => {
   test('IME composition keeps Escape and Enter from stealing the production field', () => {
     const context = createContext({
       productionInputActive: true,
-      productionRequiresHanziInput: true,
+      isProductionItem: true,
       isEditableTarget: true,
     });
     assert.equal(resolveSessionKey(key('Escape', { isComposing: true }), context), null);
@@ -151,7 +151,7 @@ describe('session keyboard contract', () => {
 
   test('frozen incorrect production keeps Next even when a supplement was served', () => {
     const context = createContext({
-      productionRequiresHanziInput: true,
+      isProductionItem: true,
       productionAwaitingNext: true,
       productionAwaitingSupplement: true,
       answerRevealed: true,
@@ -164,7 +164,7 @@ describe('session keyboard contract', () => {
 
   test('accepted production without a supplement still rates immediately', () => {
     const context = createContext({
-      productionRequiresHanziInput: true,
+      isProductionItem: true,
       productionAwaitingSupplement: false,
       answerRevealed: true,
       ratingAvailable: true,
@@ -181,7 +181,7 @@ describe('session keyboard contract', () => {
 
   test('accepted production with a supplement continues with Space before rating', () => {
     const context = createContext({
-      productionRequiresHanziInput: true,
+      isProductionItem: true,
       productionAwaitingSupplement: true,
       answerRevealed: true,
       ratingAvailable: false,
@@ -224,7 +224,7 @@ describe('session keyboard contract', () => {
     const production = createContext({
       isEditableTarget: true,
       productionInputActive: true,
-      productionRequiresHanziInput: true,
+      isProductionItem: true,
     });
     const contrast = createContext({ contrastSelectionActive: true });
     const rating = createContext({ answerRevealed: true, ratingAvailable: true });
@@ -246,7 +246,7 @@ describe('session keyboard contract', () => {
   test('guide rows stay state-aware and do not advertise unavailable actions as active', () => {
     const production = createContext({
       productionInputActive: true,
-      productionRequiresHanziInput: true,
+      isProductionItem: true,
       hasUndo: false,
     });
     const sections = getSessionShortcutGuide(production, { includeDialogClose: true });

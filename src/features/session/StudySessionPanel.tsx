@@ -85,7 +85,7 @@ export function StudySessionPanel({
   activeAnswerText,
   activeMeaningRows,
   meaningVisibilitySavingKey,
-  productionRequiresHanziInput,
+  isProductionItem,
   productionAwaitingRating,
   productionHanziInput,
   productionHanziError,
@@ -153,7 +153,7 @@ export function StudySessionPanel({
   activeAnswerText: string | null;
   activeMeaningRows: WordMeaning[];
   meaningVisibilitySavingKey: string | null;
-  productionRequiresHanziInput: boolean;
+  isProductionItem: boolean;
   productionAwaitingRating: boolean;
   productionHanziInput: string;
   productionHanziError: string | null;
@@ -201,7 +201,7 @@ export function StudySessionPanel({
     activeUnstudiedIntroComplete: activeUnstudiedProgress?.introComplete ?? false,
   });
   const showRatingButtons = answerRevealed && (
-    (!productionRequiresHanziInput || productionAwaitingRating) &&
+    (!isProductionItem || productionAwaitingRating) &&
     (!activeItem || activeItem.actionKind !== 'contrast_selection' || contrastAwaitingRating)
   );
   const showProductionSupplementAside =
@@ -210,7 +210,7 @@ export function StudySessionPanel({
   const sessionEndLabel = sessionPhase === 'draining' ? 'Session draining' : 'End session';
   const keyboardContext = createSessionKeyboardContext({
     sessionStarted,
-    productionRequiresHanziInput,
+    isProductionItem,
     answerRevealed,
     productionAwaitingNext,
     productionAwaitingSupplement,
@@ -600,7 +600,7 @@ export function StudySessionPanel({
                   </>
                 )}
               </div>
-            ) : productionRequiresHanziInput && !productionAwaitingRating ? (
+            ) : isProductionItem && !productionAwaitingRating ? (
               <form
                 id={productionFormId}
                 className="stack"
@@ -672,7 +672,7 @@ export function StudySessionPanel({
                     title={option.note}
                     onClick={() =>
                         onRate(option.value, {
-                          restoreUi: productionRequiresHanziInput ? 'production-input' : 'revealed',
+                          restoreUi: isProductionItem ? 'production-input' : 'revealed',
                         })
                       }
                       disabled={submittingRating !== null || personalNotesEditorOpen}
@@ -685,7 +685,7 @@ export function StudySessionPanel({
                     </button>
                   ))}
                 </div>
-              ) : productionRequiresHanziInput && !productionAwaitingRating ? (
+              ) : isProductionItem && !productionAwaitingRating ? (
                 <div className="rating-grid">
                   <button
                     type="submit"
@@ -1145,7 +1145,7 @@ function ProductionSupplementAside({
 
 function createSessionKeyboardContext({
   sessionStarted,
-  productionRequiresHanziInput,
+  isProductionItem,
   answerRevealed,
   productionAwaitingNext,
   productionAwaitingSupplement,
@@ -1160,7 +1160,7 @@ function createSessionKeyboardContext({
   ratingOptions,
 }: {
   sessionStarted: boolean;
-  productionRequiresHanziInput: boolean;
+  isProductionItem: boolean;
   answerRevealed: boolean;
   productionAwaitingNext: boolean;
   productionAwaitingSupplement: boolean;
@@ -1179,7 +1179,7 @@ function createSessionKeyboardContext({
     isEditableTarget: false,
     productionInputActive:
       sessionStarted &&
-      productionRequiresHanziInput &&
+      isProductionItem &&
       !answerRevealed &&
       !productionAwaitingNext &&
       !personalNotesEditorOpen,
@@ -1187,7 +1187,7 @@ function createSessionKeyboardContext({
     productionAwaitingSupplement,
     contrastAwaitingNext,
     unstudiedIntro,
-    productionRequiresHanziInput,
+    isProductionItem,
     contrastSelectionActive,
     contrastHasSelection,
     answerRevealed,

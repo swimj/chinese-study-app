@@ -43,7 +43,7 @@ export type SessionKeyboardContext = {
   productionAwaitingSupplement: boolean;
   contrastAwaitingNext: boolean;
   unstudiedIntro: boolean;
-  productionRequiresHanziInput: boolean;
+  isProductionItem: boolean;
   contrastSelectionActive: boolean;
   contrastHasSelection: boolean;
   answerRevealed: boolean;
@@ -252,7 +252,7 @@ export function resolveSessionKey(
       return { type: 'begin_unstudied_drill' };
     }
 
-    if (context.productionRequiresHanziInput && !context.answerRevealed) {
+    if (context.isProductionItem && !context.answerRevealed) {
       return null;
     }
 
