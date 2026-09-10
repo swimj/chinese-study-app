@@ -241,7 +241,12 @@ The durable V0 production-cue model separates:
   `definition_gloss` cue or for the meaning-derived fallback of a default task;
   it contains an English usage frame, a complete natural target-language
   example, and an English translation, and is never shown as part of the
-  pre-reveal production clue;
+  pre-reveal production clue; when an accepted definition-based production
+  response has a served supplement, the session presents that supplement as a
+  spoken usage note and requires Continue before rating; cards without a
+  supplement, and automatic Forgot correction cards, keep a one-step reveal;
+  the extra beat does not change grading, covering, scheduling, or supplement
+  content;
 - one answer-checking rule for every V0 cue: accept the submission only when it
   matches the accepted-word set snapshotted on the served action;
 - asynchronous, learner-authorized reconsideration of an out-of-set response;

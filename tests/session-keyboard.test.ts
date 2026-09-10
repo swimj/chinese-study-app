@@ -22,6 +22,7 @@ function createContext(overrides: Partial<SessionKeyboardContext> = {}): Session
     isEditableTarget: false,
     productionInputActive: false,
     productionAwaitingNext: false,
+    productionAwaitingSupplement: false,
     contrastAwaitingNext: false,
     unstudiedIntro: false,
     productionRequiresHanziInput: false,
@@ -146,6 +147,61 @@ describe('session keyboard contract', () => {
     assert.equal(getSessionInteractionKind(context), 'await_next');
     assert.deepEqual(resolveSessionKey(key(' '), context), { type: 'continue_after_auto_forgot' });
     assert.equal(resolveSessionKey(key('1'), context), null);
+  });
+
+  test('frozen incorrect production keeps Next even when a supplement was served', () => {
+    const context = createContext({
+      productionRequiresHanziInput: true,
+      productionAwaitingNext: true,
+      productionAwaitingSupplement: true,
+      answerRevealed: true,
+      ratingAvailable: false,
+    });
+    assert.equal(getSessionInteractionKind(context), 'await_next');
+    assert.deepEqual(resolveSessionKey(key(' '), context), { type: 'continue_after_auto_forgot' });
+    assert.equal(resolveSessionKey(key('1'), context), null);
+  });
+
+  test('accepted production without a supplement still rates immediately', () => {
+    const context = createContext({
+      productionRequiresHanziInput: true,
+      productionAwaitingSupplement: false,
+      answerRevealed: true,
+      ratingAvailable: true,
+      ratingOptions: getActiveRatingOptions({
+        actionKind: 'production',
+        wordStatus: 'review',
+        reviewInReinforcement: false,
+      }),
+    });
+    assert.equal(getSessionInteractionKind(context), 'rating');
+    assert.deepEqual(resolveSessionKey(key(' '), context), { type: 'rate_default' });
+    assert.deepEqual(resolveSessionKey(key('3'), context), { type: 'rate', rating: 'good' });
+  });
+
+  test('accepted production with a supplement continues with Space before rating', () => {
+    const context = createContext({
+      productionRequiresHanziInput: true,
+      productionAwaitingSupplement: true,
+      answerRevealed: true,
+      ratingAvailable: false,
+      ratingOptions: getActiveRatingOptions({
+        actionKind: 'production',
+        wordStatus: 'review',
+        reviewInReinforcement: false,
+      }),
+    });
+    assert.equal(getSessionInteractionKind(context), 'await_supplement');
+    assert.deepEqual(getSessionPrimaryAction(context), {
+      command: 'continue_after_supplement',
+      label: 'Continue',
+      shortcut: 'Space',
+    });
+    assert.deepEqual(resolveSessionKey(key(' '), context), { type: 'continue_after_supplement' });
+    assert.equal(resolveSessionKey(key('1'), context), null);
+    assert.equal(resolveSessionKey(key('3'), context), null);
+    const thisCard = getSessionShortcutGuide(context).find((section) => section.title === 'This card');
+    assert.equal(thisCard?.rows[0]?.description, 'Continue after the usage note');
   });
 
   test('Undo is advertised as U and still accepts Z', () => {

@@ -7,6 +7,7 @@ export type SessionInteractionKind =
   | 'production_input'
   | 'contrast_selection'
   | 'recognition_unrevealed'
+  | 'await_supplement'
   | 'rating'
   | 'await_next'
   | 'other';
@@ -18,6 +19,7 @@ export type SessionKeyCommand =
   | { type: 'reveal' }
   | { type: 'begin_unstudied_drill' }
   | { type: 'continue_after_auto_forgot' }
+  | { type: 'continue_after_supplement' }
   | { type: 'rate_default' }
   | { type: 'preview_contrast'; choiceIndex: 0 | 1 }
   | { type: 'confirm_contrast' }
@@ -38,6 +40,7 @@ export type SessionKeyboardContext = {
   isEditableTarget: boolean;
   productionInputActive: boolean;
   productionAwaitingNext: boolean;
+  productionAwaitingSupplement: boolean;
   contrastAwaitingNext: boolean;
   unstudiedIntro: boolean;
   productionRequiresHanziInput: boolean;
@@ -109,6 +112,10 @@ export function getSessionInteractionKind(context: SessionKeyboardContext): Sess
     return 'contrast_selection';
   }
 
+  if (context.productionAwaitingSupplement) {
+    return 'await_supplement';
+  }
+
   if (context.ratingAvailable) {
     return 'rating';
   }
@@ -132,6 +139,8 @@ export function getSessionPrimaryAction(context: SessionKeyboardContext): Sessio
         : { command: 'preview_contrast', label: 'Choose an option', shortcut: '1 / 2' };
     case 'recognition_unrevealed':
       return { command: 'reveal', label: 'Reveal answer', shortcut: 'Space' };
+    case 'await_supplement':
+      return { command: 'continue_after_supplement', label: 'Continue', shortcut: 'Space' };
     case 'rating': {
       const defaultRating = getDefaultRating(context.ratingOptions);
       const defaultOption = context.ratingOptions.find((option) => option.value === defaultRating);
@@ -235,6 +244,10 @@ export function resolveSessionKey(
       return { type: 'continue_after_auto_forgot' };
     }
 
+    if (context.productionAwaitingSupplement) {
+      return { type: 'continue_after_supplement' };
+    }
+
     if (context.unstudiedIntro) {
       return { type: 'begin_unstudied_drill' };
     }
@@ -272,7 +285,7 @@ export function resolveSessionKey(
     return { type: 'undo' };
   }
 
-  if (context.productionAwaitingNext || context.contrastAwaitingNext) {
+  if (context.productionAwaitingNext || context.contrastAwaitingNext || context.productionAwaitingSupplement) {
     return null;
   }
 
@@ -328,6 +341,8 @@ function getThisCardShortcutRows(
       ];
     case 'recognition_unrevealed':
       return [{ key: 'Space', description: 'Reveal the answer', available: true }];
+    case 'await_supplement':
+      return [{ key: 'Space', description: 'Continue after the usage note', available: true }];
     case 'rating':
       return [
         ...context.ratingOptions.map((option) => ({

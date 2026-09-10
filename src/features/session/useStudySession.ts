@@ -58,6 +58,7 @@ import {
   getActiveReviewState,
   getActiveWordPersonalNotes,
   getPersonalNotesEditorTarget,
+  hasServedProductionCueSupplement,
   isProductionSessionItem,
   isReviewInReinforcement,
 } from './session-selectors';
@@ -118,13 +119,15 @@ type SessionUndoSnapshot = {
   reflectionEvidence: SessionReflectionEvidenceAccumulator;
 };
 
+type ProductionUiPhase = 'idle' | 'await-supplement' | 'await-rating' | 'await-next';
+
 type SessionUiSnapshot = {
   answerRevealed: boolean;
   productionHanziInput: string;
   productionHanziError: string | null;
   productionSubmittedResponse: string | null;
   productionResponseResolution: ProductionResponseResolution | null;
-  productionUiPhase: 'idle' | 'await-rating' | 'await-next';
+  productionUiPhase: ProductionUiPhase;
   frozenProductionCard: FrozenProductionCard | null;
   contrastSelectedWordId: string | null;
   frozenContrastCard: FrozenContrastCard | null;
@@ -155,6 +158,7 @@ export type StudySessionHomePageProps = {
   personalNotesEditorSaving: boolean;
   studyManagementSubmitting: boolean;
   productionAwaitingNext: boolean;
+  productionAwaitingSupplement: boolean;
   frozenProductionCard: FrozenProductionCard | null;
   contrastAwaitingNext: boolean;
   frozenContrastCard: FrozenContrastCard | null;
@@ -185,6 +189,7 @@ export type StudySessionHomePageProps = {
   onRetrySessionReflection: () => void;
   onUndoLastRating: () => void;
   onContinueAfterAutoForgot: () => void;
+  onContinueAfterProductionSupplement: () => void;
   onContinueAfterAutoContrastForgot: () => void;
   onDismissCurrentWord: () => void;
   onManageStudyAction: () => void;
@@ -255,7 +260,7 @@ export function useStudySession({
   const [productionHanziError, setProductionHanziError] = useState<string | null>(null);
   const [productionSubmittedResponse, setProductionSubmittedResponse] = useState<string | null>(null);
   const [productionResponseResolution, setProductionResponseResolution] = useState<ProductionResponseResolution | null>(null);
-  const [productionUiPhase, setProductionUiPhase] = useState<'idle' | 'await-rating' | 'await-next'>('idle');
+  const [productionUiPhase, setProductionUiPhase] = useState<ProductionUiPhase>('idle');
   const [contrastSelectedWordId, setContrastSelectedWordId] = useState<string | null>(null);
   const [frozenProductionCard, setFrozenProductionCard] = useState<FrozenProductionCard | null>(null);
   const [frozenContrastCard, setFrozenContrastCard] = useState<FrozenContrastCard | null>(null);
@@ -363,6 +368,7 @@ export function useStudySession({
     contrastSelectedWordId !== null &&
     contrastSelectedWordId === activeItem?.contrastSelection?.promptTargetWordId;
   const productionAwaitingRating = productionRequiresHanziInput && productionUiPhase === 'await-rating';
+  const productionAwaitingSupplement = productionRequiresHanziInput && productionUiPhase === 'await-supplement';
   const productionAwaitingNext = productionUiPhase === 'await-next' && frozenProductionCard !== null;
   const contrastAwaitingNext = frozenContrastCard !== null;
   const activeRatingOptions = getActiveRatingOptions({
@@ -840,7 +846,9 @@ export function useStudySession({
         setProductionHanziError(null);
         setProductionSubmittedResponse(typedResponse);
         setProductionResponseResolution(resolution);
-        setProductionUiPhase('await-rating');
+        setProductionUiPhase(
+          hasServedProductionCueSupplement(activeItem.production) ? 'await-supplement' : 'await-rating',
+        );
         setAnswerRevealed(true);
         return;
       }
@@ -983,6 +991,14 @@ export function useStudySession({
   function handleContinueAfterAutoForgot() {
     // Unmask the active card after the queue already advanced due to an incorrect hanzi submission.
     resetAnswerAndProductionUi();
+  }
+
+  function handleContinueAfterProductionSupplement() {
+    if (!productionAwaitingSupplement) {
+      return;
+    }
+
+    setProductionUiPhase('await-rating');
   }
 
   function handlePreviewContrastChoice(wordId: string) {
@@ -1375,6 +1391,9 @@ export function useStudySession({
     if (productionUiPhase === 'await-rating' && !productionRequiresHanziInput) {
       setProductionUiPhase('idle');
     }
+    if (productionUiPhase === 'await-supplement' && !productionRequiresHanziInput) {
+      setProductionUiPhase('idle');
+    }
   }, [activeItem?.sessionActionId, productionUiPhase, productionRequiresHanziInput]);
 
   useEffect(() => {
@@ -1489,13 +1508,14 @@ export function useStudySession({
           isEditableTarget: isEditableKeyboardTarget(event.target),
           productionInputActive: productionSubmissionInputActive,
           productionAwaitingNext,
+          productionAwaitingSupplement,
           contrastAwaitingNext,
           unstudiedIntro: activeWord?.status === 'unstudied' && !activeUnstudiedProgress?.introComplete,
           productionRequiresHanziInput,
           contrastSelectionActive,
           contrastHasSelection: contrastSelectedWordId !== null,
           answerRevealed,
-          ratingAvailable: answerRevealed && !productionAwaitingNext && !contrastAwaitingNext,
+          ratingAvailable: answerRevealed && !productionAwaitingNext && !productionAwaitingSupplement && !contrastAwaitingNext,
           hasUndo: lastUndoSnapshot !== null,
           hasActiveWord: activeWord !== null,
           ratingOptions: activeRatingOptions,
@@ -1543,6 +1563,9 @@ export function useStudySession({
           } else if (contrastAwaitingNext) {
             handleContinueAfterAutoContrastForgot();
           }
+          return;
+        case 'continue_after_supplement':
+          handleContinueAfterProductionSupplement();
           return;
         case 'rate_default': {
           const defaultRating = getDefaultRating(activeRatingOptions);
@@ -1594,6 +1617,7 @@ export function useStudySession({
     contrastSelectionActive,
     contrastSelectedWordId,
     productionAwaitingNext,
+    productionAwaitingSupplement,
     productionRequiresHanziInput,
     productionSubmissionInputActive,
     frozenProductionCard,
@@ -1630,6 +1654,7 @@ export function useStudySession({
       personalNotesEditorSaving,
       studyManagementSubmitting,
       productionAwaitingNext,
+      productionAwaitingSupplement,
       frozenProductionCard,
       contrastAwaitingNext,
       frozenContrastCard,
@@ -1660,6 +1685,7 @@ export function useStudySession({
       onRetrySessionReflection: handleRetrySessionReflection,
       onUndoLastRating: handleUndoLastRating,
       onContinueAfterAutoForgot: handleContinueAfterAutoForgot,
+      onContinueAfterProductionSupplement: handleContinueAfterProductionSupplement,
       onContinueAfterAutoContrastForgot: handleContinueAfterAutoContrastForgot,
       onDismissCurrentWord: () => void handleDismissCurrentWord(),
       onManageStudyAction: () => void handleManageStudyAction(),

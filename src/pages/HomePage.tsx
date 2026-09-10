@@ -42,6 +42,7 @@ export function HomePage({
   personalNotesEditorSaving,
   studyManagementSubmitting,
   productionAwaitingNext,
+  productionAwaitingSupplement,
   frozenProductionCard,
   contrastAwaitingNext,
   frozenContrastCard,
@@ -72,6 +73,7 @@ export function HomePage({
   onRetrySessionReflection,
   onUndoLastRating,
   onContinueAfterAutoForgot,
+  onContinueAfterProductionSupplement,
   onContinueAfterAutoContrastForgot,
   onDismissCurrentWord,
   onManageStudyAction,
@@ -113,6 +115,7 @@ export function HomePage({
   personalNotesEditorSaving: boolean;
   studyManagementSubmitting: boolean;
   productionAwaitingNext: boolean;
+  productionAwaitingSupplement: boolean;
   frozenProductionCard: FrozenProductionCard | null;
   contrastAwaitingNext: boolean;
   frozenContrastCard: FrozenContrastCard | null;
@@ -143,6 +146,7 @@ export function HomePage({
   onRetrySessionReflection: () => void;
   onUndoLastRating: () => void;
   onContinueAfterAutoForgot: () => void;
+  onContinueAfterProductionSupplement: () => void;
   onContinueAfterAutoContrastForgot: () => void;
   onDismissCurrentWord: () => void;
   onManageStudyAction: () => void;
@@ -232,6 +236,7 @@ export function HomePage({
             personalNotesEditorSaving={personalNotesEditorSaving}
             studyManagementSubmitting={studyManagementSubmitting}
             productionAwaitingNext={productionAwaitingNext}
+            productionAwaitingSupplement={productionAwaitingSupplement}
             frozenProductionCard={frozenProductionCard}
             contrastAwaitingNext={contrastAwaitingNext}
             frozenContrastCard={frozenContrastCard}
@@ -261,6 +266,7 @@ export function HomePage({
             onEndSession={onEndSession}
             onRetrySessionReflection={onRetrySessionReflection}
             onContinueAfterAutoForgot={onContinueAfterAutoForgot}
+            onContinueAfterProductionSupplement={onContinueAfterProductionSupplement}
             onContinueAfterAutoContrastForgot={onContinueAfterAutoContrastForgot}
             onDismissCurrentWord={onDismissCurrentWord}
             onManageStudyAction={onManageStudyAction}

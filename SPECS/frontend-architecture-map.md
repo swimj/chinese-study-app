@@ -130,6 +130,8 @@ bounded server-side selection and result loading.
 - keyboard shortcuts and focus effects, using `session-keyboard.ts` as the
   shared state-to-action/shortcut description so the panel and controller
   cannot drift
+- accepted production with a served cue supplement: an `await-supplement`
+  Continue beat before rating; cards without a supplement still rate immediately
 
 The hook returns:
 
