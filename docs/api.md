@@ -66,16 +66,21 @@ exposed as a learner-controlled HTTP endpoint.
 
 `GET /api/status?studyDayKey=YYYY-MM-DD` also returns `sessionActiveTimeMetrics`: today's completed active-session duration, plus 3-day and 7-day calendar-day averages in milliseconds. Averages include zero-activity days.
 
-The status payload also returns `dailyNewWordLimit`, the durable configured
-limit used when composing a new session. Update it with a JSON body containing
-`dailyNewWordLimit` as a non-negative integer:
+The status payload also returns `dailyNewWordLimit` and
+`unstudiedAdmissionSource`, the durable configured limit and unstudied
+admission source used when composing a new session. `unstudiedAdmissionSource`
+is `"mixed"` (default 50/50 stash/diet split) or `"stash_only"`. Update them
+with JSON bodies containing `dailyNewWordLimit` as a non-negative integer or
+`unstudiedAdmissionSource` as `"mixed"` or `"stash_only"`:
 
 | Method | Path | Handler domain |
 | --- | --- | --- |
 | PATCH | `/api/learning-policy/daily-new-word-limit` | Config / learning policy |
+| PATCH | `/api/learning-policy/unstudied-admission-source` | Config / learning policy |
 
-Changing the limit does not rewrite the current UTC day's completed-new-word
-count and does not mutate an already-started frontend session.
+Changing either setting does not rewrite the current UTC day's
+completed-new-word count and does not mutate an already-started frontend
+session.
 
 ## Words and meanings
 
@@ -143,7 +148,8 @@ items freeze their selected durable cue or meaning-derived fallback, the canonic
 client grading, and nullable recheck-demand id. Unstudied membership is the
 experimental dual-pool admitted set from
 [`SPECS/study-action-model.md`](../SPECS/study-action-model.md#experimental-dual-pool-unstudied-admission)
-(stash/diet split of remaining daily new-word quota, plus require bypass).
+(mixed stash/diet split of remaining daily new-word quota, or stash-only when
+that source is selected, plus require bypass).
 The nullable `traditional` form is canonical content; lookup aliases are excluded.
 Typed production grading uses only that frozen accepted-answer snapshot. The
 server derives `submittedWordId` at commit: accepted results from the frozen

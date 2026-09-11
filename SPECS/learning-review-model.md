@@ -97,7 +97,9 @@ New-word intake is policy-driven.
 For the current stage, the policy uses a daily new-word cap plus the
 experimental dual-pool unstudied admission contract in
 [`study-action-model.md`](./study-action-model.md#experimental-dual-pool-unstudied-admission).
-That is a policy choice, not a fundamental property of the model.
+The mixed stash/diet split is the default; session settings may restrict new
+words to stash only. That is a policy choice, not a fundamental property of
+the model.
 
 Important rule:
 

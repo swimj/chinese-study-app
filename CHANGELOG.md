@@ -2,6 +2,12 @@
 
 Casual notes for people using the app before there is a real release process.
 
+## Unreleased — stash-only new-word intake
+
+- Session settings can restrict new-word composition to the custom stash.
+  The default remains the mixed stash/diet split. Leftover stash-only slots
+  stay empty instead of filling from the diet.
+
 ## Unreleased — undo dismiss and second-opinion review kind
 
 - Learner-dismissed reflection proposals can return to pending from By session

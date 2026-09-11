@@ -14,6 +14,8 @@ describe('experimental dual-pool unstudied admission', () => {
     assert.deepEqual(splitRemainingUnstudiedQuota(2), { stashSlots: 1, dietSlots: 1 });
     assert.deepEqual(splitRemainingUnstudiedQuota(5), { stashSlots: 2, dietSlots: 3 });
     assert.deepEqual(splitRemainingUnstudiedQuota(10), { stashSlots: 5, dietSlots: 5 });
+    assert.deepEqual(splitRemainingUnstudiedQuota(5, 'stash_only'), { stashSlots: 5, dietSlots: 0 });
+    assert.deepEqual(splitRemainingUnstudiedQuota(0, 'stash_only'), { stashSlots: 0, dietSlots: 0 });
   });
 
   test('rejects a non-integer remaining quota', () => {
@@ -176,6 +178,77 @@ describe('experimental dual-pool unstudied admission', () => {
       dietIds: ['diet-1'],
       remainingQuota: 0,
       seedSource: 'empty-remaining-require',
+    });
+    assert.deepEqual(withRequire, ['required-only']);
+  });
+
+  test('stash_only uses the full remaining quota and never admits diet', () => {
+    const admitted = selectAdmittedUnstudiedWordIds({
+      stash: stashWords(['stash-a', 'stash-b', 'stash-c', 'stash-d']),
+      dietIds: ['diet-1', 'diet-2', 'diet-3', 'diet-4'],
+      remainingQuota: 3,
+      seedSource: 'stash-only-full-quota',
+      source: 'stash_only',
+    });
+
+    assert.equal(admitted.length, 3);
+    assert.equal(admitted.every((id) => id.startsWith('stash-')), true);
+    assert.equal(admitted.some((id) => id.startsWith('diet-')), false);
+  });
+
+  test('stash_only leaves leftover quota empty instead of filling from diet', () => {
+    const admitted = selectAdmittedUnstudiedWordIds({
+      stash: stashWords(['stash-only']),
+      dietIds: ['diet-1', 'diet-2', 'diet-3'],
+      remainingQuota: 4,
+      seedSource: 'stash-only-short',
+      source: 'stash_only',
+    });
+
+    assert.deepEqual(admitted, ['stash-only']);
+  });
+
+  test('stash_only still admits required stash words beyond the remaining quota', () => {
+    const admitted = selectAdmittedUnstudiedWordIds({
+      stash: [
+        topWord('top-fills-stash', '2026-01-03T00:00:00.000Z'),
+        {
+          id: 'required-extra',
+          overlayUpdatedAt: '2026-01-01T00:00:00.000Z',
+          isTop: false,
+          isRequired: true,
+        },
+      ],
+      dietIds: ['diet-1', 'diet-2'],
+      remainingQuota: 1,
+      seedSource: 'stash-only-require',
+      source: 'stash_only',
+    });
+
+    assert.deepEqual(admitted, ['top-fills-stash', 'required-extra']);
+  });
+
+  test('stash_only with empty stash admits nobody except require bypass', () => {
+    const withoutRequire = selectAdmittedUnstudiedWordIds({
+      stash: [],
+      dietIds: ['diet-1', 'diet-2'],
+      remainingQuota: 4,
+      seedSource: 'stash-only-empty',
+      source: 'stash_only',
+    });
+    assert.deepEqual(withoutRequire, []);
+
+    const withRequire = selectAdmittedUnstudiedWordIds({
+      stash: [{
+        id: 'required-only',
+        overlayUpdatedAt: '2026-01-01T00:00:00.000Z',
+        isTop: false,
+        isRequired: true,
+      }],
+      dietIds: ['diet-1'],
+      remainingQuota: 4,
+      seedSource: 'stash-only-empty-require',
+      source: 'stash_only',
     });
     assert.deepEqual(withRequire, ['required-only']);
   });

@@ -117,6 +117,8 @@ describe('session composition', { concurrency: false }, () => {
       ON CONFLICT(learner_id, setting_key) DO UPDATE SET
         value_json = excluded.value_json,
         updated_at = excluded.updated_at;
+      DELETE FROM learner_settings
+      WHERE learner_id = 'test-learner' AND setting_key = 'unstudied_admission_source';
       DELETE FROM word_skill_state;
       DELETE FROM word_study_admission_state;
       DELETE FROM contrast_prompts;
@@ -1327,6 +1329,7 @@ describe('session composition', { concurrency: false }, () => {
 
   test('daily new-word limit defaults to 10 and persists independently from the completed count', () => {
     assert.equal(dbModule.getLearningPolicy(studyDayKey).dailyNewWordLimit, 10);
+    assert.equal(dbModule.getLearningPolicy(studyDayKey).unstudiedAdmissionSource, 'mixed');
     assert.throws(
       () => dbModule.setDailyNewWordLimit(-1),
       /Expected non-negative integer dailyNewWordLimit/,
@@ -1351,6 +1354,26 @@ describe('session composition', { concurrency: false }, () => {
     assert.equal(settingRow?.value_json, '5');
     assert.equal(intakeRow?.new_study_count, 1);
     assert.equal(dbModule.getLearningPolicy(studyDayKey).dailyNewWordLimit, 5);
+  });
+
+  test('unstudied admission source defaults to mixed and persists independently from the daily limit', () => {
+    assert.throws(
+      () => dbModule.setUnstudiedAdmissionSource('diet_only' as never),
+      /Expected unstudiedAdmissionSource to be "mixed" or "stash_only"/,
+    );
+
+    dbModule.setDailyNewWordLimit(4);
+    const policy = dbModule.setUnstudiedAdmissionSource('stash_only');
+
+    const settingRow = sqlite
+      .prepare(`SELECT value_json FROM learner_settings WHERE learner_id = 'test-learner' AND setting_key = 'unstudied_admission_source'`)
+      .get() as { value_json: string } | undefined;
+
+    assert.equal(settingRow?.value_json, '"stash_only"');
+    assert.equal(policy.unstudiedAdmissionSource, 'stash_only');
+    assert.equal(policy.dailyNewWordLimit, 4);
+    assert.equal(dbModule.getLearningPolicy(studyDayKey).unstudiedAdmissionSource, 'stash_only');
+    assert.equal(dbModule.getLearningPolicy(studyDayKey).dailyNewWordLimit, 4);
   });
 
   test('new sessions use configured limit minus completed count across limit and day changes', () => {
@@ -1610,6 +1633,40 @@ describe('session composition', { concurrency: false }, () => {
     const first = dbModule.getSessionPayload(studyDayKey).buckets.unstudied.map((word) => word.id);
     const second = dbModule.getSessionPayload(studyDayKey).buckets.unstudied.map((word) => word.id);
     assert.deepEqual(second, first);
+  });
+
+  test('stash_only admission uses the remaining quota from stash and ignores diet', () => {
+    dbModule.setDailyNewWordLimit(4);
+    dbModule.setUnstudiedAdmissionSource('stash_only');
+    insertUnstudiedWordPair('diet-a', 100, '2026-01-01T00:00:00.000Z');
+    insertUnstudiedWordPair('diet-b', 90, '2026-01-02T00:00:00.000Z');
+    insertUnstudiedWordPair('diet-c', 80, '2026-01-03T00:00:00.000Z');
+    insertUnstudiedWordPair('stash-a', 1, '2026-01-04T00:00:00.000Z');
+    insertUnstudiedWordPair('stash-b', 2, '2026-01-05T00:00:00.000Z');
+    insertUnstudiedWordPair('stash-c', 3, '2026-01-06T00:00:00.000Z');
+    dbModule.updateWordUserPriority('stash-a', { bumpDelta: 1 });
+    dbModule.updateWordUserPriority('stash-b', { bumpDelta: 1 });
+    dbModule.updateWordUserPriority('stash-c', { bumpDelta: 1 });
+
+    const unstudiedIds = dbModule.getSessionPayload(studyDayKey).buckets.unstudied.map((word) => word.id);
+    assert.equal(unstudiedIds.length, 3);
+    assert.equal(unstudiedIds.every((id) => id.startsWith('stash-')), true);
+    assert.equal(unstudiedIds.some((id) => id.startsWith('diet-')), false);
+  });
+
+  test('stash_only admission leaves leftover quota empty instead of filling from diet', () => {
+    dbModule.setDailyNewWordLimit(4);
+    dbModule.setUnstudiedAdmissionSource('stash_only');
+    insertUnstudiedWordPair('diet-a', 100, '2026-01-01T00:00:00.000Z');
+    insertUnstudiedWordPair('diet-b', 90, '2026-01-02T00:00:00.000Z');
+    insertUnstudiedWordPair('diet-c', 80, '2026-01-03T00:00:00.000Z');
+    insertUnstudiedWordPair('stash-only', 1, '2026-01-05T00:00:00.000Z');
+    dbModule.updateWordUserPriority('stash-only', { bumpDelta: 1 });
+
+    assert.deepEqual(
+      dbModule.getSessionPayload(studyDayKey).buckets.unstudied.map((word) => word.id),
+      ['stash-only'],
+    );
   });
 
   test('unstudied completion clears required state', () => {

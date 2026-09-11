@@ -11,6 +11,7 @@ import {
   retryReflectionGenerationRun,
   generateDeferredReflectionSecondOpinion,
   updateDailyNewWordLimit,
+  updateUnstudiedAdmissionSource,
   upsertReflectionQuality,
   withdrawReflectionAuthorization,
   fetchReflectionHelpInbox,
@@ -93,18 +94,36 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     setBackendStatus(statusResponse);
   }
 
-  async function saveDailyNewWordLimit(dailyNewWordLimit: number) {
+  async function saveSessionSettings(settings: {
+    dailyNewWordLimit?: number;
+    unstudiedAdmissionSource?: BackendStatus['unstudiedAdmissionSource'];
+  }) {
     try {
       await studySession.prefetchSession();
     } catch {
       // A failed prefetch is settled too, so it can no longer race the refresh below.
     }
 
-    const policy = await updateDailyNewWordLimit(dailyNewWordLimit);
+    let policy: {
+      dailyNewWordLimit: number;
+      unstudiedAdmissionSource: BackendStatus['unstudiedAdmissionSource'];
+    } | null = null;
+    if (settings.dailyNewWordLimit !== undefined) {
+      policy = await updateDailyNewWordLimit(settings.dailyNewWordLimit);
+    }
+    if (settings.unstudiedAdmissionSource !== undefined) {
+      policy = await updateUnstudiedAdmissionSource(settings.unstudiedAdmissionSource);
+    }
+    if (!policy) {
+      return;
+    }
+
+    const nextPolicy = policy;
     setBackendStatus((currentStatus) => currentStatus
       ? {
           ...currentStatus,
-          dailyNewWordLimit: policy.dailyNewWordLimit,
+          dailyNewWordLimit: nextPolicy.dailyNewWordLimit,
+          unstudiedAdmissionSource: nextPolicy.unstudiedAdmissionSource,
         }
       : currentStatus);
     void studySession.refreshSessionPrefetch().catch(() => undefined);
@@ -130,7 +149,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
       {currentPage === 'home' ? (
         <HomePage
           backendStatus={backendStatus}
-          onSaveDailyNewWordLimit={saveDailyNewWordLimit}
+          onSaveSessionSettings={saveSessionSettings}
           {...studySession.homePageProps}
         />
       ) : currentPage === 'priority' ? (

@@ -592,8 +592,8 @@ weight are unchanged.
 ### Remaining-quota split
 
 At composition time, compute the existing remaining daily new-word cap
-(`configured limit − today's completed new-word count`). Split **that
-remaining quota** 50/50, then let existing session logic consume the
+(`configured limit − today's completed new-word count`). In mixed mode, split
+**that remaining quota** 50/50, then let existing session logic consume the
 admitted unstudied set as its candidate pool.
 
 Rounding:
@@ -605,6 +605,27 @@ diet_slots  = remaining - stash_slots
 
 The odd leftover slot goes to diet. If `remaining` is `0`, this split admits
 nobody; require-bypass may still apply.
+
+### Stash-only source
+
+The mixed 50/50 split is the default. Session settings may set the unstudied
+admission source to `stash_only`.
+
+When `stash_only`:
+
+```text
+stash_slots = remaining
+diet_slots  = 0
+```
+
+Diet is not a candidate pool. Leftover stash slots stay empty; they are not
+filled from diet. Require-next-session bypass still unions in after the
+split. Tops still cannot exceed `stash_slots`, which is now the full remaining
+quota.
+
+The source is a durable `learner_settings` value. Changing it does not rewrite
+today's completed-new-word count and does not mutate an already-started
+frontend session.
 
 ### Filling the halves
 
@@ -621,9 +642,10 @@ nobody; require-bypass may still apply.
    id yet, so the RNG is seeded from `unstudied-admission:${studyDayKey}:${remainingQuota}`
    (stable for identical remaining quota on that UTC day). Tests may depend
    on that seed.
-4. If stash cannot fill `stash_slots`, leftover stash slots are filled from
-   diet in frequency order.
-5. Diet takes `diet_slots` plus any leftover stash slots, frequency-ranked.
+4. If stash cannot fill `stash_slots` in mixed mode, leftover stash slots are
+   filled from diet in frequency order. `stash_only` leaves those slots empty.
+5. In mixed mode, diet takes `diet_slots` plus any leftover stash slots,
+   frequency-ranked. `stash_only` admits no diet words.
 
 The composed unstudied admitted set is:
 
@@ -649,7 +671,8 @@ This experiment does not add:
 - keep / skip / park UI
 - ETA
 - a stash advisor or agent-on-stash
-- a user-facing mix-ratio control
+- a user-facing mix-ratio control beyond the binary `mixed` / `stash_only`
+  source
 - a diet ranker rewrite
 - grandfathering of currently-bumped high-frequency words (they become
   lottery tickets in the stash half)
