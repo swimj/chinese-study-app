@@ -165,6 +165,7 @@ match. The payload does not include the shared word catalog.
 | POST | `/api/study-sessions/:sessionId/manage-study-action` | `study-management` |
 | POST | `/api/study-sessions/:sessionId/reflections` | `reflection` |
 | POST | `/api/review-session-summaries` | `analytics` |
+| POST | `/api/client-incidents` | `client diagnostics` |
 
 Accepted review production events must include their exact frozen
 `metadata.production` snapshot. The accepted-review batch transaction appends
@@ -184,6 +185,13 @@ durable success.
 `POST /api/review-session-summaries` accepts a non-negative integer `activeDurationMs` alongside the existing completion counts. The `sessionId` upsert replaces all summary fields, including the duration.
 Caught summary persistence failures use the same diagnostic-id contract so the
 otherwise-lost completion counts and active duration remain inspectable.
+
+`POST /api/client-incidents` accepts an authenticated batch of 1–20 strictly
+bounded `client_transport_incident.v1` records. The current schema accepts only
+authentication or native-fetch failures from accepted-review and accepted-
+contrast commit routes. A valid batch returns `204`; malformed records return
+`400`. Upload is diagnostic-only and never retries or changes the associated
+study commit. See [error logging and diagnostics](./ops/error-diagnostics.md#client-transport-incidents).
 
 ## Post-session reflection
 

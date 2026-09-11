@@ -64,6 +64,7 @@ src/
       useContentDiagnosticsController.ts # bounded primitive-kind search and loading
 
   domain/
+    client-incidents.ts           # bounded client transport incident schema shared with server
     study-actions.ts              # shared study-action types/adapters (also used by server)
     reflection.ts                 # canonical reflection result/operation/lifecycle contract
     reflection-evidence.ts        # strict supplement and initial-bundle validation
@@ -76,6 +77,7 @@ src/
 
   services/
     api.ts                        # frontend API client
+    client-incident-diagnostics.ts # account-scoped pending transport-incident queue
 ```
 
 ## Mental Model
@@ -145,6 +147,10 @@ workspace are mapped separately in the
 ## Boundaries
 
 - Backend/API contracts stay centralized in `src/services/api.ts`.
+- Accepted review/contrast commit transport failures use the bounded shared
+  client-incident schema. Pending records are account-scoped in local storage
+  and uploaded best-effort after authenticated startup or reconnection; they do
+  not retry the commit itself.
 - Durable state changes go through backend API calls.
 - Frontend owns only the active, in-flight session snapshot after a session starts.
 - Core session transitions live in `src/lib/session-state.ts`; UI hooks orchestrate, they do not redefine rules.
