@@ -29,7 +29,6 @@ export type PriorityPageController = {
   advisorRunReceipt: IntakeTriageRunReceipt | null;
   advisorUpdatingAssessmentId: string | null;
   searchHanzi: string;
-  requireAddedMatches: boolean;
   searchNotice: string | null;
   searchSubmitting: boolean;
   highlightedWordIds: string[];
@@ -37,7 +36,6 @@ export type PriorityPageController = {
   bulkDismissSubmitting: boolean;
   priorityBatchSubmitting: boolean;
   setSearchHanzi: (value: string) => void;
-  setRequireAddedMatches: (value: boolean) => void;
   clearHighlights: () => void;
   openPage: () => Promise<void>;
   submitSearch: () => Promise<void>;
@@ -69,7 +67,6 @@ export function usePriorityPageController({
   const [advisorRunReceipt, setAdvisorRunReceipt] = useState<IntakeTriageRunReceipt | null>(null);
   const [advisorUpdatingAssessmentId, setAdvisorUpdatingAssessmentId] = useState<string | null>(null);
   const [searchHanzi, setSearchHanzi] = useState('');
-  const [requireAddedMatches, setRequireAddedMatches] = useState(false);
   const [searchSubmitting, setSearchSubmitting] = useState(false);
   const [searchNotice, setSearchNotice] = useState<string | null>(null);
   const [highlightedWordIds, setHighlightedWordIds] = useState<string[]>([]);
@@ -162,7 +159,7 @@ export function usePriorityPageController({
     setError(null);
 
     try {
-      const response = await addUnstudiedPriorityByHanzi(normalizedHanzi, requireAddedMatches);
+      const response = await addUnstudiedPriorityByHanzi(normalizedHanzi);
       setRows((current) => {
         const byId = new Map(current.map((entry) => [entry.word.id, entry]));
         for (const word of response.words) {
@@ -329,7 +326,6 @@ export function usePriorityPageController({
     advisorRunReceipt,
     advisorUpdatingAssessmentId,
     searchHanzi,
-    requireAddedMatches,
     searchNotice,
     searchSubmitting,
     highlightedWordIds,
@@ -337,7 +333,6 @@ export function usePriorityPageController({
     bulkDismissSubmitting,
     priorityBatchSubmitting,
     setSearchHanzi: (value: string) => setSearchHanzi(value),
-    setRequireAddedMatches,
     clearHighlights: () => setHighlightedWordIds([]),
     openPage,
     submitSearch,

@@ -13,12 +13,10 @@ export function PriorityPage({
   rows,
   triageRows,
   searchHanzi,
-  requireAddedMatches,
   searchNotice,
   searchSubmitting,
   highlightedWordIds,
   onSearchHanziChange,
-  onRequireAddedMatchesChange,
   onSearchSubmit,
   onHighlightsHandled,
   updatingWordId,
@@ -41,12 +39,10 @@ export function PriorityPage({
   rows: PriorityWord[];
   triageRows: IntakeTriagePriorityWord[];
   searchHanzi: string;
-  requireAddedMatches: boolean;
   searchNotice: string | null;
   searchSubmitting: boolean;
   highlightedWordIds: string[];
   onSearchHanziChange: (value: string) => void;
-  onRequireAddedMatchesChange: (value: boolean) => void;
   onSearchSubmit: () => void;
   onHighlightsHandled: () => void;
   updatingWordId: string | null;
@@ -240,15 +236,6 @@ export function PriorityPage({
                 placeholder={studyProfile.labels.addByTarget}
                 aria-label={studyProfile.labels.addByTarget}
               />
-              <label className="inline-checkbox">
-                <input
-                  type="checkbox"
-                  checked={requireAddedMatches}
-                  disabled={searchSubmitting}
-                  onChange={(event) => onRequireAddedMatchesChange(event.target.checked)}
-                />
-                Require added
-              </label>
               <button type="button" onClick={submitAndKeepFocus} disabled={searchSubmitting}>
                 {searchSubmitting ? 'Adding...' : 'Add'}
               </button>

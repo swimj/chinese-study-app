@@ -154,12 +154,10 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
           rows={priorityPage.rows}
           triageRows={priorityPage.triageRows}
           searchHanzi={priorityPage.searchHanzi}
-          requireAddedMatches={priorityPage.requireAddedMatches}
           searchNotice={priorityPage.searchNotice}
           searchSubmitting={priorityPage.searchSubmitting}
           highlightedWordIds={priorityPage.highlightedWordIds}
           onSearchHanziChange={priorityPage.setSearchHanzi}
-          onRequireAddedMatchesChange={priorityPage.setRequireAddedMatches}
           onSearchSubmit={() => void priorityPage.submitSearch()}
           onHighlightsHandled={priorityPage.clearHighlights}
           updatingWordId={priorityPage.updatingWordId}
