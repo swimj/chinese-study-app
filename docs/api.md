@@ -280,8 +280,9 @@ whose session/flow does not already have a successful artifact.
 ### Comparison arms
 
 The reflection service has a backend-only comparison-arm registry. Luna, GLM,
-Gemini 3.6 Flash, and GPT-5.6 Terra are sampled with equal
-probability for initial generation. OpenRouter arms require
+and GPT-5.6 Terra are sampled with equal probability for initial generation.
+Gemini 3.6 Flash remains registered so it can be re-offered later, but it is
+not in the default candidate pool or learner-facing pickers. OpenRouter arms require
 `OPENROUTER_API_KEY` and use OpenRouter's normal eligible-provider routing;
 they do not pin one upstream host or disable fallbacks. Missing credentials fail
 only the selected arm with the existing `503` typed failure; they never affect

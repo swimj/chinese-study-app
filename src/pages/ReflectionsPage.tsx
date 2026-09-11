@@ -57,18 +57,27 @@ const REFLECTION_HANDLE_OPTIONS = [
   { value: 'accept_production_alternate@1', label: 'Accept production alternate' },
 ] as const;
 
+// Keep `enabledByDefault` in sync with `server/reflection/model-arms.ts`.
+// Withdrawn arms stay listed so they can be re-offered without deleting them.
 const REFLECTION_RETRY_MODEL_OPTIONS: ReadonlyArray<Omit<ReflectionRetryMenuOption, 'label'> & {
   label: string;
   model: ReflectionModelChoice;
+  enabledByDefault: boolean;
 }> = [
-  { id: 'openai:gpt-5.6-luna-high', label: 'Luna high', model: 'openai:gpt-5.6-luna-high' },
-  { id: 'zai:glm-5.3-high', label: 'GLM-5.3 high', model: 'zai:glm-5.3-high' },
-  { id: 'openrouter:gemini-3.6-flash', label: 'Gemini 3.6 Flash', model: 'openrouter:gemini-3.6-flash' },
-  { id: 'openai:gpt-5.6-terra-high', label: 'GPT-5.6 Terra high', model: 'openai:gpt-5.6-terra-high' },
+  { id: 'openai:gpt-5.6-luna-high', label: 'Luna high', model: 'openai:gpt-5.6-luna-high', enabledByDefault: true },
+  { id: 'zai:glm-5.3-high', label: 'GLM-5.3 high', model: 'zai:glm-5.3-high', enabledByDefault: true },
+  { id: 'openrouter:gemini-3.6-flash', label: 'Gemini 3.6 Flash', model: 'openrouter:gemini-3.6-flash', enabledByDefault: false },
+  { id: 'openai:gpt-5.6-terra-high', label: 'GPT-5.6 Terra high', model: 'openai:gpt-5.6-terra-high', enabledByDefault: true },
 ];
 
+const OFFERED_REFLECTION_MODEL_OPTIONS = REFLECTION_RETRY_MODEL_OPTIONS.filter(
+  (option) => option.enabledByDefault,
+);
+
+const DEFAULT_SECOND_OPINION_MODEL: ReflectionModelChoice = 'openai:gpt-5.6-terra-high';
+
 function sourceModelIsCurrentlyAvailable(storedModel: string): boolean {
-  return REFLECTION_RETRY_MODEL_OPTIONS.some((option) => option.model.endsWith(`:${storedModel}`));
+  return OFFERED_REFLECTION_MODEL_OPTIONS.some((option) => option.model.endsWith(`:${storedModel}`));
 }
 
 type ReflectionView = 'help' | 'second-opinion' | 'sessions' | 'usage' | 'quality';
@@ -186,7 +195,7 @@ export function DeferredSecondOpinionQueue({
   );
   const selectionInitialized = useRef(cards.length > 0);
   const [inspectedId, setInspectedId] = useState<string | null>(null);
-  const [model, setModel] = useState<ReflectionModelChoice>('openai:gpt-5.6-luna-high');
+  const [model, setModel] = useState<ReflectionModelChoice>(DEFAULT_SECOND_OPINION_MODEL);
   const cardIds = cards.map((card) => card.proposal.review.proposalId).join('\u0000');
   useEffect(() => {
     const availableIds = new Set(cardIds.length === 0 ? [] : cardIds.split('\u0000'));
@@ -329,7 +338,7 @@ export function DeferredSecondOpinionQueue({
             value={model}
             onChange={(event) => setModel(event.target.value as ReflectionModelChoice)}
           >
-            {REFLECTION_RETRY_MODEL_OPTIONS.map((option) => (
+            {OFFERED_REFLECTION_MODEL_OPTIONS.map((option) => (
               <option key={option.model} value={option.model}>{option.label}</option>
             ))}
           </select>
@@ -1147,7 +1156,7 @@ function ReflectionRetryControl({
         : `Same model (${run.model}) — no longer available`,
       disabled: !sameModelAvailable,
     },
-    ...REFLECTION_RETRY_MODEL_OPTIONS,
+    ...OFFERED_REFLECTION_MODEL_OPTIONS,
   ];
   const firstEnabledIndex = Math.max(0, options.findIndex((option) => !option.disabled));
   const label = retryFailed

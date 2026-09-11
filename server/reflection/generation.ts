@@ -38,6 +38,7 @@ import { createGlmReflectionProvider } from './glm-provider.ts';
 import { GLM_REFLECTION_MODEL_CONFIG } from './glm-provider.ts';
 import {
   REFLECTION_MODEL_ARMS,
+  isOfferedReflectionModelChoice,
   isReflectionModelChoice,
   type ReflectionModelChoice,
 } from './model-arms.ts';
@@ -60,6 +61,11 @@ export function choiceForStoredModel(model: string): ReflectionModelChoice | nul
     return separator >= 0 && choice.slice(separator + 1) === model;
   });
   return match ?? null;
+}
+
+function offeredChoiceForStoredModel(model: string): ReflectionModelChoice | null {
+  const match = choiceForStoredModel(model);
+  return match !== null && isOfferedReflectionModelChoice(match) ? match : null;
 }
 
 function reflectionProviderConfigForChoice(choice: ReflectionModelChoice): ReflectionProviderConfig {
@@ -189,7 +195,7 @@ export function createInitialReflectionGenerationService(
     provider: configuredProviders[arm.choice]!,
   }));
   const defaultComparisonArms = comparisonArms.filter((arm) => (
-    REFLECTION_MODEL_ARMS.find((candidate) => candidate.choice === arm.choice)!.enabledByDefault
+    isOfferedReflectionModelChoice(arm.choice)
   ));
 
   function selectProvider(choice: ReflectionModelChoice | undefined): {
@@ -278,7 +284,7 @@ export function createInitialReflectionGenerationService(
         && retrySource.evidenceBundle.schemaVersion !== 'curated_reflection_bundle.v1') {
         throw new Error('The current reflection flow cannot retry this evidence bundle.');
       }
-      const selectedChoice = model ?? choiceForStoredModel(retrySource.model);
+      const selectedChoice = model ?? offeredChoiceForStoredModel(retrySource.model);
       if (selectedChoice === null) {
         throw new RetiredReflectionSourceModelError(retrySource.model);
       }

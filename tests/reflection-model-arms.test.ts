@@ -3,10 +3,14 @@ import { describe, test } from 'node:test';
 import { PROVIDER_REQUEST_TIMEOUT_MS } from '../server/llm/types.ts';
 import { GLM_REFLECTION_MODEL_CONFIG } from '../server/reflection/glm-provider.ts';
 import { LUNA_REFLECTION_MODEL_CONFIG } from '../server/reflection/luna-provider.ts';
-import { REFLECTION_MODEL_ARMS, isReflectionModelChoice } from '../server/reflection/model-arms.ts';
+import {
+  REFLECTION_MODEL_ARMS,
+  isOfferedReflectionModelChoice,
+  isReflectionModelChoice,
+} from '../server/reflection/model-arms.ts';
 
 describe('reflection comparison-arm registry', () => {
-  test('registers four equally weighted default comparison arms', () => {
+  test('registers four comparison arms and offers three by default', () => {
     const choices = REFLECTION_MODEL_ARMS.map((arm) => arm.choice);
     assert.deepEqual(choices, [
       'openai:gpt-5.6-luna-high',
@@ -15,6 +19,9 @@ describe('reflection comparison-arm registry', () => {
       'openai:gpt-5.6-terra-high',
     ]);
     assert.equal(isReflectionModelChoice('openai:gpt-5.6-terra-high'), true);
+    assert.equal(isReflectionModelChoice('openrouter:gemini-3.6-flash'), true);
+    assert.equal(isOfferedReflectionModelChoice('openai:gpt-5.6-terra-high'), true);
+    assert.equal(isOfferedReflectionModelChoice('openrouter:gemini-3.6-flash'), false);
     assert.equal(isReflectionModelChoice('openrouter:claude-sonnet-5'), false);
     assert.equal(isReflectionModelChoice('dashscope:qwen3.8-max'), false);
     assert.equal(isReflectionModelChoice('openrouter:deepseek-v4-pro'), false);
@@ -24,9 +31,12 @@ describe('reflection comparison-arm registry', () => {
       [
         'openai:gpt-5.6-luna-high',
         'zai:glm-5.3-high',
-        'openrouter:gemini-3.6-flash',
         'openai:gpt-5.6-terra-high',
       ],
+    );
+    assert.equal(
+      REFLECTION_MODEL_ARMS.find((arm) => arm.choice === 'openrouter:gemini-3.6-flash')?.enabledByDefault,
+      false,
     );
     assert.ok(
       REFLECTION_MODEL_ARMS
