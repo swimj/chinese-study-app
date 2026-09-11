@@ -785,6 +785,7 @@ export async function dismissIntakeTriageAssessment(assessmentId: string): Promi
   }
 }
 
+/** Add-time requiring stays in the API; the add-box checkbox is currently hidden. */
 export async function addUnstudiedPriorityByHanzi(
   hanzi: string,
   requiredForNextSession = false,

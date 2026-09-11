@@ -2,6 +2,12 @@
 
 Casual notes for people using the app before there is a real release process.
 
+## Unreleased — hide add-time require
+
+- The New Words add box no longer offers "Require added". New words still join
+  the stash without overflowing the daily budget. Selected-word Require /
+  Unrequire and the backend add-by-hanzi flag stay in place.
+
 ## Unreleased — stash-only new-word intake
 
 - Session settings can restrict new-word composition to the custom stash.
