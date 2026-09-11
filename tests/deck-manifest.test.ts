@@ -6,6 +6,7 @@ import {
   EXPECTED_HSK20_DELTA_COUNTS,
   EXPECTED_HSK30_DELTA_COUNTS,
   guardSourceCounts,
+  HSK20_EXCLUDED_READINGS,
   manifestWordKey,
   parseHsk20LevelJson,
   parseHsk30SyllabusTsv,
@@ -15,7 +16,7 @@ import {
   TAIL_DECK_ID,
 } from '../scripts/lib/hsk-decks.ts';
 
-test('parseHsk20LevelJson reads drkameleon exclusive-level JSON', () => {
+test('parseHsk20LevelJson excludes obscure dictionary readings but keeps useful alternates', () => {
   const contents = JSON.stringify([
     { simplified: '啊', forms: [
       { transcriptions: { pinyin: 'ā' } },
@@ -24,16 +25,31 @@ test('parseHsk20LevelJson reads drkameleon exclusive-level JSON', () => {
       { transcriptions: { pinyin: 'à' } },
       { transcriptions: { pinyin: 'a' } },
     ] },
+    { simplified: '看', forms: [
+      { transcriptions: { pinyin: 'kān' } },
+      { transcriptions: { pinyin: 'kàn' } },
+    ] },
+    { simplified: '的', forms: [
+      { transcriptions: { pinyin: 'de' } },
+      { transcriptions: { pinyin: 'dī' } },
+      { transcriptions: { pinyin: 'dí' } },
+      { transcriptions: { pinyin: 'dì' } },
+    ] },
     { simplified: '八', forms: [{ transcriptions: { pinyin: 'bā' } }] },
   ]);
   assert.deepEqual(parseHsk20LevelJson(contents, 1), [
-    { hanzi: '啊', pinyin: 'ā', level: 1 },
-    { hanzi: '啊', pinyin: 'á', level: 1 },
-    { hanzi: '啊', pinyin: 'ǎ', level: 1 },
-    { hanzi: '啊', pinyin: 'à', level: 1 },
     { hanzi: '啊', pinyin: 'a', level: 1 },
+    { hanzi: '看', pinyin: 'kān', level: 1 },
+    { hanzi: '看', pinyin: 'kàn', level: 1 },
+    { hanzi: '的', pinyin: 'de', level: 1 },
     { hanzi: '八', pinyin: 'bā', level: 1 },
   ]);
+});
+
+test('the curated HSK 2.0 exclusion policy is explicit and comparison-normalized', () => {
+  assert.equal(HSK20_EXCLUDED_READINGS['的|dī'], 'taxi abbreviation; not useful as a standalone beginner word');
+  assert.equal(HSK20_EXCLUDED_READINGS['啊|ā'], 'tone-specific interjection is poor standalone study intake');
+  assert.equal(HSK20_EXCLUDED_READINGS['看|kān'], undefined);
 });
 
 test('parseHsk20LevelJson tolerates missing pinyin and rejects bad payloads', () => {

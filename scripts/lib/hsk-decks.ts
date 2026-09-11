@@ -68,6 +68,97 @@ function normalizeSourcePinyin(pinyin: string): string {
   return normalizeToneMarkedPinyin(pinyin).replace(/u:|v/g, 'ü');
 }
 
+/**
+ * The HSK 2.0 package attaches every CC-CEDICT form for a headword, rather
+ * than only the reading intended by the HSK list. Keep useful, contemporary
+ * alternate readings, but do not turn dictionary curiosities into study
+ * intake merely because their hanzi is on an HSK list.
+ *
+ * Keys use the same normalized comparison form as the join. Reasons are
+ * intentionally short because this object is also emitted in build metadata
+ * and the eyeball report for review.
+ */
+export const HSK20_EXCLUDED_READINGS: Readonly<Record<string, string>> = {
+  '大|dài': 'only used in the obscure title 大夫',
+  '的|dī': 'taxi abbreviation; not useful as a standalone beginner word',
+  '的|dí': 'rare standalone literary reading',
+  '的|dì': 'bound target/bullseye reading',
+  '东西|dōngxī': 'literal east-and-west reading is marginal as a standalone word',
+  '读|dòu': 'archaic punctuation reading',
+  '多少|duōshǎo': 'formal amount reading; beginner word is the neutral-tone question',
+  '个|gě': 'occurs only inside 自个儿',
+  '会|kuài': 'accounting reading is specialized and normally appears in compounds',
+  '了|liào': 'unofficial variant reading',
+  '吗|má': 'marked colloquial interjection rather than the HSK question particle',
+  '吗|mǎ': 'occurs only inside 吗啡',
+  '哪|né': 'rare character-name reading',
+  '那|nā': 'surname reading',
+  '那|nuó': 'surname/archaic reading',
+  '那|nǎ': 'variant spelling of 哪 rather than the listed word',
+  '上|shǎng': 'occurs only in the technical term 上声',
+  '听|yǐn': 'archaic reading meaning smile',
+  '吧|biā': 'rare onomatopoeic reading',
+  '别|biè': 'rare dialectal reading',
+  '好吃|hàochī': 'marked gluttonous reading; not useful as a standalone intake item',
+  '离|chī': 'archaic mythical-beast reading',
+  '远|yuàn': 'classical reading',
+  '啊|ā': 'tone-specific interjection is poor standalone study intake',
+  '啊|á': 'tone-specific interjection is poor standalone study intake',
+  '啊|ǎ': 'tone-specific interjection is poor standalone study intake',
+  '啊|à': 'tone-specific interjection is poor standalone study intake',
+  '把|bà': 'bound handle reading',
+  '草|cào': 'vulgar variant reading',
+  '脚|jué': 'variant of theatrical-role 角',
+  '鸟|diǎo': 'vulgar variant reading',
+  '胖|pán': 'literary reading',
+  '骑|jì': 'Taiwan-specific noun reading',
+  '刷|shuà': 'rare reading meaning select',
+  '万|mò': 'occurs only inside an archaic name',
+  '底|de': 'literary possessive-particle reading',
+  '过|guō': 'surname reading',
+  '汗|hán': 'historical title reading',
+  '好处|hǎochǔ': 'rare lexicalized reading',
+  '假|gēi': 'occurs only inside a dialect word',
+  '俩|liǎng': 'occurs only inside 伎俩',
+  '趟|tāng': 'obsolete variant reading',
+  '页|xié': 'rare reading meaning head',
+  '与|yú': 'variant of the literary particle 欤',
+  '赚|zuàn': 'obsolete reading meaning swindle',
+  '薄|bò': 'occurs only inside 薄荷',
+  '便|pián': 'occurs only in fixed compounds such as 便宜',
+  '乘|shèng': 'archaic chariot/counting reading',
+  '盖|gě': 'surname reading',
+  '哈|hǎ': 'rare dog-breed abbreviation',
+  '节|jiē': 'occurs only inside 节骨眼',
+  '摸|mó': 'variant of 摹',
+  '浅|jiān': 'literary onomatopoeic reading',
+  '提|dī': 'occurs only inside obscure compounds',
+  '歪|wǎi': 'Taiwan-specific reading',
+  '乙|zhé': 'technical stroke-name reading',
+  '呵|ā': 'variant of the interjection 啊',
+  '甭|bèng': 'rare dialectal intensifier',
+  '番|pān': 'surname reading',
+  '磕|kè': 'variant of 嗑',
+  '溜|liù': 'dictionary entry only redirects to a compound',
+  '嘛|má': 'rare/Taiwan interjection reading',
+  '拾|shè': 'literary reading',
+  '数|shuò': 'literary reading meaning repeatedly',
+  '嗯|ēn': 'tone-specific grunt is poor standalone study intake',
+  '嗯|èn': 'tone-specific grunt is poor standalone study intake',
+  '哦|é': 'literary chant reading',
+  '哦|ó': 'tone-specific interjection is poor standalone study intake',
+  '哦|ò': 'tone-specific interjection is poor standalone study intake',
+  '熨|yù': 'rare reading meaning reconciled/smooth',
+  '咋|zé': 'rare reading meaning gnaw',
+  '咋|zhà': 'rare onomatopoeic reading',
+  '粥|yù': 'occurs only in the historical name 荤粥',
+  '拽|yè': 'archaic reading',
+};
+
+export function isExcludedHsk20Reading(hanzi: string, pinyin: string | null): boolean {
+  return pinyin !== null && `${hanzi.trim()}|${readingComparisonKey(pinyin)}` in HSK20_EXCLUDED_READINGS;
+}
+
 // --- Source parsers -----------------------------------------------------------
 
 /** drkameleon/complete-hsk-vocabulary `wordlists/exclusive/old/<level>.json`. */
@@ -88,12 +179,16 @@ export function parseHsk20LevelJson(contents: string, level: number): HskSourceE
     if (!forms || forms.length === 0) {
       return [{ hanzi: hanzi.trim(), pinyin: null, level }];
     }
-    return forms.map((form, formIndex) => {
+    return forms.flatMap((form, formIndex) => {
       const pinyin = (form as { transcriptions?: { pinyin?: unknown } })?.transcriptions?.pinyin;
       if (pinyin !== null && pinyin !== undefined && typeof pinyin !== 'string') {
         throw new Error(`HSK 2.0 level ${level} entry ${index} form ${formIndex} has a non-string pinyin.`);
       }
-      return { hanzi: hanzi.trim(), pinyin: (pinyin as string | null) ?? null, level };
+      const normalizedHanzi = hanzi.trim();
+      const normalizedPinyin = (pinyin as string | null) ?? null;
+      return isExcludedHsk20Reading(normalizedHanzi, normalizedPinyin)
+        ? []
+        : [{ hanzi: normalizedHanzi, pinyin: normalizedPinyin, level }];
     });
   });
 }
