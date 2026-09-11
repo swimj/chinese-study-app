@@ -1,3 +1,7 @@
+export const UNSTUDIED_ADMISSION_SOURCES = ['mixed', 'stash_only'] as const;
+export type UnstudiedAdmissionSource = (typeof UNSTUDIED_ADMISSION_SOURCES)[number];
+export const DEFAULT_UNSTUDIED_ADMISSION_SOURCE: UnstudiedAdmissionSource = 'mixed';
+
 export type UnstudiedStashCandidate = {
   id: string;
   overlayUpdatedAt: string;
@@ -10,14 +14,26 @@ export type UnstudiedAdmissionInput = {
   dietIds: string[];
   remainingQuota: number;
   seedSource: string;
+  source?: UnstudiedAdmissionSource;
 };
 
-export function splitRemainingUnstudiedQuota(remainingQuota: number): {
+export function splitRemainingUnstudiedQuota(
+  remainingQuota: number,
+  source: UnstudiedAdmissionSource = DEFAULT_UNSTUDIED_ADMISSION_SOURCE,
+): {
   stashSlots: number;
   dietSlots: number;
 } {
   if (!Number.isInteger(remainingQuota) || remainingQuota < 0) {
     throw new Error(`Expected non-negative integer remaining unstudied quota, received ${String(remainingQuota)}`);
+  }
+  assertUnstudiedAdmissionSource(source);
+
+  if (source === 'stash_only') {
+    return {
+      stashSlots: remainingQuota,
+      dietSlots: 0,
+    };
   }
 
   const stashSlots = Math.floor(remainingQuota / 2);
@@ -25,6 +41,12 @@ export function splitRemainingUnstudiedQuota(remainingQuota: number): {
     stashSlots,
     dietSlots: remainingQuota - stashSlots,
   };
+}
+
+export function assertUnstudiedAdmissionSource(value: unknown): asserts value is UnstudiedAdmissionSource {
+  if (value !== 'mixed' && value !== 'stash_only') {
+    throw new Error('Expected unstudiedAdmissionSource to be "mixed" or "stash_only"');
+  }
 }
 
 export function buildUnstudiedAdmissionSeedSource(studyDayKey: string, remainingQuota: number): string {
@@ -36,7 +58,8 @@ export function buildUnstudiedAdmissionSeedSource(studyDayKey: string, remaining
 }
 
 export function selectAdmittedUnstudiedWordIds(input: UnstudiedAdmissionInput): string[] {
-  const { stashSlots, dietSlots } = splitRemainingUnstudiedQuota(input.remainingQuota);
+  const source = input.source ?? DEFAULT_UNSTUDIED_ADMISSION_SOURCE;
+  const { stashSlots, dietSlots } = splitRemainingUnstudiedQuota(input.remainingQuota, source);
   const stashById = indexStashCandidates(input.stash);
   assertDisjointPools(stashById, input.dietIds);
 
@@ -55,7 +78,9 @@ export function selectAdmittedUnstudiedWordIds(input: UnstudiedAdmissionInput): 
   const selectedStash = [...selectedTops, ...selectedNonTops];
   const selectedStashIds = new Set(selectedStash.map((candidate) => candidate.id));
   const unfilledStashSlots = stashSlots - selectedStash.length;
-  const selectedDietIds = input.dietIds.slice(0, dietSlots + unfilledStashSlots);
+  const selectedDietIds = source === 'stash_only'
+    ? []
+    : input.dietIds.slice(0, dietSlots + unfilledStashSlots);
   const selectedDietIdSet = new Set(selectedDietIds);
 
   const requiredBypass = input.stash

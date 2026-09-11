@@ -24,6 +24,7 @@ import {
   addUnstudiedUserPriorityByHanzi,
   dbConfig,
   getLearningPolicy,
+  setUnstudiedAdmissionSource,
   getContentDiagnostics,
   getReflectionArtifactDetail,
   getReflectionQualityStats,
@@ -370,6 +371,21 @@ export function createApp(options: CreateAppOptions = {}) {
       }
 
       res.status(500).json({ error: 'Failed to update daily new-word limit' });
+    }
+  });
+
+  app.patch('/api/learning-policy/unstudied-admission-source', (req, res) => {
+    const unstudiedAdmissionSource = req.body?.unstudiedAdmissionSource;
+
+    try {
+      res.json(setUnstudiedAdmissionSource(unstudiedAdmissionSource));
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Expected unstudiedAdmissionSource to be "mixed" or "stash_only"') {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to update unstudied admission source' });
     }
   });
 

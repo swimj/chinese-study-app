@@ -78,8 +78,11 @@ import {
 import { applyIntervalHourFuzz } from './interval-schedule.ts';
 import {
   buildUnstudiedAdmissionSeedSource,
+  DEFAULT_UNSTUDIED_ADMISSION_SOURCE,
   selectAdmittedUnstudiedWordIds,
+  type UnstudiedAdmissionSource,
   type UnstudiedStashCandidate,
+  assertUnstudiedAdmissionSource,
 } from './unstudied-admission.ts';
 import {
   assertLearnerExists,
@@ -2038,28 +2041,21 @@ export function getWordStatusCounts(): Record<WordStatus, number> {
 export function getLearningPolicy(studyDayKey: string) {
   assertStudyDayKey(studyDayKey);
   return {
-    dailyNewWordLimit: getDailyNewWordLimit(),
+    ...getLearningPolicySettings(),
     learningCoverageDate: studyDayKey,
   };
 }
 
 export function setDailyNewWordLimit(dailyNewWordLimit: number) {
   assertDailyNewWordLimit(dailyNewWordLimit);
-  getDb().prepare(`
-    INSERT INTO learner_settings (
-      learner_id,
-      setting_key,
-      value_json,
-      updated_at
-    ) VALUES (?, 'daily_new_word_limit', ?, ?)
-    ON CONFLICT(learner_id, setting_key) DO UPDATE SET
-      value_json = excluded.value_json,
-      updated_at = excluded.updated_at
-  `).run(requireLearnerId(), JSON.stringify(dailyNewWordLimit), new Date().toISOString());
+  upsertLearnerSetting('daily_new_word_limit', dailyNewWordLimit);
+  return getLearningPolicySettings();
+}
 
-  return {
-    dailyNewWordLimit,
-  };
+export function setUnstudiedAdmissionSource(unstudiedAdmissionSource: UnstudiedAdmissionSource) {
+  assertUnstudiedAdmissionSource(unstudiedAdmissionSource);
+  upsertLearnerSetting('unstudied_admission_source', unstudiedAdmissionSource);
+  return getLearningPolicySettings();
 }
 
 export function completeUnstudiedWordSession(wordId: string, studyDayKey: string): Word {
@@ -4628,6 +4624,7 @@ function getSessionItemBucketsWithWords(
   const now = new Date().toISOString();
   const today = getTodayKey();
   const remainingDailyNewWordSlots = getRemainingDailyNewWordSlots(studyDayKey);
+  const unstudiedAdmissionSource = getUnstudiedAdmissionSource();
   const reviewRows = getReviewSessionStudyItems(now, random);
 
   const learningRows = getDb()
@@ -4657,11 +4654,15 @@ function getSessionItemBucketsWithWords(
   return {
     review: reviewRows,
     learning: learningRows.map(mapWordRow),
-    unstudied: getAdmittedUnstudiedWords(remainingDailyNewWordSlots, studyDayKey),
+    unstudied: getAdmittedUnstudiedWords(remainingDailyNewWordSlots, studyDayKey, unstudiedAdmissionSource),
   };
 }
 
-function getAdmittedUnstudiedWords(remainingDailyNewWordSlots: number, studyDayKey: string): Word[] {
+function getAdmittedUnstudiedWords(
+  remainingDailyNewWordSlots: number,
+  studyDayKey: string,
+  source: UnstudiedAdmissionSource,
+): Word[] {
   const stashRows = getDb()
     .prepare(`
       SELECT
@@ -4693,7 +4694,7 @@ function getAdmittedUnstudiedWords(remainingDailyNewWordSlots: number, studyDayK
       overlay_updated_at: string;
     }>;
 
-  const dietRows = remainingDailyNewWordSlots === 0
+  const dietRows = source === 'stash_only' || remainingDailyNewWordSlots === 0
     ? []
     : getDb()
       .prepare(`
@@ -4732,6 +4733,7 @@ function getAdmittedUnstudiedWords(remainingDailyNewWordSlots: number, studyDayK
     dietIds: dietRows.map((row) => row.id),
     remainingQuota: remainingDailyNewWordSlots,
     seedSource: buildUnstudiedAdmissionSeedSource(studyDayKey, remainingDailyNewWordSlots),
+    source,
   });
 
   const wordsById = new Map<string, Word>();
@@ -5408,6 +5410,27 @@ function addDaysToDateKey(dateKey: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+function getLearningPolicySettings() {
+  return {
+    dailyNewWordLimit: getDailyNewWordLimit(),
+    unstudiedAdmissionSource: getUnstudiedAdmissionSource(),
+  };
+}
+
+function upsertLearnerSetting(settingKey: string, value: unknown) {
+  getDb().prepare(`
+    INSERT INTO learner_settings (
+      learner_id,
+      setting_key,
+      value_json,
+      updated_at
+    ) VALUES (?, ?, ?, ?)
+    ON CONFLICT(learner_id, setting_key) DO UPDATE SET
+      value_json = excluded.value_json,
+      updated_at = excluded.updated_at
+  `).run(requireLearnerId(), settingKey, JSON.stringify(value), new Date().toISOString());
+}
+
 function getTodayKey() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -5433,6 +5456,24 @@ function getDailyNewWordLimit(): number {
   const dailyNewWordLimit = JSON.parse(row.value_json) as unknown;
   assertDailyNewWordLimit(dailyNewWordLimit);
   return dailyNewWordLimit;
+}
+
+function getUnstudiedAdmissionSource(): UnstudiedAdmissionSource {
+  const row = getDb()
+    .prepare(`
+      SELECT value_json
+      FROM learner_settings
+      WHERE learner_id = ? AND setting_key = 'unstudied_admission_source'
+    `)
+    .get(requireLearnerId()) as { value_json: string } | undefined;
+
+  if (!row) {
+    return DEFAULT_UNSTUDIED_ADMISSION_SOURCE;
+  }
+
+  const unstudiedAdmissionSource = JSON.parse(row.value_json) as unknown;
+  assertUnstudiedAdmissionSource(unstudiedAdmissionSource);
+  return unstudiedAdmissionSource;
 }
 
 function getDailyNewStudyCount(studyDayKey: string): number {

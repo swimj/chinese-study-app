@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { BackendStatus } from '../services/api';
+import type { BackendStatus, UnstudiedAdmissionSource } from '../services/api';
 import {
   formatSessionPrefetchStatus,
   type SessionPrefetchState,
@@ -124,12 +124,15 @@ export function HomeOverviewPanel({
 
 export function SessionSettingsPanel({
   backendStatus,
-  onSaveDailyNewWordLimit,
+  onSaveSessionSettings,
   onSavingChange,
   onClose,
 }: {
   backendStatus: BackendStatus | null;
-  onSaveDailyNewWordLimit: (dailyNewWordLimit: number) => Promise<void>;
+  onSaveSessionSettings: (settings: {
+    dailyNewWordLimit?: number;
+    unstudiedAdmissionSource?: UnstudiedAdmissionSource;
+  }) => Promise<void>;
   onSavingChange: (saving: boolean) => void;
   onClose: () => void;
 }) {
@@ -140,11 +143,17 @@ export function SessionSettingsPanel({
       ? ''
       : String(backendStatus.dailyNewWordLimit)
   ));
+  const [sourceDraft, setSourceDraft] = useState<UnstudiedAdmissionSource>(
+    backendStatus?.unstudiedAdmissionSource ?? 'mixed',
+  );
   const [limitSaving, setLimitSaving] = useState(false);
   const [limitError, setLimitError] = useState<string | null>(null);
 
   const committedLimit = backendStatus?.dailyNewWordLimit ?? null;
+  const committedSource = backendStatus?.unstudiedAdmissionSource ?? 'mixed';
   const limitDirty = committedLimit !== null && limitDraft.trim() !== String(committedLimit);
+  const sourceDirty = sourceDraft !== committedSource;
+  const settingsDirty = limitDirty || sourceDirty;
 
   function beginLimitEdit() {
     setLimitDraft(committedLimit === null ? '' : String(committedLimit));
@@ -154,6 +163,7 @@ export function SessionSettingsPanel({
 
   function cancelAndClose() {
     setLimitDraft(committedLimit === null ? '' : String(committedLimit));
+    setSourceDraft(committedSource);
     setLimitEditing(false);
     setLimitError(null);
     onClose();
@@ -164,7 +174,7 @@ export function SessionSettingsPanel({
       return;
     }
 
-    if (!limitDirty) {
+    if (!settingsDirty) {
       onClose();
       return;
     }
@@ -173,23 +183,37 @@ export function SessionSettingsPanel({
       return;
     }
 
-    const dailyNewWordLimit = Number(limitDraft);
-    if (limitDraft.trim().length === 0 || !Number.isSafeInteger(dailyNewWordLimit) || dailyNewWordLimit < 0) {
-      setLimitError('Enter a non-negative integer.');
-      setLimitEditing(true);
-      return;
+    const patch: {
+      dailyNewWordLimit?: number;
+      unstudiedAdmissionSource?: UnstudiedAdmissionSource;
+    } = {};
+
+    if (limitDirty) {
+      const dailyNewWordLimit = Number(limitDraft);
+      if (limitDraft.trim().length === 0 || !Number.isSafeInteger(dailyNewWordLimit) || dailyNewWordLimit < 0) {
+        setLimitError('Enter a non-negative integer.');
+        setLimitEditing(true);
+        return;
+      }
+      patch.dailyNewWordLimit = dailyNewWordLimit;
+    }
+
+    if (sourceDirty) {
+      patch.unstudiedAdmissionSource = sourceDraft;
     }
 
     setLimitSaving(true);
     onSavingChange(true);
     setLimitError(null);
     try {
-      await onSaveDailyNewWordLimit(dailyNewWordLimit);
-      setLimitDraft(String(dailyNewWordLimit));
+      await onSaveSessionSettings(patch);
+      if (patch.dailyNewWordLimit !== undefined) {
+        setLimitDraft(String(patch.dailyNewWordLimit));
+      }
       setLimitEditing(false);
       onClose();
     } catch (error) {
-      setLimitError(error instanceof Error ? error.message : 'Failed to save daily new-word limit');
+      setLimitError(error instanceof Error ? error.message : 'Failed to save session settings');
     } finally {
       setLimitSaving(false);
       onSavingChange(false);
@@ -219,7 +243,7 @@ export function SessionSettingsPanel({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [limitDraft, limitSaving, limitDirty, committedLimit]);
+  }, [limitDraft, sourceDraft, limitSaving, settingsDirty, committedLimit, committedSource]);
 
   useEffect(() => {
     if (limitEditing) {
@@ -233,6 +257,10 @@ export function SessionSettingsPanel({
       setLimitDraft(String(committedLimit));
     }
   }, [committedLimit, limitEditing]);
+
+  useEffect(() => {
+    setSourceDraft(committedSource);
+  }, [committedSource]);
 
   return (
     <div
@@ -271,6 +299,21 @@ export function SessionSettingsPanel({
               {committedLimit ?? '...'}
             </button>
           )}
+        </div>
+        <div className="session-settings-row">
+          <label className="inline-checkbox">
+            <input
+              type="checkbox"
+              checked={sourceDraft === 'stash_only'}
+              disabled={backendStatus?.unstudiedAdmissionSource === undefined || limitSaving}
+              aria-label="New words from stash only"
+              onChange={(event) => {
+                setSourceDraft(event.target.checked ? 'stash_only' : 'mixed');
+                setLimitError(null);
+              }}
+            />
+            New words from stash only
+          </label>
         </div>
         {limitError ? <p className="form-error" role="alert">{limitError}</p> : null}
         <div className="session-settings-actions">

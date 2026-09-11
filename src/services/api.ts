@@ -68,11 +68,15 @@ type BackendStatus = {
   reviewFailureRateDays: ReviewFailureRateDay[];
   sessionActiveTimeMetrics: SessionActiveTimeMetrics;
   dailyNewWordLimit: number;
+  unstudiedAdmissionSource: UnstudiedAdmissionSource;
   learningCoverageDate: string;
 };
 
+export type UnstudiedAdmissionSource = 'mixed' | 'stash_only';
+
 type LearningPolicyResponse = {
   dailyNewWordLimit: number;
+  unstudiedAdmissionSource: UnstudiedAdmissionSource;
 };
 
 export type SessionPayload = {
@@ -286,6 +290,23 @@ export async function updateDailyNewWordLimit(dailyNewWordLimit: number): Promis
   });
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to update daily new-word limit'));
+  }
+
+  return response.json();
+}
+
+export async function updateUnstudiedAdmissionSource(
+  unstudiedAdmissionSource: UnstudiedAdmissionSource,
+): Promise<LearningPolicyResponse> {
+  const response = await apiFetch(`${API_BASE}/api/learning-policy/unstudied-admission-source`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ unstudiedAdmissionSource }),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to update unstudied admission source'));
   }
 
   return response.json();

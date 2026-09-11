@@ -1,6 +1,6 @@
 import type { RefObject } from 'react';
 import { useEffect, useState } from 'react';
-import type { BackendStatus } from '../services/api';
+import type { BackendStatus, UnstudiedAdmissionSource } from '../services/api';
 import type {
   BucketSessionState,
   LearningWordProgress,
@@ -22,7 +22,7 @@ import { HomeOverviewPanel, SessionSettingsPanel } from './HomeOverviewPanel';
 
 export function HomePage({
   backendStatus,
-  onSaveDailyNewWordLimit,
+  onSaveSessionSettings,
   sessionPrefetch,
   sessionStarted,
   sessionPhase,
@@ -95,7 +95,10 @@ export function HomePage({
   onCloseShortcutGuide,
 }: {
   backendStatus: BackendStatus | null;
-  onSaveDailyNewWordLimit: (dailyNewWordLimit: number) => Promise<void>;
+  onSaveSessionSettings: (settings: {
+    dailyNewWordLimit?: number;
+    unstudiedAdmissionSource?: UnstudiedAdmissionSource;
+  }) => Promise<void>;
   sessionPrefetch: SessionPrefetchState;
   sessionStarted: boolean;
   sessionPhase: BucketSessionState['phase'] | null;
@@ -213,7 +216,7 @@ export function HomePage({
         {sessionSettingsOpen && !sessionStarted ? (
           <SessionSettingsPanel
             backendStatus={backendStatus}
-            onSaveDailyNewWordLimit={onSaveDailyNewWordLimit}
+            onSaveSessionSettings={onSaveSessionSettings}
             onSavingChange={setSessionSettingsSaving}
             onClose={() => setSessionSettingsOpen(false)}
           />

@@ -223,7 +223,9 @@ seed application, rather than rewriting persisted eligibility at every restart.
 
 The `learner_settings` row keyed by `(learner_id, daily_new_word_limit)` stores
 the learner's configured non-negative integer limit as JSON. A missing row
-reads as the current default of `10`. This setting is independent of
+reads as the current default of `10`. The row keyed by
+`(learner_id, unstudied_admission_source)` stores `"mixed"` or `"stash_only"`;
+a missing row reads as `"mixed"`. These settings are independent of
 `daily_new_word_intake.new_study_count`, the per-UTC-day counter incremented
 only when an unstudied word is completed.
 

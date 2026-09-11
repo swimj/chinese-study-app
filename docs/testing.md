@@ -7,7 +7,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | Test file | Domain | Imports |
 | --- | --- | --- |
 | `session-composition.test.ts` | Session payload / scheduling composition | Dynamic `server/db.ts` |
-| `unstudied-admission.test.ts` | Experimental dual-pool unstudied admission selector | `server/db/unstudied-admission.ts` |
+| `unstudied-admission.test.ts` | Experimental dual-pool unstudied admission selector, including stash-only source | `server/db/unstudied-admission.ts` |
 | `session-completion.test.ts` | Session completion commits | Dynamic `server/db.ts` |
 | `session-bucket-scheduler.test.ts` | Bucket ordering helpers | `src/domain/study-actions.ts` |
 | `session-bucket-state.test.ts` | In-session bucket state | `src/domain/study-actions.ts` |
