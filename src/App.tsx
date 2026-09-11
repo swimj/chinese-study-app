@@ -29,8 +29,6 @@ import { useReflectionPageController } from './features/reflection/useReflection
 import { useContentDiagnosticsController } from './features/content/useContentDiagnosticsController';
 import { ContentDiagnosticsPage } from './pages/ContentDiagnosticsPage';
 
-const APP_VERSION = __APP_VERSION__;
-
 function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
   const [currentPage, setCurrentPage] = useState<AppPageKey>('home');
   const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);
@@ -135,7 +133,6 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     <AppChrome
       currentPage={currentPage}
       error={error}
-      version={APP_VERSION}
       sessionActive={sessionActive}
       priorityPageLoading={priorityPage.isLoading}
       reflectionPageLoading={reflectionPage.isLoading}

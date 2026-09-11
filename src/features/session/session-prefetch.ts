@@ -95,21 +95,6 @@ export async function ensureSessionPrefetch(onStateChange: () => void): Promise<
   }
 }
 
-export function formatSessionPrefetchStatus(sessionPrefetch: SessionPrefetchState) {
-  switch (sessionPrefetch.status) {
-    case 'idle':
-      return 'idle';
-    case 'pending':
-      return 'prefetching session data';
-    case 'ready':
-      return `ready (${getSessionPayloadItemCount(sessionPrefetch.payload) ?? 0} items)`;
-    case 'error':
-      return sessionPrefetch.error ? `error: ${sessionPrefetch.error}` : 'error';
-    default:
-      return 'unknown';
-  }
-}
-
 export function getSessionPayloadItemCount(payload: SessionPayload | null): number | null {
   if (!payload) {
     return null;

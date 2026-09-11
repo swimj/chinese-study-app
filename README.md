@@ -47,7 +47,6 @@ The current implementation includes:
 
 - Use `package.json` `version` as the single source of truth for releases.
 - Bump that value when you cut a release (for example, `1.0.0`).
-- The frontend shows the same version in the app chrome, so the running UI always reflects the repo version.
 
 ## Getting Started
 

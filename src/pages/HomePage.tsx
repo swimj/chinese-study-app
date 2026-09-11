@@ -181,18 +181,6 @@ export function HomePage({
 
   return (
     <div className={sessionStarted ? 'home-page home-session-active' : 'home-page'}>
-      <header className="header">
-        <div>
-          <h1 className="title">法华挣路</h1>
-        </div>
-        <div>
-          <p className="badge">
-            Backend: {backendStatus ? `${backendStatus.mode} @ ${new Date(backendStatus.time).toLocaleTimeString()}` : 'Unknown'}
-          </p>
-          {backendStatus ? <p className="status-meta">{backendStatus.dbPath}</p> : null}
-        </div>
-      </header>
-
       <div className="grid home-grid">
         <HomeOverviewPanel
           backendStatus={backendStatus}

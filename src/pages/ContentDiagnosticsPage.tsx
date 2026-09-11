@@ -46,7 +46,7 @@ export function ContentDiagnosticsPage({
     <section className="content-diagnostics-page">
       <header className="header">
         <div>
-          <h1 className="title">Content</h1>
+          <h1 className="title">Content Bin</h1>
           <p className="subtitle">Read-only diagnostics for the primitive units behind study.</p>
         </div>
       </header>

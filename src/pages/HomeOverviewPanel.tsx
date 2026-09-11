@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { BackendStatus, UnstudiedAdmissionSource } from '../services/api';
-import {
-  formatSessionPrefetchStatus,
-  type SessionPrefetchState,
-} from '../features/session/session-prefetch';
+import type { SessionPrefetchState } from '../features/session/session-prefetch';
 import type { SessionPhase } from '../lib/session-state';
 import { getReviewFailureRatePeriods } from '../lib/review-failure-rates';
 import type { SessionFinalizationState } from '../features/session/session-finalization';
@@ -113,11 +110,6 @@ export function HomeOverviewPanel({
           <ActiveTimeMetric label="7-day average" value={backendStatus?.sessionActiveTimeMetrics.rolling7DayAverageActiveDurationMs ?? 0} />
         </div>
       </section>
-      {!sessionStarted ? (
-        <p className="notes">
-          Session prefetch: {formatSessionPrefetchStatus(sessionPrefetch)}
-        </p>
-      ) : null}
     </div>
   );
 }
