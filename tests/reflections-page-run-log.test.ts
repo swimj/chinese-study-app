@@ -85,6 +85,15 @@ describe('reflection run log presentation', () => {
     assert.match(markup, />Select all</);
     assert.match(markup, />Clear</);
     assert.match(markup, /aria-label="Model"/);
+    assert.match(
+      markup,
+      /<option value="openai:gpt-5.6-terra-high" selected="">GPT-5.6 Terra high<\/option>/,
+    );
+    assert.doesNotMatch(
+      markup,
+      /<option value="openai:gpt-5.6-luna-high" selected="">Luna high<\/option>/,
+    );
+    assert.doesNotMatch(markup, /Gemini 3.6 Flash/);
     assert.match(markup, />Get a second opinion \(2\)</);
     assert.match(markup, /aria-label="Details for 目标"/);
     assert.doesNotMatch(markup, /Build a second-opinion bundle/);

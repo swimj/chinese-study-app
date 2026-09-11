@@ -5,7 +5,9 @@ import type { ReflectionProviderConfig } from './luna-provider.ts';
  * The complete comparison-arm registry. Registration never sends learner data
  * or requires credentials. Each arm uses the fixed reflection prompt and
  * strict V7 validator supplied by createReflectionProvider. Arms with
- * enabledByDefault enter the initial-generation random pool.
+ * enabledByDefault enter the initial-generation random pool and learner-facing
+ * model pickers. Keep withdrawn arms registered so they can be re-offered by
+ * flipping that flag rather than deleting the arm.
  */
 const OPENROUTER = {
   provider: 'openrouter',
@@ -37,7 +39,7 @@ export const REFLECTION_MODEL_ARMS = [
   {
     choice: 'openrouter:gemini-3.6-flash',
     label: 'Gemini 3.6 Flash',
-    enabledByDefault: true,
+    enabledByDefault: false,
     dogfoodSelectionWeight: 1,
     config: {
       ...OPENROUTER,
@@ -71,4 +73,10 @@ export type ReflectionModelChoice = (typeof REFLECTION_MODEL_ARMS)[number]['choi
 
 export function isReflectionModelChoice(value: unknown): value is ReflectionModelChoice {
   return typeof value === 'string' && REFLECTION_MODEL_ARMS.some((arm) => arm.choice === value);
+}
+
+export function isOfferedReflectionModelChoice(value: unknown): value is ReflectionModelChoice {
+  return typeof value === 'string' && REFLECTION_MODEL_ARMS.some(
+    (arm) => arm.choice === value && arm.enabledByDefault,
+  );
 }
