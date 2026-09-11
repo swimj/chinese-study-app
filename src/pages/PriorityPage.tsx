@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type React from 'react';
 import type { IntakeTriagePriorityWord, IntakeTriageRunReceipt, PriorityWord } from '../types';
+import { NestedNav } from '../components/AppChrome';
 import { MeaningList } from '../components/MeaningList';
 import { PriorityWordBank } from '../features/priority/PriorityWordBank';
 import { partitionPriorityBank } from '../features/priority/priority-page-model';
@@ -184,26 +185,28 @@ export function PriorityPage({
 
   return (
     <section className="priority-page">
-      <nav className="priority-view-rail" aria-label="Priority views">
-        <button
-          type="button"
-          className={activeSubtab === 'manage' ? 'priority-view-rail-tab active' : 'priority-view-rail-tab'}
-          aria-current={activeSubtab === 'manage' ? 'page' : undefined}
-          onClick={() => setActiveSubtab('manage')}
-        >
-          <span>Stashed</span>
-          <span className="priority-view-rail-count">{rows.length}</span>
-        </button>
-        <button
-          type="button"
-          className={activeSubtab === 'triage' ? 'priority-view-rail-tab active' : 'priority-view-rail-tab'}
-          aria-current={activeSubtab === 'triage' ? 'page' : undefined}
-          onClick={() => setActiveSubtab('triage')}
-        >
-          <span>Decks</span>
-          <span className="priority-view-rail-count">{triageRows.length}</span>
-        </button>
-      </nav>
+      <NestedNav>
+        <nav className="priority-view-rail" aria-label="New Words views">
+          <button
+            type="button"
+            className={activeSubtab === 'manage' ? 'priority-view-rail-tab active' : 'priority-view-rail-tab'}
+            aria-current={activeSubtab === 'manage' ? 'page' : undefined}
+            onClick={() => setActiveSubtab('manage')}
+          >
+            <span>Stashed</span>
+            <span className="priority-view-rail-count">{rows.length}</span>
+          </button>
+          <button
+            type="button"
+            className={activeSubtab === 'triage' ? 'priority-view-rail-tab active' : 'priority-view-rail-tab'}
+            aria-current={activeSubtab === 'triage' ? 'page' : undefined}
+            onClick={() => setActiveSubtab('triage')}
+          >
+            <span>Decks</span>
+            <span className="priority-view-rail-count">{triageRows.length}</span>
+          </button>
+        </nav>
+      </NestedNav>
 
       <div className="priority-page-main">
         {activeSubtab === 'manage' ? (

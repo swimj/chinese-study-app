@@ -43,7 +43,9 @@ describe('Clerk auth gate', () => {
 
     const loading = renderToStaticMarkup(createElement(ClerkAuthLoadingView));
     assert.match(loading, /aria-busy="true"/);
-    assert.match(loading, /法华挣路/);
+    assert.match(loading, /aria-label="Primary"/);
+    assert.match(loading, /class="nav-brand"/);
+    assert.match(loading, /闲云无敌锤子/);
     assert.doesNotMatch(loading, /Sign in to study/);
 
     const signIn = renderToStaticMarkup(createElement(ClerkAuthSignInView, { error: null }));

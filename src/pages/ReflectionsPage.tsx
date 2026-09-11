@@ -12,6 +12,7 @@ import type {
 } from '../domain/reflection';
 import { CURRENT_REFLECTION_PROMPT_VERSION } from '../domain/reflection';
 import type { ReflectionModelChoice, ReflectionQualityStatsDto } from '../services/api';
+import { NestedNav } from '../components/AppChrome';
 import { ReflectionOperationEditor } from '../features/reflection/ReflectionOperationEditor';
 import type { ReflectionPageController } from '../features/reflection/useReflectionPageController';
 import { qualityItemKey } from '../features/reflection/useReflectionPageController';
@@ -97,7 +98,7 @@ export function ReflectionsPage({
     ? [...helpCards, ...deferredCards]
     : helpCards;
   const views: Array<{ key: ReflectionView; label: string; count?: number }> = [
-    { key: 'help', label: 'Help', count: helpCards.length },
+    { key: 'help', label: 'Proposals', count: helpCards.length },
     { key: 'second-opinion', label: 'Second opinion', count: deferredCards.length },
     { key: 'sessions', label: 'By session' },
     { key: 'usage', label: 'Run meta' },
@@ -106,33 +107,35 @@ export function ReflectionsPage({
 
   return (
     <section className="reflections-page">
-      <nav className="reflection-view-rail" aria-label="Reflection views">
-        {views.map((option) => (
+      <NestedNav>
+        <nav className="reflection-view-rail" aria-label="Reflection views">
+          {views.map((option) => (
+            <button
+              type="button"
+              className={view === option.key ? 'reflection-view-rail-tab active' : 'reflection-view-rail-tab'}
+              aria-current={view === option.key ? 'page' : undefined}
+              aria-pressed={view === option.key}
+              key={option.key}
+              onClick={() => setView(option.key)}
+            >
+              <span>{option.label}</span>
+              {option.count === undefined ? null : (
+                <span className="reflection-view-rail-count">{option.count}</span>
+              )}
+            </button>
+          ))}
           <button
             type="button"
-            className={view === option.key ? 'reflection-view-rail-tab active' : 'reflection-view-rail-tab'}
-            aria-current={view === option.key ? 'page' : undefined}
-            aria-pressed={view === option.key}
-            key={option.key}
-            onClick={() => setView(option.key)}
+            className="secondary-button reflection-view-rail-refresh"
+            disabled={controller.isLoading}
+            title="Reload reflection lists, help inbox, run log, and all artifact details"
+            aria-label="Refresh reflection workspace from server"
+            onClick={() => void controller.refresh()}
           >
-            <span>{option.label}</span>
-            {option.count === undefined ? null : (
-              <span className="reflection-view-rail-count">{option.count}</span>
-            )}
+            {controller.isLoading ? 'Refreshing...' : 'Refresh'}
           </button>
-        ))}
-        <button
-          type="button"
-          className="secondary-button reflection-view-rail-refresh"
-          disabled={controller.isLoading}
-          title="Reload reflection lists, help inbox, run log, and all artifact details"
-          aria-label="Refresh reflection workspace from server"
-          onClick={() => void controller.refresh()}
-        >
-          {controller.isLoading ? 'Refreshing...' : 'Refresh'}
-        </button>
-      </nav>
+        </nav>
+      </NestedNav>
 
       <div className="reflections-page-main">
         {controller.unreadableArtifactIds.size > 0 ? (
@@ -171,8 +174,8 @@ export function ReflectionsPage({
               key={showDeferredInHelp ? 'help-with-deferred' : 'help'}
               cards={displayedHelpCards}
               controller={controller}
-              emptyCopy="No remaining session help to review. Explanation-only cards you marked Done stay in By session."
-              itemLabel="help card"
+              emptyCopy="No remaining proposals to review. Explanation-only cards you marked Done stay in By session."
+              itemLabel="proposal card"
             />
           </>
         ) : (
