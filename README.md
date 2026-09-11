@@ -217,5 +217,34 @@ destination for the later dogfood migration.
 - Product model spec: [`SPECS/learning-review-model.md`](/Users/jw/dev/chinese-study-app/SPECS/learning-review-model.md)
 - Default dev database: [`data/app.db`](/Users/jw/dev/chinese-study-app/data/app.db)
 - Checked-in dev seed files: [`server/seeds/mandarin-dev.json`](/Users/jw/dev/chinese-study-app/server/seeds/mandarin-dev.json), [`server/seeds/french-dev.json`](/Users/jw/dev/chinese-study-app/server/seeds/french-dev.json)
+- Deck manifest (HSK delta decks for the new-word diet): `server/decks/mandarin-decks-v1.json` — checked-in runtime artifact with logical source provenance in its metadata. Rebuild with `npm run build:deck-manifest` only after supplying the external inputs described in [the deck-build script](scripts/build-deck-manifest.ts) at its expected local paths.
+
+### Deck manifest provenance and regeneration
+
+The runtime manifest is intentionally versioned; the raw HSK inputs are not.
+Its metadata records the logical upstream sources and retrieval date, while
+`data/sources/hsk/` is ignored so an operator can retain or acquire inputs
+locally without committing them. The deck builder needs all of the following:
+
+- `data/canonical-corpus.json`; it can be supplied as an existing artifact, or
+  rebuilt from CC-CEDICT and `data/sources/subtlex/SUBTLEX-CH-WF_PoS`;
+- the HSK 2.0, final HSK 3.0, and HSK 3.1 cross-check files under
+  `data/sources/hsk/`; and
+- `data/sources/subtlex/SUBTLEX-CH-WF` for within-stratum ordering.
+
+The deck-build script lists the external HSK and SUBTLEX references; the
+[canonical-wordlist builder](scripts/build-canonical-wordlist.ts) records the
+CC-CEDICT and `SUBTLEX-CH-WF_PoS` paths used to create the canonical corpus.
+Locally retained inputs may be copied back to those paths. Rebuilding with
+currently available upstream data can produce a useful new artifact, but is not
+guaranteed to reproduce the historical manifest exactly: upstream mirrors,
+source parsing, and the canonical corpus may differ from the inputs used here.
+
+The HSK 2.0 mirror enriches each listed hanzi with every matching dictionary
+form. The builder deliberately excludes a small, explicit set of obscure,
+archaic, surname-only, variant-only, and poor standalone-study readings while
+retaining useful contemporary alternate readings. Those decisions, including
+their short reasons, are recorded in the manifest metadata and the generated
+eyeball report.
 
 Dev mode requires an explicit seed file via `--seed-data` or `APP_SEED_DATA_PATH`. Use `npm run dev:backend`, `npm run dev:french:backend`, or `npm run reset:dev-data` instead of invoking the server manually without a seed path.

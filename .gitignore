@@ -8,6 +8,9 @@ data/*.json
 data/french-dev/
 data/local-user-data/
 data/friend-mandarin-user-data/
+data/sources/hsk/
+data/sources/subtlex/
+tmp/deck-eyeball-report.md
 artifacts/*
 !artifacts/README.md
 .codex/
