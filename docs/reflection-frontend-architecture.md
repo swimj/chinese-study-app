@@ -111,9 +111,11 @@ available, and shows a persistent unreadable-artifact notice without rewriting
 the stored payload.
 
 `ReflectionsPage` is reachable outside an active session. The page's view rail
-(Proposals, Second opinion, By session, Run meta, Quality, plus Refresh) nests under
+(Proposals, Second opinion, By session, Run meta, Quality) nests under
 the app-chrome **Reflections** item in the persistent left gutter, so the
-default **Proposals** workspace can give most of the viewport to the current card. Help is a cross-session pager:
+default **Proposals** workspace can give most of the viewport to the current card.
+A refresh control overlays the active **Reflections** primary tab (gear-style
+affordance) for a full workspace reread. Help is a cross-session pager:
 one card at a time for pending proposals and for explanation-only items still
 in Help. The grain is one proposal per card; empty proposal lists produce one
 explanation card while that item remains in Help. Accept, Dismiss, Defer, and

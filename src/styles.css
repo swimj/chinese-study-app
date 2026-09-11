@@ -181,6 +181,92 @@ button:hover {
   outline-offset: 1px;
 }
 
+.reflections-nav-shell {
+  position: relative;
+}
+
+.reflections-nav-shell .nav-tab {
+  padding-right: 2.1rem;
+}
+
+.reflections-nav-shell:has(.reflections-nav-refresh:hover:not(:disabled)) .nav-tab,
+.reflections-nav-shell:has(.reflections-nav-refresh:focus-visible:not(:disabled)) .nav-tab {
+  pointer-events: none;
+  background: #334155;
+  color: rgba(248, 250, 252, 0.72);
+}
+
+.reflections-nav-refresh {
+  position: absolute;
+  top: 50%;
+  right: 0.35rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: rgba(239, 246, 255, 0.78);
+  transform: translateY(-50%);
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.reflections-nav-refresh:hover,
+.reflections-nav-refresh:focus-visible {
+  background: transparent;
+  color: #f8fafc;
+  transform: translateY(-50%);
+}
+
+.reflections-nav-shell:has(.reflections-nav-refresh:hover:not(:disabled)) .reflections-nav-refresh {
+  color: #f8fafc;
+  animation: reflections-nav-refresh-pulse 1.05s ease-in-out infinite;
+}
+
+.reflections-nav-refresh:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.reflections-nav-refresh:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+.reflections-nav-refresh-icon {
+  display: block;
+}
+
+.reflections-nav-refresh-icon.is-spinning {
+  animation: reflections-nav-refresh-spin 0.85s linear infinite;
+}
+
+@keyframes reflections-nav-refresh-pulse {
+  0%,
+  100% {
+    transform: translateY(-50%) scale(1);
+  }
+
+  50% {
+    transform: translateY(-50%) scale(1.2);
+  }
+}
+
+@keyframes reflections-nav-refresh-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .app-nav-nested {
   display: flex;
   flex-direction: column;
@@ -2060,29 +2146,9 @@ button:disabled:hover {
   color: rgba(255, 255, 255, 0.86);
 }
 
-.reflection-view-rail-refresh {
-  margin-top: auto;
-  width: 100%;
-  padding: 0.55rem 0.7rem;
-}
-
 .app-nav-nested .reflection-view-rail,
 .app-nav-nested .priority-view-rail {
   min-height: 0;
-}
-
-.app-nav-nested .reflection-view-rail-refresh {
-  margin-top: 0.35rem;
-  background: transparent;
-  color: #cbd5e1;
-  box-shadow: none;
-  transform: none;
-  text-align: left;
-}
-
-.app-nav-nested .reflection-view-rail-refresh:hover:not(:disabled) {
-  transform: none;
-  background: rgba(51, 65, 85, 0.72);
 }
 
 .reflection-help-deferred-toggle {

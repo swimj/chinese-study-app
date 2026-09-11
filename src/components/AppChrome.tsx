@@ -35,6 +35,7 @@ export function AppChrome({
   onOpenHomePage,
   onOpenPriorityPage,
   onOpenReflectionsPage,
+  onRefreshReflections,
   onOpenContentPage,
   onSignOut,
 }: {
@@ -48,6 +49,7 @@ export function AppChrome({
   onOpenHomePage: () => void;
   onOpenPriorityPage: () => void;
   onOpenReflectionsPage: () => void;
+  onRefreshReflections?: () => void;
   onOpenContentPage: () => void;
   onSignOut?: () => Promise<void>;
 }) {
@@ -63,7 +65,11 @@ export function AppChrome({
   };
   const loadingLabels: Partial<Record<AppPageKey, string>> = {
     priority: priorityPageLoading ? 'Loading new words...' : undefined,
-    reflections: reflectionPageLoading ? 'Loading reflections...' : undefined,
+    // While already on Reflections, the overlay refresh icon owns loading feedback.
+    reflections:
+      reflectionPageLoading && currentPage !== 'reflections'
+        ? 'Loading reflections...'
+        : undefined,
     content: contentPageLoading ? 'Loading content bin...' : undefined,
   };
 
@@ -89,17 +95,37 @@ export function AppChrome({
           <div className="nav-tabs">
             {PRIMARY_PAGES.map((page) => {
               const active = currentPage === page.key;
+              const showReflectionsRefresh = page.key === 'reflections' && active && onRefreshReflections;
+              const tabButton = (
+                <button
+                  type="button"
+                  className={`nav-tab ${active ? 'active' : ''}`}
+                  aria-current={active ? 'page' : undefined}
+                  onClick={openers[page.key]}
+                  disabled={navigationLoading}
+                >
+                  {loadingLabels[page.key] ?? page.label}
+                </button>
+              );
               return (
                 <div key={page.key} className="app-nav-item">
-                  <button
-                    type="button"
-                    className={`nav-tab ${active ? 'active' : ''}`}
-                    aria-current={active ? 'page' : undefined}
-                    onClick={openers[page.key]}
-                    disabled={navigationLoading}
-                  >
-                    {loadingLabels[page.key] ?? page.label}
-                  </button>
+                  {showReflectionsRefresh ? (
+                    <div className="reflections-nav-shell">
+                      {tabButton}
+                      <button
+                        type="button"
+                        className="reflections-nav-refresh"
+                        title="Reload reflection lists, help inbox, run log, and all artifact details"
+                        aria-label="Refresh reflection workspace from server"
+                        disabled={reflectionPageLoading}
+                        onClick={() => onRefreshReflections()}
+                      >
+                        <ReflectionsRefreshIcon spinning={reflectionPageLoading} />
+                      </button>
+                    </div>
+                  ) : (
+                    tabButton
+                  )}
                   {active && page.nested ? (
                     <div ref={nestedSlotRef} className="app-nav-nested" />
                   ) : null}
@@ -126,5 +152,27 @@ export function AppChrome({
         </div>
       </div>
     </NestedNavContext.Provider>
+  );
+}
+
+function ReflectionsRefreshIcon({ spinning }: { spinning: boolean }) {
+  return (
+    <svg
+      className={
+        spinning
+          ? 'reflections-nav-refresh-icon is-spinning'
+          : 'reflections-nav-refresh-icon'
+      }
+      viewBox="0 0 24 24"
+      width="15"
+      height="15"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        fill="currentColor"
+        d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 8 8h-2a6 6 0 1 1-1.76-4.24L14 10h6V4l-2.35 2.35Z"
+      />
+    </svg>
   );
 }

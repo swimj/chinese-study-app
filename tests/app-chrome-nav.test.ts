@@ -43,4 +43,42 @@ describe('AppChrome primary navigation', () => {
     assert.doesNotMatch(renderChrome('home'), /class="app-nav-nested"/);
     assert.doesNotMatch(renderChrome('content'), /class="app-nav-nested"/);
   });
+
+  test('overlays a refresh control on Reflections only while that view is open', () => {
+    const withHandler = renderToStaticMarkup(createElement(AppChrome, {
+      currentPage: 'reflections',
+      error: null,
+      sessionActive: false,
+      priorityPageLoading: false,
+      reflectionPageLoading: false,
+      contentPageLoading: false,
+      onOpenHomePage: noop,
+      onOpenPriorityPage: noop,
+      onOpenReflectionsPage: noop,
+      onRefreshReflections: noop,
+      onOpenContentPage: noop,
+    }));
+    assert.match(withHandler, /class="reflections-nav-shell"/);
+    assert.match(withHandler, /aria-label="Refresh reflection workspace from server"/);
+    assert.match(withHandler, /class="reflections-nav-refresh"/);
+
+    assert.doesNotMatch(renderChrome('reflections'), /class="reflections-nav-shell"/);
+    assert.doesNotMatch(renderChrome('home'), /class="reflections-nav-refresh"/);
+    assert.doesNotMatch(
+      renderToStaticMarkup(createElement(AppChrome, {
+        currentPage: 'home',
+        error: null,
+        sessionActive: false,
+        priorityPageLoading: false,
+        reflectionPageLoading: false,
+        contentPageLoading: false,
+        onOpenHomePage: noop,
+        onOpenPriorityPage: noop,
+        onOpenReflectionsPage: noop,
+        onRefreshReflections: noop,
+        onOpenContentPage: noop,
+      })),
+      /class="reflections-nav-refresh"/,
+    );
+  });
 });
