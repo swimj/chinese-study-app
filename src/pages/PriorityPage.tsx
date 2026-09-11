@@ -189,7 +189,7 @@ export function PriorityPage({
             aria-current={activeSubtab === 'manage' ? 'page' : undefined}
             onClick={() => setActiveSubtab('manage')}
           >
-            <span>Manage</span>
+            <span>Stashed</span>
             <span className="priority-view-rail-count">{rows.length}</span>
           </button>
           <button
@@ -198,7 +198,7 @@ export function PriorityPage({
             aria-current={activeSubtab === 'triage' ? 'page' : undefined}
             onClick={() => setActiveSubtab('triage')}
           >
-            <span>Triage</span>
+            <span>Decks</span>
             <span className="priority-view-rail-count">{triageRows.length}</span>
           </button>
         </nav>
