@@ -124,16 +124,6 @@ export function ReflectionsPage({
               )}
             </button>
           ))}
-          <button
-            type="button"
-            className="secondary-button reflection-view-rail-refresh"
-            disabled={controller.isLoading}
-            title="Reload reflection lists, help inbox, run log, and all artifact details"
-            aria-label="Refresh reflection workspace from server"
-            onClick={() => void controller.refresh()}
-          >
-            {controller.isLoading ? 'Refreshing...' : 'Refresh'}
-          </button>
         </nav>
       </NestedNav>
 

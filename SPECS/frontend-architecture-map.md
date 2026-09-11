@@ -112,7 +112,9 @@ nested children.
 
 - New Words children: **Manage**, **Triage**
 - Reflections children: **Proposals**, **Second opinion**, **By session**, **Run meta**,
-  **Quality**, plus **Refresh**
+  **Quality**
+- Reflections primary-tab overlay (only while that view is open): **Refresh**
+  (cycle icon; same hover dimming/pulse pattern as Home session-settings gear)
 
 The primary landmark remains `aria-label="Primary"`. Nested rails keep their
 existing `New Words views` / `Reflection views` labels and keyboard behavior.

@@ -50,6 +50,8 @@ describe('reflection run log presentation', () => {
     assert.match(markup, />Proposals</);
     assert.match(markup, />Second opinion</);
     assert.match(markup, /Show deferred proposals \(0\)/);
+    assert.doesNotMatch(markup, /reflection-view-rail-refresh/);
+    assert.doesNotMatch(markup, />Refresh</);
     assert.doesNotMatch(markup, />Help</);
     assert.doesNotMatch(markup, />Pending</);
     assert.doesNotMatch(markup, /Review the help you asked for/);

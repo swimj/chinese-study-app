@@ -140,6 +140,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
       onOpenHomePage={() => setCurrentPage('home')}
       onOpenPriorityPage={() => void priorityPage.openPage()}
       onOpenReflectionsPage={() => void reflectionPage.openPage()}
+      onRefreshReflections={() => void reflectionPage.refresh()}
       onOpenContentPage={() => void contentPage.openPage()}
       onSignOut={onSignOut}
     >
