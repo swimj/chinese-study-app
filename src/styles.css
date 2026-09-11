@@ -197,8 +197,11 @@ button:hover {
 }
 
 .reflections-nav-refresh {
+  /* Center with inset/margin so global button:disabled { transform: none }
+     cannot drop the control when refresh loading disables it. */
   position: absolute;
-  top: 50%;
+  top: 0;
+  bottom: 0;
   right: 0.35rem;
   z-index: 2;
   display: inline-flex;
@@ -206,12 +209,13 @@ button:hover {
   justify-content: center;
   width: 1.55rem;
   height: 1.55rem;
+  margin-block: auto;
   padding: 0;
   border: 0;
   border-radius: 0.4rem;
   background: transparent;
   color: rgba(239, 246, 255, 0.78);
-  transform: translateY(-50%);
+  transform: none;
   cursor: pointer;
   box-shadow: none;
 }
@@ -220,7 +224,13 @@ button:hover {
 .reflections-nav-refresh:focus-visible {
   background: transparent;
   color: #f8fafc;
-  transform: translateY(-50%);
+  transform: none;
+}
+
+.reflections-nav-refresh:disabled,
+.reflections-nav-refresh:disabled:hover {
+  background: transparent;
+  transform: none;
 }
 
 .reflections-nav-shell:has(.reflections-nav-refresh:hover:not(:disabled)) .reflections-nav-refresh {
@@ -240,6 +250,7 @@ button:hover {
 
 .reflections-nav-refresh-icon {
   display: block;
+  transform-origin: center;
 }
 
 .reflections-nav-refresh-icon.is-spinning {
@@ -249,11 +260,11 @@ button:hover {
 @keyframes reflections-nav-refresh-pulse {
   0%,
   100% {
-    transform: translateY(-50%) scale(1);
+    transform: scale(1);
   }
 
   50% {
-    transform: translateY(-50%) scale(1.2);
+    transform: scale(1.2);
   }
 }
 
