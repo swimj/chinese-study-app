@@ -23,7 +23,7 @@ src/
     clerk-auth-gate.ts               # loading vs sign-in vs app phase resolver
 
   components/
-    AppChrome.tsx                 # nav (home, priority, reflections, content), version, errors
+    AppChrome.tsx                 # left-gutter primary nav, nested page rails, errors
     MeaningList.tsx               # shared meaning list rendering
 
   pages/
@@ -95,6 +95,27 @@ Clerk reports no session.
   `useReflectionPageController`, `useContentDiagnosticsController`)
 
 Page-specific state should not drift back into `App.tsx`. Use a page controller hook or keep state inside the page component when it is purely local UI.
+
+## Primary navigation
+
+`AppChrome` is a persistent left gutter, not a top tab bar. The four primary
+views stay **Home**, **New Words**, **Reflections**, and **Content Bin**. The product
+name sits at the top of that gutter and wraps to fill the rail width; there is
+no tagline or version in primary nav, and Home does not repeat the name as a
+page heading. An active study session still hides this gutter so the session
+panel can use the full width.
+
+New Words and Reflections already have left-gutter view controls. Those controls
+are nested children of the matching primary item (portal into the chrome
+nested slot; they still own their local view state). Home and Content have no
+nested children.
+
+- New Words children: **Manage**, **Triage**
+- Reflections children: **Proposals**, **Second opinion**, **By session**, **Run meta**,
+  **Quality**, plus **Refresh**
+
+The primary landmark remains `aria-label="Primary"`. Nested rails keep their
+existing `New Words views` / `Reflection views` labels and keyboard behavior.
 
 ## Page Controllers
 

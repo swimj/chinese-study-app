@@ -45,11 +45,12 @@ describe('reflection run log presentation', () => {
 
     const markup = renderToStaticMarkup(createElement(ReflectionsPage, { controller }));
     assert.match(markup, /1 stored reflection could not be read/);
-    assert.match(markup, /No remaining session help to review/);
+    assert.match(markup, /No remaining proposals to review/);
     assert.match(markup, /reflection-view-rail/);
-    assert.match(markup, />Help</);
+    assert.match(markup, />Proposals</);
     assert.match(markup, />Second opinion</);
     assert.match(markup, /Show deferred proposals \(0\)/);
+    assert.doesNotMatch(markup, />Help</);
     assert.doesNotMatch(markup, />Pending</);
     assert.doesNotMatch(markup, /Review the help you asked for/);
   });

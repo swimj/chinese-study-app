@@ -2,12 +2,13 @@ import type { Ref } from 'react';
 
 export function ClerkAuthLoadingView() {
   return (
-    <div className="container" aria-busy="true" aria-label="Loading">
-      <nav className="navbar" aria-label="Primary">
+    <div className="container app-shell" aria-busy="true" aria-label="Loading">
+      <nav className="navbar app-primary-nav" aria-label="Primary">
         <div className="nav-brand">
-          <strong>法华挣路</strong>
+          <strong>闲云无敌锤子</strong>
         </div>
       </nav>
+      <div className="app-chrome-main" />
     </div>
   );
 }
