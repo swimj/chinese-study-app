@@ -7,10 +7,12 @@ Navigation-only overview. Product rules live in `SPECS/` canonical docs.
 ```text
 Browser (Vite dev, :4173; Express-served build in production)
   └── src/          React UI, in-flight session state
-        └── services/api.ts  → HTTP
+        ├── services/api.ts  → HTTP
+        └── account-scoped pending client incidents → localStorage
 Express (server/index.ts, :5174)
-  └── server/db.ts (barrel) → server/db/*
-        └── SQLite app.db (APP_DATA_DIR or data/)
+  ├── server/db.ts (barrel) → server/db/*
+  │     └── SQLite app.db (APP_DATA_DIR or data/)
+  └── private diagnostic sidecars beside app.db
 Private metrics listener (server/observability.ts, :9091 hosted only)
   └── Fly Prometheus → Fly managed Grafana operator view
 ```
@@ -34,6 +36,7 @@ Private metrics listener (server/observability.ts, :9091 hosted only)
 | Reflections | `pages/ReflectionsPage.tsx`, `features/reflection/*` | Artifact history and proposal review |
 | Content diagnostics | `pages/ContentDiagnosticsPage.tsx`, `features/content/*` | Read-only primitive content browser |
 | Shared domain types | `domain/study-actions.ts`, `types.ts` | Used by FE and imported by server |
+| Client transport diagnostics | `domain/client-incidents.ts`, `services/client-incident-diagnostics.ts` | Bounded commit-failure capture and pending upload |
 | Study profile | `study-profile.ts` | Mandarin vs French client behavior |
 
 Detail: [SPECS/frontend-architecture-map.md](../SPECS/frontend-architecture-map.md).
@@ -45,6 +48,7 @@ Detail: [SPECS/frontend-architecture-map.md](../SPECS/frontend-architecture-map.
 | `index.ts` | Express app, route handlers (thin) |
 | `config.ts` | `APP_MODE`, learner id, data dir, study profile, port |
 | `observability.ts`, `hosted-observability.ts` | Content-free HTTP/runtime/SQLite/backup metrics and private Prometheus listener |
+| `client-incident-diagnostics.ts`, `study-commit-diagnostics.ts` | Private bounded client-transport and server commit diagnostic sidecars |
 | `db.ts` | Barrel: init DB on import, re-export `server/db/*` |
 | `db/` | Split persistence and domain logic — see [server-db.md](./server-db.md) |
 | `reset-dev-db.ts` | Dev data reset entrypoint |

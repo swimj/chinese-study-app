@@ -95,6 +95,10 @@ import type {
   UpsertReflectionQualityRequest,
 } from '../src/domain/reflection.ts';
 import {
+  CLIENT_TRANSPORT_INCIDENT_MAX_BATCH_SIZE,
+  isClientTransportIncident,
+} from '../src/domain/client-incidents.ts';
+import {
   isReflectionQualityTag,
 } from '../src/domain/reflection.ts';
 import {
@@ -126,6 +130,10 @@ import {
   type StudyCommitDiagnosticSink,
   type StudyCommitRoute,
 } from './study-commit-diagnostics.ts';
+import {
+  createClientIncidentDiagnosticSink,
+  type ClientIncidentDiagnosticSink,
+} from './client-incident-diagnostics.ts';
 
 const port = dbConfig.port;
 const defaultJsonBodyLimit = '100kb';
@@ -140,6 +148,7 @@ export type CreateAppOptions = {
   logError?: (message: string, metadata: Record<string, string>) => void;
   serviceMetrics?: ServiceMetrics | null;
   studyCommitDiagnosticSink?: StudyCommitDiagnosticSink;
+  clientIncidentDiagnosticSink?: ClientIncidentDiagnosticSink;
 };
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -157,6 +166,8 @@ export function createApp(options: CreateAppOptions = {}) {
     ?? createDietIntakePlacementService();
   const studyCommitDiagnosticSink = options.studyCommitDiagnosticSink
     ?? createStudyCommitDiagnosticSink(dbConfig.dataDir);
+  const clientIncidentDiagnosticSink = options.clientIncidentDiagnosticSink
+    ?? createClientIncidentDiagnosticSink(dbConfig.dataDir);
 
   app.disable('x-powered-by');
   if (options.serviceMetrics) app.use(options.serviceMetrics.requestMiddleware);
@@ -196,6 +207,32 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
     next();
+  });
+
+  app.post('/api/client-incidents', (req, res) => {
+    const incidents = req.body?.incidents;
+    if (
+      !Array.isArray(incidents)
+      || incidents.length < 1
+      || incidents.length > CLIENT_TRANSPORT_INCIDENT_MAX_BATCH_SIZE
+      || incidents.some((incident) => !isClientTransportIncident(incident))
+    ) {
+      res.status(400).json({ error: 'Expected a valid client incident batch' });
+      return;
+    }
+
+    try {
+      const learnerId = requireLearnerId();
+      for (const incident of incidents) {
+        clientIncidentDiagnosticSink.record({ learnerId, incident });
+      }
+      res.status(204).send();
+    } catch (error) {
+      (options.logError ?? defaultErrorLogger)('Failed to record client incident diagnostics', {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
+      res.status(500).json({ error: 'Failed to record client incident diagnostics' });
+    }
   });
 
   app.get('/api/content-diagnostics', (req, res) => {
