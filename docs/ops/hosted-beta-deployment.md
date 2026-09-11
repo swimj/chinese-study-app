@@ -203,17 +203,23 @@ does not become a fire-and-forget Fly job after it starts.
 
 1. Apply the same eligibility and clean-checkout checks as the human procedure,
    then start **one** `hosted:upgrade` process.
-2. Preserve the terminal session handle returned by the execution environment.
+2. Start the process with access to the authenticated Fly CLI state. In a
+   managed sandbox that blocks the operator's `~/.fly` directory, request the
+   required elevated execution permission on the first launch; do not make an
+   unprivileged trial first. A `failed ensuring config directory perms` error
+   is only a local sandbox preflight failure, reaches no Fly stage, and says
+   nothing about the service or release eligibility.
+3. Preserve the terminal session handle returned by the execution environment.
    A response that has partial output or a session handle but no exit status
    means the runner is still active. It is not a failure and it is not evidence
    that Fly has finished deploying.
-3. Poll or stream that exact session until it returns a terminal exit status.
+4. Poll or stream that exact session until it returns a terminal exit status.
    Only its final `upgrade-result` says whether the runner completed, failed,
    and reopened controls.
-4. Do not start a second upgrade merely because output is quiet, an outer tool
+5. Do not start a second upgrade merely because output is quiet, an outer tool
    invocation has yielded, or a remote build is taking longer than expected.
    Deploy, health, and smoke stages can legitimately take minutes.
-5. If the terminal session itself is genuinely lost before an exit status,
+6. If the terminal session itself is genuinely lost before an exit status,
    treat the release as **unknown execution state**, not failed. First perform
    read-only reconciliation of Fly status, public `/healthz`, and hosted
    release identity. Do not assume controls were reopened or retry the upgrade
