@@ -6,6 +6,7 @@ import {
   buildDeckAssignments,
   EXPECTED_HSK20_DELTA_COUNTS,
   EXPECTED_HSK30_DELTA_COUNTS,
+  HSK20_EXCLUDED_READINGS,
   guardSourceCounts,
   manifestWordKey,
   parseHsk20LevelJson,
@@ -161,6 +162,7 @@ function main() {
         canonicalWordCount: canonicalWords.length,
         subtlexWordCount: frequencyByHanzi.size,
       },
+      hsk20ExcludedReadings: HSK20_EXCLUDED_READINGS,
       countGuardWarnings: warnings,
     },
     decks,
@@ -211,6 +213,10 @@ function main() {
     '### HSK 2.0 unmatched source probes',
     '',
     hsk20.stats.unmatchedJoins.join('\n') || '(none)',
+    '',
+    '### HSK 2.0 excluded obscure readings',
+    '',
+    ...Object.entries(HSK20_EXCLUDED_READINGS).map(([key, reason]) => `- ${key}: ${reason}`),
   );
   fs.mkdirSync(path.dirname(reportPath), { recursive: true });
   fs.writeFileSync(reportPath, reportLines.join('\n'));

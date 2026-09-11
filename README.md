@@ -240,4 +240,11 @@ currently available upstream data can produce a useful new artifact, but is not
 guaranteed to reproduce the historical manifest exactly: upstream mirrors,
 source parsing, and the canonical corpus may differ from the inputs used here.
 
+The HSK 2.0 mirror enriches each listed hanzi with every matching dictionary
+form. The builder deliberately excludes a small, explicit set of obscure,
+archaic, surname-only, variant-only, and poor standalone-study readings while
+retaining useful contemporary alternate readings. Those decisions, including
+their short reasons, are recorded in the manifest metadata and the generated
+eyeball report.
+
 Dev mode requires an explicit seed file via `--seed-data` or `APP_SEED_DATA_PATH`. Use `npm run dev:backend`, `npm run dev:french:backend`, or `npm run reset:dev-data` instead of invoking the server manually without a seed path.
