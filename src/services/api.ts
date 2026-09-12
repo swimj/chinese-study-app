@@ -37,24 +37,95 @@ import type {
   ContentDiagnosticKind,
   ContentDiagnosticsResponse,
 } from '../domain/content-diagnostics';
+import type { ClientTransportIncidentContext } from './client-incident-diagnostics';
+import {
+  captureClientTransportFailure,
+  readBrowserStorage,
+  readPendingClientTransportIncidents,
+  removeUploadedClientTransportIncidents,
+} from './client-incident-diagnostics';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? 'http://localhost:5174' : '');
+const APP_VERSION = __APP_VERSION__;
 
 type ApiAuthenticationTokenProvider = () => Promise<string | null>;
 
 let apiAuthenticationTokenProvider: ApiAuthenticationTokenProvider | null = null;
+let clientIncidentStorageScope: string | null = import.meta.env.VITE_AUTH_MODE === 'clerk'
+  ? null
+  : 'trusted-local';
+let clientIncidentUpload: Promise<void> | null = null;
 
 export function setApiAuthenticationTokenProvider(provider: ApiAuthenticationTokenProvider | null): void {
   apiAuthenticationTokenProvider = provider;
 }
 
-async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
-  const token = await apiAuthenticationTokenProvider?.() ?? null;
-  if (!token) return fetch(input, init);
+export function setClientIncidentStorageScope(scope: string | null): void {
+  clientIncidentStorageScope = scope;
+}
+
+async function apiFetch(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  incidentContext?: ClientTransportIncidentContext,
+): Promise<Response> {
+  const startedAtMs = Date.now();
+  let token: string | null;
+  try {
+    token = await apiAuthenticationTokenProvider?.() ?? null;
+  } catch (error) {
+    if (!incidentContext) throw error;
+    throw captureClientTransportFailure({
+      error,
+      phase: 'authentication',
+      context: incidentContext,
+      storageScope: clientIncidentStorageScope,
+      appVersion: APP_VERSION,
+      startedAtMs,
+    });
+  }
 
   const headers = new Headers(init.headers);
-  headers.set('Authorization', `Bearer ${token}`);
-  return fetch(input, { ...init, headers });
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  try {
+    return await fetch(input, { ...init, headers });
+  } catch (error) {
+    if (!incidentContext) throw error;
+    throw captureClientTransportFailure({
+      error,
+      phase: 'fetch',
+      context: incidentContext,
+      storageScope: clientIncidentStorageScope,
+      appVersion: APP_VERSION,
+      startedAtMs,
+    });
+  }
+}
+
+export async function flushPendingClientTransportIncidents(): Promise<void> {
+  if (clientIncidentUpload) return clientIncidentUpload;
+  const storageScope = clientIncidentStorageScope;
+  const storage = readBrowserStorage();
+  if (storageScope === null || storage === null) return;
+  const incidents = readPendingClientTransportIncidents(storage, storageScope);
+  if (incidents.length === 0) return;
+
+  clientIncidentUpload = (async () => {
+    const response = await apiFetch(`${API_BASE}/api/client-incidents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ incidents }),
+    });
+    if (!response.ok) return;
+    removeUploadedClientTransportIncidents(
+      storage,
+      storageScope,
+      incidents.map((incident) => incident.diagnosticId),
+    );
+  })().finally(() => {
+    clientIncidentUpload = null;
+  });
+  return clientIncidentUpload;
 }
 
 type BackendStatus = {
@@ -335,6 +406,11 @@ export async function recordAcceptedReviewAttemptBatch({
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ events, commitIntent }),
+  }, {
+    route: '/api/study-sessions/:sessionId/accepted-review-attempt-batch',
+    sessionId,
+    sessionActionId: commitIntent.sessionActionId,
+    eventIds: events.map((event) => event.id),
   });
 
   if (!response.ok) {
@@ -357,6 +433,11 @@ export async function recordAcceptedContrastSelectionAttempt({
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ event, commitIntent }),
+  }, {
+    route: '/api/study-sessions/:sessionId/accepted-contrast-selection-attempt',
+    sessionId,
+    sessionActionId: commitIntent.sessionActionId,
+    eventIds: [event.id],
   });
 
   if (!response.ok) {

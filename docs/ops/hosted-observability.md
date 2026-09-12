@@ -45,6 +45,30 @@ credentials, cookies, and unrelated request headers are never recorded.
 Fly adds its own `app`, `instance`, `host`, and `region` labels when scraping.
 Do not emit those labels from the application.
 
+For the complete inventory of client, commit, provider, lifecycle, and generic
+error surfaces, see [error logging and diagnostics](./error-diagnostics.md).
+
+## Diagnose a client `Failed to fetch`
+
+Accepted review and contrast commits capture rejected Clerk-token and native
+fetch promises as bounded client incidents. The visible error includes a client
+incident ID. After a later authenticated startup or browser `online` event, the
+frontend uploads pending records to `/data/client-transport-incidents.jsonl`.
+
+```bash
+fly ssh console --app <app-name> --command \
+  'npm run --silent hosted:inspect-client-incidents -- --data-dir=/data --diagnostic-id=<id>'
+```
+
+The record identifies the client phase and the affected session/action/event
+IDs without retaining the request body or answer. A `fetch` rejection remains
+ambiguous: correlate the event IDs with `study_commit.succeeded` logs. A match
+proves the backend committed before the response was lost; no match does not
+prove the request never reached the backend. If the browser never reconnects,
+site data is cleared, or local storage is unavailable, the record cannot reach
+the server. The full contract and limitations are documented in
+[error logging and diagnostics](./error-diagnostics.md#client-transport-incidents).
+
 ## Diagnose a failed study commit
 
 Every successful accepted-review or contrast-selection commit emits a compact

@@ -17,6 +17,7 @@ import {
   fetchReflectionHelpInbox,
   markReflectionHelpInboxDone,
   authorizeManualReflectionOperation,
+  flushPendingClientTransportIncidents,
 } from './services/api';
 import { AppChrome, type AppPageKey } from './components/AppChrome';
 import { PersonalNotesEditorOverlay } from './features/session/PersonalNotesEditorOverlay';
@@ -75,6 +76,15 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     }
 
     loadData();
+  }, []);
+
+  useEffect(() => {
+    const flush = () => {
+      void flushPendingClientTransportIncidents().catch(() => undefined);
+    };
+    flush();
+    window.addEventListener('online', flush);
+    return () => window.removeEventListener('online', flush);
   }, []);
 
   useEffect(() => {
