@@ -232,9 +232,8 @@ The durable V0 production-cue model separates:
   unrelated cues retain their identity; deactivation is terminal logical
   deletion, and any later cue with similar content is an ordinary new create
   with no lifecycle continuity with the deleted cue;
-- multiple simultaneously active cues, with V0 selecting one at serve time
-  independently of word admission or skill urgency; word-specific and
-  shared-answer-space cues are not mixed in that draw;
+- multiple simultaneously active cues, with V0 randomly selecting one at serve
+  time independently of word admission or skill scheduling;
 - the current meaning-derived gloss prompt as base fallback content rather than
   a cue row; it serves only when no durable cue is active, while a durable
   `definition_gloss` cue remains distinct enriched content;
@@ -299,14 +298,15 @@ scheduled SRS objects:
 
 - a cue is `shared_answer_space` when its accepted-word set contains more than
   one distinct word; otherwise it is `word_specific`;
-- when a production-admitted word has any active shared-answer-space cue, V0
-  binds one of those cues rather than mixing them with word-specific cues or
-  the meaning-derived fallback;
+- serve-time cue selection is unchanged: every active cue for the admitted
+  word remains in one random draw, including a mix of word-specific and
+  shared-answer-space cues;
 - after per-word skill selection, review composition keeps at most one
-  production action per distinct accepted-word set among those shared cues,
-  preferring the already selected most urgent candidate — the same first-wins
-  pattern as contrast choice-set dedupe;
-- word-specific production remains one action per admitted word;
+  production action per distinct accepted-word set among the shared-answer-space
+  cards that were actually selected, preferring the already selected most
+  urgent candidate — the same first-wins pattern as contrast choice-set dedupe;
+- word-specific production is never dropped by that collapse and remains one
+  action per admitted word;
 - sibling accepted words are not covered or interval-adjusted by the served
   action. The accepted-non-anchor interval stopgap above is unchanged.
 

@@ -4951,7 +4951,7 @@ function getReviewSkillContentIfAvailable(
   }
 
   if (row.skill_id === 'production') {
-    const cue = selectProductionCueForAdmittedWord(row.id, random);
+    const cue = randomArrayElement(getActiveProductionCuesForWord(row.id), random);
     if (cue) {
       const supplement = getProductionCueSupplement(cue.taskId, cue.cueId);
       return {
@@ -5008,18 +5008,6 @@ function getReviewSkillContentIfAvailable(
     contrastSelection: null,
     production: null,
   };
-}
-
-function selectProductionCueForAdmittedWord(
-  wordId: string,
-  random: () => number,
-) {
-  const activeCues = getActiveProductionCuesForWord(wordId);
-  const sharedCues = activeCues.filter((cue) => isSharedAnswerSpaceAcceptedSet(cue.acceptedWordIds));
-  return randomArrayElement(
-    sharedCues.length > 0 ? sharedCues : activeCues,
-    random,
-  );
 }
 
 function getEligibleContrastSelectionContentForScheduledWord(

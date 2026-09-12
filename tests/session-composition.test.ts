@@ -511,16 +511,16 @@ describe('session composition', { concurrency: false }, () => {
     assert.equal(item?.production?.recheckDemandId, 'due-recheck-demand');
   });
 
-  test('binds a shared-answer-space cue instead of mixing it with word-specific cues', () => {
+  test('keeps word-specific cues in the same serve-time draw as shared-answer-space cues', () => {
     insertDueProductionWord({
-      id: 'shared-preferred-word',
+      id: 'mixed-draw-word',
       hanzi: '难怪',
       pinyin: 'nanguai',
       meaning: 'no wonder',
       lastStudiedAt: isoHoursAgo(48),
     });
     insertWord({
-      id: 'shared-preferred-alternate',
+      id: 'mixed-draw-alternate',
       hanzi: '怪不得',
       pinyin: 'guaibude',
       meaning: 'no wonder either',
@@ -530,29 +530,25 @@ describe('session composition', { concurrency: false }, () => {
       createdAt: isoHoursAgo(96),
     });
     insertProductionCue({
-      wordId: 'shared-preferred-word',
-      cueId: 'shared-preferred-word-specific',
+      wordId: 'mixed-draw-word',
+      cueId: 'mixed-draw-word-specific',
       text: 'narrow gloss for one word',
-      acceptedWordIds: ['shared-preferred-word'],
+      acceptedWordIds: ['mixed-draw-word'],
       active: true,
     });
     insertProductionCue({
-      wordId: 'shared-preferred-word',
-      cueId: 'shared-preferred-shared',
+      wordId: 'mixed-draw-word',
+      cueId: 'mixed-draw-shared',
       text: 'No wonder!',
-      acceptedWordIds: ['shared-preferred-word', 'shared-preferred-alternate'],
+      acceptedWordIds: ['mixed-draw-word', 'mixed-draw-alternate'],
       active: true,
     });
 
     const first = dbModule.getSessionPayload(studyDayKey, { random: () => 0 }).buckets.review[0];
     const second = dbModule.getSessionPayload(studyDayKey, { random: () => 0.999 }).buckets.review[0];
 
-    assert.equal(first?.production?.cueId, 'shared-preferred-shared');
-    assert.equal(second?.production?.cueId, 'shared-preferred-shared');
-    assert.deepEqual(
-      first?.production?.acceptedAnswers.map((word) => word.wordId),
-      ['shared-preferred-word', 'shared-preferred-alternate'],
-    );
+    assert.equal(first?.production?.cueId, 'mixed-draw-word-specific');
+    assert.equal(second?.production?.cueId, 'mixed-draw-shared');
   });
 
   test('serves only one production action for the same shared accepted-word set', () => {
