@@ -511,6 +511,163 @@ describe('session composition', { concurrency: false }, () => {
     assert.equal(item?.production?.recheckDemandId, 'due-recheck-demand');
   });
 
+  test('binds a shared-answer-space cue instead of mixing it with word-specific cues', () => {
+    insertDueProductionWord({
+      id: 'shared-preferred-word',
+      hanzi: '难怪',
+      pinyin: 'nanguai',
+      meaning: 'no wonder',
+      lastStudiedAt: isoHoursAgo(48),
+    });
+    insertWord({
+      id: 'shared-preferred-alternate',
+      hanzi: '怪不得',
+      pinyin: 'guaibude',
+      meaning: 'no wonder either',
+      examples: [],
+      status: 'review',
+      priority: 100,
+      createdAt: isoHoursAgo(96),
+    });
+    insertProductionCue({
+      wordId: 'shared-preferred-word',
+      cueId: 'shared-preferred-word-specific',
+      text: 'narrow gloss for one word',
+      acceptedWordIds: ['shared-preferred-word'],
+      active: true,
+    });
+    insertProductionCue({
+      wordId: 'shared-preferred-word',
+      cueId: 'shared-preferred-shared',
+      text: 'No wonder!',
+      acceptedWordIds: ['shared-preferred-word', 'shared-preferred-alternate'],
+      active: true,
+    });
+
+    const first = dbModule.getSessionPayload(studyDayKey, { random: () => 0 }).buckets.review[0];
+    const second = dbModule.getSessionPayload(studyDayKey, { random: () => 0.999 }).buckets.review[0];
+
+    assert.equal(first?.production?.cueId, 'shared-preferred-shared');
+    assert.equal(second?.production?.cueId, 'shared-preferred-shared');
+    assert.deepEqual(
+      first?.production?.acceptedAnswers.map((word) => word.wordId),
+      ['shared-preferred-word', 'shared-preferred-alternate'],
+    );
+  });
+
+  test('serves only one production action for the same shared accepted-word set', () => {
+    insertDueProductionWord({
+      id: 'shared-first-word',
+      hanzi: '难怪',
+      pinyin: 'nanguai',
+      meaning: 'no wonder',
+      lastStudiedAt: isoHoursAgo(72),
+    });
+    insertDueProductionWord({
+      id: 'shared-second-word',
+      hanzi: '怪不得',
+      pinyin: 'guaibude',
+      meaning: 'no wonder either',
+      lastStudiedAt: isoHoursAgo(48),
+    });
+    insertDueProductionWord({
+      id: 'shared-third-word',
+      hanzi: '岂有此理',
+      pinyin: 'qiyoucili',
+      meaning: 'outrageous',
+      lastStudiedAt: isoHoursAgo(36),
+    });
+    insertProductionCue({
+      wordId: 'shared-first-word',
+      cueId: 'shared-first-cue',
+      text: 'No wonder!',
+      acceptedWordIds: ['shared-first-word', 'shared-second-word', 'shared-third-word'],
+      active: true,
+    });
+    insertProductionCue({
+      wordId: 'shared-second-word',
+      cueId: 'shared-second-cue',
+      text: 'No wonder!',
+      acceptedWordIds: ['shared-second-word', 'shared-first-word', 'shared-third-word'],
+      active: true,
+    });
+    insertProductionCue({
+      wordId: 'shared-third-word',
+      cueId: 'shared-third-cue',
+      text: 'No wonder!',
+      acceptedWordIds: ['shared-third-word', 'shared-first-word', 'shared-second-word'],
+      active: true,
+    });
+
+    const productionItems = dbModule.getSessionPayload(studyDayKey).buckets.review
+      .filter((item) => item.actionKind === 'production');
+
+    assert.deepEqual(productionItems.map((item) => item.targetWordId), ['shared-first-word']);
+    assert.deepEqual(
+      productionItems[0]?.production?.acceptedAnswers.map((word) => word.wordId).sort(),
+      ['shared-first-word', 'shared-second-word', 'shared-third-word'].sort(),
+    );
+  });
+
+  test('keeps distinct shared-answer-space sets and word-specific production on their own paths', () => {
+    insertDueProductionWord({
+      id: 'pair-a-word',
+      hanzi: '变换',
+      pinyin: 'bianhuan',
+      meaning: 'to transform',
+      lastStudiedAt: isoHoursAgo(60),
+    });
+    insertDueProductionWord({
+      id: 'pair-b-word',
+      hanzi: '转换',
+      pinyin: 'zhuanhuan',
+      meaning: 'to convert',
+      lastStudiedAt: isoHoursAgo(48),
+    });
+    insertDueProductionWord({
+      id: 'solo-word',
+      hanzi: '独立',
+      pinyin: 'duli',
+      meaning: 'independent',
+      lastStudiedAt: isoHoursAgo(48),
+    });
+    insertProductionCue({
+      wordId: 'pair-a-word',
+      cueId: 'pair-a-cue',
+      text: 'to transform or convert',
+      acceptedWordIds: ['pair-a-word', 'pair-b-word'],
+      active: true,
+    });
+    insertProductionCue({
+      wordId: 'pair-b-word',
+      cueId: 'pair-b-cue',
+      text: 'to transform or convert',
+      acceptedWordIds: ['pair-b-word', 'pair-a-word'],
+      active: true,
+    });
+    insertProductionCue({
+      wordId: 'solo-word',
+      cueId: 'solo-cue',
+      text: 'standing alone',
+      acceptedWordIds: ['solo-word'],
+      active: true,
+    });
+
+    const productionItems = dbModule.getSessionPayload(studyDayKey).buckets.review
+      .filter((item) => item.actionKind === 'production');
+
+    assert.deepEqual(
+      productionItems.map((item) => ({
+        targetWordId: item.targetWordId,
+        cueId: item.production?.cueId,
+      })),
+      [
+        { targetWordId: 'pair-a-word', cueId: 'pair-a-cue' },
+        { targetWordId: 'solo-word', cueId: 'solo-cue' },
+      ],
+    );
+  });
+
   test('does not schedule suppressed production even when its scheduler state is urgent', () => {
     insertWord({
       id: 'suppressed-production-word',
@@ -1983,6 +2140,39 @@ describe('session composition', { concurrency: false }, () => {
 
   test.todo('keeps UTC date-key and ISO timestamp handling consistent across session composition boundaries');
 });
+
+function insertDueProductionWord({
+  id,
+  hanzi,
+  pinyin,
+  meaning,
+  lastStudiedAt,
+}: {
+  id: string;
+  hanzi: string;
+  pinyin: string;
+  meaning: string;
+  lastStudiedAt: string;
+}) {
+  insertWord({
+    id,
+    hanzi,
+    pinyin,
+    meaning,
+    examples: [],
+    status: 'review',
+    priority: 100,
+    createdAt: isoHoursAgo(96),
+  });
+  insertWordStudyAdmissionState(id, null);
+  insertWordSkillState({
+    wordId: id,
+    skillId: 'production',
+    intervalHours: 24,
+    lastStudiedAt,
+    nextDueAt: isoHoursAgo(12),
+  });
+}
 
 function insertProductionCue({
   wordId,

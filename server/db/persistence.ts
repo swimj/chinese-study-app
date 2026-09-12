@@ -31,6 +31,10 @@ import {
   resolveUniqueOutOfSetWordId,
   type ProductionAnswerLookup,
 } from '../../src/domain/production-response.ts';
+import {
+  isSharedAnswerSpaceAcceptedSet,
+  sharedAnswerSpaceKey,
+} from '../../src/domain/production-answer-space.ts';
 import { config, getConfig, getDb, dbPath, seedDataPath, dbExistedOnStartup } from './connection.ts';
 import { assertSchemaCurrent, migrateDatabase } from './migrations.ts';
 import { createHostedOperationsSchema } from './hosted-operations.ts';
@@ -4857,9 +4861,10 @@ function getReviewSessionStudyItems(now: string, random: () => number): SessionS
     }
   }
 
-  return dedupeContrastChoiceSets([...bestCandidateByWordId.values()]
-    .sort(compareReviewSessionItemCandidates))
-    .map((candidate) => candidate.item);
+  return dedupeSharedAnswerSpaceProduction(
+    dedupeContrastChoiceSets([...bestCandidateByWordId.values()]
+      .sort(compareReviewSessionItemCandidates)),
+  ).map((candidate) => candidate.item);
 }
 
 function dedupeContrastChoiceSets(candidates: ReviewSessionItemCandidate[]): ReviewSessionItemCandidate[] {
@@ -4879,6 +4884,31 @@ function dedupeContrastChoiceSets(candidates: ReviewSessionItemCandidate[]): Rev
       }
 
       seenContrastChoiceSetKeys.add(choiceSetKey);
+    }
+
+    selected.push(candidate);
+  }
+
+  return selected;
+}
+
+function dedupeSharedAnswerSpaceProduction(
+  candidates: ReviewSessionItemCandidate[],
+): ReviewSessionItemCandidate[] {
+  const seenAcceptedSets = new Set<string>();
+  const selected: ReviewSessionItemCandidate[] = [];
+
+  for (const candidate of candidates) {
+    const production = candidate.item.production;
+    if (candidate.item.actionKind === 'production' && production) {
+      const acceptedWordIds = production.acceptedAnswers.map((word) => word.wordId);
+      if (isSharedAnswerSpaceAcceptedSet(acceptedWordIds)) {
+        const answerSpaceKey = sharedAnswerSpaceKey(acceptedWordIds);
+        if (seenAcceptedSets.has(answerSpaceKey)) {
+          continue;
+        }
+        seenAcceptedSets.add(answerSpaceKey);
+      }
     }
 
     selected.push(candidate);
@@ -4921,7 +4951,7 @@ function getReviewSkillContentIfAvailable(
   }
 
   if (row.skill_id === 'production') {
-    const cue = randomArrayElement(getActiveProductionCuesForWord(row.id), random);
+    const cue = selectProductionCueForAdmittedWord(row.id, random);
     if (cue) {
       const supplement = getProductionCueSupplement(cue.taskId, cue.cueId);
       return {
@@ -4978,6 +5008,18 @@ function getReviewSkillContentIfAvailable(
     contrastSelection: null,
     production: null,
   };
+}
+
+function selectProductionCueForAdmittedWord(
+  wordId: string,
+  random: () => number,
+) {
+  const activeCues = getActiveProductionCuesForWord(wordId);
+  const sharedCues = activeCues.filter((cue) => isSharedAnswerSpaceAcceptedSet(cue.acceptedWordIds));
+  return randomArrayElement(
+    sharedCues.length > 0 ? sharedCues : activeCues,
+    random,
+  );
 }
 
 function getEligibleContrastSelectionContentForScheduledWord(

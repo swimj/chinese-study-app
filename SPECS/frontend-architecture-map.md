@@ -155,6 +155,9 @@ bounded server-side selection and result loading.
   cannot drift
 - accepted production with a served cue supplement: an `await-supplement`
   Continue beat before rating; cards without a supplement still rate immediately
+- shared-answer-space production: a pre-reveal note that the cue accepts more
+  than one answer, and a post-reveal / frozen-card listing of the frozen
+  accepted Hanzi that marks the scheduling word
 
 The hook returns:
 

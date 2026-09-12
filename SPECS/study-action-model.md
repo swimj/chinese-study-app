@@ -232,8 +232,9 @@ The durable V0 production-cue model separates:
   unrelated cues retain their identity; deactivation is terminal logical
   deletion, and any later cue with similar content is an ordinary new create
   with no lifecycle continuity with the deleted cue;
-- multiple simultaneously active cues, with V0 randomly selecting one at serve
-  time independently of word admission or skill scheduling;
+- multiple simultaneously active cues, with V0 selecting one at serve time
+  independently of word admission or skill urgency; word-specific and
+  shared-answer-space cues are not mixed in that draw;
 - the current meaning-derived gloss prompt as base fallback content rather than
   a cue row; it serves only when no durable cue is active, while a durable
   `definition_gloss` cue remains distinct enriched content;
@@ -291,6 +292,29 @@ the recorded cue-evidence seam:
 These demands are a temporary "check again soon" class, not cue schedule state.
 They do not make cues independently scheduled SRS objects and must not be
 promoted into cue semantics or a broader scheduling redesign.
+
+Review composition now has a replaceable seam that treats shared-answer-space
+cues separately from word-specific production, without making cues independently
+scheduled SRS objects:
+
+- a cue is `shared_answer_space` when its accepted-word set contains more than
+  one distinct word; otherwise it is `word_specific`;
+- when a production-admitted word has any active shared-answer-space cue, V0
+  binds one of those cues rather than mixing them with word-specific cues or
+  the meaning-derived fallback;
+- after per-word skill selection, review composition keeps at most one
+  production action per distinct accepted-word set among those shared cues,
+  preferring the already selected most urgent candidate — the same first-wins
+  pattern as contrast choice-set dedupe;
+- word-specific production remains one action per admitted word;
+- sibling accepted words are not covered or interval-adjusted by the served
+  action. The accepted-non-anchor interval stopgap above is unchanged.
+
+The live session acknowledges a shared answer space. Before reveal it says the
+cue accepts more than one answer without listing them. After reveal, and on
+the frozen incorrect card, it lists the frozen accepted Hanzi and marks the
+scheduling word. A successful non-anchor reveal shows the submitted accepted
+form as the primary answer.
 
 Response resolution uses the session-frozen accepted-answer snapshot on the
 served production action. Only the canonical Hanzi and non-null traditional

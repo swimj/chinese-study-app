@@ -1144,6 +1144,35 @@ button:hover {
   color: #cbd5e1;
 }
 
+.accepted-answer-space {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.accepted-answer-list {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.accepted-answer-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.55rem;
+}
+
+.accepted-answer-item strong {
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+
+.accepted-answer-item.is-revealed strong {
+  color: #f8fafc;
+}
+
 .production-supplement {
   display: grid;
   gap: 0.35rem;
