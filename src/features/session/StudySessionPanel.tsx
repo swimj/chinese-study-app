@@ -6,13 +6,18 @@ import type {
   BucketSessionState,
   UnstudiedWordProgress,
 } from '../../lib/session-state';
+import { isSharedAnswerSpaceProduction } from '../../domain/production-answer-space';
 import type { ProductionCueSupplementSnapshot, SessionStudyItem } from '../../domain/study-actions';
 import type { ReviewRating, Word, WordMeaning } from '../../types';
 import { studyProfile } from '../../study-profile';
 import type { RatingOption } from './session-rating';
 import type { SessionSummary } from './session-summary';
 import type { SessionFinalizationState } from './session-finalization';
-import { getStudySessionPanelView, hasServedProductionCueSupplement } from './session-selectors';
+import {
+  getSharedAnswerSpacePromptNote,
+  getStudySessionPanelView,
+  hasServedProductionCueSupplement,
+} from './session-selectors';
 import {
   getSessionPrimaryAction,
   getSessionShortcutGuide,
@@ -206,6 +211,8 @@ export function StudySessionPanel({
   );
   const showProductionSupplementAside =
     answerRevealed && hasServedProductionCueSupplement(activeItem?.production);
+  const sharedAnswerSpacePromptNote = getSharedAnswerSpacePromptNote(activeItem?.production);
+  const frozenSharedAnswerSpacePromptNote = getSharedAnswerSpacePromptNote(frozenProductionCard?.production);
   const sessionEndDisabled = sessionPhase === 'draining' || personalNotesEditorOpen;
   const sessionEndLabel = sessionPhase === 'draining' ? 'Session draining' : 'End session';
   const keyboardContext = createSessionKeyboardContext({
@@ -256,11 +263,23 @@ export function StudySessionPanel({
               ) : (
                 <span className="prompt-meta meaning-list-prompt">{frozenProductionCard.fallbackPrompt}</span>
               )}
+              {frozenSharedAnswerSpacePromptNote ? (
+                <span className="prompt-meta">{frozenSharedAnswerSpacePromptNote}</span>
+              ) : null}
             </div>
             <div className="answer-block">
               <span className="prompt-label">Answer</span>
-              <span className="answer-pinyin">{frozenProductionCard.answerPinyin}</span>
-              <strong className="answer-value">{frozenProductionCard.answerText}</strong>
+              {isSharedAnswerSpaceProduction(frozenProductionCard.production) ? null : (
+                <span className="answer-pinyin">{frozenProductionCard.answerPinyin}</span>
+              )}
+              {isSharedAnswerSpaceProduction(frozenProductionCard.production) ? null : (
+                <strong className="answer-value">{frozenProductionCard.answerText}</strong>
+              )}
+              <AcceptedAnswerSpace
+                production={frozenProductionCard.production}
+                scheduledWordId={frozenProductionCard.targetWordId}
+                revealedAnswerText={null}
+              />
               <MeaningList meanings={frozenProductionCard.allMeanings} />
               {frozenProductionCard.production?.supplement ? (
                 <div className="production-supplement">
@@ -513,7 +532,12 @@ export function StudySessionPanel({
               ) : activeItem.actionKind === 'recognition' ? (
                 <strong className="prompt-value">{activePrompt}</strong>
               ) : activeItem.production ? (
-                <strong className="prompt-value">{activePrompt}</strong>
+                <>
+                  <strong className="prompt-value">{activePrompt}</strong>
+                  {sharedAnswerSpacePromptNote && !answerRevealed ? (
+                    <span className="prompt-meta">{sharedAnswerSpacePromptNote}</span>
+                  ) : null}
+                </>
               ) : activePromptDisplayedMeanings.length > 0 ? (
                 <MeaningList meanings={activePromptDisplayedMeanings} className="meaning-list-prompt" />
               ) : (
@@ -551,6 +575,13 @@ export function StudySessionPanel({
                     <strong className="answer-value">{activeAnswerText}</strong>
                   </>
                 )}
+                {isProductionItem ? (
+                  <AcceptedAnswerSpace
+                    production={activeItem.production}
+                    scheduledWordId={activeWord.id}
+                    revealedAnswerText={activeAnswerText}
+                  />
+                ) : null}
                 {productionAwaitingSupplement ? null : activeMeaningRows.length > 0 ? (
                   <div className="stack">
                     <div className="meaning-visibility-grid">
@@ -1127,6 +1158,45 @@ function shortcutFor(
   command: SessionKeyCommand['type'],
 ) {
   return primaryAction?.command === command ? primaryAction.shortcut : null;
+}
+
+function AcceptedAnswerSpace({
+  production,
+  scheduledWordId,
+  revealedAnswerText,
+}: {
+  production: SessionStudyItem['production'] | null | undefined;
+  scheduledWordId: string;
+  revealedAnswerText: string | null;
+}) {
+  if (!isSharedAnswerSpaceProduction(production) || production == null) {
+    return null;
+  }
+
+  return (
+    <div className="accepted-answer-space">
+      <span className="prompt-label">Accepted answers</span>
+      <ul className="accepted-answer-list">
+        {production.acceptedAnswers.map((answer) => {
+          const isScheduled = answer.wordId === scheduledWordId;
+          const isRevealed = revealedAnswerText !== null && answer.hanzi === revealedAnswerText;
+          return (
+            <li
+              key={answer.wordId}
+              className={
+                isRevealed
+                  ? 'accepted-answer-item is-revealed'
+                  : 'accepted-answer-item'
+              }
+            >
+              <strong>{answer.hanzi}</strong>
+              {isScheduled ? <span className="prompt-meta">this card</span> : null}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
 }
 
 function ProductionSupplementAside({

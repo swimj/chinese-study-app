@@ -12,6 +12,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `session-bucket-scheduler.test.ts` | Bucket ordering helpers | `src/domain/study-actions.ts` |
 | `session-bucket-state.test.ts` | In-session bucket state | `src/domain/study-actions.ts` |
 | `session-selectors.test.ts` | Session UI selectors | `src/features/session/session-selectors.ts` |
+| `production-answer-space.test.ts` | Shared vs word-specific production answer-space helpers | `src/domain/production-answer-space.ts` |
 | `session-keyboard.test.ts` | Session action/shortcut mapping, rating labels, Undo aliases | `src/features/session/session-keyboard.ts` |
 | `study-actions.test.ts` | Study action adapters / event derivation | `src/domain/study-actions.ts` |
 | `study-attempt-events.test.ts` | Attempt event persistence | Dynamic `server/db.ts` |
