@@ -13,9 +13,11 @@ let directory: string;
 let server: Server;
 let origin: string;
 let rawLearner = 'test-learner';
+const previousManifestPath = process.env.APP_DECK_MANIFEST_PATH;
 
 describe('My words collections', { concurrency: false }, () => {
   before(async () => {
+    process.env.APP_DECK_MANIFEST_PATH = path.resolve('tests/fixtures/mandarin-decks-v1.fixture.json');
     directory = fs.mkdtempSync(path.join(os.tmpdir(), 'my-words-'));
     const previousEnvironment = {
       APP_MODE: process.env.APP_MODE,
@@ -48,6 +50,7 @@ describe('My words collections', { concurrency: false }, () => {
   beforeEach(() => {
     rawLearner = 'test-learner';
     sqlite.exec('DELETE FROM study_attempt_events; DELETE FROM study_sessions; DELETE FROM word_skill_state; DELETE FROM user_word_priority; DELETE FROM words;');
+    sqlite.exec("DELETE FROM learner_settings WHERE setting_key = 'diet_profile'");
   });
 
   after(async () => {
@@ -56,6 +59,8 @@ describe('My words collections', { concurrency: false }, () => {
     const { closeDbConnection } = await import('../server/db/connection.ts');
     closeDbConnection();
     fs.rmSync(directory, { recursive: true, force: true });
+    if (previousManifestPath === undefined) delete process.env.APP_DECK_MANIFEST_PATH;
+    else process.env.APP_DECK_MANIFEST_PATH = previousManifestPath;
   });
 
   test('personal membership includes waiting and studied words; removal and dismissal exclude words', () => {
@@ -126,7 +131,89 @@ describe('My words collections', { concurrency: false }, () => {
     const payload = await response.json() as { words: Array<{ word: { id: string } }>; hasMore: boolean };
     assert.equal(payload.words[0]?.word.id, 'http'); assert.equal(payload.hasMore, false);
   });
+
+  test('current deck is unavailable until placement is stored; the fallback does not create placement', () => {
+    assert.equal(db.getMyWords().currentDeck, null);
+    assert.deepEqual(db.getMyWords({ view: 'deck' }), { words: [], hasMore: false, currentDeck: null });
+    assert.equal(db.getStoredDietProfile(), null);
+  });
+
+  test('current deck includes unseen, personal and studied words with exact pronunciation matching', async () => {
+    insertDeckWord('unseen', '我', 'wǒ');
+    insertDeckWord('personal', '你', 'nǐ');
+    insertDeckWord('studied', '他', 'tā', 'learning');
+    insertDeckWord('other-deck', '猫', 'māo', 'review');
+    insertDeckWord('other-reading', '我', 'wò');
+    insertDeckWord('normalized', '她', '  TĀ  ');
+    insertDeckWord('dismissed', '是', 'shì');
+    db.updateWordUserPriority('personal', { bumpDelta: 1 });
+    db.dismissWordFromStudy('dismissed');
+    place({ 'hsk2-l1': 1 });
+    const before = db.snapshotStoredDietProfile();
+    const result = db.getMyWords({ view: 'deck' });
+    assert.equal(result.currentDeck?.label, 'HSK 1');
+    assert.deepEqual(new Set(result.words.map((entry) => entry.word.id)), new Set(['unseen', 'personal', 'studied', 'normalized']));
+    assert.equal(result.words.find((entry) => entry.word.id === 'unseen')?.word.status, 'unstudied');
+    assert.equal(db.snapshotStoredDietProfile(), before);
+    assert.equal(db.getMyWords({ view: 'personal' }).words.length, 1);
+    const response = await fetch(`${origin}/api/my-words?view=deck&q=我`);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.words.length, 1);
+    assert.equal(payload.words[0].word.id, 'unseen');
+  });
+
+  test('deck mix follows positive weights and nudges, not cumulative HSK levels or automatic spill', () => {
+    insertDeckWord('l1', '我', 'wǒ'); insertDeckWord('l2', '猫', 'māo');
+    insertDeckWord('l3', '抽象', 'chōu xiàng');
+    place({ 'hsk2-l2': 1, 'hsk2-l1': 0 });
+    assert.deepEqual(db.getMyWords({ view: 'deck' }).words.map((entry) => entry.word.id), ['l2']);
+    db.nudgeDietProfile('harder');
+    const mix = db.getMyWords({ view: 'deck' });
+    assert.deepEqual(new Set(mix.words.map((entry) => entry.word.id)), new Set(['l2', 'l3']));
+    assert.equal(mix.currentDeck?.label, 'HSK 2 + HSK 3 · part 1');
+  });
+
+  test('deck search precedes pagination, tail membership covers unmapped words, and dates remain learner-private', () => {
+    insertDeckWord('shared', '我', 'wǒ', 'learning');
+    db.updateWordPersonalNotes('shared', 'private note');
+    sqlite.prepare('UPDATE words SET last_learning_covered_on = ? WHERE id = ?').run('2026-09-13', 'shared');
+    for (let index = 0; index < 55; index++) insert(`tail-${String(index).padStart(2, '0')}`);
+    place({ 'beyond-hsk': 1 });
+    assert.equal(db.getMyWords({ view: 'deck' }).words.length, 50);
+    assert.equal(db.getMyWords({ view: 'deck' }).hasMore, true);
+    assert.equal(db.getMyWords({ view: 'deck', offset: 50 }).words.length, 5);
+    assert.equal(db.getMyWords({ view: 'deck', query: 'tail-54' }).words[0].word.id, 'tail-54');
+    assert.equal(db.runWithLearnerId('other-learner', () => db.getMyWords()).currentDeck, null);
+    db.runWithLearnerId('other-learner', () => place({ 'hsk2-l1': 1 }));
+    const other = db.runWithLearnerId('other-learner', () => db.getMyWords({ view: 'deck' }));
+    assert.equal(other.words.length, 1);
+    assert.equal(other.words[0].word.personalNotes, '');
+    assert.equal(other.words[0].word.status, 'unstudied');
+    assert.equal(other.words[0].lastStudiedAt, null);
+    assert.equal(db.getMyWords({ view: 'deck' }).currentDeck?.label, 'Beyond HSK');
+    assert.equal(db.getMyWords({ view: 'deck' }).words.length, 50);
+  });
+
+  test('missing manifest hides deck browsing even with stored placement', () => {
+    place({ 'hsk2-l1': 1 });
+    const manifestPath = process.env.APP_DECK_MANIFEST_PATH;
+    process.env.APP_DECK_MANIFEST_PATH = path.join(directory, 'absent.json');
+    try {
+      assert.equal(db.getMyWords().currentDeck, null);
+      assert.deepEqual(db.getMyWords({ view: 'deck' }), { words: [], hasMore: false, currentDeck: null });
+    } finally { process.env.APP_DECK_MANIFEST_PATH = manifestPath; }
+  });
 });
+
+function place(weights: Record<string, number>) {
+  db.saveDietProfile({ version: 1, weights, provenance: [], updatedAt: '2026-09-13T00:00:00Z' });
+}
+
+function insertDeckWord(id: string, hanzi: string, pinyin: string, status: 'unstudied' | 'learning' | 'review' = 'unstudied') {
+  insert(id, status);
+  sqlite.prepare('UPDATE words SET hanzi = ?, pinyin = ? WHERE id = ?').run(hanzi, pinyin, id);
+}
 
 function insert(id: string, status: 'unstudied' | 'learning' | 'review' = 'unstudied', covered: string | null = null) {
   sqlite.prepare(`INSERT INTO words (id, hanzi, traditional, pinyin, meaning, meanings_json, examples_json, personal_notes, status, priority, created_at, learning_streak, last_learning_success_on, last_learning_covered_on)

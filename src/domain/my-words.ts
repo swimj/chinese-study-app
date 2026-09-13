@@ -1,6 +1,6 @@
 import type { Word } from '../types';
 
-export type MyWordsView = 'recent' | 'personal';
+export type MyWordsView = 'recent' | 'personal' | 'deck';
 
 export type MyWord = {
   word: Word;
@@ -11,6 +11,7 @@ export type MyWord = {
 export type MyWordsResponse = {
   words: MyWord[];
   hasMore: boolean;
+  currentDeck: { label: string } | null;
 };
 
 export const WORD_STAGE_LABELS: Record<Word['status'], string> = {

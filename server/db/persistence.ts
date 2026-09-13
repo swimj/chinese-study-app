@@ -90,6 +90,7 @@ import {
 } from './unstudied-admission.ts';
 import {
   deckAssignmentKey,
+  getDeckIdForWord,
   getManifestAssignmentsByDeck,
   getTailDeckId,
   loadDeckManifest,
@@ -97,6 +98,7 @@ import {
 } from '../decks/manifest.ts';
 import {
   getDietProfile,
+  getStoredDietProfile,
   getStashDietSplit,
   resolveEffectiveDietWeights,
 } from './diet-profile.ts';
@@ -180,9 +182,30 @@ export function getWords(): Word[] {
 export function getMyWords({
   view = 'recent', query = '', limit = 50, offset = 0,
 }: { view?: MyWordsView; query?: string; limit?: number; offset?: number } = {}): MyWordsResponse {
-  if (view !== 'recent' && view !== 'personal') throw new Error('Expected recent or personal view');
+  if (view !== 'recent' && view !== 'personal' && view !== 'deck') throw new Error('Expected recent, personal or deck view');
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Expected limit from 1 to 100');
   if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('Expected non-negative integer offset');
+  const manifest = config.studyProfile === 'mandarin' ? loadDeckManifest() : null;
+  const profile = manifest ? getStoredDietProfile() : null;
+  const weights = manifest && profile ? resolveEffectiveDietWeights(profile, manifest) : {};
+  const decks = manifest?.decks.filter((deck) => (weights[deck.id] ?? 0) > 0) ?? [];
+  const currentDeck = decks.length ? {
+    label: decks.map((deck) => deck.hsk
+      ? `HSK ${deck.hsk.level}${deck.stratum === null ? '' : ` · part ${deck.stratum}`}`
+      : 'Beyond HSK').join(' + '),
+  } : null;
+  if (view === 'deck' && !currentDeck) return { words: [], hasMore: false, currentDeck: null };
+  if (view === 'deck') {
+    // Resolve canonical spelling/pronunciation membership before pagination,
+    // without hydrating every word or writing a second copy of the manifest.
+    const deckIds = new Set(decks.map((deck) => deck.id));
+    if (!manifest) throw new Error('Current deck requires a manifest');
+    const activeManifest = manifest;
+    getDb().function('my_words_current_deck', { deterministic: true }, (hanzi, pinyin) => {
+      if (typeof hanzi !== 'string' || typeof pinyin !== 'string') throw new Error('Expected lexical word spelling and pronunciation');
+      return deckIds.has(getDeckIdForWord(activeManifest, hanzi, pinyin)) ? 1 : 0;
+    });
+  }
   const search = `%${query.trim().replace(/[\\%_]/g, '\\$&')}%`;
   // Learning completion only records a UTC day. Keep the whole read model at
   // that precision; accepted review commits project both correct and failed attempts.
@@ -203,13 +226,15 @@ export function getMyWords({
     FROM words
     LEFT JOIN user_word_priority personal ON personal.word_id = words.id
     LEFT JOIN latest_study ON latest_study.word_id = words.id
-    WHERE ${view === 'recent' ? "words.status IN ('learning', 'review')" : 'personal.priority_tier >= 0'}
+    WHERE ${view === 'recent' ? "words.status IN ('learning', 'review')"
+      : view === 'personal' ? 'personal.priority_tier >= 0'
+        : 'my_words_current_deck(words.hanzi, words.pinyin) = 1 AND (personal.priority_tier IS NULL OR personal.priority_tier >= 0)'}
       AND (words.hanzi LIKE ? ESCAPE '\\' OR words.traditional LIKE ? ESCAPE '\\'
         OR words.pinyin LIKE ? ESCAPE '\\' OR words.meaning LIKE ? ESCAPE '\\'
         OR EXISTS (SELECT 1 FROM json_each(words.meanings_json) WHERE value LIKE ? ESCAPE '\\'))
     ORDER BY ${view === 'recent'
       ? 'latest_study.last_studied_on IS NULL ASC, latest_study.last_studied_on DESC'
-      : 'personal.updated_at DESC'}, words.id ASC
+      : view === 'personal' ? 'personal.updated_at DESC' : 'words.pinyin COLLATE NOCASE ASC'}, words.id ASC
     LIMIT ? OFFSET ?
   `).all(search, search, search, search, search, limit + 1, offset) as Array<WordRow & {
     last_studied_on: string | null; personal_updated_at: string | null;
@@ -221,6 +246,7 @@ export function getMyWords({
       personalUpdatedAt: row.personal_updated_at,
     })),
     hasMore: rows.length > limit,
+    currentDeck,
   };
 }
 

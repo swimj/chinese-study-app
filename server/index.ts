@@ -220,10 +220,10 @@ export function createApp(options: CreateAppOptions = {}) {
     const query = req.query.q ?? '';
     const limitText = req.query.limit ?? '50';
     const offsetText = req.query.offset ?? '0';
-    if ((view !== 'recent' && view !== 'personal') || typeof query !== 'string'
+    if ((view !== 'recent' && view !== 'personal' && view !== 'deck') || typeof query !== 'string'
       || typeof limitText !== 'string' || !/^\d+$/.test(limitText)
       || typeof offsetText !== 'string' || !/^\d+$/.test(offsetText)) {
-      res.status(400).json({ error: 'Expected recent or personal view, string q, and integer pagination' });
+      res.status(400).json({ error: 'Expected recent, personal or deck view, string q, and integer pagination' });
       return;
     }
     const limit = Number(limitText);

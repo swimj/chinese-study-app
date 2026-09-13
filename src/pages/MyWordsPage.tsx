@@ -1,10 +1,11 @@
 import { useLayoutEffect, useRef } from 'react';
-import { formatStudyDate, WORD_STAGE_LABELS, type MyWord, type MyWordsView } from '../domain/my-words';
+import { formatStudyDate, WORD_STAGE_LABELS, type MyWord, type MyWordsResponse, type MyWordsView } from '../domain/my-words';
 
 export type MyWordsPageProps = {
   view: MyWordsView;
   query: string;
   words: MyWord[];
+  currentDeck: MyWordsResponse['currentDeck'];
   selectedId: string | null;
   loading: boolean;
   error: string | null;
@@ -46,6 +47,9 @@ export function MyWordsPage(props: MyWordsPageProps) {
             onChange={(event) => props.onViewChange(event.target.value as MyWordsView)}>
             <option value="recent">Recently studied</option>
             <option value="personal">Personally added</option>
+            {props.currentDeck && <option value="deck">Current deck</option>}
+            {!props.currentDeck && props.view === 'deck' &&
+              <option value="deck" disabled>Current deck unavailable</option>}
           </select>
           <input type="search" aria-label="Search this word collection"
             placeholder="Search words, pronunciation, meanings…" value={props.query}
@@ -53,7 +57,11 @@ export function MyWordsPage(props: MyWordsPageProps) {
         </div>
         <p className="notes">{props.view === 'recent'
           ? 'Words you’ve begun studying, most recent first.'
-          : 'Your personal collection, including waiting words. Most recently updated first.'}</p>
+          : props.view === 'personal'
+            ? 'Your personal collection, including waiting words. Most recently updated first.'
+            : props.currentDeck
+              ? `All words in ${props.currentDeck.label}, including words you haven’t studied. Ordered by pronunciation.`
+              : 'Current deck is unavailable. Choose another collection.'}</p>
       </header>
       <div className={`my-words-browser${selected ? ' has-detail' : ''}`}>
         <div className="my-words-list" ref={listRef} aria-label="Words"
@@ -89,11 +97,15 @@ export function MyWordsPage(props: MyWordsPageProps) {
             <p>{props.error}</p><button type="button" onClick={props.onRetry}>Try again</button>
           </div>}
           {!props.loading && !props.error && props.words.length === 0 && (
-            <p className="my-words-message">{props.query.trim()
+            <p className="my-words-message">{props.view === 'deck' && !props.currentDeck
+              ? 'Current deck is unavailable. Choose another collection.'
+              : props.query.trim()
               ? 'No matching words in this collection.'
               : props.view === 'recent'
                 ? 'Once you begin studying, your words will appear here.'
-                : 'Add words in Stash to start your personal collection.'}</p>
+                : props.view === 'personal'
+                  ? 'Add words in Stash to start your personal collection.'
+                  : 'There are no words in your current deck.'}</p>
           )}
           {props.hasMore && !props.error && <button type="button" className="my-words-more secondary-button"
             disabled={props.loading} onClick={props.onLoadMore}>Load more words</button>}
@@ -110,7 +122,8 @@ export function MyWordsPage(props: MyWordsPageProps) {
           <ul className="my-word-meanings">{(selected.word.meanings.length ? selected.word.meanings : [selected.word.meaning])
             .map((meaning, index) => <li key={index}>{meaning}</li>)}</ul>
           <h3>Study</h3>
-          {selected.word.status === 'unstudied' ? <p className="notes">This word is waiting for study.</p> : <dl>
+          {selected.word.status === 'unstudied' ? <p className="notes">{props.view === 'deck'
+            ? 'You haven’t studied this word yet.' : 'This word is waiting for study.'}</p> : <dl>
             <dt>Last studied</dt><dd>{formatStudyDate(selected.lastStudiedAt)}</dd>
           </dl>}
           {selected.word.personalNotes && <><h3>Your notes</h3><p className="my-word-notes">{selected.word.personalNotes}</p></>}
