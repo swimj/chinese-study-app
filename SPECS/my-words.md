@@ -83,10 +83,14 @@ and are omitted. Review is a lifecycle stage, not a mastery claim. Scores,
 accuracy, progress graphics, due dates, and scheduler controls are deferred.
 
 Deck membership follows the same normalized characters/pronunciation assignment
-as the diet. Both paths share an in-memory manifest-to-database loader: collect
-only the selected decks' keys, probe the indexed characters column in bounded
-parameter chunks, then match pronunciation. Deck dates use indexed per-word
-probes; deck browsing never scans the corpus or entire attempt history to
-discover membership or dates. All results and private
-notes are scoped to the current learner beneath HTTP.
+as the diet. Both paths share a cache of resolved word IDs for the manifest's
+explicit decks. Cache construction probes indexed characters in bounded chunks
+and matches normalized pronunciation. Requests hydrate current word details and
+learner state by those IDs; learner state is never cached. Bootstrap/seed imports
+invalidate the cache, other-connection commits refresh it, and transaction-local
+identities are never retained. Current deck dates batch the requested IDs into
+one pass over the current learner's attempt history, plus word-ID lookups for
+skill and learning dates. This avoids an additional event index and repeated
+history scans per word; date-query cost still grows with that learner's history.
+All results and private notes are scoped to the current learner beneath HTTP.
 Browsing never changes study state or scheduling.

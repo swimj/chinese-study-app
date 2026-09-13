@@ -5,7 +5,10 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { Server } from 'node:http';
 import { after, before, beforeEach, describe, test } from 'node:test';
-import { deckWordProbeSql, DECK_WORD_STUDY_DATE_SQL } from '../server/db/deck-words.ts';
+import { deckIdentityProbeSql, deckWordProbeSql, getResolvedDeckWordIds, invalidateDeckWordIds, queryManifestDeckWords, DECK_WORD_STUDY_DATES_SQL } from '../server/db/deck-words.ts';
+
+import { getDb } from '../server/db/connection.ts';
+import { loadDeckManifest } from '../server/decks/manifest.ts';
 
 type DbModule = typeof import('../server/db.ts');
 let db: DbModule;
@@ -227,16 +230,62 @@ describe('My words collections', { concurrency: false }, () => {
     }
   });
 
-  test('production deck queries use indexed word and history probes, never corpus or history scans', () => {
+  test('resolved identities are shared across decks while learner state stays fresh', () => {
+    insertDeckWord('first', '我', 'wǒ');
+    insertDeckWord('second', '猫', 'māo');
+    const manifest = loadDeckManifest()!;
+    const cached = getResolvedDeckWordIds(manifest);
+    assert.deepEqual(cached.get('hsk2-l1'), ['first']);
+    assert.deepEqual(cached.get('hsk2-l2'), ['second']);
+    db.updateWordUserPriority('first', { bumpDelta: 1 });
+    assert.strictEqual(getResolvedDeckWordIds(manifest), cached);
+    assert.equal(queryManifestDeckWords(manifest, ['hsk2-l1'], 'diet').length, 0);
+    assert.equal(queryManifestDeckWords(manifest, ['hsk2-l1'], 'browse').length, 1);
+    db.runWithLearnerId('other-learner', () => {
+      assert.strictEqual(getResolvedDeckWordIds(manifest), cached);
+      assert.equal(queryManifestDeckWords(manifest, ['hsk2-l1'], 'diet').length, 1);
+    });
+  });
+
+  test('identity cache observes external imports and explicit same-connection invalidation', () => {
+    insertDeckWord('first', '我', 'wǒ');
+    const manifest = loadDeckManifest()!;
+    const cached = getResolvedDeckWordIds(manifest);
+    insertDeckWord('second', '你', 'nǐ');
+    assert.notStrictEqual(getResolvedDeckWordIds(manifest), cached);
+    assert.deepEqual(new Set(getResolvedDeckWordIds(manifest).get('hsk2-l1')), new Set(['first', 'second']));
+    invalidateDeckWordIds();
+    getDb().prepare('UPDATE lexical_words SET pinyin = ? WHERE id = ?').run('wrong', 'first');
+    assert.deepEqual(getResolvedDeckWordIds(manifest).get('hsk2-l1'), ['second']);
+  });
+
+  test('rolled-back lexical identities cannot enter the shared cache', () => {
+    insertDeckWord('first', '我', 'wǒ');
+    const manifest = loadDeckManifest()!;
+    const cached = getResolvedDeckWordIds(manifest);
+    getDb().exec('BEGIN');
+    try {
+      getDb().prepare('UPDATE lexical_words SET pinyin = ? WHERE id = ?').run('wrong', 'first');
+      assert.equal(getResolvedDeckWordIds(manifest).get('hsk2-l1'), undefined);
+    } finally { getDb().exec('ROLLBACK'); }
+    assert.strictEqual(getResolvedDeckWordIds(manifest), cached);
+    assert.deepEqual(cached.get('hsk2-l1'), ['first']);
+  });
+
+  test('production queries probe lexical identities and IDs; dates make one learner-scoped history pass', () => {
+    const identityPlan = sqlite.prepare(`EXPLAIN QUERY PLAN ${deckIdentityProbeSql(2)}`).all('我', '猫') as Array<{ detail: string }>;
+    assert.match(identityPlan.map((row) => row.detail).join('\n'), /SEARCH lexical_words USING INDEX idx_lexical_words_hanzi/);
     for (const purpose of ['browse', 'diet'] as const) {
-      const plan = sqlite.prepare(`EXPLAIN QUERY PLAN ${deckWordProbeSql(2, purpose)}`).all('我', '猫') as Array<{ detail: string }>;
+      const plan = sqlite.prepare(`EXPLAIN QUERY PLAN ${deckWordProbeSql(2, purpose)}`).all('word-1', 'word-2') as Array<{ detail: string }>;
       const details = plan.map((row) => row.detail).join('\n');
-      assert.match(details, /SEARCH lexical_words USING INDEX idx_lexical_words_hanzi/);
+      assert.match(details, /SEARCH lexical_words USING INDEX sqlite_autoindex_lexical_words_1/);
       assert.doesNotMatch(details, /SCAN (lexical_words|learner_word_state|learner_owned_user_word_priority)/);
     }
-    const datePlan = sqlite.prepare(`EXPLAIN QUERY PLAN ${DECK_WORD_STUDY_DATE_SQL}`).all(null, 'word', 'word') as Array<{ detail: string }>;
+    const datePlan = sqlite.prepare(`EXPLAIN QUERY PLAN ${DECK_WORD_STUDY_DATES_SQL}`).all(JSON.stringify(['word'])) as Array<{ detail: string }>;
     const details = datePlan.map((row) => row.detail).join('\n');
-    assert.match(details, /SEARCH learner_owned_study_attempt_events USING (?:COVERING )?INDEX idx_study_attempts_word_date/);
+    assert.match(details, /SEARCH learner_owned_study_attempt_events USING INDEX .*\(learner_id=\?\)/);
+    assert.equal(datePlan.filter((row) => row.detail.includes('SEARCH learner_owned_study_attempt_events')).length, 1);
+    assert.doesNotMatch(details, /idx_study_attempts_word_date/);
     assert.match(details, /SEARCH learner_owned_word_skill_state USING INDEX/);
     assert.doesNotMatch(details, /SCAN learner_owned_/);
   });

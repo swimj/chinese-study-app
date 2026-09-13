@@ -91,12 +91,6 @@ controls before stopping and target-release controls after successful migration.
 
 ## Writing the next migration
 
-`0003_deck_word_probes` adds the lexical `hanzi` lookup index used by both
-session deck composition and My words, plus a learner/word/date index for
-accepted attempt history. It changes no application rows. Existing databases
-must apply it through the stopped-app procedure above before running the
-release; this is not an application-only upgrade.
-
 Add a SQL file under `server/db/migrations/` and append its definition to
 `schemaMigrations` in `server/db/migrations.ts`, loading the file relative to
 `import.meta.url` with `fs.readFileSync`. For example:

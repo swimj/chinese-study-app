@@ -76,7 +76,7 @@ import {
   REVIEW_PHASE_RECENCY_GUARD_HOURS,
   REVIEW_SKILL_URGENCY_TIE_EPSILON,
 } from './types.ts';
-import { queryManifestDeckWords, DECK_WORD_STUDY_DATE_SQL } from './deck-words.ts';
+import { queryManifestDeckWords, invalidateDeckWordIds, queryDeckWordStudyDates } from './deck-words.ts';
 import { applyIntervalHourFuzz } from './interval-schedule.ts';
 import {
   buildUnstudiedAdmissionSeedSource,
@@ -205,14 +205,12 @@ export function getMyWords({
         const b = right.word.pinyin.toLowerCase();
         return (a < b ? -1 : a > b ? 1 : 0) || left.word.id.localeCompare(right.word.id);
       });
-    const studyDate = getDb().prepare(DECK_WORD_STUDY_DATE_SQL);
+    const studyDates = queryDeckWordStudyDates(words.map(({ word }) => word.id));
     return {
       words: words.map(({ row, word }) => ({
         word,
         personalUpdatedAt: row.personal_updated_at,
-        lastStudiedAt: (studyDate.get(row.last_learning_covered_on, row.id, row.id) as {
-          last_studied_on: string | null;
-        }).last_studied_on,
+        lastStudiedAt: studyDates.get(word.id) ?? null,
       })),
       hasMore: false,
       currentDeck,
@@ -3247,6 +3245,7 @@ function assertTableColumnNotNull(tableName: string, columnName: string) {
 }
 
 function seedDatabase() {
+  invalidateDeckWordIds();
   if (!config.seedSampleData) {
     return;
   }
