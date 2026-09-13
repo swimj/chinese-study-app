@@ -10,6 +10,7 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`types.ts`](../server/db/types.ts) | Row/DTO types, scheduling constants, public type re-exports |
 | [`persistence.ts`](../server/db/persistence.ts) | Existing query/domain functions (words, priority, sessions, contrast, scheduler, analytics, durable learning-policy metadata) and `initializeDatabase` |
 | [`unstudied-admission.ts`](../server/db/unstudied-admission.ts) | Experimental diet/stash unstudied admission selector |
+| [`deck-words.ts`](../server/db/deck-words.ts) | Shared manifest-first indexed lexical probes for session deck composition and whole-deck browsing; indexed per-word study dates |
 | [`reflections.ts`](../server/db/reflections.ts) | Reflection schema validation, immutable artifact materialization, queue/detail read models, proposal review, immutable invocation authorization, application/recovery, and supported adapters |
 | [`reflection-quality.ts`](../server/db/reflection-quality.ts) | Dogfood item quality-tag overlay, upsert-by-item, and model-arm stats joins |
 | [`reflection-help-inbox.ts`](../server/db/reflection-help-inbox.ts) | Open explanation-only Help inbox rows, keyed by `(artifact_id, item_id)`; Done deletes the row |

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { Server } from 'node:http';
 import { after, before, beforeEach, describe, test } from 'node:test';
+import { deckWordProbeSql, DECK_WORD_STUDY_DATE_SQL } from '../server/db/deck-words.ts';
 
 type DbModule = typeof import('../server/db.ts');
 let db: DbModule;
@@ -84,6 +85,11 @@ describe('My words collections', { concurrency: false }, () => {
     const entries = db.getMyWords().words;
     assert.deepEqual(entries.map((entry) => entry.word.id), ['review', 'learning', 'missing']);
     assert.deepEqual(entries.map((entry) => entry.lastStudiedAt), ['2026-09-12', '2026-09-10', null]);
+    sqlite.prepare('UPDATE words SET hanzi = ?, pinyin = ? WHERE id = ?').run('我', 'wǒ', 'review');
+    place({ 'hsk2-l1': 1 });
+    const deck = db.getMyWords({ view: 'deck' });
+    assert.equal(deck.words.length, 1);
+    assert.equal(deck.words[0].lastStudiedAt, '2026-09-12');
   });
 
   test('search spans the collection before pagination and treats wildcard characters literally', () => {
@@ -174,16 +180,35 @@ describe('My words collections', { concurrency: false }, () => {
     assert.equal(mix.currentDeck?.label, 'HSK 2 + HSK 3 · part 1');
   });
 
-  test('deck search precedes pagination, tail membership covers unmapped words, and dates remain learner-private', () => {
+  test('full deck loading has no 50-word cutoff and search stays inside explicit membership', () => {
+    const previousPath = process.env.APP_DECK_MANIFEST_PATH;
+    const fixture = JSON.parse(fs.readFileSync(previousPath!, 'utf8'));
+    for (let index = 0; index < 455; index++) {
+      const hanzi = `测试${index}`;
+      fixture.assignments[`${hanzi}|cè shì`] = 'hsk2-l1';
+      insertDeckWord(`deck-${index}`, hanzi, 'cè shì');
+    }
+    const manifestPath = path.join(directory, 'large-deck.json');
+    fs.writeFileSync(manifestPath, JSON.stringify(fixture));
+    process.env.APP_DECK_MANIFEST_PATH = manifestPath;
+    place({ 'hsk2-l1': 1 });
+    insert('unrelated');
+    try {
+      const all = db.getMyWords({ view: 'deck' });
+      assert.equal(all.words.length, 455);
+      assert.equal(new Set(all.words.map((entry) => entry.word.id)).size, 455);
+      assert.equal(all.hasMore, false);
+      assert.equal(db.getMyWords({ view: 'deck', query: '测试454' }).words[0].word.id, 'deck-454');
+      assert.equal(db.getMyWords({ view: 'deck', query: 'unrelated' }).words.length, 0);
+    } finally { process.env.APP_DECK_MANIFEST_PATH = previousPath; }
+  });
+
+  test('deck detail dates and notes remain learner-private with shared lexical probes', () => {
     insertDeckWord('shared', '我', 'wǒ', 'learning');
     db.updateWordPersonalNotes('shared', 'private note');
     sqlite.prepare('UPDATE words SET last_learning_covered_on = ? WHERE id = ?').run('2026-09-13', 'shared');
-    for (let index = 0; index < 55; index++) insert(`tail-${String(index).padStart(2, '0')}`);
-    place({ 'beyond-hsk': 1 });
-    assert.equal(db.getMyWords({ view: 'deck' }).words.length, 50);
-    assert.equal(db.getMyWords({ view: 'deck' }).hasMore, true);
-    assert.equal(db.getMyWords({ view: 'deck', offset: 50 }).words.length, 5);
-    assert.equal(db.getMyWords({ view: 'deck', query: 'tail-54' }).words[0].word.id, 'tail-54');
+    place({ 'hsk2-l1': 1 });
+    assert.equal(db.getMyWords({ view: 'deck' }).words[0].lastStudiedAt, '2026-09-13');
     assert.equal(db.runWithLearnerId('other-learner', () => db.getMyWords()).currentDeck, null);
     db.runWithLearnerId('other-learner', () => place({ 'hsk2-l1': 1 }));
     const other = db.runWithLearnerId('other-learner', () => db.getMyWords({ view: 'deck' }));
@@ -191,8 +216,29 @@ describe('My words collections', { concurrency: false }, () => {
     assert.equal(other.words[0].word.personalNotes, '');
     assert.equal(other.words[0].word.status, 'unstudied');
     assert.equal(other.words[0].lastStudiedAt, null);
-    assert.equal(db.getMyWords({ view: 'deck' }).currentDeck?.label, 'Beyond HSK');
-    assert.equal(db.getMyWords({ view: 'deck' }).words.length, 50);
+  });
+
+  test('Beyond HSK and mixes containing it are unavailable without scanning a remainder', () => {
+    insert('unmapped'); insertDeckWord('explicit', '我', 'wǒ');
+    for (const weights of [{ 'beyond-hsk': 1 }, { 'hsk2-l1': 0.9, 'beyond-hsk': 0.1 }]) {
+      place(weights);
+      assert.deepEqual(db.getMyWords({ view: 'deck' }), { words: [], hasMore: false, currentDeck: null });
+      assert.equal(db.getMyWords().currentDeck, null);
+    }
+  });
+
+  test('production deck queries use indexed word and history probes, never corpus or history scans', () => {
+    for (const purpose of ['browse', 'diet'] as const) {
+      const plan = sqlite.prepare(`EXPLAIN QUERY PLAN ${deckWordProbeSql(2, purpose)}`).all('我', '猫') as Array<{ detail: string }>;
+      const details = plan.map((row) => row.detail).join('\n');
+      assert.match(details, /SEARCH lexical_words USING INDEX idx_lexical_words_hanzi/);
+      assert.doesNotMatch(details, /SCAN (lexical_words|learner_word_state|learner_owned_user_word_priority)/);
+    }
+    const datePlan = sqlite.prepare(`EXPLAIN QUERY PLAN ${DECK_WORD_STUDY_DATE_SQL}`).all(null, 'word', 'word') as Array<{ detail: string }>;
+    const details = datePlan.map((row) => row.detail).join('\n');
+    assert.match(details, /SEARCH learner_owned_study_attempt_events USING (?:COVERING )?INDEX idx_study_attempts_word_date/);
+    assert.match(details, /SEARCH learner_owned_word_skill_state USING INDEX/);
+    assert.doesNotMatch(details, /SCAN learner_owned_/);
   });
 
   test('missing manifest hides deck browsing even with stored placement', () => {

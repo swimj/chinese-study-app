@@ -73,12 +73,6 @@ export function useMyWordsController(active: boolean) {
       const result = await fetchMyWords(view, query, words.length, controller.signal);
       if (generation.current !== current || controller.signal.aborted) return;
       setCurrentDeck(result.currentDeck);
-      if (view === 'deck' && result.currentDeck?.label !== currentDeck?.label) {
-        // Placement may change while browsing; restart instead of mixing decks or offsets.
-        resetList();
-        setRevision((value) => value + 1);
-        return;
-      }
       setWords((existing) => {
         const ids = new Set(existing.map((entry) => entry.word.id));
         return [...existing, ...result.words.filter((entry) => !ids.has(entry.word.id))];

@@ -20,14 +20,18 @@ My words offers these collection shortcuts:
   overlay update timestamp descending. This timestamp may reflect a priority
   edit or entry into study; it is not presented as an original addition date.
 - **Current deck** is available when Mandarin deck data and a stored learner
-  placement exist. It includes all words assigned to any deck with positive
+  placement exist and the entire current mix consists of explicit HSK decks.
+  It includes all words assigned to any deck with positive
   effective weight in that learner's current mix, including unseen words.
   This is the actual deck/part selection, not the cumulative HSK level or
   session-time spill into later decks. All positive-weight decks contribute
   their full membership once each, regardless of relative weight. Dismissed
   words remain excluded. Order by pronunciation, then stable word identity.
-  The view identifies the current HSK level/part(s), or Beyond HSK for the
-  untagged tail. No scheduling weights or deck-edit controls are exposed.
+  The view identifies the current HSK level/part(s). Beyond HSK is deferred:
+  its unbounded remainder has no small explicit membership list. If any
+  positive-weight deck is Beyond HSK, this shortcut is unavailable rather
+  than showing a partial mix. No scheduling weights or deck-edit controls
+  are exposed.
 
 Ties use stable word identity ordering. The same list, search, and detail pane
 serve every shortcut. Changing placement or nudging easier/harder changes
@@ -49,9 +53,11 @@ app lifetime. Changing collection or search resets the result position and
 selection. Returning to My words refreshes its first result page.
 
 Search covers the whole selected collection, including unloaded rows, using
-word spelling, traditional spelling, pronunciation, and meanings. Results load
-in bounded batches of 50 with a Load more control; the visible batch is not the
-logical extent of the collection. Empty collection, no search matches,
+word spelling, traditional spelling, pronunciation, and meanings. Recent and
+personal results load in bounded batches of 50 with a Load more control; the
+visible batch is not the logical extent of the collection. Current deck loads
+its entire explicit membership, with no 50-word cutoff or Load more control.
+Empty collection, no search matches,
 loading, and request failure have distinct states.
 
 Each compact row shows the word, pronunciation, a short meaning, and
@@ -76,7 +82,11 @@ First-study dates cannot be reconstructed reliably from the current records
 and are omitted. Review is a lifecycle stage, not a mastery claim. Scores,
 accuracy, progress graphics, due dates, and scheduler controls are deferred.
 
-Deck membership follows the same normalized spelling/pronunciation assignment
-as the diet, including unmapped words in Beyond HSK. All results and private
+Deck membership follows the same normalized characters/pronunciation assignment
+as the diet. Both paths share an in-memory manifest-to-database loader: collect
+only the selected decks' keys, probe the indexed characters column in bounded
+parameter chunks, then match pronunciation. Deck dates use indexed per-word
+probes; deck browsing never scans the corpus or entire attempt history to
+discover membership or dates. All results and private
 notes are scoped to the current learner beneath HTTP.
 Browsing never changes study state or scheduling.

@@ -76,6 +76,7 @@ import {
   REVIEW_PHASE_RECENCY_GUARD_HOURS,
   REVIEW_SKILL_URGENCY_TIE_EPSILON,
 } from './types.ts';
+import { queryManifestDeckWords, DECK_WORD_STUDY_DATE_SQL } from './deck-words.ts';
 import { applyIntervalHourFuzz } from './interval-schedule.ts';
 import {
   buildUnstudiedAdmissionSeedSource,
@@ -89,9 +90,6 @@ import {
   assertUnstudiedAdmissionSource,
 } from './unstudied-admission.ts';
 import {
-  deckAssignmentKey,
-  getDeckIdForWord,
-  getManifestAssignmentsByDeck,
   getTailDeckId,
   loadDeckManifest,
   type DeckManifest,
@@ -189,22 +187,36 @@ export function getMyWords({
   const profile = manifest ? getStoredDietProfile() : null;
   const weights = manifest && profile ? resolveEffectiveDietWeights(profile, manifest) : {};
   const decks = manifest?.decks.filter((deck) => (weights[deck.id] ?? 0) > 0) ?? [];
-  const currentDeck = decks.length ? {
+  const currentDeck = decks.length && decks.every((deck) => deck.hsk !== null) ? {
     label: decks.map((deck) => deck.hsk
       ? `HSK ${deck.hsk.level}${deck.stratum === null ? '' : ` · part ${deck.stratum}`}`
       : 'Beyond HSK').join(' + '),
   } : null;
   if (view === 'deck' && !currentDeck) return { words: [], hasMore: false, currentDeck: null };
   if (view === 'deck') {
-    // Resolve canonical spelling/pronunciation membership before pagination,
-    // without hydrating every word or writing a second copy of the manifest.
-    const deckIds = new Set(decks.map((deck) => deck.id));
     if (!manifest) throw new Error('Current deck requires a manifest');
-    const activeManifest = manifest;
-    getDb().function('my_words_current_deck', { deterministic: true }, (hanzi, pinyin) => {
-      if (typeof hanzi !== 'string' || typeof pinyin !== 'string') throw new Error('Expected lexical word spelling and pronunciation');
-      return deckIds.has(getDeckIdForWord(activeManifest, hanzi, pinyin)) ? 1 : 0;
-    });
+    const rows = queryManifestDeckWords(manifest, decks.map((deck) => deck.id), 'browse');
+    const normalizedQuery = query.trim().toLowerCase();
+    const words = rows.map((row) => ({ row, word: mapWordRow(row) }))
+      .filter(({ word }) => [word.hanzi, word.traditional ?? '', word.pinyin, word.meaning, ...word.meanings]
+        .some((text) => text.toLowerCase().includes(normalizedQuery)))
+      .sort((left, right) => {
+        const a = left.word.pinyin.toLowerCase();
+        const b = right.word.pinyin.toLowerCase();
+        return (a < b ? -1 : a > b ? 1 : 0) || left.word.id.localeCompare(right.word.id);
+      });
+    const studyDate = getDb().prepare(DECK_WORD_STUDY_DATE_SQL);
+    return {
+      words: words.map(({ row, word }) => ({
+        word,
+        personalUpdatedAt: row.personal_updated_at,
+        lastStudiedAt: (studyDate.get(row.last_learning_covered_on, row.id, row.id) as {
+          last_studied_on: string | null;
+        }).last_studied_on,
+      })),
+      hasMore: false,
+      currentDeck,
+    };
   }
   const search = `%${query.trim().replace(/[\\%_]/g, '\\$&')}%`;
   // Learning completion only records a UTC day. Keep the whole read model at
@@ -226,15 +238,13 @@ export function getMyWords({
     FROM words
     LEFT JOIN user_word_priority personal ON personal.word_id = words.id
     LEFT JOIN latest_study ON latest_study.word_id = words.id
-    WHERE ${view === 'recent' ? "words.status IN ('learning', 'review')"
-      : view === 'personal' ? 'personal.priority_tier >= 0'
-        : 'my_words_current_deck(words.hanzi, words.pinyin) = 1 AND (personal.priority_tier IS NULL OR personal.priority_tier >= 0)'}
+    WHERE ${view === 'recent' ? "words.status IN ('learning', 'review')" : 'personal.priority_tier >= 0'}
       AND (words.hanzi LIKE ? ESCAPE '\\' OR words.traditional LIKE ? ESCAPE '\\'
         OR words.pinyin LIKE ? ESCAPE '\\' OR words.meaning LIKE ? ESCAPE '\\'
         OR EXISTS (SELECT 1 FROM json_each(words.meanings_json) WHERE value LIKE ? ESCAPE '\\'))
     ORDER BY ${view === 'recent'
       ? 'latest_study.last_studied_on IS NULL ASC, latest_study.last_studied_on DESC'
-      : view === 'personal' ? 'personal.updated_at DESC' : 'words.pinyin COLLATE NOCASE ASC'}, words.id ASC
+      : 'personal.updated_at DESC'}, words.id ASC
     LIMIT ? OFFSET ?
   `).all(search, search, search, search, search, limit + 1, offset) as Array<WordRow & {
     last_studied_on: string | null; personal_updated_at: string | null;
@@ -4857,57 +4867,9 @@ function queryDeckDietCandidatesForDeck(
   deckId: string,
   rowsById: Map<string, WordRow>,
 ): string[] {
-  const assignmentsByDeck = getManifestAssignmentsByDeck(manifest);
-  const assignments = assignmentsByDeck.get(deckId);
-  if (!assignments) {
-    return [];
-  }
-  const hanziNeeded = new Set<string>();
-  for (const key of assignments.keys()) {
-    const hanzi = key.split('|')[0];
-    if (hanzi) {
-      hanziNeeded.add(hanzi);
-    }
-  }
-  if (hanziNeeded.size === 0) {
-    return [];
-  }
-
-  const placeholders = [...hanziNeeded].map(() => '?').join(', ');
-  const rows = getDb()
-    .prepare(`
-      SELECT
-        words.id,
-        words.hanzi,
-        words.traditional,
-        words.pinyin,
-        words.meaning,
-        words.meanings_json,
-        words.personal_notes,
-        words.examples_json,
-        words.status,
-        words.priority,
-        words.created_at,
-        words.learning_streak,
-        words.last_learning_success_on,
-        words.last_learning_covered_on
-      FROM words
-      LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
-      WHERE words.status = 'unstudied'
-        AND user_word_priority.word_id IS NULL
-        AND words.hanzi IN (${placeholders})
-    `)
-    .all(...hanziNeeded) as WordRow[];
-
-  const ids: string[] = [];
-  for (const row of rows) {
-    if (!assignments.has(deckAssignmentKey(row.hanzi, row.pinyin))) {
-      continue;
-    }
-    rowsById.set(row.id, row);
-    ids.push(row.id);
-  }
-  return ids;
+  const rows = queryManifestDeckWords(manifest, [deckId], 'diet');
+  for (const row of rows) rowsById.set(row.id, row);
+  return rows.map((row) => row.id);
 }
 
 function queryLegacyDietRows(remainingQuota: number, excludeIds?: Set<string>): WordRow[] {

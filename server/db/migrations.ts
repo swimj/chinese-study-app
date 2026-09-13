@@ -19,6 +19,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
     new URL('./migrations/0002_requested_second_opinion_disposition.sql', import.meta.url),
     'utf8',
   ),
+}, {
+  id: 'app_schema:0003_deck_word_probes',
+  sql: fs.readFileSync(new URL('./migrations/0003_deck_word_probes.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {
