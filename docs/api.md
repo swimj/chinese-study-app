@@ -27,6 +27,16 @@ a learner id. The frontend obtains a short-lived Clerk session token and sends
 it as a bearer token; local setup is documented in the README's Clerk fixture
 section.
 
+## My words
+
+`GET /api/my-words?view=recent|personal&q=<query>&limit=50&offset=0`
+returns `{ words, hasMore }` for the current learner. Each entry contains the
+word, nullable UTC-day `lastStudiedAt`, and nullable `personalUpdatedAt`.
+`recent` selects learning/review words; `personal` selects retained non-sunk
+personal overlays including waiting words. Search is applied across the whole
+collection before pagination. Limit is 1–100; offset is a nonnegative integer.
+Invalid parameters return 400. See [the product contract](../SPECS/my-words.md).
+
 ## Content diagnostics
 
 | Method | Path | Handler domain |

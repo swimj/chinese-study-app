@@ -21,7 +21,9 @@ import {
   markReflectionHelpInboxDone,
   authorizeManualReflectionOperation,
 } from './services/api';
-import { AppChrome, type AppPageKey } from './components/AppChrome';
+import { AppChrome, NestedNav, type AppPageKey } from './components/AppChrome';
+import { MyWordsPage } from './pages/MyWordsPage';
+import { useMyWordsController } from './features/words/useMyWordsController';
 import { PersonalNotesEditorOverlay } from './features/session/PersonalNotesEditorOverlay';
 import { useStudySession } from './features/session/useStudySession';
 import { usePriorityPageController } from './features/priority/usePriorityPageController';
@@ -41,6 +43,8 @@ import {
 
 function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
   const [currentPage, setCurrentPage] = useState<AppPageKey>('home');
+  const [wordsView, setWordsView] = useState<'stash' | 'my-words'>('stash');
+  const myWords = useMyWordsController(currentPage === 'priority' && wordsView === 'my-words');
   const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dietIntakeSubmission, setDietIntakeSubmission] = useState<DietIntakeSubmissionState>(
@@ -210,23 +214,37 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
           {...studySession.homePageProps}
         />
       ) : currentPage === 'priority' ? (
-        <PriorityPage
-          rows={priorityPage.rows}
-          searchHanzi={priorityPage.searchHanzi}
-          searchNotice={priorityPage.searchNotice}
-          searchSubmitting={priorityPage.searchSubmitting}
-          highlightedWordIds={priorityPage.highlightedWordIds}
-          onSearchHanziChange={priorityPage.setSearchHanzi}
-          onSearchSubmit={() => void priorityPage.submitSearch()}
-          onHighlightsHandled={priorityPage.clearHighlights}
-          priorityBatchSubmitting={priorityPage.priorityBatchSubmitting}
-          onRequireForNextSession={(wordIds, requiredForNextSession) =>
-            priorityPage.requireForNextSession(wordIds, requiredForNextSession)
-          }
-          onMoveSelectedToTop={priorityPage.moveSelectedToTop}
-          onMoveSelectedToStash={priorityPage.moveSelectedToStash}
-          onRemoveSelected={priorityPage.removeSelected}
-        />
+        <>
+          <NestedNav>
+            <nav className="reflection-view-rail" aria-label="Words views">
+              {([['stash', 'Stash'], ['my-words', 'My words']] as const).map(([key, label]) => (
+                <button type="button" key={key}
+                  className={`reflection-view-rail-tab${wordsView === key ? ' active' : ''}`}
+                  aria-current={wordsView === key ? 'page' : undefined}
+                  onClick={() => setWordsView(key)}>{label}</button>
+              ))}
+            </nav>
+          </NestedNav>
+          {wordsView === 'my-words' ? <MyWordsPage {...myWords} /> : (
+            <PriorityPage
+              rows={priorityPage.rows}
+              searchHanzi={priorityPage.searchHanzi}
+              searchNotice={priorityPage.searchNotice}
+              searchSubmitting={priorityPage.searchSubmitting}
+              highlightedWordIds={priorityPage.highlightedWordIds}
+              onSearchHanziChange={priorityPage.setSearchHanzi}
+              onSearchSubmit={() => void priorityPage.submitSearch()}
+              onHighlightsHandled={priorityPage.clearHighlights}
+              priorityBatchSubmitting={priorityPage.priorityBatchSubmitting}
+              onRequireForNextSession={(wordIds, requiredForNextSession) =>
+                priorityPage.requireForNextSession(wordIds, requiredForNextSession)
+              }
+              onMoveSelectedToTop={priorityPage.moveSelectedToTop}
+              onMoveSelectedToStash={priorityPage.moveSelectedToStash}
+              onRemoveSelected={priorityPage.removeSelected}
+            />
+          )}
+        </>
       ) : currentPage === 'reflections' ? (
         <ReflectionsPage controller={reflectionPage} />
       ) : currentPage === 'content' ? (

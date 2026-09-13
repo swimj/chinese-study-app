@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import type { MyWordsResponse, MyWordsView } from '../../src/domain/my-words.ts';
 import type {
   ContrastCluster,
   ContrastClusterMember,
@@ -174,6 +175,53 @@ export function getWords(): Word[] {
     .all() as WordRow[];
 
   return rows.map(mapWordRow);
+}
+
+export function getMyWords({
+  view = 'recent', query = '', limit = 50, offset = 0,
+}: { view?: MyWordsView; query?: string; limit?: number; offset?: number } = {}): MyWordsResponse {
+  if (view !== 'recent' && view !== 'personal') throw new Error('Expected recent or personal view');
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Expected limit from 1 to 100');
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('Expected non-negative integer offset');
+  const search = `%${query.trim().replace(/[\\%_]/g, '\\$&')}%`;
+  // Learning completion only records a UTC day. Keep the whole read model at
+  // that precision; accepted review commits project both correct and failed attempts.
+  // Non-sunk overlays survive study, including required-only rows cleared on completion.
+  const rows = getDb().prepare(`
+    WITH study_dates AS (
+      SELECT target_word_id AS word_id, substr(occurred_at, 1, 10) AS studied_on
+      FROM study_attempt_events WHERE projected_at IS NOT NULL
+      UNION ALL
+      SELECT word_id, substr(last_studied_at, 1, 10) FROM word_skill_state
+      UNION ALL
+      SELECT id, last_learning_covered_on FROM words WHERE last_learning_covered_on IS NOT NULL
+    ), latest_study AS (
+      SELECT word_id, MAX(studied_on) AS last_studied_on FROM study_dates GROUP BY word_id
+    )
+    SELECT words.*, latest_study.last_studied_on,
+      CASE WHEN personal.priority_tier >= 0 THEN personal.updated_at ELSE NULL END AS personal_updated_at
+    FROM words
+    LEFT JOIN user_word_priority personal ON personal.word_id = words.id
+    LEFT JOIN latest_study ON latest_study.word_id = words.id
+    WHERE ${view === 'recent' ? "words.status IN ('learning', 'review')" : 'personal.priority_tier >= 0'}
+      AND (words.hanzi LIKE ? ESCAPE '\\' OR words.traditional LIKE ? ESCAPE '\\'
+        OR words.pinyin LIKE ? ESCAPE '\\' OR words.meaning LIKE ? ESCAPE '\\'
+        OR EXISTS (SELECT 1 FROM json_each(words.meanings_json) WHERE value LIKE ? ESCAPE '\\'))
+    ORDER BY ${view === 'recent'
+      ? 'latest_study.last_studied_on IS NULL ASC, latest_study.last_studied_on DESC'
+      : 'personal.updated_at DESC'}, words.id ASC
+    LIMIT ? OFFSET ?
+  `).all(search, search, search, search, search, limit + 1, offset) as Array<WordRow & {
+    last_studied_on: string | null; personal_updated_at: string | null;
+  }>;
+  return {
+    words: rows.slice(0, limit).map((row) => ({
+      word: mapWordRow(row),
+      lastStudiedAt: row.last_studied_on,
+      personalUpdatedAt: row.personal_updated_at,
+    })),
+    hasMore: rows.length > limit,
+  };
 }
 
 export function searchWords(query: string, limit = 20): Word[] {

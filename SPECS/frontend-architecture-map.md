@@ -29,11 +29,15 @@ src/
   pages/
     HomePage.tsx                  # home: overview + active session grid
     HomeOverviewPanel.tsx         # backend/session availability overview + Start session card (gear toggles SessionSettingsPanel)
-    PriorityPage.tsx              # unstudied priority chip bank + triage
+    PriorityPage.tsx              # Words / Stash: unstudied priority chip bank
+    MyWordsPage.tsx               # Words / My words: collection list and side detail pane
     ReflectionsPage.tsx           # help pager, second-opinion chip bank, artifact history/detail, and proposal-level review
     ContentDiagnosticsPage.tsx    # read-only primitive content browser
 
   features/
+    words/
+      useMyWordsController.ts     # learner collection search, bounded loading, selection
+
     session/
       useStudySession.ts          # session runtime controller
       StudySessionPanel.tsx       # active/completed session UI

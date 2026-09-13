@@ -31,6 +31,7 @@ import {
   getLearningPolicy,
   setUnstudiedAdmissionSource,
   getContentDiagnostics,
+  getMyWords,
   getReflectionArtifactDetail,
   getReflectionQualityStats,
   getPrioritizedUnstudiedWords,
@@ -211,6 +212,30 @@ export function createApp(options: CreateAppOptions = {}) {
       res.json(getContentDiagnostics({ kind, query, limit }));
     } catch {
       res.status(500).json({ error: 'Failed to load content diagnostics' });
+    }
+  });
+
+  app.get('/api/my-words', (req, res) => {
+    const view = req.query.view ?? 'recent';
+    const query = req.query.q ?? '';
+    const limitText = req.query.limit ?? '50';
+    const offsetText = req.query.offset ?? '0';
+    if ((view !== 'recent' && view !== 'personal') || typeof query !== 'string'
+      || typeof limitText !== 'string' || !/^\d+$/.test(limitText)
+      || typeof offsetText !== 'string' || !/^\d+$/.test(offsetText)) {
+      res.status(400).json({ error: 'Expected recent or personal view, string q, and integer pagination' });
+      return;
+    }
+    const limit = Number(limitText);
+    const offset = Number(offsetText);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || !Number.isSafeInteger(offset) || offset < 0) {
+      res.status(400).json({ error: 'Expected limit from 1 to 100 and non-negative integer offset' });
+      return;
+    }
+    try {
+      res.json(getMyWords({ view, query, limit, offset }));
+    } catch {
+      res.status(500).json({ error: 'Failed to load my words' });
     }
   });
 
