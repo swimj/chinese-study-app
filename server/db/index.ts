@@ -3,6 +3,7 @@ export * from './types.ts';
 export * from './schema.ts';
 export * from './persistence.ts';
 export * from './unstudied-admission.ts';
+export * from './diet-profile.ts';
 export * from './reflections.ts';
 export * from './reflection-quality.ts';
 export * from './reflection-help-inbox.ts';
