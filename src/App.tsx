@@ -212,7 +212,6 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
       ) : currentPage === 'priority' ? (
         <PriorityPage
           rows={priorityPage.rows}
-          triageRows={priorityPage.triageRows}
           searchHanzi={priorityPage.searchHanzi}
           searchNotice={priorityPage.searchNotice}
           searchSubmitting={priorityPage.searchSubmitting}
@@ -220,7 +219,6 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
           onSearchHanziChange={priorityPage.setSearchHanzi}
           onSearchSubmit={() => void priorityPage.submitSearch()}
           onHighlightsHandled={priorityPage.clearHighlights}
-          updatingWordId={priorityPage.updatingWordId}
           priorityBatchSubmitting={priorityPage.priorityBatchSubmitting}
           onRequireForNextSession={(wordIds, requiredForNextSession) =>
             priorityPage.requireForNextSession(wordIds, requiredForNextSession)
@@ -228,16 +226,6 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
           onMoveSelectedToTop={priorityPage.moveSelectedToTop}
           onMoveSelectedToStash={priorityPage.moveSelectedToStash}
           onRemoveSelected={priorityPage.removeSelected}
-          bulkDismissSubmitting={priorityPage.bulkDismissSubmitting}
-          analysisCandidateCount={priorityPage.analysisCandidateCount}
-          advisorGenerating={priorityPage.advisorGenerating}
-          advisorRunReceipt={priorityPage.advisorRunReceipt}
-          advisorUpdatingAssessmentId={priorityPage.advisorUpdatingAssessmentId}
-          onDismissFromTriage={(wordId) => void priorityPage.dismissFromTriage(wordId)}
-          onBulkDismissFromTriage={(wordIds) => void priorityPage.bulkDismissFromTriage(wordIds)}
-          onRunAdvisor={() => void priorityPage.runAdvisor()}
-          onAcceptAdvisorAssessment={(assessmentId) => void priorityPage.acceptAdvisorAssessment(assessmentId)}
-          onDismissAdvisorAssessment={(assessmentId) => void priorityPage.dismissAdvisorAssessment(assessmentId)}
         />
       ) : currentPage === 'reflections' ? (
         <ReflectionsPage controller={reflectionPage} />

@@ -577,8 +577,7 @@ Two provenances of `unstudied` words:
   [Deck-based diet fill](#deck-based-diet-fill) below and
   [diet-deck-distribution.md](./diet-deck-distribution.md). Without a
   manifest (French profile, older dev seeds), the legacy order applies:
-  corpus/hardcoded `words.priority` (then `created_at`, then `id`). Intake
-  triage and the advisor remain diet-only.
+  corpus/hardcoded `words.priority` (then `created_at`, then `id`).
 - **Stash:** any unstudied word that has a `user_word_priority` overlay
   (add-by-hanzi bump, move-to-top, require, or any other overlay write).
   Overlay membership is stash membership. Stash is **not** ranked by corpus

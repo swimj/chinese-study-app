@@ -68,7 +68,6 @@ src/
     reflection.ts                 # canonical reflection result/operation/lifecycle contract
     reflection-evidence.ts        # strict supplement and initial-bundle validation
     reflection-result-schema.ts   # strict provider JSON schema
-    intake-triage.ts              # intake advisor provider request/response and app annotation contract
 
   lib/
     session-state.ts              # frontend in-flight session state machine

@@ -33,24 +33,6 @@ export type PriorityWord = {
   overlayUpdatedAt: string | null;
 };
 
-export type IntakeTriagePriorityWord = PriorityWord & {
-  intakeTriage: import('./domain/intake-triage').IntakeTriageAnnotation | null;
-};
-
-export type IntakeTriagePriorityWordsResponse = {
-  words: IntakeTriagePriorityWord[];
-  analysisCandidateCount: number;
-};
-
-export type IntakeTriageRunReceipt = {
-  runId: string;
-  state: 'succeeded';
-  includedWordCount: number;
-  clientRequestId: string;
-  responseId: string | null;
-  estimatedCostUsd: number | null;
-};
-
 export type ReviewFailureRateDay = {
   dayKey: string;
   completedReviewActionSessions: number;

@@ -14,8 +14,8 @@ Related authority:
 
 - [`study-action-model.md`](./study-action-model.md) — dual-pool unstudied
   admission (the current diet behavior this redesign modifies)
-- [`intake-triage-advisor.md`](./intake-triage-advisor.md) — accepted V1
-  triage contract this design proposes retiring (§2.7)
+- [`intake-triage-advisor.md`](./archive/intake-triage-advisor.md) — retired V1
+  triage contract (§2.7)
 - [`adaptive_vocabulary_training_product_notes.md`](./adaptive_vocabulary_training_product_notes.md) —
   long-term vision; per-word action distributions (continuity in §1.5)
 - [`STABILITY_FRONTIER.md`](../STABILITY_FRONTIER.md) — cohort, onboarding,
@@ -346,8 +346,8 @@ for the beta cohort.
   creates new suppressions; a future surface can reintroduce the capability
   if evidence wants it.
 - Kept: the Manage word bank (add-by-target search, top/stash, require) —
-  the stash half of admission is the personal-steering pillar of the app —
-  and sink/dismiss, which is cheap and a key negative signal.
+  the stash half of admission is the personal-steering pillar of the app.
+  Sink/dismiss remains an in-session action rather than a Manage action.
 - Spec impact on implementation: `intake-triage-advisor.md` moves to
   historical/archive; `study-action-model.md`'s diet description is updated.
 
@@ -380,7 +380,7 @@ for the beta cohort.
   no-reroll, unchanged split and bypass behavior.
 - `tests/user-priority.test.ts`, `tests/priority-page-model.test.ts` —
   surface changes from §2.7.
-- `tests/intake-triage.test.ts` — retirement.
+- Retire `tests/intake-triage.test.ts` with the advisor loop.
 - New: placement defaulting, diet-profile round-trip, nudge/jump behavior.
 
 ## 2.11 Review decisions and remaining TBDs
