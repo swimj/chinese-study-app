@@ -44,6 +44,7 @@ These describe versioned feature behavior alongside the canonical contracts.
 | Document | Role |
 | --- | --- |
 | [deferred-reflection-second-opinion.md](./deferred-reflection-second-opinion.md) | SWI-55 implemented first cut: selected deferred evidence, chosen-model reflection, and replacement in active review without prompt changes |
+| [my-words.md](./my-words.md) | Words navigation, personal vocabulary collections, bounded browsing, and word details |
 
 ## Active plans
 

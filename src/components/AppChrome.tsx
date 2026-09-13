@@ -19,7 +19,7 @@ const PRIMARY_PAGES: ReadonlyArray<{
   nested: boolean;
 }> = [
   { key: 'home', label: 'Home', nested: false },
-  { key: 'priority', label: 'New Words', nested: true },
+  { key: 'priority', label: 'Words', nested: true },
   { key: 'reflections', label: 'Reflections', nested: true },
   { key: 'content', label: 'Content Bin', nested: false },
 ];
@@ -64,7 +64,7 @@ export function AppChrome({
     content: onOpenContentPage,
   };
   const loadingLabels: Partial<Record<AppPageKey, string>> = {
-    priority: priorityPageLoading ? 'Loading new words...' : undefined,
+    priority: priorityPageLoading ? 'Loading words...' : undefined,
     // While already on Reflections, the overlay refresh icon owns loading feedback.
     reflections:
       reflectionPageLoading && currentPage !== 'reflections'

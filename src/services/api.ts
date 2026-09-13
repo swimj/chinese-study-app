@@ -35,6 +35,14 @@ import type {
   ContentDiagnosticKind,
   ContentDiagnosticsResponse,
 } from '../domain/content-diagnostics';
+import type { MyWordsResponse, MyWordsView } from '../domain/my-words';
+
+export async function fetchMyWords(view: MyWordsView, query: string, offset = 0, signal?: AbortSignal): Promise<MyWordsResponse> {
+  const params = new URLSearchParams({ view, q: query, offset: String(offset), limit: '50' });
+  const response = await apiFetch(`${API_BASE}/api/my-words?${params}`, { signal });
+  if (!response.ok) throw new Error('Could not load your words. Please try again.');
+  return response.json();
+}
 
 const API_BASE = import.meta.env?.VITE_API_BASE ?? (import.meta.env?.DEV ? 'http://localhost:5174' : '');
 
