@@ -4,6 +4,7 @@ import type { SessionPrefetchState } from '../features/session/session-prefetch'
 import type { SessionPhase } from '../lib/session-state';
 import { getReviewFailureRatePeriods } from '../lib/review-failure-rates';
 import type { SessionFinalizationState } from '../features/session/session-finalization';
+import { DietNudgePrompt } from '../features/diet/DietNudgePrompt';
 
 export function HomeOverviewPanel({
   backendStatus,
@@ -15,9 +16,11 @@ export function HomeOverviewPanel({
   displayedSessionItemCount,
   sessionSettingsOpen,
   sessionSettingsSaving,
+  dietIntakeStartBlocked,
   onToggleSessionSettings,
   onStartSession,
   onEndSession,
+  onNudgeDiet,
 }: {
   backendStatus: BackendStatus | null;
   sessionPrefetch: SessionPrefetchState;
@@ -28,9 +31,11 @@ export function HomeOverviewPanel({
   displayedSessionItemCount: number;
   sessionSettingsOpen: boolean;
   sessionSettingsSaving: boolean;
+  dietIntakeStartBlocked: boolean;
   onToggleSessionSettings: () => void;
   onStartSession: () => void;
   onEndSession: () => void;
+  onNudgeDiet: (direction: 'easier' | 'harder') => Promise<void>;
 }) {
   const prefetchedSessionItemCount = !sessionStarted && sessionPrefetch.status === 'ready'
     ? displayedSessionItemCount
@@ -45,10 +50,10 @@ export function HomeOverviewPanel({
             type="button"
             className="session-start-card"
             onClick={onStartSession}
-            disabled={sessionSettingsOpen || sessionLoading || !canStartSession}
+            disabled={sessionSettingsOpen || sessionLoading || dietIntakeStartBlocked || !canStartSession}
           >
             <span className="session-start-card-label">
-              {sessionLoading ? 'Preparing session...' : 'Start session'}
+              {sessionLoading || dietIntakeStartBlocked ? 'Preparing session...' : 'Start session'}
             </span>
             <span className="session-start-card-helper">
               words: {prefetchedSessionItemCount ?? '...'}
@@ -89,6 +94,9 @@ export function HomeOverviewPanel({
                     : 'Finish session'
                 : 'Back to overview'}
           </button>
+          {sessionPhase === 'completed' && backendStatus?.dietDecksActive ? (
+            <DietNudgePrompt onNudge={onNudgeDiet} />
+          ) : null}
         </div>
       )}
       <section className="failure-rate-section" aria-label="Review failure rate">

@@ -66,6 +66,11 @@ exposed as a learner-controlled HTTP endpoint.
 
 `GET /api/status?studyDayKey=YYYY-MM-DD` also returns `sessionActiveTimeMetrics`: today's completed active-session duration, plus 3-day and 7-day calendar-day averages in milliseconds. Averages include zero-activity days.
 
+The status payload also returns two diet-deck flags (SPECS/diet-deck-distribution.md):
+`dietDecksActive` (deck-based diet admission is active: Mandarin profile with a
+deck manifest present) and `dietIntakeRequired` (deck mode active and the learner
+has no stored diet profile yet — the first-run placement intake should be shown).
+
 The status payload also returns `dailyNewWordLimit` and
 `unstudiedAdmissionSource`, the durable configured limit and unstudied
 admission source used when composing a new session. `unstudiedAdmissionSource`
