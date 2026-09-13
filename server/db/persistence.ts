@@ -76,6 +76,7 @@ import {
   REVIEW_PHASE_RECENCY_GUARD_HOURS,
   REVIEW_SKILL_URGENCY_TIE_EPSILON,
 } from './types.ts';
+import { queryManifestDeckWords, invalidateDeckWordIds, queryDeckWordStudyDates } from './deck-words.ts';
 import { applyIntervalHourFuzz } from './interval-schedule.ts';
 import {
   buildUnstudiedAdmissionSeedSource,
@@ -89,14 +90,13 @@ import {
   assertUnstudiedAdmissionSource,
 } from './unstudied-admission.ts';
 import {
-  deckAssignmentKey,
-  getManifestAssignmentsByDeck,
   getTailDeckId,
   loadDeckManifest,
   type DeckManifest,
 } from '../decks/manifest.ts';
 import {
   getDietProfile,
+  getStoredDietProfile,
   getStashDietSplit,
   resolveEffectiveDietWeights,
 } from './diet-profile.ts';
@@ -180,9 +180,42 @@ export function getWords(): Word[] {
 export function getMyWords({
   view = 'recent', query = '', limit = 50, offset = 0,
 }: { view?: MyWordsView; query?: string; limit?: number; offset?: number } = {}): MyWordsResponse {
-  if (view !== 'recent' && view !== 'personal') throw new Error('Expected recent or personal view');
+  if (view !== 'recent' && view !== 'personal' && view !== 'deck') throw new Error('Expected recent, personal or deck view');
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Expected limit from 1 to 100');
   if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('Expected non-negative integer offset');
+  const manifest = config.studyProfile === 'mandarin' ? loadDeckManifest() : null;
+  const profile = manifest ? getStoredDietProfile() : null;
+  const weights = manifest && profile ? resolveEffectiveDietWeights(profile, manifest) : {};
+  const decks = manifest?.decks.filter((deck) => (weights[deck.id] ?? 0) > 0) ?? [];
+  const currentDeck = decks.length && decks.every((deck) => deck.hsk !== null) ? {
+    label: decks.map((deck) => deck.hsk
+      ? `HSK ${deck.hsk.level}${deck.stratum === null ? '' : ` · part ${deck.stratum}`}`
+      : 'Beyond HSK').join(' + '),
+  } : null;
+  if (view === 'deck' && !currentDeck) return { words: [], hasMore: false, currentDeck: null };
+  if (view === 'deck') {
+    if (!manifest) throw new Error('Current deck requires a manifest');
+    const rows = queryManifestDeckWords(manifest, decks.map((deck) => deck.id), 'browse');
+    const normalizedQuery = query.trim().toLowerCase();
+    const words = rows.map((row) => ({ row, word: mapWordRow(row) }))
+      .filter(({ word }) => [word.hanzi, word.traditional ?? '', word.pinyin, word.meaning, ...word.meanings]
+        .some((text) => text.toLowerCase().includes(normalizedQuery)))
+      .sort((left, right) => {
+        const a = left.word.pinyin.toLowerCase();
+        const b = right.word.pinyin.toLowerCase();
+        return (a < b ? -1 : a > b ? 1 : 0) || left.word.id.localeCompare(right.word.id);
+      });
+    const studyDates = queryDeckWordStudyDates(words.map(({ word }) => word.id));
+    return {
+      words: words.map(({ row, word }) => ({
+        word,
+        personalUpdatedAt: row.personal_updated_at,
+        lastStudiedAt: studyDates.get(word.id) ?? null,
+      })),
+      hasMore: false,
+      currentDeck,
+    };
+  }
   const search = `%${query.trim().replace(/[\\%_]/g, '\\$&')}%`;
   // Learning completion only records a UTC day. Keep the whole read model at
   // that precision; accepted review commits project both correct and failed attempts.
@@ -221,6 +254,7 @@ export function getMyWords({
       personalUpdatedAt: row.personal_updated_at,
     })),
     hasMore: rows.length > limit,
+    currentDeck,
   };
 }
 
@@ -3211,6 +3245,7 @@ function assertTableColumnNotNull(tableName: string, columnName: string) {
 }
 
 function seedDatabase() {
+  invalidateDeckWordIds();
   if (!config.seedSampleData) {
     return;
   }
@@ -4831,57 +4866,9 @@ function queryDeckDietCandidatesForDeck(
   deckId: string,
   rowsById: Map<string, WordRow>,
 ): string[] {
-  const assignmentsByDeck = getManifestAssignmentsByDeck(manifest);
-  const assignments = assignmentsByDeck.get(deckId);
-  if (!assignments) {
-    return [];
-  }
-  const hanziNeeded = new Set<string>();
-  for (const key of assignments.keys()) {
-    const hanzi = key.split('|')[0];
-    if (hanzi) {
-      hanziNeeded.add(hanzi);
-    }
-  }
-  if (hanziNeeded.size === 0) {
-    return [];
-  }
-
-  const placeholders = [...hanziNeeded].map(() => '?').join(', ');
-  const rows = getDb()
-    .prepare(`
-      SELECT
-        words.id,
-        words.hanzi,
-        words.traditional,
-        words.pinyin,
-        words.meaning,
-        words.meanings_json,
-        words.personal_notes,
-        words.examples_json,
-        words.status,
-        words.priority,
-        words.created_at,
-        words.learning_streak,
-        words.last_learning_success_on,
-        words.last_learning_covered_on
-      FROM words
-      LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
-      WHERE words.status = 'unstudied'
-        AND user_word_priority.word_id IS NULL
-        AND words.hanzi IN (${placeholders})
-    `)
-    .all(...hanziNeeded) as WordRow[];
-
-  const ids: string[] = [];
-  for (const row of rows) {
-    if (!assignments.has(deckAssignmentKey(row.hanzi, row.pinyin))) {
-      continue;
-    }
-    rowsById.set(row.id, row);
-    ids.push(row.id);
-  }
-  return ids;
+  const rows = queryManifestDeckWords(manifest, [deckId], 'diet');
+  for (const row of rows) rowsById.set(row.id, row);
+  return rows.map((row) => row.id);
 }
 
 function queryLegacyDietRows(remainingQuota: number, excludeIds?: Set<string>): WordRow[] {

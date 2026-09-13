@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { config, getDb } from './connection.ts';
+import { invalidateDeckWordIds } from './deck-words.ts';
 
 const SHARED_MANDARIN_BOOTSTRAP_SCHEMA_VERSION = 1;
 const SHARED_MANDARIN_CONTENT_KIND = 'shared_mandarin_lexicon';
@@ -270,6 +271,7 @@ function assertExistingContentCompatible(artifact: SharedMandarinBootstrapArtifa
 }
 
 function insertMissingContent(artifact: SharedMandarinBootstrapArtifact): void {
+  invalidateDeckWordIds();
   const insertWord = getDb().prepare(`
     INSERT INTO lexical_words (
       id, hanzi, traditional, pinyin, meaning, meanings_json, examples_json, priority, created_at

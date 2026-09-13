@@ -14,7 +14,7 @@ const waiting: MyWord = {
 };
 function render(overrides: Partial<MyWordsPageProps>) {
   return renderToStaticMarkup(createElement(MyWordsPage, {
-    view: 'personal', query: '', words: [waiting], selectedId: null, loading: false,
+    view: 'personal', query: '', words: [waiting], currentDeck: null, selectedId: null, loading: false,
     error: null, hasMore: false, scrollTop: 0, onViewChange: () => {}, onQueryChange: () => {},
     onSelect: () => {}, onLoadMore: () => {}, onRetry: () => {}, onScroll: () => {}, ...overrides,
   }));
@@ -46,4 +46,26 @@ test('collection empty states distinguish no history from no search match or a f
   assert.match(failed, /role="alert"/);
   assert.match(failed, /Try again/);
   assert.doesNotMatch(failed, /Add words in Stash/);
+});
+
+test('current deck is available only with placement and includes unseen words in its description and detail', () => {
+  assert.doesNotMatch(render({}), /<option value="deck"/);
+  assert.match(render({ currentDeck: { label: 'HSK 2' } }), /<option value="deck">Current deck/);
+  const markup = render({ view: 'deck', currentDeck: { label: 'HSK 3 · part 1' }, selectedId: 'word',
+    words: [{ ...waiting, personalUpdatedAt: null }] });
+  assert.match(markup, /All words in HSK 3 · part 1, including words you haven’t studied/);
+  assert.match(markup, /Ordered by pronunciation/);
+  assert.match(markup, /Not yet studied/);
+  assert.match(markup, /You haven’t studied this word yet/);
+  assert.doesNotMatch(markup, /This word is waiting for study|Study date not recorded/);
+});
+
+test('current deck empty states distinguish an empty deck, unmatched search, and removed placement', () => {
+  assert.match(render({ view: 'deck', currentDeck: { label: 'HSK 2' }, words: [] }), /There are no words in your current deck/);
+  assert.match(render({ view: 'deck', currentDeck: { label: 'HSK 2' }, words: [], query: 'missing' }), /No matching words in this collection/);
+  const unavailable = render({ view: 'deck', words: [], query: 'missing' });
+  assert.match(unavailable, /<option value="deck" disabled="" selected="">Current deck unavailable/);
+  assert.match(unavailable, /Current deck is unavailable. Choose another collection/);
+  assert.doesNotMatch(unavailable, /Settings/);
+  assert.doesNotMatch(unavailable, /Add words in Stash|No matching words in this collection/);
 });

@@ -29,12 +29,19 @@ section.
 
 ## My words
 
-`GET /api/my-words?view=recent|personal&q=<query>&limit=50&offset=0`
-returns `{ words, hasMore }` for the current learner. Each entry contains the
+`GET /api/my-words?view=recent|personal|deck&q=<query>&limit=50&offset=0`
+returns `{ words, hasMore, currentDeck }` for the current learner. `currentDeck`
+is a display `{ label }` for the placed learner's current deck mix, or null
+when placement/deck data is unavailable. Each entry contains the
 word, nullable UTC-day `lastStudiedAt`, and nullable `personalUpdatedAt`.
 `recent` selects learning/review words; `personal` selects retained non-sunk
-personal overlays including waiting words. Search is applied across the whole
-collection before pagination. Limit is 1–100; offset is a nonnegative integer.
+personal overlays including waiting words. `deck` includes all non-dismissed
+words in positive-weight current HSK decks, including unseen words. Missing
+placement/manifest or any Beyond HSK weight returns an empty list and null
+metadata. The deck view returns the entire explicit deck mix with `hasMore:
+false`; omit limit/offset for it (these parameters only page recent/personal
+collections). Search is applied across the whole selected collection. For
+paged views, limit is 1–100; offset is a nonnegative integer.
 Invalid parameters return 400. See [the product contract](../SPECS/my-words.md).
 
 ## Content diagnostics

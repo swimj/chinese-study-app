@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import type { MyWord, MyWordsView } from '../../domain/my-words';
+import type { MyWord, MyWordsResponse, MyWordsView } from '../../domain/my-words';
 import { fetchMyWords } from '../../services/api';
 
 export function useMyWordsController(active: boolean) {
   const [view, setView] = useState<MyWordsView>('recent');
   const [query, setQuery] = useState('');
   const [words, setWords] = useState<MyWord[]>([]);
+  const [currentDeck, setCurrentDeck] = useState<MyWordsResponse['currentDeck']>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -28,6 +29,7 @@ export function useMyWordsController(active: boolean) {
     const timer = window.setTimeout(() => {
       void fetchMyWords(view, query, 0, controller.signal).then((result) => {
         if (generation.current !== current || controller.signal.aborted) return;
+        setCurrentDeck(result.currentDeck);
         setWords(result.words);
         setHasMore(result.hasMore);
         setSelectedId((id) => result.words.some((entry) => entry.word.id === id) ? id : null);
@@ -70,6 +72,7 @@ export function useMyWordsController(active: boolean) {
     try {
       const result = await fetchMyWords(view, query, words.length, controller.signal);
       if (generation.current !== current || controller.signal.aborted) return;
+      setCurrentDeck(result.currentDeck);
       setWords((existing) => {
         const ids = new Set(existing.map((entry) => entry.word.id));
         return [...existing, ...result.words.filter((entry) => !ids.has(entry.word.id))];
@@ -88,7 +91,7 @@ export function useMyWordsController(active: boolean) {
   }
 
   return {
-    view, query, words, selectedId, hasMore, loading, error,
+    view, query, words, currentDeck, selectedId, hasMore, loading, error,
     scrollTop: scrollTop.current,
     onViewChange: (next: MyWordsView) => { resetList(); setView(next); },
     onQueryChange: (next: string) => { resetList(); setQuery(next); },

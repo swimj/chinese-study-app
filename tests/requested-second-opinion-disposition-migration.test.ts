@@ -11,7 +11,6 @@ import { createBaselineFixture } from './helpers/baseline-database.ts';
 
 const time = '2026-09-08T00:00:00.000Z';
 const firstMigration = schemaMigrations[0]!;
-const rebuild = schemaMigrations[1]!;
 
 function schema(db: DatabaseSync) {
   const objects = db.prepare('SELECT type, name, sql FROM sqlite_schema ORDER BY type, name').all() as Array<{
@@ -156,7 +155,7 @@ for (const variant of ['fresh', 'fly'] as const) {
         /CHECK constraint failed/,
       );
 
-      assert.deepEqual(migrateDatabase(db), [rebuild.id]);
+      assert.deepEqual(migrateDatabase(db), schemaMigrations.slice(1).map((migration) => migration.id));
       assertSchemaCurrent(db);
 
       const afterRows = db.prepare(`

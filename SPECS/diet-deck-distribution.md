@@ -240,9 +240,10 @@ Design line: overload the session's *interaction grammar*, not its
 never enter the study-action pipeline (no attempt events, no covering, no
 commits). They land as diet-profile provenance (§2.3).
 
-Visibility (decided, §2.11): the learner knows they are being assessed; the
-deck machinery itself is never exposed. After intake, sessions simply
-source their words.
+Visibility (decided, §2.11): the learner knows they are being assessed; intake
+does not expose deck machinery. After intake, sessions simply source their
+words. The later [My words Current deck view](./my-words.md) provides read-only
+deck vocabulary and HSK level/part labels without exposing distribution controls.
 
 Intake evidence, deliberately not advanced for v1 — a mix of:
 
@@ -310,8 +311,10 @@ explicit human confirmation that it stays inside the boundary.
 
 ## 2.6 Feedback surface; no settings page in v1
 
-The deck machinery is not user-visible (decided, §2.11): no deck picker, no
-distribution controls, no HSK or deck vocabulary in the UI. Consequences:
+The deck machinery has no learner-facing picker or distribution controls
+(decided, §2.11). The later [My words Current deck view](./my-words.md) adds a
+read-only view of current deck vocabulary and HSK level/part labels; it does
+not change placement, nudges, or scheduling. Consequences:
 
 - **Nudges surface where the learner's intuition lives** — in the session or
   reflection context: an intentionally coarse, gut-level signal ("too easy /
@@ -399,10 +402,11 @@ Decisions from the 2026-09-09 review (previously open questions):
 4. **Nudge = fine-grained weight shift**, e.g. (1, 0) → (0.9, 0.1) toward an
    adjacent deck — a coarse deck jump labeled "nudge" would be
    misleading. UI specifics TBD (see 10).
-5. **Decks are not user-visible.** The learner knows they are being
+5. **Deck controls stay internal.** The learner knows they are being
    assessed at intake; afterwards sessions source their words without
-   exposing machinery. The nudge is intentionally coarse, gut-level feedback
-   rather than language-learning technicalities.
+   exposing distribution controls. The later My words Current deck shortcut
+   exposes read-only vocabulary and level/part labels (§2.6). The nudge remains
+   intentionally coarse, gut-level feedback.
 6. **Triage retires.** Existing recognition-only production suppressions
    persist (they take effect at the word immediately); advisor assessment
    provenance may be dropped.
