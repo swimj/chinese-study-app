@@ -21,6 +21,9 @@ export const DIET_PROFILE_VERSION = 1;
 /** Fixed weight quantum shifted by one nudge. Internal, never user-visible. */
 export const DIET_NUDGE_QUANTUM = 0.1;
 
+export const STASH_DIET_SPLIT_SETTING_KEY = 'stash_diet_split';
+export const DEFAULT_STASH_DIET_SPLIT = 0.5;
+
 export type DietProvenanceActor = 'intake' | 'learner-nudge' | 'operator';
 
 export type DietProvenanceEntry = {
@@ -359,6 +362,30 @@ export function saveDietProfile(profile: DietProfile): DietProfile {
       updated_at = excluded.updated_at
   `).run(requireLearnerId(), DIET_PROFILE_SETTING_KEY, JSON.stringify(profile), profile.updatedAt);
   return profile;
+}
+
+/**
+ * The learner's stash share of the remaining unstudied quota (SPECS
+ * §2.4), stored as a JSON number in learner_settings. Defaults to 0.5.
+ * Stored but not user-visible in v1; invalid values fail loudly.
+ */
+export function getStashDietSplit(): number {
+  const row = getDb()
+    .prepare(`
+      SELECT value_json
+      FROM learner_settings
+      WHERE learner_id = ? AND setting_key = ?
+    `)
+    .get(requireLearnerId(), STASH_DIET_SPLIT_SETTING_KEY) as { value_json: string } | undefined;
+
+  if (!row) {
+    return DEFAULT_STASH_DIET_SPLIT;
+  }
+  const value: unknown = JSON.parse(row.value_json);
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
+    throw new Error(`Invalid ${STASH_DIET_SPLIT_SETTING_KEY} setting: expected a JSON number in [0, 1].`);
+  }
+  return value;
 }
 
 /** Stored profile when present, otherwise the manifest-order default (not persisted). */
