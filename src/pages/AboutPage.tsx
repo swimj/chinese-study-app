@@ -7,6 +7,43 @@ const ABOUT_VIEWS = [
   ['whats-new', "What's New"],
 ] as const;
 
+// Entry dates follow the change history; add new posts at the top.
+const UPDATES = [
+  {
+    date: '2026-09-14',
+    displayDate: 'September 14, 2026',
+    title: 'A home for help and updates',
+    paragraphs: [
+      'About now brings getting-started advice, a usage guide, known limitations, and these update notes into the left rail. We’ll keep adding entries here as the app evolves.',
+    ],
+  },
+  {
+    date: '2026-09-13',
+    displayDate: 'September 13, 2026',
+    title: 'Find your words and your starting point',
+    paragraphs: [
+      'Words → My words gives you a place to browse your collection and inspect individual words, including recent additions and words with personal notes.',
+      'Before your first session, you can answer a few questions to help choose a starting level or pick it yourself. After a session, you can nudge the suggested vocabulary easier or harder.',
+    ],
+  },
+  {
+    date: '2026-09-11',
+    displayDate: 'September 11, 2026',
+    title: 'Study just the words in your stash',
+    paragraphs: [
+      'Session settings now let you choose stash-only new words. The default still mixes your stash with the app’s selection. Choose stash-only when you want to concentrate on vocabulary you’ve picked yourself.',
+    ],
+  },
+  {
+    date: '2026-09-09',
+    displayDate: 'September 9, 2026',
+    title: 'Give a dismissed suggestion another look',
+    paragraphs: [
+      'Dismissed a reflection proposal by mistake? Open By session in Reflections and use Undo dismiss to return it to Help.',
+    ],
+  },
+] as const;
+
 export type AboutView = typeof ABOUT_VIEWS[number][0];
 
 export function AboutPage({ view, onSelectView }: {
@@ -39,7 +76,7 @@ export function AboutPage({ view, onSelectView }: {
             <section>
               <h2>Your first session</h2>
               <ol>
-                <li><strong>Use a desktop browser and a Chinese input method.</strong> Some exercises ask you to type the Chinese word. The hosted beta is invite-only; use the account you were invited with.</li>
+                <li><strong>Use a desktop browser and a Chinese input method.</strong> Some exercises ask you to type the Chinese word.</li>
                 <li><strong>Choose a starting point on Home.</strong> Answer the background and goals questions for an AI assessment, or choose your own level. If you skip, you start from the beginning.</li>
                 <li><strong>Select Start session.</strong> Read the introduction for each new word, then try the recall exercises. Reveal the answer when needed and rate how well you remembered it.</li>
                 <li><strong>Finish before you leave.</strong> To stop early, use End session and work through the remaining in-progress items. On the summary, select Finish session to save the final attempt.</li>
@@ -48,7 +85,7 @@ export function AboutPage({ view, onSelectView }: {
             <section>
               <h2>Make it yours</h2>
               <p>Add words you care about in Words → Stash. The gear beside Start session lets you adjust the daily new-word limit and choose whether new words come from your stash alone or a mix of your stash and the app’s selection.</p>
-              <p>After studying, visit Reflections for optional explanations and suggestions based on your session. You can review them later; you do not need to act on every suggestion.</p>
+              <p>Each mistake is a chance to make your study content fit you better. Reflections uses your session to suggest clearer cues, useful explanations, and practice that targets the distinctions you find tricky. Visit Reflections after studying to review those suggestions and choose which to apply. You can come back later; you do not need to act on every suggestion.</p>
             </section>
           </>
         ) : view === 'usage-guide' ? (
@@ -94,23 +131,16 @@ export function AboutPage({ view, onSelectView }: {
           </>
         ) : (
           <>
-            <p>Recent changes in this build, with the learner-facing highlights first.</p>
-            <section>
-              <h2>Help inside the app</h2>
-              <p>The new About section brings getting-started advice, a usage guide, known limitations, and these update notes into the left rail.</p>
-            </section>
-            <section>
-              <h2>Study just the words in your stash</h2>
-              <p>Session settings now let you choose stash-only new words. The default still mixes your stash with the app’s selection. Adding words puts them in your stash; use the selected-word Require control when you want to explicitly request them for the next session.</p>
-            </section>
-            <section>
-              <h2>Undo a dismissed suggestion</h2>
-              <p>Dismissed a reflection proposal by mistake? Open By session in Reflections and use Undo dismiss to return it to Help.</p>
-            </section>
-            <section>
-              <h2>A smoother invitation flow</h2>
-              <p>New hosted invitations can take you straight to the study app to set your password and continue to Home.</p>
-            </section>
+            <p>Notes on how the app is evolving, newest first.</p>
+            <div className="about-updates">
+              {UPDATES.map((entry) => (
+                <article className="about-update" key={entry.date} aria-labelledby={`update-${entry.date}`}>
+                  <time className="notes" dateTime={entry.date}>{entry.displayDate}</time>
+                  <h2 id={`update-${entry.date}`}>{entry.title}</h2>
+                  {entry.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+                </article>
+              ))}
+            </div>
           </>
         )}
       </article>
