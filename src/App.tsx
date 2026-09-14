@@ -34,6 +34,7 @@ import { ReflectionsPage } from './pages/ReflectionsPage';
 import { useReflectionPageController } from './features/reflection/useReflectionPageController';
 import { useContentDiagnosticsController } from './features/content/useContentDiagnosticsController';
 import { ContentDiagnosticsPage } from './pages/ContentDiagnosticsPage';
+import { OperatorUsagePulsePage } from './pages/OperatorUsagePulsePage';
 import {
   doesDietIntakeBlockSessionStart,
   INITIAL_DIET_INTAKE_SUBMISSION_STATE,
@@ -42,8 +43,15 @@ import {
   type DietIntakeSubmissionState,
 } from './features/diet/diet-intake-submission';
 
+const OPERATOR_USAGE_HASH = '#operator-usage';
+
+function readInitialPage(): AppPageKey {
+  if (typeof window === 'undefined') return 'home';
+  return window.location.hash === OPERATOR_USAGE_HASH ? 'operator-usage' : 'home';
+}
+
 function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
-  const [currentPage, setCurrentPage] = useState<AppPageKey>('home');
+  const [currentPage, setCurrentPage] = useState<AppPageKey>(readInitialPage);
   const [aboutView, setAboutView] = useState<AboutView>('getting-started');
   const [wordsView, setWordsView] = useState<'stash' | 'my-words'>('stash');
   const myWords = useMyWordsController(currentPage === 'priority' && wordsView === 'my-words');
@@ -96,6 +104,28 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     }
 
     loadData();
+  }, []);
+
+  useEffect(() => {
+    if (currentPage === 'operator-usage') {
+      if (window.location.hash !== OPERATOR_USAGE_HASH) {
+        window.location.hash = OPERATOR_USAGE_HASH;
+      }
+      return;
+    }
+    if (window.location.hash === OPERATOR_USAGE_HASH) {
+      history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+    }
+  }, [currentPage]);
+
+  useEffect(() => {
+    function onHashChange() {
+      if (window.location.hash === OPERATOR_USAGE_HASH) {
+        setCurrentPage('operator-usage');
+      }
+    }
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
   useEffect(() => {
@@ -262,6 +292,8 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
           onSelectKind={(kind) => void contentPage.selectKind(kind)}
           onSearch={() => void contentPage.submitSearch()}
         />
+      ) : currentPage === 'operator-usage' ? (
+        <OperatorUsagePulsePage />
       ) : null}
 
       {studySession.personalNotesEditor.open ? (

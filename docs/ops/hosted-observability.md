@@ -13,6 +13,11 @@ deeper measurements after a hotspot is observed. It does not introduce a
 second telemetry vendor, distributed tracing, long-retention analytics, or
 large-scale alerting infrastructure.
 
+A separate operator **usage pulse** page (`#operator-usage`, gated by
+`APP_OPERATOR_CLERK_USER_IDS`) provides content-free cohort product-usage
+snapshots (DAU, sessions, spend, stash median, sparse scenario counts). That
+surface is not Grafana and does not replace this performance dashboard.
+
 ## Data boundary
 
 The metrics contain only bounded operational dimensions:

@@ -104,6 +104,20 @@ Changing either setting does not rewrite the current UTC day's
 completed-new-word count and does not mutate an already-started frontend
 session.
 
+## Operator usage pulse
+
+| Method | Path | Handler domain |
+| --- | --- | --- |
+| GET | `/api/operator/usage-pulse` | Operational cohort pulse |
+
+Bookmark-only frontend surface: `#operator-usage` (not in primary nav).
+Requires the caller’s Clerk user id (or trusted-local learner id / `trusted_local`
+sentinel) to appear in `APP_OPERATOR_CLERK_USER_IDS`. Returns content-free
+cohort aggregates: live `today` plus the last 7 completed UTC-day snapshots
+(`dau`, sessions, new words, model spend, median stash, median session time,
+and sparse scenario counts). Empty allowlist fails closed with `403
+OPERATOR_FORBIDDEN`.
+
 ## Words and meanings
 
 | Method | Path | Handler domain |

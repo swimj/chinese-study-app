@@ -56,6 +56,7 @@ When code and spec conflict, treat the spec as intended behavior and update code
 | `APP_LEARNER_ID` | Backend | Stable learner id; required in study mode unless `--learner-id` is supplied |
 | `APP_STUDY_PROFILE` | Backend | `mandarin` or `french` |
 | `APP_METRICS_PORT` | Backend | Optional private Prometheus listener; hosted Fly config uses `9091` |
+| `APP_OPERATOR_CLERK_USER_IDS` | Backend | Comma-separated Clerk user ids allowed to open the operator usage-pulse page/API. In `trusted_local` mode, include the learner id or the sentinel `trusted_local`. |
 | `APP_SEED_DATA_PATH` | Backend | Required in dev mode; seed JSON path |
 | `PORT` | Backend | API port (default `5174`) |
 | `APP_REVISION` | Image build | Exact Git commit baked into a hosted image; required, never left `unknown` |

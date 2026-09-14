@@ -22,6 +22,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0003_deck_word_probes',
   sql: fs.readFileSync(new URL('./migrations/0003_deck_word_probes.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0004_usage_daily_snapshots',
+  sql: fs.readFileSync(new URL('./migrations/0004_usage_daily_snapshots.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {
@@ -129,7 +132,11 @@ export function migrateDatabase(db: DatabaseSync, migrations = schemaMigrations)
       db.exec('COMMIT');
       return applied;
     } catch (error) {
-      if (db.isTransaction) db.exec('ROLLBACK');
+      try {
+        db.exec('ROLLBACK');
+      } catch {
+        // Transaction may already be inactive after the failed statement.
+      }
       throw error;
     }
   } finally {
