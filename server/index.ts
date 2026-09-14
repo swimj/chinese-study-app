@@ -1841,7 +1841,6 @@ export type StartServerOptions = {
   app?: ReturnType<typeof createApp>;
   additionalServers?: Server[];
   closeDatabase?: () => void;
-  onListening?: () => void;
 };
 
 export function startServer(options: StartServerOptions = {}): Server {
@@ -1852,7 +1851,6 @@ export function startServer(options: StartServerOptions = {}): Server {
     console.log(`Backend server listening on http://${host}:${serverPort}`);
     console.log(`Mode: ${dbConfig.mode}`);
     console.log(`Database: ${dbConfig.dbPath}`);
-    options.onListening?.();
   });
   installGracefulShutdown(
     server,

@@ -1,6 +1,5 @@
 import { config as dbConfig } from './db/connection.ts';
 import {
-  addUtcDays,
   ensureUsagePulseSnapshots,
   utcDayKey,
 } from './db/usage-pulse.ts';
@@ -68,8 +67,4 @@ export function msUntilNextUtcMidnight(now: Date): number {
   next.setUTCHours(24, 0, 0, 0);
   const delta = next.getTime() - now.getTime();
   return Math.max(delta, 1);
-}
-
-export function previousUtcDayKey(now: Date = new Date()): string {
-  return addUtcDays(utcDayKey(now), -1);
 }
