@@ -34,12 +34,14 @@ import {
   reflectionOperationLabel,
   formatRunDuration,
   visibleOutputTokens,
+  reflectionSpendCapTip,
   type NoDurableChangeReflectionGist,
   type ReflectionArtifactSummaryDto,
   type ReflectionGenerationRunDto,
   type ReflectionProposalPresentation,
   type ReflectionProposalDetailDto,
   type ReflectionHelpCard,
+  type ReflectionSpendCapDto,
 } from '../features/reflection/reflection-page-model';
 
 type ReflectionRetryMenuOption = {
@@ -48,6 +50,8 @@ type ReflectionRetryMenuOption = {
   model?: ReflectionModelChoice;
   disabled?: boolean;
 };
+
+const LUNA_REFLECTION_MODEL_CHOICE: ReflectionModelChoice = 'openai:gpt-5.6-luna-high';
 
 const REFLECTION_HANDLE_OPTIONS = [
   { value: 'suppress_definition_production@1', label: 'Suppress definition production' },
@@ -79,6 +83,14 @@ const DEFAULT_SECOND_OPINION_MODEL: ReflectionModelChoice = 'openai:gpt-5.6-terr
 
 function sourceModelIsCurrentlyAvailable(storedModel: string): boolean {
   return OFFERED_REFLECTION_MODEL_OPTIONS.some((option) => option.model.endsWith(`:${storedModel}`));
+}
+
+function isLunaOnlySpendCap(spendCap: ReflectionSpendCapDto | null): boolean {
+  return spendCap?.lunaOnly === true;
+}
+
+function storedModelMatchesChoice(storedModel: string, choice: ReflectionModelChoice): boolean {
+  return choice.endsWith(`:${storedModel}`);
 }
 
 type ReflectionView = 'help' | 'second-opinion' | 'sessions' | 'usage' | 'quality';
@@ -145,6 +157,7 @@ export function ReflectionsPage({
         ) : view === 'usage' ? (
           <TokenUsageView
             runs={controller.generationRuns}
+            spendCap={controller.spendCap}
             retryStatus={controller.generationRetryStatus}
             onRetry={controller.retryGenerationRun}
           />
@@ -189,6 +202,10 @@ export function DeferredSecondOpinionQueue({
   const selectionInitialized = useRef(cards.length > 0);
   const [inspectedId, setInspectedId] = useState<string | null>(null);
   const [model, setModel] = useState<ReflectionModelChoice>(DEFAULT_SECOND_OPINION_MODEL);
+  const lunaOnly = isLunaOnlySpendCap(controller.spendCap);
+  useEffect(() => {
+    if (lunaOnly) setModel(LUNA_REFLECTION_MODEL_CHOICE);
+  }, [lunaOnly]);
   const cardIds = cards.map((card) => card.proposal.review.proposalId).join('\u0000');
   useEffect(() => {
     const availableIds = new Set(cardIds.length === 0 ? [] : cardIds.split('\u0000'));
@@ -307,6 +324,11 @@ export function DeferredSecondOpinionQueue({
         {failed ? (
           <p className="notes" role="status">Second opinion failed. Try again from the rail.</p>
         ) : null}
+        {lunaOnly && controller.spendCap !== null ? (
+          <p className="reflection-spend-cap-tip" role="status">
+            {reflectionSpendCapTip(controller.spendCap.resetsAt)}
+          </p>
+        ) : null}
         <div className="reflection-help-toolbar">
           <button
             type="button"
@@ -332,7 +354,13 @@ export function DeferredSecondOpinionQueue({
             onChange={(event) => setModel(event.target.value as ReflectionModelChoice)}
           >
             {OFFERED_REFLECTION_MODEL_OPTIONS.map((option) => (
-              <option key={option.model} value={option.model}>{option.label}</option>
+              <option
+                key={option.model}
+                value={option.model}
+                disabled={lunaOnly && option.model !== LUNA_REFLECTION_MODEL_CHOICE}
+              >
+                {option.label}
+              </option>
             ))}
           </select>
           <button
@@ -987,15 +1015,23 @@ function NoDurableChangeGistPanel({
 
 export function TokenUsageView({
   runs,
+  spendCap,
   retryStatus,
   onRetry,
 }: {
   runs: ReflectionGenerationRunDto[];
+  spendCap: ReflectionSpendCapDto | null;
   retryStatus: ReflectionPageController['generationRetryStatus'];
   onRetry: (runId: string, model?: ReflectionModelChoice) => Promise<void>;
 }) {
+  const lunaOnly = isLunaOnlySpendCap(spendCap);
   return (
     <main className="reflection-usage-view">
+      {lunaOnly && spendCap !== null ? (
+        <p className="reflection-spend-cap-tip" role="status">
+          {reflectionSpendCapTip(spendCap.resetsAt)}
+        </p>
+      ) : null}
       {runs.length === 0 ? (
         <section className="panel reflection-empty-state">
           <h2>No run meta yet</h2>
@@ -1014,6 +1050,7 @@ export function TokenUsageView({
                 <div className="reflection-run-status">
                   <RunStatusControl
                     run={run}
+                    spendCap={spendCap}
                     retryStatus={retryStatus}
                     onRetry={onRetry}
                   />
@@ -1100,10 +1137,12 @@ function RunDiagnosticView({
 
 function RunStatusControl({
   run,
+  spendCap,
   retryStatus,
   onRetry,
 }: {
   run: ReflectionGenerationRunDto;
+  spendCap: ReflectionSpendCapDto | null;
   retryStatus: ReflectionPageController['generationRetryStatus'];
   onRetry: (runId: string, model?: ReflectionModelChoice) => Promise<void>;
 }) {
@@ -1114,6 +1153,7 @@ function RunStatusControl({
     return (
       <ReflectionRetryControl
         run={run}
+        spendCap={spendCap}
         retryFailed={retryStatus?.runId === run.runId && retryStatus.state === 'failed'}
         onRetry={onRetry}
       />
@@ -1129,10 +1169,12 @@ function RunStatusControl({
 
 function ReflectionRetryControl({
   run,
+  spendCap,
   retryFailed,
   onRetry,
 }: {
   run: ReflectionGenerationRunDto;
+  spendCap: ReflectionSpendCapDto | null;
   retryFailed: boolean;
   onRetry: (runId: string, model?: ReflectionModelChoice) => Promise<void>;
 }) {
@@ -1140,16 +1182,23 @@ function ReflectionRetryControl({
   const listId = useId();
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const sameModelAvailable = sourceModelIsCurrentlyAvailable(run.model);
+  const lunaOnly = isLunaOnlySpendCap(spendCap);
+  const sameModelAvailable = sourceModelIsCurrentlyAvailable(run.model)
+    && (!lunaOnly || storedModelMatchesChoice(run.model, LUNA_REFLECTION_MODEL_CHOICE));
   const options: ReflectionRetryMenuOption[] = [
     {
       id: 'same',
       label: sameModelAvailable
         ? `Same model (${run.model})`
-        : `Same model (${run.model}) — no longer available`,
+        : lunaOnly && sourceModelIsCurrentlyAvailable(run.model)
+          ? `Same model (${run.model}) — Luna only until reset`
+          : `Same model (${run.model}) — no longer available`,
       disabled: !sameModelAvailable,
     },
-    ...OFFERED_REFLECTION_MODEL_OPTIONS,
+    ...OFFERED_REFLECTION_MODEL_OPTIONS.map((option) => ({
+      ...option,
+      disabled: lunaOnly && option.model !== LUNA_REFLECTION_MODEL_CHOICE,
+    })),
   ];
   const firstEnabledIndex = Math.max(0, options.findIndex((option) => !option.disabled));
   const label = retryFailed
@@ -1249,7 +1298,11 @@ function ReflectionRetryControl({
       {menuOpen ? (
         <div className="reflection-retry-menu" role="presentation">
           <p className="reflection-retry-menu-title">Retry with</p>
-          {sameModelAvailable ? null : (
+          {lunaOnly && spendCap !== null ? (
+            <p className="reflection-retry-menu-notice" role="status">
+              {reflectionSpendCapTip(spendCap.resetsAt)}
+            </p>
+          ) : sameModelAvailable ? null : (
             <p className="reflection-retry-menu-notice" role="status">
               {run.model} is no longer available. Choose another model.
             </p>

@@ -12,6 +12,7 @@ import type {
 } from '../src/domain/reflection.ts';
 import {
   RetiredReflectionSourceModelError,
+  ReflectionSpendCapError,
   type InitialReflectionGenerationService,
 } from '../server/reflection/generation.ts';
 import { ReflectionEvidenceError } from '../server/reflection/evidence.ts';
@@ -435,9 +436,21 @@ describe('reflection HTTP API', { concurrency: false }, () => {
 
     const response = await request('/api/reflection-generation-runs');
     assert.equal(response.status, 200);
-    assert.deepEqual(response.json, {
-      runs: [dbModule.listReflectionGenerationRuns()[0]],
-    });
+    const payload = response.json as {
+      runs: unknown[];
+      spendCap: {
+        lunaOnly: boolean;
+        spentUsd: number;
+        capUsd: number;
+        dayKey: string;
+        resetsAt: string;
+      };
+    };
+    assert.deepEqual(payload.runs, [dbModule.listReflectionGenerationRuns()[0]]);
+    assert.equal(payload.spendCap.lunaOnly, false);
+    assert.equal(payload.spendCap.capUsd, 0.5);
+    assert.match(payload.spendCap.dayKey, /^\d{4}-\d{2}-\d{2}$/);
+    assert.equal(payload.spendCap.resetsAt, `${nextUtcDay(payload.spendCap.dayKey)}T00:00:00.000Z`);
   });
 
   test('retries a failed generation run through the dedicated endpoint', async () => {
@@ -472,6 +485,39 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     assert.deepEqual(retired.json, {
       error: 'The source run\'s model (qwen3.7-plus) is no longer available. Choose a current model.',
     });
+  });
+
+  test('refuses non-Luna generation after the daily spend cap', async () => {
+    generationImplementation = async () => {
+      throw new ReflectionSpendCapError('2026-09-11T00:00:00.000Z');
+    };
+    retryImplementation = async () => {
+      throw new ReflectionSpendCapError('2026-09-11T00:00:00.000Z');
+    };
+    secondOpinionImplementation = async () => {
+      throw new ReflectionSpendCapError('2026-09-11T00:00:00.000Z');
+    };
+
+    const generated = await request(
+      '/api/study-sessions/session-1/reflections',
+      { method: 'POST', body: { schemaVersion: 'session_reflection_evidence_supplement.v1', items: [], model: 'openai:gpt-5.6-terra-high' } },
+    );
+    assert.equal(generated.status, 409);
+    assert.deepEqual(generated.json, {
+      error: 'Daily reflection spend cap reached. Only Luna is available until 2026-09-11T00:00:00.000Z.',
+    });
+
+    const retried = await request(
+      '/api/reflection-generation-runs/failed-run/retry',
+      { method: 'POST', body: { model: 'zai:glm-5.3-high' } },
+    );
+    assert.equal(retried.status, 409);
+
+    const secondOpinion = await request(
+      '/api/deferred-reflection-second-opinions',
+      { method: 'POST', body: { proposalIds: ['proposal-1'], model: 'openai:gpt-5.6-terra-high' } },
+    );
+    assert.equal(secondOpinion.status, 409);
   });
 
   test('strictly reviews proposals and immediately applies supported acceptance', async () => {
@@ -1220,6 +1266,12 @@ function insertPendingInvocation(invocationId: string, operation: ReflectionOper
 function assertIsoString(value: string): string {
   assert.equal(new Date(value).toISOString(), value);
   return value;
+}
+
+function nextUtcDay(dayKey: string): string {
+  const date = new Date(`${dayKey}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
 }
 
 function restoreEnv(name: string, value: string | undefined) {

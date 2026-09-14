@@ -43,6 +43,12 @@ import {
 import { parseStoredSessionReflectionBundle } from '../../src/domain/reflection-evidence.ts';
 import type { NormalizedTokenUsage } from '../llm/types.ts';
 import type { ReflectionGenerationDiagnostic } from '../reflection/run-diagnostics.ts';
+import {
+  buildReflectionSpendCap,
+  utcDayKey,
+  utcDayRange,
+  type ReflectionSpendCap,
+} from '../reflection/spend-cap.ts';
 import { dbPath, getDb } from './connection.ts';
 import {
   learnerScopedStorageTableName,
@@ -1363,6 +1369,17 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
     LIMIT ?
   `).all(limit - inFlight.length) as unknown as ReflectionGenerationRunRow[];
   return [...inFlight, ...concludedRows.map(mapReflectionGenerationRunRow)];
+}
+
+export function getReflectionSpendCap(now = new Date()): ReflectionSpendCap {
+  const dayKey = utcDayKey(now);
+  const { start, end } = utcDayRange(dayKey);
+  const row = getDb().prepare(`
+    SELECT COALESCE(SUM(estimated_cost_usd), 0) AS spent_usd
+    FROM reflection_generation_runs
+    WHERE completed_at >= ? AND completed_at < ?
+  `).get(start, end) as { spent_usd: number };
+  return buildReflectionSpendCap(row.spent_usd, now);
 }
 
 function getReflectionGenerationRun(runId: string): ReflectionGenerationRunRecord {

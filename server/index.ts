@@ -38,6 +38,7 @@ import {
   getReviewFailureRateDays,
   listReflectionArtifacts,
   listReflectionGenerationRuns,
+  getReflectionSpendCap,
   listReflectionHelpInbox,
   recoverPendingReflectionInvocations,
   requireLearnerId,
@@ -97,6 +98,7 @@ import {
   createInitialReflectionGenerationService,
   isReflectionModelChoice,
   RetiredReflectionSourceModelError,
+  ReflectionSpendCapError,
   type InitialReflectionGenerationService,
 } from './reflection/generation.ts';
 import { ReflectionEvidenceError } from './reflection/evidence.ts';
@@ -146,6 +148,7 @@ export function createApp(options: CreateAppOptions = {}) {
     ?? createInitialReflectionGenerationService({
       lifecycleLogger: reflectionLifecycleLogger,
       providerDiagnosticSink: createFileReflectionProviderDiagnosticSink(dbConfig.dataDir),
+      getSpendCap: getReflectionSpendCap,
     });
   const dietIntakePlacementService = options.dietIntakePlacementService
     ?? createDietIntakePlacementService();
@@ -760,6 +763,18 @@ export function createApp(options: CreateAppOptions = {}) {
         });
         return;
       }
+      if (isReflectionSpendCapError(error)) {
+        reflectionLifecycleLogger.emit({
+          event: 'reflection.generation_failed',
+          sessionId: normalizedSessionId,
+          failure: 'internal',
+          code: 'spend_cap',
+          clientRequestId: null,
+          elapsedMs: Date.now() - generationStartedAt,
+        });
+        res.status(409).json({ error: error.message });
+        return;
+      }
       if (error instanceof LunaReflectionProviderError) {
         reflectionLifecycleLogger.emit({
           event: 'reflection.generation_failed',
@@ -803,7 +818,10 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.get('/api/reflection-generation-runs', (_req, res) => {
     try {
-      res.json({ runs: listReflectionGenerationRuns() });
+      res.json({
+        runs: listReflectionGenerationRuns(),
+        spendCap: getReflectionSpendCap(),
+      });
     } catch {
       res.status(500).json({ error: 'Failed to load reflection generation runs' });
     }
@@ -836,6 +854,10 @@ export function createApp(options: CreateAppOptions = {}) {
         error instanceof RetiredReflectionSourceModelError
         || (error instanceof Error && error.name === 'RetiredReflectionSourceModelError')
       ) {
+        res.status(409).json({ error: error.message });
+        return;
+      }
+      if (isReflectionSpendCapError(error)) {
         res.status(409).json({ error: error.message });
         return;
       }
@@ -909,6 +931,18 @@ export function createApp(options: CreateAppOptions = {}) {
           elapsedMs: Date.now() - generationStartedAt,
         });
         res.status(400).json({ error: error.message });
+        return;
+      }
+      if (isReflectionSpendCapError(error)) {
+        reflectionLifecycleLogger.emit({
+          event: 'reflection.generation_failed',
+          sessionId: null,
+          failure: 'internal',
+          code: 'spend_cap',
+          clientRequestId: null,
+          elapsedMs: Date.now() - generationStartedAt,
+        });
+        res.status(409).json({ error: error.message });
         return;
       }
       if (error instanceof LunaReflectionProviderError) {
@@ -1646,6 +1680,11 @@ function readReviewProposalRequest(value: unknown): ReviewProposalRequest | null
 
 function isReflectionNotFoundError(error: unknown, message: string): error is Error {
   return error instanceof Error && error.message === message;
+}
+
+function isReflectionSpendCapError(error: unknown): error is ReflectionSpendCapError {
+  return error instanceof ReflectionSpendCapError
+    || (error instanceof Error && error.name === 'ReflectionSpendCapError');
 }
 
 function isReflectionReviewClientError(error: unknown): error is Error {
