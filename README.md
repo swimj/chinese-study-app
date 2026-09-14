@@ -146,10 +146,8 @@ We recommend keeping study data outside the cloned repo, even though this versio
 ### Hosted beta
 
 The bounded hosted deployment uses Clerk auth, one Fly Machine and encrypted
-volume, and Litestream replication to versioned S3. Its disposable bring-up
-starts from a small checksummed shared Mandarin artifact; the one primary
-dogfood database later replaces that fixture through the dedicated cutover. See
-the [hosted beta deployment and recovery runbook](docs/ops/hosted-beta-deployment.md)
+volume, and Litestream replication to versioned S3. See the
+[hosted beta release and maintenance runbook](docs/ops/hosted-beta-deployment.md)
 and the [hosted observability runbook](docs/ops/hosted-observability.md).
 
 Provider traffic is direct by default. Set `APP_USE_LOCAL_PROVIDER_PROXY=true`

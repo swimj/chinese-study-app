@@ -26,7 +26,7 @@ Most of these require an explicit absolute `--data-dir` and force study/Clerk
 runtime configuration. `hosted:upgrade` is the exception: it runs on an
 operator checkout against Fly, not against a local data directory. Human and
 automated terminal-driver procedures are in the
-[deployment runbook](./ops/hosted-beta-deployment.md).
+[release and maintenance runbook](./ops/hosted-beta-deployment.md).
 
 | npm command | Purpose |
 | --- | --- |
