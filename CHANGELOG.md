@@ -2,6 +2,13 @@
 
 Casual notes for people using the app before there is a real release process.
 
+## Unreleased — app-origin invite signup
+
+- Hosted invitations created with `hosted:invite` send the recipient to the
+  study app to set a password. Completing that form leaves them signed in on
+  Home. Do not invite from the Clerk Dashboard if you want that path; Dashboard
+  invites still open Clerk's Account Portal on a development instance.
+
 ## Unreleased — hide add-time require
 
 - The New Words add box no longer offers "Require added". New words still join

@@ -1,42 +1,26 @@
-# Hosted beta deployment and recovery
+# Hosted beta release and maintenance
 
-This is the operator runbook for the first invite-only Mandarin deployment.
-It has complementary procedures for a human operating an interactive terminal
-and an agent or automation driving one. They use the same release command and
-release gates; the latter additionally defines how to observe a long-running
-local terminal process safely.
-The supported shape is one 1 GB Fly Machine in `sin`, one encrypted Fly Volume at
+Operator guide for the running invite-only Mandarin service. Complementary
+procedures cover a human at an interactive terminal and an agent or automation
+driving one. They use the same release command and release gates; the latter
+additionally defines how to observe a long-running local terminal process
+safely.
+
+The service is one 1 GB Fly Machine in `sin`, one encrypted Fly Volume at
 `/data`, Clerk authentication, and Litestream replication to a private,
 versioned S3 bucket. The application container serves both the API and the
-built frontend. Initial bring-up uses disposable shared content and learners.
-The dedicated dogfood cutover below later replaces that entire fixture
-database; it is not a merge.
+built frontend. Initial bring-up, disposable fixture learners, and the dogfood
+cutover are complete; those recipes remain in git history if they must be
+re-read.
 
-## One-time prerequisites
+## Runtime configuration
 
-1. Create a Clerk development instance, disable public sign-up, and retain its
-   publishable and secret keys. Add the final `https://<app>.fly.dev` origin.
-2. Create a private S3 bucket in `ap-southeast-1`, enable versioning and default
-   encryption, block all public access, and create a dedicated IAM principal.
-   Adapt [`deploy/fly/iam-policy.template.json`](../../deploy/fly/iam-policy.template.json)
-   so it can access only `chinese-study-app/hosted-beta` in that bucket.
-3. Copy [`deploy/fly/fly.template.toml`](../../deploy/fly/fly.template.toml) to
-   ignored `deploy/fly/.generated/fly.toml` and replace every `REPLACE_WITH_*`
-   value. The Clerk publishable key is public but is needed by both the frontend
-   build and the backend Clerk middleware; it is not a secret.
-4. Log in with `fly auth login` and AWS credentials appropriate for creating
-   the bucket and IAM principal. Never commit generated configuration or keys.
-
-Create the Fly resources once:
-
-```bash
-fly apps create <app-name>
-fly volumes create app_data --app <app-name> --region sin --size 1
-```
-
-Stage runtime secrets without placing their values in a tracked file. Using a
-temporary permission-restricted input file with `fly secrets import --stage`
-is preferable to command-line `NAME=value` arguments. The required names are:
+Generated Fly config lives at ignored `deploy/fly/.generated/fly.toml`, copied
+from [`deploy/fly/fly.template.toml`](../../deploy/fly/fly.template.toml).
+Never commit generated configuration or keys. Stage runtime secrets without
+placing their values in a tracked file. Using a temporary
+permission-restricted input file with `fly secrets import --stage` is
+preferable to command-line `NAME=value` arguments. The required names are:
 
 ```text
 CLERK_PUBLISHABLE_KEY
@@ -48,86 +32,46 @@ LITESTREAM_ACCESS_KEY_ID
 LITESTREAM_SECRET_ACCESS_KEY
 ```
 
-All four configured model arms remain available: the two OpenAI arms use
-`OPENAI_API_KEY`, GLM uses `ZAI_API_KEY`, and Gemini uses
-`OPENROUTER_API_KEY`. Hosted provider calls are direct. Do not enable
+The two OpenAI arms use `OPENAI_API_KEY`, GLM uses `ZAI_API_KEY`, and Gemini
+uses `OPENROUTER_API_KEY`. Hosted provider calls are direct. Do not enable
 `APP_USE_LOCAL_PROVIDER_PROXY`; that switch exists only for local dogfood.
 
-## First deployment
+The Clerk development instance remains invite-only. The Fly origin must stay
+listed on that instance. `CLERK_AUTHORIZED_PARTY` is that origin.
 
-Deploy exactly one Machine and wait for the health check:
+## Invite a learner
 
-```bash
-fly deploy --config deploy/fly/.generated/fly.toml --remote-only --ha=false
-curl --fail https://<app-name>.fly.dev/healthz
-```
+Invite from an operator checkout, not the Clerk Dashboard and not `fly ssh`.
+Dashboard invitations have no app return URL, so on a Clerk development
+instance the email link opens Account Portal on `accounts.dev`. `hosted:invite`
+attaches `CLERK_AUTHORIZED_PARTY` so the recipient sets a password on the study
+origin and lands signed in on Home. First authenticated API use creates the
+stable local learner; the invitation itself does not.
 
-Initialize the fresh database with the small, reproducible shared Mandarin
-artifact. This command refuses dev mode, trusted-local authentication, seeds,
-non-Mandarin profiles, checksum mismatches, and conflicting re-imports.
-
-```bash
-fly ssh console --app <app-name> --command \
-  'npm run bootstrap:hosted:mandarin -- --data-dir=/data'
-fly ssh console --app <app-name> --command \
-  'npm run hosted:inspect -- --data-dir=/data --litestream-socket=/data/litestream.sock'
-```
-
-Invite two dummy users in Clerk and complete invitation acceptance in separate
-browser profiles. First authenticated use creates each stable local learner.
-Verify for both users: sign-in, home/status load, adding or selecting a word,
-one study session, one provider-backed reflection/intake action, sign-out, and
-sign-in again. Confirm that one user cannot see the other's notes, priorities,
-session history, or reflections. Exercise all five model arms once; a failure
-in one arm must remain attributable and must not prevent another arm working.
-
-### Provision a reflection test card for a dummy learner
-
-For beta smoke testing only, the operator can prepare one untouched shared word
-as a due **production** review card for one named dummy learner. This creates
-private learner state only, does not modify shared content, refuses to overwrite
-existing progress, and records an attributable operator action. It is not an
-HTTP endpoint or a general-purpose state editor.
+Keep invitation addresses in environment variables so they never appear in
+command arguments or tracked output:
 
 ```bash
-fly ssh console --app <app-name> --command \
-  'npm run hosted:provision-review-test -- --data-dir=/data --learner-id=<id> --actor-id=<operator>'
+# Put CLERK_SECRET_KEY, CLERK_AUTHORIZED_PARTY, and one HOSTED_INVITE_EMAIL in
+# a chmod-600 env file, then load it without echoing values.
+set -a
+source deploy/fly/.generated/clerk-invite.env
+set +a
+npm run hosted:invite -- --email-env=HOSTED_INVITE_EMAIL
 ```
 
-Sign in as that learner, complete the production card with an intentionally
-incorrect response (or select **Ask reflection to review**), finish the
-session, and exercise the generated reflection. Preserve the command JSON and
-the learner/word pair as beta test evidence. A second request for the same
-learner/word fails rather than altering real progress.
+Replace only `HOSTED_INVITE_EMAIL` between recipients.
 
-### Recover one captured reflection completion
+Clerk development invitation email still comes from Clerk and is often prefixed
+as development mail. Warn recipients to check spam. A production Clerk instance
+with a custom sending domain is the later fix for that; it is not required for
+the app-origin password page.
 
-If a provider completion was captured externally after the Machine died before
-the app persisted it, this narrow operator command can import it through the
-normal immutable artifact writer. It accepts only a V4 evidence bundle and V7
-response, runs the same structural and domain checks as the production
-provider path, and creates Help Inbox entries only for result items that have
-no proposal. It is idempotent for the exact same payload and refuses to replace
-a different artifact for that session.
-
-Upload the two JSON files to a node-writable, non-live path first. With
-provider work disabled and maintenance enabled, run:
-
-```bash
-fly ssh console --app <app-name> --command \
-  'npm run hosted:recover-reflection-completion -- \
-    --data-dir=/data \
-    --learner-id=<learner-id> \
-    --bundle-path=/data/recovery/<bundle>.json \
-    --result-path=/data/recovery/<result>.json \
-    --provider=openai \
-    --model=gpt-5.6-terra-high \
-    --prompt-version=reflection-v9'
-```
-
-Record only the returned summary (`artifactId`, proposal count, and Help Inbox
-count); do not put the learner bundle or provider response into shell history,
-logs, or the repository.
+If you still use the Clerk Dashboard to invite, set Account Portal → Redirects
+after sign-up, after sign-in, and after logo click to `/`. That is not enough
+for a first-time invitee on a development instance: `$DEVHOST` is detected per
+browser, and a recipient who never loaded the app stays on Clerk's default
+page.
 
 ## Application-only upgrade
 
@@ -230,7 +174,7 @@ This procedure deliberately does not claim durable release history or resumable
 execution. The final terminal result is still per-invocation evidence; a lost
 local runner remains an operational recovery case.
 
-## Release and maintenance controls
+## Schema-changing releases and service controls
 
 For a schema-changing release, stop new provider work, then stop writes. The
 health response exposes only control state and the active provider-work count;
@@ -246,9 +190,32 @@ fly ssh console --app <app-name> --command \
   'litestream sync -wait -timeout 60 -socket /data/litestream.sock -json /data/app.db'
 ```
 
-For schema-changing releases, including initial migration baseline adoption,
-follow the [offline migration procedure](schema-migrations.md). The app-only
+For schema-changing releases, including migration baseline adoption, follow the
+[offline migration procedure](schema-migrations.md). The app-only
 `hosted:upgrade` command cannot perform these releases.
+
+### Idle the Machine for offline work
+
+Use this when a schema-changing release or other volume-local work cannot run
+inside the normal Litestream-plus-app process. Disable provider work, enter
+maintenance, wait for active provider work to reach zero, and force a
+Litestream sync first (see the commands above). Then save the full Machine
+configuration, create an on-demand Fly Volume snapshot, and replace the normal
+command with an idle process while skipping health checks. The Volume stays
+mounted. Confirm the Litestream socket and SQLite sidecars are absent. Do not
+delete them merely to bypass a refusal—investigate an unclean stop.
+
+```bash
+fly machine status --app <app-name> --display-config <machine-id>
+fly volumes snapshots create <volume-id>
+fly machine update --app <app-name> --command 'sleep infinity' \
+  --skip-health-checks <machine-id>
+```
+
+After the offline work, restore the saved normal Machine configuration with the
+recorded target image. Do not start the normal application against an
+unbaselined or pending schema; see the
+[offline migration procedure](schema-migrations.md).
 
 Create an attributable marker before an important release, record its id in
 the release evidence, deploy, inspect, and smoke-test. Reopen writes first and
@@ -264,6 +231,8 @@ fly ssh console --app <app-name> --command \
   'npm run hosted:control -- --data-dir=/data --control=provider-work --enabled=true --actor-id=<operator>'
 ```
 
+## Learner access
+
 To disable or re-enable local service access for a learner, also disable or
 re-enable the Clerk account and run the attributable local control:
 
@@ -272,164 +241,55 @@ fly ssh console --app <app-name> --command \
   'npm run hosted:learner-control -- --data-dir=/data --learner-id=<id> --disabled=true --actor-id=<operator>'
 ```
 
-## One-time primary dogfood cutover
+## Operator recovery
 
-This special-purpose path replaces the disposable hosted database, including
-the eight-word bootstrap, local mappings for the two test learners, and their
-activity. It does not delete their Clerk accounts. A test account that signs in
-afterward becomes a fresh learner against the migrated shared corpus.
+### Provision a reflection test card
 
-Use one reviewed application image. Deploy and smoke that image against the
-disposable hosted data first, then record its immutable image reference and the
-current Machine id. Do not build a different image after dogfood data is
-promoted.
-
-### Rehearse and review an offline candidate
-
-Stop local dogfood study before the final run. Preparation uses SQLite
-`VACUUM INTO` to create a coherent standalone snapshot, then mutates only that
-new copy. It refuses an existing output directory, requires exactly the
-trusted-local dogfood learner, binds the supplied Clerk subject without
-reassigning either side of an existing identity, applies the accepted
-`shared_trial` backfill, and writes a content-free manifest containing the
-database hash and Clerk-subject fingerprint. The candidate starts in
-maintenance with provider work disabled.
-
-Run this once as a rehearsal and inspect its JSON report. For the final run use
-a new cutover id and output directory. Obtain the exact Clerk user id from the
-Clerk dashboard; the dogfood account must not sign in against the replaced
-database until this binding is present.
+For operator smoke only, prepare one untouched shared word as a due
+**production** review card for one named learner. This creates private learner
+state only, does not modify shared content, refuses to overwrite existing
+progress, and records an attributable operator action. It is not an HTTP
+endpoint or a general-purpose state editor. Do not run it against a live
+beta learner's real progress.
 
 ```bash
-SWI57_SOURCE_DIR=/absolute/path/to/local-dogfood-data
-SWI57_OUTPUT_ROOT="$(mktemp -d)"
-SWI57_CUTOVER_ID=swi-57-dogfood-YYYYMMDD
-SWI57_CLERK_SUBJECT=user_REPLACE_ME
-
-npm run hosted:prepare-dogfood -- \
-  --source-data-dir="$SWI57_SOURCE_DIR" \
-  --output-data-dir="$SWI57_OUTPUT_ROOT/prepared" \
-  --learner-id=dogfood-local \
-  --clerk-subject="$SWI57_CLERK_SUBJECT" \
-  --actor-id=<operator> \
-  --cutover-id="$SWI57_CUTOVER_ID"
+fly ssh console --app <app-name> --command \
+  'npm run hosted:provision-review-test -- --data-dir=/data --learner-id=<id> --actor-id=<operator>'
 ```
 
-Record the final source snapshot time, `snapshotSha256`, `databaseSha256`,
-representative before/after counts, and exact shared-trial ids. Keep the local
-source unchanged and available read-only through initial hosted verification.
+Sign in as that learner, complete the production card with an intentionally
+incorrect response (or select **Ask reflection to review**), finish the
+session, and exercise the generated reflection. A second request for the same
+learner/word fails rather than altering real progress.
 
-### Stage and validate on the Fly Volume
+### Recover one captured reflection completion
 
-Create a node-writable staging directory and upload both candidate files under
-non-live names. Never upload directly over `/data/app.db`.
+If a provider completion was captured externally after the Machine died before
+the app persisted it, this narrow operator command can import it through the
+normal immutable artifact writer. It accepts only a V4 evidence bundle and V7
+response, runs the same structural and domain checks as the production
+provider path, and creates Help Inbox entries only for result items that have
+no proposal. It is idempotent for the exact same payload and refuses to replace
+a different artifact for that session.
+
+Upload the two JSON files to a node-writable, non-live path first. With
+provider work disabled and maintenance enabled, run:
 
 ```bash
-SWI57_APP=<app-name>
-SWI57_MACHINE=<machine-id>
-SWI57_REMOTE_DIR="/data/incoming/$SWI57_CUTOVER_ID"
-
-fly ssh console --app "$SWI57_APP" --command \
-  "install -d -o node -g node '$SWI57_REMOTE_DIR'"
-fly ssh sftp put --app "$SWI57_APP" --machine "$SWI57_MACHINE" --user node \
-  "$SWI57_OUTPUT_ROOT/prepared/app.db" "$SWI57_REMOTE_DIR/app.db"
-fly ssh sftp put --app "$SWI57_APP" --machine "$SWI57_MACHINE" --user node \
-  "$SWI57_OUTPUT_ROOT/prepared/manifest.json" "$SWI57_REMOTE_DIR/manifest.json"
-
-fly ssh console --app "$SWI57_APP" --command \
-  "npm run hosted:promote-dogfood -- \
+fly ssh console --app <app-name> --command \
+  'npm run hosted:recover-reflection-completion -- \
     --data-dir=/data \
-    --incoming-db='$SWI57_REMOTE_DIR/app.db' \
-    --manifest='$SWI57_REMOTE_DIR/manifest.json' \
-    --cutover-id='$SWI57_CUTOVER_ID' \
-    --litestream-socket=/data/litestream.sock"
+    --learner-id=<learner-id> \
+    --bundle-path=/data/recovery/<bundle>.json \
+    --result-path=/data/recovery/<result>.json \
+    --provider=openai \
+    --model=gpt-5.6-terra-high \
+    --prompt-version=reflection-v9'
 ```
 
-The last command is report-only. It must reproduce the manifest validation and
-incoming hash before maintenance begins.
-
-### Quiesce, promote, and restart the same image
-
-Disable provider work, enter maintenance, wait for active provider work to
-reach zero, force Litestream sync, and create an on-demand Fly Volume snapshot.
-Save the full Machine configuration. Update the owning Machine to run an idle
-command with health checks skipped; this stops the normal Litestream-plus-app
-CMD while leaving the Volume mounted. Confirm the Litestream socket and SQLite
-sidecars are absent. Do not delete them merely to bypass a refusal—investigate
-an unclean stop.
-
-```bash
-SWI57_IMAGE=<recorded-immutable-image-reference>
-fly machine status --app "$SWI57_APP" --display-config "$SWI57_MACHINE"
-fly volumes snapshots create <volume-id>
-fly machine update --app "$SWI57_APP" --command 'sleep infinity' \
-  --skip-health-checks "$SWI57_MACHINE"
-```
-
-Run promotion only in that stopped-normal-process state:
-
-```bash
-fly ssh console --app "$SWI57_APP" --command \
-  "npm run hosted:promote-dogfood -- \
-    --data-dir=/data \
-    --incoming-db='$SWI57_REMOTE_DIR/app.db' \
-    --manifest='$SWI57_REMOTE_DIR/manifest.json' \
-    --cutover-id='$SWI57_CUTOVER_ID' \
-    --litestream-socket=/data/litestream.sock \
-    --apply=true \
-    --confirm-normal-process-stopped=true"
-```
-
-Promotion keeps the previous fixture DB at
-`/data/cutover-backups/<cutover-id>/app.db`. Restore the saved normal Machine
-configuration with the exact recorded image and start it:
-
-```bash
-fly deploy --app "$SWI57_APP" --config deploy/fly/.generated/fly.toml \
-  --image "$SWI57_IMAGE" --ha=false
-```
-
-The health response must show maintenance enabled and provider work disabled.
-
-Before any hosted study write, prove that Litestream accepted the replacement
-database generation. Force a sync, restore the replica to an isolated path, and
-validate the dogfood cutover sentinel with the one migrated learner:
-
-```bash
-fly ssh console --app "$SWI57_APP" --command \
-  'litestream sync -wait -timeout 60 -socket /data/litestream.sock -json /data/app.db'
-
-# Run with the same image and restore credentials, outside /data.
-mkdir -p /tmp/swi57-initial-restore
-litestream restore -integrity-check full \
-  -o /tmp/swi57-initial-restore/app.db \
-  "s3://${LITESTREAM_BUCKET}/chinese-study-app/hosted-beta"
-npm run hosted:verify-restore -- \
-  --data-dir=/tmp/swi57-initial-restore \
-  --sentinel-id="$SWI57_CUTOVER_ID" \
-  --minimum-learners=1
-```
-
-If the forced sync or isolated restore cannot reproduce the cutover sentinel,
-keep maintenance enabled and do not study. Repair the replica generation
-rollover or configure a new empty replica prefix, then repeat this proof.
-
-### Human smoke, backup proof, and source-of-truth declaration
-
-The dogfood learner first signs in and confirms familiar scheduling, attempts,
-history, cues, and reflections. Re-enable writes while keeping provider work
-disabled for one representative study smoke. A disposable Clerk account then
-signs in fresh and must remain isolated. Re-enter maintenance, force Litestream
-sync, and perform the isolated restore proof using the cutover id as the
-sentinel and at least two learners. This second proof covers post-cutover writes
-and learner isolation; it does not replace the pre-write one-learner proof.
-
-After the restored database validates, reopen writes and provider work. The
-human operator explicitly declares hosted dogfood the sole writer. Keep the
-final local source and the on-Volume fixture rollback unchanged during the
-initial acceptance window. Once hosted study has begun, never roll back blindly:
-choose forward repair or an acknowledged recovery point and record the activity
-that would be lost.
+Record only the returned summary (`artifactId`, proposal count, and Help Inbox
+count); do not put the learner bundle or provider response into shell history,
+logs, or the repository.
 
 ## Backup and isolated restore proof
 
@@ -438,18 +298,17 @@ SQLite mode, bounded row counts and database sizes, control state, and
 Litestream sync age without printing credentials or replica coordinates.
 Investigate immediately if sync age approaches one hour.
 
-Before inviting learners, and after backup or migration changes, restore into
-an isolated path that is not the mounted live volume. Use the exact deployed
-image and an ephemeral Machine (or the same image locally), supply only the S3
-restore credentials, and run:
+After backup or migration changes, restore into an isolated path that is not
+the mounted live volume. Use the exact deployed image and an ephemeral Machine
+(or the same image locally), supply only the S3 restore credentials, and run:
 
 ```bash
-mkdir -p /tmp/swi56-restore
+mkdir -p /tmp/hosted-restore
 litestream restore -integrity-check full \
-  -o /tmp/swi56-restore/app.db \
+  -o /tmp/hosted-restore/app.db \
   "s3://${LITESTREAM_BUCKET}/chinese-study-app/hosted-beta"
 npm run hosted:verify-restore -- \
-  --data-dir=/tmp/swi56-restore \
+  --data-dir=/tmp/hosted-restore \
   --sentinel-id=<release-id> \
   --minimum-learners=2
 ```

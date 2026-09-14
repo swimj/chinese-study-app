@@ -73,7 +73,7 @@ shipped migrations before serving; existing databases never migrate on startup.
 
 ### Hosted target code and stopped process
 
-Use the [existing idle-Machine procedure](hosted-beta-deployment.md#quiesce-promote-and-restart-the-same-image):
+Use the [idle-Machine procedure](hosted-beta-deployment.md#idle-the-machine-for-offline-work):
 save the full Machine configuration and immutable source image; retain the
 mounted `/data` volume while replacing the normal app/Litestream command with
 `sleep infinity` and skipping health checks. Confirm normal processes stopped.

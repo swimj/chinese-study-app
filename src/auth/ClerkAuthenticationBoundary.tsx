@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { setApiAuthenticationTokenProvider } from '../services/api';
-import { resolveClerkAuthGatePhase } from './clerk-auth-gate';
-import { ClerkAuthLoadingView, ClerkAuthSignInView } from './ClerkAuthGateViews';
+import {
+  CLERK_INVITATION_TICKET_PARAM,
+  hasClerkInvitationTicket,
+  resolveClerkAuthGatePhase,
+  resolveClerkAuthMountedComponent,
+} from './clerk-auth-gate';
+import { ClerkAuthLoadingView, ClerkAuthSignInView, ClerkAuthSignUpView } from './ClerkAuthGateViews';
 
 type ClerkSession = {
   getToken(): Promise<string | null>;
@@ -10,6 +15,7 @@ type ClerkSession = {
 type ClerkClient = {
   load(options: Record<string, unknown>): Promise<void>;
   mountSignIn(element: HTMLDivElement, options: Record<string, unknown>): void;
+  mountSignUp(element: HTMLDivElement, options: Record<string, unknown>): void;
   signOut(options: { redirectUrl: string }): Promise<void>;
   session: ClerkSession | null;
   user: unknown;
@@ -27,7 +33,10 @@ const publishableKey = import.meta.env?.VITE_CLERK_PUBLISHABLE_KEY;
 const enabled = import.meta.env?.VITE_AUTH_MODE === 'clerk';
 
 export function ClerkAuthenticationBoundary({ children }: { children: (signOut?: () => Promise<void>) => ReactNode }) {
-  const signInTarget = useRef<HTMLDivElement>(null);
+  const authTarget = useRef<HTMLDivElement>(null);
+  const [invitationTicket] = useState(() => (
+    typeof window === 'undefined' ? false : hasClerkInvitationTicket(window.location)
+  ));
   const [client, setClient] = useState<ClerkClient | null>(null);
   const [clerkReady, setClerkReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
@@ -80,23 +89,49 @@ export function ClerkAuthenticationBoundary({ children }: { children: (signOut?:
   }, []);
 
   useEffect(() => {
-    if (!client || signedIn || error || !signInTarget.current) return;
+    if (!client || signedIn || error || !authTarget.current) return;
     const origin = window.location.origin;
-    client.mountSignIn(signInTarget.current, {
+    const redirectOptions = {
       forceRedirectUrl: origin,
+      fallbackRedirectUrl: origin,
+      signInForceRedirectUrl: origin,
+      signInFallbackRedirectUrl: origin,
       signUpForceRedirectUrl: origin,
       signUpFallbackRedirectUrl: origin,
-    });
-  }, [client, signedIn, error]);
+    };
+    if (resolveClerkAuthMountedComponent(invitationTicket) === 'sign-up') {
+      client.mountSignUp(authTarget.current, redirectOptions);
+      return;
+    }
+    client.mountSignIn(authTarget.current, redirectOptions);
+  }, [client, signedIn, error, invitationTicket]);
 
-  const phase = resolveClerkAuthGatePhase({ enabled, clerkReady, signedIn, error });
+  useEffect(() => {
+    if (!signedIn || !invitationTicket) return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has(CLERK_INVITATION_TICKET_PARAM)) return;
+    url.searchParams.delete(CLERK_INVITATION_TICKET_PARAM);
+    url.searchParams.delete('__clerk_status');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  }, [signedIn, invitationTicket]);
+
+  const phase = resolveClerkAuthGatePhase({
+    enabled,
+    clerkReady,
+    signedIn,
+    error,
+    invitationTicket,
+  });
   if (phase === 'app') {
     return <>{children(enabled && client ? () => client.signOut({ redirectUrl: window.location.origin }) : undefined)}</>;
   }
   if (phase === 'loading') {
     return <ClerkAuthLoadingView />;
   }
-  return <ClerkAuthSignInView error={error} signInTargetRef={signInTarget} />;
+  if (phase === 'sign-up') {
+    return <ClerkAuthSignUpView error={error} signUpTargetRef={authTarget} />;
+  }
+  return <ClerkAuthSignInView error={error} signInTargetRef={authTarget} />;
 }
 
 async function loadClerkClient(key: string): Promise<ClerkClient> {
