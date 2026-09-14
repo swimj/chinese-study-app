@@ -27,6 +27,7 @@ src/
     MeaningList.tsx               # shared meaning list rendering
 
   pages/
+    AboutPage.tsx                 # learner help: getting started, usage, known issues, recent changes
     HomePage.tsx                  # home: overview + active session grid
     HomeOverviewPanel.tsx         # backend/session availability overview + Start session card (gear toggles SessionSettingsPanel)
     PriorityPage.tsx              # Words / Stash: unstudied priority chip bank
@@ -91,7 +92,7 @@ Home, rather than completing signup on Clerk Account Portal.
 
 `App.tsx` is intentionally thin. It owns only cross-page concerns:
 
-- current page selection (`home` | `priority` | `reflections` | `content`)
+- current page selection (`home` | `priority` | `reflections` | `content` | `about`)
 - global error message
 - backend status refresh
 - app chrome wiring

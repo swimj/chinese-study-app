@@ -1,7 +1,7 @@
 import { createContext, useContext, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
-export type AppPageKey = 'home' | 'priority' | 'reflections' | 'content';
+export type AppPageKey = 'home' | 'priority' | 'reflections' | 'content' | 'about';
 
 const NestedNavContext = createContext<HTMLElement | null>(null);
 
@@ -22,6 +22,7 @@ const PRIMARY_PAGES: ReadonlyArray<{
   { key: 'priority', label: 'Words', nested: true },
   { key: 'reflections', label: 'Reflections', nested: true },
   { key: 'content', label: 'Content Bin', nested: false },
+  { key: 'about', label: 'About', nested: true },
 ];
 
 export function AppChrome({
@@ -37,6 +38,7 @@ export function AppChrome({
   onOpenReflectionsPage,
   onRefreshReflections,
   onOpenContentPage,
+  onOpenAboutPage,
   onSignOut,
 }: {
   currentPage: AppPageKey;
@@ -51,17 +53,19 @@ export function AppChrome({
   onOpenReflectionsPage: () => void;
   onRefreshReflections?: () => void;
   onOpenContentPage: () => void;
+  onOpenAboutPage: () => void;
   onSignOut?: () => Promise<void>;
 }) {
   const nestedSlotRef = useRef<HTMLDivElement | null>(null);
   const [nestedSlot, setNestedSlot] = useState<HTMLDivElement | null>(null);
   const navigationLoading = priorityPageLoading || reflectionPageLoading || contentPageLoading;
-  const showNested = currentPage === 'priority' || currentPage === 'reflections';
+  const showNested = currentPage === 'priority' || currentPage === 'reflections' || currentPage === 'about';
   const openers: Record<AppPageKey, () => void> = {
     home: onOpenHomePage,
     priority: onOpenPriorityPage,
     reflections: onOpenReflectionsPage,
     content: onOpenContentPage,
+    about: onOpenAboutPage,
   };
   const loadingLabels: Partial<Record<AppPageKey, string>> = {
     priority: priorityPageLoading ? 'Loading words...' : undefined,
