@@ -73,13 +73,43 @@ fly ssh console --app <app-name> --command \
   'npm run hosted:inspect -- --data-dir=/data --litestream-socket=/data/litestream.sock'
 ```
 
-Invite two dummy users in Clerk and complete invitation acceptance in separate
-browser profiles. First authenticated use creates each stable local learner.
-Verify for both users: sign-in, home/status load, adding or selecting a word,
-one study session, one provider-backed reflection/intake action, sign-out, and
-sign-in again. Confirm that one user cannot see the other's notes, priorities,
-session history, or reflections. Exercise all five model arms once; a failure
-in one arm must remain attributable and must not prevent another arm working.
+Invite two dummy users from an operator checkout, not the Clerk Dashboard and
+not `fly ssh`. Dashboard invitations have no app return URL, so on a Clerk
+development instance the email link opens Account Portal on `accounts.dev`.
+`hosted:invite` attaches `CLERK_AUTHORIZED_PARTY` so the recipient sets a
+password on the study origin and lands signed in on Home.
+
+Keep invitation addresses in environment variables so they never appear in
+command arguments or tracked output:
+
+```bash
+# Put CLERK_SECRET_KEY, CLERK_AUTHORIZED_PARTY, and one HOSTED_INVITE_EMAIL in
+# a chmod-600 env file, then load it without echoing values.
+set -a
+source deploy/fly/.generated/clerk-invite.env
+set +a
+npm run hosted:invite -- --email-env=HOSTED_INVITE_EMAIL
+```
+
+Replace only `HOSTED_INVITE_EMAIL` between recipients. Complete invitation
+acceptance in separate browser profiles. First authenticated use creates each
+stable local learner. Verify for both users: sign-in, home/status load, adding
+or selecting a word, one study session, one provider-backed reflection/intake
+action, sign-out, and sign-in again. Confirm that one user cannot see the
+other's notes, priorities, session history, or reflections. Exercise all
+configured model arms once; a failure in one arm must remain attributable and
+must not prevent another arm working.
+
+Clerk development invitation email still comes from Clerk and is often prefixed
+as development mail. Warn recipients to check spam. A production Clerk instance
+with a custom sending domain is the later fix for that; it is not required for
+the app-origin password page.
+
+If you still use the Clerk Dashboard to invite, set Account Portal → Redirects
+after sign-up, after sign-in, and after logo click to `/`. That is not enough
+for a first-time invitee on a development instance: `$DEVHOST` is detected per
+browser, and a recipient who never loaded the app stays on Clerk's default
+page.
 
 ### Provision a reflection test card for a dummy learner
 

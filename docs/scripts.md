@@ -36,6 +36,7 @@ automated terminal-driver procedures are in the
 | `npm run hosted:prepare-dogfood -- --source-data-dir=<local> --output-data-dir=<new-dir> ...` | Create a coherent, validated, Clerk-bound dogfood cutover copy without mutating the source database |
 | `npm run hosted:promote-dogfood -- --data-dir=/data --incoming-db=<staged-db> --manifest=<staged-manifest> ...` | Validate a staged dogfood copy and atomically replace the disposable hosted database only while the normal process is stopped |
 | `npm run hosted:sentinel -- --data-dir=/data --sentinel-id=<id> --actor-id=<id>` | Add an immutable restore-proof marker |
+| `npm run hosted:invite -- --email-env=<NAME>` | Create one Clerk invitation whose email link returns to `CLERK_AUTHORIZED_PARTY`. Read the address from that env var; do not pass the email on the command line. Run from an operator checkout, not `fly ssh`. |
 | `npm run hosted:inspect -- --data-dir=/data --litestream-socket=/data/litestream.sock` | Print bounded database, backup-freshness, and baked release-identity diagnostics |
 | `npm run hosted:inspect-study-commits -- --data-dir=/data --limit=20` | Read recent private study-commit failure records; optionally select one with `--diagnostic-id=<id>` |
 | `npm run hosted:smoke -- --data-dir=/data` | Mint a short-lived Clerk session for the designated smoke user and perform a read-only authenticated GET |

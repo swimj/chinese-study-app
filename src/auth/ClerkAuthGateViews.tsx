@@ -21,11 +21,45 @@ export function ClerkAuthSignInView({
   signInTargetRef?: Ref<HTMLDivElement>;
 }) {
   return (
+    <ClerkAuthFormView
+      heading="Sign in to study"
+      error={error}
+      targetRef={signInTargetRef}
+    />
+  );
+}
+
+export function ClerkAuthSignUpView({
+  error,
+  signUpTargetRef,
+}: {
+  error: string | null;
+  signUpTargetRef?: Ref<HTMLDivElement>;
+}) {
+  return (
+    <ClerkAuthFormView
+      heading="Set a password to study"
+      error={error}
+      targetRef={signUpTargetRef}
+    />
+  );
+}
+
+function ClerkAuthFormView({
+  heading,
+  error,
+  targetRef,
+}: {
+  heading: string;
+  error: string | null;
+  targetRef?: Ref<HTMLDivElement>;
+}) {
+  return (
     <main className="container">
       <section className="panel">
-        <h1>Sign in to study</h1>
+        <h1>{heading}</h1>
         {error ? <p className="notes">{error}</p> : null}
-        <div ref={signInTargetRef} />
+        <div ref={targetRef} />
       </section>
     </main>
   );

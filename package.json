@@ -21,6 +21,7 @@
     "hosted:prepare-dogfood": "node --import tsx scripts/prepare-hosted-dogfood-cutover.ts",
     "hosted:promote-dogfood": "node --import tsx scripts/promote-hosted-dogfood-cutover.ts",
     "hosted:sentinel": "node --import tsx scripts/seed-deployment-sentinel.ts",
+    "hosted:invite": "node --import tsx scripts/invite-hosted-learner.ts",
     "hosted:inspect": "node --import tsx scripts/inspect-hosted-service.ts",
     "hosted:inspect-study-commits": "node --import tsx scripts/inspect-study-commit-diagnostics.ts",
     "hosted:smoke": "node --import tsx scripts/smoke-hosted-service.ts",

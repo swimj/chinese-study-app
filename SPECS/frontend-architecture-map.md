@@ -19,8 +19,8 @@ src/
 
   auth/
     ClerkAuthenticationBoundary.tsx  # Clerk session gate around App
-    ClerkAuthGateViews.tsx           # loading chrome and signed-out sign-in panel
-    clerk-auth-gate.ts               # loading vs sign-in vs app phase resolver
+    ClerkAuthGateViews.tsx           # loading chrome, signed-out sign-in, and invite password panel
+    clerk-auth-gate.ts               # loading vs sign-in vs invite sign-up vs app phase resolver
 
   components/
     AppChrome.tsx                 # left-gutter primary nav, nested page rails, errors
@@ -85,7 +85,9 @@ src/
 
 `main.tsx` wraps `App` in `ClerkAuthenticationBoundary`. Clerk startup is a
 loading state, not a signed-out state: the sign-in heading stays hidden until
-Clerk reports no session.
+Clerk reports no session. An invitation ticket in the URL mounts SignUp on the
+app origin so invited users set a password there and continue into a signed-in
+Home, rather than completing signup on Clerk Account Portal.
 
 `App.tsx` is intentionally thin. It owns only cross-page concerns:
 
