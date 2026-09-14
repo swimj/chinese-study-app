@@ -18,11 +18,12 @@ function renderChrome(currentPage: AppPageKey, children: string | null = null) {
     onOpenPriorityPage: noop,
     onOpenReflectionsPage: noop,
     onOpenContentPage: noop,
+    onOpenAboutPage: noop,
   }, children));
 }
 
 describe('AppChrome primary navigation', () => {
-  test('renders a left-gutter primary landmark with the four views and product name', () => {
+  test('renders a left-gutter primary landmark with the five views and product name', () => {
     const markup = renderChrome('home');
     assert.match(markup, /aria-label="Primary"/);
     assert.match(markup, /class="navbar app-primary-nav"/);
@@ -34,10 +35,12 @@ describe('AppChrome primary navigation', () => {
     assert.match(markup, />Words</);
     assert.match(markup, />Reflections</);
     assert.match(markup, />Content Bin</);
+    assert.match(markup, />About</);
     assert.doesNotMatch(markup, /class="app-nav-nested"/);
   });
 
-  test('opens a nested slot only for Words and Reflections', () => {
+  test('opens a nested slot only for Words, Reflections, and About', () => {
+    assert.match(renderChrome('about'), /class="app-nav-nested"/);
     assert.match(renderChrome('priority'), /class="app-nav-nested"/);
     assert.match(renderChrome('reflections'), /class="app-nav-nested"/);
     assert.doesNotMatch(renderChrome('home'), /class="app-nav-nested"/);
@@ -57,6 +60,7 @@ describe('AppChrome primary navigation', () => {
       onOpenReflectionsPage: noop,
       onRefreshReflections: noop,
       onOpenContentPage: noop,
+      onOpenAboutPage: noop,
     }));
     assert.match(withHandler, /class="reflections-nav-shell"/);
     assert.match(withHandler, /aria-label="Refresh reflection workspace from server"/);
@@ -77,6 +81,7 @@ describe('AppChrome primary navigation', () => {
         onOpenReflectionsPage: noop,
         onRefreshReflections: noop,
         onOpenContentPage: noop,
+        onOpenAboutPage: noop,
       })),
       /class="reflections-nav-refresh"/,
     );

@@ -22,6 +22,7 @@ import {
   authorizeManualReflectionOperation,
 } from './services/api';
 import { AppChrome, NestedNav, type AppPageKey } from './components/AppChrome';
+import { AboutPage, type AboutView } from './pages/AboutPage';
 import { MyWordsPage } from './pages/MyWordsPage';
 import { useMyWordsController } from './features/words/useMyWordsController';
 import { PersonalNotesEditorOverlay } from './features/session/PersonalNotesEditorOverlay';
@@ -43,6 +44,7 @@ import {
 
 function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
   const [currentPage, setCurrentPage] = useState<AppPageKey>('home');
+  const [aboutView, setAboutView] = useState<AboutView>('getting-started');
   const [wordsView, setWordsView] = useState<'stash' | 'my-words'>('stash');
   const myWords = useMyWordsController(currentPage === 'priority' && wordsView === 'my-words');
   const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);
@@ -195,6 +197,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
       onOpenReflectionsPage={() => void reflectionPage.openPage()}
       onRefreshReflections={() => void reflectionPage.refresh()}
       onOpenContentPage={() => void contentPage.openPage()}
+      onOpenAboutPage={() => setCurrentPage('about')}
       onSignOut={onSignOut}
     >
       {currentPage === 'home' ? (
@@ -247,6 +250,8 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
         </>
       ) : currentPage === 'reflections' ? (
         <ReflectionsPage controller={reflectionPage} />
+      ) : currentPage === 'about' ? (
+        <AboutPage view={aboutView} onSelectView={setAboutView} />
       ) : currentPage === 'content' ? (
         <ContentDiagnosticsPage
           data={contentPage.data}

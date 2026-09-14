@@ -3811,3 +3811,50 @@ textarea {
   .my-words-browser.has-detail { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(8rem, 1fr) minmax(10rem, 1fr); }
   .my-word-detail { border-left: 0; border-top: 1px solid #334155; }
 }
+
+.about-page {
+  max-width: 52rem;
+  margin: 0 auto;
+  line-height: 1.7;
+}
+
+.about-page h1 {
+  margin: 0 0 1rem;
+  line-height: 1.2;
+}
+
+.about-page section + section {
+  margin-top: 1.75rem;
+}
+
+.about-page h2 {
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+}
+
+.about-page li + li {
+  margin-top: 0.8rem;
+}
+
+.about-page ol {
+  padding-left: 1.5rem;
+}
+
+.about-update {
+  padding: 1.5rem 0;
+  border-top: 1px solid #334155;
+}
+
+.about-update time {
+  display: block;
+  font-size: 0.85rem;
+}
+
+.about-update h2 {
+  margin-top: 0.35rem;
+  font-size: 1.3rem;
+}
+
+.about-update p:last-child {
+  margin-bottom: 0;
+}
