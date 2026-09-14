@@ -85,6 +85,27 @@ type BackendStatus = {
 
 export type UnstudiedAdmissionSource = 'mixed' | 'stash_only';
 
+export type UsageDailySnapshot = {
+  dayKey: string;
+  capturedAt: string;
+  dau: number;
+  sessionsCompleted: number;
+  newWords: number;
+  modelSpendUsd: number;
+  medianStashSize: number | null;
+  medianSessionActiveMs: number | null;
+  learnersInactive7d: number;
+  sessionsAbandoned: number;
+  learnersSpendWithoutAccepts: number;
+  studyCommitFailures: number;
+};
+
+export type UsagePulsePayload = {
+  generatedAt: string;
+  today: UsageDailySnapshot;
+  days: UsageDailySnapshot[];
+};
+
 type LearningPolicyResponse = {
   dailyNewWordLimit: number;
   unstudiedAdmissionSource: UnstudiedAdmissionSource;
@@ -300,6 +321,14 @@ export async function fetchStatus(): Promise<BackendStatus> {
   const response = await apiFetch(`${API_BASE}/api/status?studyDayKey=${encodeURIComponent(studyDayKey)}`);
   if (!response.ok) {
     throw new Error('Failed to load backend status');
+  }
+  return response.json();
+}
+
+export async function fetchOperatorUsagePulse(): Promise<UsagePulsePayload> {
+  const response = await apiFetch(`${API_BASE}/api/operator/usage-pulse`);
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to load operator usage pulse'));
   }
   return response.json();
 }

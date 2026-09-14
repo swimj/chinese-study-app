@@ -35,6 +35,10 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
   operationalEntry('service_controls', 'hosted maintenance and provider-work controls'),
   operationalEntry('deployment_sentinels', 'hosted persistence and restore proof markers'),
   operationalEntry('operator_actions', 'attributable hosted administrative action ledger'),
+  operationalEntry(
+    'usage_daily_snapshots',
+    'content-free daily cohort product-usage pulse aggregates',
+  ),
   sharedEntry(
     'shared_content_publications',
     'immutable reusable content plus publication disposition',

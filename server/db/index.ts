@@ -19,3 +19,4 @@ export * from './shared-content.ts';
 export * from './learner-ownership-guards.ts';
 export * from './shared-content-bootstrap.ts';
 export * from './hosted-operations.ts';
+export * from './usage-pulse.ts';

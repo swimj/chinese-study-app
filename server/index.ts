@@ -63,6 +63,7 @@ import {
   upsertReflectionQualityAnnotation,
   markReflectionHelpInboxDone,
   withdrawReflectionInvocationAuthorization,
+  getUsagePulse,
   type ReviewAttemptCommitIntent,
 } from './db.ts';
 import { isDietIntakePlacementAnswers } from '../src/domain/diet-intake-placement.ts';
@@ -71,6 +72,8 @@ import {
   DietIntakePlacementAssessmentError,
   type DietIntakePlacementService,
 } from './diet/intake-placement-service.ts';
+import { createOperatorAllowlistMiddleware } from './operator-access.ts';
+import { startUsagePulseScheduler } from './usage-pulse-scheduler.ts';
 import {
   getActiveProviderWorkCount,
   HostedProviderWorkUnavailableError,
@@ -241,6 +244,19 @@ export function createApp(options: CreateAppOptions = {}) {
       res.status(500).json({ error: 'Failed to load my words' });
     }
   });
+
+  app.get(
+    '/api/operator/usage-pulse',
+    createOperatorAllowlistMiddleware(),
+    (_req, res) => {
+      try {
+        res.json(getUsagePulse({ dataDir: dbConfig.dataDir }));
+      } catch (error) {
+        console.error('Failed to load operator usage pulse', error);
+        res.status(500).json({ error: 'Failed to load operator usage pulse' });
+      }
+    },
+  );
 
   app.get('/api/words/search', (req, res) => {
     const query = req.query?.q;
@@ -1910,10 +1926,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         port: metricsPort,
         readOperationalMetrics: () => readServiceOperationalMetrics(),
       });
+  const usagePulseScheduler = startUsagePulseScheduler();
   startServer({
     app: createApp({ serviceMetrics }),
     additionalServers: metricsServer ? [metricsServer] : [],
     closeDatabase: () => {
+      usagePulseScheduler.stop();
       serviceMetrics.dispose();
       closeDbConnection();
     },

@@ -1,7 +1,8 @@
 import { createContext, useContext, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
-export type AppPageKey = 'home' | 'priority' | 'reflections' | 'content' | 'about';
+export type AppPageKey = 'home' | 'priority' | 'reflections' | 'content' | 'about' | 'operator-usage';
+export type PrimaryAppPageKey = Exclude<AppPageKey, 'operator-usage'>;
 
 const NestedNavContext = createContext<HTMLElement | null>(null);
 
@@ -14,7 +15,7 @@ export function NestedNav({ children }: { children: ReactNode }) {
 }
 
 const PRIMARY_PAGES: ReadonlyArray<{
-  key: AppPageKey;
+  key: PrimaryAppPageKey;
   label: string;
   nested: boolean;
 }> = [
@@ -60,14 +61,14 @@ export function AppChrome({
   const [nestedSlot, setNestedSlot] = useState<HTMLDivElement | null>(null);
   const navigationLoading = priorityPageLoading || reflectionPageLoading || contentPageLoading;
   const showNested = currentPage === 'priority' || currentPage === 'reflections' || currentPage === 'about';
-  const openers: Record<AppPageKey, () => void> = {
+  const openers: Record<PrimaryAppPageKey, () => void> = {
     home: onOpenHomePage,
     priority: onOpenPriorityPage,
     reflections: onOpenReflectionsPage,
     content: onOpenContentPage,
     about: onOpenAboutPage,
   };
-  const loadingLabels: Partial<Record<AppPageKey, string>> = {
+  const loadingLabels: Partial<Record<PrimaryAppPageKey, string>> = {
     priority: priorityPageLoading ? 'Loading words...' : undefined,
     // While already on Reflections, the overlay refresh icon owns loading feedback.
     reflections:
