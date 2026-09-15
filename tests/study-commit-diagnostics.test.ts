@@ -5,6 +5,7 @@ import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import type { DatabaseSync } from 'node:sqlite';
+import type { ClientTransportIncident } from '../src/domain/client-incidents.ts';
 import {
   createStudyCommitDiagnosticSink,
   describeStudyCommitFailure,
@@ -280,6 +281,56 @@ describe('study commit diagnostics', { concurrency: false }, () => {
     });
     assert.equal(successful.status, 204);
     assert.equal(diagnostics.length, 1);
+  });
+
+  test('accepts authenticated bounded client incident batches and rejects malformed records', async () => {
+    const recorded: Array<{ learnerId: string; incident: ClientTransportIncident }> = [];
+    const app = indexModule.createApp({
+      clientIncidentDiagnosticSink: {
+        record(input) {
+          recorded.push(input);
+        },
+      },
+    });
+    const incident: ClientTransportIncident = {
+      schemaVersion: 'client_transport_incident.v1',
+      event: 'client_transport.failed',
+      diagnosticId: 'client-incident-route-test',
+      at: '2026-09-11T02:00:00.000Z',
+      appVersion: '2.3.0',
+      route: '/api/study-sessions/:sessionId/accepted-review-attempt-batch',
+      method: 'POST',
+      phase: 'fetch',
+      elapsedMs: 200,
+      correlation: {
+        sessionId: 'session-route-test',
+        sessionActionId: 'review/word-1/recognition',
+        eventIds: ['attempt-route-test'],
+      },
+      browser: { online: false, visibilityState: 'visible' },
+      error: { name: 'TypeError', message: 'Failed to fetch' },
+    };
+
+    const accepted = await request(app, '/api/client-incidents', {
+      method: 'POST',
+      body: { incidents: [incident] },
+    });
+    assert.equal(accepted.status, 204);
+    assert.deepEqual(recorded, [{ learnerId: 'test-learner', incident }]);
+
+    const rejected = await request(app, '/api/client-incidents', {
+      method: 'POST',
+      body: { incidents: [{ ...incident, route: '/api/arbitrary' }] },
+    });
+    assert.equal(rejected.status, 400);
+    assert.equal(recorded.length, 1);
+
+    const rejectedExtraField = await request(app, '/api/client-incidents', {
+      method: 'POST',
+      body: { incidents: [{ ...incident, extraSecret: 'must not be accepted' }] },
+    });
+    assert.equal(rejectedExtraField.status, 400);
+    assert.equal(recorded.length, 1);
   });
 });
 

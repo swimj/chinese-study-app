@@ -20,6 +20,7 @@ import {
   fetchReflectionHelpInbox,
   markReflectionHelpInboxDone,
   authorizeManualReflectionOperation,
+  flushPendingClientTransportIncidents,
 } from './services/api';
 import { AppChrome, NestedNav, type AppPageKey } from './components/AppChrome';
 import { AboutPage, type AboutView } from './pages/AboutPage';
@@ -126,6 +127,15 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     }
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  useEffect(() => {
+    const flush = () => {
+      void flushPendingClientTransportIncidents().catch(() => undefined);
+    };
+    flush();
+    window.addEventListener('online', flush);
+    return () => window.removeEventListener('online', flush);
   }, []);
 
   useEffect(() => {

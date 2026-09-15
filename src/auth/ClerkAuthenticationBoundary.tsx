@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { setApiAuthenticationTokenProvider } from '../services/api';
+import {
+  setApiAuthenticationTokenProvider,
+  setClientIncidentStorageScope,
+} from '../services/api';
 import {
   CLERK_INVITATION_TICKET_PARAM,
   hasClerkInvitationTicket,
@@ -12,14 +15,18 @@ type ClerkSession = {
   getToken(): Promise<string | null>;
 };
 
+type ClerkUser = {
+  id: string;
+};
+
 type ClerkClient = {
   load(options: Record<string, unknown>): Promise<void>;
   mountSignIn(element: HTMLDivElement, options: Record<string, unknown>): void;
   mountSignUp(element: HTMLDivElement, options: Record<string, unknown>): void;
   signOut(options: { redirectUrl: string }): Promise<void>;
   session: ClerkSession | null;
-  user: unknown;
-  addListener(listener: (resource: { user: unknown; session: ClerkSession | null }) => void): () => void;
+  user: ClerkUser | null;
+  addListener(listener: (resource: { user: ClerkUser | null; session: ClerkSession | null }) => void): () => void;
 };
 
 declare global {
@@ -68,8 +75,10 @@ export function ClerkAuthenticationBoundary({ children }: { children: (signOut?:
         const hasSession = Boolean(loadedClient.user && loadedClient.session);
         if (hasSession) {
           setApiAuthenticationTokenProvider(() => loadedClient.session?.getToken() ?? Promise.resolve(null));
+          setClientIncidentStorageScope(loadedClient.user?.id ?? null);
         } else {
           setApiAuthenticationTokenProvider(null);
+          setClientIncidentStorageScope(null);
         }
         setClient(loadedClient);
         setClerkReady(true);
@@ -85,6 +94,7 @@ export function ClerkAuthenticationBoundary({ children }: { children: (signOut?:
       cancelled = true;
       removeListener?.();
       setApiAuthenticationTokenProvider(null);
+      setClientIncidentStorageScope(null);
     };
   }, []);
 
