@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  formatProductionExpectationCopy,
   getPersonalNotesEditorTarget,
   getActivePrompt,
+  getRevealedProductionAnswerText,
+  getSharedAnswerSpacePromptNote,
   getStudySessionPanelView,
   hasServedProductionCueSupplement,
 } from '../src/features/session/session-selectors.ts';
@@ -164,6 +167,74 @@ describe('session selectors', () => {
       },
       recheckDemandId: null,
     }), true);
+  });
+
+  test('acknowledges a shared answer space without listing answers before reveal', () => {
+    const production = {
+      taskId: 'production-task:cue-word:default_production',
+      cueId: 'cue-1',
+      cueType: 'minimal_context' as const,
+      text: 'No wonder!',
+      acceptedAnswers: [
+        { wordId: 'cue-word', hanzi: '难怪', traditional: null },
+        { wordId: 'alt-word', hanzi: '怪不得', traditional: null },
+      ],
+      supplement: null,
+      recheckDemandId: null,
+    };
+
+    assert.equal(getSharedAnswerSpacePromptNote(production), 'This cue accepts more than one answer.');
+    assert.equal(getSharedAnswerSpacePromptNote({
+      ...production,
+      acceptedAnswers: [{ wordId: 'cue-word', hanzi: '难怪', traditional: null }],
+    }), null);
+    assert.equal(formatProductionExpectationCopy({
+      production,
+      anchorHanzi: '难怪',
+    }), 'one of "难怪", "怪不得"');
+  });
+
+  test('reveals the submitted accepted form for a shared-answer-space cue', () => {
+    const word = createWord({ id: 'cue-word', personalNotes: '' });
+    const item = {
+      sessionActionId: 'review/cue-word/production',
+      actionKind: 'production' as const,
+      targetWordId: word.id,
+      sampledSkillIds: ['production' as const],
+      contentRef: {
+        type: 'production_cue' as const,
+        taskId: 'production-task:cue-word:default_production',
+        cueId: 'cue-1',
+      },
+      intervalHours: 24,
+      word,
+      contrastSelection: null,
+      production: {
+        taskId: 'production-task:cue-word:default_production',
+        cueId: 'cue-1',
+        cueType: 'minimal_context' as const,
+        text: 'No wonder!',
+        acceptedAnswers: [
+          { wordId: 'cue-word', hanzi: '难怪', traditional: null },
+          { wordId: 'alt-word', hanzi: '怪不得', traditional: null },
+        ],
+        supplement: null,
+        recheckDemandId: null,
+      },
+    };
+
+    assert.equal(getRevealedProductionAnswerText({
+      item,
+      word,
+      submittedText: '怪不得',
+      profileId: 'mandarin',
+    }), '怪不得');
+    assert.equal(getRevealedProductionAnswerText({
+      item,
+      word,
+      submittedText: null,
+      profileId: 'mandarin',
+    }), '字');
   });
 });
 

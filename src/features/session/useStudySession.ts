@@ -51,6 +51,7 @@ import {
 } from './session-rating';
 import { resolveSessionKey, isEditableKeyboardTarget } from './session-keyboard';
 import {
+  formatProductionExpectationCopy,
   getActiveAnswerPinyin,
   getActiveAnswerText,
   getActiveMeaningSelection,
@@ -58,6 +59,7 @@ import {
   getActiveReviewState,
   getActiveWordPersonalNotes,
   getPersonalNotesEditorTarget,
+  getRevealedProductionAnswerText,
   hasServedProductionCueSupplement,
   isProductionSessionItem,
   isReviewInReinforcement,
@@ -347,15 +349,27 @@ export function useStudySession({
     promptDisplayedMeanings: activePromptDisplayedMeanings,
     allMeanings: activeAllMeanings,
   });
-  const activeAnswerText = getActiveAnswerText({
+  const scheduledAnswerText = getActiveAnswerText({
     item: activeItem,
     word: activeWord,
     allMeanings: activeAllMeanings,
   });
-  const activeAnswerPinyin = getActiveAnswerPinyin({
+  const revealedProductionAnswerText = getRevealedProductionAnswerText({
+    item: activeItem,
+    word: activeWord,
+    submittedText: productionSubmittedResponse ?? productionHanziInput,
+    profileId: studyProfile.id,
+  });
+  const activeAnswerText = revealedProductionAnswerText ?? scheduledAnswerText;
+  const scheduledAnswerPinyin = getActiveAnswerPinyin({
     item: activeItem,
     word: activeWord,
   });
+  const activeAnswerPinyin = activeItem?.actionKind === 'production'
+    && activeWord !== null
+    && activeAnswerText !== activeWord.hanzi
+    ? null
+    : scheduledAnswerPinyin;
   const activeReviewState = getActiveReviewState({
     reviewInReinforcement,
     reinforcementStreak: activeReviewReinforcementStreak,
@@ -979,10 +993,14 @@ export function useStudySession({
       intervalHours: itemAtResponse.intervalHours,
       example: wordAtResponse.examples[0] ?? '',
     });
+    const expectedAnswer = formatProductionExpectationCopy({
+      production: itemAtResponse.production,
+      anchorHanzi: wordAtResponse.hanzi,
+    });
     setProductionHanziError(
       attemptedHanzi === null
-        ? `No clue recorded. Expected "${wordAtResponse.hanzi}".`
-        : `Incorrect ${studyProfile.labels.target}. Expected "${wordAtResponse.hanzi}".`,
+        ? `No clue recorded. Expected ${expectedAnswer}.`
+        : `Incorrect ${studyProfile.labels.target}. Expected ${expectedAnswer}.`,
     );
     setProductionUiPhase('await-next');
     setAnswerRevealed(true);

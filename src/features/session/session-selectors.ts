@@ -1,4 +1,10 @@
-import type { SessionStudyItem } from '../../domain/study-actions';
+import {
+  formatExpectedProductionAnswerCopy,
+  isSharedAnswerSpaceProduction,
+} from '../../domain/production-answer-space';
+import { listMatchingProductionWordIds } from '../../domain/production-response';
+import type { ProductionExerciseSnapshot, SessionStudyItem } from '../../domain/study-actions';
+import type { StudyProfileId } from '../../study-profile';
 import type { Word, WordMeaning } from '../../types';
 
 export function hasServedProductionCueSupplement(
@@ -237,4 +243,58 @@ export function getActiveReviewState({
 
 export function isProductionSessionItem(item: SessionStudyItem | null) {
   return item?.actionKind === 'production';
+}
+
+export function getSharedAnswerSpacePromptNote(
+  production: ProductionExerciseSnapshot | null | undefined,
+): string | null {
+  return isSharedAnswerSpaceProduction(production)
+    ? 'This cue accepts more than one answer.'
+    : null;
+}
+
+export function getRevealedProductionAnswerText({
+  item,
+  word,
+  submittedText,
+  profileId,
+}: {
+  item: SessionStudyItem | null;
+  word: Word | null;
+  submittedText: string | null;
+  profileId: StudyProfileId;
+}): string | null {
+  if (!item || !word || item.actionKind !== 'production') {
+    return null;
+  }
+
+  const production = item.production;
+  if (production && submittedText && isSharedAnswerSpaceProduction(production)) {
+    const matchingWordIds = listMatchingProductionWordIds(
+      submittedText,
+      production.acceptedAnswers,
+      profileId,
+    );
+    const matchedAnswer = production.acceptedAnswers.find((answer) => (
+      matchingWordIds.includes(answer.wordId)
+    ));
+    if (matchedAnswer) {
+      return matchedAnswer.hanzi;
+    }
+  }
+
+  return word.hanzi;
+}
+
+export function formatProductionExpectationCopy({
+  production,
+  anchorHanzi,
+}: {
+  production: ProductionExerciseSnapshot | null | undefined;
+  anchorHanzi: string;
+}): string {
+  return formatExpectedProductionAnswerCopy({
+    acceptedAnswers: production?.acceptedAnswers,
+    anchorHanzi,
+  });
 }

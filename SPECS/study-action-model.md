@@ -292,6 +292,30 @@ These demands are a temporary "check again soon" class, not cue schedule state.
 They do not make cues independently scheduled SRS objects and must not be
 promoted into cue semantics or a broader scheduling redesign.
 
+Review composition now has a replaceable seam that treats shared-answer-space
+cues separately from word-specific production, without making cues independently
+scheduled SRS objects:
+
+- a cue is `shared_answer_space` when its accepted-word set contains more than
+  one distinct word; otherwise it is `word_specific`;
+- serve-time cue selection is unchanged: every active cue for the admitted
+  word remains in one random draw, including a mix of word-specific and
+  shared-answer-space cues;
+- after per-word skill selection, review composition keeps at most one
+  production action per distinct accepted-word set among the shared-answer-space
+  cards that were actually selected, preferring the already selected most
+  urgent candidate — the same first-wins pattern as contrast choice-set dedupe;
+- word-specific production is never dropped by that collapse and remains one
+  action per admitted word;
+- sibling accepted words are not covered or interval-adjusted by the served
+  action. The accepted-non-anchor interval stopgap above is unchanged.
+
+The live session acknowledges a shared answer space. Before reveal it says the
+cue accepts more than one answer without listing them. After reveal, and on
+the frozen incorrect card, it lists the frozen accepted Hanzi and marks the
+scheduling word. A successful non-anchor reveal shows the submitted accepted
+form as the primary answer.
+
 Response resolution uses the session-frozen accepted-answer snapshot on the
 served production action. Only the canonical Hanzi and non-null traditional
 form participate; lookup aliases do not. If the response matches any word in
