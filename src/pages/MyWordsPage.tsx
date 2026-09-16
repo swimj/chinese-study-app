@@ -1,18 +1,33 @@
 import { useLayoutEffect, useRef } from 'react';
-import { formatStudyDate, WORD_STAGE_LABELS, type MyWord, type MyWordsResponse, type MyWordsView } from '../domain/my-words';
+import {
+  formatStudyDate,
+  isMyWordsStageFilterNarrowed,
+  MY_WORDS_STAGE_CHIPS,
+  shouldShowMyWordsCount,
+  WORD_STAGE_LABELS,
+  type MyWord,
+  type MyWordsResponse,
+  type MyWordsStatus,
+  type MyWordsView,
+} from '../domain/my-words';
 
 export type MyWordsPageProps = {
   view: MyWordsView;
   query: string;
+  statuses: readonly MyWordsStatus[];
+  recentLapses: boolean;
   words: MyWord[];
   currentDeck: MyWordsResponse['currentDeck'];
   selectedId: string | null;
   loading: boolean;
   error: string | null;
   hasMore: boolean;
+  total: number | null;
   scrollTop: number;
   onViewChange: (view: MyWordsView) => void;
   onQueryChange: (query: string) => void;
+  onToggleStatus: (status: MyWordsStatus) => void;
+  onToggleRecentLapses: () => void;
   onSelect: (id: string | null) => void;
   onLoadMore: () => void;
   onRetry: () => void;
@@ -55,13 +70,26 @@ export function MyWordsPage(props: MyWordsPageProps) {
             placeholder="Search words, pronunciation, meanings…" value={props.query}
             onChange={(event) => props.onQueryChange(event.target.value)} />
         </div>
-        <p className="notes">{props.view === 'recent'
-          ? 'Words you’ve begun studying, most recent first.'
-          : props.view === 'personal'
-            ? 'Your personal collection, including waiting words. Most recently updated first.'
-            : props.currentDeck
-              ? `All words in ${props.currentDeck.label}, including words you haven’t studied. Ordered by pronunciation.`
-              : 'Current deck is unavailable. Choose another collection.'}</p>
+        <div className="my-words-stages">
+          <div role="group" aria-label="Word stage">
+            {MY_WORDS_STAGE_CHIPS.map(({ status, label }) => (
+              <button type="button" key={status}
+                className={`my-words-stage${props.statuses.includes(status) ? ' selected' : ''}`}
+                aria-pressed={props.statuses.includes(status)}
+                disabled={props.view === 'recent' && status === 'unstudied'}
+                onClick={() => props.onToggleStatus(status)}>{label}</button>
+            ))}
+          </div>
+          <button type="button"
+            className={`my-words-stage my-words-lapses${props.recentLapses ? ' selected' : ''}`}
+            aria-pressed={props.recentLapses}
+            onClick={props.onToggleRecentLapses}>Recent lapses</button>
+        </div>
+        {shouldShowMyWordsCount(props.view, props.recentLapses)
+          && !(props.view === 'deck' && !props.currentDeck)
+          && props.total !== null && (
+          <p className="notes my-words-count">{props.total === 1 ? '1 word' : `${props.total} words`}</p>
+        )}
       </header>
       <div className={`my-words-browser${selected ? ' has-detail' : ''}`}>
         <div className="my-words-list" ref={listRef} aria-label="Words"
@@ -99,7 +127,7 @@ export function MyWordsPage(props: MyWordsPageProps) {
           {!props.loading && !props.error && props.words.length === 0 && (
             <p className="my-words-message">{props.view === 'deck' && !props.currentDeck
               ? 'Current deck is unavailable. Choose another collection.'
-              : props.query.trim()
+              : props.query.trim() || props.recentLapses || isMyWordsStageFilterNarrowed(props.view, props.statuses)
               ? 'No matching words in this collection.'
               : props.view === 'recent'
                 ? 'Once you begin studying, your words will appear here.'

@@ -29,20 +29,32 @@ section.
 
 ## My words
 
-`GET /api/my-words?view=recent|personal|deck&q=<query>&limit=50&offset=0`
-returns `{ words, hasMore, currentDeck }` for the current learner. `currentDeck`
+`GET /api/my-words?view=recent|personal|deck&q=<query>&status=unstudied,learning,review&lapses=1&limit=50&offset=0`
+returns `{ words, hasMore, total, currentDeck }` for the current learner. `currentDeck`
 is a display `{ label }` for the placed learner's current deck mix, or null
 when placement/deck data is unavailable. Each entry contains the
 word, nullable UTC-day `lastStudiedAt`, and nullable `personalUpdatedAt`.
+`total` is the full matching count for the current collection, stage filter,
+lapses filter, and search — not the size of the returned page.
 `recent` selects learning/review words; `personal` selects retained non-sunk
 personal overlays including waiting words. `deck` includes all non-dismissed
 words in positive-weight current HSK decks, including unseen words. Missing
 placement/manifest or any Beyond HSK weight returns an empty list and null
 metadata. The deck view returns the entire explicit deck mix with `hasMore:
 false`; omit limit/offset for it (these parameters only page recent/personal
-collections). Search is applied across the whole selected collection. For
+collections). Search is applied across the whole selected collection. Optional
+`status` is a comma-separated subset of `unstudied`, `learning`, `review`
+(repeated `status` parameters are also accepted). Omitted, empty, or all three
+values mean no stage narrowing. Combined with search as AND. Recently studied
+ignores `unstudied`; if that leaves no stages, the collection's learning and
+review membership is used. Optional `lapses=1` or `lapses=true` further keeps
+words with a projected Forgot/incorrect attempt in the last three UTC days or
+an unsuccessful last learning day; omit or `0`/`false` leaves that filter off.
+The lapses predicate is independent of the selected stages. Results are ordered
+learning (last study date descending, missing last), unstudied (pronunciation),
+review (last study date descending, missing last), then word id. For
 paged views, limit is 1–100; offset is a nonnegative integer.
-Invalid parameters return 400. See [the product contract](../SPECS/my-words.md).
+Invalid parameters, including unknown status or lapses values, return 400. See [the product contract](../SPECS/my-words.md).
 
 ## Content diagnostics
 

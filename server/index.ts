@@ -67,6 +67,7 @@ import {
   type ReviewAttemptCommitIntent,
 } from './db.ts';
 import { isDietIntakePlacementAnswers } from '../src/domain/diet-intake-placement.ts';
+import { isMyWordsStatus, type MyWordsStatus } from '../src/domain/my-words.ts';
 import {
   createDietIntakePlacementService,
   DietIntakePlacementAssessmentError,
@@ -141,6 +142,25 @@ export type CreateAppOptions = {
   serviceMetrics?: ServiceMetrics | null;
   studyCommitDiagnosticSink?: StudyCommitDiagnosticSink;
 };
+
+function parseMyWordsStatusQuery(value: unknown): MyWordsStatus[] | undefined | 'invalid' {
+  if (value === undefined) return undefined;
+  const tokens = (Array.isArray(value) ? value : [value]).flatMap((entry) => {
+    if (typeof entry !== 'string') return ['invalid' as const];
+    return entry.split(',').map((part) => part.trim()).filter((part) => part.length > 0);
+  });
+  if (tokens.some((token) => token === 'invalid' || !isMyWordsStatus(token))) return 'invalid';
+  const selected = new Set(tokens.filter((token): token is MyWordsStatus => isMyWordsStatus(token)));
+  return selected.size === 0 ? undefined : [...selected];
+}
+
+function parseMyWordsLapsesQuery(value: unknown): boolean | 'invalid' {
+  if (value === undefined) return false;
+  if (Array.isArray(value) || typeof value !== 'string') return 'invalid';
+  if (value === '1' || value === 'true') return true;
+  if (value === '0' || value === 'false' || value === '') return false;
+  return 'invalid';
+}
 
 export function createApp(options: CreateAppOptions = {}) {
   const app = express();
@@ -226,10 +246,13 @@ export function createApp(options: CreateAppOptions = {}) {
     const query = req.query.q ?? '';
     const limitText = req.query.limit ?? '50';
     const offsetText = req.query.offset ?? '0';
+    const statuses = parseMyWordsStatusQuery(req.query.status);
+    const recentLapses = parseMyWordsLapsesQuery(req.query.lapses);
     if ((view !== 'recent' && view !== 'personal' && view !== 'deck') || typeof query !== 'string'
       || typeof limitText !== 'string' || !/^\d+$/.test(limitText)
-      || typeof offsetText !== 'string' || !/^\d+$/.test(offsetText)) {
-      res.status(400).json({ error: 'Expected recent, personal or deck view, string q, and integer pagination' });
+      || typeof offsetText !== 'string' || !/^\d+$/.test(offsetText)
+      || statuses === 'invalid' || recentLapses === 'invalid') {
+      res.status(400).json({ error: 'Expected recent, personal or deck view, string q, valid status, and integer pagination' });
       return;
     }
     const limit = Number(limitText);
@@ -239,7 +262,7 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
     try {
-      res.json(getMyWords({ view, query, limit, offset }));
+      res.json(getMyWords({ view, query, statuses, recentLapses, limit, offset }));
     } catch {
       res.status(500).json({ error: 'Failed to load my words' });
     }
