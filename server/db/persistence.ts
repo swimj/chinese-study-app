@@ -2,7 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import type { MyWordsResponse, MyWordsView } from '../../src/domain/my-words.ts';
+import {
+  compareMyWords,
+  myWordsRecentLapseSinceDay,
+  normalizeMyWordsStatuses,
+  type MyWordsResponse,
+  type MyWordsStatus,
+  type MyWordsView,
+} from '../../src/domain/my-words.ts';
 import type {
   ContrastCluster,
   ContrastClusterMember,
@@ -178,11 +185,20 @@ export function getWords(): Word[] {
 }
 
 export function getMyWords({
-  view = 'recent', query = '', limit = 50, offset = 0,
-}: { view?: MyWordsView; query?: string; limit?: number; offset?: number } = {}): MyWordsResponse {
+  view = 'recent', query = '', statuses, recentLapses = false, limit = 50, offset = 0,
+}: {
+  view?: MyWordsView;
+  query?: string;
+  statuses?: readonly MyWordsStatus[];
+  recentLapses?: boolean;
+  limit?: number;
+  offset?: number;
+} = {}): MyWordsResponse {
   if (view !== 'recent' && view !== 'personal' && view !== 'deck') throw new Error('Expected recent, personal or deck view');
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Expected limit from 1 to 100');
   if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('Expected non-negative integer offset');
+  const stageFilter = normalizeMyWordsStatuses(view, statuses);
+  const lapseSinceDay = recentLapses ? myWordsRecentLapseSinceDay(getTodayKey()) : null;
   const manifest = config.studyProfile === 'mandarin' ? loadDeckManifest() : null;
   const profile = manifest ? getStoredDietProfile() : null;
   const weights = manifest && profile ? resolveEffectiveDietWeights(profile, manifest) : {};
@@ -192,31 +208,50 @@ export function getMyWords({
       ? `HSK ${deck.hsk.level}${deck.stratum === null ? '' : ` · part ${deck.stratum}`}`
       : 'Beyond HSK').join(' + '),
   } : null;
-  if (view === 'deck' && !currentDeck) return { words: [], hasMore: false, currentDeck: null };
+  if (view === 'deck' && !currentDeck) return { words: [], hasMore: false, total: 0, currentDeck: null };
   if (view === 'deck') {
     if (!manifest) throw new Error('Current deck requires a manifest');
     const rows = queryManifestDeckWords(manifest, decks.map((deck) => deck.id), 'browse');
     const normalizedQuery = query.trim().toLowerCase();
-    const words = rows.map((row) => ({ row, word: mapWordRow(row) }))
-      .filter(({ word }) => [word.hanzi, word.traditional ?? '', word.pinyin, word.meaning, ...word.meanings]
-        .some((text) => text.toLowerCase().includes(normalizedQuery)))
-      .sort((left, right) => {
-        const a = left.word.pinyin.toLowerCase();
-        const b = right.word.pinyin.toLowerCase();
-        return (a < b ? -1 : a > b ? 1 : 0) || left.word.id.localeCompare(right.word.id);
-      });
-    const studyDates = queryDeckWordStudyDates(words.map(({ word }) => word.id));
+    const allowed = new Set(stageFilter);
+    const lapseIds = lapseSinceDay ? queryRecentLapseWordIds(lapseSinceDay) : null;
+    const matched = rows.map((row) => ({ row, word: mapWordRow(row) }))
+      .filter(({ word }) => allowed.has(word.status)
+        && (!lapseIds || lapseIds.has(word.id))
+        && [word.hanzi, word.traditional ?? '', word.pinyin, word.meaning, ...word.meanings]
+          .some((text) => text.toLowerCase().includes(normalizedQuery)));
+    const studyDates = queryDeckWordStudyDates(matched.map(({ word }) => word.id));
     return {
-      words: words.map(({ row, word }) => ({
+      words: matched.map(({ row, word }) => ({
         word,
         personalUpdatedAt: row.personal_updated_at,
         lastStudiedAt: studyDates.get(word.id) ?? null,
-      })),
+      })).sort(compareMyWords),
       hasMore: false,
+      total: matched.length,
       currentDeck,
     };
   }
   const search = `%${query.trim().replace(/[\\%_]/g, '\\$&')}%`;
+  const statusPlaceholders = stageFilter.map(() => '?').join(', ');
+  const lapseJoin = lapseSinceDay
+    ? `INNER JOIN (${RECENT_LAPSE_IDS_SQL}) recent_lapses ON recent_lapses.word_id = words.id`
+    : '';
+  const membership = view === 'recent' ? "words.status IN ('learning', 'review')" : 'personal.priority_tier >= 0';
+  const searchPredicate = `(words.hanzi LIKE ? ESCAPE '\\' OR words.traditional LIKE ? ESCAPE '\\'
+        OR words.pinyin LIKE ? ESCAPE '\\' OR words.meaning LIKE ? ESCAPE '\\'
+        OR EXISTS (SELECT 1 FROM json_each(words.meanings_json) WHERE value LIKE ? ESCAPE '\\'))`;
+  const filterBinds = [...(lapseSinceDay ? [lapseSinceDay] : []), ...stageFilter, search, search, search, search, search];
+  // Count skips the last-study CTE so pagination does not have to load the full matching set.
+  const { total } = getDb().prepare(`
+    SELECT COUNT(*) AS total
+    FROM words
+    LEFT JOIN user_word_priority personal ON personal.word_id = words.id
+    ${lapseJoin}
+    WHERE ${membership}
+      AND words.status IN (${statusPlaceholders})
+      AND ${searchPredicate}
+  `).get(...filterBinds) as { total: number };
   // Learning completion only records a UTC day. Keep the whole read model at
   // that precision; accepted review commits project both correct and failed attempts.
   // Non-sunk overlays survive study, including required-only rows cleared on completion.
@@ -236,15 +271,17 @@ export function getMyWords({
     FROM words
     LEFT JOIN user_word_priority personal ON personal.word_id = words.id
     LEFT JOIN latest_study ON latest_study.word_id = words.id
-    WHERE ${view === 'recent' ? "words.status IN ('learning', 'review')" : 'personal.priority_tier >= 0'}
-      AND (words.hanzi LIKE ? ESCAPE '\\' OR words.traditional LIKE ? ESCAPE '\\'
-        OR words.pinyin LIKE ? ESCAPE '\\' OR words.meaning LIKE ? ESCAPE '\\'
-        OR EXISTS (SELECT 1 FROM json_each(words.meanings_json) WHERE value LIKE ? ESCAPE '\\'))
-    ORDER BY ${view === 'recent'
-      ? 'latest_study.last_studied_on IS NULL ASC, latest_study.last_studied_on DESC'
-      : 'personal.updated_at DESC'}, words.id ASC
+    ${lapseJoin}
+    WHERE ${membership}
+      AND words.status IN (${statusPlaceholders})
+      AND ${searchPredicate}
+    ORDER BY CASE words.status WHEN 'learning' THEN 0 WHEN 'unstudied' THEN 1 WHEN 'review' THEN 2 ELSE 3 END,
+      CASE WHEN words.status = 'unstudied' THEN lower(words.pinyin) END ASC,
+      CASE WHEN words.status <> 'unstudied' THEN latest_study.last_studied_on IS NULL END ASC,
+      CASE WHEN words.status <> 'unstudied' THEN latest_study.last_studied_on END DESC,
+      words.id ASC
     LIMIT ? OFFSET ?
-  `).all(search, search, search, search, search, limit + 1, offset) as Array<WordRow & {
+  `).all(...filterBinds, limit + 1, offset) as Array<WordRow & {
     last_studied_on: string | null; personal_updated_at: string | null;
   }>;
   return {
@@ -254,8 +291,27 @@ export function getMyWords({
       personalUpdatedAt: row.personal_updated_at,
     })),
     hasMore: rows.length > limit,
+    total,
     currentDeck,
   };
+}
+
+const RECENT_LAPSE_IDS_SQL = `
+  SELECT target_word_id AS word_id
+  FROM study_attempt_events
+  WHERE projected_at IS NOT NULL
+    AND (outcome = 'incorrect' OR rating = 'forgot')
+    AND substr(occurred_at, 1, 10) >= ?
+  UNION
+  SELECT id AS word_id
+  FROM words
+  WHERE last_learning_covered_on IS NOT NULL
+    AND (last_learning_success_on IS NULL OR last_learning_covered_on > last_learning_success_on)
+`;
+
+function queryRecentLapseWordIds(sinceDay: string): Set<string> {
+  const rows = getDb().prepare(RECENT_LAPSE_IDS_SQL).all(sinceDay) as Array<{ word_id: string }>;
+  return new Set(rows.map((row) => row.word_id));
 }
 
 export function searchWords(query: string, limit = 20): Word[] {

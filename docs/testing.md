@@ -39,8 +39,8 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `reflections-page-run-log.test.ts` | Empty, unavailable-cost, priced run-log, and Luna-only spend-cap selector rendering | `ReflectionsPage.tsx` server render |
 | `llm-provider-runner.test.ts` | Spike compatibility shims, provider adapters, fixtures, current V3 validation/viewer behavior | `spikes/llm-provider/` |
 | `user-priority.test.ts` | User priority patches | Dynamic `server/db.ts` |
-| `my-words.test.ts` | Learner collection membership, study dates, search/pagination, isolation, HTTP validation | Dynamic `server/db.ts`, `server/index.ts` |
-| `my-words-page.test.ts` | Word detail and collection empty/error presentation | `MyWordsPage.tsx` server render |
+| `my-words.test.ts` | Learner collection membership, study dates, stage/lapses filters, search/pagination, isolation, HTTP validation | Dynamic `server/db.ts`, `server/index.ts` |
+| `my-words-page.test.ts` | Word detail, stage chips, and collection empty/error presentation | `MyWordsPage.tsx` server render |
 | `priority-page-model.test.ts` | Stash manage-list overlay recency sort | `src/features/priority/priority-page-model.ts` |
 | `priority-aliases.test.ts` | French alias lookup | Dynamic `server/db.ts` |
 | `word-meanings.test.ts` | Word meanings CRUD | Dynamic `server/db.ts` |

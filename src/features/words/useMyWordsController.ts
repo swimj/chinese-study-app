@@ -1,14 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
-import type { MyWord, MyWordsResponse, MyWordsView } from '../../domain/my-words';
+import {
+  ALL_MY_WORDS_STATUSES,
+  toggleMyWordsStatus,
+  type MyWord,
+  type MyWordsResponse,
+  type MyWordsStatus,
+  type MyWordsView,
+} from '../../domain/my-words';
 import { fetchMyWords } from '../../services/api';
 
 export function useMyWordsController(active: boolean) {
   const [view, setView] = useState<MyWordsView>('recent');
   const [query, setQuery] = useState('');
+  const [statuses, setStatuses] = useState<MyWordsStatus[]>([...ALL_MY_WORDS_STATUSES]);
+  const [recentLapses, setRecentLapses] = useState(false);
   const [words, setWords] = useState<MyWord[]>([]);
   const [currentDeck, setCurrentDeck] = useState<MyWordsResponse['currentDeck']>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
+  const [total, setTotal] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
@@ -27,11 +37,12 @@ export function useMyWordsController(active: boolean) {
     setError(null);
     fetchingMore.current = false;
     const timer = window.setTimeout(() => {
-      void fetchMyWords(view, query, 0, controller.signal).then((result) => {
+      void fetchMyWords(view, query, 0, controller.signal, statuses, recentLapses).then((result) => {
         if (generation.current !== current || controller.signal.aborted) return;
         setCurrentDeck(result.currentDeck);
         setWords(result.words);
         setHasMore(result.hasMore);
+        setTotal(result.total);
         setSelectedId((id) => result.words.some((entry) => entry.word.id === id) ? id : null);
         scrollTop.current = 0;
       }).catch((err: unknown) => {
@@ -48,7 +59,7 @@ export function useMyWordsController(active: boolean) {
       request.current?.abort();
       generation.current += 1;
     };
-  }, [active, view, query, revision]);
+  }, [active, view, query, statuses, recentLapses, revision]);
 
   function resetList() {
     request.current?.abort();
@@ -56,6 +67,7 @@ export function useMyWordsController(active: boolean) {
     setWords([]);
     setSelectedId(null);
     setHasMore(false);
+    setTotal(null);
     setLoading(true);
     setError(null);
     scrollTop.current = 0;
@@ -70,7 +82,7 @@ export function useMyWordsController(active: boolean) {
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchMyWords(view, query, words.length, controller.signal);
+      const result = await fetchMyWords(view, query, words.length, controller.signal, statuses, recentLapses);
       if (generation.current !== current || controller.signal.aborted) return;
       setCurrentDeck(result.currentDeck);
       setWords((existing) => {
@@ -78,6 +90,7 @@ export function useMyWordsController(active: boolean) {
         return [...existing, ...result.words.filter((entry) => !ids.has(entry.word.id))];
       });
       setHasMore(result.hasMore);
+      setTotal(result.total);
     } catch (err) {
       if (generation.current === current && !controller.signal.aborted) {
         setError(err instanceof Error ? err.message : 'Could not load more words.');
@@ -91,10 +104,18 @@ export function useMyWordsController(active: boolean) {
   }
 
   return {
-    view, query, words, currentDeck, selectedId, hasMore, loading, error,
+    view, query, statuses, recentLapses, words, currentDeck, selectedId, hasMore, total, loading, error,
     scrollTop: scrollTop.current,
     onViewChange: (next: MyWordsView) => { resetList(); setView(next); },
     onQueryChange: (next: string) => { resetList(); setQuery(next); },
+    onToggleStatus: (status: MyWordsStatus) => {
+      resetList();
+      setStatuses((current) => toggleMyWordsStatus(current, status));
+    },
+    onToggleRecentLapses: () => {
+      resetList();
+      setRecentLapses((current) => !current);
+    },
     onSelect: setSelectedId,
     onLoadMore: () => void loadMore(),
     onRetry: () => { resetList(); setRevision((value) => value + 1); },

@@ -86,8 +86,8 @@ describe('My words collections', { concurrency: false }, () => {
     insertAttempt('unprojected', '2026-09-14T20:00:00.000Z', null);
     sqlite.prepare(`INSERT INTO word_skill_state (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor) VALUES ('review', 'recognition', 1, 24, '2026-09-11T00:00:00.000Z', NULL, 2.5)`).run();
     const entries = db.getMyWords().words;
-    assert.deepEqual(entries.map((entry) => entry.word.id), ['review', 'learning', 'missing']);
-    assert.deepEqual(entries.map((entry) => entry.lastStudiedAt), ['2026-09-12', '2026-09-10', null]);
+    assert.deepEqual(entries.map((entry) => entry.word.id), ['learning', 'missing', 'review']);
+    assert.deepEqual(entries.map((entry) => entry.lastStudiedAt), ['2026-09-10', null, '2026-09-12']);
     sqlite.prepare('UPDATE words SET hanzi = ?, pinyin = ? WHERE id = ?').run('我', 'wǒ', 'review');
     place({ 'hsk2-l1': 1 });
     const deck = db.getMyWords({ view: 'deck' });
@@ -101,6 +101,7 @@ describe('My words collections', { concurrency: false }, () => {
     sqlite.prepare('UPDATE words SET meanings_json = ? WHERE id = ?').run('["first gloss", "secondary gloss"]', 'word-53');
     const first = db.getMyWords();
     assert.equal(first.words.length, 50); assert.equal(first.hasMore, true);
+    assert.equal(first.total, 55);
     assert.equal(db.getMyWords({ offset: 50 }).words.length, 5);
     for (const query of ['unique', '%', '_', '\\']) {
       assert.deepEqual(db.getMyWords({ query }).words.map((entry) => entry.word.id), ['word-54']);
@@ -110,12 +111,71 @@ describe('My words collections', { concurrency: false }, () => {
     assert.equal(db.getMyWords({ offset: 55 }).hasMore, false);
   });
 
-  test('personal order reflects overlay updates with stable id ties', () => {
-    for (const id of ['b', 'a', 'c']) {
-      insert(id); db.updateWordUserPriority(id, { bumpDelta: 1 });
-      sqlite.prepare('UPDATE user_word_priority SET updated_at = ? WHERE word_id = ?').run(id === 'c' ? '2026-09-12T00:00:00Z' : '2026-09-10T00:00:00Z', id);
+  test('lists sort learning recent, unstudied by pinyin, then review recent, and filter before pagination', () => {
+    const rows: Array<[string, 'learning' | 'review' | 'unstudied', string | null, string]> = [
+      ['learn-new', 'learning', '2026-09-11', 'learn-new'],
+      ['learn-old', 'learning', '2026-09-02', 'learn-old'],
+      ['wait-a', 'unstudied', null, 'aa'],
+      ['wait-b', 'unstudied', null, 'ba'],
+      ['review-new', 'review', '2026-09-12', 'review-new'],
+      ['review-old', 'review', '2026-09-01', 'review-old'],
+    ];
+    for (const [id, status, covered, pinyin] of rows) {
+      insert(id);
+      db.updateWordUserPriority(id, { bumpDelta: 1 });
+      sqlite.prepare('UPDATE words SET status = ?, last_learning_covered_on = ?, pinyin = ? WHERE id = ?')
+        .run(status, covered, pinyin, id);
     }
-    assert.deepEqual(db.getMyWords({ view: 'personal' }).words.map((entry) => entry.word.id), ['c', 'a', 'b']);
+    assert.deepEqual(db.getMyWords({ view: 'personal' }).words.map((entry) => entry.word.id),
+      ['learn-new', 'learn-old', 'wait-a', 'wait-b', 'review-new', 'review-old']);
+    assert.deepEqual(db.getMyWords().words.map((entry) => entry.word.id),
+      ['learn-new', 'learn-old', 'review-new', 'review-old']);
+    assert.deepEqual(db.getMyWords({ view: 'personal', statuses: ['unstudied'] }).words.map((entry) => entry.word.id),
+      ['wait-a', 'wait-b']);
+    assert.deepEqual(db.getMyWords({ statuses: ['unstudied'] }).words.map((entry) => entry.word.id),
+      ['learn-new', 'learn-old', 'review-new', 'review-old']);
+    for (let index = 0; index < 40; index++) {
+      const id = `page-learn-${String(index).padStart(2, '0')}`;
+      insert(id);
+      db.updateWordUserPriority(id, { bumpDelta: 1 });
+      sqlite.prepare("UPDATE words SET status = 'learning' WHERE id = ?").run(id);
+    }
+    const first = db.getMyWords({ view: 'personal', statuses: ['learning'], limit: 50, offset: 0 });
+    assert.equal(first.words.length, 42);
+    assert.equal(first.total, 42);
+    assert.equal(first.hasMore, false);
+    assert.ok(first.words.every((entry) => entry.word.status === 'learning'));
+  });
+
+  test('recent lapses keep any forgot in the last three UTC days or an unsuccessful last learning day', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const inWindow = shiftUtcDay(today, -2);
+    const outside = shiftUtcDay(today, -3);
+    sqlite.prepare(`INSERT INTO study_sessions (id, started_at, processing_state) VALUES ('session', ?, 'processed')`).run(`${today}T00:00:00Z`);
+    insert('review-forgot', 'review', today);
+    insert('review-recovered', 'review', today);
+    insert('review-old', 'review', outside);
+    insert('learn-fail', 'learning', today);
+    insert('learn-ok', 'learning', today);
+    insert('waiting');
+    db.updateWordUserPriority('waiting', { bumpDelta: 1 });
+    sqlite.prepare('UPDATE words SET last_learning_success_on = last_learning_covered_on WHERE id IN (?, ?, ?)').run('review-forgot', 'review-recovered', 'review-old');
+    sqlite.prepare('UPDATE words SET last_learning_success_on = ? WHERE id = ?').run(shiftUtcDay(today, -5), 'learn-fail');
+    sqlite.prepare('UPDATE words SET last_learning_success_on = ? WHERE id = ?').run(today, 'learn-ok');
+    insertAttempt('forgot-now', `${inWindow}T12:00:00.000Z`, `${inWindow}T12:00:01.000Z`, 'review-forgot', 'incorrect', 'forgot');
+    insertAttempt('forgot-then-ok', `${inWindow}T08:00:00.000Z`, `${inWindow}T08:00:01.000Z`, 'review-recovered', 'incorrect', 'forgot');
+    insertAttempt('later-ok', `${inWindow}T09:00:00.000Z`, `${inWindow}T09:00:01.000Z`, 'review-recovered', 'correct', 'good');
+    insertAttempt('forgot-old', `${outside}T12:00:00.000Z`, `${outside}T12:00:01.000Z`, 'review-old', 'incorrect', 'forgot');
+    insertAttempt('unprojected', `${today}T12:00:00.000Z`, null, 'review-old', 'incorrect', 'forgot');
+    const recent = db.getMyWords({ recentLapses: true });
+    assert.deepEqual(new Set(recent.words.map((entry) => entry.word.id)), new Set(['learn-fail', 'review-forgot', 'review-recovered']));
+    assert.equal(recent.total, 3);
+    assert.equal(db.getMyWords({ view: 'personal', recentLapses: true, statuses: ['unstudied'] }).total, 0);
+    sqlite.prepare('UPDATE words SET hanzi = ?, pinyin = ? WHERE id = ?').run('我', 'wǒ', 'review-forgot');
+    sqlite.prepare('UPDATE words SET hanzi = ?, pinyin = ? WHERE id = ?').run('你', 'nǐ', 'learn-fail');
+    place({ 'hsk2-l1': 1 });
+    assert.deepEqual(new Set(db.getMyWords({ view: 'deck', recentLapses: true }).words.map((entry) => entry.word.id)),
+      new Set(['review-forgot', 'learn-fail']));
   });
 
   test('learner context isolates membership, notes and study dates', () => {
@@ -132,18 +192,19 @@ describe('My words collections', { concurrency: false }, () => {
 
   test('HTTP validates pagination and filters, and returns the bounded payload', async () => {
     insert('http', 'learning');
-    for (const query of ['view=unknown', 'limit=0', 'limit=101', 'limit=1.5', 'offset=-1', 'offset=9007199254740992', 'q[x]=a', 'view=recent&view=personal']) {
+    for (const query of ['view=unknown', 'limit=0', 'limit=101', 'limit=1.5', 'offset=-1', 'offset=9007199254740992', 'q[x]=a', 'view=recent&view=personal', 'status=nope', 'lapses=maybe']) {
       assert.equal((await fetch(`${origin}/api/my-words?${query}`)).status, 400, query);
     }
-    const response = await fetch(`${origin}/api/my-words?view=recent&limit=1&offset=0&q=http`);
+    const response = await fetch(`${origin}/api/my-words?view=recent&limit=1&offset=0&q=http&status=learning&lapses=0`);
     assert.equal(response.status, 200);
-    const payload = await response.json() as { words: Array<{ word: { id: string } }>; hasMore: boolean };
+    const payload = await response.json() as { words: Array<{ word: { id: string } }>; hasMore: boolean; total: number };
     assert.equal(payload.words[0]?.word.id, 'http'); assert.equal(payload.hasMore, false);
+    assert.equal(payload.total, 1);
   });
 
   test('current deck is unavailable until placement is stored; the fallback does not create placement', () => {
     assert.equal(db.getMyWords().currentDeck, null);
-    assert.deepEqual(db.getMyWords({ view: 'deck' }), { words: [], hasMore: false, currentDeck: null });
+    assert.deepEqual(db.getMyWords({ view: 'deck' }), { words: [], hasMore: false, total: 0, currentDeck: null });
     assert.equal(db.getStoredDietProfile(), null);
   });
 
@@ -163,6 +224,7 @@ describe('My words collections', { concurrency: false }, () => {
     assert.equal(result.currentDeck?.label, 'HSK 1');
     assert.deepEqual(new Set(result.words.map((entry) => entry.word.id)), new Set(['unseen', 'personal', 'studied', 'normalized']));
     assert.equal(result.words.find((entry) => entry.word.id === 'unseen')?.word.status, 'unstudied');
+    assert.equal(result.total, 4);
     assert.equal(db.snapshotStoredDietProfile(), before);
     assert.equal(db.getMyWords({ view: 'personal' }).words.length, 1);
     const response = await fetch(`${origin}/api/my-words?view=deck&q=我`);
@@ -170,6 +232,7 @@ describe('My words collections', { concurrency: false }, () => {
     const payload = await response.json();
     assert.equal(payload.words.length, 1);
     assert.equal(payload.words[0].word.id, 'unseen');
+    assert.equal(payload.total, 1);
   });
 
   test('deck mix follows positive weights and nudges, not cumulative HSK levels or automatic spill', () => {
@@ -199,10 +262,11 @@ describe('My words collections', { concurrency: false }, () => {
     try {
       const all = db.getMyWords({ view: 'deck' });
       assert.equal(all.words.length, 455);
+      assert.equal(all.total, 455);
       assert.equal(new Set(all.words.map((entry) => entry.word.id)).size, 455);
       assert.equal(all.hasMore, false);
-      assert.equal(db.getMyWords({ view: 'deck', query: '测试454' }).words[0].word.id, 'deck-454');
-      assert.equal(db.getMyWords({ view: 'deck', query: 'unrelated' }).words.length, 0);
+      assert.equal(db.getMyWords({ view: 'deck', query: '测试454' }).total, 1);
+      assert.equal(db.getMyWords({ view: 'deck', query: 'unrelated' }).total, 0);
     } finally { process.env.APP_DECK_MANIFEST_PATH = previousPath; }
   });
 
@@ -225,7 +289,7 @@ describe('My words collections', { concurrency: false }, () => {
     insert('unmapped'); insertDeckWord('explicit', '我', 'wǒ');
     for (const weights of [{ 'beyond-hsk': 1 }, { 'hsk2-l1': 0.9, 'beyond-hsk': 0.1 }]) {
       place(weights);
-      assert.deepEqual(db.getMyWords({ view: 'deck' }), { words: [], hasMore: false, currentDeck: null });
+      assert.deepEqual(db.getMyWords({ view: 'deck' }), { words: [], hasMore: false, total: 0, currentDeck: null });
       assert.equal(db.getMyWords().currentDeck, null);
     }
   });
@@ -296,7 +360,7 @@ describe('My words collections', { concurrency: false }, () => {
     process.env.APP_DECK_MANIFEST_PATH = path.join(directory, 'absent.json');
     try {
       assert.equal(db.getMyWords().currentDeck, null);
-      assert.deepEqual(db.getMyWords({ view: 'deck' }), { words: [], hasMore: false, currentDeck: null });
+      assert.deepEqual(db.getMyWords({ view: 'deck' }), { words: [], hasMore: false, total: 0, currentDeck: null });
     } finally { process.env.APP_DECK_MANIFEST_PATH = manifestPath; }
   });
 });
@@ -316,8 +380,21 @@ function insert(id: string, status: 'unstudied' | 'learning' | 'review' = 'unstu
     .run(id, id, id, id, status, covered);
 }
 
-function insertAttempt(id: string, occurred: string, projected: string | null) {
+function insertAttempt(
+  id: string,
+  occurred: string,
+  projected: string | null,
+  targetWordId = 'review',
+  outcome = 'incorrect',
+  rating: string | null = null,
+) {
   sqlite.prepare(`INSERT INTO study_attempt_events (id, occurred_at, session_id, session_action_id, session_event_sequence, action_attempt_sequence, action_kind, target_word_id, sampled_skill_ids_json, response, outcome, rating, content_ref_json, metadata_json, projected_at)
-    VALUES (?, ?, 'session', ?, ?, 1, 'recognition', 'review', '["recognition"]', NULL, 'incorrect', NULL, NULL, '{}', ?)`)
-    .run(id, occurred, id, projected ? 1 : 2, projected);
+    VALUES (?, ?, 'session', ?, ?, 1, 'recognition', ?, '["recognition"]', NULL, ?, ?, NULL, '{}', ?)`)
+    .run(id, occurred, id, projected ? 1 : 2, targetWordId, outcome, rating, projected);
+}
+
+function shiftUtcDay(day: string, delta: number): string {
+  const date = new Date(`${day}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + delta);
+  return date.toISOString().slice(0, 10);
 }

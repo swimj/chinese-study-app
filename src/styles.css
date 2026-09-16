@@ -3803,7 +3803,6 @@ textarea {
   gap: 1rem;
 }
 .my-words-header h1 { font-size: 1.4rem; margin: 0 0 1rem; }
-.my-words-header .notes { margin: 0.65rem 0 0; }
 .my-words-toolbar { display: flex; gap: 0.75rem; }
 .my-words-toolbar select, .my-words-toolbar input {
   border: 1px solid #334155;
@@ -3813,6 +3812,30 @@ textarea {
   padding: 0.65rem 0.75rem;
 }
 .my-words-toolbar input { flex: 1; min-width: 0; }
+.my-words-stages { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0.65rem 0 0; }
+.my-words-stages [role="group"] { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.my-words-lapses { margin-left: 0.25rem; }
+.my-words-count { margin: 0.5rem 0 0; color: #94a3b8; font-size: 0.85rem; }
+.my-words-stage {
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 999px;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.75rem;
+}
+.my-words-stage:hover:not(:disabled) { background: rgba(148, 163, 184, 0.22); }
+.my-words-stage:disabled { cursor: default; opacity: 0.55; }
+.my-words-stage.selected {
+  background: rgba(96, 165, 250, 0.25);
+  border-color: rgba(96, 165, 250, 0.6);
+}
+.my-words-stage.selected:disabled {
+  background: rgba(96, 165, 250, 0.14);
+  border-color: rgba(148, 163, 184, 0.35);
+}
 .my-words-browser { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1; min-height: 0; }
 .my-words-browser.has-detail { grid-template-columns: minmax(0, 1fr) minmax(17rem, 34%); }
 .my-words-list { overflow-y: auto; min-height: 0; scrollbar-gutter: stable; }

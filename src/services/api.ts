@@ -35,7 +35,8 @@ import type {
   ContentDiagnosticKind,
   ContentDiagnosticsResponse,
 } from '../domain/content-diagnostics';
-import type { MyWordsResponse, MyWordsView } from '../domain/my-words';
+import type { MyWordsResponse, MyWordsStatus, MyWordsView } from '../domain/my-words';
+import { ALL_MY_WORDS_STATUSES } from '../domain/my-words';
 import type { ClientTransportIncidentContext } from './client-incident-diagnostics';
 import {
   captureClientTransportFailure,
@@ -44,9 +45,20 @@ import {
   removeUploadedClientTransportIncidents,
 } from './client-incident-diagnostics';
 
-export async function fetchMyWords(view: MyWordsView, query: string, offset = 0, signal?: AbortSignal): Promise<MyWordsResponse> {
+export async function fetchMyWords(
+  view: MyWordsView,
+  query: string,
+  offset = 0,
+  signal?: AbortSignal,
+  statuses: readonly MyWordsStatus[] = ALL_MY_WORDS_STATUSES,
+  recentLapses = false,
+): Promise<MyWordsResponse> {
   const params = new URLSearchParams({ view, q: query });
   if (view !== 'deck') { params.set('offset', String(offset)); params.set('limit', '50'); }
+  if (statuses.length > 0 && statuses.length < ALL_MY_WORDS_STATUSES.length) {
+    params.set('status', statuses.join(','));
+  }
+  if (recentLapses) params.set('lapses', '1');
   const response = await apiFetch(`${API_BASE}/api/my-words?${params}`, { signal });
   if (!response.ok) throw new Error('Could not load your words. Please try again.');
   return response.json();
