@@ -15,8 +15,10 @@ large-scale alerting infrastructure.
 
 A separate operator **usage pulse** page (`#operator-usage`, gated by
 `APP_OPERATOR_CLERK_USER_IDS`) provides content-free cohort product-usage
-snapshots (DAU, sessions, spend, stash median, sparse scenario counts). That
-surface is not Grafana and does not replace this performance dashboard.
+snapshots (DAU, sessions, spend, stash median, sparse scenario counts). The
+hosted smoke account is omitted from the inactive-learner count so a
+read-only deploy identity is not treated as a lapsed learner. That surface is
+not Grafana and does not replace this performance dashboard.
 
 ## Data boundary
 

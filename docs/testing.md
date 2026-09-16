@@ -56,7 +56,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `hosted-upgrade.test.ts` | App-only upgrade command: identity confirmation, dirty-tree refusal, deploy build-arg, smoke-failure stays closed, reopen banner clear | `scripts/lib/hosted-upgrade.ts` |
 | `hosted-smoke.test.ts` | Read-only Clerk smoke: existing-learner gate, token mint/revoke, no token leakage | `scripts/lib/hosted-smoke.ts` |
 | `observability.test.ts` | Bounded route labels, request/response histograms, private Prometheus listener, and metrics-port validation | `server/observability.ts` |
-| `usage-pulse.test.ts` | Daily cohort snapshot compute/idempotency, operator allowlist, and usage-pulse API gate | `server/db/usage-pulse.ts`, `server/operator-access.ts` |
+| `usage-pulse.test.ts` | Daily cohort snapshot compute/idempotency, smoke-learner inactive exclusion, operator allowlist, and usage-pulse API gate | `server/db/usage-pulse.ts`, `server/operator-access.ts` |
 | `client-incident-diagnostics.test.ts` | Account-scoped client queue bounds/retention, visible IDs, private sidecar deduplication/pruning, and inspection | Client/server incident diagnostic modules |
 | `study-commit-diagnostics.test.ts` | Success/failure correlation, exact private payload/error retention, 30-day pruning, diagnostic-id responses, contrast routing, and logging isolation | `server/study-commit-diagnostics.ts`, study-commit API handlers |
 

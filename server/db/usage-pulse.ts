@@ -1,4 +1,5 @@
 import { getDb } from './connection.ts';
+import { CLERK_AUTH_PROVIDER, resolveLearnerId } from './identity.ts';
 import { PRIORITY_TIER_REGULAR } from './types.ts';
 import {
   readStudyCommitDiagnostics,
@@ -80,6 +81,7 @@ export function computeUsagePulseDay(input: {
   capturedAt?: string;
   dataDir?: string | null;
   studyCommitFailures?: StudyCommitFailureDiagnostic[] | null;
+  smokeClerkUserId?: string | null;
 }): UsageDailySnapshot {
   const dayKey = input.dayKey.trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) {
@@ -87,6 +89,7 @@ export function computeUsagePulseDay(input: {
   }
   const capturedAt = input.capturedAt ?? new Date().toISOString();
   const inactiveWindowStart = addUtcDays(dayKey, -(USAGE_PULSE_WINDOW_DAYS - 1));
+  const smokeLearnerId = resolveConfiguredSmokeLearnerId(input.smokeClerkUserId);
 
   const dauRow = getDb().prepare(`
     SELECT COUNT(DISTINCT learner_id) AS value
@@ -147,14 +150,15 @@ export function computeUsagePulseDay(input: {
   const learnersInactive7dRow = getDb().prepare(`
     SELECT COUNT(*) AS value
     FROM learners
-    WHERE NOT EXISTS (
-      SELECT 1
-      FROM learner_owned_review_session_summaries AS summaries
-      WHERE summaries.learner_id = learners.learner_id
-        AND summaries.day_key >= ?
-        AND summaries.day_key <= ?
-    )
-  `).get(inactiveWindowStart, dayKey) as { value: number };
+    WHERE (? IS NULL OR learners.learner_id != ?)
+      AND NOT EXISTS (
+        SELECT 1
+        FROM learner_owned_review_session_summaries AS summaries
+        WHERE summaries.learner_id = learners.learner_id
+          AND summaries.day_key >= ?
+          AND summaries.day_key <= ?
+      )
+  `).get(smokeLearnerId, smokeLearnerId, inactiveWindowStart, dayKey) as { value: number };
 
   const sessionsAbandonedRow = getDb().prepare(`
     SELECT COUNT(*) AS value
@@ -341,6 +345,17 @@ export function getUsagePulse(input: {
     today,
     days,
   };
+}
+
+const SMOKE_CLERK_USER_ID_PATTERN = /^user_[A-Za-z0-9_]+$/;
+
+function resolveConfiguredSmokeLearnerId(smokeClerkUserId?: string | null): string | null {
+  const configuredId = smokeClerkUserId === undefined
+    ? process.env.APP_SMOKE_CLERK_USER_ID
+    : smokeClerkUserId;
+  const clerkUserId = configuredId?.trim() ?? '';
+  if (!SMOKE_CLERK_USER_ID_PATTERN.test(clerkUserId)) return null;
+  return resolveLearnerId(CLERK_AUTH_PROVIDER, clerkUserId);
 }
 
 function mapSnapshotRow(row: SnapshotRow): UsageDailySnapshot {
