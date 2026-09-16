@@ -10,6 +10,14 @@ const ABOUT_VIEWS = [
 // Entry dates follow the change history; add new posts at the top.
 const UPDATES = [
   {
+    date: '2026-09-16',
+    displayDate: 'September 16, 2026',
+    title: 'Filter My words by stage or recent lapses',
+    paragraphs: [
+      'Words → My words now has chips to show only Not yet studied, Learning, or In review words. Turn on Recent lapses when you want to look at words you recently forgot or whose last learning attempt didn’t go well. The chips work with search across Recently studied, Personally added, and Current deck.',
+    ],
+  },
+  {
     date: '2026-09-14',
     displayDate: 'September 14, 2026',
     title: 'A home for help and updates',
