@@ -9,6 +9,12 @@ Casual notes for people using the app before there is a real release process.
   expires after 24 hours or is cleared, and it stays hidden during an active
   study session.
 
+## Unreleased — usage pulse smoke exclusion
+
+- The operator usage pulse no longer counts the configured hosted smoke
+  learner as inactive.
+>>>>>>> 6affbc0 (Exclude the hosted smoke learner from usage-pulse inactive counts.)
+
 ## Unreleased — app-origin invite signup
 
 - Hosted invitations created with `hosted:invite` send the recipient to the

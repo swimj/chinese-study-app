@@ -132,8 +132,9 @@ Requires the caller’s Clerk user id (or trusted-local learner id / `trusted_lo
 sentinel) to appear in `APP_OPERATOR_CLERK_USER_IDS`. Returns content-free
 cohort aggregates: live `today` plus the last 7 completed UTC-day snapshots
 (`dau`, sessions, new words, model spend, median stash, median session time,
-and sparse scenario counts). Empty allowlist fails closed with `403
-OPERATOR_FORBIDDEN`.
+and sparse scenario counts). The configured hosted smoke learner
+(`APP_SMOKE_CLERK_USER_ID`) is omitted from the inactive-7d count. Empty
+allowlist fails closed with `403 OPERATOR_FORBIDDEN`.
 
 ## Words and meanings
 

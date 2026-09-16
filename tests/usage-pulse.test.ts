@@ -58,6 +58,7 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
   let previousDataDir: string | undefined;
   let previousLearnerId: string | undefined;
   let previousOperatorAllowlist: string | undefined;
+  let previousSmokeClerkUserId: string | undefined;
   let dbModule: typeof import('../server/db.ts');
   let usagePulse: typeof import('../server/db/usage-pulse.ts');
   let getDb: typeof import('../server/db/connection.ts').getDb;
@@ -72,6 +73,7 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     previousDataDir = process.env.APP_DATA_DIR;
     previousLearnerId = process.env.APP_LEARNER_ID;
     previousOperatorAllowlist = process.env.APP_OPERATOR_CLERK_USER_IDS;
+    previousSmokeClerkUserId = process.env.APP_SMOKE_CLERK_USER_ID;
     process.env.APP_MODE = 'study';
     process.env.APP_DATA_DIR = dataDir;
     process.env.APP_LEARNER_ID = 'test-learner';
@@ -88,6 +90,7 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     restoreEnv('APP_DATA_DIR', previousDataDir);
     restoreEnv('APP_LEARNER_ID', previousLearnerId);
     restoreEnv('APP_OPERATOR_CLERK_USER_IDS', previousOperatorAllowlist);
+    restoreEnv('APP_SMOKE_CLERK_USER_ID', previousSmokeClerkUserId);
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
@@ -187,6 +190,39 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     assert.equal(stored.length, 1);
     assert.equal(stored[0]?.capturedAt, `${dayKey}T23:59:30.000Z`);
     assert.equal(stored[0]?.dau, 1);
+  });
+
+  test('excludes the configured smoke learner from inactive 7d count', () => {
+    const dayKey = '2026-09-15';
+    const smokeClerkUserId = 'user_smokePulse1';
+    dbModule.bootstrapLearner({
+      learnerId: 'learner-smoke-pulse',
+      provider: dbModule.CLERK_AUTH_PROVIDER,
+      providerSubject: smokeClerkUserId,
+    });
+
+    const included = usagePulse.computeUsagePulseDay({
+      dayKey,
+      capturedAt: `${dayKey}T12:00:00.000Z`,
+      dataDir,
+      smokeClerkUserId: null,
+    });
+    const excluded = usagePulse.computeUsagePulseDay({
+      dayKey,
+      capturedAt: `${dayKey}T12:00:00.000Z`,
+      dataDir,
+      smokeClerkUserId,
+    });
+    assert.equal(excluded.learnersInactive7d, included.learnersInactive7d - 1);
+
+    process.env.APP_SMOKE_CLERK_USER_ID = smokeClerkUserId;
+    const fromEnv = usagePulse.computeUsagePulseDay({
+      dayKey,
+      capturedAt: `${dayKey}T12:00:00.000Z`,
+      dataDir,
+    });
+    assert.equal(fromEnv.learnersInactive7d, excluded.learnersInactive7d);
+    restoreEnv('APP_SMOKE_CLERK_USER_ID', previousSmokeClerkUserId);
   });
 
   test('ensureUsagePulseSnapshots backfills missing historical days once', () => {
