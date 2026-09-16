@@ -218,6 +218,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     <AppChrome
       currentPage={currentPage}
       error={error}
+      serviceBanner={backendStatus?.serviceBanner ?? null}
       sessionActive={sessionActive}
       priorityPageLoading={priorityPage.isLoading}
       reflectionPageLoading={reflectionPage.isLoading}

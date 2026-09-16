@@ -6,11 +6,16 @@ import { AppChrome, type AppPageKey } from '../src/components/AppChrome.tsx';
 
 const noop = () => {};
 
-function renderChrome(currentPage: AppPageKey, children: string | null = null) {
+function renderChrome(
+  currentPage: AppPageKey,
+  children: string | null = null,
+  extras: { serviceBanner?: { message: string } | null; sessionActive?: boolean } = {},
+) {
   return renderToStaticMarkup(createElement(AppChrome, {
     currentPage,
     error: null,
-    sessionActive: false,
+    serviceBanner: extras.serviceBanner ?? null,
+    sessionActive: extras.sessionActive ?? false,
     priorityPageLoading: false,
     reflectionPageLoading: false,
     contentPageLoading: false,
@@ -51,6 +56,7 @@ describe('AppChrome primary navigation', () => {
     const withHandler = renderToStaticMarkup(createElement(AppChrome, {
       currentPage: 'reflections',
       error: null,
+      serviceBanner: null,
       sessionActive: false,
       priorityPageLoading: false,
       reflectionPageLoading: false,
@@ -72,6 +78,7 @@ describe('AppChrome primary navigation', () => {
       renderToStaticMarkup(createElement(AppChrome, {
         currentPage: 'home',
         error: null,
+        serviceBanner: null,
         sessionActive: false,
         priorityPageLoading: false,
         reflectionPageLoading: false,
@@ -85,5 +92,17 @@ describe('AppChrome primary navigation', () => {
       })),
       /class="reflections-nav-refresh"/,
     );
+  });
+
+  test('shows a service banner outside an active session and hides it during one', () => {
+    const posted = { message: 'Planned downtime tonight for upgrade' };
+    assert.match(renderChrome('home', null, { serviceBanner: posted }), /class="service-banner"/);
+    assert.match(renderChrome('home', null, { serviceBanner: posted }), /Planned downtime tonight for upgrade/);
+    assert.match(renderChrome('priority', null, { serviceBanner: posted }), /class="service-banner"/);
+    assert.doesNotMatch(
+      renderChrome('home', null, { serviceBanner: posted, sessionActive: true }),
+      /class="service-banner"/,
+    );
+    assert.doesNotMatch(renderChrome('home'), /class="service-banner"/);
   });
 });

@@ -90,6 +90,17 @@ button:hover {
   padding: 0.75rem;
 }
 
+.service-banner {
+  margin: 0 0 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 0.75rem;
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(245, 158, 11, 0.42);
+  color: #fde68a;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
 .container.app-priority-page .app-chrome-main,
 .container.app-reflections-page .app-chrome-main {
   display: flex;

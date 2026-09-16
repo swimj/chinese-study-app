@@ -29,6 +29,7 @@ const PRIMARY_PAGES: ReadonlyArray<{
 export function AppChrome({
   currentPage,
   error,
+  serviceBanner,
   sessionActive,
   priorityPageLoading,
   reflectionPageLoading,
@@ -44,6 +45,7 @@ export function AppChrome({
 }: {
   currentPage: AppPageKey;
   error: string | null;
+  serviceBanner: { message: string } | null;
   sessionActive: boolean;
   priorityPageLoading: boolean;
   reflectionPageLoading: boolean;
@@ -146,6 +148,12 @@ export function AppChrome({
         </nav>
 
         <div className="app-chrome-main">
+          {serviceBanner && !sessionActive ? (
+            <div className="service-banner" role="status">
+              {serviceBanner.message}
+            </div>
+          ) : null}
+
           {error ? (
             <div className="panel">
               <h2>Error</h2>

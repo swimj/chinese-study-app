@@ -88,6 +88,69 @@ describe('hosted operational controls', { concurrency: false }, () => {
     assert.equal(dbModule.getHostedOperationalDiagnostics().operatorActionCount, 1);
   });
 
+  test('posts one current service banner with a 24-hour default expiry and an explicit no-op clear', () => {
+    assert.equal(dbModule.getActiveServiceBanner(new Date('2026-08-31T08:00:00.000Z')), null);
+    assert.deepEqual(dbModule.clearServiceBanner({
+      actorId: 'operator-test',
+      clearedAt: '2026-08-31T08:00:00.000Z',
+    }), {
+      status: 'noop',
+      actorId: 'operator-test',
+      clearedAt: '2026-08-31T08:00:00.000Z',
+    });
+
+    const posted = dbModule.setServiceBanner({
+      message: '  Planned downtime tonight for upgrade  ',
+      actorId: 'operator-test',
+      postedAt: '2026-08-31T08:00:00.000Z',
+    });
+    assert.deepEqual(posted, {
+      message: 'Planned downtime tonight for upgrade',
+      postedAt: '2026-08-31T08:00:00.000Z',
+      expiresAt: '2026-09-01T08:00:00.000Z',
+      actorId: 'operator-test',
+    });
+    assert.deepEqual(
+      dbModule.toPublicServiceBanner(posted),
+      {
+        message: 'Planned downtime tonight for upgrade',
+        postedAt: '2026-08-31T08:00:00.000Z',
+        expiresAt: '2026-09-01T08:00:00.000Z',
+      },
+    );
+    assert.deepEqual(
+      dbModule.getActiveServiceBanner(new Date('2026-08-31T20:00:00.000Z')),
+      posted,
+    );
+    assert.equal(dbModule.getActiveServiceBanner(new Date('2026-09-01T08:00:00.000Z')), null);
+
+    const live = dbModule.setServiceBanner({
+      message: 'Upgrade window moved to Thursday',
+      actorId: 'operator-test',
+    });
+    assert.equal(live.message, 'Upgrade window moved to Thursday');
+    assert.equal(dbModule.getHostedOperationalDiagnostics().serviceBanner?.message, live.message);
+    assert.throws(() => dbModule.setServiceBanner({
+      message: '',
+      actorId: 'operator-test',
+    }), /non-empty service banner message/);
+    assert.throws(() => dbModule.setServiceBanner({
+      message: 'x'.repeat(281),
+      actorId: 'operator-test',
+    }), /at most 280 characters/);
+
+    assert.deepEqual(dbModule.clearServiceBanner({
+      actorId: 'operator-test',
+      clearedAt: '2026-08-31T10:00:00.000Z',
+    }), {
+      status: 'cleared',
+      actorId: 'operator-test',
+      clearedAt: '2026-08-31T10:00:00.000Z',
+    });
+    assert.equal(dbModule.getActiveServiceBanner(new Date('2026-08-31T10:00:00.000Z')), null);
+    assert.equal(dbModule.getHostedOperationalDiagnostics().serviceBanner, null);
+  });
+
   test('provisions one untouched shared word as an immediately due private production review', () => {
     dbModule.bootstrapLearner({ learnerId: 'learner-review-test' });
     const action = dbModule.provisionHostedBetaReviewTest({

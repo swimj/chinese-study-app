@@ -32,6 +32,7 @@ automated terminal-driver procedures are in the
 | --- | --- |
 | `npm run bootstrap:hosted:mandarin -- --data-dir=/data` | Import the checksummed shared-only Mandarin bootstrap artifact |
 | `npm run hosted:control -- --data-dir=/data --control=<maintenance\|provider-work> --enabled=<true\|false> --actor-id=<id>` | Change an attributable service control |
+| `npm run hosted:banner -- --data-dir=/data --actor-id=<id> --message=<text>` | Post the current signed-in service banner (default 24-hour expiry). `--clear=true` instead of `--message` removes it and no-ops when none exists. |
 | `npm run hosted:learner-control -- --data-dir=/data --learner-id=<id> --disabled=<true\|false> --actor-id=<id>` | Disable or re-enable one learner and record the operator action |
 | `npm run hosted:prepare-dogfood -- --source-data-dir=<local> --output-data-dir=<new-dir> ...` | Create a coherent, validated, Clerk-bound dogfood cutover copy without mutating the source database |
 | `npm run hosted:promote-dogfood -- --data-dir=/data --incoming-db=<staged-db> --manifest=<staged-manifest> ...` | Validate a staged dogfood copy and atomically replace the disposable hosted database only while the normal process is stopped |

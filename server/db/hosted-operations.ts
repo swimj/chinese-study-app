@@ -93,6 +93,123 @@ export function readHostedServiceControl(key: HostedServiceControlKey): HostedSe
   };
 }
 
+export const SERVICE_BANNER_MESSAGE_MAX_LENGTH = 280;
+export const DEFAULT_SERVICE_BANNER_TTL_MS = 24 * 60 * 60 * 1000;
+
+export type ServiceBanner = {
+  message: string;
+  postedAt: string;
+  expiresAt: string;
+  actorId: string;
+};
+
+export type ServiceBannerPublic = {
+  message: string;
+  postedAt: string;
+  expiresAt: string;
+};
+
+export type ClearServiceBannerResult = {
+  status: 'cleared' | 'noop';
+  actorId: string;
+  clearedAt: string;
+};
+
+export function toPublicServiceBanner(banner: ServiceBanner): ServiceBannerPublic {
+  return {
+    message: banner.message,
+    postedAt: banner.postedAt,
+    expiresAt: banner.expiresAt,
+  };
+}
+
+export function getActiveServiceBanner(now: Date = new Date()): ServiceBanner | null {
+  const row = getDb().prepare(`
+    SELECT message, posted_at, expires_at, actor_id
+    FROM service_banner
+    WHERE singleton = 1
+  `).get() as {
+    message: string;
+    posted_at: string;
+    expires_at: string;
+    actor_id: string;
+  } | undefined;
+  if (!row) return null;
+  if (row.expires_at <= now.toISOString()) return null;
+  return {
+    message: row.message,
+    postedAt: row.posted_at,
+    expiresAt: row.expires_at,
+    actorId: row.actor_id,
+  };
+}
+
+export function setServiceBanner(input: {
+  message: string;
+  actorId: string;
+  postedAt?: string;
+  expiresAt?: string;
+}): ServiceBanner {
+  const message = requireBannerMessage(input.message);
+  const actorId = requireNonEmpty(input.actorId, 'actor id');
+  const postedAt = requireIsoTimestamp(input.postedAt ?? new Date().toISOString(), 'posted at');
+  const expiresAt = requireIsoTimestamp(
+    input.expiresAt ?? new Date(new Date(postedAt).getTime() + DEFAULT_SERVICE_BANNER_TTL_MS).toISOString(),
+    'expires at',
+  );
+  if (expiresAt <= postedAt) throw new Error('Expected service banner expiry after posted at.');
+  getDb().exec('BEGIN IMMEDIATE');
+  try {
+    getDb().prepare(`
+      INSERT INTO service_banner (singleton, message, posted_at, expires_at, actor_id)
+      VALUES (1, ?, ?, ?, ?)
+      ON CONFLICT(singleton) DO UPDATE SET
+        message = excluded.message,
+        posted_at = excluded.posted_at,
+        expires_at = excluded.expires_at,
+        actor_id = excluded.actor_id
+    `).run(message, postedAt, expiresAt, actorId);
+    getDb().exec('COMMIT');
+  } catch (error) {
+    getDb().exec('ROLLBACK');
+    throw error;
+  }
+  return { message, postedAt, expiresAt, actorId };
+}
+
+export function clearServiceBanner(input: {
+  actorId: string;
+  clearedAt?: string;
+}): ClearServiceBannerResult {
+  const actorId = requireNonEmpty(input.actorId, 'actor id');
+  const clearedAt = requireIsoTimestamp(input.clearedAt ?? new Date().toISOString(), 'cleared at');
+  getDb().exec('BEGIN IMMEDIATE');
+  try {
+    const result = getDb().prepare('DELETE FROM service_banner WHERE singleton = 1').run();
+    getDb().exec('COMMIT');
+    return {
+      status: result.changes === 1 ? 'cleared' : 'noop',
+      actorId,
+      clearedAt,
+    };
+  } catch (error) {
+    getDb().exec('ROLLBACK');
+    throw error;
+  }
+}
+
+function requireBannerMessage(value: string): string {
+  const normalized = value.trim();
+  if (!normalized) throw new Error('Expected non-empty service banner message.');
+  if (normalized.includes('\n') || normalized.includes('\r')) {
+    throw new Error('Service banner message must be a single line.');
+  }
+  if (normalized.length > SERVICE_BANNER_MESSAGE_MAX_LENGTH) {
+    throw new Error(`Service banner message must be at most ${SERVICE_BANNER_MESSAGE_MAX_LENGTH} characters.`);
+  }
+  return normalized;
+}
+
 export function setHostedServiceControl(input: {
   key: HostedServiceControlKey;
   enabled: boolean;
@@ -254,6 +371,7 @@ export function provisionHostedBetaReviewTest(input: {
 
 export function getHostedOperationalDiagnostics(): {
   controls: HostedServiceControlState;
+  serviceBanner: ServiceBanner | null;
   journalMode: string;
   foreignKeysEnabled: boolean;
   databaseBytes: number;
@@ -269,6 +387,7 @@ export function getHostedOperationalDiagnostics(): {
   const dbPath = getDatabasePath();
   return {
     controls: getHostedServiceControls(),
+    serviceBanner: getActiveServiceBanner(),
     journalMode: readJournalMode(),
     foreignKeysEnabled: readForeignKeysEnabled(),
     databaseBytes: fileSize(dbPath),

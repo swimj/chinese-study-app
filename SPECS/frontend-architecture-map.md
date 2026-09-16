@@ -23,7 +23,7 @@ src/
     clerk-auth-gate.ts               # loading vs sign-in vs invite sign-up vs app phase resolver
 
   components/
-    AppChrome.tsx                 # left-gutter primary nav, nested page rails, errors
+    AppChrome.tsx                 # left-gutter primary nav, nested page rails, errors, signed-in service banner
     MeaningList.tsx               # shared meaning list rendering
 
   pages/
@@ -95,6 +95,7 @@ Home, rather than completing signup on Clerk Account Portal.
 - current page selection (`home` | `priority` | `reflections` | `content` | `about`)
 - global error message
 - backend status refresh
+- signed-in service banner from that status (hidden during an active session)
 - app chrome wiring
 - personal-notes overlay mounting
 - wiring page controllers (`useStudySession`, `usePriorityPageController`,

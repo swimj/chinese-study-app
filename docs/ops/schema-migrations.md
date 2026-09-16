@@ -137,7 +137,10 @@ provenance; immutable-update and learner-filtered-delete behavior is preserved.
 `learner_owned_reflection_proposal_reviews` so second-opinion retirement is a
 distinct review disposition rather than a dismissed sentinel reason, and maps
 any existing sentinel rows. The current-learner view is dropped and recreated
-with the physical table. Fresh installations start with the frozen baseline
+with the physical table.
+`0004_usage_daily_snapshots.sql` adds the operational daily cohort pulse table.
+`0005_service_banner.sql` adds the singleton current operator-posted service
+banner. Fresh installations start with the frozen baseline
 and apply this same SQL.
 `tests/deferred-second-opinion-migration.test.ts` and
 `tests/requested-second-opinion-disposition-migration.test.ts` verify history

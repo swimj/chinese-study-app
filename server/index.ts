@@ -54,6 +54,8 @@ import {
   recordStudyManagementAction,
   getSharedContentPublicationForContent,
   getHostedServiceControls,
+  getActiveServiceBanner,
+  toPublicServiceBanner,
   reportSharedContentPublication,
   searchWords,
   suppressProductionForWordOutsideSession,
@@ -436,6 +438,7 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
 
+    const banner = getActiveServiceBanner();
     res.json({
       status: 'ok',
       time: new Date().toISOString(),
@@ -448,6 +451,7 @@ export function createApp(options: CreateAppOptions = {}) {
       sessionActiveTimeMetrics: getSessionActiveTimeMetrics(studyDayKey),
       dietDecksActive: isDietDeckModeActive(),
       dietIntakeRequired: isDietIntakeRequired(),
+      serviceBanner: banner ? toPublicServiceBanner(banner) : null,
       ...getLearningPolicy(studyDayKey),
     });
   });

@@ -172,6 +172,33 @@ describe('hosted application runtime', { concurrency: false }, () => {
     });
   });
 
+  test('returns the active service banner on authenticated status and omits expired notices', async () => {
+    const dbModule = await import('../server/db.ts');
+    assert.equal((await (await fetch(`${baseUrl}/api/status?studyDayKey=2026-09-04`)).json()).serviceBanner, null);
+
+    const posted = dbModule.setServiceBanner({
+      message: 'Planned downtime tonight for upgrade',
+      actorId: 'runtime-test',
+    });
+    const active = await fetch(`${baseUrl}/api/status?studyDayKey=2026-09-04`);
+    assert.equal(active.status, 200);
+    assert.deepEqual((await active.json()).serviceBanner, {
+      message: posted.message,
+      postedAt: posted.postedAt,
+      expiresAt: posted.expiresAt,
+    });
+
+    dbModule.setServiceBanner({
+      message: 'This window already ended',
+      actorId: 'runtime-test',
+      postedAt: '2026-09-01T00:00:00.000Z',
+      expiresAt: '2026-09-02T00:00:00.000Z',
+    });
+    const expired = await fetch(`${baseUrl}/api/status?studyDayKey=2026-09-04`);
+    assert.equal((await expired.json()).serviceBanner, null);
+    dbModule.clearServiceBanner({ actorId: 'runtime-test' });
+  });
+
   test('closes the HTTP server and database hook through one idempotent shutdown', async () => {
     const disposableServer = createServer((_req, response) => response.end());
     const additionalServer = createServer((_req, response) => response.end());

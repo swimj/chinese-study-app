@@ -15,6 +15,7 @@
     "start:hosted": "node --import tsx server/index.ts --mode=study --auth-mode=clerk",
     "bootstrap:hosted:mandarin": "node --import tsx scripts/bootstrap-hosted-mandarin.ts",
     "hosted:control": "node --import tsx scripts/set-hosted-service-control.ts",
+    "hosted:banner": "node --import tsx scripts/set-hosted-service-banner.ts",
     "hosted:learner-control": "node --import tsx scripts/set-hosted-learner-disabled.ts",
     "hosted:provision-review-test": "node --import tsx scripts/provision-hosted-beta-review-test.ts",
     "hosted:recover-reflection-completion": "node --import tsx scripts/recover-reflection-completion.ts",
