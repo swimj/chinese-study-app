@@ -292,11 +292,12 @@ export async function runHostedUpgrade(
     currentStage = 'reopen';
     await setHostedControl(app, actorId, 'maintenance', false, deps);
     await setHostedControl(app, actorId, 'provider-work', true, deps);
+    const bannerClear = await clearHostedBanner(app, actorId, deps);
     const reopenedInspect = await inspectHostedService(app, deps);
     assertPersistedControls(reopenedInspect, { maintenanceMode: false, providerWorkEnabled: true });
     runningIdentity = reopenedInspect.releaseIdentity ?? reopenedInspect;
     reopened = true;
-    recordStage('reopen', 'ok', { controls: readControls(reopenedInspect) });
+    recordStage('reopen', 'ok', { controls: readControls(reopenedInspect), banner: bannerClear });
 
     return finish('ok', null, null);
   } catch (error) {
@@ -430,6 +431,24 @@ async function inspectHostedService(app: string, deps: HostedUpgradeDeps): Promi
   const value = parseHostedCommandJson(raw);
   if (!isRecord(value)) throw new Error('hosted:inspect did not return a JSON object.');
   return value;
+}
+
+async function clearHostedBanner(
+  app: string,
+  actorId: string,
+  deps: HostedUpgradeDeps,
+): Promise<{ status: 'cleared' | 'noop' }> {
+  const raw = await ssh(
+    app,
+    `npm run --silent hosted:banner -- --data-dir=/data --clear=true --actor-id=${shellSingleQuote(actorId)}`,
+    deps,
+    30_000,
+  );
+  const value = parseHostedCommandJson(raw);
+  if (!isRecord(value) || (value.status !== 'cleared' && value.status !== 'noop')) {
+    throw new Error('hosted:banner --clear=true did not report a cleared or noop status.');
+  }
+  return { status: value.status };
 }
 
 async function setHostedControl(

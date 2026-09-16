@@ -147,6 +147,12 @@ export async function flushPendingClientTransportIncidents(): Promise<void> {
   return clientIncidentUpload;
 }
 
+type ServiceBanner = {
+  message: string;
+  postedAt: string;
+  expiresAt: string;
+};
+
 type BackendStatus = {
   status: string;
   time: string;
@@ -164,6 +170,7 @@ type BackendStatus = {
   dietDecksActive: boolean;
   /** True when the learner should see the first-run placement intake (SPECS/diet-deck-distribution.md §2.5). */
   dietIntakeRequired: boolean;
+  serviceBanner: ServiceBanner | null;
 };
 
 export type UnstudiedAdmissionSource = 'mixed' | 'stash_only';
@@ -359,7 +366,7 @@ export type ReflectionReviewApi = {
   ) => Promise<unknown>;
 };
 
-export type { BackendStatus };
+export type { BackendStatus, ServiceBanner };
 
 export async function fetchContentDiagnostics(
   kind: ContentDiagnosticKind,

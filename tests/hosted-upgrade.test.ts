@@ -108,6 +108,7 @@ describe('hosted upgrade pipeline', () => {
       'deploy',
       'maintenance:false',
       'provider-work:true',
+      'banner:clear',
     ]);
     const deploy = harness.commands.find((command) => command.args[0] === 'deploy');
     assert.deepEqual(deploy?.args.slice(-2), ['--build-arg', `APP_REVISION=${SOURCE_REVISION}`]);
@@ -272,6 +273,10 @@ function createHarness(options: {
       maintenance = command.includes('--enabled=true');
       mutations.push(`maintenance:${maintenance}`);
       return { stdout: JSON.stringify({ status: 'updated', control: { key: 'maintenance_mode', enabled: maintenance } }), stderr: '' };
+    }
+    if (command.includes('hosted:banner') && command.includes('--clear=true')) {
+      mutations.push('banner:clear');
+      return { stdout: JSON.stringify({ status: 'noop' }), stderr: '' };
     }
     if (command.includes('litestream sync')) {
       return { stdout: JSON.stringify({ replica: 's3://secret-bucket/secret-prefix', ok: true }), stderr: '' };

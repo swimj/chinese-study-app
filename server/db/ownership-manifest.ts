@@ -39,6 +39,7 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
     'usage_daily_snapshots',
     'content-free daily cohort product-usage pulse aggregates',
   ),
+  operationalEntry('service_banner', 'current operator-posted signed-in service notice'),
   sharedEntry(
     'shared_content_publications',
     'immutable reusable content plus publication disposition',

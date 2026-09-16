@@ -113,6 +113,27 @@ A `fly secrets set` of a new variable restarts the Machine; putting the values
 in the generated Fly env applies them on the next deploy, which this command
 performs.
 
+### Post a pre-upgrade banner
+
+Hours before a planned window, post a signed-in chrome notice from the **currently
+running** image. Do not bake the message into the upgrade itself. Quote the
+message so spaces survive `fly ssh`:
+
+```bash
+fly ssh console --app <app-name> --command \
+  "npm run hosted:banner -- --data-dir=/data --actor-id=<operator> --message='Planned downtime tonight for upgrade'"
+```
+
+The notice is visible to signed-in learners on the next Home load (including
+returning from a session). It expires after 24 hours. Successful
+`hosted:upgrade` reopen also clears it and no-ops when none exists. Clear
+manually with `--clear=true` instead of `--message`.
+
+This first banner capability is itself a schema-changing release
+(`app_schema:0005_service_banner`). Use the offline migration procedure for
+that landing; later app-only upgrades can post and clear banners without a
+schema change.
+
 ### Human operator procedure
 
 From the intended commit, with a prepared generated Fly config and an
@@ -219,7 +240,8 @@ unbaselined or pending schema; see the
 
 Create an attributable marker before an important release, record its id in
 the release evidence, deploy, inspect, and smoke-test. Reopen writes first and
-provider work last:
+provider work last. Clear any pre-upgrade banner after reopen; `--clear=true`
+no-ops when none exists:
 
 ```bash
 fly ssh console --app <app-name> --command \
@@ -229,6 +251,8 @@ fly ssh console --app <app-name> --command \
   'npm run hosted:control -- --data-dir=/data --control=maintenance --enabled=false --actor-id=<operator>'
 fly ssh console --app <app-name> --command \
   'npm run hosted:control -- --data-dir=/data --control=provider-work --enabled=true --actor-id=<operator>'
+fly ssh console --app <app-name> --command \
+  'npm run hosted:banner -- --data-dir=/data --clear=true --actor-id=<operator>'
 ```
 
 ## Learner access

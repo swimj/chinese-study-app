@@ -2,6 +2,13 @@
 
 Casual notes for people using the app before there is a real release process.
 
+## Unreleased — signed-in service banner
+
+- Operators can post a short signed-in notice (for example planned downtime)
+  without shipping a new app image. It appears above the main chrome until it
+  expires after 24 hours or is cleared, and it stays hidden during an active
+  study session.
+
 ## Unreleased — app-origin invite signup
 
 - Hosted invitations created with `hosted:invite` send the recipient to the
