@@ -55,7 +55,7 @@ describe('attention badges', { concurrency: false }, () => {
       DELETE FROM study_sessions;
       DELETE FROM word_meanings;
       DELETE FROM words;
-      DELETE FROM learner_settings WHERE setting_key = 'whats_new_seen_through_date';
+      DELETE FROM learner_params;
       COMMIT;
     `);
     insertWord('target', '目标');
@@ -150,6 +150,20 @@ describe('attention badges', { concurrency: false }, () => {
     assert.equal(dbModule.markWhatsNewSeenThroughDate('2026-09-14'), '2026-09-16');
     assert.equal(dbModule.markWhatsNewSeenThroughDate('2026-09-20'), '2026-09-20');
     assert.equal(dbModule.getAttentionBadges().whatsNewSeenThroughDate, '2026-09-20');
+    assert.equal(
+      sqlite.prepare(`
+        SELECT value_json FROM learner_params
+        WHERE learner_id = 'test-learner' AND param_key = 'whats_new_seen_through_date'
+      `).get()?.value_json,
+      JSON.stringify('2026-09-20'),
+    );
+    assert.equal(
+      sqlite.prepare(`
+        SELECT 1 FROM learner_settings
+        WHERE learner_id = 'test-learner' AND setting_key = 'whats_new_seen_through_date'
+      `).get(),
+      undefined,
+    );
     assert.throws(
       () => dbModule.markWhatsNewSeenThroughDate('09-20-2026'),
       /YYYY-MM-DD/,

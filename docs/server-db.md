@@ -20,7 +20,7 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`production-cues.ts`](../server/db/production-cues.ts) | Default production tasks, immutable cue/lifecycle/evidence state, one immutable post-reveal supplement per definition cue or fallback, production recheck demands, and cue/supplement application adapters |
 | [`schema.ts`](../server/db/schema.ts) | Re-exports `applyProductionContrastExerciseSeed` and `initializeDatabase` for init ordering |
 | [`ownership-manifest.ts`](../server/db/ownership-manifest.ts) | Auditable ownership, enforcement, history, migration, and lifecycle classification for every durable application table |
-| [`identity.ts`](../server/db/identity.ts) | Stable learner records, auth-provider mappings, learner settings, and explicit Clerk-free bootstrap |
+| [`identity.ts`](../server/db/identity.ts) | Stable learner records, auth-provider mappings, learner settings, learner params, and explicit Clerk-free bootstrap |
 | [`shared-content-bootstrap.ts`](../server/db/shared-content-bootstrap.ts) | Strict checksummed shared-only hosted Mandarin import and provenance validation |
 | [`hosted-operations.ts`](../server/db/hosted-operations.ts) | Persisted service controls, current service banner, attributable learner disablement, diagnostics, sentinels, and restore validation |
 | [`usage-pulse.ts`](../server/db/usage-pulse.ts) | Content-free daily cohort usage snapshots and live today pulse for the operator page |
@@ -219,12 +219,15 @@ The `learner_settings` row keyed by `(learner_id, daily_new_word_limit)` stores
 the learner's configured non-negative integer limit as JSON. A missing row
 reads as the current default of `10`. The row keyed by
 `(learner_id, unstudied_admission_source)` stores `"mixed"` or `"stash_only"`;
-a missing row reads as `"mixed"`. The row keyed by
-`(learner_id, whats_new_seen_through_date)` stores the learner’s What’s New
-YYYY-MM-DD cursor as JSON; a missing row means the client should grandfather
-the current catalog without badging historical posts. These settings are independent of
+a missing row reads as `"mixed"`. These settings are independent of
 `daily_new_word_intake.new_study_count`, the per-UTC-day counter incremented
 only when an unstudied word is completed.
+
+`learner_params` is the sibling per-learner key-value store for non-setting
+parameters (`learner_id`, `param_key`, `value_json`, `updated_at`). The first
+key, `whats_new_seen_through_date`, stores the learner’s What’s New YYYY-MM-DD
+cursor as JSON; a missing row means the client should grandfather the current
+catalog without badging historical posts.
 
 Legacy single-learner databases are not mutated during startup and are no
 longer supported. The sole dogfood database completed the one-time SWI-47

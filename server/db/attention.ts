@@ -1,5 +1,5 @@
 import { getDb } from './connection.ts';
-import { requireLearnerId } from './learner-context.ts';
+import { getLearnerParam, upsertLearnerParam } from './identity.ts';
 
 const WHATS_NEW_SEEN_THROUGH_KEY = 'whats_new_seen_through_date';
 const UTC_DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -68,13 +68,8 @@ export function stampProposalInboxSeenIfLeavingPending(
 }
 
 export function getWhatsNewSeenThroughDate(): string | null {
-  const row = getDb().prepare(`
-    SELECT value_json
-    FROM learner_settings
-    WHERE learner_id = ? AND setting_key = ?
-  `).get(requireLearnerId(), WHATS_NEW_SEEN_THROUGH_KEY) as { value_json: string } | undefined;
-  if (!row) return null;
-  const parsed = JSON.parse(row.value_json) as unknown;
+  const parsed = getLearnerParam(WHATS_NEW_SEEN_THROUGH_KEY);
+  if (parsed === null) return null;
   if (typeof parsed !== 'string' || !isUtcDateKey(parsed)) {
     throw new Error('Stored whats-new seen-through date is invalid.');
   }
@@ -155,22 +150,7 @@ function markExplanationInboxSeen(
 }
 
 function upsertWhatsNewSeenThroughDate(throughDate: string): void {
-  getDb().prepare(`
-    INSERT INTO learner_settings (
-      learner_id,
-      setting_key,
-      value_json,
-      updated_at
-    ) VALUES (?, ?, ?, ?)
-    ON CONFLICT(learner_id, setting_key) DO UPDATE SET
-      value_json = excluded.value_json,
-      updated_at = excluded.updated_at
-  `).run(
-    requireLearnerId(),
-    WHATS_NEW_SEEN_THROUGH_KEY,
-    JSON.stringify(throughDate),
-    new Date().toISOString(),
-  );
+  upsertLearnerParam(WHATS_NEW_SEEN_THROUGH_KEY, throughDate);
 }
 
 function requireUtcDateKey(value: string): string {

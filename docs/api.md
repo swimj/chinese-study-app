@@ -578,9 +578,10 @@ still show the item.
 
 `reflectionUnseenCount` is pending Help proposals plus open explanation-only
 inbox rows whose `inbox_seen_at` is still null. It is not the Help queue length.
-`whatsNewSeenThroughDate` is the learner’s stored YYYY-MM-DD cursor, or null if
-it has never been written. The client grandfathers a missing cursor against the
-current catalog and counts later posts itself.
+`whatsNewSeenThroughDate` is the learner’s stored YYYY-MM-DD cursor in
+`learner_params` (`whats_new_seen_through_date`), or null if it has never been
+written. It is not a `learner_settings` value. The client grandfathers a
+missing cursor against the current catalog and counts later posts itself.
 
 `POST /api/reflection-inbox-seen` accepts one of:
 
