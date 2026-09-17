@@ -1691,11 +1691,123 @@ button:hover {
 .priority-bottom-rail input {
   flex: 1 1 11rem;
   min-width: 8rem;
+  width: 100%;
   border-radius: 0.65rem;
   border: 1px solid rgba(148, 163, 184, 0.25);
   background: rgba(15, 23, 42, 0.95);
   color: #e2e8f0;
   padding: 0.42rem 0.65rem;
+}
+
+.priority-add-field {
+  position: relative;
+  flex: 1 1 11rem;
+  min-width: 8rem;
+}
+
+.priority-match-picker {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 0.45rem);
+  z-index: 45;
+  width: min(26rem, calc(100vw - 2rem));
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.7rem 0.75rem 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 0.85rem;
+  background: rgba(15, 23, 42, 0.98);
+  box-shadow: 0 18px 40px rgba(2, 6, 23, 0.5);
+}
+
+.priority-match-picker-head {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.priority-match-picker-head span {
+  color: #94a3b8;
+  font-size: 0.78rem;
+}
+
+.priority-match-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+  max-height: 16rem;
+  overflow: auto;
+}
+
+.priority-match-option {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1.6rem minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: start;
+  text-align: left;
+  padding: 0.45rem 0.55rem;
+  border-radius: 0.65rem;
+  border: 1px solid transparent;
+  background: rgba(30, 41, 59, 0.85);
+  color: #e2e8f0;
+}
+
+.priority-match-option:hover,
+.priority-match-option:disabled:hover {
+  transform: none;
+  background: rgba(51, 65, 85, 0.95);
+}
+
+.priority-match-option.is-selected {
+  border-color: rgba(59, 130, 246, 0.55);
+  background: rgba(30, 64, 175, 0.35);
+}
+
+.priority-match-option-shortcut {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 0.4rem;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  color: #cbd5e1;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.priority-match-option-body {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.priority-match-option-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+
+.priority-match-option-title span,
+.priority-match-option-meaning {
+  color: #94a3b8;
+  font-size: 0.82rem;
+}
+
+.priority-match-option-meaning {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.priority-match-picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
 }
 
 .priority-bottom-rail input:focus {

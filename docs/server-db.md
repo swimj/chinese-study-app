@@ -36,7 +36,7 @@ Domain-oriented re-export shims (navigation only; implementation stays in `persi
 | Shim | Key exports |
 | --- | --- |
 | [`words.ts`](../server/db/words.ts) | `getWords`, `getMyWords` learner collection projection, `searchWords`, meanings, lifecycle completions |
-| [`priority.ts`](../server/db/priority.ts) | Unstudied priority queues, `addUnstudiedUserPriorityByHanzi` |
+| [`priority.ts`](../server/db/priority.ts) | Unstudied priority queues, `listUnstudiedPriorityMatchesByTarget`, `addUnstudiedUserPriorityByHanzi` |
 | [`session-composition.ts`](../server/db/session-composition.ts) | `getSessionPayload`, projection guard, dual-pool unstudied admission re-exports |
 | [`contrast.ts`](../server/db/contrast.ts) | Scoped clusters and prompts |
 | [`study-sessions.ts`](../server/db/study-sessions.ts) | Session records, attempt batches |

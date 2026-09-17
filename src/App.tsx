@@ -302,9 +302,14 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
               searchHanzi={priorityPage.searchHanzi}
               searchNotice={priorityPage.searchNotice}
               searchSubmitting={priorityPage.searchSubmitting}
+              matchChoices={priorityPage.matchChoices}
+              selectedMatchIds={priorityPage.selectedMatchIds}
               highlightedWordIds={priorityPage.highlightedWordIds}
               onSearchHanziChange={priorityPage.setSearchHanzi}
               onSearchSubmit={() => void priorityPage.submitSearch()}
+              onToggleMatchSelection={priorityPage.toggleMatchSelection}
+              onConfirmMatchSelection={() => void priorityPage.confirmMatchSelection()}
+              onCancelMatchSelection={priorityPage.cancelMatchSelection}
               onHighlightsHandled={priorityPage.clearHighlights}
               priorityBatchSubmitting={priorityPage.priorityBatchSubmitting}
               onRequireForNextSession={(wordIds, requiredForNextSession) =>

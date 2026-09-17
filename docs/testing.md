@@ -43,6 +43,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `my-words.test.ts` | Learner collection membership, study dates, stage/lapses filters, search/pagination, isolation, HTTP validation | Dynamic `server/db.ts`, `server/index.ts` |
 | `my-words-page.test.ts` | Word detail, stage chips, and collection empty/error presentation | `MyWordsPage.tsx` server render |
 | `priority-page-model.test.ts` | Stash manage-list overlay recency sort | `src/features/priority/priority-page-model.ts` |
+| `priority-match-selection.test.ts` | Stash add-by-target multi-match chooser helpers and picker markup | `priority-match-selection.ts`, `PriorityPage.tsx` |
 | `priority-aliases.test.ts` | French alias lookup | Dynamic `server/db.ts` |
 | `word-meanings.test.ts` | Word meanings CRUD | Dynamic `server/db.ts` |
 | `dev-db-bootstrap.test.ts` | Dev DB bootstrap | Dynamic `server/db.ts` |

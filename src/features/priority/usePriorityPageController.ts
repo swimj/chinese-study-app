@@ -6,8 +6,14 @@ import {
   updateWordUserPriority,
 } from '../../services/api';
 import { studyProfile } from '../../study-profile';
-import type { PriorityWord } from '../../types';
+import type { PriorityWord, Word } from '../../types';
 import { applyPriorityPatch, sortStashManageWords } from './priority-page-model';
+import { toggleSelectedMatchId } from './priority-match-selection';
+
+export type PriorityMatchChoiceState = {
+  query: string;
+  matches: Word[];
+};
 
 export type PriorityPageControllerOptions = {
   currentPage: AppPageKey;
@@ -21,13 +27,18 @@ export type PriorityPageController = {
   searchHanzi: string;
   searchNotice: string | null;
   searchSubmitting: boolean;
+  matchChoices: PriorityMatchChoiceState | null;
+  selectedMatchIds: string[];
   highlightedWordIds: string[];
   updatingWordId: string | null;
   priorityBatchSubmitting: boolean;
   setSearchHanzi: (value: string) => void;
   clearHighlights: () => void;
+  toggleMatchSelection: (wordId: string) => void;
+  cancelMatchSelection: () => void;
   openPage: () => Promise<void>;
   submitSearch: () => Promise<void>;
+  confirmMatchSelection: () => Promise<void>;
   moveToTop: (wordId: string) => Promise<void>;
   bumpAgain: (wordId: string) => Promise<void>;
   requireForNextSession: (wordIds: string[], requiredForNextSession: boolean) => Promise<void>;
@@ -48,13 +59,19 @@ export function usePriorityPageController({
   const [searchHanzi, setSearchHanzi] = useState('');
   const [searchSubmitting, setSearchSubmitting] = useState(false);
   const [searchNotice, setSearchNotice] = useState<string | null>(null);
+  const [matchChoices, setMatchChoices] = useState<PriorityMatchChoiceState | null>(null);
+  const [selectedMatchIds, setSelectedMatchIds] = useState<string[]>([]);
   const [highlightedWordIds, setHighlightedWordIds] = useState<string[]>([]);
   const [updatingWordId, setUpdatingWordId] = useState<string | null>(null);
   const [priorityBatchSubmitting, setPriorityBatchSubmitting] = useState(false);
   const rowsRef = useRef<PriorityWord[]>([]);
   const batchSubmittingRef = useRef(false);
   const searchSubmittingRef = useRef(false);
+  const matchChoicesRef = useRef<PriorityMatchChoiceState | null>(null);
+  const selectedMatchIdsRef = useRef<string[]>([]);
   rowsRef.current = rows;
+  matchChoicesRef.current = matchChoices;
+  selectedMatchIdsRef.current = selectedMatchIds;
 
   async function openPage(): Promise<void> {
     if (currentPage === 'priority') {
@@ -68,6 +85,8 @@ export function usePriorityPageController({
       const priorityWordsResponse = await fetchUnstudiedPriorityWords();
       setRows(sortStashManageWords(priorityWordsResponse.words));
       setSearchNotice(null);
+      setMatchChoices(null);
+      setSelectedMatchIds([]);
       setHighlightedWordIds([]);
       setCurrentPage('priority');
     } catch (err) {
@@ -106,8 +125,29 @@ export function usePriorityPageController({
     }
   }
 
+  function applyAddedPriorityWords(words: PriorityWord[], query: string, addedCount: number): void {
+    setRows((current) => {
+      const byId = new Map(current.map((entry) => [entry.word.id, entry]));
+      for (const word of words) {
+        byId.set(word.word.id, word);
+      }
+
+      return sortStashManageWords([...byId.values()]);
+    });
+    setMatchChoices(null);
+    setSelectedMatchIds([]);
+    setHighlightedWordIds(words.map((word) => word.word.id));
+    setSearchNotice(`Added ${addedCount} matching word${addedCount === 1 ? '' : 's'} for "${query}".`);
+  }
+
   async function submitSearch(): Promise<void> {
     if (searchSubmittingRef.current) {
+      return;
+    }
+
+    const activeChoices = matchChoicesRef.current;
+    if (activeChoices) {
+      await confirmMatchSelection();
       return;
     }
 
@@ -124,21 +164,56 @@ export function usePriorityPageController({
 
     try {
       const response = await addUnstudiedPriorityByHanzi(normalizedHanzi);
-      setRows((current) => {
-        const byId = new Map(current.map((entry) => [entry.word.id, entry]));
-        for (const word of response.words) {
-          byId.set(word.word.id, word);
-        }
+      if (response.needsSelection) {
+        setMatchChoices({ query: response.query, matches: response.matches });
+        setSelectedMatchIds([]);
+        setHighlightedWordIds([]);
+        setSearchNotice(
+          `${response.matches.length} matches for "${response.query}". Press 1–9 to select, then Enter.`,
+        );
+        return;
+      }
 
-        return sortStashManageWords([...byId.values()]);
-      });
-      setHighlightedWordIds(response.words.map((word) => word.word.id));
-      setSearchNotice(`Added ${response.addedCount} matching word${response.addedCount === 1 ? '' : 's'} for "${normalizedHanzi}".`);
+      applyAddedPriorityWords(response.words, normalizedHanzi, response.addedCount);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       setSearchNotice(message);
+      setMatchChoices(null);
+      setSelectedMatchIds([]);
       setHighlightedWordIds([]);
       setSearchHanzi((current) => (current.length === 0 ? normalizedHanzi : current));
+    } finally {
+      searchSubmittingRef.current = false;
+      setSearchSubmitting(false);
+    }
+  }
+
+  async function confirmMatchSelection(): Promise<void> {
+    const activeChoices = matchChoicesRef.current;
+    const selectedIds = selectedMatchIdsRef.current;
+    if (!activeChoices || searchSubmittingRef.current) {
+      return;
+    }
+
+    if (selectedIds.length === 0) {
+      setSearchNotice(`Select at least one match for "${activeChoices.query}", then press Enter.`);
+      return;
+    }
+
+    searchSubmittingRef.current = true;
+    setSearchSubmitting(true);
+    setError(null);
+
+    try {
+      const response = await addUnstudiedPriorityByHanzi(activeChoices.query, false, selectedIds);
+      if (response.needsSelection) {
+        throw new Error('Expected selected matches to add without another chooser round.');
+      }
+
+      applyAddedPriorityWords(response.words, activeChoices.query, response.addedCount);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setSearchNotice(message);
     } finally {
       searchSubmittingRef.current = false;
       setSearchSubmitting(false);
@@ -204,13 +279,31 @@ export function usePriorityPageController({
     searchHanzi,
     searchNotice,
     searchSubmitting,
+    matchChoices,
+    selectedMatchIds,
     highlightedWordIds,
     updatingWordId,
     priorityBatchSubmitting,
-    setSearchHanzi: (value: string) => setSearchHanzi(value),
+    setSearchHanzi: (value: string) => {
+      setSearchHanzi(value);
+      if (matchChoicesRef.current) {
+        setMatchChoices(null);
+        setSelectedMatchIds([]);
+        setSearchNotice(null);
+      }
+    },
     clearHighlights: () => setHighlightedWordIds([]),
+    toggleMatchSelection: (wordId: string) => {
+      setSelectedMatchIds((current) => toggleSelectedMatchId(current, wordId));
+    },
+    cancelMatchSelection: () => {
+      setMatchChoices(null);
+      setSelectedMatchIds([]);
+      setSearchNotice(null);
+    },
     openPage,
     submitSearch,
+    confirmMatchSelection,
     moveToTop: (wordId: string) => updateWordPriority(wordId, { forceTop: true }),
     bumpAgain: (wordId: string) => updateWordPriority(wordId, { bumpDelta: 1 }),
     requireForNextSession: (wordIds: string[], requiredForNextSession: boolean) =>

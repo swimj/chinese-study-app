@@ -20,6 +20,7 @@ import {
   dismissReflectionProposal,
   reopenReflectionProposal,
   addUnstudiedUserPriorityByHanzi,
+  listUnstudiedPriorityMatchesByTarget,
   dbConfig,
   DietManifestUnavailableError,
   DietProfileChangedDuringAssessmentError,
@@ -377,6 +378,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post('/api/priority/unstudied/add-by-hanzi', (req, res) => {
     const hanzi = req.body?.hanzi;
     const requiredForNextSession = req.body?.requiredForNextSession;
+    const wordIds = req.body?.wordIds;
 
     if (typeof hanzi !== 'string') {
       res.status(400).json({ error: 'Expected string hanzi' });
@@ -388,6 +390,13 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
 
+    if (wordIds !== undefined) {
+      if (!Array.isArray(wordIds) || wordIds.some((wordId) => typeof wordId !== 'string')) {
+        res.status(400).json({ error: 'Expected wordIds to be an array of strings when provided' });
+        return;
+      }
+    }
+
     const normalizedHanzi = hanzi.trim();
     if (normalizedHanzi.length === 0) {
       res.status(400).json({ error: 'Expected non-empty hanzi' });
@@ -395,7 +404,26 @@ export function createApp(options: CreateAppOptions = {}) {
     }
 
     try {
-      const addedWords = addUnstudiedUserPriorityByHanzi(normalizedHanzi, requiredForNextSession === true);
+      const matches = listUnstudiedPriorityMatchesByTarget(normalizedHanzi);
+      if (matches.length === 0) {
+        res.status(404).json({ error: 'No matching unstudied words found' });
+        return;
+      }
+
+      if (wordIds === undefined && matches.length > 1) {
+        res.json({
+          needsSelection: true,
+          query: normalizedHanzi,
+          matches,
+        });
+        return;
+      }
+
+      const addedWords = addUnstudiedUserPriorityByHanzi(
+        normalizedHanzi,
+        requiredForNextSession === true,
+        wordIds,
+      );
       res.json({
         addedCount: addedWords.length,
         words: addedWords,
@@ -403,6 +431,18 @@ export function createApp(options: CreateAppOptions = {}) {
     } catch (error) {
       if (error instanceof Error && error.message === 'No matching unstudied words found') {
         res.status(404).json({ error: error.message });
+        return;
+      }
+
+      if (
+        error instanceof Error
+        && (
+          error.message === 'Expected wordIds to be an array of strings when provided'
+          || error.message === 'Expected non-empty wordIds when provided'
+          || error.message === 'wordIds must match the submitted target'
+        )
+      ) {
+        res.status(400).json({ error: error.message });
         return;
       }
 

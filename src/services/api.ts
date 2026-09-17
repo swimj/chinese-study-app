@@ -388,10 +388,17 @@ type UserPriorityPatch = {
   requiredForNextSession?: boolean;
 };
 
-type AddPriorityByHanziResponse = {
-  addedCount: number;
-  words: PriorityWord[];
-};
+type AddPriorityByHanziResponse =
+  | {
+      addedCount: number;
+      words: PriorityWord[];
+      needsSelection?: false;
+    }
+  | {
+      needsSelection: true;
+      query: string;
+      matches: Word[];
+    };
 
 type PriorityWordsResponse = {
   words: PriorityWord[];
@@ -1008,13 +1015,18 @@ export async function fetchUnstudiedPriorityWords(): Promise<PriorityWordsRespon
 export async function addUnstudiedPriorityByHanzi(
   hanzi: string,
   requiredForNextSession = false,
+  wordIds?: string[],
 ): Promise<AddPriorityByHanziResponse> {
   const response = await apiFetch(`${API_BASE}/api/priority/unstudied/add-by-hanzi`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ hanzi, requiredForNextSession }),
+    body: JSON.stringify({
+      hanzi,
+      requiredForNextSession,
+      ...(wordIds === undefined ? {} : { wordIds }),
+    }),
   });
 
   if (!response.ok) {

@@ -135,9 +135,9 @@ existing `New Words views` / `Reflection views` labels and keyboard behavior.
 
 `useStudySession` owns the in-flight study session on the home page (see Session Controller below).
 
-`usePriorityPageController` owns the priority page: loading, search,
-added-word highlighting, batch priority updates, unbumped triage loading, manual advisor
-generation, and assessment accept/dismiss actions.
+`usePriorityPageController` owns the priority page: loading, add-by-target search,
+multi-match selection when a query resolves to several unstudied rows, added-word
+highlighting, and batch priority updates.
 
 `useReflectionPageController` owns the reflection page. See the
 [reflection frontend architecture map](../docs/reflection-frontend-architecture.md)
