@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { config, getDb } from './connection.ts';
 import { invalidateDeckWordIds } from './deck-words.ts';
+import { normalizeMandarinHanziLookup } from './hanzi-lookup.ts';
 
 const SHARED_MANDARIN_BOOTSTRAP_SCHEMA_VERSION = 1;
 const SHARED_MANDARIN_CONTENT_KIND = 'shared_mandarin_lexicon';
@@ -274,8 +275,8 @@ function insertMissingContent(artifact: SharedMandarinBootstrapArtifact): void {
   invalidateDeckWordIds();
   const insertWord = getDb().prepare(`
     INSERT INTO lexical_words (
-      id, hanzi, traditional, pinyin, meaning, meanings_json, examples_json, priority, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      id, hanzi, traditional, pinyin, meaning, meanings_json, examples_json, priority, created_at, normalized_hanzi
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO NOTHING
   `);
   const insertMeaning = getDb().prepare(`
@@ -294,6 +295,7 @@ function insertMissingContent(artifact: SharedMandarinBootstrapArtifact): void {
       JSON.stringify(word.examples),
       word.priority,
       word.createdAt,
+      normalizeMandarinHanziLookup(word.hanzi),
     );
     word.meanings.forEach((meaning, position) => {
       insertMeaning.run(meaning.id, word.id, position, meaning.text, word.createdAt, word.createdAt);

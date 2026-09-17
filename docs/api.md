@@ -162,6 +162,10 @@ other stash by the same timestamp. Corpus frequency no longer ranks that list.
 `bump_count` is still written on overlay updates and is treated as zero/nonzero
 stash membership; the payload no longer includes approximate rank, percentile
 baseline, or bump-boosted effective priority.
+`POST /api/priority/unstudied/add-by-hanzi` still exact-matches `hanzi`, then
+for Mandarin also matches the punctuation-stripped lookup key used by
+production answers, and adds every unstudied hit. French continues to use
+exact plus alias lookup and ignores that key.
 
 ## Diet profile
 

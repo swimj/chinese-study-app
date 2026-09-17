@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
+import { fillMissingNormalizedHanzi } from './hanzi-lookup.ts';
 
 const PREFIX = 'app_schema:';
 const BASELINE_ID = `${PREFIX}0000_baseline`;
@@ -8,7 +9,11 @@ const baseline = JSON.parse(fs.readFileSync(new URL('./migrations/baseline-schem
 const deployedOverrides = JSON.parse(fs.readFileSync(new URL('./migrations/baseline-deployed-variant.json', import.meta.url), 'utf8')) as Record<string, string>;
 const deployedBaseline = { ...baseline, ...deployedOverrides };
 
-export type SchemaMigration = { id: string; sql: string };
+export type SchemaMigration = {
+  id: string;
+  sql: string;
+  after?: (db: DatabaseSync) => void;
+};
 // Append migrations here in order. Never edit an applied migration or the baseline.
 export const schemaMigrations: readonly SchemaMigration[] = [{
   id: 'app_schema:0001_deferred_second_opinion',
@@ -34,6 +39,10 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0007_learner_params',
   sql: fs.readFileSync(new URL('./migrations/0007_learner_params.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0008_normalized_hanzi',
+  sql: fs.readFileSync(new URL('./migrations/0008_normalized_hanzi.sql', import.meta.url), 'utf8'),
+  after: fillMissingNormalizedHanzi,
 }];
 
 function checksum(value: string): string {
@@ -65,7 +74,7 @@ function adoptBaseline(db: DatabaseSync): 'fresh' | 'fly_3ad618b' {
   throw new Error(`Database does not match the supported current schema baseline: ${schemaDifferences(baseline, actual).join(', ')}. Older schemas are unsupported; do not stamp this database manually.`);
 }
 
-function definitions(migrations: readonly SchemaMigration[]) {
+function definitions(migrations: readonly SchemaMigration[]): SchemaMigration[] {
   const all = [{ id: BASELINE_ID, sql: JSON.stringify({ baseline, deployedOverrides }) }, ...migrations];
   let previous = BASELINE_ID;
   for (const migration of migrations) {
@@ -130,7 +139,10 @@ export function migrateDatabase(db: DatabaseSync, migrations = schemaMigrations)
       for (const migration of state.all.slice(state.applied)) {
         let baselineVariant: 'fresh' | 'fly_3ad618b' | undefined;
         if (migration.id === BASELINE_ID) baselineVariant = adoptBaseline(db);
-        else db.exec(migration.sql);
+        else {
+          db.exec(migration.sql);
+          migration.after?.(db);
+        }
         if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error(`Foreign key check failed after ${migration.id}`);
         const integrity = db.prepare('PRAGMA quick_check').all() as Array<{ quick_check: string }>;
         if (integrity.length !== 1 || integrity[0].quick_check !== 'ok') throw new Error(`Integrity check failed after ${migration.id}`);
