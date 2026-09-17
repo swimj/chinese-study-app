@@ -10,6 +10,16 @@ const ABOUT_VIEWS = [
 // Entry dates follow the change history; add new posts at the top.
 const UPDATES = [
   {
+    date: '2026-09-17',
+    displayDate: 'September 17, 2026',
+    title: 'See what’s waiting, finish with Space, and pick the right stash word',
+    paragraphs: [
+      'Reflections and About can now show a little number when something’s waiting. Reflections counts new Help cards after a session. About counts unread What’s New notes, including this one. Open the page and the count goes away.',
+      'When you hit the session summary, Space now finishes the session the same way Finish session does. Heading somewhere else in the app also wraps it up, so the last attempt is saved and a reflection can start without you sitting on the waiting screen. Leaving in the middle of a session is unchanged, and closing the tab still isn’t a reliable way to finish.',
+      'Stash add got two small improvements. You no longer have to type the comma in a saying: 吃一堑长一智 still finds 吃一堑，长一智. And if what you typed matches more than one unstudied word, a picker pops up so you can choose which ones to add instead of getting all of them. One match still adds immediately.',
+    ],
+  },
+  {
     date: '2026-09-16',
     displayDate: 'September 16, 2026',
     title: 'Filter My words by stage or recent lapses',
