@@ -90,6 +90,7 @@ function SessionReflectionStatus({
     return (
       <p className="notes">
         Finish the session to save the final attempt and start reflection.
+        Leaving for another page does the same.
       </p>
     );
   }

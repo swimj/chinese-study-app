@@ -10,6 +10,9 @@ import {
   isCurrentSessionReflectionRequest,
   resetFailedSessionFinalization,
   retrySessionReflectionGeneration,
+  runExclusiveAsync,
+  sessionHidesAppChrome,
+  shouldFinishSessionOnLeave,
 } from '../src/features/session/session-finalization.ts';
 
 describe('completed-session finalization', () => {
@@ -120,6 +123,71 @@ describe('completed-session finalization', () => {
       }),
       /not retryable/,
     );
+  });
+
+  test('only a completed summary can finish implicitly on in-app leave', () => {
+    assert.equal(shouldFinishSessionOnLeave({
+      sessionStarted: true,
+      sessionPhase: 'completed',
+      finalizationKind: 'unfinalized',
+    }), true);
+    assert.equal(shouldFinishSessionOnLeave({
+      sessionStarted: true,
+      sessionPhase: 'completed',
+      finalizationKind: 'finalizing',
+    }), true);
+    assert.equal(shouldFinishSessionOnLeave({
+      sessionStarted: true,
+      sessionPhase: 'completed',
+      finalizationKind: 'finalized',
+    }), false);
+    assert.equal(shouldFinishSessionOnLeave({
+      sessionStarted: true,
+      sessionPhase: 'active',
+      finalizationKind: 'unfinalized',
+    }), false);
+    assert.equal(shouldFinishSessionOnLeave({
+      sessionStarted: true,
+      sessionPhase: 'draining',
+      finalizationKind: 'unfinalized',
+    }), false);
+    assert.equal(shouldFinishSessionOnLeave({
+      sessionStarted: false,
+      sessionPhase: 'completed',
+      finalizationKind: 'unfinalized',
+    }), false);
+  });
+
+  test('hides app chrome only while a live session has not reached the summary', () => {
+    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'active' }), true);
+    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'draining' }), true);
+    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'completed' }), false);
+    assert.equal(sessionHidesAppChrome({ sessionStarted: false, sessionPhase: null }), false);
+  });
+
+  test('overlapping finish callers share one in-flight run', async () => {
+    const slot: { current: Promise<void> | null } = { current: null };
+    let starts = 0;
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const first = runExclusiveAsync(slot, async () => {
+      starts += 1;
+      await gate;
+    });
+    const second = runExclusiveAsync(slot, async () => {
+      starts += 1;
+    });
+    release();
+    await Promise.all([first, second]);
+    assert.equal(starts, 1);
+
+    await runExclusiveAsync(slot, async () => {
+      starts += 1;
+    });
+    assert.equal(starts, 2);
   });
 
   test('ignores a reflection response after close or after another session starts', () => {

@@ -223,6 +223,8 @@ export function StudySessionPanel({
     hasUndo,
     hasActiveWord: activeWord !== null,
     ratingOptions: activeRatingOptions,
+    completedSummary: panelView === 'completed',
+    summaryFinalizationKind: sessionFinalization.kind,
   });
   const primaryAction = getSessionPrimaryAction(keyboardContext);
   const shortcutGuide = getSessionShortcutGuide(keyboardContext, { includeDialogClose: shortcutGuideOpen });
@@ -394,6 +396,10 @@ export function StudySessionPanel({
                   : sessionFinalization.kind === 'finalizing'
                     ? 'Finishing...'
                     : 'Finish session'}
+                <ShortcutHint
+                  shortcut={shortcutFor(primaryAction, 'finish_session')
+                    ?? shortcutFor(primaryAction, 'close_summary')}
+                />
               </button>
               <KeyboardGuideButton onClick={onOpenShortcutGuide} />
               <UndoButton
@@ -1158,6 +1164,8 @@ function createSessionKeyboardContext({
   hasUndo,
   hasActiveWord,
   ratingOptions,
+  completedSummary,
+  summaryFinalizationKind,
 }: {
   sessionStarted: boolean;
   isProductionItem: boolean;
@@ -1173,6 +1181,8 @@ function createSessionKeyboardContext({
   hasUndo: boolean;
   hasActiveWord: boolean;
   ratingOptions: RatingOption[];
+  completedSummary: boolean;
+  summaryFinalizationKind: SessionKeyboardContext['summaryFinalizationKind'];
 }): SessionKeyboardContext {
   return {
     sessionStarted,
@@ -1195,5 +1205,7 @@ function createSessionKeyboardContext({
     hasUndo,
     hasActiveWord,
     ratingOptions,
+    completedSummary,
+    summaryFinalizationKind,
   };
 }

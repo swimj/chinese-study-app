@@ -21,6 +21,32 @@ export type SessionFinalizationState =
       reflection: SessionReflectionGenerationState;
     };
 
+export type SessionLeavePhase = 'active' | 'draining' | 'completed' | null;
+
+export function sessionHidesAppChrome({
+  sessionStarted,
+  sessionPhase,
+}: {
+  sessionStarted: boolean;
+  sessionPhase: SessionLeavePhase;
+}): boolean {
+  return sessionStarted && sessionPhase !== null && sessionPhase !== 'completed';
+}
+
+export function shouldFinishSessionOnLeave({
+  sessionStarted,
+  sessionPhase,
+  finalizationKind,
+}: {
+  sessionStarted: boolean;
+  sessionPhase: SessionLeavePhase;
+  finalizationKind: SessionFinalizationState['kind'];
+}): boolean {
+  return sessionStarted
+    && sessionPhase === 'completed'
+    && (finalizationKind === 'unfinalized' || finalizationKind === 'finalizing');
+}
+
 export function createSessionFinalizationState(): SessionFinalizationState {
   return { kind: 'unfinalized' };
 }
@@ -128,6 +154,26 @@ export function isCurrentSessionReflectionRequest({
   requestSessionId: string;
 }): boolean {
   return activeSessionId === requestSessionId;
+}
+
+export async function runExclusiveAsync(
+  slot: { current: Promise<void> | null },
+  start: () => Promise<void>,
+): Promise<void> {
+  if (slot.current) {
+    await slot.current;
+    return;
+  }
+
+  const run = start();
+  slot.current = run;
+  try {
+    await run;
+  } finally {
+    if (slot.current === run) {
+      slot.current = null;
+    }
+  }
 }
 
 function assertReflectionState<TKind extends SessionReflectionGenerationState['kind']>(

@@ -48,7 +48,7 @@ src/
       PersonalNotesEditorOverlay.tsx
       session-keyboard.ts         # state-to-action/shortcut descriptors + key resolution
       session-dialog-focus.ts     # session dialog focus trap, Escape, restoration
-      session-finalization.ts     # explicit Finish/Close and best-effort reflection states
+      session-finalization.ts     # Finish/Close, in-app leave finish, and best-effort reflection states
       session-reflection-evidence.ts # typed production evidence accumulator + Undo snapshots
       session-commit.ts           # deferred durable commit adapter
       session-prefetch.ts         # session payload prefetch cache
@@ -157,20 +157,23 @@ bounded server-side selection and result loading.
 - start/end/rate/undo/dismiss flows
 - deferred durable session commits
 - session summary updates
-- completed-session finalization and non-blocking reflection generation
+- completed-session finalization and non-blocking reflection generation,
+  including in-app leave from the completed summary as the same finish path
 - ephemeral reflection-evidence capture and retry supplement retention
 - production Hanzi input flow
 - personal notes editor state
 - active word meaning loading and visibility updates
 - keyboard shortcuts and focus effects, using `session-keyboard.ts` as the
   shared state-to-action/shortcut description so the panel and controller
-  cannot drift
+  cannot drift; Space on the completed summary is Finish session / Close
+  summary
 - accepted production with a served cue supplement: an `await-supplement`
   Continue beat before rating; cards without a supplement still rate immediately
 
 The hook returns:
 
 - `homePageProps` → `HomePage`
+- `finishCompletedSessionIfLeaving` → `App.tsx` primary-nav leave
 - `personalNotesEditor` → overlay in `App.tsx`
 
 The completed-session finalization, evidence accumulator, and reflection review

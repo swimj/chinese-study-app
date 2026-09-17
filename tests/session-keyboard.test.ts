@@ -32,6 +32,8 @@ function createContext(overrides: Partial<SessionKeyboardContext> = {}): Session
     ratingAvailable: false,
     hasUndo: false,
     hasActiveWord: true,
+    completedSummary: false,
+    summaryFinalizationKind: 'unfinalized',
     ratingOptions: getActiveRatingOptions({
       actionKind: 'recognition',
       wordStatus: 'review',
@@ -241,6 +243,55 @@ describe('session keyboard contract', () => {
     assert.deepEqual(resolveSessionKey(key('?'), rating), { type: 'toggle_shortcut_guide' });
     assert.equal(resolveSessionKey(key('?', { isComposing: true }), createContext()), null);
     assert.equal(resolveSessionKey(key('/'), createContext()), null);
+  });
+
+  test('completed summary uses Space to finish, then Space to close, and never rates or reveals', () => {
+    const unfinalized = createContext({
+      completedSummary: true,
+      answerRevealed: true,
+      ratingAvailable: true,
+      hasUndo: true,
+    });
+    assert.equal(getSessionInteractionKind(unfinalized), 'completed_summary');
+    assert.deepEqual(getSessionPrimaryAction(unfinalized), {
+      command: 'finish_session',
+      label: 'Finish session',
+      shortcut: 'Space',
+    });
+    assert.deepEqual(resolveSessionKey(key(' '), unfinalized), { type: 'finish_session' });
+    assert.deepEqual(resolveSessionKey(key('u'), unfinalized), { type: 'undo' });
+    assert.equal(resolveSessionKey(key('1'), unfinalized), null);
+    assert.equal(resolveSessionKey(key('3'), unfinalized), null);
+
+    const finalizing = createContext({
+      completedSummary: true,
+      summaryFinalizationKind: 'finalizing',
+      hasUndo: true,
+    });
+    assert.equal(getSessionPrimaryAction(finalizing)?.shortcut, null);
+    assert.equal(resolveSessionKey(key(' '), finalizing), null);
+    assert.equal(resolveSessionKey(key('u'), finalizing), null);
+
+    const finalized = createContext({
+      completedSummary: true,
+      summaryFinalizationKind: 'finalized',
+      hasUndo: false,
+    });
+    assert.deepEqual(getSessionPrimaryAction(finalized), {
+      command: 'close_summary',
+      label: 'Close summary',
+      shortcut: 'Space',
+    });
+    assert.deepEqual(resolveSessionKey(key(' '), finalized), { type: 'close_summary' });
+    const thisCard = getSessionShortcutGuide(unfinalized).find((section) => section.title === 'This card');
+    assert.equal(thisCard?.rows[0]?.description, 'Finish the session');
+  });
+
+  test('Space still reveals an in-session card rather than finishing', () => {
+    const context = createContext();
+    assert.equal(context.completedSummary, false);
+    assert.deepEqual(resolveSessionKey(key(' '), context), { type: 'reveal' });
+    assert.equal(resolveSessionKey(key(' '), createContext({ isEditableTarget: true })), null);
   });
 
   test('guide rows stay state-aware and do not advertise unavailable actions as active', () => {

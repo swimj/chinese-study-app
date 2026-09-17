@@ -28,6 +28,7 @@ import { MyWordsPage } from './pages/MyWordsPage';
 import { useMyWordsController } from './features/words/useMyWordsController';
 import { PersonalNotesEditorOverlay } from './features/session/PersonalNotesEditorOverlay';
 import { useStudySession } from './features/session/useStudySession';
+import { sessionHidesAppChrome } from './features/session/session-finalization';
 import { usePriorityPageController } from './features/priority/usePriorityPageController';
 import { HomePage } from './pages/HomePage';
 import { PriorityPage } from './pages/PriorityPage';
@@ -69,6 +70,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     setError,
     onSessionEnded: reloadDashboard,
     onReflectionGenerated: attention.refresh,
+    sessionSurfaceVisible: currentPage === 'home',
   });
   const priorityPage = usePriorityPageController({
     currentPage,
@@ -226,7 +228,18 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     void studySession.refreshSessionPrefetch().catch(() => undefined);
   }
 
-  const sessionActive = currentPage === 'home' && studySession.homePageProps.sessionStarted;
+  const sessionActive = sessionHidesAppChrome({
+    sessionStarted: studySession.sessionStarted,
+    sessionPhase: studySession.homePageProps.sessionPhase,
+  });
+
+  async function leaveCompletedSessionThen(navigate: () => void | Promise<void>) {
+    const allowed = await studySession.finishCompletedSessionIfLeaving();
+    if (!allowed) {
+      return;
+    }
+    await navigate();
+  }
 
   return (
     <AppChrome
@@ -240,12 +253,20 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
       reflectionUnseenCount={attention.reflectionUnseenCount}
       aboutUnseenCount={attention.whatsNewUnseenCount}
       onOpenHomePage={() => setCurrentPage('home')}
-      onOpenPriorityPage={() => void priorityPage.openPage()}
-      onOpenReflectionsPage={() => void reflectionPage.openPage()}
+      onOpenPriorityPage={() => void leaveCompletedSessionThen(() => priorityPage.openPage())}
+      onOpenReflectionsPage={() => void leaveCompletedSessionThen(() => reflectionPage.openPage())}
       onRefreshReflections={() => void reflectionPage.refresh()}
-      onOpenContentPage={() => void contentPage.openPage()}
-      onOpenAboutPage={() => setCurrentPage('about')}
-      onSignOut={onSignOut}
+      onOpenContentPage={() => void leaveCompletedSessionThen(() => contentPage.openPage())}
+      onOpenAboutPage={() => void leaveCompletedSessionThen(() => setCurrentPage('about'))}
+      onSignOut={onSignOut
+        ? async () => {
+            const allowed = await studySession.finishCompletedSessionIfLeaving();
+            if (!allowed) {
+              return;
+            }
+            await onSignOut();
+          }
+        : undefined}
     >
       {currentPage === 'home' ? (
         <HomePage
