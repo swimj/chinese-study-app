@@ -161,6 +161,40 @@ describe('user priority layer', { concurrency: false }, () => {
     assert.deepEqual(added.map((entry) => entry.word.id), ['plain', 'dotted']);
   });
 
+  test('list-by-target returns unstudied matches without writing overlay rows', () => {
+    insertWord('list-a', 70, 'unstudied', '2026-01-01T00:00:00.000Z', '行');
+    insertWord('list-b', 60, 'unstudied', '2026-01-02T00:00:00.000Z', '行');
+    insertWord('list-learning', 50, 'learning', '2026-01-03T00:00:00.000Z', '行');
+
+    const matches = dbModule.listUnstudiedPriorityMatchesByTarget('行');
+    assert.deepEqual(matches.map((entry) => entry.id), ['list-a', 'list-b']);
+    assert.equal(dbModule.getPrioritizedUnstudiedWords().words.length, 0);
+  });
+
+  test('add-by-hanzi can add an explicit subset of matching word ids', () => {
+    insertWord('subset-a', 70, 'unstudied', '2026-01-01T00:00:00.000Z', '中');
+    insertWord('subset-b', 60, 'unstudied', '2026-01-02T00:00:00.000Z', '中');
+    insertWord('subset-c', 50, 'unstudied', '2026-01-03T00:00:00.000Z', '中');
+
+    const added = dbModule.addUnstudiedUserPriorityByHanzi('中', false, ['subset-c', 'subset-a']);
+    assert.deepEqual(added.map((entry) => entry.word.id), ['subset-c', 'subset-a']);
+    assert.deepEqual(
+      dbModule.getPrioritizedUnstudiedWords().words.map((entry) => entry.word.id).sort(),
+      ['subset-a', 'subset-c'],
+    );
+  });
+
+  test('add-by-hanzi rejects word ids that are not matches for the target', () => {
+    insertWord('valid-match', 70, 'unstudied', '2026-01-01T00:00:00.000Z', '开');
+    insertWord('other-word', 60, 'unstudied', '2026-01-02T00:00:00.000Z', '关');
+
+    assert.throws(
+      () => dbModule.addUnstudiedUserPriorityByHanzi('开', false, ['other-word']),
+      /wordIds must match the submitted target/,
+    );
+    assert.equal(dbModule.getPrioritizedUnstudiedWords().words.length, 0);
+  });
+
   test('prioritized list includes required-only rows and excludes sunk rows', () => {
     insertWord('required-only', 70, 'unstudied', '2026-01-01T00:00:00.000Z');
     insertWord('sunk-boosted', 100, 'unstudied', '2026-01-02T00:00:00.000Z');

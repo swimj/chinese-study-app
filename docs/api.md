@@ -167,6 +167,14 @@ for Mandarin also matches the punctuation-stripped lookup key used by
 production answers, and adds every unstudied hit. French continues to use
 exact plus alias lookup and ignores that key.
 
+`POST /api/priority/unstudied/add-by-hanzi` accepts `{ hanzi, requiredForNextSession?,
+wordIds? }`. Exact (and French alias) lookup still resolves unstudied matches.
+When multiple matches exist and `wordIds` is omitted, the handler returns
+`{ needsSelection: true, query, matches }` without writing overlay rows so the
+client can present a chooser. A single match, or an explicit `wordIds` subset of
+those matches, adds the selected rows and returns `{ addedCount, words }` as
+before.
+
 ## Diet profile
 
 The durable contract is

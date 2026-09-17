@@ -607,17 +607,27 @@ export function updateWordUserPriority(wordId: string, patch: UserWordPriorityPa
   return getUnstudiedPriorityWordById(wordId);
 }
 
-export function addUnstudiedUserPriorityByHanzi(hanzi: string, requiredForNextSession = false): PriorityWord[] {
+export function listUnstudiedPriorityMatchesByTarget(targetText: string): Word[] {
+  return resolveUnstudiedPriorityWordIdsByTarget(targetText).map((match) => getUnstudiedPriorityWordById(match.id).word);
+}
+
+export function addUnstudiedUserPriorityByHanzi(
+  hanzi: string,
+  requiredForNextSession = false,
+  wordIds?: string[],
+): PriorityWord[] {
   const matches = resolveUnstudiedPriorityWordIdsByTarget(hanzi);
 
   if (matches.length === 0) {
     throw new Error('No matching unstudied words found');
   }
 
+  const matchesToAdd = selectPriorityMatchesByWordIds(matches, wordIds);
+
   getDb().exec('BEGIN');
 
   try {
-    for (const match of matches) {
+    for (const match of matchesToAdd) {
       const existingPriorityRow = getDb()
         .prepare(`
           SELECT
@@ -661,7 +671,46 @@ export function addUnstudiedUserPriorityByHanzi(hanzi: string, requiredForNextSe
     throw error;
   }
 
-  return matches.map((match) => getUnstudiedPriorityWordById(match.id));
+  return matchesToAdd.map((match) => getUnstudiedPriorityWordById(match.id));
+}
+
+function selectPriorityMatchesByWordIds(
+  matches: Array<{ id: string }>,
+  wordIds: string[] | undefined,
+): Array<{ id: string }> {
+  if (wordIds === undefined) {
+    return matches;
+  }
+
+  if (!Array.isArray(wordIds)) {
+    throw new Error('Expected wordIds to be an array of strings when provided');
+  }
+
+  const uniqueWordIds: string[] = [];
+  const seenWordIds = new Set<string>();
+  for (const wordId of wordIds) {
+    if (typeof wordId !== 'string' || wordId.trim().length === 0) {
+      throw new Error('Expected wordIds to be an array of strings when provided');
+    }
+    if (seenWordIds.has(wordId)) {
+      continue;
+    }
+    seenWordIds.add(wordId);
+    uniqueWordIds.push(wordId);
+  }
+
+  if (uniqueWordIds.length === 0) {
+    throw new Error('Expected non-empty wordIds when provided');
+  }
+
+  const matchIds = new Set(matches.map((match) => match.id));
+  for (const wordId of uniqueWordIds) {
+    if (!matchIds.has(wordId)) {
+      throw new Error('wordIds must match the submitted target');
+    }
+  }
+
+  return uniqueWordIds.map((id) => ({ id }));
 }
 
 function resolveUnstudiedPriorityWordIdsByTarget(targetText: string): Array<{ id: string }> {
