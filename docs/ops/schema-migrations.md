@@ -115,7 +115,10 @@ indexes and ownership guards when its column changes require that.
 Write ordinary transactional SQLite SQL, using physical tables and explicit
 learner ids for data writes. Do not include transaction control (`BEGIN`,
 `COMMIT`, `ROLLBACK`, savepoints), `PRAGMA foreign_keys`, use `VACUUM`, or perform
-external side effects. The runner disables foreign keys around the migration
+external side effects. A migration may also set `after` for a same-transaction
+TypeScript backfill when SQLite cannot express the transform; `0008` uses this
+for Unicode punctuation stripping. Do not register domain SQL functions on the
+generic runner. The runner disables foreign keys around the migration
 transaction because SQLite cannot alter CHECK constraints or drop a table with
 incoming foreign keys while they are enabled, and that pragma is a no-op inside
 a transaction. `PRAGMA foreign_key_check` after each migration remains the
@@ -144,10 +147,10 @@ banner. `0006_inbox_seen_at.sql` adds Help-queue `inbox_seen_at` columns.
 `0007_learner_params.sql` adds the per-learner non-settings key-value store
 and copies any existing `whats_new_seen_through_date` rows out of
 `learner_settings`.
-`0008_normalized_hanzi.sql` adds `lexical_words.normalized_hanzi`,
-backfills it with the Mandarin production punctuation/whitespace strip, and
-indexes nonempty keys. Display `hanzi` is unchanged. Fresh installations start
-with the frozen baseline
+`0008_normalized_hanzi.sql` adds `lexical_words.normalized_hanzi` and indexes
+nonempty keys. Its `after` hook backfills the Mandarin production
+punctuation/whitespace strip. Display `hanzi` is unchanged. Fresh installations
+start with the frozen baseline
 and apply this same SQL.
 `tests/deferred-second-opinion-migration.test.ts` and
 `tests/requested-second-opinion-disposition-migration.test.ts` verify history

@@ -1,23 +1,8 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { normalizeProductionAnswerForProfile } from '../../src/study-profile.ts';
 
-const installed = new WeakSet<DatabaseSync>();
-
 export function normalizeMandarinHanziLookup(value: string): string {
   return normalizeProductionAnswerForProfile(value, 'mandarin');
-}
-
-export function installHanziLookupSqlFunction(database: DatabaseSync): void {
-  if (installed.has(database)) {
-    return;
-  }
-
-  database.function(
-    'normalize_mandarin_hanzi_lookup',
-    { deterministic: true },
-    (value: unknown) => normalizeMandarinHanziLookup(typeof value === 'string' ? value : String(value ?? '')),
-  );
-  installed.add(database);
 }
 
 export function fillMissingNormalizedHanzi(database: DatabaseSync): void {
