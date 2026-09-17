@@ -5,6 +5,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
+import { normalizeMandarinHanziLookup } from '../server/db/hanzi-lookup.ts';
 
 type WordStatus = 'unstudied' | 'learning' | 'review';
 type DbModule = typeof import('../server/db.ts');
@@ -140,6 +141,26 @@ describe('user priority layer', { concurrency: false }, () => {
     assert(prioritized.every((entry) => entry.requiredForNextSession));
   });
 
+  test('add-by-hanzi matches a saying without the stored comma or surrounding punctuation', () => {
+    insertWord('saying', 80, 'unstudied', '2026-01-01T00:00:00.000Z', '吃一堑，长一智');
+    insertWord('learning-saying', 70, 'learning', '2026-01-02T00:00:00.000Z', '吃一堑，长一智');
+
+    const added = dbModule.addUnstudiedUserPriorityByHanzi('吃一堑长一智');
+    assert.deepEqual(added.map((entry) => entry.word.id), ['saying']);
+    assert.equal(added[0]?.word.hanzi, '吃一堑，长一智');
+
+    const addedWithComma = dbModule.addUnstudiedUserPriorityByHanzi('吃一堑，长一智');
+    assert.deepEqual(addedWithComma.map((entry) => entry.word.id), ['saying']);
+  });
+
+  test('add-by-hanzi still exact-matches and also adds punctuation-stripped collisions', () => {
+    insertWord('plain', 90, 'unstudied', '2026-01-01T00:00:00.000Z', '本拉登');
+    insertWord('dotted', 80, 'unstudied', '2026-01-02T00:00:00.000Z', '本·拉登');
+
+    const added = dbModule.addUnstudiedUserPriorityByHanzi('本拉登');
+    assert.deepEqual(added.map((entry) => entry.word.id), ['plain', 'dotted']);
+  });
+
   test('prioritized list includes required-only rows and excludes sunk rows', () => {
     insertWord('required-only', 70, 'unstudied', '2026-01-01T00:00:00.000Z');
     insertWord('sunk-boosted', 100, 'unstudied', '2026-01-02T00:00:00.000Z');
@@ -252,6 +273,11 @@ function insertWord(id: string, priority: number, status: WordStatus, createdAt:
     null,
     null,
   );
+  sqlite.prepare(`
+    UPDATE lexical_words
+    SET normalized_hanzi = ?
+    WHERE id = ?
+  `).run(normalizeMandarinHanziLookup(hanzi), id);
 }
 
 function getSessionItemIds(db: DbModule): string[] {

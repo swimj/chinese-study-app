@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
+import { installHanziLookupSqlFunction } from './hanzi-lookup.ts';
 
 const PREFIX = 'app_schema:';
 const BASELINE_ID = `${PREFIX}0000_baseline`;
@@ -34,6 +35,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0007_learner_params',
   sql: fs.readFileSync(new URL('./migrations/0007_learner_params.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0008_normalized_hanzi',
+  sql: fs.readFileSync(new URL('./migrations/0008_normalized_hanzi.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {
@@ -111,6 +115,7 @@ export function getSchemaMigrationStatus(db: DatabaseSync, migrations = schemaMi
 
 /** Caller owns the maintenance window. The transaction serializes migration runners. */
 export function migrateDatabase(db: DatabaseSync, migrations = schemaMigrations): string[] {
+  installHanziLookupSqlFunction(db);
   if (db.isTransaction) {
     throw new Error('Schema migrations cannot start inside an open transaction.');
   }

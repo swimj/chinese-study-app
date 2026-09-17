@@ -143,7 +143,11 @@ with the physical table.
 banner. `0006_inbox_seen_at.sql` adds Help-queue `inbox_seen_at` columns.
 `0007_learner_params.sql` adds the per-learner non-settings key-value store
 and copies any existing `whats_new_seen_through_date` rows out of
-`learner_settings`. Fresh installations start with the frozen baseline
+`learner_settings`.
+`0008_normalized_hanzi.sql` adds `lexical_words.normalized_hanzi`,
+backfills it with the Mandarin production punctuation/whitespace strip, and
+indexes nonempty keys. Display `hanzi` is unchanged. Fresh installations start
+with the frozen baseline
 and apply this same SQL.
 `tests/deferred-second-opinion-migration.test.ts` and
 `tests/requested-second-opinion-disposition-migration.test.ts` verify history

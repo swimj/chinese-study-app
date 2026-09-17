@@ -40,6 +40,7 @@ import {
   type ProductionAnswerLookup,
 } from '../../src/domain/production-response.ts';
 import { config, getConfig, getDb, dbPath, seedDataPath, dbExistedOnStartup } from './connection.ts';
+import { fillMissingNormalizedHanzi, normalizeMandarinHanziLookup } from './hanzi-lookup.ts';
 import { assertSchemaCurrent, migrateDatabase } from './migrations.ts';
 import { createHostedOperationsSchema } from './hosted-operations.ts';
 import {
@@ -677,6 +678,28 @@ function resolveUnstudiedPriorityWordIdsByTarget(targetText: string): Array<{ id
     .all(submittedText) as Array<{ id: string }>;
 
   const candidateMatches = [...exactMatches];
+
+  if (config.studyProfile === 'mandarin') {
+    const normalizedHanzi = normalizeMandarinHanziLookup(submittedText);
+    if (normalizedHanzi.length > 0) {
+      const normalizedMatches = getDb()
+        .prepare(`
+          SELECT
+            words.id,
+            words.priority,
+            words.created_at
+          FROM words
+          JOIN lexical_words ON lexical_words.id = words.id
+          WHERE words.status = 'unstudied'
+            AND lexical_words.normalized_hanzi <> ''
+            AND lexical_words.normalized_hanzi = ?
+          ORDER BY words.priority DESC, words.created_at ASC
+        `)
+        .all(normalizedHanzi) as Array<{ id: string; priority: number; created_at: string }>;
+
+      candidateMatches.push(...normalizedMatches.map((match) => ({ id: match.id })));
+    }
+  }
 
   if (config.studyProfile === 'french') {
     const normalizedAlias = normalizeLookupText(submittedText);
@@ -3493,6 +3516,7 @@ function seedDatabase() {
       );
     }
 
+    fillMissingNormalizedHanzi(getDb());
     getDb().exec('COMMIT');
   } catch (error) {
     getDb().exec('ROLLBACK');
@@ -3508,8 +3532,8 @@ function seedDatabase() {
 function seedSharedDevelopmentFixtureData(seedData: SeedData) {
   const insertWord = getDb().prepare(`
     INSERT OR IGNORE INTO lexical_words (
-      id, hanzi, traditional, pinyin, meaning, meanings_json, examples_json, priority, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      id, hanzi, traditional, pinyin, meaning, meanings_json, examples_json, priority, created_at, normalized_hanzi
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertMeaning = getDb().prepare(`
     INSERT OR IGNORE INTO lexical_word_meanings (
@@ -3530,6 +3554,7 @@ function seedSharedDevelopmentFixtureData(seedData: SeedData) {
         JSON.stringify(word.examples),
         word.priority,
         word.createdAt,
+        normalizeMandarinHanziLookup(word.hanzi),
       );
     }
     for (const meaning of seedData.wordMeanings) {
