@@ -169,17 +169,60 @@ describe('attention badges', { concurrency: false }, () => {
       /YYYY-MM-DD/,
     );
   });
+
+  test('lists failed generation run ids without counting succeeded runs', () => {
+    insertSession('attention-failed-run');
+    recordFailedRun('attention-failed-run', 'failed-run', seenAt);
+    recordSucceededRun('attention-failed-run', 'succeeded-run', '2026-08-18T08:06:00.000Z');
+
+    assert.deepEqual(dbModule.listFailedReflectionRunIds(), ['failed-run']);
+    assert.deepEqual(dbModule.getAttentionBadges(), {
+      reflectionUnseenCount: 0,
+      failedReflectionRunIds: ['failed-run'],
+      failedReflectionRunsSeenThroughAt: null,
+      whatsNewSeenThroughDate: null,
+    });
+  });
+
+  test('durably acknowledges failed runs so reload does not re-badge until a newer failure', () => {
+    insertSession('attention-failed-durable');
+    recordFailedRun('attention-failed-durable', 'failed-old', '2026-08-18T08:05:00.000Z');
+
+    const acknowledged = dbModule.markFailedReflectionRunsSeen('2026-08-18T08:05:00.000Z');
+    assert.deepEqual(acknowledged, {
+      failedReflectionRunIds: [],
+      failedReflectionRunsSeenThroughAt: '2026-08-18T08:05:00.000Z',
+    });
+    assert.deepEqual(dbModule.getAttentionBadges().failedReflectionRunIds, []);
+    assert.equal(
+      dbModule.getFailedReflectionRunsSeenThroughAt(),
+      '2026-08-18T08:05:00.000Z',
+    );
+    assert.equal(
+      sqlite.prepare(`
+        SELECT value_json FROM learner_params
+        WHERE learner_id = 'test-learner' AND param_key = 'failed_reflection_runs_seen_through_at'
+      `).get()?.value_json,
+      JSON.stringify('2026-08-18T08:05:00.000Z'),
+    );
+
+    const earlier = dbModule.markFailedReflectionRunsSeen('2026-08-18T08:00:00.000Z');
+    assert.equal(earlier.failedReflectionRunsSeenThroughAt, '2026-08-18T08:05:00.000Z');
+
+    recordFailedRun('attention-failed-durable', 'failed-new', '2026-08-18T09:00:00.000Z');
+    assert.deepEqual(dbModule.getAttentionBadges().failedReflectionRunIds, ['failed-new']);
+
+    const reack = dbModule.markFailedReflectionRunsSeen('2026-08-18T09:00:00.000Z');
+    assert.deepEqual(reack.failedReflectionRunIds, []);
+    assert.deepEqual(dbModule.getAttentionBadges().failedReflectionRunIds, []);
+  });
 });
 
 function materialize(
   sessionId: string,
   operation: ReflectionOperation,
 ): ReturnType<DbModule['materializeReflectionArtifact']> {
-  sqlite.prepare(`
-    INSERT INTO study_sessions (
-      id, started_at, ended_at, processing_state, processed_at
-    ) VALUES (?, '2026-08-18T07:30:00.000Z', ?, 'processed', ?)
-  `).run(sessionId, generatedAt, generatedAt);
+  insertSession(sessionId);
   return dbModule.materializeReflectionArtifact({
     sourceSessionId: sessionId,
     reflectionFlowVersion: 'initial_post_session_reflection.v2',
@@ -195,11 +238,7 @@ function materialize(
 function materializeInformational(
   sessionId: string,
 ): ReturnType<DbModule['materializeReflectionArtifact']> {
-  sqlite.prepare(`
-    INSERT INTO study_sessions (
-      id, started_at, ended_at, processing_state, processed_at
-    ) VALUES (?, '2026-08-18T07:30:00.000Z', ?, 'processed', ?)
-  `).run(sessionId, generatedAt, generatedAt);
+  insertSession(sessionId);
   return dbModule.materializeReflectionArtifact({
     sourceSessionId: sessionId,
     reflectionFlowVersion: 'initial_post_session_reflection.v2',
@@ -218,6 +257,80 @@ function materializeInformational(
         questions: [],
       }],
     },
+  });
+}
+
+function insertSession(sessionId: string): void {
+  sqlite.prepare(`
+    INSERT INTO study_sessions (
+      id, started_at, ended_at, processing_state, processed_at
+    ) VALUES (?, '2026-08-18T07:30:00.000Z', ?, 'processed', ?)
+  `).run(sessionId, generatedAt, generatedAt);
+}
+
+function recordFailedRun(sessionId: string, runId: string, completedAt: string): void {
+  dbModule.recordReflectionGenerationRun({
+    runId,
+    sourceSessionId: sessionId,
+    reflectionFlowVersion: 'initial_post_session_reflection.v2',
+    startedAt: generatedAt,
+    completedAt,
+    provider: 'openai',
+    model: 'gpt-5.6-luna-high',
+    providerModel: 'gpt-5.6-luna',
+    promptVersion: 'reflection-v7',
+    responseId: null,
+    finishReason: null,
+    state: 'failed',
+    failureCode: 'upstream_failure',
+    eligibleItemCount: 1,
+    includedItemCount: 1,
+    usage: {
+      inputTokens: null,
+      cachedInputTokens: null,
+      cacheWriteInputTokens: null,
+      outputTokens: null,
+      reasoningTokens: null,
+      totalTokens: null,
+    },
+    pricingSnapshotId: null,
+    pricingAsOf: null,
+    pricingBasis: null,
+    estimatedCostUsd: null,
+    evidenceBundle: bundle(sessionId),
+  });
+}
+
+function recordSucceededRun(sessionId: string, runId: string, completedAt: string): void {
+  dbModule.recordReflectionGenerationRun({
+    runId,
+    sourceSessionId: sessionId,
+    reflectionFlowVersion: 'initial_post_session_reflection.v2',
+    startedAt: generatedAt,
+    completedAt,
+    provider: 'openai',
+    model: 'gpt-5.6-luna-high',
+    providerModel: 'gpt-5.6-luna',
+    promptVersion: 'reflection-v7',
+    responseId: 'response-1',
+    finishReason: 'stop',
+    state: 'succeeded',
+    failureCode: null,
+    eligibleItemCount: 1,
+    includedItemCount: 1,
+    usage: {
+      inputTokens: 10,
+      cachedInputTokens: null,
+      cacheWriteInputTokens: null,
+      outputTokens: 4,
+      reasoningTokens: null,
+      totalTokens: 14,
+    },
+    pricingSnapshotId: null,
+    pricingAsOf: null,
+    pricingBasis: null,
+    estimatedCostUsd: null,
+    evidenceBundle: bundle(sessionId),
   });
 }
 

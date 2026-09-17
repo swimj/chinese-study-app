@@ -251,6 +251,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
       reflectionPageLoading={reflectionPage.isLoading}
       contentPageLoading={contentPage.isLoading}
       reflectionUnseenCount={attention.reflectionUnseenCount}
+      hasUnseenReflectionFailure={attention.hasUnseenReflectionFailure}
       aboutUnseenCount={attention.whatsNewUnseenCount}
       onOpenHomePage={() => setCurrentPage('home')}
       onOpenPriorityPage={() => void leaveCompletedSessionThen(() => priorityPage.openPage())}
@@ -324,6 +325,8 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
       ) : currentPage === 'reflections' ? (
         <ReflectionsPage
           controller={reflectionPage}
+          hasUnseenReflectionFailure={attention.hasUnseenReflectionFailure}
+          onAcknowledgeFailedReflectionRuns={attention.acknowledgeFailedReflectionRuns}
           onHelpCardDisplayed={(request) => void attention.markHelpCardSeen(request)}
         />
       ) : currentPage === 'about' ? (

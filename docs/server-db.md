@@ -14,7 +14,7 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`reflections.ts`](../server/db/reflections.ts) | Reflection schema validation, immutable artifact materialization, queue/detail read models, proposal review, immutable invocation authorization, application/recovery, and supported adapters |
 | [`reflection-quality.ts`](../server/db/reflection-quality.ts) | Dogfood item quality-tag overlay, upsert-by-item, and model-arm stats joins |
 | [`reflection-help-inbox.ts`](../server/db/reflection-help-inbox.ts) | Open explanation-only Help inbox rows, keyed by `(artifact_id, item_id)`; Done deletes the row |
-| [`attention.ts`](../server/db/attention.ts) | Help `inbox_seen_at` stamps, unseen Help-queue count, and the What’s New seen-through cursor |
+| [`attention.ts`](../server/db/attention.ts) | Help `inbox_seen_at` stamps, unseen Help-queue count, unseen failed generation-run ids, failed-run seen-through cursor, and the What’s New seen-through cursor |
 | [`intake-triage.ts`](../server/db/intake-triage.ts) | Dormant intake-triage schema creation and validation retained for database compatibility |
 | [`domain-commands.ts`](../server/db/domain-commands.ts) | Shared transaction-aware domain commands used by reflection and manual paths; definition-production suppression and contextual-selection eligibility |
 | [`production-cues.ts`](../server/db/production-cues.ts) | Default production tasks, immutable cue/lifecycle/evidence state, one immutable post-reveal supplement per definition cue or fallback, production recheck demands, and cue/supplement application adapters |

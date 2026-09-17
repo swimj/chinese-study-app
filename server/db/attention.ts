@@ -2,6 +2,7 @@ import { getDb } from './connection.ts';
 import { getLearnerParam, upsertLearnerParam } from './identity.ts';
 
 const WHATS_NEW_SEEN_THROUGH_KEY = 'whats_new_seen_through_date';
+const FAILED_REFLECTION_RUNS_SEEN_THROUGH_KEY = 'failed_reflection_runs_seen_through_at';
 const UTC_DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export type ReflectionInboxSeenTarget =
@@ -10,13 +11,65 @@ export type ReflectionInboxSeenTarget =
 
 export type AttentionBadges = {
   reflectionUnseenCount: number;
+  failedReflectionRunIds: string[];
+  failedReflectionRunsSeenThroughAt: string | null;
   whatsNewSeenThroughDate: string | null;
 };
 
 export function getAttentionBadges(): AttentionBadges {
+  const failedReflectionRunsSeenThroughAt = getFailedReflectionRunsSeenThroughAt();
   return {
     reflectionUnseenCount: countUnseenReflectionHelpItems(),
+    failedReflectionRunIds: listFailedReflectionRunIds(failedReflectionRunsSeenThroughAt),
+    failedReflectionRunsSeenThroughAt,
     whatsNewSeenThroughDate: getWhatsNewSeenThroughDate(),
+  };
+}
+
+export function listFailedReflectionRunIds(
+  seenThroughAt = getFailedReflectionRunsSeenThroughAt(),
+): string[] {
+  const rows = seenThroughAt === null
+    ? getDb().prepare(`
+        SELECT run_id
+        FROM reflection_generation_runs
+        WHERE state = 'failed'
+        ORDER BY completed_at DESC, run_id ASC
+      `).all() as Array<{ run_id: string }>
+    : getDb().prepare(`
+        SELECT run_id
+        FROM reflection_generation_runs
+        WHERE state = 'failed' AND completed_at > ?
+        ORDER BY completed_at DESC, run_id ASC
+      `).all(seenThroughAt) as Array<{ run_id: string }>;
+  return rows.map((row) => row.run_id);
+}
+
+export function getFailedReflectionRunsSeenThroughAt(): string | null {
+  const parsed = getLearnerParam(FAILED_REFLECTION_RUNS_SEEN_THROUGH_KEY);
+  if (parsed === null) return null;
+  if (typeof parsed !== 'string') {
+    throw new Error('Stored failed-reflection-runs seen-through timestamp is invalid.');
+  }
+  assertIsoTimestamp(parsed, 'failed-reflection-runs seen-through timestamp');
+  return parsed;
+}
+
+export function markFailedReflectionRunsSeen(
+  seenThroughAt = new Date().toISOString(),
+): {
+  failedReflectionRunIds: string[];
+  failedReflectionRunsSeenThroughAt: string;
+} {
+  assertIsoTimestamp(seenThroughAt, 'failed-reflection-runs seen-through timestamp');
+  const current = getFailedReflectionRunsSeenThroughAt();
+  const next = current !== null && current >= seenThroughAt ? current : seenThroughAt;
+  if (next !== current) {
+    upsertLearnerParam(FAILED_REFLECTION_RUNS_SEEN_THROUGH_KEY, next);
+  }
+  return {
+    failedReflectionRunIds: listFailedReflectionRunIds(next),
+    failedReflectionRunsSeenThroughAt: next,
   };
 }
 

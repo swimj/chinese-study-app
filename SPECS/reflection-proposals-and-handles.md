@@ -726,6 +726,18 @@ Disposition that leaves `pending`, including from By session, also stamps
 `inbox_seen_at` if it was null, so Undo dismiss does not re-badge. The stamp is
 monotonic and is not a `deferred` consideration state.
 
+The primary Reflections count is hidden while Reflections is the current page;
+its job is to show that something is waiting when the tab is not open. A
+concluded generation run with durable `state = 'failed'` can replace that count
+with a failure marker (`!`) while the tab is not current. Failure takes
+priority over the unseen Help count. Opening Run meta durably acknowledges
+currently failed runs by advancing a monotonic `learner_params` seen-through
+timestamp (`failed_reflection_runs_seen_through_at`). Failed runs whose
+`completed_at` is later than that cursor can re-badge; historical failures at
+or before it do not. The Run meta rail shows a matching marker until that
+acknowledgement. Retry, success of a later run, and unreadable artifacts do
+not themselves dismiss the failure marker.
+
 ## 7. Authorized Invocations
 
 Authorization creates an immutable invocation:

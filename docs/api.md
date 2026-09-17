@@ -310,9 +310,10 @@ Request/result types live in
 | PUT | `/api/reflection-quality` | Upsert the tag set on one reflection item |
 | DELETE | `/api/reflection-quality` | Clear quality tags for one reflection item |
 | GET | `/api/reflection-quality-stats` | Aggregate dogfood quality rates by model arm |
-| GET | `/api/attention-badges` | Unseen Help-queue count plus What’s New seen-through date |
+| GET | `/api/attention-badges` | Unseen Help-queue count, unseen failed generation-run ids, failed-run seen-through cursor, and What’s New seen-through date |
 | POST | `/api/reflection-inbox-seen` | Stamp one Help card as displayed |
 | POST | `/api/whats-new-seen` | Ensure or advance the What’s New seen-through date |
+| POST | `/api/failed-reflection-runs-seen` | Advance the failed-reflection-run seen-through timestamp |
 | GET | `/api/reflection-help-inbox` | List open explanation-only Help inbox rows |
 | DELETE | `/api/reflection-help-inbox` | Mark one explanation-only Help item Done by deleting its inbox row |
 | POST | `/api/reflection-artifacts/:artifactId/items/:itemId/manual-invocations` | Authorize a registered operation against an explanation-only item |
@@ -584,13 +585,23 @@ still show the item.
 ```ts
 {
   reflectionUnseenCount: number;
+  failedReflectionRunIds: string[];
+  failedReflectionRunsSeenThroughAt: string | null;
   whatsNewSeenThroughDate: string | null;
 }
 ```
 
 `reflectionUnseenCount` is pending Help proposals plus open explanation-only
 inbox rows whose `inbox_seen_at` is still null. It is not the Help queue length.
-`whatsNewSeenThroughDate` is the learner’s stored YYYY-MM-DD cursor in
+`failedReflectionRunIds` are concluded generation runs whose durable `state` is
+`failed` and whose `completed_at` is later than the learner’s stored
+seen-through timestamp, newest completion first. A null cursor means every
+failed run is unseen. The client hides both Reflections markers while that tab
+is current and gives the failure marker priority over the count. Opening Run
+meta durably acknowledges currently failed runs. `failedReflectionRunsSeenThroughAt`
+is that ISO-8601 UTC cursor in `learner_params`
+(`failed_reflection_runs_seen_through_at`), or null if it has never been
+written. `whatsNewSeenThroughDate` is the learner’s stored YYYY-MM-DD cursor in
 `learner_params` (`whats_new_seen_through_date`), or null if it has never been
 written. It is not a `learner_settings` value. The client grandfathers a
 missing cursor against the current catalog and counts later posts itself.
@@ -609,6 +620,12 @@ Missing proposals return `404`. A missing explanation inbox row is a no-op
 `POST /api/whats-new-seen` accepts `{ throughDate, mode }` where `throughDate`
 is `YYYY-MM-DD` and `mode` is `ensure` (fill only when unset) or `seen`
 (monotonic max). Success returns `{ whatsNewSeenThroughDate }`.
+
+`POST /api/failed-reflection-runs-seen` accepts `{}` or `{ seenThroughAt }`
+where `seenThroughAt` is an ISO-8601 UTC timestamp. An empty body uses the
+server clock. Success advances the cursor monotonically and returns
+`{ failedReflectionRunIds, failedReflectionRunsSeenThroughAt }`, where the ids
+are the remaining unseen failed runs.
 
 ### Manual authorization from explanation-only items
 

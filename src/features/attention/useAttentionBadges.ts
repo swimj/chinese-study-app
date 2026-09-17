@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { MarkReflectionInboxSeenRequest } from '../../domain/reflection';
 import {
   fetchAttentionBadges,
+  markFailedReflectionRunsSeen,
   markReflectionInboxSeen,
   markWhatsNewSeen,
 } from '../../services/api';
@@ -9,6 +10,7 @@ import { countUnseenWhatsNew, latestWhatsNewDate } from '../../pages/AboutPage';
 
 export function useAttentionBadges() {
   const [reflectionUnseenCount, setReflectionUnseenCount] = useState(0);
+  const [failedReflectionRunIds, setFailedReflectionRunIds] = useState<string[]>([]);
   const [whatsNewUnseenCount, setWhatsNewUnseenCount] = useState(0);
 
   const refresh = useCallback(async () => {
@@ -22,12 +24,21 @@ export function useAttentionBadges() {
       seenThrough = ensured.whatsNewSeenThroughDate;
     }
     setReflectionUnseenCount(attention.reflectionUnseenCount);
+    if (!Array.isArray(attention.failedReflectionRunIds)) {
+      throw new Error('Attention badges response is missing failedReflectionRunIds.');
+    }
+    setFailedReflectionRunIds(attention.failedReflectionRunIds);
     setWhatsNewUnseenCount(countUnseenWhatsNew(seenThrough));
   }, []);
 
   const markHelpCardSeen = useCallback(async (request: MarkReflectionInboxSeenRequest) => {
     const result = await markReflectionInboxSeen(request);
     setReflectionUnseenCount(result.reflectionUnseenCount);
+  }, []);
+
+  const acknowledgeFailedReflectionRuns = useCallback(async () => {
+    const result = await markFailedReflectionRunsSeen();
+    setFailedReflectionRunIds(result.failedReflectionRunIds);
   }, []);
 
   const acknowledgeWhatsNew = useCallback(async () => {
@@ -51,9 +62,11 @@ export function useAttentionBadges() {
 
   return {
     reflectionUnseenCount,
+    hasUnseenReflectionFailure: failedReflectionRunIds.length > 0,
     whatsNewUnseenCount,
     refresh,
     markHelpCardSeen,
+    acknowledgeFailedReflectionRuns,
     acknowledgeWhatsNew,
   };
 }

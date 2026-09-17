@@ -898,8 +898,27 @@ export async function markWhatsNewSeen(request: {
   return response.json();
 }
 
+export async function markFailedReflectionRunsSeen(request: {
+  seenThroughAt?: string;
+} = {}): Promise<{
+  failedReflectionRunIds: string[];
+  failedReflectionRunsSeenThroughAt: string;
+}> {
+  const response = await apiFetch(`${API_BASE}/api/failed-reflection-runs-seen`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to acknowledge failed reflection runs'));
+  }
+  return response.json();
+}
+
 export type AttentionBadgesDto = {
   reflectionUnseenCount: number;
+  failedReflectionRunIds: string[];
+  failedReflectionRunsSeenThroughAt: string | null;
   whatsNewSeenThroughDate: string | null;
 };
 

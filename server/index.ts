@@ -46,6 +46,7 @@ import {
   runWithLearnerId,
   getAttentionBadges,
   markReflectionInboxSeen,
+  markFailedReflectionRunsSeen,
   ensureWhatsNewSeenThroughDate,
   markWhatsNewSeenThroughDate,
   getSessionActiveTimeMetrics,
@@ -1379,6 +1380,23 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
+  app.post('/api/failed-reflection-runs-seen', (req, res) => {
+    const request = readFailedReflectionRunsSeenRequest(req.body);
+    if (request === null) {
+      res.status(400).json({ error: 'Expected a valid failed-reflection-runs seen request' });
+      return;
+    }
+    try {
+      res.json(markFailedReflectionRunsSeen(request.seenThroughAt));
+    } catch (error) {
+      if (isAttentionClientError(error)) {
+        res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid request' });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to acknowledge failed reflection runs' });
+    }
+  });
+
   app.get('/api/reflection-help-inbox', (_req, res) => {
     try {
       res.json({ entries: listReflectionHelpInbox() });
@@ -1987,6 +2005,22 @@ function readWhatsNewSeenRequest(
     return null;
   }
   return { throughDate: value.throughDate, mode: value.mode };
+}
+
+function readFailedReflectionRunsSeenRequest(
+  value: unknown,
+): { seenThroughAt?: string } | null {
+  if (!isPlainObject(value)) return null;
+  const keys = Object.keys(value);
+  if (keys.length === 0) return {};
+  if (
+    keys.length !== 1
+    || keys[0] !== 'seenThroughAt'
+    || typeof value.seenThroughAt !== 'string'
+  ) {
+    return null;
+  }
+  return { seenThroughAt: value.seenThroughAt };
 }
 
 function isAttentionClientError(error: unknown): error is Error {

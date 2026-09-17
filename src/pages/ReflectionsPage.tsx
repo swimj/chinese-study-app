@@ -98,9 +98,13 @@ type ReflectionView = 'help' | 'second-opinion' | 'sessions' | 'usage' | 'qualit
 
 export function ReflectionsPage({
   controller,
+  hasUnseenReflectionFailure = false,
+  onAcknowledgeFailedReflectionRuns,
   onHelpCardDisplayed,
 }: {
   controller: ReflectionPageController;
+  hasUnseenReflectionFailure?: boolean;
+  onAcknowledgeFailedReflectionRuns?: () => void | Promise<void>;
   onHelpCardDisplayed?: (request: MarkReflectionInboxSeenRequest) => void;
 }) {
   const [view, setView] = useState<ReflectionView>('help');
@@ -120,6 +124,11 @@ export function ReflectionsPage({
     { key: 'quality', label: 'Quality' },
   ];
 
+  useEffect(() => {
+    if (view !== 'usage' || !hasUnseenReflectionFailure) return;
+    void onAcknowledgeFailedReflectionRuns?.();
+  }, [view, hasUnseenReflectionFailure, onAcknowledgeFailedReflectionRuns]);
+
   return (
     <section className="reflections-page">
       <NestedNav>
@@ -130,6 +139,11 @@ export function ReflectionsPage({
               className={view === option.key ? 'reflection-view-rail-tab active' : 'reflection-view-rail-tab'}
               aria-current={view === option.key ? 'page' : undefined}
               aria-pressed={view === option.key}
+              aria-label={
+                option.key === 'usage' && hasUnseenReflectionFailure
+                  ? 'Run meta, generation failed'
+                  : undefined
+              }
               key={option.key}
               onClick={() => setView(option.key)}
             >
@@ -137,6 +151,9 @@ export function ReflectionsPage({
               {option.count === undefined ? null : (
                 <span className="reflection-view-rail-count">{option.count}</span>
               )}
+              {option.key === 'usage' && hasUnseenReflectionFailure ? (
+                <span className="reflection-view-rail-alert" aria-hidden="true">!</span>
+              ) : null}
             </button>
           ))}
         </nav>

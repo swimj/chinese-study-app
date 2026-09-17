@@ -313,6 +313,7 @@ export function useReflectionPageController({
       } catch {
         // Preserve the retry failure as the actionable error.
       }
+      notifyHelpQueueChanged();
     }
   }
 

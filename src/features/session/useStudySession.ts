@@ -715,6 +715,7 @@ export function useStudySession({
           err instanceof Error ? err.message : 'Unknown reflection error',
         ),
       );
+      void Promise.resolve(onReflectionGenerated?.()).catch(() => undefined);
     }
   }
 
