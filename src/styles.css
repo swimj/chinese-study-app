@@ -158,6 +158,10 @@ button:hover {
 }
 
 .nav-tab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
   width: 100%;
   text-align: left;
   padding: 0.55rem 0.7rem;
@@ -190,6 +194,16 @@ button:hover {
 .nav-tab:focus-visible {
   outline: 2px solid rgba(147, 197, 253, 0.7);
   outline-offset: 1px;
+}
+
+.nav-tab-count {
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: #94a3b8;
+}
+
+.nav-tab.active .nav-tab-count {
+  color: rgba(255, 255, 255, 0.86);
 }
 
 .reflections-nav-shell {

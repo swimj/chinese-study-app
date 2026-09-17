@@ -298,6 +298,9 @@ Request/result types live in
 | PUT | `/api/reflection-quality` | Upsert the tag set on one reflection item |
 | DELETE | `/api/reflection-quality` | Clear quality tags for one reflection item |
 | GET | `/api/reflection-quality-stats` | Aggregate dogfood quality rates by model arm |
+| GET | `/api/attention-badges` | Unseen Help-queue count plus What’s New seen-through date |
+| POST | `/api/reflection-inbox-seen` | Stamp one Help card as displayed |
+| POST | `/api/whats-new-seen` | Ensure or advance the What’s New seen-through date |
 | GET | `/api/reflection-help-inbox` | List open explanation-only Help inbox rows |
 | DELETE | `/api/reflection-help-inbox` | Mark one explanation-only Help item Done by deleting its inbox row |
 | POST | `/api/reflection-artifacts/:artifactId/items/:itemId/manual-invocations` | Authorize a registered operation against an explanation-only item |
@@ -561,6 +564,38 @@ return `404`. There is no learner-facing undo.
 
 Done leaves the artifact body unchanged, so By session and raw artifact reads
 still show the item.
+
+### Attention badges
+
+`GET /api/attention-badges` returns the cheap nav-badge payload:
+
+```ts
+{
+  reflectionUnseenCount: number;
+  whatsNewSeenThroughDate: string | null;
+}
+```
+
+`reflectionUnseenCount` is pending Help proposals plus open explanation-only
+inbox rows whose `inbox_seen_at` is still null. It is not the Help queue length.
+`whatsNewSeenThroughDate` is the learner’s stored YYYY-MM-DD cursor, or null if
+it has never been written. The client grandfathers a missing cursor against the
+current catalog and counts later posts itself.
+
+`POST /api/reflection-inbox-seen` accepts one of:
+
+```ts
+| { kind: 'proposal'; proposalId: string }
+| { kind: 'explanation'; artifactId: string; itemId: string }
+```
+
+It stamps `inbox_seen_at` once and returns `{ marked, reflectionUnseenCount }`.
+Missing proposals return `404`. A missing explanation inbox row is a no-op
+`200` so Done races do not fail the pager.
+
+`POST /api/whats-new-seen` accepts `{ throughDate, mode }` where `throughDate`
+is `YYYY-MM-DD` and `mode` is `ensure` (fill only when unset) or `seen`
+(monotonic max). Success returns `{ whatsNewSeenThroughDate }`.
 
 ### Manual authorization from explanation-only items
 

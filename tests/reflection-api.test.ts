@@ -749,6 +749,30 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     })).status, 404);
   });
 
+  test('attention badges count unseen help cards and mark one proposal seen', async () => {
+    const withProposals = materialize('attention-api-pending', suppressOperation('target')).artifact;
+    materializeInformational('attention-api-explanation');
+    const listed = await request('/api/attention-badges');
+    assert.equal(listed.status, 200);
+    assert.equal((listed.json as { reflectionUnseenCount: number }).reflectionUnseenCount, 2);
+
+    const marked = await request('/api/reflection-inbox-seen', {
+      method: 'POST',
+      body: { kind: 'proposal', proposalId: withProposals.proposals[0]!.review.proposalId },
+    });
+    assert.equal(marked.status, 200);
+    assert.equal((marked.json as { reflectionUnseenCount: number }).reflectionUnseenCount, 1);
+
+    assert.equal((await request('/api/reflection-inbox-seen', {
+      method: 'POST',
+      body: { kind: 'proposal', proposalId: 'missing' },
+    })).status, 404);
+    assert.equal((await request('/api/whats-new-seen', {
+      method: 'POST',
+      body: { mode: 'ensure', throughDate: '2026-09-16' },
+    })).status, 200);
+  });
+
   test('authorizes a manual operation from an explanation-only Help item', async () => {
     const informational = materializeInformational('inbox-api-manual').artifact;
     const withProposals = materialize('inbox-api-manual-proposal', suppressOperation('target')).artifact;

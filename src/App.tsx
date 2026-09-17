@@ -36,6 +36,7 @@ import { useReflectionPageController } from './features/reflection/useReflection
 import { useContentDiagnosticsController } from './features/content/useContentDiagnosticsController';
 import { ContentDiagnosticsPage } from './pages/ContentDiagnosticsPage';
 import { OperatorUsagePulsePage } from './pages/OperatorUsagePulsePage';
+import { useAttentionBadges } from './features/attention/useAttentionBadges';
 import {
   doesDietIntakeBlockSessionStart,
   INITIAL_DIET_INTAKE_SUBMISSION_STATE,
@@ -63,9 +64,11 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
   );
   const [dietIntakeDrafts, setDietIntakeDrafts] = useState<Record<string, string>>({});
   const [dietIntakeSelfSelect, setDietIntakeSelfSelect] = useState<DietSelfSelect | null>(null);
+  const attention = useAttentionBadges();
   const studySession = useStudySession({
     setError,
     onSessionEnded: reloadDashboard,
+    onReflectionGenerated: attention.refresh,
   });
   const priorityPage = usePriorityPageController({
     currentPage,
@@ -77,6 +80,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     setCurrentPage,
     setError,
     onAcceptedProposal: studySession.invalidateSessionPrefetch,
+    onHelpQueueChanged: attention.refresh,
     api: {
       listArtifacts: fetchReflectionArtifacts,
       listGenerationRuns: fetchReflectionGenerationRuns,
@@ -233,6 +237,8 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
       priorityPageLoading={priorityPage.isLoading}
       reflectionPageLoading={reflectionPage.isLoading}
       contentPageLoading={contentPage.isLoading}
+      reflectionUnseenCount={attention.reflectionUnseenCount}
+      aboutUnseenCount={attention.whatsNewUnseenCount}
       onOpenHomePage={() => setCurrentPage('home')}
       onOpenPriorityPage={() => void priorityPage.openPage()}
       onOpenReflectionsPage={() => void reflectionPage.openPage()}
@@ -290,9 +296,19 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
           )}
         </>
       ) : currentPage === 'reflections' ? (
-        <ReflectionsPage controller={reflectionPage} />
+        <ReflectionsPage
+          controller={reflectionPage}
+          onHelpCardDisplayed={(request) => void attention.markHelpCardSeen(request)}
+        />
       ) : currentPage === 'about' ? (
-        <AboutPage view={aboutView} onSelectView={setAboutView} />
+        <AboutPage
+          view={aboutView}
+          whatsNewUnseenCount={attention.whatsNewUnseenCount}
+          onSelectView={(view) => {
+            setAboutView(view);
+            if (view === 'whats-new') void attention.acknowledgeWhatsNew();
+          }}
+        />
       ) : currentPage === 'content' ? (
         <ContentDiagnosticsPage
           data={contentPage.data}

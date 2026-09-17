@@ -43,6 +43,10 @@ import {
   recoverPendingReflectionInvocations,
   requireLearnerId,
   runWithLearnerId,
+  getAttentionBadges,
+  markReflectionInboxSeen,
+  ensureWhatsNewSeenThroughDate,
+  markWhatsNewSeenThroughDate,
   getSessionActiveTimeMetrics,
   getSessionPayload,
   setDailyNewWordLimit,
@@ -93,6 +97,7 @@ import type {
 import type {
   ClearReflectionQualityRequest,
   MarkReflectionHelpInboxDoneRequest,
+  MarkReflectionInboxSeenRequest,
   ReflectionOperation,
   ReviewProposalRequest,
   UpsertReflectionQualityRequest,
@@ -1285,6 +1290,55 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
+  app.get('/api/attention-badges', (_req, res) => {
+    try {
+      res.json(getAttentionBadges());
+    } catch {
+      res.status(500).json({ error: 'Failed to load attention badges' });
+    }
+  });
+
+  app.post('/api/reflection-inbox-seen', (req, res) => {
+    const request = readMarkReflectionInboxSeenRequest(req.body);
+    if (request === null) {
+      res.status(400).json({ error: 'Expected a valid reflection inbox seen request' });
+      return;
+    }
+    try {
+      res.json(markReflectionInboxSeen(request));
+    } catch (error) {
+      if (isReflectionNotFoundError(error, 'Reflection proposal not found.')) {
+        res.status(404).json({ error: 'Reflection proposal not found' });
+        return;
+      }
+      if (isReflectionQualityClientError(error) || isAttentionClientError(error)) {
+        res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid request' });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to mark reflection inbox item seen' });
+    }
+  });
+
+  app.post('/api/whats-new-seen', (req, res) => {
+    const request = readWhatsNewSeenRequest(req.body);
+    if (request === null) {
+      res.status(400).json({ error: 'Expected a valid whats-new seen request' });
+      return;
+    }
+    try {
+      const whatsNewSeenThroughDate = request.mode === 'ensure'
+        ? ensureWhatsNewSeenThroughDate(request.throughDate)
+        : markWhatsNewSeenThroughDate(request.throughDate);
+      res.json({ whatsNewSeenThroughDate });
+    } catch (error) {
+      if (isAttentionClientError(error)) {
+        res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid request' });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to update whats-new seen date' });
+    }
+  });
+
   app.get('/api/reflection-help-inbox', (_req, res) => {
     try {
       res.json({ entries: listReflectionHelpInbox() });
@@ -1837,6 +1891,70 @@ function readMarkReflectionHelpInboxDoneRequest(
   value: unknown,
 ): MarkReflectionHelpInboxDoneRequest | null {
   return readItemLocatorRequest(value);
+}
+
+function readMarkReflectionInboxSeenRequest(
+  value: unknown,
+): MarkReflectionInboxSeenRequest | null {
+  if (!isPlainObject(value) || typeof value.kind !== 'string') return null;
+  const keys = Object.keys(value).sort();
+  if (value.kind === 'proposal') {
+    if (
+      keys.length !== 2
+      || keys[0] !== 'kind'
+      || keys[1] !== 'proposalId'
+      || typeof value.proposalId !== 'string'
+      || value.proposalId.trim().length === 0
+    ) {
+      return null;
+    }
+    return { kind: 'proposal', proposalId: value.proposalId.trim() };
+  }
+  if (value.kind === 'explanation') {
+    if (
+      keys.length !== 3
+      || keys[0] !== 'artifactId'
+      || keys[1] !== 'itemId'
+      || keys[2] !== 'kind'
+      || typeof value.artifactId !== 'string'
+      || value.artifactId.trim().length === 0
+      || typeof value.itemId !== 'string'
+      || value.itemId.trim().length === 0
+    ) {
+      return null;
+    }
+    return {
+      kind: 'explanation',
+      artifactId: value.artifactId.trim(),
+      itemId: value.itemId.trim(),
+    };
+  }
+  return null;
+}
+
+function readWhatsNewSeenRequest(
+  value: unknown,
+): { throughDate: string; mode: 'ensure' | 'seen' } | null {
+  if (!isPlainObject(value)) return null;
+  const keys = Object.keys(value).sort();
+  if (
+    keys.length !== 2
+    || keys[0] !== 'mode'
+    || keys[1] !== 'throughDate'
+    || (value.mode !== 'ensure' && value.mode !== 'seen')
+    || typeof value.throughDate !== 'string'
+  ) {
+    return null;
+  }
+  return { throughDate: value.throughDate, mode: value.mode };
+}
+
+function isAttentionClientError(error: unknown): error is Error {
+  return error instanceof Error && (
+    error.message === 'Expected a YYYY-MM-DD whats-new date.'
+    || error.message.startsWith('Expected non-empty ')
+    || error.message.startsWith('Expected ') && error.message.includes('ISO-8601')
+  );
 }
 
 function readItemLocatorRequest(value: unknown): { artifactId: string; itemId: string } | null {

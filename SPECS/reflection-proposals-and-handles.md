@@ -717,6 +717,15 @@ shows it.
 Help membership for those items is separate from proposal review. Learner-facing
 undo of Done is not offered. Artifact-level read/archive remains deferred.
 
+Help "new" attention is not a review disposition. Each pending proposal review
+and each open explanation-only inbox row may carry a nullable `inbox_seen_at`.
+The nav badge counts Help-queue items that have never been shown as the current
+Help pager card: `pending` proposals and open explanation rows with a null
+stamp. Opening Help marks the current card; paging marks subsequent cards.
+Disposition that leaves `pending`, including from By session, also stamps
+`inbox_seen_at` if it was null, so Undo dismiss does not re-badge. The stamp is
+monotonic and is not a `deferred` consideration state.
+
 ## 7. Authorized Invocations
 
 Authorization creates an immutable invocation:

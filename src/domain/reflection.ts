@@ -594,6 +594,10 @@ export type MarkReflectionHelpInboxDoneRequest = {
   itemId: string;
 };
 
+export type MarkReflectionInboxSeenRequest =
+  | { kind: 'proposal'; proposalId: string }
+  | { kind: 'explanation'; artifactId: string; itemId: string };
+
 export type AuthorizeManualReflectionOperationRequest = {
   artifactId: string;
   itemId: string;

@@ -136,6 +136,7 @@ type SessionUiSnapshot = {
 export type StudySessionControllerOptions = {
   setError: (message: string | null) => void;
   onSessionEnded: () => Promise<void>;
+  onReflectionGenerated?: () => Promise<void> | void;
 };
 
 export type StudySessionHomePageProps = {
@@ -235,6 +236,7 @@ export type StudySessionController = {
 export function useStudySession({
   setError,
   onSessionEnded,
+  onReflectionGenerated,
 }: StudySessionControllerOptions): StudySessionController {
   const [sessionPrefetch, setSessionPrefetch] = useState<SessionPrefetchState>(() => getSessionPrefetchSnapshot());
   const [sessionStarted, setSessionStarted] = useState(false);
@@ -663,6 +665,7 @@ export function useStudySession({
       updateSessionFinalization((current) =>
         completeSessionReflectionGeneration(current, result),
       );
+      void Promise.resolve(onReflectionGenerated?.()).catch(() => undefined);
     } catch (err) {
       if (!isCurrentSessionReflectionRequest({
         activeSessionId: activeSessionIdRef.current,
