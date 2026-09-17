@@ -14,12 +14,13 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`reflections.ts`](../server/db/reflections.ts) | Reflection schema validation, immutable artifact materialization, queue/detail read models, proposal review, immutable invocation authorization, application/recovery, and supported adapters |
 | [`reflection-quality.ts`](../server/db/reflection-quality.ts) | Dogfood item quality-tag overlay, upsert-by-item, and model-arm stats joins |
 | [`reflection-help-inbox.ts`](../server/db/reflection-help-inbox.ts) | Open explanation-only Help inbox rows, keyed by `(artifact_id, item_id)`; Done deletes the row |
+| [`attention.ts`](../server/db/attention.ts) | Help `inbox_seen_at` stamps, unseen Help-queue count, and the What’s New seen-through cursor |
 | [`intake-triage.ts`](../server/db/intake-triage.ts) | Dormant intake-triage schema creation and validation retained for database compatibility |
 | [`domain-commands.ts`](../server/db/domain-commands.ts) | Shared transaction-aware domain commands used by reflection and manual paths; definition-production suppression and contextual-selection eligibility |
 | [`production-cues.ts`](../server/db/production-cues.ts) | Default production tasks, immutable cue/lifecycle/evidence state, one immutable post-reveal supplement per definition cue or fallback, production recheck demands, and cue/supplement application adapters |
 | [`schema.ts`](../server/db/schema.ts) | Re-exports `applyProductionContrastExerciseSeed` and `initializeDatabase` for init ordering |
 | [`ownership-manifest.ts`](../server/db/ownership-manifest.ts) | Auditable ownership, enforcement, history, migration, and lifecycle classification for every durable application table |
-| [`identity.ts`](../server/db/identity.ts) | Stable learner records, auth-provider mappings, learner settings, and explicit Clerk-free bootstrap |
+| [`identity.ts`](../server/db/identity.ts) | Stable learner records, auth-provider mappings, learner settings, learner params, and explicit Clerk-free bootstrap |
 | [`shared-content-bootstrap.ts`](../server/db/shared-content-bootstrap.ts) | Strict checksummed shared-only hosted Mandarin import and provenance validation |
 | [`hosted-operations.ts`](../server/db/hosted-operations.ts) | Persisted service controls, current service banner, attributable learner disablement, diagnostics, sentinels, and restore validation |
 | [`usage-pulse.ts`](../server/db/usage-pulse.ts) | Content-free daily cohort usage snapshots and live today pulse for the operator page |
@@ -53,10 +54,10 @@ Reflection uses six SQLite tables initialized and validated from
 | --- | --- |
 | `reflection_artifacts` | Immutable successful evidence/result provenance with an optional source session |
 | `reflection_generation_runs` | Append-only provider-attempt log, including the exact validated bundle used for retry, failed/truncated attempts, normalized usage, and a persisted price snapshot |
-| `reflection_proposal_reviews` | One mutable review status for each immutable `(artifact, item, proposal index)` locator |
+| `reflection_proposal_reviews` | One mutable review status for each immutable `(artifact, item, proposal index)` locator; `inbox_seen_at` is Help-pager display, not a disposition |
 | `reflection_operation_invocations` | Immutable authorized operation plus its mutable application status, effects, and non-effect reason |
 | `reflection_quality_annotations` | Optional item tag-set overlay keyed by `(artifact_id, item_id)`; joins to artifact model arm at read time |
-| `reflection_help_inbox` | Open explanation-only Help membership keyed by `(artifact_id, item_id)`; seeded at artifact materialize; Done deletes the row |
+| `reflection_help_inbox` | Open explanation-only Help membership keyed by `(artifact_id, item_id)`; seeded at artifact materialize; Done deletes the row; `inbox_seen_at` records Help-pager display |
 
 Artifacts preserve the exact bounded bundle, validated result, generation time,
 provider/model/prompt metadata, and schema versions. Same-owner guards require
@@ -221,6 +222,12 @@ reads as the current default of `10`. The row keyed by
 a missing row reads as `"mixed"`. These settings are independent of
 `daily_new_word_intake.new_study_count`, the per-UTC-day counter incremented
 only when an unstudied word is completed.
+
+`learner_params` is the sibling per-learner key-value store for non-setting
+parameters (`learner_id`, `param_key`, `value_json`, `updated_at`). The first
+key, `whats_new_seen_through_date`, stores the learner’s What’s New YYYY-MM-DD
+cursor as JSON; a missing row means the client should grandfather the current
+catalog without badging historical posts.
 
 Legacy single-learner databases are not mutated during startup and are no
 longer supported. The sole dogfood database completed the one-time SWI-47

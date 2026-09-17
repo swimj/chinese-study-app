@@ -140,7 +140,10 @@ any existing sentinel rows. The current-learner view is dropped and recreated
 with the physical table.
 `0004_usage_daily_snapshots.sql` adds the operational daily cohort pulse table.
 `0005_service_banner.sql` adds the singleton current operator-posted service
-banner. Fresh installations start with the frozen baseline
+banner. `0006_inbox_seen_at.sql` adds Help-queue `inbox_seen_at` columns.
+`0007_learner_params.sql` adds the per-learner non-settings key-value store
+and copies any existing `whats_new_seen_through_date` rows out of
+`learner_settings`. Fresh installations start with the frozen baseline
 and apply this same SQL.
 `tests/deferred-second-opinion-migration.test.ts` and
 `tests/requested-second-opinion-disposition-migration.test.ts` verify history

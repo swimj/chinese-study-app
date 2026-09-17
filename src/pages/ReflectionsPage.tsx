@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import type {
   EffectRef,
+  MarkReflectionInboxSeenRequest,
   OperationApplicationState,
   ProposalReviewDisposition,
   ReflectionInputItemV1,
@@ -97,8 +98,10 @@ type ReflectionView = 'help' | 'second-opinion' | 'sessions' | 'usage' | 'qualit
 
 export function ReflectionsPage({
   controller,
+  onHelpCardDisplayed,
 }: {
   controller: ReflectionPageController;
+  onHelpCardDisplayed?: (request: MarkReflectionInboxSeenRequest) => void;
 }) {
   const [view, setView] = useState<ReflectionView>('help');
   const [showDeferredInHelp, setShowDeferredInHelp] = useState(false);
@@ -179,6 +182,7 @@ export function ReflectionsPage({
               controller={controller}
               emptyCopy="No remaining proposals to review. Explanation-only cards you marked Done stay in By session."
               itemLabel="proposal card"
+              onCardDisplayed={onHelpCardDisplayed}
             />
           </>
         ) : (
@@ -416,16 +420,29 @@ function toDeferredHelpCards(
   }));
 }
 
+function helpCardSeenRequest(card: ReflectionHelpCard): MarkReflectionInboxSeenRequest {
+  if (card.kind === 'proposal') {
+    return { kind: 'proposal', proposalId: card.proposal.review.proposalId };
+  }
+  return {
+    kind: 'explanation',
+    artifactId: card.artifact.artifactId,
+    itemId: card.result.itemId,
+  };
+}
+
 function HelpQueueView({
   cards,
   controller,
   emptyCopy,
   itemLabel,
+  onCardDisplayed,
 }: {
   cards: ReflectionHelpCard[];
   controller: ReflectionPageController;
   emptyCopy: string;
   itemLabel: string;
+  onCardDisplayed?: (request: MarkReflectionInboxSeenRequest) => void;
 }) {
   const [index, setIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -442,6 +459,13 @@ function HelpQueueView({
     scrollRef.current?.scrollTo(0, 0);
     window.scrollTo(0, 0);
   }, [cardKey, safeIndex]);
+
+  useEffect(() => {
+    if (cardKey === 'empty' || onCardDisplayed === undefined) return;
+    const current = cards.find((entry) => entry.cardKey === cardKey);
+    if (current === undefined) return;
+    onCardDisplayed(helpCardSeenRequest(current));
+  }, [cardKey]);
 
   if (cards.length === 0) {
     return (

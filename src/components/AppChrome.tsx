@@ -34,6 +34,8 @@ export function AppChrome({
   priorityPageLoading,
   reflectionPageLoading,
   contentPageLoading,
+  reflectionUnseenCount = 0,
+  aboutUnseenCount = 0,
   children,
   onOpenHomePage,
   onOpenPriorityPage,
@@ -50,6 +52,8 @@ export function AppChrome({
   priorityPageLoading: boolean;
   reflectionPageLoading: boolean;
   contentPageLoading: boolean;
+  reflectionUnseenCount?: number;
+  aboutUnseenCount?: number;
   children: ReactNode;
   onOpenHomePage: () => void;
   onOpenPriorityPage: () => void;
@@ -103,15 +107,25 @@ export function AppChrome({
             {PRIMARY_PAGES.map((page) => {
               const active = currentPage === page.key;
               const showReflectionsRefresh = page.key === 'reflections' && active && onRefreshReflections;
+              const unseenCount = page.key === 'reflections'
+                ? reflectionUnseenCount
+                : page.key === 'about'
+                  ? aboutUnseenCount
+                  : 0;
+              const label = loadingLabels[page.key] ?? page.label;
               const tabButton = (
                 <button
                   type="button"
                   className={`nav-tab ${active ? 'active' : ''}`}
                   aria-current={active ? 'page' : undefined}
+                  aria-label={unseenCount > 0 ? `${page.label}, ${unseenCount} new` : undefined}
                   onClick={openers[page.key]}
                   disabled={navigationLoading}
                 >
-                  {loadingLabels[page.key] ?? page.label}
+                  <span>{label}</span>
+                  {unseenCount > 0 ? (
+                    <span className="nav-tab-count">{unseenCount}</span>
+                  ) : null}
                 </button>
               );
               return (

@@ -118,7 +118,9 @@ A refresh control overlays the active **Reflections** primary tab (gear-style
 affordance) for a full workspace reread. Help is a cross-session pager:
 one card at a time for pending proposals and for explanation-only items still
 in Help. The grain is one proposal per card; empty proposal lists produce one
-explanation card while that item remains in Help. Accept, Dismiss, Defer, and
+explanation card while that item remains in Help. The current pager card is
+stamped `inbox_seen_at` so the primary Reflections badge can decrement without
+leaving `pending`. Accept, Dismiss, Defer, and
 Done are durable and advance the pager; Done leaves Help with no learner-facing
 undo. Prev/Next are ephemeral. Compact pager chrome stays above the reading
 pane with the target / typed-response identity line. Item quality chips, handle

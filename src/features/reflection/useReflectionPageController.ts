@@ -73,12 +73,14 @@ export function useReflectionPageController({
   setCurrentPage,
   setError,
   onAcceptedProposal,
+  onHelpQueueChanged,
   api,
 }: {
   currentPage: AppPageKey;
   setCurrentPage: (page: AppPageKey) => void;
   setError: (message: string | null) => void;
   onAcceptedProposal?: () => Promise<void> | void;
+  onHelpQueueChanged?: () => Promise<void> | void;
   api?: ReflectionReviewApi;
 }): ReflectionPageController {
   const [isLoading, setIsLoading] = useState(false);
@@ -102,6 +104,10 @@ export function useReflectionPageController({
   const [deferredSecondOpinionStatus, setDeferredSecondOpinionStatus] = useState<
     ReflectionPageController['deferredSecondOpinionStatus']
   >(null);
+
+  function notifyHelpQueueChanged(): void {
+    void Promise.resolve(onHelpQueueChanged?.()).catch(() => undefined);
+  }
 
   function requireApi(): ReflectionReviewApi {
     if (api === undefined) {
@@ -230,6 +236,7 @@ export function useReflectionPageController({
     try {
       // Full workspace reread: lists, runs, stats, help inbox, and every scoped detail.
       await runLoading(() => loadListsAndDetail(selectedArtifact?.artifactId ?? null, 'all'));
+      notifyHelpQueueChanged();
     } catch {
       // The shared app error panel owns the visible failure.
     }
@@ -276,6 +283,7 @@ export function useReflectionPageController({
       );
       await loadListsAndDetail(result.artifactId, new Set(), retiredDetails);
       setDeferredSecondOpinionStatus(null);
+      notifyHelpQueueChanged();
     } catch (error) {
       setDeferredSecondOpinionStatus('failed');
       setError(error instanceof Error ? error.message : 'Failed to generate a second opinion');
@@ -294,6 +302,7 @@ export function useReflectionPageController({
       const result = await request();
       await loadListsAndDetail(result.artifactId);
       setGenerationRetryStatus({ runId, state: 'succeeded' });
+      notifyHelpQueueChanged();
     } catch (error) {
       setGenerationRetryStatus({ runId, state: 'failed' });
       setError(error instanceof Error ? error.message : 'Failed to retry reflection generation');
@@ -332,6 +341,7 @@ export function useReflectionPageController({
         selectedArtifact?.artifactId ?? null,
         new Set([artifactId]),
       );
+      notifyHelpQueueChanged();
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to review reflection proposal');
       throw error;
@@ -411,6 +421,7 @@ export function useReflectionPageController({
         selectedArtifact?.artifactId ?? null,
         new Set([request.artifactId]),
       );
+      notifyHelpQueueChanged();
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to mark reflection help item done');
       throw error;

@@ -29,6 +29,7 @@ import type {
   UpsertReflectionQualityRequest,
   ClearReflectionQualityRequest,
   MarkReflectionHelpInboxDoneRequest,
+  MarkReflectionInboxSeenRequest,
   AuthorizeManualReflectionOperationRequest,
 } from '../domain/reflection';
 import type {
@@ -852,6 +853,48 @@ export async function fetchReflectionQualityStats(): Promise<ReflectionQualitySt
   }
   return response.json();
 }
+
+export async function fetchAttentionBadges(): Promise<AttentionBadgesDto> {
+  const response = await apiFetch(`${API_BASE}/api/attention-badges`);
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to load attention badges'));
+  }
+  return response.json();
+}
+
+export async function markReflectionInboxSeen(
+  request: MarkReflectionInboxSeenRequest,
+): Promise<{ marked: boolean; reflectionUnseenCount: number }> {
+  const response = await apiFetch(`${API_BASE}/api/reflection-inbox-seen`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to mark reflection inbox item seen'));
+  }
+  return response.json();
+}
+
+export async function markWhatsNewSeen(request: {
+  throughDate: string;
+  mode: 'ensure' | 'seen';
+}): Promise<{ whatsNewSeenThroughDate: string }> {
+  const response = await apiFetch(`${API_BASE}/api/whats-new-seen`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to update whats-new seen date'));
+  }
+  return response.json();
+}
+
+export type AttentionBadgesDto = {
+  reflectionUnseenCount: number;
+  whatsNewSeenThroughDate: string | null;
+};
 
 export async function fetchReflectionHelpInbox(): Promise<{ entries: ReflectionHelpInboxEntry[] }> {
   const response = await apiFetch(`${API_BASE}/api/reflection-help-inbox`);

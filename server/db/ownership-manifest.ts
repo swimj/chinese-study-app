@@ -30,6 +30,11 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
   operationalEntry('learners', 'stable local learner identity'),
   operationalEntry('learner_auth_mappings', 'external-provider subject to stable learner mapping'),
   privateEntry('learner_settings', 'learner settings root', 'bootstrap explicit defaults for each learner'),
+  privateEntry(
+    'learner_params',
+    'learner params root',
+    'create empty; copy whats_new_seen_through_date from learner_settings when present',
+  ),
   operationalEntry('schema_migrations', 'database schema migration ledger'),
   operationalEntry('content_imports', 'shared content import ledger'),
   operationalEntry('service_controls', 'hosted maintenance and provider-work controls'),

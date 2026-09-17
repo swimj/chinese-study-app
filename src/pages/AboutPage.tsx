@@ -54,9 +54,23 @@ const UPDATES = [
 
 export type AboutView = typeof ABOUT_VIEWS[number][0];
 
-export function AboutPage({ view, onSelectView }: {
+export function latestWhatsNewDate(): string {
+  const latest = UPDATES[0];
+  if (latest === undefined) {
+    throw new Error('Expected at least one What’s New entry.');
+  }
+  return latest.date;
+}
+
+export function countUnseenWhatsNew(seenThroughDate: string | null): number {
+  if (seenThroughDate === null) return 0;
+  return UPDATES.filter((entry) => entry.date > seenThroughDate).length;
+}
+
+export function AboutPage({ view, onSelectView, whatsNewUnseenCount = 0 }: {
   view: AboutView;
   onSelectView: (view: AboutView) => void;
+  whatsNewUnseenCount?: number;
 }) {
   return (
     <>
@@ -70,7 +84,10 @@ export function AboutPage({ view, onSelectView }: {
               aria-current={view === key ? 'page' : undefined}
               onClick={() => onSelectView(key)}
             >
-              {label}
+              <span>{label}</span>
+              {key === 'whats-new' && whatsNewUnseenCount > 0 ? (
+                <span className="reflection-view-rail-count">{whatsNewUnseenCount}</span>
+              ) : null}
             </button>
           ))}
         </nav>

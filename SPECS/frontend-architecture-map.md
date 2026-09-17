@@ -36,6 +36,8 @@ src/
     ContentDiagnosticsPage.tsx    # read-only primitive content browser
 
   features/
+    attention/
+      useAttentionBadges.ts       # nav unseen counts, Help-card ack, What’s New cursor
     words/
       useMyWordsController.ts     # learner collection search, bounded loading, selection
 
@@ -101,7 +103,8 @@ Home, rather than completing signup on Clerk Account Portal.
 - app chrome wiring
 - personal-notes overlay mounting
 - wiring page controllers (`useStudySession`, `usePriorityPageController`,
-  `useReflectionPageController`, `useContentDiagnosticsController`)
+  `useReflectionPageController`, `useContentDiagnosticsController`,
+  `useAttentionBadges`)
 
 Page-specific state should not drift back into `App.tsx`. Use a page controller hook or keep state inside the page component when it is purely local UI.
 

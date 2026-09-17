@@ -7,6 +7,7 @@ export * from './diet-profile.ts';
 export * from './reflections.ts';
 export * from './reflection-quality.ts';
 export * from './reflection-help-inbox.ts';
+export * from './attention.ts';
 export * from './domain-commands.ts';
 export * from './production-cues.ts';
 export * from './content-diagnostics.ts';

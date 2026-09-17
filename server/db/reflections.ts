@@ -75,6 +75,7 @@ import {
   applyProductionCueRepairWithoutTransaction,
   applyProductionCueSupplementWithoutTransaction,
 } from './production-cues.ts';
+import { stampProposalInboxSeenIfLeavingPending } from './attention.ts';
 
 export const INITIAL_REFLECTION_FLOW_VERSION = 'initial_post_session_reflection.v2';
 export const DEFERRED_SECOND_OPINION_FLOW_VERSION = 'deferred_second_opinion.v1';
@@ -2062,6 +2063,9 @@ function transitionProposalReview(
       to,
     );
     update();
+    if (to !== 'pending') {
+      stampProposalInboxSeenIfLeavingPending(proposalId, updatedAt);
+    }
     database.exec('COMMIT');
   } catch (error) {
     database.exec('ROLLBACK');
