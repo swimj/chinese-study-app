@@ -104,7 +104,7 @@ export function AboutPage({ view, onSelectView, whatsNewUnseenCount = 0 }: {
                 <li><strong>Use a desktop browser and a Chinese input method.</strong> Some exercises ask you to type the Chinese word.</li>
                 <li><strong>Choose a starting point on Home.</strong> Answer the background and goals questions for an AI assessment, or choose your own level. If you skip, you start from the beginning.</li>
                 <li><strong>Select Start session.</strong> Read the introduction for each new word, then try the recall exercises. Reveal the answer when needed and rate how well you remembered it.</li>
-                <li><strong>Finish before you leave.</strong> To stop early, use End session and work through the remaining in-progress items. On the summary, select Finish session to save the final attempt.</li>
+                <li><strong>End when you are done studying.</strong> To stop early, use End session and work through the remaining in-progress items. The summary saves the final attempt when you finish or go to another page.</li>
               </ol>
             </section>
             <section>
@@ -138,7 +138,7 @@ export function AboutPage({ view, onSelectView, whatsNewUnseenCount = 0 }: {
             <p>This is an early private beta. These are the main limitations to keep in mind while studying.</p>
             <section>
               <h2>Keep an active session open</h2>
-              <p>The live session lives in your browser’s memory. Refreshing or closing the tab can lose unfinished work; the app does not restore the active session. Use End session and then Finish session before leaving.</p>
+              <p>The live session lives in your browser’s memory. Refreshing or closing the tab can lose unfinished work; the app does not restore the active session. Use End session to wrap up in-progress cards. On the summary, Finish session, Space, or going to another page saves the final attempt. Closing the tab from the summary is still not a reliable way to finish.</p>
             </section>
             <section>
               <h2>Prompts and AI help can be imperfect</h2>

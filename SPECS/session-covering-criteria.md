@@ -217,15 +217,33 @@ state: no selected choice, no revealed answer, and no pending contrast commit.
 
 ## Completed-Session Reflection Boundary
 
-Reaching the session summary does not by itself close the final Undo window. The
-learner explicitly finishes the session before post-session reflection becomes
-eligible.
+Reaching the session summary does not by itself close the final Undo window.
+The learner may still undo the final session-affecting transition while they
+remain on that summary.
+
+The session is finished, and post-session reflection becomes eligible, when
+they take any of these equivalent finish actions:
+
+- choose **Finish session**
+- press Space on the finishable summary, which is the same primary action
+- leave the completed summary through in-app navigation (another primary page
+  or sign-out)
+
+Leaving an in-progress session (active or draining, before the summary) does
+not finish it. Refreshing or closing the tab is not a reliable finish path:
+the live session is still frontend-owned, and those unload events must not be
+treated as a completed finish.
+
+All finish actions share one finalization path. A second Finish or leave
+during an in-flight finish must not start a second commit, summary write, or
+reflection generation. Finishing is as final as an explicit **Finish session**:
+it closes Undo.
 
 Finishing must first flush the final accepted deferred commit and record the
 durable completed-session summary. Only after those steps succeed may the app
 freeze qualifying reflection evidence and start best-effort generation. If
 finalization fails, reflection does not start and must not fabricate a completed
-session.
+session. The learner remains on the summary so they can retry.
 
 An undone transition contributes no reflection evidence. Reflection generation,
 validation, or later review failure never changes covering, accepted attempts,

@@ -24,8 +24,15 @@ App.tsx
 
 ## Completed-session finalization
 
-A completed session is not closed implicitly. The summary preserves the final
-Undo opportunity until the user chooses **Finish session**. Finishing:
+The summary preserves the final Undo opportunity until the session is finished.
+Finish is the **Finish session** control, Space on that surface, or in-app
+navigation away from the completed summary (another primary page or sign-out).
+The live session still hides primary nav during active/draining study; nav
+returns on the completed summary so leaving is possible. Mid-session leave is
+unchanged and does not finish. Tab close and refresh are not treated as finish.
+
+All of those finish entries call the same `finishCompletedSession` path.
+Overlapping Finish and leave share one in-flight run. Finishing:
 
 1. flushes the final deferred commit;
 2. records the durable review-session summary;
@@ -36,13 +43,16 @@ If the final commit fails, finalization returns to `unfinalized`, retains Undo,
 and does not record the summary or generate reflection. If the later summary
 write fails, finalization also returns to `unfinalized`, but the now-durable
 final commit has correctly closed the Undo window; retrying Finish resumes from
-that durable state.
+that durable state. Failed implicit finish stays on the summary so the learner
+can retry rather than navigating away with an unfinished persist.
 
 Once finalized, **Close summary** is a separate action and remains available
 while reflection is generating. Provider or validation failure is displayed as
 best-effort failure without changing session correctness; the retained
 supplement supports an explicit retry. Session-id guards ignore late responses
-after close or after another session starts.
+after close or after another session starts. Generation continues in the
+session controller even if Home is unmounted, so a later Reflections visit can
+see the artifact or its failed/retry state.
 
 ## Reflection evidence
 

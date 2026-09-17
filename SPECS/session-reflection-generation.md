@@ -43,8 +43,10 @@ It does not choose:
 ## 2. Finalized-Session Boundary
 
 Reaching a session summary does not itself make the session immutable. The final
-session-affecting transition may remain undoable until the learner explicitly
-finishes the session.
+session-affecting transition may remain undoable until the learner finishes the
+session. Finish is any of: **Finish session**, Space on that summary, or in-app
+navigation away from the completed summary. Mid-session leave does not finish.
+Tab close and refresh are not a reliable finish path.
 
 Finalization proceeds in this order:
 
@@ -57,10 +59,13 @@ If the final study commit or session-summary write fails, reflection must not
 start. The learner may retry finalization without fabricating a completed
 session or duplicate attempt evidence.
 
-Once finalization succeeds, reflection is best-effort. The learner may leave the
-summary while generation continues. Provider failure, invalid output, timeout,
-or absence of qualifying evidence does not reopen the session, alter its
-completion, change covering, or affect scheduling projection.
+Once finalization succeeds, reflection is best-effort. Generation is kicked off
+after the durable finish writes succeed and does not require the summary page
+to remain mounted. The learner may leave the summary while generation
+continues. Provider failure, invalid output, timeout, or absence of qualifying
+evidence does not reopen the session, alter its completion, change covering, or
+affect scheduling projection. If they already left, retry remains available
+later from Reflections rather than as a blocking return to the summary.
 
 ## 3. Evidence Boundary
 

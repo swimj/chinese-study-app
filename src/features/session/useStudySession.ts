@@ -109,6 +109,8 @@ import {
   isCurrentSessionReflectionRequest,
   resetFailedSessionFinalization,
   retrySessionReflectionGeneration,
+  shouldFinishSessionOnLeave,
+  runExclusiveAsync,
   type SessionFinalizationState,
 } from './session-finalization';
 
@@ -137,6 +139,7 @@ export type StudySessionControllerOptions = {
   setError: (message: string | null) => void;
   onSessionEnded: () => Promise<void>;
   onReflectionGenerated?: () => Promise<void> | void;
+  sessionSurfaceVisible: boolean;
 };
 
 export type StudySessionHomePageProps = {
@@ -229,6 +232,7 @@ export type StudySessionController = {
   prefetchSession: () => Promise<void>;
   refreshSessionPrefetch: () => Promise<void>;
   invalidateSessionPrefetch: () => void;
+  finishCompletedSessionIfLeaving: () => Promise<boolean>;
   homePageProps: StudySessionHomePageProps;
   personalNotesEditor: PersonalNotesEditorController;
 };
@@ -237,6 +241,7 @@ export function useStudySession({
   setError,
   onSessionEnded,
   onReflectionGenerated,
+  sessionSurfaceVisible,
 }: StudySessionControllerOptions): StudySessionController {
   const [sessionPrefetch, setSessionPrefetch] = useState<SessionPrefetchState>(() => getSessionPrefetchSnapshot());
   const [sessionStarted, setSessionStarted] = useState(false);
@@ -282,6 +287,13 @@ export function useStudySession({
     createSessionFinalizationState,
   );
   const sessionFinalizationRef = useRef<SessionFinalizationState>(sessionFinalization);
+  const pendingSessionCommitRef = useRef<DeferredSessionCommit | null>(pendingSessionCommit);
+  const sessionStateRef = useRef<BucketSessionState | null>(sessionState);
+  const sessionStartedRef = useRef(sessionStarted);
+  const inFlightFinishRef = useRef<Promise<void> | null>(null);
+  pendingSessionCommitRef.current = pendingSessionCommit;
+  sessionStateRef.current = sessionState;
+  sessionStartedRef.current = sessionStarted;
 
   function updateSessionFinalization(
     updater: (current: SessionFinalizationState) => SessionFinalizationState,
@@ -492,8 +504,8 @@ export function useStudySession({
   }
 
   async function applyPendingUndoClosure(): Promise<SessionReflectionEvidenceAccumulator> {
-    if (pendingSessionCommit) {
-      const commit = pendingSessionCommit;
+    if (pendingSessionCommitRef.current) {
+      const commit = pendingSessionCommitRef.current;
       const acceptedEvidence =
         commit.type === 'commit-review-action-session'
           ? appendAcceptedProductionAttemptIds(
@@ -587,9 +599,33 @@ export function useStudySession({
 
   }
 
+  async function finishCompletedSessionIfLeaving(): Promise<boolean> {
+    if (!shouldFinishSessionOnLeave({
+      sessionStarted: sessionStartedRef.current,
+      sessionPhase: sessionStateRef.current?.phase ?? null,
+      finalizationKind: sessionFinalizationRef.current.kind,
+    })) {
+      return true;
+    }
+
+    await finishCompletedSession();
+    return sessionFinalizationRef.current.kind === 'finalized';
+  }
+
   async function finishCompletedSession() {
-    if (!sessionSummary || !sessionState || sessionState.phase !== 'completed') {
+    if (sessionFinalizationRef.current.kind === 'finalized') {
+      return;
+    }
+
+    await runExclusiveAsync(inFlightFinishRef, runCompletedSessionFinish);
+  }
+
+  async function runCompletedSessionFinish() {
+    if (!sessionSummary || !sessionStateRef.current || sessionStateRef.current.phase !== 'completed') {
       throw new Error('Session finalization invariant violated: expected a completed session summary.');
+    }
+    if (sessionFinalizationRef.current.kind !== 'unfinalized') {
+      return;
     }
 
     updateSessionFinalization(beginSessionFinalization);
@@ -1489,9 +1525,12 @@ export function useStudySession({
   }, [personalNotesEditorOpen]);
 
   useEffect(() => {
-    if (!sessionStarted || !sessionState || sessionState.phase === 'completed') {
+    if (!sessionStarted || !sessionState || !sessionSurfaceVisible) {
       return;
     }
+
+    const completedSummary = sessionState.phase === 'completed';
+    const summaryFinalizationKind = sessionFinalization.kind;
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented || shortcutGuideOpen || submittingRating !== null || personalNotesEditorOpen) {
@@ -1522,6 +1561,8 @@ export function useStudySession({
           hasUndo: lastUndoSnapshot !== null,
           hasActiveWord: activeWord !== null,
           ratingOptions: activeRatingOptions,
+          completedSummary,
+          summaryFinalizationKind,
         },
       );
 
@@ -1599,6 +1640,10 @@ export function useStudySession({
             restoreUi: isProductionItem ? 'production-input' : 'revealed',
           });
           return;
+        case 'finish_session':
+        case 'close_summary':
+          void handleEndSession();
+          return;
         case 'toggle_shortcut_guide':
           if (!shortcutGuideOpen) {
             setShortcutGuideOpen(true);
@@ -1626,8 +1671,10 @@ export function useStudySession({
     frozenProductionCard,
     lastUndoSnapshot,
     personalNotesEditorOpen,
+    sessionFinalization,
     sessionStarted,
     sessionState,
+    sessionSurfaceVisible,
     shortcutGuideOpen,
     submittingRating,
   ]);
@@ -1637,6 +1684,7 @@ export function useStudySession({
     prefetchSession,
     refreshSessionPrefetch,
     invalidateSessionPrefetch,
+    finishCompletedSessionIfLeaving,
     homePageProps: {
       sessionPrefetch,
       sessionStarted,
