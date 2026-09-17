@@ -42,14 +42,27 @@ export function isMyWordsStatus(value: string): value is MyWordsStatus {
   return value === 'unstudied' || value === 'learning' || value === 'review';
 }
 
+export function isMyWordsStageSelectionAll(
+  statuses: readonly MyWordsStatus[],
+): boolean {
+  // Empty means all implicitly; an explicit full set is the same filter.
+  return statuses.length === 0
+    || (
+      statuses.length === ALL_MY_WORDS_STATUSES.length
+      && ALL_MY_WORDS_STATUSES.every((status) => statuses.includes(status))
+    );
+}
+
 export function toggleMyWordsStatus(
   current: readonly MyWordsStatus[],
   status: MyWordsStatus,
 ): MyWordsStatus[] {
+  // From the implicit/explicit all state, one click isolates that stage.
+  if (isMyWordsStageSelectionAll(current)) return [status];
   const selected = new Set(current);
   if (selected.has(status)) selected.delete(status);
   else selected.add(status);
-  if (selected.size === 0) return [...ALL_MY_WORDS_STATUSES];
+  // Empty selection means all again (no chips pressed).
   return ALL_MY_WORDS_STATUSES.filter((stage) => selected.has(stage));
 }
 

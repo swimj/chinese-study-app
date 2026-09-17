@@ -62,7 +62,8 @@ selection. Returning to My words refreshes its first result page.
 Search covers the whole selected collection, including unloaded rows, using
 word spelling, traditional spelling, pronunciation, and meanings. Stage chips
 (Not yet studied / Learning / In review) further restrict membership as AND
-with search. Default all selected. Empty selection is treated as all selected.
+with search. Default none selected (implicit all). Empty selection means all
+stages; from that all-state, one click isolates the chosen stage.
 Recently studied disables Not yet studied; if it is the only selected stage,
 the effective filter is that collection's remaining stages (learning and
 review) rather than an empty list. Recent lapses is an independent extra chip,

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  ALL_MY_WORDS_STATUSES,
   toggleMyWordsStatus,
   type MyWord,
   type MyWordsResponse,
@@ -12,7 +11,8 @@ import { fetchMyWords } from '../../services/api';
 export function useMyWordsController(active: boolean) {
   const [view, setView] = useState<MyWordsView>('recent');
   const [query, setQuery] = useState('');
-  const [statuses, setStatuses] = useState<MyWordsStatus[]>([...ALL_MY_WORDS_STATUSES]);
+  // Empty = all stages (no chips pressed).
+  const [statuses, setStatuses] = useState<MyWordsStatus[]>([]);
   const [recentLapses, setRecentLapses] = useState(false);
   const [words, setWords] = useState<MyWord[]>([]);
   const [currentDeck, setCurrentDeck] = useState<MyWordsResponse['currentDeck']>(null);
