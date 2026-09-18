@@ -71,11 +71,11 @@ describe('production response resolution', () => {
     { wordId: 'homograph-b', hanzi: '行', traditional: null },
   ];
 
-  test('resolves anchor, accepted non-anchor, and traditional forms while preserving raw text', () => {
+  test('accepts target traditional forms and rejects alternate words while preserving raw text', () => {
     assert.deepEqual(resolveAcceptedProductionResponse({
       submittedText: ' 學 習 ',
       anchorWordId: 'anchor',
-      acceptedAnswers,
+      acceptedAnswers: [acceptedAnswers[0]!],
     }), {
       submittedText: ' 學 習 ',
       result: 'accepted_anchor',
@@ -83,8 +83,8 @@ describe('production response resolution', () => {
     assert.equal(resolveAcceptedProductionResponse({
       submittedText: '研习',
       anchorWordId: 'anchor',
-      acceptedAnswers,
-    }).result, 'accepted_non_anchor');
+      acceptedAnswers: [acceptedAnswers[0]!],
+    }).result, 'rejected');
   });
 
   test('accepts an anchor even when an unaccepted word has the same canonical form', () => {
@@ -103,20 +103,19 @@ describe('production response resolution', () => {
     }).result, 'accepted_anchor');
   });
 
-  test('accepts a matching non-anchor and uses accepted-set order for the rare tie', () => {
-    assert.deepEqual(resolveAcceptedProductionResponse({
+  test('rejects multi-answer served forms even when the target or an alternate matches', () => {
+    for (const submittedText of ['学习', '行']) {
+      assert.throws(() => resolveAcceptedProductionResponse({
+        submittedText,
+        anchorWordId: 'anchor',
+        acceptedAnswers: [acceptedAnswers[0]!, acceptedAnswers[3]!],
+      }), /exactly one accepted answer/);
+    }
+    assert.throws(() => resolveAcceptedProductionResponse({
       submittedText: '行',
-      anchorWordId: 'anchor',
-      acceptedAnswers: [acceptedAnswers[0]!, acceptedAnswers[3]!],
-    }), {
-      submittedText: '行',
-      result: 'accepted_non_anchor',
-    });
-    assert.equal(resolveAcceptedProductionResponse({
-      submittedText: '行',
-      anchorWordId: 'anchor',
-      acceptedAnswers: [acceptedAnswers[0]!, acceptedAnswers[3]!, acceptedAnswers[2]!],
-    }).result, 'accepted_non_anchor');
+      anchorWordId: 'homograph-a',
+      acceptedAnswers: [acceptedAnswers[2]!, acceptedAnswers[3]!],
+    }), /exactly one accepted answer/);
   });
 
   test('rejects unknown text against the accepted set only', () => {
@@ -153,13 +152,31 @@ describe('production response resolution', () => {
     }), null);
   });
 
-  test('server attribution rejects a non-anchor result when the anchor also matches', () => {
+  test('server attribution returns only the target or null and rejects inconsistent results', () => {
+    assert.equal(deriveAcceptedSubmittedWordId({
+      result: 'accepted_anchor',
+      submittedText: ' 學 習 ',
+      anchorWordId: 'anchor',
+      acceptedAnswers: [acceptedAnswers[0]!],
+    }), 'anchor');
+    assert.equal(deriveAcceptedSubmittedWordId({
+      result: 'rejected',
+      submittedText: '研习',
+      anchorWordId: 'anchor',
+      acceptedAnswers: [acceptedAnswers[0]!],
+    }), null);
     assert.throws(() => deriveAcceptedSubmittedWordId({
-      result: 'accepted_non_anchor',
+      result: 'accepted_anchor',
+      submittedText: '研习',
+      anchorWordId: 'anchor',
+      acceptedAnswers: [acceptedAnswers[0]!],
+    }), /does not match the frozen target-only answer form/);
+    assert.throws(() => deriveAcceptedSubmittedWordId({
+      result: 'accepted_anchor',
       submittedText: '行',
       anchorWordId: 'homograph-a',
       acceptedAnswers: [acceptedAnswers[2]!, acceptedAnswers[3]!],
-    }), /does not match the frozen accepted-answer forms/);
+    }), /exactly one accepted answer/);
   });
 
   test('accepts a saying without the corpus comma or surrounding symbols', () => {

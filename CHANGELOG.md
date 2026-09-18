@@ -2,6 +2,18 @@
 
 Casual notes for people using the app before there is a real release process.
 
+## Unreleased — strict word cues and pure-cue cutover
+
+- Word-owned cues now accept only their target word. Existing alternate answer
+  memberships are removed, including on shared cues. Broad meanings can become
+  standalone pure cues through future practice and reflection; this release
+  does not automatically promote existing content.
+- The temporary 48-hour alternate-answer retry scheduler and its outstanding
+  demands are removed. Restart any open study session after this upgrade.
+- Obsolete reflection work cannot be retried, used for second opinions, or
+  applied after the cutover. Old results remain readable; pending old work may
+  need to be discarded. New study uses the current staged reflection pipeline.
+
 ## Unreleased — GLM-5.3 Flash reflection arm
 
 - The Z.AI comparison arm now uses GLM-5.3 Flash at reasoning max instead of

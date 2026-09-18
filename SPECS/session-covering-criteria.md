@@ -4,6 +4,11 @@ This document defines what it means for a study unit to be considered covered wi
 
 It complements [`SPECS/learning-review-model.md`](/Users/jw/dev/chinese-study-app/SPECS/learning-review-model.md).
 
+The accepted [pure-cue contract](./pure-cue-elicitation.md) extends review
+covering to standalone elicitations. Any accepted member is success; one
+covered assessment commits to the elicitation, never to a representative word.
+The same Undo and deferred-commit boundary applies.
+
 ## Scope
 
 This spec is about in-session behavior and commit boundaries.

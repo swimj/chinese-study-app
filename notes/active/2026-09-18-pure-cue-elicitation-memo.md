@@ -12,7 +12,9 @@ related:
   - PLANS/swi-24-production-task-cue-contract.md
   - notes/active/2026-08-04-cue-first-class-brainstorm.md
 
-This is a design inventory, not an implementation contract. Canonical specs and
+The accepted task decisions are now consolidated in
+[`SPECS/pure-cue-elicitation.md`](../../SPECS/pure-cue-elicitation.md).
+This memo remains the original design inventory, not an implementation contract. Canonical specs and
 the stability frontier still describe current behavior. A parked composition
 patch ([PR 222](https://github.com/swimj/chinese-study-app/pull/222)) collapses
 duplicate shared accepted-sets inside one session; it does not encode this

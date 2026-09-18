@@ -5,6 +5,7 @@ import type {
   StudyAttemptEvent,
   StudySkillId,
 } from '../domain/study-actions';
+import { assertStrictTargetOnlyProductionSnapshot } from '../domain/study-actions';
 import {
   createBucketSessionScheduler,
   createInitialBucketLearningProgress,
@@ -128,6 +129,12 @@ export function createBucketSessionState({
   schedulerPolicy?: Partial<BucketSessionSchedulerPolicy>;
   seed?: number;
 }): BucketSessionState {
+  for (const item of buckets.review) {
+    if (item.actionKind === 'production' && item.production !== null) {
+      assertStrictTargetOnlyProductionSnapshot(item.production, item.targetWordId);
+    }
+  }
+
   const progress: BucketSchedulerProgress = {
     learning: {},
     unstudied: {},
@@ -650,6 +657,7 @@ function buildProductionAttemptMetadata(
   if (!production || !resolution) {
     throw new Error('Session invariant violated: review production attempt is missing its frozen response evidence.');
   }
+  assertStrictTargetOnlyProductionSnapshot(production, item.targetWordId);
   if (resolution.responseKind !== 'no_clue' && resolution.submittedText !== response) {
     throw new Error('Session invariant violated: production response evidence does not match the submitted response.');
   }
@@ -675,7 +683,6 @@ function buildProductionAttemptMetadata(
       ...(resolution.responseKind === 'no_clue' ? { responseKind: 'no_clue' } : {}),
       submittedText: resolution.submittedText,
       result: resolution.result,
-      recheckDemandId: production.recheckDemandId,
     },
   };
 }

@@ -16,7 +16,6 @@ export type ProductionCueType = 'definition_gloss' | 'minimal_context' | 'circum
 
 export type ProductionAttemptResult =
   | 'accepted_anchor'
-  | 'accepted_non_anchor'
   | 'rejected';
 
 export type ProductionCueSupplementSnapshot = {
@@ -33,7 +32,6 @@ export type ProductionExerciseSnapshot = {
   text: string;
   acceptedAnswers: ProductionAnswerWord[];
   supplement: ProductionCueSupplementSnapshot | null;
-  recheckDemandId: string | null;
 };
 
 export type ProductionAnswerWord = {
@@ -41,6 +39,29 @@ export type ProductionAnswerWord = {
   hanzi: string;
   traditional: string | null;
 };
+
+/**
+ * Word-owned production remains a target-word assessment. The array shape is
+ * retained in served evidence, but a live snapshot must contain exactly the
+ * one answer owned by its scheduled target.
+ */
+export function assertStrictTargetOnlyProductionSnapshot(
+  production: Pick<ProductionExerciseSnapshot, 'acceptedAnswers'>,
+  targetWordId: string,
+): void {
+  if (production.acceptedAnswers.length !== 1) {
+    throw new Error(
+      'Production snapshot invariant violated: word-owned production must contain exactly one accepted answer.',
+    );
+  }
+
+  const acceptedAnswer = production.acceptedAnswers[0];
+  if (acceptedAnswer === undefined || acceptedAnswer.wordId !== targetWordId) {
+    throw new Error(
+      `Production snapshot invariant violated: word-owned production must accept only target word "${targetWordId}".`,
+    );
+  }
+}
 
 export type ProductionResponseResolution =
   | {
@@ -153,7 +174,7 @@ export type StudyEventType =
   | 'bad_prompt_reported';
 
 // 'deprioritized' unused currently, saved for future enrichment
-export type WordSkillRelevanceState = 'normal' | 'deprioritized' | 'suppressed';
+export type WordSkillRelevanceState = 'normal' | 'deprioritized' | 'suppressed' | 'proxied';
 
 export type StudyManagementActionKind = 'suppress_skill';
 
@@ -262,6 +283,10 @@ export function buildReviewSessionStudyItem({
     throw new Error(
       `Session study item invariant violated: review session item word "${word.id}" must have review status.`,
     );
+  }
+
+  if (production !== null) {
+    assertStrictTargetOnlyProductionSnapshot(production, word.id);
   }
 
   return {

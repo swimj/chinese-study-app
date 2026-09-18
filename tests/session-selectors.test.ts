@@ -130,7 +130,6 @@ describe('session selectors', () => {
           text: 'The exact served cue',
           acceptedAnswers: [{ wordId: 'cue-word', hanzi: '字', traditional: null }],
           supplement: null,
-          recheckDemandId: null,
         },
       },
       word,
@@ -148,7 +147,6 @@ describe('session selectors', () => {
       text: 'to shield',
       acceptedAnswers: [{ wordId: 'cue-word', hanzi: '包庇', traditional: null }],
       supplement: null,
-      recheckDemandId: null,
     }), false);
     assert.equal(hasServedProductionCueSupplement({
       taskId: 'production-task:cue-word:default_production',
@@ -162,7 +160,6 @@ describe('session selectors', () => {
         exampleSentence: '他明知儿子犯了罪，却包庇了他。',
         exampleTranslation: 'He knew his son had committed a crime but shielded him.',
       },
-      recheckDemandId: null,
     }), true);
   });
 });

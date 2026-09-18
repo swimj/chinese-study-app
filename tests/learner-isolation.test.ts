@@ -300,7 +300,6 @@ describe('learner isolation', { concurrency: false }, () => {
         submittedText: '共享',
         submittedWordId: 'shared-word',
         result: 'accepted_anchor',
-        recheckDemandId: null,
       },
     });
     sqlite.prepare(`
