@@ -397,8 +397,10 @@ export function publishAuthorizedProductionCueWithoutTransaction(input: {
   } | undefined;
   if (
     !invocation
-    || invocation.operation_kind !== 'repair_production_cue'
-    || invocation.operation_version !== 2
+    || !(
+      (invocation.operation_kind === 'repair_production_cue' && invocation.operation_version === 2)
+      || (invocation.operation_kind === 'promote_pure_elicitation' && invocation.operation_version === 1)
+    )
     || (invocation.application_state !== 'pending' && invocation.application_state !== 'applied')
     || !effectRefsContain(invocation.effect_refs_json, 'production_cue', input.cueId, invocation.application_state)
   ) {
@@ -447,6 +449,163 @@ export function publishAuthorizedProductionCueWithoutTransaction(input: {
   `).run(cue.cue_id, learnerId);
 
   return getSharedContentPublication(publicationId)!;
+}
+
+export function publishAuthorizedPureCueWithoutTransaction(input: {
+  pureCueId: string;
+  invocationId: string;
+  authorizedAt: string;
+}): SharedContentPublication {
+  assertCanonicalIsoTimestamp(input.authorizedAt, 'Shared publication authorization time');
+  requireLearnerId();
+  const invocation = getDb().prepare(`
+    SELECT operation_kind, operation_version, operation_json, application_state
+    FROM reflection_operation_invocations
+    WHERE invocation_id = ?
+  `).get(input.invocationId) as {
+    operation_kind: string;
+    operation_version: number;
+    operation_json: string;
+    application_state: string;
+  } | undefined;
+  const authorizedCreate = invocation === undefined
+    ? null
+    : authorizedPureCueCreate(invocation.operation_json, input.invocationId);
+  if (
+    invocation?.operation_kind !== 'promote_pure_elicitation'
+    || invocation.operation_version !== 1
+    || invocation.application_state !== 'pending'
+    || authorizedCreate === null
+    || authorizedCreate.pureCueId !== input.pureCueId
+  ) {
+    throw new Error(
+      `Reflection invocation ${input.invocationId} does not authorize pure cue ${input.pureCueId}.`,
+    );
+  }
+
+  const cue = getDb().prepare(`
+    SELECT id, stimulus, axis_note, created_at
+    FROM pure_cues
+    WHERE id = ?
+  `).get(input.pureCueId) as {
+    id: string;
+    stimulus: string;
+    axis_note: string;
+    created_at: string;
+  } | undefined;
+  const acceptedWordIds = cue === undefined ? [] : (getDb().prepare(`
+    SELECT word_id
+    FROM pure_cue_accepted_words
+    WHERE pure_cue_id = ?
+    ORDER BY position
+  `).all(input.pureCueId) as Array<{ word_id: string }>).map((row) => row.word_id);
+  if (
+    cue === undefined
+    || cue.stimulus !== authorizedCreate.stimulus
+    || cue.axis_note !== authorizedCreate.axisNote
+    || cue.created_at !== input.authorizedAt
+    || acceptedWordIds.length !== 2
+    || !authorizedCreate.acceptedWordIds.every((wordId) => acceptedWordIds.includes(wordId))
+  ) {
+    throw new Error(`Pure cue ${input.pureCueId} does not match its authorized private source.`);
+  }
+
+  const existing = getSharedContentPublicationForContent('pure_cue', input.pureCueId);
+  if (existing !== null) {
+    const provenance = getSharedContentPublicationProvenance(existing.publicationId);
+    if (provenance?.sourceInvocationId !== input.invocationId) {
+      throw new Error(`Pure cue ${input.pureCueId} was published by another authorization.`);
+    }
+    return existing;
+  }
+
+  const publicationId = randomUUID();
+  getDb().prepare(`
+    INSERT INTO shared_content_publications (
+      publication_id, content_kind, content_id, learning_purpose_key,
+      publication_status, published_at, status_updated_at
+    ) VALUES (?, 'pure_cue', ?, ?, 'shared_trial', ?, ?)
+  `).run(
+    publicationId,
+    cue.id,
+    `pure-cue:${cue.id}`,
+    input.authorizedAt,
+    input.authorizedAt,
+  );
+  getDb().prepare(`
+    INSERT INTO shared_content_publication_provenance (
+      publication_id, source_content_id, source_invocation_id, authorized_at
+    ) VALUES (?, ?, ?, ?)
+  `).run(publicationId, cue.id, input.invocationId, input.authorizedAt);
+  appendPublicationEvent({
+    publicationId,
+    fromStatus: null,
+    toStatus: 'shared_trial',
+    actorKind: 'source_authorization',
+    actorId: null,
+    reason: 'validated learner-authorized pure-cue promotion',
+    occurredAt: input.authorizedAt,
+  });
+  return getSharedContentPublication(publicationId)!;
+}
+
+export type SharedProductionCueRetirementResult =
+  | { kind: 'not_shared' }
+  | { kind: 'retired'; publication: SharedContentPublication }
+  | { kind: 'already_retired'; publication: SharedContentPublication };
+
+export function retireSharedProductionCuePublicationWithoutTransaction(input: {
+  cueId: string;
+  invocationId: string;
+  retiredAt: string;
+}): SharedProductionCueRetirementResult {
+  assertCanonicalIsoTimestamp(input.retiredAt, 'Shared publication retirement time');
+  const publication = getSharedContentPublicationForContent('production_cue', input.cueId);
+  if (publication === null) return { kind: 'not_shared' };
+  if (publication.publicationStatus === 'retired') {
+    return { kind: 'already_retired', publication };
+  }
+  if (!isEligibleSharedPublicationStatus(publication.publicationStatus)) {
+    throw new Error(
+      `Shared production cue ${input.cueId} is not eligible for authorized retirement.`,
+    );
+  }
+
+  const invocation = getDb().prepare(`
+    SELECT operation_kind, operation_version, operation_json, application_state
+    FROM reflection_operation_invocations
+    WHERE invocation_id = ?
+  `).get(input.invocationId) as {
+    operation_kind: string;
+    operation_version: number;
+    operation_json: string;
+    application_state: string;
+  } | undefined;
+  if (
+    invocation === undefined
+    || invocation.application_state !== 'pending'
+    || !(
+      (invocation.operation_kind === 'repair_production_cue' && invocation.operation_version === 2)
+      || (invocation.operation_kind === 'promote_pure_elicitation' && invocation.operation_version === 1)
+    )
+    || !authorizedProductionCueRetirement(invocation.operation_json, input.cueId)
+  ) {
+    throw new Error(
+      `Reflection invocation ${input.invocationId} does not authorize retirement of production cue ${input.cueId}.`,
+    );
+  }
+
+  return {
+    kind: 'retired',
+    publication: transitionSharedContentPublicationWithoutTransaction({
+      publicationId: publication.publicationId,
+      toStatus: 'retired',
+      actorKind: 'source_authorization',
+      actorId: null,
+      reason: 'validated learner-authorized production-cue retirement',
+      occurredAt: input.retiredAt,
+    }),
+  };
 }
 
 export function getSharedContentPublication(publicationId: string): SharedContentPublication | null {
@@ -1062,6 +1221,59 @@ function isSharedContentKind(value: string): value is SharedContentKind {
     || value === 'pure_cue'
     || value === 'contrast_cluster'
     || value === 'production_cue_supplement';
+}
+
+function authorizedPureCueCreate(rawOperation: string, invocationId: string): {
+  pureCueId: string;
+  stimulus: string;
+  axisNote: string;
+  acceptedWordIds: [string, string];
+} | null {
+  const operation = parsedInvocationOperation(rawOperation);
+  if (
+    operation?.kind !== 'promote_pure_elicitation'
+    || operation.version !== 1
+    || !isRecord(operation.destination)
+    || operation.destination.kind !== 'create'
+    || typeof operation.destination.stimulus !== 'string'
+    || typeof operation.destination.axisNote !== 'string'
+    || typeof operation.targetWordId !== 'string'
+    || typeof operation.responseWordId !== 'string'
+  ) return null;
+  return {
+    pureCueId: `pure-cue:reflection:${invocationId}`,
+    stimulus: operation.destination.stimulus.trim(),
+    axisNote: operation.destination.axisNote.trim(),
+    acceptedWordIds: [operation.targetWordId, operation.responseWordId],
+  };
+}
+
+function authorizedProductionCueRetirement(rawOperation: string, cueId: string): boolean {
+  const operation = parsedInvocationOperation(rawOperation);
+  if (operation?.kind === 'repair_production_cue' && operation.version === 2) {
+    return Array.isArray(operation.changes) && operation.changes.some((change) => (
+      isRecord(change)
+      && (change.kind === 'replace' || change.kind === 'deactivate')
+      && change.cueId === cueId
+    ));
+  }
+  if (operation?.kind === 'promote_pure_elicitation' && operation.version === 1) {
+    return Array.isArray(operation.wordPlans) && operation.wordPlans.some((plan) => (
+      isRecord(plan)
+      && Array.isArray(plan.deactivateCueIds)
+      && plan.deactivateCueIds.includes(cueId)
+    ));
+  }
+  return false;
+}
+
+function parsedInvocationOperation(rawOperation: string): Record<string, unknown> | null {
+  try {
+    const envelope: unknown = JSON.parse(rawOperation);
+    return isRecord(envelope) ? envelope : null;
+  } catch {
+    return null;
+  }
 }
 
 function isSharedPublicationStatus(value: string): value is SharedPublicationStatus {

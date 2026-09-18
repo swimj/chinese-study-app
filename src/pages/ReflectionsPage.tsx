@@ -61,6 +61,7 @@ const REFLECTION_HANDLE_OPTIONS = [
   { value: 'repair_production_cue@1', label: 'Repair production cue (v1)' },
   { value: 'repair_production_cue@2', label: 'Repair production cue (v2)' },
   { value: 'accept_production_alternate@1', label: 'Accept production alternate' },
+  { value: 'promote_pure_elicitation@1', label: 'Promote pure elicitation' },
 ] as const;
 
 // Keep `enabledByDefault` in sync with `server/reflection/model-arms.ts`.
@@ -424,6 +425,8 @@ function compactReflectionOperationLabel(operation: ReflectionOperation): string
       return 'Context';
     case 'accept_production_alternate':
       return 'Alternate';
+    case 'promote_pure_elicitation':
+      return 'Pure cue';
   }
 }
 
@@ -2170,10 +2173,31 @@ function EffectRefs({ label, refs }: { label: string; refs: EffectRef[] }) {
     <>
       <strong>{label}</strong>
       <ul className="reflection-reference-list">
-        {refs.map((ref) => <li key={`${ref.type}:${ref.id}`}>{ref.type}: {ref.id}</li>)}
+        {refs.map((ref) => (
+          <li key={`${ref.type}:${ref.id}`}>{effectRefLabel(ref)}</li>
+        ))}
       </ul>
     </>
   );
+}
+
+function effectRefLabel(ref: EffectRef): string {
+  if (ref.type !== 'production_scheduler_compensation') {
+    return `${ref.type}: ${ref.id}`;
+  }
+  const separator = ref.id.lastIndexOf('/');
+  const attemptId = decodeURIComponent(separator === -1 ? ref.id : ref.id.slice(0, separator));
+  const result = separator === -1 ? 'unknown' : ref.id.slice(separator + 1);
+  switch (result) {
+    case 'restored':
+      return `Scheduler compensation restored for ${attemptId}`;
+    case 'already_restored':
+      return `Scheduler compensation was already restored for ${attemptId}`;
+    case 'unavailable':
+      return `Scheduler compensation unavailable for ${attemptId}`;
+    default:
+      return `Scheduler compensation ${result} for ${attemptId}`;
+  }
 }
 
 function EvidenceView({

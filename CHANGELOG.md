@@ -11,6 +11,10 @@ Casual notes for people using the app before there is a real release process.
 
 ## Unreleased — strict word cues and pure-cue cutover
 
+- Accepted pure-cue promotions publish shared content. Relevant cues enter
+  review automatically when you study any accepted member, with your own
+  schedule and history. Accepted repairs retire selected overbroad shared
+  targeted cues for everyone; existing served assessments remain unchanged.
 - Word-owned cues now accept only their target word. Existing alternate answer
   memberships are removed, including on shared cues. Broad meanings can become
   standalone pure cues through future practice and reflection; this release
