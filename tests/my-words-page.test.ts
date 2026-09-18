@@ -20,7 +20,7 @@ const waiting: MyWord = {
 };
 function render(overrides: Partial<MyWordsPageProps>) {
   return renderToStaticMarkup(createElement(MyWordsPage, {
-    view: 'personal', query: '', statuses: [...ALL_MY_WORDS_STATUSES], recentLapses: false,
+    view: 'personal', query: '', statuses: [], recentLapses: false,
     words: [waiting], currentDeck: null, selectedId: null, loading: false,
     error: null, hasMore: false, total: 1, scrollTop: 0, onViewChange: () => {}, onQueryChange: () => {},
     onToggleStatus: () => {}, onToggleRecentLapses: () => {},
@@ -65,11 +65,15 @@ test('stage chips sit beside Recent lapses; Recently studied disables unstudied 
   assert.match(personal, />Learning</);
   assert.match(personal, />In review</);
   assert.match(personal, />Recent lapses</);
+  assert.match(personal, /aria-pressed="false"[^>]*>Not yet studied</);
+  assert.match(personal, /aria-pressed="false"[^>]*>Learning</);
+  assert.match(personal, /aria-pressed="false"[^>]*>In review</);
   assert.doesNotMatch(personal, /disabled=""[^>]*>Not yet studied</);
   const recent = render({ view: 'recent' });
   assert.match(recent, /disabled=""[^>]*>Not yet studied</);
   assert.doesNotMatch(recent, /disabled=""[^>]*>Recent lapses</);
   assert.match(render({ recentLapses: true }), /aria-pressed="true"[^>]*>Recent lapses</);
+  assert.match(render({ statuses: ['learning'] }), /aria-pressed="true"[^>]*>Learning</);
 });
 
 test('current deck is available only with placement and includes unseen words in its detail', () => {
@@ -101,8 +105,12 @@ test('muted count appears on bounded collections and lapses, not recency paginat
   assert.doesNotMatch(render({ view: 'deck', words: [], total: 0 }), /0 words/);
 });
 
-test('status chip helpers treat all-off as all-on and drop unstudied-only on Recently studied', () => {
-  assert.deepEqual(toggleMyWordsStatus(['learning'], 'learning'), [...ALL_MY_WORDS_STATUSES]);
+test('status chip helpers start from implicit all, isolate on first click, and drop unstudied-only on Recently studied', () => {
+  assert.deepEqual(toggleMyWordsStatus([], 'learning'), ['learning']);
+  assert.deepEqual(toggleMyWordsStatus([...ALL_MY_WORDS_STATUSES], 'learning'), ['learning']);
+  assert.deepEqual(toggleMyWordsStatus(['learning'], 'learning'), []);
+  assert.deepEqual(toggleMyWordsStatus(['learning'], 'review'), ['learning', 'review']);
+  assert.deepEqual(normalizeMyWordsStatuses('recent', []), ['learning', 'review']);
   assert.deepEqual(normalizeMyWordsStatuses('recent', ['unstudied']), ['learning', 'review']);
   assert.deepEqual(normalizeMyWordsStatuses('personal', ['unstudied']), ['unstudied']);
   assert.equal(myWordsRecentLapseSinceDay('2026-09-16'), '2026-09-14');
