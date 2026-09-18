@@ -30,8 +30,8 @@ export const REFLECTION_MODEL_ARMS = [
     config: null,
   },
   {
-    choice: 'zai:glm-5.3-flash-high',
-    label: 'GLM-5.3 Flash high',
+    choice: 'zai:glm-5.3-flash-max',
+    label: 'GLM-5.3 Flash max',
     enabledByDefault: true,
     dogfoodSelectionWeight: 1,
     config: null,

@@ -350,7 +350,7 @@ describe('initial reflection generation orchestration', () => {
       metadata: {
         ...providerSuccess().metadata,
         provider: 'zai',
-        modelConfig: 'glm-5.3-flash-high',
+        modelConfig: 'glm-5.3-flash-max',
         providerModel: 'glm-5.3-flash',
       },
     };
@@ -376,13 +376,13 @@ describe('initial reflection generation orchestration', () => {
     });
 
     await assert.rejects(
-      () => service.retry('failed-run', 'zai:glm-5.3-flash-high'),
+      () => service.retry('failed-run', 'zai:glm-5.3-flash-max'),
       /persistence rejected the artifact/,
     );
     assert.equal(recordedRun?.state, 'failed');
     assert.equal(recordedRun?.failureCode, 'internal_error');
     assert.equal(recordedRun?.provider, 'zai');
-    assert.equal(recordedRun?.model, 'glm-5.3-flash-high');
+    assert.equal(recordedRun?.model, 'glm-5.3-flash-max');
     assert.equal(recordedRun?.providerModel, 'glm-5.3-flash');
     assert.equal(recordedRun?.responseId, 'response-1');
   });
@@ -559,7 +559,7 @@ describe('initial reflection generation orchestration', () => {
     });
 
     await assert.rejects(
-      () => service.generate('session-1', {}, 'zai:glm-5.3-flash-high'),
+      () => service.generate('session-1', {}, 'zai:glm-5.3-flash-max'),
       ReflectionSpendCapError,
     );
     assert.deepEqual(selected, []);
@@ -587,7 +587,7 @@ describe('initial reflection generation orchestration', () => {
         runId: 'failed-run',
         sourceSessionId: 'session-1',
         reflectionFlowVersion: 'initial_post_session_reflection.v2',
-        model: 'glm-5.3-flash-high',
+        model: 'glm-5.3-flash-max',
         eligibleItemCount: 1,
         includedItemCount: 1,
         evidenceBundle: bundle(),
