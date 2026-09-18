@@ -12,8 +12,8 @@ export const modelTargets: ModelTarget[] = [
   { id: 'gpt-5.6-luna-xhigh', provider: 'openai', model: 'gpt-5.6-luna', reasoningEffort: 'xhigh' },
   { id: 'gpt-5.4-mini-high', provider: 'openai', model: 'gpt-5.4-mini', reasoningEffort: 'high' },
   { id: 'gpt-5.4-mini-xhigh', provider: 'openai', model: 'gpt-5.4-mini', reasoningEffort: 'xhigh' },
-  { id: 'glm-5.3-high', provider: 'zai', model: 'glm-5.3', reasoningEffort: 'high' },
-  { id: 'glm-5.3-max', provider: 'zai', model: 'glm-5.3', reasoningEffort: 'max' },
+  { id: 'glm-5.3-flash-high', provider: 'zai', model: 'glm-5.3-flash', reasoningEffort: 'high' },
+  { id: 'glm-5.3-flash-max', provider: 'zai', model: 'glm-5.3-flash', reasoningEffort: 'max' },
   { id: 'qwen3.8-max', provider: 'dashscope', model: 'qwen3.8-max', reasoningEffort: 'high' },
 ];
 

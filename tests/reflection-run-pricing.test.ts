@@ -114,6 +114,35 @@ describe('initial reflection run pricing', () => {
     })?.pricing.id, 'zai-glm-5.2-standard-short-context-2026-08-11');
   });
 
+  test('prices GLM-5.3 Flash from the pinned September 18 list without rewriting GLM-5.3', () => {
+    assert.deepEqual(estimateInitialReflectionRunCost({
+      provider: 'zai',
+      providerModel: 'glm-5.3-flash',
+      usage: completeUsage,
+    }), {
+      // 600k*0.15 + 400k*0.03 + 200k*0 + 200k*0.5 = 90+12+0+100 = 202 / 1e6
+      estimatedCostUsd: 0.202,
+      pricing: {
+        id: 'zai-glm-5.3-flash-standard-short-context-2026-09-18',
+        pricingAsOf: '2026-09-18',
+        provider: 'zai',
+        providerModel: 'glm-5.3-flash',
+        serviceTier: 'standard',
+        contextBand: 'short',
+        currency: 'USD',
+        inputPerMillionUsd: 0.15,
+        cachedInputPerMillionUsd: 0.03,
+        cacheWriteInputPerMillionUsd: 0,
+        outputPerMillionUsd: 0.5,
+      },
+    });
+    assert.deepEqual(estimateInitialReflectionRunCost({
+      provider: 'zai',
+      providerModel: 'glm-5.3',
+      usage: completeUsage,
+    })?.pricing.id, 'zai-glm-5.3-standard-short-context-2026-08-21');
+  });
+
   test('treats absent cache categories as zero but leaves incomplete or unknown pricing unavailable', () => {
     assert.deepEqual(estimateInitialReflectionRunCost({
       provider: 'openai',

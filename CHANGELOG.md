@@ -2,6 +2,12 @@
 
 Casual notes for people using the app before there is a real release process.
 
+## Unreleased — GLM-5.3 Flash reflection arm
+
+- The Z.AI comparison arm now uses GLM-5.3 Flash at reasoning max instead of
+  GLM-5.3, as a cheaper candidate against Luna. Historical 5.2 and 5.3 runs
+  keep their original quality and pricing identifiers.
+
 ## Unreleased — signed-in service banner
 
 - Operators can post a short signed-in notice (for example planned downtime)

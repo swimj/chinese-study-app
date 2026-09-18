@@ -27,7 +27,7 @@ export const INITIAL_LUNA_STANDARD_SHORT_CONTEXT_PRICING = LUNA_STANDARD_SHORT_C
 
 /**
  * Historical GLM-5.2 snapshot. Kept so persisted glm-5.2 runs still price
- * against the original basis and stay distinguishable from GLM-5.3.
+ * against the original basis and stay distinguishable from later GLM arms.
  */
 export const INITIAL_GLM_5_2_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricingSnapshot = {
   id: 'zai-glm-5.2-standard-short-context-2026-08-11',
@@ -45,7 +45,11 @@ export const INITIAL_GLM_5_2_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricin
   outputPerMillionUsd: 4.4,
 };
 
-export const INITIAL_GLM_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricingSnapshot = {
+/**
+ * Historical GLM-5.3 snapshot. Kept so persisted glm-5.3 runs still price
+ * against the original basis and stay distinguishable from GLM-5.3 Flash.
+ */
+export const INITIAL_GLM_5_3_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricingSnapshot = {
   id: 'zai-glm-5.3-standard-short-context-2026-08-21',
   pricingAsOf: '2026-08-21',
   provider: 'zai',
@@ -59,6 +63,24 @@ export const INITIAL_GLM_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricingSna
   // convention records that no separately reported write rate was charged.
   cacheWriteInputPerMillionUsd: 0,
   outputPerMillionUsd: 4.4,
+};
+
+// List prices from Z.AI's pricing page, pinned 2026-09-18, after the
+// GLM-5.3-Flash 50% launch promo ended 2026-09-09 (UTC+8).
+export const INITIAL_GLM_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricingSnapshot = {
+  id: 'zai-glm-5.3-flash-standard-short-context-2026-09-18',
+  pricingAsOf: '2026-09-18',
+  provider: 'zai',
+  providerModel: 'glm-5.3-flash',
+  serviceTier: 'standard',
+  contextBand: 'short',
+  currency: 'USD',
+  inputPerMillionUsd: 0.15,
+  cachedInputPerMillionUsd: 0.03,
+  // Z.AI lists cached-input storage as limited-time free; the null-free
+  // convention records that no separately reported write rate was charged.
+  cacheWriteInputPerMillionUsd: 0,
+  outputPerMillionUsd: 0.5,
 };
 
 /**
@@ -125,6 +147,7 @@ export type ReflectionRunCostEstimate = {
 const INITIAL_REFLECTION_RUN_PRICING: ReadonlyArray<ReflectionRunPricingSnapshot> = [
   INITIAL_LUNA_STANDARD_SHORT_CONTEXT_PRICING,
   INITIAL_GLM_5_2_STANDARD_SHORT_CONTEXT_PRICING,
+  INITIAL_GLM_5_3_STANDARD_SHORT_CONTEXT_PRICING,
   INITIAL_GLM_STANDARD_SHORT_CONTEXT_PRICING,
   INITIAL_QWEN_3_8_MAX_STANDARD_SHORT_CONTEXT_PRICING,
   INITIAL_OPENROUTER_GEMINI_3_6_FLASH_PRICING,

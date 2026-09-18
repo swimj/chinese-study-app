@@ -15,7 +15,7 @@ describe('reflection comparison-arm registry', () => {
     const choices = REFLECTION_MODEL_ARMS.map((arm) => arm.choice);
     assert.deepEqual(choices, [
       'openai:gpt-5.6-luna-high',
-      'zai:glm-5.3-high',
+      'zai:glm-5.3-flash-max',
       'openrouter:gemini-3.6-flash',
       'openai:gpt-5.6-terra-high',
     ]);
@@ -32,7 +32,7 @@ describe('reflection comparison-arm registry', () => {
       REFLECTION_MODEL_ARMS.filter((arm) => arm.enabledByDefault).map((arm) => arm.choice),
       [
         'openai:gpt-5.6-luna-high',
-        'zai:glm-5.3-high',
+        'zai:glm-5.3-flash-max',
         'openai:gpt-5.6-terra-high',
       ],
     );

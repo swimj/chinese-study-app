@@ -77,7 +77,7 @@ function offeredChoiceForStoredModel(model: string): ReflectionModelChoice | nul
 
 function reflectionProviderConfigForChoice(choice: ReflectionModelChoice): ReflectionProviderConfig {
   if (choice === 'openai:gpt-5.6-luna-high') return LUNA_REFLECTION_MODEL_CONFIG;
-  if (choice === 'zai:glm-5.3-high') return GLM_REFLECTION_MODEL_CONFIG;
+  if (choice === 'zai:glm-5.3-flash-max') return GLM_REFLECTION_MODEL_CONFIG;
   const arm = REFLECTION_MODEL_ARMS.find((candidate) => candidate.choice === choice);
   if (arm?.config === null || arm === undefined) {
     throw new Error(`Unsupported reflection model choice: ${choice}`);
@@ -188,7 +188,7 @@ export function createInitialReflectionGenerationService(
   const configuredProviders: Partial<Record<ReflectionModelChoice, LunaReflectionProvider>> = {
     ...dependencies.comparisonProviders,
     'openai:gpt-5.6-luna-high': provider,
-    'zai:glm-5.3-high': glmProvider,
+    'zai:glm-5.3-flash-max': glmProvider,
   };
   for (const arm of REFLECTION_MODEL_ARMS) {
     if (arm.config !== null && configuredProviders[arm.choice] === undefined) {
