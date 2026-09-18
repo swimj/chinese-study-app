@@ -18,6 +18,7 @@ import {
   getProductionCueSupplement,
   type ProductionCueAttemptResultV0,
 } from '../db/production-cues.ts';
+import { selectNonOverlappingReflectionItems } from './bundle-admission.ts';
 
 export type ReflectionEvidenceErrorCode =
   | 'invalid_supplement'
@@ -98,6 +99,7 @@ export type InitialReflectionBundleBuild = {
   bundle: SessionReflectionBundleV4;
   eligibleItemCount: number;
   includedItemCount: number;
+  overlapOmittedItemCount?: number;
 };
 
 export function buildInitialReflectionBundle(
@@ -181,7 +183,8 @@ export function buildInitialReflectionBundleWithMetrics(
       'No qualifying production reflection evidence remains after excluding managed study actions.',
     );
   }
-  const items = eligibleItems.slice(0, INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS);
+  const admittedItems = selectNonOverlappingReflectionItems(eligibleItems);
+  const items = admittedItems.items.slice(0, INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS);
   const bundle = {
     schemaVersion: 'session_reflection_bundle.v4' as const,
     generatedAt,
@@ -199,6 +202,7 @@ export function buildInitialReflectionBundleWithMetrics(
       bundle: parseSessionReflectionBundleV4(bundle),
       eligibleItemCount: eligibleItems.length,
       includedItemCount: items.length,
+      overlapOmittedItemCount: admittedItems.overlapOmittedItemCount,
     };
   } catch {
     throw new ReflectionEvidenceError(
@@ -500,7 +504,9 @@ function parseProductionAttemptMetadata(raw: string): ProductionAttemptMetadataV
     || typeof production.text !== 'string'
     || production.text.trim().length === 0
     || !Array.isArray(production.acceptedWordIds)
-    || production.acceptedWordIds.length === 0
+    || production.acceptedWordIds.length !== 1
+    || production.acceptedWordIds[0] !== production.anchorWordId
+    || 'recheckDemandId' in production
     || production.acceptedWordIds.some((wordId) => typeof wordId !== 'string')
     || new Set(production.acceptedWordIds).size !== production.acceptedWordIds.length
     || (
@@ -523,7 +529,6 @@ function parseProductionAttemptMetadata(raw: string): ProductionAttemptMetadataV
     || (production.submittedWordId !== null && typeof production.submittedWordId !== 'string')
     || (
       production.result !== 'accepted_anchor'
-      && production.result !== 'accepted_non_anchor'
       && production.result !== 'rejected'
     )
   ) {
@@ -609,9 +614,7 @@ function isProductionResultCoherent(metadata: ProductionAttemptMetadataV0): bool
     case 'accepted_anchor':
       return metadata.submittedWordId === metadata.anchorWordId;
     case 'accepted_non_anchor':
-      return metadata.submittedWordId !== null
-        && metadata.submittedWordId !== metadata.anchorWordId
-        && metadata.acceptedWordIds.includes(metadata.submittedWordId);
+      return false;
     case 'rejected':
       return metadata.submittedWordId === null
         || !metadata.acceptedWordIds.includes(metadata.submittedWordId);

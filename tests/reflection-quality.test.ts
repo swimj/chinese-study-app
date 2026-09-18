@@ -7,8 +7,8 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import type {
   ReflectionOperation,
-  SessionReflectionBundleV2,
-  SessionReflectionResultV6,
+  SessionReflectionBundleV5,
+  SessionReflectionResultV8,
 } from '../src/domain/reflection.js';
 
 type DbModule = typeof import('../server/db.ts');
@@ -246,11 +246,10 @@ describe('reflection quality item tags', { concurrency: false }, () => {
       suppressOperation('target'),
       'gpt-5.6-luna-high',
     ).artifact;
-    const otherPrompt = materialize(
-      'agg-other-prompt',
+    const fourthExact = materialize(
+      'agg-exact-d',
       suppressOperation('target'),
       'gpt-5.6-luna-high',
-      'reflection-v6',
     ).artifact;
     const emptyItem = materializeInformational('agg-item-miss', 'gpt-5.6-luna-high').artifact;
     const stillPending = materialize(
@@ -277,7 +276,7 @@ describe('reflection quality item tags', { concurrency: false }, () => {
       updatedAt,
     );
     dbModule.acceptReflectionProposal({
-      proposalId: otherPrompt.proposals[0]!.review.proposalId,
+      proposalId: fourthExact.proposals[0]!.review.proposalId,
       operation: suppressOperation('target'),
       createdAt: updatedAt,
     });
@@ -304,28 +303,20 @@ describe('reflection quality item tags', { concurrency: false }, () => {
     }, updatedAt);
 
     const stats = dbModule.getReflectionQualityStats();
-    const lunaV7 = stats.arms.find((arm) => (
-      arm.modelArm === 'gpt-5.6-luna-high' && arm.promptVersion === 'reflection-v7'
+    const luna = stats.arms.find((arm) => (
+      arm.modelArm === 'gpt-5.6-luna-high' && arm.promptVersion === 'reflection-staged-v1'
     ));
-    const lunaV6 = stats.arms.find((arm) => (
-      arm.modelArm === 'gpt-5.6-luna-high' && arm.promptVersion === 'reflection-v6'
-    ));
-    assert(lunaV7);
-    assert(lunaV6);
+    assert(luna);
 
-    assert.equal(lunaV7.terminalReviewCount, 5);
-    assert.equal(lunaV7.exactAcceptCount, 3);
-    assert.equal(lunaV7.revisedAcceptCount, 0);
-    assert.equal(lunaV7.dismissCount, 2);
-    assert.equal(lunaV7.taggedItemCount, 4);
-    assert.equal(lunaV7.tagCounts.praise, 2);
-    assert.equal(lunaV7.tagCounts.low_quality_content, 1);
-    assert.equal(lunaV7.tagCounts.missed_intervention, 1);
-    assert.equal(lunaV7.tagCounts.inconsistent, 1);
-
-    assert.equal(lunaV6.terminalReviewCount, 1);
-    assert.equal(lunaV6.exactAcceptCount, 1);
-    assert.equal(lunaV6.dismissCount, 0);
+    assert.equal(luna.terminalReviewCount, 6);
+    assert.equal(luna.exactAcceptCount, 4);
+    assert.equal(luna.revisedAcceptCount, 0);
+    assert.equal(luna.dismissCount, 2);
+    assert.equal(luna.taggedItemCount, 4);
+    assert.equal(luna.tagCounts.praise, 2);
+    assert.equal(luna.tagCounts.low_quality_content, 1);
+    assert.equal(luna.tagCounts.missed_intervention, 1);
+    assert.equal(luna.tagCounts.inconsistent, 1);
   });
 
   test('stats aggregate generation run failures and priced cost by model arm', () => {
@@ -339,18 +330,18 @@ describe('reflection quality item tags', { concurrency: false }, () => {
     dbModule.recordReflectionGenerationRun({
       runId: 'run-success',
       sourceSessionId: 'run-stats-luna',
-      reflectionFlowVersion: 'initial_post_session_reflection.v2',
+      reflectionFlowVersion: 'initial_post_session_reflection.v4',
       startedAt: generatedAt,
       completedAt: updatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v7',
+      promptVersion: 'reflection-staged-v1',
       responseId: 'response-1',
       clientRequestId: null,
       finishReason: 'stop',
-      bundleSchemaVersion: 'session_reflection_bundle.v2',
-      resultSchemaVersion: 'session_reflection_result.v6',
+      bundleSchemaVersion: 'session_reflection_bundle.v5',
+      resultSchemaVersion: 'session_reflection_result.v8',
       diagnostic: null,
       state: 'succeeded',
       failureCode: null,
@@ -373,18 +364,18 @@ describe('reflection quality item tags', { concurrency: false }, () => {
     dbModule.recordReflectionGenerationRun({
       runId: 'run-failed-validation',
       sourceSessionId: 'run-stats-luna',
-      reflectionFlowVersion: 'initial_post_session_reflection.v2',
+      reflectionFlowVersion: 'initial_post_session_reflection.v4',
       startedAt: generatedAt,
       completedAt: updatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v7',
+      promptVersion: 'reflection-staged-v1',
       responseId: 'response-2',
       clientRequestId: null,
       finishReason: 'stop',
-      bundleSchemaVersion: 'session_reflection_bundle.v2',
-      resultSchemaVersion: 'session_reflection_result.v6',
+      bundleSchemaVersion: 'session_reflection_bundle.v5',
+      resultSchemaVersion: 'session_reflection_result.v8',
       diagnostic: {
         schemaVersion: 'reflection_generation_diagnostic.v1',
         phase: 'domain_validation',
@@ -412,18 +403,18 @@ describe('reflection quality item tags', { concurrency: false }, () => {
     dbModule.recordReflectionGenerationRun({
       runId: 'run-failed-upstream',
       sourceSessionId: 'run-stats-luna',
-      reflectionFlowVersion: 'initial_post_session_reflection.v2',
+      reflectionFlowVersion: 'initial_post_session_reflection.v4',
       startedAt: generatedAt,
       completedAt: updatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v6',
+      promptVersion: 'reflection-staged-v1',
       responseId: null,
       clientRequestId: null,
       finishReason: null,
-      bundleSchemaVersion: 'session_reflection_bundle.v2',
-      resultSchemaVersion: 'session_reflection_result.v6',
+      bundleSchemaVersion: 'session_reflection_bundle.v5',
+      resultSchemaVersion: 'session_reflection_result.v8',
       diagnostic: null,
       state: 'failed',
       failureCode: 'upstream_failure',
@@ -445,20 +436,13 @@ describe('reflection quality item tags', { concurrency: false }, () => {
     });
 
     const stats = dbModule.getReflectionQualityStats();
-    const lunaV7 = stats.arms.find((arm) => (
-      arm.modelArm === 'gpt-5.6-luna-high' && arm.promptVersion === 'reflection-v7'
+    const lunaArm = stats.arms.find((arm) => (
+      arm.modelArm === 'gpt-5.6-luna-high' && arm.promptVersion === 'reflection-staged-v1'
     ));
-    const lunaV6 = stats.arms.find((arm) => (
-      arm.modelArm === 'gpt-5.6-luna-high' && arm.promptVersion === 'reflection-v6'
-    ));
-    assert(lunaV7);
-    assert(lunaV6);
-    assert.equal(lunaV7.failedRunCount, 1);
-    assert.equal(lunaV7.totalCostUsd, 0.03);
-    assert.equal(lunaV7.avgCostPerExactAcceptUsd, 0.03);
-    assert.equal(lunaV6.failedRunCount, 1);
-    assert.equal(lunaV6.totalCostUsd, null);
-    assert.equal(lunaV6.avgCostPerExactAcceptUsd, null);
+    assert(lunaArm);
+    assert.equal(lunaArm.failedRunCount, 2);
+    assert.equal(lunaArm.totalCostUsd, 0.03);
+    assert.equal(lunaArm.avgCostPerExactAcceptUsd, 0.03);
   });
 
   test('clear removes tags without changing disposition', () => {
@@ -490,7 +474,6 @@ function materialize(
   sessionId: string,
   operation: ReflectionOperation,
   model: string,
-  promptVersion = 'reflection-v7',
 ): ReturnType<DbModule['materializeReflectionArtifact']> {
   sqlite.prepare(`
     INSERT INTO study_sessions (
@@ -499,11 +482,11 @@ function materialize(
   `).run(sessionId, generatedAt, generatedAt);
   return dbModule.materializeReflectionArtifact({
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v2',
+    reflectionFlowVersion: 'initial_post_session_reflection.v4',
     generatedAt,
     provider: 'openai',
     model,
-    promptVersion,
+    promptVersion: 'reflection-staged-v1',
     evidenceBundle: bundle(sessionId),
     result: result(operation),
   });
@@ -520,14 +503,14 @@ function materializeInformational(
   `).run(sessionId, generatedAt, generatedAt);
   return dbModule.materializeReflectionArtifact({
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v2',
+    reflectionFlowVersion: 'initial_post_session_reflection.v4',
     generatedAt,
     provider: 'openai',
     model,
-    promptVersion: 'reflection-v7',
+    promptVersion: 'reflection-staged-v1',
     evidenceBundle: bundle(sessionId),
     result: {
-      schemaVersion: 'session_reflection_result.v6',
+      schemaVersion: 'session_reflection_result.v8',
       itemResults: [{
         itemId: 'item',
         diagnosisTags: ['ordinary_retrieval_noise'],
@@ -539,9 +522,9 @@ function materializeInformational(
   });
 }
 
-function bundle(sessionId: string): SessionReflectionBundleV2 {
+function bundle(sessionId: string): SessionReflectionBundleV5 {
   return {
-    schemaVersion: 'session_reflection_bundle.v2',
+    schemaVersion: 'session_reflection_bundle.v5',
     generatedAt,
     session: {
       sessionId,
@@ -569,7 +552,9 @@ function bundle(sessionId: string): SessionReflectionBundleV2 {
         cueType: 'definition_gloss',
         text: 'target',
         acceptedWordIds: ['target'],
+        supplement: null,
       },
+      promotionEvidence: null,
       rawResponse: '替代',
       responseKind: 'unmatched_text',
       submittedWord: null,
@@ -577,9 +562,9 @@ function bundle(sessionId: string): SessionReflectionBundleV2 {
   };
 }
 
-function result(operation: ReflectionOperation): SessionReflectionResultV6 {
+function result(operation: ReflectionOperation): SessionReflectionResultV8 {
   return {
-    schemaVersion: 'session_reflection_result.v6',
+    schemaVersion: 'session_reflection_result.v8',
     itemResults: [{
       itemId: 'item',
       diagnosisTags: ['persistent_confusion'],

@@ -2,20 +2,52 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type {
   ReflectionOperation,
-  SessionReflectionBundleV2,
+  SessionReflectionBundleV4,
   SessionReflectionResultV7,
+  StagedReflectionDiagnosisResultV1,
 } from '../src/domain/reflection.ts';
 import type {
   MaterializeReflectionArtifactInput,
   RecordReflectionGenerationRunInput,
   ReflectionArtifactDetail,
+  ReflectionGenerationContinuationRetrySource,
 } from '../server/db/reflections.ts';
 import { ReflectionEvidenceError } from '../server/reflection/evidence.ts';
-import { createInitialReflectionGenerationService, RetiredReflectionSourceModelError, ReflectionSpendCapError } from '../server/reflection/generation.ts';
+import {
+  createInitialReflectionGenerationService as createProductionReflectionGenerationService,
+  RetiredReflectionSourceModelError,
+  ReflectionSpendCapError,
+  type InitialReflectionGenerationDependencies,
+} from '../server/reflection/generation.ts';
 import {
   LunaReflectionProviderError,
-  type LunaReflectionSuccess,
+  type LunaReflectionProvider,
 } from '../server/reflection/luna-provider.ts';
+import { createTestReflectionContinuationBoundaries } from './helpers/reflection-continuation.ts';
+
+function createInitialReflectionGenerationService(
+  dependencies: InitialReflectionGenerationDependencies,
+) {
+  const boundaries = createTestReflectionContinuationBoundaries();
+  const suppliedRetrySource = dependencies.getContinuationRetrySource;
+  return createProductionReflectionGenerationService({
+    ...boundaries,
+    startRun: () => {},
+    ...dependencies,
+    ...(suppliedRetrySource === undefined ? {} : {
+      getContinuationRetrySource(runId: string) {
+        const source = suppliedRetrySource(runId);
+        if (source !== null) {
+          boundaries.continuations.set(
+            source.continuation.continuationId,
+            source.continuation,
+          );
+        }
+        return source;
+      },
+    }),
+  });
+}
 
 const generatedAt = '2026-07-29T12:00:00.000Z';
 
@@ -30,12 +62,12 @@ describe('initial reflection generation orchestration', () => {
         bundleCalls += 1;
         return bundle();
       },
-      provider: {
-        async generate() {
+      provider: stagedProvider(
+        async () => {
           providerCalls += 1;
-          return providerSuccess();
+          return diagnosisSuccess();
         },
-      },
+      ),
       materializeArtifact: () => {
         materializeCalls += 1;
         return {
@@ -69,7 +101,7 @@ describe('initial reflection generation orchestration', () => {
         assert.equal(at, generatedAt);
         return evidenceBundle;
       },
-      provider: { generate: async () => providerSuccess() },
+      provider: stagedProvider(async () => diagnosisSuccess()),
       materializeArtifact: (input) => {
         persisted = input;
         return {
@@ -89,32 +121,39 @@ describe('initial reflection generation orchestration', () => {
     });
     assert.equal(persisted?.sourceRunId !== undefined, true);
     assert.equal(persisted?.sourceRunId, recordedRun?.runId);
-    const { sourceRunId: _sourceRunId, ...persistedWithoutRun } = persisted!;
+    const { sourceRunId: _sourceRunId, continuationId, ...persistedWithoutRun } = persisted!;
+    assert.equal(continuationId, 'test-continuation-1');
+    const finalEvidence = {
+      schemaVersion: 'session_reflection_bundle.v5' as const,
+      generatedAt,
+      session: evidenceBundle.session,
+      items: evidenceBundle.items.map((item) => ({ ...item, promotionEvidence: null })),
+    };
     assert.deepEqual(persistedWithoutRun, {
       sourceSessionId: 'session-1',
-      reflectionFlowVersion: 'initial_post_session_reflection.v2',
+      reflectionFlowVersion: 'initial_post_session_reflection.v4',
       generatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
-      promptVersion: 'reflection-v3',
-      evidenceBundle,
-      result: result(),
+      promptVersion: 'reflection-staged-v1',
+      evidenceBundle: finalEvidence,
+      result: { ...ordinaryDiagnosisResult(), schemaVersion: 'session_reflection_result.v8' },
     });
     assert.match(recordedRun!.clientRequestId ?? '', /^[0-9a-f-]{36}$/);
     const { runId: _runId, clientRequestId: _clientRequestId, ...recordedRunWithoutId } = recordedRun!;
     assert.deepEqual(recordedRunWithoutId, {
       sourceSessionId: 'session-1',
-      reflectionFlowVersion: 'initial_post_session_reflection.v2',
+      reflectionFlowVersion: 'initial_post_session_reflection.v4',
       startedAt: generatedAt,
       completedAt: generatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v3',
+      promptVersion: 'reflection-staged-v1',
       responseId: 'response-1',
       finishReason: 'stop',
-      bundleSchemaVersion: 'session_reflection_bundle.v2',
-      resultSchemaVersion: 'session_reflection_result.v7',
+      bundleSchemaVersion: 'session_reflection_bundle.v4',
+      resultSchemaVersion: 'staged_reflection_diagnosis_result.v1',
       diagnostic: null,
       state: 'succeeded',
       failureCode: null,
@@ -156,12 +195,12 @@ describe('initial reflection generation orchestration', () => {
       now: () => generatedAt,
       buildBundle: () => evidenceBundle,
       startRun: (input) => { started = input as unknown as RecordReflectionGenerationRunInput; },
-      provider: {
-        async generate(_bundle, options) {
+      provider: stagedProvider(
+        async (_bundle, options) => {
           providerRequestId = options?.clientRequestId;
-          return providerSuccess();
+          return diagnosisSuccess();
         },
-      },
+      ),
       materializeArtifact: () => ({ created: true, artifact: artifactDetail('created-artifact', 0) }),
       recordRun: () => {},
     });
@@ -176,31 +215,26 @@ describe('initial reflection generation orchestration', () => {
     assert.match(providerRequestId ?? '', /^[0-9a-f-]{36}$/);
   });
 
-  test('retries a failed durable run from its exact saved bundle', async () => {
+  test('retries a current staged diagnosis run from its exact saved bundle', async () => {
     const evidenceBundle = bundle();
-    let providerBundle: SessionReflectionBundleV2 | null = null;
+    let providerBundle: SessionReflectionBundleV4 | null = null;
     let recordedRun: RecordReflectionGenerationRunInput | null = null;
     const service = createInitialReflectionGenerationService({
       now: () => generatedAt,
       findExistingArtifact: () => null,
-      getRetrySource: (runId) => {
+      getContinuationRetrySource: (runId) => {
         assert.equal(runId, 'failed-run');
-        return {
-          runId,
-          sourceSessionId: 'session-1',
-          reflectionFlowVersion: 'initial_post_session_reflection.v2',
-          model: 'gpt-5.6-luna-high',
+        return currentDiagnosisRetrySource(runId, evidenceBundle, {
           eligibleItemCount: 3,
           includedItemCount: 1,
-          evidenceBundle,
-        };
+        });
       },
-      provider: {
-        async generate(input) {
+      provider: stagedProvider(
+        async (input) => {
           providerBundle = input;
-          return providerSuccess();
+          return diagnosisSuccess();
         },
-      },
+      ),
       materializeArtifact: () => ({
         created: true,
         artifact: artifactDetail('retried-artifact', 1),
@@ -224,22 +258,22 @@ describe('initial reflection generation orchestration', () => {
   test('coalesces concurrent generation by normalized session and flow key', async () => {
     let providerCalls = 0;
     let materializeCalls = 0;
-    let releaseProvider: (success: LunaReflectionSuccess) => void = () => {
+    let releaseProvider: (success: ReturnType<typeof diagnosisSuccess>) => void = () => {
       throw new Error('Provider release was not initialized.');
     };
-    const waitingProvider = new Promise<LunaReflectionSuccess>((resolve) => {
+    const waitingProvider = new Promise<ReturnType<typeof diagnosisSuccess>>((resolve) => {
       releaseProvider = resolve;
     });
     const service = createInitialReflectionGenerationService({
       now: () => generatedAt,
       findExistingArtifact: () => null,
       buildBundle: () => bundle(),
-      provider: {
-        async generate() {
+      provider: stagedProvider(
+        async () => {
           providerCalls += 1;
           return waitingProvider;
         },
-      },
+      ),
       materializeArtifact: () => {
         materializeCalls += 1;
         return {
@@ -253,7 +287,7 @@ describe('initial reflection generation orchestration', () => {
     const first = service.generate('session-1', { first: true });
     const second = service.generate(' session-1 ', { second: true });
     assert.equal(providerCalls, 1);
-    releaseProvider(providerSuccess());
+    releaseProvider(diagnosisSuccess());
 
     assert.deepEqual(await Promise.all([first, second]), [
       {
@@ -270,6 +304,161 @@ describe('initial reflection generation orchestration', () => {
     assert.equal(materializeCalls, 1);
   });
 
+  test('resumes saved diagnosis after final persistence failure without another call or false model provenance', async () => {
+    const boundaries = createTestReflectionContinuationBoundaries();
+    let providerCalls = 0;
+    let materializeCalls = 0;
+    let failedRunId = '';
+    const persisted: MaterializeReflectionArtifactInput[] = [];
+    const service = createProductionReflectionGenerationService({
+      ...boundaries,
+      now: () => generatedAt,
+      random: () => 0,
+      buildBundle: () => bundle(),
+      startRun: () => {},
+      provider: stagedProvider(
+        async () => {
+          providerCalls += 1;
+          return diagnosisSuccess();
+        },
+      ),
+      glmProvider: stagedProvider(
+        async () => {
+          throw new Error('saved diagnosis retry must not call the override provider');
+        },
+      ),
+      materializeArtifact(input) {
+        materializeCalls += 1;
+        persisted.push(input);
+        if (materializeCalls === 1) throw new Error('artifact write failed');
+        return { created: true, artifact: artifactDetail('resumed-artifact', 1) };
+      },
+      recordRun(input) {
+        failedRunId = input.runId ?? '';
+        assert.equal(input.state, 'failed');
+        assert.equal(input.failureCode, 'internal_error');
+        assert.deepEqual(input.usage, diagnosisSuccess().metadata.usage);
+      },
+    });
+
+    await assert.rejects(() => service.generate('session-1', {}), /artifact write failed/);
+    assert.equal(providerCalls, 1);
+    assert.match(failedRunId, /^[0-9a-f-]{36}$/);
+
+    await service.retry(failedRunId, 'zai:glm-5.3-flash-max');
+    assert.equal(providerCalls, 1);
+    assert.equal(materializeCalls, 2);
+    assert.equal(persisted[1]!.provider, 'openai');
+    assert.equal(persisted[1]!.model, 'gpt-5.6-luna-high');
+    assert.equal(persisted[1]!.promptVersion, 'reflection-staged-v1');
+    assert.equal(persisted[1]!.sourceRunId, failedRunId);
+  });
+
+  test('retries only promotion from its exact saved input and honors the explicit model override', async () => {
+    const boundaries = createTestReflectionContinuationBoundaries();
+    const stageTwoBundles: unknown[] = [];
+    const runRecords: RecordReflectionGenerationRunInput[] = [];
+    let materialized: MaterializeReflectionArtifactInput | null = null;
+    let diagnosisCalls = 0;
+    let failedPromotionRunId = '';
+    const sharedDiagnosisSuccess = {
+      ...diagnosisSuccess(),
+      result: {
+        schemaVersion: 'staged_reflection_diagnosis_result.v1' as const,
+        itemResults: [{
+          kind: 'shared_axis' as const,
+          itemId: 'item-1',
+          diagnosisTags: ['production_cue_overloaded'],
+          handoff: sharedAxisHandoff(),
+        }],
+      },
+    };
+    const service = createProductionReflectionGenerationService({
+      ...boundaries,
+      now: () => generatedAt,
+      buildBundle: () => bundle(true),
+      startRun: () => {},
+      provider: {
+        async generateDiagnosis() {
+          diagnosisCalls += 1;
+          return sharedDiagnosisSuccess;
+        },
+        async generate() {
+          throw new Error('staged generation must use the diagnosis entrypoint');
+        },
+        async generatePromotion(input) {
+          stageTwoBundles.push(input);
+          throw new LunaReflectionProviderError('upstream_failure');
+        },
+      },
+      glmProvider: {
+        async generate() {
+          throw new Error('promotion retry must not rerun diagnosis');
+        },
+        async generateDiagnosis() {
+          throw new Error('promotion retry must not rerun diagnosis');
+        },
+        async generatePromotion(input) {
+          stageTwoBundles.push(input);
+          return {
+            result: {
+              schemaVersion: 'pure_cue_promotion_result.v1',
+              itemResults: input.items.map((item) => ({
+                itemId: item.itemId,
+                decision: {
+                  kind: 'disagreement' as const,
+                  learnerExplanation: 'The saved evidence supports keeping these as separate tasks.',
+                },
+              })),
+            },
+            metadata: {
+              ...diagnosisSuccess().metadata,
+              provider: 'zai',
+              modelConfig: 'glm-5.3-flash-max',
+              providerModel: 'glm-5.3-flash',
+              promptVersion: 'pure-cue-promotion-v1',
+            },
+          };
+        },
+      },
+      materializeArtifact: (input) => {
+        materialized = input;
+        return {
+          created: true,
+          artifact: artifactDetail('stage-two-retry-artifact', 0),
+        };
+      },
+      recordRun(input) {
+        runRecords.push(input);
+        if (input.state === 'failed') failedPromotionRunId = input.runId ?? '';
+      },
+    });
+
+    await assert.rejects(
+      () => service.generate('session-1', {}, 'openai:gpt-5.6-luna-high'),
+      LunaReflectionProviderError,
+    );
+    assert.equal(diagnosisCalls, 1);
+    assert.match(failedPromotionRunId, /^[0-9a-f-]{36}$/);
+    await service.retry(failedPromotionRunId, 'zai:glm-5.3-flash-max');
+    assert.equal(diagnosisCalls, 1);
+    assert.equal(stageTwoBundles.length, 2);
+    assert.equal(stageTwoBundles[1], stageTwoBundles[0]);
+    assert.deepEqual(materialized?.result.itemResults[0], {
+      itemId: 'item-1',
+      diagnosisTags: ['production_cue_overloaded'],
+      learnerExplanation: 'The saved evidence supports keeping these as separate tasks.',
+      promotionOutcome: 'disagreement',
+      proposals: [],
+      questions: [],
+    });
+    assert.deepEqual(runRecords.map((run) => [run.state, run.model, run.resultSchemaVersion]), [
+      ['succeeded', 'gpt-5.6-luna-high', 'staged_reflection_diagnosis_result.v1'],
+      ['failed', 'gpt-5.6-luna-high', 'pure_cue_promotion_result.v1'],
+      ['succeeded', 'glm-5.3-flash-max', 'pure_cue_promotion_result.v1'],
+    ]);
+  });
+
   test('leaves no artifact on evidence or provider failure and permits retry', async () => {
     let providerCalls = 0;
     let materializeCalls = 0;
@@ -281,12 +470,12 @@ describe('initial reflection generation orchestration', () => {
           'The study session is incomplete.',
         );
       },
-      provider: {
-        async generate() {
+      provider: stagedProvider(
+        async () => {
           providerCalls += 1;
-          return providerSuccess();
+          return diagnosisSuccess();
         },
-      },
+      ),
       materializeArtifact: () => {
         materializeCalls += 1;
         throw new Error('must not materialize');
@@ -307,16 +496,16 @@ describe('initial reflection generation orchestration', () => {
     const providerFailureService = createInitialReflectionGenerationService({
       findExistingArtifact: () => null,
       buildBundle: () => bundle(),
-      provider: {
-        async generate() {
+      provider: stagedProvider(
+        async () => {
           providerCalls += 1;
           if (failProvider) {
             failProvider = false;
             throw new LunaReflectionProviderError('upstream_failure');
           }
-          return providerSuccess();
+          return diagnosisSuccess();
         },
-      },
+      ),
       materializeArtifact: () => {
         materializeCalls += 1;
         return {
@@ -345,10 +534,10 @@ describe('initial reflection generation orchestration', () => {
 
   test('retains the selected provider metadata when persistence fails after generation', async () => {
     let recordedRun: RecordReflectionGenerationRunInput | null = null;
-    const glmSuccess: LunaReflectionSuccess = {
-      ...providerSuccess(),
+    const glmSuccess = {
+      ...diagnosisSuccess(),
       metadata: {
-        ...providerSuccess().metadata,
+        ...diagnosisSuccess().metadata,
         provider: 'zai',
         modelConfig: 'glm-5.3-flash-max',
         providerModel: 'glm-5.3-flash',
@@ -356,17 +545,9 @@ describe('initial reflection generation orchestration', () => {
     };
     const service = createInitialReflectionGenerationService({
       now: () => generatedAt,
-      getRetrySource: () => ({
-        runId: 'failed-run',
-        sourceSessionId: 'session-1',
-        reflectionFlowVersion: 'initial_post_session_reflection.v2',
-        model: 'gpt-5.6-luna-high',
-        eligibleItemCount: 1,
-        includedItemCount: 1,
-        evidenceBundle: bundle(),
-      }),
-      provider: { generate: async () => providerSuccess() },
-      glmProvider: { generate: async () => glmSuccess },
+      getContinuationRetrySource: () => currentDiagnosisRetrySource('failed-run'),
+      provider: stagedProvider(async () => diagnosisSuccess()),
+      glmProvider: stagedProvider(async () => glmSuccess),
       materializeArtifact: () => {
         throw new Error('persistence rejected the artifact');
       },
@@ -389,12 +570,12 @@ describe('initial reflection generation orchestration', () => {
 
   test('routes the initial run across offered comparison arms with equal probability', async () => {
     const selected: string[] = [];
-    const makeArm = (label: string) => ({
-      async generate() {
+    const makeArm = (label: string) => stagedProvider(
+      async () => {
         selected.push(label);
-        return providerSuccess();
+        return diagnosisSuccess();
       },
-    });
+    );
     let randomCalls = 0;
     const service = createInitialReflectionGenerationService({
       findExistingArtifact: () => null,
@@ -424,12 +605,12 @@ describe('initial reflection generation orchestration', () => {
 
   test('still routes an explicit request to a registered arm that is not offered by default', async () => {
     const selected: string[] = [];
-    const makeArm = (label: string) => ({
-      async generate() {
+    const makeArm = (label: string) => stagedProvider(
+      async () => {
         selected.push(label);
-        return providerSuccess();
+        return diagnosisSuccess();
       },
-    });
+    );
     const service = createInitialReflectionGenerationService({
       findExistingArtifact: () => null,
       buildBundle: () => bundle(),
@@ -452,26 +633,18 @@ describe('initial reflection generation orchestration', () => {
 
   test('refuses same-model retry when the stored model is registered but not currently offered', async () => {
     const selected: string[] = [];
-    const makeArm = (label: string) => ({
-      async generate() {
+    const makeArm = (label: string) => stagedProvider(
+      async () => {
         selected.push(label);
-        return providerSuccess();
+        return diagnosisSuccess();
       },
-    });
+    );
     const service = createInitialReflectionGenerationService({
       findExistingArtifact: () => null,
       buildBundle: () => bundle(),
-      getRetrySource: (runId) => {
+      getContinuationRetrySource: (runId) => {
         assert.equal(runId, 'failed-gemini-run');
-        return {
-          runId,
-          sourceSessionId: 'session-1',
-          reflectionFlowVersion: 'initial_post_session_reflection.v2',
-          model: 'gemini-3.6-flash',
-          eligibleItemCount: 1,
-          includedItemCount: 1,
-          evidenceBundle: bundle(),
-        };
+        return currentDiagnosisRetrySource(runId, bundle(), { model: 'gemini-3.6-flash' });
       },
       provider: makeArm('luna'),
       glmProvider: makeArm('glm'),
@@ -501,12 +674,12 @@ describe('initial reflection generation orchestration', () => {
 
   test('routes unselected initial generation to Luna after the daily spend cap', async () => {
     const selected: string[] = [];
-    const makeArm = (label: string) => ({
-      async generate() {
+    const makeArm = (label: string) => stagedProvider(
+      async () => {
         selected.push(label);
-        return providerSuccess();
+        return diagnosisSuccess();
       },
-    });
+    );
     const service = createInitialReflectionGenerationService({
       findExistingArtifact: () => null,
       buildBundle: () => bundle(),
@@ -538,18 +711,18 @@ describe('initial reflection generation orchestration', () => {
     const service = createInitialReflectionGenerationService({
       findExistingArtifact: () => null,
       buildBundle: () => bundle(),
-      provider: {
-        async generate() {
+      provider: stagedProvider(
+        async () => {
           selected.push('luna');
-          return providerSuccess();
+          return diagnosisSuccess();
         },
-      },
-      glmProvider: {
-        async generate() {
+      ),
+      glmProvider: stagedProvider(
+        async () => {
           selected.push('glm');
-          return providerSuccess();
+          return diagnosisSuccess();
         },
-      },
+      ),
       getSpendCap: () => cappedSpendCap(),
       materializeArtifact: () => ({
         created: true,
@@ -570,27 +743,23 @@ describe('initial reflection generation orchestration', () => {
     const service = createInitialReflectionGenerationService({
       findExistingArtifact: () => null,
       buildBundle: () => bundle(),
-      provider: {
-        async generate() {
+      provider: stagedProvider(
+        async () => {
           selected.push('luna');
-          return providerSuccess();
+          return diagnosisSuccess();
         },
-      },
-      glmProvider: {
-        async generate() {
+      ),
+      glmProvider: stagedProvider(
+        async () => {
           selected.push('glm');
-          return providerSuccess();
+          return diagnosisSuccess();
         },
-      },
+      ),
       getSpendCap: () => cappedSpendCap(),
-      getRetrySource: () => ({
-        runId: 'failed-run',
-        sourceSessionId: 'session-1',
-        reflectionFlowVersion: 'initial_post_session_reflection.v2',
+      getContinuationRetrySource: () => currentDiagnosisRetrySource('failed-run', bundle(), {
+        provider: 'zai',
         model: 'glm-5.3-flash-max',
-        eligibleItemCount: 1,
-        includedItemCount: 1,
-        evidenceBundle: bundle(),
+        providerModel: 'glm-5.3-flash',
       }),
       materializeArtifact: () => ({
         created: true,
@@ -607,26 +776,18 @@ describe('initial reflection generation orchestration', () => {
 
   test('refuses same-model retry when the stored model is no longer a current choice', async () => {
     const selected: string[] = [];
-    const makeArm = (label: string) => ({
-      async generate() {
+    const makeArm = (label: string) => stagedProvider(
+      async () => {
         selected.push(label);
-        return providerSuccess();
+        return diagnosisSuccess();
       },
-    });
+    );
     const service = createInitialReflectionGenerationService({
       findExistingArtifact: () => null,
       buildBundle: () => bundle(),
-      getRetrySource: (runId) => {
+      getContinuationRetrySource: (runId) => {
         assert.equal(runId, 'failed-retired-run');
-        return {
-          runId,
-          sourceSessionId: 'session-1',
-          reflectionFlowVersion: 'initial_post_session_reflection.v2',
-          model: 'qwen3.7-plus',
-          eligibleItemCount: 1,
-          includedItemCount: 1,
-          evidenceBundle: bundle(),
-        };
+        return currentDiagnosisRetrySource(runId, bundle(), { model: 'qwen3.7-plus' });
       },
       provider: makeArm('luna'),
       glmProvider: makeArm('glm'),
@@ -652,14 +813,25 @@ describe('initial reflection generation orchestration', () => {
   });
 });
 
-function providerSuccess(): LunaReflectionSuccess {
+function stagedProvider(
+  generateDiagnosis: NonNullable<LunaReflectionProvider['generateDiagnosis']>,
+): LunaReflectionProvider {
   return {
-    result: result(),
+    async generate() {
+      throw new Error('staged generation must not fall back to legacy generate');
+    },
+    generateDiagnosis,
+  };
+}
+
+function diagnosisSuccess() {
+  return {
+    result: stagedDiagnosisResult(),
     metadata: {
       provider: 'openai',
       modelConfig: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v3',
+      promptVersion: 'reflection-staged-v1',
       responseId: 'response-1',
       finishReason: 'stop',
       usage: {
@@ -707,9 +879,9 @@ function artifactDetail(artifactId: string, proposalCount: number): ReflectionAr
   };
 }
 
-function bundle(): SessionReflectionBundleV2 {
+function bundle(promotionCandidate = false): SessionReflectionBundleV4 {
   return {
-    schemaVersion: 'session_reflection_bundle.v2',
+    schemaVersion: 'session_reflection_bundle.v4',
     generatedAt,
     session: {
       sessionId: 'session-1',
@@ -737,16 +909,84 @@ function bundle(): SessionReflectionBundleV2 {
         cueType: 'definition_gloss',
         text: 'target',
         acceptedWordIds: ['target'],
+        supplement: null,
       },
-      rawResponse: '替代',
+      rawResponse: promotionCandidate ? '替代' : '目标',
       submittedWord: {
-        wordId: 'alternate',
-        hanzi: '替代',
-        pinyin: 'tìdài',
-        meanings: ['alternate'],
+        wordId: promotionCandidate ? 'alternate' : 'target',
+        hanzi: promotionCandidate ? '替代' : '目标',
+        pinyin: promotionCandidate ? 'tìdài' : 'mùbiāo',
+        meanings: [promotionCandidate ? 'alternate' : 'target'],
       },
       responseKind: 'matched_known_word',
     }],
+  };
+}
+
+function currentDiagnosisRetrySource(
+  runId: string,
+  diagnosisBundle = bundle(),
+  overrides: Partial<Pick<
+    ReflectionGenerationContinuationRetrySource,
+    'provider' | 'model' | 'providerModel'
+  >> & { eligibleItemCount?: number; includedItemCount?: number } = {},
+): ReflectionGenerationContinuationRetrySource {
+  return {
+    runId,
+    stage: 'diagnosis',
+    provider: overrides.provider ?? 'openai',
+    model: overrides.model ?? 'gpt-5.6-luna-high',
+    providerModel: overrides.providerModel ?? 'gpt-5.6-luna',
+    promptVersion: 'reflection-staged-v1',
+    continuation: {
+      continuationId: `continuation-${runId}`,
+      sourceSessionId: 'session-1',
+      reflectionFlowVersion: 'initial_post_session_reflection.v4',
+      createdAt: generatedAt,
+      eligibleItemCount: overrides.eligibleItemCount ?? 1,
+      includedItemCount: overrides.includedItemCount ?? 1,
+      diagnosisBundle,
+      sourceProposalIds: null,
+      overlapOmittedItemCount: 0,
+      diagnosisResult: null,
+      finalEvidenceBundle: null,
+      promotionBundle: null,
+      artifactId: null,
+    },
+  };
+}
+
+function stagedDiagnosisResult(): StagedReflectionDiagnosisResultV1 {
+  return {
+    schemaVersion: 'staged_reflection_diagnosis_result.v1',
+    itemResults: [{
+      kind: 'ordinary',
+      itemId: 'item-1',
+      diagnosisTags: ['persistent_confusion'],
+      learnerExplanation: 'This production goal is not useful as an isolated task.',
+      proposals: [{
+        proposalGroupKey: null,
+        rationale: 'Suppress this production goal.',
+        operation: operation(),
+      }],
+      questions: [],
+    }],
+  };
+}
+
+function ordinaryDiagnosisResult() {
+  const { kind: _kind, ...ordinary } = stagedDiagnosisResult().itemResults[0]!;
+  return {
+    schemaVersion: 'session_reflection_result.v8' as const,
+    itemResults: [ordinary],
+  };
+}
+
+function sharedAxisHandoff() {
+  return {
+    axis: 'Choosing between an intended goal and a substitute.',
+    boundaries: 'Use 目标 for the intended outcome and 替代 for what takes its place.',
+    responseValidity: '替代 was valid for the overly broad served cue.',
   };
 }
 

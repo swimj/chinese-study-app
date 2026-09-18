@@ -74,6 +74,19 @@ describe('reflection page model', () => {
     ]);
     assert.equal(cards[0]?.kind === 'proposal' && cards[0].result.itemId, 'mistake');
     assert.equal(cards[2]?.kind, 'explanation');
+    assert.equal(cards[2]?.kind === 'explanation' && cards[2].actionability, 'manual');
+  });
+
+  test('marks staged disagreement explanations as non-actionable while retaining Help membership', () => {
+    const detail = artifactDetail();
+    const result = detail.result.itemResults[1]!;
+    Object.assign(result, { promotionOutcome: 'disagreement' as const });
+
+    const cards = buildReflectionHelpCards([detail]);
+    const explanation = cards.find((card) => card.kind === 'explanation');
+    assert(explanation?.kind === 'explanation');
+    assert.equal(explanation.actionability, 'non_actionable_disagreement');
+
   });
 
   test('hides Done explanation cards from the help queue but keeps pending proposals', () => {

@@ -7,8 +7,8 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import type {
   ReflectionOperation,
-  SessionReflectionBundleV2,
-  SessionReflectionResultV6,
+  SessionReflectionBundleV5,
+  SessionReflectionResultV8,
 } from '../src/domain/reflection.js';
 
 type DbModule = typeof import('../server/db.ts');
@@ -184,11 +184,11 @@ function materialize(
   `).run(sessionId, generatedAt, generatedAt);
   return dbModule.materializeReflectionArtifact({
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v2',
+    reflectionFlowVersion: 'initial_post_session_reflection.v4',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-v7',
+    promptVersion: 'reflection-staged-v1',
     evidenceBundle: bundle(sessionId),
     result: result(operation),
   });
@@ -204,14 +204,14 @@ function materializeInformational(
   `).run(sessionId, generatedAt, generatedAt);
   return dbModule.materializeReflectionArtifact({
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v2',
+    reflectionFlowVersion: 'initial_post_session_reflection.v4',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-v7',
+    promptVersion: 'reflection-staged-v1',
     evidenceBundle: bundle(sessionId),
     result: {
-      schemaVersion: 'session_reflection_result.v6',
+      schemaVersion: 'session_reflection_result.v8',
       itemResults: [{
         itemId: 'item',
         diagnosisTags: ['ordinary_retrieval_noise'],
@@ -223,9 +223,9 @@ function materializeInformational(
   });
 }
 
-function bundle(sessionId: string): SessionReflectionBundleV2 {
+function bundle(sessionId: string): SessionReflectionBundleV5 {
   return {
-    schemaVersion: 'session_reflection_bundle.v2',
+    schemaVersion: 'session_reflection_bundle.v5',
     generatedAt,
     session: {
       sessionId,
@@ -253,7 +253,9 @@ function bundle(sessionId: string): SessionReflectionBundleV2 {
         cueType: 'definition_gloss',
         text: 'target',
         acceptedWordIds: ['target'],
+        supplement: null,
       },
+      promotionEvidence: null,
       rawResponse: '替代',
       responseKind: 'unmatched_text',
       submittedWord: null,
@@ -261,9 +263,9 @@ function bundle(sessionId: string): SessionReflectionBundleV2 {
   };
 }
 
-function result(operation: ReflectionOperation): SessionReflectionResultV6 {
+function result(operation: ReflectionOperation): SessionReflectionResultV8 {
   return {
-    schemaVersion: 'session_reflection_result.v6',
+    schemaVersion: 'session_reflection_result.v8',
     itemResults: [{
       itemId: 'item',
       diagnosisTags: ['persistent_confusion'],

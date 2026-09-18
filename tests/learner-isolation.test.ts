@@ -460,6 +460,38 @@ function cueRepairOperation(input: {
 }
 
 function insertInvocation(invocationId: string, operation: ReflectionOperation): void {
+  const generatedAt = '2026-08-21T04:00:00.000Z';
+  const sessionId = `source-${invocationId}`;
+  sqlite.prepare(`
+    INSERT INTO study_sessions (id, started_at, ended_at, processing_state, processed_at)
+    VALUES (?, ?, ?, 'processed', ?)
+  `).run(sessionId, generatedAt, generatedAt, generatedAt);
+  const artifact = dbModule.runWithLearnerId(rawLearnerId, () => dbModule.materializeReflectionArtifact({
+    sourceSessionId: sessionId,
+    reflectionFlowVersion: 'initial_post_session_reflection.v4',
+    generatedAt,
+    provider: 'openai',
+    model: 'gpt-5.6-luna-high',
+    promptVersion: 'reflection-staged-v1',
+    evidenceBundle: {
+      schemaVersion: 'session_reflection_bundle.v5',
+      generatedAt,
+      session: { sessionId, startedAt: generatedAt, endedAt: generatedAt, studyProfile: 'mandarin' },
+      items: [{
+        itemId: 'item', source: 'production_mistake', sourceActionKind: 'production',
+        sessionActionId: `action-${invocationId}`, sourceAttemptId: `attempt-${invocationId}`,
+        occurredAt: generatedAt,
+        targetWord: { wordId: 'shared-word', hanzi: '共享', pinyin: 'gòngxiǎng', meanings: ['shared'] },
+        sessionNote: null, existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+        servedCue: { cueId: null, cueType: 'definition_gloss', text: 'shared', acceptedWordIds: ['shared-word'], supplement: null },
+        promotionEvidence: null, rawResponse: '?', responseKind: 'unmatched_text', submittedWord: null,
+      }],
+    },
+    result: {
+      schemaVersion: 'session_reflection_result.v8',
+      itemResults: [{ itemId: 'item', diagnosisTags: ['ordinary_retrieval_noise'], learnerExplanation: 'Review the cue.', proposals: [], questions: [] }],
+    },
+  }).artifact);
   sqlite.prepare(`
     INSERT INTO reflection_operation_invocations (
       invocation_id, created_at, origin_kind, origin_proposal_id,
@@ -469,7 +501,12 @@ function insertInvocation(invocationId: string, operation: ReflectionOperation):
       effect_refs_json, satisfying_effect_refs_json
     ) VALUES (?, '2026-08-21T04:00:00.000Z', 'manual', NULL, NULL, ?, ?, ?,
       'pending', '2026-08-21T04:00:00.000Z', NULL, NULL, NULL, NULL, '[]', '[]')
-  `).run(invocationId, operation.kind, operation.version, JSON.stringify(operation));
+  `).run(invocationId, operation.kind, operation.version, JSON.stringify({
+    schemaVersion: 'reflection_invocation_operation.v1',
+    sourceArtifactId: artifact.artifactId,
+    sourceItemId: 'item',
+    operation,
+  }));
 }
 
 function restoreEnv(name: string, value: string | undefined): void {

@@ -102,11 +102,30 @@ automatic semantic refinement remains out of scope.
 
 ## Staged reflection
 
-The server orchestrates ordinary diagnosis followed, only for eligible
-candidates, by a bounded promotion-specific provider call. The second stage
-receives the source attempt, diagnosis, both words' existing production cues,
-and intersecting pure cues including their stimulus and axis notes. There is
-no provider-directed database tool loop.
+Before diagnosis, initial and second-opinion bundle assembly greedily keeps
+items in stable order only when neither their target nor identified response
+word has appeared in an already admitted item. Overlapping items are silently
+omitted from best-effort reflection; counts remain available in continuation
+diagnostics. Omitted second-opinion proposals remain deferred. This is a
+word-pair guard, not complete collision detection across pure-cue destinations.
+
+Stage one chooses exactly one path per item, before drafting interventions:
+ordinary reflection with explanation/proposals, or an explicit shared-axis
+handoff with no proposals or questions. The handoff states the expressive
+instinct, its boundaries, and why the actual response was valid for the served
+cue. A merely possible shared category is insufficient. Handoffs require a
+strict target-only rejected/Forgot source with a distinct known response word.
+Pure-cue attempts themselves are not yet reflection inputs.
+
+Stage two normally trusts that premise and reconciles it with both words'
+existing production cues and intersecting pure cues. It owns the coordinated
+content repair and the final learner explanation for routed items. The original
+served cue grounds the premise; it does not dictate the new stimulus wording.
+Stage two either proposes a promotion or explicitly reports disagreement if the
+premise is materially wrong. Disagreement is visible, non-actionable feedback:
+no proposals, manual override, or compensation for that item. Done and quality
+feedback remain available. There is no conflict-resolution workflow yet and no
+provider-directed database tool loop.
 
 The stage chain is versioned separately from legacy one-shot history. Persist
 the exact stage input before calling the provider; a retry of stage two reuses
@@ -115,10 +134,17 @@ provider call retains its own run diagnostics and usage. Only the final
 validated result becomes a learner artifact. Generation never authorizes an
 operation automatically.
 
-Final new results cannot propose new multi-answer word-owned cues. Promotion
-also replaces conflicting first-stage repairs, supplements, or suppression
-for affected words so separate authorization cannot undo the promotion's
-intended content policy. Unrelated proposals remain available.
+This release is a hard execution cutover: only current flow, evidence, and
+prompt contracts support retries, second opinions, or proposal authorization
+and application. Older results stay readable but cannot be upgraded in place.
+There is no age-based compatibility window. Learners continue with new study.
+
+Final new results cannot propose new multi-answer word-owned cues. Ordinary
+items keep stage one's explanation/proposals; routed items use stage two's
+explanation and promotion or disagreement outcome. There are no competing
+first-stage content deltas for routed items to merge or discard. Unrelated
+ordinary items remain available. All content and compensation effects still
+require explicit proposal acceptance.
 
 ## False-lapse compensation
 

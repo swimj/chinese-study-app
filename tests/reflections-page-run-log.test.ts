@@ -4,8 +4,15 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, test } from 'node:test';
 import type { SessionReflectionBundleV1, SessionReflectionResultV4 } from '../src/domain/reflection.ts';
 import type { ReflectionPageController } from '../src/features/reflection/useReflectionPageController.ts';
-import { ReflectionsPage, DeferredSecondOpinionQueue, TokenUsageView } from '../src/pages/ReflectionsPage.tsx';
+import {
+  ReflectionsPage,
+  DeferredSecondOpinionQueue,
+  SessionWorkspace,
+  TokenUsageView,
+} from '../src/pages/ReflectionsPage.tsx';
 import type { ReflectionArtifactDetailDto } from '../src/services/api.ts';
+import type { SessionReflectionBundleV5, SessionReflectionResultV8 } from '../src/domain/reflection.ts';
+import { CURRENT_INITIAL_REFLECTION_FLOW_VERSION, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION } from '../src/domain/reflection-contracts.ts';
 
 describe('reflection run log presentation', () => {
   test('keeps the page available when every stored artifact is unreadable', () => {
@@ -91,6 +98,50 @@ describe('reflection run log presentation', () => {
     assert.match(markup, />Accept</);
     assert.doesNotMatch(markup, />Done</);
     assert.doesNotMatch(markup, /disabled=""[^>]*>Accept</);
+  });
+
+  test('disagreement Help keeps Done and quality but exposes no actionable controls', () => {
+    const artifact = disagreementArtifact();
+    const markup = renderToStaticMarkup(createElement(ReflectionsPage, {
+      controller: idleController({ artifactDetails: [artifact] }),
+    }));
+
+    assert.match(markup, /No actionable change/);
+    assert.match(markup, /The two-stage reviewers did not agree./);
+    assert.match(markup, /informational only, so it cannot create or authorize a proposal/);
+    assert.match(markup, /aria-label="Quality tags"/);
+    assert.match(markup, />Done</);
+    assert.doesNotMatch(markup, /aria-label="Handle"/);
+    assert.doesNotMatch(markup, />Accept</);
+    assert.doesNotMatch(markup, />Dismiss</);
+  });
+
+  test('by-session disagreement is explicit and remains non-actionable', () => {
+    const artifact = disagreementArtifact();
+    const markup = renderToStaticMarkup(createElement(SessionWorkspace, {
+      controller: idleController({
+        selectedArtifact: artifact,
+        selectedArtifactId: artifact.artifactId,
+      }),
+    }));
+
+    assert.match(markup, /No actionable change/);
+    assert.match(markup, /The two-stage reviewers did not agree./);
+    assert.match(markup, /Content review disagreed with the shared-axis handoff/);
+    assert.match(markup, /aria-label="Quality tags"/);
+    assert.doesNotMatch(markup, /aria-label="Handle"/);
+    assert.doesNotMatch(markup, /Authorize replacement/);
+  });
+
+  test('obsolete artifacts are readable history, not actionable Help cards', () => {
+    const artifact = explanationArtifact();
+    artifact.promptVersion = 'reflection-v9';
+    const markup = renderToStaticMarkup(createElement(ReflectionsPage, {
+      controller: idleController({ artifactDetails: [artifact] }),
+    }));
+    assert.match(markup, /older contract remain available under By session, read-only/);
+    assert.match(markup, /No remaining proposals to review/);
+    assert.doesNotMatch(markup, />Accept</);
   });
 
   test('second-opinion packaging uses compact chips and a Help-style bottom rail', () => {
@@ -290,8 +341,8 @@ function idleController(
 
 function explanationArtifact(): ReflectionArtifactDetailDto {
   const generatedAt = '2026-07-29T12:00:00.000Z';
-  const evidenceBundle: SessionReflectionBundleV1 = {
-    schemaVersion: 'session_reflection_bundle.v1',
+  const evidenceBundle: SessionReflectionBundleV5 = {
+    schemaVersion: 'session_reflection_bundle.v5',
     generatedAt,
     session: {
       sessionId: 'session',
@@ -313,13 +364,15 @@ function explanationArtifact(): ReflectionArtifactDetailDto {
       },
       sessionNote: null,
       existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
-      cuesAsShown: [{
+      sourceAttemptId: 'attempt-informational',
+      promotionEvidence: null,
+      servedCue: {
         cueId: null,
         cueType: 'definition_gloss',
-        displayOrder: 0,
         text: 'target',
-        displayedMeanings: ['target'],
-      }],
+        acceptedWordIds: ['target'],
+        supplement: null,
+      },
       rawResponse: '替代',
       submittedWord: {
         wordId: 'alternate',
@@ -330,27 +383,25 @@ function explanationArtifact(): ReflectionArtifactDetailDto {
       responseKind: 'matched_known_word',
     }],
   };
-  const result: SessionReflectionResultV4 = {
-    schemaVersion: 'session_reflection_result.v4',
+  const result: SessionReflectionResultV8 = {
+    schemaVersion: 'session_reflection_result.v8',
     itemResults: [{
       itemId: 'informational',
       diagnosisTags: ['ordinary_retrieval_noise'],
-      observation: 'Keep going.',
       learnerExplanation: 'Keep going.',
       proposals: [],
       questions: [],
-      unhandledNeeds: [],
     }],
   };
   return {
     artifactId: 'artifact',
     sourceSessionId: 'session',
     sourceRunId: null,
-    reflectionFlowVersion: 'initial_post_session_reflection.v1',
+    reflectionFlowVersion: CURRENT_INITIAL_REFLECTION_FLOW_VERSION,
     generatedAt,
     provider: 'openai-compatible',
     model: 'gpt-5.6-luna',
-    promptVersion: 'reflection-v2',
+    promptVersion: STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
     bundleSchemaVersion: evidenceBundle.schemaVersion,
     resultSchemaVersion: result.schemaVersion,
     evidenceBundle,
@@ -364,6 +415,14 @@ function explanationArtifact(): ReflectionArtifactDetailDto {
       openedAt: generatedAt,
     }],
   };
+}
+
+function disagreementArtifact(): ReflectionArtifactDetailDto {
+  const artifact = explanationArtifact();
+  const result = artifact.result.itemResults[0]!;
+  result.learnerExplanation = 'The two-stage reviewers did not agree.';
+  Object.assign(result, { promotionOutcome: 'disagreement' as const });
+  return artifact;
 }
 
 function deferredSecondOpinionCards(): Array<Extract<import('../src/features/reflection/reflection-page-model.ts').ReflectionHelpCard, { kind: 'proposal' }>> {

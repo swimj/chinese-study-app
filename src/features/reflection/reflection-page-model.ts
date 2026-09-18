@@ -225,6 +225,7 @@ export type ReflectionHelpCard =
     })
   | {
       kind: 'explanation';
+      actionability: 'manual' | 'non_actionable_disagreement';
       cardKey: string;
       artifact: ReflectionArtifactDetailDto;
       evidence: ReflectionInputItemV1
@@ -283,6 +284,9 @@ export function buildReflectionHelpCards(
       }
       cards.push({
         kind: 'explanation',
+        actionability: isPromotionDisagreement(result)
+          ? 'non_actionable_disagreement'
+          : 'manual',
         cardKey: `explanation:${artifact.artifactId}:${result.itemId}`,
         artifact,
         evidence,
@@ -335,6 +339,14 @@ export function buildNoDurableChangeGists(
       cueSummary: reflectionCueSummary(item.evidence),
       questionCount: item.result.questions.length,
     }));
+}
+
+/**
+ * Legacy result items do not carry a staged-promotion outcome. Keep the guard
+ * structural so stored V1 items remain readable when V2 adds the optional field.
+ */
+export function isPromotionDisagreement(result: ReflectionItemResult): boolean {
+  return 'promotionOutcome' in result && result.promotionOutcome === 'disagreement';
 }
 
 export function reflectionLearnerFeedback(result: ReflectionItemResult): string {

@@ -18,7 +18,7 @@ App.tsx
 └─ useReflectionPageController
    ├─ ReflectionsPage.tsx              queue, history, detail, proposal cards
    ├─ reflection-page-model.ts         grouping, drafts, support, validation
-   ├─ ReflectionOperationEditor.tsx    purpose-built V1 operation editors
+   ├─ ReflectionOperationEditor.tsx    versioned operation and promotion editors
    └─ services/api.ts                  review and authorization withdrawal
 ```
 
@@ -53,6 +53,33 @@ supplement supports an explicit retry. Session-id guards ignore late responses
 after close or after another session starts. Generation continues in the
 session controller even if Home is unmounted, so a later Reflections visit can
 see the artifact or its failed/retry state.
+
+## Staged generation
+
+New initial reflections and new second opinions run server-owned diagnosis and
+conditional pure-cue promotion stages. The client receives only the final V8
+artifact, never an intermediate diagnosis artifact. The run log retains each
+provider call separately; retry resolves its durable continuation and reuses
+saved diagnosis/promotion input within the current contract. Stored legacy
+artifacts remain readable, but obsolete retries, second opinions, authorization,
+and application are rejected. No live session grading uses this pipeline.
+
+Diagnosis explicitly chooses ordinary feedback/proposals or a shared-axis
+handoff with no ordinary interventions. Routed items use stage two's final
+explanation. A hard stage disagreement is displayed in Help and By session as
+non-actionable feedback, with Done/quality controls but no proposal creator or
+manual override. The backend independently rejects authorization from such
+items. Unrelated ordinary items retain stage one's feedback/proposals.
+
+Bundle admission excludes overlapping target/response pairs in stable order
+before diagnosis. Omitted second-opinion originals remain deferred; only
+included originals retire after successful artifact materialization.
+
+The promotion editor presents the shared stimulus/axis and both words' cue
+plans. Application outcomes include explicit restored, already-restored,
+or unavailable compensation feedback. A non-lapse promotion source is invalid.
+Pure-cue membership is
+not a word-scheduler projection.
 
 ## Reflection evidence
 
@@ -201,7 +228,7 @@ a compact per-run table. It presents each attempt's provider/model, completion
 or failure state, response/finish metadata when available, eligible/included
 counts, normalized token categories, and the persisted estimated cost or an
 explicit unavailable state. Successful and failed states use compact icons;
-every retained bundle has an interactive retry control. Clicking the compact
+only retained current-contract bundles have an interactive retry control. Clicking the compact
 retry icon opens a confirmation menu defaulting to the source model when that
 model is still a configured comparison arm; arrow keys move the highlight, and
 Enter or a click starts the retry (including an explicit comparison-arm model
@@ -227,7 +254,7 @@ provider request correlation, and capped rejected-output context. The current
 dogfood surface intentionally shows that bounded output verbatim; missing detail
 is rendered as unavailable rather than inferred for legacy rows.
 
-A failed run with a retained bundle and no successful artifact exposes a small
+A failed current-contract run with a retained bundle and no successful artifact exposes a small
 retry action. Retrying reuses the exact backend-owned bundle, replaces the
 action with a concise generating/result indicator, appends a new concluded run,
 and opens the resulting artifact on success. Older run rows created before

@@ -1,18 +1,28 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  PURE_CUE_PROMOTION_RESULT_V1_WIRE_SCHEMA_NAME,
+  pureCuePromotionResultV1WireSchema,
   SESSION_REFLECTION_RESULT_V7_WIRE_SCHEMA_NAME,
   sessionReflectionResultV7WireSchema,
+  STAGED_REFLECTION_DIAGNOSIS_RESULT_V1_WIRE_SCHEMA_NAME,
+  stagedReflectionDiagnosisResultV1WireSchema,
 } from '../src/domain/reflection-result-schema.js';
 import type {
+  PureCuePromotionBundleV1,
+  PureCuePromotionResultV1Wire,
   SessionReflectionBundleV2,
+  SessionReflectionBundleV4,
   SessionReflectionResultV7,
   SessionReflectionResultV7Wire,
+  StagedReflectionDiagnosisResultV1Wire,
 } from '../src/domain/reflection.js';
 import {
   createLunaReflectionProvider,
   LUNA_REFLECTION_MODEL_CONFIG,
   LUNA_REFLECTION_PROMPT_VERSION,
+  PURE_CUE_PROMOTION_PROMPT_VERSION,
+  STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
   LunaReflectionProviderError,
 } from '../server/reflection/luna-provider.js';
 import {
@@ -127,6 +137,100 @@ const validCanonicalResult: SessionReflectionResultV7 = {
         : proposal.operation,
     })),
   })),
+};
+
+const diagnosisBundle: SessionReflectionBundleV4 = {
+  ...bundle,
+  schemaVersion: 'session_reflection_bundle.v4',
+  items: bundle.items.map((item) => ({
+    ...item,
+    servedCue: { ...item.servedCue, supplement: null },
+  })),
+};
+
+const validStagedDiagnosisWireResult: StagedReflectionDiagnosisResultV1Wire = {
+  schemaVersion: 'staged_reflection_diagnosis_result.v1',
+  itemResults: [{
+    kind: 'shared_axis',
+    itemId: 'item-1',
+    diagnosisTags: ['valid_or_near_valid_alternate'],
+    handoff: {
+      axis: 'expressing that someone knows or recognizes the relevant fact or person',
+      boundaries: 'The words differ in object type and construction outside this bounded use.',
+      responseValidity: '认识 is a natural answer to the exact original broad cue “to know”.',
+    },
+  }],
+};
+
+const promotionBundle: PureCuePromotionBundleV1 = {
+  schemaVersion: 'pure_cue_promotion_bundle.v1',
+  generatedAt: bundle.generatedAt,
+  sourceSessionId: bundle.session.sessionId,
+  studyProfile: bundle.session.studyProfile,
+  items: [{
+    itemId: 'item-1',
+    sourceAttemptId: 'attempt-1',
+    targetWord: bundle.items[0]!.targetWord,
+    responseWord: bundle.items[0]!.submittedWord!,
+    servedCue: { ...bundle.items[0]!.servedCue, supplement: null },
+    handoff: validStagedDiagnosisWireResult.itemResults[0]!.kind === 'shared_axis'
+      ? validStagedDiagnosisWireResult.itemResults[0]!.handoff
+      : { axis: '', boundaries: '', responseValidity: '' },
+    promotionEvidence: {
+      diagnosisTags: ['production_cue_overloaded'],
+      words: [{
+        wordId: 'word-1',
+        activeProductionCues: [{
+          cueId: 'cue-1',
+          taskId: 'production-task:word-1:default_production',
+          cueType: 'definition_gloss',
+          text: 'to know',
+          acceptedWordIds: ['word-1', 'word-2'],
+        }],
+      }, {
+        wordId: 'word-2',
+        activeProductionCues: [{
+          cueId: 'cue-2',
+          taskId: 'production-task:word-2:default_production',
+          cueType: 'minimal_context',
+          text: 'to recognize a person',
+          acceptedWordIds: ['word-2'],
+        }],
+      }],
+      intersectingPureCues: [],
+    },
+  }],
+};
+
+const validPromotionWireResult: PureCuePromotionResultV1Wire = {
+  schemaVersion: 'pure_cue_promotion_result.v1',
+  itemResults: [{
+    itemId: 'item-1',
+    decision: {
+      kind: 'promote',
+      rationale: 'The shared elicitation is useful and the remaining cue can stay distinctive.',
+      learnerExplanation: 'This proposes a shared cue for the bounded overlap and keeps the distinctive cue; no change has been applied yet.',
+      operation: {
+        destination: {
+          kind: 'create',
+          stimulus: 'to know or recognize',
+          axisNote: 'General knowledge versus recognizing a person.',
+        },
+        wordPlans: [{
+          wordId: 'word-1',
+          deactivateCueIds: ['cue-1'],
+          distinctiveCueDrafts: [],
+        }, {
+          wordId: 'word-2',
+          deactivateCueIds: [],
+          distinctiveCueDrafts: [{
+            cueType: 'minimal_context',
+            text: 'Recognize a person you have met.',
+          }],
+        }],
+      },
+    },
+  }],
 };
 
 function responseEnvelope(
@@ -283,6 +387,136 @@ describe('production Luna reflection provider', () => {
     assert.equal(serialized.includes('unit-test-secret'), false);
     assert.equal(serialized.includes('transportDebug'), false);
     assert.equal(serialized.includes('must-not-be-returned'), false);
+  });
+
+  test('uses the separate strict promotion contract and returns the validated wire decision', async () => {
+    const capture: CapturedRequest[] = [];
+    const provider = createLunaReflectionProvider({
+      environment: { OPENAI_API_KEY: 'unit-test-secret' },
+      promotionSystemPrompt: 'Pure-cue promotion system prompt.',
+      fetchImplementation: capturingFetch(
+        responseEnvelope(JSON.stringify(validPromotionWireResult)),
+        capture,
+      ),
+    });
+
+    const generated = await provider.generatePromotion!(promotionBundle, {
+      clientRequestId: 'promotion-run-123',
+    });
+
+    assert.equal(capture.length, 1);
+    const request = capture[0]!;
+    assert.equal(request.headers.get('x-client-request-id'), 'promotion-run-123');
+    const { studyProfile: _profile, ...modelPromotionBundle } = promotionBundle;
+    assert.deepEqual(request.body.messages, [
+      { role: 'system', content: 'Pure-cue promotion system prompt.' },
+      { role: 'user', content: JSON.stringify(modelPromotionBundle) },
+    ]);
+    assert.deepEqual(request.body.response_format, {
+      type: 'json_schema',
+      json_schema: {
+        name: PURE_CUE_PROMOTION_RESULT_V1_WIRE_SCHEMA_NAME,
+        strict: true,
+        schema: pureCuePromotionResultV1WireSchema,
+      },
+    });
+    assert.deepEqual(generated.result, validPromotionWireResult);
+    assert.equal(generated.metadata.promptVersion, PURE_CUE_PROMOTION_PROMPT_VERSION);
+  });
+
+  test('uses the standalone staged diagnosis prompt and distinct strict result contract', async () => {
+    const capture: CapturedRequest[] = [];
+    const provider = createLunaReflectionProvider({
+      environment: { OPENAI_API_KEY: 'unit-test-secret' },
+      fetchImplementation: capturingFetch(
+        responseEnvelope(JSON.stringify(validStagedDiagnosisWireResult)),
+        capture,
+      ),
+    });
+
+    const generated = await provider.generateDiagnosis(diagnosisBundle, {
+      clientRequestId: 'diagnosis-run-123',
+    });
+
+    const request = capture[0]!;
+    assert.equal(request.headers.get('x-client-request-id'), 'diagnosis-run-123');
+    assert.deepEqual(request.body.response_format, {
+      type: 'json_schema',
+      json_schema: {
+        name: STAGED_REFLECTION_DIAGNOSIS_RESULT_V1_WIRE_SCHEMA_NAME,
+        strict: true,
+        schema: stagedReflectionDiagnosisResultV1WireSchema,
+      },
+    });
+    const messages = request.body.messages;
+    assert.ok(Array.isArray(messages));
+    const systemMessage = messages[0] as Record<string, JsonValue>;
+    assert.match(String(systemMessage.content), /^# Staged reflection diagnosis/);
+    assert.match(String(systemMessage.content), /studying Mandarin/);
+    assert.match(String(systemMessage.content), /replacementCues/);
+    assert.match(String(systemMessage.content), /strong evocation, not proof that no other word could ever fit/);
+    assert.doesNotMatch(String(systemMessage.content), /studyProfile|acceptedWordIds|cueId|fallback|history|restoration/);
+    const userMessage = messages[1] as Record<string, JsonValue>;
+    const modelInput = JSON.parse(String(userMessage.content));
+    assert.equal(modelInput.items[0].targetWord.wordId, diagnosisBundle.items[0]!.targetWord.wordId);
+    assert.deepEqual(modelInput.items[0].servedCue, {
+      cueType: diagnosisBundle.items[0]!.servedCue.cueType,
+      text: diagnosisBundle.items[0]!.servedCue.text,
+      supplement: null,
+    });
+    assert.doesNotMatch(String(userMessage.content), /"(?:studyProfile|cueId|taskId|sourceAttemptId|sessionActionId|acceptedWordIds|supplementId)"/);
+    assert.ok(diagnosisBundle.items[0]!.sourceAttemptId);
+    assert.equal(diagnosisBundle.session.studyProfile, 'mandarin');
+    assert.equal(String(systemMessage.content).includes('Every known visible word'), false);
+    assert.deepEqual(generated.result, validStagedDiagnosisWireResult);
+    assert.equal(generated.metadata.promptVersion, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION);
+  });
+
+  test('refuses non-Mandarin staged input before any model call', async () => {
+    const capture: CapturedRequest[] = [];
+    const provider = createLunaReflectionProvider({
+      environment: { OPENAI_API_KEY: 'unit-test-secret' },
+      fetchImplementation: capturingFetch(responseEnvelope('{}'), capture),
+    });
+    const french = structuredClone(diagnosisBundle);
+    french.session.studyProfile = 'french';
+    await assert.rejects(provider.generateDiagnosis(french), /supports Mandarin only/);
+    await assert.rejects(provider.generatePromotion({ ...promotionBundle, studyProfile: 'french' }), /supports Mandarin only/);
+    assert.equal(capture.length, 0);
+  });
+
+  test('projects second-opinion content without losing supplements or changing retained evidence', async () => {
+    const capture: CapturedRequest[] = [];
+    const item = structuredClone(diagnosisBundle.items[0]!);
+    item.learnerRequestedReview = true;
+    item.sessionNote = 'Please explain this usage.';
+    item.servedCue.supplement = {
+      supplementId: 'private-supplement', englishFrame: 'An everyday use',
+      exampleSentence: '目标', exampleTranslation: 'A goal',
+    };
+    const evidence = {
+      schemaVersion: 'curated_reflection_diagnosis_bundle.v2' as const,
+      generatedAt: diagnosisBundle.generatedAt,
+      studyProfile: 'mandarin' as const,
+      items: [item],
+    };
+    const before = structuredClone(evidence);
+    const provider = createLunaReflectionProvider({
+      environment: { OPENAI_API_KEY: 'unit-test-secret' },
+      fetchImplementation: capturingFetch(responseEnvelope(JSON.stringify(validStagedDiagnosisWireResult)), capture),
+    });
+    await provider.generateDiagnosis(evidence);
+    const messages = capture[0]!.body.messages as Array<Record<string, JsonValue>>;
+    const projected = JSON.parse(String(messages[1]!.content));
+    assert.deepEqual(projected.items[0].servedCue.supplement, {
+      englishFrame: 'An everyday use', exampleSentence: '目标', exampleTranslation: 'A goal',
+    });
+    assert.equal(projected.items[0].learnerRequestedReview, true);
+    assert.equal(projected.items[0].sessionNote, item.sessionNote);
+    assert.deepEqual(projected.items[0].submittedWord, item.submittedWord);
+    assert.equal(projected.items[0].rawResponse, item.rawResponse);
+    assert.doesNotMatch(JSON.stringify(projected), /"(?:studyProfile|cueId|taskId|sourceAttemptId|acceptedWordIds|supplementId)"/);
+    assert.deepEqual(evidence, before);
   });
 
   test('retains a non-negative provider-reported request cost', async () => {

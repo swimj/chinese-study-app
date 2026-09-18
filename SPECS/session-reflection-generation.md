@@ -87,9 +87,8 @@ explicit no-clue response or a non-empty typed response outside the accepted
 answer space snapshotted on the served cue. A learner may mark an otherwise
 accepted Hanzi response wrong because they recalled its pronunciation
 incorrectly; that remains a study mistake but is not reflection-eligible in the
-initial flow. The accepted words are treated as a cue-scoped equivalence class
-for this exclusion; the legacy fallback's accepted space contains only the
-target word. No-clue evidence preserves a null raw response and null submitted
+initial flow. Word-owned accepted space now contains only the target word,
+including all migrated durable cues and fallback. No-clue evidence preserves a null raw response and null submitted
 word with the explicit `no_clue` discriminator; it is not relabeled as a typed
 mistake. Each item preserves at least:
 
@@ -137,14 +136,15 @@ marker.
 The marker and all learner-authored fields are hints, not strict content
 management directives. Backend reconstruction remains authoritative, and the
 prompt treats the marker only as a request for useful feedback. V4 retains that
-marker and pairs with the current V7 result contract; every item has a non-empty
+marker and pairs with the V7 diagnosis result contract; every item has a non-empty
 learner-facing explanation even when no proposal is warranted. V5 and V6
 results remain readable for immutable stored artifacts.
 
-All newly constructed provider bundles use V4, including sessions containing
+All newly constructed initial diagnosis bundles use V4, including sessions containing
 only ordinary failure evidence or no served supplement. V2 and V3 remain
 readable for immutable stored artifacts and exact-bundle retries, but new
-generation does not branch by marker or supplement presence.
+diagnosis does not branch by marker or supplement presence. The staged flow
+then retains V5 enriched evidence with a final V8 result, as described below.
 
 Learner-authored session notes, contrast-selection signals, learning/unstudied
 actions, and broader history require explicit evidence-kind and bundle-schema
@@ -176,6 +176,71 @@ Provider credentials and calls remain backend concerns. Provider/model identity,
 prompt version, bundle schema, result schema, and available response metadata are
 preserved so later review can distinguish what actually ran.
 
+### Staged pure-cue promotion
+
+New initial requests use `initial_post_session_reflection.v4`; new deferred
+second opinions use `deferred_second_opinion.v3`. Only the current staged
+generation contract and prompt identities can execute. Older artifacts remain
+readable, but their runs cannot be retried or their evidence repackaged into
+second opinions. Pending obsolete proposals cannot be authorized or applied.
+There is no one-shot retry compatibility path and no silent evidence upgrade.
+
+The server persists a continuation and exact diagnosis input before calling the
+provider. Diagnosis uses `staged_reflection_diagnosis_result.v1`: each item is
+either ordinary explanation/proposals or a shared-axis handoff, never both.
+The handoff describes an expressive instinct, its boundaries, and why the
+original response was valid for the served cue. Only explicit handoffs trigger
+enrichment with both words' active production cues and intersecting pure cues;
+diagnosis tags alone do not route an item. New targeted cues are owner-only.
+
+The active staged prompts target Mandarin; French is retired experimentation,
+not a supported staged-reflection path. The model receives a content-focused
+projection, not the complete durable evidence bundle. Stage-one input omits
+cue/task/attempt identities, deterministic answer membership, and study-profile
+configuration. The full evidence remains available internally for validation,
+normalization, and exact continuation checkpoints.
+
+Stage-one repair, suppression, and supplement wire operations omit `wordId`.
+Normalization resolves the containing `itemId` against that retained bundle
+and uses its `targetWord.wordId`; contrast membership remains model-authored.
+
+Stage-one repair output describes non-empty `replacementCues` (cue type and
+text), not persistence-level create/replace/deactivate operations. The adapter
+derives creation versus replacement, the served cue identity, and target-only
+acceptance from the original evidence. Standalone cue retirement remains a
+durable/manual capability, not a stage-one model choice. Suppression remains
+a separate semantic judgment about low production value, never an automatic
+translation of cue retirement. A target-only answer set is a storage invariant;
+natural cue design aims for strong target evocation, not guaranteed linguistic
+uniqueness. Subsequent practice can reveal ambiguity worth revisiting.
+
+Before either initial or second-opinion diagnosis, stable greedy admission
+excludes items whose target/identified response words overlap an already kept
+item. Initial admission then applies its item cap. Continuations record
+`overlapOmittedItemCount` separately from eligible/included counts. This bounded
+best-effort policy does not detect every shared destination conflict.
+
+The exact diagnosis, enriched final evidence, and bounded promotion input are
+saved before the conditional promotion-only call. That call uses a separate
+strict wire contract and Mandarin prompt, without model-facing study-profile
+configuration. It may
+return explicit disagreement or leave either word without distinctive drafts;
+the latter is the accepted production-proxy policy, not a generation failure.
+Stage two normally trusts the handoff and owns content reconciliation and the
+final learner explanation, including when it disagrees. Disagreement yields
+visible non-actionable feedback, never an ordinary proposal fallback. No model
+directs a database tool loop, and no intermediate learner artifact is created.
+
+The final V8 result excludes multi-answer word-owned drafts. Ordinary items
+retain stage-one feedback; routed items receive only stage-two feedback and
+its coordinated promotion or explicit disagreement outcome. Stage-one handoffs
+have no ordinary proposals to merge or discard. Each actual provider call has its own
+run, prompt/schema identity, usage, and failure accounting. The final artifact
+links to the completing run; its continuation retains the chain.
+
+See [`pure-cue-elicitation.md`](./pure-cue-elicitation.md) for promotion,
+compensation, and standalone scheduling policy.
+
 ## 5. Failure And Deliberate Retry
 
 Every generation failure is isolated from session correctness. A failure may be
@@ -188,8 +253,7 @@ deliberate retry. Retry:
 
 - reuses the exact backend-owned bundle rather than reconstructing current word
   or content context;
-- creates a new generation-attempt record rather than overwriting the failed
-  attempt;
+- creates a new generation-attempt record for each new provider call;
 - still passes provider output through the current strict result validator;
 - materializes a distinct successful candidate artifact with provenance back to
   its source run;
@@ -198,9 +262,17 @@ deliberate retry. Retry:
   configured comparison arm. Retry with an explicit current model remains
   available when the bundle is still retryable.
 
-A legacy failure without a retained valid bundle is not retryable. Changing the
-evidence, provider-flow contract, or intended interpretation requires a new
-versioned generation rather than calling an exact-bundle retry.
+A failure outside the current flow/bundle/prompt contract is not retryable,
+even if its evidence was retained. Study forward to obtain current evidence;
+the service does not upgrade historical work into a new generation contract.
+
+For staged flows, a promotion retry reuses the saved diagnosis and exact
+promotion input, without refreshing cues or regenerating diagnosis. Normal
+stages use the same selected model; an explicit retry-model override applies to
+the stage being called. If diagnosis is already saved and no promotion call is
+needed, retrying artifact persistence makes no provider call and preserves the
+original diagnosis model identity. Provider success followed by preparation or
+artifact-persistence failure remains visible and retryable, with usage retained.
 
 ## 6. Bounded Resource Exposure
 
@@ -210,7 +282,8 @@ A learner may deliberately compose a non-session reflection request from one
 or more deferred proposals. The backend resolves each selection to its
 learner-owned immutable source evidence, deduplicates a shared evidence item,
 and sends no prior proposal text, disposition, later attempt, or refreshed
-content state. The current request is capped at the same twenty-five distinct
+content state to diagnosis. A subsequent promotion stage enriches current cue
+state exactly once and saves it for retries. The current request is capped at the same twenty-five distinct
 evidence items as initial reflection; an over-limit request is rejected rather
 than truncated or partitioned automatically.
 
@@ -220,9 +293,13 @@ ids, while the provider envelope contains only its version, generation time,
 and remapped original evidence items. It never fabricates a session or sends
 prior proposal/review identifiers. It remaps provider item
 ids to avoid collisions between original artifacts. Model/provider/run/result
-validation is otherwise the ordinary V7 flow. A provider or validation failure
+validation now follows the same staged diagnosis/promotion flow. Its diagnosis
+envelope is `curated_reflection_diagnosis_bundle.v2`; final enriched evidence is
+`curated_reflection_bundle.v2`, with explicit study profile and no fabricated
+source session. Stored V1 curated evidence remains readable. A provider or validation failure
 leaves every selected original deferred. On successful durable materialization,
-only selections that remain deferred are retired atomically. The current
+only included selections that remain deferred are retired atomically. Selections
+omitted by word-overlap admission remain deferred. The current
 implementation records that retirement as the terminal review disposition
 `requested_second_opinion`; it is distinct from an explicit learner dismissal.
 

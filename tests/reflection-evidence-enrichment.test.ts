@@ -193,6 +193,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
 
     assert.equal(built.eligibleItemCount, 1);
     assert.equal(built.includedItemCount, 1);
+    assert.equal(built.overlapOmittedItemCount, 0);
     assert.equal(built.bundle.items.length, 1);
   });
 
@@ -213,18 +214,24 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
     ]);
   });
 
-  test('caps more than twenty-five eligible items at the backend bundle boundary', () => {
+  test('admits non-overlapping evidence before applying the backend item cap', () => {
     const additionalItems = Array.from({ length: 25 }, (_, index) => (
       insertEligibleProductionMistake(`additional-${index + 1}`)
     ));
+    const repeatedTarget = insertEligibleRepeatedTargetMistake('repeated-target');
     const built = buildInitialReflectionBundleWithMetrics(
       'session-1',
-      withItems(supplement('替代'), [supplement('替代').items[0]!, ...additionalItems]),
+      withItems(supplement('替代'), [
+        supplement('替代').items[0]!,
+        repeatedTarget,
+        ...additionalItems,
+      ]),
       generatedAt,
     );
 
-    assert.equal(built.eligibleItemCount, 26);
+    assert.equal(built.eligibleItemCount, 27);
     assert.equal(built.includedItemCount, 25);
+    assert.equal(built.overlapOmittedItemCount, 1);
     assert.equal(built.bundle.items.length, INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS);
     assert.deepEqual(
       built.bundle.items.map((item) => item.itemId),
@@ -447,7 +454,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
     }
   });
 
-  test('excludes an accepted non-anchor response that the learner rated forgot', () => {
+  test('rejects obsolete accepted-alternate evidence rather than regenerating reflection', () => {
     sqlite.prepare(`
       UPDATE study_attempt_events
       SET metadata_json = ?
@@ -461,7 +468,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
 
     assertEvidenceError(
       () => buildInitialReflectionBundle('session-1', supplement('替代'), generatedAt),
-      'no_qualifying_evidence',
+      'invalid_reference',
       400,
     );
   });
@@ -902,6 +909,41 @@ function insertEligibleProductionMistake(
       displayOrder: 0,
       text: `meaning ${suffix}`,
       displayedMeanings: [`meaning ${suffix}`],
+    }],
+    rawResponse: response,
+    responseKind: 'typed',
+    attemptIds: [`attempt-${suffix}-1`, `attempt-${suffix}-2`],
+  };
+}
+
+function insertEligibleRepeatedTargetMistake(
+  suffix: string,
+): SessionReflectionEvidenceSupplementV1['items'][number] {
+  const actionId = `action-${suffix}`;
+  const response = `wrong-${suffix}`;
+  sqlite.prepare(`
+    INSERT INTO study_attempt_events (
+      id, occurred_at, session_id, session_action_id, session_event_sequence,
+      action_attempt_sequence, action_kind, target_word_id,
+      sampled_skill_ids_json, response, outcome, rating, projected_at
+    ) VALUES
+      (?, ?, 'session-1', ?, 1, 1, 'production', 'target', '["production"]', ?, 'incorrect', 'forgot', ?),
+      (?, ?, 'session-1', ?, 2, 2, 'production', 'target', '["production"]', ?, 'correct', 'good', ?)
+  `).run(
+    `attempt-${suffix}-1`, completedAt, actionId, response, completedAt,
+    `attempt-${suffix}-2`, completedAt, actionId, `correct-${suffix}`, completedAt,
+  );
+
+  return {
+    itemId: `production-mistake:${actionId}`,
+    sessionActionId: actionId,
+    targetWordId: 'target',
+    cuesAsShown: [{
+      cueId: null,
+      cueType: 'definition_gloss',
+      displayOrder: 0,
+      text: 'goal; objective',
+      displayedMeanings: ['goal', 'objective'],
     }],
     rawResponse: response,
     responseKind: 'typed',

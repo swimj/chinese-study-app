@@ -15,6 +15,8 @@ import type {
   SessionReflectionBundleV5,
   PureCuePromotionBundleV1,
   CuratedReflectionBundleV1,
+  CuratedReflectionBundleV2,
+  CuratedReflectionDiagnosisBundleV2,
 } from './reflection';
 
 export type ProductionMistakeCueEvidenceV1 = Omit<ReflectionCueSnapshotV0, 'cueType'> & {
@@ -450,7 +452,7 @@ export function parseSessionReflectionBundleV5(value: unknown): SessionReflectio
 export function parsePureCuePromotionBundleV1(value: unknown): PureCuePromotionBundleV1 {
   const errors = validateObjectFields(
     value,
-    ['schemaVersion', 'generatedAt', 'sessionId', 'studyProfile', 'items'],
+    ['schemaVersion', 'generatedAt', 'sourceSessionId', 'studyProfile', 'items'],
     '$',
   );
   if (isRecord(value)) {
@@ -458,7 +460,9 @@ export function parsePureCuePromotionBundleV1(value: unknown): PureCuePromotionB
       errors.push('$.schemaVersion: expected pure_cue_promotion_bundle.v1');
     }
     errors.push(...validateUtcTimestamp(value.generatedAt, '$.generatedAt'));
-    errors.push(...validateId(value.sessionId, '$.sessionId'));
+    if (value.sourceSessionId !== null) {
+      errors.push(...validateId(value.sourceSessionId, '$.sourceSessionId'));
+    }
     if (typeof value.studyProfile !== 'string' || !studyProfiles.has(value.studyProfile)) {
       errors.push('$.studyProfile: value is not in the allowed enum');
     }
@@ -477,7 +481,7 @@ export function parsePureCuePromotionBundleV1(value: unknown): PureCuePromotionB
             'targetWord',
             'responseWord',
             'servedCue',
-            'learnerExplanation',
+            'handoff',
             'promotionEvidence',
           ],
           path,
@@ -503,7 +507,7 @@ export function parsePureCuePromotionBundleV1(value: unknown): PureCuePromotionB
           `${path}.servedCue`,
           targetWordId,
         ));
-        errors.push(...validateNonEmptyString(item.learnerExplanation, `${path}.learnerExplanation`));
+        errors.push(...validateSharedAxisHandoff(item.handoff, `${path}.handoff`));
         errors.push(...validatePureCuePromotionEvidence(
           item.promotionEvidence,
           `${path}.promotionEvidence`,
@@ -515,6 +519,75 @@ export function parsePureCuePromotionBundleV1(value: unknown): PureCuePromotionB
   }
   if (errors.length > 0) throw new Error(`Invalid pure-cue promotion bundle V1:\n${errors.join('\n')}`);
   return value as PureCuePromotionBundleV1;
+}
+
+function validateSharedAxisHandoff(value: unknown, path: string): string[] {
+  const errors = validateObjectFields(
+    value,
+    ['axis', 'boundaries', 'responseValidity'],
+    path,
+  );
+  if (!isRecord(value)) return errors;
+  errors.push(...validateNonEmptyString(value.axis, `${path}.axis`));
+  errors.push(...validateNonEmptyString(value.boundaries, `${path}.boundaries`));
+  errors.push(...validateNonEmptyString(value.responseValidity, `${path}.responseValidity`));
+  return errors;
+}
+
+export function parseCuratedReflectionBundleV2(value: unknown): CuratedReflectionBundleV2 {
+  if (!isRecord(value)) throw new Error('Invalid curated reflection bundle V2');
+  const { items, studyProfile, ...envelope } = value;
+  const profile = typeof studyProfile === 'string' && studyProfiles.has(studyProfile)
+    ? studyProfile
+    : 'mandarin';
+  const errors = validateSessionReflectionBundleV5WithOptions(
+    {
+      generatedAt: value.generatedAt,
+      session: { sessionId: 'validation-only', startedAt: null, endedAt: null, studyProfile: profile },
+      items,
+      schemaVersion: 'session_reflection_bundle.v5',
+    },
+    false,
+  );
+  errors.push(...validateObjectFields(envelope, ['schemaVersion', 'generatedAt'], '$'));
+  if (value.schemaVersion !== 'curated_reflection_bundle.v2') {
+    errors.push('$.schemaVersion: expected curated_reflection_bundle.v2');
+  }
+  if (typeof studyProfile !== 'string' || !studyProfiles.has(studyProfile)) {
+    errors.push('$.studyProfile: value is not in the allowed enum');
+  }
+  if (errors.length > 0) throw new Error(`Invalid curated reflection bundle V2:\n${errors.join('\n')}`);
+  return value as CuratedReflectionBundleV2;
+}
+
+export function parseCuratedReflectionDiagnosisBundleV2(
+  value: unknown,
+): CuratedReflectionDiagnosisBundleV2 {
+  if (!isRecord(value)) throw new Error('Invalid curated reflection diagnosis bundle V2');
+  const { items, studyProfile, ...envelope } = value;
+  const profile = typeof studyProfile === 'string' && studyProfiles.has(studyProfile)
+    ? studyProfile
+    : 'mandarin';
+  const errors = validateSessionReflectionBundleV4WithOptions(
+    {
+      generatedAt: value.generatedAt,
+      session: { sessionId: 'validation-only', startedAt: null, endedAt: null, studyProfile: profile },
+      items,
+      schemaVersion: 'session_reflection_bundle.v4',
+    },
+    false,
+  );
+  errors.push(...validateObjectFields(envelope, ['schemaVersion', 'generatedAt'], '$'));
+  if (value.schemaVersion !== 'curated_reflection_diagnosis_bundle.v2') {
+    errors.push('$.schemaVersion: expected curated_reflection_diagnosis_bundle.v2');
+  }
+  if (typeof studyProfile !== 'string' || !studyProfiles.has(studyProfile)) {
+    errors.push('$.studyProfile: value is not in the allowed enum');
+  }
+  if (errors.length > 0) {
+    throw new Error(`Invalid curated reflection diagnosis bundle V2:\n${errors.join('\n')}`);
+  }
+  return value as CuratedReflectionDiagnosisBundleV2;
 }
 
 export function parseCuratedReflectionBundleV1(value: unknown): CuratedReflectionBundleV1 {
@@ -549,6 +622,9 @@ export function parseStoredSessionReflectionBundle(value: unknown): SessionRefle
   }
   if (isRecord(value) && value.schemaVersion === 'session_reflection_bundle.v5') {
     return parseSessionReflectionBundleV5(value);
+  }
+  if (isRecord(value) && value.schemaVersion === 'curated_reflection_bundle.v2') {
+    return parseCuratedReflectionBundleV2(value);
   }
   if (isRecord(value) && value.schemaVersion === 'curated_reflection_bundle.v1') {
     return parseCuratedReflectionBundleV1(value);

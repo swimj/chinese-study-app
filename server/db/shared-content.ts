@@ -1270,7 +1270,7 @@ function authorizedProductionCueRetirement(rawOperation: string, cueId: string):
 function parsedInvocationOperation(rawOperation: string): Record<string, unknown> | null {
   try {
     const envelope: unknown = JSON.parse(rawOperation);
-    return isRecord(envelope) ? envelope : null;
+    return isRecord(envelope) && isRecord(envelope.operation) ? envelope.operation : null;
   } catch {
     return null;
   }

@@ -49,6 +49,12 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0010_strict_word_cues',
   sql: fs.readFileSync(new URL('./migrations/0010_strict_word_cues.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0011_reflection_generation_continuations',
+  sql: fs.readFileSync(
+    new URL('./migrations/0011_reflection_generation_continuations.sql', import.meta.url),
+    'utf8',
+  ),
 }];
 
 function checksum(value: string): string {

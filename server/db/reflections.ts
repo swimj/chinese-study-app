@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { selectNonOverlappingReflectionItems } from '../reflection/bundle-admission.ts';
 import type {
   EffectRef,
   OperationApplicationStatus,
@@ -21,6 +22,10 @@ import type {
   SessionReflectionBundleV4,
   SessionReflectionBundleV5,
   CuratedReflectionBundleV1,
+  CuratedReflectionBundleV2,
+  CuratedReflectionDiagnosisBundleV2,
+  PureCuePromotionBundleV1,
+  PureCuePromotionResultV1Wire,
   SessionReflectionResult,
   SessionReflectionResultV4,
   SessionReflectionResultV5,
@@ -28,6 +33,7 @@ import type {
   ReflectionHelpInboxEntry,
   SessionReflectionResultV6,
   SessionReflectionResultV7,
+  StagedReflectionDiagnosisResultV1,
   SessionReflectionResultV8,
   PromotePureElicitationOperationV1,
 } from '../../src/domain/reflection.ts';
@@ -43,18 +49,33 @@ import {
   validateSessionReflectionResultV5,
   validateSessionReflectionResultV6,
   validateSessionReflectionResultV7,
+  validateStagedReflectionDiagnosisResultV1,
   validateSessionReflectionResultV8,
 } from '../../src/domain/reflection.ts';
-import { parseStoredSessionReflectionBundle } from '../../src/domain/reflection-evidence.ts';
+import {
+  parseCuratedReflectionDiagnosisBundleV2,
+  parsePureCuePromotionBundleV1,
+  parseStoredSessionReflectionBundle,
+} from '../../src/domain/reflection-evidence.ts';
 import type { NormalizedTokenUsage } from '../llm/types.ts';
 import type { ReflectionGenerationDiagnostic } from '../reflection/run-diagnostics.ts';
+import {
+  CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION,
+  CURRENT_INITIAL_REFLECTION_FLOW_VERSION,
+  PURE_CUE_PROMOTION_PROMPT_VERSION,
+  STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
+  isCurrentReflectionArtifactContract,
+  isCurrentReflectionFlowVersion,
+  isCurrentReflectionGenerationStage,
+} from '../../src/domain/reflection-contracts.ts';
 import {
   buildReflectionSpendCap,
   utcDayKey,
   utcDayRange,
   type ReflectionSpendCap,
 } from '../reflection/spend-cap.ts';
-import { dbPath, getDb } from './connection.ts';
+import { dbPath, getConfig, getDb } from './connection.ts';
+import { requireLearnerId } from './learner-context.ts';
 import {
   learnerScopedStorageTableName,
   physicalLearnerTableName,
@@ -88,6 +109,7 @@ import {
   createPureCueWithoutTransaction,
   extendPureCueAcceptedWordsWithoutTransaction,
   getPureCueContent,
+  getActivePureCuesAcceptingAny,
   restoreProductionSchedulerSnapshotWithoutTransaction,
 } from './pure-cues.ts';
 import {
@@ -98,7 +120,11 @@ import {
 import { stampProposalInboxSeenIfLeavingPending } from './attention.ts';
 
 export const INITIAL_REFLECTION_FLOW_VERSION = 'initial_post_session_reflection.v2';
+export const STAGED_INITIAL_REFLECTION_FLOW_VERSION = CURRENT_INITIAL_REFLECTION_FLOW_VERSION;
+export const LEGACY_INITIAL_REFLECTION_FLOW_VERSION = INITIAL_REFLECTION_FLOW_VERSION;
 export const DEFERRED_SECOND_OPINION_FLOW_VERSION = 'deferred_second_opinion.v1';
+export const STAGED_DEFERRED_SECOND_OPINION_FLOW_VERSION = CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION;
+export const LEGACY_DEFERRED_SECOND_OPINION_FLOW_VERSION = DEFERRED_SECOND_OPINION_FLOW_VERSION;
 export const DEFERRED_SECOND_OPINION_MAX_EVIDENCE_ITEMS = 25;
 
 export class DeferredSecondOpinionError extends Error {
@@ -121,6 +147,7 @@ type MaterializeReflectionArtifactBase = {
   provider: string;
   model: string;
   promptVersion: string;
+  continuationId?: string;
 };
 
 export type MaterializeReflectionArtifactInput = MaterializeReflectionArtifactBase & (
@@ -134,11 +161,21 @@ export type MaterializeReflectionArtifactInput = MaterializeReflectionArtifactBa
   | { evidenceBundle: SessionReflectionBundleV3; result: SessionReflectionResultV7 }
   | { evidenceBundle: SessionReflectionBundleV5; result: SessionReflectionResultV8 }
   | {
+      evidenceBundle: CuratedReflectionBundleV2;
+      result: SessionReflectionResultV8;
+      sourceProposalIds: string[];
+    }
+  | {
       evidenceBundle: CuratedReflectionBundleV1;
       result: SessionReflectionResultV7;
       sourceProposalIds: string[];
     }
 );
+
+export type ReflectionGenerationProviderBundle =
+  | SessionReflectionBundle
+  | CuratedReflectionDiagnosisBundleV2
+  | PureCuePromotionBundleV1;
 
 export type ReflectionGenerationRunState = 'in_flight' | 'succeeded' | 'failed';
 
@@ -179,19 +216,8 @@ export type RecordReflectionGenerationRunInput = Omit<
   bundleSchemaVersion?: string | null;
   resultSchemaVersion?: string | null;
   diagnostic?: ReflectionGenerationDiagnostic | null;
-  evidenceBundle: SessionReflectionBundle;
+  evidenceBundle: ReflectionGenerationProviderBundle;
   sourceProposalIds?: string[] | null;
-};
-
-export type ReflectionGenerationRetrySource = {
-  runId: string;
-  sourceSessionId: string | null;
-  reflectionFlowVersion: string;
-  model: string;
-  eligibleItemCount: number;
-  includedItemCount: number;
-  evidenceBundle: SessionReflectionBundle;
-  sourceProposalIds?: string[];
 };
 
 export type StartReflectionGenerationRunInput = {
@@ -206,8 +232,36 @@ export type StartReflectionGenerationRunInput = {
   clientRequestId: string;
   eligibleItemCount: number;
   includedItemCount: number;
-  evidenceBundle: SessionReflectionBundle;
+  evidenceBundle: ReflectionGenerationProviderBundle;
   sourceProposalIds?: string[] | null;
+};
+
+export type ReflectionGenerationContinuationStage = 'diagnosis' | 'promotion';
+
+export type ReflectionGenerationContinuation = {
+  continuationId: string;
+  sourceSessionId: string | null;
+  reflectionFlowVersion: string;
+  createdAt: string;
+  eligibleItemCount: number;
+  includedItemCount: number;
+  diagnosisBundle: SessionReflectionBundleV4 | CuratedReflectionDiagnosisBundleV2;
+  sourceProposalIds: string[] | null;
+  overlapOmittedItemCount: number;
+  diagnosisResult: StagedReflectionDiagnosisResultV1 | null;
+  finalEvidenceBundle: SessionReflectionBundleV5 | CuratedReflectionBundleV2 | null;
+  promotionBundle: PureCuePromotionBundleV1 | null;
+  artifactId: string | null;
+};
+
+export type ReflectionGenerationContinuationRetrySource = {
+  runId: string;
+  continuation: ReflectionGenerationContinuation;
+  stage: ReflectionGenerationContinuationStage;
+  provider: string;
+  model: string;
+  providerModel: string;
+  promptVersion: string;
 };
 
 /**
@@ -265,6 +319,20 @@ export type ReflectionArtifactDetail = ReflectionArtifactRecord & {
   qualityItemTags: ReflectionQualityItemTags[];
   helpInbox: ReflectionHelpInboxEntry[];
 };
+
+export function reflectionArtifactSupportsCurrentActions(
+  artifact: Pick<
+    ReflectionArtifactRecord,
+    'reflectionFlowVersion' | 'bundleSchemaVersion' | 'resultSchemaVersion' | 'promptVersion'
+  >,
+): boolean {
+  return isCurrentReflectionArtifactContract({
+    reflectionFlowVersion: artifact.reflectionFlowVersion,
+    bundleSchemaVersion: artifact.bundleSchemaVersion,
+    resultSchemaVersion: artifact.resultSchemaVersion,
+    promptVersion: artifact.promptVersion,
+  });
+}
 
 export type ReflectionArtifactSummary = Omit<
   ReflectionArtifactRecord,
@@ -412,6 +480,18 @@ type InvocationRow = {
   effect_refs_json: string;
   satisfying_effect_refs_json: string;
 };
+
+type StoredInvocationOperationV1 = {
+  schemaVersion: 'reflection_invocation_operation.v1';
+  sourceArtifactId: string;
+  sourceItemId: string;
+  operation: ReflectionOperation;
+};
+
+const LEGACY_REFLECTION_READ_ONLY_MESSAGE = (
+  'This reflection was generated by an older contract and is read-only. '
+  + 'Its saved result remains available, but it cannot authorize or apply changes.'
+);
 
 const artifactColumns = [
   'artifact_id',
@@ -924,24 +1004,51 @@ export function materializeReflectionArtifact(
   assertNonEmpty(input.promptVersion, 'prompt version');
   assertIsoTimestamp(input.generatedAt, 'generation timestamp');
   if (
-    input.sourceSessionId !== null
-    && (!('session' in input.evidenceBundle) || input.evidenceBundle.session.sessionId !== input.sourceSessionId)
+    (
+      input.sourceSessionId !== null
+      || input.reflectionFlowVersion === STAGED_INITIAL_REFLECTION_FLOW_VERSION
+      || input.reflectionFlowVersion === STAGED_DEFERRED_SECOND_OPINION_FLOW_VERSION
+    )
+    && providerBundleSourceSessionId(input.evidenceBundle) !== input.sourceSessionId
   ) {
     throw new Error('Reflection evidence session does not match the source session id.');
   }
   if (
-    input.reflectionFlowVersion === INITIAL_REFLECTION_FLOW_VERSION
+    input.reflectionFlowVersion === LEGACY_INITIAL_REFLECTION_FLOW_VERSION
     && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v2'
     && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v3'
     && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v4'
   ) {
-    throw new Error('The current reflection flow requires a V2, V3, or V4 evidence bundle.');
+    throw new Error('The legacy initial reflection flow requires a V2, V3, or V4 evidence bundle.');
   }
   if (
-    input.reflectionFlowVersion === DEFERRED_SECOND_OPINION_FLOW_VERSION
+    input.reflectionFlowVersion === STAGED_INITIAL_REFLECTION_FLOW_VERSION
+    && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v5'
+  ) {
+    throw new Error('The staged initial reflection flow requires a V5 evidence bundle.');
+  }
+  if (
+    input.reflectionFlowVersion === LEGACY_DEFERRED_SECOND_OPINION_FLOW_VERSION
     && input.evidenceBundle.schemaVersion !== 'curated_reflection_bundle.v1'
   ) {
-    throw new Error('The deferred second-opinion flow requires a curated deferred evidence bundle.');
+    throw new Error('The legacy deferred second-opinion flow requires a V1 curated bundle.');
+  }
+  if (
+    input.reflectionFlowVersion === STAGED_DEFERRED_SECOND_OPINION_FLOW_VERSION
+    && input.evidenceBundle.schemaVersion !== 'curated_reflection_bundle.v2'
+  ) {
+    throw new Error('The staged deferred second-opinion flow requires a V2 curated bundle.');
+  }
+  if (
+    isCurrentReflectionFlowVersion(input.reflectionFlowVersion)
+    && !isCurrentReflectionArtifactContract({
+      reflectionFlowVersion: input.reflectionFlowVersion,
+      bundleSchemaVersion: input.evidenceBundle.schemaVersion,
+      resultSchemaVersion: input.result.schemaVersion,
+      promptVersion: input.promptVersion,
+    })
+  ) {
+    throw new Error('The current reflection flow requires current final bundle, result, and prompt versions.');
   }
   assertCuratedSourceProposalProvenance(input.evidenceBundle, input.sourceProposalIds);
   const validationErrors = validateReflectionArtifactPair(input.result, input.evidenceBundle);
@@ -1013,12 +1120,34 @@ export function materializeReflectionArtifact(
           );
         }
       }
+
+      if (input.continuationId !== undefined) {
+        const updated = database.prepare(`
+          UPDATE reflection_generation_continuations
+          SET artifact_id = ?
+          WHERE learner_id = current_learner_id()
+            AND continuation_id = ?
+            AND artifact_id IS NULL
+            AND final_evidence_bundle_json = ?
+            AND diagnosis_result_json IS NOT NULL
+        `).run(
+          artifactId,
+          input.continuationId,
+          JSON.stringify(input.evidenceBundle),
+        );
+        if (updated.changes !== 1) {
+          throw new Error('Reflection generation continuation is not ready for final materialization.');
+        }
+      }
       seedReflectionHelpInboxWithoutTransaction(
         artifactId,
         explanationItemIds,
         input.generatedAt,
       );
-      if (input.evidenceBundle.schemaVersion === 'curated_reflection_bundle.v1') {
+      if (
+        input.evidenceBundle.schemaVersion === 'curated_reflection_bundle.v1'
+        || input.evidenceBundle.schemaVersion === 'curated_reflection_bundle.v2'
+      ) {
         const selection = input.sourceProposalIds;
         if (selection === undefined || selection.length === 0) {
           throw new DeferredSecondOpinionError('Second-opinion selection provenance is required.');
@@ -1229,21 +1358,25 @@ export function recordReflectionGenerationRun(
     throw new Error('Included reflection evidence item count cannot exceed eligible item count.');
   }
   if (
-    input.sourceSessionId !== null
-    && (!('session' in input.evidenceBundle) || input.evidenceBundle.session.sessionId !== input.sourceSessionId)
+    (
+      input.sourceSessionId !== null
+      || input.reflectionFlowVersion === STAGED_INITIAL_REFLECTION_FLOW_VERSION
+      || input.reflectionFlowVersion === STAGED_DEFERRED_SECOND_OPINION_FLOW_VERSION
+    )
+    && providerBundleSourceSessionId(input.evidenceBundle) !== input.sourceSessionId
   ) {
     throw new Error('Reflection generation run source session does not match its evidence bundle.');
   }
   if (
-    input.reflectionFlowVersion === INITIAL_REFLECTION_FLOW_VERSION
+    input.reflectionFlowVersion === LEGACY_INITIAL_REFLECTION_FLOW_VERSION
     && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v2'
     && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v3'
     && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v4'
   ) {
-    throw new Error('The current reflection flow requires a V2, V3, or V4 retained evidence bundle.');
+    throw new Error('The legacy reflection flow requires a V2, V3, or V4 retained evidence bundle.');
   }
   assertCuratedSourceProposalProvenance(input.evidenceBundle, input.sourceProposalIds);
-  parseStoredSessionReflectionBundle(input.evidenceBundle);
+  parseReflectionGenerationProviderBundle(input.evidenceBundle);
   assertNormalizedUsage(input.usage);
   if (input.estimatedCostUsd !== null && (!Number.isFinite(input.estimatedCostUsd)
     || input.estimatedCostUsd < 0)) {
@@ -1293,9 +1426,11 @@ export function recordReflectionGenerationRun(
         || input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v3'
         || input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v4'
         || input.evidenceBundle.schemaVersion === 'curated_reflection_bundle.v1'
+        || input.evidenceBundle.schemaVersion === 'curated_reflection_diagnosis_bundle.v2'
       )
         ? (input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v4'
-          || input.evidenceBundle.schemaVersion === 'curated_reflection_bundle.v1')
+          || input.evidenceBundle.schemaVersion === 'curated_reflection_bundle.v1'
+          || input.evidenceBundle.schemaVersion === 'curated_reflection_diagnosis_bundle.v2')
           ? 'session_reflection_result.v7'
           : 'session_reflection_result.v6'
         : 'session_reflection_result.v4'
@@ -1339,9 +1474,15 @@ export function startReflectionGenerationRun(input: StartReflectionGenerationRun
   assertCount(input.eligibleItemCount, 'eligible reflection evidence item count');
   assertCount(input.includedItemCount, 'included reflection evidence item count');
   if (input.includedItemCount > input.eligibleItemCount) throw new Error('Included reflection evidence item count cannot exceed eligible item count.');
-  if (input.sourceSessionId !== null
-    && (!('session' in input.evidenceBundle) || input.evidenceBundle.session.sessionId !== input.sourceSessionId)) throw new Error('Reflection generation run source session does not match its evidence bundle.');
-  parseStoredSessionReflectionBundle(input.evidenceBundle);
+  if (
+    (
+      input.sourceSessionId !== null
+      || input.reflectionFlowVersion === STAGED_INITIAL_REFLECTION_FLOW_VERSION
+      || input.reflectionFlowVersion === STAGED_DEFERRED_SECOND_OPINION_FLOW_VERSION
+    )
+    && providerBundleSourceSessionId(input.evidenceBundle) !== input.sourceSessionId
+  ) throw new Error('Reflection generation run source session does not match its evidence bundle.');
+  parseReflectionGenerationProviderBundle(input.evidenceBundle);
   assertCuratedSourceProposalProvenance(input.evidenceBundle, input.sourceProposalIds);
   getDb().prepare(`
     INSERT INTO reflection_generation_run_starts (
@@ -1371,13 +1512,22 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
     run_id: string; source_session_id: string | null; reflection_flow_version: string;
     started_at: string; provider: string; model: string; provider_model: string; prompt_version: string;
     client_request_id: string; eligible_item_count: number; included_item_count: number;
+    evidence_bundle_json: string;
   }>;
   const inFlight = activeRows.map((row): ReflectionGenerationRunRecord => ({
     runId: row.run_id, sourceSessionId: row.source_session_id, reflectionFlowVersion: row.reflection_flow_version,
     startedAt: row.started_at, completedAt: null, provider: row.provider, model: row.model,
     providerModel: row.provider_model, promptVersion: row.prompt_version, responseId: null,
-    clientRequestId: row.client_request_id, finishReason: null, bundleSchemaVersion: 'session_reflection_bundle.v4',
-    resultSchemaVersion: 'session_reflection_result.v7', diagnostic: null, state: 'in_flight', failureCode: null,
+    clientRequestId: row.client_request_id, finishReason: null,
+    bundleSchemaVersion: parseReflectionGenerationProviderBundle(
+      parseJson(row.evidence_bundle_json, `reflection run ${row.run_id} input`),
+    ).schemaVersion,
+    resultSchemaVersion: row.prompt_version === PURE_CUE_PROMOTION_PROMPT_VERSION
+      ? 'pure_cue_promotion_result.v1'
+      : row.prompt_version === STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION
+        ? 'staged_reflection_diagnosis_result.v1'
+        : 'session_reflection_result.v7',
+    diagnostic: null, state: 'in_flight', failureCode: null,
     eligibleItemCount: row.eligible_item_count, includedItemCount: row.included_item_count,
     usage: { inputTokens: null, cachedInputTokens: null, cacheWriteInputTokens: null, outputTokens: null, reasoningTokens: null, totalTokens: null },
     pricingSnapshotId: null, pricingAsOf: null, pricingBasis: null, estimatedCostUsd: null, retryable: false,
@@ -1385,7 +1535,38 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
   if (inFlight.length >= limit) return inFlight;
   const concludedRows = getDb().prepare(`
     SELECT ${reflectionGenerationRunColumns.map((column) => `runs.${column}`).join(', ')},
-      CASE WHEN runs.evidence_bundle_json IS NOT NULL THEN 1 ELSE 0 END AS retryable
+      CASE WHEN runs.state = 'failed' AND runs.evidence_bundle_json IS NOT NULL AND EXISTS (
+        SELECT 1
+        FROM reflection_generation_continuation_runs AS links
+        JOIN reflection_generation_continuations AS continuations
+          ON continuations.learner_id = links.learner_id
+          AND continuations.continuation_id = links.continuation_id
+        WHERE links.learner_id = current_learner_id()
+          AND links.run_id = runs.run_id
+          AND continuations.artifact_id IS NULL
+          AND continuations.reflection_flow_version = runs.reflection_flow_version
+          AND (
+            (
+              links.stage = 'diagnosis'
+              AND runs.prompt_version = '${STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION}'
+              AND (
+                (runs.reflection_flow_version = '${CURRENT_INITIAL_REFLECTION_FLOW_VERSION}'
+                  AND runs.bundle_schema_version = 'session_reflection_bundle.v4')
+                OR (runs.reflection_flow_version = '${CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION}'
+                  AND runs.bundle_schema_version = 'curated_reflection_diagnosis_bundle.v2')
+              )
+            )
+            OR (
+              links.stage = 'promotion'
+              AND runs.reflection_flow_version IN (
+                '${CURRENT_INITIAL_REFLECTION_FLOW_VERSION}',
+                '${CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION}'
+              )
+              AND runs.bundle_schema_version = 'pure_cue_promotion_bundle.v1'
+              AND runs.prompt_version = '${PURE_CUE_PROMOTION_PROMPT_VERSION}'
+            )
+          )
+      ) THEN 1 ELSE 0 END AS retryable
     FROM reflection_generation_runs AS runs
     ORDER BY completed_at DESC, run_id ASC
     LIMIT ?
@@ -1407,61 +1588,42 @@ export function getReflectionSpendCap(now = new Date()): ReflectionSpendCap {
 function getReflectionGenerationRun(runId: string): ReflectionGenerationRunRecord {
   const row = getDb().prepare(`
     SELECT ${reflectionGenerationRunColumns.map((column) => `runs.${column}`).join(', ')},
-      CASE WHEN runs.evidence_bundle_json IS NOT NULL THEN 1 ELSE 0 END AS retryable
+      CASE WHEN runs.state = 'failed' AND runs.evidence_bundle_json IS NOT NULL AND EXISTS (
+        SELECT 1 FROM reflection_generation_continuation_runs AS links
+        JOIN reflection_generation_continuations AS continuations
+          ON continuations.learner_id = links.learner_id
+          AND continuations.continuation_id = links.continuation_id
+        WHERE links.learner_id = current_learner_id()
+          AND links.run_id = runs.run_id
+          AND continuations.artifact_id IS NULL
+          AND continuations.reflection_flow_version = runs.reflection_flow_version
+          AND (
+            (
+              links.stage = 'diagnosis'
+              AND runs.prompt_version = '${STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION}'
+              AND (
+                (runs.reflection_flow_version = '${CURRENT_INITIAL_REFLECTION_FLOW_VERSION}'
+                  AND runs.bundle_schema_version = 'session_reflection_bundle.v4')
+                OR (runs.reflection_flow_version = '${CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION}'
+                  AND runs.bundle_schema_version = 'curated_reflection_diagnosis_bundle.v2')
+              )
+            )
+            OR (
+              links.stage = 'promotion'
+              AND runs.reflection_flow_version IN (
+                '${CURRENT_INITIAL_REFLECTION_FLOW_VERSION}',
+                '${CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION}'
+              )
+              AND runs.bundle_schema_version = 'pure_cue_promotion_bundle.v1'
+              AND runs.prompt_version = '${PURE_CUE_PROMOTION_PROMPT_VERSION}'
+            )
+          )
+      ) THEN 1 ELSE 0 END AS retryable
     FROM reflection_generation_runs AS runs
     WHERE runs.run_id = ?
   `).get(runId) as ReflectionGenerationRunRow | undefined;
   if (!row) throw new Error('Reflection generation run not found.');
   return mapReflectionGenerationRunRow(row);
-}
-
-export function getReflectionGenerationRetrySource(
-  runId: string,
-): ReflectionGenerationRetrySource {
-  const normalizedRunId = runId.trim();
-  if (normalizedRunId.length === 0) {
-    throw new Error('Expected non-empty reflection generation run id.');
-  }
-  const row = getDb().prepare(`
-    SELECT ${reflectionGenerationRunColumns.map((column) => `runs.${column}`).join(', ')},
-      CASE WHEN runs.evidence_bundle_json IS NOT NULL THEN 1 ELSE 0 END AS retryable
-    FROM reflection_generation_runs AS runs
-    WHERE runs.run_id = ?
-  `).get(normalizedRunId) as ReflectionGenerationRunRow | undefined;
-  if (!row) throw new Error('Reflection generation run not found.');
-  if (row.retryable !== 1 || row.evidence_bundle_json === null) {
-    throw new Error('Reflection generation run is not retryable.');
-  }
-
-  let evidenceBundle: SessionReflectionBundle;
-  try {
-    evidenceBundle = parseStoredSessionReflectionBundle(parseJson(
-      row.evidence_bundle_json,
-      `reflection generation run ${row.run_id} evidence bundle`,
-    ));
-  } catch (error) {
-    throw corruptionError(error instanceof Error ? error.message : String(error));
-  }
-  if (
-    row.source_session_id !== null
-    && (!('session' in evidenceBundle) || evidenceBundle.session.sessionId !== row.source_session_id)
-  ) {
-    throw corruptionError(
-      `reflection generation run ${row.run_id} source session does not match its evidence`,
-    );
-  }
-  return {
-    runId: row.run_id,
-    sourceSessionId: row.source_session_id,
-    reflectionFlowVersion: row.reflection_flow_version,
-    model: row.model,
-    eligibleItemCount: row.eligible_item_count,
-    includedItemCount: row.included_item_count,
-    evidenceBundle,
-    ...(row.source_proposal_ids_json === null
-      ? {}
-      : { sourceProposalIds: parseSourceProposalIds(row.source_proposal_ids_json, row.run_id) }),
-  };
 }
 
 function parseSourceProposalIds(value: string, runId: string): string[] {
@@ -1472,11 +1634,372 @@ function parseSourceProposalIds(value: string, runId: string): string[] {
   return parsed;
 }
 
+function providerBundleSourceSessionId(bundle: ReflectionGenerationProviderBundle): string | null {
+  if ('session' in bundle) return bundle.session.sessionId;
+  if (bundle.schemaVersion === 'pure_cue_promotion_bundle.v1') return bundle.sourceSessionId;
+  return null;
+}
+
+function parseReflectionGenerationProviderBundle(
+  value: unknown,
+): ReflectionGenerationProviderBundle {
+  if (isRecord(value) && value.schemaVersion === 'pure_cue_promotion_bundle.v1') {
+    return parsePureCuePromotionBundleV1(value);
+  }
+  if (isRecord(value) && value.schemaVersion === 'curated_reflection_diagnosis_bundle.v2') {
+    return parseCuratedReflectionDiagnosisBundleV2(value);
+  }
+  return parseStoredSessionReflectionBundle(value);
+}
+
+export function createReflectionGenerationContinuation(input: {
+  continuationId?: string;
+  sourceSessionId: string | null;
+  reflectionFlowVersion: string;
+  createdAt: string;
+  eligibleItemCount: number;
+  includedItemCount: number;
+  overlapOmittedItemCount?: number;
+  diagnosisBundle: SessionReflectionBundleV4 | CuratedReflectionDiagnosisBundleV2;
+  sourceProposalIds?: string[];
+}): ReflectionGenerationContinuation {
+  const continuationId = input.continuationId ?? randomUUID();
+  assertNonEmpty(continuationId, 'reflection continuation id');
+  assertIsoTimestamp(input.createdAt, 'reflection continuation creation time');
+  assertCount(input.eligibleItemCount, 'eligible reflection evidence item count');
+  assertCount(input.includedItemCount, 'included reflection evidence item count');
+  const overlapOmittedItemCount = input.overlapOmittedItemCount ?? 0;
+  assertCount(overlapOmittedItemCount, 'overlapping reflection evidence item count');
+  if (overlapOmittedItemCount + input.includedItemCount > input.eligibleItemCount) {
+    throw new Error('Included and overlapping reflection counts exceed eligible evidence.');
+  }
+  if (input.includedItemCount > input.eligibleItemCount) {
+    throw new Error('Included reflection evidence item count cannot exceed eligible item count.');
+  }
+  parseReflectionGenerationProviderBundle(input.diagnosisBundle);
+  if (!isCurrentReflectionGenerationStage({
+    reflectionFlowVersion: input.reflectionFlowVersion,
+    stage: 'diagnosis',
+    bundleSchemaVersion: input.diagnosisBundle.schemaVersion,
+    promptVersion: STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
+  })) {
+    throw new Error('New reflection continuations require the current staged diagnosis contract.');
+  }
+  if (providerBundleSourceSessionId(input.diagnosisBundle) !== input.sourceSessionId) {
+    throw new Error('Reflection continuation source session does not match its diagnosis bundle.');
+  }
+  assertCuratedSourceProposalProvenance(input.diagnosisBundle, input.sourceProposalIds);
+  getDb().prepare(`
+    INSERT INTO reflection_generation_continuations (
+      learner_id, continuation_id, source_session_id, reflection_flow_version,
+      created_at, eligible_item_count, included_item_count, diagnosis_bundle_json,
+      source_proposal_ids_json, diagnosis_result_json, final_evidence_bundle_json,
+      promotion_bundle_json, artifact_id, overlap_omitted_item_count
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)
+  `).run(
+    requireLearnerId(),
+    continuationId,
+    input.sourceSessionId,
+    input.reflectionFlowVersion,
+    input.createdAt,
+    input.eligibleItemCount,
+    input.includedItemCount,
+    JSON.stringify(input.diagnosisBundle),
+    input.sourceProposalIds === undefined ? null : JSON.stringify(input.sourceProposalIds),
+    overlapOmittedItemCount,
+  );
+  return getReflectionGenerationContinuation(continuationId);
+}
+
+export function linkReflectionGenerationContinuationRun(input: {
+  continuationId: string;
+  runId: string;
+  stage: ReflectionGenerationContinuationStage;
+  createdAt: string;
+}): void {
+  assertNonEmpty(input.continuationId, 'reflection continuation id');
+  assertNonEmpty(input.runId, 'reflection continuation run id');
+  assertIsoTimestamp(input.createdAt, 'reflection continuation run link time');
+  if (input.stage !== 'diagnosis' && input.stage !== 'promotion') {
+    throw new Error('Reflection continuation stage must be diagnosis or promotion.');
+  }
+  getDb().prepare(`
+    INSERT INTO reflection_generation_continuation_runs (
+      learner_id, run_id, continuation_id, stage, created_at
+    ) VALUES (?, ?, ?, ?, ?)
+  `).run(requireLearnerId(), input.runId, input.continuationId, input.stage, input.createdAt);
+}
+
+export function prepareReflectionGenerationPromotion(input: {
+  continuationId: string;
+  diagnosisResult: StagedReflectionDiagnosisResultV1;
+  preparedAt: string;
+}): ReflectionGenerationContinuation {
+  assertIsoTimestamp(input.preparedAt, 'reflection promotion preparation time');
+  const continuation = getReflectionGenerationContinuation(input.continuationId);
+  const validationErrors = validateStagedReflectionDiagnosisResultV1(
+    input.diagnosisResult,
+    continuation.diagnosisBundle,
+  );
+  if (validationErrors.length > 0) {
+    throw new Error(`Cannot persist invalid staged diagnosis:\n${validationErrors.join('\n')}`);
+  }
+  const resultByItemId = new Map(
+    input.diagnosisResult.itemResults.map((itemResult) => [itemResult.itemId, itemResult]),
+  );
+  const enrichedItems = continuation.diagnosisBundle.items.map((item): ReflectionItemV5 => {
+    const itemResult = resultByItemId.get(item.itemId)!;
+    const responseWordId = item.submittedWord?.wordId ?? null;
+    const targetWordId = item.targetWord.wordId;
+    const shouldEnrich = itemResult.kind === 'shared_axis';
+    if (shouldEnrich) {
+      if (responseWordId === null) throw new Error('Shared-axis handoff requires a response word.');
+      assertPureCuePromotionSource(item.sourceAttemptId, targetWordId, responseWordId);
+    }
+    const activeByWord = shouldEnrich
+      ? [targetWordId, responseWordId!].map((wordId) => ({
+          wordId,
+          activeProductionCues: getActiveProductionCuesForWord(wordId).map((cue) => ({
+            cueId: cue.cueId,
+            taskId: cue.taskId,
+            cueType: cue.cueType,
+            text: cue.text,
+            acceptedWordIds: cue.acceptedWordIds,
+          })),
+        }))
+      : [];
+    const promotionEvidence = shouldEnrich ? {
+      diagnosisTags: [...itemResult.diagnosisTags],
+      words: activeByWord,
+      intersectingPureCues: getActivePureCuesAcceptingAny([targetWordId, responseWordId!])
+        .map((cue) => ({
+          id: cue.id,
+          stimulus: cue.stimulus,
+          axisNote: cue.axisNote,
+          acceptedWordIds: cue.acceptedWordIds,
+        })),
+    } : null;
+    return { ...item, promotionEvidence };
+  });
+  const studyProfile = 'session' in continuation.diagnosisBundle
+    ? continuation.diagnosisBundle.session.studyProfile
+    : continuation.diagnosisBundle.studyProfile;
+  const finalEvidenceBundle: SessionReflectionBundleV5 | CuratedReflectionBundleV2 =
+    'session' in continuation.diagnosisBundle
+      ? {
+          schemaVersion: 'session_reflection_bundle.v5',
+          generatedAt: input.preparedAt,
+          session: continuation.diagnosisBundle.session,
+          items: enrichedItems,
+        }
+      : {
+          schemaVersion: 'curated_reflection_bundle.v2',
+          generatedAt: input.preparedAt,
+          studyProfile,
+          items: enrichedItems,
+        };
+  parseStoredSessionReflectionBundle(finalEvidenceBundle);
+  const promotionBundle: PureCuePromotionBundleV1 = {
+    schemaVersion: 'pure_cue_promotion_bundle.v1',
+    generatedAt: input.preparedAt,
+    sourceSessionId: continuation.sourceSessionId,
+    studyProfile,
+    items: enrichedItems.flatMap((item) => {
+      const itemResult = resultByItemId.get(item.itemId)!;
+      if (itemResult.kind !== 'shared_axis' || item.promotionEvidence === null || item.submittedWord === null) return [];
+      return [{
+        itemId: item.itemId,
+        sourceAttemptId: item.sourceAttemptId,
+        targetWord: item.targetWord,
+        responseWord: item.submittedWord,
+        servedCue: item.servedCue,
+        handoff: itemResult.handoff,
+        promotionEvidence: item.promotionEvidence,
+      }];
+    }),
+  };
+  parsePureCuePromotionBundleV1(promotionBundle);
+
+  const database = getDb();
+  const stored = database.prepare(`
+    SELECT diagnosis_result_json, final_evidence_bundle_json, promotion_bundle_json
+    FROM reflection_generation_continuations
+    WHERE learner_id = ? AND continuation_id = ?
+  `).get(requireLearnerId(), input.continuationId) as {
+    diagnosis_result_json: string | null;
+    final_evidence_bundle_json: string | null;
+    promotion_bundle_json: string | null;
+  } | undefined;
+  if (stored === undefined) throw new Error('Reflection generation continuation not found.');
+  const exact = [
+    JSON.stringify(input.diagnosisResult),
+    JSON.stringify(finalEvidenceBundle),
+    JSON.stringify(promotionBundle),
+  ];
+  if (stored.diagnosis_result_json !== null) {
+    if (
+      stored.diagnosis_result_json !== exact[0]
+      || stored.final_evidence_bundle_json !== exact[1]
+      || stored.promotion_bundle_json !== exact[2]
+    ) {
+      throw new Error('Reflection continuation diagnosis was already prepared with different evidence.');
+    }
+    return getReflectionGenerationContinuation(input.continuationId);
+  }
+  const updated = database.prepare(`
+    UPDATE reflection_generation_continuations
+    SET diagnosis_result_json = ?, final_evidence_bundle_json = ?, promotion_bundle_json = ?
+    WHERE learner_id = ? AND continuation_id = ? AND diagnosis_result_json IS NULL
+  `).run(...exact, requireLearnerId(), input.continuationId);
+  if (updated.changes !== 1) throw new Error('Reflection continuation could not save promotion evidence.');
+  return getReflectionGenerationContinuation(input.continuationId);
+}
+
+export function getReflectionGenerationContinuationRetrySource(
+  runId: string,
+): ReflectionGenerationContinuationRetrySource | null {
+  const row = getDb().prepare(`
+    SELECT links.continuation_id, links.stage, runs.provider, runs.model,
+      runs.provider_model, runs.prompt_version, runs.bundle_schema_version,
+      runs.state, runs.reflection_flow_version AS run_flow_version,
+      continuations.reflection_flow_version, continuations.artifact_id
+    FROM reflection_generation_continuation_runs AS links
+    JOIN reflection_generation_runs AS runs ON runs.run_id = links.run_id
+    JOIN reflection_generation_continuations AS continuations
+      ON continuations.learner_id = links.learner_id
+      AND continuations.continuation_id = links.continuation_id
+    WHERE links.learner_id = ? AND links.run_id = ?
+  `).get(requireLearnerId(), runId) as {
+    continuation_id: string;
+    stage: ReflectionGenerationContinuationStage;
+    provider: string;
+    model: string;
+    provider_model: string;
+    prompt_version: string;
+    bundle_schema_version: string | null;
+    state: ReflectionGenerationRunState;
+    run_flow_version: string;
+    reflection_flow_version: string;
+    artifact_id: string | null;
+  } | undefined;
+  if (row === undefined) return null;
+  if (
+    row.state !== 'failed'
+    || row.artifact_id !== null
+    || row.run_flow_version !== row.reflection_flow_version
+    || !isCurrentReflectionGenerationStage({
+      reflectionFlowVersion: row.reflection_flow_version,
+      stage: row.stage,
+      bundleSchemaVersion: row.bundle_schema_version,
+      promptVersion: row.prompt_version,
+    })
+  ) return null;
+  return {
+    runId,
+    continuation: getReflectionGenerationContinuation(row.continuation_id),
+    stage: row.stage,
+    provider: row.provider,
+    model: row.model,
+    providerModel: row.provider_model,
+    promptVersion: row.prompt_version,
+  };
+}
+
+export function getReflectionGenerationContinuation(
+  continuationId: string,
+): ReflectionGenerationContinuation {
+  const row = getDb().prepare(`
+    SELECT * FROM reflection_generation_continuations
+    WHERE learner_id = ? AND continuation_id = ?
+  `).get(requireLearnerId(), continuationId) as ReflectionGenerationContinuationRow | undefined;
+  if (row === undefined) throw new Error('Reflection generation continuation not found.');
+  return mapReflectionGenerationContinuation(row);
+}
+
+type ReflectionGenerationContinuationRow = {
+  continuation_id: string;
+  source_session_id: string | null;
+  reflection_flow_version: string;
+  created_at: string;
+  eligible_item_count: number;
+  included_item_count: number;
+  overlap_omitted_item_count: number;
+  diagnosis_bundle_json: string;
+  source_proposal_ids_json: string | null;
+  diagnosis_result_json: string | null;
+  final_evidence_bundle_json: string | null;
+  promotion_bundle_json: string | null;
+  artifact_id: string | null;
+};
+
+function mapReflectionGenerationContinuation(
+  row: ReflectionGenerationContinuationRow,
+): ReflectionGenerationContinuation {
+  const diagnosisBundle = parseReflectionGenerationProviderBundle(parseJson(
+    row.diagnosis_bundle_json,
+    `reflection continuation ${row.continuation_id} diagnosis bundle`,
+  ));
+  if (
+    diagnosisBundle.schemaVersion !== 'session_reflection_bundle.v4'
+    && diagnosisBundle.schemaVersion !== 'curated_reflection_diagnosis_bundle.v2'
+  ) {
+    throw corruptionError(`reflection continuation ${row.continuation_id} has an invalid diagnosis bundle`);
+  }
+  const diagnosisResult = row.diagnosis_result_json === null
+    ? null
+    : parseJson(row.diagnosis_result_json, `reflection continuation ${row.continuation_id} diagnosis result`) as StagedReflectionDiagnosisResultV1;
+  if (diagnosisResult !== null) {
+    const errors = validateStagedReflectionDiagnosisResultV1(diagnosisResult, diagnosisBundle);
+    if (errors.length > 0) throw corruptionError(errors.join('; '));
+  }
+  const finalEvidenceBundle = row.final_evidence_bundle_json === null
+    ? null
+    : parseStoredSessionReflectionBundle(parseJson(
+        row.final_evidence_bundle_json,
+        `reflection continuation ${row.continuation_id} final evidence`,
+      ));
+  if (
+    finalEvidenceBundle !== null
+    && finalEvidenceBundle.schemaVersion !== 'session_reflection_bundle.v5'
+    && finalEvidenceBundle.schemaVersion !== 'curated_reflection_bundle.v2'
+  ) {
+    throw corruptionError(`reflection continuation ${row.continuation_id} has invalid final evidence`);
+  }
+  const promotionBundle = row.promotion_bundle_json === null
+    ? null
+    : parsePureCuePromotionBundleV1(parseJson(
+        row.promotion_bundle_json,
+        `reflection continuation ${row.continuation_id} promotion bundle`,
+      ));
+  return {
+    continuationId: row.continuation_id,
+    sourceSessionId: row.source_session_id,
+    reflectionFlowVersion: row.reflection_flow_version,
+    createdAt: row.created_at,
+    eligibleItemCount: row.eligible_item_count,
+    includedItemCount: row.included_item_count,
+    overlapOmittedItemCount: row.overlap_omitted_item_count,
+    diagnosisBundle,
+    sourceProposalIds: row.source_proposal_ids_json === null
+      ? null
+      : parseSourceProposalIds(row.source_proposal_ids_json, row.continuation_id),
+    diagnosisResult,
+    finalEvidenceBundle,
+    promotionBundle,
+    artifactId: row.artifact_id,
+  };
+}
+
 function assertCuratedSourceProposalProvenance(
-  bundle: SessionReflectionBundle,
+  bundle: ReflectionGenerationProviderBundle,
   sourceProposalIds: string[] | null | undefined,
 ): void {
-  if (bundle.schemaVersion !== 'curated_reflection_bundle.v1') {
+  if (
+    bundle.schemaVersion !== 'curated_reflection_bundle.v1'
+    && bundle.schemaVersion !== 'curated_reflection_diagnosis_bundle.v2'
+    && bundle.schemaVersion !== 'curated_reflection_bundle.v2'
+    && !(bundle.schemaVersion === 'pure_cue_promotion_bundle.v1' && bundle.sourceSessionId === null)
+  ) {
     if (sourceProposalIds !== null && sourceProposalIds !== undefined) {
       throw new Error('Only curated reflection bundles may retain proposal selection provenance.');
     }
@@ -1512,10 +2035,10 @@ export function deferReflectionProposal(
  * The returned envelope intentionally contains no earlier proposal text or
  * review disposition; the provider sees only the original evidence again.
  */
-export function buildDeferredSecondOpinionBundle(
+export function buildStagedDeferredSecondOpinionBundle(
   proposalIds: string[],
   generatedAt = new Date().toISOString(),
-): { bundle: CuratedReflectionBundleV1; sourceProposalIds: string[] } {
+): { bundle: CuratedReflectionDiagnosisBundleV2; sourceProposalIds: string[]; eligibleItemCount: number; overlapOmittedItemCount: number } {
   const normalizedProposalIds = [...new Set(proposalIds.map((proposalId) => proposalId.trim()))].sort();
   if (normalizedProposalIds.length === 0) {
     throw new DeferredSecondOpinionError('Select at least one deferred proposal.');
@@ -1528,6 +2051,7 @@ export function buildDeferredSecondOpinionBundle(
     SELECT proposal_id, artifact_id, item_id
     FROM reflection_proposal_reviews
     WHERE proposal_id IN (${placeholders}) AND disposition = 'deferred'
+    ORDER BY proposal_id
   `).all(...normalizedProposalIds) as Array<{ proposal_id: string; artifact_id: string; item_id: string }>;
   if (rows.length !== normalizedProposalIds.length) {
     throw new DeferredSecondOpinionError(
@@ -1536,8 +2060,15 @@ export function buildDeferredSecondOpinionBundle(
   }
 
   const sourceItems = new Map<string, ReflectionItemV4>();
+  const studyProfiles = new Set<string>();
   for (const row of rows) {
     const artifact = getReflectionArtifactDetail(row.artifact_id);
+    if (!reflectionArtifactSupportsCurrentActions(artifact)) {
+      throw new DeferredSecondOpinionError(
+        'Second opinions are only available for proposals from the current reflection version. '
+        + 'This older proposal remains viewable.',
+      );
+    }
     const item = artifact.evidenceBundle.items.find((candidate) => candidate.itemId === row.item_id);
     if (item === undefined) {
       throw new DeferredSecondOpinionError('A selected proposal no longer has usable retained evidence.');
@@ -1545,13 +2076,21 @@ export function buildDeferredSecondOpinionBundle(
     if (!('servedCue' in item)) {
       throw new DeferredSecondOpinionError('A selected proposal no longer has usable retained evidence.');
     }
+    const { promotionEvidence: _promotionEvidence, ...diagnosisItem } = item as ReflectionItemV5;
     sourceItems.set(`${row.artifact_id}\u0000${row.item_id}`, {
-      ...item,
+      ...diagnosisItem,
       servedCue: {
-        ...item.servedCue,
-        supplement: item.servedCue.supplement ?? null,
+        ...diagnosisItem.servedCue,
+        supplement: diagnosisItem.servedCue.supplement ?? null,
       },
     });
+    studyProfiles.add(
+      'session' in artifact.evidenceBundle
+        ? artifact.evidenceBundle.session.studyProfile
+        : 'studyProfile' in artifact.evidenceBundle
+          ? artifact.evidenceBundle.studyProfile
+          : getConfig().studyProfile,
+    );
   }
   if (sourceItems.size > DEFERRED_SECOND_OPINION_MAX_EVIDENCE_ITEMS) {
     throw new DeferredSecondOpinionError(
@@ -1560,17 +2099,34 @@ export function buildDeferredSecondOpinionBundle(
   }
 
   const requestId = randomUUID();
-  const items = [...sourceItems.values()].map((item, index) => ({
+  const selection = selectNonOverlappingReflectionItems([...sourceItems.values()]);
+  const includedSourceItems = new Set(selection.items);
+  const includedSourceKeys = new Set([...sourceItems.entries()]
+    .filter(([, item]) => includedSourceItems.has(item)).map(([key]) => key));
+  // Omitted proposals stay deferred; only evidence actually reconsidered is retired.
+  const includedProposalIds = rows.filter((row) => (
+    includedSourceKeys.has(`${row.artifact_id}\u0000${row.item_id}`)
+  )).map((row) => row.proposal_id);
+  const items = selection.items.map((item, index) => ({
     ...item,
     itemId: `${requestId}:item:${index + 1}`,
   }));
-  const bundle: CuratedReflectionBundleV1 = {
-    schemaVersion: 'curated_reflection_bundle.v1',
+  if (studyProfiles.size !== 1) {
+    throw new DeferredSecondOpinionError('Selected evidence spans incompatible study profiles.');
+  }
+  const bundle: CuratedReflectionDiagnosisBundleV2 = {
+    schemaVersion: 'curated_reflection_diagnosis_bundle.v2',
     generatedAt,
+    studyProfile: [...studyProfiles][0] as CuratedReflectionDiagnosisBundleV2['studyProfile'],
     items,
   };
-  parseStoredSessionReflectionBundle(bundle);
-  return { bundle, sourceProposalIds: normalizedProposalIds };
+  parseCuratedReflectionDiagnosisBundleV2(bundle);
+  return {
+    bundle,
+    sourceProposalIds: includedProposalIds,
+    eligibleItemCount: sourceItems.size,
+    overlapOmittedItemCount: selection.overlapOmittedItemCount,
+  };
 }
 
 export function dismissReflectionProposal(
@@ -1681,6 +2237,7 @@ export function acceptReflectionProposal(
   database.exec('BEGIN IMMEDIATE');
   try {
     const reviewRow = requireProposalReviewRow(input.proposalId);
+    assertCurrentReflectionArtifactActions(reviewRow.artifact_id);
     assertProposalReviewTransition(
       reviewRow.disposition as ProposalReviewDisposition['kind'],
       'accepted',
@@ -1721,7 +2278,11 @@ export function acceptReflectionProposal(
       input.proposalId,
       input.operation.kind,
       input.operation.version,
-      JSON.stringify(input.operation),
+      serializeStoredInvocationOperation(
+        input.operation,
+        reviewRow.artifact_id,
+        reviewRow.item_id,
+      ),
       initialApplication.kind,
       createdAt,
       applicationColumns.unsupportedReason,
@@ -1765,6 +2326,7 @@ export function replaceReflectionProposal(
   database.exec('BEGIN IMMEDIATE');
   try {
     const reviewRow = requireProposalReviewRow(input.proposalId);
+    assertCurrentReflectionArtifactActions(reviewRow.artifact_id);
     assertProposalReviewTransition(
       reviewRow.disposition as ProposalReviewDisposition['kind'],
       'superseded',
@@ -1807,7 +2369,11 @@ export function replaceReflectionProposal(
       input.proposalId,
       input.operation.kind,
       input.operation.version,
-      JSON.stringify(input.operation),
+      serializeStoredInvocationOperation(
+        input.operation,
+        reviewRow.artifact_id,
+        reviewRow.item_id,
+      ),
       initialApplication.kind,
       createdAt,
       applicationColumns.unsupportedReason,
@@ -1865,10 +2431,14 @@ export function authorizeManualReflectionOperation(
   database.exec('BEGIN IMMEDIATE');
   try {
     const artifact = getReflectionArtifactDetail(input.artifactId);
+    assertCurrentReflectionArtifactActions(artifact.artifactId);
     const itemResult = artifact.result.itemResults.find((item) => item.itemId === input.itemId);
     const evidenceItem = artifact.evidenceBundle.items.find((item) => item.itemId === input.itemId);
     if (!itemResult || !evidenceItem) {
       throw new Error('Reflection item not found.');
+    }
+    if ('promotionOutcome' in itemResult && itemResult.promotionOutcome === 'disagreement') {
+      throw new Error('Stage disagreement is non-actionable; no content changes can be authorized from this item.');
     }
     if (itemResult.proposals.length > 0) {
       throw new Error(
@@ -1905,7 +2475,7 @@ export function authorizeManualReflectionOperation(
       createdAt,
       input.operation.kind,
       input.operation.version,
-      JSON.stringify(input.operation),
+      serializeStoredInvocationOperation(input.operation, input.artifactId, input.itemId),
       initialApplication.kind,
       createdAt,
       applicationColumns.unsupportedReason,
@@ -1954,6 +2524,7 @@ export function transitionReflectionInvocationApplication(
   database.exec('BEGIN IMMEDIATE');
   try {
     const current = getReflectionInvocation(invocationId);
+    assertCurrentReflectionInvocationActions(invocationId);
     assertOperationApplicationTransition(current.application.state.kind, state.kind);
     database.prepare(`
       UPDATE ${physicalLearnerTableName('reflection_operation_invocations')}
@@ -2003,7 +2574,9 @@ export function listPendingReflectionInvocationIds(): string[] {
     WHERE application_state = 'pending'
     ORDER BY application_updated_at ASC, invocation_id ASC
   `).all() as Array<{ invocation_id: string }>;
-  return rows.map((row) => row.invocation_id);
+  return rows
+    .map((row) => row.invocation_id)
+    .filter(reflectionInvocationSupportsCurrentActions);
 }
 
 export function recoverPendingReflectionInvocations(): OperationInvocationStatus[] {
@@ -2035,6 +2608,13 @@ export function applyReflectionInvocation(
   if (current.application.state.kind !== 'pending') {
     database.exec('COMMIT');
     return current;
+  }
+
+  try {
+    assertCurrentReflectionInvocationActions(invocationId);
+  } catch (error) {
+    database.exec('ROLLBACK');
+    throw error;
   }
 
   try {
@@ -2079,6 +2659,7 @@ function transitionProposalReview(
   database.exec('BEGIN IMMEDIATE');
   try {
     const current = requireProposalReviewRow(proposalId);
+    assertCurrentReflectionArtifactActions(current.artifact_id);
     assertProposalReviewTransition(
       current.disposition as ProposalReviewDisposition['kind'],
       to,
@@ -2340,6 +2921,12 @@ function validateReflectionArtifactPair(
   ) {
     return validateSessionReflectionResultV8(result, evidenceBundle);
   }
+  if (
+    evidenceBundle.schemaVersion === 'curated_reflection_bundle.v2'
+    && result.schemaVersion === 'session_reflection_result.v8'
+  ) {
+    return validateSessionReflectionResultV8(result, evidenceBundle);
+  }
   return [
     `$.schemaVersion: result ${String(result.schemaVersion)} is not compatible with ${evidenceBundle.schemaVersion}`,
   ];
@@ -2405,19 +2992,21 @@ function mapProposalReviewRow(row: ProposalReviewRow): ProposalReviewStatus {
 }
 
 function mapInvocationRow(row: InvocationRow): OperationInvocationStatus {
-  const operation = parseJson(
+  const storedOperation = parseJson(
     row.operation_json,
     `reflection invocation ${row.invocation_id} operation`,
   );
+  const { operation } = parseStoredInvocationOperation(storedOperation, row.invocation_id);
   const operationErrors = validateReflectionOperation(operation);
   if (operationErrors.length > 0) {
     throw corruptionError(
       `invocation ${row.invocation_id} contains an invalid operation:\n${operationErrors.join('\n')}`,
     );
   }
+  const validatedOperation = operation as ReflectionOperation;
   if (
-    row.operation_kind !== operation.kind
-    || row.operation_version !== operation.version
+    row.operation_kind !== validatedOperation.kind
+    || row.operation_version !== validatedOperation.version
   ) {
     throw corruptionError(`invocation ${row.invocation_id} operation metadata does not match its JSON`);
   }
@@ -2451,7 +3040,7 @@ function mapInvocationRow(row: InvocationRow): OperationInvocationStatus {
       invocationId: row.invocation_id,
       createdAt: row.created_at,
       origin,
-      operation: operation as ReflectionOperation,
+      operation: validatedOperation,
     },
     application: {
       invocationId: row.invocation_id,
@@ -2459,6 +3048,112 @@ function mapInvocationRow(row: InvocationRow): OperationInvocationStatus {
       state: applicationStateFromRow(row),
     },
   };
+}
+
+function serializeStoredInvocationOperation(
+  operation: ReflectionOperation,
+  sourceArtifactId: string,
+  sourceItemId: string,
+): string {
+  const stored: StoredInvocationOperationV1 = {
+    schemaVersion: 'reflection_invocation_operation.v1',
+    sourceArtifactId,
+    sourceItemId,
+    operation,
+  };
+  return JSON.stringify(stored);
+}
+
+function parseStoredInvocationOperation(
+  value: unknown,
+  invocationId: string,
+): {
+  operation: unknown;
+  sourceArtifactId: string | null;
+  sourceItemId: string | null;
+} {
+  if (!isRecord(value) || value.schemaVersion !== 'reflection_invocation_operation.v1') {
+    return { operation: value, sourceArtifactId: null, sourceItemId: null };
+  }
+  if (
+    typeof value.sourceArtifactId !== 'string'
+    || value.sourceArtifactId.trim().length === 0
+    || typeof value.sourceItemId !== 'string'
+    || value.sourceItemId.trim().length === 0
+    || !('operation' in value)
+  ) {
+    throw corruptionError(`invocation ${invocationId} has invalid source-artifact provenance`);
+  }
+  return {
+    operation: value.operation,
+    sourceArtifactId: value.sourceArtifactId,
+    sourceItemId: value.sourceItemId,
+  };
+}
+
+function assertCurrentReflectionArtifactActions(artifactId: string): void {
+  const row = getDb().prepare(`
+    SELECT reflection_flow_version, bundle_schema_version, result_schema_version, prompt_version
+    FROM reflection_artifacts
+    WHERE artifact_id = ?
+  `).get(artifactId) as {
+    reflection_flow_version: string;
+    bundle_schema_version: string;
+    result_schema_version: string;
+    prompt_version: string;
+  } | undefined;
+  if (row === undefined) throw new Error('Reflection artifact not found.');
+  if (!isCurrentReflectionArtifactContract({
+    reflectionFlowVersion: row.reflection_flow_version,
+    bundleSchemaVersion: row.bundle_schema_version,
+    resultSchemaVersion: row.result_schema_version,
+    promptVersion: row.prompt_version,
+  })) {
+    throw new Error(`Cannot authorize or apply changes. ${LEGACY_REFLECTION_READ_ONLY_MESSAGE}`);
+  }
+}
+
+function invocationSourceArtifactId(row: InvocationRow): string | null {
+  const stored = parseStoredInvocationOperation(
+    parseJson(row.operation_json, `reflection invocation ${row.invocation_id} operation`),
+    row.invocation_id,
+  );
+  if (stored.sourceArtifactId !== null) return stored.sourceArtifactId;
+  const proposalId = row.origin_kind === 'proposal_acceptance'
+    ? row.origin_proposal_id
+    : row.origin_kind === 'user_replacement'
+      ? row.origin_superseded_proposal_id
+      : null;
+  if (proposalId === null) return null;
+  const proposal = getDb().prepare(`
+    SELECT artifact_id
+    FROM reflection_proposal_reviews
+    WHERE proposal_id = ?
+  `).get(proposalId) as { artifact_id: string } | undefined;
+  return proposal?.artifact_id ?? null;
+}
+
+function assertCurrentReflectionInvocationActions(invocationId: string): void {
+  const row = getDb().prepare(`
+    SELECT ${invocationColumns.join(', ')}
+    FROM reflection_operation_invocations
+    WHERE invocation_id = ?
+  `).get(invocationId) as InvocationRow | undefined;
+  if (row === undefined) throw new Error('Reflection invocation not found.');
+  const artifactId = invocationSourceArtifactId(row);
+  if (artifactId === null) {
+    throw new Error(`Cannot authorize or apply changes. ${LEGACY_REFLECTION_READ_ONLY_MESSAGE}`);
+  }
+  assertCurrentReflectionArtifactActions(artifactId);
+}
+
+function reflectionInvocationSupportsCurrentActions(invocationId: string): boolean {
+  try {
+    assertCurrentReflectionInvocationActions(invocationId);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function applicationStateFromRow(row: InvocationRow): OperationApplicationState {

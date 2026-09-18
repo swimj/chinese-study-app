@@ -47,6 +47,15 @@ Domain-oriented re-export shims (navigation only; implementation stays in `persi
 
 ## Reflection persistence
 
+Staged generation additionally uses `reflection_generation_continuations` for
+immutable diagnosis input, overlap-omission counts, the saved diagnosis result,
+exact promotion input/final evidence checkpoint, and completed artifact link.
+`reflection_generation_continuation_runs` associates each ordinary run-log row
+with its continuation and diagnosis/promotion stage. Promotion retries reuse
+the saved explicit shared-axis handoff and catalog snapshots. Successful stage
+two results, including non-actionable disagreements, are materialized only in
+the final artifact; there is no autonomous retry worker.
+
 Reflection uses six SQLite tables initialized and validated from
 [`reflections.ts`](../server/db/reflections.ts) (quality overlay from
 [`reflection-quality.ts`](../server/db/reflection-quality.ts); Help inbox from
