@@ -184,7 +184,11 @@ V4, V5, and V6 results remain readable under their frozen contracts. V6 removes
 item-level text surface, and removes `unhandledNeeds` because the current model
 and product do not use them reliably. V7 retains that item shape and adds the
 strict `add_production_cue_supplement@1` wire operation. New generation uses
-V7; stored V4/V5/V6 artifacts remain immutable.
+V8 through staged diagnosis/promotion; V7 remains the diagnosis and legacy
+one-shot result contract for historical reads only. Stored V4/V5/V6/V7 artifacts
+remain immutable. Execution requires the current staged flow and prompt contract:
+obsolete proposals cannot be accepted, revised, replaced, used as manual-operation
+evidence, sent for second opinion, or applied. No legacy retry path is retained.
 
 V8 retains the same item-result shape and adds `promote_pure_elicitation@1`.
 It is validated against V5 enriched session evidence, including each word's

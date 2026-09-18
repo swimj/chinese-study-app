@@ -447,7 +447,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
     }
   });
 
-  test('excludes an accepted non-anchor response that the learner rated forgot', () => {
+  test('rejects obsolete accepted-alternate evidence rather than regenerating reflection', () => {
     sqlite.prepare(`
       UPDATE study_attempt_events
       SET metadata_json = ?
@@ -461,7 +461,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
 
     assertEvidenceError(
       () => buildInitialReflectionBundle('session-1', supplement('替代'), generatedAt),
-      'no_qualifying_evidence',
+      'invalid_reference',
       400,
     );
   });

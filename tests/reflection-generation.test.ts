@@ -2,20 +2,51 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type {
   ReflectionOperation,
-  SessionReflectionBundleV2,
+  SessionReflectionBundleV4,
   SessionReflectionResultV7,
 } from '../src/domain/reflection.ts';
 import type {
   MaterializeReflectionArtifactInput,
   RecordReflectionGenerationRunInput,
   ReflectionArtifactDetail,
+  ReflectionGenerationContinuationRetrySource,
 } from '../server/db/reflections.ts';
 import { ReflectionEvidenceError } from '../server/reflection/evidence.ts';
-import { createInitialReflectionGenerationService, RetiredReflectionSourceModelError, ReflectionSpendCapError } from '../server/reflection/generation.ts';
+import {
+  createInitialReflectionGenerationService as createProductionReflectionGenerationService,
+  RetiredReflectionSourceModelError,
+  ReflectionSpendCapError,
+  type InitialReflectionGenerationDependencies,
+} from '../server/reflection/generation.ts';
 import {
   LunaReflectionProviderError,
   type LunaReflectionSuccess,
 } from '../server/reflection/luna-provider.ts';
+import { createTestReflectionContinuationBoundaries } from './helpers/reflection-continuation.ts';
+
+function createInitialReflectionGenerationService(
+  dependencies: InitialReflectionGenerationDependencies,
+) {
+  const boundaries = createTestReflectionContinuationBoundaries();
+  const suppliedRetrySource = dependencies.getContinuationRetrySource;
+  return createProductionReflectionGenerationService({
+    ...boundaries,
+    startRun: () => {},
+    ...dependencies,
+    ...(suppliedRetrySource === undefined ? {} : {
+      getContinuationRetrySource(runId: string) {
+        const source = suppliedRetrySource(runId);
+        if (source !== null) {
+          boundaries.continuations.set(
+            source.continuation.continuationId,
+            source.continuation,
+          );
+        }
+        return source;
+      },
+    }),
+  });
+}
 
 const generatedAt = '2026-07-29T12:00:00.000Z';
 
@@ -89,31 +120,38 @@ describe('initial reflection generation orchestration', () => {
     });
     assert.equal(persisted?.sourceRunId !== undefined, true);
     assert.equal(persisted?.sourceRunId, recordedRun?.runId);
-    const { sourceRunId: _sourceRunId, ...persistedWithoutRun } = persisted!;
+    const { sourceRunId: _sourceRunId, continuationId, ...persistedWithoutRun } = persisted!;
+    assert.equal(continuationId, 'test-continuation-1');
+    const finalEvidence = {
+      schemaVersion: 'session_reflection_bundle.v5' as const,
+      generatedAt,
+      session: evidenceBundle.session,
+      items: evidenceBundle.items.map((item) => ({ ...item, promotionEvidence: null })),
+    };
     assert.deepEqual(persistedWithoutRun, {
       sourceSessionId: 'session-1',
-      reflectionFlowVersion: 'initial_post_session_reflection.v2',
+      reflectionFlowVersion: 'initial_post_session_reflection.v4',
       generatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
-      promptVersion: 'reflection-v3',
-      evidenceBundle,
-      result: result(),
+      promptVersion: 'reflection-staged-v2',
+      evidenceBundle: finalEvidence,
+      result: { ...result(), schemaVersion: 'session_reflection_result.v8' },
     });
     assert.match(recordedRun!.clientRequestId ?? '', /^[0-9a-f-]{36}$/);
     const { runId: _runId, clientRequestId: _clientRequestId, ...recordedRunWithoutId } = recordedRun!;
     assert.deepEqual(recordedRunWithoutId, {
       sourceSessionId: 'session-1',
-      reflectionFlowVersion: 'initial_post_session_reflection.v2',
+      reflectionFlowVersion: 'initial_post_session_reflection.v4',
       startedAt: generatedAt,
       completedAt: generatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v3',
+      promptVersion: 'reflection-staged-v2',
       responseId: 'response-1',
       finishReason: 'stop',
-      bundleSchemaVersion: 'session_reflection_bundle.v2',
+      bundleSchemaVersion: 'session_reflection_bundle.v4',
       resultSchemaVersion: 'session_reflection_result.v7',
       diagnostic: null,
       state: 'succeeded',
@@ -176,24 +214,19 @@ describe('initial reflection generation orchestration', () => {
     assert.match(providerRequestId ?? '', /^[0-9a-f-]{36}$/);
   });
 
-  test('retries a failed durable run from its exact saved bundle', async () => {
+  test('retries a current staged diagnosis run from its exact saved bundle', async () => {
     const evidenceBundle = bundle();
-    let providerBundle: SessionReflectionBundleV2 | null = null;
+    let providerBundle: SessionReflectionBundleV4 | null = null;
     let recordedRun: RecordReflectionGenerationRunInput | null = null;
     const service = createInitialReflectionGenerationService({
       now: () => generatedAt,
       findExistingArtifact: () => null,
-      getRetrySource: (runId) => {
+      getContinuationRetrySource: (runId) => {
         assert.equal(runId, 'failed-run');
-        return {
-          runId,
-          sourceSessionId: 'session-1',
-          reflectionFlowVersion: 'initial_post_session_reflection.v2',
-          model: 'gpt-5.6-luna-high',
+        return currentDiagnosisRetrySource(runId, evidenceBundle, {
           eligibleItemCount: 3,
           includedItemCount: 1,
-          evidenceBundle,
-        };
+        });
       },
       provider: {
         async generate(input) {
@@ -268,6 +301,144 @@ describe('initial reflection generation orchestration', () => {
       },
     ]);
     assert.equal(materializeCalls, 1);
+  });
+
+  test('resumes saved diagnosis after final persistence failure without another call or false model provenance', async () => {
+    const boundaries = createTestReflectionContinuationBoundaries();
+    let providerCalls = 0;
+    let materializeCalls = 0;
+    let failedRunId = '';
+    const persisted: MaterializeReflectionArtifactInput[] = [];
+    const service = createProductionReflectionGenerationService({
+      ...boundaries,
+      now: () => generatedAt,
+      random: () => 0,
+      buildBundle: () => bundle(),
+      startRun: () => {},
+      provider: {
+        async generate() {
+          providerCalls += 1;
+          return providerSuccess();
+        },
+      },
+      glmProvider: {
+        async generate() {
+          throw new Error('saved diagnosis retry must not call the override provider');
+        },
+      },
+      materializeArtifact(input) {
+        materializeCalls += 1;
+        persisted.push(input);
+        if (materializeCalls === 1) throw new Error('artifact write failed');
+        return { created: true, artifact: artifactDetail('resumed-artifact', 1) };
+      },
+      recordRun(input) {
+        failedRunId = input.runId ?? '';
+        assert.equal(input.state, 'failed');
+        assert.equal(input.failureCode, 'internal_error');
+        assert.deepEqual(input.usage, providerSuccess().metadata.usage);
+      },
+    });
+
+    await assert.rejects(() => service.generate('session-1', {}), /artifact write failed/);
+    assert.equal(providerCalls, 1);
+    assert.match(failedRunId, /^[0-9a-f-]{36}$/);
+
+    await service.retry(failedRunId, 'zai:glm-5.3-flash-max');
+    assert.equal(providerCalls, 1);
+    assert.equal(materializeCalls, 2);
+    assert.equal(persisted[1]!.provider, 'openai');
+    assert.equal(persisted[1]!.model, 'gpt-5.6-luna-high');
+    assert.equal(persisted[1]!.promptVersion, 'reflection-staged-v2');
+    assert.equal(persisted[1]!.sourceRunId, failedRunId);
+  });
+
+  test('retries only promotion from its exact saved input and honors the explicit model override', async () => {
+    const boundaries = createTestReflectionContinuationBoundaries();
+    const stageTwoBundles: unknown[] = [];
+    const runRecords: RecordReflectionGenerationRunInput[] = [];
+    let diagnosisCalls = 0;
+    let failedPromotionRunId = '';
+    const diagnosisSuccess: LunaReflectionSuccess = {
+      ...providerSuccess(),
+      result: {
+        schemaVersion: 'session_reflection_result.v7',
+        itemResults: [{
+          itemId: 'item-1',
+          diagnosisTags: ['production_cue_overloaded'],
+          learnerExplanation: 'These words share this broad axis but retain different uses.',
+          proposals: [],
+          questions: [],
+        }],
+      },
+    };
+    const service = createProductionReflectionGenerationService({
+      ...boundaries,
+      now: () => generatedAt,
+      buildBundle: () => bundle(true),
+      startRun: () => {},
+      provider: {
+        async generateDiagnosis() {
+          diagnosisCalls += 1;
+          return diagnosisSuccess;
+        },
+        async generate() {
+          throw new Error('staged generation must use the diagnosis entrypoint');
+        },
+        async generatePromotion(input) {
+          stageTwoBundles.push(input);
+          throw new LunaReflectionProviderError('upstream_failure');
+        },
+      },
+      glmProvider: {
+        async generate() {
+          throw new Error('promotion retry must not rerun diagnosis');
+        },
+        async generatePromotion(input) {
+          stageTwoBundles.push(input);
+          return {
+            result: {
+              schemaVersion: 'pure_cue_promotion_result.v1',
+              itemResults: input.items.map((item) => ({
+                itemId: item.itemId,
+                decision: { kind: 'no_promotion' as const, rationale: 'Keep the pair separate.' },
+              })),
+            },
+            metadata: {
+              ...providerSuccess().metadata,
+              provider: 'zai',
+              modelConfig: 'glm-5.3-flash-max',
+              providerModel: 'glm-5.3-flash',
+              promptVersion: 'pure-cue-promotion-v2',
+            },
+          };
+        },
+      },
+      materializeArtifact: () => ({
+        created: true,
+        artifact: artifactDetail('stage-two-retry-artifact', 0),
+      }),
+      recordRun(input) {
+        runRecords.push(input);
+        if (input.state === 'failed') failedPromotionRunId = input.runId ?? '';
+      },
+    });
+
+    await assert.rejects(
+      () => service.generate('session-1', {}, 'openai:gpt-5.6-luna-high'),
+      LunaReflectionProviderError,
+    );
+    assert.equal(diagnosisCalls, 1);
+    assert.match(failedPromotionRunId, /^[0-9a-f-]{36}$/);
+    await service.retry(failedPromotionRunId, 'zai:glm-5.3-flash-max');
+    assert.equal(diagnosisCalls, 1);
+    assert.equal(stageTwoBundles.length, 2);
+    assert.equal(stageTwoBundles[1], stageTwoBundles[0]);
+    assert.deepEqual(runRecords.map((run) => [run.state, run.model, run.resultSchemaVersion]), [
+      ['succeeded', 'gpt-5.6-luna-high', 'session_reflection_result.v7'],
+      ['failed', 'gpt-5.6-luna-high', 'pure_cue_promotion_result.v1'],
+      ['succeeded', 'glm-5.3-flash-max', 'pure_cue_promotion_result.v1'],
+    ]);
   });
 
   test('leaves no artifact on evidence or provider failure and permits retry', async () => {
@@ -356,15 +527,7 @@ describe('initial reflection generation orchestration', () => {
     };
     const service = createInitialReflectionGenerationService({
       now: () => generatedAt,
-      getRetrySource: () => ({
-        runId: 'failed-run',
-        sourceSessionId: 'session-1',
-        reflectionFlowVersion: 'initial_post_session_reflection.v2',
-        model: 'gpt-5.6-luna-high',
-        eligibleItemCount: 1,
-        includedItemCount: 1,
-        evidenceBundle: bundle(),
-      }),
+      getContinuationRetrySource: () => currentDiagnosisRetrySource('failed-run'),
       provider: { generate: async () => providerSuccess() },
       glmProvider: { generate: async () => glmSuccess },
       materializeArtifact: () => {
@@ -461,17 +624,9 @@ describe('initial reflection generation orchestration', () => {
     const service = createInitialReflectionGenerationService({
       findExistingArtifact: () => null,
       buildBundle: () => bundle(),
-      getRetrySource: (runId) => {
+      getContinuationRetrySource: (runId) => {
         assert.equal(runId, 'failed-gemini-run');
-        return {
-          runId,
-          sourceSessionId: 'session-1',
-          reflectionFlowVersion: 'initial_post_session_reflection.v2',
-          model: 'gemini-3.6-flash',
-          eligibleItemCount: 1,
-          includedItemCount: 1,
-          evidenceBundle: bundle(),
-        };
+        return currentDiagnosisRetrySource(runId, bundle(), { model: 'gemini-3.6-flash' });
       },
       provider: makeArm('luna'),
       glmProvider: makeArm('glm'),
@@ -583,14 +738,10 @@ describe('initial reflection generation orchestration', () => {
         },
       },
       getSpendCap: () => cappedSpendCap(),
-      getRetrySource: () => ({
-        runId: 'failed-run',
-        sourceSessionId: 'session-1',
-        reflectionFlowVersion: 'initial_post_session_reflection.v2',
+      getContinuationRetrySource: () => currentDiagnosisRetrySource('failed-run', bundle(), {
+        provider: 'zai',
         model: 'glm-5.3-flash-max',
-        eligibleItemCount: 1,
-        includedItemCount: 1,
-        evidenceBundle: bundle(),
+        providerModel: 'glm-5.3-flash',
       }),
       materializeArtifact: () => ({
         created: true,
@@ -616,17 +767,9 @@ describe('initial reflection generation orchestration', () => {
     const service = createInitialReflectionGenerationService({
       findExistingArtifact: () => null,
       buildBundle: () => bundle(),
-      getRetrySource: (runId) => {
+      getContinuationRetrySource: (runId) => {
         assert.equal(runId, 'failed-retired-run');
-        return {
-          runId,
-          sourceSessionId: 'session-1',
-          reflectionFlowVersion: 'initial_post_session_reflection.v2',
-          model: 'qwen3.7-plus',
-          eligibleItemCount: 1,
-          includedItemCount: 1,
-          evidenceBundle: bundle(),
-        };
+        return currentDiagnosisRetrySource(runId, bundle(), { model: 'qwen3.7-plus' });
       },
       provider: makeArm('luna'),
       glmProvider: makeArm('glm'),
@@ -659,7 +802,7 @@ function providerSuccess(): LunaReflectionSuccess {
       provider: 'openai',
       modelConfig: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v3',
+      promptVersion: 'reflection-staged-v2',
       responseId: 'response-1',
       finishReason: 'stop',
       usage: {
@@ -707,9 +850,9 @@ function artifactDetail(artifactId: string, proposalCount: number): ReflectionAr
   };
 }
 
-function bundle(): SessionReflectionBundleV2 {
+function bundle(promotionCandidate = false): SessionReflectionBundleV4 {
   return {
-    schemaVersion: 'session_reflection_bundle.v2',
+    schemaVersion: 'session_reflection_bundle.v4',
     generatedAt,
     session: {
       sessionId: 'session-1',
@@ -737,16 +880,49 @@ function bundle(): SessionReflectionBundleV2 {
         cueType: 'definition_gloss',
         text: 'target',
         acceptedWordIds: ['target'],
+        supplement: null,
       },
-      rawResponse: '替代',
+      rawResponse: promotionCandidate ? '替代' : '目标',
       submittedWord: {
-        wordId: 'alternate',
-        hanzi: '替代',
-        pinyin: 'tìdài',
-        meanings: ['alternate'],
+        wordId: promotionCandidate ? 'alternate' : 'target',
+        hanzi: promotionCandidate ? '替代' : '目标',
+        pinyin: promotionCandidate ? 'tìdài' : 'mùbiāo',
+        meanings: [promotionCandidate ? 'alternate' : 'target'],
       },
       responseKind: 'matched_known_word',
     }],
+  };
+}
+
+function currentDiagnosisRetrySource(
+  runId: string,
+  diagnosisBundle = bundle(),
+  overrides: Partial<Pick<
+    ReflectionGenerationContinuationRetrySource,
+    'provider' | 'model' | 'providerModel'
+  >> & { eligibleItemCount?: number; includedItemCount?: number } = {},
+): ReflectionGenerationContinuationRetrySource {
+  return {
+    runId,
+    stage: 'diagnosis',
+    provider: overrides.provider ?? 'openai',
+    model: overrides.model ?? 'gpt-5.6-luna-high',
+    providerModel: overrides.providerModel ?? 'gpt-5.6-luna',
+    promptVersion: 'reflection-staged-v2',
+    continuation: {
+      continuationId: `continuation-${runId}`,
+      sourceSessionId: 'session-1',
+      reflectionFlowVersion: 'initial_post_session_reflection.v4',
+      createdAt: generatedAt,
+      eligibleItemCount: overrides.eligibleItemCount ?? 1,
+      includedItemCount: overrides.includedItemCount ?? 1,
+      diagnosisBundle,
+      sourceProposalIds: null,
+      diagnosisResult: null,
+      finalEvidenceBundle: null,
+      promotionBundle: null,
+      artifactId: null,
+    },
   };
 }
 

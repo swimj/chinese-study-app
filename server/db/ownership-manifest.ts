@@ -202,6 +202,18 @@ function reflectionEntries(): DurableOwnershipEntry[] {
       'append-only provider attempt and retry basis',
     ),
     privateEntry(
+      'reflection_generation_continuations',
+      'learner staged-reflection chain plus optional source study session',
+      'create empty; legacy one-shot runs retain no fabricated continuation',
+      'immutable diagnosis input with one saved enrichment and final artifact link',
+    ),
+    privateEntry(
+      'reflection_generation_continuation_runs',
+      'learner plus staged-reflection continuation',
+      'create empty; only new staged provider calls receive links',
+      'immutable actual-call stage membership',
+    ),
+    privateEntry(
       'learner_owned_reflection_proposal_reviews',
       'learner plus reflection artifact',
       'inherit artifact ownership and validate invocation links within the same learner',

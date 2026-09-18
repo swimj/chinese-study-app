@@ -45,7 +45,7 @@ describe('reflection persistence across process reload', { concurrency: false },
       \`).run(generatedAt, generatedAt);
 
       const evidenceBundle = {
-        schemaVersion: 'session_reflection_bundle.v1',
+        schemaVersion: 'session_reflection_bundle.v5',
         generatedAt,
         session: {
           sessionId: 'reload-session',
@@ -58,6 +58,7 @@ describe('reflection persistence across process reload', { concurrency: false },
           source: 'production_mistake',
           sourceActionKind: 'production',
           sessionActionId: 'action-1',
+          sourceAttemptId: 'attempt-1',
           occurredAt: '2026-07-29T11:59:00.000Z',
           targetWord: {
             wordId: 'target',
@@ -70,25 +71,25 @@ describe('reflection persistence across process reload', { concurrency: false },
             contrastClusters: [],
             knownAcceptedAlternates: [],
           },
-          cuesAsShown: [{
+          servedCue: {
             cueId: null,
             cueType: 'definition_gloss',
-            displayOrder: 0,
             text: 'target',
-            displayedMeanings: ['target'],
-          }],
+            acceptedWordIds: ['target'],
+            supplement: null,
+          },
+          promotionEvidence: null,
           rawResponse: 'other response',
           submittedWord: null,
           responseKind: 'unmatched_text',
         }],
       };
       const result = {
-        schemaVersion: 'session_reflection_result.v4',
+        schemaVersion: 'session_reflection_result.v8',
         itemResults: [{
           itemId: 'item-1',
           diagnosisTags: ['persistent_confusion'],
-          observation: 'The durable state should survive a process boundary.',
-          learnerExplanation: null,
+          learnerExplanation: 'The durable state should survive a process boundary.',
           proposals: [{
             proposalGroupKey: null,
             rationale: 'Suppress this production goal.',
@@ -102,28 +103,32 @@ describe('reflection persistence across process reload', { concurrency: false },
             rationale: 'Keep a cue draft available for later review.',
             operation: {
               kind: 'repair_production_cue',
-              version: 1,
+              version: 2,
               wordId: 'target',
-              proposedCues: [{
-                cueType: 'minimal_context',
-                text: 'A concrete target.',
+              taskId: 'production-task:target:default_production',
+              changes: [{
+                kind: 'create',
+                cue: {
+                  cueType: 'minimal_context',
+                  text: 'A concrete target.',
+                  acceptedWordIds: ['target'],
+                },
               }],
-              repairIntent: 'add_contextual_triangulation',
+              sourceAttemptJudgments: [],
             },
           }],
           questions: [],
-          unhandledNeeds: [],
         }],
       };
 
       const artifact = db.materializeReflectionArtifact({
         artifactId: 'reload-artifact',
         sourceSessionId: 'reload-session',
-        reflectionFlowVersion: 'initial_post_session_reflection.v1',
+        reflectionFlowVersion: 'initial_post_session_reflection.v4',
         generatedAt,
         provider: 'openai',
         model: 'gpt-5.6-luna-high',
-        promptVersion: 'reflection-v2',
+        promptVersion: 'reflection-staged-v2',
         evidenceBundle,
         result,
       }).artifact;
@@ -172,7 +177,7 @@ describe('reflection persistence across process reload', { concurrency: false },
       const detail = db.getReflectionArtifactDetail('reload-artifact');
       const bySource = db.getReflectionArtifactBySessionAndFlow(
         'reload-session',
-        'initial_post_session_reflection.v1',
+        'initial_post_session_reflection.v4',
       );
       const relevance = db.getWordSkillRelevance('target', 'production');
 
@@ -191,7 +196,7 @@ describe('reflection persistence across process reload', { concurrency: false },
     );
     assert.equal(reloaded.bySource.artifactId, 'reload-artifact');
     assert.equal(
-      reloaded.detail.result.itemResults[0].observation,
+      reloaded.detail.result.itemResults[0].learnerExplanation,
       'The durable state should survive a process boundary.',
     );
     assert.deepEqual(reloaded.detail.proposals[0].review.disposition, {
@@ -244,7 +249,7 @@ type ReloadedProcessState = {
   history: Array<{ artifactId: string }>;
   bySource: { artifactId: string };
   detail: {
-    result: { itemResults: Array<{ observation: string }> };
+    result: { itemResults: Array<{ learnerExplanation: string }> };
     proposals: Array<{
       review: { proposalId: string; disposition: unknown };
       invocation: unknown;

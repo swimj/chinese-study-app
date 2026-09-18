@@ -89,12 +89,23 @@ receives the source attempt, diagnosis, both words' existing production cues,
 and intersecting pure cues including their stimulus and axis notes. There is
 no provider-directed database tool loop.
 
+Promotion candidates must be strict target-only rejected/Forgot attempts with
+a distinct known response word. Diagnosis must flag a valid/near-valid alternate,
+hidden usage overlap, or an overloaded cue (or propose a multi-answer draft,
+which is redirected to promotion). Ordinary forgetting alone does not trigger
+the second call. Pure-cue attempts themselves are not yet reflection inputs.
+
 The stage chain is versioned separately from legacy one-shot history. Persist
 the exact stage input before calling the provider; a retry of stage two reuses
 that input and the saved diagnosis rather than regenerating stage one. Each
 provider call retains its own run diagnostics and usage. Only the final
 validated result becomes a learner artifact. Generation never authorizes an
 operation automatically.
+
+This release is a hard execution cutover: only current flow, evidence, and
+prompt contracts support retries, second opinions, or proposal authorization
+and application. Older results stay readable but cannot be upgraded in place.
+There is no age-based compatibility window. Learners continue with new study.
 
 Final new results cannot propose new multi-answer word-owned cues. Promotion
 also replaces conflicting first-stage repairs, supplements, or suppression

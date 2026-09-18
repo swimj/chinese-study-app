@@ -166,6 +166,37 @@ const addProductionCueSupplementOperationV1Wire = objectSchema({
   exampleTranslation: stringSchema,
 });
 
+const promotePureElicitationOperationV1Wire = objectSchema({
+  destination: {
+    anyOf: [
+      objectSchema({
+        kind: enumSchema(['existing']),
+        pureCueId: stringSchema,
+      }),
+      objectSchema({
+        kind: enumSchema(['create']),
+        stimulus: stringSchema,
+        axisNote: stringSchema,
+      }),
+    ],
+  },
+  wordPlans: {
+    ...arraySchema(objectSchema({
+      wordId: stringSchema,
+      deactivateCueIds: arraySchema(stringSchema),
+      distinctiveCueDrafts: arraySchema(objectSchema({
+        cueType: enumSchema([
+          'definition_gloss',
+          'minimal_context',
+          'circumstance',
+        ]),
+        text: stringSchema,
+      })),
+    })),
+    minItems: 2,
+  },
+});
+
 const acceptAlternateOperation = objectSchema({
   kind: enumSchema(['accept_production_alternate']),
   version: enumSchema([1]),
@@ -319,3 +350,25 @@ export const sessionReflectionResultV7WireSchema: JsonSchema = objectSchema({
 }, 'One structured post-session reflection result with post-reveal cue supplements.');
 
 export const SESSION_REFLECTION_RESULT_V7_WIRE_SCHEMA_NAME = 'session_reflection_result_v7';
+
+export const pureCuePromotionResultV1WireSchema: JsonSchema = objectSchema({
+  schemaVersion: enumSchema(['pure_cue_promotion_result.v1']),
+  itemResults: arraySchema(objectSchema({
+    itemId: stringSchema,
+    decision: {
+      anyOf: [
+        objectSchema({
+          kind: enumSchema(['promote']),
+          rationale: stringSchema,
+          operation: promotePureElicitationOperationV1Wire,
+        }),
+        objectSchema({
+          kind: enumSchema(['no_promotion']),
+          rationale: stringSchema,
+        }),
+      ],
+    },
+  })),
+}, 'Promotion-only decisions over server-enriched pure-cue evidence.');
+
+export const PURE_CUE_PROMOTION_RESULT_V1_WIRE_SCHEMA_NAME = 'pure_cue_promotion_result_v1';

@@ -500,7 +500,9 @@ function parseProductionAttemptMetadata(raw: string): ProductionAttemptMetadataV
     || typeof production.text !== 'string'
     || production.text.trim().length === 0
     || !Array.isArray(production.acceptedWordIds)
-    || production.acceptedWordIds.length === 0
+    || production.acceptedWordIds.length !== 1
+    || production.acceptedWordIds[0] !== production.anchorWordId
+    || 'recheckDemandId' in production
     || production.acceptedWordIds.some((wordId) => typeof wordId !== 'string')
     || new Set(production.acceptedWordIds).size !== production.acceptedWordIds.length
     || (
@@ -523,7 +525,6 @@ function parseProductionAttemptMetadata(raw: string): ProductionAttemptMetadataV
     || (production.submittedWordId !== null && typeof production.submittedWordId !== 'string')
     || (
       production.result !== 'accepted_anchor'
-      && production.result !== 'accepted_non_anchor'
       && production.result !== 'rejected'
     )
   ) {
@@ -609,9 +610,7 @@ function isProductionResultCoherent(metadata: ProductionAttemptMetadataV0): bool
     case 'accepted_anchor':
       return metadata.submittedWordId === metadata.anchorWordId;
     case 'accepted_non_anchor':
-      return metadata.submittedWordId !== null
-        && metadata.submittedWordId !== metadata.anchorWordId
-        && metadata.acceptedWordIds.includes(metadata.submittedWordId);
+      return false;
     case 'rejected':
       return metadata.submittedWordId === null
         || !metadata.acceptedWordIds.includes(metadata.submittedWordId);

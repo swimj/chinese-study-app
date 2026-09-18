@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  PURE_CUE_PROMOTION_RESULT_V1_WIRE_SCHEMA_NAME,
+  pureCuePromotionResultV1WireSchema,
   SESSION_REFLECTION_RESULT_V7_WIRE_SCHEMA_NAME,
   sessionReflectionResultV7WireSchema,
 } from '../src/domain/reflection-result-schema.js';
 import type {
+  PureCuePromotionBundleV1,
+  PureCuePromotionResultV1Wire,
   SessionReflectionBundleV2,
   SessionReflectionResultV7,
   SessionReflectionResultV7Wire,
@@ -13,6 +17,7 @@ import {
   createLunaReflectionProvider,
   LUNA_REFLECTION_MODEL_CONFIG,
   LUNA_REFLECTION_PROMPT_VERSION,
+  PURE_CUE_PROMOTION_PROMPT_VERSION,
   LunaReflectionProviderError,
 } from '../server/reflection/luna-provider.js';
 import {
@@ -127,6 +132,74 @@ const validCanonicalResult: SessionReflectionResultV7 = {
         : proposal.operation,
     })),
   })),
+};
+
+const promotionBundle: PureCuePromotionBundleV1 = {
+  schemaVersion: 'pure_cue_promotion_bundle.v1',
+  generatedAt: bundle.generatedAt,
+  sourceSessionId: bundle.session.sessionId,
+  studyProfile: bundle.session.studyProfile,
+  items: [{
+    itemId: 'item-1',
+    sourceAttemptId: 'attempt-1',
+    targetWord: bundle.items[0]!.targetWord,
+    responseWord: bundle.items[0]!.submittedWord!,
+    servedCue: { ...bundle.items[0]!.servedCue, supplement: null },
+    learnerExplanation: 'The broad cue admits both words.',
+    promotionEvidence: {
+      diagnosisTags: ['production_cue_overloaded'],
+      words: [{
+        wordId: 'word-1',
+        activeProductionCues: [{
+          cueId: 'cue-1',
+          taskId: 'production-task:word-1:default_production',
+          cueType: 'definition_gloss',
+          text: 'to know',
+          acceptedWordIds: ['word-1', 'word-2'],
+        }],
+      }, {
+        wordId: 'word-2',
+        activeProductionCues: [{
+          cueId: 'cue-2',
+          taskId: 'production-task:word-2:default_production',
+          cueType: 'minimal_context',
+          text: 'to recognize a person',
+          acceptedWordIds: ['word-2'],
+        }],
+      }],
+      intersectingPureCues: [],
+    },
+  }],
+};
+
+const validPromotionWireResult: PureCuePromotionResultV1Wire = {
+  schemaVersion: 'pure_cue_promotion_result.v1',
+  itemResults: [{
+    itemId: 'item-1',
+    decision: {
+      kind: 'promote',
+      rationale: 'The shared elicitation is useful and the remaining cue can stay distinctive.',
+      operation: {
+        destination: {
+          kind: 'create',
+          stimulus: 'to know or recognize',
+          axisNote: 'General knowledge versus recognizing a person.',
+        },
+        wordPlans: [{
+          wordId: 'word-1',
+          deactivateCueIds: ['cue-1'],
+          distinctiveCueDrafts: [],
+        }, {
+          wordId: 'word-2',
+          deactivateCueIds: [],
+          distinctiveCueDrafts: [{
+            cueType: 'minimal_context',
+            text: 'Recognize a person you have met.',
+          }],
+        }],
+      },
+    },
+  }],
 };
 
 function responseEnvelope(
@@ -283,6 +356,40 @@ describe('production Luna reflection provider', () => {
     assert.equal(serialized.includes('unit-test-secret'), false);
     assert.equal(serialized.includes('transportDebug'), false);
     assert.equal(serialized.includes('must-not-be-returned'), false);
+  });
+
+  test('uses the separate strict promotion contract and returns the validated wire decision', async () => {
+    const capture: CapturedRequest[] = [];
+    const provider = createLunaReflectionProvider({
+      environment: { OPENAI_API_KEY: 'unit-test-secret' },
+      promotionSystemPrompt: 'Pure-cue promotion system prompt.',
+      fetchImplementation: capturingFetch(
+        responseEnvelope(JSON.stringify(validPromotionWireResult)),
+        capture,
+      ),
+    });
+
+    const generated = await provider.generatePromotion!(promotionBundle, {
+      clientRequestId: 'promotion-run-123',
+    });
+
+    assert.equal(capture.length, 1);
+    const request = capture[0]!;
+    assert.equal(request.headers.get('x-client-request-id'), 'promotion-run-123');
+    assert.deepEqual(request.body.messages, [
+      { role: 'system', content: 'Pure-cue promotion system prompt.' },
+      { role: 'user', content: JSON.stringify(promotionBundle) },
+    ]);
+    assert.deepEqual(request.body.response_format, {
+      type: 'json_schema',
+      json_schema: {
+        name: PURE_CUE_PROMOTION_RESULT_V1_WIRE_SCHEMA_NAME,
+        strict: true,
+        schema: pureCuePromotionResultV1WireSchema,
+      },
+    });
+    assert.deepEqual(generated.result, validPromotionWireResult);
+    assert.equal(generated.metadata.promptVersion, PURE_CUE_PROMOTION_PROMPT_VERSION);
   });
 
   test('retains a non-negative provider-reported request cost', async () => {

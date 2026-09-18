@@ -179,6 +179,10 @@ Open sessions must be restarted; old multi-answer/recheck commits fail closed.
 This intentionally discards obsolete membership and recheck state, so retain the
 pre-upgrade backup if historical inspection of that state is needed.
 
+`0011_reflection_generation_continuations.sql` adds exact staged-reflection
+continuations and per-provider-call links. Legacy generation runs and artifacts
+are preserved without synthetic continuation links.
+
 This is a schema-changing release: use the stopped-writer migration procedure
 above, not the application-only hosted upgrade. Fresh databases apply the same
 migration automatically; existing databases require the explicit offline step.

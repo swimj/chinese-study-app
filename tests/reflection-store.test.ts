@@ -168,7 +168,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       pricingAsOf: '2026-07-30',
       pricingBasis: { id: 'price-v1', inputPerMillionUsd: 0.2 },
       estimatedCostUsd: 0.00042,
-      retryable: true,
+      retryable: false,
     });
     assert.deepEqual(dbModule.listReflectionGenerationRuns(), [recorded]);
   });
@@ -298,7 +298,7 @@ describe('reflection durable store', { concurrency: false }, () => {
     );
   });
 
-  test('retains failed-run evidence for retry until an artifact exists', () => {
+  test('keeps legacy failed-run evidence readable but never retryable', () => {
     materializationInput('retry-session', suppressOperation('target'));
     const evidenceBundle = bundle('retry-session');
     const failed = dbModule.recordReflectionGenerationRun({
@@ -331,21 +331,13 @@ describe('reflection durable store', { concurrency: false }, () => {
       estimatedCostUsd: null,
       evidenceBundle,
     });
-    assert.equal(failed.retryable, true);
-    assert.deepEqual(dbModule.getReflectionGenerationRetrySource('failed-run'), {
-      runId: 'failed-run',
-      sourceSessionId: 'retry-session',
-      reflectionFlowVersion: 'initial_post_session_reflection.v1',
-      model: 'gpt-5.6-luna-high',
-      eligibleItemCount: 1,
-      includedItemCount: 1,
-      evidenceBundle,
-    });
+    assert.equal(failed.retryable, false);
+    assert.equal(dbModule.getReflectionGenerationContinuationRetrySource('failed-run'), null);
 
     dbModule.materializeReflectionArtifact(
       materializationInput('retry-session', suppressOperation('target')),
     );
-    assert.equal(dbModule.listReflectionGenerationRuns()[0]?.retryable, true);
+    assert.equal(dbModule.listReflectionGenerationRuns()[0]?.retryable, false);
   });
 
   test('retains sessionless remediation artifacts and exact-bundle retry provenance', () => {
@@ -390,15 +382,21 @@ describe('reflection durable store', { concurrency: false }, () => {
       estimatedCostUsd: null,
       evidenceBundle: input.evidenceBundle,
     });
-    const retry = dbModule.getReflectionGenerationRetrySource('sessionless-failed-run');
-    assert.equal(retry.sourceSessionId, null);
-    assert.deepEqual(retry.evidenceBundle, input.evidenceBundle);
+    assert.equal(
+      dbModule.getReflectionGenerationContinuationRetrySource('sessionless-failed-run'),
+      null,
+    );
   });
 
   test('atomically materializes immutable JSON and exactly one pending row per proposal', () => {
     const input = materializationInput('session-one', suppressOperation('target'));
     input.result.itemResults.push(informationalResult('info'));
-    input.evidenceBundle.items.push(productionItem('info'));
+    input.evidenceBundle.items.push({
+      ...structuredClone(input.evidenceBundle.items[0]!),
+      itemId: 'info',
+      sourceAttemptId: 'attempt-info',
+      sessionActionId: 'action-info',
+    });
 
     const materialized = dbModule.materializeReflectionArtifact(input);
     assert.equal(materialized.created, true);
@@ -533,18 +531,36 @@ describe('reflection durable store', { concurrency: false }, () => {
       }],
     };
     const artifact = dbModule.materializeReflectionArtifact(
-      materializationInput('legacy-contrast-session', operation),
+      legacyMaterializationInput('legacy-contrast-session', operation),
     ).artifact;
-    const accepted = dbModule.acceptReflectionProposal({
-      proposalId: artifact.proposals[0]!.review.proposalId,
-      operation,
-      invocationId: 'legacy-contrast-invocation',
-      createdAt: updatedAt,
-    });
-    dbModule.applyReflectionInvocation(
-      accepted.invocation.invocation.invocationId,
+    const proposalId = artifact.proposals[0]!.review.proposalId;
+    sqlite.prepare(`
+      INSERT INTO reflection_operation_invocations (
+        invocation_id, created_at, origin_kind, origin_proposal_id,
+        origin_superseded_proposal_id, operation_kind, operation_version,
+        operation_json, application_state, application_updated_at,
+        unsupported_reason, applied_at, application_error, stale_reason,
+        effect_refs_json, satisfying_effect_refs_json
+      ) VALUES (
+        'legacy-contrast-invocation', ?, 'proposal_acceptance', ?, NULL, ?, ?, ?,
+        'applied', ?, NULL, ?, NULL, NULL, ?, '[]'
+      )
+    `).run(
+      updatedAt,
+      proposalId,
+      operation.kind,
+      operation.version,
+      JSON.stringify(operation),
       appliedAt,
+      appliedAt,
+      JSON.stringify([{ type: 'contrast_cluster', id: 'legacy-cluster' }]),
     );
+    sqlite.prepare(`
+      UPDATE reflection_proposal_reviews
+      SET disposition = 'accepted', updated_at = ?, acceptance_mode = 'exact',
+          accepted_invocation_id = 'legacy-contrast-invocation'
+      WHERE proposal_id = ?
+    `).run(appliedAt, proposalId);
 
     assert.equal(dbModule.listReflectionArtifacts('all')[0]?.readState, 'available');
     assert.equal(
@@ -554,8 +570,44 @@ describe('reflection durable store', { concurrency: false }, () => {
     );
   });
 
+  test('leaves pending legacy manual invocations readable but outside recovery and application', () => {
+    const operation = suppressOperation('target');
+    sqlite.prepare(`
+      INSERT INTO reflection_operation_invocations (
+        invocation_id, created_at, origin_kind, origin_proposal_id,
+        origin_superseded_proposal_id, operation_kind, operation_version,
+        operation_json, application_state, application_updated_at,
+        unsupported_reason, applied_at, application_error, stale_reason,
+        effect_refs_json, satisfying_effect_refs_json
+      ) VALUES (
+        'legacy-manual-pending', ?, 'manual', NULL, NULL, ?, ?, ?,
+        'pending', ?, NULL, NULL, NULL, NULL, '[]', '[]'
+      )
+    `).run(
+      updatedAt,
+      operation.kind,
+      operation.version,
+      JSON.stringify(operation),
+      updatedAt,
+    );
+
+    assert.equal(
+      dbModule.getReflectionInvocation('legacy-manual-pending').application.state.kind,
+      'pending',
+    );
+    assert.deepEqual(dbModule.listPendingReflectionInvocationIds(), []);
+    assert.throws(
+      () => dbModule.applyReflectionInvocation('legacy-manual-pending', appliedAt),
+      /older contract and is read-only/,
+    );
+    assert.equal(
+      dbModule.getReflectionInvocation('legacy-manual-pending').application.state.kind,
+      'pending',
+    );
+  });
+
   test('rejects mismatched bundle and result generations', () => {
-    const v1 = materializationInput('mismatch-v1-session', suppressOperation('target'));
+    const v1 = legacyMaterializationInput('mismatch-v1-session', suppressOperation('target'));
     const v2 = materializationInputV2('mismatch-v2-session');
     assert.throws(
       () => dbModule.materializeReflectionArtifact({
@@ -573,22 +625,17 @@ describe('reflection durable store', { concurrency: false }, () => {
     );
   });
 
-  test('authorizes exact and contained revised V2 cue repairs against immutable evidence', () => {
+  test('keeps legacy V2 cue repairs readable but rejects exact and revised authorization', () => {
     const exactArtifact = dbModule.materializeReflectionArtifact(
       materializationInputV2('v2-exact-session'),
     ).artifact;
     const exactOperation = exactArtifact.proposals[0]!.proposal.operation;
-    const exact = dbModule.acceptReflectionProposal({
+    assert.throws(() => dbModule.acceptReflectionProposal({
       proposalId: exactArtifact.proposals[0]!.review.proposalId,
       operation: exactOperation,
       invocationId: 'v2-exact-invocation',
       createdAt: updatedAt,
-    });
-    assert.deepEqual(exact.review.disposition, {
-      kind: 'accepted',
-      acceptanceMode: 'exact',
-      acceptedInvocationId: 'v2-exact-invocation',
-    });
+    }), /older contract and is read-only/);
 
     const revisedArtifact = dbModule.materializeReflectionArtifact(
       materializationInputV2('v2-revised-session'),
@@ -600,18 +647,14 @@ describe('reflection durable store', { concurrency: false }, () => {
       assert.equal(create?.kind, 'create');
       if (create?.kind === 'create') create.cue.text = 'A learner-edited bounded context';
     }
-    const revised = dbModule.acceptReflectionProposal({
+    assert.throws(() => dbModule.acceptReflectionProposal({
       proposalId: revisedArtifact.proposals[0]!.review.proposalId,
       operation: revisedOperation,
       invocationId: 'v2-revised-invocation',
       createdAt: updatedAt,
-    });
-    assert.equal(
-      revised.review.disposition.kind === 'accepted'
-        ? revised.review.disposition.acceptanceMode
-        : null,
-      'revised',
-    );
+    }), /older contract and is read-only/);
+    assert.equal(exactArtifact.proposals[0]!.review.disposition.kind, 'pending');
+    assert.equal(revisedArtifact.proposals[0]!.review.disposition.kind, 'pending');
   });
 
   test('materializes separate candidates for the same session and flow', () => {
@@ -723,12 +766,17 @@ describe('reflection durable store', { concurrency: false }, () => {
   });
 
   test('creates a sessionless curated bundle and retires only its selected deferred original on success', () => {
-    const source = dbModule.materializeReflectionArtifact(materializationInputV2('second-opinion-source'));
+    const source = dbModule.materializeReflectionArtifact(
+      materializationInput('second-opinion-source', suppressOperation('target')),
+    );
     const originalProposalId = source.artifact.proposals[0]!.review.proposalId;
     dbModule.deferReflectionProposal(originalProposalId, updatedAt);
 
-    const { bundle, sourceProposalIds } = dbModule.buildDeferredSecondOpinionBundle([originalProposalId], appliedAt);
-    assert.equal(bundle.schemaVersion, 'curated_reflection_bundle.v1');
+    const { bundle, sourceProposalIds } = dbModule.buildStagedDeferredSecondOpinionBundle(
+      [originalProposalId],
+      appliedAt,
+    );
+    assert.equal(bundle.schemaVersion, 'curated_reflection_diagnosis_bundle.v2');
     assert.equal(bundle.items.length, 1);
     assert.notEqual(bundle.items[0]!.itemId, 'item');
     assert.equal('session' in bundle, false);
@@ -737,15 +785,19 @@ describe('reflection durable store', { concurrency: false }, () => {
 
     const replacement = dbModule.materializeReflectionArtifact({
       sourceSessionId: null,
-      reflectionFlowVersion: dbModule.DEFERRED_SECOND_OPINION_FLOW_VERSION,
+      reflectionFlowVersion: dbModule.STAGED_DEFERRED_SECOND_OPINION_FLOW_VERSION,
       generatedAt: appliedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
-      promptVersion: 'reflection-v9',
-      evidenceBundle: bundle,
+      promptVersion: 'reflection-staged-v2',
+      evidenceBundle: {
+        ...bundle,
+        schemaVersion: 'curated_reflection_bundle.v2',
+        items: bundle.items.map((item) => ({ ...item, promotionEvidence: null })),
+      },
       sourceProposalIds,
       result: {
-        schemaVersion: 'session_reflection_result.v7',
+        schemaVersion: 'session_reflection_result.v8',
         itemResults: [{
           itemId: bundle.items[0]!.itemId,
           diagnosisTags: ['ordinary_retrieval_noise'],
@@ -776,27 +828,25 @@ describe('reflection durable store', { concurrency: false }, () => {
   });
 
   test('builds one curated bundle when session-local action ids repeat across source sessions', () => {
-    const firstInput = materializationInputV2('second-opinion-cross-session-a');
-    assert.equal(firstInput.evidenceBundle.schemaVersion, 'session_reflection_bundle.v2');
-    if (firstInput.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v2') {
-      throw new Error('Expected V2 evidence fixture.');
-    }
+    const firstInput = materializationInput(
+      'second-opinion-cross-session-a',
+      suppressOperation('target'),
+    );
     firstInput.evidenceBundle.items[0]!.sourceAttemptId = 'attempt-cross-session-a';
     const first = dbModule.materializeReflectionArtifact(firstInput);
     const firstProposalId = first.artifact.proposals[0]!.review.proposalId;
     dbModule.deferReflectionProposal(firstProposalId, updatedAt);
 
-    const secondInput = materializationInputV2('second-opinion-cross-session-b');
-    assert.equal(secondInput.evidenceBundle.schemaVersion, 'session_reflection_bundle.v2');
-    if (secondInput.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v2') {
-      throw new Error('Expected V2 evidence fixture.');
-    }
+    const secondInput = materializationInput(
+      'second-opinion-cross-session-b',
+      suppressOperation('target'),
+    );
     secondInput.evidenceBundle.items[0]!.sourceAttemptId = 'attempt-cross-session-b';
     const second = dbModule.materializeReflectionArtifact(secondInput);
     const secondProposalId = second.artifact.proposals[0]!.review.proposalId;
     dbModule.deferReflectionProposal(secondProposalId, updatedAt);
 
-    const { bundle } = dbModule.buildDeferredSecondOpinionBundle(
+    const { bundle } = dbModule.buildStagedDeferredSecondOpinionBundle(
       [firstProposalId, secondProposalId],
       appliedAt,
     );
@@ -1064,6 +1114,30 @@ function materializationInput(
   sessionId: string,
   operation: ReflectionOperation,
 ): Parameters<DbModule['materializeReflectionArtifact']>[0] {
+  const legacy = legacyMaterializationInput(sessionId, operation);
+  const v2 = bundleV2(sessionId);
+  const evidenceBundle: SessionReflectionBundleV5 = {
+    ...v2,
+    schemaVersion: 'session_reflection_bundle.v5',
+    items: v2.items.map((item) => ({
+      ...item,
+      servedCue: { ...item.servedCue, supplement: null },
+      promotionEvidence: null,
+    })),
+  };
+  return {
+    ...legacy,
+    reflectionFlowVersion: 'initial_post_session_reflection.v4',
+    promptVersion: 'reflection-staged-v2',
+    evidenceBundle,
+    result: currentResult(operation),
+  };
+}
+
+function legacyMaterializationInput(
+  sessionId: string,
+  operation: ReflectionOperation,
+): Parameters<DbModule['materializeReflectionArtifact']>[0] {
   sqlite.prepare(`
     INSERT OR IGNORE INTO study_sessions (
       id,
@@ -1081,7 +1155,7 @@ function materializationInput(
     model: 'gpt-5.6-luna',
     promptVersion: 'initial-reflection.v1',
     evidenceBundle: bundle(sessionId),
-    result: result(operation),
+    result: legacyResult(operation),
   };
 }
 
@@ -1144,6 +1218,37 @@ function materializationInputV8(
   const base = bundleV2(sessionId);
   const item = base.items[0]!;
   const responseWordId = item.submittedWord!.wordId;
+  sqlite.prepare(`
+    INSERT OR REPLACE INTO study_attempt_events (
+      id, occurred_at, session_id, session_action_id, session_event_sequence,
+      action_attempt_sequence, action_kind, target_word_id,
+      sampled_skill_ids_json, response, outcome, rating,
+      content_ref_json, metadata_json, projected_at
+    ) VALUES (
+      ?, ?, ?, ?, 1, 1, 'production', 'target', '["production"]', '替代',
+      'incorrect', 'forgot', NULL, ?, ?
+    )
+  `).run(
+    item.sourceAttemptId,
+    generatedAt,
+    sessionId,
+    item.sessionActionId,
+    JSON.stringify({
+      production: {
+        taskId: 'production-task:target:default_production',
+        cueId: null,
+        cueType: 'definition_gloss',
+        text: 'target',
+        acceptedWordIds: ['target'],
+        supplement: null,
+        anchorWordId: 'target',
+        submittedText: '替代',
+        submittedWordId: responseWordId,
+        result: 'rejected',
+      },
+    }),
+    generatedAt,
+  );
   const evidenceBundle: SessionReflectionBundleV5 = {
     ...base,
     schemaVersion: 'session_reflection_bundle.v5',
@@ -1199,11 +1304,11 @@ function materializationInputV8(
   };
   return {
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v3',
+    reflectionFlowVersion: 'initial_post_session_reflection.v4',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna',
-    promptVersion: 'reflection-v8',
+    promptVersion: 'pure-cue-promotion-v2',
     evidenceBundle,
     result,
   };
@@ -1331,7 +1436,7 @@ function productionItem(itemId: string): SessionReflectionBundleV1['items'][numb
   };
 }
 
-function result(operation: ReflectionOperation): SessionReflectionResultV4 {
+function legacyResult(operation: ReflectionOperation): SessionReflectionResultV4 {
   return {
     schemaVersion: 'session_reflection_result.v4',
     itemResults: [{
@@ -1350,15 +1455,30 @@ function result(operation: ReflectionOperation): SessionReflectionResultV4 {
   };
 }
 
-function informationalResult(itemId: string): SessionReflectionResultV4['itemResults'][number] {
+function currentResult(operation: ReflectionOperation): SessionReflectionResultV8 {
+  return {
+    schemaVersion: 'session_reflection_result.v8',
+    itemResults: [{
+      itemId: 'item',
+      diagnosisTags: ['persistent_confusion'],
+      learnerExplanation: 'The learner supplied a visible alternate.',
+      proposals: [{
+        proposalGroupKey: null,
+        rationale: 'This operation may make the study state more faithful.',
+        operation,
+      }],
+      questions: [],
+    }],
+  };
+}
+
+function informationalResult(itemId: string): SessionReflectionResultV8['itemResults'][number] {
   return {
     itemId,
     diagnosisTags: ['ordinary_retrieval_noise'],
-    observation: 'No durable intervention is warranted.',
-    learnerExplanation: null,
+    learnerExplanation: 'No durable intervention is warranted.',
     proposals: [],
     questions: [],
-    unhandledNeeds: [],
   };
 }
 
