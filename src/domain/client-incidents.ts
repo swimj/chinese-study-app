@@ -4,6 +4,7 @@ export const CLIENT_TRANSPORT_INCIDENT_MAX_BATCH_SIZE = 20;
 
 export type ClientTransportIncidentRoute =
   | '/api/study-sessions/:sessionId/accepted-review-attempt-batch'
+  | '/api/study-sessions/:sessionId/pure-cue-assessments'
   | '/api/study-sessions/:sessionId/accepted-contrast-selection-attempt';
 
 export type ClientTransportIncident = {
@@ -98,6 +99,7 @@ export function isClientTransportIncidentRoute(
   value: unknown,
 ): value is ClientTransportIncidentRoute {
   return value === '/api/study-sessions/:sessionId/accepted-review-attempt-batch'
+    || value === '/api/study-sessions/:sessionId/pure-cue-assessments'
     || value === '/api/study-sessions/:sessionId/accepted-contrast-selection-attempt';
 }
 

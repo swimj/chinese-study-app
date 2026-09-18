@@ -234,6 +234,19 @@ are performed with `scripts/set-diet-deck.ts`; there is no HTTP endpoint.
 
 ## Session composition
 
+The review bucket includes word-owned items and standalone pure-cue items
+(`itemType: pure_cue_production`). Pure-cue items have a server-issued frozen
+snapshot and no target word. Their admission is independent of word review;
+fragile cues are due-date admitted and strong cues use proportional sampling.
+
+`POST /api/study-sessions/:sessionId/pure-cue-assessments` accepts
+`{ attemptId, snapshotId, sessionActionId, events }`. Each event supplies
+`eventId`, `occurredAt`, `response`, `outcome`, `submittedWordId`, and `rating`.
+The server verifies outcomes against its saved snapshot and covering rules,
+uses its own commit clock, and returns 204. An identical retry is idempotent;
+conflicting evidence or a snapshot already consumed by another action is 400.
+No member-word scheduler or admission state is changed.
+
 | Method | Path | Handler domain |
 | --- | --- | --- |
 | GET | `/api/session-payload` | `session-composition` |

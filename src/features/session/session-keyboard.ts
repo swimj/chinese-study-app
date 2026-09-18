@@ -45,6 +45,7 @@ export type SessionKeyboardContext = {
   isEditableTarget: boolean;
   productionInputActive: boolean;
   productionAwaitingNext: boolean;
+  pureCueAwaitingNext?: boolean;
   productionAwaitingSupplement: boolean;
   contrastAwaitingNext: boolean;
   unstudiedIntro: boolean;
@@ -107,7 +108,7 @@ export function getSessionInteractionKind(context: SessionKeyboardContext): Sess
     return 'completed_summary';
   }
 
-  if (context.productionAwaitingNext || context.contrastAwaitingNext) {
+  if (context.productionAwaitingNext || context.pureCueAwaitingNext || context.contrastAwaitingNext) {
     return 'await_next';
   }
 
@@ -281,7 +282,7 @@ export function resolveSessionKey(
   }
 
   if (event.key === ' ') {
-    if (context.productionAwaitingNext || context.contrastAwaitingNext) {
+    if (context.productionAwaitingNext || context.pureCueAwaitingNext || context.contrastAwaitingNext) {
       return { type: 'continue_after_auto_forgot' };
     }
 
@@ -305,7 +306,7 @@ export function resolveSessionKey(
       return { type: 'reveal' };
     }
 
-    if (context.hasActiveWord && getDefaultRating(context.ratingOptions)) {
+    if (context.ratingAvailable && getDefaultRating(context.ratingOptions)) {
       return { type: 'rate_default' };
     }
 
@@ -326,7 +327,7 @@ export function resolveSessionKey(
     return { type: 'undo' };
   }
 
-  if (context.productionAwaitingNext || context.contrastAwaitingNext || context.productionAwaitingSupplement) {
+  if (context.productionAwaitingNext || context.pureCueAwaitingNext || context.contrastAwaitingNext || context.productionAwaitingSupplement) {
     return null;
   }
 

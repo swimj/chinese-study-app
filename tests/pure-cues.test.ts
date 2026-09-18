@@ -264,6 +264,17 @@ describe('pure cue persistence', { concurrency: false }, () => {
     `).get()?.relevance_state, 'suppressed');
   });
 
+  test('composes a standalone pure cue review item with a frozen server snapshot', () => {
+    const payload = dbModule.getSessionPayload('2026-09-18');
+    const item = payload.buckets.review.find((candidate) => candidate.itemType === 'pure_cue_production');
+    assert.ok(item);
+    assert.equal(item.itemType, 'pure_cue_production');
+    assert.equal(item.snapshot.pureCueId, 'pure-a');
+    assert.equal(item.snapshot.stimulus, 'to tell an untruth');
+    assert.equal('word' in item, false);
+    assert.deepEqual(item.snapshot.acceptedAnswers.map((answer) => answer.wordId), ['word-a', 'word-b', 'word-c']);
+  });
+
   test('freezes server answer forms and consumes a snapshot once without word scheduling effects', () => {
     const snapshot = dbModule.issuePureCueServedSnapshot({
       snapshotId: 'snapshot-pure-a', pureCueId: 'pure-a', servedAt: now,

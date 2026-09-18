@@ -17,6 +17,7 @@ import type {
   ContrastSelectionCommitIntent,
   ContrastPrompt,
   ReviewCommitFields,
+  PureCueSessionReviewItem,
   SessionStudyItem,
   SessionStudyItemBuckets,
   ProductionExerciseSnapshot,
@@ -32,6 +33,11 @@ import type {
   WordSkillRelevanceState,
 } from '../../src/domain/study-actions.ts';
 import { buildReviewSessionStudyItem, deriveReviewCommitFieldsFromAttemptEvents } from '../../src/domain/study-actions.ts';
+import {
+  issuePureCueServedSnapshot,
+  selectStoredPureCuesForSession,
+  captureProductionSchedulerSnapshotForAttemptBatchWithoutTransaction,
+} from './pure-cues.ts';
 import type { StudyProfileId } from '../../src/study-profile.ts';
 import {
   buildProductionAnswerLookup,
@@ -1494,11 +1500,18 @@ export function recordAcceptedReviewAttemptBatch({
     const assigned = productionAttempts.find((attempt) => attempt.event.id === event.id);
     return assigned?.event ?? event;
   });
+  const terminalProductionAttempt = productionAttempts.at(-1) ?? null;
   getDb().exec('BEGIN');
 
   try {
     ensureStudySessionExistsWithoutTransaction(sessionId, eventsToStore[0]?.occurredAt ?? reviewedAt);
     insertStudyAttemptEventsWithoutTransaction(eventsToStore);
+    if (terminalProductionAttempt !== null && derivedCommitFields.failureCount > 0) {
+      captureProductionSchedulerSnapshotForAttemptBatchWithoutTransaction({
+        sourceAttemptId: terminalProductionAttempt.event.id,
+        capturedAt: reviewedAt,
+      });
+    }
     for (const { event, evidence } of productionAttempts) {
       appendProductionCueAttemptEvidenceWithoutTransaction({
         occurredAt: event.occurredAt,
@@ -4741,7 +4754,22 @@ function getSessionItemBucketsWithWords(
   const today = getTodayKey();
   const remainingDailyNewWordSlots = getRemainingDailyNewWordSlots(studyDayKey);
   const unstudiedAdmissionSource = getUnstudiedAdmissionSource();
-  const reviewRows = getReviewSessionStudyItems(now, random);
+  const wordReviewItems = getReviewSessionStudyItems(now, random);
+  const pureCueSelection = selectStoredPureCuesForSession({
+    ordinaryReviewCount: wordReviewItems.length,
+    now,
+    random,
+  });
+  const fragileIds = new Set(pureCueSelection.fragile.map((cue) => cue.id));
+  const pureCueReviewItems: PureCueSessionReviewItem[] = pureCueSelection.selected.map((cue) => {
+    const snapshot = issuePureCueServedSnapshot({ pureCueId: cue.id, servedAt: now });
+    return {
+      itemType: 'pure_cue_production',
+      sessionActionId: `pure-cue/${snapshot.snapshotId}`,
+      snapshot,
+      tier: fragileIds.has(cue.id) ? 'fragile' : 'strong',
+    };
+  });
 
   const learningRows = getDb()
     .prepare(`
@@ -4768,10 +4796,23 @@ function getSessionItemBucketsWithWords(
     .all(today) as WordRow[];
 
   return {
-    review: reviewRows,
+    review: interleavePureCueReviewItems(wordReviewItems, pureCueReviewItems, random),
     learning: learningRows.map(mapWordRow),
     unstudied: getAdmittedUnstudiedWords(remainingDailyNewWordSlots, studyDayKey, unstudiedAdmissionSource),
   };
+}
+
+function interleavePureCueReviewItems(
+  wordItems: SessionStudyItem[],
+  pureCueItems: PureCueSessionReviewItem[],
+  random: () => number,
+) {
+  const interleaved = [...wordItems];
+  for (const item of pureCueItems) {
+    const index = Math.floor(random() * (interleaved.length + 1));
+    interleaved.splice(index, 0, item);
+  }
+  return interleaved;
 }
 
 function getAdmittedUnstudiedWords(
@@ -5087,6 +5128,9 @@ function isReviewSkillCandidateAllowedByRelevancePolicy(
   row: ReviewSessionItemWithSkillRow,
   hasDurableProductionCue: boolean,
 ) {
+  if (row.skill_id === 'production' && row.skill_relevance_state === 'proxied') {
+    return false;
+  }
   return row.skill_relevance_state !== 'suppressed' || hasDurableProductionCue;
 }
 
