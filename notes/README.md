@@ -82,6 +82,7 @@ portfolio-disposition pattern as Linear.
 
 | Note | Type | Retire by |
 | --- | --- | --- |
+| [2026-09-18-pure-cue-elicitation-memo.md](active/2026-09-18-pure-cue-elicitation-memo.md) | research | when graduated into a spec/plan, or declined |
 | [2026-09-04-swi-51-app-only-upgrade-pipeline.md](active/2026-09-04-swi-51-app-only-upgrade-pipeline.md) | work-bundle | when the first app-only upgrade pipeline is dispositioned |
 | [2026-09-04-swi-51-release-maturity-map.md](active/2026-09-04-swi-51-release-maturity-map.md) | work-bundle | when SWI-51's accepted contract graduates |
 | [2026-09-03-swi-51-hosted-release-design.md](active/2026-09-03-swi-51-hosted-release-design.md) | work-bundle | when SWI-51 is dispositioned and its accepted release contract has graduated |

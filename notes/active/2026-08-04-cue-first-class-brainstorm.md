@@ -10,6 +10,7 @@ related:
   - SPECS/reflection-proposals-and-handles.md (repair_production_cue)
   - STABILITY_FRONTIER.md (cue-repair loop near-term outcome)
   - notes/active/2026-07-06-session-reflection-workflow.md (cue-as-broader-than-gloss intuition)
+  - notes/active/2026-09-18-pure-cue-elicitation-memo.md (standalone elicitation / promotion; successor thread)
 
 ## Purpose
 
