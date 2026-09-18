@@ -17,7 +17,8 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`attention.ts`](../server/db/attention.ts) | Help `inbox_seen_at` stamps, unseen Help-queue count, unseen failed generation-run ids, failed-run seen-through cursor, and the What’s New seen-through cursor |
 | [`intake-triage.ts`](../server/db/intake-triage.ts) | Dormant intake-triage schema creation and validation retained for database compatibility |
 | [`domain-commands.ts`](../server/db/domain-commands.ts) | Shared transaction-aware domain commands used by reflection and manual paths; definition-production suppression and contextual-selection eligibility |
-| [`production-cues.ts`](../server/db/production-cues.ts) | Default production tasks, immutable cue/lifecycle/evidence state, one immutable post-reveal supplement per definition cue or fallback, production recheck demands, and cue/supplement application adapters |
+| [`production-cues.ts`](../server/db/production-cues.ts) | Default production tasks, strict target-only word cues, immutable lifecycle/evidence state, one immutable post-reveal supplement per definition cue or fallback, and cue/supplement application adapters |
+| [`pure-cues.ts`](../server/db/pure-cues.ts) | Shared standalone cue content and indexed membership lookup; automatic adoption into private learner schedules; frozen answer snapshots, independent assessment projection, and restore-once pre-lapse scheduler snapshots |
 | [`schema.ts`](../server/db/schema.ts) | Re-exports `applyProductionContrastExerciseSeed` and `initializeDatabase` for init ordering |
 | [`ownership-manifest.ts`](../server/db/ownership-manifest.ts) | Auditable ownership, enforcement, history, migration, and lifecycle classification for every durable application table |
 | [`identity.ts`](../server/db/identity.ts) | Stable learner records, auth-provider mappings, learner settings, learner params, and explicit Clerk-free bootstrap |
@@ -181,7 +182,7 @@ addressable publication record with its learning purpose and current
 `shared_trial` and `available` publications are eligible for serving. A repair
 creates distinct attributable content; replacement does not imply lineage or
 automatically retire the prior publication. Private cue lifecycle, evidence,
-activation, recheck state, publication provenance, and reports stay in
+activation, publication provenance, and reports stay in
 `learner_owned_*` tables. Reporting does not itself quarantine content; the
 registered operator queue reads open reports from their physical learner-owned rows, and the
 registered operator command records the separate quarantine disposition and

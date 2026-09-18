@@ -164,6 +164,33 @@ changed migration SQL, and subsequent DDL drift fail closed. Historical markers
 outside that namespace remain independent. Hosted diagnostics already include
 these rows in their migration count.
 
+## Pure-cue release
+
+`0009_pure_cues.sql` adds shared pure-cue content and accepted membership,
+private `learner_pure_cue_state`, immutable private served snapshots and attempts,
+and restore-once production scheduler compensation snapshots with source-attempt
+links. It rebuilds the publication-kind constraint to include `pure_cue`, retaining
+existing publications, their events, private provenance, and integrity guards.
+Attempt history is not rewritten. The unmerged pure-cue schema is introduced
+directly in its shared-content form; there is no migration from an earlier
+draft of the feature.
+
+`0010_strict_word_cues.sql` resets every word-owned cue's accepted membership to
+its task's target, including inactive and shared cues, then enforces owner-only
+membership inserts. It drops the retired production recheck view/table and all
+outstanding 48-hour demands. No semantic promotion or proxy assignment occurs.
+Open sessions must be restarted; old multi-answer/recheck commits fail closed.
+This intentionally discards obsolete membership and recheck state, so retain the
+pre-upgrade backup if historical inspection of that state is needed.
+
+`0011_reflection_generation_continuations.sql` adds exact staged-reflection
+continuations and per-provider-call links. Legacy generation runs and artifacts
+are preserved without synthetic continuation links.
+
+This is a schema-changing release: use the stopped-writer migration procedure
+above, not the application-only hosted upgrade. Fresh databases apply the same
+migration automatically; existing databases require the explicit offline step.
+
 ## Failure and rollback
 
 On migration failure, keep the app stopped, inspect the error, correct the

@@ -83,17 +83,6 @@ export type ProductionCueEvidenceProjectionV0 = {
   updatedAt: string;
 };
 
-export type ProductionRecheckDemandV0 = {
-  demandId: string;
-  taskId: string;
-  sourceAttemptId: string;
-  scheduledAt: string;
-  dueAt: string;
-  consumedAt: string | null;
-  consumedByAttemptId: string | null;
-  replacementDemandId: string | null;
-};
-
 type ProductionTaskRow = {
   task_id: string;
   word_id: string;
@@ -143,17 +132,6 @@ type SourceAttemptRow = {
   response: string | null;
   content_ref_json: string | null;
   metadata_json: string;
-};
-
-type ProductionRecheckDemandRow = {
-  demand_id: string;
-  task_id: string;
-  source_attempt_id: string;
-  scheduled_at: string;
-  due_at: string;
-  consumed_at: string | null;
-  consumed_by_attempt_id: string | null;
-  replacement_demand_id: string | null;
 };
 
 export function defaultProductionTaskId(wordId: string): string {
@@ -526,16 +504,6 @@ export function validateProductionCueSchema(): void {
     'active_judgment_count',
     'updated_at',
   ]);
-  assertColumns('production_recheck_demands', [
-    'demand_id',
-    'task_id',
-    'source_attempt_id',
-    'scheduled_at',
-    'due_at',
-    'consumed_at',
-    'consumed_by_attempt_id',
-    'replacement_demand_id',
-  ]);
 }
 
 export function getDefaultProductionTask(wordId: string): ProductionTaskV0 | null {
@@ -589,202 +557,6 @@ export function getProductionCueSupplement(
   return row ? mapProductionCueSupplementRow(row) : null;
 }
 
-export function getPendingProductionRecheckForWord(wordId: string): ProductionRecheckDemandV0 | null {
-  const row = getDb().prepare(`
-    SELECT
-      demand_id,
-      task_id,
-      source_attempt_id,
-      scheduled_at,
-      due_at,
-      consumed_at,
-      consumed_by_attempt_id,
-      replacement_demand_id
-    FROM production_recheck_demands
-    WHERE task_id = ? AND consumed_at IS NULL
-  `).get(defaultProductionTaskId(wordId)) as ProductionRecheckDemandRow | undefined;
-  return row ? mapProductionRecheckDemandRow(row) : null;
-}
-
-export function getProductionRecheckDemand(demandId: string): ProductionRecheckDemandV0 | null {
-  const row = getDb().prepare(`
-    SELECT
-      demand_id,
-      task_id,
-      source_attempt_id,
-      scheduled_at,
-      due_at,
-      consumed_at,
-      consumed_by_attempt_id,
-      replacement_demand_id
-    FROM production_recheck_demands
-    WHERE demand_id = ?
-  `).get(demandId) as ProductionRecheckDemandRow | undefined;
-  return row ? mapProductionRecheckDemandRow(row) : null;
-}
-
-export function appendProductionRecheckDemandWithoutTransaction(input: {
-  demandId?: string;
-  taskId: string;
-  sourceAttemptId: string;
-  scheduledAt: string;
-  dueAt: string;
-}): ProductionRecheckDemandV0 {
-  assertCanonicalIsoTimestamp(input.scheduledAt, 'Production recheck scheduledAt');
-  assertCanonicalIsoTimestamp(input.dueAt, 'Production recheck dueAt');
-  if (input.dueAt !== addHoursToIso(input.scheduledAt, 48)) {
-    throw new Error('Production recheck demand must be due exactly 48 hours after it is scheduled.');
-  }
-  const source = getProductionRecheckAttemptContext(input.taskId, input.sourceAttemptId);
-  if (
-    source.action_kind !== 'production'
-    || source.target_word_id !== source.word_id
-    || source.outcome !== 'correct'
-    || source.rating === 'forgot'
-    || source.evidence_task_id !== input.taskId
-    || source.attempt_result !== 'accepted_non_anchor'
-  ) {
-    throw new Error(`Study attempt ${input.sourceAttemptId} cannot source a production recheck demand.`);
-  }
-  const demandId = input.demandId ?? randomUUID();
-  getDb().prepare(`
-    INSERT INTO production_recheck_demands (
-      demand_id,
-      task_id,
-      source_attempt_id,
-      scheduled_at,
-      due_at,
-      consumed_at,
-      consumed_by_attempt_id,
-      replacement_demand_id
-    ) VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL)
-  `).run(
-    demandId,
-    input.taskId,
-    input.sourceAttemptId,
-    input.scheduledAt,
-    input.dueAt,
-  );
-  return getProductionRecheckDemand(demandId)!;
-}
-
-export function consumeProductionRecheckDemandWithoutTransaction(input: {
-  demandId: string;
-  consumedAt: string;
-  consumedByAttemptId: string;
-}): void {
-  assertCanonicalIsoTimestamp(input.consumedAt, 'Production recheck consumedAt');
-  const demand = getProductionRecheckDemand(input.demandId);
-  if (demand === null || demand.consumedAt !== null || input.consumedAt < demand.dueAt) {
-    throw new Error(`Production recheck demand ${input.demandId} is no longer pending or is not due.`);
-  }
-  const consumer = getProductionRecheckAttemptContext(demand.taskId, input.consumedByAttemptId);
-  const consumerProduction = parseObjectJson(consumer.metadata_json)?.production;
-  if (
-    consumer.action_kind !== 'production'
-    || consumer.target_word_id !== consumer.word_id
-    || consumer.evidence_task_id !== demand.taskId
-    || !isRecord(consumerProduction)
-    || consumerProduction.taskId !== demand.taskId
-    || consumerProduction.anchorWordId !== consumer.word_id
-    || consumerProduction.recheckDemandId !== demand.demandId
-  ) {
-    throw new Error(
-      `Study attempt ${input.consumedByAttemptId} cannot consume production recheck demand ${input.demandId}.`,
-    );
-  }
-  const result = getDb().prepare(`
-    UPDATE ${physicalLearnerTableName('production_recheck_demands')}
-    SET consumed_at = ?, consumed_by_attempt_id = ?, replacement_demand_id = ?
-    WHERE demand_id = ? AND consumed_at IS NULL
-  `).run(
-    input.consumedAt,
-    input.consumedByAttemptId,
-    null,
-    input.demandId,
-  );
-  if (result.changes !== 1) {
-    throw new Error(`Production recheck demand ${input.demandId} is no longer pending.`);
-  }
-}
-
-function getProductionRecheckAttemptContext(taskId: string, attemptId: string): SourceAttemptRow & {
-  word_id: string;
-  outcome: string;
-  rating: string | null;
-  evidence_task_id: string | null;
-  attempt_result: string | null;
-} {
-  const row = getDb().prepare(`
-    SELECT
-      production_tasks.word_id,
-      study_attempt_events.action_kind,
-      study_attempt_events.target_word_id,
-      study_attempt_events.response,
-      study_attempt_events.outcome,
-      study_attempt_events.rating,
-      study_attempt_events.content_ref_json,
-      study_attempt_events.metadata_json,
-      production_cue_evidence_records.task_id AS evidence_task_id,
-      production_cue_evidence_records.attempt_result
-    FROM production_tasks
-    JOIN study_attempt_events ON study_attempt_events.id = ?
-    LEFT JOIN production_cue_evidence_records
-      ON production_cue_evidence_records.source_attempt_id = study_attempt_events.id
-      AND production_cue_evidence_records.record_kind = 'attempt'
-    WHERE production_tasks.task_id = ?
-  `).get(attemptId, taskId) as (SourceAttemptRow & {
-    word_id: string;
-    outcome: string;
-    rating: string | null;
-    evidence_task_id: string | null;
-    attempt_result: string | null;
-  }) | undefined;
-  if (!row) {
-    throw new Error(`Production task ${taskId} or study attempt ${attemptId} does not exist.`);
-  }
-  return row;
-}
-
-function assertCanonicalIsoTimestamp(value: string, label: string): void {
-  const milliseconds = Date.parse(value);
-  if (!Number.isFinite(milliseconds) || new Date(milliseconds).toISOString() !== value) {
-    throw new Error(`${label} must be a canonical ISO timestamp.`);
-  }
-}
-
-function addHoursToIso(value: string, hours: number): string {
-  return new Date(Date.parse(value) + hours * 60 * 60 * 1_000).toISOString();
-}
-
-export function linkProductionRecheckReplacementWithoutTransaction(
-  demandId: string,
-  replacementDemandId: string,
-): void {
-  const demand = getProductionRecheckDemand(demandId);
-  const replacement = getProductionRecheckDemand(replacementDemandId);
-  if (
-    demand === null
-    || replacement === null
-    || demand.consumedAt === null
-    || replacement.consumedAt !== null
-    || demand.taskId !== replacement.taskId
-    || demand.consumedByAttemptId !== replacement.sourceAttemptId
-  ) {
-    throw new Error(`Production recheck demand ${demandId} cannot link to replacement ${replacementDemandId}.`);
-  }
-  const result = getDb().prepare(`
-    UPDATE ${physicalLearnerTableName('production_recheck_demands')}
-    SET replacement_demand_id = ?
-    WHERE demand_id = ?
-      AND consumed_at IS NOT NULL
-      AND replacement_demand_id IS NULL
-  `).run(replacementDemandId, demandId);
-  if (result.changes !== 1) {
-    throw new Error(`Production recheck demand ${demandId} cannot be linked to a replacement.`);
-  }
-}
-
 export function applyProductionCueRepairWithoutTransaction(
   operation: RepairProductionCueOperationV2,
   invocationId: string,
@@ -821,16 +593,22 @@ export function applyProductionCueRepairWithoutTransaction(
     }
   }
 
-  const draftWordIds = operation.changes.flatMap((change) => {
+  const drafts = operation.changes.flatMap((change) => {
     switch (change.kind) {
       case 'create':
-        return change.cue.acceptedWordIds;
+        return [change.cue];
       case 'replace':
-        return change.replacements.flatMap((replacement) => replacement.acceptedWordIds);
+        return change.replacements;
       case 'deactivate':
         return [];
     }
   });
+  if (drafts.some((draft) => (
+    draft.acceptedWordIds.length !== 1 || draft.acceptedWordIds[0] !== operation.wordId
+  ))) {
+    throw new Error('Word-owned production cues must accept exactly their target word.');
+  }
+  const draftWordIds = drafts.flatMap((draft) => draft.acceptedWordIds);
   for (const wordId of new Set(draftWordIds)) {
     if (!wordExists(wordId)) {
       return { kind: 'stale', reason: `Accepted production word ${wordId} no longer exists.` };
@@ -1391,7 +1169,8 @@ function validateSourceAttemptSnapshot(
     || !Array.isArray(production.acceptedWordIds)
     || production.acceptedWordIds.some((wordId) => typeof wordId !== 'string')
     || new Set(production.acceptedWordIds).size !== production.acceptedWordIds.length
-    || !production.acceptedWordIds.includes(taskWordId)
+    || production.acceptedWordIds.length !== 1
+    || production.acceptedWordIds[0] !== taskWordId
     || (cue === null && production.cueType !== 'definition_gloss')
     || (cue !== null && (
       production.cueType !== cue.cueType
@@ -1422,9 +1201,7 @@ function isProductionAttemptResultCoherent(
     case 'accepted_anchor':
       return submittedWordId === anchorWordId;
     case 'accepted_non_anchor':
-      return submittedWordId !== null
-        && submittedWordId !== anchorWordId
-        && acceptedWordIds.includes(submittedWordId);
+      return false;
     case 'rejected':
       return submittedWordId === null || !acceptedWordIds.includes(submittedWordId);
   }
@@ -1572,19 +1349,6 @@ export function mapProductionCueSupplementRow(
     exampleTranslation: row.example_translation,
     createdAt: row.created_at,
     invocationId: row.origin_invocation_id,
-  };
-}
-
-function mapProductionRecheckDemandRow(row: ProductionRecheckDemandRow): ProductionRecheckDemandV0 {
-  return {
-    demandId: row.demand_id,
-    taskId: row.task_id,
-    sourceAttemptId: row.source_attempt_id,
-    scheduledAt: row.scheduled_at,
-    dueAt: row.due_at,
-    consumedAt: row.consumed_at,
-    consumedByAttemptId: row.consumed_by_attempt_id,
-    replacementDemandId: row.replacement_demand_id,
   };
 }
 

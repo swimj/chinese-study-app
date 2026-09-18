@@ -48,7 +48,7 @@ const immutableErrorByTable: Readonly<Record<string, string>> = {
   intake_triage_assessment_dispositions: 'intake triage dispositions are immutable',
 };
 
-export const learnerScopedCompatibilityTables = [
+const baselineLearnerScopedCompatibilityTables = [
   'user_word_priority',
   'word_study_admission_state',
   'word_skill_state',
@@ -77,6 +77,10 @@ export const learnerScopedCompatibilityTables = [
   'intake_triage_assessment_dispositions',
 ] as const;
 
+// Baseline construction is frozen; migration 0010 drops the retired scheduler.
+export const learnerScopedCompatibilityTables = baselineLearnerScopedCompatibilityTables
+  .filter((name) => name !== 'production_recheck_demands');
+
 export function physicalLearnerTableName(logicalTableName: string): string {
   return `${PHYSICAL_PREFIX}${logicalTableName}`;
 }
@@ -87,7 +91,7 @@ export function learnerScopedStorageTableName(logicalTableName: string): string 
 }
 
 export function createLearnerScopedCompatibilityViews(): void {
-  for (const logicalName of learnerScopedCompatibilityTables) {
+  for (const logicalName of baselineLearnerScopedCompatibilityTables) {
     createLearnerScopedCompatibilityView(logicalName);
   }
 }

@@ -833,7 +833,6 @@ function productionAttemptMetadata({
       submittedText,
       submittedWordId,
       result,
-      recheckDemandId: null,
     },
   });
 }

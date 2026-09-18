@@ -83,7 +83,6 @@ describe('session composition', { concurrency: false }, () => {
       WHERE type = 'trigger' AND name LIKE '%_no_delete'
     `).all() as Array<{ name: string; sql: string }>;
     sqlite.exec(`
-      DROP TRIGGER IF EXISTS production_recheck_demands_no_delete;
       DROP TRIGGER IF EXISTS production_cue_evidence_records_no_delete;
       DROP TRIGGER IF EXISTS production_cue_lifecycle_events_no_delete;
       DROP TRIGGER IF EXISTS production_cue_accepted_words_no_delete;
@@ -98,7 +97,6 @@ describe('session composition', { concurrency: false }, () => {
       DELETE FROM shared_content_publication_provenance;
       DELETE FROM shared_content_publications;
       DELETE FROM production_cue_evidence_projection;
-      DELETE FROM production_recheck_demands;
       DELETE FROM production_cue_evidence_records;
       DELETE FROM production_cue_activation_state;
       DELETE FROM production_cue_lifecycle_events;
@@ -291,7 +289,6 @@ describe('session composition', { concurrency: false }, () => {
       text: 'To tell two close possibilities apart',
       acceptedAnswers: [{ wordId: 'cue-word', hanzi: '辨', traditional: null }],
       supplement: null,
-      recheckDemandId: null,
     });
   });
 
@@ -432,83 +429,6 @@ describe('session composition', { concurrency: false }, () => {
     );
 
     assert.deepEqual(getSessionItemIds(dbModule), []);
-  });
-
-  test('masks ordinary production until a pending recheck is due, then forces production', () => {
-    insertWord({
-      id: 'recheck-word',
-      hanzi: '查',
-      pinyin: 'cha',
-      meaning: 'check',
-      examples: [],
-      status: 'review',
-      priority: 100,
-      createdAt: isoHoursAgo(96),
-    });
-    insertWordStudyAdmissionState('recheck-word', null);
-    insertWordSkillState({
-      wordId: 'recheck-word',
-      skillId: 'production',
-      intervalHours: 72,
-      lastStudiedAt: isoHoursAgo(1),
-      nextDueAt: isoHoursFromNow(71),
-    });
-    insertWordSkillState({
-      wordId: 'recheck-word',
-      skillId: 'recognition',
-      intervalHours: 24,
-      lastStudiedAt: isoHoursAgo(48),
-      nextDueAt: isoHoursAgo(24),
-    });
-    const sourceAttemptId = insertProjectedProductionAttempt('recheck-word');
-    const scheduledAt = isoHoursAgo(1);
-    dbModule.appendProductionRecheckDemandWithoutTransaction({
-      demandId: 'recheck-demand',
-      taskId: 'production-task:recheck-word:default_production',
-      sourceAttemptId,
-      scheduledAt,
-      dueAt: shiftHours(scheduledAt, 48),
-    });
-
-    assert.deepEqual(
-      dbModule.getSessionPayload(studyDayKey).buckets.review.map((item) => item.actionKind),
-      ['recognition'],
-    );
-
-    insertWord({
-      id: 'due-recheck-word',
-      hanzi: '再',
-      pinyin: 'zai',
-      meaning: 'again',
-      examples: [],
-      status: 'review',
-      priority: 100,
-      createdAt: isoHoursAgo(96),
-    });
-    insertWordStudyAdmissionState('due-recheck-word', isoHoursFromNow(72));
-    insertWordSkillState({
-      wordId: 'due-recheck-word',
-      skillId: 'production',
-      intervalHours: 72,
-      lastStudiedAt: isoHoursAgo(1),
-      nextDueAt: isoHoursFromNow(71),
-    });
-    const dueSourceAttemptId = insertProjectedProductionAttempt('due-recheck-word');
-    const dueScheduledAt = isoHoursAgo(49);
-    dbModule.appendProductionRecheckDemandWithoutTransaction({
-      demandId: 'due-recheck-demand',
-      taskId: 'production-task:due-recheck-word:default_production',
-      sourceAttemptId: dueSourceAttemptId,
-      scheduledAt: dueScheduledAt,
-      dueAt: shiftHours(dueScheduledAt, 48),
-    });
-
-    const item = dbModule.getSessionPayload(studyDayKey).buckets.review.find(
-      (candidate) => candidate.targetWordId === 'due-recheck-word',
-    );
-    assert.equal(item?.actionKind, 'production');
-    assert.equal(item?.sessionActionId, 'review/due-recheck-word/production/recheck/due-recheck-demand');
-    assert.equal(item?.production?.recheckDemandId, 'due-recheck-demand');
   });
 
   test('does not schedule suppressed production even when its scheduler state is urgent', () => {
@@ -2051,76 +1971,6 @@ function insertSharedProductionCue({
       publication_status, published_at, status_updated_at
     ) VALUES (?, 'production_cue', ?, ?, 'shared_trial', ?, ?)
   `).run(publicationId, cueId, taskId, isoHoursAgo(1), isoHoursAgo(1));
-}
-
-function insertProjectedProductionAttempt(wordId: string) {
-  const sessionId = `${wordId}-source-session`;
-  const attemptId = `${wordId}-source-attempt`;
-  const alternateWordId = `${wordId}-alternate`;
-  insertWord({
-    id: alternateWordId,
-    hanzi: `${wordId} alternate`,
-    pinyin: 'alternate',
-    meaning: 'alternate',
-    examples: [],
-    status: 'unstudied',
-    priority: -999,
-    createdAt: isoHoursAgo(96),
-  });
-  sqlite.prepare(`
-    INSERT INTO study_sessions (id, started_at, ended_at, processing_state, processed_at)
-    VALUES (?, ?, ?, 'processed', ?)
-  `).run(sessionId, isoHoursAgo(2), isoHoursAgo(1), isoHoursAgo(1));
-  sqlite.prepare(`
-    INSERT INTO study_attempt_events (
-      id,
-      occurred_at,
-      session_id,
-      session_action_id,
-      session_event_sequence,
-      action_attempt_sequence,
-      action_kind,
-      target_word_id,
-      sampled_skill_ids_json,
-      response,
-      outcome,
-      rating,
-      content_ref_json,
-      metadata_json,
-      projected_at
-    ) VALUES (?, ?, ?, ?, 1, 1, 'production', ?, '["production"]', ?, 'correct', 'good', NULL, ?, ?)
-  `).run(
-    attemptId,
-    isoHoursAgo(1),
-    sessionId,
-    `review/${wordId}/production`,
-    wordId,
-    alternateWordId,
-    JSON.stringify({
-      production: {
-        taskId: `production-task:${wordId}:default_production`,
-        cueId: null,
-        cueType: 'definition_gloss',
-        text: 'source prompt',
-        acceptedWordIds: [wordId, alternateWordId],
-        anchorWordId: wordId,
-        submittedText: alternateWordId,
-        submittedWordId: alternateWordId,
-        result: 'accepted_non_anchor',
-        recheckDemandId: null,
-      },
-    }),
-    isoHoursAgo(1),
-  );
-  dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
-    occurredAt: isoHoursAgo(1),
-    taskId: `production-task:${wordId}:default_production`,
-    cueId: null,
-    sourceAttemptId: attemptId,
-    attemptResult: 'accepted_non_anchor',
-    submittedWordId: alternateWordId,
-  });
-  return attemptId;
 }
 
 function insertWord(record: WordRecord) {

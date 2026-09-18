@@ -63,7 +63,6 @@ describe('completed-session reflection evidence', () => {
         anchorWordId: 'review-word',
         submittedText: '  生字原样  ',
         result: 'rejected',
-        recheckDemandId: null,
       },
     );
 
@@ -127,7 +126,6 @@ describe('completed-session reflection evidence', () => {
       responseKind: 'no_clue',
       submittedText: null,
       result: 'rejected',
-      recheckDemandId: null,
     });
     assert.equal(result.state.reviewProgress[item.sessionActionId]?.failureCount, 1);
     assert.equal(result.state.reviewProgress[item.sessionActionId]?.reinforcementStreak, 0);
@@ -276,7 +274,6 @@ describe('completed-session reflection evidence', () => {
         text: 'When choosing a target under uncertain conditions',
         acceptedAnswers: [{ wordId: 'review-word', hanzi: '目标', traditional: null }],
         supplement: null,
-        recheckDemandId: null,
       },
     };
     const durableCaptured = recordProductionMistakeEvidence(initial, {
@@ -482,7 +479,6 @@ function createStudyItem({
           text: word.meaning,
           acceptedAnswers: [{ wordId: word.id, hanzi: word.hanzi, traditional: word.traditional }],
           supplement: null,
-          recheckDemandId: null,
         }
       : null,
   };
