@@ -206,6 +206,19 @@ button:hover {
   color: rgba(255, 255, 255, 0.86);
 }
 
+.nav-tab-alert,
+.reflection-view-rail-alert {
+  font-size: 0.85rem;
+  font-weight: 800;
+  line-height: 1;
+  color: #f87171;
+}
+
+.nav-tab.active .nav-tab-alert,
+.reflection-view-rail-tab.active .reflection-view-rail-alert {
+  color: #fecaca;
+}
+
 .reflections-nav-shell {
   position: relative;
 }

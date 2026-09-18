@@ -58,6 +58,25 @@ describe('reflection run log presentation', () => {
     assert.doesNotMatch(markup, /Review the help you asked for/);
   });
 
+  test('marks Run meta when a failed generation run has not been acknowledged', () => {
+    const markup = renderToStaticMarkup(createElement(ReflectionsPage, {
+      controller: idleController(),
+      hasUnseenReflectionFailure: true,
+    }));
+    assert.match(markup, /aria-label="Run meta, generation failed"/);
+    assert.match(markup, /class="reflection-view-rail-alert"/);
+  });
+
+  test('does not mark Run meta after the failure attention is cleared', () => {
+    const markup = renderToStaticMarkup(createElement(ReflectionsPage, {
+      controller: idleController(),
+      hasUnseenReflectionFailure: false,
+    }));
+    assert.match(markup, />Run meta</);
+    assert.doesNotMatch(markup, /Run meta, generation failed/);
+    assert.doesNotMatch(markup, /reflection-view-rail-alert/);
+  });
+
   test('explanation-only Help keeps the proposal toolbar and maps Accept to Done', () => {
     const markup = renderToStaticMarkup(createElement(ReflectionsPage, {
       controller: idleController({

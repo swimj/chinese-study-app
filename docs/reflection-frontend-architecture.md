@@ -130,7 +130,10 @@ one card at a time for pending proposals and for explanation-only items still
 in Help. The grain is one proposal per card; empty proposal lists produce one
 explanation card while that item remains in Help. The current pager card is
 stamped `inbox_seen_at` so the primary Reflections badge can decrement without
-leaving `pending`. Accept, Dismiss, Defer, and
+leaving `pending`. The primary count is hidden while Reflections is the current
+page. A failed concluded generation run can instead show a failure marker on
+the Reflections tab (priority over the count) until Run meta is opened, which
+durably acknowledges it and also marks the Run meta rail. Accept, Dismiss, Defer, and
 Done are durable and advance the pager; Done leaves Help with no learner-facing
 undo. Prev/Next are ephemeral. Compact pager chrome stays above the reading
 pane with the target / typed-response identity line. Item quality chips, handle

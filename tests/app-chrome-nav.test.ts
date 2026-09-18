@@ -9,7 +9,12 @@ const noop = () => {};
 function renderChrome(
   currentPage: AppPageKey,
   children: string | null = null,
-  extras: { serviceBanner?: { message: string } | null; sessionActive?: boolean } = {},
+  extras: {
+    serviceBanner?: { message: string } | null;
+    sessionActive?: boolean;
+    reflectionUnseenCount?: number;
+    hasUnseenReflectionFailure?: boolean;
+  } = {},
 ) {
   return renderToStaticMarkup(createElement(AppChrome, {
     currentPage,
@@ -19,6 +24,8 @@ function renderChrome(
     priorityPageLoading: false,
     reflectionPageLoading: false,
     contentPageLoading: false,
+    reflectionUnseenCount: extras.reflectionUnseenCount ?? 0,
+    hasUnseenReflectionFailure: extras.hasUnseenReflectionFailure ?? false,
     onOpenHomePage: noop,
     onOpenPriorityPage: noop,
     onOpenReflectionsPage: noop,
@@ -104,5 +111,33 @@ describe('AppChrome primary navigation', () => {
       /class="service-banner"/,
     );
     assert.doesNotMatch(renderChrome('home'), /class="service-banner"/);
+  });
+
+  test('hides the Reflections unseen count while that tab is current', () => {
+    const home = renderChrome('home', null, { reflectionUnseenCount: 2 });
+    assert.match(home, /aria-label="Reflections, 2 new"/);
+    assert.match(home, /class="nav-tab-count">2</);
+
+    const reflections = renderChrome('reflections', null, { reflectionUnseenCount: 2 });
+    assert.doesNotMatch(reflections, /nav-tab-count/);
+    assert.doesNotMatch(reflections, /Reflections, 2 new/);
+  });
+
+  test('shows a failure marker instead of the count, and hides it while Reflections is current', () => {
+    const home = renderChrome('home', null, {
+      reflectionUnseenCount: 4,
+      hasUnseenReflectionFailure: true,
+    });
+    assert.match(home, /aria-label="Reflections, generation failed"/);
+    assert.match(home, /class="nav-tab-alert"/);
+    assert.doesNotMatch(home, /nav-tab-count/);
+
+    const reflections = renderChrome('reflections', null, {
+      reflectionUnseenCount: 4,
+      hasUnseenReflectionFailure: true,
+    });
+    assert.doesNotMatch(reflections, /nav-tab-alert/);
+    assert.doesNotMatch(reflections, /generation failed/);
+    assert.doesNotMatch(reflections, /nav-tab-count/);
   });
 });

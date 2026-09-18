@@ -108,6 +108,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       DELETE FROM study_sessions;
       DELETE FROM word_meanings;
       DELETE FROM words;
+      DELETE FROM learner_params;
       COMMIT;
     `);
     insertWord('target', '目标');
@@ -754,7 +755,12 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     materializeInformational('attention-api-explanation');
     const listed = await request('/api/attention-badges');
     assert.equal(listed.status, 200);
-    assert.equal((listed.json as { reflectionUnseenCount: number }).reflectionUnseenCount, 2);
+    assert.deepEqual(listed.json, {
+      reflectionUnseenCount: 2,
+      failedReflectionRunIds: [],
+      failedReflectionRunsSeenThroughAt: null,
+      whatsNewSeenThroughDate: null,
+    });
 
     const marked = await request('/api/reflection-inbox-seen', {
       method: 'POST',
@@ -771,6 +777,73 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       method: 'POST',
       body: { mode: 'ensure', throughDate: '2026-09-16' },
     })).status, 200);
+  });
+
+  test('acknowledges failed reflection runs durably across a later badges read', async () => {
+    materializationInput('failed-run-api', suppressOperation('target'));
+    dbModule.recordReflectionGenerationRun({
+      runId: 'api-failed-old',
+      sourceSessionId: 'failed-run-api',
+      reflectionFlowVersion: 'initial_post_session_reflection.v1',
+      startedAt: generatedAt,
+      completedAt: '2026-07-29T12:00:01.000Z',
+      provider: 'openai',
+      model: 'gpt-5.6-luna-high',
+      providerModel: 'gpt-5.6-luna',
+      promptVersion: 'reflection-v2',
+      responseId: null,
+      finishReason: null,
+      state: 'failed',
+      failureCode: 'upstream_failure',
+      eligibleItemCount: 1,
+      includedItemCount: 1,
+      usage: {
+        inputTokens: null,
+        cachedInputTokens: null,
+        cacheWriteInputTokens: null,
+        outputTokens: null,
+        reasoningTokens: null,
+        totalTokens: null,
+      },
+      pricingSnapshotId: null,
+      pricingAsOf: null,
+      pricingBasis: null,
+      estimatedCostUsd: null,
+      evidenceBundle: bundle('failed-run-api'),
+    });
+
+    const listed = await request('/api/attention-badges');
+    assert.equal(listed.status, 200);
+    assert.deepEqual(
+      (listed.json as { failedReflectionRunIds: string[] }).failedReflectionRunIds,
+      ['api-failed-old'],
+    );
+
+    const marked = await request('/api/failed-reflection-runs-seen', {
+      method: 'POST',
+      body: { seenThroughAt: '2026-07-29T12:00:01.000Z' },
+    });
+    assert.equal(marked.status, 200);
+    assert.deepEqual(marked.json, {
+      failedReflectionRunIds: [],
+      failedReflectionRunsSeenThroughAt: '2026-07-29T12:00:01.000Z',
+    });
+
+    const reloaded = await request('/api/attention-badges');
+    assert.equal(reloaded.status, 200);
+    const reloadedPayload = reloaded.json as {
+      failedReflectionRunIds: string[];
+      failedReflectionRunsSeenThroughAt: string | null;
+    };
+    assert.deepEqual(reloadedPayload.failedReflectionRunIds, []);
+    assert.equal(
+      reloadedPayload.failedReflectionRunsSeenThroughAt,
+      '2026-07-29T12:00:01.000Z',
+    );
+    assert.equal((await request('/api/failed-reflection-runs-seen', {
+      method: 'POST',
+      body: { seenThroughAt: 'not-a-timestamp' },
+    })).status, 400);
   });
 
   test('authorizes a manual operation from an explanation-only Help item', async () => {

@@ -37,7 +37,7 @@ src/
 
   features/
     attention/
-      useAttentionBadges.ts       # nav unseen counts, Help-card ack, What’s New cursor
+      useAttentionBadges.ts       # nav unseen counts, durable failed-run marker, Help-card ack, What’s New cursor
     words/
       useMyWordsController.ts     # learner collection search, bounded loading, selection
 

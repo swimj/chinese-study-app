@@ -1,5 +1,6 @@
 import { createContext, useContext, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { reflectionNavBadge } from '../features/attention/reflection-attention';
 
 export type AppPageKey = 'home' | 'priority' | 'reflections' | 'content' | 'about' | 'operator-usage';
 export type PrimaryAppPageKey = Exclude<AppPageKey, 'operator-usage'>;
@@ -35,6 +36,7 @@ export function AppChrome({
   reflectionPageLoading,
   contentPageLoading,
   reflectionUnseenCount = 0,
+  hasUnseenReflectionFailure = false,
   aboutUnseenCount = 0,
   children,
   onOpenHomePage,
@@ -53,6 +55,7 @@ export function AppChrome({
   reflectionPageLoading: boolean;
   contentPageLoading: boolean;
   reflectionUnseenCount?: number;
+  hasUnseenReflectionFailure?: boolean;
   aboutUnseenCount?: number;
   children: ReactNode;
   onOpenHomePage: () => void;
@@ -107,24 +110,37 @@ export function AppChrome({
             {PRIMARY_PAGES.map((page) => {
               const active = currentPage === page.key;
               const showReflectionsRefresh = page.key === 'reflections' && active && onRefreshReflections;
-              const unseenCount = page.key === 'reflections'
-                ? reflectionUnseenCount
-                : page.key === 'about'
-                  ? aboutUnseenCount
-                  : 0;
+              const badge = page.key === 'reflections'
+                ? reflectionNavBadge({
+                    tabActive: active,
+                    unseenCount: reflectionUnseenCount,
+                    hasUnseenFailure: hasUnseenReflectionFailure,
+                  })
+                : page.key === 'about' && aboutUnseenCount > 0
+                  ? { kind: 'count' as const, count: aboutUnseenCount }
+                  : { kind: 'none' as const };
               const label = loadingLabels[page.key] ?? page.label;
               const tabButton = (
                 <button
                   type="button"
                   className={`nav-tab ${active ? 'active' : ''}`}
                   aria-current={active ? 'page' : undefined}
-                  aria-label={unseenCount > 0 ? `${page.label}, ${unseenCount} new` : undefined}
+                  aria-label={
+                    badge.kind === 'failure'
+                      ? `${page.label}, generation failed`
+                      : badge.kind === 'count'
+                        ? `${page.label}, ${badge.count} new`
+                        : undefined
+                  }
                   onClick={openers[page.key]}
                   disabled={navigationLoading}
                 >
                   <span>{label}</span>
-                  {unseenCount > 0 ? (
-                    <span className="nav-tab-count">{unseenCount}</span>
+                  {badge.kind === 'count' ? (
+                    <span className="nav-tab-count">{badge.count}</span>
+                  ) : null}
+                  {badge.kind === 'failure' ? (
+                    <span className="nav-tab-alert" aria-hidden="true">!</span>
                   ) : null}
                 </button>
               );
