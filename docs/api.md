@@ -49,7 +49,9 @@ values mean no stage narrowing. Combined with search as AND. Recently studied
 ignores `unstudied`; if that leaves no stages, the collection's learning and
 review membership is used. Optional `lapses=1` or `lapses=true` further keeps
 words with a projected Forgot/incorrect attempt in the last three UTC days or
-an unsuccessful last learning day; omit or `0`/`false` leaves that filter off.
+an unsuccessful last learning day after a prior successful learning day
+(never-succeeded / just-graduated learning words excluded); omit or `0`/`false`
+leaves that filter off.
 The lapses predicate is independent of the selected stages. Results are ordered
 learning (last study date descending, missing last), unstudied (pronunciation),
 review (last study date descending, missing last), then word id. For
