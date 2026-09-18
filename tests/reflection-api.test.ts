@@ -510,7 +510,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
 
     const retried = await request(
       '/api/reflection-generation-runs/failed-run/retry',
-      { method: 'POST', body: { model: 'zai:glm-5.3-high' } },
+      { method: 'POST', body: { model: 'zai:glm-5.3-flash-high' } },
     );
     assert.equal(retried.status, 409);
 

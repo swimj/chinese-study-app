@@ -7,8 +7,8 @@ import {
 
 export const GLM_REFLECTION_MODEL_CONFIG = {
   provider: 'zai',
-  modelConfig: 'glm-5.3-high',
-  providerModel: 'glm-5.3',
+  modelConfig: 'glm-5.3-flash-high',
+  providerModel: 'glm-5.3-flash',
   reasoningEffort: 'high',
   maxOutputTokens: 50_000,
   timeoutMs: PROVIDER_REQUEST_TIMEOUT_MS,
