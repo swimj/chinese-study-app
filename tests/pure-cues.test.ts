@@ -286,6 +286,17 @@ describe('pure cue persistence', { concurrency: false }, () => {
     `).get()?.relevance_state, 'suppressed');
   });
 
+  test('composes a standalone pure cue review item with a frozen server snapshot', () => {
+    const payload = dbModule.getSessionPayload('2026-09-18');
+    const item = payload.buckets.review.find((candidate) => candidate.itemType === 'pure_cue_production');
+    assert.ok(item);
+    assert.equal(item.itemType, 'pure_cue_production');
+    assert.equal(item.snapshot.pureCueId, 'pure-a');
+    assert.equal(item.snapshot.stimulus, 'to tell an untruth');
+    assert.equal('word' in item, false);
+    assert.deepEqual(item.snapshot.acceptedAnswers.map((answer) => answer.wordId), ['word-a', 'word-b', 'word-c']);
+  });
+
   test('freezes server answer forms and consumes a snapshot once without word scheduling effects', () => {
     const snapshot = dbModule.issuePureCueServedSnapshot({
       snapshotId: 'snapshot-pure-a', pureCueId: 'pure-a', servedAt: now,
@@ -326,6 +337,33 @@ describe('pure cue persistence', { concurrency: false }, () => {
       SELECT COUNT(*) AS count FROM learner_owned_word_skill_state
       WHERE word_id IN ('word-a', 'word-b', 'word-c')
     `).get()?.count, 0);
+  });
+
+  test('blocks definition fallback through shared coverage and recovers when targeted content exists', () => {
+    sqlite.prepare(`UPDATE word_skill_relevance SET relevance_state = 'normal'
+      WHERE word_id = 'word-a' AND skill_id = 'production'`).run();
+    sqlite.prepare(`INSERT INTO word_skill_state
+      (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor)
+      VALUES ('word-a', 'production', 1, 24, '2026-09-01T00:00:00.000Z', ?, 2.5)`).run(now);
+    const before = dbModule.getSessionPayload('2026-09-18').buckets.review;
+    assert.equal(before.some((item) => !('itemType' in item) && item.targetWordId === 'word-a'), false);
+    const cueId = 'distinctive-word-a';
+    const taskId = 'production-task:word-a:default_production';
+    sqlite.prepare(`INSERT INTO scoped_production_cues
+      (cue_id, task_id, cue_type, cue_text, created_at, origin_kind, origin_invocation_id, content_scope, owner_learner_id)
+      VALUES (?, ?, 'minimal_context', 'a distinctive usage', ?, 'manual', NULL, 'shared', NULL)`)
+      .run(cueId, taskId, now);
+    sqlite.prepare(`INSERT INTO scoped_production_cue_accepted_words (cue_id, word_id, position)
+      VALUES (?, 'word-a', 0)`).run(cueId);
+    sqlite.prepare(`INSERT INTO shared_content_publications
+      (publication_id, content_kind, content_id, learning_purpose_key, publication_status, published_at, status_updated_at)
+      VALUES ('distinctive-publication', 'production_cue', ?, ?, 'shared_trial', ?, ?)`)
+      .run(cueId, taskId, now, now);
+    assert.equal(dbModule.isWordProductionProxied('word-a'), false);
+    const after = dbModule.getSessionPayload('2026-09-18').buckets.review;
+    assert.ok(after.some((item) => !('itemType' in item) && item.production?.cueId === cueId));
+    assert.equal(sqlite.prepare(`SELECT COUNT(*) AS count FROM learner_owned_word_skill_relevance
+      WHERE relevance_state = 'proxied'`).get()?.count, 0);
   });
 
   test('looks up shared memberships with indexed probes, excluding ineligible publications', () => {

@@ -5,6 +5,7 @@ import {
   type ServedCueSnapshot,
   type TargetedCueContent,
 } from './cues';
+import type { PureCueServedSnapshot } from './pure-cues';
 
 export type StudySkillId = 'recognition' | 'production' | 'contextual_selection';
 
@@ -135,8 +136,27 @@ export type SessionStudyItem = {
   production: ProductionExerciseSnapshot | null;
 };
 
+/**
+ * A standalone production elicitation.  Unlike SessionStudyItem it is not
+ * admitted from, anchored to, or projected onto a word scheduler row.
+ */
+export type PureCueSessionReviewItem = {
+  itemType: 'pure_cue_production';
+  sessionActionId: string;
+  snapshot: PureCueServedSnapshot;
+  tier: 'fragile' | 'strong';
+};
+
+// Keep the established word item shape available to all word-only callers.
+// Only the review queue carries the wider union.
+export type SessionReviewItem = SessionStudyItem | PureCueSessionReviewItem;
+
+export function isPureCueSessionReviewItem(item: SessionReviewItem): item is PureCueSessionReviewItem {
+  return 'itemType' in item && item.itemType === 'pure_cue_production';
+}
+
 export type SessionStudyItemBuckets = {
-  review: SessionStudyItem[];
+  review: SessionReviewItem[];
   learning: Word[];
   unstudied: Word[];
 };

@@ -2,10 +2,12 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { ReviewRating, Word, WordMeaning } from '../../types';
 import type {
   ProductionResponseResolution,
+  PureCueSessionReviewItem,
   SessionStudyItem,
 } from '../../domain/study-actions';
-import { studyManagementActionRemovesCurrentReviewAction } from '../../domain/study-actions';
+import { isPureCueSessionReviewItem, studyManagementActionRemovesCurrentReviewAction } from '../../domain/study-actions';
 import { resolveSessionProductionResponse } from '../../domain/production-response';
+import { resolvePureCueResponse, type PureCueAssessmentEvent } from '../../domain/pure-cues';
 import {
   dismissWordFromStudy,
   fetchWordMeanings,
@@ -31,6 +33,7 @@ import {
   getBucketSessionTotalCount,
   markActiveSessionUnitStarted,
   rateActiveSessionUnit,
+  rateActivePureCueProductionUnit,
   rateActiveContrastSelectionUnit,
   type BucketSessionState,
   type LearningWordProgress,
@@ -41,6 +44,7 @@ import type { ActiveBucketSchedulerUnit } from '../../lib/session-scheduler';
 import {
   beginDrainSessionSummary,
   createSessionSummary,
+  updateSessionSummaryForPureCueRating,
   updateSessionSummaryForRating,
   type SessionSummary,
 } from './session-summary';
@@ -60,6 +64,7 @@ import {
   getPersonalNotesEditorTarget,
   hasServedProductionCueSupplement,
   isProductionSessionItem,
+  isPureCueReviewInReinforcement,
   isReviewInReinforcement,
 } from './session-selectors';
 import {
@@ -74,7 +79,7 @@ import {
   applySessionCommit,
   type DeferredSessionCommit,
 } from './session-commit';
-import type { FrozenContrastCard, FrozenProductionCard } from './StudySessionPanel';
+import type { FrozenContrastCard, FrozenProductionCard, FrozenPureCueCard } from './StudySessionPanel';
 import {
   createActiveSessionClock,
   finishActiveSessionClock,
@@ -129,8 +134,10 @@ type SessionUiSnapshot = {
   productionHanziError: string | null;
   productionSubmittedResponse: string | null;
   productionResponseResolution: ProductionResponseResolution | null;
+  pureCueResponseResolution: Pick<PureCueAssessmentEvent, 'outcome' | 'submittedWordId'> | null;
   productionUiPhase: ProductionUiPhase;
   frozenProductionCard: FrozenProductionCard | null;
+  frozenPureCueCard: FrozenPureCueCard | null;
   contrastSelectedWordId: string | null;
   frozenContrastCard: FrozenContrastCard | null;
 };
@@ -152,18 +159,22 @@ export type StudySessionHomePageProps = {
   sessionSummary: SessionSummary | null;
   sessionFinalization: SessionFinalizationState;
   activeItem: SessionStudyItem | null;
+  activePureCue: PureCueSessionReviewItem | null;
   activeWord: Word | null;
   activeLearningProgress: LearningWordProgress | undefined;
   activeUnstudiedProgress: UnstudiedWordProgress | undefined;
   activeReviewProgress: ReviewActionProgress | undefined;
+  activePureCueFailureCount: number;
   hasUndo: boolean;
   submittingRating: ReviewRating | null;
   personalNotesEditorOpen: boolean;
   personalNotesEditorSaving: boolean;
   studyManagementSubmitting: boolean;
   productionAwaitingNext: boolean;
+  pureCueAwaitingNext: boolean;
   productionAwaitingSupplement: boolean;
   frozenProductionCard: FrozenProductionCard | null;
+  frozenPureCueCard: FrozenPureCueCard | null;
   contrastAwaitingNext: boolean;
   frozenContrastCard: FrozenContrastCard | null;
   activeAllMeanings: string[];
@@ -267,9 +278,11 @@ export function useStudySession({
   const [productionHanziError, setProductionHanziError] = useState<string | null>(null);
   const [productionSubmittedResponse, setProductionSubmittedResponse] = useState<string | null>(null);
   const [productionResponseResolution, setProductionResponseResolution] = useState<ProductionResponseResolution | null>(null);
+  const [pureCueResponseResolution, setPureCueResponseResolution] = useState<Pick<PureCueAssessmentEvent, 'outcome' | 'submittedWordId'> | null>(null);
   const [productionUiPhase, setProductionUiPhase] = useState<ProductionUiPhase>('idle');
   const [contrastSelectedWordId, setContrastSelectedWordId] = useState<string | null>(null);
   const [frozenProductionCard, setFrozenProductionCard] = useState<FrozenProductionCard | null>(null);
+  const [frozenPureCueCard, setFrozenPureCueCard] = useState<FrozenPureCueCard | null>(null);
   const [frozenContrastCard, setFrozenContrastCard] = useState<FrozenContrastCard | null>(null);
   const [shortcutGuideOpen, setShortcutGuideOpen] = useState(false);
   const personalNotesEditorInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -328,7 +341,12 @@ export function useStudySession({
       : 0
     : getSessionPayloadItemCount(sessionPrefetch.payload) ?? 0;
   const activeUnit = sessionStarted && sessionState ? getOptionalActiveSessionUnit(sessionState) : null;
-  const activeItem: SessionStudyItem | null = activeUnit?.type === 'study' ? activeUnit.item : null;
+  const activePureCue: PureCueSessionReviewItem | null = activeUnit?.type === 'study' && isPureCueSessionReviewItem(activeUnit.item)
+    ? activeUnit.item
+    : null;
+  const activeItem: SessionStudyItem | null = activeUnit?.type === 'study' && !isPureCueSessionReviewItem(activeUnit.item)
+    ? activeUnit.item
+    : null;
   const activeWord = activeUnit?.type === 'unstudied_intro' ? activeUnit.word : activeItem?.word ?? null;
   const activeWordPersonalNotes = getActiveWordPersonalNotes({
     word: activeWord,
@@ -348,13 +366,16 @@ export function useStudySession({
     activeUnit?.type === 'study' && activeUnit.bucket === 'review'
       ? sessionState?.reviewProgress[activeUnit.item.sessionActionId]
       : undefined;
+  const activePureCueReviewProgress = activePureCue
+    ? sessionState?.pureCueReviewProgress[activePureCue.sessionActionId]
+    : undefined;
   const reviewedCount = sessionStarted ? sessionState?.answeredCount ?? 0 : 0;
-  const activeReviewFailureCount = activeReviewProgress?.failureCount ?? 0;
-  const activeReviewReinforcementStreak = activeReviewProgress?.reinforcementStreak ?? 0;
-  const reviewInReinforcement = isReviewInReinforcement({
-    word: activeWord,
-    failureCount: activeReviewFailureCount,
-  });
+  const activeReviewFailureCount = activePureCueReviewProgress?.failureCount ?? activeReviewProgress?.failureCount ?? 0;
+  const activePureCueFailureCount = activePureCueReviewProgress?.failureCount ?? 0;
+  const activeReviewReinforcementStreak = activePureCueReviewProgress?.reinforcementStreak ?? activeReviewProgress?.reinforcementStreak ?? 0;
+  const reviewInReinforcement = activePureCue
+    ? isPureCueReviewInReinforcement(activeReviewFailureCount)
+    : isReviewInReinforcement({ word: activeWord, failureCount: activeReviewFailureCount });
   const activePrompt = getActivePrompt({
     item: activeItem,
     word: activeWord,
@@ -375,7 +396,7 @@ export function useStudySession({
     reinforcementStreak: activeReviewReinforcementStreak,
     failureCount: activeReviewFailureCount,
   });
-  const isProductionItem = isProductionSessionItem(activeItem);
+  const isProductionItem = isProductionSessionItem(activeItem) || activePureCue !== null;
   const contrastSelectionActive = activeItem?.actionKind === 'contrast_selection';
   const contrastAwaitingRating =
     contrastSelectionActive &&
@@ -384,10 +405,11 @@ export function useStudySession({
   const productionAwaitingRating = isProductionItem && productionUiPhase === 'await-rating';
   const productionAwaitingSupplement = isProductionItem && productionUiPhase === 'await-supplement';
   const productionAwaitingNext = productionUiPhase === 'await-next' && frozenProductionCard !== null;
+  const pureCueAwaitingNext = productionUiPhase === 'await-next' && frozenPureCueCard !== null;
   const contrastAwaitingNext = frozenContrastCard !== null;
   const activeRatingOptions = getActiveRatingOptions({
     actionKind: activeItem?.actionKind,
-    wordStatus: activeWord?.status,
+    wordStatus: activePureCue ? 'review' : activeWord?.status,
     reviewInReinforcement,
   });
   const activeElapsedTime =
@@ -445,8 +467,10 @@ export function useStudySession({
     setProductionHanziError(null);
     setProductionSubmittedResponse(null);
     setProductionResponseResolution(null);
+    setPureCueResponseResolution(null);
     setProductionUiPhase('idle');
     setFrozenProductionCard(null);
+    setFrozenPureCueCard(null);
   }
 
   function resetContrastUi() {
@@ -484,8 +508,10 @@ export function useStudySession({
       productionHanziError,
       productionSubmittedResponse,
       productionResponseResolution,
+      pureCueResponseResolution,
       productionUiPhase,
       frozenProductionCard,
+      frozenPureCueCard,
       contrastSelectedWordId,
       frozenContrastCard,
     };
@@ -497,8 +523,10 @@ export function useStudySession({
     setProductionHanziError(snapshot.productionHanziError);
     setProductionSubmittedResponse(snapshot.productionSubmittedResponse);
     setProductionResponseResolution(snapshot.productionResponseResolution);
+    setPureCueResponseResolution(snapshot.pureCueResponseResolution);
     setProductionUiPhase(snapshot.productionUiPhase);
     setFrozenProductionCard(snapshot.frozenProductionCard);
+    setFrozenPureCueCard(snapshot.frozenPureCueCard);
     setContrastSelectedWordId(snapshot.contrastSelectedWordId);
     setFrozenContrastCard(snapshot.frozenContrastCard);
   }
@@ -760,11 +788,11 @@ export function useStudySession({
       restoreUi?: 'revealed' | 'production-input';
     },
   ) {
-    if (!sessionState || !activeItem || !activeWord) {
+    if (!sessionState || (!activeItem && !activePureCue) || (!activeWord && !activePureCue)) {
       return;
     }
 
-    if (activeItem.actionKind === 'contrast_selection' && contrastSelectedWordId === null) {
+    if (activeItem?.actionKind === 'contrast_selection' && contrastSelectedWordId === null) {
       setError('Choose an answer before rating this contrast prompt.');
       return;
     }
@@ -790,7 +818,13 @@ export function useStudySession({
       }
 
       const transition =
-        activeItem.actionKind === 'contrast_selection'
+        activePureCue
+          ? rateActivePureCueProductionUnit(sessionState, rating, {
+              response: productionSubmittedResponse,
+              outcome: pureCueResponseResolution?.outcome ?? 'rejected',
+              submittedWordId: pureCueResponseResolution?.submittedWordId ?? null,
+            })
+          : activeItem?.actionKind === 'contrast_selection'
           ? rateActiveContrastSelectionUnit({
               state: sessionState,
               selectedWordId: contrastSelectedWordId ?? '',
@@ -799,27 +833,31 @@ export function useStudySession({
             })
           : rateActiveSessionUnit(sessionState, rating, {
               response:
-                activeItem.actionKind === 'production'
+                activeItem?.actionKind === 'production'
                   ? productionSubmittedResponse
                   : null,
               productionResponse:
-                activeItem.actionKind === 'production'
+                activeItem?.actionKind === 'production'
                   ? productionResponseResolution
                   : null,
             });
       setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
 
       setSessionState(transition.state);
-      setSessionSummary((current) =>
-        updateSessionSummaryForRating({
+      setSessionSummary((current) => activePureCue
+        ? updateSessionSummaryForPureCueRating({
+            summary: current,
+            transition,
+            previousPhase: sessionState.phase,
+          })
+        : updateSessionSummaryForRating({
           summary: current,
           transition,
           rating,
-          activeWord,
-          activeItem,
+          activeWord: activeWord!,
+          activeItem: activeItem!,
           previousPhase: sessionState.phase,
-        }),
-      );
+        }));
       resetAnswerAndProductionUi();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -832,9 +870,8 @@ export function useStudySession({
     if (
       personalNotesEditorOpen ||
       !sessionState ||
-      !activeItem ||
-      !activeWord ||
-      activeItem.actionKind !== 'production'
+      (!activeItem && !activePureCue) ||
+      (activeItem !== null && activeItem.actionKind !== 'production')
     ) {
       return;
     }
@@ -862,17 +899,30 @@ export function useStudySession({
         reflectionEvidence: snapshotSessionReflectionEvidence(reflectionEvidenceRef.current),
       });
 
+      if (activePureCue) {
+        const resolution = resolvePureCueResponse(activePureCue.snapshot, typedResponse, studyProfile.id);
+        if (resolution.outcome === 'accepted') {
+          setProductionHanziError(null);
+          setProductionSubmittedResponse(typedResponse);
+          setPureCueResponseResolution(resolution);
+          setProductionUiPhase('await-rating');
+          setAnswerRevealed(true);
+          return;
+        }
+        applyAutomaticPureCueForgot({ stateAtResponse: sessionState, item: activePureCue, response: typedResponse, resolution });
+        return;
+      }
       let resolution: ProductionResponseResolution;
-      if (activeWord.status === 'review') {
+      if (activeWord!.status === 'review') {
         resolution = resolveSessionProductionResponse({
           submittedText: typedResponse,
-          anchorWordId: activeWord.id,
-          production: activeItem.production,
+          anchorWordId: activeWord!.id,
+          production: activeItem!.production,
           profileId: studyProfile.id,
         });
       } else {
         const accepted = submittedHanzi === normalizeProductionAnswer(
-          activeWord.hanzi,
+          activeWord!.hanzi,
           studyProfile.defaultProductionMatchOptions,
         );
         resolution = {
@@ -887,17 +937,17 @@ export function useStudySession({
         setProductionSubmittedResponse(typedResponse);
         setProductionResponseResolution(resolution);
         setProductionUiPhase(
-          hasServedProductionCueSupplement(activeItem.production) ? 'await-supplement' : 'await-rating',
+          hasServedProductionCueSupplement(activeItem!.production) ? 'await-supplement' : 'await-rating',
         );
         setAnswerRevealed(true);
         return;
       }
       applyAutomaticProductionForgot({
         stateAtResponse: sessionState,
-        itemAtResponse: activeItem,
-        wordAtResponse: activeWord,
+        itemAtResponse: activeItem!,
+        wordAtResponse: activeWord!,
         response: typedResponse,
-        resolution: activeWord.status === 'review' ? resolution : null,
+        resolution: activeWord!.status === 'review' ? resolution : null,
         attemptedHanzi: submittedHanzi,
       });
     } catch (err) {
@@ -911,9 +961,8 @@ export function useStudySession({
     if (
       personalNotesEditorOpen ||
       !sessionState ||
-      !activeItem ||
-      !activeWord ||
-      activeItem.actionKind !== 'production' ||
+      (!activeItem && !activePureCue) ||
+      (activeItem !== null && activeItem.actionKind !== 'production') ||
       productionHanziInput.trim().length > 0
     ) {
       return;
@@ -930,12 +979,21 @@ export function useStudySession({
         ui: createSessionUiSnapshot(),
         reflectionEvidence: snapshotSessionReflectionEvidence(reflectionEvidenceRef.current),
       });
+      if (activePureCue) {
+        applyAutomaticPureCueForgot({
+          stateAtResponse: sessionState,
+          item: activePureCue,
+          response: null,
+          resolution: { outcome: 'rejected', submittedWordId: null },
+        });
+        return;
+      }
       applyAutomaticProductionForgot({
         stateAtResponse: sessionState,
-        itemAtResponse: activeItem,
-        wordAtResponse: activeWord,
+        itemAtResponse: activeItem!,
+        wordAtResponse: activeWord!,
         response: null,
-        resolution: activeWord.status === 'review'
+        resolution: activeWord!.status === 'review'
           ? {
               responseKind: 'no_clue',
               submittedText: null,
@@ -1023,6 +1081,46 @@ export function useStudySession({
       attemptedHanzi === null
         ? `No clue recorded. Expected "${wordAtResponse.hanzi}".`
         : `Incorrect ${studyProfile.labels.target}. Expected "${wordAtResponse.hanzi}".`,
+    );
+    setProductionUiPhase('await-next');
+    setAnswerRevealed(true);
+  }
+
+  function applyAutomaticPureCueForgot({
+    stateAtResponse,
+    item,
+    response,
+    resolution,
+  }: {
+    stateAtResponse: BucketSessionState;
+    item: PureCueSessionReviewItem;
+    response: string | null;
+    resolution: Pick<PureCueAssessmentEvent, 'outcome' | 'submittedWordId'>;
+  }) {
+    const transition = rateActivePureCueProductionUnit(stateAtResponse, 'forgot', {
+      response,
+      outcome: resolution.outcome,
+      submittedWordId: resolution.submittedWordId,
+    });
+    setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
+    setSessionState(transition.state);
+    setSessionSummary((current) =>
+      updateSessionSummaryForPureCueRating({
+        summary: current,
+        transition,
+        previousPhase: stateAtResponse.phase,
+      }),
+    );
+    setFrozenPureCueCard({
+      item,
+      attemptedResponse: response,
+      reviewedCount,
+      queuedCount: getBucketSessionTotalCount(stateAtResponse),
+    });
+    setProductionHanziError(
+      response === null
+        ? 'No clue recorded. Review the accepted answers.'
+        : 'That response is not in this cue\'s frozen accepted-answer set.',
     );
     setProductionUiPhase('await-next');
     setAnswerRevealed(true);
@@ -1422,21 +1520,6 @@ export function useStudySession({
   }, [activeUnit?.type, activeUnit?.type === 'study' ? activeUnit.item.sessionActionId : null, answerRevealed, sessionStarted, sessionState]);
 
   useEffect(() => {
-    if (productionUiPhase === 'await-next') {
-      return;
-    }
-
-    setProductionHanziInput('');
-    setProductionHanziError(null);
-    if (productionUiPhase === 'await-rating' && !isProductionItem) {
-      setProductionUiPhase('idle');
-    }
-    if (productionUiPhase === 'await-supplement' && !isProductionItem) {
-      setProductionUiPhase('idle');
-    }
-  }, [activeItem?.sessionActionId, productionUiPhase, isProductionItem]);
-
-  useEffect(() => {
     if (!sessionStarted || sessionState?.phase === 'completed' || !sessionSummary) {
       return;
     }
@@ -1493,7 +1576,7 @@ export function useStudySession({
   }, [personalNotesEditorOpen]);
 
   useEffect(() => {
-    if (!sessionStarted || !isProductionItem || answerRevealed || productionAwaitingNext || personalNotesEditorOpen) {
+    if (!sessionStarted || !isProductionItem || answerRevealed || (productionAwaitingNext || pureCueAwaitingNext) || personalNotesEditorOpen) {
       return;
     }
 
@@ -1505,9 +1588,11 @@ export function useStudySession({
   }, [
     activeUnstudiedProgress?.introComplete,
     activeItem?.sessionActionId,
+    activePureCue?.sessionActionId,
     answerRevealed,
     personalNotesEditorOpen,
     productionAwaitingNext,
+    pureCueAwaitingNext,
     isProductionItem,
     sessionStarted,
   ]);
@@ -1551,6 +1636,7 @@ export function useStudySession({
           isEditableTarget: isEditableKeyboardTarget(event.target),
           productionInputActive: productionSubmissionInputActive,
           productionAwaitingNext,
+          pureCueAwaitingNext,
           productionAwaitingSupplement,
           contrastAwaitingNext,
           unstudiedIntro: activeWord?.status === 'unstudied' && !activeUnstudiedProgress?.introComplete,
@@ -1558,7 +1644,7 @@ export function useStudySession({
           contrastSelectionActive,
           contrastHasSelection: contrastSelectedWordId !== null,
           answerRevealed,
-          ratingAvailable: answerRevealed && !productionAwaitingNext && !productionAwaitingSupplement && !contrastAwaitingNext,
+          ratingAvailable: answerRevealed && !productionAwaitingNext && !pureCueAwaitingNext && !productionAwaitingSupplement && !contrastAwaitingNext,
           hasUndo: lastUndoSnapshot !== null,
           hasActiveWord: activeWord !== null,
           ratingOptions: activeRatingOptions,
@@ -1603,7 +1689,7 @@ export function useStudySession({
           }
           return;
         case 'continue_after_auto_forgot':
-          if (productionAwaitingNext) {
+          if (productionAwaitingNext || pureCueAwaitingNext) {
             handleContinueAfterAutoForgot();
           } else if (contrastAwaitingNext) {
             handleContinueAfterAutoContrastForgot();
@@ -1614,7 +1700,7 @@ export function useStudySession({
           return;
         case 'rate_default': {
           const defaultRating = getDefaultRating(activeRatingOptions);
-          if (defaultRating && activeWord) {
+          if (defaultRating && (activeWord || activePureCue)) {
             void handleRate(defaultRating, {
               restoreUi: isProductionItem ? 'production-input' : 'revealed',
             });
@@ -1658,6 +1744,7 @@ export function useStudySession({
   }, [
     activeRatingOptions,
     activeItem,
+    activePureCue,
     activeUnstudiedProgress?.introComplete,
     activeWord,
     activeWordPersonalNotes,
@@ -1666,6 +1753,7 @@ export function useStudySession({
     contrastSelectionActive,
     contrastSelectedWordId,
     productionAwaitingNext,
+    pureCueAwaitingNext,
     productionAwaitingSupplement,
     isProductionItem,
     productionSubmissionInputActive,
@@ -1696,18 +1784,22 @@ export function useStudySession({
       sessionSummary,
       sessionFinalization,
       activeItem,
+      activePureCue,
       activeWord,
       activeLearningProgress,
       activeUnstudiedProgress,
       activeReviewProgress,
+      activePureCueFailureCount,
       hasUndo: lastUndoSnapshot !== null,
       submittingRating,
       personalNotesEditorOpen,
       personalNotesEditorSaving,
       studyManagementSubmitting,
       productionAwaitingNext,
+      pureCueAwaitingNext,
       productionAwaitingSupplement,
       frozenProductionCard,
+      frozenPureCueCard,
       contrastAwaitingNext,
       frozenContrastCard,
       activeAllMeanings,

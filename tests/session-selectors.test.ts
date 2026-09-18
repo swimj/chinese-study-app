@@ -5,6 +5,7 @@ import {
   getActivePrompt,
   getStudySessionPanelView,
   hasServedProductionCueSupplement,
+  isPureCueReviewInReinforcement,
 } from '../src/features/session/session-selectors.ts';
 import type { Word } from '../src/types.ts';
 
@@ -161,6 +162,11 @@ describe('session selectors', () => {
         exampleTranslation: 'He knew his son had committed a crime but shielded him.',
       },
     }), true);
+  });
+
+  test('treats a lapsed pure cue as reinforcement without a word anchor', () => {
+    assert.equal(isPureCueReviewInReinforcement(0), false);
+    assert.equal(isPureCueReviewInReinforcement(1), true);
   });
 });
 

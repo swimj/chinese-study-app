@@ -12,7 +12,7 @@ import type {
   ReviewActionProgress,
   UnstudiedWordProgress,
 } from '../lib/session-state';
-import type { SessionStudyItem } from '../domain/study-actions';
+import type { PureCueSessionReviewItem, SessionStudyItem } from '../domain/study-actions';
 import type { ReviewRating, Word, WordMeaning } from '../types';
 import type { SessionPrefetchState } from '../features/session/session-prefetch';
 import type { RatingOption } from '../features/session/session-rating';
@@ -22,6 +22,7 @@ import {
   StudySessionPanel,
   type FrozenContrastCard,
   type FrozenProductionCard,
+  type FrozenPureCueCard,
 } from '../features/session/StudySessionPanel';
 import { HomeOverviewPanel, SessionSettingsPanel } from './HomeOverviewPanel';
 
@@ -37,18 +38,22 @@ export function HomePage({
   sessionSummary,
   sessionFinalization,
   activeItem,
+  activePureCue,
   activeWord,
   activeLearningProgress,
   activeUnstudiedProgress,
   activeReviewProgress,
+  activePureCueFailureCount,
   hasUndo,
   submittingRating,
   personalNotesEditorOpen,
   personalNotesEditorSaving,
   studyManagementSubmitting,
   productionAwaitingNext,
+  pureCueAwaitingNext,
   productionAwaitingSupplement,
   frozenProductionCard,
+  frozenPureCueCard,
   contrastAwaitingNext,
   frozenContrastCard,
   activeAllMeanings,
@@ -123,18 +128,22 @@ export function HomePage({
   sessionSummary: SessionSummary | null;
   sessionFinalization: SessionFinalizationState;
   activeItem: SessionStudyItem | null;
+  activePureCue: PureCueSessionReviewItem | null;
   activeWord: Word | null;
   activeLearningProgress: LearningWordProgress | undefined;
   activeUnstudiedProgress: UnstudiedWordProgress | undefined;
   activeReviewProgress: ReviewActionProgress | undefined;
+  activePureCueFailureCount: number;
   hasUndo: boolean;
   submittingRating: ReviewRating | null;
   personalNotesEditorOpen: boolean;
   personalNotesEditorSaving: boolean;
   studyManagementSubmitting: boolean;
   productionAwaitingNext: boolean;
+  pureCueAwaitingNext: boolean;
   productionAwaitingSupplement: boolean;
   frozenProductionCard: FrozenProductionCard | null;
+  frozenPureCueCard: FrozenPureCueCard | null;
   contrastAwaitingNext: boolean;
   frozenContrastCard: FrozenContrastCard | null;
   activeAllMeanings: string[];
@@ -254,10 +263,12 @@ export function HomePage({
             sessionSummary={sessionSummary}
             sessionFinalization={sessionFinalization}
             activeItem={activeItem}
+            activePureCue={activePureCue}
             activeWord={activeWord}
             activeLearningProgress={activeLearningProgress}
             activeUnstudiedProgress={activeUnstudiedProgress}
             activeReviewProgress={activeReviewProgress}
+            activePureCueFailureCount={activePureCueFailureCount}
             reviewedCount={reviewedCount}
             queuedCount={displayedSessionItemCount}
             hasUndo={hasUndo}
@@ -266,8 +277,10 @@ export function HomePage({
             personalNotesEditorSaving={personalNotesEditorSaving}
             studyManagementSubmitting={studyManagementSubmitting}
             productionAwaitingNext={productionAwaitingNext}
+            pureCueAwaitingNext={pureCueAwaitingNext}
             productionAwaitingSupplement={productionAwaitingSupplement}
             frozenProductionCard={frozenProductionCard}
+            frozenPureCueCard={frozenPureCueCard}
             contrastAwaitingNext={contrastAwaitingNext}
             frozenContrastCard={frozenContrastCard}
             activeAllMeanings={activeAllMeanings}

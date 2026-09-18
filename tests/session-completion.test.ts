@@ -89,6 +89,8 @@ describe('session completion', { concurrency: false }, () => {
       DELETE FROM scoped_production_cue_accepted_words;
       DELETE FROM scoped_production_cues;
       DELETE FROM word_skill_relevance;
+      DELETE FROM pure_cue_scheduler_compensation_snapshot_attempts;
+      DELETE FROM pure_cue_scheduler_compensation_snapshots;
       DELETE FROM study_attempt_events;
       DELETE FROM study_sessions;
       DELETE FROM daily_new_word_intake;
