@@ -110,10 +110,12 @@ including interval/ease and recency/admission, without editing attempt history
 or the response word's scheduler.
 
 Intervening study can be overwritten by this restoration: this is an accepted
-quirk of asynchronous reflection, not a replay/rebase feature. Historical
-attempts lacking snapshots may still be promoted, with compensation explicitly
-reported as unavailable. A successful accepted-alternate attempt has no lapse
-to compensate. Repeated promotion cannot restore the same action twice.
+quirk of asynchronous reflection, not a replay/rebase feature. Promotion requires
+a strict target-only source lapse and a distinct resolved response word; a clean
+success is an invalid source, not a `not_applicable` compensation outcome.
+Missing snapshots report `unavailable`; repeated promotion reports
+`already_restored` and cannot restore the same action twice. Obsolete reflection
+work is read-only after the generation-contract cutover.
 
 ## Non-goals
 

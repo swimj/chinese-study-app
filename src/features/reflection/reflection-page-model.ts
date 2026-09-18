@@ -4,6 +4,7 @@ import type {
   ReflectionInputItemV1,
   ReflectionInputItemV2,
   ReflectionItemV3,
+  ReflectionItemV5,
   ReflectionItemResult,
   ReflectionHelpInboxEntry,
   ReflectionOperation,
@@ -11,6 +12,8 @@ import type {
   ReflectionQualityTag,
   ProductionCueChangeV2,
   ProductionCueDraftV2,
+  PureCueDistinctiveProductionCueDraftV1,
+  PromotePureElicitationDestinationV1,
   RepairProductionCueOperationV1,
   RepairProductionCueOperationV2,
 } from '../../domain/reflection';
@@ -512,6 +515,16 @@ export function cloneReflectionOperation(operation: ReflectionOperation): Reflec
       return { ...operation };
     case 'add_production_cue_supplement':
       return { ...operation };
+    case 'promote_pure_elicitation':
+      return {
+        ...operation,
+        destination: { ...operation.destination },
+        wordPlans: operation.wordPlans.map((plan) => ({
+          ...plan,
+          deactivateCueIds: [...plan.deactivateCueIds],
+          distinctiveCueDrafts: plan.distinctiveCueDrafts.map((draft) => ({ ...draft })),
+        })),
+      };
   }
 }
 
@@ -580,7 +593,17 @@ export type ReflectionOperationDraftAction =
   | { type: 'set_alternate_word'; alternateWordId: string }
   | { type: 'set_supplement_english_frame'; englishFrame: string }
   | { type: 'set_supplement_example_sentence'; exampleSentence: string }
-  | { type: 'set_supplement_example_translation'; exampleTranslation: string };
+  | { type: 'set_supplement_example_translation'; exampleTranslation: string }
+  | { type: 'set_promotion_destination'; destination: PromotePureElicitationDestinationV1 }
+  | { type: 'toggle_promotion_deactivation'; wordId: string; cueId: string }
+  | { type: 'add_promotion_distinctive_cue'; wordId: string }
+  | { type: 'remove_promotion_distinctive_cue'; wordId: string; index: number }
+  | {
+      type: 'update_promotion_distinctive_cue';
+      wordId: string;
+      index: number;
+      patch: Partial<PureCueDistinctiveProductionCueDraftV1>;
+    };
 
 export function reduceReflectionOperationDraft(
   operation: ReflectionOperation,
@@ -947,6 +970,87 @@ export function reduceReflectionOperationDraft(
         action.type,
         (current) => ({ ...current, exampleTranslation: action.exampleTranslation }),
       );
+    case 'set_promotion_destination':
+      return editOperation(
+        operation,
+        'promote_pure_elicitation',
+        action.type,
+        (current) => ({ ...current, destination: action.destination }),
+      );
+    case 'toggle_promotion_deactivation':
+      return editOperation(
+        operation,
+        'promote_pure_elicitation',
+        action.type,
+        (current) => ({
+          ...current,
+          wordPlans: current.wordPlans.map((plan) => plan.wordId !== action.wordId
+            ? plan
+            : {
+                ...plan,
+                deactivateCueIds: plan.deactivateCueIds.includes(action.cueId)
+                  ? plan.deactivateCueIds.filter((cueId) => cueId !== action.cueId)
+                  : [...plan.deactivateCueIds, action.cueId],
+              }),
+        }),
+      );
+    case 'add_promotion_distinctive_cue':
+      return editOperation(
+        operation,
+        'promote_pure_elicitation',
+        action.type,
+        (current) => ({
+          ...current,
+          wordPlans: current.wordPlans.map((plan) => plan.wordId !== action.wordId
+            ? plan
+            : {
+                ...plan,
+                distinctiveCueDrafts: [
+                  ...plan.distinctiveCueDrafts,
+                  { cueType: 'definition_gloss', text: '' },
+                ],
+              }),
+        }),
+      );
+    case 'remove_promotion_distinctive_cue':
+      return editOperation(
+        operation,
+        'promote_pure_elicitation',
+        action.type,
+        (current) => ({
+          ...current,
+          wordPlans: current.wordPlans.map((plan) => plan.wordId !== action.wordId
+            ? plan
+            : {
+                ...plan,
+                distinctiveCueDrafts: removeAt(
+                  plan.distinctiveCueDrafts,
+                  action.index,
+                  'promotion distinctive cue',
+                ),
+              }),
+        }),
+      );
+    case 'update_promotion_distinctive_cue':
+      return editOperation(
+        operation,
+        'promote_pure_elicitation',
+        action.type,
+        (current) => ({
+          ...current,
+          wordPlans: current.wordPlans.map((plan) => plan.wordId !== action.wordId
+            ? plan
+            : {
+                ...plan,
+                distinctiveCueDrafts: updateAt(
+                  plan.distinctiveCueDrafts,
+                  action.index,
+                  (draft) => ({ ...draft, ...action.patch }),
+                  'promotion distinctive cue',
+                ),
+              }),
+        }),
+      );
   }
 }
 
@@ -986,7 +1090,7 @@ export function createReplacementOperation(
   kind: ReflectionOperation['kind'],
   version: number,
   original: ReflectionOperation,
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV5 | null,
 ): ReflectionOperation {
   const targetWordId = evidence?.targetWord?.wordId ?? primaryWordId(original);
   const submittedWordId = evidence !== null && 'submittedWord' in evidence
@@ -1043,13 +1147,38 @@ export function createReplacementOperation(
         targetWordId,
         alternateWordId: submittedWordId,
       };
+    case 'promote_pure_elicitation': {
+      const promotionEvidence = evidence !== null && 'promotionEvidence' in evidence
+        ? evidence.promotionEvidence
+        : null;
+      const firstPureCueId = promotionEvidence?.intersectingPureCues[0]?.id ?? null;
+      return {
+        kind,
+        version: 1,
+        sourceAttemptId: evidence !== null && 'sourceAttemptId' in evidence
+          ? evidence.sourceAttemptId
+          : '',
+        targetWordId,
+        responseWordId: submittedWordId,
+        destination: firstPureCueId === null
+          ? { kind: 'create', stimulus: '', axisNote: '' }
+          : { kind: 'existing', pureCueId: firstPureCueId },
+        wordPlans: [targetWordId, submittedWordId]
+          .filter((wordId, index, values) => wordId.length > 0 && values.indexOf(wordId) === index)
+          .map((wordId) => ({
+            wordId,
+            deactivateCueIds: [],
+            distinctiveCueDrafts: [],
+          })),
+      };
+    }
   }
 }
 
 export function createManualOperation(
   kind: ReflectionOperation['kind'],
   version: number,
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV5 | null,
 ): ReflectionOperation {
   return createReplacementOperation(
     kind,
@@ -1075,6 +1204,8 @@ export function reflectionOperationLabel(operation: ReflectionOperation): string
       return 'Add post-reveal context';
     case 'accept_production_alternate':
       return 'Accept production alternate';
+    case 'promote_pure_elicitation':
+      return 'Promote pure elicitation';
   }
 }
 
@@ -1086,6 +1217,8 @@ function primaryWordId(operation: ReflectionOperation): string {
       return operation.wordId;
     case 'accept_production_alternate':
       return operation.targetWordId;
+    case 'promote_pure_elicitation':
+      return operation.targetWordId;
     case 'create_contrast_cluster':
       return operation.members[0]?.wordId ?? '';
   }
@@ -1095,6 +1228,8 @@ function secondaryWordId(operation: ReflectionOperation): string {
   switch (operation.kind) {
     case 'accept_production_alternate':
       return operation.alternateWordId;
+    case 'promote_pure_elicitation':
+      return operation.responseWordId;
     case 'create_contrast_cluster':
       return operation.members[1]?.wordId ?? '';
     case 'suppress_definition_production':

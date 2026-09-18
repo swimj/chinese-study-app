@@ -7,6 +7,9 @@ intentionally unsupported. The V2 production-cue repair behavior is accepted
 and implemented current behavior. `add_production_cue_supplement@1` is the
 accepted bounded path for adding post-reveal contextual reinforcement without
 replacing a fair definition-based production cue.
+`promote_pure_elicitation@1` is the atomic path from an overbroad word cue to
+a standalone pure cue; its policy is defined in
+[`pure-cue-elicitation.md`](./pure-cue-elicitation.md).
 
 This specification defines how learner-facing reflection describes bounded
 changes, how a user reviews or revises those proposals, and how an authorized
@@ -182,6 +185,14 @@ item-level text surface, and removes `unhandledNeeds` because the current model
 and product do not use them reliably. V7 retains that item shape and adds the
 strict `add_production_cue_supplement@1` wire operation. New generation uses
 V7; stored V4/V5/V6 artifacts remain immutable.
+
+V8 retains the same item-result shape and adds `promote_pure_elicitation@1`.
+It is validated against V5 enriched session evidence, including each word's
+current production cues and explicitly identified intersecting pure cues.
+New word-owned cue drafts in V8 accept only their owner. A V8 result cannot
+contain ordinary repair, supplement, or suppression proposals for either word
+affected by a promotion, even under another item. Different semantic axes may
+still have overlapping accepted membership. Legacy contracts remain frozen.
 
 The current diagnosis vocabulary is:
 
@@ -493,8 +504,8 @@ The behavioral contract is:
   or deactivate cue identities atomically;
 - a cue draft uses one V0 cue type (`definition_gloss`, `minimal_context`, or
   `circumstance`), non-empty stimulus text, and an accepted set of known visible
-  word ids that includes `wordId`; the answer space is always explicit and may
-  not contain duplicates; register and domain details are expressed in the cue
+  word ids containing exactly `wordId`; the answer space is explicit and
+  target-only; register and domain details are expressed in the cue
   text rather than as a separate type;
 - new or edited cue content always receives a new cue id; replacement
   deactivates only the named cue, and unrelated cues retain their identity and
@@ -512,14 +523,9 @@ Validation requires at least one change, allows a cue id in at most one change,
 requires at least one replacement for `replace`, and resolves the word, task,
 referenced cues, accepted words, and any source attempt against current state.
 Every referenced cue must belong to the named task. A cue draft's accepted set
-must include the task word; it need not include the submitted response. An
-accepted-answer-space judgment is the claim that that response belongs in the
-new answer space: it must identify the durable submitted word and admit it in a
-created or replacement cue. For a durable served cue, that judgment must replace
-the exact cue; for the meaning-derived fallback, it may create the first durable
-cue. If the learner revises the accepted set so the submitted word is no longer
-admitted, the review editor drops that now-inconsistent judgment rather than
-blocking authorization. A misleading or overloaded judgment must likewise repair
+must contain only the task word. Historical accepted-answer-space omission
+judgments remain readable but cannot expand word-owned acceptance. Shared-axis
+answers belong to pure-cue promotion instead. A misleading or overloaded judgment must repair
 the exact served cue or create a durable cue for fallback evidence.
 
 Application activates every created or replacement cue immediately and records
@@ -606,6 +612,37 @@ Non-effects:
 - it does not turn the example into a cloze or show it before recall; and
 - it does not attach reinforcement to `minimal_context` or `circumstance`
   cues, whose existing prompt already supplies natural context.
+
+### `promote_pure_elicitation` version 1
+
+The operation identifies the source production attempt, target word, and
+response word from enriched evidence. Its destination is either an explicitly
+identified existing pure cue or a new stimulus and semantic-axis note. Exactly
+two word plans list the existing cue IDs to deactivate and distinctive
+single-answer drafts to create. The review editor exposes both plans and the
+destination; semantic-axis judgment belongs to reflection and the learner,
+not an adapter's membership heuristic.
+
+Accepted membership is read-only in the proposal editor. New word-owned drafts
+accept only their owner, and revised/replacement/manual operations grounded in
+V8 evidence must preserve that rule at authorization. Legacy accepted sets are
+shown unchanged, without membership-editing controls. Pure-cue promotion shows
+its evidence-bound pair read-only while allowing stimulus, axis, and cue-plan
+edits.
+
+Application preflights both word plans and the destination before writing.
+One transaction creates or extends the pure cue, applies both word plans,
+sets production to `proxied` when no distinctive cue remains (preserving
+explicit suppression), and restores the originating false-lapse snapshot when
+available. Any write failure rolls the entire operation back. Existing pure
+cue membership is set-add only; pure cues remain learner-private.
+
+Compensation reports `restored`, `already_restored`, or `unavailable` as an
+explicit effect outcome. The source must be a rejected/Forgot strict target-only
+production attempt with the operation's distinct resolved response word.
+Non-lapse sources fail before any promotion effects; there is no live
+`not_applicable` path. Compensation preserves
+attempt history and never projects onto the response word's scheduler.
 
 ### `accept_production_alternate` version 1
 
@@ -938,12 +975,9 @@ change is not enough to claim satisfaction or borrow its effect attribution.
 Generated content inside an operation remains editable before authorization.
 For contrast creation this includes title, cluster note, member nuance notes,
 prompt targets, prompt text, and explanations. For V2 cue repair it includes
-the cue lifecycle changes, draft cue types and text, and accepted-word sets.
-Source-attempt judgments stay in the authorized payload; the compact editor
-keeps them consistent with the visible accepted sets rather than exposing them
-as a separate field. Clearing the submitted response from every created or
-replacement accepted set drops a now-inconsistent
-`accepted_answer_space_omission` judgment. For a cue supplement the editable
+the cue lifecycle changes and draft cue types and text. Accepted-word sets are
+read-only and new writes must be target-only. Source-attempt judgments stay in
+the authorized payload rather than being a separate editor field. For a cue supplement the editable
 fields are the English frame, full example sentence, and translation; changing
 any of those fields creates a revised invocation without changing the exact
 evidence attachment.

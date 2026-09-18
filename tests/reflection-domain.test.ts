@@ -168,6 +168,7 @@ describe('reflection operation registry and validation', () => {
         ['repair_production_cue', 2, true, 'supported'],
         ['add_production_cue_supplement', 1, true, 'supported'],
         ['accept_production_alternate', 1, true, 'unsupported'],
+        ['promote_pure_elicitation', 1, true, 'supported'],
       ],
     );
   });
@@ -200,6 +201,23 @@ describe('reflection operation registry and validation', () => {
         version: 1,
         targetWordId: 'target',
         alternateWordId: 'alternate',
+      },
+      {
+        kind: 'promote_pure_elicitation',
+        version: 1,
+        sourceAttemptId: 'attempt-1',
+        targetWordId: 'target',
+        responseWordId: 'alternate',
+        destination: { kind: 'create', stimulus: 'shared axis', axisNote: 'usage distinction' },
+        wordPlans: [{
+          wordId: 'target',
+          deactivateCueIds: ['cue-1'],
+          distinctiveCueDrafts: [],
+        }, {
+          wordId: 'alternate',
+          deactivateCueIds: [],
+          distinctiveCueDrafts: [{ cueType: 'minimal_context', text: 'alternate only' }],
+        }],
       },
     ];
     for (const operation of operations) {

@@ -562,56 +562,13 @@ export function applyProductionCueRepairWithoutTransaction(
   invocationId: string,
   appliedAt: string,
 ): OperationApplicationState {
-  const task = getDb().prepare(`
-    SELECT task_id, word_id, task_kind, created_at
-    FROM production_tasks
-    WHERE task_id = ?
-  `).get(operation.taskId) as ProductionTaskRow | undefined;
-  if (!task || task.word_id !== operation.wordId || task.task_kind !== DEFAULT_PRODUCTION_TASK_KIND) {
-    return {
-      kind: 'stale',
-      reason: `Default production task ${operation.taskId} no longer belongs to word ${operation.wordId}.`,
-    };
-  }
+  const currentStateError = validateProductionCueRepairCurrentStateWithoutTransaction(operation);
+  if (currentStateError !== null) return { kind: 'stale', reason: currentStateError };
 
   const referencedCues = new Map<string, ProductionCueEntryV0>();
   for (const change of operation.changes) {
-    if (change.kind === 'create') continue;
-    const cue = getProductionCue(change.cueId);
-    if (!cue || cue.taskId !== operation.taskId) {
-      return {
-        kind: 'stale',
-        reason: `Production cue ${change.cueId} no longer belongs to task ${operation.taskId}.`,
-      };
-    }
-    referencedCues.set(change.cueId, cue);
-    if (change.kind === 'replace' && !cue.active) {
-      return {
-        kind: 'stale',
-        reason: `Production cue ${change.cueId} is no longer active for replacement.`,
-      };
-    }
-  }
-
-  const drafts = operation.changes.flatMap((change) => {
-    switch (change.kind) {
-      case 'create':
-        return [change.cue];
-      case 'replace':
-        return change.replacements;
-      case 'deactivate':
-        return [];
-    }
-  });
-  if (drafts.some((draft) => (
-    draft.acceptedWordIds.length !== 1 || draft.acceptedWordIds[0] !== operation.wordId
-  ))) {
-    throw new Error('Word-owned production cues must accept exactly their target word.');
-  }
-  const draftWordIds = drafts.flatMap((draft) => draft.acceptedWordIds);
-  for (const wordId of new Set(draftWordIds)) {
-    if (!wordExists(wordId)) {
-      return { kind: 'stale', reason: `Accepted production word ${wordId} no longer exists.` };
+    if (change.kind !== 'create') {
+      referencedCues.set(change.cueId, getProductionCue(change.cueId)!);
     }
   }
 
@@ -705,6 +662,84 @@ export function applyProductionCueRepairWithoutTransaction(
   return causedEffectRefs.length > 0
     ? { kind: 'applied', appliedAt, effectRefs: causedEffectRefs }
     : { kind: 'already_satisfied', satisfyingEffectRefs };
+}
+
+export function validateProductionCueRepairCurrentStateWithoutTransaction(
+  operation: RepairProductionCueOperationV2,
+): string | null {
+  const task = getDb().prepare(`
+    SELECT task_id, word_id, task_kind, created_at
+    FROM production_tasks
+    WHERE task_id = ?
+  `).get(operation.taskId) as ProductionTaskRow | undefined;
+  if (!task || task.word_id !== operation.wordId || task.task_kind !== DEFAULT_PRODUCTION_TASK_KIND) {
+    return `Default production task ${operation.taskId} no longer belongs to word ${operation.wordId}.`;
+  }
+
+  for (const change of operation.changes) {
+    if (change.kind === 'create') continue;
+    const cue = getProductionCue(change.cueId);
+    if (!cue || cue.taskId !== operation.taskId) {
+      return `Production cue ${change.cueId} no longer belongs to task ${operation.taskId}.`;
+    }
+    if (change.kind === 'replace' && !cue.active) {
+      return `Production cue ${change.cueId} is no longer active for replacement.`;
+    }
+  }
+
+  const drafts = operation.changes.flatMap((change) => (
+    change.kind === 'create' ? [change.cue] : change.kind === 'replace' ? change.replacements : []
+  ));
+  if (drafts.some((draft) => draft.acceptedWordIds.length !== 1 || draft.acceptedWordIds[0] !== operation.wordId)) {
+    throw new Error('Word-owned production cues must accept exactly their target word.');
+  }
+  const draftWordIds = operation.changes.flatMap((change) => {
+    switch (change.kind) {
+      case 'create':
+        return change.cue.acceptedWordIds;
+      case 'replace':
+        return change.replacements.flatMap((replacement) => replacement.acceptedWordIds);
+      case 'deactivate':
+        return [];
+    }
+  });
+  for (const wordId of new Set(draftWordIds)) {
+    if (!wordExists(wordId)) {
+      return `Accepted production word ${wordId} no longer exists.`;
+    }
+  }
+  return null;
+}
+
+export function assertPureCuePromotionSource(
+  sourceAttemptId: string,
+  targetWordId: string,
+  responseWordId: string,
+): void {
+  const attempt = getDb().prepare(`
+    SELECT action_kind, outcome, rating, target_word_id, metadata_json
+    FROM study_attempt_events
+    WHERE id = ?
+  `).get(sourceAttemptId) as {
+    action_kind: string;
+    outcome: string;
+    rating: string | null;
+    target_word_id: string;
+    metadata_json: string;
+  } | undefined;
+  if (!attempt || attempt.action_kind !== 'production') {
+    throw new Error(`Source production attempt ${sourceAttemptId} is unavailable.`);
+  }
+  const metadata = JSON.parse(attempt.metadata_json) as { production?: {
+    acceptedWordIds?: string[]; submittedWordId?: string; result?: string;
+  } };
+  const production = metadata.production;
+  if (attempt.target_word_id !== targetWordId || targetWordId === responseWordId
+    || attempt.rating !== 'forgot' || attempt.outcome !== 'incorrect'
+    || production?.result !== 'rejected' || production.submittedWordId !== responseWordId
+    || production.acceptedWordIds?.length !== 1 || production.acceptedWordIds[0] !== targetWordId) {
+    throw new Error('Pure-cue promotion requires a strict target-only production lapse with a distinct response word.');
+  }
 }
 
 export function applyProductionCueSupplementWithoutTransaction(
