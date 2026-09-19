@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import type { SessionStudyItem, SessionStudyItemBuckets, StudySkillId } from '../src/domain/study-actions.ts';
+import type {
+  PureCueSessionReviewItem,
+  SessionStudyItem,
+  SessionStudyItemBuckets,
+  StudySkillId,
+} from '../src/domain/study-actions.ts';
 import type { ReviewRating, Word } from '../src/types.ts';
+import { cloneBucketSessionState } from '../src/features/session/session-state-copy.ts';
 
 const testSessionId = 'bucket-session-test';
 
@@ -411,6 +417,59 @@ describe('bucket session state covering contract', () => {
     assert.equal(getBucketSessionUnitCounts(canceled).review, 1);
   });
 
+  test('pure cue review preserves the Undo snapshot and completes after clean or reinforced responses', async () => {
+    const {
+      createBucketSessionState,
+      getActiveSessionUnit,
+      markActiveSessionUnitStarted,
+      rateActivePureCueProductionUnit,
+    } = await loadBucketSessionStateApi();
+    const pureCue = createPureCueReviewItem();
+    const started = markActiveSessionUnitStarted(createBucketSessionState({
+      buckets: { review: [pureCue], learning: [], unstudied: [] },
+      sessionId: testSessionId,
+      schedulerPolicy: { bucketWeights: { review: 1, learning: 0, unstudied: 0 } },
+      seed: 1,
+    }));
+    const undoSnapshot = cloneBucketSessionState(started);
+
+    const lapsed = rateActivePureCueProductionUnit(started, 'forgot', {
+      response: 'wrong', outcome: 'rejected', submittedWordId: null,
+    });
+    assert.deepEqual(lapsed.commit, { type: 'none' });
+    assert.equal(lapsed.state.pureCueReviewProgress[pureCue.sessionActionId]?.failureCount, 1);
+    const active = getActiveSessionUnit(lapsed.state);
+    assert.equal(active.type, 'study');
+    assert.equal(active.type === 'study' ? active.item.sessionActionId : null, pureCue.sessionActionId);
+
+    const undone = cloneBucketSessionState(undoSnapshot);
+    assert.equal(undone.answeredCount, 0);
+    assert.equal(undone.pureCueReviewProgress[pureCue.sessionActionId], undefined);
+    const restoredActive = getActiveSessionUnit(undone);
+    assert.equal(restoredActive.type === 'study' ? restoredActive.item.sessionActionId : null, pureCue.sessionActionId);
+
+    let reinforced = lapsed.state;
+    let completed: ReturnType<typeof rateActivePureCueProductionUnit> | null = null;
+    for (let successes = 0; successes < 3; successes += 1) {
+      completed = rateActivePureCueProductionUnit(reinforced, 'good', {
+        response: '撒谎', outcome: 'accepted', submittedWordId: 'word-a',
+      });
+      reinforced = completed.state;
+    }
+    assert.equal(completed?.commit.type, 'commit-pure-cue-production-session');
+
+    const cleanStarted = markActiveSessionUnitStarted(createBucketSessionState({
+      buckets: { review: [createPureCueReviewItem()], learning: [], unstudied: [] },
+      sessionId: `${testSessionId}-clean`,
+      schedulerPolicy: { bucketWeights: { review: 1, learning: 0, unstudied: 0 } },
+      seed: 1,
+    }));
+    const cleanCompleted = rateActivePureCueProductionUnit(cleanStarted, 'good', {
+      response: '撒谎', outcome: 'accepted', submittedWordId: 'word-a',
+    });
+    assert.equal(cleanCompleted.commit.type, 'commit-pure-cue-production-session');
+  });
+
   test('contrast selection requires forgot for wrong choices and pass ratings for correct choices', async () => {
     const {
       createBucketSessionState,
@@ -550,6 +609,7 @@ type BucketSessionStateApi = {
   cancelRatedReviewSessionAction: (state: unknown, sessionActionId: string) => {
     answeredCount: number;
     reviewProgress: Record<string, { failureCount: number } | undefined>;
+    pureCueReviewProgress: Record<string, { failureCount: number } | undefined>;
   };
   dismissActiveBucketSessionUnit: (state: unknown) => { state: { reviewProgress: Record<string, unknown> } };
   getActiveSessionUnit: (state: unknown) => BucketSessionActiveUnit;
@@ -579,6 +639,16 @@ type BucketSessionStateApi = {
     practiceMore: boolean;
   }) => BucketSessionTransitionResult;
   rateActiveSessionUnit: (state: unknown, rating: ReviewRating) => BucketSessionTransitionResult;
+  rateActivePureCueProductionUnit: (state: unknown, rating: ReviewRating, response: {
+    response: string | null;
+    outcome: 'accepted' | 'rejected';
+    submittedWordId: string | null;
+  }) => {
+    state: {
+      pureCueReviewProgress: Record<string, { failureCount: number } | undefined>;
+    };
+    commit: { type: string };
+  };
 };
 
 type TestBucketSessionState = {
@@ -600,6 +670,7 @@ async function loadBucketSessionStateApi(): Promise<BucketSessionStateApi> {
     'getBucketSessionUnitCounts',
     'markActiveSessionUnitStarted',
     'rateActiveContrastSelectionUnit',
+    'rateActivePureCueProductionUnit',
     'rateActiveSessionUnit',
   ];
 
@@ -637,6 +708,22 @@ function createReviewStudyItem(wordId: string): SessionStudyItem {
     intervalHours: 24,
     word,
     contrastSelection: null,
+  };
+}
+
+function createPureCueReviewItem(): PureCueSessionReviewItem {
+  return {
+    itemType: 'pure_cue_production',
+    sessionActionId: 'pure-cue/snapshot-a',
+    tier: 'fragile',
+    snapshot: {
+      snapshotId: 'snapshot-a',
+      pureCueId: 'cue-a',
+      servedAt: '2026-09-18T00:00:00.000Z',
+      stimulus: 'to tell an untruth',
+      axisNote: 'ordinary speech',
+      acceptedAnswers: [{ wordId: 'word-a', hanzi: '撒谎', traditional: '撒謊' }],
+    },
   };
 }
 

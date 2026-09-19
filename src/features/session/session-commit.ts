@@ -4,6 +4,7 @@ import {
   completeUnstudiedSession,
   recordAcceptedContrastSelectionAttempt,
   recordAcceptedReviewAttemptBatch,
+  recordPureCueAssessment,
 } from '../../services/api';
 
 export type DeferredSessionCommit = Exclude<BucketSessionCommitIntent, { type: 'none' }>;
@@ -42,6 +43,15 @@ export async function applySessionCommit(commit: DeferredSessionCommit) {
           rating: commit.rating,
           practiceMore: commit.practiceMore,
         },
+      });
+      return;
+    case 'commit-pure-cue-production-session':
+      await recordPureCueAssessment({
+        sessionId: commit.sessionId,
+        attemptId: commit.attemptId,
+        snapshotId: commit.snapshotId,
+        sessionActionId: commit.sessionActionId,
+        events: commit.events,
       });
       return;
     case 'commit-learning-word-session':

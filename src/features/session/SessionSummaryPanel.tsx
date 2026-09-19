@@ -25,7 +25,13 @@ export function SessionSummaryPanel({
       </p>
       <div className="summary-topline">
         <span className="badge">Review actions completed {summary.completedReviewActions}</span>
+        {summary.completedPureCueActions > 0 ? (
+          <span className="badge">Pure cues completed {summary.completedPureCueActions}</span>
+        ) : null}
         <span className="badge">Lapses {summary.lapsedReviewActions}</span>
+        {summary.lapsedPureCueActions > 0 ? (
+          <span className="badge">Pure cue lapses {summary.lapsedPureCueActions}</span>
+        ) : null}
       </div>
       {summary.lapsedReviewLabels.length > 0 ? (
         <div className="summary-lapses">
@@ -58,6 +64,12 @@ export function SessionSummaryPanel({
           <span className="stat-label">Review actions completed</span>
           <strong className="stat-value">{summary.completedReviewActions}</strong>
         </div>
+        {summary.completedPureCueActions > 0 ? (
+          <div className="stat-card">
+            <span className="stat-label">Pure cues completed</span>
+            <strong className="stat-value">{summary.completedPureCueActions}</strong>
+          </div>
+        ) : null}
         <div className="stat-card">
           <span className="stat-label">Learning words covered</span>
           <strong className="stat-value">{summary.completedLearningWords}</strong>

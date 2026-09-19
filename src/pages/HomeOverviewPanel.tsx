@@ -56,7 +56,7 @@ export function HomeOverviewPanel({
               {sessionLoading || dietIntakeStartBlocked ? 'Preparing session...' : 'Start session'}
             </span>
             <span className="session-start-card-helper">
-              words: {prefetchedSessionItemCount ?? '...'}
+              items: {prefetchedSessionItemCount ?? '...'}
             </span>
           </button>
           <button

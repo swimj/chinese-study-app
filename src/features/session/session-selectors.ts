@@ -55,6 +55,7 @@ export type StudySessionPanelView =
   | 'not_started'
   | 'completed'
   | 'frozen_production'
+  | 'frozen_pure_cue'
   | 'frozen_contrast'
   | 'unstudied_intro'
   | 'empty'
@@ -65,9 +66,12 @@ export function getStudySessionPanelView({
   sessionCompletedWithSummary,
   productionAwaitingNext,
   frozenProductionCardPresent,
+  pureCueAwaitingNext = false,
+  frozenPureCueCardPresent = false,
   contrastAwaitingNext,
   frozenContrastCardPresent,
   activeItemPresent,
+  activePureCuePresent = false,
   activeWordStatus,
   activeUnstudiedIntroComplete,
 }: {
@@ -75,9 +79,12 @@ export function getStudySessionPanelView({
   sessionCompletedWithSummary: boolean;
   productionAwaitingNext: boolean;
   frozenProductionCardPresent: boolean;
+  pureCueAwaitingNext?: boolean;
+  frozenPureCueCardPresent?: boolean;
   contrastAwaitingNext: boolean;
   frozenContrastCardPresent: boolean;
   activeItemPresent: boolean;
+  activePureCuePresent?: boolean;
   activeWordStatus: Word['status'] | null;
   activeUnstudiedIntroComplete: boolean;
 }): StudySessionPanelView {
@@ -87,6 +94,10 @@ export function getStudySessionPanelView({
 
   if (productionAwaitingNext && frozenProductionCardPresent) {
     return 'frozen_production';
+  }
+
+  if (pureCueAwaitingNext && frozenPureCueCardPresent) {
+    return 'frozen_pure_cue';
   }
 
   if (contrastAwaitingNext && frozenContrastCardPresent) {
@@ -101,7 +112,7 @@ export function getStudySessionPanelView({
     return 'unstudied_intro';
   }
 
-  if (!activeItemPresent || activeWordStatus === null) {
+  if (!activePureCuePresent && (!activeItemPresent || activeWordStatus === null)) {
     return 'empty';
   }
 
@@ -219,6 +230,10 @@ export function isReviewInReinforcement({
   failureCount: number;
 }) {
   return word?.status === 'review' && failureCount > 0;
+}
+
+export function isPureCueReviewInReinforcement(failureCount: number) {
+  return failureCount > 0;
 }
 
 export function getActiveReviewState({

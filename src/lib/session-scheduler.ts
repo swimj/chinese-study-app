@@ -1,9 +1,10 @@
 import type {
   SessionStudyItem,
+  SessionReviewItem,
   SessionStudyItemBuckets,
   StudySkillId,
 } from '../domain/study-actions';
-import { buildWordLifecycleSessionStudyItems, cloneProductionExerciseSnapshot } from '../domain/study-actions';
+import { buildWordLifecycleSessionStudyItems, cloneProductionExerciseSnapshot, isPureCueSessionReviewItem } from '../domain/study-actions';
 import type { Word } from '../types';
 
 // Live sessions seed from sessionId. This fallback keeps scheduler unit tests
@@ -38,7 +39,7 @@ export type ActiveBucketSchedulerUnit =
   | {
       type: 'study';
       bucket: BucketSchedulerBucket;
-      item: SessionStudyItem;
+      item: SessionReviewItem;
     }
   | {
       type: 'unstudied_intro';
@@ -46,7 +47,7 @@ export type ActiveBucketSchedulerUnit =
     };
 
 export type BucketSessionScheduler = {
-  reviewQueue: SessionStudyItem[];
+  reviewQueue: SessionReviewItem[];
   learningPool: Word[];
   unstudiedPool: Word[];
   policy: BucketSessionSchedulerPolicy;
@@ -149,6 +150,9 @@ export function completeActiveBucketSchedulerUnit(scheduler: BucketSessionSchedu
         });
       }
 
+      if (isPureCueSessionReviewItem(active.item)) {
+        throw new Error('Pure cue session items are review-only.');
+      }
       return syncBucketScheduler(removeBucketSchedulerWord(scheduler, active.bucket, active.item.targetWordId));
     case 'unstudied_intro':
       return syncBucketScheduler(scheduler);
@@ -247,7 +251,16 @@ function cloneActiveBucketSchedulerUnit(unit: ActiveBucketSchedulerUnit): Active
   };
 }
 
-function cloneSessionStudyItem(item: SessionStudyItem): SessionStudyItem {
+function cloneSessionStudyItem(item: SessionReviewItem): SessionReviewItem {
+  if (isPureCueSessionReviewItem(item)) {
+    return {
+      ...item,
+      snapshot: {
+        ...item.snapshot,
+        acceptedAnswers: item.snapshot.acceptedAnswers.map((answer) => ({ ...answer })),
+      },
+    };
+  }
   return {
     ...item,
     sampledSkillIds: [...item.sampledSkillIds],
@@ -483,10 +496,10 @@ function isActiveBucketWord(
     return bucket === 'unstudied' && active.word.id === wordId;
   }
 
-  return active.bucket === bucket && active.item.targetWordId === wordId;
+  return active.bucket === bucket && !isPureCueSessionReviewItem(active.item) && active.item.targetWordId === wordId;
 }
 
-function assertActiveReviewHeadMatches(scheduler: BucketSessionScheduler, item: SessionStudyItem) {
+function assertActiveReviewHeadMatches(scheduler: BucketSessionScheduler, item: SessionReviewItem) {
   const head = scheduler.reviewQueue[0] ?? assertBucketSchedulerReviewActionPresent();
   if (head.sessionActionId !== item.sessionActionId) {
     throw new Error(
