@@ -843,8 +843,8 @@ function assertReusableProductionCue(cue: SourceCueRow): void {
     ORDER BY accepted.position
   `).all(cue.task_id, cue.cue_id) as Array<{ word_id: string; anchor_word_id: string }>;
   if (
-    acceptedWords.length === 0
-    || !acceptedWords.some((row) => row.word_id === row.anchor_word_id)
+    acceptedWords.length !== 1
+    || acceptedWords[0].word_id !== acceptedWords[0].anchor_word_id
   ) {
     throw new Error(`Production cue ${cue.cue_id} has an invalid reusable answer space.`);
   }

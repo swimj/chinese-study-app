@@ -109,7 +109,7 @@ describe('content diagnostics', { concurrency: false }, () => {
     assert.equal(cues.hasMore, false);
     assert.equal(cues.items[0]?.kind, 'production_cue');
     assert.equal(cues.items[0]?.active, true);
-    assert.deepEqual(cues.items[0]?.acceptedWords.map((word) => word.id), ['check', 'inspect']);
+    assert.deepEqual(cues.items[0]?.acceptedWords.map((word) => word.id), ['check']);
     assert.deepEqual(cues.items[0]?.evidence, {
       attemptCount: 3,
       acceptedAnchorCount: 1,
@@ -137,7 +137,7 @@ function insertCue() {
       'In a classroom checking-understanding context', '2026-08-02T00:00:00.000Z', 'manual', NULL
     );
     INSERT INTO production_cue_accepted_words (cue_id, word_id, position)
-    VALUES ('check-cue', 'check', 0), ('check-cue', 'inspect', 1);
+    VALUES ('check-cue', 'check', 0);
     INSERT INTO production_cue_lifecycle_events (
       event_id, cue_id, task_id, lifecycle_kind, occurred_at, invocation_id
     ) VALUES (

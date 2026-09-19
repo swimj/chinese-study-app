@@ -94,6 +94,7 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
   ...contrastContentEntries(),
   ...reflectionEntries(),
   ...productionEntries(),
+  ...pureCueEntries(),
   ...intakeTriageEntries(),
 ];
 
@@ -276,11 +277,45 @@ function productionEntries(): DurableOwnershipEntry[] {
       'rebuild from same-learner cue evidence',
       'shadow evidence aggregate; not scheduling authority',
     ),
+  ];
+}
+
+function pureCueEntries(): DurableOwnershipEntry[] {
+  return [
     privateEntry(
-      'learner_owned_production_recheck_demands',
-      'learner plus production task and source attempt',
-      'assign source, consumer, and replacement references to one learner',
-      'temporary learner scheduling demand',
+      'pure_cues',
+      'learner standalone elicitation and scheduler root',
+      'create empty; pure cues are post-release learner-private state',
+    ),
+    privateEntry(
+      'pure_cue_accepted_words',
+      'learner plus pure cue; words remain shared references',
+      'create empty; membership is append-only',
+      'append-only accepted-answer membership',
+    ),
+    privateEntry(
+      'pure_cue_served_snapshots',
+      'learner plus pure cue; session action binds only when consumed',
+      'create empty; historical sessions have no fabricated snapshots',
+      'immutable served exercise snapshot with one consumption marker',
+    ),
+    privateEntry(
+      'pure_cue_attempts',
+      'learner plus consumed pure-cue snapshot',
+      'create empty; independent post-release attempt history',
+      'immutable assessment batch and scheduler projection evidence',
+    ),
+    privateEntry(
+      'pure_cue_scheduler_compensation_snapshots',
+      'learner plus originating session-action batch',
+      'create empty; historical attempts return unavailable rather than fabricated state',
+      'immutable pre-projection scheduler state with one compensation marker',
+    ),
+    privateEntry(
+      'pure_cue_scheduler_compensation_snapshot_attempts',
+      'learner plus same-learner source attempt and compensation batch',
+      'create empty; links every post-release batch event to one restore-once key',
+      'immutable source-attempt links',
     ),
   ];
 }
