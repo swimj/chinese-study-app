@@ -7,8 +7,8 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import type {
   ReflectionOperation,
-  SessionReflectionBundleV1,
-  SessionReflectionResultV4,
+  SessionReflectionBundleV5,
+  SessionReflectionResultV8,
 } from '../src/domain/reflection.ts';
 import {
   RetiredReflectionSourceModelError,
@@ -359,7 +359,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       'pending',
     );
     assert.equal(
-      (detail.json as { result: SessionReflectionResultV4 }).result.itemResults[0]?.observation,
+      (detail.json as { result: SessionReflectionResultV8 }).result.itemResults[0]?.learnerExplanation,
       'The production goal is not useful.',
     );
 
@@ -383,13 +383,13 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       artifacts: [{
         artifactId: artifact.artifactId,
         sourceSessionId: 'unreadable-session',
-        reflectionFlowVersion: 'initial_post_session_reflection.v1',
+        reflectionFlowVersion: 'initial_post_session_reflection.v4',
         generatedAt,
         provider: 'openai',
         model: 'gpt-5.6-luna-high',
-        promptVersion: 'reflection-v2',
-        bundleSchemaVersion: 'session_reflection_bundle.v1',
-        resultSchemaVersion: 'session_reflection_result.v4',
+        promptVersion: 'reflection-staged-v2',
+        bundleSchemaVersion: 'session_reflection_bundle.v5',
+        resultSchemaVersion: 'session_reflection_result.v8',
         proposalCount: 1,
         openProposalCount: 1,
         readState: 'unreadable',
@@ -1184,23 +1184,21 @@ function materializeInformational(
   `).run(sessionId, generatedAt, generatedAt);
   return dbModule.materializeReflectionArtifact({
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v1',
+    reflectionFlowVersion: 'initial_post_session_reflection.v4',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-v2',
+    promptVersion: 'reflection-staged-v2',
     evidenceBundle: bundle(sessionId),
     result: {
-      schemaVersion: 'session_reflection_result.v4',
+      schemaVersion: 'session_reflection_result.v8',
       itemResults: [{
         itemId: 'item-1',
         diagnosisTags: ['ordinary_retrieval_noise'],
-        observation: 'Ordinary retrieval noise; no durable change.',
-        learnerExplanation: null,
+      learnerExplanation: 'Ordinary retrieval noise; no durable change.',
         proposals: [],
         questions: [],
-        unhandledNeeds: [],
-      }],
+        }],
     },
   });
 }
@@ -1216,19 +1214,19 @@ function materializationInput(
   `).run(sessionId, generatedAt, generatedAt);
   return {
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v1',
+    reflectionFlowVersion: 'initial_post_session_reflection.v4',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-v2',
+    promptVersion: 'reflection-staged-v2',
     evidenceBundle: bundle(sessionId),
     result: result(operation),
   };
 }
 
-function bundle(sessionId: string): SessionReflectionBundleV1 {
+function bundle(sessionId: string): SessionReflectionBundleV5 {
   return {
-    schemaVersion: 'session_reflection_bundle.v1',
+    schemaVersion: 'session_reflection_bundle.v5',
     generatedAt,
     session: {
       sessionId,
@@ -1250,15 +1248,16 @@ function bundle(sessionId: string): SessionReflectionBundleV1 {
       },
       sessionNote: null,
       existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
-      cuesAsShown: [{
+      sourceAttemptId: 'attempt-1',
+      promotionEvidence: null,
+      servedCue: {
         cueId: null,
         cueType: 'definition_gloss',
-        displayOrder: 0,
         text: 'target',
-        displayedMeanings: ['target'],
-      }],
+        acceptedWordIds: ['target'],
+        supplement: null,
+      },
       rawResponse: '替代',
-      responseKind: 'typed',
       submittedWord: {
         wordId: 'alternate',
         hanzi: '替代',
@@ -1270,21 +1269,19 @@ function bundle(sessionId: string): SessionReflectionBundleV1 {
   };
 }
 
-function result(operation: ReflectionOperation): SessionReflectionResultV4 {
+function result(operation: ReflectionOperation): SessionReflectionResultV8 {
   return {
-    schemaVersion: 'session_reflection_result.v4',
+    schemaVersion: 'session_reflection_result.v8',
     itemResults: [{
       itemId: 'item-1',
       diagnosisTags: ['persistent_confusion'],
-      observation: 'The production goal is not useful.',
-      learnerExplanation: null,
+      learnerExplanation: 'The production goal is not useful.',
       proposals: [{
         proposalGroupKey: null,
         rationale: 'Apply the bounded operation.',
         operation,
       }],
       questions: [],
-      unhandledNeeds: [],
     }],
   };
 }
@@ -1331,6 +1328,7 @@ function insertWord(wordId: string, hanzi: string): void {
 }
 
 function insertPendingInvocation(invocationId: string, operation: ReflectionOperation): void {
+  const artifact = materialize(`source-${invocationId}`, operation).artifact;
   sqlite.prepare(`
     INSERT INTO reflection_operation_invocations (
       invocation_id,
@@ -1355,7 +1353,12 @@ function insertPendingInvocation(invocationId: string, operation: ReflectionOper
     generatedAt,
     operation.kind,
     operation.version,
-    JSON.stringify(operation),
+    JSON.stringify({
+      schemaVersion: 'reflection_invocation_operation.v1',
+      sourceArtifactId: artifact.artifactId,
+      sourceItemId: 'item-1',
+      operation,
+    }),
     generatedAt,
   );
 }

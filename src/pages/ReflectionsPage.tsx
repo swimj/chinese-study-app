@@ -12,6 +12,7 @@ import type {
   ReflectionQualityTag,
 } from '../domain/reflection';
 import { CURRENT_REFLECTION_PROMPT_VERSION } from '../domain/reflection';
+import { isCurrentReflectionArtifactContract } from '../domain/reflection-contracts';
 import type { ReflectionModelChoice, ReflectionQualityStatsDto } from '../services/api';
 import { NestedNav } from '../components/AppChrome';
 import { ReflectionOperationEditor } from '../features/reflection/ReflectionOperationEditor';
@@ -110,9 +111,10 @@ export function ReflectionsPage({
 }) {
   const [view, setView] = useState<ReflectionView>('help');
   const [showDeferredInHelp, setShowDeferredInHelp] = useState(false);
-  const helpCards = buildReflectionHelpCards(controller.artifactDetails);
+  const currentArtifacts = controller.artifactDetails.filter(isCurrentReflectionArtifactContract);
+  const helpCards = buildReflectionHelpCards(currentArtifacts);
   const deferredCards = toDeferredHelpCards(
-    buildReflectionProposalPresentations(controller.artifactDetails),
+    buildReflectionProposalPresentations(currentArtifacts),
   );
   const displayedHelpCards = showDeferredInHelp
     ? [...helpCards, ...deferredCards]
@@ -161,6 +163,14 @@ export function ReflectionsPage({
       </NestedNav>
 
       <div className="reflections-page-main">
+        {currentArtifacts.length < controller.artifactDetails.length ? (
+          <section className="panel" role="status">
+            <p className="notes">
+              Reflections from an older contract remain available under By session, read-only.
+              They cannot supply new proposals, second opinions, or changes to study content.
+            </p>
+          </section>
+        ) : null}
         {controller.unreadableArtifactIds.size > 0 ? (
           <section className="panel reflection-unreadable-notice" role="status">
             <strong>
@@ -950,6 +960,7 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                           key={proposal.review.proposalId}
                           proposal={proposal}
                           evidence={item.evidence}
+                          readOnly={!isCurrentReflectionArtifactContract(selectedArtifact)}
                           qualityArtifactId={selectedArtifact.artifactId}
                           qualityItemId={item.result.itemId}
                           qualityAnnotation={findQualityItemTags(
@@ -1475,6 +1486,7 @@ function formatUsd(value: number): string {
 function ProposalCard({
   proposal,
   evidence,
+  readOnly,
   qualityArtifactId,
   qualityItemId,
   qualityAnnotation,
@@ -1492,6 +1504,7 @@ function ProposalCard({
 }: {
   proposal: ReflectionProposalDetailDto;
   evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null;
+  readOnly: boolean;
   qualityArtifactId: string;
   qualityItemId: string;
   qualityAnnotation: ReflectionQualityItemTags | null;
@@ -1552,7 +1565,7 @@ function ProposalCard({
       <p>{proposal.proposal.rationale}</p>
       {draftState.applySupport === 'unsupported' ? <SupportNotice /> : null}
 
-      {unresolved ? (
+      {unresolved && !readOnly ? (
         <>
           <ReflectionOperationEditor
             operation={draft}
@@ -1650,7 +1663,7 @@ function ProposalCard({
           <h5>Original operation</h5>
           <ReflectionOperationEditor operation={original} evidence={evidence} disabled />
           <ReviewOutcome disposition={proposal.review.disposition} />
-          {proposal.review.disposition.kind === 'dismissed' ? (
+          {proposal.review.disposition.kind === 'dismissed' && !readOnly ? (
             <button
               type="button"
               className="secondary-button"
@@ -1684,8 +1697,8 @@ function ProposalCard({
                       </>
                     ) : null}
               <ApplicationOutcome state={invocation.application.state} />
-              {invocation.application.state.kind === 'unsupported'
-                || invocation.application.state.kind === 'pending' ? (
+              {!readOnly && (invocation.application.state.kind === 'unsupported'
+                || invocation.application.state.kind === 'pending') ? (
                   <button
                     type="button"
                     className="danger-button"

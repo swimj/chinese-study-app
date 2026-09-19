@@ -1,23 +1,33 @@
 import type {
-  SessionReflectionBundleV2,
-  SessionReflectionBundleV3,
   SessionReflectionBundleV4,
-  CuratedReflectionBundleV1,
+  SessionReflectionBundleV5,
+  CuratedReflectionBundleV2,
+  CuratedReflectionDiagnosisBundleV2,
+  PureCuePromotionBundleV1,
+  PureCuePromotionResultV1Wire,
+  ReflectionProposalV1,
+  SessionReflectionResultV7,
+  SessionReflectionResultV8,
 } from '../../src/domain/reflection.ts';
+import { validateSessionReflectionResultV8 } from '../../src/domain/reflection.ts';
 import {
-  getReflectionGenerationRetrySource,
+  createReflectionGenerationContinuation,
+  getReflectionGenerationContinuationRetrySource,
   getReflectionArtifactBySessionAndFlow,
-  INITIAL_REFLECTION_FLOW_VERSION,
-  DEFERRED_SECOND_OPINION_FLOW_VERSION,
-  buildDeferredSecondOpinionBundle,
+  STAGED_INITIAL_REFLECTION_FLOW_VERSION,
+  STAGED_DEFERRED_SECOND_OPINION_FLOW_VERSION,
+  buildStagedDeferredSecondOpinionBundle,
+  linkReflectionGenerationContinuationRun,
   materializeReflectionArtifact,
+  prepareReflectionGenerationPromotion,
   recordReflectionGenerationRun,
   startReflectionGenerationRun,
-  type MaterializeReflectionArtifactResult,
   type RecordReflectionGenerationRunInput,
   type StartReflectionGenerationRunInput,
   type ReflectionArtifactDetail,
-  type ReflectionGenerationRetrySource,
+  type ReflectionGenerationContinuation,
+  type ReflectionGenerationContinuationRetrySource,
+  type ReflectionGenerationProviderBundle,
 } from '../db/reflections.ts';
 import {
   buildInitialReflectionBundleWithMetrics,
@@ -27,12 +37,16 @@ import {
 import {
   createLunaReflectionProvider,
   LUNA_REFLECTION_MODEL_CONFIG,
-  LUNA_REFLECTION_PROMPT_VERSION,
   LunaReflectionProviderError,
   type LunaReflectionProvider,
   type LunaReflectionRunMetadata,
+  type LunaPureCuePromotionSuccess,
   type ReflectionProviderConfig,
 } from './luna-provider.ts';
+import {
+  PURE_CUE_PROMOTION_PROMPT_VERSION,
+  STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
+} from '../../src/domain/reflection-contracts.ts';
 import { createReflectionProvider } from './luna-provider.ts';
 import { createGlmReflectionProvider } from './glm-provider.ts';
 import { GLM_REFLECTION_MODEL_CONFIG } from './glm-provider.ts';
@@ -125,17 +139,20 @@ export type InitialReflectionGenerationDependencies = {
     generatedAt: string,
   ) => InitialReflectionBundleBuild;
   buildDeferredBundle?: (proposalIds: string[], generatedAt: string) => {
-    bundle: CuratedReflectionBundleV1;
+    bundle: CuratedReflectionDiagnosisBundleV2;
     sourceProposalIds: string[];
   };
   findExistingArtifact?: (
     sessionId: string,
     reflectionFlowVersion: string,
   ) => ReflectionArtifactDetail | null;
-  getRetrySource?: (runId: string) => ReflectionGenerationRetrySource;
   materializeArtifact?: typeof materializeReflectionArtifact;
   recordRun?: (input: RecordReflectionGenerationRunInput) => void;
   startRun?: (input: StartReflectionGenerationRunInput) => void;
+  createContinuation?: typeof createReflectionGenerationContinuation;
+  preparePromotion?: typeof prepareReflectionGenerationPromotion;
+  linkContinuationRun?: typeof linkReflectionGenerationContinuationRun;
+  getContinuationRetrySource?: typeof getReflectionGenerationContinuationRetrySource;
   lifecycleLogger?: ReflectionLifecycleLogger;
   providerDiagnosticSink?: ReflectionProviderDiagnosticSink;
   getSpendCap?: () => ReflectionSpendCap;
@@ -170,17 +187,19 @@ export function createInitialReflectionGenerationService(
         });
   const findExistingArtifact = dependencies.findExistingArtifact
     ?? getReflectionArtifactBySessionAndFlow;
-  const getRetrySource = dependencies.getRetrySource ?? getReflectionGenerationRetrySource;
-  const buildDeferredBundle = dependencies.buildDeferredBundle ?? buildDeferredSecondOpinionBundle;
+  const buildDeferredBundle = dependencies.buildDeferredBundle ?? buildStagedDeferredSecondOpinionBundle;
   const materializeArtifact = dependencies.materializeArtifact
     ?? materializeReflectionArtifact;
   const recordRun = dependencies.recordRun ?? recordReflectionGenerationRun;
-  // Unit orchestrator fixtures intentionally replace persistence boundaries;
-  // keep their synthetic providers free of an initialized SQLite database.
-  const startRun = dependencies.startRun
-    ?? (dependencies.recordRun === undefined && dependencies.materializeArtifact === undefined
-      ? startReflectionGenerationRun
-      : (() => {}));
+  const startRun = dependencies.startRun ?? startReflectionGenerationRun;
+  const createContinuation = dependencies.createContinuation
+    ?? createReflectionGenerationContinuation;
+  const preparePromotion = dependencies.preparePromotion
+    ?? prepareReflectionGenerationPromotion;
+  const linkContinuationRun = dependencies.linkContinuationRun
+    ?? linkReflectionGenerationContinuationRun;
+  const continuationRetrySource = dependencies.getContinuationRetrySource
+    ?? getReflectionGenerationContinuationRetrySource;
   const getSpendCap = dependencies.getSpendCap
     ?? (() => buildReflectionSpendCap(0, new Date(now())));
   const lifecycleLogger = dependencies.lifecycleLogger;
@@ -274,90 +293,72 @@ export function createInitialReflectionGenerationService(
       const generatedAt = now();
       const selectedProvider = selectProvider(model);
       const coalescingModelKey = model ?? 'initial-routed';
-      return runCoalesced(`${normalizedSessionId}\u0000${coalescingModelKey}`, () => generateAndMaterialize({
-        sessionId: normalizedSessionId,
-        evidenceSupplement,
-        generatedAt,
-        provider: selectedProvider.provider,
-        providerConfig: selectedProvider.config,
-        buildBundleWithMetrics,
-        materializeArtifact,
-        recordRun,
-        startRun,
-        now,
-        lifecycleLogger,
-        runId: randomUUID(),
-        clientRequestId: randomUUID(),
-      }));
+      return runCoalesced(`${normalizedSessionId}\u0000${coalescingModelKey}`, async () => {
+        const built = buildBundleWithMetrics(
+          normalizedSessionId,
+          evidenceSupplement,
+          generatedAt,
+        );
+        if (built.bundle.schemaVersion !== 'session_reflection_bundle.v4') {
+          throw new Error('New staged initial reflection requires a V4 diagnosis bundle.');
+        }
+        const continuation = createContinuation({
+          sourceSessionId: normalizedSessionId,
+          reflectionFlowVersion: STAGED_INITIAL_REFLECTION_FLOW_VERSION,
+          createdAt: generatedAt,
+          eligibleItemCount: built.eligibleItemCount,
+          includedItemCount: built.includedItemCount,
+          diagnosisBundle: built.bundle,
+        });
+        return runStagedContinuation({
+          continuation,
+          startingStage: 'diagnosis',
+          provider: selectedProvider.provider,
+          providerConfig: selectedProvider.config,
+          now,
+          startRun,
+          recordRun,
+          materializeArtifact,
+          linkContinuationRun,
+          preparePromotion,
+          lifecycleLogger,
+        });
+      });
     },
 
     async retry(runId: string, model?: ReflectionModelChoice): Promise<InitialReflectionGenerationResult> {
-      const retrySource = getRetrySource(runId);
-      if (retrySource.reflectionFlowVersion !== INITIAL_REFLECTION_FLOW_VERSION
-        && retrySource.reflectionFlowVersion !== DEFERRED_SECOND_OPINION_FLOW_VERSION) {
+      const stagedRetry = continuationRetrySource(runId);
+      if (stagedRetry === null) {
         throw new Error('Reflection generation run is not retryable by the current flow.');
       }
-      if (retrySource.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v2'
-        && retrySource.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v3'
-        && retrySource.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v4'
-        && retrySource.evidenceBundle.schemaVersion !== 'curated_reflection_bundle.v1') {
-        throw new Error('The current reflection flow cannot retry this evidence bundle.');
-      }
-      const selectedChoice = model ?? offeredChoiceForStoredModel(retrySource.model);
-      if (selectedChoice === null) {
-        throw new RetiredReflectionSourceModelError(retrySource.model);
-      }
-      const retryStartedAt = Date.now();
-      const lifecycleSessionId = 'session' in retrySource.evidenceBundle
-        ? retrySource.evidenceBundle.session.sessionId
-        : null;
-      lifecycleLogger?.emit({
-        event: 'reflection.generation_requested',
-        sessionId: lifecycleSessionId,
-      });
-      try {
-        const result = await generateBundleAndMaterialize({
-          sourceSessionId: retrySource.sourceSessionId,
-          reflectionFlowVersion: retrySource.reflectionFlowVersion,
-          builtBundle: {
-            bundle: retrySource.evidenceBundle,
-            eligibleItemCount: retrySource.eligibleItemCount,
-            includedItemCount: retrySource.includedItemCount,
+      const selectedChoice = model ?? offeredChoiceForStoredModel(stagedRetry.model);
+      if (selectedChoice === null) throw new RetiredReflectionSourceModelError(stagedRetry.model);
+      const selectedProvider = selectProvider(selectedChoice);
+      return runCoalesced(`continuation\u0000${stagedRetry.continuation.continuationId}`, () => (
+        runStagedContinuation({
+          continuation: stagedRetry.continuation,
+          startingStage: stagedRetry.stage,
+          retryRunId: stagedRetry.runId,
+          provider: selectedProvider.provider,
+          providerConfig: selectedProvider.config,
+          resumeMetadata: {
+            provider: stagedRetry.provider,
+            modelConfig: stagedRetry.model,
+            providerModel: stagedRetry.providerModel,
+            promptVersion: stagedRetry.promptVersion,
+            responseId: null,
+            finishReason: null,
+            usage: unavailableUsage(),
           },
-          sourceProposalIds: retrySource.sourceProposalIds ?? undefined,
-          generatedAt: now(),
-          provider: selectProvider(selectedChoice).provider,
-          providerConfig: reflectionProviderConfigForChoice(selectedChoice),
-          materializeArtifact,
-          recordRun,
-          startRun,
           now,
+          startRun,
+          recordRun,
+          materializeArtifact,
+          linkContinuationRun,
+          preparePromotion,
           lifecycleLogger,
-          runId: randomUUID(),
-          clientRequestId: randomUUID(),
-        });
-        lifecycleLogger?.emit({
-          event: 'reflection.generation_succeeded',
-          sessionId: lifecycleSessionId,
-          artifactId: result.artifactId,
-          proposalCount: result.proposalCount,
-          status: result.status,
-          elapsedMs: Date.now() - retryStartedAt,
-        });
-        return result;
-      } catch (error) {
-        lifecycleLogger?.emit({
-          event: 'reflection.generation_failed',
-          sessionId: lifecycleSessionId,
-          failure: error instanceof LunaReflectionProviderError ? 'provider' : 'internal',
-          code: error instanceof LunaReflectionProviderError ? error.code : null,
-          clientRequestId: error instanceof LunaReflectionProviderError
-            ? error.clientRequestId
-            : null,
-          elapsedMs: Date.now() - retryStartedAt,
-        });
-        throw error;
-      }
+        })
+      ));
     },
 
     async generateDeferredSecondOpinion(
@@ -366,186 +367,427 @@ export function createInitialReflectionGenerationService(
     ): Promise<InitialReflectionGenerationResult> {
       const normalizedProposalIds = [...new Set(proposalIds.map((proposalId) => proposalId.trim()))].sort();
       const key = `deferred-second-opinion\u0000${normalizedProposalIds.join('\u0000')}\u0000${model}`;
-      return runCoalesced(key, () => {
+      return runCoalesced(key, async () => {
         const generatedAt = now();
         const deferred = buildDeferredBundle(normalizedProposalIds, generatedAt);
         const selectedProvider = selectProvider(model);
-        return generateBundleAndMaterialize({
+        const continuation = createContinuation({
           sourceSessionId: null,
-          reflectionFlowVersion: DEFERRED_SECOND_OPINION_FLOW_VERSION,
-          builtBundle: {
-            bundle: deferred.bundle,
-            eligibleItemCount: deferred.bundle.items.length,
-            includedItemCount: deferred.bundle.items.length,
-          },
+          reflectionFlowVersion: STAGED_DEFERRED_SECOND_OPINION_FLOW_VERSION,
+          createdAt: generatedAt,
+          eligibleItemCount: deferred.bundle.items.length,
+          includedItemCount: deferred.bundle.items.length,
+          diagnosisBundle: deferred.bundle,
           sourceProposalIds: deferred.sourceProposalIds,
-          generatedAt,
+        });
+        return runStagedContinuation({
+          continuation,
+          startingStage: 'diagnosis',
           provider: selectedProvider.provider,
           providerConfig: selectedProvider.config,
-          materializeArtifact,
-          recordRun,
-          startRun,
           now,
+          startRun,
+          recordRun,
+          materializeArtifact,
+          linkContinuationRun,
+          preparePromotion,
           lifecycleLogger,
-          runId: randomUUID(),
-          clientRequestId: randomUUID(),
         });
       });
     },
   };
 }
 
-async function generateAndMaterialize(input: {
-  sessionId: string;
-  evidenceSupplement: unknown;
-  generatedAt: string;
+type StagedRunSuccess<T> = {
+  result: T;
+  metadata: LunaReflectionRunMetadata;
+  runId: string;
+  startedAt: string;
+  clientRequestId: string;
+  bundle: ReflectionGenerationProviderBundle;
+  resultSchemaVersion: string;
+  sourceProposalIds?: string[];
+};
+
+type PreparedReflectionGenerationContinuation = ReflectionGenerationContinuation & {
+  diagnosisResult: SessionReflectionResultV7;
+  finalEvidenceBundle: SessionReflectionBundleV5 | CuratedReflectionBundleV2;
+  promotionBundle: PureCuePromotionBundleV1;
+};
+
+function assertPreparedReflectionGenerationContinuation(
+  continuation: ReflectionGenerationContinuation,
+): asserts continuation is PreparedReflectionGenerationContinuation {
+  if (
+    continuation.diagnosisResult === null
+    || continuation.finalEvidenceBundle === null
+    || continuation.promotionBundle === null
+  ) {
+    throw new Error('Reflection continuation preparation did not persist exact stage-two evidence.');
+  }
+}
+
+async function runStagedContinuation(input: {
+  continuation: ReflectionGenerationContinuation;
+  startingStage: 'diagnosis' | 'promotion';
   provider: LunaReflectionProvider;
   providerConfig: ReflectionProviderConfig;
-  buildBundleWithMetrics: NonNullable<
-    InitialReflectionGenerationDependencies['buildBundleWithMetrics']
-  >;
-  materializeArtifact: NonNullable<
-    InitialReflectionGenerationDependencies['materializeArtifact']
-  >;
-  recordRun: NonNullable<InitialReflectionGenerationDependencies['recordRun']>;
-  startRun: NonNullable<InitialReflectionGenerationDependencies['startRun']>;
   now: () => string;
+  startRun: NonNullable<InitialReflectionGenerationDependencies['startRun']>;
+  recordRun: NonNullable<InitialReflectionGenerationDependencies['recordRun']>;
+  materializeArtifact: NonNullable<InitialReflectionGenerationDependencies['materializeArtifact']>;
+  linkContinuationRun: NonNullable<InitialReflectionGenerationDependencies['linkContinuationRun']>;
+  preparePromotion: NonNullable<InitialReflectionGenerationDependencies['preparePromotion']>;
   lifecycleLogger: ReflectionLifecycleLogger | undefined;
-  runId: string;
-  clientRequestId: string;
+  retryRunId?: string;
+  resumeMetadata?: LunaReflectionRunMetadata;
 }): Promise<InitialReflectionGenerationResult> {
-  const builtBundle = input.buildBundleWithMetrics(
-    input.sessionId,
-    input.evidenceSupplement,
-    input.generatedAt,
+  let continuation = input.continuation;
+  let diagnosisCall: StagedRunSuccess<SessionReflectionResultV7> | null = null;
+  if (input.startingStage === 'diagnosis' && continuation.diagnosisResult === null) {
+    diagnosisCall = await runDiagnosisStage({ ...input, continuation });
+    try {
+      continuation = input.preparePromotion({
+        continuationId: continuation.continuationId,
+        diagnosisResult: diagnosisCall.result,
+        preparedAt: input.now(),
+      });
+    } catch (error) {
+      recordStagedRunOutcome(input, diagnosisCall, 'failed', error);
+      throw error;
+    }
+  } else if (
+    continuation.diagnosisResult === null
+    || continuation.finalEvidenceBundle === null
+    || continuation.promotionBundle === null
+  ) {
+    throw new Error('The saved reflection continuation has no exact promotion-stage input.');
+  }
+
+  assertPreparedReflectionGenerationContinuation(continuation);
+
+  if (diagnosisCall !== null && continuation.promotionBundle.items.length > 0) {
+    recordStagedRunOutcome(input, diagnosisCall, 'succeeded', null);
+  }
+
+  if (continuation.promotionBundle.items.length > 0) {
+    const promotion = await runPromotionStage({ ...input, continuation });
+    try {
+      const result = materializeStagedResult(input, continuation, promotion.result, promotion);
+      recordStagedRunOutcome(input, promotion, 'succeeded', null);
+      return result;
+    } catch (error) {
+      recordStagedRunOutcome(input, promotion, 'failed', error);
+      throw error;
+    }
+  } else if (input.startingStage === 'promotion') {
+    throw new Error('A continuation without promotion candidates has no promotion stage to retry.');
+  }
+
+  const finalCall = diagnosisCall ?? {
+    metadata: input.resumeMetadata
+      ?? unavailableMetadata(input.providerConfig, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION),
+    runId: input.retryRunId ?? '',
+  };
+  try {
+    const result = materializeStagedResult(input, continuation, null, finalCall);
+    if (diagnosisCall !== null) recordStagedRunOutcome(input, diagnosisCall, 'succeeded', null);
+    return result;
+  } catch (error) {
+    if (diagnosisCall !== null) recordStagedRunOutcome(input, diagnosisCall, 'failed', error);
+    throw error;
+  }
+}
+
+function materializeStagedResult(
+  input: Pick<
+    Parameters<typeof runStagedContinuation>[0],
+    'materializeArtifact' | 'now'
+  >,
+  continuation: PreparedReflectionGenerationContinuation,
+  promotionResult: PureCuePromotionResultV1Wire | null,
+  finalCall: { metadata: LunaReflectionRunMetadata; runId: string },
+): InitialReflectionGenerationResult {
+  const result = assembleStagedReflectionResult(
+    continuation.diagnosisResult,
+    continuation.finalEvidenceBundle,
+    promotionResult,
   );
-  return generateBundleAndMaterialize({
-    sourceSessionId: input.sessionId,
-    reflectionFlowVersion: INITIAL_REFLECTION_FLOW_VERSION,
-    builtBundle,
-    generatedAt: input.generatedAt,
-    provider: input.provider,
-    providerConfig: input.providerConfig,
-    materializeArtifact: input.materializeArtifact,
-    recordRun: input.recordRun,
-    startRun: input.startRun,
-    now: input.now,
-    lifecycleLogger: input.lifecycleLogger,
-    runId: input.runId,
-    clientRequestId: input.clientRequestId,
+  const materializationBase = {
+    continuationId: continuation.continuationId,
+    sourceRunId: finalCall.runId,
+    sourceSessionId: continuation.sourceSessionId,
+    reflectionFlowVersion: continuation.reflectionFlowVersion,
+    generatedAt: input.now(),
+    provider: finalCall.metadata.provider,
+    model: finalCall.metadata.modelConfig,
+    promptVersion: finalCall.metadata.promptVersion,
+  };
+  const materialized = continuation.finalEvidenceBundle.schemaVersion === 'curated_reflection_bundle.v2'
+    ? input.materializeArtifact({
+        ...materializationBase,
+        evidenceBundle: continuation.finalEvidenceBundle,
+        result,
+        sourceProposalIds: continuation.sourceProposalIds
+          ?? (() => {
+            throw new Error('A curated staged continuation requires source proposal provenance.');
+          })(),
+      })
+    : input.materializeArtifact({
+        ...materializationBase,
+        evidenceBundle: continuation.finalEvidenceBundle,
+        result,
+      });
+  return generationResult(materialized.created, materialized.artifact);
+}
+
+async function runDiagnosisStage(input: {
+  continuation: ReflectionGenerationContinuation;
+  provider: LunaReflectionProvider;
+  providerConfig: ReflectionProviderConfig;
+  now: () => string;
+  startRun: NonNullable<InitialReflectionGenerationDependencies['startRun']>;
+  recordRun: NonNullable<InitialReflectionGenerationDependencies['recordRun']>;
+  linkContinuationRun: NonNullable<InitialReflectionGenerationDependencies['linkContinuationRun']>;
+  lifecycleLogger: ReflectionLifecycleLogger | undefined;
+}): Promise<StagedRunSuccess<SessionReflectionResultV7>> {
+  return runProviderStage({
+    ...input,
+    stage: 'diagnosis',
+    bundle: input.continuation.diagnosisBundle,
+    promptVersion: STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
+    resultSchemaVersion: 'session_reflection_result.v7',
+    sourceProposalIds: input.continuation.sourceProposalIds ?? undefined,
+    invoke: (options) => (
+      input.provider.generateDiagnosis?.(input.continuation.diagnosisBundle, options)
+      ?? input.provider.generate(input.continuation.diagnosisBundle, options)
+    ),
   });
 }
 
-async function generateBundleAndMaterialize(input: {
-  sourceSessionId: string | null;
-  reflectionFlowVersion: string;
-  builtBundle: {
-    bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4 | CuratedReflectionBundleV1;
-    eligibleItemCount: number;
-    includedItemCount: number;
-  };
-  generatedAt: string;
+async function runPromotionStage(input: {
+  continuation: ReflectionGenerationContinuation;
   provider: LunaReflectionProvider;
   providerConfig: ReflectionProviderConfig;
-  materializeArtifact: NonNullable<
-    InitialReflectionGenerationDependencies['materializeArtifact']
-  >;
-  recordRun: NonNullable<InitialReflectionGenerationDependencies['recordRun']>;
-  startRun: NonNullable<InitialReflectionGenerationDependencies['startRun']>;
   now: () => string;
+  startRun: NonNullable<InitialReflectionGenerationDependencies['startRun']>;
+  recordRun: NonNullable<InitialReflectionGenerationDependencies['recordRun']>;
+  linkContinuationRun: NonNullable<InitialReflectionGenerationDependencies['linkContinuationRun']>;
   lifecycleLogger: ReflectionLifecycleLogger | undefined;
-  runId: string;
-  clientRequestId: string;
+}): Promise<StagedRunSuccess<PureCuePromotionResultV1Wire>> {
+  const bundle = input.continuation.promotionBundle;
+  if (bundle === null) throw new Error('Reflection continuation promotion input is missing.');
+  if (input.provider.generatePromotion === undefined) {
+    throw new Error('The selected reflection provider does not implement the promotion-stage contract.');
+  }
+  return runProviderStage({
+    ...input,
+    stage: 'promotion',
+    bundle,
+    promptVersion: PURE_CUE_PROMOTION_PROMPT_VERSION,
+    resultSchemaVersion: 'pure_cue_promotion_result.v1',
+    sourceProposalIds: input.continuation.sourceProposalIds ?? undefined,
+    invoke: (options) => input.provider.generatePromotion!(bundle, options),
+  });
+}
+
+async function runProviderStage<T>(input: {
+  continuation: ReflectionGenerationContinuation;
+  stage: 'diagnosis' | 'promotion';
+  bundle: ReflectionGenerationProviderBundle;
+  providerConfig: ReflectionProviderConfig;
+  promptVersion: string;
+  resultSchemaVersion: string;
+  invoke: (options: { clientRequestId: string }) => Promise<{
+    result: T;
+    metadata: LunaReflectionRunMetadata;
+  }>;
+  now: () => string;
+  startRun: NonNullable<InitialReflectionGenerationDependencies['startRun']>;
+  recordRun: NonNullable<InitialReflectionGenerationDependencies['recordRun']>;
+  linkContinuationRun: NonNullable<InitialReflectionGenerationDependencies['linkContinuationRun']>;
+  lifecycleLogger: ReflectionLifecycleLogger | undefined;
   sourceProposalIds?: string[];
-}): Promise<InitialReflectionGenerationResult> {
-  const builtBundle = input.builtBundle;
-  const { bundle } = builtBundle;
-  const lifecycleSessionId = 'session' in bundle ? bundle.session.sessionId : null;
+}): Promise<StagedRunSuccess<T>> {
+  const runId = randomUUID();
+  const clientRequestId = randomUUID();
+  const startedAt = input.now();
+  input.linkContinuationRun({
+    continuationId: input.continuation.continuationId,
+    runId,
+    stage: input.stage,
+    createdAt: startedAt,
+  });
   input.startRun({
-    runId: input.runId,
-    sourceSessionId: input.sourceSessionId,
-    reflectionFlowVersion: input.reflectionFlowVersion,
-    startedAt: input.generatedAt,
+    runId,
+    sourceSessionId: input.continuation.sourceSessionId,
+    reflectionFlowVersion: input.continuation.reflectionFlowVersion,
+    startedAt,
     provider: input.providerConfig.provider,
     model: input.providerConfig.modelConfig,
     providerModel: input.providerConfig.providerModel,
-    promptVersion: input.providerConfig.promptVersion,
-    clientRequestId: input.clientRequestId,
-    eligibleItemCount: builtBundle.eligibleItemCount,
-    includedItemCount: builtBundle.includedItemCount,
-    evidenceBundle: bundle,
+    promptVersion: input.promptVersion,
+    clientRequestId,
+    eligibleItemCount: input.continuation.eligibleItemCount,
+    includedItemCount: input.continuation.includedItemCount,
+    evidenceBundle: input.bundle,
     ...(input.sourceProposalIds === undefined ? {} : { sourceProposalIds: input.sourceProposalIds }),
   });
   input.lifecycleLogger?.emit({
     event: 'reflection.provider_started',
-    sessionId: lifecycleSessionId,
-    evidenceItemCount: bundle.items.length,
+    sessionId: input.continuation.sourceSessionId,
+    evidenceItemCount: input.bundle.items.length,
   });
-  let artifactMaterialized = false;
-  let generatedMetadata: LunaReflectionRunMetadata | null = null;
+  let metadata: LunaReflectionRunMetadata | null = null;
   try {
-    const generated = await input.provider.generate(bundle, { clientRequestId: input.clientRequestId });
-    generatedMetadata = generated.metadata;
-    const materialized: MaterializeReflectionArtifactResult = input.materializeArtifact({
-      sourceRunId: input.runId,
-      sourceSessionId: input.sourceSessionId,
-      reflectionFlowVersion: input.reflectionFlowVersion,
-      generatedAt: input.generatedAt,
-      provider: generated.metadata.provider,
-      model: generated.metadata.modelConfig,
-      promptVersion: generated.metadata.promptVersion,
-      evidenceBundle: bundle,
-      result: generated.result,
+    const generated = await input.invoke({ clientRequestId });
+    metadata = generated.metadata;
+    if (metadata.promptVersion !== input.promptVersion) {
+      throw new Error(
+        `Reflection provider returned prompt version ${metadata.promptVersion}; expected ${input.promptVersion}.`,
+      );
+    }
+    return {
+      ...generated,
+      runId,
+      startedAt,
+      clientRequestId,
+      bundle: input.bundle,
+      resultSchemaVersion: input.resultSchemaVersion,
       ...(input.sourceProposalIds === undefined ? {} : { sourceProposalIds: input.sourceProposalIds }),
-    });
-    artifactMaterialized = true;
+    };
+  } catch (error) {
     try {
       input.recordRun(runRecordInput({
-        runId: input.runId,
-        sourceSessionId: input.sourceSessionId,
-        reflectionFlowVersion: input.reflectionFlowVersion,
-        startedAt: input.generatedAt,
+        runId,
+        sourceSessionId: input.continuation.sourceSessionId,
+        reflectionFlowVersion: input.continuation.reflectionFlowVersion,
+        startedAt,
         completedAt: input.now(),
-        metadata: generated.metadata,
-        state: 'succeeded',
-        failureCode: null,
-        error: null,
-        eligibleItemCount: builtBundle.eligibleItemCount,
-        includedItemCount: builtBundle.includedItemCount,
-        evidenceBundle: bundle,
-        clientRequestId: input.clientRequestId,
+        metadata: failureMetadataForConfig(error, metadata, input.providerConfig, input.promptVersion),
+        state: 'failed',
+        failureCode: failureCode(error),
+        error,
+        eligibleItemCount: input.continuation.eligibleItemCount,
+        includedItemCount: input.continuation.includedItemCount,
+        evidenceBundle: input.bundle,
+        clientRequestId,
+        resultSchemaVersion: input.resultSchemaVersion,
         sourceProposalIds: input.sourceProposalIds,
       }));
     } catch {
-      // A successful immutable artifact remains a success if optional dogfood
-      // observability cannot be recorded.
-    }
-    return generationResult(materialized.created, materialized.artifact);
-  } catch (error) {
-    if (!artifactMaterialized) {
-      try {
-        input.recordRun(runRecordInput({
-          runId: input.runId,
-          sourceSessionId: input.sourceSessionId,
-          reflectionFlowVersion: input.reflectionFlowVersion,
-          startedAt: input.generatedAt,
-          completedAt: input.now(),
-          metadata: failureMetadata(error, generatedMetadata),
-          state: 'failed',
-          failureCode: failureCode(error),
-          error,
-          eligibleItemCount: builtBundle.eligibleItemCount,
-          includedItemCount: builtBundle.includedItemCount,
-          evidenceBundle: bundle,
-          clientRequestId: input.clientRequestId,
-          sourceProposalIds: input.sourceProposalIds,
-        }));
-      } catch {
-        // Run logging must not turn a reflection/provider failure into a study failure.
-      }
+      // Provider failure remains primary when operational logging also fails.
     }
     throw error;
   }
+}
+
+function recordStagedRunOutcome(
+  input: Pick<
+    Parameters<typeof runStagedContinuation>[0],
+    'continuation' | 'now' | 'recordRun' | 'providerConfig'
+  >,
+  run: StagedRunSuccess<unknown>,
+  state: 'succeeded' | 'failed',
+  error: unknown,
+): void {
+  input.recordRun(runRecordInput({
+    runId: run.runId,
+    sourceSessionId: input.continuation.sourceSessionId,
+    reflectionFlowVersion: input.continuation.reflectionFlowVersion,
+    startedAt: run.startedAt,
+    completedAt: input.now(),
+    metadata: run.metadata,
+    state,
+    failureCode: state === 'succeeded' ? null : failureCode(error),
+    error,
+    eligibleItemCount: input.continuation.eligibleItemCount,
+    includedItemCount: input.continuation.includedItemCount,
+    evidenceBundle: run.bundle,
+    clientRequestId: run.clientRequestId,
+    resultSchemaVersion: run.resultSchemaVersion,
+    sourceProposalIds: run.sourceProposalIds,
+  }));
+}
+
+export function assembleStagedReflectionResult(
+  diagnosis: SessionReflectionResultV7,
+  evidence: SessionReflectionBundleV5 | CuratedReflectionBundleV2,
+  promotion: PureCuePromotionResultV1Wire | null,
+): SessionReflectionResultV8 {
+  const promotionByItemId = new Map(
+    promotion?.itemResults.map((itemResult) => [itemResult.itemId, itemResult.decision]) ?? [],
+  );
+  const evidenceByItemId = new Map(evidence.items.map((item) => [item.itemId, item]));
+  const itemResults = diagnosis.itemResults.map((itemResult) => {
+    const item = evidenceByItemId.get(itemResult.itemId)!;
+    const decision = promotionByItemId.get(itemResult.itemId);
+    const proposals = itemResult.proposals.filter(isOwnerOnlyOrdinaryProposal);
+    if (decision?.kind === 'promote' && item.submittedWord !== null) {
+      proposals.push({
+        proposalGroupKey: null,
+        rationale: decision.rationale,
+        operation: {
+          ...decision.operation,
+          kind: 'promote_pure_elicitation',
+          version: 1,
+          sourceAttemptId: item.sourceAttemptId,
+          targetWordId: item.targetWord.wordId,
+          responseWordId: item.submittedWord.wordId,
+        },
+      });
+    }
+    return { ...itemResult, proposals };
+  });
+  const affectedWordIds = new Set(itemResults.flatMap((itemResult) => (
+    itemResult.proposals.flatMap((proposal) => (
+      proposal.operation.kind === 'promote_pure_elicitation'
+        ? [proposal.operation.targetWordId, proposal.operation.responseWordId]
+        : []
+    ))
+  )));
+  const result: SessionReflectionResultV8 = {
+    schemaVersion: 'session_reflection_result.v8',
+    itemResults: itemResults.map((itemResult) => ({
+      ...itemResult,
+      proposals: itemResult.proposals.filter((proposal) => (
+        proposal.operation.kind === 'promote_pure_elicitation'
+        || !isConflictingOrdinaryProposal(proposal, affectedWordIds)
+      )),
+    })),
+  };
+  const errors = validateSessionReflectionResultV8(result, evidence);
+  if (errors.length > 0) {
+    throw new Error(`Cannot assemble invalid staged reflection result:\n${errors.join('\n')}`);
+  }
+  return result;
+}
+
+function isOwnerOnlyOrdinaryProposal(proposal: ReflectionProposalV1): boolean {
+  const operation = proposal.operation;
+  if (operation.kind !== 'repair_production_cue' || operation.version !== 2) return true;
+  return operation.changes.every((change) => {
+    const drafts = change.kind === 'create'
+      ? [change.cue]
+      : change.kind === 'replace'
+        ? change.replacements
+        : [];
+    return drafts.every((draft) => (
+      draft.acceptedWordIds.length === 1 && draft.acceptedWordIds[0] === operation.wordId
+    ));
+  });
+}
+
+function isConflictingOrdinaryProposal(
+  proposal: ReflectionProposalV1,
+  affectedWordIds: Set<string>,
+): boolean {
+  const operation = proposal.operation;
+  return (
+    operation.kind === 'suppress_definition_production'
+    || operation.kind === 'repair_production_cue'
+    || operation.kind === 'add_production_cue_supplement'
+  ) && affectedWordIds.has(operation.wordId);
 }
 
 function runRecordInput(input: {
@@ -560,8 +802,9 @@ function runRecordInput(input: {
   error: unknown;
   eligibleItemCount: number;
   includedItemCount: number;
-  evidenceBundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4 | CuratedReflectionBundleV1;
+  evidenceBundle: ReflectionGenerationProviderBundle;
   clientRequestId: string;
+  resultSchemaVersion?: string;
   sourceProposalIds?: string[];
 }): RecordReflectionGenerationRunInput {
   const estimate = estimateInitialReflectionRunCost({
@@ -585,7 +828,7 @@ function runRecordInput(input: {
     clientRequestId: input.clientRequestId,
     finishReason: input.metadata.finishReason,
     bundleSchemaVersion: input.evidenceBundle.schemaVersion,
-    resultSchemaVersion: 'session_reflection_result.v7',
+    resultSchemaVersion: input.resultSchemaVersion ?? 'session_reflection_result.v7',
     diagnostic: input.error instanceof LunaReflectionProviderError
       ? input.error.diagnostic
       : null,
@@ -603,29 +846,42 @@ function runRecordInput(input: {
   };
 }
 
-function failureMetadata(
+function failureMetadataForConfig(
   error: unknown,
   generatedMetadata: LunaReflectionRunMetadata | null,
+  config: ReflectionProviderConfig,
+  promptVersion: string,
 ): LunaReflectionRunMetadata {
   if (error instanceof LunaReflectionProviderError && error.metadata !== null) {
     return error.metadata;
   }
   if (generatedMetadata !== null) return generatedMetadata;
+  return unavailableMetadata(config, promptVersion);
+}
+
+function unavailableMetadata(
+  config: ReflectionProviderConfig,
+  promptVersion: string,
+): LunaReflectionRunMetadata {
   return {
-    provider: 'openai',
-    modelConfig: LUNA_REFLECTION_MODEL_CONFIG.modelConfig,
-    providerModel: LUNA_REFLECTION_MODEL_CONFIG.providerModel,
-    promptVersion: LUNA_REFLECTION_PROMPT_VERSION,
+    provider: config.provider,
+    modelConfig: config.modelConfig,
+    providerModel: config.providerModel,
+    promptVersion,
     responseId: null,
     finishReason: null,
-    usage: {
-      inputTokens: null,
-      cachedInputTokens: null,
-      cacheWriteInputTokens: null,
-      outputTokens: null,
-      reasoningTokens: null,
-      totalTokens: null,
-    },
+    usage: unavailableUsage(),
+  };
+}
+
+function unavailableUsage(): LunaReflectionRunMetadata['usage'] {
+  return {
+    inputTokens: null,
+    cachedInputTokens: null,
+    cacheWriteInputTokens: null,
+    outputTokens: null,
+    reasoningTokens: null,
+    totalTokens: null,
   };
 }
 

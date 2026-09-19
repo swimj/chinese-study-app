@@ -191,7 +191,7 @@ export type SessionReflectionBundleV5 = {
 export type PureCuePromotionBundleV1 = {
   schemaVersion: 'pure_cue_promotion_bundle.v1';
   generatedAt: string;
-  sessionId: string;
+  sourceSessionId: string | null;
   studyProfile: StudyProfileV0;
   items: Array<{
     itemId: string;
@@ -201,6 +201,25 @@ export type PureCuePromotionBundleV1 = {
     servedCue: ReflectionServedCueSnapshotV2;
     learnerExplanation: string;
     promotionEvidence: PureCuePromotionEvidenceV1;
+  }>;
+};
+
+export type PureCuePromotionDecisionV1Wire =
+  | {
+      kind: 'promote';
+      rationale: string;
+      operation: PromotePureElicitationOperationV1Wire;
+    }
+  | {
+      kind: 'no_promotion';
+      rationale: string;
+    };
+
+export type PureCuePromotionResultV1Wire = {
+  schemaVersion: 'pure_cue_promotion_result.v1';
+  itemResults: Array<{
+    itemId: string;
+    decision: PureCuePromotionDecisionV1Wire;
   }>;
 };
 
@@ -216,13 +235,37 @@ export type CuratedReflectionBundleV1 = {
   items: ReflectionItemV4[];
 };
 
+/** Sessionless first-stage evidence for new staged second opinions. */
+export type CuratedReflectionDiagnosisBundleV2 = {
+  schemaVersion: 'curated_reflection_diagnosis_bundle.v2';
+  generatedAt: string;
+  studyProfile: StudyProfileV0;
+  items: ReflectionItemV4[];
+};
+
+/** New staged second-opinion evidence keeps profile identity without inventing a session. */
+export type CuratedReflectionBundleV2 = {
+  schemaVersion: 'curated_reflection_bundle.v2';
+  generatedAt: string;
+  studyProfile: StudyProfileV0;
+  items: ReflectionItemV5[];
+};
+
+export type ReflectionDiagnosisBundle =
+  | SessionReflectionBundleV2
+  | SessionReflectionBundleV3
+  | SessionReflectionBundleV4
+  | CuratedReflectionBundleV1
+  | CuratedReflectionDiagnosisBundleV2;
+
 export type SessionReflectionBundle =
   | SessionReflectionBundleV1
   | SessionReflectionBundleV2
   | SessionReflectionBundleV3
   | SessionReflectionBundleV4
   | SessionReflectionBundleV5
-  | CuratedReflectionBundleV1;
+  | CuratedReflectionBundleV1
+  | CuratedReflectionBundleV2;
 
 export type ReflectionDiagnosisTagV1 =
   | 'valid_or_near_valid_alternate'
@@ -1487,7 +1530,7 @@ export function validateSessionReflectionResultV6(
 
 export function validateSessionReflectionResultV7(
   value: unknown,
-  bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4 | CuratedReflectionBundleV1,
+  bundle: ReflectionDiagnosisBundle,
 ): string[] {
   return validateSessionReflectionResultVersion(
     value,
@@ -1498,7 +1541,7 @@ export function validateSessionReflectionResultV7(
 
 export function validateSessionReflectionResultV8(
   value: unknown,
-  bundle: SessionReflectionBundleV5,
+  bundle: SessionReflectionBundleV5 | CuratedReflectionBundleV2,
 ): string[] {
   return validateSessionReflectionResultVersion(
     value,
@@ -1507,9 +1550,94 @@ export function validateSessionReflectionResultV8(
   );
 }
 
+export function validatePureCuePromotionResultV1(
+  value: unknown,
+  bundle: PureCuePromotionBundleV1,
+): string[] {
+  const errors = validateObjectFields(value, ['schemaVersion', 'itemResults'], '$');
+  if (!isRecord(value)) return errors;
+  if (value.schemaVersion !== 'pure_cue_promotion_result.v1') {
+    errors.push('$.schemaVersion: expected pure_cue_promotion_result.v1');
+  }
+  if (!Array.isArray(value.itemResults)) {
+    errors.push('$.itemResults: expected array');
+    return errors;
+  }
+
+  const expectedItems = new Map(bundle.items.map((item) => [item.itemId, item]));
+  const seen = new Set<string>();
+  value.itemResults.forEach((itemResult, itemIndex) => {
+    const path = `$.itemResults[${itemIndex}]`;
+    errors.push(...validateObjectFields(itemResult, ['itemId', 'decision'], path));
+    if (!isRecord(itemResult)) return;
+    errors.push(...validateString(itemResult.itemId, `${path}.itemId`, true));
+    const itemId = typeof itemResult.itemId === 'string' ? itemResult.itemId : '';
+    if (seen.has(itemId)) errors.push(`${path}.itemId: duplicate item id`);
+    seen.add(itemId);
+    const evidence = expectedItems.get(itemId);
+    const decisionPath = `${path}.decision`;
+    const decision = itemResult.decision;
+    if (!isRecord(decision)) {
+      errors.push(`${decisionPath}: expected object`);
+      return;
+    }
+    if (decision.kind === 'no_promotion') {
+      errors.push(...validateObjectFields(decision, ['kind', 'rationale'], decisionPath));
+      errors.push(...validateString(decision.rationale, `${decisionPath}.rationale`, true));
+      return;
+    }
+    if (decision.kind !== 'promote') {
+      errors.push(`${decisionPath}.kind: expected promote or no_promotion`);
+      return;
+    }
+    errors.push(...validateObjectFields(decision, ['kind', 'rationale', 'operation'], decisionPath));
+    errors.push(...validateString(decision.rationale, `${decisionPath}.rationale`, true));
+    if (evidence === undefined) return;
+    const operation = decision.operation;
+    if (!isRecord(operation)) {
+      errors.push(`${decisionPath}.operation: expected object`);
+      return;
+    }
+    const stamped: PromotePureElicitationOperationV1 = {
+      ...(operation as PromotePureElicitationOperationV1Wire),
+      kind: 'promote_pure_elicitation',
+      version: 1,
+      sourceAttemptId: evidence.sourceAttemptId,
+      targetWordId: evidence.targetWord.wordId,
+      responseWordId: evidence.responseWord.wordId,
+    };
+    errors.push(...validateReflectionOperation(stamped, {
+      allowedWordIds: new Set([evidence.targetWord.wordId, evidence.responseWord.wordId]),
+      evidenceItemId: evidence.itemId,
+      path: `${decisionPath}.operation`,
+    }));
+    const enrichedItem: ReflectionItemV5 = {
+      ...evidence,
+      source: 'production_mistake',
+      sourceActionKind: 'production',
+      sessionActionId: null,
+      occurredAt: null,
+      sessionNote: null,
+      existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+      rawResponse: null,
+      submittedWord: evidence.responseWord,
+      responseKind: 'matched_known_word',
+    };
+    errors.push(...validatePureCuePromotionEvidenceContext(
+      stamped,
+      enrichedItem,
+      `${decisionPath}.operation`,
+    ));
+  });
+  if (seen.size !== expectedItems.size || [...expectedItems.keys()].some((itemId) => !seen.has(itemId))) {
+    errors.push('$.itemResults: every promotion input item must appear exactly once and no unknown item is allowed');
+  }
+  return errors;
+}
+
 function validateSessionReflectionResultVersion(
   value: unknown,
-  bundle: SessionReflectionBundle,
+  bundle: SessionReflectionBundle | CuratedReflectionDiagnosisBundleV2,
   schemaVersion: SessionReflectionResult['schemaVersion'],
 ): string[] {
   const errors = validateObjectFields(
@@ -2093,7 +2221,7 @@ export function normalizeSessionReflectionResultV6(
 
 export function normalizeSessionReflectionResultV7(
   value: SessionReflectionResultV7Wire,
-  bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4 | CuratedReflectionBundleV1,
+  bundle: ReflectionDiagnosisBundle,
 ): SessionReflectionResultV7 {
   return {
     schemaVersion: 'session_reflection_result.v7',

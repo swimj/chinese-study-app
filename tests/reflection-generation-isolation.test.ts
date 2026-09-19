@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import type { SessionReflectionEvidenceSupplementV1 } from '../src/domain/reflection-evidence.ts';
+import type { SessionReflectionBundleV4 } from '../src/domain/reflection.ts';
 import { createInitialReflectionGenerationService } from '../server/reflection/generation.ts';
 import {
   createLunaReflectionProvider,
@@ -55,6 +56,8 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       DELETE FROM reflection_quality_annotations;
       DELETE FROM reflection_proposal_reviews;
       DELETE FROM reflection_operation_invocations;
+      DELETE FROM reflection_generation_continuation_runs;
+      DELETE FROM reflection_generation_continuations;
       DELETE FROM reflection_generation_runs;
       DELETE FROM reflection_generation_run_starts;
       DELETE FROM reflection_artifacts;
@@ -102,13 +105,13 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
     assert.deepEqual({ ...run, runId: 'generated-run-id' }, {
       runId: 'generated-run-id',
       sourceSessionId: 'session-1',
-      reflectionFlowVersion: 'initial_post_session_reflection.v2',
+      reflectionFlowVersion: 'initial_post_session_reflection.v4',
       startedAt: generatedAt,
       completedAt: generatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-v9',
+      promptVersion: 'reflection-staged-v2',
       responseId: null,
       clientRequestId: run.clientRequestId,
       finishReason: null,
@@ -229,7 +232,463 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
     assert.equal(run?.estimatedCostUsd, 0.0000136);
   });
 
+  test('does not promote an ordinary strict known-word lapse without a diagnosis signal', async () => {
+    let promotionCalls = 0;
+    const service = createInitialReflectionGenerationService({
+      now: () => generatedAt,
+      provider: {
+        async generate() {
+          throw new Error('new initial flow must use staged diagnosis');
+        },
+        async generateDiagnosis(bundle) {
+          return {
+            result: {
+              schemaVersion: 'session_reflection_result.v7',
+              itemResults: bundle.items.map((item) => ({
+                itemId: item.itemId,
+                diagnosisTags: ['ordinary_retrieval_noise'],
+                learnerExplanation: 'This was an ordinary retrieval lapse.',
+                proposals: [],
+                questions: [],
+              })),
+            },
+            metadata: stagedMetadata('reflection-staged-v2'),
+          };
+        },
+        async generatePromotion() {
+          promotionCalls += 1;
+          throw new Error('ordinary retrieval noise must not enter promotion');
+        },
+      },
+    });
+
+    const generated = await service.generate(
+      'session-1',
+      supplement(),
+      'openai:gpt-5.6-luna-high',
+    );
+    const artifact = dbModule.getReflectionArtifactDetail(generated.artifactId);
+    assert.equal(promotionCalls, 0);
+    assert.equal(artifact.resultSchemaVersion, 'session_reflection_result.v8');
+    assert.equal(
+      artifact.result.itemResults.some((item) => item.proposals.some((proposal) => (
+        proposal.operation.kind === 'promote_pure_elicitation'
+      ))),
+      false,
+    );
+  });
+
+  test('a staged deferred second opinion persists both calls and sessionless selected-proposal provenance', async () => {
+    const sourceDiagnosisEvidence = stagedSourceBundle();
+    const sourceEvidence = {
+      ...sourceDiagnosisEvidence,
+      schemaVersion: 'session_reflection_bundle.v5' as const,
+      items: sourceDiagnosisEvidence.items.map((item) => ({
+        ...item,
+        promotionEvidence: null,
+      })),
+    };
+    const sourceArtifact = dbModule.materializeReflectionArtifact({
+      sourceSessionId: 'session-1',
+      reflectionFlowVersion: 'initial_post_session_reflection.v4',
+      generatedAt,
+      provider: 'openai',
+      model: 'gpt-5.6-luna-high',
+      promptVersion: 'reflection-staged-v2',
+      evidenceBundle: sourceEvidence,
+      result: {
+        schemaVersion: 'session_reflection_result.v8',
+        itemResults: [{
+          itemId: 'source-item',
+          diagnosisTags: ['production_cue_overloaded'],
+          learnerExplanation: 'The broad cue hides a useful distinction.',
+          proposals: [{
+            proposalGroupKey: null,
+            rationale: 'Review this cue policy again.',
+            operation: { kind: 'suppress_definition_production', version: 1, wordId: 'target' },
+          }],
+          questions: [],
+        }],
+      },
+    });
+    const sourceProposalId = sourceArtifact.artifact.proposals[0]!.review.proposalId;
+    dbModule.deferReflectionProposal(sourceProposalId, generatedAt);
+    let diagnosisBundle: unknown;
+    let promotionBundle: unknown;
+    const service = createInitialReflectionGenerationService({
+      now: () => generatedAt,
+      provider: {
+        async generate() {
+          throw new Error('new deferred flow must use staged diagnosis');
+        },
+        async generateDiagnosis(bundle) {
+          diagnosisBundle = bundle;
+          return {
+            result: {
+              schemaVersion: 'session_reflection_result.v7',
+              itemResults: bundle.items.map((item) => ({
+                itemId: item.itemId,
+                diagnosisTags: ['production_cue_overloaded'],
+                learnerExplanation: 'The pair shares one broad axis.',
+                proposals: [],
+                questions: [],
+              })),
+            },
+            metadata: stagedMetadata('reflection-staged-v2'),
+          };
+        },
+        async generatePromotion(bundle) {
+          promotionBundle = bundle;
+          return {
+            result: {
+              schemaVersion: 'pure_cue_promotion_result.v1',
+              itemResults: bundle.items.map((item) => ({
+                itemId: item.itemId,
+                decision: { kind: 'no_promotion' as const, rationale: 'Keep targeted practice.' },
+              })),
+            },
+            metadata: stagedMetadata('pure-cue-promotion-v2'),
+          };
+        },
+      },
+    });
+
+    const generated = await service.generateDeferredSecondOpinion(
+      [sourceProposalId],
+      'openai:gpt-5.6-luna-high',
+    );
+    const artifact = dbModule.getReflectionArtifactDetail(generated.artifactId);
+    assert.equal(artifact.sourceSessionId, null);
+    assert.equal(artifact.reflectionFlowVersion, 'deferred_second_opinion.v3');
+    assert.equal(artifact.evidenceBundle.schemaVersion, 'curated_reflection_bundle.v2');
+    assert.equal('studyProfile' in artifact.evidenceBundle && artifact.evidenceBundle.studyProfile, 'mandarin');
+    assert.equal(
+      isRecord(diagnosisBundle) && diagnosisBundle.schemaVersion,
+      'curated_reflection_diagnosis_bundle.v2',
+    );
+    assert.equal(isRecord(diagnosisBundle) && diagnosisBundle.studyProfile, 'mandarin');
+    assert.equal(isRecord(promotionBundle) && promotionBundle.sourceSessionId, null);
+
+    const runs = dbModule.listReflectionGenerationRuns().filter((run) => (
+      run.reflectionFlowVersion === 'deferred_second_opinion.v3'
+    ));
+    assert.equal(runs.length, 2);
+    assert.deepEqual(new Set(runs.map((run) => run.resultSchemaVersion)), new Set([
+      'session_reflection_result.v7',
+      'pure_cue_promotion_result.v1',
+    ]));
+    assert.ok(runs.every((run) => run.state === 'succeeded' && run.retryable === false));
+    const provenance = sqlite.prepare(`
+      SELECT source_proposal_ids_json
+      FROM reflection_generation_runs
+      WHERE reflection_flow_version = 'deferred_second_opinion.v3'
+    `).all() as Array<{ source_proposal_ids_json: string | null }>;
+    assert.deepEqual(
+      provenance.map((row) => JSON.parse(row.source_proposal_ids_json ?? 'null')),
+      [[sourceProposalId], [sourceProposalId]],
+    );
+    const continuation = sqlite.prepare(`
+      SELECT source_session_id, source_proposal_ids_json, artifact_id
+      FROM reflection_generation_continuations
+    `).get() as {
+      source_session_id: string | null;
+      source_proposal_ids_json: string;
+      artifact_id: string;
+    };
+    assert.equal(continuation.source_session_id, null);
+    assert.deepEqual(JSON.parse(continuation.source_proposal_ids_json), [sourceProposalId]);
+    assert.equal(continuation.artifact_id, generated.artifactId);
+    assert.equal(
+      dbModule.getReflectionArtifactDetail(sourceArtifact.artifact.artifactId)
+        .proposals[0]!.review.disposition.kind,
+      'requested_second_opinion',
+    );
+  });
+
+  test('materializes and applies a server-stamped promotion while filtering cross-item conflicts', async () => {
+    insertProductionCue('target', 'broad-target', ['target'], 'goal or substitute');
+    insertProductionCue('alternate', 'broad-alternate', ['alternate'], 'goal or substitute');
+    insertProductionCue('third', 'third-only', ['third'], 'third only');
+    const evidence = stagedPromotionBundle();
+    const service = createInitialReflectionGenerationService({
+      now: () => generatedAt,
+      buildBundle: () => evidence,
+      provider: {
+        async generate() {
+          throw new Error('new initial flow must use staged diagnosis');
+        },
+        async generateDiagnosis(bundle) {
+          return {
+            result: {
+              schemaVersion: 'session_reflection_result.v7',
+              itemResults: [{
+                itemId: bundle.items[0]!.itemId,
+                diagnosisTags: ['production_cue_overloaded'],
+                learnerExplanation: 'The typed pair shares a useful elicitation axis.',
+                proposals: [{
+                  proposalGroupKey: null,
+                  rationale: 'This target suppression must yield to promotion.',
+                  operation: {
+                    kind: 'suppress_definition_production' as const,
+                    version: 1 as const,
+                    wordId: 'target',
+                  },
+                }],
+                questions: [],
+              }, {
+                itemId: bundle.items[1]!.itemId,
+                diagnosisTags: ['ordinary_retrieval_noise'],
+                learnerExplanation: 'This conflicting alternate policy should yield to promotion.',
+                proposals: [{
+                  proposalGroupKey: null,
+                  rationale: 'This alternate suppression conflicts with promotion elsewhere.',
+                  operation: {
+                    kind: 'suppress_definition_production' as const,
+                    version: 1 as const,
+                    wordId: 'alternate',
+                  },
+                }],
+                questions: [],
+              }, {
+                itemId: bundle.items[2]!.itemId,
+                diagnosisTags: ['ordinary_retrieval_noise'],
+                learnerExplanation: 'Keep the unrelated owner policy adjustment only.',
+                proposals: [{
+                  proposalGroupKey: null,
+                  rationale: 'This unrelated third-word proposal remains valid.',
+                  operation: {
+                    kind: 'suppress_definition_production' as const,
+                    version: 1 as const,
+                    wordId: 'third',
+                  },
+                }],
+                questions: [],
+              }],
+            },
+            metadata: stagedMetadata('reflection-staged-v2'),
+          };
+        },
+        async generatePromotion(bundle) {
+          assert.equal(bundle.items.length, 1);
+          assert.equal(bundle.items[0]!.sourceAttemptId, 'attempt-1');
+          assert.deepEqual(
+            bundle.items[0]!.promotionEvidence.words.map((word) => word.wordId),
+            ['target', 'alternate'],
+          );
+          return {
+            result: {
+              schemaVersion: 'pure_cue_promotion_result.v1',
+              itemResults: [{
+                itemId: bundle.items[0]!.itemId,
+                decision: {
+                  kind: 'promote' as const,
+                  rationale: 'Practice the shared axis directly.',
+                  operation: {
+                    destination: {
+                      kind: 'create' as const,
+                      stimulus: 'goal or substitute',
+                      axisNote: 'Choose the word that matches the intended role.',
+                    },
+                    wordPlans: [{
+                      wordId: 'target',
+                      deactivateCueIds: ['broad-target'],
+                      distinctiveCueDrafts: [{
+                        cueType: 'minimal_context' as const,
+                        text: 'An intended outcome to work toward.',
+                      }],
+                    }, {
+                      wordId: 'alternate',
+                      deactivateCueIds: ['broad-alternate'],
+                      distinctiveCueDrafts: [],
+                    }],
+                  },
+                },
+              }],
+            },
+            metadata: stagedMetadata('pure-cue-promotion-v2'),
+          };
+        },
+      },
+    });
+
+    const generated = await service.generate(
+      'session-1',
+      { schemaVersion: 'session_reflection_evidence_supplement.v1', items: [] },
+      'openai:gpt-5.6-luna-high',
+    );
+    const artifact = dbModule.getReflectionArtifactDetail(generated.artifactId);
+    assert.equal(artifact.bundleSchemaVersion, 'session_reflection_bundle.v5');
+    assert.equal(artifact.resultSchemaVersion, 'session_reflection_result.v8');
+    const operations = artifact.result.itemResults.flatMap((item) => (
+      item.proposals.map((proposal) => proposal.operation)
+    ));
+    assert.deepEqual(
+      operations.map((operation) => operation.kind),
+      ['promote_pure_elicitation', 'suppress_definition_production'],
+    );
+    const promotion = operations[0]!;
+    assert.equal(promotion.kind, 'promote_pure_elicitation');
+    if (promotion.kind !== 'promote_pure_elicitation') return;
+    assert.deepEqual({
+      sourceAttemptId: promotion.sourceAttemptId,
+      targetWordId: promotion.targetWordId,
+      responseWordId: promotion.responseWordId,
+    }, {
+      sourceAttemptId: 'attempt-1',
+      targetWordId: 'target',
+      responseWordId: 'alternate',
+    });
+    assert.equal(
+      operations.some((operation) => (
+        operation.kind === 'suppress_definition_production'
+        && operation.wordId === 'alternate'
+      )),
+      false,
+    );
+    assert.equal(
+      operations.some((operation) => (
+        operation.kind === 'suppress_definition_production'
+        && operation.wordId === 'third'
+      )),
+      true,
+    );
+
+    const promotionProposal = artifact.proposals.find((proposal) => (
+      proposal.proposal.operation.kind === 'promote_pure_elicitation'
+    ));
+    assert.ok(promotionProposal);
+    const accepted = dbModule.acceptReflectionProposal({
+      proposalId: promotionProposal.review.proposalId,
+      invocationId: 'generated-promotion-invocation',
+      createdAt: generatedAt,
+      operation: promotion,
+    });
+    assert.equal(accepted.invocation.application.state.kind, 'pending');
+    const applied = dbModule.applyReflectionInvocation('generated-promotion-invocation', generatedAt);
+    assert.equal(applied.application.state.kind, 'applied');
+    assert.ok(dbModule.getPureCues().some((cue) => (
+      cue.stimulus === 'goal or substitute'
+      && cue.acceptedWordIds.includes('target')
+      && cue.acceptedWordIds.includes('alternate')
+    )));
+    assert.equal(dbModule.getActiveProductionCuesForWord('target').some((cue) => (
+      cue.cueId === 'broad-target'
+    )), false);
+    assert.equal(dbModule.getActiveProductionCuesForWord('alternate').some((cue) => (
+      cue.cueId === 'broad-alternate'
+    )), false);
+  });
+
 });
+
+function stagedSourceBundle() {
+  return {
+    schemaVersion: 'session_reflection_bundle.v4' as const,
+    generatedAt,
+    session: {
+      sessionId: 'session-1',
+      startedAt,
+      endedAt: completedAt,
+      studyProfile: 'mandarin' as const,
+    },
+    items: [{
+      itemId: 'source-item',
+      source: 'production_mistake' as const,
+      sourceActionKind: 'production' as const,
+      sourceAttemptId: 'attempt-1',
+      sessionActionId: 'action-1',
+      occurredAt: completedAt,
+      targetWord: { wordId: 'target', hanzi: '目标', pinyin: 'mùbiāo', meanings: ['goal'] },
+      sessionNote: null,
+      existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+      servedCue: {
+        cueId: 'legacy-broad-cue',
+        cueType: 'definition_gloss' as const,
+        text: 'goal or substitute',
+        acceptedWordIds: ['target'],
+        supplement: null,
+      },
+      rawResponse: '替代',
+      submittedWord: { wordId: 'alternate', hanzi: '替代', pinyin: 'tìdài', meanings: ['substitute'] },
+      responseKind: 'matched_known_word' as const,
+    }],
+  };
+}
+
+function stagedPromotionBundle(): SessionReflectionBundleV4 {
+  const first = stagedSourceBundle().items[0]!;
+  return {
+    schemaVersion: 'session_reflection_bundle.v4',
+    generatedAt,
+    session: stagedSourceBundle().session,
+    items: [{
+      ...first,
+      itemId: 'promotion-item',
+      servedCue: {
+        cueId: 'broad-target',
+        cueType: 'definition_gloss',
+        text: 'goal or substitute',
+        acceptedWordIds: ['target'],
+        supplement: null,
+      },
+    }, {
+      ...first,
+      itemId: 'conflicting-other-item',
+      sourceAttemptId: 'synthetic-reflection-attempt:conflicting-other-item',
+      sessionActionId: null,
+      targetWord: { wordId: 'alternate', hanzi: '替代', pinyin: 'tìdài', meanings: ['substitute'] },
+      rawResponse: null,
+      submittedWord: null,
+      responseKind: 'no_clue',
+      servedCue: {
+        cueId: 'broad-alternate',
+        cueType: 'minimal_context',
+        text: 'substitute only',
+        acceptedWordIds: ['alternate'],
+        supplement: null,
+      },
+    }, {
+      ...first,
+      itemId: 'unrelated-item',
+      sourceAttemptId: 'synthetic-reflection-attempt:unrelated-item',
+      sessionActionId: null,
+      targetWord: { wordId: 'third', hanzi: '第三', pinyin: 'dìsān', meanings: ['third'] },
+      rawResponse: null,
+      submittedWord: null,
+      responseKind: 'no_clue',
+      servedCue: {
+        cueId: 'third-only',
+        cueType: 'minimal_context',
+        text: 'third only',
+        acceptedWordIds: ['third'],
+        supplement: null,
+      },
+    }],
+  };
+}
+
+function stagedMetadata(promptVersion: string) {
+  return {
+    provider: 'openai',
+    modelConfig: 'gpt-5.6-luna-high',
+    providerModel: 'gpt-5.6-luna',
+    promptVersion,
+    responseId: `response-${promptVersion}`,
+    finishReason: 'stop',
+    usage: {
+      inputTokens: 10,
+      cachedInputTokens: null,
+      cacheWriteInputTokens: null,
+      outputTokens: 5,
+      reasoningTokens: 2,
+      totalTokens: 15,
+    },
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 function insertCompletedStudyState() {
   sqlite.prepare(`
@@ -245,16 +704,26 @@ function insertCompletedStudyState() {
       (
         'alternate', '替代', NULL, 'tìdài', 'substitute', '["substitute"]',
         '', '[]', 'review', 0, ?, 0, NULL, NULL
+      ),
+      (
+        'third', '第三', NULL, 'dìsān', 'third', '["third"]',
+        '', '[]', 'review', 0, ?, 0, NULL, NULL
       )
-  `).run(startedAt, startedAt);
+  `).run(startedAt, startedAt, startedAt);
   sqlite.prepare(`
     INSERT INTO word_meanings (
       id, word_id, position, text, show_on_production_prompt, created_at, updated_at
     ) VALUES
       ('target-1', 'target', 0, 'goal', 1, ?, ?),
       ('target-2', 'target', 1, 'objective', 1, ?, ?),
-      ('alternate-1', 'alternate', 0, 'substitute', 1, ?, ?)
-  `).run(startedAt, startedAt, startedAt, startedAt, startedAt, startedAt);
+      ('alternate-1', 'alternate', 0, 'substitute', 1, ?, ?),
+      ('third-1', 'third', 0, 'third', 1, ?, ?)
+  `).run(
+    startedAt, startedAt,
+    startedAt, startedAt,
+    startedAt, startedAt,
+    startedAt, startedAt,
+  );
   sqlite.prepare(`
     INSERT INTO study_sessions (
       id, started_at, ended_at, processing_state, processed_at
@@ -277,14 +746,59 @@ function insertCompletedStudyState() {
       (
         'attempt-1', '2026-07-29T08:05:00.000Z', 'session-1', 'action-1', 1,
         1, 'production', 'target', '["production"]', '替代', 'incorrect', 'forgot',
-        NULL, '{}', '2026-07-29T08:10:00.000Z'
+        NULL, ?, '2026-07-29T08:10:00.000Z'
       ),
       (
         'attempt-2', '2026-07-29T08:06:00.000Z', 'session-1', 'action-1', 2,
         2, 'production', 'target', '["production"]', '目标', 'correct', 'good',
         NULL, '{}', '2026-07-29T08:10:00.000Z'
       )
-  `).run();
+  `).run(JSON.stringify({
+    production: {
+      taskId: 'production-task:target:default_production',
+      cueId: null,
+      cueType: 'definition_gloss',
+      text: 'goal; objective',
+      acceptedWordIds: ['target'],
+      supplement: null,
+      anchorWordId: 'target',
+      submittedText: '替代',
+      submittedWordId: 'alternate',
+      result: 'rejected',
+    },
+  }));
+}
+
+function insertProductionCue(
+  wordId: string,
+  cueId: string,
+  acceptedWordIds: string[],
+  text: string,
+) {
+  const taskId = `production-task:${wordId}:default_production`;
+  const eventId = `activate:${cueId}`;
+  sqlite.prepare(`
+    INSERT INTO production_cues (
+      cue_id, task_id, cue_type, cue_text, created_at, origin_kind, origin_invocation_id
+    ) VALUES (?, ?, 'minimal_context', ?, ?, 'manual', NULL)
+  `).run(cueId, taskId, text, startedAt);
+  const insertAccepted = sqlite.prepare(`
+    INSERT INTO production_cue_accepted_words (cue_id, word_id, position)
+    VALUES (?, ?, ?)
+  `);
+  acceptedWordIds.forEach((acceptedWordId, position) => {
+    insertAccepted.run(cueId, acceptedWordId, position);
+  });
+  sqlite.prepare(`
+    INSERT INTO production_cue_lifecycle_events (
+      event_id, cue_id, task_id, lifecycle_kind, occurred_at, invocation_id
+    ) VALUES (?, ?, ?, 'activated', ?, NULL)
+  `).run(eventId, cueId, taskId, startedAt);
+  sqlite.prepare(`
+    INSERT INTO production_cue_activation_state (
+      cue_id, active, latest_lifecycle_event_id, updated_at
+    ) VALUES (?, 1, ?, ?)
+  `).run(cueId, eventId, startedAt);
 }
 
 function supplement(): SessionReflectionEvidenceSupplementV1 {

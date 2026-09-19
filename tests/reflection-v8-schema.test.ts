@@ -121,7 +121,7 @@ describe('session reflection V5 evidence and V8 final result', () => {
     const stageTwo = {
       schemaVersion: 'pure_cue_promotion_bundle.v1' as const,
       generatedAt,
-      sessionId: evidence.session.sessionId,
+      sourceSessionId: evidence.session.sessionId,
       studyProfile: evidence.session.studyProfile,
       items: [{
         itemId: evidence.items[0]!.itemId,

@@ -7,8 +7,8 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import type {
   ReflectionOperation,
-  SessionReflectionBundleV1,
-  SessionReflectionResultV4,
+  SessionReflectionBundleV5,
+  SessionReflectionResultV8,
 } from '../src/domain/reflection.js';
 
 type DbModule = typeof import('../server/db.ts');
@@ -1274,6 +1274,7 @@ function insertInvocation(
   operation: ReflectionOperation,
   applicationState: 'pending' | 'unsupported' = 'pending',
 ): void {
+  const sourceArtifact = materializeCurrentSourceArtifact(invocationId);
   sqlite.prepare(`
     INSERT INTO reflection_operation_invocations (
       invocation_id,
@@ -1298,7 +1299,12 @@ function insertInvocation(
     createdAt,
     operation.kind,
     operation.version,
-    JSON.stringify(operation),
+    JSON.stringify({
+      schemaVersion: 'reflection_invocation_operation.v1',
+      sourceArtifactId: sourceArtifact.artifactId,
+      sourceItemId: 'item',
+      operation,
+    }),
     applicationState,
     createdAt,
     applicationState === 'unsupported' ? 'No faithful adapter is available.' : null,
@@ -1318,8 +1324,8 @@ function materializeProposal(
       processed_at
     ) VALUES (?, '2026-07-29T11:30:00.000Z', ?, 'processed', ?)
   `).run(sourceSessionId, createdAt, createdAt);
-  const evidenceBundle: SessionReflectionBundleV1 = {
-    schemaVersion: 'session_reflection_bundle.v1',
+  const evidenceBundle: SessionReflectionBundleV5 = {
+    schemaVersion: 'session_reflection_bundle.v5',
     generatedAt: createdAt,
     session: {
       sessionId: sourceSessionId,
@@ -1333,50 +1339,111 @@ function materializeProposal(
       occurredAt: '2026-07-29T11:59:00.000Z',
       source: 'production_mistake',
       sourceActionKind: 'production',
+      sourceAttemptId: `attempt-${sourceSessionId}`,
       targetWord: wordSnapshot('target', '目标'),
       sessionNote: null,
       existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
-      cuesAsShown: [{
+      servedCue: {
         cueId: null,
         cueType: 'definition_gloss',
-        displayOrder: 0,
         text: 'target',
-        displayedMeanings: ['meaning'],
-      }],
+        acceptedWordIds: ['target'],
+        supplement: null,
+      },
+      promotionEvidence: null,
       rawResponse: '替代',
       submittedWord: wordSnapshot('alternate', '替代'),
       responseKind: 'matched_known_word',
     }],
   };
-  const result: SessionReflectionResultV4 = {
-    schemaVersion: 'session_reflection_result.v4',
+  const result: SessionReflectionResultV8 = {
+    schemaVersion: 'session_reflection_result.v8',
     itemResults: [{
       itemId: 'item',
       diagnosisTags: ['persistent_confusion'],
-      observation: 'The two words merit a concrete contrast.',
-      learnerExplanation: null,
+      learnerExplanation: 'The two words merit a concrete contrast.',
       proposals: [{
         proposalGroupKey: null,
         rationale: 'Make the distinction trainable.',
         operation,
       }],
       questions: [],
-      unhandledNeeds: [],
     }],
   };
   return dbModule.materializeReflectionArtifact({
     sourceSessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v1',
+    reflectionFlowVersion: 'initial_post_session_reflection.v4',
     generatedAt: createdAt,
     provider: 'openai',
     model: 'gpt-5.6-luna',
-    promptVersion: 'reflection-v2',
+    promptVersion: 'reflection-staged-v2',
     evidenceBundle,
     result,
   }).artifact;
 }
 
-function wordSnapshot(wordId: string, hanzi: string): SessionReflectionBundleV1[
+function materializeCurrentSourceArtifact(
+  invocationId: string,
+): ReturnType<DbModule['materializeReflectionArtifact']>['artifact'] {
+  const sourceSessionId = `source-${invocationId}`;
+  sqlite.prepare(`
+    INSERT INTO study_sessions (
+      id, started_at, ended_at, processing_state, processed_at
+    ) VALUES (?, '2026-07-29T11:30:00.000Z', ?, 'processed', ?)
+  `).run(sourceSessionId, createdAt, createdAt);
+  return dbModule.materializeReflectionArtifact({
+    sourceSessionId,
+    reflectionFlowVersion: 'initial_post_session_reflection.v4',
+    generatedAt: createdAt,
+    provider: 'openai',
+    model: 'gpt-5.6-luna',
+    promptVersion: 'reflection-staged-v2',
+    evidenceBundle: {
+      schemaVersion: 'session_reflection_bundle.v5',
+      generatedAt: createdAt,
+      session: {
+        sessionId: sourceSessionId,
+        startedAt: '2026-07-29T11:30:00.000Z',
+        endedAt: createdAt,
+        studyProfile: 'mandarin',
+      },
+      items: [{
+        itemId: 'item',
+        source: 'production_mistake',
+        sourceActionKind: 'production',
+        sessionActionId: `action-${invocationId}`,
+        sourceAttemptId: `attempt-${invocationId}`,
+        occurredAt: '2026-07-29T11:59:00.000Z',
+        targetWord: wordSnapshot('target', '目标'),
+        sessionNote: null,
+        existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+        servedCue: {
+          cueId: null,
+          cueType: 'definition_gloss',
+          text: 'target',
+          acceptedWordIds: ['target'],
+          supplement: null,
+        },
+        promotionEvidence: null,
+        rawResponse: '替代',
+        submittedWord: wordSnapshot('alternate', '替代'),
+        responseKind: 'matched_known_word',
+      }],
+    },
+    result: {
+      schemaVersion: 'session_reflection_result.v8',
+      itemResults: [{
+        itemId: 'item',
+        diagnosisTags: ['ordinary_retrieval_noise'],
+        learnerExplanation: 'The operation is explicitly authorized in this fixture.',
+        proposals: [],
+        questions: [],
+      }],
+    },
+  }).artifact;
+}
+
+function wordSnapshot(wordId: string, hanzi: string): SessionReflectionBundleV5[
   'items'
 ][number]['targetWord'] {
   return {
