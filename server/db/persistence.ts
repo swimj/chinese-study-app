@@ -306,8 +306,8 @@ const RECENT_LAPSE_IDS_SQL = `
   UNION
   SELECT id AS word_id
   FROM words
-  WHERE last_learning_covered_on IS NOT NULL
-    AND (last_learning_success_on IS NULL OR last_learning_covered_on > last_learning_success_on)
+  WHERE last_learning_success_on IS NOT NULL
+    AND last_learning_covered_on > last_learning_success_on
 `;
 
 function queryRecentLapseWordIds(sinceDay: string): Set<string> {

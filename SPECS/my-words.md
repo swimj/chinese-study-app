@@ -69,8 +69,13 @@ the effective filter is that collection's remaining stages (learning and
 review) rather than an empty list. Recent lapses is an independent extra chip,
 off by default. When on, it keeps words that either have a projected Forgot /
 incorrect attempt in the last three UTC days (any Forgot in the window counts)
-or whose last learning coverage day is unsuccessful. Combinations that cannot
-match, such as Recent lapses with only Not yet studied, return an empty list.
+or whose last learning coverage day is unsuccessful after a prior successful
+learning day (covered after last success). Never-succeeded learning words,
+including same-day `unstudied -> learning` graduates, are excluded: a lapse
+requires having succeeded first. The learning arm is not date-windowed; learning
+words resurface daily until recovered, so an unrecovered post-success failure
+stays visible under ordinary study activity. Combinations that cannot match,
+such as Recent lapses with only Not yet studied, return an empty list.
 Recent and
 personal results load in bounded batches of 50 with a Load more control; the
 visible batch is not the logical extent of the collection. Current deck loads
