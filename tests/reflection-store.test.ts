@@ -9,9 +9,11 @@ import type {
   ReflectionOperation,
   SessionReflectionBundleV1,
   SessionReflectionBundleV2,
+  SessionReflectionBundleV5,
   SessionReflectionResultV4,
   SessionReflectionResultV5,
   SessionReflectionResultV6,
+  SessionReflectionResultV8,
 } from '../src/domain/reflection.js';
 
 type DbModule = typeof import('../server/db.ts');
@@ -444,6 +446,74 @@ describe('reflection durable store', { concurrency: false }, () => {
     assert.deepEqual(materialized.artifact.result, input.result);
     assert.equal(materialized.artifact.bundleSchemaVersion, 'session_reflection_bundle.v2');
     assert.equal(materialized.artifact.resultSchemaVersion, 'session_reflection_result.v6');
+  });
+
+  test('pairs V5 evidence only with V8 and authorizes only its exact promotion references', () => {
+    const input = materializationInputV8('v8-round-trip-session');
+    const materialized = dbModule.materializeReflectionArtifact(input);
+    assert.equal(materialized.artifact.bundleSchemaVersion, 'session_reflection_bundle.v5');
+    assert.equal(materialized.artifact.resultSchemaVersion, 'session_reflection_result.v8');
+    const proposal = materialized.artifact.proposals[0]!;
+    const operation = proposal.proposal.operation;
+    assert.equal(operation.kind, 'promote_pure_elicitation');
+    if (operation.kind !== 'promote_pure_elicitation') return;
+
+    assert.throws(() => dbModule.acceptReflectionProposal({
+      proposalId: proposal.review.proposalId,
+      invocationId: 'v8-hidden-reference',
+      createdAt: updatedAt,
+      operation: {
+        ...operation,
+        destination: { kind: 'existing', pureCueId: 'not-in-evidence' },
+      },
+    }), /enriched intersecting pure cue/);
+
+    const accepted = dbModule.acceptReflectionProposal({
+      proposalId: proposal.review.proposalId,
+      invocationId: 'v8-exact-promotion',
+      createdAt: updatedAt,
+      operation,
+    });
+    assert.equal(accepted.invocation.application.state.kind, 'pending');
+  });
+
+  test('V8 authorization keeps revised, replacement, and manual word cues owner-only', () => {
+    for (const mode of ['revised', 'replacement', 'manual'] as const) {
+      const input = materializationInputV8(`v8-owner-only-${mode}`);
+      assert.equal(input.result.schemaVersion, 'session_reflection_result.v8');
+      if (input.result.schemaVersion !== 'session_reflection_result.v8') continue;
+      const repair: ReflectionOperation = {
+        kind: 'repair_production_cue', version: 2,
+        wordId: 'target', taskId: 'production-task:target:default_production',
+        changes: [{ kind: 'create', cue: {
+          cueType: 'minimal_context', text: 'A distinctive context', acceptedWordIds: ['target'],
+        } }],
+        sourceAttemptJudgments: [],
+      };
+      if (mode === 'revised') input.result.itemResults[0]!.proposals[0]!.operation = repair;
+      if (mode === 'manual') input.result.itemResults[0]!.proposals = [];
+      const { artifact } = dbModule.materializeReflectionArtifact(input);
+      const invalid = structuredClone(repair);
+      assert.equal(invalid.kind, 'repair_production_cue');
+      if (invalid.kind !== 'repair_production_cue' || invalid.version !== 2) continue;
+      const change = invalid.changes[0]!;
+      if (change.kind !== 'create') throw new Error('Expected created cue');
+      change.cue.acceptedWordIds.push('alternate');
+      const identity = { invocationId: `invalid-owner-${mode}`, createdAt: updatedAt, operation: invalid };
+      assert.throws(() => {
+        if (mode === 'manual') {
+          dbModule.authorizeManualReflectionOperation({
+            ...identity, artifactId: artifact.artifactId, itemId: artifact.result.itemResults[0]!.itemId,
+          });
+        } else {
+          const request = { ...identity, proposalId: artifact.proposals[0]!.review.proposalId };
+          if (mode === 'replacement') dbModule.replaceReflectionProposal(request);
+          else dbModule.acceptReflectionProposal(request);
+        }
+      }, /must accept exactly their owner/);
+      assert.equal(sqlite.prepare('SELECT COUNT(*) AS count FROM reflection_operation_invocations WHERE invocation_id = ?')
+        .get(identity.invocationId)?.count, 0);
+    }
   });
 
   test('reloads legacy V1 contrast artifacts and applied invocations under their frozen contract', () => {
@@ -1060,6 +1130,82 @@ function materializationInputV6(
     promptVersion: 'reflection-v7',
     evidenceBundle: bundleV2(sessionId),
     result: resultV6(),
+  };
+}
+
+function materializationInputV8(
+  sessionId: string,
+): Parameters<DbModule['materializeReflectionArtifact']>[0] {
+  sqlite.prepare(`
+    INSERT OR IGNORE INTO study_sessions (
+      id, started_at, ended_at, processing_state, processed_at
+    ) VALUES (?, '2026-07-29T11:30:00.000Z', ?, 'processed', ?)
+  `).run(sessionId, generatedAt, generatedAt);
+  const base = bundleV2(sessionId);
+  const item = base.items[0]!;
+  const responseWordId = item.submittedWord!.wordId;
+  const evidenceBundle: SessionReflectionBundleV5 = {
+    ...base,
+    schemaVersion: 'session_reflection_bundle.v5',
+    items: [{
+      ...item,
+      servedCue: { ...item.servedCue, acceptedWordIds: ['target'], supplement: null },
+      promotionEvidence: {
+        diagnosisTags: ['production_cue_overloaded'],
+        words: ['target', responseWordId].map((wordId) => ({
+          wordId,
+          activeProductionCues: [{
+            cueId: `cue-${wordId}`,
+            taskId: `production-task:${wordId}:default_production`,
+            cueType: 'definition_gloss',
+            text: `broad ${wordId}`,
+            acceptedWordIds: [wordId],
+          }],
+        })),
+        intersectingPureCues: [{
+          id: 'pure-1',
+          stimulus: 'shared axis',
+          axisNote: 'explicit axis',
+          acceptedWordIds: ['target'],
+        }],
+      },
+    }],
+  };
+  const result: SessionReflectionResultV8 = {
+    schemaVersion: 'session_reflection_result.v8',
+    itemResults: [{
+      itemId: item.itemId,
+      diagnosisTags: ['production_cue_overloaded'],
+      learnerExplanation: 'The pair shares a broad axis.',
+      proposals: [{
+        proposalGroupKey: null,
+        rationale: 'Promote the explicit pair.',
+        operation: {
+          kind: 'promote_pure_elicitation',
+          version: 1,
+          sourceAttemptId: item.sourceAttemptId,
+          targetWordId: 'target',
+          responseWordId,
+          destination: { kind: 'existing', pureCueId: 'pure-1' },
+          wordPlans: ['target', responseWordId].map((wordId) => ({
+            wordId,
+            deactivateCueIds: [`cue-${wordId}`],
+            distinctiveCueDrafts: [],
+          })),
+        },
+      }],
+      questions: [],
+    }],
+  };
+  return {
+    sourceSessionId: sessionId,
+    reflectionFlowVersion: 'initial_post_session_reflection.v3',
+    generatedAt,
+    provider: 'openai',
+    model: 'gpt-5.6-luna',
+    promptVersion: 'reflection-v8',
+    evidenceBundle,
+    result,
   };
 }
 

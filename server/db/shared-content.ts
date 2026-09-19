@@ -396,8 +396,10 @@ export function publishAuthorizedProductionCueWithoutTransaction(input: {
   } | undefined;
   if (
     !invocation
-    || invocation.operation_kind !== 'repair_production_cue'
-    || invocation.operation_version !== 2
+    || !(
+      (invocation.operation_kind === 'repair_production_cue' && invocation.operation_version === 2)
+      || (invocation.operation_kind === 'promote_pure_elicitation' && invocation.operation_version === 1)
+    )
     || (invocation.application_state !== 'pending' && invocation.application_state !== 'applied')
     || !effectRefsContain(invocation.effect_refs_json, 'production_cue', input.cueId, invocation.application_state)
   ) {

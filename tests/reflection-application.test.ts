@@ -49,6 +49,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
     sqlite.exec(`
       DROP TRIGGER IF EXISTS fail_reflection_prompt_insert;
       DROP TRIGGER IF EXISTS fail_production_cue_lifecycle_insert;
+      DROP TRIGGER IF EXISTS fail_promotion_second_cue_insert;
       DROP TRIGGER IF EXISTS production_cues_no_delete;
       DROP TRIGGER IF EXISTS production_cue_supplements_no_delete;
       DROP TRIGGER IF EXISTS production_cue_accepted_words_no_delete;
@@ -58,6 +59,9 @@ describe('reflection application adapters', { concurrency: false }, () => {
       DROP TRIGGER IF EXISTS shared_content_publications_no_delete;
       DROP TRIGGER IF EXISTS shared_content_publication_provenance_no_delete;
       DROP TRIGGER IF EXISTS shared_content_reports_no_delete;
+      DROP TRIGGER IF EXISTS pure_cue_accepted_words_no_delete;
+      DROP TRIGGER IF EXISTS pure_cue_served_snapshots_no_delete;
+      DROP TRIGGER IF EXISTS pure_cue_attempts_no_delete;
       PRAGMA defer_foreign_keys = ON;
       BEGIN;
       DELETE FROM shared_content_publication_events;
@@ -71,6 +75,12 @@ describe('reflection application adapters', { concurrency: false }, () => {
       DELETE FROM scoped_production_cue_supplements;
       DELETE FROM scoped_production_cues;
       DELETE FROM production_tasks;
+      DELETE FROM pure_cue_attempts;
+      DELETE FROM pure_cue_served_snapshots;
+      DELETE FROM pure_cue_scheduler_compensation_snapshot_attempts;
+      DELETE FROM pure_cue_scheduler_compensation_snapshots;
+      DELETE FROM pure_cue_accepted_words;
+      DELETE FROM pure_cues;
       DELETE FROM reflection_help_inbox;
       DELETE FROM reflection_quality_annotations;
       DELETE FROM reflection_proposal_reviews;
@@ -286,6 +296,153 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.equal(countRows('word_skill_state'), beforeSkillCount);
     assert.equal(countRows('word_study_admission_state'), beforeAdmissionCount);
     assert.deepEqual(dbModule.applyReflectionInvocation('cue-create', createdAt), result);
+  });
+
+  test('promotes an explicit pair atomically with set-add, relevance, and lapse restoration', () => {
+    insertWord('third', '第三');
+    const targetBroadId = seedBroadCue('promotion-target-broad', 'target');
+    const alternateBroadId = seedBroadCue('promotion-alternate-broad', 'alternate');
+    dbModule.createPureCueWithoutTransaction({
+      id: 'existing-pure',
+      stimulus: 'shared axis',
+      axisNote: 'explicit existing axis',
+      acceptedWordIds: ['target', 'third'],
+      createdAt,
+    });
+    sqlite.prepare(`
+      INSERT INTO word_skill_state (
+        word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor
+      ) VALUES ('target', 'production', 1, 240, ?, '2026-08-08T12:00:00.000Z', 2.4)
+    `).run(createdAt);
+    sqlite.prepare(`
+      INSERT INTO word_study_admission_state (word_id, study_phase, earliest_next_study_at)
+      VALUES ('target', 'review', '2026-07-30T12:00:00.000Z')
+    `).run();
+    insertStudyAttempt('promotion-lapse');
+    dbModule.captureProductionSchedulerSnapshotForAttemptBatchWithoutTransaction({
+      sourceAttemptId: 'promotion-lapse',
+      capturedAt: appliedAt,
+    });
+    sqlite.prepare(`
+      UPDATE word_skill_state
+      SET interval_hours = 6, ease_factor = 2.1,
+        last_studied_at = ?, next_due_at = '2026-07-29T18:01:00.000Z'
+      WHERE word_id = 'target' AND skill_id = 'production'
+    `).run(appliedAt);
+    sqlite.prepare(`
+      INSERT INTO word_skill_relevance (
+        word_id, skill_id, relevance_state, updated_at, source_event_id
+      ) VALUES ('alternate', 'production', 'suppressed', ?, NULL)
+    `).run(createdAt);
+
+    insertInvocation('promotion-existing', promotionOperation({
+      sourceAttemptId: 'promotion-lapse',
+      destination: { kind: 'existing', pureCueId: 'existing-pure' },
+      targetBroadId,
+      alternateBroadId,
+      targetDistinctiveText: 'target-only situation',
+    }));
+    const applied = dbModule.applyReflectionInvocation('promotion-existing', appliedAt);
+    assert.equal(
+      applied.application.state.kind,
+      'applied',
+      JSON.stringify(applied.application.state),
+    );
+    assert.deepEqual(dbModule.getPureCue('existing-pure')?.acceptedWordIds, [
+      'target',
+      'third',
+      'alternate',
+    ]);
+    assert.equal(dbModule.getProductionCue(targetBroadId)?.active, false);
+    assert.equal(dbModule.getProductionCue(alternateBroadId)?.active, false);
+    assert.deepEqual(
+      dbModule.getActiveProductionCuesForWord('target').map((cue) => ({
+        text: cue.text,
+        acceptedWordIds: cue.acceptedWordIds,
+      })),
+      [{ text: 'target-only situation', acceptedWordIds: ['target'] }],
+    );
+    assert.equal(dbModule.getWordSkillRelevance('target', 'production'), null);
+    assert.equal(
+      dbModule.getWordSkillRelevance('alternate', 'production')?.relevanceState,
+      'suppressed',
+    );
+    assert.equal(
+      (sqlite.prepare(`
+        SELECT interval_hours FROM word_skill_state
+        WHERE word_id = 'target' AND skill_id = 'production'
+      `).get() as { interval_hours: number }).interval_hours,
+      240,
+    );
+    const refs = applied.application.state.kind === 'applied'
+      ? applied.application.state.effectRefs
+      : [];
+    assert.ok(refs.some((ref) => (
+      ref.type === 'production_scheduler_compensation' && ref.id.endsWith('/restored')
+    )));
+  });
+
+  test('rolls back every promotion effect on failure', () => {
+    insertStudyAttempt('accepted-forgot');
+
+    const targetBroadId = seedBroadCue('rollback-target-broad', 'target');
+    const alternateBroadId = seedBroadCue('rollback-alternate-broad', 'alternate');
+    sqlite.exec(`
+      CREATE TRIGGER fail_promotion_second_cue_insert
+      BEFORE INSERT ON scoped_production_cues
+      WHEN NEW.task_id = 'production-task:alternate:default_production'
+      BEGIN
+        SELECT RAISE(ABORT, 'forced second-word cue failure');
+      END;
+    `);
+    insertInvocation('promotion-rollback', promotionOperation({
+      sourceAttemptId: 'accepted-forgot',
+      destination: { kind: 'create', stimulus: 'new shared axis', axisNote: 'explicit axis' },
+      targetBroadId,
+      alternateBroadId,
+      targetDistinctiveText: 'target only',
+      alternateDistinctiveText: 'alternate only',
+    }));
+    const failed = dbModule.applyReflectionInvocation('promotion-rollback', appliedAt);
+    assert.equal(failed.application.state.kind, 'failed');
+    assert.equal(dbModule.getPureCue('pure-cue:reflection:promotion-rollback'), null);
+    assert.equal(dbModule.getProductionCue(targetBroadId)?.active, true);
+    assert.equal(dbModule.getProductionCue(alternateBroadId)?.active, true);
+    assert.deepEqual(
+      dbModule.getActiveProductionCuesForWord('target').map((cue) => cue.text),
+      ['broad target'],
+    );
+  });
+
+  test('reports unavailable snapshots but rejects clean-success promotion', () => {
+    const targetBroadId = seedBroadCue('historical-target-broad', 'target');
+    const alternateBroadId = seedBroadCue('historical-alternate-broad', 'alternate');
+    insertStudyAttempt('historical-lapse');
+    insertInvocation('historical-promotion', promotionOperation({
+      sourceAttemptId: 'historical-lapse',
+      destination: { kind: 'create', stimulus: 'historical shared axis', axisNote: 'explicit axis' },
+      targetBroadId,
+      alternateBroadId,
+    }));
+    const historical = dbModule.applyReflectionInvocation('historical-promotion', appliedAt);
+    assert.equal(historical.application.state.kind, 'applied');
+    const historicalRefs = historical.application.state.kind === 'applied'
+      ? historical.application.state.effectRefs
+      : [];
+    assert.ok(historicalRefs.some((ref) => (
+      ref.type === 'production_scheduler_compensation' && ref.id.endsWith('/unavailable')
+    )));
+
+    insertAcceptedNonAnchorAttempt('accepted-good', 'good');
+    insertInvocation('successful-promotion', promotionOperation({
+      sourceAttemptId: 'accepted-good',
+      destination: { kind: 'existing', pureCueId: 'pure-cue:reflection:historical-promotion' },
+      targetBroadId,
+      alternateBroadId,
+    }));
+    const successful = dbModule.applyReflectionInvocation('successful-promotion', appliedAt);
+    assert.equal(successful.application.state.kind, 'failed');
+    assert.match(JSON.stringify(successful.application.state), /strict target-only production lapse/);
   });
 
   test('adds one immutable fallback supplement without changing the cue or scheduler', () => {
@@ -1042,6 +1199,61 @@ function cueRepairOperation(input: {
   };
 }
 
+function seedBroadCue(invocationId: string, wordId: 'target' | 'alternate'): string {
+  insertInvocation(invocationId, {
+    kind: 'repair_production_cue',
+    version: 2,
+    wordId,
+    taskId: `production-task:${wordId}:default_production`,
+    changes: [{
+      kind: 'create',
+      cue: {
+        cueType: 'definition_gloss',
+        text: `broad ${wordId}`,
+        acceptedWordIds: [wordId],
+      },
+    }],
+    sourceAttemptJudgments: [],
+  });
+  const applied = dbModule.applyReflectionInvocation(invocationId, appliedAt);
+  assert.equal(applied.application.state.kind, 'applied');
+  if (applied.application.state.kind !== 'applied') throw new Error('Cue seed failed.');
+  return applied.application.state.effectRefs.find((ref) => ref.type === 'production_cue')!.id;
+}
+
+function promotionOperation(input: {
+  sourceAttemptId: string;
+  destination: Extract<ReflectionOperation, { kind: 'promote_pure_elicitation' }>['destination'];
+  targetBroadId: string;
+  alternateBroadId: string;
+  targetDistinctiveText?: string;
+  alternateDistinctiveText?: string;
+}): Extract<ReflectionOperation, { kind: 'promote_pure_elicitation' }> {
+  return {
+    kind: 'promote_pure_elicitation',
+    version: 1,
+    sourceAttemptId: input.sourceAttemptId,
+    targetWordId: 'target',
+    responseWordId: 'alternate',
+    destination: input.destination,
+    wordPlans: [{
+      wordId: 'target',
+      deactivateCueIds: [input.targetBroadId],
+      distinctiveCueDrafts: input.targetDistinctiveText === undefined ? [] : [{
+        cueType: 'minimal_context',
+        text: input.targetDistinctiveText,
+      }],
+    }, {
+      wordId: 'alternate',
+      deactivateCueIds: [input.alternateBroadId],
+      distinctiveCueDrafts: input.alternateDistinctiveText === undefined ? [] : [{
+        cueType: 'minimal_context',
+        text: input.alternateDistinctiveText,
+      }],
+    }],
+  };
+}
+
 function supplementOperation(
   cueId: string | null,
 ): Extract<ReflectionOperation, { kind: 'add_production_cue_supplement' }> {
@@ -1202,8 +1414,8 @@ function insertStudyAttempt(
   sqlite.prepare(`
     INSERT OR IGNORE INTO study_sessions (
       id, started_at, ended_at, processing_state, processed_at
-    ) VALUES ('cue-evidence-session', ?, ?, 'processed', ?)
-  `).run(createdAt, appliedAt, appliedAt);
+    ) VALUES (?, ?, ?, 'processed', ?)
+  `).run(`cue-evidence-session:${attemptId}`, createdAt, appliedAt, appliedAt);
   sqlite.prepare(`
     INSERT INTO study_attempt_events (
       id,
@@ -1221,11 +1433,13 @@ function insertStudyAttempt(
       content_ref_json,
       metadata_json,
       projected_at
-    ) VALUES (?, ?, 'cue-evidence-session', 'cue-action', 1, 1, 'production', 'target',
+    ) VALUES (?, ?, ?, ?, 1, 1, 'production', 'target',
       '["production"]', '替代', 'incorrect', 'forgot', ?, ?, ?)
   `).run(
     attemptId,
     appliedAt,
+    `cue-evidence-session:${attemptId}`,
+    `cue-action:${attemptId}`,
     options.cueId === null
       ? null
       : JSON.stringify({
@@ -1248,6 +1462,31 @@ function insertStudyAttempt(
     }),
     appliedAt,
   );
+}
+
+function insertAcceptedNonAnchorAttempt(
+  attemptId: string,
+  rating: 'forgot' | 'good',
+): void {
+  insertStudyAttempt(attemptId);
+  sqlite.prepare(`
+    UPDATE study_attempt_events
+    SET outcome = 'correct', rating = ?, metadata_json = ?
+    WHERE id = ?
+  `).run(rating, JSON.stringify({
+    production: {
+      taskId: 'production-task:target:default_production',
+      cueId: null,
+      cueType: 'definition_gloss',
+      text: 'target',
+      acceptedWordIds: ['target', 'alternate'],
+      anchorWordId: 'target',
+      submittedText: '替代',
+      submittedWordId: 'alternate',
+      result: 'accepted_non_anchor',
+    },
+  }), attemptId);
+
 }
 
 function insertContextualSchedulerState(wordId: string, enabled: boolean): void {

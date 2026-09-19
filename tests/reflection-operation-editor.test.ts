@@ -4,6 +4,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, test } from 'node:test';
 import type {
   ProductionMistakeReflectionItemV2,
+  ReflectionItemV5,
+  PromotePureElicitationOperationV1,
   RepairProductionCueOperationV2,
 } from '../src/domain/reflection.ts';
 import { AcceptedWordChips, ReflectionOperationEditor } from '../src/features/reflection/ReflectionOperationEditor.tsx';
@@ -32,22 +34,65 @@ describe('reflection operation editor', () => {
     assert.doesNotMatch(markup, /Remove word/);
   });
 
-  test('accepted-word chips cover visible attempt words and mark the proposal set', () => {
+  test('accepted-word labels show only the fixed proposal set without editing controls', () => {
     const markup = renderToStaticMarkup(createElement(AcceptedWordChips, {
       wordOptions: [
         { wordId: 'target', hanzi: '目标', pinyin: 'mùbiāo' },
         { wordId: 'alternate', hanzi: '替代', pinyin: 'tìdài' },
       ],
       acceptedWordIds: ['target'],
-      disabled: false,
-      onChange: () => {},
     }));
 
     assert.match(markup, /目标 · mùbiāo/);
-    assert.match(markup, /替代 · tìdài/);
-    assert.match(markup, /aria-pressed="true"/);
-    assert.match(markup, /aria-pressed="false"/);
+    assert.doesNotMatch(markup, /替代 · tìdài/);
+    assert.doesNotMatch(markup, /<button|aria-pressed/);
+    assert.match(markup, /read-only/);
     assert.match(markup, /is-accepted/);
+  });
+
+  test('legacy multi-answer sets remain visible and unchanged as read-only labels', () => {
+    const acceptedWordIds = ['target', 'alternate'];
+    const markup = renderToStaticMarkup(createElement(AcceptedWordChips, {
+      wordOptions: [{ wordId: 'target', hanzi: '目标', pinyin: 'mùbiāo' }],
+      acceptedWordIds,
+    }));
+    assert.match(markup, /目标 · mùbiāo/);
+    assert.match(markup, />alternate</);
+    assert.doesNotMatch(markup, /<button|aria-pressed/);
+    assert.deepEqual(acceptedWordIds, ['target', 'alternate']);
+  });
+
+  test('shows both-word promotion scope and only evidence-backed cue choices', () => {
+    const evidence = promotionEvidence();
+    const operation: PromotePureElicitationOperationV1 = {
+      kind: 'promote_pure_elicitation',
+      version: 1,
+      sourceAttemptId: evidence.sourceAttemptId,
+      targetWordId: 'target',
+      responseWordId: 'alternate',
+      destination: { kind: 'existing', pureCueId: 'pure-1' },
+      wordPlans: [{
+        wordId: 'target',
+        deactivateCueIds: ['cue-1'],
+        distinctiveCueDrafts: [],
+      }, {
+        wordId: 'alternate',
+        deactivateCueIds: [],
+        distinctiveCueDrafts: [{ cueType: 'minimal_context', text: 'alternate-only context' }],
+      }],
+    };
+    const markup = renderToStaticMarkup(createElement(ReflectionOperationEditor, {
+      operation,
+      evidence,
+      onChange: () => {},
+    }));
+    assert.match(markup, /目标 · mùbiāo/);
+    assert.match(markup, /替代 · tìdài/);
+    assert.match(markup, /Source attempt: attempt-1/);
+    assert.match(markup, /shared axis — explicit axis/);
+    assert.match(markup, /broad target \(2 accepted\)/);
+    assert.match(markup, /alternate-only context/);
+    assert.doesNotMatch(markup, /not-in-evidence/);
   });
 });
 
@@ -114,5 +159,32 @@ function v2Evidence(): ProductionMistakeReflectionItemV2 {
       meanings: ['alternate'],
     },
     responseKind: 'matched_known_word',
+  };
+}
+
+function promotionEvidence(): ReflectionItemV5 {
+  const evidence = v2Evidence();
+  return {
+    ...evidence,
+    servedCue: { ...evidence.servedCue, acceptedWordIds: ['target', 'alternate'], supplement: null },
+    promotionEvidence: {
+      diagnosisTags: ['production_cue_overloaded'],
+      words: ['target', 'alternate'].map((wordId) => ({
+        wordId,
+        activeProductionCues: [{
+          cueId: wordId === 'target' ? 'cue-1' : 'cue-2',
+          taskId: `production-task:${wordId}:default_production`,
+          cueType: 'definition_gloss',
+          text: `broad ${wordId}`,
+          acceptedWordIds: ['target', 'alternate'],
+        }],
+      })),
+      intersectingPureCues: [{
+        id: 'pure-1',
+        stimulus: 'shared axis',
+        axisNote: 'explicit axis',
+        acceptedWordIds: ['target'],
+      }],
+    },
   };
 }

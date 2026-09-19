@@ -6,7 +6,9 @@ import type {
   ReflectionInputItemV1,
   ReflectionInputItemV2,
   ReflectionItemV3,
+  ReflectionItemV5,
   ReflectionOperation,
+  PromotePureElicitationOperationV1,
   RepairProductionCueOperationV1,
   RepairProductionCueOperationV2,
 } from '../../domain/reflection';
@@ -28,7 +30,7 @@ export function ReflectionOperationEditor({
   onChange,
 }: {
   operation: ReflectionOperation;
-  evidence?: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null;
+  evidence?: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV5 | null;
   disabled?: boolean;
   onChange?: (operation: ReflectionOperation) => void;
 }) {
@@ -160,7 +162,204 @@ export function ReflectionOperationEditor({
           </Field>
         </div>
       );
+    case 'promote_pure_elicitation':
+      return (
+        <PureElicitationPromotionEditor
+          operation={operation}
+          evidence={evidence}
+          wordOptions={wordOptions}
+          disabled={disabled}
+          dispatch={dispatch}
+        />
+      );
   }
+}
+
+function PureElicitationPromotionEditor({
+  operation,
+  evidence,
+  wordOptions,
+  disabled,
+  dispatch,
+}: {
+  operation: PromotePureElicitationOperationV1;
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV5 | null;
+  wordOptions: EvidenceWordOption[];
+  disabled: boolean;
+  dispatch: (action: ReflectionOperationDraftAction) => void;
+}) {
+  const promotionEvidence = evidence !== null && 'promotionEvidence' in evidence
+    ? evidence.promotionEvidence
+    : null;
+  const pureCues = promotionEvidence?.intersectingPureCues ?? [];
+  const wordEvidence = new Map(
+    (promotionEvidence?.words ?? []).map((word) => [word.wordId, word]),
+  );
+  const wordLabel = (wordId: string) => {
+    const option = wordOptions.find((word) => word.wordId === wordId);
+    return option === undefined ? wordId : evidenceWordSurfaceLabel(option);
+  };
+  const cueTypes = ['definition_gloss', 'minimal_context', 'circumstance'] as const;
+
+  return (
+    <div className="reflection-operation-fields">
+      <section className="reflection-analysis">
+        <h3>Promotion scope</h3>
+        <p>
+          {wordLabel(operation.targetWordId)} ↔ {wordLabel(operation.responseWordId)}
+        </p>
+        <p className="notes">Source attempt: {operation.sourceAttemptId}</p>
+      </section>
+
+      <Field label="Pure elicitation destination">
+        <select
+          value={operation.destination.kind}
+          disabled={disabled}
+          onChange={(event) => dispatch({
+            type: 'set_promotion_destination',
+            destination: event.target.value === 'existing' && pureCues[0] !== undefined
+              ? { kind: 'existing', pureCueId: pureCues[0].id }
+              : { kind: 'create', stimulus: '', axisNote: '' },
+          })}
+        >
+          <option value="create">Create new pure elicitation</option>
+          <option value="existing" disabled={pureCues.length === 0}>Extend existing pure elicitation</option>
+        </select>
+      </Field>
+      {operation.destination.kind === 'existing' ? (
+        <Field label="Existing pure elicitation">
+          <select
+            value={operation.destination.pureCueId}
+            disabled={disabled}
+            onChange={(event) => dispatch({
+              type: 'set_promotion_destination',
+              destination: { kind: 'existing', pureCueId: event.target.value },
+            })}
+          >
+            {pureCues.map((cue) => (
+              <option value={cue.id} key={cue.id}>
+                {cue.stimulus}{cue.axisNote ? ` — ${cue.axisNote}` : ''}
+              </option>
+            ))}
+          </select>
+        </Field>
+      ) : (
+        <>
+          <Field label="Shared elicitation stimulus">
+            <textarea
+              value={operation.destination.stimulus}
+              disabled={disabled}
+              onChange={(event) => dispatch({
+                type: 'set_promotion_destination',
+                destination: {
+                  kind: 'create',
+                  stimulus: event.target.value,
+                  axisNote: operation.destination.kind === 'create'
+                    ? operation.destination.axisNote
+                    : '',
+                },
+              })}
+            />
+          </Field>
+          <Field label="Semantic axis note">
+            <textarea
+              value={operation.destination.axisNote}
+              disabled={disabled}
+              onChange={(event) => dispatch({
+                type: 'set_promotion_destination',
+                destination: {
+                  kind: 'create',
+                  stimulus: operation.destination.kind === 'create'
+                    ? operation.destination.stimulus
+                    : '',
+                  axisNote: event.target.value,
+                },
+              })}
+            />
+          </Field>
+        </>
+      )}
+
+      {operation.wordPlans.map((plan) => {
+        const activeCues = wordEvidence.get(plan.wordId)?.activeProductionCues ?? [];
+        return (
+          <section className="reflection-info-list" key={plan.wordId}>
+            <h3>{wordLabel(plan.wordId)}</h3>
+            <strong>Deactivate broad word-owned cues</strong>
+            {activeCues.length === 0 ? <p className="notes">No active cues in the saved evidence.</p> : (
+              activeCues.map((cue) => (
+                <label key={cue.cueId}>
+                  <input
+                    type="checkbox"
+                    checked={plan.deactivateCueIds.includes(cue.cueId)}
+                    disabled={disabled}
+                    onChange={() => dispatch({
+                      type: 'toggle_promotion_deactivation',
+                      wordId: plan.wordId,
+                      cueId: cue.cueId,
+                    })}
+                  />{' '}
+                  {cue.text} ({cue.acceptedWordIds.length} accepted)
+                </label>
+              ))
+            )}
+            <EditorCollection
+              title="Distinctive single-word cues"
+              addLabel="Add distinctive cue"
+              disabled={disabled}
+              onAdd={() => dispatch({ type: 'add_promotion_distinctive_cue', wordId: plan.wordId })}
+            >
+              {plan.distinctiveCueDrafts.map((draft, index) => (
+                <div className="reflection-editor-row" key={`${plan.wordId}-draft-${index}`}>
+                  <Field label={`Cue ${index + 1} type`}>
+                    <select
+                      value={draft.cueType}
+                      disabled={disabled}
+                      onChange={(event) => dispatch({
+                        type: 'update_promotion_distinctive_cue',
+                        wordId: plan.wordId,
+                        index,
+                        patch: { cueType: event.target.value as typeof cueTypes[number] },
+                      })}
+                    >
+                      {cueTypes.map((cueType) => (
+                        <option value={cueType} key={cueType}>{humanize(cueType)}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Cue text">
+                    <textarea
+                      value={draft.text}
+                      disabled={disabled}
+                      onChange={(event) => dispatch({
+                        type: 'update_promotion_distinctive_cue',
+                        wordId: plan.wordId,
+                        index,
+                        patch: { text: event.target.value },
+                      })}
+                    />
+                  </Field>
+                  {!disabled ? (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => dispatch({
+                        type: 'remove_promotion_distinctive_cue',
+                        wordId: plan.wordId,
+                        index,
+                      })}
+                    >
+                      Remove cue
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </EditorCollection>
+          </section>
+        );
+      })}
+    </div>
+  );
 }
 
 function ProductionCueEditorV2({
@@ -415,8 +614,6 @@ function ProductionCueDraftFields({
       <AcceptedWordChips
         wordOptions={wordOptions}
         acceptedWordIds={draft.acceptedWordIds}
-        disabled={disabled}
-        onChange={(acceptedWordIds) => onPatch({ acceptedWordIds })}
       />
     </div>
   );
@@ -425,25 +622,20 @@ function ProductionCueDraftFields({
 export function AcceptedWordChips({
   wordOptions,
   acceptedWordIds,
-  disabled,
-  onChange,
 }: {
   wordOptions: EvidenceWordOption[];
   acceptedWordIds: string[];
-  disabled: boolean;
-  onChange: (acceptedWordIds: string[]) => void;
 }) {
-  const selected = new Set(acceptedWordIds);
-  const extraOptions = acceptedWordIds
-    .filter((wordId) => !wordOptions.some((option) => option.wordId === wordId))
-    .map((wordId) => ({ wordId, hanzi: wordId, pinyin: '' }));
-  const chips = [...wordOptions, ...extraOptions];
+  const chips = acceptedWordIds.map((wordId) => (
+    wordOptions.find((option) => option.wordId === wordId)
+      ?? { wordId, hanzi: wordId, pinyin: '' }
+  ));
 
   if (chips.length === 0) {
     return (
       <div className="reflection-accepted-words">
         <span className="reflection-accepted-words-label">Accepted</span>
-        <p className="notes">No visible words on this attempt.</p>
+        <p className="notes">No accepted answers.</p>
       </div>
     );
   }
@@ -451,32 +643,15 @@ export function AcceptedWordChips({
   return (
     <div className="reflection-accepted-words">
       <span className="reflection-accepted-words-label">Accepted</span>
-      <div className="reflection-accepted-word-chips" role="group" aria-label="Accepted words">
-        {chips.map((option) => {
-          const isAccepted = selected.has(option.wordId);
-          return (
-            <button
-              type="button"
+      <div className="reflection-accepted-word-chips" aria-label="Accepted words (read-only)">
+        {chips.map((option) => (
+            <span
               key={option.wordId}
-              className={
-                isAccepted
-                  ? 'reflection-accepted-word-chip is-accepted'
-                  : 'reflection-accepted-word-chip'
-              }
-              disabled={disabled}
-              aria-pressed={isAccepted}
-              onClick={() => {
-                onChange(
-                  isAccepted
-                    ? acceptedWordIds.filter((wordId) => wordId !== option.wordId)
-                    : [...acceptedWordIds, option.wordId],
-                );
-              }}
+              className="reflection-accepted-word-chip is-accepted"
             >
-              {evidenceWordSurfaceLabel(option)}
-            </button>
-          );
-        })}
+              {option.pinyin.trim() ? evidenceWordSurfaceLabel(option) : option.hanzi}
+            </span>
+        ))}
       </div>
     </div>
   );
