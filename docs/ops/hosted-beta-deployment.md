@@ -6,6 +6,12 @@ driving one. They use the same release command and release gates; the latter
 additionally defines how to observe a long-running local terminal process
 safely.
 
+Release candidates should first pass the separate restore-backed Fly RC and
+manual acceptance procedure in the
+[hosted release-candidate runbook](hosted-release-candidate.md). For an
+application-only beta release, that flow can promote the exact tested image by
+digest instead of rebuilding it.
+
 The service is one 1 GB Fly Machine in `sin`, one encrypted Fly Volume at
 `/data`, Clerk authentication, and Litestream replication to a private,
 versioned S3 bucket. The application container serves both the API and the
@@ -145,12 +151,16 @@ npm run hosted:upgrade -- \
   --app=<app-name> \
   --actor-id=<operator> \
   --confirm-source-revision=<full-40-character-sha> \
-  --confirm-eligible-release=true
+  --confirm-eligible-release=true \
+  --image=registry.fly.io/<rc-app>@sha256:<tested-digest>
 ```
 
 `--confirm-source-revision` must match `HEAD`. Image-source paths must be
-clean. The command supplies `APP_REVISION` as a Docker build arg, so a manual
-`fly deploy` without that arg will fail closed.
+clean. When `--image` is present it must be an immutable, digest-qualified Fly
+image and the runner confirms that exact digest is serving. Omit `--image` to
+retain the prior behavior: the command supplies `APP_REVISION` as a Docker
+build arg and builds remotely. A manual `fly deploy` without that build arg
+will fail closed.
 
 `hosted:inspect` reports the baked app version and source revision. Public
 `/healthz` stays a small health endpoint.

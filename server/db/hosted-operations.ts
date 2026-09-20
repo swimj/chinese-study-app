@@ -26,6 +26,7 @@ export type HostedRestoreValidation = {
   sharedWordCount: number;
   contentImportCount: number;
   schemaMigrationCount: number;
+  sentinelCount: number;
   sentinelPresent: boolean;
 };
 
@@ -396,7 +397,10 @@ export function getHostedOperationalDiagnostics(): {
   };
 }
 
-export function validateHostedRestore(expectedSentinelId: string): HostedRestoreValidation {
+export function validateHostedRestore(
+  expectedSentinelId?: string,
+  minimumSentinels = expectedSentinelId ? 0 : 1,
+): HostedRestoreValidation {
   const integrityRows = getDb().prepare('PRAGMA integrity_check').all() as Array<{ integrity_check: string }>;
   if (integrityRows.length !== 1 || integrityRows[0]?.integrity_check !== 'ok') {
     throw new Error('Restored database failed SQLite integrity_check.');
@@ -405,8 +409,18 @@ export function validateHostedRestore(expectedSentinelId: string): HostedRestore
   if (counts.sharedWordCount === 0) {
     throw new Error('Restored database has no shared Mandarin content.');
   }
-  const sentinelPresent = hasDeploymentSentinel(expectedSentinelId);
-  if (!sentinelPresent) throw new Error(`Restored database is missing sentinel "${expectedSentinelId}".`);
+  if (!Number.isInteger(minimumSentinels) || minimumSentinels < 0) {
+    throw new Error('Minimum sentinel count must be a non-negative integer.');
+  }
+  const sentinelPresent = expectedSentinelId ? hasDeploymentSentinel(expectedSentinelId) : false;
+  if (expectedSentinelId && !sentinelPresent) {
+    throw new Error(`Restored database is missing sentinel "${expectedSentinelId}".`);
+  }
+  if (counts.sentinelCount < minimumSentinels) {
+    throw new Error(
+      `Restored database has ${counts.sentinelCount} deployment sentinels; expected at least ${minimumSentinels}.`,
+    );
+  }
   return {
     integrityCheck: 'ok',
     journalMode: readJournalMode(),
@@ -415,6 +429,7 @@ export function validateHostedRestore(expectedSentinelId: string): HostedRestore
     sharedWordCount: counts.sharedWordCount,
     contentImportCount: counts.contentImportCount,
     schemaMigrationCount: counts.schemaMigrationCount,
+    sentinelCount: counts.sentinelCount,
     sentinelPresent,
   };
 }
