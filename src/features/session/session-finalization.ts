@@ -23,6 +23,10 @@ export type SessionFinalizationState =
 
 export type SessionLeavePhase = 'active' | 'draining' | 'completed' | null;
 
+export function isSessionReflectionGenerating(state: SessionFinalizationState): boolean {
+  return state.kind === 'finalized' && state.reflection.kind === 'generating';
+}
+
 export function sessionHidesAppChrome({
   sessionStarted,
   sessionPhase,

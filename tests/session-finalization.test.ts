@@ -8,6 +8,7 @@ import {
   failSessionReflectionGeneration,
   finalizeSessionBeforeReflection,
   isCurrentSessionReflectionRequest,
+  isSessionReflectionGenerating,
   resetFailedSessionFinalization,
   retrySessionReflectionGeneration,
   runExclusiveAsync,
@@ -26,6 +27,7 @@ describe('completed-session finalization', () => {
       kind: 'finalized',
       reflection: { kind: 'generating' },
     });
+    assert.equal(isSessionReflectionGenerating(finalized), true);
 
     const failed = failSessionReflectionGeneration(finalized, 'Provider unavailable');
     assert.deepEqual(failed, {
@@ -52,6 +54,7 @@ describe('completed-session finalization', () => {
         status: 'created',
       },
     });
+    assert.equal(isSessionReflectionGenerating(succeeded), false);
   });
 
   test('marks a finalized session with no qualifying evidence as skipped', () => {

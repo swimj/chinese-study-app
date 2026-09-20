@@ -28,7 +28,10 @@ import { MyWordsPage } from './pages/MyWordsPage';
 import { useMyWordsController } from './features/words/useMyWordsController';
 import { PersonalNotesEditorOverlay } from './features/session/PersonalNotesEditorOverlay';
 import { useStudySession } from './features/session/useStudySession';
-import { sessionHidesAppChrome } from './features/session/session-finalization';
+import {
+  isSessionReflectionGenerating,
+  sessionHidesAppChrome,
+} from './features/session/session-finalization';
 import { usePriorityPageController } from './features/priority/usePriorityPageController';
 import { HomePage } from './pages/HomePage';
 import { PriorityPage } from './pages/PriorityPage';
@@ -252,6 +255,11 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
       contentPageLoading={contentPage.isLoading}
       reflectionUnseenCount={attention.reflectionUnseenCount}
       hasUnseenReflectionFailure={attention.hasUnseenReflectionFailure}
+      reflectionGenerating={
+        isSessionReflectionGenerating(studySession.homePageProps.sessionFinalization)
+        || reflectionPage.generationRetryStatus?.state === 'generating'
+        || reflectionPage.deferredSecondOpinionStatus === 'generating'
+      }
       aboutUnseenCount={attention.whatsNewUnseenCount}
       onOpenHomePage={() => setCurrentPage('home')}
       onOpenPriorityPage={() => void leaveCompletedSessionThen(() => priorityPage.openPage())}
