@@ -37,6 +37,7 @@ export function AppChrome({
   contentPageLoading,
   reflectionUnseenCount = 0,
   hasUnseenReflectionFailure = false,
+  reflectionGenerating = false,
   aboutUnseenCount = 0,
   children,
   onOpenHomePage,
@@ -56,6 +57,7 @@ export function AppChrome({
   contentPageLoading: boolean;
   reflectionUnseenCount?: number;
   hasUnseenReflectionFailure?: boolean;
+  reflectionGenerating?: boolean;
   aboutUnseenCount?: number;
   children: ReactNode;
   onOpenHomePage: () => void;
@@ -115,6 +117,7 @@ export function AppChrome({
                     tabActive: active,
                     unseenCount: reflectionUnseenCount,
                     hasUnseenFailure: hasUnseenReflectionFailure,
+                    isGenerating: reflectionGenerating,
                   })
                 : page.key === 'about' && aboutUnseenCount > 0
                   ? { kind: 'count' as const, count: aboutUnseenCount }
@@ -128,9 +131,11 @@ export function AppChrome({
                   aria-label={
                     badge.kind === 'failure'
                       ? `${page.label}, generation failed`
-                      : badge.kind === 'count'
-                        ? `${page.label}, ${badge.count} new`
-                        : undefined
+                      : badge.kind === 'generating'
+                        ? `${page.label}, generating`
+                        : badge.kind === 'count'
+                          ? `${page.label}, ${badge.count} new`
+                          : undefined
                   }
                   onClick={openers[page.key]}
                   disabled={navigationLoading}
@@ -138,6 +143,9 @@ export function AppChrome({
                   <span>{label}</span>
                   {badge.kind === 'count' ? (
                     <span className="nav-tab-count">{badge.count}</span>
+                  ) : null}
+                  {badge.kind === 'generating' ? (
+                    <span className="nav-tab-generating" aria-hidden="true" />
                   ) : null}
                   {badge.kind === 'failure' ? (
                     <span className="nav-tab-alert" aria-hidden="true">!</span>

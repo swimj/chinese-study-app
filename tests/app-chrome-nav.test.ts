@@ -14,6 +14,7 @@ function renderChrome(
     sessionActive?: boolean;
     reflectionUnseenCount?: number;
     hasUnseenReflectionFailure?: boolean;
+    reflectionGenerating?: boolean;
   } = {},
 ) {
   return renderToStaticMarkup(createElement(AppChrome, {
@@ -26,6 +27,7 @@ function renderChrome(
     contentPageLoading: false,
     reflectionUnseenCount: extras.reflectionUnseenCount ?? 0,
     hasUnseenReflectionFailure: extras.hasUnseenReflectionFailure ?? false,
+    reflectionGenerating: extras.reflectionGenerating ?? false,
     onOpenHomePage: noop,
     onOpenPriorityPage: noop,
     onOpenReflectionsPage: noop,
@@ -139,5 +141,32 @@ describe('AppChrome primary navigation', () => {
     assert.doesNotMatch(reflections, /nav-tab-alert/);
     assert.doesNotMatch(reflections, /generation failed/);
     assert.doesNotMatch(reflections, /nav-tab-count/);
+  });
+
+  test('shows a generating spinner instead of the count, behind a failure marker, and hides it on Reflections', () => {
+    const home = renderChrome('home', null, {
+      reflectionUnseenCount: 4,
+      reflectionGenerating: true,
+    });
+    assert.match(home, /aria-label="Reflections, generating"/);
+    assert.match(home, /class="nav-tab-generating"/);
+    assert.doesNotMatch(home, /nav-tab-count/);
+    assert.doesNotMatch(home, /nav-tab-alert/);
+
+    const failed = renderChrome('home', null, {
+      reflectionUnseenCount: 4,
+      reflectionGenerating: true,
+      hasUnseenReflectionFailure: true,
+    });
+    assert.match(failed, /aria-label="Reflections, generation failed"/);
+    assert.match(failed, /class="nav-tab-alert"/);
+    assert.doesNotMatch(failed, /nav-tab-generating/);
+
+    const reflections = renderChrome('reflections', null, {
+      reflectionUnseenCount: 4,
+      reflectionGenerating: true,
+    });
+    assert.doesNotMatch(reflections, /nav-tab-generating/);
+    assert.doesNotMatch(reflections, /Reflections, generating/);
   });
 });

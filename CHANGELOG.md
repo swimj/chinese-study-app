@@ -2,6 +2,13 @@
 
 Casual notes for people using the app before there is a real release process.
 
+## Unreleased — Reflections generating spinner
+
+- After a session starts reflection, or while a retry or second opinion is
+  running in this tab, Reflections shows a spinner instead of the Help count.
+  An unseen failed run still takes priority. The spinner is same-tab only and
+  hides on the Reflections page like the other badges.
+
 ## Unreleased — GLM-5.3 Flash reflection arm
 
 - The Z.AI comparison arm now uses GLM-5.3 Flash at reasoning max instead of

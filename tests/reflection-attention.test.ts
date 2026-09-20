@@ -10,29 +10,84 @@ import {
 describe('reflection attention badges', () => {
   test('hides the nav count while the Reflections tab is current', () => {
     assert.deepEqual(
-      reflectionNavBadge({ tabActive: true, unseenCount: 3, hasUnseenFailure: false }),
+      reflectionNavBadge({
+        tabActive: true,
+        unseenCount: 3,
+        hasUnseenFailure: false,
+        isGenerating: false,
+      }),
       { kind: 'none' },
     );
   });
 
   test('shows the unseen Help count only while Reflections is not current', () => {
     assert.deepEqual(
-      reflectionNavBadge({ tabActive: false, unseenCount: 3, hasUnseenFailure: false }),
+      reflectionNavBadge({
+        tabActive: false,
+        unseenCount: 3,
+        hasUnseenFailure: false,
+        isGenerating: false,
+      }),
       { kind: 'count', count: 3 },
     );
     assert.deepEqual(
-      reflectionNavBadge({ tabActive: false, unseenCount: 0, hasUnseenFailure: false }),
+      reflectionNavBadge({
+        tabActive: false,
+        unseenCount: 0,
+        hasUnseenFailure: false,
+        isGenerating: false,
+      }),
       { kind: 'none' },
     );
   });
 
   test('gives a failed run priority over the Help count and hides both while the tab is current', () => {
     assert.deepEqual(
-      reflectionNavBadge({ tabActive: false, unseenCount: 2, hasUnseenFailure: true }),
+      reflectionNavBadge({
+        tabActive: false,
+        unseenCount: 2,
+        hasUnseenFailure: true,
+        isGenerating: false,
+      }),
       { kind: 'failure' },
     );
     assert.deepEqual(
-      reflectionNavBadge({ tabActive: true, unseenCount: 2, hasUnseenFailure: true }),
+      reflectionNavBadge({
+        tabActive: true,
+        unseenCount: 2,
+        hasUnseenFailure: true,
+        isGenerating: false,
+      }),
+      { kind: 'none' },
+    );
+  });
+
+  test('shows a generating spinner over the Help count, behind an unseen failure, and hides it on the current tab', () => {
+    assert.deepEqual(
+      reflectionNavBadge({
+        tabActive: false,
+        unseenCount: 3,
+        hasUnseenFailure: false,
+        isGenerating: true,
+      }),
+      { kind: 'generating' },
+    );
+    assert.deepEqual(
+      reflectionNavBadge({
+        tabActive: false,
+        unseenCount: 3,
+        hasUnseenFailure: true,
+        isGenerating: true,
+      }),
+      { kind: 'failure' },
+    );
+    assert.deepEqual(
+      reflectionNavBadge({
+        tabActive: true,
+        unseenCount: 3,
+        hasUnseenFailure: false,
+        isGenerating: true,
+      }),
       { kind: 'none' },
     );
   });
