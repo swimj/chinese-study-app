@@ -202,7 +202,7 @@ describe('production Luna reflection provider', () => {
     assert.equal(request.headers.get('authorization'), 'Bearer unit-test-zai-secret');
     assert.equal(request.body.model, 'glm-5.3-flash');
     assert.equal(request.body.reasoning_effort, 'max');
-    assert.equal(request.body.max_tokens, 50_000);
+    assert.equal(request.body.max_tokens, 200_000);
     assert.deepEqual(request.body.response_format, { type: 'json_object' });
     assert.equal(generated.metadata.provider, 'zai');
     assert.equal(generated.metadata.modelConfig, 'glm-5.3-flash-max');
@@ -223,7 +223,7 @@ describe('production Luna reflection provider', () => {
     assert.equal(request.url, 'https://api.z.ai/api/paas/v4/chat/completions');
     assert.equal(request.body.model, 'glm-5.3-flash');
     assert.equal(request.body.reasoning_effort, 'high');
-    assert.equal(request.body.max_tokens, 50_000);
+    assert.equal(request.body.max_tokens, 200_000);
     assert.deepEqual(request.body.response_format, { type: 'json_object' });
     assert.equal(generated.metadata.provider, 'zai');
     assert.equal(generated.metadata.modelConfig, 'glm-5.3-flash-high');

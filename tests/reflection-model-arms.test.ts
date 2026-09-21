@@ -61,9 +61,17 @@ describe('reflection comparison-arm registry', () => {
     assert.equal(GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG.timeoutMs, PROVIDER_REQUEST_TIMEOUT_MS);
     assert.equal(GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG.reasoningEffort, 'high');
     assert.equal(GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG.providerModel, 'glm-5.3-flash');
+    assert.equal(GLM_REFLECTION_MODEL_CONFIG.maxOutputTokens, 200_000);
+    assert.equal(GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG.maxOutputTokens, 200_000);
+    assert.equal(LUNA_REFLECTION_MODEL_CONFIG.maxOutputTokens, 50_000);
     for (const arm of REFLECTION_MODEL_ARMS) {
       if (arm.config === null) continue;
       assert.equal(arm.config.timeoutMs, PROVIDER_REQUEST_TIMEOUT_MS, arm.choice);
+      assert.equal(
+        arm.config.maxOutputTokens,
+        arm.choice.startsWith('zai:') ? 200_000 : 50_000,
+        arm.choice,
+      );
     }
   });
 

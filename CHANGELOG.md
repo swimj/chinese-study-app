@@ -8,6 +8,8 @@ Casual notes for people using the app before there is a real release process.
   alongside Luna, GLM-5.3 Flash max, and Terra. It uses the same Z.AI Flash
   model and pricing as the max arm; the stored model id keeps the two
   reasoning profiles distinct.
+- Both GLM-5.3 Flash reasoning arms allow 200,000 output tokens, including
+  reasoning, instead of the 50,000 cap used by the other models.
 
 ## Unreleased — Reflections generating spinner
 
