@@ -32,8 +32,9 @@ LITESTREAM_ACCESS_KEY_ID
 LITESTREAM_SECRET_ACCESS_KEY
 ```
 
-The two OpenAI arms use `OPENAI_API_KEY`, GLM uses `ZAI_API_KEY`, and Gemini
-uses `OPENROUTER_API_KEY`. Hosted provider calls are direct. Do not enable
+The two OpenAI arms use `OPENAI_API_KEY`, both GLM-5.3 Flash arms use
+`ZAI_API_KEY`, and Gemini uses `OPENROUTER_API_KEY`. Hosted provider calls are
+direct. Do not enable
 `APP_USE_LOCAL_PROVIDER_PROXY`; that switch exists only for local dogfood.
 
 The Clerk development instance remains invite-only. The Fly origin must stay

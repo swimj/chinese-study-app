@@ -1,4 +1,5 @@
 import { PROVIDER_REQUEST_TIMEOUT_MS } from '../llm/types.ts';
+import { GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG } from './glm-provider.ts';
 import type { ReflectionProviderConfig } from './luna-provider.ts';
 
 /**
@@ -35,6 +36,13 @@ export const REFLECTION_MODEL_ARMS = [
     enabledByDefault: true,
     dogfoodSelectionWeight: 1,
     config: null,
+  },
+  {
+    choice: 'zai:glm-5.3-flash-high',
+    label: 'GLM-5.3 Flash high',
+    enabledByDefault: true,
+    dogfoodSelectionWeight: 1,
+    config: GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG satisfies ReflectionProviderConfig,
   },
   {
     choice: 'openrouter:gemini-3.6-flash',

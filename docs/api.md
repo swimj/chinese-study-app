@@ -399,8 +399,9 @@ whose session/flow does not already have a successful artifact.
 
 ### Comparison arms
 
-The reflection service has a backend-only comparison-arm registry. Luna, GLM,
-and GPT-5.6 Terra are sampled with equal probability for initial generation.
+The reflection service has a backend-only comparison-arm registry. Luna,
+GLM-5.3 Flash max, GLM-5.3 Flash high, and GPT-5.6 Terra are sampled with equal
+probability for initial generation.
 Gemini 3.6 Flash remains registered so it can be re-offered later, but it is
 not in the default candidate pool or learner-facing pickers. Once that learner's
 UTC-day estimated spend surpasses $0.50, unselected initial generation uses only

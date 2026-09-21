@@ -16,7 +16,9 @@ import {
   LunaReflectionProviderError,
 } from '../server/reflection/luna-provider.js';
 import {
+  createGlmFlashHighReflectionProvider,
   createGlmReflectionProvider,
+  GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG,
   GLM_REFLECTION_MODEL_CONFIG,
 } from '../server/reflection/glm-provider.js';
 import { PROVIDER_REQUEST_TIMEOUT_MS, type JsonValue } from '../server/llm/types.js';
@@ -205,6 +207,27 @@ describe('production Luna reflection provider', () => {
     assert.equal(generated.metadata.provider, 'zai');
     assert.equal(generated.metadata.modelConfig, 'glm-5.3-flash-max');
     assert.equal(GLM_REFLECTION_MODEL_CONFIG.timeoutMs, PROVIDER_REQUEST_TIMEOUT_MS);
+  });
+
+  test('uses Z.AI JSON-object transport for GLM-5.3 Flash high', async () => {
+    const capture: CapturedRequest[] = [];
+    const provider = createGlmFlashHighReflectionProvider({
+      environment: { ZAI_API_KEY: 'unit-test-zai-secret' },
+      systemPrompt: 'Production reflection system prompt.',
+      fetchImplementation: capturingFetch(responseEnvelope(JSON.stringify(validWireResult)), capture),
+    });
+
+    const generated = await provider.generate(bundle);
+
+    const request = capture[0]!;
+    assert.equal(request.url, 'https://api.z.ai/api/paas/v4/chat/completions');
+    assert.equal(request.body.model, 'glm-5.3-flash');
+    assert.equal(request.body.reasoning_effort, 'high');
+    assert.equal(request.body.max_tokens, 50_000);
+    assert.deepEqual(request.body.response_format, { type: 'json_object' });
+    assert.equal(generated.metadata.provider, 'zai');
+    assert.equal(generated.metadata.modelConfig, 'glm-5.3-flash-high');
+    assert.equal(GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG.timeoutMs, PROVIDER_REQUEST_TIMEOUT_MS);
   });
 
   test('sends the exact model, reasoning, auth, prompt, and strict V7 wire schema request', async () => {
