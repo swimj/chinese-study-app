@@ -19,6 +19,11 @@ Canonical specs and the stability frontier still describe current behavior.
 Technical design (generation timing, persistence, session actions, reflection
 wiring) is deliberately deferred until the teaching experience is agreed.
 
+**Revision (2026-09-22):** §§3–4 describe an earlier teach-then-test sequence
+that still opens on the word. §10 supersedes that sequence. The ingredients
+(sense, situation, example, construction, neighbor) still matter; the entry
+order, the learning-state role, and the content model do not.
+
 ---
 
 ## 1. Problem (restated)
@@ -296,8 +301,9 @@ review card.
 
 Not technical blockers — product taste to settle before build talk:
 
-1. **Minimum viable intro:** is circumstance + one example enough, or is a
-   construction/collocation hint part of the default template?
+1. **Minimum viable intro:** superseded in spirit by §10. The first beat is an
+   unresolved situation plus its resolution. Which further slices ship on day
+   one versus during learning is the remaining question (§10.4).
 2. **Multi-sense words:** always one sense at introduction, with later senses
    as explicit expansions — confirm.
 3. **Near-neighbor at intro:** default off, or default on when a known
@@ -305,9 +311,9 @@ Not technical blockers — product taste to settle before build talk:
 4. **Re-show vs one-shot:** after the first session, is introduction content
    still available on demand (word detail / optional peek), or only at first
    encounter?
-5. **Learning-state words:** today's learning path skips intro entirely —
-   should returning learning words still get a short "remind me of the use"
-   peek, or only unstudied first encounter?
+5. **Learning-state words:** in scope, not a peek. §10 treats learning as the
+   staging window for further manifestations of the same base content. The
+   open part is which slices wait until then.
 6. **Diet vs stash provenance:** does teacher density differ for curated diet
    words vs learner-stashed words, or is the content template the same?
 
@@ -338,3 +344,151 @@ living example, optional construction hint, optional cheap neighbor note —
 then asks for recall. The app's first encounter should feel like that, rather
 than like a dictionary row that only grows a soul after review-production
 reflection.
+
+§10 revises the *order* and the *scope*: open on a situation, resolve into the
+word, and stage further enrichment across learning. Treat §9 as the problem
+claim and §10 as the current experience direction.
+
+---
+
+## 10. Revision: one content, many manifestations; situation first
+
+Captured 2026-09-22 from continued brainstorm. Still gathering; not a locked
+experience spec. The ambition is intentional: design new and learning together
+so the acquisition arc stays coherent, rather than shipping a richer intro card
+that leaves learning as thinner gloss recall.
+
+### 10.1 Content model claim
+
+Think of this as a remodeling of content, not a new card type bolted onto
+unstudied.
+
+There is a **base content** for a word's introduction (and later, for further
+enrichment of that word): situation, example, definition, explanation of the
+context, and whatever further notes earn a place. That base is authored once.
+
+The learner never sees "the base." They see a **manifestation**: a particular
+slice, order, and job for that same material. The same situation can cold-open
+a first encounter, reappear as the thing a learning-day card asks you to
+recall, and later sit behind a compact review cue as a usage note. The same
+example can be the unresolved Chinese sentence on day one and a post-reveal
+illustration after the word is known.
+
+Why this framing matters:
+
+- Intro gloss, production cue, and review supplement stop being three drifting
+  writeups of the same idea.
+- Reflection stays a way to **add or repair** base content (especially from
+  discovered confusions). It stops being the only door through which usage
+  content is allowed to exist.
+- New and learning are different manifestations and different moments in an
+  arc, not different content systems.
+
+Review elicitation can stay lean. The richness lives in the base and in which
+manifestation the moment calls for.
+
+### 10.2 Situation-first cold open
+
+Do not start the word as a word.
+
+Start it as a **situation**, dropped in unresolved. Two obvious manifestations
+of that opening, drawn from the same base:
+
+| Cold open | What the learner meets first | What it asks of them |
+| --- | --- | --- |
+| **English scenario** | A communicative situation in English, with no hanzi title and no gloss | Imagine the need. Predict what kind of word would fill it. |
+| **Chinese example** | A full example sentence in Chinese, not a labeled headword | Meet language in use. Notice the unknown piece inside a real sentence. |
+
+Slightly disruptive on purpose. The unresolved drop is meant to wake prediction
+and attention before the label arrives. A dictionary card lets the learner
+passively store a string. A cold situation gives them a question.
+
+Then **resolve** the situation:
+
+- name the word (hanzi, pinyin)
+- give the definition and/or an explanation of *why this context uses this word*
+- the explanation is about the situation just seen, not an encyclopedic entry
+
+Only after that resolution does **further initial enrichment** show up, and
+only as appropriate: construction/collocation groove, a second angle on the
+same sense, a cheap near-neighbor note. Not a dump of every available note.
+
+```text
+Cold open (ungraded, unresolved)
+  English scenario  and/or  Chinese example sentence
+        |
+        v
+Resolve (ungraded)
+  the word, in this context
+  definition and/or explanation of why this situation uses it
+        |
+        v
+Further enrichment (staged; see §10.3)
+  only what helps this sense land
+        |
+        v
+Recall manifestations
+  recognition / production against a compact cue
+  the situation remains available as the meaning of the cue
+```
+
+The earlier beats in §3 are still the raw ingredients. The sequence change is
+the point: form and definition are the **answer** to the situation, not the
+title of the card.
+
+### 10.3 Stage enrichment across learning
+
+New and learning should be redesigned together.
+
+Today, learning skips introduction and repeats thinner recall. Under this
+direction, learning is where the **rest of the base content is allowed to
+arrive**, and where manifestations shift from "show" toward "use."
+
+Possible shape (illustrative, not a schedule):
+
+| Moment | Manifestation | Job |
+| --- | --- | --- |
+| First unstudied encounter | Cold situation → resolve into the word | Get a live question, then the answer |
+| Same session, after resolve | Compact recognition / production | Bind form to the situation just explained |
+| Later learning sessions | A further slice: construction, second example, neighbor note, or a re-shown situation used as the prompt | Enrich without repeating the whole lesson |
+| Learning recall | Production or recognition whose prompt is a manifestation of known base content | Test against something the learner has actually been shown |
+| Review | Lean elicitation cue | Protect the trace; reflection repairs or extends the base when evidence says so |
+
+Not every enrichment beat belongs on the first card. Some of it can wait until
+a learning session, when the form is no longer brand new and a collocation or
+neighbor note has something to attach to. Staging is a teaching choice: attention
+on day one stays on one situation and its resolution.
+
+Learning therefore changes job, not only density. It is the acquisition window
+for manifestations of the same content, not a second copy of unstudied drills
+with the intro removed.
+
+### 10.4 What this does not decide yet
+
+Still gathering. These stay open on purpose:
+
+- Which cold open is the default, and whether the two entry forms alternate,
+  sequence inside one encounter, or depend on the word.
+- How much of the Chinese sentence must already be readable for that cold open
+  to activate rather than overwhelm.
+- Which enrichment slices are first-encounter versus learning-session material.
+- Whether a learning session without new enrichment is still just recall, or
+  whether every learning appearance should manifest *some* unused slice until
+  the base planned for acquisition is exhausted.
+- Whether "situation" is only a presentation of word-owned content, or eventually
+  a more first-class object. Do not collapse this into the pure-cue elicitation
+  memo: that memo is about judgment and scheduling when one cue cannot pick a
+  single word. This section is about how introduction content is entered and
+  revealed.
+
+### 10.5 Coherence over a thin first slice
+
+The intended product is the whole arc: situation-first entry, resolution,
+staged enrichment through learning, lean review cues drawn from the same base,
+reflection as repair and extension.
+
+A first implementation can still be smaller. It should be a slice of this arc,
+not a different product (for example, a longer dictionary intro that still
+opens on the headword and still leaves learning untouched). Prefer a clear
+vision of the manifestations over a sequence of locally coherent cards that
+never share a content model.
