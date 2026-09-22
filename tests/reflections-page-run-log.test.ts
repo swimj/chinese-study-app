@@ -185,6 +185,7 @@ describe('reflection run log presentation', () => {
     assert.match(markup, /value="openai:gpt-5.6-luna-high"/);
     assert.doesNotMatch(markup, /value="openai:gpt-5.6-luna-high" disabled=""/);
     assert.match(markup, /value="zai:glm-5.3-flash-max" disabled=""/);
+    assert.match(markup, /value="zai:glm-5.3-flash-high" disabled=""/);
     assert.match(markup, /value="openai:gpt-5.6-terra-high" disabled=""/);
   });
 

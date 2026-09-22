@@ -583,11 +583,12 @@ describe('initial reflection generation orchestration', () => {
       provider: makeArm('luna'),
       glmProvider: makeArm('glm'),
       comparisonProviders: {
+        'zai:glm-5.3-flash-high': makeArm('glm-high'),
         'openrouter:gemini-3.6-flash': makeArm('gemini'),
         'openai:gpt-5.6-terra-high': makeArm('terra'),
       },
       random: () => {
-        const values = [0, 0.4, 0.8];
+        const values = [0, 0.3, 0.6, 0.9];
         return values[randomCalls++]!;
       },
       materializeArtifact: () => ({
@@ -597,10 +598,10 @@ describe('initial reflection generation orchestration', () => {
       recordRun: () => {},
     });
 
-    for (let index = 0; index < 3; index += 1) {
+    for (let index = 0; index < 4; index += 1) {
       await service.generate(`session-${index}`, {});
     }
-    assert.deepEqual(selected, ['luna', 'glm', 'terra']);
+    assert.deepEqual(selected, ['luna', 'glm', 'glm-high', 'terra']);
   });
 
   test('still routes an explicit request to a registered arm that is not offered by default', async () => {

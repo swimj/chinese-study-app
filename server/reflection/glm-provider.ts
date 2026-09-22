@@ -5,12 +5,10 @@ import {
   type LunaReflectionProviderOptions,
 } from './luna-provider.ts';
 
-export const GLM_REFLECTION_MODEL_CONFIG = {
+const GLM_FLASH_TRANSPORT = {
   provider: 'zai',
-  modelConfig: 'glm-5.3-flash-max',
   providerModel: 'glm-5.3-flash',
-  reasoningEffort: 'max',
-  maxOutputTokens: 50_000,
+  maxOutputTokens: 200_000,
   timeoutMs: PROVIDER_REQUEST_TIMEOUT_MS,
   promptVersion: 'reflection-v9',
   defaultBaseUrl: 'https://api.z.ai/api/paas/v4',
@@ -19,8 +17,26 @@ export const GLM_REFLECTION_MODEL_CONFIG = {
   maxTokensField: 'max_tokens',
 } as const;
 
+export const GLM_REFLECTION_MODEL_CONFIG = {
+  ...GLM_FLASH_TRANSPORT,
+  modelConfig: 'glm-5.3-flash-max',
+  reasoningEffort: 'max',
+} as const;
+
+export const GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG = {
+  ...GLM_FLASH_TRANSPORT,
+  modelConfig: 'glm-5.3-flash-high',
+  reasoningEffort: 'high',
+} as const;
+
 export function createGlmReflectionProvider(
   options: LunaReflectionProviderOptions = {},
 ): LunaReflectionProvider {
   return createReflectionProvider(GLM_REFLECTION_MODEL_CONFIG, options);
+}
+
+export function createGlmFlashHighReflectionProvider(
+  options: LunaReflectionProviderOptions = {},
+): LunaReflectionProvider {
+  return createReflectionProvider(GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG, options);
 }

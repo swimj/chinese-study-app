@@ -2,6 +2,15 @@
 
 Casual notes for people using the app before there is a real release process.
 
+## Unreleased — GLM-5.3 Flash high reflection arm
+
+- GLM-5.3 Flash at reasoning high is now a default reflection candidate
+  alongside Luna, GLM-5.3 Flash max, and Terra. It uses the same Z.AI Flash
+  model and pricing as the max arm; the stored model id keeps the two
+  reasoning profiles distinct.
+- Both GLM-5.3 Flash reasoning arms allow 200,000 output tokens, including
+  reasoning, instead of the 50,000 cap used by the other models.
+
 ## Unreleased — Reflections generating spinner
 
 - After a session starts reflection, or while a retry or second opinion is
@@ -47,7 +56,6 @@ Casual notes for people using the app before there is a real release process.
 
 - The operator usage pulse no longer counts the configured hosted smoke
   learner as inactive.
->>>>>>> 6affbc0 (Exclude the hosted smoke learner from usage-pulse inactive counts.)
 
 ## Unreleased — app-origin invite signup
 
