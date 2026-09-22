@@ -11,6 +11,8 @@ export const PURE_CUE_INITIAL_INTERVAL_HOURS = 24;
 export const PURE_CUE_INITIAL_EASE_FACTOR = 2.5;
 export const PURE_CUE_MINIMUM_EASE_FACTOR = 1.8;
 export const PURE_CUE_LAPSE_INTERVAL_HOURS = 6;
+/** Same length as a lapse reset: new adoptions and compensated production due dates. */
+export const PURE_CUE_DUE_DELAY_HOURS = PURE_CUE_LAPSE_INTERVAL_HOURS;
 export const PURE_CUE_STRONG_INTERVAL_HOURS = 720;
 export const PURE_CUE_STRONG_RECENCY_HOURS = 6;
 
@@ -58,6 +60,13 @@ export type PureCueSelection = {
   strong: PureCue[];
   selected: PureCue[];
 };
+
+export function dueAtWithResetDelay(from: string, existingDueAt: string | null = null): string {
+  assertCanonicalIsoTimestamp(from, 'Due-delay origin');
+  if (existingDueAt !== null) assertCanonicalIsoTimestamp(existingDueAt, 'Existing due at');
+  const delayed = addHours(from, PURE_CUE_DUE_DELAY_HOURS);
+  return existingDueAt !== null && existingDueAt > delayed ? existingDueAt : delayed;
+}
 
 export function schedulePureCueAssessment(
   cue: PureCue,

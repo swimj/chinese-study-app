@@ -3,6 +3,7 @@ import {
   PURE_CUE_INITIAL_EASE_FACTOR,
   PURE_CUE_INITIAL_INTERVAL_HOURS,
   derivePureCueAssessment,
+  dueAtWithResetDelay,
   schedulePureCueAssessment,
   selectPureCuesForSession,
   type PureCue,
@@ -245,7 +246,13 @@ export function adoptEligiblePureCuesForCurrentLearner(now: string): void {
     WHERE publication.publication_status IN ('shared_trial', 'available')
       AND ${reviewMembershipExistsSql()}
     ON CONFLICT(learner_id, pure_cue_id) DO NOTHING
-  `).run(learnerId, PURE_CUE_INITIAL_INTERVAL_HOURS, PURE_CUE_INITIAL_EASE_FACTOR, now, now);
+  `).run(
+    learnerId,
+    PURE_CUE_INITIAL_INTERVAL_HOURS,
+    PURE_CUE_INITIAL_EASE_FACTOR,
+    dueAtWithResetDelay(now),
+    now,
+  );
 }
 
 export function selectStoredPureCuesForSession(input: {
@@ -540,6 +547,7 @@ export function restoreProductionSchedulerSnapshotWithoutTransaction(input: {
     `).run(learnerId, snapshot.targetWordId);
   } else {
     const state = snapshot.productionSkillState;
+    const nextDueAt = dueAtWithResetDelay(input.restoredAt, state.nextDueAt);
     getDb().prepare(`
       INSERT INTO learner_owned_word_skill_state (
         learner_id, word_id, skill_id, enabled, interval_hours,
@@ -557,7 +565,7 @@ export function restoreProductionSchedulerSnapshotWithoutTransaction(input: {
       state.enabled ? 1 : 0,
       state.intervalHours,
       state.lastStudiedAt,
-      state.nextDueAt,
+      nextDueAt,
       state.easeFactor,
     );
   }
