@@ -10,6 +10,17 @@ const ABOUT_VIEWS = [
 // Entry dates follow the change history; add new posts at the top.
 const UPDATES = [
   {
+    date: '2026-09-22',
+    displayDate: 'September 22, 2026',
+    title: 'A smoother ride when more than one answer is right',
+    paragraphs: [
+      'Some prompts really do have more than one good Chinese answer. We’re making that feel less like a gotcha. If you type something that fits the cue, we want the app to treat it as a success more often, instead of acting as if you’d missed one hidden target word.',
+      'You may see this in a few places. After you reveal a production cue, the card can list every accepted answer, not just one. Some of that practice now follows the prompt itself rather than a single word, so a card labeled Pure cue production can show up alongside ordinary word reviews. And if a reflection decides your “Forgot” was actually a valid alternative, it can offer to treat the cue as shared. Authorize that and it can also unwind the unfair miss so the original word isn’t punished.',
+      'This is new, so expect a few bumps. A suggestion might be too broad, a card might show up at an odd time, or the reveal might list more answers than you expected. Read those proposals before applying them. If something feels off, send the cue, what you typed, and what you expected to the person who invited you.',
+      'A few smaller changes. Fixed a bug in My Words which led to the Recent Lapses selector picking up today’s newly learned words. Reflections shows a spinner on the tab while a reflection is generating, hides its count while you’re already there, and uses a red ! if generation failed — open Run meta to clear that.',
+    ],
+  },
+  {
     date: '2026-09-17',
     displayDate: 'September 17, 2026',
     title: 'See what’s waiting, finish with Space, and pick the right stash word',
