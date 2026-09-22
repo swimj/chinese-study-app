@@ -2,6 +2,11 @@
 
 Casual notes for people using the app before there is a real release process.
 
+## Unreleased — GLM-5.3 Flash output cap
+
+- Both GLM-5.3 Flash arms request 131,072 output tokens, the maximum Z.AI
+  accepts. The previous 200,000 cap was rejected immediately.
+
 ## Unreleased — GLM-5.3 Flash high reflection arm
 
 - GLM-5.3 Flash at reasoning high is now a default reflection candidate
