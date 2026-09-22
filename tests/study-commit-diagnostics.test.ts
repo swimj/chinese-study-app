@@ -9,6 +9,7 @@ import type { ClientTransportIncident } from '../src/domain/client-incidents.ts'
 import {
   createStudyCommitDiagnosticSink,
   describeStudyCommitFailure,
+  describeStudyCommitSuccess,
   readStudyCommitDiagnostics,
   STUDY_COMMIT_DIAGNOSTICS_FILENAME,
   type StudyCommitFailureDiagnostic,
@@ -17,6 +18,29 @@ import {
 
 type IndexModule = typeof import('../server/index.ts');
 type ExpressApp = ReturnType<IndexModule['createApp']>;
+
+test('pure-cue diagnostics correlate standalone action and event IDs without a word target', () => {
+  const input = {
+    route: '/api/study-sessions/:sessionId/pure-cue-assessments' as const,
+    learnerId: 'learner-1',
+    params: { sessionId: 'session-1' },
+    body: {
+      sessionActionId: 'pure-cue/action-1',
+      events: [{ eventId: 'pure-event-1', outcome: 'accepted', rating: 'good' }],
+    },
+    elapsedMs: 3,
+  };
+  const success = describeStudyCommitSuccess(input);
+  const failure = describeStudyCommitFailure({
+    ...input, responseStatus: 400, error: new Error('invalid assessment'),
+  });
+  for (const diagnostic of [success, failure]) {
+    assert.equal(diagnostic.correlation.sessionActionId, 'pure-cue/action-1');
+    assert.deepEqual(diagnostic.correlation.eventIds, ['pure-event-1']);
+    assert.equal(diagnostic.correlation.targetWordId, null);
+  }
+  assert.deepEqual(success.results, [{ eventId: 'pure-event-1', outcome: 'accepted', rating: 'good' }]);
+});
 
 describe('study commit diagnostics', { concurrency: false }, () => {
   let dataDir = '';
@@ -236,6 +260,40 @@ describe('study commit diagnostics', { concurrency: false }, () => {
     assert.equal(diagnostics[0]?.correlation.selectedWordId, 'diagnostic-missing-word');
     assert.deepEqual(diagnostics[0]?.correlation.eventIds, [failedBody.event.id]);
     assert.match(diagnostics[0]?.error.message ?? '', /FOREIGN KEY constraint failed/);
+  });
+
+  test('pure cue assessment route validates its standalone identity and event objects before persistence', async () => {
+    const app = indexModule.createApp({ frontendDistPath: null });
+    const invalidEvent = await request(
+      app,
+      '/api/study-sessions/pure-session/pure-cue-assessments',
+      {
+        method: 'POST',
+        body: {
+          attemptId: 'pure-attempt', snapshotId: 'pure-snapshot', sessionActionId: 'pure-cue/pure-snapshot',
+          events: [null],
+        },
+      },
+    );
+    assert.equal(invalidEvent.status, 400);
+    assert.match(String((invalidEvent.json as { error?: unknown }).error), /event objects/);
+
+    const unknownSnapshot = await request(
+      app,
+      '/api/study-sessions/pure-session/pure-cue-assessments',
+      {
+        method: 'POST',
+        body: {
+          attemptId: 'pure-attempt', snapshotId: 'pure-snapshot', sessionActionId: 'pure-cue/pure-snapshot',
+          events: [{
+            eventId: 'pure-event', occurredAt: '2026-09-18T00:00:00.000Z', response: '撒谎',
+            outcome: 'accepted', submittedWordId: 'word-a', rating: 'good',
+          }],
+        },
+      },
+    );
+    assert.equal(unknownSnapshot.status, 400);
+    assert.equal(typeof (unknownSnapshot.json as { error?: unknown }).error, 'string');
   });
 
   test('records rejected session summary statistics and keeps successful summary logging failure-isolated', async () => {

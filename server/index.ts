@@ -56,6 +56,7 @@ import {
   getWordStatusCounts,
   recordAcceptedContrastSelectionAttempt,
   recordAcceptedReviewAttemptBatch,
+  recordPureCueAssessment,
   recordReviewSessionSummary,
   recordStudyManagementAction,
   getSharedContentPublicationForContent,
@@ -96,6 +97,7 @@ import type {
   StudyContentRef,
   StudySkillId,
 } from '../src/domain/study-actions.ts';
+import type { PureCueAssessmentEvent } from '../src/domain/pure-cues.ts';
 import type {
   ClearReflectionQualityRequest,
   MarkReflectionHelpInboxDoneRequest,
@@ -704,6 +706,57 @@ export function createApp(options: CreateAppOptions = {}) {
         publicError: isClientError
           ? error.message
           : 'Failed to record accepted contrast selection attempt',
+      });
+    }
+  });
+
+  app.post('/api/study-sessions/:sessionId/pure-cue-assessments', (req, res) => {
+    const sessionId = req.params.sessionId;
+    const { attemptId, snapshotId, sessionActionId, events } = req.body ?? {};
+    if (
+      typeof sessionId !== 'string' || sessionId.trim().length === 0
+      || typeof attemptId !== 'string' || attemptId.trim().length === 0
+      || typeof snapshotId !== 'string' || snapshotId.trim().length === 0
+      || typeof sessionActionId !== 'string' || sessionActionId.trim().length === 0
+      || !Array.isArray(events)
+    ) {
+      res.status(400).json({ error: 'Expected non-empty pure cue assessment identity and events array' });
+      return;
+    }
+    if (!events.every(isPureCueAssessmentEventInput)) {
+      res.status(400).json({ error: 'Expected pure cue assessment event objects with valid primitive fields' });
+      return;
+    }
+    const commitStartedAtMs = Date.now();
+    try {
+      recordPureCueAssessment({
+        attemptId: attemptId.trim(),
+        snapshotId: snapshotId.trim(),
+        sessionId: sessionId.trim(),
+        sessionActionId: sessionActionId.trim(),
+        events: events as PureCueAssessmentEvent[],
+        committedAt: new Date().toISOString(),
+      });
+      recordStudyCommitSuccessSafely({
+        sink: studyCommitDiagnosticSink,
+        route: '/api/study-sessions/:sessionId/pure-cue-assessments',
+        request: req,
+        elapsedMs: Date.now() - commitStartedAtMs,
+      });
+      res.status(204).send();
+    } catch (error) {
+      const isClientError = isPureCueAssessmentClientError(error);
+      respondWithStudyCommitFailure({
+        sink: studyCommitDiagnosticSink,
+        route: '/api/study-sessions/:sessionId/pure-cue-assessments',
+        request: req,
+        response: res,
+        error,
+        elapsedMs: Date.now() - commitStartedAtMs,
+        responseStatus: isClientError ? 400 : 500,
+        publicError: isClientError && error instanceof Error
+          ? error.message
+          : 'Failed to record pure cue assessment',
       });
     }
   });
@@ -1726,6 +1779,34 @@ function respondWithStudyCommitFailure({
     error: publicError,
     diagnosticId: diagnostic.diagnosticId,
   });
+}
+
+function isPureCueAssessmentEventInput(value: unknown): value is PureCueAssessmentEvent {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const event = value as Record<string, unknown>;
+  return (
+    typeof event.eventId === 'string'
+    && typeof event.occurredAt === 'string'
+    && (typeof event.response === 'string' || event.response === null)
+    && (event.outcome === 'accepted' || event.outcome === 'rejected')
+    && (typeof event.submittedWordId === 'string' || event.submittedWordId === null)
+    && (event.rating === 'forgot' || event.rating === 'hard' || event.rating === 'good' || event.rating === 'easy')
+  );
+}
+
+function isPureCueAssessmentClientError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message.startsWith('Expected ')
+    || error.message.startsWith('Invalid ')
+    || error.message.startsWith('Pure cue ')
+    || error.message.startsWith('Duplicate pure cue ')
+    || error.message.startsWith('Rejected pure cue ')
+    || error.message.startsWith('Frozen pure cue ')
+    || error.message.startsWith('Pure cue assessment')
+  );
 }
 
 function recordStudyCommitSuccessSafely({

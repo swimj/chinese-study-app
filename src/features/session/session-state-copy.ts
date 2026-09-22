@@ -42,6 +42,16 @@ export function cloneBucketSessionState(state: BucketSessionState): BucketSessio
         },
       ]),
     ),
+    pureCueReviewProgress: Object.fromEntries(
+      Object.entries(state.pureCueReviewProgress).map(([actionId, progress]) => [
+        actionId,
+        {
+          failureCount: progress.failureCount,
+          reinforcementStreak: progress.reinforcementStreak,
+          events: progress.events.map((event) => ({ ...event })),
+        },
+      ]),
+    ),
   };
 }
 

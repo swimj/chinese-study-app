@@ -15,6 +15,7 @@ import type {
   StudySkillId,
   StudyEvent,
 } from '../domain/study-actions';
+import type { PureCueAssessmentEvent } from '../domain/pure-cues';
 import type {
   OperationApplicationStatus,
   OperationInvocation,
@@ -581,6 +582,34 @@ export async function recordAcceptedContrastSelectionAttempt({
 
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to record accepted contrast selection attempt'));
+  }
+}
+
+export async function recordPureCueAssessment({
+  sessionId,
+  attemptId,
+  snapshotId,
+  sessionActionId,
+  events,
+}: {
+  sessionId: string;
+  attemptId: string;
+  snapshotId: string;
+  sessionActionId: string;
+  events: PureCueAssessmentEvent[];
+}): Promise<void> {
+  const response = await apiFetch(`${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/pure-cue-assessments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ attemptId, snapshotId, sessionActionId, events }),
+  }, {
+    route: '/api/study-sessions/:sessionId/pure-cue-assessments',
+    sessionId,
+    sessionActionId,
+    eventIds: events.map((event) => event.eventId),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to record pure cue assessment'));
   }
 }
 

@@ -6,7 +6,11 @@ import type {
   BucketSessionState,
   UnstudiedWordProgress,
 } from '../../lib/session-state';
-import type { ProductionCueSupplementSnapshot, SessionStudyItem } from '../../domain/study-actions';
+import type {
+  ProductionCueSupplementSnapshot,
+  PureCueSessionReviewItem,
+  SessionStudyItem,
+} from '../../domain/study-actions';
 import type { ReviewRating, Word, WordMeaning } from '../../types';
 import { studyProfile } from '../../study-profile';
 import type { RatingOption } from './session-rating';
@@ -51,16 +55,25 @@ export type FrozenContrastCard = {
   queuedCount: number;
 };
 
+export type FrozenPureCueCard = {
+  item: PureCueSessionReviewItem;
+  attemptedResponse: string | null;
+  reviewedCount: number;
+  queuedCount: number;
+};
+
 export function StudySessionPanel({
   sessionStarted,
   sessionPhase,
   sessionSummary,
   sessionFinalization,
   activeItem,
+  activePureCue,
   activeWord,
   activeLearningProgress,
   activeUnstudiedProgress,
   activeReviewProgress,
+  activePureCueFailureCount,
   reviewedCount,
   queuedCount,
   hasUndo,
@@ -69,8 +82,10 @@ export function StudySessionPanel({
   personalNotesEditorSaving,
   studyManagementSubmitting,
   productionAwaitingNext,
+  pureCueAwaitingNext,
   productionAwaitingSupplement,
   frozenProductionCard,
+  frozenPureCueCard,
   contrastAwaitingNext,
   frozenContrastCard,
   activeAllMeanings,
@@ -125,10 +140,12 @@ export function StudySessionPanel({
   sessionSummary: SessionSummary | null;
   sessionFinalization: SessionFinalizationState;
   activeItem: SessionStudyItem | null;
+  activePureCue: PureCueSessionReviewItem | null;
   activeWord: Word | null;
   activeLearningProgress: LearningWordProgress | undefined;
   activeUnstudiedProgress: UnstudiedWordProgress | undefined;
   activeReviewProgress: ReviewActionProgress | undefined;
+  activePureCueFailureCount: number;
   reviewedCount: number;
   queuedCount: number;
   hasUndo: boolean;
@@ -137,8 +154,10 @@ export function StudySessionPanel({
   personalNotesEditorSaving: boolean;
   studyManagementSubmitting: boolean;
   productionAwaitingNext: boolean;
+  pureCueAwaitingNext: boolean;
   productionAwaitingSupplement: boolean;
   frozenProductionCard: FrozenProductionCard | null;
+  frozenPureCueCard: FrozenPureCueCard | null;
   contrastAwaitingNext: boolean;
   frozenContrastCard: FrozenContrastCard | null;
   activeAllMeanings: string[];
@@ -193,10 +212,13 @@ export function StudySessionPanel({
     sessionStarted,
     sessionCompletedWithSummary: sessionPhase === 'completed' && sessionSummary !== null,
     productionAwaitingNext,
+    pureCueAwaitingNext,
     frozenProductionCardPresent: frozenProductionCard !== null,
+    frozenPureCueCardPresent: frozenPureCueCard !== null,
     contrastAwaitingNext,
     frozenContrastCardPresent: frozenContrastCard !== null,
     activeItemPresent: activeItem !== null,
+    activePureCuePresent: activePureCue !== null,
     activeWordStatus: activeWord?.status ?? null,
     activeUnstudiedIntroComplete: activeUnstudiedProgress?.introComplete ?? false,
   });
@@ -213,6 +235,7 @@ export function StudySessionPanel({
     isProductionItem,
     answerRevealed,
     productionAwaitingNext,
+    pureCueAwaitingNext,
     productionAwaitingSupplement,
     personalNotesEditorOpen,
     contrastAwaitingNext,
@@ -324,6 +347,57 @@ export function StudySessionPanel({
                 />
               </SessionActionSection>
             ) : null}
+            <SessionActionSection>
+              <button type="button" className="secondary-button" onClick={onEndSession} disabled={sessionEndDisabled}>
+                {sessionEndLabel}
+              </button>
+              <KeyboardGuideButton onClick={onOpenShortcutGuide} />
+            </SessionActionSection>
+          </div>
+        </div>
+      ) : panelView === 'frozen_pure_cue' && frozenPureCueCard ? (
+        <div className="review-card session-card-shell">
+          <div className="session-card-scroll">
+            <div className="review-card-header">
+              <p className="badge">Review · Pure cue production</p>
+            </div>
+            <p className="notes">
+              Answered {frozenPureCueCard.reviewedCount} this session · {frozenPureCueCard.queuedCount} still queued
+            </p>
+            <div className="prompt-block">
+              <span className="prompt-label">Cue</span>
+              <strong className="prompt-value">{frozenPureCueCard.item.snapshot.stimulus}</strong>
+              {frozenPureCueCard.item.snapshot.axisNote ? (
+                <span className="prompt-meta">{frozenPureCueCard.item.snapshot.axisNote}</span>
+              ) : null}
+            </div>
+            <div className="answer-block">
+              <span className="prompt-label">Accepted answers</span>
+              {frozenPureCueCard.item.snapshot.acceptedAnswers.map((answer) => (
+                <strong key={answer.wordId} className="answer-value">
+                  {answer.hanzi}{answer.traditional && answer.traditional !== answer.hanzi ? ` / ${answer.traditional}` : ''}
+                </strong>
+              ))}
+            </div>
+            {frozenPureCueCard.attemptedResponse ? (
+              <p className="notes">Your response: {frozenPureCueCard.attemptedResponse}. This cue was recorded as Forgot.</p>
+            ) : (
+              <p className="notes">No clue. This cue was recorded as Forgot.</p>
+            )}
+          </div>
+          <div className="session-action-bar">
+            <SessionActionSection>
+              <button type="button" onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen}>
+                Next
+                <ShortcutHint shortcut={shortcutFor(primaryAction, 'continue_after_auto_forgot')} />
+              </button>
+              <UndoButton
+                hasUndo={hasUndo}
+                submittingRating={submittingRating}
+                personalNotesEditorOpen={personalNotesEditorOpen}
+                onUndoLastRating={onUndoLastRating}
+              />
+            </SessionActionSection>
             <SessionActionSection>
               <button type="button" className="secondary-button" onClick={onEndSession} disabled={sessionEndDisabled}>
                 {sessionEndLabel}
@@ -454,6 +528,119 @@ export function StudySessionPanel({
                 onDismissCurrentWord={onDismissCurrentWord}
                 onManageStudyAction={onManageStudyAction}
                 onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
+              />
+            </SessionActionSection>
+            <SessionActionSection>
+              <button type="button" className="secondary-button" onClick={onEndSession} disabled={sessionEndDisabled}>
+                {sessionEndLabel}
+              </button>
+              <KeyboardGuideButton onClick={onOpenShortcutGuide} />
+            </SessionActionSection>
+          </div>
+        </div>
+      ) : activePureCue ? (
+        <div className="review-card session-card-shell">
+          <div className="session-card-scroll">
+            <div className="review-card-header">
+              <p className="badge">
+                {reviewInReinforcement ? 'Review reinforcement' : 'Review'} · Pure cue production
+              </p>
+            </div>
+            <p className="notes">
+              Answered {reviewedCount} this session · {queuedCount} still queued · Elapsed {activeElapsedTime}
+            </p>
+            <div className="prompt-block">
+              <span className="prompt-label">Cue</span>
+              <strong className="prompt-value">{activePureCue.snapshot.stimulus}</strong>
+              <span className="prompt-meta">
+                {activeReviewState} · Failures {activePureCueFailureCount}
+              </span>
+            </div>
+            {answerRevealed ? (
+              <div className="answer-block">
+                <span className="prompt-label">Accepted answers</span>
+                {activePureCue.snapshot.acceptedAnswers.map((answer) => (
+                  <strong key={answer.wordId} className="answer-value">
+                    {answer.hanzi}{answer.traditional && answer.traditional !== answer.hanzi ? ` / ${answer.traditional}` : ''}
+                  </strong>
+                ))}
+                {activePureCue.snapshot.axisNote ? (
+                  <span className="prompt-meta">{activePureCue.snapshot.axisNote}</span>
+                ) : null}
+              </div>
+            ) : (
+              <form
+                id={productionFormId}
+                className="stack"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  onSubmitProductionHanzi();
+                }}
+              >
+                <label className="prompt-label" htmlFor="production-hanzi-input">
+                  {studyProfile.labels.productionInput}
+                </label>
+                <input
+                  ref={productionHanziInputRef}
+                  id="production-hanzi-input"
+                  type="text"
+                  value={productionHanziInput}
+                  onChange={(event) => onProductionHanziInputChange(event.target.value)}
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  disabled={submittingRating !== null || personalNotesEditorOpen}
+                />
+                {productionHanziError ? <p className="notes">{productionHanziError}</p> : null}
+              </form>
+            )}
+          </div>
+          <div className="session-action-bar">
+            <SessionActionSection>
+              {showRatingButtons ? (
+                <div className="rating-grid">
+                  {activeRatingOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={option.isDefault ? 'rating-button is-default' : 'rating-button'}
+                      title={option.note}
+                      onClick={() => onRate(option.value, { restoreUi: 'production-input' })}
+                      disabled={submittingRating !== null || personalNotesEditorOpen}
+                    >
+                      <strong>
+                        {option.label}
+                        <ShortcutHint shortcuts={[option.shortcutKey, option.isDefault ? 'Space' : null]} />
+                      </strong>
+                      <span>{option.note}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="rating-grid">
+                  <button
+                    type="submit"
+                    form={productionFormId}
+                    disabled={submittingRating !== null || personalNotesEditorOpen}
+                  >
+                    {studyProfile.labels.submitProductionInput}
+                    <ShortcutHint shortcut={shortcutFor(primaryAction, 'submit_production')} />
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={onNoClueProduction}
+                    disabled={submittingRating !== null || personalNotesEditorOpen || productionHanziInput.trim().length > 0}
+                  >
+                    No clue
+                  </button>
+                </div>
+              )}
+              <UndoButton
+                hasUndo={hasUndo}
+                submittingRating={submittingRating}
+                personalNotesEditorOpen={personalNotesEditorOpen}
+                onUndoLastRating={onUndoLastRating}
               />
             </SessionActionSection>
             <SessionActionSection>
@@ -1154,6 +1341,7 @@ function createSessionKeyboardContext({
   isProductionItem,
   answerRevealed,
   productionAwaitingNext,
+  pureCueAwaitingNext,
   productionAwaitingSupplement,
   personalNotesEditorOpen,
   contrastAwaitingNext,
@@ -1171,6 +1359,7 @@ function createSessionKeyboardContext({
   isProductionItem: boolean;
   answerRevealed: boolean;
   productionAwaitingNext: boolean;
+  pureCueAwaitingNext: boolean;
   productionAwaitingSupplement: boolean;
   personalNotesEditorOpen: boolean;
   contrastAwaitingNext: boolean;
@@ -1192,8 +1381,10 @@ function createSessionKeyboardContext({
       isProductionItem &&
       !answerRevealed &&
       !productionAwaitingNext &&
+      !pureCueAwaitingNext &&
       !personalNotesEditorOpen,
     productionAwaitingNext,
+    pureCueAwaitingNext,
     productionAwaitingSupplement,
     contrastAwaitingNext,
     unstudiedIntro,

@@ -20,6 +20,8 @@ export type SessionSummary = {
   initialQueueLength: number;
   answeredCount: number;
   completedReviewActions: number;
+  completedPureCueActions: number;
+  lapsedPureCueActions: number;
   lapsedReviewActions: number;
   lapsedReviewLabels: string[];
   lapsedReviewActionIds: string[];
@@ -45,6 +47,8 @@ export function createSessionSummary({
     initialQueueLength,
     answeredCount: 0,
     completedReviewActions: 0,
+    completedPureCueActions: 0,
+    lapsedPureCueActions: 0,
     lapsedReviewActions: 0,
     lapsedReviewLabels: [],
     lapsedReviewActionIds: [],
@@ -150,6 +154,35 @@ export function updateSessionSummaryForRating({
       break;
   }
 
+  return nextSummary;
+}
+
+export function updateSessionSummaryForPureCueRating({
+  summary,
+  transition,
+  previousPhase,
+}: {
+  summary: SessionSummary | null;
+  transition: SessionSummaryTransition;
+  previousPhase: SessionPhase;
+}): SessionSummary | null {
+  if (!summary) return summary;
+  const nextSummary: SessionSummary = {
+    ...summary,
+    answeredCount: transition.state.answeredCount,
+    completedAt: transition.state.phase === 'completed' && summary.completedAt === null
+      ? new Date().toISOString()
+      : summary.completedAt,
+    completionMode: transition.state.phase === 'completed' && previousPhase === 'draining'
+      ? 'drain'
+      : summary.completionMode,
+  };
+  if (transition.commit.type === 'commit-pure-cue-production-session') {
+    nextSummary.completedPureCueActions += 1;
+    if (transition.commit.events.some((event) => event.rating === 'forgot')) {
+      nextSummary.lapsedPureCueActions += 1;
+    }
+  }
   return nextSummary;
 }
 
