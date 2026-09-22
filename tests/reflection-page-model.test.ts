@@ -4,6 +4,7 @@ import type {
   CreateContrastClusterOperationV1,
   ProductionMistakeReflectionItemV2,
   ReflectionOperation,
+  ReflectionItemV5,
   RepairProductionCueOperationV2,
   SessionReflectionBundleV1,
   SessionReflectionResultV4,
@@ -705,6 +706,42 @@ describe('reflection page model', () => {
     );
   });
 
+  test('builds and edits a promotion without changing the server-stamped pair', () => {
+    const evidence = promotionEvidence();
+    let draft = createManualOperation('promote_pure_elicitation', 1, evidence);
+    assert.equal(draft.kind, 'promote_pure_elicitation');
+    if (draft.kind !== 'promote_pure_elicitation') return;
+    assert.deepEqual({
+      sourceAttemptId: draft.sourceAttemptId,
+      targetWordId: draft.targetWordId,
+      responseWordId: draft.responseWordId,
+    }, {
+      sourceAttemptId: 'attempt-1',
+      targetWordId: 'target',
+      responseWordId: 'alternate',
+    });
+    assert.deepEqual(draft.wordPlans.map((plan) => plan.deactivateCueIds), [[], []]);
+
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'toggle_promotion_deactivation',
+      wordId: 'target',
+      cueId: 'cue-1',
+    }) as typeof draft;
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'add_promotion_distinctive_cue',
+      wordId: 'alternate',
+    }) as typeof draft;
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'update_promotion_distinctive_cue',
+      wordId: 'alternate',
+      index: 0,
+      patch: { text: 'alternate-only situation' },
+    }) as typeof draft;
+    assert.deepEqual(draft.wordPlans[0]!.deactivateCueIds, ['cue-1']);
+    assert.equal(draft.wordPlans[1]!.distinctiveCueDrafts[0]!.text, 'alternate-only situation');
+    assert.deepEqual(getOperationDraftState(draft, draft, evidence).validationErrors, []);
+  });
+
   test('stamps the served cue id when a manual V2 change is switched to deactivate', () => {
     const evidence = v2Evidence();
     const original: ReflectionOperation = {
@@ -898,6 +935,33 @@ function v2Evidence(): ProductionMistakeReflectionItemV2 {
       meanings: ['alternate'],
     },
     responseKind: 'matched_known_word',
+  };
+}
+
+function promotionEvidence(): ReflectionItemV5 {
+  const evidence = v2Evidence();
+  return {
+    ...evidence,
+    servedCue: { ...evidence.servedCue, acceptedWordIds: ['target'], supplement: null },
+    promotionEvidence: {
+      diagnosisTags: ['production_cue_overloaded'],
+      words: ['target', 'alternate'].map((wordId) => ({
+        wordId,
+        activeProductionCues: [{
+          cueId: wordId === 'target' ? 'cue-1' : 'cue-2',
+          taskId: `production-task:${wordId}:default_production`,
+          cueType: 'definition_gloss',
+          text: `broad ${wordId}`,
+          acceptedWordIds: [wordId],
+        }],
+      })),
+      intersectingPureCues: [{
+        id: 'pure-1',
+        stimulus: 'shared axis',
+        axisNote: 'explicit axis',
+        acceptedWordIds: ['target'],
+      }],
+    },
   };
 }
 

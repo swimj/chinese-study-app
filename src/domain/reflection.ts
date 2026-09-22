@@ -150,6 +150,60 @@ export type SessionReflectionBundleV4 = {
   items: ReflectionItemV4[];
 };
 
+export type PureCuePromotionProductionCueSnapshotV1 = {
+  cueId: string;
+  taskId: string;
+  cueType: ProductionCueTypeV0;
+  text: string;
+  acceptedWordIds: string[];
+};
+
+export type PureCuePromotionPureCueSnapshotV1 = {
+  id: string;
+  stimulus: string;
+  axisNote: string;
+  acceptedWordIds: string[];
+};
+
+export type PureCuePromotionWordEvidenceV1 = {
+  wordId: string;
+  activeProductionCues: PureCuePromotionProductionCueSnapshotV1[];
+};
+
+export type PureCuePromotionEvidenceV1 = {
+  diagnosisTags: ReflectionDiagnosisTagV1[];
+  words: PureCuePromotionWordEvidenceV1[];
+  intersectingPureCues: PureCuePromotionPureCueSnapshotV1[];
+};
+
+export type ReflectionItemV5 = ReflectionItemV4 & {
+  promotionEvidence: PureCuePromotionEvidenceV1 | null;
+};
+
+export type SessionReflectionBundleV5 = {
+  schemaVersion: 'session_reflection_bundle.v5';
+  generatedAt: string;
+  session: SessionReflectionBundleV1['session'];
+  items: ReflectionItemV5[];
+};
+
+/** Exact provider-independent input retained before a promotion-specific call. */
+export type PureCuePromotionBundleV1 = {
+  schemaVersion: 'pure_cue_promotion_bundle.v1';
+  generatedAt: string;
+  sessionId: string;
+  studyProfile: StudyProfileV0;
+  items: Array<{
+    itemId: string;
+    sourceAttemptId: string;
+    targetWord: ReflectionWordSnapshotV1;
+    responseWord: ReflectionWordSnapshotV1;
+    servedCue: ReflectionServedCueSnapshotV2;
+    learnerExplanation: string;
+    promotionEvidence: PureCuePromotionEvidenceV1;
+  }>;
+};
+
 /**
  * A deliberately curated, non-session reflection request. It is the provider
  * wire format for a cross-session second opinion, so it contains only the
@@ -167,6 +221,7 @@ export type SessionReflectionBundle =
   | SessionReflectionBundleV2
   | SessionReflectionBundleV3
   | SessionReflectionBundleV4
+  | SessionReflectionBundleV5
   | CuratedReflectionBundleV1;
 
 export type ReflectionDiagnosisTagV1 =
@@ -317,13 +372,52 @@ export type AcceptProductionAlternateOperationV1 = {
   alternateWordId: string;
 };
 
+export type PureCueDistinctiveProductionCueDraftV1 = {
+  cueType: ProductionCueTypeV0;
+  text: string;
+};
+
+export type PromotePureElicitationWordPlanV1 = {
+  wordId: string;
+  deactivateCueIds: string[];
+  distinctiveCueDrafts: PureCueDistinctiveProductionCueDraftV1[];
+};
+
+export type PromotePureElicitationDestinationV1 =
+  | {
+      kind: 'existing';
+      pureCueId: string;
+    }
+  | {
+      kind: 'create';
+      stimulus: string;
+      axisNote: string;
+    };
+
+export type PromotePureElicitationOperationV1 = {
+  kind: 'promote_pure_elicitation';
+  version: 1;
+  sourceAttemptId: string;
+  targetWordId: string;
+  responseWordId: string;
+  destination: PromotePureElicitationDestinationV1;
+  wordPlans: PromotePureElicitationWordPlanV1[];
+};
+
+/** Provider-authored fields only; source and pair identity are stamped by the server. */
+export type PromotePureElicitationOperationV1Wire = Omit<
+  PromotePureElicitationOperationV1,
+  'kind' | 'version' | 'sourceAttemptId' | 'targetWordId' | 'responseWordId'
+>;
+
 export type ReflectionOperation =
   | SuppressDefinitionProductionOperationV1
   | CreateContrastClusterOperation
   | RepairProductionCueOperationV1
   | RepairProductionCueOperationV2
   | AddProductionCueSupplementOperationV1
-  | AcceptProductionAlternateOperationV1;
+  | AcceptProductionAlternateOperationV1
+  | PromotePureElicitationOperationV1;
 
 export type ReflectionOperationV5Wire =
   | SuppressDefinitionProductionOperationV1
@@ -425,11 +519,17 @@ export type SessionReflectionResultV7 = {
   itemResults: ReflectionItemResultV2[];
 };
 
+export type SessionReflectionResultV8 = {
+  schemaVersion: 'session_reflection_result.v8';
+  itemResults: ReflectionItemResultV2[];
+};
+
 export type SessionReflectionResult =
   | SessionReflectionResultV4
   | SessionReflectionResultV5
   | SessionReflectionResultV6
-  | SessionReflectionResultV7;
+  | SessionReflectionResultV7
+  | SessionReflectionResultV8;
 
 export type EffectRef = {
   type: string;
@@ -676,6 +776,12 @@ export const REFLECTION_OPERATION_REGISTRY = [
     editorAvailable: true,
     applySupport: 'unsupported',
   },
+  {
+    kind: 'promote_pure_elicitation',
+    version: 1,
+    editorAvailable: true,
+    applySupport: 'supported',
+  },
 ] as const satisfies readonly ReflectionOperationRegistration[];
 
 export function getReflectionOperationRegistration(
@@ -813,6 +919,12 @@ export function reflectionOperationWordReferences(operation: ReflectionOperation
       return operation.members.map((member) => member.wordId);
     case 'accept_production_alternate':
       return [operation.targetWordId, operation.alternateWordId];
+    case 'promote_pure_elicitation':
+      return [
+        operation.targetWordId,
+        operation.responseWordId,
+        ...operation.wordPlans.map((plan) => plan.wordId),
+      ];
   }
 }
 
@@ -993,6 +1105,127 @@ export function validateReflectionOperation(
         && value.targetWordId === value.alternateWordId
       ) {
         errors.push(`${path}: target and alternate words must be distinct`);
+      }
+      break;
+    }
+    case 'promote_pure_elicitation': {
+      errors.push(...validateObjectFields(
+        value,
+        [
+          'kind',
+          'version',
+          'sourceAttemptId',
+          'targetWordId',
+          'responseWordId',
+          'destination',
+          'wordPlans',
+        ],
+        path,
+      ));
+      errors.push(...validateString(value.sourceAttemptId, `${path}.sourceAttemptId`, true));
+      errors.push(...validateWordReference(value.targetWordId, `${path}.targetWordId`, options));
+      errors.push(...validateWordReference(value.responseWordId, `${path}.responseWordId`, options));
+      if (
+        typeof value.targetWordId === 'string'
+        && value.targetWordId === value.responseWordId
+      ) {
+        errors.push(`${path}: target and response words must be distinct`);
+      }
+
+      if (!isRecord(value.destination)) {
+        errors.push(`${path}.destination: expected object`);
+      } else if (value.destination.kind === 'existing') {
+        errors.push(...validateObjectFields(
+          value.destination,
+          ['kind', 'pureCueId'],
+          `${path}.destination`,
+        ));
+        errors.push(...validateString(
+          value.destination.pureCueId,
+          `${path}.destination.pureCueId`,
+          true,
+        ));
+      } else if (value.destination.kind === 'create') {
+        errors.push(...validateObjectFields(
+          value.destination,
+          ['kind', 'stimulus', 'axisNote'],
+          `${path}.destination`,
+        ));
+        errors.push(...validateString(
+          value.destination.stimulus,
+          `${path}.destination.stimulus`,
+          true,
+        ));
+        errors.push(...validateString(
+          value.destination.axisNote,
+          `${path}.destination.axisNote`,
+          true,
+        ));
+      } else {
+        errors.push(`${path}.destination.kind: value is not in the allowed enum`);
+      }
+
+      if (!Array.isArray(value.wordPlans)) {
+        errors.push(`${path}.wordPlans: expected array`);
+      } else {
+        const planWordIds: string[] = [];
+        for (const [index, plan] of value.wordPlans.entries()) {
+          const planPath = `${path}.wordPlans[${index}]`;
+          errors.push(...validateObjectFields(
+            plan,
+            ['wordId', 'deactivateCueIds', 'distinctiveCueDrafts'],
+            planPath,
+          ));
+          if (!isRecord(plan)) continue;
+          errors.push(...validateWordReference(plan.wordId, `${planPath}.wordId`, options));
+          if (typeof plan.wordId === 'string') planWordIds.push(plan.wordId);
+          if (!Array.isArray(plan.deactivateCueIds)) {
+            errors.push(`${planPath}.deactivateCueIds: expected array`);
+          } else {
+            const cueIds: string[] = [];
+            plan.deactivateCueIds.forEach((cueId, cueIndex) => {
+              errors.push(...validateString(
+                cueId,
+                `${planPath}.deactivateCueIds[${cueIndex}]`,
+                true,
+              ));
+              if (typeof cueId === 'string') cueIds.push(cueId);
+            });
+            if (new Set(cueIds).size !== cueIds.length) {
+              errors.push(`${planPath}.deactivateCueIds: duplicate cue id`);
+            }
+          }
+          if (!Array.isArray(plan.distinctiveCueDrafts)) {
+            errors.push(`${planPath}.distinctiveCueDrafts: expected array`);
+          } else {
+            plan.distinctiveCueDrafts.forEach((draft, draftIndex) => {
+              const draftPath = `${planPath}.distinctiveCueDrafts[${draftIndex}]`;
+              errors.push(...validateObjectFields(draft, ['cueType', 'text'], draftPath));
+              if (!isRecord(draft)) return;
+              if (
+                typeof draft.cueType !== 'string'
+                || !productionCueTypesV0.has(draft.cueType as ProductionCueTypeV0)
+              ) {
+                errors.push(`${draftPath}.cueType: value is not in the allowed enum`);
+              }
+              errors.push(...validateString(draft.text, `${draftPath}.text`, true));
+            });
+          }
+        }
+        if (new Set(planWordIds).size !== planWordIds.length) {
+          errors.push(`${path}.wordPlans: duplicate word plan`);
+        }
+        if (
+          typeof value.targetWordId === 'string'
+          && typeof value.responseWordId === 'string'
+          && (
+            planWordIds.length !== 2
+            || !planWordIds.includes(value.targetWordId)
+            || !planWordIds.includes(value.responseWordId)
+          )
+        ) {
+          errors.push(`${path}.wordPlans: exactly one plan is required for each affected word`);
+        }
       }
       break;
     }
@@ -1199,7 +1432,9 @@ function validateRepairProductionCueOperationV2(
   return errors;
 }
 
-export function visibleWordIds(item: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3): Set<string> {
+export function visibleWordIds(
+  item: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4 | ReflectionItemV5,
+): Set<string> {
   const ids = new Set<string>();
   if (item.targetWord !== null) ids.add(item.targetWord.wordId);
   if ('submittedWord' in item && item.submittedWord !== null) {
@@ -1261,6 +1496,17 @@ export function validateSessionReflectionResultV7(
   );
 }
 
+export function validateSessionReflectionResultV8(
+  value: unknown,
+  bundle: SessionReflectionBundleV5,
+): string[] {
+  return validateSessionReflectionResultVersion(
+    value,
+    bundle,
+    'session_reflection_result.v8',
+  );
+}
+
 function validateSessionReflectionResultVersion(
   value: unknown,
   bundle: SessionReflectionBundle,
@@ -1296,7 +1542,8 @@ function validateSessionReflectionResultVersion(
 
   const inputItemsById = new Map(bundle.items.map((item) => [item.itemId, item]));
   const usesStreamlinedItemResult = schemaVersion === 'session_reflection_result.v6'
-    || schemaVersion === 'session_reflection_result.v7';
+    || schemaVersion === 'session_reflection_result.v7'
+    || schemaVersion === 'session_reflection_result.v8';
   for (const [itemIndex, itemResult] of value.itemResults.entries()) {
     const itemPath = `$.itemResults[${itemIndex}]`;
     errors.push(...validateObjectFields(
@@ -1346,6 +1593,28 @@ function validateSessionReflectionResultVersion(
 
     const itemId = typeof itemResult.itemId === 'string' ? itemResult.itemId : null;
     const inputItem = itemId === null ? undefined : inputItemsById.get(itemId);
+    const savedPromotionEvidence = inputItem !== undefined
+      && 'promotionEvidence' in inputItem
+      && isRecord(inputItem.promotionEvidence)
+      ? inputItem.promotionEvidence
+      : null;
+    if (
+      schemaVersion === 'session_reflection_result.v8'
+      && savedPromotionEvidence !== null
+      && Array.isArray(savedPromotionEvidence.diagnosisTags)
+      && Array.isArray(itemResult.diagnosisTags)
+    ) {
+      const finalTags = itemResult.diagnosisTags.filter((tag): tag is string => typeof tag === 'string');
+      const savedTags = savedPromotionEvidence.diagnosisTags.filter(
+        (tag): tag is string => typeof tag === 'string',
+      );
+      if (
+        finalTags.length !== savedTags.length
+        || finalTags.some((tag) => !savedTags.includes(tag))
+      ) {
+        errors.push(`${itemPath}.diagnosisTags: must preserve the saved first-stage diagnosis tags`);
+      }
+    }
     if (
       inputItem !== undefined
       && 'learnerRequestedReview' in inputItem
@@ -1373,6 +1642,13 @@ function validateSessionReflectionResultVersion(
           path: `${proposalPath}.operation`,
         }));
         if (
+          schemaVersion !== 'session_reflection_result.v8'
+          && isRecord(proposal.operation)
+          && proposal.operation.kind === 'promote_pure_elicitation'
+        ) {
+          errors.push(`${proposalPath}.operation: promotion is reserved for V8 results`);
+        }
+        if (
           schemaVersion !== 'session_reflection_result.v4'
           && inputItem !== undefined
           && 'servedCue' in inputItem
@@ -1383,6 +1659,13 @@ function validateSessionReflectionResultVersion(
             `${proposalPath}.operation`,
           ));
         }
+      }
+      if (schemaVersion === 'session_reflection_result.v8' && inputItem !== undefined) {
+        errors.push(...validateV8ProposalSet(
+          itemResult.proposals,
+          inputItem as ReflectionItemV5,
+          `${itemPath}.proposals`,
+        ));
       }
     }
 
@@ -1419,16 +1702,207 @@ function validateSessionReflectionResultVersion(
       }
     }
   }
+  if (schemaVersion === 'session_reflection_result.v8') {
+    errors.push(...validateV8BundleWideProposalConflicts(value.itemResults));
+  }
+  return errors;
+}
+
+function validateV8BundleWideProposalConflicts(itemResults: unknown[]): string[] {
+  const errors: string[] = [];
+  const operations = itemResults.flatMap((itemResult, itemIndex) => {
+    if (!isRecord(itemResult) || !Array.isArray(itemResult.proposals)) return [];
+    return itemResult.proposals.flatMap((proposal, proposalIndex) => (
+      isRecord(proposal) && isRecord(proposal.operation)
+        ? [{ operation: proposal.operation, path: `$.itemResults[${itemIndex}].proposals[${proposalIndex}].operation` }]
+        : []
+    ));
+  });
+  const promotions = operations.filter(({ operation }) => (
+    operation.kind === 'promote_pure_elicitation'
+  ));
+  const promotionPathByWordId = new Map<string, string>();
+  for (const promotion of promotions) {
+    for (const wordId of [promotion.operation.targetWordId, promotion.operation.responseWordId]) {
+      if (typeof wordId !== 'string') continue;
+      if (!promotionPathByWordId.has(wordId)) promotionPathByWordId.set(wordId, promotion.path);
+    }
+  }
+  for (const candidate of operations) {
+    const operation = candidate.operation;
+    if (
+      operation.kind !== 'suppress_definition_production'
+      && operation.kind !== 'repair_production_cue'
+      && operation.kind !== 'add_production_cue_supplement'
+    ) continue;
+    if (typeof operation.wordId !== 'string') continue;
+    const promotionPath = promotionPathByWordId.get(operation.wordId);
+    if (promotionPath !== undefined) {
+      errors.push(
+        `${candidate.path}: conflicts with ${promotionPath} for affected word ${operation.wordId}`,
+      );
+    }
+  }
+  return errors;
+}
+
+function validateOwnerOnlyCueDrafts(value: unknown, path: string): string[] {
+  if (!isRecord(value) || value.kind !== 'repair_production_cue' || value.version !== 2
+    || !Array.isArray(value.changes)) return [];
+  const errors: string[] = [];
+  value.changes.forEach((change, changeIndex) => {
+    if (!isRecord(change)) return;
+    const drafts = change.kind === 'create' ? [change.cue]
+      : change.kind === 'replace' && Array.isArray(change.replacements) ? change.replacements : [];
+    drafts.forEach((draft, draftIndex) => {
+      if (isRecord(draft) && (!Array.isArray(draft.acceptedWordIds)
+        || draft.acceptedWordIds.length !== 1 || draft.acceptedWordIds[0] !== value.wordId)) {
+        errors.push(`${path}.changes[${changeIndex}].drafts[${draftIndex}]: V8 word-owned cues must accept exactly their owner`);
+      }
+    });
+  });
+  return errors;
+}
+
+function validateV8ProposalSet(
+  proposals: unknown[],
+  item: ReflectionItemV5,
+  path: string,
+): string[] {
+  const errors: string[] = [];
+  const promotionOperations = proposals.flatMap((proposal) => (
+    isRecord(proposal)
+    && isRecord(proposal.operation)
+    && proposal.operation.kind === 'promote_pure_elicitation'
+      ? [proposal.operation]
+      : []
+  ));
+  if (promotionOperations.length > 1) {
+    errors.push(`${path}: at most one pure-elicitation promotion is allowed`);
+  }
+
+  for (const [proposalIndex, proposal] of proposals.entries()) {
+    if (!isRecord(proposal) || !isRecord(proposal.operation)) continue;
+    errors.push(...validateOwnerOnlyCueDrafts(proposal.operation, `${path}[${proposalIndex}].operation`));
+  }
+
+  const promotion = promotionOperations[0];
+  if (promotion === undefined) return errors;
+  const promotionPath = `${path}[${proposals.findIndex((proposal) => (
+    isRecord(proposal) && proposal.operation === promotion
+  ))}].operation`;
+  errors.push(...validatePureCuePromotionEvidenceContext(promotion, item, promotionPath));
+
+  const affectedWordIds = new Set([
+    promotion.targetWordId,
+    promotion.responseWordId,
+  ].filter((wordId): wordId is string => typeof wordId === 'string'));
+  proposals.forEach((proposal, proposalIndex) => {
+    if (!isRecord(proposal) || !isRecord(proposal.operation)) return;
+    const operation = proposal.operation;
+    if (operation === promotion) return;
+    const conflicts = (
+      operation.kind === 'suppress_definition_production'
+      || operation.kind === 'repair_production_cue'
+      || operation.kind === 'add_production_cue_supplement'
+    ) && typeof operation.wordId === 'string' && affectedWordIds.has(operation.wordId);
+    if (conflicts) {
+      errors.push(
+        `${path}[${proposalIndex}].operation: conflicts with promotion policy for an affected word`,
+      );
+    }
+  });
+  return errors;
+}
+
+export function validatePureCuePromotionEvidenceContext(
+  value: unknown,
+  item: ReflectionItemV5,
+  path = '$',
+): string[] {
+  if (!isRecord(value) || value.kind !== 'promote_pure_elicitation') return [];
+  const errors: string[] = [];
+  const responseWordId = item.submittedWord?.wordId ?? null;
+  if (item.servedCue.acceptedWordIds.length !== 1
+    || item.servedCue.acceptedWordIds[0] !== item.targetWord.wordId
+    || responseWordId === item.targetWord.wordId) {
+    errors.push(`${path}: promotion requires strict target-only evidence and a distinct response word`);
+  }
+  if (item.promotionEvidence === null) {
+    return [`${path}: promotion requires enriched promotion evidence`];
+  }
+  if (responseWordId === null) {
+    errors.push(`${path}.responseWordId: promotion requires a resolved response word`);
+  }
+  if (value.sourceAttemptId !== item.sourceAttemptId) {
+    errors.push(`${path}.sourceAttemptId: must match the evidence source attempt`);
+  }
+  if (value.targetWordId !== item.targetWord.wordId) {
+    errors.push(`${path}.targetWordId: must match the evidence target word`);
+  }
+  if (value.responseWordId !== responseWordId) {
+    errors.push(`${path}.responseWordId: must match the resolved response word`);
+  }
+
+  const evidenceWords = new Map(
+    item.promotionEvidence.words.map((word) => [word.wordId, word]),
+  );
+  const expectedWordIds = new Set([item.targetWord.wordId, responseWordId].filter(
+    (wordId): wordId is string => wordId !== null,
+  ));
+  if (
+    evidenceWords.size !== expectedWordIds.size
+    || [...expectedWordIds].some((wordId) => !evidenceWords.has(wordId))
+  ) {
+    errors.push(`${path}: promotion evidence must contain exactly the target-response pair`);
+  }
+
+  if (isRecord(value.destination) && value.destination.kind === 'existing') {
+    const allowedPureCueIds = new Set(
+      item.promotionEvidence.intersectingPureCues.map((cue) => cue.id),
+    );
+    if (
+      typeof value.destination.pureCueId === 'string'
+      && !allowedPureCueIds.has(value.destination.pureCueId)
+    ) {
+      errors.push(`${path}.destination.pureCueId: must reference an enriched intersecting pure cue`);
+    }
+  }
+
+  if (Array.isArray(value.wordPlans)) {
+    value.wordPlans.forEach((plan, planIndex) => {
+      if (!isRecord(plan) || typeof plan.wordId !== 'string') return;
+      const evidenceWord = evidenceWords.get(plan.wordId);
+      if (evidenceWord === undefined || !Array.isArray(plan.deactivateCueIds)) return;
+      const allowedCueIds = new Set(evidenceWord.activeProductionCues.map((cue) => cue.cueId));
+      plan.deactivateCueIds.forEach((cueId, cueIndex) => {
+        if (typeof cueId === 'string' && !allowedCueIds.has(cueId)) {
+          errors.push(
+            `${path}.wordPlans[${planIndex}].deactivateCueIds[${cueIndex}]`
+            + ': must reference an enriched active cue for that word',
+          );
+        }
+      });
+    });
+  }
   return errors;
 }
 
 export function validateReflectionOperationEvidenceContext(
   value: unknown,
-  item: ProductionMistakeReflectionItemV2 | ReflectionItemV3 | ReflectionItemV4,
+  item: ProductionMistakeReflectionItemV2 | ReflectionItemV3 | ReflectionItemV4 | ReflectionItemV5,
   path: string,
 ): string[] {
   if (!isRecord(value)) return [];
   const errors: string[] = [];
+  if ('promotionEvidence' in item) {
+    errors.push(...validateOwnerOnlyCueDrafts(value, path));
+  }
+  if (value.kind === 'promote_pure_elicitation') {
+    return 'promotionEvidence' in item
+      ? validatePureCuePromotionEvidenceContext(value, item, path)
+      : [`${path}: promotion requires V5 enriched evidence`];
+  }
   if (item.responseKind === 'no_clue') {
     if (value.kind === 'create_contrast_cluster') {
       errors.push(`${path}: no-clue evidence cannot ground contrast content`);

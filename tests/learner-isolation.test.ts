@@ -173,7 +173,12 @@ describe('learner isolation', { concurrency: false }, () => {
       'production_cue',
       originalCueId,
     );
+    const otherOriginalPublication = dbModule.getSharedContentPublicationForContent(
+      'production_cue',
+      otherOriginalCueId,
+    );
     assert.ok(originalPublication);
+    assert.ok(otherOriginalPublication);
     assert.deepEqual(sourceCue?.attribution, {
       origin: 'reflection',
       invocationId: 'learner-a-cue-create',
@@ -259,7 +264,11 @@ describe('learner isolation', { concurrency: false }, () => {
     assert.ok(replacementPublication);
     assert.equal(
       dbModule.getSharedContentPublication(originalPublication.publicationId)?.publicationStatus,
-      'shared_trial',
+      'retired',
+    );
+    assert.equal(
+      dbModule.getSharedContentPublication(otherOriginalPublication.publicationId)?.publicationStatus,
+      'retired',
     );
     assert.equal(
       dbModule.getSharedContentPublication(replacementPublication.publicationId)?.publicationStatus,
@@ -272,7 +281,7 @@ describe('learner isolation', { concurrency: false }, () => {
         'learner-b',
         () => dbModule.getProductionCue(originalCueId)?.active,
       ),
-      true,
+      false,
     );
     assert.equal(
       dbModule.runWithLearnerId(
@@ -280,6 +289,18 @@ describe('learner isolation', { concurrency: false }, () => {
         () => dbModule.getProductionCue(originalCueId)?.active,
       ),
       false,
+    );
+    assert.deepEqual(
+      { ...sqlite.prepare(`
+        SELECT actor_kind, actor_id, reason
+        FROM shared_content_publication_events
+        WHERE publication_id = ? AND to_status = 'retired'
+      `).get(originalPublication.publicationId) as Record<string, unknown> },
+      {
+        actor_kind: 'source_authorization',
+        actor_id: null,
+        reason: 'validated learner-authorized production-cue retirement',
+      },
     );
     dbModule.runWithLearnerId('learner-b', () => dbModule.upsertStudySessionRecord({
       id: 'shared-version-session',

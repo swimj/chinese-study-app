@@ -13,11 +13,13 @@ import type {
   ReflectionInputItemV2,
   ReflectionItemV3,
   ReflectionItemV4,
+  ReflectionItemV5,
   SessionReflectionBundle,
   SessionReflectionBundleV1,
   SessionReflectionBundleV2,
   SessionReflectionBundleV3,
   SessionReflectionBundleV4,
+  SessionReflectionBundleV5,
   CuratedReflectionBundleV1,
   SessionReflectionResult,
   SessionReflectionResultV4,
@@ -26,6 +28,8 @@ import type {
   ReflectionHelpInboxEntry,
   SessionReflectionResultV6,
   SessionReflectionResultV7,
+  SessionReflectionResultV8,
+  PromotePureElicitationOperationV1,
 } from '../../src/domain/reflection.ts';
 import {
   assertOperationApplicationTransition,
@@ -39,6 +43,7 @@ import {
   validateSessionReflectionResultV5,
   validateSessionReflectionResultV6,
   validateSessionReflectionResultV7,
+  validateSessionReflectionResultV8,
 } from '../../src/domain/reflection.ts';
 import { parseStoredSessionReflectionBundle } from '../../src/domain/reflection-evidence.ts';
 import type { NormalizedTokenUsage } from '../llm/types.ts';
@@ -74,7 +79,22 @@ import {
 import {
   applyProductionCueRepairWithoutTransaction,
   applyProductionCueSupplementWithoutTransaction,
+  defaultProductionTaskId,
+  getActiveProductionCuesForWord,
+  assertPureCuePromotionSource,
+  validateProductionCueRepairCurrentStateWithoutTransaction,
 } from './production-cues.ts';
+import {
+  createPureCueWithoutTransaction,
+  extendPureCueAcceptedWordsWithoutTransaction,
+  getPureCueContent,
+  restoreProductionSchedulerSnapshotWithoutTransaction,
+} from './pure-cues.ts';
+import {
+  getSharedContentPublicationForContent,
+  isEligibleSharedPublicationStatus,
+  publishAuthorizedPureCueWithoutTransaction,
+} from './shared-content.ts';
 import { stampProposalInboxSeenIfLeavingPending } from './attention.ts';
 
 export const INITIAL_REFLECTION_FLOW_VERSION = 'initial_post_session_reflection.v2';
@@ -112,6 +132,7 @@ export type MaterializeReflectionArtifactInput = MaterializeReflectionArtifactBa
   | { evidenceBundle: SessionReflectionBundleV4; result: SessionReflectionResultV7 }
   | { evidenceBundle: SessionReflectionBundleV2; result: SessionReflectionResultV7 }
   | { evidenceBundle: SessionReflectionBundleV3; result: SessionReflectionResultV7 }
+  | { evidenceBundle: SessionReflectionBundleV5; result: SessionReflectionResultV8 }
   | {
       evidenceBundle: CuratedReflectionBundleV1;
       result: SessionReflectionResultV7;
@@ -1615,7 +1636,7 @@ export function supersedeReflectionProposal(
 
 function requireRegisteredOperationForEvidence(
   operation: ReflectionOperation,
-  evidenceItem: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4,
+  evidenceItem: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4 | ReflectionItemV5,
 ): NonNullable<ReturnType<typeof getReflectionOperationRegistration>> {
   const itemValidationErrors = validateReflectionOperation(operation, {
     allowedWordIds: visibleWordIds(evidenceItem),
@@ -2101,7 +2122,7 @@ function requireProposalReviewRow(proposalId: string): ProposalReviewRow {
 
 function originalProposalContextForReview(row: ProposalReviewRow): {
   proposal: ReflectionProposalV1;
-  evidenceItem: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4;
+  evidenceItem: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4 | ReflectionItemV5;
 } {
   const artifactRow = getDb().prepare(`
     SELECT ${artifactColumns.join(', ')}
@@ -2312,6 +2333,12 @@ function validateReflectionArtifactPair(
     && result.schemaVersion === 'session_reflection_result.v7'
   ) {
     return validateSessionReflectionResultV7(result, evidenceBundle);
+  }
+  if (
+    evidenceBundle.schemaVersion === 'session_reflection_bundle.v5'
+    && result.schemaVersion === 'session_reflection_result.v8'
+  ) {
+    return validateSessionReflectionResultV8(result, evidenceBundle);
   }
   return [
     `$.schemaVersion: result ${String(result.schemaVersion)} is not compatible with ${evidenceBundle.schemaVersion}`,
@@ -2530,7 +2557,144 @@ function applyPendingOperationWithoutTransaction(
       throw new Error(
         `No faithful application adapter is available for ${operation.kind}@${operation.version}.`,
       );
+    case 'promote_pure_elicitation':
+      return applyPureElicitationPromotionWithoutTransaction(
+        operation,
+        invocationId,
+        appliedAt,
+      );
   }
+}
+
+function applyPureElicitationPromotionWithoutTransaction(
+  operation: PromotePureElicitationOperationV1,
+  invocationId: string,
+  appliedAt: string,
+): OperationApplicationState {
+  assertPureCuePromotionSource(operation.sourceAttemptId, operation.targetWordId, operation.responseWordId);
+  const pairWordIds = [operation.targetWordId, operation.responseWordId];
+  const planByWordId = new Map(operation.wordPlans.map((plan) => [plan.wordId, plan]));
+  const repairs = pairWordIds.map((wordId) => {
+    const plan = planByWordId.get(wordId)!;
+    return {
+      kind: 'repair_production_cue' as const,
+      version: 2 as const,
+      wordId,
+      taskId: defaultProductionTaskId(wordId),
+      changes: [
+        ...plan.deactivateCueIds.map((cueId) => ({ kind: 'deactivate' as const, cueId })),
+        ...plan.distinctiveCueDrafts.map((draft) => ({
+          kind: 'create' as const,
+          cue: {
+            cueType: draft.cueType,
+            text: draft.text,
+            acceptedWordIds: [wordId],
+          },
+        })),
+      ],
+      sourceAttemptJudgments: [],
+    };
+  });
+
+  for (const repair of repairs) {
+    const currentStateError = validateProductionCueRepairCurrentStateWithoutTransaction(repair);
+    if (currentStateError !== null) return { kind: 'stale', reason: currentStateError };
+  }
+
+  const existingDestination = operation.destination.kind === 'existing'
+    ? getPureCueContent(operation.destination.pureCueId)
+    : getPureCueContent(`pure-cue:reflection:${invocationId}`);
+  if (operation.destination.kind === 'existing') {
+    const publication = getSharedContentPublicationForContent(
+      'pure_cue',
+      operation.destination.pureCueId,
+    );
+    if (
+      existingDestination === null
+      || publication === null
+      || !isEligibleSharedPublicationStatus(publication.publicationStatus)
+    ) {
+      return {
+        kind: 'stale',
+        reason: `Pure cue ${operation.destination.pureCueId} is no longer eligible shared content.`,
+      };
+    }
+  } else if (existingDestination !== null) {
+    return {
+      kind: 'stale',
+      reason: `Pure cue id reserved for invocation ${invocationId} already exists.`,
+    };
+  }
+
+  const causedEffectRefs: EffectRef[] = [];
+  const satisfyingEffectRefs: EffectRef[] = [];
+  let pureCueId: string;
+  if (operation.destination.kind === 'create') {
+    const pureCue = createPureCueWithoutTransaction({
+      id: `pure-cue:reflection:${invocationId}`,
+      stimulus: operation.destination.stimulus,
+      axisNote: operation.destination.axisNote,
+      acceptedWordIds: pairWordIds,
+      createdAt: appliedAt,
+    });
+    pureCueId = pureCue.id;
+    publishAuthorizedPureCueWithoutTransaction({
+      pureCueId,
+      invocationId,
+      authorizedAt: appliedAt,
+    });
+    causedEffectRefs.push({ type: 'pure_cue', id: pureCueId });
+  } else {
+    pureCueId = operation.destination.pureCueId;
+    const existingMembers = new Set(existingDestination!.acceptedWordIds);
+    const addedMembers = pairWordIds.filter((wordId) => !existingMembers.has(wordId));
+    extendPureCueAcceptedWordsWithoutTransaction({
+      id: pureCueId,
+      acceptedWordIds: pairWordIds,
+    });
+    for (const wordId of pairWordIds) {
+      const membershipRef = {
+        type: 'pure_cue_membership',
+        id: `${encodeURIComponent(pureCueId)}/${encodeURIComponent(wordId)}`,
+      };
+      if (addedMembers.includes(wordId)) causedEffectRefs.push(membershipRef);
+      else satisfyingEffectRefs.push(membershipRef);
+    }
+  }
+
+  for (const repair of repairs) {
+    const repairState = applyProductionCueRepairWithoutTransaction(repair, invocationId, appliedAt);
+    if (repairState.kind === 'stale') {
+      throw new Error(`Promotion cue state changed after preflight: ${repairState.reason}`);
+    }
+    if (repairState.kind === 'applied') causedEffectRefs.push(...repairState.effectRefs);
+    if (repairState.kind === 'already_satisfied') {
+      satisfyingEffectRefs.push(...repairState.satisfyingEffectRefs);
+    }
+    if (
+      repairState.kind !== 'applied'
+      && repairState.kind !== 'already_satisfied'
+    ) {
+      throw new Error(`Unexpected promotion cue application state ${repairState.kind}.`);
+    }
+  }
+
+  const compensationKind = restoreProductionSchedulerSnapshotWithoutTransaction({
+    sourceAttemptId: operation.sourceAttemptId,
+    compensationInvocationId: invocationId,
+    restoredAt: appliedAt,
+  }).kind;
+  const compensationRef = {
+    type: 'production_scheduler_compensation',
+    id: `${encodeURIComponent(operation.sourceAttemptId)}/${compensationKind}`,
+  };
+  if (compensationKind === 'restored') causedEffectRefs.push(compensationRef);
+  else satisfyingEffectRefs.push(compensationRef);
+
+  if (causedEffectRefs.length > 0) {
+    return { kind: 'applied', appliedAt, effectRefs: [...causedEffectRefs, ...satisfyingEffectRefs] };
+  }
+  return { kind: 'already_satisfied', satisfyingEffectRefs };
 }
 
 function applyProductionSuppressionWithoutTransaction(
@@ -3181,7 +3345,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function visibleWordIds(
-  item: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4,
+  item: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4 | ReflectionItemV5,
 ): Set<string> {
   const wordIds = new Set<string>();
   if (item.targetWord !== null) {
