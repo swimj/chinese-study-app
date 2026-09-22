@@ -2,8 +2,7 @@ import type { ReviewRating, Word } from '../types';
 import {
   assertTargetedCueAcceptsOnlyOwner,
   type AcceptedCueAnswer,
-  type ServedCueSnapshot,
-  type TargetedCueContent,
+  type TargetedCueFormat,
 } from './cues';
 import type { PureCueServedSnapshot } from './pure-cues';
 
@@ -19,7 +18,7 @@ export type StudyContentRef =
   | { type: 'example_sentence'; id: string }
   | { type: 'production_cue'; taskId: string; cueId: string };
 
-export type ProductionCueType = TargetedCueContent['format'];
+export type ProductionCueType = TargetedCueFormat;
 
 export type ProductionAttemptResult =
   | 'accepted_anchor'
@@ -32,7 +31,7 @@ export type ProductionCueSupplementSnapshot = {
   exampleTranslation: string;
 };
 
-export type ProductionExerciseSnapshot = ServedCueSnapshot & {
+export type ProductionExerciseSnapshot = {
   taskId: string;
   cueId: string | null;
   cueType: ProductionCueType;

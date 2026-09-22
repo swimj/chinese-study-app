@@ -1,5 +1,6 @@
 import { getDb } from './connection.ts';
 import { getLearnerParam, upsertLearnerParam } from './identity.ts';
+import { isCurrentReflectionArtifactContract } from '../../src/domain/reflection-contracts.ts';
 
 const WHATS_NEW_SEEN_THROUGH_KEY = 'whats_new_seen_through_date';
 const FAILED_REFLECTION_RUNS_SEEN_THROUGH_KEY = 'failed_reflection_runs_seen_through_at';
@@ -74,14 +75,17 @@ export function markFailedReflectionRunsSeen(
 }
 
 export function countUnseenReflectionHelpItems(): number {
-  const row = getDb().prepare(`
-    SELECT
-      (
-        SELECT COUNT(*)
+  const rows = getDb().prepare(`
+    SELECT artifacts.reflection_flow_version AS reflectionFlowVersion,
+      artifacts.bundle_schema_version AS bundleSchemaVersion,
+      artifacts.result_schema_version AS resultSchemaVersion,
+      artifacts.prompt_version AS promptVersion, COUNT(*) AS count
+    FROM (
+        SELECT artifact_id
         FROM reflection_proposal_reviews
         WHERE disposition = 'pending' AND inbox_seen_at IS NULL
-      ) + (
-        SELECT COUNT(*)
+        UNION ALL
+        SELECT inbox.artifact_id
         FROM reflection_help_inbox AS inbox
         WHERE inbox.inbox_seen_at IS NULL
           AND NOT EXISTS (
@@ -91,9 +95,19 @@ export function countUnseenReflectionHelpItems(): number {
               AND review.item_id = inbox.item_id
               AND review.disposition = 'pending'
           )
-      ) AS count
-  `).get() as { count: number };
-  return row.count;
+      ) AS unseen
+    JOIN reflection_artifacts AS artifacts ON artifacts.artifact_id = unseen.artifact_id
+    GROUP BY artifacts.artifact_id
+  `).all() as Array<{
+    reflectionFlowVersion: string;
+    bundleSchemaVersion: string;
+    resultSchemaVersion: string;
+    promptVersion: string;
+    count: number;
+  }>;
+  return rows.reduce((count, row) => (
+    count + (isCurrentReflectionArtifactContract(row) ? row.count : 0)
+  ), 0);
 }
 
 export function markReflectionInboxSeen(

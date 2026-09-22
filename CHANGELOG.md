@@ -11,6 +11,11 @@ Casual notes for people using the app before there is a real release process.
 
 ## Unreleased — strict word cues and pure-cue cutover
 
+- Reflection first diagnoses the attempt, then hands shared expressive axes
+  to a content-reconciliation stage. That stage explains the actual proposed
+  repairs. If it disagrees with the diagnosis, you see explicit feedback with
+  no content changes or compensation to accept. Overlapping word pairs are
+  omitted from a bundle; omitted second-opinion proposals remain deferred.
 - Accepted pure-cue promotions publish shared content. Relevant cues enter
   review automatically when you study any accepted member, with your own
   schedule and history. Accepted repairs retire selected overbroad shared

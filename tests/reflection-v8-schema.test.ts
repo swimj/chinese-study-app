@@ -104,6 +104,7 @@ function resultFor(items: ReflectionItemV5[]): SessionReflectionResultV8 {
       itemId: evidence.itemId,
       diagnosisTags: ['production_cue_overloaded'],
       learnerExplanation: 'Use a shared elicitation and remove only the named broad cues.',
+      promotionOutcome: 'promoted',
       proposals: [{
         proposalGroupKey: null,
         rationale: 'Promote the explicit pair.',
@@ -121,7 +122,7 @@ describe('session reflection V5 evidence and V8 final result', () => {
     const stageTwo = {
       schemaVersion: 'pure_cue_promotion_bundle.v1' as const,
       generatedAt,
-      sessionId: evidence.session.sessionId,
+      sourceSessionId: evidence.session.sessionId,
       studyProfile: evidence.session.studyProfile,
       items: [{
         itemId: evidence.items[0]!.itemId,
@@ -129,11 +130,20 @@ describe('session reflection V5 evidence and V8 final result', () => {
         targetWord: evidence.items[0]!.targetWord,
         responseWord: evidence.items[0]!.submittedWord!,
         servedCue: evidence.items[0]!.servedCue,
-        learnerExplanation: 'The response reveals a shared axis.',
+        handoff: {
+          axis: 'one shared meaning',
+          boundaries: 'The words remain distinct outside this meaning.',
+          responseValidity: 'The response naturally answers the bounded shared meaning.',
+        },
         promotionEvidence: evidence.items[0]!.promotionEvidence!,
       }],
     };
     assert.equal(parsePureCuePromotionBundleV1(stageTwo), stageTwo);
+
+    const legacyExplanation = structuredClone(stageTwo) as Record<string, unknown>;
+    const legacyItem = (legacyExplanation.items as Array<Record<string, unknown>>)[0]!;
+    legacyItem.learnerExplanation = 'This field belongs to the stage-two result now.';
+    assert.throws(() => parsePureCuePromotionBundleV1(legacyExplanation), /learnerExplanation: unknown property/);
 
     const missingProfile = structuredClone(stageTwo) as Record<string, unknown>;
     delete missingProfile.studyProfile;
@@ -195,6 +205,101 @@ describe('session reflection V5 evidence and V8 final result', () => {
     assert.match(
       validateSessionReflectionResultV8(noPromotion, bundle([items[0]!])).join('\n'),
       /must accept exactly their owner/,
+    );
+  });
+
+  test('accepts a routed disagreement marker only as a non-actionable item', () => {
+    const evidence = bundle();
+    const disagreement: SessionReflectionResultV8 = {
+      schemaVersion: 'session_reflection_result.v8',
+      itemResults: [{
+        itemId: evidence.items[0]!.itemId,
+        diagnosisTags: evidence.items[0]!.promotionEvidence!.diagnosisTags,
+        learnerExplanation: 'The second stage found that no honest shared elicitation represents the pair.',
+        promotionOutcome: 'disagreement',
+        proposals: [],
+        questions: [],
+      }],
+    };
+    assert.deepEqual(validateSessionReflectionResultV8(disagreement, evidence), []);
+
+    disagreement.itemResults[0]!.questions.push({
+      question: 'Should this still change content?',
+      reason: 'A disagreement is non-actionable.',
+    });
+    assert.match(
+      validateSessionReflectionResultV8(disagreement, evidence).join('\n'),
+      /disagreement must not expose questions/,
+    );
+
+    disagreement.itemResults[0]!.questions = [];
+    const unroutedEvidence = structuredClone(evidence);
+    unroutedEvidence.items[0]!.promotionEvidence = null;
+    assert.match(
+      validateSessionReflectionResultV8(disagreement, unroutedEvidence).join('\n'),
+      /disagreement requires valid routed promotion evidence/,
+    );
+  });
+
+  test('accepts a promoted marker only for one routed promotion-only proposal', () => {
+    const evidence = bundle();
+    const promoted = resultFor(evidence.items);
+    assert.deepEqual(validateSessionReflectionResultV8(promoted, evidence), []);
+
+    const missingOutcome = structuredClone(promoted);
+    delete missingOutcome.itemResults[0]!.promotionOutcome;
+    assert.match(
+      validateSessionReflectionResultV8(missingOutcome, evidence).join('\n'),
+      /routed promotion evidence requires an outcome/,
+    );
+
+    promoted.itemResults[0]!.proposals.push({
+      proposalGroupKey: null,
+      rationale: 'An ordinary proposal must not accompany a promoted outcome.',
+      operation: {
+        kind: 'suppress_definition_production',
+        version: 1,
+        wordId: evidence.items[0]!.targetWord.wordId,
+      },
+    });
+    assert.match(
+      validateSessionReflectionResultV8(promoted, evidence).join('\n'),
+      /promoted must expose exactly one pure-elicitation promotion and no ordinary proposals/,
+    );
+
+    promoted.itemResults[0]!.proposals = [promoted.itemResults[0]!.proposals[0]!];
+    promoted.itemResults[0]!.questions.push({
+      question: 'Should this coexist with promotion?',
+      reason: 'Promoted outcomes are proposal-only stage-two results.',
+    });
+    assert.match(
+      validateSessionReflectionResultV8(promoted, evidence).join('\n'),
+      /promoted must not expose questions/,
+    );
+
+    promoted.itemResults[0]!.questions = [];
+    const unroutedEvidence = structuredClone(evidence);
+    unroutedEvidence.items[0]!.promotionEvidence = null;
+    assert.match(
+      validateSessionReflectionResultV8(promoted, unroutedEvidence).join('\n'),
+      /promoted requires valid routed promotion evidence/,
+    );
+
+    const ordinary: SessionReflectionResultV8 = {
+      schemaVersion: 'session_reflection_result.v8',
+      itemResults: [{
+        itemId: unroutedEvidence.items[0]!.itemId,
+        diagnosisTags: ['ordinary_retrieval_noise'],
+        learnerExplanation: 'This was an ordinary miss and does not route to promotion.',
+        proposals: [],
+        questions: [],
+      }],
+    };
+    assert.deepEqual(validateSessionReflectionResultV8(ordinary, unroutedEvidence), []);
+    ordinary.itemResults[0]!.promotionOutcome = 'disagreement';
+    assert.match(
+      validateSessionReflectionResultV8(ordinary, unroutedEvidence).join('\n'),
+      /outcome requires routed promotion evidence/,
     );
   });
 

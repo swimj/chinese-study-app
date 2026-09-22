@@ -184,9 +184,21 @@ V4, V5, and V6 results remain readable under their frozen contracts. V6 removes
 item-level text surface, and removes `unhandledNeeds` because the current model
 and product do not use them reliably. V7 retains that item shape and adds the
 strict `add_production_cue_supplement@1` wire operation. New generation uses
-V7; stored V4/V5/V6 artifacts remain immutable.
+V8 through staged diagnosis/promotion; stage one uses the exclusive
+`staged_reflection_diagnosis_result.v1` ordinary/shared-axis contract. V7 is the
+legacy one-shot result contract. Stored V4/V5/V6/V7 artifacts
+remain immutable. Execution requires the current staged flow and prompt contract:
+obsolete proposals cannot be accepted, revised, replaced, used as manual-operation
+evidence, sent for second opinion, or applied. No legacy retry path is retained.
 
-V8 retains the same item-result shape and adds `promote_pure_elicitation@1`.
+V8 retains the ordinary item-result shape and adds `promote_pure_elicitation@1`
+and `promotionOutcome` (`promoted` or `disagreement`) on routed items. A
+disagreement has a stage-two learner explanation but no proposals or questions;
+it cannot be used for manual-operation authorization. It remains visible in Help
+and session history, with Done and quality feedback but no resolution workflow.
+For successful promotion, stage two also authors the final learner explanation,
+describing proposed rather than already-applied changes. Stage one's shared-axis
+handoff contains no competing ordinary interventions.
 It is validated against V5 enriched session evidence, including each word's
 current production cues and explicitly identified intersecting pure cues.
 New word-owned cue drafts in V8 accept only their owner. A V8 result cannot
@@ -487,7 +499,7 @@ type ProductionCueEffectRef =
   | { type: 'production_cue_evidence_judgment'; id: string };
 ```
 
-The strict model-facing wire form omits the fixed `version` field, the V0
+The legacy V7 model-facing wire form omits the fixed `version` field, the V0
 default-production `taskId`, and each judgment's `sourceAttemptId` from
 `RepairProductionCueOperationV2`. After strict schema validation, the provider
 boundary stamps `version: 2`, derives the task id from the model-authored
@@ -496,6 +508,16 @@ matching backend-owned evidence item. Legacy model-supplied attempt ids are
 ignored; they never select provenance or application targets.
 Both arrays remain required on the wire, including when
 `sourceAttemptJudgments` is empty.
+
+The current staged-diagnosis wire is simpler: a repair contains
+non-empty `replacementCues` with only `cueType` and `text`, and semantic
+`sourceAttemptJudgments` limited to `misleading_or_overloaded_cue`. The adapter
+constructs target-only `acceptedWordIds`, resolves the presented cue identity,
+and creates cues for fallback evidence or replaces the presented durable cue.
+The model does not choose this persistence distinction and cannot request a
+standalone deactivation through this wire. Normalized durable operations and
+manual editing retain their explicit identities and lifecycle operations.
+Shared-axis handling, not ordinary repair, owns accepted-alternate findings.
 
 The behavioral contract is:
 
