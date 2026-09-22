@@ -60,16 +60,11 @@ import {
 } from './domain-commands.ts';
 import {
   appendProductionCueAttemptEvidenceWithoutTransaction,
-  appendProductionRecheckDemandWithoutTransaction,
-  consumeProductionRecheckDemandWithoutTransaction,
   defaultProductionTaskId,
   createProductionCueIndexes,
   createProductionCueSchema,
   getActiveProductionCuesForWord,
-  getPendingProductionRecheckForWord,
   getProductionCueSupplement,
-  getProductionRecheckDemand,
-  linkProductionRecheckReplacementWithoutTransaction,
   projectProductionCueEvidence,
   validateProductionCueSchema,
   type ProductionCueAttemptResultV0,
@@ -1499,31 +1494,6 @@ export function recordAcceptedReviewAttemptBatch({
     const assigned = productionAttempts.find((attempt) => attempt.event.id === event.id);
     return assigned?.event ?? event;
   });
-  const terminalProductionAttempt = productionAttempts.at(-1) ?? null;
-  const recheckDemandId = assertProductionAttemptRecheckDemandCoherence(productionAttempts);
-  const servedRecheck = recheckDemandId === null ? null : getProductionRecheckDemand(recheckDemandId);
-  if (recheckDemandId !== null && servedRecheck === null) {
-    throw new Error(`Production recheck demand ${recheckDemandId} does not exist.`);
-  }
-  if (servedRecheck !== null && (
-    servedRecheck.consumedAt !== null
-    || servedRecheck.taskId !== terminalProductionAttempt?.evidence.taskId
-    || servedRecheck.dueAt > reviewedAt
-  )) {
-    throw new Error(`Production recheck demand ${recheckDemandId} is stale or not due.`);
-  }
-  if (servedRecheck !== null && terminalProductionAttempt !== null) {
-    const expectedSessionActionId = `review/${terminalProductionAttempt.event.targetWordId}/production/recheck/${servedRecheck.demandId}`;
-    if (events.some((event) => event.sessionActionId !== expectedSessionActionId)) {
-      throw new Error(`Production recheck demand ${servedRecheck.demandId} does not match its served action.`);
-    }
-  } else if (
-    terminalProductionAttempt !== null
-    && terminalProductionAttempt.event.sessionActionId.includes('/production/recheck/')
-  ) {
-    throw new Error('Production recheck action is missing its demand snapshot.');
-  }
-
   getDb().exec('BEGIN');
 
   try {
@@ -1541,39 +1511,12 @@ export function recordAcceptedReviewAttemptBatch({
     }
     if (productionAttempts.length > 0) projectProductionCueEvidence(reviewedAt);
 
-    const preserveAnchorScheduler = derivedCommitFields.failureCount === 0
-      && terminalProductionAttempt !== null
-      && terminalProductionAttempt.evidence.result === 'accepted_non_anchor';
-    if (!preserveAnchorScheduler) {
-      projectReviewAttemptEventsWithoutTransaction({
-        events: eventsToStore,
-        failureCount: derivedCommitFields.failureCount,
-        terminalRating: derivedCommitFields.terminalRating,
-        reviewedAt,
-      });
-    }
-
-    if (servedRecheck !== null && terminalProductionAttempt !== null) {
-      consumeProductionRecheckDemandWithoutTransaction({
-        demandId: servedRecheck.demandId,
-        consumedAt: reviewedAt,
-        consumedByAttemptId: terminalProductionAttempt.event.id,
-      });
-    }
-    if (preserveAnchorScheduler && terminalProductionAttempt !== null) {
-      const existingPending = getPendingProductionRecheckForWord(terminalProductionAttempt.event.targetWordId);
-      if (existingPending === null) {
-        const replacement = appendProductionRecheckDemandWithoutTransaction({
-          taskId: terminalProductionAttempt.evidence.taskId,
-          sourceAttemptId: terminalProductionAttempt.event.id,
-          scheduledAt: reviewedAt,
-          dueAt: addHours(reviewedAt, 48),
-        });
-        if (servedRecheck !== null) {
-          linkProductionRecheckReplacementWithoutTransaction(servedRecheck.demandId, replacement.demandId);
-        }
-      }
-    }
+    projectReviewAttemptEventsWithoutTransaction({
+      events: eventsToStore,
+      failureCount: derivedCommitFields.failureCount,
+      terminalRating: derivedCommitFields.terminalRating,
+      reviewedAt,
+    });
     markStudyAttemptEventsProjectedWithoutTransaction(eventsToStore.map((event) => event.id), reviewedAt);
 
     getDb().exec('COMMIT');
@@ -1592,7 +1535,6 @@ type ParsedProductionAttemptEvidence = {
   cueId: string | null;
   submittedWordId: string | null;
   result: ProductionCueAttemptResultV0;
-  recheckDemandId: string | null;
   responseKind: 'typed' | 'no_clue';
 };
 
@@ -1604,14 +1546,17 @@ function parseProductionAttemptEvidence(event: StudyAttemptEvent): ParsedProduct
     || typeof production.taskId !== 'string'
     || (production.cueId !== null && typeof production.cueId !== 'string')
     || !isProductionCueAttemptResult(production.result)
-    || (production.recheckDemandId !== null && typeof production.recheckDemandId !== 'string')
     || !Array.isArray(production.acceptedWordIds)
-    || production.acceptedWordIds.some((wordId) => typeof wordId !== 'string')
+    || production.acceptedWordIds.length !== 1
+    || production.acceptedWordIds[0] !== event.targetWordId
     || (responseKind !== 'typed' && responseKind !== 'no_clue')
     || (responseKind === 'typed' && typeof production.submittedText !== 'string')
     || (responseKind === 'no_clue' && production.submittedText !== null)
   ) {
     throw new Error(`Production attempt ${event.id} has invalid production evidence metadata.`);
+  }
+  if ('recheckDemandId' in production || event.sessionActionId.includes('/production/recheck/')) {
+    throw new Error(`Production attempt ${event.id} uses retired production recheck state.`);
   }
   if (
     production.submittedText !== event.response
@@ -1647,7 +1592,6 @@ function parseProductionAttemptEvidence(event: StudyAttemptEvent): ParsedProduct
     cueId: production.cueId,
     submittedWordId,
     result: production.result,
-    recheckDemandId: production.recheckDemandId,
     responseKind,
   };
 }
@@ -1787,27 +1731,14 @@ function isProductionAttemptResultCoherent(
     case 'accepted_anchor':
       return submittedWordId === anchorWordId && acceptedWordIds.includes(anchorWordId);
     case 'accepted_non_anchor':
-      return submittedWordId !== null
-        && submittedWordId !== anchorWordId
-        && acceptedWordIds.includes(submittedWordId);
+      return false;
     case 'rejected':
       return submittedWordId === null || !acceptedWordIds.includes(submittedWordId);
   }
 }
 
-function assertProductionAttemptRecheckDemandCoherence(
-  attempts: Array<{ evidence: ParsedProductionAttemptEvidence }>,
-): string | null {
-  const demandIds = new Set(attempts.map(({ evidence }) => evidence.recheckDemandId));
-  if (demandIds.size > 1) {
-    throw new Error('Production attempt batch must reference one recheck demand.');
-  }
-  return attempts[0]?.evidence.recheckDemandId ?? null;
-}
-
 function isProductionCueAttemptResult(value: unknown): value is ProductionCueAttemptResultV0 {
   return value === 'accepted_anchor'
-    || value === 'accepted_non_anchor'
     || value === 'rejected';
 }
 
@@ -5076,19 +5007,7 @@ function getReviewSessionStudyItems(now: string, random: () => number): SessionS
   const bestCandidateByWordId = new Map<string, ReviewSessionItemCandidate>();
 
   for (const row of rows) {
-    const pendingRecheck = row.skill_id === 'production'
-      ? getPendingProductionRecheckForWord(row.id)
-      : null;
-    const dueRecheck = pendingRecheck !== null && pendingRecheck.dueAt <= now;
-    if (pendingRecheck !== null && !dueRecheck) {
-      continue;
-    }
-
-    const content = getReviewSkillContentIfAvailable(
-      row,
-      pendingRecheck?.demandId ?? null,
-      random,
-    );
+    const content = getReviewSkillContentIfAvailable(row, random);
     if (content === undefined) {
       continue;
     }
@@ -5101,7 +5020,7 @@ function getReviewSessionStudyItems(now: string, random: () => number): SessionS
     }
 
     const ordinarilyAdmitted = row.earliest_next_study_at === null || row.earliest_next_study_at <= now;
-    if (!ordinarilyAdmitted && !dueRecheck) {
+    if (!ordinarilyAdmitted) {
       continue;
     }
 
@@ -5112,7 +5031,7 @@ function getReviewSessionStudyItems(now: string, random: () => number): SessionS
     }
 
     const elapsedHours = getElapsedHours(row.skill_last_studied_at, now);
-    const urgency = dueRecheck ? Number.POSITIVE_INFINITY : elapsedHours / row.skill_interval_hours;
+    const urgency = elapsedHours / row.skill_interval_hours;
     if (urgency < 1) {
       continue;
     }
@@ -5121,12 +5040,11 @@ function getReviewSessionStudyItems(now: string, random: () => number): SessionS
       item: mapReviewSessionItemWithSkillRow(
         row,
         content,
-        dueRecheck ? `review/${row.id}/production/recheck/${pendingRecheck.demandId}` : undefined,
       ),
       wordId: row.id,
       skillId: row.skill_id,
       urgency,
-      nextDueAt: dueRecheck ? pendingRecheck.dueAt : row.skill_next_due_at,
+      nextDueAt: row.skill_next_due_at,
     };
     const currentBest = bestCandidateByWordId.get(candidate.wordId);
 
@@ -5174,7 +5092,6 @@ function isReviewSkillCandidateAllowedByRelevancePolicy(
 
 function getReviewSkillContentIfAvailable(
   row: ReviewSessionItemWithSkillRow,
-  recheckDemandId: string | null,
   random: () => number,
 ): {
   contentRef: StudyContentRef | null;
@@ -5217,7 +5134,6 @@ function getReviewSkillContentIfAvailable(
             exampleSentence: supplement.exampleSentence,
             exampleTranslation: supplement.exampleTranslation,
           },
-          recheckDemandId,
         }),
       };
     }
@@ -5246,7 +5162,6 @@ function getReviewSkillContentIfAvailable(
           exampleSentence: supplement.exampleSentence,
           exampleTranslation: supplement.exampleTranslation,
         },
-        recheckDemandId,
       }),
     };
   }

@@ -437,7 +437,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
         replacements: [{
           cueType: 'definition_gloss',
           text: 'target or substitute',
-          acceptedWordIds: ['target', 'alternate'],
+          acceptedWordIds: ['target'],
         }],
       }],
     }));
@@ -453,7 +453,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.ok(activeCues.some((cue) => cue.cueId === seededCueIds[1]));
     assert.ok(activeCues.some((cue) => (
       cue.text === 'target or substitute'
-      && cue.acceptedWordIds.join(',') === 'target,alternate'
+      && cue.acceptedWordIds.join(',') === 'target'
     )));
   });
 
@@ -587,14 +587,13 @@ describe('reflection application adapters', { concurrency: false }, () => {
           replacements: [{
             cueType: 'definition_gloss',
             text: 'target',
-            acceptedWordIds: ['target', 'alternate'],
+            acceptedWordIds: ['target'],
           }],
         }],
       }),
       sourceAttemptJudgments: [{
-        kind: 'accepted_answer_space_omission',
+        kind: 'misleading_or_overloaded_cue',
         sourceAttemptId: 'attempt-omission',
-        submittedWordId: 'alternate',
       }],
     });
     const repaired = dbModule.applyReflectionInvocation(
@@ -634,7 +633,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.equal(countRows('word_study_admission_state'), beforeAdmissionCount);
   });
 
-  test('requires an accepted-answer judgment to replace the exact served cue', () => {
+  test('requires a misleading-cue judgment to repair the exact served cue', () => {
     insertInvocation('cue-exact-repair-seed', cueRepairOperation({
       changes: [{
         kind: 'create',
@@ -667,14 +666,13 @@ describe('reflection application adapters', { concurrency: false }, () => {
           cue: {
             cueType: 'minimal_context',
             text: 'An unrelated new cue',
-            acceptedWordIds: ['target', 'alternate'],
+            acceptedWordIds: ['target'],
           },
         }],
       }),
       sourceAttemptJudgments: [{
-        kind: 'accepted_answer_space_omission',
+        kind: 'misleading_or_overloaded_cue',
         sourceAttemptId: 'attempt-exact-repair',
-        submittedWordId: 'alternate',
       }],
     });
 

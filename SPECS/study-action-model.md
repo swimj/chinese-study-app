@@ -15,6 +15,12 @@ rules in `session-covering-criteria.md`.
 For long-term product vision beyond the current PoC, see
 `adaptive_vocabulary_training_product_notes.md`.
 
+The accepted [pure-cue elicitation contract](./pure-cue-elicitation.md) adds a
+bounded exception to word-owned scheduling: explicitly promoted standalone
+elicitations own their admission, attempts, and scheduler. The word-level
+principles below continue to govern ordinary word-owned actions; they do not
+impose a hidden target or member-word projection on pure cues.
+
 Related documents:
 
 - [`learning-review-model.md`](/Users/jw/dev/chinese-study-app/SPECS/learning-review-model.md)
@@ -250,9 +256,8 @@ The durable V0 production-cue model separates:
 - one answer-checking rule for every V0 cue: accept the submission only when it
   matches the accepted-word set snapshotted on the served action;
 - asynchronous, learner-authorized reconsideration of an out-of-set response;
-  expanding the accepted set writes a replacement cue and may append a later
-  cue-evidence judgment without rewriting the source attempt or its provisional
-  word-scheduler effect; and
+  shared meaning is represented by a standalone pure cue, never by expanding
+  a word-owned cue's accepted set; and
 - append-oriented cue evidence plus asynchronous shadow projection, kept
   distinct from the current word-based scheduler and not consumed by V0
   scheduling.
@@ -263,41 +268,20 @@ cue, cue text, accepted-word set, raw submission, nullable resolved submitted
 word, nullable post-reveal supplement snapshot, and session-time result so later
 content changes cannot reinterpret history.
 
-Cues are content, not independently scheduled SRS objects. Cue application does
-not reset or fork word-skill scheduling. Multi-answer cues nevertheless expose
-a mismatch with the current scheduler: an action is anchored to one word even
-when another accepted word is produced. Treating that response as a lapse can
-falsely punish the anchor, while treating it as ordinary target-word success
-can falsely strengthen it.
-
-The bounded scheduler response is a replaceable implementation policy behind
-the recorded cue-evidence seam:
-
-- a clean `accepted_anchor` result uses the ordinary anchor production
-  projection;
-- any covered action containing a rejected initial attempt, or an accepted
-  typed response that the learner rates `forgot`, uses the ordinary anchor
-  lapse/reinforcement projection;
-- a clean `accepted_non_anchor` result leaves both the
-  anchor production-skill row and word-admission row exactly unchanged and
-  appends a one-shot production recheck demand due 48 hours later;
-- a future recheck demand masks ordinary production for that word without
-  masking recognition; when due, it forces production admission using the
-  currently available active cue selection or governed fallback;
-- the durable commit consumes a served due demand; anchor acceptance or a
-  covered rejected action ends it, while a clean non-anchor result
-  links a successor demand due another 48 hours later.
-
-These demands are a temporary "check again soon" class, not cue schedule state.
-They do not make cues independently scheduled SRS objects and must not be
-promoted into cue semantics or a broader scheduling redesign.
+Word-owned cues are content, not independently scheduled SRS objects. Every
+word-owned cue accepts only its target. Clean target acceptance uses ordinary
+production projection; rejected or Forgot-rated actions use the ordinary lapse
+and reinforcement projection. The former accepted-alternate holding state and
+48-hour recheck demands are removed, including outstanding demands at migration.
+Historical accepted-alternate evidence remains readable, not live behavior.
+Standalone pure cues own independent schedules; see `pure-cue-elicitation.md`.
 
 Response resolution uses the session-frozen accepted-answer snapshot on the
 served production action. Only the canonical Hanzi and non-null traditional
 form participate; lookup aliases do not. If the response matches any word in
-the served accepted set, it is accepted. The anchor wins an accepted tie;
-otherwise the first matching id in the frozen accepted-set order is recorded
-as the accepted non-anchor.
+the target's served answer forms, it is accepted. A served word-owned answer
+set containing any other word is invalid and fails rather than accepting an
+alternate or silently changing grading.
 This deterministic attribution is a known rare V0 gap: it does not infer which
 same-form word the learner meant. When no accepted word matches, the durable
 commit may attach a unique known out-of-set word id by best-effort catalog
@@ -764,7 +748,7 @@ For a production-cue action, `contentRef` identifies the durable task and cue.
 The event metadata snapshots `anchorWordId`, cue type and text,
 `acceptedWordIds`, nullable raw submitted text, nullable resolved submitted word
 id, the explicit `typed` or `no_clue` response kind, and the deterministic
-session-time result, plus the nullable served recheck-demand id. A no-clue
+session-time result. New actions have no recheck-demand id. A no-clue
 attempt keeps both response fields null and uses the ordinary rejected/Forgot
 path. The metadata is historical evidence, not a live lookup into mutable cue
 state.

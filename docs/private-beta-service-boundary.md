@@ -54,7 +54,7 @@ and a self-service recovery product are outside this beta contract.
 
 ## Durable Ownership Inventory
 
-The current schema has 47 steady-state application tables. Temporary migration
+The ownership manifest enumerates the steady-state application tables. Temporary migration
 tables and SQLite internals are excluded. Existing mixed tables must be split
 or given an equivalently explicit ownership/scope boundary before real hosted
 learner data is accepted.
@@ -74,8 +74,10 @@ before it can land.
   `reflection_quality_annotations`, and `reflection_help_inbox`.
 - `intake_triage_runs`, `intake_triage_assessments`, and
   `intake_triage_assessment_dispositions`.
-- `production_cue_evidence_records`, `production_cue_evidence_projection`, and
-  `production_recheck_demands`.
+- `production_cue_evidence_records` and `production_cue_evidence_projection`.
+  The strict-target cue cutover removes the legacy `production_recheck_demands`.
+- `learner_pure_cue_state`, pure-cue served snapshots and attempts, and
+  restore-once scheduler compensation snapshots and their source-attempt links.
 - `production_cue_lifecycle_events` and `production_cue_activation_state` in
   their current meaning. They record each learner's authorized cue activation
   history and projection and are explicitly learner-owned.
@@ -95,11 +97,15 @@ evidence into service-owned data.
 - Reusable production content currently represented by `production_tasks`,
   `production_cues`, `production_cue_accepted_words`, and post-reveal
   `production_cue_supplements`.
+- Pure-cue stimulus/axis identity (`pure_cues`) and additive accepted membership
+  (`pure_cue_accepted_words`). No learner schedule lives on these content rows.
 - A new or explicitly repurposed shared publication lifecycle records
   `shared_trial`, `available`, `quarantined`, and `retired`. It is separate
   from the current learner activation history and from learner suppression.
 
-Shared content is immutable. Corrections create distinct attributable content
+Shared stimulus identity is immutable. Pure cues explicitly allow authorized
+set-add membership expansion; this affects future snapshots, never historical
+grading. Other corrections create distinct attributable content
 or an explicit disposition rather than rewriting history. A repair operation
 preserves causal provenance without assuming that its inputs and outputs are
 versions of one stable artifact. Attempts and evidence retain the exact content
@@ -125,7 +131,10 @@ SWI-47 implements this boundary with physical learner-owned tables behind
 current-learner compatibility views, shared lexical tables plus learner
 overlays, and explicit `learner`/`shared` scope on contrast and production cue
 artifacts. Ordinary application writes create learner-private generated
-content; shared publication remains a later service operation.
+content; accepted reusable repairs publish in the same transaction. Accepted
+pure-cue promotions likewise publish `shared_trial` content, and explicitly
+selected overbroad shared targeted cues retire globally. Private activation
+overlays cannot reactivate a retired publication.
 
 ## Shared Content Contract
 
@@ -142,11 +151,18 @@ learner identity are never published with it. Publication states are:
 - `quarantined` — immediately ineligible while a problem is investigated; and
 - `retired` — historically retained but no longer eligible.
 
-For the first beta, selection is uniform random across all eligible artifacts
+For targeted content in the first beta, selection is uniform random across all eligible artifacts
 for the same learning purpose, including imported and trial content. The
 randomness is injectable in tests. Later ranking, personalization, feedback,
 or embedding-based policy is a refinement of the probability distribution,
 not a reason to weaken identity or provenance.
+
+Pure cues instead use their own learner-private scheduler and proportional
+strong-cue sampling. They are automatically adopted when at least one accepted
+word is in the learner's review vocabulary, without a separate approval or
+intake cap. `proxied` describes derived shared production coverage of a word;
+it is not learner suppression or another stored relevance preference. See
+[`pure-cue-elicitation.md`](../SPECS/pure-cue-elicitation.md).
 
 Learner suppression remains private relevance/curriculum state. Reporting a
 bad artifact may cause a shared quarantine or retirement, and a future shared

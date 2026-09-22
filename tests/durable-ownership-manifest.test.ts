@@ -11,7 +11,7 @@ import { durableOwnershipManifest } from '../server/db/ownership-manifest.ts';
 test('classifies every steady-state application table exactly once', async () => {
   const manifestNames = durableOwnershipManifest.map((entry) => entry.table);
   assert.equal(new Set(manifestNames).size, manifestNames.length, 'ownership manifest contains duplicate tables');
-  assert.equal(durableOwnershipManifest.length, 51);
+  assert.equal(durableOwnershipManifest.length, 57);
   assert.ok(durableOwnershipManifest.every((entry) => entry.ambiguity === null));
 
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-ownership-manifest-'));
@@ -47,6 +47,19 @@ test('classifies every steady-state application table exactly once', async () =>
           `${entry.table} must carry a required learner_id`,
         );
       }
+
+      assert.equal(
+        durableOwnershipManifest.find((entry) => entry.table === 'pure_cues')?.ownershipClass,
+        'shared',
+      );
+      assert.equal(
+        durableOwnershipManifest.find((entry) => entry.table === 'pure_cue_accepted_words')?.ownershipClass,
+        'shared',
+      );
+      assert.equal(
+        durableOwnershipManifest.find((entry) => entry.table === 'learner_pure_cue_state')?.ownershipClass,
+        'learner_private',
+      );
 
       assert.deepEqual(
         learnerScopedCompatibilityTables.map((name) => `learner_owned_${name}`).sort(),

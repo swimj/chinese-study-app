@@ -43,6 +43,12 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
   id: 'app_schema:0008_normalized_hanzi',
   sql: fs.readFileSync(new URL('./migrations/0008_normalized_hanzi.sql', import.meta.url), 'utf8'),
   after: fillMissingNormalizedHanzi,
+}, {
+  id: 'app_schema:0009_pure_cues',
+  sql: fs.readFileSync(new URL('./migrations/0009_pure_cues.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0010_strict_word_cues',
+  sql: fs.readFileSync(new URL('./migrations/0010_strict_word_cues.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

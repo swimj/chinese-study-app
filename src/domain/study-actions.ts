@@ -1,4 +1,10 @@
 import type { ReviewRating, Word } from '../types';
+import {
+  assertTargetedCueAcceptsOnlyOwner,
+  type AcceptedCueAnswer,
+  type ServedCueSnapshot,
+  type TargetedCueContent,
+} from './cues';
 
 export type StudySkillId = 'recognition' | 'production' | 'contextual_selection';
 
@@ -12,11 +18,10 @@ export type StudyContentRef =
   | { type: 'example_sentence'; id: string }
   | { type: 'production_cue'; taskId: string; cueId: string };
 
-export type ProductionCueType = 'definition_gloss' | 'minimal_context' | 'circumstance';
+export type ProductionCueType = TargetedCueContent['format'];
 
 export type ProductionAttemptResult =
   | 'accepted_anchor'
-  | 'accepted_non_anchor'
   | 'rejected';
 
 export type ProductionCueSupplementSnapshot = {
@@ -26,21 +31,28 @@ export type ProductionCueSupplementSnapshot = {
   exampleTranslation: string;
 };
 
-export type ProductionExerciseSnapshot = {
+export type ProductionExerciseSnapshot = ServedCueSnapshot & {
   taskId: string;
   cueId: string | null;
   cueType: ProductionCueType;
   text: string;
   acceptedAnswers: ProductionAnswerWord[];
   supplement: ProductionCueSupplementSnapshot | null;
-  recheckDemandId: string | null;
 };
 
-export type ProductionAnswerWord = {
-  wordId: string;
-  hanzi: string;
-  traditional: string | null;
-};
+export type ProductionAnswerWord = AcceptedCueAnswer;
+
+/**
+ * Word-owned production remains a target-word assessment. The array shape is
+ * retained in served evidence, but a live snapshot must contain exactly the
+ * one answer owned by its scheduled target.
+ */
+export function assertStrictTargetOnlyProductionSnapshot(
+  production: Pick<ProductionExerciseSnapshot, 'acceptedAnswers'>,
+  targetWordId: string,
+): void {
+  assertTargetedCueAcceptsOnlyOwner(production, targetWordId);
+}
 
 export type ProductionResponseResolution =
   | {
@@ -262,6 +274,10 @@ export function buildReviewSessionStudyItem({
     throw new Error(
       `Session study item invariant violated: review session item word "${word.id}" must have review status.`,
     );
+  }
+
+  if (production !== null) {
+    assertStrictTargetOnlyProductionSnapshot(production, word.id);
   }
 
   return {
