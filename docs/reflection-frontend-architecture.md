@@ -49,10 +49,12 @@ can retry rather than navigating away with an unfinished persist.
 Once finalized, **Close summary** is a separate action and remains available
 while reflection is generating. Provider or validation failure is displayed as
 best-effort failure without changing session correctness; the retained
-supplement supports an explicit retry. Session-id guards ignore late responses
-after close or after another session starts. Generation continues in the
-session controller even if Home is unmounted, so a later Reflections visit can
-see the artifact or its failed/retry state.
+supplement supports an explicit retry. Session-id guards ignore late summary-UI
+updates after close or after another session starts. Same-tab in-flight
+generation still keeps the Reflections spinner until that request settles, then
+refreshes attention. Generation continues in the session controller even if Home
+is unmounted, so a later Reflections visit can see the artifact or its
+failed/retry state.
 
 ## Staged generation
 

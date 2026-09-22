@@ -106,10 +106,14 @@ import {
 } from './session-reflection-evidence';
 import {
   beginSessionFinalization,
+  addInFlightSessionReflection,
   completeSessionFinalization,
   completeSessionReflectionGeneration,
+  createInFlightSessionReflectionIds,
   createSessionFinalizationState,
+  hasInFlightSessionReflection,
   failSessionReflectionGeneration,
+  removeInFlightSessionReflection,
   finalizeSessionBeforeReflection,
   isCurrentSessionReflectionRequest,
   resetFailedSessionFinalization,
@@ -240,6 +244,7 @@ export type PersonalNotesEditorController = {
 
 export type StudySessionController = {
   sessionStarted: boolean;
+  sessionReflectionGenerating: boolean;
   prefetchSession: () => Promise<void>;
   refreshSessionPrefetch: () => Promise<void>;
   invalidateSessionPrefetch: () => void;
@@ -298,6 +303,9 @@ export function useStudySession({
   const activeSessionIdRef = useRef<string | null>(null);
   const [sessionFinalization, setSessionFinalization] = useState<SessionFinalizationState>(
     createSessionFinalizationState,
+  );
+  const [inFlightSessionReflectionIds, setInFlightSessionReflectionIds] = useState(
+    createInFlightSessionReflectionIds,
   );
   const sessionFinalizationRef = useRef<SessionFinalizationState>(sessionFinalization);
   const pendingSessionCommitRef = useRef<DeferredSessionCommit | null>(pendingSessionCommit);
@@ -715,33 +723,35 @@ export function useStudySession({
     sessionId: string,
     supplement: unknown,
   ) {
+    setInFlightSessionReflectionIds((current) => addInFlightSessionReflection(current, sessionId));
     try {
       const result = await generateSessionReflection({
         sessionId,
         evidence: supplement,
       });
-      if (!isCurrentSessionReflectionRequest({
+      if (isCurrentSessionReflectionRequest({
         activeSessionId: activeSessionIdRef.current,
         requestSessionId: sessionId,
       })) {
-        return;
+        updateSessionFinalization((current) =>
+          completeSessionReflectionGeneration(current, result),
+        );
       }
-      updateSessionFinalization((current) =>
-        completeSessionReflectionGeneration(current, result),
-      );
-      void Promise.resolve(onReflectionGenerated?.()).catch(() => undefined);
     } catch (err) {
-      if (!isCurrentSessionReflectionRequest({
+      if (isCurrentSessionReflectionRequest({
         activeSessionId: activeSessionIdRef.current,
         requestSessionId: sessionId,
       })) {
-        return;
+        updateSessionFinalization((current) =>
+          failSessionReflectionGeneration(
+            current,
+            err instanceof Error ? err.message : 'Unknown reflection error',
+          ),
+        );
       }
-      updateSessionFinalization((current) =>
-        failSessionReflectionGeneration(
-          current,
-          err instanceof Error ? err.message : 'Unknown reflection error',
-        ),
+    } finally {
+      setInFlightSessionReflectionIds((current) =>
+        removeInFlightSessionReflection(current, sessionId),
       );
       void Promise.resolve(onReflectionGenerated?.()).catch(() => undefined);
     }
@@ -768,6 +778,8 @@ export function useStudySession({
     setSessionStarted(false);
     setSessionState(null);
     setSessionSummary(null);
+    // Summary UI is gone; in-flight generation IDs stay so the Reflections spinner
+    // can keep running until that request settles.
     updateSessionFinalization(() => createSessionFinalizationState());
     activeSessionClockRef.current = null;
     reflectionEvidenceRef.current = createSessionReflectionEvidenceAccumulator();
@@ -1770,6 +1782,7 @@ export function useStudySession({
 
   return {
     sessionStarted,
+    sessionReflectionGenerating: hasInFlightSessionReflection(inFlightSessionReflectionIds),
     prefetchSession,
     refreshSessionPrefetch,
     invalidateSessionPrefetch,

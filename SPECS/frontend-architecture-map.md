@@ -48,7 +48,7 @@ src/
       PersonalNotesEditorOverlay.tsx
       session-keyboard.ts         # state-to-action/shortcut descriptors + key resolution
       session-dialog-focus.ts     # session dialog focus trap, Escape, restoration
-      session-finalization.ts     # Finish/Close, in-app leave finish, and best-effort reflection states
+      session-finalization.ts     # Finish/Close, in-app leave finish, in-flight generation, and best-effort reflection states
       session-reflection-evidence.ts # typed production evidence accumulator + Undo snapshots
       session-commit.ts           # deferred durable commit adapter
       session-prefetch.ts         # session payload prefetch cache

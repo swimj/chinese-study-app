@@ -23,8 +23,44 @@ export type SessionFinalizationState =
 
 export type SessionLeavePhase = 'active' | 'draining' | 'completed' | null;
 
+export type InFlightSessionReflectionIds = ReadonlySet<string>;
+
 export function isSessionReflectionGenerating(state: SessionFinalizationState): boolean {
   return state.kind === 'finalized' && state.reflection.kind === 'generating';
+}
+
+export function createInFlightSessionReflectionIds(): InFlightSessionReflectionIds {
+  return new Set();
+}
+
+export function addInFlightSessionReflection(
+  current: InFlightSessionReflectionIds,
+  sessionId: string,
+): InFlightSessionReflectionIds {
+  if (current.has(sessionId)) {
+    return current;
+  }
+  const next = new Set(current);
+  next.add(sessionId);
+  return next;
+}
+
+export function removeInFlightSessionReflection(
+  current: InFlightSessionReflectionIds,
+  sessionId: string,
+): InFlightSessionReflectionIds {
+  if (!current.has(sessionId)) {
+    return current;
+  }
+  const next = new Set(current);
+  next.delete(sessionId);
+  return next;
+}
+
+export function hasInFlightSessionReflection(
+  current: InFlightSessionReflectionIds,
+): boolean {
+  return current.size > 0;
 }
 
 export function sessionHidesAppChrome({
