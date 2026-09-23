@@ -15,13 +15,18 @@ Casual notes for people using the app before there is a real release process.
 - Newly adopted pure cues keep a 24-hour interval, but first become due after
   six hours.
 
+## Unreleased — GLM-5.3 Flash output cap
+
+- Both GLM-5.3 Flash arms request 131,072 output tokens, the maximum Z.AI
+  accepts. The previous 200,000 cap was rejected immediately.
+
 ## Unreleased — GLM-5.3 Flash high reflection arm
 
 - GLM-5.3 Flash at reasoning high is now a default reflection candidate
   alongside Luna, GLM-5.3 Flash max, and Terra. It uses the same Z.AI Flash
   model and pricing as the max arm; the stored model id keeps the two
   reasoning profiles distinct.
-- Both GLM-5.3 Flash reasoning arms allow 200,000 output tokens, including
+- Both GLM-5.3 Flash reasoning arms allow 131,072 output tokens, including
   reasoning, instead of the 50,000 cap used by the other models.
 
 ## Unreleased — Reflections generating spinner
