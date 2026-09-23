@@ -2,6 +2,12 @@
 
 Casual notes for people using the app before there is a real release process.
 
+## Unreleased — promotion run item counts
+
+- Run meta for a promotion attempt shows how many items that attempt considered.
+  Earlier promotion runs that copied the diagnosis bundle size, such as 19/19,
+  now report the saved promotion input instead.
+
 ## Unreleased — GLM-5.3 Flash high reflection arm
 
 - GLM-5.3 Flash at reasoning high is now a default reflection candidate

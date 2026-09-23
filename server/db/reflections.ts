@@ -441,6 +441,7 @@ type ReflectionGenerationRunRow = {
   estimated_cost_usd: number | null;
   evidence_bundle_json: string | null;
   source_proposal_ids_json: string | null;
+  promotion_considered_item_count?: number | null;
   retryable: number;
 };
 
@@ -507,6 +508,13 @@ const artifactColumns = [
   'evidence_bundle_json',
   'result_json',
 ] as const;
+
+const promotionRunItemCountSelect = `
+  CASE
+    WHEN runs.bundle_schema_version = 'pure_cue_promotion_bundle.v1'
+      THEN json_array_length(json_extract(runs.evidence_bundle_json, '$.items'))
+    ELSE NULL
+  END AS promotion_considered_item_count`;
 
 const reflectionGenerationRunColumns = [
   'run_id',
@@ -1514,27 +1522,56 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
     client_request_id: string; eligible_item_count: number; included_item_count: number;
     evidence_bundle_json: string;
   }>;
-  const inFlight = activeRows.map((row): ReflectionGenerationRunRecord => ({
-    runId: row.run_id, sourceSessionId: row.source_session_id, reflectionFlowVersion: row.reflection_flow_version,
-    startedAt: row.started_at, completedAt: null, provider: row.provider, model: row.model,
-    providerModel: row.provider_model, promptVersion: row.prompt_version, responseId: null,
-    clientRequestId: row.client_request_id, finishReason: null,
-    bundleSchemaVersion: parseReflectionGenerationProviderBundle(
+  const inFlight = activeRows.map((row): ReflectionGenerationRunRecord => {
+    const evidenceBundle = parseReflectionGenerationProviderBundle(
       parseJson(row.evidence_bundle_json, `reflection run ${row.run_id} input`),
-    ).schemaVersion,
-    resultSchemaVersion: row.prompt_version === PURE_CUE_PROMOTION_PROMPT_VERSION
-      ? 'pure_cue_promotion_result.v1'
-      : row.prompt_version === STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION
-        ? 'staged_reflection_diagnosis_result.v1'
-        : 'session_reflection_result.v7',
-    diagnostic: null, state: 'in_flight', failureCode: null,
-    eligibleItemCount: row.eligible_item_count, includedItemCount: row.included_item_count,
-    usage: { inputTokens: null, cachedInputTokens: null, cacheWriteInputTokens: null, outputTokens: null, reasoningTokens: null, totalTokens: null },
-    pricingSnapshotId: null, pricingAsOf: null, pricingBasis: null, estimatedCostUsd: null, retryable: false,
-  }));
+    );
+    const consideredItemCount = evidenceBundle.schemaVersion === 'pure_cue_promotion_bundle.v1'
+      ? evidenceBundle.items.length
+      : null;
+    return {
+      runId: row.run_id,
+      sourceSessionId: row.source_session_id,
+      reflectionFlowVersion: row.reflection_flow_version,
+      startedAt: row.started_at,
+      completedAt: null,
+      provider: row.provider,
+      model: row.model,
+      providerModel: row.provider_model,
+      promptVersion: row.prompt_version,
+      responseId: null,
+      clientRequestId: row.client_request_id,
+      finishReason: null,
+      bundleSchemaVersion: evidenceBundle.schemaVersion,
+      resultSchemaVersion: row.prompt_version === PURE_CUE_PROMOTION_PROMPT_VERSION
+        ? 'pure_cue_promotion_result.v1'
+        : row.prompt_version === STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION
+          ? 'staged_reflection_diagnosis_result.v1'
+          : 'session_reflection_result.v7',
+      diagnostic: null,
+      state: 'in_flight',
+      failureCode: null,
+      eligibleItemCount: consideredItemCount ?? row.eligible_item_count,
+      includedItemCount: consideredItemCount ?? row.included_item_count,
+      usage: {
+        inputTokens: null,
+        cachedInputTokens: null,
+        cacheWriteInputTokens: null,
+        outputTokens: null,
+        reasoningTokens: null,
+        totalTokens: null,
+      },
+      pricingSnapshotId: null,
+      pricingAsOf: null,
+      pricingBasis: null,
+      estimatedCostUsd: null,
+      retryable: false,
+    };
+  });
   if (inFlight.length >= limit) return inFlight;
   const concludedRows = getDb().prepare(`
     SELECT ${reflectionGenerationRunColumns.map((column) => `runs.${column}`).join(', ')},
+      ${promotionRunItemCountSelect},
       CASE WHEN runs.state = 'failed' AND runs.evidence_bundle_json IS NOT NULL AND EXISTS (
         SELECT 1
         FROM reflection_generation_continuation_runs AS links
@@ -1588,6 +1625,7 @@ export function getReflectionSpendCap(now = new Date()): ReflectionSpendCap {
 function getReflectionGenerationRun(runId: string): ReflectionGenerationRunRecord {
   const row = getDb().prepare(`
     SELECT ${reflectionGenerationRunColumns.map((column) => `runs.${column}`).join(', ')},
+      ${promotionRunItemCountSelect},
       CASE WHEN runs.state = 'failed' AND runs.evidence_bundle_json IS NOT NULL AND EXISTS (
         SELECT 1 FROM reflection_generation_continuation_runs AS links
         JOIN reflection_generation_continuations AS continuations
@@ -2727,6 +2765,16 @@ function originalProposalContextForReview(row: ProposalReviewRow): {
   return { proposal, evidenceItem };
 }
 
+function reportedPromotionItemCount(row: ReflectionGenerationRunRow): number | null {
+  if (row.bundle_schema_version !== 'pure_cue_promotion_bundle.v1') return null;
+  const count = row.promotion_considered_item_count;
+  if (count === undefined || count === null) return null;
+  if (!Number.isInteger(count) || count < 0) {
+    throw corruptionError('reflection generation run promotion input has an invalid item count');
+  }
+  return count;
+}
+
 function mapReflectionGenerationRunRow(
   row: ReflectionGenerationRunRow,
 ): ReflectionGenerationRunRecord {
@@ -2744,6 +2792,7 @@ function mapReflectionGenerationRunRow(
   if (row.included_item_count > row.eligible_item_count) {
     throw corruptionError('reflection generation run includes more items than were eligible');
   }
+  const consideredItemCount = reportedPromotionItemCount(row);
   if (row.state !== 'succeeded' && row.state !== 'failed') {
     throw corruptionError(`reflection generation run has unsupported state ${row.state}`);
   }
@@ -2784,8 +2833,8 @@ function mapReflectionGenerationRunRow(
     resultSchemaVersion: row.result_schema_version,
     state: row.state,
     failureCode: row.failure_code,
-    eligibleItemCount: row.eligible_item_count,
-    includedItemCount: row.included_item_count,
+    eligibleItemCount: consideredItemCount ?? row.eligible_item_count,
+    includedItemCount: consideredItemCount ?? row.included_item_count,
     usage,
     pricingSnapshotId: row.pricing_snapshot_id,
     pricingAsOf: row.pricing_as_of,
