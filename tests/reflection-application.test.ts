@@ -314,8 +314,8 @@ describe('reflection application adapters', { concurrency: false }, () => {
     sqlite.prepare(`
       INSERT INTO word_skill_state (
         word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor
-      ) VALUES ('target', 'production', 1, 240, ?, '2026-08-08T12:00:00.000Z', 2.4)
-    `).run(createdAt);
+      ) VALUES ('target', 'production', 1, 240, ?, ?, 2.4)
+    `).run(createdAt, createdAt);
     sqlite.prepare(`
       INSERT INTO word_study_admission_state (word_id, study_phase, earliest_next_study_at)
       VALUES ('target', 'review', '2026-07-30T12:00:00.000Z')
@@ -432,12 +432,12 @@ describe('reflection application adapters', { concurrency: false }, () => {
     );
     assert.equal(dbModule.isWordProductionProxied('target'), false);
     assert.equal(dbModule.isWordProductionProxied('alternate'), true);
-    assert.equal(
-      (sqlite.prepare(`
-        SELECT interval_hours FROM word_skill_state
+    assert.deepEqual(
+      { ...sqlite.prepare(`
+        SELECT interval_hours, next_due_at FROM word_skill_state
         WHERE word_id = 'target' AND skill_id = 'production'
-      `).get() as { interval_hours: number }).interval_hours,
-      240,
+      `).get() as Record<string, unknown> },
+      { interval_hours: 240, next_due_at: '2026-07-29T18:01:00.000Z' },
     );
     const refs = applied.application.state.kind === 'applied'
       ? applied.application.state.effectRefs

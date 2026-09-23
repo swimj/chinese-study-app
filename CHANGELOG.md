@@ -2,6 +2,19 @@
 
 Casual notes for people using the app before there is a real release process.
 
+## Unreleased — post pure-cue review tweaks
+
+- Older-contract reflections no longer show a page banner; they remain
+  read-only under By session.
+- Pure-cue promotion proposals in Help use the same compact expandable change
+  list as cue repairs. Expand a row to edit destination, deactivations, or
+  distinctive cues.
+- Accepting a promotion still restores the pre-lapse interval and ease. Production
+  then stays off the next session for at least six hours instead of becoming
+  immediately due.
+- Newly adopted pure cues keep a 24-hour interval, but first become due after
+  six hours.
+
 ## Unreleased — GLM-5.3 Flash high reflection arm
 
 - GLM-5.3 Flash at reasoning high is now a default reflection candidate

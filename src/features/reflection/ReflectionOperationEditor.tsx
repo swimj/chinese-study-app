@@ -200,166 +200,275 @@ function PureElicitationPromotionEditor({
     return option === undefined ? wordId : evidenceWordSurfaceLabel(option);
   };
   const cueTypes = ['definition_gloss', 'minimal_context', 'circumstance'] as const;
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const changeCount = 1 + operation.wordPlans.length;
+
+  function toggleExpanded(key: string) {
+    setExpandedKey((current) => (current === key ? null : key));
+  }
 
   return (
     <div className="reflection-operation-fields">
-      <section className="reflection-analysis">
-        <h3>Promotion scope</h3>
-        <p>
-          {wordLabel(operation.targetWordId)} ↔ {wordLabel(operation.responseWordId)}
-        </p>
-        <p className="notes">Source attempt: {operation.sourceAttemptId}</p>
-      </section>
-
-      <Field label="Pure elicitation destination">
-        <select
-          value={operation.destination.kind}
-          disabled={disabled}
-          onChange={(event) => dispatch({
-            type: 'set_promotion_destination',
-            destination: event.target.value === 'existing' && pureCues[0] !== undefined
-              ? { kind: 'existing', pureCueId: pureCues[0].id }
-              : { kind: 'create', stimulus: '', axisNote: '' },
-          })}
-        >
-          <option value="create">Create new pure elicitation</option>
-          <option value="existing" disabled={pureCues.length === 0}>Extend existing pure elicitation</option>
-        </select>
-      </Field>
-      {operation.destination.kind === 'existing' ? (
-        <Field label="Existing pure elicitation">
-          <select
-            value={operation.destination.pureCueId}
-            disabled={disabled}
-            onChange={(event) => dispatch({
-              type: 'set_promotion_destination',
-              destination: { kind: 'existing', pureCueId: event.target.value },
-            })}
+      <p className="notes">
+        {wordLabel(operation.targetWordId)} ↔ {wordLabel(operation.responseWordId)}
+      </p>
+      <section className="reflection-cue-change-list" aria-label="Promotion changes">
+        <div className="reflection-cue-change-heading">
+          <span className="reflection-cue-change-count">
+            {changeCount} change{changeCount === 1 ? '' : 's'}
+          </span>
+        </div>
+        <ul className="reflection-cue-change-items">
+          <li
+            className={
+              expandedKey === 'destination'
+                ? 'reflection-cue-change-item is-expanded'
+                : 'reflection-cue-change-item'
+            }
           >
-            {pureCues.map((cue) => (
-              <option value={cue.id} key={cue.id}>
-                {cue.stimulus}{cue.axisNote ? ` — ${cue.axisNote}` : ''}
-              </option>
-            ))}
-          </select>
-        </Field>
-      ) : (
-        <>
-          <Field label="Shared elicitation stimulus">
-            <textarea
-              value={operation.destination.stimulus}
-              disabled={disabled}
-              onChange={(event) => dispatch({
-                type: 'set_promotion_destination',
-                destination: {
-                  kind: 'create',
-                  stimulus: event.target.value,
-                  axisNote: operation.destination.kind === 'create'
-                    ? operation.destination.axisNote
-                    : '',
-                },
-              })}
-            />
-          </Field>
-          <Field label="Semantic axis note">
-            <textarea
-              value={operation.destination.axisNote}
-              disabled={disabled}
-              onChange={(event) => dispatch({
-                type: 'set_promotion_destination',
-                destination: {
-                  kind: 'create',
-                  stimulus: operation.destination.kind === 'create'
-                    ? operation.destination.stimulus
-                    : '',
-                  axisNote: event.target.value,
-                },
-              })}
-            />
-          </Field>
-        </>
-      )}
-
-      {operation.wordPlans.map((plan) => {
-        const activeCues = wordEvidence.get(plan.wordId)?.activeProductionCues ?? [];
-        return (
-          <section className="reflection-info-list" key={plan.wordId}>
-            <h3>{wordLabel(plan.wordId)}</h3>
-            <strong>Deactivate broad word-owned cues</strong>
-            {activeCues.length === 0 ? <p className="notes">No active cues in the saved evidence.</p> : (
-              activeCues.map((cue) => (
-                <label key={cue.cueId}>
-                  <input
-                    type="checkbox"
-                    checked={plan.deactivateCueIds.includes(cue.cueId)}
+            <div className="reflection-cue-change-row">
+              <span
+                className="reflection-cue-change-kind kind-replace"
+                title={operation.destination.kind === 'existing' ? 'Extend' : 'Create'}
+                aria-hidden="true"
+              />
+              <button
+                type="button"
+                className="reflection-cue-change-preview"
+                aria-expanded={expandedKey === 'destination'}
+                aria-label={`Destination: ${compactPromotionDestinationPreview(operation, pureCues)}`}
+                onClick={() => toggleExpanded('destination')}
+              >
+                {compactPromotionDestinationPreview(operation, pureCues)}
+              </button>
+            </div>
+            {expandedKey === 'destination' ? (
+              <div className="reflection-cue-change-detail">
+                <Field label="Pure elicitation destination">
+                  <select
+                    value={operation.destination.kind}
                     disabled={disabled}
-                    onChange={() => dispatch({
-                      type: 'toggle_promotion_deactivation',
-                      wordId: plan.wordId,
-                      cueId: cue.cueId,
+                    onChange={(event) => dispatch({
+                      type: 'set_promotion_destination',
+                      destination: event.target.value === 'existing' && pureCues[0] !== undefined
+                        ? { kind: 'existing', pureCueId: pureCues[0].id }
+                        : { kind: 'create', stimulus: '', axisNote: '' },
                     })}
-                  />{' '}
-                  {cue.text} ({cue.acceptedWordIds.length} accepted)
-                </label>
-              ))
-            )}
-            <EditorCollection
-              title="Distinctive single-word cues"
-              addLabel="Add distinctive cue"
-              disabled={disabled}
-              onAdd={() => dispatch({ type: 'add_promotion_distinctive_cue', wordId: plan.wordId })}
-            >
-              {plan.distinctiveCueDrafts.map((draft, index) => (
-                <div className="reflection-editor-row" key={`${plan.wordId}-draft-${index}`}>
-                  <Field label={`Cue ${index + 1} type`}>
+                  >
+                    <option value="create">Create new pure elicitation</option>
+                    <option value="existing" disabled={pureCues.length === 0}>
+                      Extend existing pure elicitation
+                    </option>
+                  </select>
+                </Field>
+                {operation.destination.kind === 'existing' ? (
+                  <Field label="Existing pure elicitation">
                     <select
-                      value={draft.cueType}
+                      value={operation.destination.pureCueId}
                       disabled={disabled}
                       onChange={(event) => dispatch({
-                        type: 'update_promotion_distinctive_cue',
-                        wordId: plan.wordId,
-                        index,
-                        patch: { cueType: event.target.value as typeof cueTypes[number] },
+                        type: 'set_promotion_destination',
+                        destination: { kind: 'existing', pureCueId: event.target.value },
                       })}
                     >
-                      {cueTypes.map((cueType) => (
-                        <option value={cueType} key={cueType}>{humanize(cueType)}</option>
+                      {pureCues.map((cue) => (
+                        <option value={cue.id} key={cue.id}>
+                          {cue.stimulus}{cue.axisNote ? ` — ${cue.axisNote}` : ''}
+                        </option>
                       ))}
                     </select>
                   </Field>
-                  <Field label="Cue text">
-                    <textarea
-                      value={draft.text}
-                      disabled={disabled}
-                      onChange={(event) => dispatch({
-                        type: 'update_promotion_distinctive_cue',
-                        wordId: plan.wordId,
-                        index,
-                        patch: { text: event.target.value },
-                      })}
-                    />
-                  </Field>
-                  {!disabled ? (
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => dispatch({
-                        type: 'remove_promotion_distinctive_cue',
-                        wordId: plan.wordId,
-                        index,
-                      })}
-                    >
-                      Remove cue
-                    </button>
-                  ) : null}
+                ) : (
+                  <>
+                    <Field label="Shared elicitation stimulus">
+                      <textarea
+                        value={operation.destination.stimulus}
+                        disabled={disabled}
+                        onChange={(event) => dispatch({
+                          type: 'set_promotion_destination',
+                          destination: {
+                            kind: 'create',
+                            stimulus: event.target.value,
+                            axisNote: operation.destination.kind === 'create'
+                              ? operation.destination.axisNote
+                              : '',
+                          },
+                        })}
+                      />
+                    </Field>
+                    <Field label="Semantic axis note">
+                      <textarea
+                        value={operation.destination.axisNote}
+                        disabled={disabled}
+                        onChange={(event) => dispatch({
+                          type: 'set_promotion_destination',
+                          destination: {
+                            kind: 'create',
+                            stimulus: operation.destination.kind === 'create'
+                              ? operation.destination.stimulus
+                              : '',
+                            axisNote: event.target.value,
+                          },
+                        })}
+                      />
+                    </Field>
+                  </>
+                )}
+              </div>
+            ) : null}
+          </li>
+          {operation.wordPlans.map((plan) => {
+            const activeCues = wordEvidence.get(plan.wordId)?.activeProductionCues ?? [];
+            const rowKey = `word:${plan.wordId}`;
+            const expanded = expandedKey === rowKey;
+            const preview = compactPromotionWordPlanPreview(
+              plan,
+              wordLabel(plan.wordId),
+              activeCues,
+            );
+            return (
+              <li
+                className={expanded ? 'reflection-cue-change-item is-expanded' : 'reflection-cue-change-item'}
+                key={plan.wordId}
+              >
+                <div className="reflection-cue-change-row">
+                  <span
+                    className={`reflection-cue-change-kind ${
+                      plan.deactivateCueIds.length > 0 ? 'kind-deactivate' : 'kind-create'
+                    }`}
+                    aria-hidden="true"
+                  />
+                  <button
+                    type="button"
+                    className="reflection-cue-change-preview"
+                    aria-expanded={expanded}
+                    aria-label={preview}
+                    onClick={() => toggleExpanded(rowKey)}
+                  >
+                    {preview}
+                  </button>
                 </div>
-              ))}
-            </EditorCollection>
-          </section>
-        );
-      })}
+                {expanded ? (
+                  <div className="reflection-cue-change-detail">
+                    <strong>Deactivate broad word-owned cues</strong>
+                    {activeCues.length === 0 ? (
+                      <p className="notes">No active cues in the saved evidence.</p>
+                    ) : (
+                      activeCues.map((cue) => (
+                        <label key={cue.cueId}>
+                          <input
+                            type="checkbox"
+                            checked={plan.deactivateCueIds.includes(cue.cueId)}
+                            disabled={disabled}
+                            onChange={() => dispatch({
+                              type: 'toggle_promotion_deactivation',
+                              wordId: plan.wordId,
+                              cueId: cue.cueId,
+                            })}
+                          />{' '}
+                          {cue.text} ({cue.acceptedWordIds.length} accepted)
+                        </label>
+                      ))
+                    )}
+                    <EditorCollection
+                      title="Distinctive single-word cues"
+                      addLabel="Add distinctive cue"
+                      disabled={disabled}
+                      onAdd={() => dispatch({ type: 'add_promotion_distinctive_cue', wordId: plan.wordId })}
+                    >
+                      {plan.distinctiveCueDrafts.map((draft, index) => (
+                        <div className="reflection-editor-row" key={`${plan.wordId}-draft-${index}`}>
+                          <Field label={`Cue ${index + 1} type`}>
+                            <select
+                              value={draft.cueType}
+                              disabled={disabled}
+                              onChange={(event) => dispatch({
+                                type: 'update_promotion_distinctive_cue',
+                                wordId: plan.wordId,
+                                index,
+                                patch: { cueType: event.target.value as typeof cueTypes[number] },
+                              })}
+                            >
+                              {cueTypes.map((cueType) => (
+                                <option value={cueType} key={cueType}>{humanize(cueType)}</option>
+                              ))}
+                            </select>
+                          </Field>
+                          <Field label="Cue text">
+                            <textarea
+                              value={draft.text}
+                              disabled={disabled}
+                              onChange={(event) => dispatch({
+                                type: 'update_promotion_distinctive_cue',
+                                wordId: plan.wordId,
+                                index,
+                                patch: { text: event.target.value },
+                              })}
+                            />
+                          </Field>
+                          {!disabled ? (
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => dispatch({
+                                type: 'remove_promotion_distinctive_cue',
+                                wordId: plan.wordId,
+                                index,
+                              })}
+                            >
+                              Remove cue
+                            </button>
+                          ) : null}
+                        </div>
+                      ))}
+                    </EditorCollection>
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      </section>
     </div>
   );
+}
+
+function compactPromotionDestinationPreview(
+  operation: PromotePureElicitationOperationV1,
+  pureCues: ReadonlyArray<{ id: string; stimulus: string; axisNote: string }>,
+): string {
+  if (operation.destination.kind === 'existing') {
+    const cue = pureCues.find((item) => item.id === operation.destination.pureCueId);
+    const stimulus = cue?.stimulus.trim() ?? operation.destination.pureCueId;
+    const axisNote = cue?.axisNote.trim() ?? '';
+    return axisNote.length === 0 ? stimulus : `${stimulus} — ${axisNote}`;
+  }
+  const stimulus = operation.destination.stimulus.trim();
+  const axisNote = operation.destination.axisNote.trim();
+  const head = stimulus.length === 0 ? 'New elicitation' : stimulus;
+  return axisNote.length === 0 ? head : `${head} — ${axisNote}`;
+}
+
+function compactPromotionWordPlanPreview(
+  plan: PromotePureElicitationOperationV1['wordPlans'][number],
+  label: string,
+  activeCues: ReadonlyArray<{ cueId: string; text: string; acceptedWordIds: string[] }>,
+): string {
+  const parts: string[] = [];
+  const deactivated = plan.deactivateCueIds.map((cueId) => {
+    const cue = activeCues.find((item) => item.cueId === cueId);
+    if (cue === undefined) return cueId;
+    return `${cue.text} (${cue.acceptedWordIds.length} accepted)`;
+  });
+  if (deactivated.length > 0) parts.push(deactivated.join(', '));
+  const drafts = plan.distinctiveCueDrafts
+    .map((draft) => draft.text.trim())
+    .filter((text) => text.length > 0);
+  if (drafts.length === 1) parts.push(drafts[0]!);
+  else if (drafts.length > 1) parts.push(`${drafts[0]} +${drafts.length - 1}`);
+  else if (plan.distinctiveCueDrafts.length > 0) parts.push('New distinctive cue');
+  if (parts.length === 0) return `${label} · no cue changes`;
+  return `${label} · ${parts.join(' · ')}`;
 }
 
 function ProductionCueEditorV2({

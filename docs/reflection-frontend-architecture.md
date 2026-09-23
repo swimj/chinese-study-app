@@ -76,7 +76,8 @@ before diagnosis. Omitted second-opinion originals remain deferred; only
 included originals retire after successful artifact materialization.
 
 The promotion editor presents the shared stimulus/axis and both words' cue
-plans. Application outcomes include explicit restored, already-restored,
+plans as compact expandable rows, matching cue-repair review. Application
+outcomes include explicit restored, already-restored,
 or unavailable compensation feedback. A non-lapse promotion source is invalid.
 Pure-cue membership is
 not a word-scheduler projection.

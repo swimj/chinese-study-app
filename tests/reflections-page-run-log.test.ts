@@ -139,7 +139,7 @@ describe('reflection run log presentation', () => {
     const markup = renderToStaticMarkup(createElement(ReflectionsPage, {
       controller: idleController({ artifactDetails: [artifact] }),
     }));
-    assert.match(markup, /older contract remain available under By session, read-only/);
+    assert.doesNotMatch(markup, /older contract remain available under By session, read-only/);
     assert.match(markup, /No remaining proposals to review/);
     assert.doesNotMatch(markup, />Accept</);
   });

@@ -49,8 +49,8 @@ word admission, or word-learning counts.
 
 ## Scheduler and strong-cue budget
 
-New learner adoptions start at a 24-hour interval, ease 2.5, and are immediately
-eligible. Fragile cues use ordinary due-date SRS. A clean Hard/Good/Easy grows
+New learner adoptions start at a 24-hour interval, ease 2.5, and become due
+after a six-hour delay. Fragile cues use ordinary due-date SRS. A clean Hard/Good/Easy grows
 the cue's interval using the ordinary rating multipliers and interval fuzz.
 A miss produces a six-hour interval and the ordinary ease penalty; in-session
 recovery requires three consecutive successful responses. Reinforcement is
@@ -152,7 +152,9 @@ Capture the originating production skill state and word admission state before
 projecting a new lapsed review action. All source events in that action share
 one snapshot and one restore-once marker. Promotion restores that snapshot,
 including interval/ease and recency/admission, without editing attempt history
-or the response word's scheduler.
+or the response word's scheduler. Restored production `nextDueAt` is the later of
+the snapshot due time and six hours after restoration, so remaining (non-proxied)
+production does not become immediately due.
 
 Intervening study can be overwritten by this restoration: this is an accepted
 quirk of asynchronous reflection, not a replay/rebase feature. Promotion requires
