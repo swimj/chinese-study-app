@@ -836,14 +836,54 @@ describe('reflection durable store', { concurrency: false }, () => {
         runId, sourceSessionId: 'handoff-checkpoint', reflectionFlowVersion: dbModule.STAGED_INITIAL_REFLECTION_FLOW_VERSION,
         startedAt: updatedAt, provider: 'openai', model: 'gpt-5.6-luna-high', providerModel: 'gpt-5.6-luna',
         promptVersion: stage === 'diagnosis' ? 'reflection-staged-v1' : 'pure-cue-promotion-v1',
-        clientRequestId: `request-${stage}`, eligibleItemCount: 1, includedItemCount: 1,
+        clientRequestId: `request-${stage}`,
+        eligibleItemCount: stage === 'promotion' ? 19 : 1,
+        includedItemCount: stage === 'promotion' ? 19 : 1,
         evidenceBundle: stage === 'diagnosis' ? diagnosisBundle : prepared.promotionBundle!,
       });
     }
     const runs = dbModule.listReflectionGenerationRuns();
     assert.equal(runs.find((run) => run.runId === 'in-flight-diagnosis')?.resultSchemaVersion, 'staged_reflection_diagnosis_result.v1');
-    assert.equal(runs.find((run) => run.runId === 'in-flight-promotion')?.resultSchemaVersion, 'pure_cue_promotion_result.v1');
-    assert.equal(runs.find((run) => run.runId === 'in-flight-promotion')?.bundleSchemaVersion, 'pure_cue_promotion_bundle.v1');
+    assert.equal(runs.find((run) => run.runId === 'in-flight-diagnosis')?.eligibleItemCount, 1);
+    const inFlightPromotion = runs.find((run) => run.runId === 'in-flight-promotion');
+    assert.equal(inFlightPromotion?.resultSchemaVersion, 'pure_cue_promotion_result.v1');
+    assert.equal(inFlightPromotion?.bundleSchemaVersion, 'pure_cue_promotion_bundle.v1');
+    assert.equal(inFlightPromotion?.eligibleItemCount, prepared.promotionBundle?.items.length);
+    assert.equal(inFlightPromotion?.includedItemCount, prepared.promotionBundle?.items.length);
+    const concluded = dbModule.recordReflectionGenerationRun({
+      runId: 'concluded-promotion',
+      sourceSessionId: 'handoff-checkpoint',
+      reflectionFlowVersion: dbModule.STAGED_INITIAL_REFLECTION_FLOW_VERSION,
+      startedAt: updatedAt,
+      completedAt: updatedAt,
+      provider: 'openai',
+      model: 'gpt-5.6-luna-high',
+      providerModel: 'gpt-5.6-luna',
+      promptVersion: 'pure-cue-promotion-v1',
+      responseId: null,
+      clientRequestId: 'request-concluded-promotion',
+      finishReason: 'stop',
+      resultSchemaVersion: 'pure_cue_promotion_result.v1',
+      state: 'succeeded',
+      failureCode: null,
+      eligibleItemCount: 19,
+      includedItemCount: 19,
+      usage: {
+        inputTokens: 1,
+        cachedInputTokens: null,
+        cacheWriteInputTokens: null,
+        outputTokens: 1,
+        reasoningTokens: null,
+        totalTokens: 2,
+      },
+      pricingSnapshotId: null,
+      pricingAsOf: null,
+      pricingBasis: null,
+      estimatedCostUsd: null,
+      evidenceBundle: prepared.promotionBundle!,
+    });
+    assert.equal(concluded.eligibleItemCount, prepared.promotionBundle?.items.length);
+    assert.equal(concluded.includedItemCount, prepared.promotionBundle?.items.length);
   });
 
   test('overlapping second-opinion evidence is omitted without retiring omitted proposals', () => {

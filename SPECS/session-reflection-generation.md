@@ -235,7 +235,9 @@ The final V8 result excludes multi-answer word-owned drafts. Ordinary items
 retain stage-one feedback; routed items receive only stage-two feedback and
 its coordinated promotion or explicit disagreement outcome. Stage-one handoffs
 have no ordinary proposals to merge or discard. Each actual provider call has its own
-run, prompt/schema identity, usage, and failure accounting. The final artifact
+run, prompt/schema identity, usage, and failure accounting. A promotion run's
+eligible and included counts are the items in its retained promotion input,
+not the diagnosis bundle size. The final artifact
 links to the completing run; its continuation retains the chain.
 
 See [`pure-cue-elicitation.md`](./pure-cue-elicitation.md) for promotion,

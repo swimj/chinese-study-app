@@ -459,6 +459,107 @@ describe('initial reflection generation orchestration', () => {
     ]);
   });
 
+  test('counts a promotion run by the items it considers, not the diagnosis bundle size', async () => {
+    const promotionItem = bundle(true).items[0]!;
+    const evidenceBundle = bundle(true);
+    evidenceBundle.items.push({
+      ...promotionItem,
+      itemId: 'item-2',
+      sourceAttemptId: 'attempt-2',
+      sessionActionId: 'action-2',
+      targetWord: {
+        wordId: 'other',
+        hanzi: '其他',
+        pinyin: 'qítā',
+        meanings: ['other'],
+      },
+      rawResponse: '其他',
+      submittedWord: {
+        wordId: 'other',
+        hanzi: '其他',
+        pinyin: 'qítā',
+        meanings: ['other'],
+      },
+    });
+    const started: Array<{ schema: string; eligibleItemCount: number; includedItemCount: number }> = [];
+    const recorded: Array<{ schema: string; eligibleItemCount: number; includedItemCount: number }> = [];
+    const service = createInitialReflectionGenerationService({
+      now: () => generatedAt,
+      buildBundle: () => evidenceBundle,
+      startRun: (input) => {
+        started.push({
+          schema: input.evidenceBundle.schemaVersion,
+          eligibleItemCount: input.eligibleItemCount,
+          includedItemCount: input.includedItemCount,
+        });
+      },
+      provider: {
+        async generate() {
+          throw new Error('staged generation must use the diagnosis entrypoint');
+        },
+        async generateDiagnosis() {
+          return {
+            result: {
+              schemaVersion: 'staged_reflection_diagnosis_result.v1' as const,
+              itemResults: [{
+                kind: 'shared_axis' as const,
+                itemId: 'item-1',
+                diagnosisTags: ['production_cue_overloaded'],
+                handoff: sharedAxisHandoff(),
+              }, {
+                kind: 'ordinary' as const,
+                itemId: 'item-2',
+                diagnosisTags: ['ordinary_retrieval_noise'],
+                learnerExplanation: 'This unrelated item stays with the diagnosis.',
+                proposals: [],
+                questions: [],
+              }],
+            },
+            metadata: diagnosisSuccess().metadata,
+          };
+        },
+        async generatePromotion(input) {
+          return {
+            result: {
+              schemaVersion: 'pure_cue_promotion_result.v1' as const,
+              itemResults: input.items.map((item) => ({
+                itemId: item.itemId,
+                decision: {
+                  kind: 'disagreement' as const,
+                  learnerExplanation: 'The saved evidence supports keeping these as separate tasks.',
+                },
+              })),
+            },
+            metadata: {
+              ...diagnosisSuccess().metadata,
+              promptVersion: 'pure-cue-promotion-v1',
+            },
+          };
+        },
+      },
+      materializeArtifact: () => ({
+        created: true,
+        artifact: artifactDetail('promotion-count-artifact', 0),
+      }),
+      recordRun: (input) => {
+        recorded.push({
+          schema: input.evidenceBundle.schemaVersion,
+          eligibleItemCount: input.eligibleItemCount,
+          includedItemCount: input.includedItemCount,
+        });
+      },
+    });
+
+    await service.generate('session-1', {}, 'openai:gpt-5.6-luna-high');
+
+    const expected = [
+      { schema: 'session_reflection_bundle.v4', eligibleItemCount: 2, includedItemCount: 2 },
+      { schema: 'pure_cue_promotion_bundle.v1', eligibleItemCount: 1, includedItemCount: 1 },
+    ];
+    assert.deepEqual(started, expected);
+    assert.deepEqual(recorded, expected);
+  });
+
   test('leaves no artifact on evidence or provider failure and permits retry', async () => {
     let providerCalls = 0;
     let materializeCalls = 0;

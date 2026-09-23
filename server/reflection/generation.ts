@@ -408,6 +408,8 @@ type StagedRunSuccess<T> = {
   startedAt: string;
   clientRequestId: string;
   bundle: ReflectionGenerationProviderBundle;
+  eligibleItemCount: number;
+  includedItemCount: number;
   resultSchemaVersion: string;
   sourceProposalIds?: string[];
 };
@@ -596,6 +598,23 @@ async function runPromotionStage(input: {
   });
 }
 
+function stageEvidenceItemCounts(
+  stage: 'diagnosis' | 'promotion',
+  continuation: ReflectionGenerationContinuation,
+  bundle: ReflectionGenerationProviderBundle,
+): { eligibleItemCount: number; includedItemCount: number } {
+  if (stage === 'promotion') {
+    return {
+      eligibleItemCount: bundle.items.length,
+      includedItemCount: bundle.items.length,
+    };
+  }
+  return {
+    eligibleItemCount: continuation.eligibleItemCount,
+    includedItemCount: continuation.includedItemCount,
+  };
+}
+
 async function runProviderStage<T>(input: {
   continuation: ReflectionGenerationContinuation;
   stage: 'diagnosis' | 'promotion';
@@ -617,6 +636,7 @@ async function runProviderStage<T>(input: {
   const runId = randomUUID();
   const clientRequestId = randomUUID();
   const startedAt = input.now();
+  const itemCounts = stageEvidenceItemCounts(input.stage, input.continuation, input.bundle);
   input.linkContinuationRun({
     continuationId: input.continuation.continuationId,
     runId,
@@ -633,8 +653,8 @@ async function runProviderStage<T>(input: {
     providerModel: input.providerConfig.providerModel,
     promptVersion: input.promptVersion,
     clientRequestId,
-    eligibleItemCount: input.continuation.eligibleItemCount,
-    includedItemCount: input.continuation.includedItemCount,
+    eligibleItemCount: itemCounts.eligibleItemCount,
+    includedItemCount: itemCounts.includedItemCount,
     evidenceBundle: input.bundle,
     ...(input.sourceProposalIds === undefined ? {} : { sourceProposalIds: input.sourceProposalIds }),
   });
@@ -658,6 +678,8 @@ async function runProviderStage<T>(input: {
       startedAt,
       clientRequestId,
       bundle: input.bundle,
+      eligibleItemCount: itemCounts.eligibleItemCount,
+      includedItemCount: itemCounts.includedItemCount,
       resultSchemaVersion: input.resultSchemaVersion,
       ...(input.sourceProposalIds === undefined ? {} : { sourceProposalIds: input.sourceProposalIds }),
     };
@@ -673,8 +695,8 @@ async function runProviderStage<T>(input: {
         state: 'failed',
         failureCode: failureCode(error),
         error,
-        eligibleItemCount: input.continuation.eligibleItemCount,
-        includedItemCount: input.continuation.includedItemCount,
+        eligibleItemCount: itemCounts.eligibleItemCount,
+        includedItemCount: itemCounts.includedItemCount,
         evidenceBundle: input.bundle,
         clientRequestId,
         resultSchemaVersion: input.resultSchemaVersion,
@@ -706,8 +728,8 @@ function recordStagedRunOutcome(
     state,
     failureCode: state === 'succeeded' ? null : failureCode(error),
     error,
-    eligibleItemCount: input.continuation.eligibleItemCount,
-    includedItemCount: input.continuation.includedItemCount,
+    eligibleItemCount: run.eligibleItemCount,
+    includedItemCount: run.includedItemCount,
     evidenceBundle: run.bundle,
     clientRequestId: run.clientRequestId,
     resultSchemaVersion: run.resultSchemaVersion,
