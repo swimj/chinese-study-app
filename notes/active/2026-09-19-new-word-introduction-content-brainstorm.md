@@ -27,6 +27,9 @@ order, the learning-state role, and the content model do not.
 **First slice (2026-09-23):** §10.3's staged enrichment is longer-term framing.
 §11 is the deliverable to land first: one generated bundle, shown on day 1,
 exercised as a cloze once the word is in learning. Not an adaptive teacher.
+§13 names that generator pass **word bootstrap**. It shares primitives with
+reflection and keeps a distinct top-level schema. A per-learner introduction
+pass is a far-later task.
 
 ---
 
@@ -629,12 +632,58 @@ need a second author. Some frames may still want a pass of wording (how the
 situation is spoken to the learner, how the resolution is phrased). That
 legwork can be agent or template; it is not a second content model.
 
-Open in the bounce, not settled:
+Still open from this bounce:
 
 - whether a successful first pass should leave the meaning list off the study
   surface entirely, or keep it as a quiet anchor under the sentence
-- whether the first pass should write the same durable artifacts reflection
-  writes (cues, supplements), so review inherits them at graduation with no
-  extra ask
 - what "good enough that I would not press the button" is, as the bar for the
   generator
+
+§13 names the pass and splits schemas from shared primitives. Review should
+inherit those primitives. Bootstrap does not emit a reflection result.
+
+---
+
+## 13. Name: word bootstrap
+
+Captured 2026-09-23.
+
+**Word bootstrap** is the agent task that looks at a word as it stands — corpus
+meanings, existing examples, anything already attached — and produces the
+content a learner should meet instead of a bare gloss. It runs because the
+word has not had this pass yet, not because a learner missed.
+
+Far later, there may be a separate per-learner **word introduction** pass,
+shaped for that user just before a session introduces the word. That is not
+this task. Bootstrap is word-level and reusable. Introduction-for-this-user
+can wait.
+
+### Distinct jobs, shared primitives
+
+Bootstrap and reflection may emit some of the same objects. Their top-level
+response schemas stay distinct, because the jobs differ.
+
+| | Word bootstrap | Reflection |
+| --- | --- | --- |
+| Occasion | Word has not been bootstrapped | A study event, including an explicit ask on a correct card |
+| Looks at | The word as it stands | The word, the served exercise, and what the learner did |
+| Succeeds when | Review can inherit the content; the "please fix this gloss" ask is rare | The event becomes useful learning, and content changes only where that event warrants them |
+
+Shared objects are primitives, not a shared response envelope. Candidates,
+whether or not the system tracks them yet:
+
+- example sentences
+- senses (not tracked today; potentially valuable)
+- collocations
+- confusion candidates
+
+Reflection keeps its own result schema: diagnosis of an event, learner-facing
+explanation, proposals. Bootstrap gets its own: a judgment of what this word
+needs in order to be introduced, expressed as those primitives plus whatever
+framing the first encounter needs (situation, resolution).
+
+Review inherits the primitives when bootstrap did a good job. It does not
+re-run bootstrap's schema, and bootstrap does not pretend to be a reflection
+with an empty attempt. Framing on top of a primitive can stay small:
+deterministic where it is a transform (blank the target in a sentence), and a
+bit of wording work where the learner needs the situation spoken.
