@@ -6,7 +6,13 @@ import type {
   SessionStudyItem,
 } from '../../domain/study-actions';
 import { isPureCueSessionReviewItem, studyManagementActionRemovesCurrentReviewAction } from '../../domain/study-actions';
+import {
+  DEFAULT_CHARACTER_PRESENTATION,
+  formatCardCharacters,
+  type CharacterPresentation,
+} from '../../domain/card-characters';
 import { resolveSessionProductionResponse } from '../../domain/production-response';
+import { matchServedCueAnswer } from '../../domain/cues';
 import { resolvePureCueResponse, type PureCueAssessmentEvent } from '../../domain/pure-cues';
 import {
   dismissWordFromStudy,
@@ -151,6 +157,7 @@ export type StudySessionControllerOptions = {
   onSessionEnded: () => Promise<void>;
   onReflectionGenerated?: () => Promise<void> | void;
   sessionSurfaceVisible: boolean;
+  characterPresentation?: CharacterPresentation;
 };
 
 export type StudySessionHomePageProps = {
@@ -258,6 +265,7 @@ export function useStudySession({
   onSessionEnded,
   onReflectionGenerated,
   sessionSurfaceVisible,
+  characterPresentation = DEFAULT_CHARACTER_PRESENTATION,
 }: StudySessionControllerOptions): StudySessionController {
   const [sessionPrefetch, setSessionPrefetch] = useState<SessionPrefetchState>(() => getSessionPrefetchSnapshot());
   const [sessionStarted, setSessionStarted] = useState(false);
@@ -389,11 +397,13 @@ export function useStudySession({
     word: activeWord,
     promptDisplayedMeanings: activePromptDisplayedMeanings,
     allMeanings: activeAllMeanings,
+    characterPresentation,
   });
   const activeAnswerText = getActiveAnswerText({
     item: activeItem,
     word: activeWord,
     allMeanings: activeAllMeanings,
+    characterPresentation,
   });
   const activeAnswerPinyin = getActiveAnswerPinyin({
     item: activeItem,
@@ -869,6 +879,7 @@ export function useStudySession({
           activeWord: activeWord!,
           activeItem: activeItem!,
           previousPhase: sessionState.phase,
+          characterPresentation,
         }));
       resetAnswerAndProductionUi();
     } catch (err) {
@@ -933,10 +944,13 @@ export function useStudySession({
           profileId: studyProfile.id,
         });
       } else {
-        const accepted = submittedHanzi === normalizeProductionAnswer(
-          activeWord!.hanzi,
-          studyProfile.defaultProductionMatchOptions,
-        );
+        const accepted = matchServedCueAnswer({
+          acceptedAnswers: [{
+            wordId: activeWord!.id,
+            hanzi: activeWord!.hanzi,
+            traditional: activeWord!.traditional,
+          }],
+        }, typedResponse, studyProfile.id) !== null;
         resolution = {
           submittedText: typedResponse,
           result: accepted ? 'accepted_anchor' : 'rejected',
@@ -1067,6 +1081,7 @@ export function useStudySession({
         activeWord: wordAtResponse,
         activeItem: itemAtResponse,
         previousPhase: stateAtResponse.phase,
+        characterPresentation,
       }),
     );
     setFrozenProductionCard({
@@ -1083,16 +1098,17 @@ export function useStudySession({
       promptDisplayedMeanings: itemAtResponse.production ? [] : [...activePromptDisplayedMeanings],
       fallbackPrompt: activePrompt ?? wordAtResponse.meaning,
       answerPinyin: wordAtResponse.pinyin,
-      answerText: wordAtResponse.hanzi,
+      answerText: formatCardCharacters(wordAtResponse, characterPresentation),
       allMeanings: [...activeAllMeanings],
       personalNotes: activeWordPersonalNotes,
       intervalHours: itemAtResponse.intervalHours,
       example: wordAtResponse.examples[0] ?? '',
     });
+    const expectedCharacters = formatCardCharacters(wordAtResponse, characterPresentation);
     setProductionHanziError(
       attemptedHanzi === null
-        ? `No clue recorded. Expected "${wordAtResponse.hanzi}".`
-        : `Incorrect ${studyProfile.labels.target}. Expected "${wordAtResponse.hanzi}".`,
+        ? `No clue recorded. Expected "${expectedCharacters}".`
+        : `Incorrect ${studyProfile.labels.target}. Expected "${expectedCharacters}".`,
     );
     setProductionUiPhase('await-next');
     setAnswerRevealed(true);
@@ -1215,6 +1231,7 @@ export function useStudySession({
           activeWord,
           activeItem,
           previousPhase: sessionState.phase,
+          characterPresentation,
         }),
       );
       setFrozenContrastCard({

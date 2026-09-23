@@ -123,6 +123,19 @@ Changing either setting does not rewrite the current UTC day's
 completed-new-word count and does not mutate an already-started frontend
 session.
 
+The status payload also returns `characterPresentation`: `"simplified"`
+(default), `"traditional"`, or `"both"`. Study-session cards use it for stored
+character fields only. Examples, meanings, notes, cue text, and contrast prompt
+sentences stay in their stored form. A missing or identical traditional field
+is shown as the stored hanzi. `"both"` renders `simplified / traditional` when
+the forms differ, matching the pure-cue revealed answer.
+
+| Method | Path | Handler domain |
+| --- | --- | --- |
+| PATCH | `/api/learner-settings/character-presentation` | Learner settings |
+
+Send `{ "characterPresentation": "simplified" | "traditional" | "both" }`.
+
 ## Operator usage pulse
 
 | Method | Path | Handler domain |

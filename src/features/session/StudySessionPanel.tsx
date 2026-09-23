@@ -12,6 +12,11 @@ import type {
   SessionStudyItem,
 } from '../../domain/study-actions';
 import type { ReviewRating, Word, WordMeaning } from '../../types';
+import {
+  DEFAULT_CHARACTER_PRESENTATION,
+  formatCardCharacters,
+  type CharacterPresentation,
+} from '../../domain/card-characters';
 import { studyProfile } from '../../study-profile';
 import type { RatingOption } from './session-rating';
 import type { SessionSummary } from './session-summary';
@@ -70,6 +75,7 @@ export function StudySessionPanel({
   activeItem,
   activePureCue,
   activeWord,
+  characterPresentation = DEFAULT_CHARACTER_PRESENTATION,
   activeLearningProgress,
   activeUnstudiedProgress,
   activeReviewProgress,
@@ -142,6 +148,7 @@ export function StudySessionPanel({
   activeItem: SessionStudyItem | null;
   activePureCue: PureCueSessionReviewItem | null;
   activeWord: Word | null;
+  characterPresentation?: CharacterPresentation;
   activeLearningProgress: LearningWordProgress | undefined;
   activeUnstudiedProgress: UnstudiedWordProgress | undefined;
   activeReviewProgress: ReviewActionProgress | undefined;
@@ -374,9 +381,11 @@ export function StudySessionPanel({
             <div className="answer-block">
               <span className="prompt-label">Accepted answers</span>
               {frozenPureCueCard.item.snapshot.acceptedAnswers.map((answer) => (
-                <strong key={answer.wordId} className="answer-value">
-                  {answer.hanzi}{answer.traditional && answer.traditional !== answer.hanzi ? ` / ${answer.traditional}` : ''}
-                </strong>
+                <AcceptedCharacterAnswer
+                  key={answer.wordId}
+                  answer={answer}
+                  presentation={characterPresentation}
+                />
               ))}
             </div>
             {frozenPureCueCard.attemptedResponse ? (
@@ -424,6 +433,7 @@ export function StudySessionPanel({
               selectedWordId={frozenContrastCard.selectedWordId}
               answerRevealed={true}
               disabled={true}
+              characterPresentation={characterPresentation}
               onSelectChoice={() => undefined}
             />
             <p className="notes">Incorrect contrast choice. This item was recorded as Forgot.</p>
@@ -493,7 +503,7 @@ export function StudySessionPanel({
             </div>
             <div className="prompt-block">
               <span className="prompt-label">{studyProfile.labels.target}</span>
-              <strong className="prompt-value">{activeWord.hanzi}</strong>
+              <strong className="prompt-value">{formatCardCharacters(activeWord, characterPresentation)}</strong>
               <span className="prompt-meta">{activeWord.pinyin}</span>
               <MeaningList meanings={activeAllMeanings} />
               <span className="prompt-meta">{activeWord.examples[0]}</span>
@@ -560,9 +570,11 @@ export function StudySessionPanel({
               <div className="answer-block">
                 <span className="prompt-label">Accepted answers</span>
                 {activePureCue.snapshot.acceptedAnswers.map((answer) => (
-                  <strong key={answer.wordId} className="answer-value">
-                    {answer.hanzi}{answer.traditional && answer.traditional !== answer.hanzi ? ` / ${answer.traditional}` : ''}
-                  </strong>
+                  <AcceptedCharacterAnswer
+                    key={answer.wordId}
+                    answer={answer}
+                    presentation={characterPresentation}
+                  />
                 ))}
                 {activePureCue.snapshot.axisNote ? (
                   <span className="prompt-meta">{activePureCue.snapshot.axisNote}</span>
@@ -726,6 +738,7 @@ export function StudySessionPanel({
                 selectedWordId={contrastSelectedWordId}
                 answerRevealed={answerRevealed}
                 disabled={submittingRating !== null || personalNotesEditorOpen}
+                characterPresentation={characterPresentation}
                 onSelectChoice={onSelectContrastChoice}
               />
             ) : answerRevealed ? (
@@ -1039,17 +1052,33 @@ function KeyboardShortcutsOverlay({
   );
 }
 
+function AcceptedCharacterAnswer({
+  answer,
+  presentation,
+}: {
+  answer: { wordId: string; hanzi: string; traditional: string | null };
+  presentation: CharacterPresentation;
+}) {
+  return (
+    <strong className="answer-value">
+      {formatCardCharacters(answer, presentation)}
+    </strong>
+  );
+}
+
 function ContrastSelectionDrill({
   item,
   selectedWordId,
   answerRevealed,
   disabled,
+  characterPresentation,
   onSelectChoice,
 }: {
   item: SessionStudyItem;
   selectedWordId: string | null;
   answerRevealed: boolean;
   disabled: boolean;
+  characterPresentation: CharacterPresentation;
   onSelectChoice: (wordId: string) => void;
 }) {
   const contrastSelection = item.contrastSelection;
@@ -1084,7 +1113,7 @@ function ContrastSelectionDrill({
               disabled={disabled || answerRevealed}
             >
               <span className="contrast-choice-index" aria-hidden="true">{index + 1}</span>
-              <strong>{choice.word.hanzi}</strong>
+              <strong>{formatCardCharacters(choice.word, characterPresentation)}</strong>
             </button>
           );
         })}
@@ -1094,13 +1123,13 @@ function ContrastSelectionDrill({
           <span className="prompt-label">{selectedCorrect ? 'Correct' : 'Answer'}</span>
           {selectedChoice ? (
             <span className="prompt-meta">
-              You chose {selectedChoice.word.hanzi}.
+              You chose {formatCardCharacters(selectedChoice.word, characterPresentation)}.
             </span>
           ) : null}
           {targetChoice ? (
             <>
               <span className="answer-pinyin">{targetChoice.word.pinyin}</span>
-              <strong className="answer-value">{targetChoice.word.hanzi}</strong>
+              <strong className="answer-value">{formatCardCharacters(targetChoice.word, characterPresentation)}</strong>
               <MeaningList meanings={targetChoice.word.meanings.length > 0 ? targetChoice.word.meanings : [targetChoice.word.meaning]} />
               {targetChoice.nuanceNote.trim().length > 0 ? (
                 <span className="prompt-meta">Nuance: {targetChoice.nuanceNote}</span>

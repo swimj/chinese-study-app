@@ -100,6 +100,11 @@ import {
   assertUnstudiedAdmissionSource,
 } from './unstudied-admission.ts';
 import {
+  assertCharacterPresentation,
+  DEFAULT_CHARACTER_PRESENTATION,
+  type CharacterPresentation,
+} from '../../src/domain/card-characters.ts';
+import {
   getTailDeckId,
   loadDeckManifest,
   type DeckManifest,
@@ -2183,6 +2188,16 @@ export function setUnstudiedAdmissionSource(unstudiedAdmissionSource: UnstudiedA
   assertUnstudiedAdmissionSource(unstudiedAdmissionSource);
   upsertLearnerSetting('unstudied_admission_source', unstudiedAdmissionSource);
   return getLearningPolicySettings();
+}
+
+export function getCharacterPresentation(): CharacterPresentation {
+  return readCharacterPresentation();
+}
+
+export function setCharacterPresentation(characterPresentation: CharacterPresentation) {
+  assertCharacterPresentation(characterPresentation);
+  upsertLearnerSetting('character_presentation', characterPresentation);
+  return { characterPresentation: readCharacterPresentation() };
 }
 
 export function completeUnstudiedWordSession(wordId: string, studyDayKey: string): Word {
@@ -5712,6 +5727,24 @@ function getUnstudiedAdmissionSource(): UnstudiedAdmissionSource {
   const unstudiedAdmissionSource = JSON.parse(row.value_json) as unknown;
   assertUnstudiedAdmissionSource(unstudiedAdmissionSource);
   return unstudiedAdmissionSource;
+}
+
+function readCharacterPresentation(): CharacterPresentation {
+  const row = getDb()
+    .prepare(`
+      SELECT value_json
+      FROM learner_settings
+      WHERE learner_id = ? AND setting_key = 'character_presentation'
+    `)
+    .get(requireLearnerId()) as { value_json: string } | undefined;
+
+  if (!row) {
+    return DEFAULT_CHARACTER_PRESENTATION;
+  }
+
+  const characterPresentation = JSON.parse(row.value_json) as unknown;
+  assertCharacterPresentation(characterPresentation);
+  return characterPresentation;
 }
 
 function getDailyNewStudyCount(studyDayKey: string): number {

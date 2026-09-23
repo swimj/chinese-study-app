@@ -1,3 +1,8 @@
+import {
+  DEFAULT_CHARACTER_PRESENTATION,
+  formatCardCharacters,
+  type CharacterPresentation,
+} from '../../domain/card-characters';
 import type { SessionStudyItem } from '../../domain/study-actions';
 import type { Word, WordMeaning } from '../../types';
 
@@ -157,11 +162,13 @@ export function getActivePrompt({
   word,
   promptDisplayedMeanings,
   allMeanings,
+  characterPresentation = DEFAULT_CHARACTER_PRESENTATION,
 }: {
   item: SessionStudyItem | null;
   word: Word | null;
   promptDisplayedMeanings: string[];
   allMeanings: string[];
+  characterPresentation?: CharacterPresentation;
 }) {
   if (!item || !word) {
     return null;
@@ -176,7 +183,7 @@ export function getActivePrompt({
   }
 
   return item.actionKind === 'recognition'
-    ? word.hanzi
+    ? formatCardCharacters(word, characterPresentation)
     : promptDisplayedMeanings[0] ?? allMeanings[0] ?? word.meaning;
 }
 
@@ -184,23 +191,27 @@ export function getActiveAnswerText({
   item,
   word,
   allMeanings,
+  characterPresentation = DEFAULT_CHARACTER_PRESENTATION,
 }: {
   item: SessionStudyItem | null;
   word: Word | null;
   allMeanings: string[];
+  characterPresentation?: CharacterPresentation;
 }) {
   if (!item || !word) {
     return null;
   }
 
   if (item.actionKind === 'contrast_selection') {
-    return item.contrastSelection?.choices.find((choice) => choice.word.id === item.contrastSelection?.promptTargetWordId)
-      ?.word.hanzi ?? null;
+    const target = item.contrastSelection?.choices.find((choice) => (
+      choice.word.id === item.contrastSelection?.promptTargetWordId
+    ));
+    return target ? formatCardCharacters(target.word, characterPresentation) : null;
   }
 
   return item.actionKind === 'recognition'
     ? allMeanings[0] ?? word.meaning
-    : word.hanzi;
+    : formatCardCharacters(word, characterPresentation);
 }
 
 export function getActiveAnswerPinyin({

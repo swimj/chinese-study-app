@@ -1296,6 +1296,27 @@ describe('session composition', { concurrency: false }, () => {
     assert.equal(dbModule.getLearningPolicy(studyDayKey).dailyNewWordLimit, 4);
   });
 
+  test('character presentation defaults to simplified and persists independently of learning policy', () => {
+    assert.equal(dbModule.getCharacterPresentation(), 'simplified');
+    assert.throws(
+      () => dbModule.setCharacterPresentation('pinyin' as never),
+      /Expected characterPresentation to be "simplified", "traditional", or "both"/,
+    );
+
+    dbModule.setDailyNewWordLimit(4);
+    const saved = dbModule.setCharacterPresentation('both');
+
+    const settingRow = sqlite
+      .prepare(`SELECT value_json FROM learner_settings WHERE learner_id = 'test-learner' AND setting_key = 'character_presentation'`)
+      .get() as { value_json: string } | undefined;
+
+    assert.equal(settingRow?.value_json, '"both"');
+    assert.deepEqual(saved, { characterPresentation: 'both' });
+    assert.equal(dbModule.getCharacterPresentation(), 'both');
+    assert.equal(dbModule.getLearningPolicy(studyDayKey).dailyNewWordLimit, 4);
+    assert.equal(dbModule.getLearningPolicy(studyDayKey).unstudiedAdmissionSource, 'mixed');
+  });
+
   test('new sessions use configured limit minus completed count across limit and day changes', () => {
     for (let index = 0; index < 6; index += 1) {
       insertUnstudiedWordPair(

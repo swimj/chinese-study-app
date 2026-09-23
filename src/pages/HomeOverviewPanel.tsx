@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { BackendStatus, UnstudiedAdmissionSource } from '../services/api';
+import type { CharacterPresentation } from '../domain/card-characters';
 import type { SessionPrefetchState } from '../features/session/session-prefetch';
 import type { SessionPhase } from '../lib/session-state';
 import { getReviewFailureRatePeriods } from '../lib/review-failure-rates';
@@ -132,6 +133,7 @@ export function SessionSettingsPanel({
   onSaveSessionSettings: (settings: {
     dailyNewWordLimit?: number;
     unstudiedAdmissionSource?: UnstudiedAdmissionSource;
+    characterPresentation?: CharacterPresentation;
   }) => Promise<void>;
   onSavingChange: (saving: boolean) => void;
   onClose: () => void;
@@ -146,14 +148,19 @@ export function SessionSettingsPanel({
   const [sourceDraft, setSourceDraft] = useState<UnstudiedAdmissionSource>(
     backendStatus?.unstudiedAdmissionSource ?? 'mixed',
   );
+  const [presentationDraft, setPresentationDraft] = useState<CharacterPresentation>(
+    backendStatus?.characterPresentation ?? 'simplified',
+  );
   const [limitSaving, setLimitSaving] = useState(false);
   const [limitError, setLimitError] = useState<string | null>(null);
 
   const committedLimit = backendStatus?.dailyNewWordLimit ?? null;
   const committedSource = backendStatus?.unstudiedAdmissionSource ?? 'mixed';
+  const committedPresentation = backendStatus?.characterPresentation ?? 'simplified';
   const limitDirty = committedLimit !== null && limitDraft.trim() !== String(committedLimit);
   const sourceDirty = sourceDraft !== committedSource;
-  const settingsDirty = limitDirty || sourceDirty;
+  const presentationDirty = backendStatus?.studyProfile === 'mandarin' && presentationDraft !== committedPresentation;
+  const settingsDirty = limitDirty || sourceDirty || presentationDirty;
 
   function beginLimitEdit() {
     setLimitDraft(committedLimit === null ? '' : String(committedLimit));
@@ -164,6 +171,7 @@ export function SessionSettingsPanel({
   function cancelAndClose() {
     setLimitDraft(committedLimit === null ? '' : String(committedLimit));
     setSourceDraft(committedSource);
+    setPresentationDraft(committedPresentation);
     setLimitEditing(false);
     setLimitError(null);
     onClose();
@@ -186,6 +194,7 @@ export function SessionSettingsPanel({
     const patch: {
       dailyNewWordLimit?: number;
       unstudiedAdmissionSource?: UnstudiedAdmissionSource;
+      characterPresentation?: CharacterPresentation;
     } = {};
 
     if (limitDirty) {
@@ -200,6 +209,10 @@ export function SessionSettingsPanel({
 
     if (sourceDirty) {
       patch.unstudiedAdmissionSource = sourceDraft;
+    }
+
+    if (presentationDirty) {
+      patch.characterPresentation = presentationDraft;
     }
 
     setLimitSaving(true);
@@ -243,7 +256,7 @@ export function SessionSettingsPanel({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [limitDraft, sourceDraft, limitSaving, settingsDirty, committedLimit, committedSource]);
+  }, [limitDraft, sourceDraft, presentationDraft, limitSaving, settingsDirty, committedLimit, committedSource, committedPresentation]);
 
   useEffect(() => {
     if (limitEditing) {
@@ -261,6 +274,10 @@ export function SessionSettingsPanel({
   useEffect(() => {
     setSourceDraft(committedSource);
   }, [committedSource]);
+
+  useEffect(() => {
+    setPresentationDraft(committedPresentation);
+  }, [committedPresentation]);
 
   return (
     <div
@@ -315,6 +332,30 @@ export function SessionSettingsPanel({
             New words from stash only
           </label>
         </div>
+        {backendStatus?.studyProfile === 'mandarin' ? (
+          <div className="session-settings-row">
+            <label className="session-settings-label" htmlFor="card-character-presentation">
+              Card characters:
+            </label>
+            <select
+              id="card-character-presentation"
+              className="session-settings-select"
+              value={presentationDraft}
+              disabled={backendStatus.characterPresentation === undefined || limitSaving}
+              onChange={(event) => {
+                const next = event.target.value;
+                if (next === 'simplified' || next === 'traditional' || next === 'both') {
+                  setPresentationDraft(next);
+                  setLimitError(null);
+                }
+              }}
+            >
+              <option value="simplified">Simplified</option>
+              <option value="traditional">Traditional</option>
+              <option value="both">Both</option>
+            </select>
+          </div>
+        ) : null}
         {limitError ? <p className="form-error" role="alert">{limitError}</p> : null}
         <div className="session-settings-actions">
           <button

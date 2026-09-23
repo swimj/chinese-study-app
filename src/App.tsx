@@ -1,4 +1,8 @@
 import { useEffect, useState } from 'react';
+import {
+  DEFAULT_CHARACTER_PRESENTATION,
+  type CharacterPresentation,
+} from './domain/card-characters';
 import type { BackendStatus, DietIntakeInput, DietSelfSelect } from './services/api';
 import {
   clearReflectionQuality,
@@ -15,6 +19,7 @@ import {
   generateDeferredReflectionSecondOpinion,
   updateDailyNewWordLimit,
   updateUnstudiedAdmissionSource,
+  updateCharacterPresentation,
   upsertReflectionQuality,
   withdrawReflectionAuthorization,
   fetchReflectionHelpInbox,
@@ -71,6 +76,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     onSessionEnded: reloadDashboard,
     onReflectionGenerated: attention.refresh,
     sessionSurfaceVisible: currentPage === 'home',
+    characterPresentation: backendStatus?.characterPresentation ?? DEFAULT_CHARACTER_PRESENTATION,
   });
   const priorityPage = usePriorityPageController({
     currentPage,
@@ -196,11 +202,16 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
   async function saveSessionSettings(settings: {
     dailyNewWordLimit?: number;
     unstudiedAdmissionSource?: BackendStatus['unstudiedAdmissionSource'];
+    characterPresentation?: CharacterPresentation;
   }) {
-    try {
-      await studySession.prefetchSession();
-    } catch {
-      // A failed prefetch is settled too, so it can no longer race the refresh below.
+    const policyRequested = settings.dailyNewWordLimit !== undefined
+      || settings.unstudiedAdmissionSource !== undefined;
+    if (policyRequested) {
+      try {
+        await studySession.prefetchSession();
+      } catch {
+        // A failed prefetch is settled too, so it can no longer race the refresh below.
+      }
     }
 
     let policy: {
@@ -213,19 +224,34 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     if (settings.unstudiedAdmissionSource !== undefined) {
       policy = await updateUnstudiedAdmissionSource(settings.unstudiedAdmissionSource);
     }
-    if (!policy) {
+
+    let characterPresentation = settings.characterPresentation;
+    if (settings.characterPresentation !== undefined) {
+      const saved = await updateCharacterPresentation(settings.characterPresentation);
+      characterPresentation = saved.characterPresentation;
+    }
+
+    if (!policy && characterPresentation === undefined) {
       return;
     }
 
     const nextPolicy = policy;
+    const nextPresentation = characterPresentation;
     setBackendStatus((currentStatus) => currentStatus
       ? {
           ...currentStatus,
-          dailyNewWordLimit: nextPolicy.dailyNewWordLimit,
-          unstudiedAdmissionSource: nextPolicy.unstudiedAdmissionSource,
+          ...(nextPolicy
+            ? {
+                dailyNewWordLimit: nextPolicy.dailyNewWordLimit,
+                unstudiedAdmissionSource: nextPolicy.unstudiedAdmissionSource,
+              }
+            : {}),
+          ...(nextPresentation !== undefined ? { characterPresentation: nextPresentation } : {}),
         }
       : currentStatus);
-    void studySession.refreshSessionPrefetch().catch(() => undefined);
+    if (policyRequested) {
+      void studySession.refreshSessionPrefetch().catch(() => undefined);
+    }
   }
 
   const sessionActive = sessionHidesAppChrome({

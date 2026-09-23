@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   getPersonalNotesEditorTarget,
+  getActiveAnswerText,
   getActivePrompt,
   getStudySessionPanelView,
   hasServedProductionCueSupplement,
@@ -106,6 +107,67 @@ describe('session selectors', () => {
       }),
       'unstudied_intro',
     );
+  });
+
+  test('formats recognition characters and leaves served cue text stored', () => {
+    const word = {
+      ...createWord({ id: 'gate', personalNotes: '' }),
+      hanzi: '门',
+      traditional: '門',
+      meaning: 'door',
+      meanings: ['door'],
+    };
+    const recognition = {
+      sessionActionId: 'learning/gate/recognition',
+      actionKind: 'recognition' as const,
+      targetWordId: word.id,
+      sampledSkillIds: ['recognition' as const],
+      contentRef: null,
+      intervalHours: 0,
+      word,
+      contrastSelection: null,
+      production: null,
+    };
+
+    assert.equal(getActivePrompt({
+      item: recognition,
+      word,
+      promptDisplayedMeanings: [],
+      allMeanings: ['door'],
+      characterPresentation: 'traditional',
+    }), '門');
+    assert.equal(getActivePrompt({
+      item: recognition,
+      word,
+      promptDisplayedMeanings: [],
+      allMeanings: ['door'],
+      characterPresentation: 'both',
+    }), '门 / 門');
+    assert.equal(getActiveAnswerText({
+      item: recognition,
+      word,
+      allMeanings: ['door'],
+      characterPresentation: 'both',
+    }), 'door');
+
+    const production = {
+      ...recognition,
+      actionKind: 'production' as const,
+      sampledSkillIds: ['production' as const],
+    };
+    assert.equal(getActivePrompt({
+      item: production,
+      word,
+      promptDisplayedMeanings: ['door'],
+      allMeanings: ['door'],
+      characterPresentation: 'traditional',
+    }), 'door');
+    assert.equal(getActiveAnswerText({
+      item: production,
+      word,
+      allMeanings: ['door'],
+      characterPresentation: 'traditional',
+    }), '門');
   });
 
   test('uses the frozen production cue instead of live word meanings', () => {
