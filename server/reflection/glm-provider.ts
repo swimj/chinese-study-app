@@ -8,7 +8,8 @@ import {
 const GLM_FLASH_TRANSPORT = {
   provider: 'zai',
   providerModel: 'glm-5.3-flash',
-  maxOutputTokens: 200_000,
+  // Z.AI rejects max_tokens above 131072 (error 1210).
+  maxOutputTokens: 131_072,
   timeoutMs: PROVIDER_REQUEST_TIMEOUT_MS,
   promptVersion: 'reflection-v9',
   defaultBaseUrl: 'https://api.z.ai/api/paas/v4',

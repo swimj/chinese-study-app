@@ -8,19 +8,38 @@ Casual notes for people using the app before there is a real release process.
   Earlier promotion runs that copied the diagnosis bundle size, such as 19/19,
   now report the saved promotion input instead.
 
+## Unreleased — post pure-cue review tweaks
+
+- Older-contract reflections no longer show a page banner; they remain
+  read-only under By session.
+- Pure-cue promotion proposals in Help use the same compact expandable change
+  list as cue repairs. Expand a row to edit destination, deactivations, or
+  distinctive cues.
+- Accepting a promotion still restores the pre-lapse interval and ease. Production
+  then stays off the next session for at least six hours instead of becoming
+  immediately due.
+- Newly adopted pure cues keep a 24-hour interval, but first become due after
+  six hours.
+
+## Unreleased — GLM-5.3 Flash output cap
+
+- Both GLM-5.3 Flash arms request 131,072 output tokens, the maximum Z.AI
+  accepts. The previous 200,000 cap was rejected immediately.
+
 ## Unreleased — GLM-5.3 Flash high reflection arm
 
 - GLM-5.3 Flash at reasoning high is now a default reflection candidate
   alongside Luna, GLM-5.3 Flash max, and Terra. It uses the same Z.AI Flash
   model and pricing as the max arm; the stored model id keeps the two
   reasoning profiles distinct.
-- Both GLM-5.3 Flash reasoning arms allow 200,000 output tokens, including
+- Both GLM-5.3 Flash reasoning arms allow 131,072 output tokens, including
   reasoning, instead of the 50,000 cap used by the other models.
 
 ## Unreleased — Reflections generating spinner
 
 - After a session starts reflection, or while a retry or second opinion is
   running in this tab, Reflections shows a spinner instead of the Help count.
+  Closing the session summary leaves that spinner up until generation finishes.
   An unseen failed run still takes priority. The spinner is same-tab only and
   hides on the Reflections page like the other badges.
 

@@ -667,6 +667,8 @@ production attempt with the operation's distinct resolved response word.
 Non-lapse sources fail before any promotion effects; there is no live
 `not_applicable` path. Compensation preserves
 attempt history and never projects onto the response word's scheduler.
+Restored production `nextDueAt` is the later of the snapshot due time and six
+hours after restoration.
 
 ### `accept_production_alternate` version 1
 

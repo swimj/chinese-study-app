@@ -1,14 +1,18 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  addInFlightSessionReflection,
   beginSessionFinalization,
   completeSessionFinalization,
   completeSessionReflectionGeneration,
+  createInFlightSessionReflectionIds,
   createSessionFinalizationState,
   failSessionReflectionGeneration,
   finalizeSessionBeforeReflection,
+  hasInFlightSessionReflection,
   isCurrentSessionReflectionRequest,
   isSessionReflectionGenerating,
+  removeInFlightSessionReflection,
   resetFailedSessionFinalization,
   retrySessionReflectionGeneration,
   runExclusiveAsync,
@@ -206,5 +210,34 @@ describe('completed-session finalization', () => {
       activeSessionId: 'session-1',
       requestSessionId: 'session-1',
     }), true);
+  });
+
+  test('keeps in-flight generation after the summary is closed', () => {
+    const generating = completeSessionFinalization({
+      state: beginSessionFinalization(createSessionFinalizationState()),
+      hasReflectionEvidence: true,
+    });
+    let inFlight = addInFlightSessionReflection(
+      createInFlightSessionReflectionIds(),
+      'session-1',
+    );
+
+    assert.equal(isSessionReflectionGenerating(generating), true);
+    assert.equal(hasInFlightSessionReflection(inFlight), true);
+
+    const closedSummary = createSessionFinalizationState();
+    assert.equal(isSessionReflectionGenerating(closedSummary), false);
+    assert.equal(hasInFlightSessionReflection(inFlight), true);
+    assert.equal(isCurrentSessionReflectionRequest({
+      activeSessionId: null,
+      requestSessionId: 'session-1',
+    }), false);
+
+    inFlight = addInFlightSessionReflection(inFlight, 'session-2');
+    inFlight = removeInFlightSessionReflection(inFlight, 'session-1');
+    assert.equal(hasInFlightSessionReflection(inFlight), true);
+
+    inFlight = removeInFlightSessionReflection(inFlight, 'session-2');
+    assert.equal(hasInFlightSessionReflection(inFlight), false);
   });
 });
