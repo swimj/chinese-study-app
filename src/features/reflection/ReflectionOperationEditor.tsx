@@ -438,8 +438,9 @@ function compactPromotionDestinationPreview(
   pureCues: ReadonlyArray<{ id: string; stimulus: string; axisNote: string }>,
 ): string {
   if (operation.destination.kind === 'existing') {
-    const cue = pureCues.find((item) => item.id === operation.destination.pureCueId);
-    const stimulus = cue?.stimulus.trim() ?? operation.destination.pureCueId;
+    const { pureCueId } = operation.destination;
+    const cue = pureCues.find((item) => item.id === pureCueId);
+    const stimulus = cue?.stimulus.trim() ?? pureCueId;
     const axisNote = cue?.axisNote.trim() ?? '';
     return axisNote.length === 0 ? stimulus : `${stimulus} — ${axisNote}`;
   }
