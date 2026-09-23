@@ -165,14 +165,6 @@ export function ReflectionsPage({
       </NestedNav>
 
       <div className="reflections-page-main">
-        {currentArtifacts.length < controller.artifactDetails.length ? (
-          <section className="panel" role="status">
-            <p className="notes">
-              Reflections from an older contract remain available under By session, read-only.
-              They cannot supply new proposals, second opinions, or changes to study content.
-            </p>
-          </section>
-        ) : null}
         {controller.unreadableArtifactIds.size > 0 ? (
           <section className="panel reflection-unreadable-notice" role="status">
             <strong>

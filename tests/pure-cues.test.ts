@@ -7,6 +7,7 @@ import { after, before, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import {
   derivePureCueAssessment,
+  dueAtWithResetDelay,
   schedulePureCueAssessment,
   selectPureCuesForSession,
   type PureCue,
@@ -79,6 +80,10 @@ describe('pure cue domain policy', () => {
     assert.equal(lapsed.easeFactor, 2.05);
     assert.equal(lapsed.strongSince, null);
     assert.equal(lapsed.strongSuccesses, 0);
+
+    assert.equal(dueAtWithResetDelay(now), '2026-09-18T06:00:00.000Z');
+    assert.equal(dueAtWithResetDelay(now, '2026-09-18T03:00:00.000Z'), '2026-09-18T06:00:00.000Z');
+    assert.equal(dueAtWithResetDelay(now, '2026-09-19T00:00:00.000Z'), '2026-09-19T00:00:00.000Z');
 
     const reentered = schedulePureCueAssessment(
       lapsed,
@@ -251,7 +256,17 @@ describe('pure cue persistence', { concurrency: false }, () => {
     dbModule.adoptEligiblePureCuesForCurrentLearner(now);
     const initial = dbModule.getPureCue('pure-a')!;
     assert.equal(initial.intervalHours, 24);
-    assert.equal(initial.nextDueAt, now);
+    assert.equal(initial.nextDueAt, '2026-09-18T06:00:00.000Z');
+    assert.deepEqual(
+      dbModule.selectStoredPureCuesForSession({ ordinaryReviewCount: 0, now }).selected,
+      [],
+    );
+    assert.ok(
+      dbModule.selectStoredPureCuesForSession({
+        ordinaryReviewCount: 0,
+        now: '2026-09-18T06:00:00.000Z',
+      }).selected.some((cue) => cue.id === 'pure-a'),
+    );
 
     const extended = dbModule.extendPureCueAcceptedWordsWithoutTransaction({
       id: 'pure-a',
@@ -427,20 +442,20 @@ describe('pure cue persistence', { concurrency: false }, () => {
     dbModule.runWithLearnerId('other', () => {
       dbModule.adoptEligiblePureCuesForCurrentLearner('2026-09-19T00:00:00.000Z');
       assert.equal(dbModule.getPureCue('pure-a')?.intervalHours, 24);
-      assert.equal(dbModule.getPureCue('pure-a')?.nextDueAt, '2026-09-19T00:00:00.000Z');
+      assert.equal(dbModule.getPureCue('pure-a')?.nextDueAt, '2026-09-19T06:00:00.000Z');
       assert.equal(dbModule.getPureCue('lookup-inactive'), null);
     });
     assert.equal(dbModule.getPureCue('pure-a')?.intervalHours, 60);
     sqlite.prepare("UPDATE learner_word_state SET status = 'learning' WHERE learner_id = 'other' AND word_id = 'word-d'").run();
     dbModule.runWithLearnerId('other', () => {
       assert.deepEqual(dbModule.selectStoredPureCuesForSession({ ordinaryReviewCount: 0, now }).selected, []);
-      assert.equal(dbModule.getPureCue('pure-a')?.nextDueAt, '2026-09-19T00:00:00.000Z');
+      assert.equal(dbModule.getPureCue('pure-a')?.nextDueAt, '2026-09-19T06:00:00.000Z');
     });
     reviewMember('other', 'word-d');
     dbModule.runWithLearnerId('other', () => {
       const selected = dbModule.selectStoredPureCuesForSession({ ordinaryReviewCount: 0, now: '2026-09-20T00:00:00.000Z' });
       assert.ok(selected.selected.some((cue) => cue.id === 'pure-a'));
-      assert.equal(dbModule.getPureCue('pure-a')?.nextDueAt, '2026-09-19T00:00:00.000Z');
+      assert.equal(dbModule.getPureCue('pure-a')?.nextDueAt, '2026-09-19T06:00:00.000Z');
     });
   });
 
@@ -474,8 +489,8 @@ describe('pure cue persistence', { concurrency: false }, () => {
     sqlite.prepare(`
       INSERT INTO word_skill_state (
         word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor
-      ) VALUES ('word-b', 'production', 1, 240, ?, '2026-09-28T00:00:00.000Z', 2.4)
-    `).run(now);
+      ) VALUES ('word-b', 'production', 1, 240, ?, ?, 2.4)
+    `).run(now, now);
     sqlite.prepare(`
       INSERT INTO word_study_admission_state (word_id, study_phase, earliest_next_study_at)
       VALUES ('word-b', 'review', '2026-09-18T06:00:00.000Z')
@@ -535,6 +550,10 @@ describe('pure cue persistence', { concurrency: false }, () => {
     `).get() as { interval_hours: number; ease_factor: number };
     assert.equal(restoredSkill.interval_hours, 240);
     assert.equal(restoredSkill.ease_factor, 2.4);
+    assert.equal(sqlite.prepare(`
+      SELECT next_due_at FROM word_skill_state
+      WHERE word_id = 'word-b' AND skill_id = 'production'
+    `).get()?.next_due_at, '2026-09-18T08:00:00.000Z');
     assert.equal(sqlite.prepare(`
       SELECT earliest_next_study_at FROM word_study_admission_state WHERE word_id = 'word-b'
     `).get()?.earliest_next_study_at, '2026-09-18T06:00:00.000Z');

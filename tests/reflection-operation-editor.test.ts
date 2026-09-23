@@ -86,12 +86,17 @@ describe('reflection operation editor', () => {
       evidence,
       onChange: () => {},
     }));
+    assert.match(markup, /reflection-cue-change-list/);
+    assert.match(markup, /3 changes/);
     assert.match(markup, /目标 · mùbiāo/);
     assert.match(markup, /替代 · tìdài/);
-    assert.match(markup, /Source attempt: attempt-1/);
     assert.match(markup, /shared axis — explicit axis/);
     assert.match(markup, /broad target \(2 accepted\)/);
     assert.match(markup, /alternate-only context/);
+    assert.doesNotMatch(markup, /Source attempt/);
+    assert.doesNotMatch(markup, /Promotion scope/);
+    assert.doesNotMatch(markup, /Pure elicitation destination/);
+    assert.doesNotMatch(markup, /Deactivate broad word-owned cues/);
     assert.doesNotMatch(markup, /not-in-evidence/);
   });
 });
