@@ -24,6 +24,10 @@ that still opens on the word. §10 supersedes that sequence. The ingredients
 (sense, situation, example, construction, neighbor) still matter; the entry
 order, the learning-state role, and the content model do not.
 
+**First slice (2026-09-23):** §10.3's staged enrichment is longer-term framing.
+§11 is the deliverable to land first: one generated bundle, shown on day 1,
+exercised as a cloze once the word is in learning. Not an adaptive teacher.
+
 ---
 
 ## 1. Problem (restated)
@@ -436,9 +440,13 @@ The earlier beats in §3 are still the raw ingredients. The sequence change is
 the point: form and definition are the **answer** to the situation, not the
 title of the card.
 
-### 10.3 Stage enrichment across learning
+### 10.3 Stage enrichment across learning (longer-term framing)
 
-New and learning should be redesigned together.
+This subsection is the ambition that keeps the arc coherent. It is **not** the
+first deliverable. See §11. The first slice should not grow a curriculum of
+enrichment beats.
+
+New and learning should eventually be redesigned together.
 
 Today, learning skips introduction and repeats thinner recall. Under this
 direction, learning is where the **rest of the base content is allowed to
@@ -463,23 +471,23 @@ Learning therefore changes job, not only density. It is the acquisition window
 for manifestations of the same content, not a second copy of unstudied drills
 with the intro removed.
 
-### 10.4 What this does not decide yet
+### 10.4 Settled enough to stop blocking, and what stays open
 
-Still gathering. These stay open on purpose:
+**Do not design learner-vocabulary matching.** Sentence readability against the
+learner's known lexicon is out of scope. Recognition of surrounding words is
+not the problem to solve here, and it is a large product of its own. Trust the
+generator to scale sentence complexity to the target word. If a later nudge is
+needed, the cheap version is a learner "too hard / too easy" signal that
+becomes a coarse level hint on the next generation — not a known-vocab filter.
 
-- Which cold open is the default, and whether the two entry forms alternate,
-  sequence inside one encounter, or depend on the word.
-- How much of the Chinese sentence must already be readable for that cold open
-  to activate rather than overwhelm.
-- Which enrichment slices are first-encounter versus learning-session material.
-- Whether a learning session without new enrichment is still just recall, or
-  whether every learning appearance should manifest *some* unused slice until
-  the base planned for acquisition is exhausted.
-- Whether "situation" is only a presentation of word-owned content, or eventually
-  a more first-class object. Do not collapse this into the pure-cue elicitation
-  memo: that memo is about judgment and scheduling when one cue cannot pick a
-  single word. This section is about how introduction content is entered and
-  revealed.
+Still open, and not required to name the first slice:
+
+- Which cold open leads (English scenario, Chinese sentence, or both in one
+  encounter).
+- Whether "situation" stays a presentation of word-owned content. Do not
+  collapse this into the pure-cue elicitation memo: that memo is about
+  judgment when one cue cannot pick a single word. This note is about how
+  introduction content is entered and revealed.
 
 ### 10.5 Coherence over a thin first slice
 
@@ -492,3 +500,81 @@ not a different product (for example, a longer dictionary intro that still
 opens on the headword and still leaves learning untouched). Prefer a clear
 vision of the manifestations over a sequence of locally coherent cards that
 never share a content model.
+
+§11 names that slice. It lands the content model and a generator, and one
+bridge from shown content to an exercise. It does not land the staged teacher.
+
+---
+
+## 11. First deliverable: bundle, show, then cloze
+
+Captured 2026-09-23. The goal of this slice is modest and specific: make the
+initial word experience less bad, especially for new users, whose sessions are
+currently only new words. Changing what else a new user studies is a separate
+topic and out of scope.
+
+This slice should feel like enriched content plus one exercise that reuses it.
+It should not feel like a dynamic adaptive teacher.
+
+### 11.1 What gets generated once
+
+For each word about to be introduced, a generation agent writes one bundle:
+
+- an English situation
+- a resolution: short definition, plus an explanation of why this situation
+  uses this word
+- **N Chinese example sentences** that contain the target word and can be shown
+  intact or with that word blanked
+
+No second authoring pass for the exercise. The cloze is a manifestation of a
+sentence already in the bundle.
+
+No known-vocabulary filter. Complexity tracks the target word. A later
+"too hard / too easy" nudge may feed a coarse level hint back to this agent;
+it is not part of landing the bundle.
+
+### 11.2 Two manifestations
+
+| When | What the learner gets | Graded? |
+| --- | --- | --- |
+| **Day 1 / first encounter** | Cold open on a **full** sentence (situation + resolution around it). Replaces the dictionary intro card. | No. Continue when ready. |
+| **Learning days** | Same policy shape as today: the word is a session obligation until covered. Covering is **not** "Good in both directions." Covering is a small fixed set drawn from the bundle: **recognition**, plus **one cloze sampled from the N sentences**. | Yes. |
+
+Day 1 shows the sentence whole. A later learning day blanks the target in one
+of those sentences. That pair is the entire content↔exercise bridge for this
+slice.
+
+Learning does not gain a sequence of new enrichment beats. If the bundle has
+nothing new to reveal, learning is still just that cover set.
+
+### 11.3 What this replaces in the current new-word session
+
+The painful bulk of a new-user session is the thin intro plus gloss-direction
+drills (3×3 on first encounter, then both directions on learning days). This
+slice treats that as the thing to retire for these words:
+
+- first encounter becomes show-the-bundle, not show-a-gloss-and-drill-it
+- learning cover becomes recognition + one sentence cloze, not forward and
+  reverse gloss production
+
+One choice still inside the slice, not a new track: whether day 1 is purely
+the ungraded show, or the show plus a single recognition check before the word
+counts as introduced. The cloze stays on a learning day either way. Do not
+keep 3×3 gloss production as the price of meeting the word.
+
+### 11.4 Explicitly not in this deliverable
+
+- staged enrichment across learning (§10.3)
+- an agent that chooses which pedagogical beat to run
+- matching sentence vocabulary to the learner's known words
+- the too-hard / too-easy level hint (cheap follow-up, not a prerequisite)
+- changing new-user session mix to include other exercise types
+- review-phase reflection, cue repair, or pure-cue promotion
+
+### 11.5 Done when
+
+A newly introduced word has a stored bundle. Its first encounter shows a full
+sentence and a resolution instead of a bare gloss card. A later learning
+appearance can ask for that word as a cloze inside one of the generated
+sentences, and covering can succeed on recognition plus that cloze without
+both gloss directions. The generator is not adapting the lesson mid-session.
