@@ -1,3 +1,8 @@
+import {
+  DEFAULT_CHARACTER_PRESENTATION,
+  formatCardCharacters,
+  type CharacterPresentation,
+} from '../../domain/card-characters';
 import type { SessionStudyItem } from '../../domain/study-actions';
 import type { ReviewRating, Word } from '../../types';
 import type { BucketSessionCommitIntent, SessionPhase } from '../../lib/session-state';
@@ -87,6 +92,7 @@ export function updateSessionSummaryForRating({
   activeWord,
   activeItem,
   previousPhase,
+  characterPresentation = DEFAULT_CHARACTER_PRESENTATION,
 }: {
   summary: SessionSummary | null;
   transition: SessionSummaryTransition;
@@ -94,6 +100,7 @@ export function updateSessionSummaryForRating({
   activeWord: Word;
   activeItem: SessionStudyItem;
   previousPhase: SessionPhase;
+  characterPresentation?: CharacterPresentation;
 }): SessionSummary | null {
   if (!summary) {
     return summary;
@@ -129,7 +136,7 @@ export function updateSessionSummaryForRating({
         nextSummary.lapsedReviewActions += 1;
         nextSummary.lapsedReviewLabels = [
           ...nextSummary.lapsedReviewLabels,
-          formatReviewEncounterLabel(activeItem, activeWord),
+          formatReviewEncounterLabel(activeItem, activeWord, characterPresentation),
         ];
       }
       break;
@@ -139,7 +146,7 @@ export function updateSessionSummaryForRating({
         nextSummary.lapsedReviewActions += 1;
         nextSummary.lapsedReviewLabels = [
           ...nextSummary.lapsedReviewLabels,
-          formatReviewEncounterLabel(activeItem, activeWord),
+          formatReviewEncounterLabel(activeItem, activeWord, characterPresentation),
         ];
         nextSummary.lapsedReviewActionIds = [...nextSummary.lapsedReviewActionIds, activeItem.sessionActionId];
       }
@@ -186,13 +193,25 @@ export function updateSessionSummaryForPureCueRating({
   return nextSummary;
 }
 
-function formatReviewEncounterLabel(item: SessionStudyItem, word: Word) {
+function formatReviewEncounterLabel(
+  item: SessionStudyItem,
+  word: Word,
+  characterPresentation: CharacterPresentation,
+) {
   if (item.actionKind === 'contrast_selection') {
-    const target = item.contrastSelection?.choices.find((choice) => choice.word.id === item.contrastSelection?.promptTargetWordId);
-    return target ? `${item.contrastSelection?.prompt.promptText} -> ${target.word.hanzi}` : `${word.hanzi} contrast`;
+    const target = item.contrastSelection?.choices.find((choice) => (
+      choice.word.id === item.contrastSelection?.promptTargetWordId
+    ));
+    const characters = target
+      ? formatCardCharacters(target.word, characterPresentation)
+      : formatCardCharacters(word, characterPresentation);
+    return target
+      ? `${item.contrastSelection?.prompt.promptText} -> ${characters}`
+      : `${characters} contrast`;
   }
 
+  const characters = formatCardCharacters(word, characterPresentation);
   return item.actionKind === 'recognition'
-    ? `${word.hanzi} -> ${word.meaning}`
-    : `${word.meaning} -> ${word.hanzi}`;
+    ? `${characters} -> ${word.meaning}`
+    : `${word.meaning} -> ${characters}`;
 }

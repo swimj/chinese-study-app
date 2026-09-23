@@ -16,6 +16,7 @@ import type {
   StudyEvent,
 } from '../domain/study-actions';
 import type { PureCueAssessmentEvent } from '../domain/pure-cues';
+import type { CharacterPresentation } from '../domain/card-characters';
 import type {
   OperationApplicationStatus,
   OperationInvocation,
@@ -167,6 +168,7 @@ type BackendStatus = {
   sessionActiveTimeMetrics: SessionActiveTimeMetrics;
   dailyNewWordLimit: number;
   unstudiedAdmissionSource: UnstudiedAdmissionSource;
+  characterPresentation: CharacterPresentation;
   learningCoverageDate: string;
   /** True when deck-based diet admission is active (Mandarin profile with a manifest). */
   dietDecksActive: boolean;
@@ -460,6 +462,23 @@ export async function updateUnstudiedAdmissionSource(
   });
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to update unstudied admission source'));
+  }
+
+  return response.json();
+}
+
+export async function updateCharacterPresentation(
+  characterPresentation: CharacterPresentation,
+): Promise<{ characterPresentation: CharacterPresentation }> {
+  const response = await apiFetch(`${API_BASE}/api/learner-settings/character-presentation`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ characterPresentation }),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to update character presentation'));
   }
 
   return response.json();

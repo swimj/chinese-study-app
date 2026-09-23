@@ -1,6 +1,10 @@
 import type { RefObject } from 'react';
 import { useEffect, useState } from 'react';
 import type { BackendStatus, UnstudiedAdmissionSource, DietIntakeInput, DietSelfSelect } from '../services/api';
+import {
+  DEFAULT_CHARACTER_PRESENTATION,
+  type CharacterPresentation,
+} from '../domain/card-characters';
 import { DietIntakePanel } from '../features/diet/DietIntakePanel';
 import {
   isDietIntakeSubmitting,
@@ -118,6 +122,7 @@ export function HomePage({
   onSaveSessionSettings: (settings: {
     dailyNewWordLimit?: number;
     unstudiedAdmissionSource?: UnstudiedAdmissionSource;
+    characterPresentation?: CharacterPresentation;
   }) => Promise<void>;
   sessionPrefetch: SessionPrefetchState;
   sessionStarted: boolean;
@@ -265,6 +270,7 @@ export function HomePage({
             activeItem={activeItem}
             activePureCue={activePureCue}
             activeWord={activeWord}
+            characterPresentation={backendStatus?.characterPresentation ?? DEFAULT_CHARACTER_PRESENTATION}
             activeLearningProgress={activeLearningProgress}
             activeUnstudiedProgress={activeUnstudiedProgress}
             activeReviewProgress={activeReviewProgress}

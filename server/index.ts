@@ -30,6 +30,8 @@ import {
   nudgeDietProfile,
   recordDietIntake,
   getLearningPolicy,
+  getCharacterPresentation,
+  setCharacterPresentation,
   setUnstudiedAdmissionSource,
   getContentDiagnostics,
   getMyWords,
@@ -561,6 +563,7 @@ export function createApp(options: CreateAppOptions = {}) {
       dietIntakeRequired: isDietIntakeRequired(),
       serviceBanner: banner ? toPublicServiceBanner(banner) : null,
       ...getLearningPolicy(studyDayKey),
+      characterPresentation: getCharacterPresentation(),
     });
   });
 
@@ -591,6 +594,24 @@ export function createApp(options: CreateAppOptions = {}) {
       }
 
       res.status(500).json({ error: 'Failed to update unstudied admission source' });
+    }
+  });
+
+  app.patch('/api/learner-settings/character-presentation', (req, res) => {
+    const characterPresentation = req.body?.characterPresentation;
+
+    try {
+      res.json(setCharacterPresentation(characterPresentation));
+    } catch (error) {
+      if (
+        error instanceof Error
+        && error.message === 'Expected characterPresentation to be "simplified", "traditional", or "both"'
+      ) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to update character presentation' });
     }
   });
 
