@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type {
   CreateContrastClusterOperation,
   ProductionCueChangeV2,
@@ -199,56 +199,106 @@ function PureElicitationPromotionEditor({
     const option = wordOptions.find((word) => word.wordId === wordId);
     return option === undefined ? wordId : evidenceWordSurfaceLabel(option);
   };
+  const wordHeading = (wordId: string) => {
+    const option = wordOptions.find((word) => word.wordId === wordId);
+    return option?.hanzi ?? wordId;
+  };
   const cueTypes = ['definition_gloss', 'minimal_context', 'circumstance'] as const;
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
-  const changeCount = 1 + operation.wordPlans.length;
+  const [excludedDraftsByWord, setExcludedDraftsByWord] = useState<Record<
+    string,
+    Array<{
+      key: string;
+      draft: PromotePureElicitationOperationV1['wordPlans'][number]['distinctiveCueDrafts'][number];
+    }>
+  >>({});
+  const excludedDraftKey = useRef(0);
+  const localOperationChangePending = useRef(false);
+  const destinationAcceptedWordIds = promotionDestinationAcceptedWordIds(operation, pureCues);
+
+  useEffect(() => {
+    if (localOperationChangePending.current) {
+      localOperationChangePending.current = false;
+      return;
+    }
+    setExcludedDraftsByWord({});
+  }, [operation]);
+
+  function dispatchLocal(action: ReflectionOperationDraftAction) {
+    localOperationChangePending.current = true;
+    dispatch(action);
+  }
 
   function toggleExpanded(key: string) {
     setExpandedKey((current) => (current === key ? null : key));
   }
 
+  function excludeDistinctiveCue(
+    wordId: string,
+    index: number,
+    draft: PromotePureElicitationOperationV1['wordPlans'][number]['distinctiveCueDrafts'][number],
+  ) {
+    const key = `${wordId}:excluded:${excludedDraftKey.current}`;
+    excludedDraftKey.current += 1;
+    setExcludedDraftsByWord((current) => ({
+      ...current,
+      [wordId]: [...(current[wordId] ?? []), { key, draft: { ...draft } }],
+    }));
+    setExpandedKey((current) => (current === `new:${wordId}:${index}` ? null : current));
+    dispatchLocal({ type: 'remove_promotion_distinctive_cue', wordId, index });
+  }
+
+  function restoreDistinctiveCue(
+    wordId: string,
+    key: string,
+    draft: PromotePureElicitationOperationV1['wordPlans'][number]['distinctiveCueDrafts'][number],
+  ) {
+    setExcludedDraftsByWord((current) => ({
+      ...current,
+      [wordId]: (current[wordId] ?? []).filter((entry) => entry.key !== key),
+    }));
+    dispatchLocal({ type: 'restore_promotion_distinctive_cue', wordId, draft });
+  }
+
   return (
     <div className="reflection-operation-fields">
-      <p className="notes">
+      <p className="notes reflection-promotion-pair">
         {wordLabel(operation.targetWordId)} ↔ {wordLabel(operation.responseWordId)}
       </p>
-      <section className="reflection-cue-change-list" aria-label="Promotion changes">
-        <div className="reflection-cue-change-heading">
-          <span className="reflection-cue-change-count">
-            {changeCount} change{changeCount === 1 ? '' : 's'}
-          </span>
-        </div>
-        <ul className="reflection-cue-change-items">
-          <li
-            className={
-              expandedKey === 'destination'
-                ? 'reflection-cue-change-item is-expanded'
-                : 'reflection-cue-change-item'
-            }
+      <section className="reflection-promotion-preview" aria-label="Resulting cue set">
+        <section className="reflection-promotion-group reflection-promotion-shared-group">
+          <header className="reflection-promotion-group-heading">
+            <h5>{destinationAcceptedWordIds.map(wordHeading).join(' / ')}</h5>
+          </header>
+          <div
+            className={`reflection-promotion-cue is-included ${
+              operation.destination.kind === 'existing' ? 'kind-keep' : 'kind-create'
+            }${expandedKey === 'destination' ? ' is-expanded' : ''}`}
           >
-            <div className="reflection-cue-change-row">
-              <span
-                className="reflection-cue-change-kind kind-replace"
-                title={operation.destination.kind === 'existing' ? 'Extend' : 'Create'}
-                aria-hidden="true"
+            <div className="reflection-promotion-cue-row">
+              <PromotionCueStatus
+                kind={operation.destination.kind === 'existing' ? 'keep' : 'create'}
               />
+              <span className="reflection-promotion-cue-copy">
+                {compactPromotionDestinationPreview(operation, pureCues)}
+              </span>
               <button
                 type="button"
-                className="reflection-cue-change-preview"
+                className="reflection-promotion-expand"
                 aria-expanded={expandedKey === 'destination'}
-                aria-label={`Destination: ${compactPromotionDestinationPreview(operation, pureCues)}`}
+                aria-label={expandedKey === 'destination' ? 'Close shared cue editor' : 'Edit shared cue'}
                 onClick={() => toggleExpanded('destination')}
               >
-                {compactPromotionDestinationPreview(operation, pureCues)}
+                {expandedKey === 'destination' ? '▴' : '▾'}
               </button>
             </div>
             {expandedKey === 'destination' ? (
-              <div className="reflection-cue-change-detail">
+              <div className="reflection-promotion-cue-detail">
                 <Field label="Pure elicitation destination">
                   <select
                     value={operation.destination.kind}
                     disabled={disabled}
-                    onChange={(event) => dispatch({
+                    onChange={(event) => dispatchLocal({
                       type: 'set_promotion_destination',
                       destination: event.target.value === 'existing' && pureCues[0] !== undefined
                         ? { kind: 'existing', pureCueId: pureCues[0].id }
@@ -266,7 +316,7 @@ function PureElicitationPromotionEditor({
                     <select
                       value={operation.destination.pureCueId}
                       disabled={disabled}
-                      onChange={(event) => dispatch({
+                      onChange={(event) => dispatchLocal({
                         type: 'set_promotion_destination',
                         destination: { kind: 'existing', pureCueId: event.target.value },
                       })}
@@ -284,7 +334,7 @@ function PureElicitationPromotionEditor({
                       <textarea
                         value={operation.destination.stimulus}
                         disabled={disabled}
-                        onChange={(event) => dispatch({
+                        onChange={(event) => dispatchLocal({
                           type: 'set_promotion_destination',
                           destination: {
                             kind: 'create',
@@ -300,7 +350,7 @@ function PureElicitationPromotionEditor({
                       <textarea
                         value={operation.destination.axisNote}
                         disabled={disabled}
-                        onChange={(event) => dispatch({
+                        onChange={(event) => dispatchLocal({
                           type: 'set_promotion_destination',
                           destination: {
                             kind: 'create',
@@ -316,73 +366,85 @@ function PureElicitationPromotionEditor({
                 )}
               </div>
             ) : null}
-          </li>
-          {operation.wordPlans.map((plan) => {
-            const activeCues = wordEvidence.get(plan.wordId)?.activeProductionCues ?? [];
-            const rowKey = `word:${plan.wordId}`;
-            const expanded = expandedKey === rowKey;
-            const preview = compactPromotionWordPlanPreview(
-              plan,
-              wordLabel(plan.wordId),
-              activeCues,
-            );
-            return (
-              <li
-                className={expanded ? 'reflection-cue-change-item is-expanded' : 'reflection-cue-change-item'}
-                key={plan.wordId}
-              >
-                <div className="reflection-cue-change-row">
-                  <span
-                    className={`reflection-cue-change-kind ${
-                      plan.deactivateCueIds.length > 0 ? 'kind-deactivate' : 'kind-create'
-                    }`}
-                    aria-hidden="true"
-                  />
-                  <button
-                    type="button"
-                    className="reflection-cue-change-preview"
-                    aria-expanded={expanded}
-                    aria-label={preview}
-                    onClick={() => toggleExpanded(rowKey)}
-                  >
-                    {preview}
-                  </button>
-                </div>
-                {expanded ? (
-                  <div className="reflection-cue-change-detail">
-                    <strong>Deactivate broad word-owned cues</strong>
-                    {activeCues.length === 0 ? (
-                      <p className="notes">No active cues in the saved evidence.</p>
-                    ) : (
-                      activeCues.map((cue) => (
-                        <label key={cue.cueId}>
-                          <input
-                            type="checkbox"
-                            checked={plan.deactivateCueIds.includes(cue.cueId)}
-                            disabled={disabled}
-                            onChange={() => dispatch({
-                              type: 'toggle_promotion_deactivation',
-                              wordId: plan.wordId,
-                              cueId: cue.cueId,
-                            })}
-                          />{' '}
-                          {cue.text} ({cue.acceptedWordIds.length} accepted)
-                        </label>
-                      ))
-                    )}
-                    <EditorCollection
-                      title="Distinctive single-word cues"
-                      addLabel="Add distinctive cue"
-                      disabled={disabled}
-                      onAdd={() => dispatch({ type: 'add_promotion_distinctive_cue', wordId: plan.wordId })}
+          </div>
+        </section>
+
+        {operation.wordPlans.map((plan) => {
+          const activeCues = wordEvidence.get(plan.wordId)?.activeProductionCues ?? [];
+          const excludedDrafts = excludedDraftsByWord[plan.wordId] ?? [];
+          return (
+            <section className="reflection-promotion-group" key={plan.wordId}>
+              <header className="reflection-promotion-group-heading">
+                <h5>{wordHeading(plan.wordId)}</h5>
+              </header>
+              <ul className="reflection-promotion-cues">
+                {activeCues.map((cue) => {
+                  const included = !plan.deactivateCueIds.includes(cue.cueId);
+                  return (
+                    <li
+                      className={`reflection-promotion-cue ${
+                        included ? 'kind-keep is-included' : 'kind-deactivate is-excluded'
+                      }`}
+                      key={cue.cueId}
                     >
-                      {plan.distinctiveCueDrafts.map((draft, index) => (
-                        <div className="reflection-editor-row" key={`${plan.wordId}-draft-${index}`}>
+                      <button
+                        type="button"
+                        className="reflection-promotion-cue-toggle"
+                        aria-pressed={included}
+                        aria-label={`${included ? 'Keep' : 'Deactivate'} cue: ${cue.text}`}
+                        disabled={disabled}
+                        onClick={() => dispatchLocal({
+                          type: 'toggle_promotion_deactivation',
+                          wordId: plan.wordId,
+                          cueId: cue.cueId,
+                        })}
+                      >
+                        <PromotionCueStatus kind={included ? 'keep' : 'deactivate'} />
+                        <span className="reflection-promotion-cue-copy">{cue.text}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+                {plan.distinctiveCueDrafts.map((draft, index) => {
+                  const rowKey = `new:${plan.wordId}:${index}`;
+                  const expanded = expandedKey === rowKey;
+                  const preview = draft.text.trim() || 'New distinctive cue';
+                  return (
+                    <li
+                      className={`reflection-promotion-cue kind-create is-included${
+                        expanded ? ' is-expanded' : ''
+                      }`}
+                      key={rowKey}
+                    >
+                      <div className="reflection-promotion-cue-row">
+                        <button
+                          type="button"
+                          className="reflection-promotion-cue-toggle"
+                          aria-pressed="true"
+                          aria-label={`New cue: ${preview}`}
+                          disabled={disabled}
+                          onClick={() => excludeDistinctiveCue(plan.wordId, index, draft)}
+                        >
+                          <PromotionCueStatus kind="create" />
+                          <span className="reflection-promotion-cue-copy">{preview}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="reflection-promotion-expand"
+                          aria-expanded={expanded}
+                          aria-label={expanded ? 'Close new cue editor' : 'Edit new cue'}
+                          onClick={() => toggleExpanded(rowKey)}
+                        >
+                          {expanded ? '▴' : '▾'}
+                        </button>
+                      </div>
+                      {expanded ? (
+                        <div className="reflection-promotion-cue-detail">
                           <Field label={`Cue ${index + 1} type`}>
                             <select
                               value={draft.cueType}
                               disabled={disabled}
-                              onChange={(event) => dispatch({
+                              onChange={(event) => dispatchLocal({
                                 type: 'update_promotion_distinctive_cue',
                                 wordId: plan.wordId,
                                 index,
@@ -398,7 +460,7 @@ function PureElicitationPromotionEditor({
                             <textarea
                               value={draft.text}
                               disabled={disabled}
-                              onChange={(event) => dispatch({
+                              onChange={(event) => dispatchLocal({
                                 type: 'update_promotion_distinctive_cue',
                                 wordId: plan.wordId,
                                 index,
@@ -406,31 +468,76 @@ function PureElicitationPromotionEditor({
                               })}
                             />
                           </Field>
-                          {!disabled ? (
-                            <button
-                              type="button"
-                              className="secondary-button"
-                              onClick={() => dispatch({
-                                type: 'remove_promotion_distinctive_cue',
-                                wordId: plan.wordId,
-                                index,
-                              })}
-                            >
-                              Remove cue
-                            </button>
-                          ) : null}
                         </div>
-                      ))}
-                    </EditorCollection>
-                  </div>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
+                      ) : null}
+                    </li>
+                  );
+                })}
+                {excludedDrafts.map(({ key, draft }) => (
+                  <li className="reflection-promotion-cue kind-create is-excluded" key={key}>
+                    <button
+                      type="button"
+                      className="reflection-promotion-cue-toggle"
+                      aria-pressed="false"
+                      aria-label={`New cue: ${draft.text.trim() || 'New distinctive cue'}`}
+                      disabled={disabled}
+                      onClick={() => restoreDistinctiveCue(plan.wordId, key, draft)}
+                    >
+                      <PromotionCueStatus kind="create" />
+                      <span className="reflection-promotion-cue-copy">
+                        {draft.text.trim() || 'New distinctive cue'}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {!disabled ? (
+                <button
+                  type="button"
+                  className="secondary-button reflection-promotion-add-cue"
+                  onClick={() => {
+                    setExpandedKey(`new:${plan.wordId}:${plan.distinctiveCueDrafts.length}`);
+                    dispatchLocal({ type: 'add_promotion_distinctive_cue', wordId: plan.wordId });
+                  }}
+                >
+                  + Add cue
+                </button>
+              ) : null}
+            </section>
+          );
+        })}
       </section>
     </div>
   );
+}
+
+function PromotionCueStatus({
+  kind,
+}: {
+  kind: 'create' | 'keep' | 'deactivate';
+}) {
+  return (
+    <span className={`reflection-promotion-cue-status kind-${kind}`} aria-hidden="true">
+      {kind === 'create' ? '+' : kind === 'keep' ? '✓' : '−'}
+    </span>
+  );
+}
+
+function promotionDestinationAcceptedWordIds(
+  operation: PromotePureElicitationOperationV1,
+  pureCues: ReadonlyArray<{ id: string; acceptedWordIds: string[] }>,
+): string[] {
+  const existingPureCueId = operation.destination.kind === 'existing'
+    ? operation.destination.pureCueId
+    : null;
+  const existingIds = existingPureCueId === null
+    ? []
+    : pureCues.find((cue) => cue.id === existingPureCueId)?.acceptedWordIds ?? [];
+  return [...new Set([
+    ...existingIds,
+    operation.targetWordId,
+    operation.responseWordId,
+  ])];
 }
 
 function compactPromotionDestinationPreview(
@@ -448,28 +555,6 @@ function compactPromotionDestinationPreview(
   const axisNote = operation.destination.axisNote.trim();
   const head = stimulus.length === 0 ? 'New elicitation' : stimulus;
   return axisNote.length === 0 ? head : `${head} — ${axisNote}`;
-}
-
-function compactPromotionWordPlanPreview(
-  plan: PromotePureElicitationOperationV1['wordPlans'][number],
-  label: string,
-  activeCues: ReadonlyArray<{ cueId: string; text: string; acceptedWordIds: string[] }>,
-): string {
-  const parts: string[] = [];
-  const deactivated = plan.deactivateCueIds.map((cueId) => {
-    const cue = activeCues.find((item) => item.cueId === cueId);
-    if (cue === undefined) return cueId;
-    return `${cue.text} (${cue.acceptedWordIds.length} accepted)`;
-  });
-  if (deactivated.length > 0) parts.push(deactivated.join(', '));
-  const drafts = plan.distinctiveCueDrafts
-    .map((draft) => draft.text.trim())
-    .filter((text) => text.length > 0);
-  if (drafts.length === 1) parts.push(drafts[0]!);
-  else if (drafts.length > 1) parts.push(`${drafts[0]} +${drafts.length - 1}`);
-  else if (plan.distinctiveCueDrafts.length > 0) parts.push('New distinctive cue');
-  if (parts.length === 0) return `${label} · no cue changes`;
-  return `${label} · ${parts.join(' · ')}`;
 }
 
 function ProductionCueEditorV2({

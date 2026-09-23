@@ -62,7 +62,7 @@ describe('reflection operation editor', () => {
     assert.deepEqual(acceptedWordIds, ['target', 'alternate']);
   });
 
-  test('shows both-word promotion scope and only evidence-backed cue choices', () => {
+  test('presents promotion as a grouped future cue set without repeated word metadata', () => {
     const evidence = promotionEvidence();
     const operation: PromotePureElicitationOperationV1 = {
       kind: 'promote_pure_elicitation',
@@ -86,13 +86,22 @@ describe('reflection operation editor', () => {
       evidence,
       onChange: () => {},
     }));
-    assert.match(markup, /reflection-cue-change-list/);
-    assert.match(markup, /3 changes/);
+    assert.match(markup, /reflection-promotion-preview/);
+    assert.match(markup, /目标 \/ 替代/);
     assert.match(markup, /目标 · mùbiāo/);
     assert.match(markup, /替代 · tìdài/);
+    assert.equal(markup.match(/mùbiāo/g)?.length, 1);
+    assert.equal(markup.match(/tìdài/g)?.length, 1);
     assert.match(markup, /shared axis — explicit axis/);
-    assert.match(markup, /broad target \(2 accepted\)/);
+    assert.match(markup, /kind-deactivate is-excluded/);
+    assert.match(markup, /aria-pressed="false" aria-label="Deactivate cue: broad target"/);
+    assert.match(markup, /kind-keep is-included/);
+    assert.match(markup, /aria-pressed="true" aria-label="Keep cue: broad alternate"/);
+    assert.match(markup, /kind-create is-included/);
     assert.match(markup, /alternate-only context/);
+    assert.doesNotMatch(markup, /\(2 accepted\)/);
+    assert.doesNotMatch(markup, /type="checkbox"/);
+    assert.doesNotMatch(markup, /3 changes/);
     assert.doesNotMatch(markup, /Source attempt/);
     assert.doesNotMatch(markup, /Promotion scope/);
     assert.doesNotMatch(markup, /Pure elicitation destination/);
