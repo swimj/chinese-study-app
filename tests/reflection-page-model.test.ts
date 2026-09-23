@@ -752,6 +752,20 @@ describe('reflection page model', () => {
     }) as typeof draft;
     assert.deepEqual(draft.wordPlans[0]!.deactivateCueIds, ['cue-1']);
     assert.equal(draft.wordPlans[1]!.distinctiveCueDrafts[0]!.text, 'alternate-only situation');
+
+    const excludedDraft = draft.wordPlans[1]!.distinctiveCueDrafts[0]!;
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'remove_promotion_distinctive_cue',
+      wordId: 'alternate',
+      index: 0,
+    }) as typeof draft;
+    assert.deepEqual(draft.wordPlans[1]!.distinctiveCueDrafts, []);
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'restore_promotion_distinctive_cue',
+      wordId: 'alternate',
+      draft: excludedDraft,
+    }) as typeof draft;
+    assert.deepEqual(draft.wordPlans[1]!.distinctiveCueDrafts, [excludedDraft]);
     assert.deepEqual(getOperationDraftState(draft, draft, evidence).validationErrors, []);
   });
 

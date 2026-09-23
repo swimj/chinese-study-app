@@ -609,6 +609,11 @@ export type ReflectionOperationDraftAction =
   | { type: 'set_promotion_destination'; destination: PromotePureElicitationDestinationV1 }
   | { type: 'toggle_promotion_deactivation'; wordId: string; cueId: string }
   | { type: 'add_promotion_distinctive_cue'; wordId: string }
+  | {
+      type: 'restore_promotion_distinctive_cue';
+      wordId: string;
+      draft: PureCueDistinctiveProductionCueDraftV1;
+    }
   | { type: 'remove_promotion_distinctive_cue'; wordId: string; index: number }
   | {
       type: 'update_promotion_distinctive_cue';
@@ -1021,6 +1026,21 @@ export function reduceReflectionOperationDraft(
                   ...plan.distinctiveCueDrafts,
                   { cueType: 'definition_gloss', text: '' },
                 ],
+              }),
+        }),
+      );
+    case 'restore_promotion_distinctive_cue':
+      return editOperation(
+        operation,
+        'promote_pure_elicitation',
+        action.type,
+        (current) => ({
+          ...current,
+          wordPlans: current.wordPlans.map((plan) => plan.wordId !== action.wordId
+            ? plan
+            : {
+                ...plan,
+                distinctiveCueDrafts: [...plan.distinctiveCueDrafts, { ...action.draft }],
               }),
         }),
       );
