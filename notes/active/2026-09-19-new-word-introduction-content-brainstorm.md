@@ -578,3 +578,63 @@ sentence and a resolution instead of a bare gloss card. A later learning
 appearance can ask for that word as a cloze inside one of the generated
 sentences, and covering can succeed on recognition plus that cloze without
 both gloss directions. The generator is not adapting the lesson mid-session.
+
+---
+
+## 12. Same judgment as reflection, without a mistake
+
+Captured 2026-09-23, still bouncing. Not a revision of §11's slice; a claim about
+what the generator is doing.
+
+### Why the meaning list feels wrong
+
+The corpus meaning list is the fallback production card: visible glosses, typed
+hanzi. It is also what a new word is rote-memorized against for the learning
+days. A common dogfood path is: remember that card through graduation, then on
+the first review press **Ask reflection to review**, because the memory is fine
+and the content is not. Graduation is being used as the door to a content
+repair that did not need a mistake.
+
+So the meaning list's value as the *thing you study* is in question. Its
+remaining value is as *material the agent reads*: a sense inventory, not a
+card. Reflection already treats the meaning-derived gloss as fallback content,
+not as the durable claim about how the word should be elicited.
+
+### What the generator shares with reflection
+
+Reflection's first move is to look at the word and the served content and
+judge what would be worth improving, before it interprets the attempt. An
+explicit ask says: do that even when the answer was correct.
+
+Initial generation is that same look, run once, when the word has not had this
+pass yet. There is no production response to interpret. There is no confusion
+pair unless the word itself makes one obvious. The judgment is: given this
+word as it stands, what content should exist so a learner is not memorizing a
+bare gloss.
+
+If that pass is good, most post-graduation "please improve this card"
+reflections should not happen. What reflection keeps is the part that needs a
+learner event: a real miss, a near-synonym, an alternate that the card punished,
+a distinction that only showed up in use.
+
+### One content, then framing
+
+The generated material and the material reflection would attach are the same
+kind of thing: a situation, sentences that use the word, a short explanation,
+maybe a tighter cue. Day-1 "show the sentence," learning-day cloze, and a later
+review prompt are frames of that material.
+
+Some frames are deterministic. Blanking the target inside a sentence does not
+need a second author. Some frames may still want a pass of wording (how the
+situation is spoken to the learner, how the resolution is phrased). That
+legwork can be agent or template; it is not a second content model.
+
+Open in the bounce, not settled:
+
+- whether a successful first pass should leave the meaning list off the study
+  surface entirely, or keep it as a quiet anchor under the sentence
+- whether the first pass should write the same durable artifacts reflection
+  writes (cues, supplements), so review inherits them at graduation with no
+  extra ask
+- what "good enough that I would not press the button" is, as the bar for the
+  generator
