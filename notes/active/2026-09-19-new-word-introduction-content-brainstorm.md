@@ -28,10 +28,11 @@ order, the learning-state role, and the content model do not.
 §11 is the deliverable to land first: one generated bundle, shown on day 1,
 exercised as a cloze once the word is in learning. Not an adaptive teacher.
 §13 names that generator pass **word bootstrap**. It shares primitives with
-reflection and keeps a distinct top-level schema. §14 is the minimal schema:
-uses, examples, collocations, confusion candidates. Teaching content is a
-later workflow that reads bootstrap state. A per-learner introduction pass is
-farther still.
+reflection and keeps a distinct top-level schema. §14 is the first prototype:
+uses, examples, and collocations, motivated by word introduction. Confusion
+candidates stay in the general word-content vision and out of that prototype.
+Teaching content is a later workflow that reads bootstrap state. A per-learner
+introduction pass is farther still.
 
 ---
 
@@ -671,13 +672,18 @@ response schemas stay distinct, because the jobs differ.
 | Looks at | The word as it stands | The word, the served exercise, and what the learner did |
 | Succeeds when | Review can inherit the content; the "please fix this gloss" ask is rare | The event becomes useful learning, and content changes only where that event warrants them |
 
-Shared objects are primitives, not a shared response envelope. Candidates,
-whether or not the system tracks them yet:
+Shared objects are primitives, not a shared response envelope. The general
+word-content vision includes, whether or not the system tracks them yet:
 
 - example sentences
 - senses (not tracked today; potentially valuable)
 - collocations
 - confusion candidates
+
+The first bootstrap prototype (§14) is motivated by word introduction, so it
+only writes uses, examples, and collocations. Confusion candidates stay in
+this vision. A neighbor is usually earned by a learner event, which is
+reflection's job, and the introduction path does not need them yet.
 
 Reflection keeps its own result schema: diagnosis of an event, learner-facing
 explanation, proposals. Bootstrap gets its own schema (§14). It does not know
@@ -694,8 +700,11 @@ separate workflow where the learner needs the situation spoken.
 
 ## 14. Minimal word bootstrap
 
-Captured 2026-09-23. This is the core to get right. New-word teaching is a
-reader of this state, not part of the bootstrap prompt.
+Captured 2026-09-23. This is the first prototype. The reason to build it is
+word introduction: teaching content should have real uses and sentences to
+read. The bootstrap prompt itself stays unaware of introduction. Confusion
+candidates remain in the general word-content vision (§13) and are not part
+of this prototype.
 
 ### 14.1 Job
 
@@ -739,21 +748,16 @@ type WordBootstrap = {
     }>;
     collocations: string[]; // may be empty; short phrases, not drills
   }>;
-  confusionCandidates: Array<{
-    otherWordId: string | null; // null when the neighbor is not in corpus
-    label: string;
-    note: string;
-  }>;
 };
 ```
 
 Per use: a label and at least one example. A second example is useful so a
 later cloze is not always the sentence they just read, and it is still the
-same primitive. Collocations and confusion candidates may be empty. Confusion
-candidates are notes, not contrast clusters and not exercises.
+same primitive. Collocations may be empty.
 
-That is the whole bootstrap result. No situation paragraph, no resolution
-script, no cloze, no cue-repair operation, no diagnosis tags.
+That is the whole first prototype. No confusion candidates, no situation
+paragraph, no resolution script, no cloze, no cue-repair operation, no
+diagnosis tags.
 
 ### 14.4 What recognition shows
 
@@ -787,7 +791,8 @@ does not need either prompt.
 ### 14.6 Still out of this minimum
 
 - sense rows that scheduling or review intervals read
-- applying confusion candidates as contrast clusters
+- confusion candidates (still part of the general word-content vision, not
+  this prototype)
 - per-user teaching parameters
 - the too-hard / too-easy level hint
 - retiring the meaning list from storage; it remains agent input and the
