@@ -28,8 +28,10 @@ order, the learning-state role, and the content model do not.
 §11 is the deliverable to land first: one generated bundle, shown on day 1,
 exercised as a cloze once the word is in learning. Not an adaptive teacher.
 §13 names that generator pass **word bootstrap**. It shares primitives with
-reflection and keeps a distinct top-level schema. A per-learner introduction
-pass is a far-later task.
+reflection and keeps a distinct top-level schema. §14 is the minimal schema:
+uses, examples, collocations, confusion candidates. Teaching content is a
+later workflow that reads bootstrap state. A per-learner introduction pass is
+farther still.
 
 ---
 
@@ -678,12 +680,115 @@ whether or not the system tracks them yet:
 - confusion candidates
 
 Reflection keeps its own result schema: diagnosis of an event, learner-facing
-explanation, proposals. Bootstrap gets its own: a judgment of what this word
-needs in order to be introduced, expressed as those primitives plus whatever
-framing the first encounter needs (situation, resolution).
+explanation, proposals. Bootstrap gets its own schema (§14). It does not know
+about introduction. A separate teaching-content workflow reads bootstrap state
+and frames the first encounter.
 
 Review inherits the primitives when bootstrap did a good job. It does not
 re-run bootstrap's schema, and bootstrap does not pretend to be a reflection
 with an empty attempt. Framing on top of a primitive can stay small:
 deterministic where it is a transform (blank the target in a sentence), and a
-bit of wording work where the learner needs the situation spoken.
+separate workflow where the learner needs the situation spoken.
+
+---
+
+## 14. Minimal word bootstrap
+
+Captured 2026-09-23. This is the core to get right. New-word teaching is a
+reader of this state, not part of the bootstrap prompt.
+
+### 14.1 Job
+
+Look at the word as it stands (hanzi, pinyin, corpus meaning list, any existing
+examples). Write the steady-state content review and recognition should inherit.
+Do not mention sessions, introduction, clozes, or a particular learner.
+
+The corpus meaning list is **input**. It is a fallback reveal only when a word
+has no bootstrap yet. It is not the steady-state thing to show after a
+successful recognition. Once bootstrap has run, recognition reveals bootstrap
+content. "Possibly never" is the steady state: the meaning list stays in the
+corpus for the agent to read, and drops off the card.
+
+### 14.2 Senses, bounded
+
+A full sense model, with its own review state, is out of scope. Do not block
+bootstrap on it.
+
+A word can still have more than one useful sense. Handle that with a **use**:
+a bounded group inside the bootstrap document, for display and for later
+teaching. Uses are not scheduled, not graded, and not part of word-skill state.
+The word keeps one recognition clock and one production clock. SRS can leave
+the learner to sort the uses out over time. Explicit teaching can still be
+use-aware, because it can see the list.
+
+Cap it. One use is the normal case. Two or three when the word genuinely has
+more than one high-value use. Not an encyclopedia.
+
+### 14.3 Minimal schema
+
+```ts
+type WordBootstrap = {
+  wordId: string;
+  uses: Array<{
+    id: string;
+    label: string; // one short natural sense, learner-facing
+    examples: Array<{
+      id: string;
+      sentence: string;
+      translation: string;
+    }>;
+    collocations: string[]; // may be empty; short phrases, not drills
+  }>;
+  confusionCandidates: Array<{
+    otherWordId: string | null; // null when the neighbor is not in corpus
+    label: string;
+    note: string;
+  }>;
+};
+```
+
+Per use: a label and at least one example. A second example is useful so a
+later cloze is not always the sentence they just read, and it is still the
+same primitive. Collocations and confusion candidates may be empty. Confusion
+candidates are notes, not contrast clusters and not exercises.
+
+That is the whole bootstrap result. No situation paragraph, no resolution
+script, no cloze, no cue-repair operation, no diagnosis tags.
+
+### 14.4 What recognition shows
+
+On a successful recognition reveal, for a bootstrapped word:
+
+- the use labels
+- one example sentence and its translation, from those uses
+
+Not the corpus meaning list. Not a personal essay. If several uses exist, show
+their labels together; the word is still one card. Rotating which example
+appears can wait.
+
+Unbootstrapped words keep today's reveal (meaning list, `examples[0]`). That
+path is the migration fallback, not a second design.
+
+### 14.5 Teaching content is the next workflow
+
+Bootstrap stays unaware of introduction. A separate default task, **generate
+new-word teaching content**, takes a bootstrap as input and writes the
+first-encounter framing: which sentence or situation opens, and the resolution
+that explains it.
+
+Default output is deduped across users for a given bootstrap. The workflow is
+parametrizable later (level, known words, whatever a user-specific introduction
+needs) without changing the bootstrap prompt. Each agent task keeps a focused
+prompt.
+
+Cloze blanking of a bootstrap example can stay deterministic session code. It
+does not need either prompt.
+
+### 14.6 Still out of this minimum
+
+- sense rows that scheduling or review intervals read
+- applying confusion candidates as contrast clusters
+- per-user teaching parameters
+- the too-hard / too-easy level hint
+- retiring the meaning list from storage; it remains agent input and the
+  unbootstrapped fallback
