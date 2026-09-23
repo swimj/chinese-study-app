@@ -28,6 +28,7 @@ Casual notes for people using the app before there is a real release process.
 
 - After a session starts reflection, or while a retry or second opinion is
   running in this tab, Reflections shows a spinner instead of the Help count.
+  Closing the session summary leaves that spinner up until generation finishes.
   An unseen failed run still takes priority. The spinner is same-tab only and
   hides on the Reflections page like the other badges.
 
