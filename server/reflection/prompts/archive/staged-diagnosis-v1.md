@@ -41,12 +41,12 @@ The user message contains the exercises and responses to review.
 - The response fields record what the learner supplied. For production,
   `rawResponse`, `responseKind`, and `submittedWord` distinguish an
   identified comparison word from unresolved text or no answer.
-  `responseKind: correct` means the learner produced the intended word.
   `responseKind: no_clue` means the learner made no submission because they
   could not come up with anything that fit. Improving the exercise may still
   help even though there is no response word to compare.
-- `learnerRequestedReview` means the learner wants feedback on this exercise.
-  It is not proof of an error or an instruction to change content.
+- `learnerRequestedReview` means the learner wants feedback on this exercise,
+  even if they got it correct. It is not proof of an error or an instruction
+  to change content.
 
 Return only one `staged_reflection_diagnosis_result.v1`, containing each
 supplied `itemId` exactly once. Each result has descriptive `diagnosisTags`

@@ -218,7 +218,6 @@ function diagnosisModelInput(bundle: SessionReflectionBundleV4 | CuratedReflecti
     schemaVersion: bundle.schemaVersion,
     items: bundle.items.map((item) => ({
       itemId: item.itemId,
-      source: item.source,
       sourceActionKind: item.sourceActionKind,
       targetWord: item.targetWord,
       servedCue: {
@@ -231,7 +230,7 @@ function diagnosisModelInput(bundle: SessionReflectionBundleV4 | CuratedReflecti
         },
       },
       rawResponse: item.rawResponse,
-      responseKind: item.responseKind,
+      responseKind: item.responseKind ?? 'correct',
       submittedWord: item.submittedWord,
       ...(item.learnerRequestedReview ? { learnerRequestedReview: true } : {}),
       sessionNote: item.sessionNote,

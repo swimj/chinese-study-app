@@ -387,7 +387,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
         generatedAt,
         provider: 'openai',
         model: 'gpt-5.6-luna-high',
-        promptVersion: 'reflection-staged-v1',
+        promptVersion: 'reflection-staged-v2',
         bundleSchemaVersion: 'session_reflection_bundle.v5',
         resultSchemaVersion: 'session_reflection_result.v8',
         proposalCount: 1,
@@ -1188,7 +1188,7 @@ function materializeInformational(
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-staged-v1',
+    promptVersion: 'reflection-staged-v2',
     evidenceBundle: bundle(sessionId),
     result: {
       schemaVersion: 'session_reflection_result.v8',
@@ -1218,7 +1218,7 @@ function materializationInput(
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-staged-v1',
+    promptVersion: 'reflection-staged-v2',
     evidenceBundle: bundle(sessionId),
     result: result(operation),
   };

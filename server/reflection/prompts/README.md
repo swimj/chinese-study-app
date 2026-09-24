@@ -1,13 +1,15 @@
 # Reflection prompt versioning
 
 `staged-diagnosis.md` is the current first-stage prompt, stamped
-`reflection-staged-v1`. `reflection.md` retains the shipped one-shot guidance
+`reflection-staged-v2`. `reflection.md` retains the shipped one-shot guidance
 for historical/provider-contract coverage; new staged generation does not append
 overrides to that older prompt.
 
 The active staged prompts are Mandarin-only. French remains retired
 experimentation. Internal evidence retains its profile and provenance, but the
-model-facing projection omits study-profile configuration. Stage-one cue
+model-facing projection omits study-profile configuration and the persistence
+source label. A stored null response kind, used for a correct requested review,
+is projected as `correct`. Stage-one cue
 repair asks for replacement content, not database identities or accepted-answer
 lists; normalization derives those from the retained evidence. Cue quality
 means natural, strong evocation, not proof that no alternative can ever fit.

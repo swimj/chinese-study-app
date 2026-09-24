@@ -1757,7 +1757,7 @@ function materializeProposal(
     generatedAt: createdAt,
     provider: 'openai',
     model: 'gpt-5.6-luna',
-    promptVersion: 'reflection-staged-v1',
+    promptVersion: 'reflection-staged-v2',
     evidenceBundle,
     result,
   }).artifact;
@@ -1778,7 +1778,7 @@ function materializeCurrentSourceArtifact(
     generatedAt: createdAt,
     provider: 'openai',
     model: 'gpt-5.6-luna',
-    promptVersion: 'reflection-staged-v1',
+    promptVersion: 'reflection-staged-v2',
     evidenceBundle: {
       schemaVersion: 'session_reflection_bundle.v5',
       generatedAt: createdAt,
