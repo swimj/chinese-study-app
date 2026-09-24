@@ -3,6 +3,8 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { ClerkAuthenticationBoundary } from './auth/ClerkAuthenticationBoundary';
 import './styles.css';
+import './features/introduction-lab/styles.css';
+import './features/word-introduction/styles.css';
 
 const root = ReactDOM.createRoot(document.getElementById('root')!);
 

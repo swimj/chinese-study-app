@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   formatStudyDate,
   isMyWordsStageFilterNarrowed,
@@ -10,6 +10,8 @@ import {
   type MyWordsStatus,
   type MyWordsView,
 } from '../domain/my-words';
+import { WordIntroductionExperience } from '../features/word-introduction/WordIntroductionExperience';
+import { studyProfile } from '../study-profile';
 
 export type MyWordsPageProps = {
   view: MyWordsView;
@@ -36,11 +38,15 @@ export type MyWordsPageProps = {
 
 export function MyWordsPage(props: MyWordsPageProps) {
   const listRef = useRef<HTMLDivElement>(null);
+  const [introductionWordId, setIntroductionWordId] = useState<string | null>(null);
   const selected = props.words.find((entry) => entry.word.id === props.selectedId);
+  const introductionOpen = studyProfile.id === 'mandarin' && selected?.word.id === introductionWordId;
+
+  useEffect(() => { setIntroductionWordId(null); }, [props.selectedId]);
 
   useLayoutEffect(() => {
     if (listRef.current) listRef.current.scrollTop = props.scrollTop;
-  }, [props.scrollTop]);
+  }, [props.scrollTop, introductionOpen]);
 
   function closeDetails() {
     props.onSelect(null);
@@ -53,8 +59,12 @@ export function MyWordsPage(props: MyWordsPageProps) {
   return (
     <section className="my-words-page" aria-label="My words"
       onKeyDown={(event) => {
-        if (event.key === 'Escape' && selected) { event.stopPropagation(); closeDetails(); }
+        if (event.key !== 'Escape') return;
+        if (introductionOpen) { event.stopPropagation(); setIntroductionWordId(null); }
+        else if (selected) { event.stopPropagation(); closeDetails(); }
       }}>
+      {introductionOpen ? <WordIntroductionExperience key={selected.word.id}
+        wordId={selected.word.id} onClose={() => setIntroductionWordId(null)} autoPrepare /> : <>
       <header className="my-words-header">
         <h1>My words</h1>
         <div className="my-words-toolbar">
@@ -146,6 +156,11 @@ export function MyWordsPage(props: MyWordsPageProps) {
           {selected.word.traditional && selected.word.traditional !== selected.word.hanzi &&
             <p className="notes">Traditional: {selected.word.traditional}</p>}
           <span className="my-word-stage">{WORD_STAGE_LABELS[selected.word.status]}</span>
+          {studyProfile.id === 'mandarin' && <div className="my-word-introduction-action">
+            <button type="button" className="primary-button" onClick={() => setIntroductionWordId(selected.word.id)}>
+              Prepare introduction
+            </button>
+          </div>}
           <h3>Meaning</h3>
           <ul className="my-word-meanings">{(selected.word.meanings.length ? selected.word.meanings : [selected.word.meaning])
             .map((meaning, index) => <li key={index}>{meaning}</li>)}</ul>
@@ -157,6 +172,7 @@ export function MyWordsPage(props: MyWordsPageProps) {
           {selected.word.personalNotes && <><h3>Your notes</h3><p className="my-word-notes">{selected.word.personalNotes}</p></>}
         </aside>}
       </div>
+      </>}
     </section>
   );
 }
