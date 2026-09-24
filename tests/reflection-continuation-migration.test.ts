@@ -15,7 +15,10 @@ test('continuation migration preserves the previous schema rows and is repeatabl
     database.function('current_learner_id', () => 'learner-a');
     database.exec('PRAGMA foreign_keys = ON;');
     try {
-      const previousMigrations = schemaMigrations.slice(0, -1);
+      const migrationIndex = schemaMigrations.findIndex((migration) => migration.id === 'app_schema:0011_reflection_generation_continuations');
+      assert.ok(migrationIndex >= 0);
+      const throughContinuation = schemaMigrations.slice(0, migrationIndex + 1);
+      const previousMigrations = throughContinuation.slice(0, -1);
       migrateDatabase(database, previousMigrations);
       database.prepare('INSERT INTO learners VALUES (?, ?, ?, NULL)').run(
         'learner-a',
@@ -86,7 +89,7 @@ test('continuation migration preserves the previous schema rows and is repeatabl
         (database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count,
       ]));
 
-      assert.deepEqual(migrateDatabase(database), [
+      assert.deepEqual(migrateDatabase(database, throughContinuation), [
         'app_schema:0011_reflection_generation_continuations',
       ]);
       const countsAfter = Object.fromEntries(oldTables.map((table) => [
@@ -100,7 +103,7 @@ test('continuation migration preserves the previous schema rows and is repeatabl
       assert.deepEqual(database.prepare(`
         SELECT * FROM learner_owned_reflection_artifacts ORDER BY learner_id, artifact_id
       `).all(), artifactRowsBefore);
-      assert.deepEqual(migrateDatabase(database), []);
+      assert.deepEqual(migrateDatabase(database, throughContinuation), []);
       assert.deepEqual(database.prepare('PRAGMA foreign_key_check').all(), []);
       assert.ok(database.prepare(`
         SELECT 1 FROM sqlite_master

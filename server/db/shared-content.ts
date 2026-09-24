@@ -17,7 +17,9 @@ export type SharedContentKind =
   | 'production_cue'
   | 'pure_cue'
   | 'contrast_cluster'
-  | 'production_cue_supplement';
+  | 'production_cue_supplement'
+  | 'word_content'
+  | 'teaching_package';
 
 export type SharedContentPublication = {
   publicationId: string;
@@ -1220,7 +1222,9 @@ function isSharedContentKind(value: string): value is SharedContentKind {
   return value === 'production_cue'
     || value === 'pure_cue'
     || value === 'contrast_cluster'
-    || value === 'production_cue_supplement';
+    || value === 'production_cue_supplement'
+    || value === 'word_content'
+    || value === 'teaching_package';
 }
 
 function authorizedPureCueCreate(rawOperation: string, invocationId: string): {
