@@ -92,7 +92,8 @@ describe('reflection operation editor', () => {
     assert.match(markup, /替代 · tìdài/);
     assert.equal(markup.match(/mùbiāo/g)?.length, 1);
     assert.equal(markup.match(/tìdài/g)?.length, 1);
-    assert.match(markup, /shared axis — explicit axis/);
+    assert.match(markup, /reflection-promotion-cue-copy">shared axis</);
+    assert.doesNotMatch(markup, /reflection-promotion-cue-copy">shared axis — explicit axis</);
     assert.match(markup, /kind-deactivate is-excluded/);
     assert.match(markup, /aria-pressed="false" aria-label="Deactivate cue: broad target"/);
     assert.match(markup, /kind-keep is-included/);

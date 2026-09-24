@@ -547,14 +547,11 @@ function compactPromotionDestinationPreview(
   if (operation.destination.kind === 'existing') {
     const { pureCueId } = operation.destination;
     const cue = pureCues.find((item) => item.id === pureCueId);
-    const stimulus = cue?.stimulus.trim() ?? pureCueId;
-    const axisNote = cue?.axisNote.trim() ?? '';
-    return axisNote.length === 0 ? stimulus : `${stimulus} — ${axisNote}`;
+    const stimulus = cue?.stimulus.trim() ?? '';
+    return stimulus.length === 0 ? pureCueId : stimulus;
   }
   const stimulus = operation.destination.stimulus.trim();
-  const axisNote = operation.destination.axisNote.trim();
-  const head = stimulus.length === 0 ? 'New elicitation' : stimulus;
-  return axisNote.length === 0 ? head : `${head} — ${axisNote}`;
+  return stimulus.length === 0 ? 'New elicitation' : stimulus;
 }
 
 function ProductionCueEditorV2({
