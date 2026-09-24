@@ -9,12 +9,7 @@ export type IntroductionDraft = {
   teaching: TeachingPackage | null;
 };
 
-export type IntroductionLexicalInput = {
-  hanzi: string;
-  traditional: string | null;
-  pinyin: string;
-  guidance: string;
-};
+export type { WordBootstrapInput as IntroductionLexicalInput } from './application';
 
 export type IntroductionLabStatus = {
   generationAvailable: boolean;

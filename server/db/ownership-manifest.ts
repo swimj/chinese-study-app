@@ -73,6 +73,14 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
     'assign legacy lifecycle, notes, and coverage to the explicit legacy learner',
   ),
   sharedEntry('lexical_word_meanings', 'shared lexical meaning', 'copy legacy meaning content once'),
+  sharedEntry('word_content_documents', 'shared immutable word introduction content', 'new immutable generated content'),
+  sharedEntry('word_teaching_packages', 'shared immutable teaching package', 'new pinned generated package'),
+  operationalEntry('word_introduction_preparation', 'shared per-word generation stage and recoverable lease'),
+  privateEntry(
+    'learner_word_introduction_events',
+    'learner plus word and shared teaching package',
+    'new private open and completion markers',
+  ),
   privateEntry(
     'learner_word_meaning_preferences',
     'learner plus shared lexical meaning',

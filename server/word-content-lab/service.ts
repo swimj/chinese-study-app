@@ -5,10 +5,11 @@ import type {
   IntroductionDraft, IntroductionLabStatus, IntroductionLexicalInput,
 } from '../../src/domain/word-content/lab.ts';
 import type {
-  ContentStimulus, TeachingPackage, WordContentDocument,
+  TeachingPackage, WordContentDocument,
 } from '../../src/domain/word-content/types.ts';
 import { materializeTeachingPackage } from '../../src/domain/word-content/materialize.ts';
 import { parseTeachingPackage, parseWordContent } from '../../src/domain/word-content/validation.ts';
+import { normalizeWordContent, normalizeTeachingPackage } from '../word-content/authoring.ts';
 import { createIntroductionLabProvider, type IntroductionLabProvider } from './provider.ts';
 
 export class IntroductionLabError extends Error {
@@ -59,95 +60,6 @@ function lexicalInput(value: unknown): IntroductionLexicalInput {
     pinyin: input.pinyin.trim(),
     guidance: input.guidance.trim(),
   };
-}
-
-function generatedContent(value: unknown, input: IntroductionLexicalInput): WordContentDocument {
-  const wire = record(value, 'Bootstrap result');
-  exactKeys(wire, ['uses', 'examples'], 'Bootstrap result');
-  return parseWordContent({
-    schemaVersion: 1,
-    id: `content-lab:${randomUUID()}`,
-    word: {
-      wordId: `word-lab:${randomUUID()}`,
-      hanzi: input.hanzi,
-      traditional: input.traditional,
-      pinyin: input.pinyin,
-    },
-    uses: wire.uses,
-    examples: wire.examples,
-  });
-}
-
-function occurrenceSpans(text: string, target: string): Array<{ start: number; end: number; expectedText: string }> {
-  const points = Array.from(text);
-  const targetPoints = Array.from(target);
-  const found: Array<{ start: number; end: number; expectedText: string }> = [];
-  for (let index = 0; index <= points.length - targetPoints.length; index += 1) {
-    if (targetPoints.every((point, offset) => points[index + offset] === point)) {
-      found.push({ start: index, end: index + targetPoints.length, expectedText: target });
-    }
-  }
-  return found;
-}
-
-function normalizeStimulus(value: unknown, content: WordContentDocument): ContentStimulus {
-  const stimulus = record(value, 'Rehearsal stimulus');
-  if (stimulus.kind === 'direct_text') {
-    exactKeys(stimulus, ['kind', 'text'], 'Direct stimulus');
-    return { kind: 'direct_text', text: stimulus.text as string };
-  }
-  if (stimulus.kind !== 'example_cloze') throw new Error('Unsupported rehearsal stimulus.');
-  exactKeys(stimulus, ['kind', 'exampleId', 'occurrenceIndexes', 'frame'], 'Cloze stimulus');
-  if (typeof stimulus.exampleId !== 'string' || !Array.isArray(stimulus.occurrenceIndexes)
-    || stimulus.occurrenceIndexes.length === 0 || stimulus.occurrenceIndexes.length > 4) {
-    throw new Error('Cloze needs an example and one to four occurrence indexes.');
-  }
-  const example = content.examples.find((candidate) => candidate.id === stimulus.exampleId);
-  if (example === undefined) throw new Error('Cloze names an unknown source example.');
-  const occurrences = occurrenceSpans(example.text, content.word.hanzi);
-  let previous = -1;
-  const blanks = stimulus.occurrenceIndexes.map((value: unknown) => {
-    if (!Number.isSafeInteger(value) || (value as number) <= previous || (value as number) >= occurrences.length) {
-      throw new Error('Cloze occurrence indexes must be ordered, unique, and in range.');
-    }
-    previous = value as number;
-    return occurrences[value as number]!;
-  });
-  return {
-    kind: 'example_cloze',
-    example: { contentId: content.id, exampleId: example.id },
-    blanks,
-    frame: stimulus.frame as string | null,
-  };
-}
-
-function generatedTeaching(value: unknown, content: WordContentDocument): TeachingPackage {
-  const wire = record(value, 'Teaching result');
-  exactKeys(wire, ['beats', 'rehearsals'], 'Teaching result');
-  if (!Array.isArray(wire.rehearsals)) throw new Error('Teaching rehearsals must be an array.');
-  const rehearsals = wire.rehearsals.map((raw, index) => {
-    const item = record(raw, `Rehearsal ${index}`);
-    exactKeys(item, ['id', 'stimulus'], `Rehearsal ${index}`);
-    return {
-      id: item.id,
-      responseMode: 'hanzi_entry',
-      contract: { kind: 'target_rehearsal', wordId: content.word.wordId },
-      instruction: 'Recall the expression you just met. Enter only that expression in Chinese characters, not the whole sentence.',
-      stimulus: normalizeStimulus(item.stimulus, content),
-      acceptedAnswers: [{
-        wordId: content.word.wordId,
-        hanzi: content.word.hanzi,
-        traditional: content.word.traditional,
-      }],
-    };
-  });
-  return parseTeachingPackage({
-    schemaVersion: 1,
-    id: `teaching-lab:${randomUUID()}`,
-    wordContentId: content.id,
-    beats: wire.beats,
-    rehearsals,
-  });
 }
 
 function validatedDraft(value: unknown, id: string): IntroductionDraft {
@@ -267,7 +179,7 @@ export function createIntroductionLabService(options: {
         try { output = await provider.generateBootstrap(input); }
         catch { throw new IntroductionLabError(502, 'Bootstrap provider request failed.'); }
         let content: WordContentDocument;
-        try { content = generatedContent(output, input); }
+        try { content = normalizeWordContent(output, { wordId: `word-lab:${randomUUID()}`, hanzi: input.hanzi, traditional: input.traditional, pinyin: input.pinyin }, `content-lab:${randomUUID()}`); }
         catch { throw new IntroductionLabError(502, 'Bootstrap output failed validation.'); }
         return save(content, null, 'generated');
       });
@@ -280,13 +192,7 @@ export function createIntroductionLabService(options: {
         catch { throw new IntroductionLabError(502, 'Teaching provider request failed.'); }
         let teaching: TeachingPackage;
         try {
-          teaching = generatedTeaching(output, source.content);
-          const snapshot = materializeTeachingPackage(teaching, [source.content]);
-          const forms = [source.content.word.hanzi, source.content.word.traditional]
-            .filter((form): form is string => form !== null);
-          if (snapshot.rehearsals.some((exercise) => forms.some((form) => (
-            exercise.instruction.includes(form) || exercise.stimulus.text.includes(form)
-          )))) throw new Error('Generated rehearsal exposes its target answer.');
+          teaching = normalizeTeachingPackage(output, source.content, `teaching-lab:${randomUUID()}`);
         } catch {
           throw new IntroductionLabError(502, 'Teaching output failed validation.');
         }
