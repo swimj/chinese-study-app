@@ -245,6 +245,29 @@ export function completeActiveUnstudiedIntro(state: BucketSessionState): BucketS
   };
 }
 
+/** The taught package and its rehearsal replace the legacy new-word drill.
+ * This completes one word unit; it does not manufacture recognition/production ratings.
+ */
+export function completeActiveUnstudiedTeaching(
+  state: BucketSessionState, wordId: string,
+): BucketSessionTransitionResult {
+  const active = getBucketSchedulerActiveUnit(state.scheduler);
+  const word = active.type === 'unstudied_intro' ? active.word
+    : active.bucket === 'unstudied' && !isPureCueReviewItem(active.item) ? active.item.word : null;
+  if (!word || word.id !== wordId || word.status !== 'unstudied') {
+    throw new Error('Session invariant violated: completed teaching must match the active unstudied word.');
+  }
+  return {
+    state: refreshBucketSessionScheduler({
+      ...state,
+      answeredCount: state.answeredCount + 1,
+      progress: { ...state.progress, unstudied: removeKey(state.progress.unstudied, wordId) },
+      scheduler: removeBucketSchedulerWord(state.scheduler, 'unstudied', wordId),
+    }),
+    commit: { type: 'commit-unstudied-word-session', wordId },
+  };
+}
+
 export function rateActiveSessionUnit(
   state: BucketSessionState,
   rating: ReviewRating,

@@ -717,3 +717,18 @@ Bootstrap input is `{ hanzi, traditional, pinyin, guidance }`. Import input is
 `{ content, teaching?, origin? }`, where origin is `sample` or `imported`.
 Success returns the draft itself; failures return `{ error }`. Invalid output
 is never archived, and teaching failure preserves its input bootstrap draft.
+
+## Shared word introduction (Mandarin)
+
+Mounted after authentication and maintenance controls. See
+[word-introduction-in-app.md](word-introduction-in-app.md) for the full policy.
+
+| Method | Route | Effect |
+| --- | --- | --- |
+| GET | `/api/words/:wordId/introduction` | Eligible shared library + private pin/completion |
+| POST | `/api/words/:wordId/introduction/prepare` | Empty body; claim/reuse, validate, publish, privately pin |
+| POST | `/api/words/:wordId/introduction/complete` | Exact packageId; private navigation marker only |
+
+Preparation accepts no lexical or learner overrides. Missing words return 404;
+unavailable/withdrawn sources return 409; provider unavailability returns 503;
+provider/validation failures return sanitized 502 responses.

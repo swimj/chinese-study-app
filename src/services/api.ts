@@ -47,6 +47,7 @@ import type {
   IntroductionLexicalInput,
 } from '../domain/word-content/lab';
 import type { TeachingPackage, WordContentDocument } from '../domain/word-content/types';
+import type { WordIntroductionResponse } from '../domain/word-content/application';
 import {
   captureClientTransportFailure,
   readBrowserStorage,
@@ -166,6 +167,37 @@ export function importIntroductionDraft(input: {
 }): Promise<IntroductionDraft> {
   return introductionLabRequest('/import', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
+}
+
+async function wordIntroductionRequest(
+  wordId: string,
+  path: string,
+  init?: RequestInit,
+): Promise<WordIntroductionResponse> {
+  const response = await apiFetch(`${API_BASE}/api/words/${encodeURIComponent(wordId)}/introduction${path}`, init);
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => null);
+    const message = body && typeof body === 'object' && 'error' in body && typeof body.error === 'string'
+      ? body.error : `Could not load the introduction (${response.status}).`;
+    throw new Error(message);
+  }
+  return response.json() as Promise<WordIntroductionResponse>;
+}
+
+export function fetchWordIntroduction(wordId: string, signal?: AbortSignal): Promise<WordIntroductionResponse> {
+  return wordIntroductionRequest(wordId, '', { signal });
+}
+
+export function prepareWordIntroduction(wordId: string): Promise<WordIntroductionResponse> {
+  return wordIntroductionRequest(wordId, '/prepare', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+  });
+}
+
+export function completeWordIntroduction(wordId: string, packageId: string): Promise<WordIntroductionResponse> {
+  return wordIntroductionRequest(wordId, '/complete', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ packageId }),
   });
 }
 

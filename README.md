@@ -78,6 +78,11 @@ server and `VITE_API_BASE` are not required for the hosted beta.
 
 ## Word introduction prototype
 
+Mandarin My Words offers **Prepare introduction**; first encounters can open the
+same paced lesson in a study session. Validated content publishes automatically
+and is reused across learners. See [the in-app guide](docs/word-introduction-in-app.md)
+for the learning policy and required offline database migration.
+
 Run `npm run dev:intro-lab` and open <http://localhost:4177/intro-lab> to try
 the six paced introductions, deterministic rehearsal, and optional two-stage
 generation. It uses isolated local draft storage and does not change study

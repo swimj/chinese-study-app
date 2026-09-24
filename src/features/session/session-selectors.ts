@@ -178,13 +178,17 @@ export function getActivePrompt({
     return item.contrastSelection?.prompt.promptText ?? null;
   }
 
+  if (item.actionKind === 'production' && item.rehearsal) {
+    return `${item.rehearsal.instruction}\n${item.rehearsal.stimulus.text}`;
+  }
+
   if (item.actionKind === 'production' && item.production) {
     return item.production.text;
   }
 
   return item.actionKind === 'recognition'
     ? formatCardCharacters(word, characterPresentation)
-    : promptDisplayedMeanings[0] ?? allMeanings[0] ?? word.meaning;
+    : promptDisplayedMeanings[0] ?? item.wordContent?.uses[0]?.label ?? allMeanings[0] ?? word.meaning;
 }
 
 export function getActiveAnswerText({
@@ -210,7 +214,7 @@ export function getActiveAnswerText({
   }
 
   return item.actionKind === 'recognition'
-    ? allMeanings[0] ?? word.meaning
+    ? item.wordContent?.uses[0]?.label ?? allMeanings[0] ?? word.meaning
     : formatCardCharacters(word, characterPresentation);
 }
 

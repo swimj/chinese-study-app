@@ -20,6 +20,7 @@ import type {
   PureCueSessionReviewItem,
   SessionStudyItem,
   SessionStudyItemBuckets,
+  LearningRehearsalSnapshot,
   ProductionExerciseSnapshot,
   ProductionAnswerWord,
   StudyAttemptEvent,
@@ -40,6 +41,8 @@ import {
   captureProductionSchedulerSnapshotForAttemptBatchWithoutTransaction,
 } from './pure-cues.ts';
 import type { StudyProfileId } from '../../src/study-profile.ts';
+import type { WordContentDocument } from '../../src/domain/word-content/types.ts';
+import { materializeTeachingPackage } from '../../src/domain/word-content/materialize.ts';
 import {
   buildProductionAnswerLookup,
   deriveAcceptedSubmittedWordId,
@@ -48,6 +51,7 @@ import {
 } from '../../src/domain/production-response.ts';
 import { config, getConfig, getDb, dbPath, seedDataPath, dbExistedOnStartup } from './connection.ts';
 import { fillMissingNormalizedHanzi, normalizeMandarinHanziLookup } from './hanzi-lookup.ts';
+import { getWordIntroductionLibrary } from './word-introductions.ts';
 import { assertSchemaCurrent, migrateDatabase } from './migrations.ts';
 import { createHostedOperationsSchema } from './hosted-operations.ts';
 import {
@@ -4811,9 +4815,37 @@ function getSessionItemBucketsWithWords(
     `)
     .all(today) as WordRow[];
 
+  const learning = learningRows.map(mapWordRow);
+  const learningContent: Record<string, WordContentDocument> = {};
+  const learningRehearsals: Record<string, LearningRehearsalSnapshot> = {};
+  if (config.studyProfile === 'mandarin') {
+    // No durable cursor is needed: this stable UTC-day index rotates authored
+    // rehearsals without advancing when a session is merely composed/fetched.
+    const dayOrdinal = Math.floor(Date.parse(`${studyDayKey}T00:00:00.000Z`) / 86_400_000);
+    for (const word of learning) {
+      const library = getWordIntroductionLibrary(word.id);
+      // Rehearsal is teaching-linked: an available shared package alone does
+      // not mean this learner completed its introduction.
+      if (!library?.completed) continue;
+      const selected = library?.packages.find((entry) => entry.teaching.id === library.selectedPackageId);
+      if (!selected) continue;
+      const content = library?.contents.find((entry) => entry.content.id === selected.teaching.wordContentId)?.content;
+      if (!content) throw new Error(`Selected introduction ${selected.teaching.id} has no eligible pinned content`);
+      const snapshot = materializeTeachingPackage(selected.teaching, [content]);
+      const rehearsal = snapshot.rehearsals[dayOrdinal % snapshot.rehearsals.length];
+      if (!rehearsal) throw new Error(`Selected introduction ${selected.teaching.id} has no rehearsal`);
+      learningContent[word.id] = content;
+      learningRehearsals[word.id] = {
+        ...rehearsal, packageId: selected.teaching.id, wordContentId: content.id,
+      };
+    }
+  }
+
   return {
     review: interleavePureCueReviewItems(wordReviewItems, pureCueReviewItems, random),
-    learning: learningRows.map(mapWordRow),
+    learning,
+    learningContent,
+    learningRehearsals,
     unstudied: getAdmittedUnstudiedWords(remainingDailyNewWordSlots, studyDayKey, unstudiedAdmissionSource),
   };
 }
