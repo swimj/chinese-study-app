@@ -149,6 +149,8 @@ import {
   type ClientIncidentDiagnosticSink,
 } from './client-incident-diagnostics.ts';
 import { createIntroductionLabRouter, introductionLabEnabled } from './word-content-lab/routes.ts';
+import { createWordIntroductionRouter } from './word-content/routes.ts';
+import { createWordIntroductionService, type WordIntroductionService } from './word-content/service.ts';
 import {
   createIntroductionLabService,
   type IntroductionLabService,
@@ -169,6 +171,7 @@ export type CreateAppOptions = {
   studyCommitDiagnosticSink?: StudyCommitDiagnosticSink;
   clientIncidentDiagnosticSink?: ClientIncidentDiagnosticSink;
   introductionLabService?: IntroductionLabService;
+  wordIntroductionService?: WordIntroductionService;
 };
 
 function parseMyWordsStatusQuery(value: unknown): MyWordsStatus[] | undefined | 'invalid' {
@@ -247,6 +250,12 @@ export function createApp(options: CreateAppOptions = {}) {
     }
     next();
   });
+
+  if (dbConfig.studyProfile === 'mandarin') {
+    app.use('/api/words', createWordIntroductionRouter(
+      options.wordIntroductionService ?? createWordIntroductionService(),
+    ));
+  }
 
   if (introductionLabEnabled(dbConfig, process.env.APP_WORD_CONTENT_WORKBENCH)) {
     app.use('/api/intro-lab', createIntroductionLabRouter(
