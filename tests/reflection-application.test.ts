@@ -951,6 +951,133 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.equal(countRows('word_study_admission_state'), beforeAdmissionCount);
   });
 
+  test('smart-resets a lapsed production schedule when an unfair cue is replaced', () => {
+    sqlite.prepare(`
+      INSERT INTO word_skill_state (
+        word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor
+      ) VALUES ('target', 'production', 1, 240, ?, ?, 2.4)
+    `).run(createdAt, createdAt);
+    sqlite.prepare(`
+      INSERT INTO word_study_admission_state (word_id, study_phase, earliest_next_study_at)
+      VALUES ('target', 'review', '2026-07-30T12:00:00.000Z')
+    `).run();
+    const cueId = seedBroadCue('unfair-reset-seed', 'target');
+    insertStudyAttempt('unfair-reset-lapse', { cueId });
+    sqlite.prepare(`
+      UPDATE study_attempt_events
+      SET metadata_json = ?
+      WHERE id = 'unfair-reset-lapse'
+    `).run(JSON.stringify({
+      production: {
+        taskId: 'production-task:target:default_production',
+        cueId,
+        cueType: 'definition_gloss',
+        text: 'broad target',
+        acceptedWordIds: ['target'],
+        anchorWordId: 'target',
+        submittedText: '替代',
+        submittedWordId: 'alternate',
+        result: 'rejected',
+      },
+    }));
+    dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
+      evidenceId: 'unfair-reset-attempt-evidence',
+      occurredAt: appliedAt,
+      taskId: 'production-task:target:default_production',
+      cueId,
+      sourceAttemptId: 'unfair-reset-lapse',
+      attemptResult: 'rejected',
+      submittedWordId: 'alternate',
+    });
+    dbModule.captureProductionSchedulerSnapshotForAttemptBatchWithoutTransaction({
+      sourceAttemptId: 'unfair-reset-lapse',
+      capturedAt: appliedAt,
+    });
+    sqlite.prepare(`
+      UPDATE word_skill_state
+      SET interval_hours = 6, ease_factor = 2.1,
+        last_studied_at = ?, next_due_at = '2026-07-29T18:00:00.000Z'
+      WHERE word_id = 'target' AND skill_id = 'production'
+    `).run(appliedAt);
+
+    insertInvocation('unfair-reset-repair', {
+      ...cueRepairOperation({
+        changes: [{
+          kind: 'replace',
+          cueId,
+          replacements: [{
+            cueType: 'circumstance',
+            text: 'a fairer situation for 目标',
+            acceptedWordIds: ['target'],
+          }],
+        }],
+      }),
+      sourceAttemptJudgments: [{
+        kind: 'misleading_or_overloaded_cue',
+        sourceAttemptId: 'unfair-reset-lapse',
+      }],
+    });
+    const repaired = dbModule.applyReflectionInvocation('unfair-reset-repair', appliedAt);
+    assert.equal(repaired.application.state.kind, 'applied');
+    assert.deepEqual(
+      { ...sqlite.prepare(`
+        SELECT interval_hours, ease_factor, next_due_at FROM word_skill_state
+        WHERE word_id = 'target' AND skill_id = 'production'
+      `).get() as Record<string, unknown> },
+      { interval_hours: 240, ease_factor: 2.4, next_due_at: '2026-07-29T18:01:00.000Z' },
+    );
+    const refs = repaired.application.state.kind === 'applied'
+      ? repaired.application.state.effectRefs
+      : [];
+    assert.ok(refs.some((ref) => (
+      ref.type === 'production_scheduler_compensation' && ref.id.endsWith('/restored')
+    )));
+    assert.equal(dbModule.getProductionCue(cueId)?.active, false);
+  });
+
+  test('leaves a lapse in place when a repair does not judge the served cue unfair', () => {
+    sqlite.prepare(`
+      INSERT INTO word_skill_state (
+        word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor
+      ) VALUES ('target', 'production', 1, 240, ?, ?, 2.4)
+    `).run(createdAt, createdAt);
+    const cueId = seedBroadCue('fair-repair-seed', 'target');
+    insertStudyAttempt('fair-repair-lapse', { cueId });
+    dbModule.captureProductionSchedulerSnapshotForAttemptBatchWithoutTransaction({
+      sourceAttemptId: 'fair-repair-lapse',
+      capturedAt: appliedAt,
+    });
+    sqlite.prepare(`
+      UPDATE word_skill_state
+      SET interval_hours = 6, ease_factor = 2.1, next_due_at = '2026-07-29T18:00:00.000Z'
+      WHERE word_id = 'target' AND skill_id = 'production'
+    `).run();
+    insertInvocation('fair-repair', cueRepairOperation({
+      changes: [{
+        kind: 'replace',
+        cueId,
+        replacements: [{
+          cueType: 'circumstance',
+          text: 'a clearer situation for 目标',
+          acceptedWordIds: ['target'],
+        }],
+      }],
+    }));
+    const repaired = dbModule.applyReflectionInvocation('fair-repair', appliedAt);
+    assert.equal(repaired.application.state.kind, 'applied');
+    assert.deepEqual(
+      { ...sqlite.prepare(`
+        SELECT interval_hours, ease_factor FROM word_skill_state
+        WHERE word_id = 'target' AND skill_id = 'production'
+      `).get() as Record<string, unknown> },
+      { interval_hours: 6, ease_factor: 2.1 },
+    );
+    const refs = repaired.application.state.kind === 'applied'
+      ? repaired.application.state.effectRefs
+      : [];
+    assert.equal(refs.some((ref) => ref.type === 'production_scheduler_compensation'), false);
+  });
+
   test('requires a misleading-cue judgment to repair the exact served cue', () => {
     insertInvocation('cue-exact-repair-seed', cueRepairOperation({
       changes: [{

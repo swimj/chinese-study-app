@@ -555,8 +555,18 @@ created cues, lifecycle events, and later cue-evidence judgments through the
 three exact effect-reference variants above. Reapplying an
 invocation whose exact postcondition is already present produces
 `already_satisfied`. Applying V2 never mutates lexical meanings, changes
-meaning visibility, rewrites historical attempts, retroactively changes word
-scheduling state, or destructively deletes cues.
+meaning visibility, rewrites historical attempts, or destructively deletes cues.
+
+An accepted repair smart-resets the target's production schedule only when it
+both installs a fairer cue and judges the served exercise misleading or
+overloaded. `create` and `replace` install that cue. Deactivation alone does
+not, and a repair without `misleading_or_overloaded_cue` does not: improving a
+fair exercise leaves the lapse in place. The reset uses the same pre-lapse
+snapshot as pure-cue promotion. It restores production interval, ease, and
+admission, leaves attempt history unchanged, and sets production `nextDueAt` to
+the later of the snapshot due time and six hours after restoration. Outcomes
+are `restored`, `already_restored`, or `unavailable`. One action restores once.
+A repair that does not meet this condition still does not change scheduling.
 
 The provider evidence for a V2 repair contains the target word and the singular
 cue snapshot served by the source attempt. The V0 default-production task id is
@@ -668,7 +678,8 @@ Non-lapse sources fail before any promotion effects; there is no live
 `not_applicable` path. Compensation preserves
 attempt history and never projects onto the response word's scheduler.
 Restored production `nextDueAt` is the later of the snapshot due time and six
-hours after restoration.
+hours after restoration. The same snapshot and restore-once marker serve an
+accepted unfair-cue replacement; see `repair_production_cue` version 2.
 
 ### `accept_production_alternate` version 1
 

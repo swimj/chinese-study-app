@@ -3284,13 +3284,17 @@ function applyPendingOperationWithoutTransaction(
     case 'create_contrast_cluster':
       return applyContrastClusterCreationWithoutTransaction(operation, appliedAt);
     case 'repair_production_cue':
-      return operation.version === 2
-        ? applyProductionCueRepairWithoutTransaction(operation, invocationId, appliedAt)
-        : (() => {
-            throw new Error(
-              `No faithful application adapter is available for ${operation.kind}@${operation.version}.`,
-            );
-          })();
+      if (operation.version !== 2) {
+        throw new Error(
+          `No faithful application adapter is available for ${operation.kind}@${operation.version}.`,
+        );
+      }
+      return applyUnfairCueRepairCompensation(
+        operation,
+        applyProductionCueRepairWithoutTransaction(operation, invocationId, appliedAt),
+        invocationId,
+        appliedAt,
+      );
     case 'add_production_cue_supplement':
       return applyProductionCueSupplementWithoutTransaction(
         operation,
@@ -3308,6 +3312,51 @@ function applyPendingOperationWithoutTransaction(
         appliedAt,
       );
   }
+}
+
+function applyUnfairCueRepairCompensation(
+  operation: Extract<ReflectionOperation, { kind: 'repair_production_cue'; version: 2 }>,
+  state: OperationApplicationState,
+  invocationId: string,
+  appliedAt: string,
+): OperationApplicationState {
+  if (state.kind !== 'applied' && state.kind !== 'already_satisfied') return state;
+  const installsFairerCue = operation.changes.some((change) => (
+    change.kind === 'create' || change.kind === 'replace'
+  ));
+  if (!installsFairerCue) return state;
+  const sourceAttemptIds = [...new Set(
+    operation.sourceAttemptJudgments
+      .filter((judgment) => judgment.kind === 'misleading_or_overloaded_cue')
+      .map((judgment) => judgment.sourceAttemptId),
+  )];
+  if (sourceAttemptIds.length === 0) return state;
+
+  const causedEffectRefs = state.kind === 'applied' ? [...state.effectRefs] : [];
+  const satisfyingEffectRefs = state.kind === 'already_satisfied'
+    ? [...state.satisfyingEffectRefs]
+    : [];
+  for (const sourceAttemptId of sourceAttemptIds) {
+    const compensationKind = restoreProductionSchedulerSnapshotWithoutTransaction({
+      sourceAttemptId,
+      compensationInvocationId: invocationId,
+      restoredAt: appliedAt,
+    }).kind;
+    const compensationRef = {
+      type: 'production_scheduler_compensation',
+      id: `${encodeURIComponent(sourceAttemptId)}/${compensationKind}`,
+    };
+    if (compensationKind === 'restored') causedEffectRefs.push(compensationRef);
+    else satisfyingEffectRefs.push(compensationRef);
+  }
+  if (causedEffectRefs.length > 0) {
+    return {
+      kind: 'applied',
+      appliedAt,
+      effectRefs: [...causedEffectRefs, ...satisfyingEffectRefs],
+    };
+  }
+  return { kind: 'already_satisfied', satisfyingEffectRefs };
 }
 
 function applyPureElicitationPromotionWithoutTransaction(
