@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION } from '../../src/domain/reflection-contracts.ts';
 import {
   isReflectionQualityTag,
   REFLECTION_QUALITY_TAGS,
@@ -180,11 +181,56 @@ export function listReflectionQualityAnnotationsForArtifact(
   return rows.map(mapAnnotationRow);
 }
 
+type QualityArmIdentity = {
+  modelArm: string;
+  promptVersion: string;
+};
+
+type ContinuationStageRun = {
+  stage: string;
+  model: string;
+  createdAt: string;
+};
+
+export function stagedContinuationQualityIdentity(
+  runs: ContinuationStageRun[],
+): QualityArmIdentity {
+  const ordered = [...runs].sort((left, right) => (
+    left.createdAt.localeCompare(right.createdAt) || left.stage.localeCompare(right.stage)
+  ));
+  const diagnosis = uniqueModels(ordered.filter((run) => run.stage === 'diagnosis'));
+  const promotion = uniqueModels(ordered.filter((run) => run.stage === 'promotion'));
+  const allModels = uniqueModels(ordered);
+  let modelArm: string;
+  if (allModels.length === 1) {
+    modelArm = allModels[0]!;
+  } else if (promotion.length === 0) {
+    modelArm = diagnosis.join(' + ');
+  } else if (diagnosis.length === 0) {
+    modelArm = promotion.join(' + ');
+  } else {
+    modelArm = `${diagnosis.join(' + ')} → ${promotion.join(' + ')}`;
+  }
+  return {
+    modelArm,
+    promptVersion: STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
+  };
+}
+
+function uniqueModels(runs: Array<{ model: string }>): string[] {
+  const models: string[] = [];
+  for (const run of runs) {
+    if (!models.includes(run.model)) models.push(run.model);
+  }
+  return models;
+}
+
 export function getReflectionQualityStats(): ReflectionQualityStats {
   const reviewRows = getDb().prepare(`
     SELECT
       artifacts.model AS model_arm,
       artifacts.prompt_version AS prompt_version,
+      artifacts.source_run_id AS source_run_id,
       reviews.disposition AS disposition,
       reviews.acceptance_mode AS acceptance_mode,
       reviews.supersession_source AS supersession_source
@@ -194,6 +240,7 @@ export function getReflectionQualityStats(): ReflectionQualityStats {
   `).all() as Array<{
     model_arm: string;
     prompt_version: string;
+    source_run_id: string | null;
     disposition: string;
     acceptance_mode: string | null;
     supersession_source: string | null;
@@ -203,6 +250,7 @@ export function getReflectionQualityStats(): ReflectionQualityStats {
     SELECT
       artifacts.model AS model_arm,
       artifacts.prompt_version AS prompt_version,
+      artifacts.source_run_id AS source_run_id,
       annotations.tags_json AS tags_json
     FROM reflection_quality_annotations AS annotations
     JOIN reflection_artifacts AS artifacts
@@ -210,22 +258,57 @@ export function getReflectionQualityStats(): ReflectionQualityStats {
   `).all() as Array<{
     model_arm: string;
     prompt_version: string;
+    source_run_id: string | null;
     tags_json: string;
   }>;
 
   const runRows = getDb().prepare(`
     SELECT
-      model AS model_arm,
-      prompt_version,
-      state,
-      estimated_cost_usd
-    FROM reflection_generation_runs
+      runs.run_id AS run_id,
+      runs.model AS model_arm,
+      runs.prompt_version AS prompt_version,
+      runs.state AS state,
+      runs.estimated_cost_usd AS estimated_cost_usd,
+      links.continuation_id AS continuation_id,
+      links.stage AS stage,
+      links.created_at AS link_created_at
+    FROM reflection_generation_runs AS runs
+    LEFT JOIN reflection_generation_continuation_runs AS links
+      ON links.run_id = runs.run_id
+      AND links.learner_id = current_learner_id()
   `).all() as Array<{
+    run_id: string;
     model_arm: string;
     prompt_version: string;
     state: string;
     estimated_cost_usd: number | null;
+    continuation_id: string | null;
+    stage: string | null;
+    link_created_at: string | null;
   }>;
+
+  const continuationRuns = new Map<string, ContinuationStageRun[]>();
+  for (const row of runRows) {
+    if (row.continuation_id === null || row.stage === null || row.link_created_at === null) continue;
+    const runs = continuationRuns.get(row.continuation_id) ?? [];
+    runs.push({ stage: row.stage, model: row.model_arm, createdAt: row.link_created_at });
+    continuationRuns.set(row.continuation_id, runs);
+  }
+  const continuationIdentity = new Map<string, QualityArmIdentity>();
+  for (const [continuationId, runs] of continuationRuns) {
+    continuationIdentity.set(continuationId, stagedContinuationQualityIdentity(runs));
+  }
+  const runIdentity = new Map<string, QualityArmIdentity>();
+  for (const row of runRows) {
+    if (row.continuation_id === null) continue;
+    const identity = continuationIdentity.get(row.continuation_id);
+    if (identity !== undefined) runIdentity.set(row.run_id, identity);
+  }
+
+  function identityForSource(sourceRunId: string | null, fallback: QualityArmIdentity): QualityArmIdentity {
+    if (sourceRunId === null) return fallback;
+    return runIdentity.get(sourceRunId) ?? fallback;
+  }
 
   const arms = new Map<string, ReflectionQualityArmStats>();
 
@@ -262,7 +345,11 @@ export function getReflectionQualityStats(): ReflectionQualityStats {
     if (row.disposition === 'superseded' && row.supersession_source !== 'user_replacement') {
       continue;
     }
-    const arm = ensureArm(row.model_arm, row.prompt_version);
+    const identity = identityForSource(row.source_run_id, {
+      modelArm: row.model_arm,
+      promptVersion: row.prompt_version,
+    });
+    const arm = ensureArm(identity.modelArm, identity.promptVersion);
     arm.terminalReviewCount += 1;
     if (row.disposition === 'accepted' && row.acceptance_mode === 'exact') {
       arm.exactAcceptCount += 1;
@@ -277,7 +364,11 @@ export function getReflectionQualityStats(): ReflectionQualityStats {
 
   for (const row of annotationRows) {
     const tags = parseTagsJson(row.tags_json, 'stats');
-    const arm = ensureArm(row.model_arm, row.prompt_version);
+    const identity = identityForSource(row.source_run_id, {
+      modelArm: row.model_arm,
+      promptVersion: row.prompt_version,
+    });
+    const arm = ensureArm(identity.modelArm, identity.promptVersion);
     arm.taggedItemCount += 1;
     for (const tag of tags) {
       arm.tagCounts[tag] += 1;
@@ -285,7 +376,13 @@ export function getReflectionQualityStats(): ReflectionQualityStats {
   }
 
   for (const row of runRows) {
-    const arm = ensureArm(row.model_arm, row.prompt_version);
+    const identity = row.continuation_id === null
+      ? { modelArm: row.model_arm, promptVersion: row.prompt_version }
+      : continuationIdentity.get(row.continuation_id) ?? {
+        modelArm: row.model_arm,
+        promptVersion: row.prompt_version,
+      };
+    const arm = ensureArm(identity.modelArm, identity.promptVersion);
     if (row.state === 'failed') {
       arm.failedRunCount += 1;
     }

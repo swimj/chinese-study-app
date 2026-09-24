@@ -1966,8 +1966,9 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
               Terminal user reviews plus item tag overlays. Pending, deferred, and system
               supersession are excluded from disposition rates. Second-opinion retirement
               counts in the terminal total but is not a dismiss. Tags count whenever present.
-              Run cost sums priced generation attempts, including validation failures. Small
-              counts are not statistical claims.
+              Run cost sums priced generation attempts, including validation failures.
+              A staged continuation is one arm: both stage costs roll up, and mixed
+              models show as diagnosis → promotion. Small counts are not statistical claims.
             </p>
           </div>
         </header>

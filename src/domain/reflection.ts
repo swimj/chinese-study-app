@@ -1,3 +1,5 @@
+import { STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION } from './reflection-contracts.ts';
+
 export type StudyProfileV0 = 'mandarin' | 'french';
 
 export const SYNTHETIC_REFLECTION_ATTEMPT_ID_PREFIX = 'synthetic-reflection-attempt:';
@@ -750,8 +752,11 @@ export type ReflectionQualityTag =
   | 'inconsistent'
   | 'other';
 
-/** Prompt version currently used by live reflection generation arms. */
-export const CURRENT_REFLECTION_PROMPT_VERSION = 'reflection-v9' as const;
+/**
+ * Quality-comparison identity for the current staged flow.
+ * Diagnosis and promotion calls share this version instead of splitting by stage prompt.
+ */
+export const CURRENT_REFLECTION_PROMPT_VERSION = STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION;
 
 export const REFLECTION_QUALITY_TAGS = [
   'praise',
