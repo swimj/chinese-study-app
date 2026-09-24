@@ -34,6 +34,7 @@
     "build:deck-manifest": "node --import tsx scripts/build-deck-manifest.ts",
     "check:study-scheduler-state": "node --import tsx scripts/check-study-scheduler-state.ts",
     "report:word": "node --import tsx scripts/report-word.ts",
+    "inspect:word-content": "node --import tsx scripts/inspect-word-content.ts",
     "backfill:dogfood-shared-trial": "node --import tsx scripts/backfill-dogfood-shared-trial.ts",
     "spike:llm": "node --import tsx spikes/llm-provider/runner/cli.ts",
     "spike:llm:env": "node --env-file=.env --import tsx spikes/llm-provider/runner/cli.ts",
