@@ -165,10 +165,10 @@ document can coexist with the old one without changing a pinned package.
 
 ## Convergence path and remaining limits
 
-1. Persist these documents as immutable records with unique IDs and source
-   relationships. Freezing JavaScript objects prevents mutation in this slice;
-   storage-level immutability, attribution, and publication eligibility are
-   still to be implemented. Do not mistake a parsed document for published
+1. The [local introduction lab](word-introduction-lab.md) now persists immutable
+   authoring drafts and generates content/packages through separate provider
+   stages. Shared storage, attribution, and publication eligibility remain a
+   later integration step. Do not mistake a validated local draft for published
    content or reuse its ID for a changed body.
 2. Author structured new content directly. Reflection can initially continue
    emitting current cue/supplement shapes. No old cloze-to-sentence conversion
@@ -184,6 +184,8 @@ document can coexist with the old one without changing a pinned package.
    The current model does not build a replacement graph or automatically swap
    packages. Global sentence deduplication can wait until reuse justifies it.
 
-Persistence/publication, provider authoring, UI, package selection, and study
-progress policies are the next integration layers. They need not change the
-core separation demonstrated here. No production database access was needed.
+Provider authoring, local draft storage, and paced introduction/rehearsal UI
+are exercised by the lab. Shared publication, package selection for learners,
+and study progress policies are the next integration layers. They need not
+change the core separation demonstrated here. No production database access
+was needed.

@@ -697,3 +697,23 @@ primitives. The vestigial `contrast_candidate_intake` table and reader are
 retired; pre-SWI-47 databases are no longer supported by current builds.
 
 Domain column matches [server-db.md](./server-db.md) modules.
+
+## Local introduction lab
+
+These development-only routes require `APP_WORD_CONTENT_WORKBENCH=1`, dev mode,
+trusted-local authentication, Mandarin, and a loopback client. The
+[lab guide](word-introduction-lab.md) documents its isolated launch command.
+They return local drafts, never publish study content or record learner progress.
+
+| Route | Result |
+| --- | --- |
+| `GET /api/intro-lab/status` | Generation availability and configured model |
+| `GET /api/intro-lab/drafts` | Saved immutable draft envelopes |
+| `POST /api/intro-lab/bootstrap` | Generate and save content from lexical input |
+| `POST /api/intro-lab/drafts/:id/teaching` | Generate and save a new draft with teaching pinned to the saved content |
+| `POST /api/intro-lab/import` | Validate and save supplied content with optional teaching |
+
+Bootstrap input is `{ hanzi, traditional, pinyin, guidance }`. Import input is
+`{ content, teaching?, origin? }`, where origin is `sample` or `imported`.
+Success returns the draft itself; failures return `{ error }`. Invalid output
+is never archived, and teaching failure preserves its input bootstrap draft.

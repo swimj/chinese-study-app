@@ -76,6 +76,13 @@ The frontend calls the backend at `http://localhost:5174` by default. You can ov
 Production builds use their serving origin by default, so a separate frontend
 server and `VITE_API_BASE` are not required for the hosted beta.
 
+## Word introduction prototype
+
+Run `npm run dev:intro-lab` and open <http://localhost:4177/intro-lab> to try
+the six paced introductions, deterministic rehearsal, and optional two-stage
+generation. It uses isolated local draft storage and does not change study
+progress. See [the lab guide](docs/word-introduction-lab.md).
+
 ## Modes and Data
 
 ### Dev mode
