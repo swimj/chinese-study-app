@@ -1,8 +1,8 @@
 # Word Bootstrap, Introduction, And Early Rehearsal
 
-Status: accepted design direction (2026-09-24). The representation checkpoint
-is implemented, with a [local authoring and rehearsal lab](../docs/word-introduction-lab.md);
-live study progression is not integrated. See the
+Status: accepted design direction, with initial in-app policies agreed 2026-09-25.
+The [local authoring lab](../docs/word-introduction-lab.md) remains available alongside
+shared preparation, paced introductions, and package-based early learning. See the
 [executable model and compatibility guide](../docs/word-content-model.md).
 This is the product and content-model north star for the combined feature.
 The policy choices in §9 can remain open through a merged prototype. Define
@@ -122,7 +122,7 @@ valid completion. An out-of-contract response is not a claim of bad Chinese.
 Coupling means coherent content and exact references, not identical presentation
 or forced immediate practice after each beat. The package can supply reusable
 rehearsal definitions while session policy decides when and how often they run.
-Cross-session association and the transition into learning remain open in §9.
+The initial cross-session association and transition policy are specified in §9.
 
 ## 5. Reuse Material; Keep Exercise Contracts Distinct
 
@@ -151,11 +151,13 @@ have a corresponding exercise, and not every exercise needs a source sentence.
 Target rehearsal uses deterministic matching and is excluded from automatic
 review cue repair/pure-cue promotion. Attempts must be distinguishable from
 review attempts so a natural alternative in a constrained drill does not enter
-the review false-lapse/promotion path. The effects of rehearsal success/failure
-on learning coverage and graduation remain open.
+the review false-lapse/promotion path. During learning, rehearsal occupies the production direction and uses the existing
+coverage and first-try success rules; it does not become a review cue.
 
-Persist the exercise intent with the served stimulus, instructions, and frozen
-answer forms. Rehearsal must not accidentally invoke review-lapse compensation
+Preserve the exercise intent with the served stimulus, instructions, and frozen
+answer forms. The initial learning integration freezes these in the session/Undo
+snapshot; durable learning commits retain their existing word-level success
+contract, without a new per-rehearsal attempt ledger. Rehearsal must not accidentally invoke review-lapse compensation
 or review scheduler projection. Navigation, completion, and attempts remain
 learner-private; they are not mutable fields of a shared teaching package.
 
@@ -214,9 +216,9 @@ retain their independent schedules and target-free answer contract.
 
 Provider work stays backend-owned and outside live grading. Generation failure
 must not corrupt study state. Generation, validation, publication/selection,
-and learner progress are separate effects. This spec does not grant new model
-authority to publish content or mutate shared state automatically; the concrete
-bootstrap/package publication path must fit the existing authorization boundary.
+and learner progress are separate effects. The application authorizes automatic publication of validated lexical bootstrap and
+teaching outputs as shared-trial content. This policy does not give the model
+arbitrary mutation authority or grant reflection proposals new authorization.
 
 ## 8. Observable Acceptance Criteria
 
@@ -259,3 +261,31 @@ accepted experience.
 For this feature, the user explicitly waived the existing frontier as a scope
 gate while that project working model is being reconsidered. No frontier
 reconciliation is required to proceed with this work.
+
+### Initial in-app policy (2026-09-25)
+
+- **Shared preparation:** the first request prepares lexical word content and then
+  its teaching package. Both publish immediately after deterministic validation,
+  with no learner quality-review step. Later learners reuse the result. Each stage
+  has durable shared readiness and an expiring generation claim. A failed teaching
+  stage retains the completed bootstrap. A withdrawn ready result is unavailable;
+  ordinary requests do not silently regenerate it.
+- **Private association:** opening pins an eligible package for that learner.
+  Completion is a private navigation marker, separate from study credit. A
+  withdrawn private pin is not silently replaced with another package.
+- **First encounter:** an unstudied Mandarin word opens its introduction before
+  ordinary cards. Completing the introduction and its rehearsal satisfies the
+  first-encounter word unit through the existing deferred commit and Undo path.
+  On-demand completion in My Words alone does not advance word status. Skipping
+  or unavailable content falls back to the existing first-encounter cards.
+- **Learning:** one recognition direction and one production direction remain
+  the daily obligation. Production can use a cloze or direct definition/situation
+  from a pinned package whose introduction the learner has completed. Rotate available rehearsals with a simple deterministic
+  policy; no per-example or per-sense mastery ledger is required. Retries retain
+  the served exercise. Missing eligible package content uses existing cards.
+- **Graduation:** preserve three consecutive successful study sessions, with
+  first-try Good in both directions. Adjacent calendar days are not required.
+  Graduation restores the ordinary review contracts and scheduler.
+- **Correction:** quarantine/retirement prevents future serving, preserves stored
+  documents and evidence, and offers ordinary cards. Automatic quality control,
+  revision selection, and drift reconciliation remain future policies.

@@ -247,3 +247,12 @@ learner-ownership migration before its import tooling was retired.
 ## Primary tests by area
 
 See [testing.md](./testing.md). DB-touching suites import `server/db.ts` with a temp `APP_DATA_DIR`.
+
+## Shared word introduction
+
+`word-introductions.ts` persists immutable word-content and teaching-package
+documents, publishes validated content through the existing shared registry,
+serializes each word's bootstrap/teaching stages using expiring claims, and keeps
+learner package-open/completion events private. Migration 0012 adds these tables
+and the two publication kinds; it does not rewrite legacy cues or supplements.
+See [the in-app guide](word-introduction-in-app.md).

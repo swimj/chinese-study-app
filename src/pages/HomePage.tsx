@@ -1,3 +1,5 @@
+import { SessionIntroductionGatePanel } from '../features/session/SessionIntroductionGatePanel';
+import type { SessionIntroductionGate } from '../features/session/useIntroductionGate';
 import type { RefObject } from 'react';
 import { useEffect, useState } from 'react';
 import type { BackendStatus, UnstudiedAdmissionSource, DietIntakeInput, DietSelfSelect } from '../services/api';
@@ -31,6 +33,7 @@ import {
 import { HomeOverviewPanel, SessionSettingsPanel } from './HomeOverviewPanel';
 
 export function HomePage({
+  introductionGate,
   backendStatus,
   onSaveSessionSettings,
   sessionPrefetch,
@@ -118,6 +121,7 @@ export function HomePage({
   dietIntakeStartBlocked,
   onNudgeDiet,
 }: {
+  introductionGate?: SessionIntroductionGate | null;
   backendStatus: BackendStatus | null;
   onSaveSessionSettings: (settings: {
     dailyNewWordLimit?: number;
@@ -261,6 +265,8 @@ export function HomePage({
             onSavingChange={setSessionSettingsSaving}
             onClose={() => setSessionSettingsOpen(false)}
           />
+        ) : introductionGate ? (
+          <SessionIntroductionGatePanel gate={introductionGate} onUndo={hasUndo && submittingRating === null ? onUndoLastRating : undefined} />
         ) : (
           <StudySessionPanel
             sessionStarted={sessionStarted}

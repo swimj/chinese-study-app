@@ -1,3 +1,6 @@
+import { resolveContentExerciseResponse } from '../../domain/word-content/materialize';
+import { useIntroductionGate, type SessionIntroductionGate } from './useIntroductionGate';
+import { sameIntroductionCompletionTarget } from './introduction-gate';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { ReviewRating, Word, WordMeaning } from '../../types';
 import type {
@@ -31,6 +34,7 @@ import {
   beginBucketDrainSession,
   cancelRatedReviewSessionAction,
   completeActiveUnstudiedIntro,
+  completeActiveUnstudiedTeaching,
   createBucketSessionState,
   dismissActiveBucketSessionUnit,
   dismissBucketSessionWordFromSnapshot,
@@ -130,6 +134,7 @@ import {
 } from './session-finalization';
 
 type SessionUndoSnapshot = {
+  introductionWordId?: string;
   sessionState: BucketSessionState;
   sessionSummary: SessionSummary | null;
   ui: SessionUiSnapshot;
@@ -161,6 +166,7 @@ export type StudySessionControllerOptions = {
 };
 
 export type StudySessionHomePageProps = {
+  introductionGate: SessionIntroductionGate | null;
   sessionPrefetch: SessionPrefetchState;
   sessionStarted: boolean;
   sessionPhase: BucketSessionState['phase'] | null;
@@ -364,6 +370,19 @@ export function useStudySession({
     ? activeUnit.item
     : null;
   const activeWord = activeUnit?.type === 'unstudied_intro' ? activeUnit.word : activeItem?.word ?? null;
+  const introductionController = useIntroductionGate({
+    sessionId: sessionStarted ? sessionState?.sessionId ?? null : null,
+    visible: sessionSurfaceVisible && frozenProductionCard === null
+      && frozenPureCueCard === null && frozenContrastCard === null,
+    profile: studyProfile.id, word: activeWord,
+    completedSession: sessionState?.phase === 'completed',
+  });
+  const introductionGate = introductionController.gate;
+  const currentIntroductionTargetRef = useRef({ state: sessionState, wordId: activeWord?.id, gateKey: introductionGate?.key });
+  currentIntroductionTargetRef.current = { state: sessionState, wordId: activeWord?.id, gateKey: introductionGate?.key };
+  const introductionBlocked = introductionGate !== null;
+  const introductionBlockedRef = useRef(introductionBlocked);
+  introductionBlockedRef.current = introductionBlocked;
   const activeWordPersonalNotes = getActiveWordPersonalNotes({
     word: activeWord,
     overridesByWordId: sessionPersonalNotesOverridesByWordId,
@@ -936,7 +955,10 @@ export function useStudySession({
         return;
       }
       let resolution: ProductionResponseResolution;
-      if (activeWord!.status === 'review') {
+      if (activeItem!.rehearsal) {
+        const result = resolveContentExerciseResponse(activeItem!.rehearsal, typedResponse);
+        resolution = { submittedText: typedResponse, result: result.outcome === 'accepted' ? 'accepted_anchor' : 'rejected' };
+      } else if (activeWord!.status === 'review') {
         resolution = resolveSessionProductionResponse({
           submittedText: typedResponse,
           anchorWordId: activeWord!.id,
@@ -1095,7 +1117,7 @@ export function useStudySession({
       status: wordAtResponse.status,
       reviewedCount,
       queuedCount: getBucketSessionTotalCount(stateAtResponse),
-      promptDisplayedMeanings: itemAtResponse.production ? [] : [...activePromptDisplayedMeanings],
+      promptDisplayedMeanings: itemAtResponse.production || itemAtResponse.rehearsal ? [] : [...activePromptDisplayedMeanings],
       fallbackPrompt: activePrompt ?? wordAtResponse.meaning,
       answerPinyin: wordAtResponse.pinyin,
       answerText: formatCardCharacters(wordAtResponse, characterPresentation),
@@ -1108,7 +1130,9 @@ export function useStudySession({
     setProductionHanziError(
       attemptedHanzi === null
         ? `No clue recorded. Expected "${expectedCharacters}".`
-        : `Incorrect ${studyProfile.labels.target}. Expected "${expectedCharacters}".`,
+        : itemAtResponse.rehearsal
+          ? `This drill asks for the taught expression "${expectedCharacters}". Another expression may be natural here.`
+          : `Incorrect ${studyProfile.labels.target}. Expected "${expectedCharacters}".`,
     );
     setProductionUiPhase('await-next');
     setAnswerRevealed(true);
@@ -1256,6 +1280,9 @@ export function useStudySession({
       return;
     }
 
+    if (lastUndoSnapshot.introductionWordId) {
+      introductionController.reopen(lastUndoSnapshot.sessionState.sessionId, lastUndoSnapshot.introductionWordId);
+    }
     setSessionState(cloneBucketSessionState(lastUndoSnapshot.sessionState));
     setSessionSummary(lastUndoSnapshot.sessionSummary);
     restoreSessionUiSnapshot(lastUndoSnapshot.ui);
@@ -1265,6 +1292,45 @@ export function useStudySession({
     setPendingSessionCommit(null);
     setLastUndoSnapshot(null);
     setError(null);
+  }
+
+  async function handleCompleteTeaching() {
+    if (!sessionState || !activeWord || !introductionGate || submittingRating !== null) return;
+    const sourceState = sessionState;
+    const sourceWord = activeWord;
+    const dismiss = introductionGate.dismiss;
+    setSubmittingRating('good');
+    setError(null);
+    try {
+      await applyPendingUndoClosure();
+      const current = currentIntroductionTargetRef.current;
+      if (!sameIntroductionCompletionTarget({
+        state: sourceState, wordId: sourceWord.id, gateKey: introductionGate.key,
+      }, current)) return;
+      const transition = completeActiveUnstudiedTeaching(sourceState, sourceWord.id);
+      setLastUndoSnapshot({
+        introductionWordId: sourceWord.id,
+        sessionState: cloneBucketSessionState(sourceState), sessionSummary,
+        ui: createSessionUiSnapshot(),
+        reflectionEvidence: snapshotSessionReflectionEvidence(reflectionEvidenceRef.current),
+      });
+      if (transition.commit.type !== 'commit-unstudied-word-session') throw new Error('Teaching completion must commit its word unit.');
+      setPendingSessionCommit(transition.commit);
+      setSessionState(transition.state);
+      setSessionSummary((summary) => summary === null ? null : ({
+        ...summary,
+        answeredCount: transition.state.answeredCount,
+        completedUnstudiedWords: summary.completedUnstudiedWords + 1,
+        completedAt: transition.state.phase === 'completed' && summary.completedAt === null
+          ? new Date().toISOString() : summary.completedAt,
+        completionMode: transition.state.phase === 'completed' && sourceState.phase === 'draining'
+          ? 'drain' : summary.completionMode,
+      }));
+      dismiss();
+      resetAnswerAndProductionUi();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not finish the introduction.');
+    } finally { setSubmittingRating(null); }
   }
 
   function handleBeginUnstudiedDrill(wordId: string) {
@@ -1605,7 +1671,7 @@ export function useStudySession({
   }, [personalNotesEditorOpen]);
 
   useEffect(() => {
-    if (!sessionStarted || !isProductionItem || answerRevealed || (productionAwaitingNext || pureCueAwaitingNext) || personalNotesEditorOpen) {
+    if (introductionBlocked || !sessionStarted || !isProductionItem || answerRevealed || (productionAwaitingNext || pureCueAwaitingNext) || personalNotesEditorOpen) {
       return;
     }
 
@@ -1615,6 +1681,7 @@ export function useStudySession({
 
     productionHanziInputRef.current?.focus();
   }, [
+    introductionBlocked,
     activeUnstudiedProgress?.introComplete,
     activeItem?.sessionActionId,
     activePureCue?.sessionActionId,
@@ -1640,7 +1707,7 @@ export function useStudySession({
   }, [personalNotesEditorOpen]);
 
   useEffect(() => {
-    if (!sessionStarted || !sessionState || !sessionSurfaceVisible) {
+    if (introductionBlocked || !sessionStarted || !sessionState || !sessionSurfaceVisible) {
       return;
     }
 
@@ -1648,7 +1715,7 @@ export function useStudySession({
     const summaryFinalizationKind = sessionFinalization.kind;
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented || shortcutGuideOpen || submittingRating !== null || personalNotesEditorOpen) {
+      if (introductionBlockedRef.current || event.defaultPrevented || shortcutGuideOpen || submittingRating !== null || personalNotesEditorOpen) {
         return;
       }
 
@@ -1793,6 +1860,7 @@ export function useStudySession({
     sessionStarted,
     sessionState,
     sessionSurfaceVisible,
+    introductionBlocked,
     shortcutGuideOpen,
     submittingRating,
   ]);
@@ -1805,6 +1873,7 @@ export function useStudySession({
     invalidateSessionPrefetch,
     finishCompletedSessionIfLeaving,
     homePageProps: {
+      introductionGate: introductionGate ? { ...introductionGate, complete: () => { void handleCompleteTeaching(); } } : null,
       sessionPrefetch,
       sessionStarted,
       sessionPhase: sessionState?.phase ?? null,

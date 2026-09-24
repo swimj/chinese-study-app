@@ -2,8 +2,9 @@
 
 This implements the representation and materialization portion of
 [Word Bootstrap, Introduction, And Early Rehearsal](../SPECS/word-bootstrap-and-introduction.md).
-It is a model checkpoint, not a released learning flow. It does not migrate
-SQLite, call a provider, publish shared content, or alter session scheduling.
+The domain layer remains independent of persistence and scheduling. The
+[in-app integration](word-introduction-in-app.md) adds shared SQLite storage,
+provider preparation, and an initial learning flow around these objects.
 
 Run the six worked examples and old/new review coexistence:
 

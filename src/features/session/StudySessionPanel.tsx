@@ -717,7 +717,7 @@ export function StudySessionPanel({
                 </>
               ) : activeItem.actionKind === 'recognition' ? (
                 <strong className="prompt-value">{activePrompt}</strong>
-              ) : activeItem.production ? (
+              ) : activeItem.production || activeItem.rehearsal ? (
                 <strong className="prompt-value">{activePrompt}</strong>
               ) : activePromptDisplayedMeanings.length > 0 ? (
                 <MeaningList meanings={activePromptDisplayedMeanings} className="meaning-list-prompt" />
@@ -757,7 +757,17 @@ export function StudySessionPanel({
                     <strong className="answer-value">{activeAnswerText}</strong>
                   </>
                 )}
-                {productionAwaitingSupplement ? null : activeMeaningRows.length > 0 ? (
+                {productionAwaitingSupplement ? null : activeItem.wordContent ? (
+                  <div className="stack">
+                    {activeItem.wordContent.uses.map((use) => {
+                      const example = activeItem.wordContent!.examples.find((row) => row.id === use.exampleIds[0]);
+                      return <div key={use.id}>
+                        <strong>{use.label}</strong>
+                        {example && <><p lang="zh-Hans">{example.text}</p><p>{example.translation}</p></>}
+                      </div>;
+                    })}
+                  </div>
+                ) : activeMeaningRows.length > 0 ? (
                   <div className="stack">
                     <div className="meaning-visibility-grid">
                       <div className="meaning-visibility-header">
@@ -802,7 +812,7 @@ export function StudySessionPanel({
                     <span className="prompt-meta">
                       Interval {formatIntervalHours(activeItem.intervalHours)}
                     </span>
-                    <span className="prompt-meta">{activeWord.examples[0]}</span>
+                    {!activeItem.wordContent && <span className="prompt-meta">{activeWord.examples[0]}</span>}
                   </>
                 )}
               </div>
