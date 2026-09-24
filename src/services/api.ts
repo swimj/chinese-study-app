@@ -41,6 +41,12 @@ import type {
 import type { MyWordsResponse, MyWordsStatus, MyWordsView } from '../domain/my-words';
 import { ALL_MY_WORDS_STATUSES } from '../domain/my-words';
 import type { ClientTransportIncidentContext } from './client-incident-diagnostics';
+import type {
+  IntroductionDraft,
+  IntroductionLabStatus,
+  IntroductionLexicalInput,
+} from '../domain/word-content/lab';
+import type { TeachingPackage, WordContentDocument } from '../domain/word-content/types';
 import {
   captureClientTransportFailure,
   readBrowserStorage,
@@ -122,6 +128,45 @@ async function apiFetch(
       startedAtMs,
     });
   }
+}
+
+async function introductionLabRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await apiFetch(`${API_BASE}/api/intro-lab${path}`, init);
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => null);
+    const message = body && typeof body === 'object' && 'error' in body
+      && typeof body.error === 'string' ? body.error : `Introduction lab request failed (${response.status}).`;
+    throw new Error(message);
+  }
+  return response.json() as Promise<T>;
+}
+
+export function fetchIntroductionLabStatus(): Promise<IntroductionLabStatus> {
+  return introductionLabRequest('/status');
+}
+
+export function fetchIntroductionDrafts(): Promise<IntroductionDraft[]> {
+  return introductionLabRequest('/drafts');
+}
+
+export function bootstrapIntroduction(input: IntroductionLexicalInput): Promise<IntroductionDraft> {
+  return introductionLabRequest('/bootstrap', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
+}
+
+export function generateIntroductionTeaching(draftId: string): Promise<IntroductionDraft> {
+  return introductionLabRequest(`/drafts/${encodeURIComponent(draftId)}/teaching`, { method: 'POST' });
+}
+
+export function importIntroductionDraft(input: {
+  content: WordContentDocument;
+  teaching?: TeachingPackage | null;
+  origin?: 'sample' | 'imported';
+}): Promise<IntroductionDraft> {
+  return introductionLabRequest('/import', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
 }
 
 export async function flushPendingClientTransportIncidents(): Promise<void> {

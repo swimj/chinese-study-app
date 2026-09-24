@@ -1,7 +1,8 @@
 # Word Bootstrap, Introduction, And Early Rehearsal
 
 Status: accepted design direction (2026-09-24). The representation checkpoint
-is implemented; the live learning flow is not. See the
+is implemented, with a [local authoring and rehearsal lab](../docs/word-introduction-lab.md);
+live study progression is not integrated. See the
 [executable model and compatibility guide](../docs/word-content-model.md).
 This is the product and content-model north star for the combined feature.
 The policy choices in §9 can remain open through a merged prototype. Define

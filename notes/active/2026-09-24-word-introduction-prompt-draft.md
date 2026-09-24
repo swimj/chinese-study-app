@@ -18,6 +18,12 @@ It couples introduction and associated rehearsal in a pinned package. This
 prompt currently covers the introduction portion; rehearsal authoring and the
 learning transition still need their concrete contracts.
 
+The [local introduction lab](../../docs/word-introduction-lab.md) now exercises
+this stance with separate [bootstrap](../../server/word-content-lab/prompts/bootstrap.md)
+and [teaching](../../server/word-content-lab/prompts/teaching.md) runtime prompts.
+The prose below remains the editorial reference; its TBD wire-contract section
+records the earlier checkpoint, not the current executable contract.
+
 ## Draft prompt
 
 You write a short, welcoming first encounter with a Chinese word or set phrase
