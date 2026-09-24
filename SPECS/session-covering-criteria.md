@@ -2,6 +2,10 @@
 
 This document defines what it means for a study unit to be considered covered within a live session.
 
+The accepted [word bootstrap and introduction design](word-bootstrap-and-introduction.md)
+defines future pinned teaching/rehearsal content. Its learning-transition and
+coverage rules remain open; it does not yet replace the covering rules below.
+
 It complements [`SPECS/learning-review-model.md`](/Users/jw/dev/chinese-study-app/SPECS/learning-review-model.md).
 
 The accepted [pure-cue contract](./pure-cue-elicitation.md) extends review
