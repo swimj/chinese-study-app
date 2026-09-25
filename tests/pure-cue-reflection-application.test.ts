@@ -22,7 +22,7 @@ before(async () => {
   sqlite.function('current_learner_id', () => 'learner'); sqlite.exec('PRAGMA foreign_keys=ON');
 });
 after(() => { sqlite?.close(); fs.rmSync(dir, { recursive: true, force: true }); });
-function sourceFixture(id: string) {
+function sourceFixture(id: string, axisNote = '') {
   const words = ['a', 'b', 'c'].map(suffix => `${id}-${suffix}`);
   for (const [index, wordId] of words.entries()) {
     const hanzi = `${['撒谎', '说谎', '骗人'][index]}${id}`;
@@ -37,7 +37,7 @@ function sourceFixture(id: string) {
     sqlite.prepare(`INSERT INTO shared_content_publications VALUES (?, 'production_cue', ?, ?, 'shared_trial', ?, ?)`)
       .run(`pub-${wordId}`, `cue-${wordId}`, `production-task:${wordId}:default_production`, now, now);
   }
-  db.createPureCueWithoutTransaction({ id, stimulus: 'to tell an untruth', axisNote: '', acceptedWordIds: words.slice(0,2), createdAt: now });
+  db.createPureCueWithoutTransaction({ id, stimulus: 'to tell an untruth', axisNote, acceptedWordIds: words.slice(0,2), createdAt: now });
   sqlite.prepare(`INSERT INTO shared_content_publications VALUES (?, 'pure_cue', ?, ?, 'shared_trial', ?, ?)`)
     .run(`pub-${id}`, id, `pure:${id}`, now, now);
   sqlite.prepare(`INSERT INTO learner_pure_cue_state VALUES ('learner', ?, 900, 2.65, ?, ?, ?, 7, ?)`)
@@ -92,7 +92,14 @@ test('acceptance extends pure cue, intentionally proxies C, keeps A/B cues stabl
 });
 
 test('accepted stimulus repair preserves identity, axis and members, audits the revision, and restores the unfair lapse', () => {
-  const { words, bundle } = sourceFixture('stimulusrepair');
+  const { words, bundle } = sourceFixture('stimulusrepair', 'telling an untruth');
+  const originalCanonical = db.getCanonicalReviewContent('pure_cue', 'stimulusrepair');
+  assert.equal(originalCanonical?.kind, 'pure_cue');
+  if (originalCanonical?.kind !== 'pure_cue') throw new Error('Missing original canonical pure cue');
+  assert.equal(originalCanonical.revision, 1);
+  assert.deepEqual(originalCanonical.exercise.stimulus, { kind: 'direct_text', text: 'to tell an untruth' });
+  const originalSnapshot = db.getPureCueServedSnapshot(bundle.items[0]!.servedSnapshot.snapshotId);
+  assert.deepEqual(originalSnapshot, bundle.items[0]!.servedSnapshot);
   const repaired = 'Tell an untruth: to tell an untruth';
   const result = normalizePureCueReflectionResult({ schemaVersion: 'pure_cue_reflection_result.v2', itemResults: [{
     submittedWord: bundle.items[0]!.submittedWord.hanzi,
@@ -129,15 +136,52 @@ test('accepted stimulus repair preserves identity, axis and members, audits the 
     .get('accept-stimulusrepair') as { previous_stimulus: string; stimulus: string };
   assert.equal(revision.previous_stimulus, 'to tell an untruth');
   assert.equal(revision.stimulus, repaired);
+  const repairedCanonical = db.getCanonicalReviewContent('pure_cue', 'stimulusrepair');
+  assert.equal(repairedCanonical?.kind, 'pure_cue');
+  if (repairedCanonical?.kind !== 'pure_cue') throw new Error('Missing repaired canonical pure cue');
+  assert.equal(repairedCanonical.revision, 2);
+  assert.notEqual(repairedCanonical.exercise.id, originalCanonical.exercise.id);
+  assert.deepEqual(repairedCanonical.exercise.stimulus, { kind: 'direct_text', text: repaired });
+  assert.deepEqual(repairedCanonical.exercise.contract, originalCanonical.exercise.contract);
+  assert.deepEqual(repairedCanonical.exercise.acceptedAnswers, originalCanonical.exercise.acceptedAnswers);
+  const originalRow = sqlite.prepare(`SELECT document_json FROM scoped_review_content_records
+    WHERE kind = 'pure_cue' AND content_id = ? AND revision = 1`).get('stimulusrepair') as { document_json: string };
+  assert.deepEqual(JSON.parse(originalRow.document_json).exercise, originalCanonical.exercise);
+  assert.deepEqual(db.getPureCueServedSnapshot(originalSnapshot!.snapshotId), originalSnapshot);
   assert.equal(bundle.items[0]!.servedSnapshot.stimulus, 'to tell an untruth');
   assert.equal(evidence.buildPureCueReflectionBundle('session-stimulusrepair', appliedAt), null);
   assert.equal(db.applyReflectionInvocation(oldAuthorized.invocation.invocation.invocationId, appliedAt).application.state.kind, 'stale');
   assert.deepEqual(db.getPureCueContent('stimulusrepair')?.acceptedWordIds, words.slice(0, 2));
+  assert.deepEqual(db.getCanonicalReviewContent('pure_cue', 'stimulusrepair'), repairedCanonical);
   assert.throws(() => sqlite.prepare('UPDATE pure_cues SET stimulus = ? WHERE id = ?')
     .run('Unauthorized', 'stimulusrepair'), /authorized revision/);
   assert.equal(db.applyReflectionInvocation('accept-stimulusrepair', appliedAt).application.state.kind, 'applied');
   assert.equal((sqlite.prepare('SELECT COUNT(*) AS count FROM pure_cue_stimulus_revisions WHERE pure_cue_id = ?')
     .get('stimulusrepair') as { count: number }).count, 1);
+  assert.equal((sqlite.prepare(`SELECT COUNT(*) AS count FROM scoped_review_content_records
+    WHERE kind = 'pure_cue' AND content_id = ?`).get('stimulusrepair') as { count: number }).count, 2);
+  assert.deepEqual(db.getCanonicalReviewContent('pure_cue', 'stimulusrepair'), repairedCanonical);
+});
+
+test('legacy empty-axis stimulus repair retains its historical compatibility path', () => {
+  const { bundle } = sourceFixture('legacystimulusrepair');
+  assert.equal(db.getCanonicalReviewContent('pure_cue', 'legacystimulusrepair'), null);
+  const result = normalizePureCueReflectionResult({ schemaVersion: 'pure_cue_reflection_result.v2', itemResults: [{
+    submittedWord: bundle.items[0]!.submittedWord.hanzi,
+    learnerExplanation: 'The old wording admitted this answer.', rationale: 'Clarify the displayed stimulus.',
+    decision: 'repair', reason: null, extension: null, repair: { stimulus: 'A more specific way to tell an untruth' },
+  }] }, bundle);
+  const { artifact } = db.materializeReflectionArtifact({ sourceSessionId: 'session-legacystimulusrepair',
+    reflectionFlowVersion: PURE_CUE_REFLECTION_FLOW_VERSION, generatedAt: now,
+    provider: 'openai', model: 'gpt-5.6-luna', promptVersion: PURE_CUE_REFLECTION_PROMPT_VERSION,
+    evidenceBundle: bundle, result });
+  const proposal = artifact.proposals[0]!;
+  const authorized = db.acceptReflectionProposal({ proposalId: proposal.review.proposalId,
+    invocationId: 'accept-legacystimulusrepair', operation: proposal.proposal.operation, createdAt: appliedAt });
+  assert.equal(db.applyReflectionInvocation(authorized.invocation.invocation.invocationId, appliedAt).application.state.kind, 'applied');
+  assert.equal(db.getPureCueContent('legacystimulusrepair')?.stimulus, 'A more specific way to tell an untruth');
+  assert.equal(db.getCanonicalReviewContent('pure_cue', 'legacystimulusrepair'), null);
+  assert.equal(db.getPureCueServedSnapshot(bundle.items[0]!.servedSnapshot.snapshotId)?.stimulus, 'to tell an untruth');
 });
 
 test('C can retain targeted practice through a new distinctive cue without editing A/B', () => {

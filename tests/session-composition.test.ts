@@ -88,10 +88,12 @@ describe('session composition', { concurrency: false }, () => {
       DROP TRIGGER IF EXISTS production_cue_accepted_words_no_delete;
       DROP TRIGGER IF EXISTS production_cues_no_delete;
       DROP TRIGGER IF EXISTS production_cue_supplements_no_delete;
+      DROP TRIGGER IF EXISTS review_content_records_no_delete;
       DROP TRIGGER IF EXISTS shared_content_publication_events_no_delete;
       DROP TRIGGER IF EXISTS shared_content_publications_no_delete;
       DROP TRIGGER IF EXISTS shared_content_publication_provenance_no_delete;
       DROP TRIGGER IF EXISTS shared_content_reports_no_delete;
+      DELETE FROM scoped_review_content_records;
       DELETE FROM shared_content_publication_events;
       DELETE FROM shared_content_reports;
       DELETE FROM shared_content_publication_provenance;

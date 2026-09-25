@@ -745,6 +745,20 @@ function createSchema() {
       latest_lifecycle_event_id TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    -- These fixtures intentionally model legacy cues with no canonical sidecar.
+    -- The review-content reader must see an empty sidecar surface.
+    CREATE TABLE review_content_records (
+      record_id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      content_id TEXT NOT NULL,
+      exercise_id TEXT,
+      revision INTEGER NOT NULL,
+      word_id TEXT,
+      source_word_content_id TEXT,
+      document_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      model TEXT
+    );
   `);
 }
 

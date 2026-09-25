@@ -289,3 +289,29 @@ reconciliation is required to proceed with this work.
 - **Correction:** quarantine/retirement prevents future serving, preserves stored
   documents and evidence, and offers ordinary cards. Automatic quality control,
   revision selection, and drift reconciliation remain future policies.
+
+### Ordinary review and reflection storage (2026-09-25)
+
+Bootstrap content also supplies a separate review-authoring stage. Its outputs
+use `targeted_review`, rather than relabeling teaching rehearsals. At least one
+contextual production cue is required; definition cues may carry an exact
+post-reveal example. Validated results publish automatically under the same
+application-authorized shared-trial policy, with a separate recoverable readiness
+claim. Preparing an existing introduction retries missing review preparation.
+Failure preserves usable teaching and ordinary fallback; completion does not
+regenerate retired review content.
+
+Ordinary review uses these durable cues through its existing lifecycle and
+evidence paths. Recognition may reveal eligible bootstrap material. Source
+withdrawal excludes dependent review material from new serving without rewriting
+past snapshots or the pinned teaching package.
+
+Newly applied reflection cue repairs, supplements and pure-cue content also gain
+canonical content records. Existing proposal schemas/approval remain unchanged;
+text-only repairs normalize to `direct_text`, with no inferred sentence parsing.
+Supplements carry exact local example sources with the same private visibility
+as their owning supplement. Pure accepted-set growth creates a new immutable
+exercise revision without changing schedule identity. Compatibility projections
+remain in existing tables; the set of legacy-only authored records stops growing
+for these reflection effects. Model-authored structured cloze proposals and bulk
+legacy unification remain separate later work.

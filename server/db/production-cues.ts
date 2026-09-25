@@ -8,8 +8,20 @@ import type {
   ProductionCueTypeV0,
   RepairProductionCueOperationV2,
 } from '../../src/domain/reflection.ts';
+import type { ContentExercise, WordContentDocument } from '../../src/domain/word-content/types.ts';
+import { resolveWordExample } from '../../src/domain/word-content/materialize.ts';
+import {
+  adaptTargetedReviewExercise,
+  toProductionExerciseSnapshot,
+} from '../../src/domain/word-content/review-compat.ts';
 import { getDb } from './connection.ts';
 import { physicalLearnerTableName } from './learner-scoped-tables.ts';
+import {
+  appendCanonicalReviewExercise,
+  appendCanonicalReviewSupplement,
+  getCanonicalReviewContent,
+  isCanonicalReviewSourceEligible,
+} from './review-content.ts';
 import {
   getSharedContentPublicationForContent,
   isEligibleSharedPublicationStatus,
@@ -536,7 +548,9 @@ export function getProductionCuesForTask(taskId: string): ProductionCueEntryV0[]
 }
 
 export function getActiveProductionCuesForWord(wordId: string): ProductionCueEntryV0[] {
-  return getProductionCuesForTask(defaultProductionTaskId(wordId)).filter((cue) => cue.active);
+  return getProductionCuesForTask(defaultProductionTaskId(wordId)).filter((cue) => (
+    cue.active && isCanonicalReviewSourceEligible('production_cue', cue.cueId)
+  ));
 }
 
 export function getProductionCueSupplement(
@@ -559,7 +573,22 @@ export function getProductionCueSupplement(
       OR cue_id = ?
     )
   `).get(taskId, cueId, cueId) as ProductionCueSupplementRow | undefined;
-  return row ? mapProductionCueSupplementRow(row) : null;
+  if (!row) return null;
+  const supplement = mapProductionCueSupplementRow(row);
+  const canonical = getCanonicalReviewContent('production_cue_supplement', row.supplement_id);
+  if (canonical === null) return supplement;
+  if (canonical.kind !== 'production_cue_supplement') {
+    throw new Error(`Review content ${row.supplement_id} has the wrong kind.`);
+  }
+  const source = canonical.source;
+  if (source.kind === 'snapshot') return { ...supplement, ...source.value };
+  const example = resolveWordExample(source.example, canonical.contents);
+  return {
+    ...supplement,
+    englishFrame: source.englishFrame,
+    exampleSentence: example.text,
+    exampleTranslation: example.translation,
+  };
 }
 
 export function applyProductionCueRepairWithoutTransaction(
@@ -830,6 +859,35 @@ export function applyProductionCueSupplementWithoutTransaction(
     appliedAt,
     invocationId,
   );
+  const lexical = lexicalReviewWord(operation.wordId);
+  const content: WordContentDocument = {
+    schemaVersion: 1,
+    id: `review-supplement-content:${supplementId}`,
+    word: lexical,
+    uses: [{
+      id: 'reinforcement',
+      label: operation.englishFrame,
+      notes: [operation.englishFrame],
+      exampleIds: ['example'],
+    }],
+    examples: [{
+      id: 'example',
+      text: operation.exampleSentence,
+      translation: operation.exampleTranslation,
+      pronunciation: null,
+    }],
+  };
+  appendCanonicalReviewSupplement({
+    supplementId,
+    source: {
+      kind: 'example',
+      supplementId,
+      englishFrame: operation.englishFrame,
+      example: { contentId: content.id, exampleId: 'example' },
+    },
+    contents: [content],
+    createdAt: appliedAt,
+  });
   return {
     kind: 'applied',
     appliedAt,
@@ -1075,6 +1133,22 @@ function createCue(
   draft.acceptedWordIds.forEach((wordId, position) => {
     insertAcceptedWord.run(cueId, wordId, position);
   });
+  if (draft.acceptedWordIds.length !== 1) {
+    throw new Error('Word-owned review content requires one accepted target.');
+  }
+  const lexical = lexicalReviewWord(draft.acceptedWordIds[0]);
+  const exercise: ContentExercise = {
+    id: cueId,
+    responseMode: 'hanzi_entry',
+    contract: { kind: 'targeted_review', wordId: lexical.wordId },
+    instruction: '',
+    stimulus: { kind: 'direct_text', text: draft.text },
+    acceptedAnswers: [{
+      wordId: lexical.wordId,
+      hanzi: lexical.hanzi,
+      traditional: lexical.traditional,
+    }],
+  };
   const lifecycleRef = appendLifecycleEvent(
     cueId,
     taskId,
@@ -1086,6 +1160,9 @@ function createCue(
     cueId,
     invocationId,
     authorizedAt: appliedAt,
+  });
+  appendCanonicalReviewExercise({
+    kind: 'production_cue', contentId: cueId, exercise, contents: [], createdAt: appliedAt,
   });
   return [{ type: 'production_cue', id: cueId }, lifecycleRef];
 }
@@ -1409,11 +1486,34 @@ function mapCueRow(row: ProductionCueRow): ProductionCueEntryV0 {
   if (row.origin_kind !== 'reflection' && row.origin_kind !== 'manual') {
     throw new Error(`Production cue ${row.cue_id} has unknown origin ${row.origin_kind}.`);
   }
+  const canonical = getCanonicalReviewContent('production_cue', row.cue_id);
+  let text = row.cue_text;
+  if (canonical !== null) {
+    if (canonical.kind !== 'production_cue') {
+      throw new Error(`Review content ${row.cue_id} has the wrong kind.`);
+    }
+    const projected = toProductionExerciseSnapshot(adaptTargetedReviewExercise(
+      canonical.exercise,
+      canonical.contents,
+      {
+        taskId: row.task_id,
+        cueId: row.cue_id,
+        cueType: row.cue_type,
+        supplement: null,
+      },
+    ));
+    if (projected.text !== row.cue_text
+      || projected.acceptedAnswers.length !== acceptedWordIds.length
+      || projected.acceptedAnswers.some((answer, index) => answer.wordId !== acceptedWordIds[index])) {
+      throw new Error(`Canonical review cue ${row.cue_id} diverges from its durable identity.`);
+    }
+    text = projected.text;
+  }
   return {
     cueId: row.cue_id,
     taskId: row.task_id,
     cueType: row.cue_type,
-    text: row.cue_text,
+    text,
     acceptedWordIds,
     createdAt: row.created_at,
     attribution: {
@@ -1441,6 +1541,20 @@ export function mapProductionCueSupplementRow(
 
 function isProductionCueType(value: string): value is ProductionCueTypeV0 {
   return value === 'definition_gloss' || value === 'minimal_context' || value === 'circumstance';
+}
+
+function lexicalReviewWord(wordId: string): {
+  wordId: string; hanzi: string; traditional: string | null; pinyin: string;
+} {
+  const word = getDb().prepare(`
+    SELECT id, hanzi, traditional, pinyin FROM lexical_words WHERE id = ?
+  `).get(wordId) as {
+    id: string; hanzi: string; traditional: string | null; pinyin: string;
+  } | undefined;
+  if (!word) throw new Error(`Unknown lexical review word ${wordId}.`);
+  return {
+    wordId: word.id, hanzi: word.hanzi, traditional: word.traditional, pinyin: word.pinyin,
+  };
 }
 
 function wordExists(wordId: string): boolean {

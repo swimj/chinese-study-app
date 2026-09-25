@@ -94,6 +94,7 @@ function fakeProvider(counts: { bootstrap: number; teaching: number }, overrides
 } = {}): WordIntroductionProvider {
   return {
     model: 'test-model',
+    generateReview: async () => { throw new Error('unused review provider'); },
     isConfigured: () => true,
     generateBootstrap: async () => {
       counts.bootstrap += 1;
@@ -108,6 +109,7 @@ function fakeProvider(counts: { bootstrap: number; teaching: number }, overrides
 
 function serviceFor(stores: ReturnType<typeof fakeStores>, learnerId: string, provider: WordIntroductionProvider) {
   return createWordIntroductionService({
+    prepareReview: async () => {},
     provider, store: stores.store(learnerId), requireLearner: () => learnerId,
     providerWork: async (work) => work(),
     wait: async () => {
@@ -163,6 +165,25 @@ describe('shared word introduction preparation', () => {
     assert.ok(retried.selectedPackageId);
     assert.equal(stores.counts.bootstrap, 1);
     assert.equal(stores.counts.teaching, 2);
+  });
+
+  test('review preparation failure preserves the lesson and retries without reauthoring teaching', async () => {
+    const stores = fakeStores();
+    let reviewCalls = 0;
+    const service = createWordIntroductionService({
+      provider: fakeProvider(stores.counts), store: stores.store('learner-a'),
+      requireLearner: () => 'learner-a', providerWork: async (work) => work(),
+      prepareReview: async () => { reviewCalls += 1; if (reviewCalls === 1) throw new Error('offline'); },
+    });
+    const first = await service.prepare(lexical.wordId);
+    assert.ok(first.selectedPackageId);
+    assert.match(first.reviewPreparationError!, /introduction is ready/);
+    const second = await service.prepare(lexical.wordId);
+    assert.equal(second.reviewPreparationError, undefined);
+    assert.equal(first.selectedPackageId, second.selectedPackageId);
+    assert.equal(stores.counts.bootstrap, 1);
+    assert.equal(stores.counts.teaching, 1);
+    assert.equal(reviewCalls, 2);
   });
 
   test('malformed stage output is never published', async () => {
