@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createWordReviewPreparationService } from './review-service.ts';
 import type { WordIntroductionResponse } from '../../src/domain/word-content/application.ts';
 import {
   getIntroductionLexicalWord, getWordIntroductionLibrary,
@@ -39,6 +40,7 @@ export function createWordIntroductionService(options: {
   store?: WordIntroductionStore;
   requireLearner?: () => string;
   wait?: () => Promise<void>;
+  prepareReview?: (wordId: string) => Promise<void>;
   providerWork?: <T>(work: () => Promise<T>) => Promise<T>;
 } = {}): WordIntroductionService {
   const provider = options.provider ?? createWordIntroductionProvider();
@@ -53,6 +55,20 @@ export function createWordIntroductionService(options: {
   const providerWork = options.providerWork ?? runHostedProviderWork;
   const wait = options.wait ?? (() => new Promise<void>((resolve) => setTimeout(resolve, 500)));
   const inFlight = new Map<string, Promise<string>>();
+  const prepareReview = options.prepareReview ?? createWordReviewPreparationService({
+    provider, requireLearner, providerWork, wait: options.wait,
+  }).prepare;
+
+  async function openPrepared(wordId: string, packageId: string): Promise<WordIntroductionResponse> {
+    store.pin(wordId, packageId);
+    let reviewPreparationError: string | undefined;
+    try { await prepareReview(wordId); }
+    catch {
+      // Review failure must not discard a valid lesson or block its completion.
+      reviewPreparationError = 'Your introduction is ready, but review examples could not be prepared yet. Reopening the introduction will retry.';
+    }
+    return { ...get(wordId), ...(reviewPreparationError ? { reviewPreparationError } : {}) };
+  }
 
   function get(wordId: string): WordIntroductionResponse {
     requireLearner();
@@ -139,8 +155,7 @@ export function createWordIntroductionService(options: {
     async prepare(wordId) {
       const current = get(wordId);
       if (current.selectedPackageId !== null) {
-        store.pin(wordId, current.selectedPackageId);
-        return get(wordId);
+        return openPrepared(wordId, current.selectedPackageId);
       }
       if (current.preparationUnavailable) throw new WordIntroductionServiceError(409, 'This introduction is unavailable. You can continue with the usual cards.');
       if (!provider.isConfigured()) throw new WordIntroductionServiceError(503, 'Introduction generation is not configured. You can continue with the usual cards.');
@@ -153,8 +168,7 @@ export function createWordIntroductionService(options: {
         void pending.finally(() => inFlight.delete(wordId)).catch(() => undefined);
       }
       const packageId = await pending;
-      store.pin(wordId, packageId);
-      return get(wordId);
+      return openPrepared(wordId, packageId);
     },
     complete(wordId, packageId) {
       get(wordId);

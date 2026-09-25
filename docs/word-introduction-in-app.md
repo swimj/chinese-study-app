@@ -24,7 +24,8 @@ curated recognition material. The production choice rotates by UTC study-day
 ordinal modulo the package's rehearsal count; retries/fetches on that day keep
 the same choice. There is no per-example mastery ledger. Three consecutive
 successful study sessions graduate the word; calendar-day adjacency is irrelevant.
-Review then uses its existing cues, reflection and scheduling. Exact package,
+Review uses independently authored bootstrap-backed cues through its existing
+reflection and scheduling paths; see [structured review content](structured-review-content.md). Exact package,
 content and exercise identities remain frozen in the active session and Undo
 snapshot. Learning commits still persist the existing word-level success result;
 this prototype adds no durable per-rehearsal attempt ledger.
@@ -105,3 +106,8 @@ Fresh databases apply the migration automatically during initialization. Existin
 startup deliberately does not silently migrate. See [schema migrations](ops/schema-migrations.md)
 for the full backup and deployment procedure. This feature does not itself deploy
 or migrate the hosted production database.
+
+Opening/preparing an introduction now also prepares independent ordinary-review
+exercises. Review-generation failure is non-blocking and reported in the lesson;
+reopening retries it. Migration 0013 adds canonical review records and review
+preparation claims on top of 0012; it preserves existing introduction data.

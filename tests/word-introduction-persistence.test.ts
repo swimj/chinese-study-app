@@ -205,16 +205,18 @@ test('0011 database migrates to 0012 preserving existing shared publications and
     try {
       upgrade.exec('PRAGMA foreign_keys=ON');
       upgrade.function('current_learner_id', () => 'learner-a');
-      migrateDatabase(upgrade, schemaMigrations.slice(0, -1));
+      const index = schemaMigrations.findIndex((migration) => migration.id === 'app_schema:0012_word_introduction_content');
+      const through0012 = schemaMigrations.slice(0, index + 1);
+      migrateDatabase(upgrade, schemaMigrations.slice(0, index));
       upgrade.prepare(`INSERT INTO shared_content_publications
         (publication_id, content_kind, content_id, learning_purpose_key,
          publication_status, published_at, status_updated_at)
         VALUES ('existing', 'pure_cue', 'old', 'old', 'available', ?, ?)`)
         .run('2026-09-25T00:00:00.000Z', '2026-09-25T00:00:00.000Z');
       // Existing data does not change the schema fingerprint.
-      assert.deepEqual(migrateDatabase(upgrade), ['app_schema:0012_word_introduction_content']);
-      assertSchemaCurrent(upgrade);
-      assert.deepEqual(migrateDatabase(upgrade), []);
+      assert.deepEqual(migrateDatabase(upgrade, through0012), ['app_schema:0012_word_introduction_content']);
+      assertSchemaCurrent(upgrade, through0012);
+      assert.deepEqual(migrateDatabase(upgrade, through0012), []);
       assert.equal((upgrade.prepare(`SELECT publication_status AS status
         FROM shared_content_publications WHERE publication_id = 'existing'`).get() as { status: string }).status,
       'available');

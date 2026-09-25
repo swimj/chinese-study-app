@@ -51,7 +51,8 @@ import {
 } from '../../src/domain/production-response.ts';
 import { config, getConfig, getDb, dbPath, seedDataPath, dbExistedOnStartup } from './connection.ts';
 import { fillMissingNormalizedHanzi, normalizeMandarinHanziLookup } from './hanzi-lookup.ts';
-import { getWordIntroductionLibrary } from './word-introductions.ts';
+import { getWordIntroductionLibrary, getWordIntroductionPreparation } from './word-introductions.ts';
+import { getCanonicalReviewContent, isCanonicalReviewSourceEligible } from './review-content.ts';
 import { assertSchemaCurrent, migrateDatabase } from './migrations.ts';
 import { createHostedOperationsSchema } from './hosted-operations.ts';
 import {
@@ -1595,6 +1596,7 @@ function parseProductionAttemptEvidence(event: StudyAttemptEvent): ParsedProduct
   }
   const submittedWordId = deriveProductionSubmittedWordId({
     event,
+    cueId: production.cueId,
     acceptedWordIds: production.acceptedWordIds,
     result: production.result,
     responseKind,
@@ -1644,12 +1646,14 @@ function assignProductionSubmittedWordId(
 
 function deriveProductionSubmittedWordId({
   event,
+  cueId,
   acceptedWordIds,
   result,
   responseKind,
   submittedText,
 }: {
   event: StudyAttemptEvent;
+  cueId: string | null;
   acceptedWordIds: string[];
   result: ProductionCueAttemptResultV0;
   responseKind: 'typed' | 'no_clue';
@@ -1662,7 +1666,7 @@ function deriveProductionSubmittedWordId({
     throw new Error(`Production attempt ${event.id} has invalid production evidence metadata.`);
   }
   const profileId = getConfig().studyProfile;
-  const acceptedAnswers = getProductionAnswerWordsByIds(acceptedWordIds);
+  const acceptedAnswers = getReviewProductionAnswers(cueId, acceptedWordIds);
   const acceptedSubmittedWordId = deriveAcceptedSubmittedWordId({
     result,
     submittedText,
@@ -1740,8 +1744,20 @@ function freezeProductionExerciseSnapshot(
   const { acceptedWordIds, ...snapshot } = production;
   return {
     ...snapshot,
-    acceptedAnswers: getProductionAnswerWordsByIds(acceptedWordIds),
+    acceptedAnswers: getReviewProductionAnswers(snapshot.cueId, acceptedWordIds),
   };
+}
+
+function getReviewProductionAnswers(cueId: string | null, wordIds: readonly string[]): ProductionAnswerWord[] {
+  const canonical = cueId === null ? null : getCanonicalReviewContent('production_cue', cueId);
+  if (canonical === null) return getProductionAnswerWordsByIds(wordIds);
+  if (canonical.kind !== 'production_cue'
+    || canonical.exercise.acceptedAnswers.length !== wordIds.length
+    || canonical.exercise.acceptedAnswers.some((answer, index) => answer.wordId !== wordIds[index])) {
+    throw new Error(`Canonical review cue ${cueId} has inconsistent accepted word identities.`);
+  }
+  // The immutable cue owns its answer forms even if the lexical catalog is corrected later.
+  return canonical.exercise.acceptedAnswers.map((answer) => ({ ...answer }));
 }
 
 function isProductionAttemptResultCoherent(
@@ -5182,6 +5198,12 @@ function isReviewSkillCandidateAllowedByRelevancePolicy(
   return row.skill_relevance_state !== 'suppressed' || hasDurableProductionCue;
 }
 
+function eligibleReviewSupplement(taskId: string, cueId: string | null) {
+  const supplement = getProductionCueSupplement(taskId, cueId);
+  return supplement && isCanonicalReviewSourceEligible('production_cue_supplement', supplement.supplementId)
+    ? supplement : null;
+}
+
 function getReviewSkillContentIfAvailable(
   row: ReviewSessionItemWithSkillRow,
   random: () => number,
@@ -5210,7 +5232,7 @@ function getReviewSkillContentIfAvailable(
   if (row.skill_id === 'production') {
     const cue = randomArrayElement(getActiveProductionCuesForWord(row.id), random);
     if (cue) {
-      const supplement = getProductionCueSupplement(cue.taskId, cue.cueId);
+      const supplement = eligibleReviewSupplement(cue.taskId, cue.cueId);
       return {
         contentRef: { type: 'production_cue', taskId: cue.taskId, cueId: cue.cueId },
         contrastSelection: null,
@@ -5238,7 +5260,7 @@ function getReviewSkillContentIfAvailable(
       return undefined;
     }
     const taskId = defaultProductionTaskId(row.id);
-    const supplement = getProductionCueSupplement(taskId, null);
+    const supplement = eligibleReviewSupplement(taskId, null);
     return {
       contentRef: null,
       contrastSelection: null,
@@ -5450,7 +5472,7 @@ function mapReviewSessionItemWithSkillRow(
   sessionActionId?: string,
 ): SessionStudyItem {
   const word = mapWordRow(row);
-  return buildReviewSessionStudyItem({
+  const item = buildReviewSessionStudyItem({
     wordSkillState: {
       wordId: row.id,
       skillId: row.skill_id,
@@ -5466,6 +5488,12 @@ function mapReviewSessionItemWithSkillRow(
     contrastSelection: content.contrastSelection,
     production: content.production,
   });
+  if (row.skill_id === 'recognition' && getConfig().studyProfile === 'mandarin') {
+    const sourceId = getWordIntroductionPreparation(row.id)?.contentId;
+    const source = getWordIntroductionLibrary(row.id)?.contents.find((entry) => entry.content.id === sourceId)?.content;
+    if (source) return { ...item, wordContent: source };
+  }
+  return item;
 }
 
 function compareReviewSessionItemCandidates(

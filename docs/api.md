@@ -732,3 +732,8 @@ Mounted after authentication and maintenance controls. See
 Preparation accepts no lexical or learner overrides. Missing words return 404;
 unavailable/withdrawn sources return 409; provider unavailability returns 503;
 provider/validation failures return sanitized 502 responses.
+
+Preparation also claims or reuses shared ordinary-review exercises over the
+bootstrap source. If that separate stage fails, the response still contains the
+usable introduction, with an optional `reviewPreparationError` message. Reopening
+preparation retries the missing review stage without regenerating the lesson.

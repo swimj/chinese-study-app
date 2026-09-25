@@ -1222,3 +1222,22 @@ proposal. The system does not call this a revised acceptance of suppression.
 A referenced word or required relationship no longer exists when application
 runs. The accepted review remains historical. The invocation becomes `stale`,
 and no effect is attributed.
+
+## Canonical content storage behind compatible proposal operations
+
+As of the bootstrap-review integration, newly applied cue repairs and
+supplements also create immutable structured review content records in the same
+transaction. Current V2 cue text becomes `ContentExercise` with a `direct_text`
+stimulus and `targeted_review` contract; strings that look like clozes remain
+opaque. Supplements retain an exact source example/document without automatically
+becoming shared word-bootstrap content. Pure-cue creation and accepted-set
+extension create immutable `pure_review` exercise revisions while preserving
+the durable pure-cue identity.
+
+The operation payload, authorization, effect refs, retirement and attempt
+evidence contracts above are unchanged. Existing rows remain readable; new
+compatibility rows are projections backed by canonical content. Publishing a
+cue and reading its canonical representation obey the same visibility boundary.
+This does not introduce a new model-facing structured-cloze operation or
+reinterpret historical proposals. See
+[structured review content](../docs/structured-review-content.md).
