@@ -50,6 +50,7 @@ function provider(overrides: Partial<IntroductionLabProvider> = {}): Introductio
     isConfigured: () => true,
     generateBootstrap: async () => bootstrapWire(),
     generateTeaching: async () => teachingWire(),
+    generateReview: async () => { throw new Error('The introduction lab does not generate review cues.'); },
     ...overrides,
   };
 }

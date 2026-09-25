@@ -43,6 +43,7 @@ When a map doc and code disagree, fix the map in the same change as the code (or
 - [server-db.md](./server-db.md) — `server/db/` module map
 - [word-introduction-in-app.md](./word-introduction-in-app.md) — shared preparation, private package pins, and early learning
 - [word-introduction-lab.md](./word-introduction-lab.md) — local bootstrap, teaching, and rehearsal prototype
+- [structured-review-content.md](./structured-review-content.md) — bootstrap-backed review and canonical storage for new reflection content
 - [word-content-model.md](./word-content-model.md) — executable bootstrap/teaching model checkpoint, synthetic fixture report, and review compatibility boundary
 - [scripts.md](./scripts.md) — maintenance scripts catalog
 - [ops/schema-migrations.md](./ops/schema-migrations.md) — explicit offline migrations, baseline adoption, and migration authoring

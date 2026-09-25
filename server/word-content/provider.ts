@@ -17,6 +17,7 @@ export type WordIntroductionProvider = {
   isConfigured(): boolean;
   generateBootstrap(input: WordBootstrapInput): Promise<unknown>;
   generateTeaching(content: WordContentDocument): Promise<unknown>;
+  generateReview(content: WordContentDocument): Promise<unknown>;
 };
 
 const string: JsonSchema = { type: 'string' };
@@ -63,6 +64,23 @@ const teachingSchema = object({
   }), 1),
 });
 
+const reviewSchema = object({
+  exercises: {
+    type: 'array', minItems: 1, maxItems: 3,
+    items: object({
+      id: string,
+      cueType: { type: 'string', enum: ['definition_gloss', 'minimal_context', 'circumstance'] },
+      stimulus: { anyOf: [
+        oneOfKinds('direct_text', { text: string }),
+        oneOfKinds('example_cloze', { exampleId: string, occurrenceIndexes: array(integer, 1), frame: nullableString }),
+      ] },
+      supplement: { anyOf: [
+        { type: 'null' }, object({ exampleId: string, englishFrame: string }),
+      ] },
+    }),
+  },
+});
+
 export function createWordIntroductionProvider(options: {
   environment?: NodeJS.ProcessEnv;
   fetchImplementation?: FetchImplementation;
@@ -77,11 +95,11 @@ export function createWordIntroductionProvider(options: {
     fetchImplementation: options.fetchImplementation ?? fetchImplementationForProvider('openai', TIMEOUT_MS),
   });
   async function generate(
-    stage: 'bootstrap' | 'teaching', input: WordBootstrapInput | WordContentDocument,
+    stage: 'bootstrap' | 'teaching' | 'review', input: WordBootstrapInput | WordContentDocument,
   ): Promise<unknown> {
     const apiKey = environment.OPENAI_API_KEY?.trim();
     if (!apiKey) throw new Error('Introduction generation is not configured.');
-    const schema = stage === 'bootstrap' ? bootstrapSchema : teachingSchema;
+    const schema = stage === 'bootstrap' ? bootstrapSchema : stage === 'teaching' ? teachingSchema : reviewSchema;
     const prompt = await readFile(new URL(`./prompts/${stage}.md`, import.meta.url), 'utf8');
     const result = await adapter.run({
       model: WORD_INTRODUCTION_MODEL,
@@ -114,5 +132,6 @@ export function createWordIntroductionProvider(options: {
     isConfigured: () => Boolean(environment.OPENAI_API_KEY?.trim()),
     generateBootstrap: (input) => generate('bootstrap', input),
     generateTeaching: (content) => generate('teaching', content),
+    generateReview: (content) => generate('review', content),
   };
 }

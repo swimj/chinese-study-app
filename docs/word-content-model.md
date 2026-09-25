@@ -147,9 +147,10 @@ preserve it. Review framing belongs in the stimulus until that boundary evolves.
 
 The wrapper retains new source references, but the old DTO does not. Export is
 therefore a presentation/matching compatibility seam, not proof of a completed
-provenance migration. Actual review publication/serving integration will need
-to persist those references (or retain this wrapper) before relying on them for
-custodial analysis. Existing live serving does not call these adapters yet.
+provenance migration. The [structured review integration](structured-review-content.md) now persists
+canonical exercises and their exact source documents alongside durable cue IDs.
+Live readers rematerialize these records through the adapter while retaining
+legacy lifecycle/evidence compatibility.
 
 ## What the fixtures establish
 
@@ -168,11 +169,11 @@ document can coexist with the old one without changing a pinned package.
 
 1. The [local introduction lab](word-introduction-lab.md) now persists immutable
    authoring drafts and generates content/packages through separate provider
-   stages. Shared storage, attribution, and publication eligibility remain a
-   later integration step. Do not mistake a validated local draft for published
-   content or reuse its ID for a changed body.
-2. Author structured new content directly. Reflection can initially continue
-   emitting current cue/supplement shapes. No old cloze-to-sentence conversion
+   stages. The application now has separate shared storage, attribution and publication
+   eligibility. Local lab drafts remain separate; do not mistake them for
+   published content or reuse their IDs for changed bodies.
+2. Author structured new content directly. Reflection continues emitting compatible cue/supplement proposal shapes,
+   but newly applied effects are stored as canonical exercises and example sources. No old cloze-to-sentence conversion
    is necessary to use the new model.
 3. When reflection emits structured examples/clozes, retain source references
    alongside the existing cue identity and lifecycle. An optional conservative

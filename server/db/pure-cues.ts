@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import type { ContentExercise } from '../../src/domain/word-content/types.ts';
+import { materializeExercise } from '../../src/domain/word-content/materialize.ts';
 import {
   PURE_CUE_INITIAL_EASE_FACTOR,
   PURE_CUE_INITIAL_INTERVAL_HOURS,
@@ -17,6 +19,7 @@ import {
 import { getConfig, getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
 import { scopedContentStorageTableName } from './scoped-content-tables.ts';
+import { appendCanonicalReviewExercise, getCanonicalReviewContent } from './review-content.ts';
 
 type PureCueContentRow = {
   id: string;
@@ -192,6 +195,7 @@ export function createPureCueWithoutTransaction(input: CreatePureCueInput): Pure
     input.createdAt,
   );
   insertAcceptedWords(id, acceptedWordIds, 0);
+  appendPureReviewContent(id, input.createdAt);
   return getPureCueContent(id)!;
 }
 
@@ -207,7 +211,30 @@ export function extendPureCueAcceptedWordsWithoutTransaction(input: {
   const existingSet = new Set(existing.acceptedWordIds);
   const additions = requested.filter((wordId) => !existingSet.has(wordId));
   insertAcceptedWords(input.id, additions, existing.acceptedWordIds.length);
+  if (additions.length > 0) appendPureReviewContent(input.id, new Date().toISOString());
   return getPureCueContent(input.id)!;
+}
+
+function appendPureReviewContent(cueId: string, createdAt: string): void {
+  const cue = getDb().prepare(`
+    SELECT stimulus, axis_note FROM pure_cues WHERE id = ?
+  `).get(cueId) as { stimulus: string; axis_note: string } | undefined;
+  if (!cue) throw new Error(`Pure cue ${cueId} does not exist.`);
+  // Older manual cues may have no axis. Reflection-authored promotions must
+  // supply one; do not invent semantics while normalizing legacy content.
+  if (cue.axis_note.trim() === '') return;
+  const answers = getAcceptedAnswers(cueId);
+  const exercise: ContentExercise = {
+    id: `review-exercise:${cueId}:${randomUUID()}`,
+    responseMode: 'hanzi_entry',
+    contract: { kind: 'pure_review', axisNote: cue.axis_note },
+    instruction: '',
+    stimulus: { kind: 'direct_text', text: cue.stimulus },
+    acceptedAnswers: answers,
+  };
+  appendCanonicalReviewExercise({
+    kind: 'pure_cue', contentId: cueId, exercise, contents: [], createdAt,
+  });
 }
 
 export function isWordProductionProxied(wordId: string): boolean {
@@ -683,6 +710,26 @@ function mapPureCueContentRow(row: PureCueContentRow): PureCueContent {
     SELECT word_id FROM pure_cue_accepted_words
     WHERE pure_cue_id = ? ORDER BY position, word_id
   `).all(row.id) as Array<{ word_id: string }>).map((item) => item.word_id);
+  const canonical = getCanonicalReviewContent('pure_cue', row.id);
+  if (canonical !== null) {
+    if (canonical.kind !== 'pure_cue') throw new Error(`Review content ${row.id} has the wrong kind.`);
+    const exercise = materializeExercise(canonical.exercise, canonical.contents);
+    if (exercise.contract.kind !== 'pure_review'
+      || exercise.stimulus.text !== row.stimulus
+      || exercise.contract.axisNote !== row.axis_note
+      || exercise.acceptedAnswers.length !== acceptedWordIds.length
+      || exercise.acceptedAnswers.some((answer, index) => answer.wordId !== acceptedWordIds[index])) {
+      throw new Error(`Canonical pure review ${row.id} diverges from current membership.`);
+    }
+    return {
+      kind: 'pure',
+      id: row.id,
+      stimulus: exercise.stimulus.text,
+      axisNote: exercise.contract.axisNote,
+      acceptedWordIds: exercise.acceptedAnswers.map((answer) => answer.wordId),
+      active: row.active === 1,
+    };
+  }
   return {
     kind: 'pure',
     id: row.id,
