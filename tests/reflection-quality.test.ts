@@ -50,6 +50,8 @@ describe('reflection quality item tags', { concurrency: false }, () => {
       DELETE FROM reflection_quality_annotations;
       DELETE FROM reflection_proposal_reviews;
       DELETE FROM reflection_operation_invocations;
+      DELETE FROM reflection_generation_continuation_runs;
+      DELETE FROM reflection_generation_continuations;
       DELETE FROM reflection_generation_runs;
       DELETE FROM reflection_artifacts;
       DELETE FROM study_sessions;
@@ -445,6 +447,110 @@ describe('reflection quality item tags', { concurrency: false }, () => {
     assert.equal(lunaArm.avgCostPerExactAcceptUsd, 0.03);
   });
 
+  test('staged continuation rolls both stage costs into one model arm', () => {
+    const sessionId = 'staged-same-model';
+    const diagnosisRunId = 'staged-same-diagnosis';
+    const promotionRunId = 'staged-same-promotion';
+    const artifact = materialize(sessionId, suppressOperation('target'), 'gpt-5.6-luna-high', {
+      sourceRunId: promotionRunId,
+      promptVersion: 'pure-cue-promotion-v1',
+    }).artifact;
+    recordPricedRun({
+      runId: diagnosisRunId,
+      sessionId,
+      model: 'gpt-5.6-luna-high',
+      promptVersion: 'reflection-staged-v1',
+      costUsd: 0.04,
+    });
+    recordPricedRun({
+      runId: promotionRunId,
+      sessionId,
+      model: 'gpt-5.6-luna-high',
+      promptVersion: 'pure-cue-promotion-v1',
+      costUsd: 0.06,
+    });
+    linkStagedContinuation({
+      continuationId: 'continuation-same',
+      sessionId,
+      runs: [
+        { runId: diagnosisRunId, stage: 'diagnosis' },
+        { runId: promotionRunId, stage: 'promotion' },
+      ],
+    });
+    dbModule.acceptReflectionProposal({
+      proposalId: artifact.proposals[0]!.review.proposalId,
+      operation: suppressOperation('target'),
+      createdAt: updatedAt,
+    });
+
+    const stats = dbModule.getReflectionQualityStats();
+    const arm = stats.arms.find((candidate) => candidate.modelArm === 'gpt-5.6-luna-high');
+    assert(arm);
+    assert.equal(arm.promptVersion, 'reflection-staged-v1');
+    assert.equal(stats.arms.some((candidate) => candidate.promptVersion === 'pure-cue-promotion-v1'), false);
+    assert.equal(arm.exactAcceptCount, 1);
+    assert.equal(arm.totalCostUsd, 0.1);
+    assert.equal(arm.avgCostPerExactAcceptUsd, 0.1);
+  });
+
+  test('mixed-model staged continuation uses a diagnosis to promotion tuple', () => {
+    const sessionId = 'staged-mixed-model';
+    const diagnosisRunId = 'staged-mixed-diagnosis';
+    const promotionRunId = 'staged-mixed-promotion';
+    const artifact = materialize(sessionId, suppressOperation('target'), 'gpt-5.6-luna-high', {
+      sourceRunId: promotionRunId,
+      promptVersion: 'pure-cue-promotion-v1',
+    }).artifact;
+    recordPricedRun({
+      runId: diagnosisRunId,
+      sessionId,
+      model: 'glm-5.3-flash-max',
+      promptVersion: 'reflection-staged-v1',
+      costUsd: 0.02,
+      state: 'failed',
+      failureCode: 'domain_contract_invalid',
+    });
+    recordPricedRun({
+      runId: promotionRunId,
+      sessionId,
+      model: 'gpt-5.6-luna-high',
+      promptVersion: 'pure-cue-promotion-v1',
+      costUsd: 0.03,
+    });
+    linkStagedContinuation({
+      continuationId: 'continuation-mixed',
+      sessionId,
+      runs: [
+        { runId: diagnosisRunId, stage: 'diagnosis', createdAt: generatedAt },
+        { runId: promotionRunId, stage: 'promotion', createdAt: updatedAt },
+      ],
+    });
+    dbModule.acceptReflectionProposal({
+      proposalId: artifact.proposals[0]!.review.proposalId,
+      operation: suppressOperation('target'),
+      createdAt: updatedAt,
+    });
+
+    const stats = dbModule.getReflectionQualityStats();
+    assert.equal(stats.arms.length, 1);
+    assert.equal(stats.arms[0]!.modelArm, 'glm-5.3-flash-max → gpt-5.6-luna-high');
+    assert.equal(stats.arms[0]!.promptVersion, 'reflection-staged-v1');
+    assert.equal(stats.arms[0]!.exactAcceptCount, 1);
+    assert.equal(stats.arms[0]!.failedRunCount, 1);
+    assert.equal(stats.arms[0]!.totalCostUsd, 0.05);
+  });
+
+  test('promotion without diagnosis is not a quality arm', () => {
+    assert.throws(
+      () => dbModule.stagedContinuationQualityIdentity([{
+        stage: 'promotion',
+        model: 'gpt-5.6-luna-high',
+        createdAt: generatedAt,
+      }]),
+      /diagnosis stage before promotion/,
+    );
+  });
+
   test('clear removes tags without changing disposition', () => {
     const artifact = materialize('quality-clear', suppressOperation('target'), 'glm-5.3-flash-max').artifact;
     const proposalId = artifact.proposals[0]!.review.proposalId;
@@ -474,6 +580,7 @@ function materialize(
   sessionId: string,
   operation: ReflectionOperation,
   model: string,
+  provenance: { sourceRunId?: string; promptVersion?: string } = {},
 ): ReturnType<DbModule['materializeReflectionArtifact']> {
   sqlite.prepare(`
     INSERT INTO study_sessions (
@@ -486,10 +593,80 @@ function materialize(
     generatedAt,
     provider: 'openai',
     model,
-    promptVersion: 'reflection-staged-v1',
+    promptVersion: provenance.promptVersion ?? 'reflection-staged-v1',
+    ...(provenance.sourceRunId === undefined ? {} : { sourceRunId: provenance.sourceRunId }),
     evidenceBundle: bundle(sessionId),
     result: result(operation),
   });
+}
+
+function recordPricedRun(input: {
+  runId: string;
+  sessionId: string;
+  model: string;
+  promptVersion: string;
+  costUsd: number;
+  state?: 'succeeded' | 'failed';
+  failureCode?: string | null;
+}): void {
+  const state = input.state ?? 'succeeded';
+  dbModule.recordReflectionGenerationRun({
+    runId: input.runId,
+    sourceSessionId: input.sessionId,
+    reflectionFlowVersion: 'initial_post_session_reflection.v4',
+    startedAt: generatedAt,
+    completedAt: updatedAt,
+    provider: 'openai',
+    model: input.model,
+    providerModel: input.model,
+    promptVersion: input.promptVersion,
+    responseId: null,
+    clientRequestId: null,
+    finishReason: 'stop',
+    bundleSchemaVersion: 'session_reflection_bundle.v5',
+    resultSchemaVersion: 'session_reflection_result.v8',
+    diagnostic: null,
+    state,
+    failureCode: state === 'failed' ? (input.failureCode ?? 'domain_contract_invalid') : null,
+    eligibleItemCount: 1,
+    includedItemCount: 1,
+    usage: {
+      inputTokens: 100,
+      cachedInputTokens: null,
+      cacheWriteInputTokens: null,
+      outputTokens: 50,
+      reasoningTokens: null,
+      totalTokens: 150,
+    },
+    pricingSnapshotId: 'price-v1',
+    pricingAsOf: '2026-07-30',
+    pricingBasis: { id: 'price-v1' },
+    estimatedCostUsd: input.costUsd,
+    evidenceBundle: bundle(input.sessionId),
+  });
+}
+
+function linkStagedContinuation(input: {
+  continuationId: string;
+  sessionId: string;
+  runs: Array<{ runId: string; stage: 'diagnosis' | 'promotion'; createdAt?: string }>;
+}): void {
+  sqlite.prepare(`
+    INSERT INTO reflection_generation_continuations (
+      learner_id, continuation_id, source_session_id, reflection_flow_version,
+      created_at, eligible_item_count, included_item_count, diagnosis_bundle_json,
+      source_proposal_ids_json, diagnosis_result_json, final_evidence_bundle_json,
+      promotion_bundle_json, artifact_id, overlap_omitted_item_count
+    ) VALUES ('test-learner', ?, ?, 'initial_post_session_reflection.v4', ?, 1, 1, '{}', NULL, NULL, NULL, NULL, NULL, 0)
+  `).run(input.continuationId, input.sessionId, generatedAt);
+  const insertLink = sqlite.prepare(`
+    INSERT INTO reflection_generation_continuation_runs (
+      learner_id, run_id, continuation_id, stage, created_at
+    ) VALUES ('test-learner', ?, ?, ?, ?)
+  `);
+  for (const run of input.runs) {
+    insertLink.run(run.runId, input.continuationId, run.stage, run.createdAt ?? generatedAt);
+  }
 }
 
 function materializeInformational(
