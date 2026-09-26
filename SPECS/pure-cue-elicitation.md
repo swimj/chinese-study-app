@@ -160,8 +160,10 @@ Two accepted proposals can restore that snapshot. Promotion does, when it
 publishes or extends a pure cue. An ordinary cue repair does, when it installs
 a fairer cue (`create` or `replace`) and judges the served exercise
 `misleading_or_overloaded_cue`. Deactivation alone does not restore it, and a
-repair that only improves a fair cue does not. The same action restores once,
-whichever proposal runs first.
+repair that only improves a fair cue does not. The repair addresses that
+action-level snapshot through the action's first attempt, the mistake.
+Naming a later attempt, or more than one attempt, fails the application.
+The same action restores once, whichever proposal runs first.
 
 Intervening study can be overwritten by this restoration: this is an accepted
 quirk of asynchronous reflection, not a replay/rebase feature. Promotion requires

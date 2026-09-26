@@ -512,6 +512,42 @@ export function captureProductionSchedulerSnapshotForAttemptBatchWithoutTransact
   return mapCompensationSnapshot(existing, learnerId);
 }
 
+/**
+ * A compensation snapshot belongs to one production action. Reflection addresses
+ * it through that action's first attempt, which is the mistake when later
+ * reinforcement attempts exist.
+ */
+export function assertActionLapseCompensationAttempt(sourceAttemptId: string): void {
+  assertNonEmpty(sourceAttemptId, 'Source attempt id');
+  const source = getDb().prepare(`
+    SELECT session_id, session_action_id, action_kind, outcome
+    FROM study_attempt_events WHERE id = ?
+  `).get(sourceAttemptId) as {
+    session_id: string;
+    session_action_id: string;
+    action_kind: string;
+    outcome: string;
+  } | undefined;
+  if (!source || source.action_kind !== 'production') {
+    throw new Error(`Unfair-cue compensation attempt ${sourceAttemptId} is unavailable.`);
+  }
+  const first = getDb().prepare(`
+    SELECT id, outcome
+    FROM study_attempt_events
+    WHERE session_id = ? AND session_action_id = ?
+    ORDER BY action_attempt_sequence, session_event_sequence, id
+    LIMIT 1
+  `).get(source.session_id, source.session_action_id) as {
+    id: string;
+    outcome: string;
+  } | undefined;
+  if (!first || first.id !== sourceAttemptId || first.outcome !== 'incorrect') {
+    throw new Error(
+      'Unfair-cue compensation requires the action\'s first attempt, which must be the mistake.',
+    );
+  }
+}
+
 export function restoreProductionSchedulerSnapshotWithoutTransaction(input: {
   sourceAttemptId: string;
   compensationInvocationId: string;

@@ -1035,6 +1035,72 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.equal(dbModule.getProductionCue(cueId)?.active, false);
   });
 
+  test('rejects unfair-cue compensation that does not name the action\'s first mistake', () => {
+    const cueId = seedBroadCue('later-attempt-seed', 'target');
+    insertStudyAttempt('later-attempt-first', { cueId });
+    sqlite.prepare(`
+      UPDATE study_attempt_events
+      SET metadata_json = ?
+      WHERE id = 'later-attempt-first'
+    `).run(JSON.stringify({
+      production: {
+        taskId: 'production-task:target:default_production',
+        cueId,
+        cueType: 'definition_gloss',
+        text: 'broad target',
+        acceptedWordIds: ['target'],
+        anchorWordId: 'target',
+        submittedText: '替代',
+        submittedWordId: 'alternate',
+        result: 'rejected',
+      },
+    }));
+    sqlite.prepare(`
+      INSERT INTO study_attempt_events (
+        id, occurred_at, session_id, session_action_id, session_event_sequence,
+        action_attempt_sequence, action_kind, target_word_id, sampled_skill_ids_json,
+        response, outcome, rating, content_ref_json, metadata_json, projected_at
+      )
+      SELECT 'later-attempt-second', occurred_at, session_id, session_action_id, 2,
+        2, action_kind, target_word_id, sampled_skill_ids_json,
+        response, outcome, rating, content_ref_json, metadata_json, projected_at
+      FROM study_attempt_events WHERE id = 'later-attempt-first'
+    `).run();
+    dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
+      evidenceId: 'later-attempt-evidence',
+      occurredAt: appliedAt,
+      taskId: 'production-task:target:default_production',
+      cueId,
+      sourceAttemptId: 'later-attempt-second',
+      attemptResult: 'rejected',
+      submittedWordId: 'alternate',
+    });
+    insertInvocation('later-attempt-repair', {
+      ...cueRepairOperation({
+        changes: [{
+          kind: 'replace',
+          cueId,
+          replacements: [{
+            cueType: 'circumstance',
+            text: 'a fairer situation for 目标',
+            acceptedWordIds: ['target'],
+          }],
+        }],
+      }),
+      sourceAttemptJudgments: [{
+        kind: 'misleading_or_overloaded_cue',
+        sourceAttemptId: 'later-attempt-second',
+      }],
+    });
+    const repaired = dbModule.applyReflectionInvocation('later-attempt-repair', appliedAt);
+    assert.equal(repaired.application.state.kind, 'failed');
+    assert.match(
+      repaired.application.state.kind === 'failed' ? repaired.application.state.error : '',
+      /first attempt, which must be the mistake/,
+    );
+    assert.equal(dbModule.getProductionCue(cueId)?.active, true);
+  });
+
   test('leaves a lapse in place when a repair does not judge the served cue unfair', () => {
     sqlite.prepare(`
       INSERT INTO word_skill_state (

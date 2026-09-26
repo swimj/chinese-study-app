@@ -565,7 +565,10 @@ fair exercise leaves the lapse in place. The reset uses the same pre-lapse
 snapshot as pure-cue promotion. It restores production interval, ease, and
 admission, leaves attempt history unchanged, and sets production `nextDueAt` to
 the later of the snapshot due time and six hours after restoration. Outcomes
-are `restored`, `already_restored`, or `unavailable`. One action restores once.
+are `restored`, `already_restored`, or `unavailable`. The snapshot is one per
+action. The repair addresses it through that action's first attempt, which is
+the mistake when later reinforcement attempts exist. Naming a later attempt, or
+more than one attempt, fails the application. One action restores once.
 A repair that does not meet this condition still does not change scheduling.
 
 The provider evidence for a V2 repair contains the target word and the singular

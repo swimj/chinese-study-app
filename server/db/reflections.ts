@@ -110,6 +110,7 @@ import {
   extendPureCueAcceptedWordsWithoutTransaction,
   getPureCueContent,
   getActivePureCuesAcceptingAny,
+  assertActionLapseCompensationAttempt,
   restoreProductionSchedulerSnapshotWithoutTransaction,
 } from './pure-cues.ts';
 import {
@@ -3325,30 +3326,31 @@ function applyUnfairCueRepairCompensation(
     change.kind === 'create' || change.kind === 'replace'
   ));
   if (!installsFairerCue) return state;
-  const sourceAttemptIds = [...new Set(
-    operation.sourceAttemptJudgments
-      .filter((judgment) => judgment.kind === 'misleading_or_overloaded_cue')
-      .map((judgment) => judgment.sourceAttemptId),
-  )];
-  if (sourceAttemptIds.length === 0) return state;
+  const misleadingAttemptIds = operation.sourceAttemptJudgments
+    .filter((judgment) => judgment.kind === 'misleading_or_overloaded_cue')
+    .map((judgment) => judgment.sourceAttemptId);
+  const sourceAttemptId = misleadingAttemptIds[0];
+  if (sourceAttemptId === undefined) return state;
+  if (misleadingAttemptIds.some((attemptId) => attemptId !== sourceAttemptId)) {
+    throw new Error('Unfair-cue compensation restores one action and cannot name multiple attempts.');
+  }
+  assertActionLapseCompensationAttempt(sourceAttemptId);
 
   const causedEffectRefs = state.kind === 'applied' ? [...state.effectRefs] : [];
   const satisfyingEffectRefs = state.kind === 'already_satisfied'
     ? [...state.satisfyingEffectRefs]
     : [];
-  for (const sourceAttemptId of sourceAttemptIds) {
-    const compensationKind = restoreProductionSchedulerSnapshotWithoutTransaction({
-      sourceAttemptId,
-      compensationInvocationId: invocationId,
-      restoredAt: appliedAt,
-    }).kind;
-    const compensationRef = {
-      type: 'production_scheduler_compensation',
-      id: `${encodeURIComponent(sourceAttemptId)}/${compensationKind}`,
-    };
-    if (compensationKind === 'restored') causedEffectRefs.push(compensationRef);
-    else satisfyingEffectRefs.push(compensationRef);
-  }
+  const compensationKind = restoreProductionSchedulerSnapshotWithoutTransaction({
+    sourceAttemptId,
+    compensationInvocationId: invocationId,
+    restoredAt: appliedAt,
+  }).kind;
+  const compensationRef = {
+    type: 'production_scheduler_compensation',
+    id: `${encodeURIComponent(sourceAttemptId)}/${compensationKind}`,
+  };
+  if (compensationKind === 'restored') causedEffectRefs.push(compensationRef);
+  else satisfyingEffectRefs.push(compensationRef);
   if (causedEffectRefs.length > 0) {
     return {
       kind: 'applied',
