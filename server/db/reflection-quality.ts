@@ -200,17 +200,15 @@ export function stagedContinuationQualityIdentity(
   ));
   const diagnosis = uniqueModels(ordered.filter((run) => run.stage === 'diagnosis'));
   const promotion = uniqueModels(ordered.filter((run) => run.stage === 'promotion'));
-  const allModels = uniqueModels(ordered);
-  let modelArm: string;
-  if (allModels.length === 1) {
-    modelArm = allModels[0]!;
-  } else if (promotion.length === 0) {
-    modelArm = diagnosis.join(' + ');
-  } else if (diagnosis.length === 0) {
-    modelArm = promotion.join(' + ');
-  } else {
-    modelArm = `${diagnosis.join(' + ')} → ${promotion.join(' + ')}`;
+  if (diagnosis.length === 0) {
+    throw new Error('A staged continuation requires a diagnosis stage before promotion.');
   }
+  const allModels = uniqueModels(ordered);
+  const modelArm = allModels.length === 1
+    ? allModels[0]!
+    : promotion.length === 0
+      ? diagnosis.join(' + ')
+      : `${diagnosis.join(' + ')} → ${promotion.join(' + ')}`;
   return {
     modelArm,
     promptVersion: STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,

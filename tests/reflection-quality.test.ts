@@ -540,6 +540,17 @@ describe('reflection quality item tags', { concurrency: false }, () => {
     assert.equal(stats.arms[0]!.totalCostUsd, 0.05);
   });
 
+  test('promotion without diagnosis is not a quality arm', () => {
+    assert.throws(
+      () => dbModule.stagedContinuationQualityIdentity([{
+        stage: 'promotion',
+        model: 'gpt-5.6-luna-high',
+        createdAt: generatedAt,
+      }]),
+      /diagnosis stage before promotion/,
+    );
+  });
+
   test('clear removes tags without changing disposition', () => {
     const artifact = materialize('quality-clear', suppressOperation('target'), 'glm-5.3-flash-max').artifact;
     const proposalId = artifact.proposals[0]!.review.proposalId;
