@@ -82,6 +82,7 @@ portfolio-disposition pattern as Linear.
 
 | Note | Type | Retire by |
 | --- | --- | --- |
+| [2026-09-26-reflection-ambiguity-cleanup.md](active/2026-09-26-reflection-ambiguity-cleanup.md) | research | when accepted into the reflection specs, or declined |
 | [2026-09-19-new-word-introduction-content-brainstorm.md](active/2026-09-19-new-word-introduction-content-brainstorm.md) | research | when graduated into a spec/plan, or declined |
 | [2026-09-18-pure-cue-elicitation-memo.md](active/2026-09-18-pure-cue-elicitation-memo.md) | research | when graduated into a spec/plan, or declined |
 | [2026-09-04-swi-51-app-only-upgrade-pipeline.md](active/2026-09-04-swi-51-app-only-upgrade-pipeline.md) | work-bundle | when the first app-only upgrade pipeline is dispositioned |
