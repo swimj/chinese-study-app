@@ -18,7 +18,7 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`intake-triage.ts`](../server/db/intake-triage.ts) | Dormant intake-triage schema creation and validation retained for database compatibility |
 | [`domain-commands.ts`](../server/db/domain-commands.ts) | Shared transaction-aware domain commands used by reflection and manual paths; definition-production suppression and contextual-selection eligibility |
 | [`production-cues.ts`](../server/db/production-cues.ts) | Default production tasks, strict target-only word cues, immutable lifecycle/evidence state, one immutable post-reveal supplement per definition cue or fallback, and cue/supplement application adapters |
-| [`pure-cues.ts`](../server/db/pure-cues.ts) | Shared standalone cue content and indexed membership lookup; automatic adoption into private learner schedules; frozen answer snapshots, independent assessment projection, and restore-once pre-lapse scheduler snapshots |
+| [`pure-cues.ts`](../server/db/pure-cues.ts) | Shared standalone cue content, holistic teaching notes, and indexed membership lookup; automatic adoption into private learner schedules; frozen answer/reveal snapshots, independent assessment projection, and restore-once pre-lapse scheduler snapshots |
 | [`schema.ts`](../server/db/schema.ts) | Re-exports `applyProductionContrastExerciseSeed` and `initializeDatabase` for init ordering |
 | [`ownership-manifest.ts`](../server/db/ownership-manifest.ts) | Auditable ownership, enforcement, history, migration, and lifecycle classification for every durable application table |
 | [`identity.ts`](../server/db/identity.ts) | Stable learner records, auth-provider mappings, learner settings, learner params, and explicit Clerk-free bootstrap |
@@ -52,9 +52,16 @@ immutable diagnosis input, overlap-omission counts, the saved diagnosis result,
 exact promotion input/final evidence checkpoint, and completed artifact link.
 `reflection_generation_continuation_runs` associates each ordinary run-log row
 with its continuation and diagnosis/promotion stage. Promotion retries reuse
-the saved explicit shared-axis handoff and catalog snapshots. Successful stage
-two results, including non-actionable disagreements, are materialized only in
+the saved suspected-entanglement handoff and catalog snapshots. Successful stage
+two results, including word-only cleanup and explanation-only outcomes, are materialized only in
 the final artifact; there is no autonomous retry worker.
+
+`pure_cue_teaching_revisions` records immutable, learner-private before/after
+teaching text and its authorizing cleanup invocation. The shared `pure_cues`
+row holds current teaching, while `pure_cue_served_snapshots` freezes the text
+shown for each assessment. Membership/note preconditions reject stale extension
+plans before any writes; teaching, word-cue changes, and compensation commit in
+one transaction.
 
 Reflection uses six SQLite tables initialized and validated from
 [`reflections.ts`](../server/db/reflections.ts) (quality overlay from

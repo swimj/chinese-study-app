@@ -9,6 +9,8 @@ import type {
   ReflectionItemV5,
   ReflectionOperation,
   PromotePureElicitationOperationV1,
+  ReconcileProductionCuesOperationV1,
+  PureCuePromotionPureCueSnapshotV2,
   RepairProductionCueOperationV1,
   RepairProductionCueOperationV2,
 } from '../../domain/reflection';
@@ -162,6 +164,7 @@ export function ReflectionOperationEditor({
           </Field>
         </div>
       );
+    case 'reconcile_production_cues':
     case 'promote_pure_elicitation':
       return (
         <PureElicitationPromotionEditor
@@ -182,7 +185,7 @@ function PureElicitationPromotionEditor({
   disabled,
   dispatch,
 }: {
-  operation: PromotePureElicitationOperationV1;
+  operation: PromotePureElicitationOperationV1 | ReconcileProductionCuesOperationV1;
   evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV5 | null;
   wordOptions: EvidenceWordOption[];
   disabled: boolean;
@@ -192,6 +195,10 @@ function PureElicitationPromotionEditor({
     ? evidence.promotionEvidence
     : null;
   const pureCues = promotionEvidence?.intersectingPureCues ?? [];
+  const pureMemberLabels = new Map(pureCues.flatMap((cue) =>
+    'acceptedMembers' in cue
+      ? (cue as PureCuePromotionPureCueSnapshotV2).acceptedMembers.map((member) => [member.wordId, member.hanzi] as const)
+      : []));
   const wordEvidence = new Map(
     (promotionEvidence?.words ?? []).map((word) => [word.wordId, word]),
   );
@@ -201,7 +208,7 @@ function PureElicitationPromotionEditor({
   };
   const wordHeading = (wordId: string) => {
     const option = wordOptions.find((word) => word.wordId === wordId);
-    return option?.hanzi ?? wordId;
+    return option?.hanzi ?? pureMemberLabels.get(wordId) ?? wordId;
   };
   const cueTypes = ['definition_gloss', 'minimal_context', 'circumstance'] as const;
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -260,110 +267,103 @@ function PureElicitationPromotionEditor({
     dispatchLocal({ type: 'restore_promotion_distinctive_cue', wordId, draft });
   }
 
+  function existingDestination(cue: typeof pureCues[number]) {
+    const teachingNote = 'teachingNote' in cue && typeof cue.teachingNote === 'string' ? cue.teachingNote : '';
+    return operation.kind === 'reconcile_production_cues'
+      ? { kind: 'existing' as const, pureCueId: cue.id, teachingNote,
+          expectedAcceptedWordIds: [...cue.acceptedWordIds], expectedTeachingNote: teachingNote }
+      : { kind: 'existing' as const, pureCueId: cue.id };
+  }
+
   return (
     <div className="reflection-operation-fields">
       <p className="notes reflection-promotion-pair">
         {wordLabel(operation.targetWordId)} ↔ {wordLabel(operation.responseWordId)}
       </p>
+      {operation.kind === 'reconcile_production_cues' ? (
+        <Field label="Original cue fairness">
+          <select value={operation.sourceAttemptFairness} disabled={disabled}
+            onChange={(event) => dispatchLocal({ type: 'set_reconciliation_fairness', fairness: event.target.value as ReconcileProductionCuesOperationV1['sourceAttemptFairness'] })}>
+            <option value="fair">Fair cue — preserve the original assessment</option>
+            <option value="misleading_or_overloaded_cue">Misleading or overloaded cue — restore eligible lapse</option>
+          </select>
+        </Field>
+      ) : null}
       <section className="reflection-promotion-preview" aria-label="Resulting cue set">
         <section className="reflection-promotion-group reflection-promotion-shared-group">
           <header className="reflection-promotion-group-heading">
-            <h5>{destinationAcceptedWordIds.map(wordHeading).join(' / ')}</h5>
+            <h5>{operation.destination === null ? 'Word-specific cleanup' : destinationAcceptedWordIds.map(wordHeading).join(' / ')}</h5>
           </header>
-          <div
-            className={`reflection-promotion-cue is-included ${
-              operation.destination.kind === 'existing' ? 'kind-keep' : 'kind-create'
-            }${expandedKey === 'destination' ? ' is-expanded' : ''}`}
-          >
+          <div className={`reflection-promotion-cue is-included ${operation.destination?.kind === 'existing' ? 'kind-keep' : operation.destination === null ? '' : 'kind-create'}`}>
             <div className="reflection-promotion-cue-row">
-              <PromotionCueStatus
-                kind={operation.destination.kind === 'existing' ? 'keep' : 'create'}
-              />
+              {operation.destination !== null ? <PromotionCueStatus kind={operation.destination.kind === 'existing' ? 'keep' : 'create'} /> : null}
               <span className="reflection-promotion-cue-copy">
                 {compactPromotionDestinationPreview(operation, pureCues)}
               </span>
-              <button
-                type="button"
-                className="reflection-promotion-expand"
+              <button type="button" className="reflection-promotion-expand"
                 aria-expanded={expandedKey === 'destination'}
                 aria-label={expandedKey === 'destination' ? 'Close shared cue editor' : 'Edit shared cue'}
-                onClick={() => toggleExpanded('destination')}
-              >
+                onClick={() => toggleExpanded('destination')}>
                 {expandedKey === 'destination' ? '▴' : '▾'}
               </button>
             </div>
             {expandedKey === 'destination' ? (
               <div className="reflection-promotion-cue-detail">
-                <Field label="Pure elicitation destination">
-                  <select
-                    value={operation.destination.kind}
-                    disabled={disabled}
-                    onChange={(event) => dispatchLocal({
-                      type: 'set_promotion_destination',
-                      destination: event.target.value === 'existing' && pureCues[0] !== undefined
-                        ? { kind: 'existing', pureCueId: pureCues[0].id }
-                        : { kind: 'create', stimulus: '', axisNote: '' },
-                    })}
-                  >
+                <Field label="Shared practice">
+                  <select value={operation.destination?.kind ?? 'none'} disabled={disabled}
+                    onChange={(event) => {
+                      const cue = pureCues[0];
+                      const destination = event.target.value === 'none' ? null
+                        : event.target.value === 'existing' && cue !== undefined
+                          ? existingDestination(cue)
+                          : operation.kind === 'reconcile_production_cues'
+                            ? { kind: 'create' as const, stimulus: '', axisNote: '', teachingNote: '' }
+                            : { kind: 'create' as const, stimulus: '', axisNote: '' };
+                      dispatchLocal({ type: 'set_promotion_destination', destination });
+                    }}>
+                    {operation.kind === 'reconcile_production_cues' ? <option value="none">No shared cue</option> : null}
                     <option value="create">Create new pure elicitation</option>
-                    <option value="existing" disabled={pureCues.length === 0}>
-                      Extend existing pure elicitation
-                    </option>
+                    <option value="existing" disabled={pureCues.length === 0}>Extend existing pure elicitation</option>
                   </select>
                 </Field>
-                {operation.destination.kind === 'existing' ? (
+                {operation.destination?.kind === 'existing' ? (
                   <Field label="Existing pure elicitation">
-                    <select
-                      value={operation.destination.pureCueId}
-                      disabled={disabled}
-                      onChange={(event) => dispatchLocal({
-                        type: 'set_promotion_destination',
-                        destination: { kind: 'existing', pureCueId: event.target.value },
-                      })}
-                    >
-                      {pureCues.map((cue) => (
-                        <option value={cue.id} key={cue.id}>
-                          {cue.stimulus}{cue.axisNote ? ` — ${cue.axisNote}` : ''}
-                        </option>
-                      ))}
+                    <select value={operation.destination.pureCueId} disabled={disabled}
+                      onChange={(event) => {
+                        const cue = pureCues.find((entry) => entry.id === event.target.value);
+                        if (cue === undefined) throw new Error('Selected pure cue is missing from evidence.');
+                        dispatchLocal({ type: 'set_promotion_destination', destination: existingDestination(cue) });
+                      }}>
+                      {pureCues.map((cue) => <option value={cue.id} key={cue.id}>{cue.stimulus}{cue.axisNote ? ` — ${cue.axisNote}` : ''}</option>)}
                     </select>
                   </Field>
-                ) : (
+                ) : operation.destination?.kind === 'create' ? (
                   <>
                     <Field label="Shared elicitation stimulus">
-                      <textarea
-                        value={operation.destination.stimulus}
-                        disabled={disabled}
-                        onChange={(event) => dispatchLocal({
-                          type: 'set_promotion_destination',
-                          destination: {
-                            kind: 'create',
-                            stimulus: event.target.value,
-                            axisNote: operation.destination.kind === 'create'
-                              ? operation.destination.axisNote
-                              : '',
-                          },
-                        })}
-                      />
+                      <textarea value={operation.destination.stimulus} disabled={disabled}
+                        onChange={(event) => {
+                          if (operation.destination?.kind !== 'create') return;
+                          dispatchLocal({ type: 'set_promotion_destination', destination: { ...operation.destination, stimulus: event.target.value } });
+                        }} />
                     </Field>
                     <Field label="Semantic axis note">
-                      <textarea
-                        value={operation.destination.axisNote}
-                        disabled={disabled}
-                        onChange={(event) => dispatchLocal({
-                          type: 'set_promotion_destination',
-                          destination: {
-                            kind: 'create',
-                            stimulus: operation.destination.kind === 'create'
-                              ? operation.destination.stimulus
-                              : '',
-                            axisNote: event.target.value,
-                          },
-                        })}
-                      />
+                      <textarea value={operation.destination.axisNote} disabled={disabled}
+                        onChange={(event) => {
+                          if (operation.destination?.kind !== 'create') return;
+                          dispatchLocal({ type: 'set_promotion_destination', destination: { ...operation.destination, axisNote: event.target.value } });
+                        }} />
                     </Field>
                   </>
-                )}
+                ) : null}
+                {operation.kind === 'reconcile_production_cues' && operation.destination !== null ? (
+                  <Field label="Teaching note shown on reveal">
+                    <textarea value={operation.destination.teachingNote} disabled={disabled}
+                      onChange={(event) => {
+                        if (operation.destination === null) return;
+                        dispatchLocal({ type: 'set_promotion_destination', destination: { ...operation.destination, teachingNote: event.target.value } });
+                      }} />
+                  </Field>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -524,10 +524,10 @@ function PromotionCueStatus({
 }
 
 function promotionDestinationAcceptedWordIds(
-  operation: PromotePureElicitationOperationV1,
+  operation: PromotePureElicitationOperationV1 | ReconcileProductionCuesOperationV1,
   pureCues: ReadonlyArray<{ id: string; acceptedWordIds: string[] }>,
 ): string[] {
-  const existingPureCueId = operation.destination.kind === 'existing'
+  const existingPureCueId = operation.destination?.kind === 'existing'
     ? operation.destination.pureCueId
     : null;
   const existingIds = existingPureCueId === null
@@ -541,15 +541,16 @@ function promotionDestinationAcceptedWordIds(
 }
 
 function compactPromotionDestinationPreview(
-  operation: PromotePureElicitationOperationV1,
+  operation: PromotePureElicitationOperationV1 | ReconcileProductionCuesOperationV1,
   pureCues: ReadonlyArray<{ id: string; stimulus: string; axisNote: string }>,
 ): string {
-  if (operation.destination.kind === 'existing') {
+  if (operation.destination?.kind === 'existing') {
     const { pureCueId } = operation.destination;
     const cue = pureCues.find((item) => item.id === pureCueId);
     const stimulus = cue?.stimulus.trim() ?? '';
     return stimulus.length === 0 ? pureCueId : stimulus;
   }
+  if (operation.destination === null) return 'No shared cue; reconcile word-specific cues';
   const stimulus = operation.destination.stimulus.trim();
   return stimulus.length === 0 ? 'New elicitation' : stimulus;
 }

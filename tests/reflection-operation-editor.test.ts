@@ -7,10 +7,55 @@ import type {
   ReflectionItemV5,
   PromotePureElicitationOperationV1,
   RepairProductionCueOperationV2,
+  ReconcileProductionCuesOperationV1,
 } from '../src/domain/reflection.ts';
 import { AcceptedWordChips, ReflectionOperationEditor } from '../src/features/reflection/ReflectionOperationEditor.tsx';
 
 describe('reflection operation editor', () => {
+  test('word-only reconciliation displays compensation independently of a shared cue', () => {
+    const operation: ReconcileProductionCuesOperationV1 = {
+      kind: 'reconcile_production_cues', version: 1, sourceAttemptId: 'attempt-1',
+      targetWordId: 'target', responseWordId: 'alternate', destination: null,
+      sourceAttemptFairness: 'misleading_or_overloaded_cue',
+      wordPlans: [{ wordId: 'target', deactivateCueIds: ['cue-1'], distinctiveCueDrafts: [
+        { cueType: 'minimal_context', text: 'A precise target context' },
+      ] }, { wordId: 'alternate', deactivateCueIds: [], distinctiveCueDrafts: [] }],
+    };
+    const markup = renderToStaticMarkup(createElement(ReflectionOperationEditor, {
+      operation, evidence: promotionEvidence(), disabled: true,
+    }));
+    assert.match(markup, /Word-specific cleanup/);
+    assert.match(markup, /No shared cue; reconcile word-specific cues/);
+    assert.match(markup, /Original cue fairness/);
+    assert.match(markup, /value="misleading_or_overloaded_cue" selected=""/);
+    assert.match(markup, /restore eligible lapse/);
+    assert.match(markup, /A precise target context/);
+    assert.match(markup, /Deactivate cue: broad target/);
+    assert.match(markup, /Keep cue: broad alternate/);
+    assert.doesNotMatch(markup, /New elicitation/);
+    assert.doesNotMatch(markup, /No actionable change/);
+  });
+
+  test('extension preview names existing members beyond the triggering pair', () => {
+    const evidence = promotionEvidence();
+    assert.ok(evidence.promotionEvidence);
+    Object.assign(evidence.promotionEvidence.intersectingPureCues[0]!, {
+      acceptedWordIds: ['target', 'third'], teachingNote: 'Existing member comparison',
+      acceptedMembers: [{ wordId: 'target', hanzi: '目标' }, { wordId: 'third', hanzi: '其他' }],
+    });
+    const operation: ReconcileProductionCuesOperationV1 = {
+      kind: 'reconcile_production_cues', version: 1, sourceAttemptId: 'attempt-1',
+      targetWordId: 'target', responseWordId: 'alternate', sourceAttemptFairness: 'fair',
+      destination: { kind: 'existing', pureCueId: 'pure-1', teachingNote: 'Whole group teaching',
+        expectedAcceptedWordIds: ['target', 'third'], expectedTeachingNote: 'Existing member comparison' },
+      wordPlans: ['target', 'alternate'].map((wordId) => ({ wordId, deactivateCueIds: [], distinctiveCueDrafts: [] })),
+    };
+    const markup = renderToStaticMarkup(createElement(ReflectionOperationEditor, { operation, evidence }));
+    assert.match(markup, /目标 \/ 其他 \/ 替代/);
+    assert.doesNotMatch(markup, />third</);
+    assert.match(markup, /value="fair" selected=""/);
+  });
+
   test('lists V2 cue changes compactly and does not restate Hanzi', () => {
     const markup = renderToStaticMarkup(createElement(ReflectionOperationEditor, {
       operation: cueRepairV2(),

@@ -722,6 +722,7 @@ function createPureCueReviewItem(): PureCueSessionReviewItem {
       servedAt: '2026-09-18T00:00:00.000Z',
       stimulus: 'to tell an untruth',
       axisNote: 'ordinary speech',
+      teachingNote: 'Both answers describe telling an untruth.',
       acceptedAnswers: [{ wordId: 'word-a', hanzi: '撒谎', traditional: '撒謊' }],
     },
   };

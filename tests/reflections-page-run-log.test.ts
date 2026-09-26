@@ -11,7 +11,7 @@ import {
   TokenUsageView,
 } from '../src/pages/ReflectionsPage.tsx';
 import type { ReflectionArtifactDetailDto } from '../src/services/api.ts';
-import type { SessionReflectionBundleV5, SessionReflectionResultV8 } from '../src/domain/reflection.ts';
+import type { SessionReflectionBundleV6, SessionReflectionResultV9 } from '../src/domain/reflection.ts';
 import { CURRENT_INITIAL_REFLECTION_FLOW_VERSION, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION } from '../src/domain/reflection-contracts.ts';
 
 describe('reflection run log presentation', () => {
@@ -342,8 +342,8 @@ function idleController(
 
 function explanationArtifact(): ReflectionArtifactDetailDto {
   const generatedAt = '2026-07-29T12:00:00.000Z';
-  const evidenceBundle: SessionReflectionBundleV5 = {
-    schemaVersion: 'session_reflection_bundle.v5',
+  const evidenceBundle: SessionReflectionBundleV6 = {
+    schemaVersion: 'session_reflection_bundle.v6',
     generatedAt,
     session: {
       sessionId: 'session',
@@ -384,8 +384,8 @@ function explanationArtifact(): ReflectionArtifactDetailDto {
       responseKind: 'matched_known_word',
     }],
   };
-  const result: SessionReflectionResultV8 = {
-    schemaVersion: 'session_reflection_result.v8',
+  const result: SessionReflectionResultV9 = {
+    schemaVersion: 'session_reflection_result.v9',
     itemResults: [{
       itemId: 'informational',
       diagnosisTags: ['ordinary_retrieval_noise'],

@@ -18,7 +18,7 @@ App.tsx
 └─ useReflectionPageController
    ├─ ReflectionsPage.tsx              queue, history, detail, proposal cards
    ├─ reflection-page-model.ts         grouping, drafts, support, validation
-   ├─ ReflectionOperationEditor.tsx    versioned operation and promotion editors
+   ├─ ReflectionOperationEditor.tsx    versioned operation and coordinated cleanup editors
    └─ services/api.ts                  review and authorization withdrawal
 ```
 
@@ -59,30 +59,37 @@ failed/retry state.
 ## Staged generation
 
 New initial reflections and new second opinions run server-owned diagnosis and
-conditional pure-cue promotion stages. The client receives only the final V8
+conditional production-cue cleanup stages. The client receives only the final V9
 artifact, never an intermediate diagnosis artifact. The run log retains each
 provider call separately; retry resolves its durable continuation and reuses
 saved diagnosis/promotion input within the current contract. Stored legacy
 artifacts remain readable, but obsolete retries, second opinions, authorization,
 and application are rejected. No live session grading uses this pipeline.
 
-Diagnosis explicitly chooses ordinary feedback/proposals or a shared-axis
-handoff with no ordinary interventions. Routed items use stage two's final
-explanation. A hard stage disagreement is displayed in Help and By session as
-non-actionable feedback, with Done/quality controls but no proposal creator or
-manual override. The backend independently rejects authorization from such
-items. Unrelated ordinary items retain stage one's feedback/proposals.
+Diagnosis explicitly chooses ordinary feedback/proposals or a best-effort
+ambiguous-pair handoff with no ordinary interventions. Routed items use stage
+two's final explanation and either coordinated cleanup or explanation only.
+Cleanup without a pure destination remains a normal actionable proposal.
+Historical V8 disagreements remain non-actionable, without a manual override.
+Unrelated ordinary items retain stage one's feedback/proposals, including
+contrast authoring in its separate content space.
 
 Bundle admission excludes overlapping target/response pairs in stable order
 before diagnosis. Omitted second-opinion originals remain deferred; only
 included originals retire after successful artifact materialization.
 
-The promotion editor presents the shared stimulus/axis and both words' cue
-plans as compact expandable rows, matching cue-repair review. Application
-outcomes include explicit restored, already-restored,
-or unavailable compensation feedback. A non-lapse promotion source is invalid.
+The cleanup editor presents the optional shared stimulus/axis, holistic teaching
+note, source-fairness judgment, and both words' cue plans as compact expandable
+rows. Extension keeps stimulus/axis fixed while editing reveal teaching for the
+whole resulting membership. Application outcomes include explicit restored,
+already-restored, or unavailable compensation feedback when an unfair source
+exercise is remedied. A non-lapse pair-cleanup source is invalid.
 Pure-cue membership is
 not a word-scheduler projection.
+
+Pure-cue card reveal reads the frozen snapshot's teaching note, not the semantic
+axis. Blank notes on pre-migration content stay blank pending separate operator
+cleanup. A later extension cannot change teaching text on an already served card.
 
 ## Reflection evidence
 

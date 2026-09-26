@@ -38,6 +38,7 @@ export type PureCueServedSnapshot = {
   servedAt: string;
   stimulus: string;
   axisNote: string;
+  teachingNote: string;
   acceptedAnswers: PureCueAcceptedAnswer[];
 };
 

@@ -1,21 +1,21 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
-  PURE_CUE_PROMOTION_RESULT_V1_WIRE_SCHEMA_NAME,
-  pureCuePromotionResultV1WireSchema,
+  PURE_CUE_PROMOTION_RESULT_V2_WIRE_SCHEMA_NAME,
+  pureCuePromotionResultV2WireSchema,
   SESSION_REFLECTION_RESULT_V7_WIRE_SCHEMA_NAME,
   sessionReflectionResultV7WireSchema,
-  STAGED_REFLECTION_DIAGNOSIS_RESULT_V1_WIRE_SCHEMA_NAME,
-  stagedReflectionDiagnosisResultV1WireSchema,
+  STAGED_REFLECTION_DIAGNOSIS_RESULT_V2_WIRE_SCHEMA_NAME,
+  stagedReflectionDiagnosisResultV2WireSchema,
 } from '../src/domain/reflection-result-schema.js';
 import type {
-  PureCuePromotionBundleV1,
-  PureCuePromotionResultV1Wire,
+  PureCuePromotionBundleV2,
+  PureCuePromotionResultV2Wire,
   SessionReflectionBundleV2,
   SessionReflectionBundleV4,
   SessionReflectionResultV7,
   SessionReflectionResultV7Wire,
-  StagedReflectionDiagnosisResultV1Wire,
+  StagedReflectionDiagnosisResultV2Wire,
 } from '../src/domain/reflection.js';
 import {
   createLunaReflectionProvider,
@@ -150,22 +150,20 @@ const diagnosisBundle: SessionReflectionBundleV4 = {
   })),
 };
 
-const validStagedDiagnosisWireResult: StagedReflectionDiagnosisResultV1Wire = {
-  schemaVersion: 'staged_reflection_diagnosis_result.v1',
+const validStagedDiagnosisWireResult: StagedReflectionDiagnosisResultV2Wire = {
+  schemaVersion: 'staged_reflection_diagnosis_result.v2',
   itemResults: [{
-    kind: 'shared_axis',
+    kind: 'ambiguous_pair',
     itemId: 'item-1',
     diagnosisTags: ['valid_or_near_valid_alternate'],
     handoff: {
-      axis: 'expressing that someone knows or recognizes the relevant fact or person',
-      boundaries: 'The words differ in object type and construction outside this bounded use.',
-      responseValidity: '认识 is a natural answer to the exact original broad cue “to know”.',
+      ambiguityReason: 'The response plausibly fits the original cue.',
     },
   }],
 };
 
-const promotionBundle: PureCuePromotionBundleV1 = {
-  schemaVersion: 'pure_cue_promotion_bundle.v1',
+const promotionBundle: PureCuePromotionBundleV2 = {
+  schemaVersion: 'pure_cue_promotion_bundle.v2',
   generatedAt: bundle.generatedAt,
   sourceSessionId: bundle.session.sessionId,
   studyProfile: bundle.session.studyProfile,
@@ -175,9 +173,9 @@ const promotionBundle: PureCuePromotionBundleV1 = {
     targetWord: bundle.items[0]!.targetWord,
     responseWord: bundle.items[0]!.submittedWord!,
     servedCue: { ...bundle.items[0]!.servedCue, supplement: null },
-    handoff: validStagedDiagnosisWireResult.itemResults[0]!.kind === 'shared_axis'
+    handoff: validStagedDiagnosisWireResult.itemResults[0]!.kind === 'ambiguous_pair'
       ? validStagedDiagnosisWireResult.itemResults[0]!.handoff
-      : { axis: '', boundaries: '', responseValidity: '' },
+      : { ambiguityReason: '' },
     promotionEvidence: {
       diagnosisTags: ['production_cue_overloaded'],
       words: [{
@@ -204,19 +202,21 @@ const promotionBundle: PureCuePromotionBundleV1 = {
   }],
 };
 
-const validPromotionWireResult: PureCuePromotionResultV1Wire = {
-  schemaVersion: 'pure_cue_promotion_result.v1',
+const validPromotionWireResult: PureCuePromotionResultV2Wire = {
+  schemaVersion: 'pure_cue_promotion_result.v2',
   itemResults: [{
     itemId: 'item-1',
     decision: {
-      kind: 'promote',
+      kind: 'reconcile',
       rationale: 'The shared elicitation is useful and the remaining cue can stay distinctive.',
       learnerExplanation: 'This proposes a shared cue for the bounded overlap and keeps the distinctive cue; no change has been applied yet.',
       operation: {
+        sourceAttemptFairness: 'fair',
         destination: {
           kind: 'create',
           stimulus: 'to know or recognize',
           axisNote: 'General knowledge versus recognizing a person.',
+          teachingNote: 'Both words fit this exercise; their other uses differ.',
         },
         wordPlans: [{
           wordId: 'word-1',
@@ -438,9 +438,9 @@ describe('production Luna reflection provider', () => {
     assert.deepEqual(request.body.response_format, {
       type: 'json_schema',
       json_schema: {
-        name: PURE_CUE_PROMOTION_RESULT_V1_WIRE_SCHEMA_NAME,
+        name: PURE_CUE_PROMOTION_RESULT_V2_WIRE_SCHEMA_NAME,
         strict: true,
-        schema: pureCuePromotionResultV1WireSchema,
+        schema: pureCuePromotionResultV2WireSchema,
       },
     });
     assert.deepEqual(generated.result, validPromotionWireResult);
@@ -466,9 +466,9 @@ describe('production Luna reflection provider', () => {
     assert.deepEqual(request.body.response_format, {
       type: 'json_schema',
       json_schema: {
-        name: STAGED_REFLECTION_DIAGNOSIS_RESULT_V1_WIRE_SCHEMA_NAME,
+        name: STAGED_REFLECTION_DIAGNOSIS_RESULT_V2_WIRE_SCHEMA_NAME,
         strict: true,
-        schema: stagedReflectionDiagnosisResultV1WireSchema,
+        schema: stagedReflectionDiagnosisResultV2WireSchema,
       },
     });
     const messages = request.body.messages;

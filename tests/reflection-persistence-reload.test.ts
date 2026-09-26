@@ -45,7 +45,7 @@ describe('reflection persistence across process reload', { concurrency: false },
       \`).run(generatedAt, generatedAt);
 
       const evidenceBundle = {
-        schemaVersion: 'session_reflection_bundle.v5',
+        schemaVersion: 'session_reflection_bundle.v6',
         generatedAt,
         session: {
           sessionId: 'reload-session',
@@ -85,7 +85,7 @@ describe('reflection persistence across process reload', { concurrency: false },
         }],
       };
       const result = {
-        schemaVersion: 'session_reflection_result.v8',
+        schemaVersion: 'session_reflection_result.v9',
         itemResults: [{
           itemId: 'item-1',
           diagnosisTags: ['persistent_confusion'],
@@ -124,11 +124,11 @@ describe('reflection persistence across process reload', { concurrency: false },
       const artifact = db.materializeReflectionArtifact({
         artifactId: 'reload-artifact',
         sourceSessionId: 'reload-session',
-        reflectionFlowVersion: 'initial_post_session_reflection.v4',
+        reflectionFlowVersion: 'initial_post_session_reflection.v5',
         generatedAt,
         provider: 'openai',
         model: 'gpt-5.6-luna-high',
-        promptVersion: 'reflection-staged-v2',
+        promptVersion: 'reflection-staged-v3',
         evidenceBundle,
         result,
       }).artifact;
@@ -177,7 +177,7 @@ describe('reflection persistence across process reload', { concurrency: false },
       const detail = db.getReflectionArtifactDetail('reload-artifact');
       const bySource = db.getReflectionArtifactBySessionAndFlow(
         'reload-session',
-        'initial_post_session_reflection.v4',
+        'initial_post_session_reflection.v5',
       );
       const relevance = db.getWordSkillRelevance('target', 'production');
 
