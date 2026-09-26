@@ -1,18 +1,18 @@
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import {
-  PURE_CUE_PROMOTION_RESULT_V1_WIRE_SCHEMA_NAME,
-  pureCuePromotionResultV1WireSchema,
+  PURE_CUE_PROMOTION_RESULT_V2_WIRE_SCHEMA_NAME,
+  pureCuePromotionResultV2WireSchema,
   SESSION_REFLECTION_RESULT_V7_WIRE_SCHEMA_NAME,
   sessionReflectionResultV7WireSchema,
-  STAGED_REFLECTION_DIAGNOSIS_RESULT_V1_WIRE_SCHEMA_NAME,
-  stagedReflectionDiagnosisResultV1WireSchema,
+  STAGED_REFLECTION_DIAGNOSIS_RESULT_V2_WIRE_SCHEMA_NAME,
+  stagedReflectionDiagnosisResultV2WireSchema,
 } from '../../src/domain/reflection-result-schema.js';
 import {
-  normalizeStagedReflectionDiagnosisResultV1,
+  normalizeStagedReflectionDiagnosisResultV2,
   normalizeSessionReflectionResultV7,
   stripLegacySourceAttemptIdsFromReflectionWire,
-  validateStagedReflectionDiagnosisResultV1,
+  validateStagedReflectionDiagnosisResultV2,
   validateSessionReflectionResultV7,
   type SessionReflectionBundleV4,
   type SessionReflectionBundleV2,
@@ -20,13 +20,13 @@ import {
   type CuratedReflectionBundleV1,
   type CuratedReflectionBundleV2,
   type CuratedReflectionDiagnosisBundleV2,
-  type PureCuePromotionBundleV1,
-  type PureCuePromotionResultV1Wire,
+  type PureCuePromotionBundleV2,
+  type PureCuePromotionResultV2Wire,
   type SessionReflectionResultV7,
   type SessionReflectionResultV7Wire,
-  type StagedReflectionDiagnosisResultV1,
-  type StagedReflectionDiagnosisResultV1Wire,
-  validatePureCuePromotionResultV1,
+  type StagedReflectionDiagnosisResultV2,
+  type StagedReflectionDiagnosisResultV2Wire,
+  validatePureCuePromotionResultV2,
 } from '../../src/domain/reflection.js';
 import type { FetchImplementation } from '../llm/http.js';
 import { validateJsonSchemaIssues } from '../llm/json-schema-validator.js';
@@ -147,12 +147,12 @@ export type LunaReflectionSuccess = {
 };
 
 export type LunaPureCuePromotionSuccess = {
-  result: PureCuePromotionResultV1Wire;
+  result: PureCuePromotionResultV2Wire;
   metadata: LunaReflectionRunMetadata;
 };
 
 export type LunaStagedDiagnosisSuccess = {
-  result: StagedReflectionDiagnosisResultV1;
+  result: StagedReflectionDiagnosisResultV2;
   metadata: LunaReflectionRunMetadata;
 };
 
@@ -166,7 +166,7 @@ export type LunaReflectionProvider = {
     options?: { clientRequestId?: string },
   ): Promise<LunaStagedDiagnosisSuccess>;
   generatePromotion?(
-    bundle: PureCuePromotionBundleV1,
+    bundle: PureCuePromotionBundleV2,
     options?: { clientRequestId?: string },
   ): Promise<LunaPureCuePromotionSuccess>;
 };
@@ -246,7 +246,7 @@ function diagnosisModelInput(bundle: SessionReflectionBundleV4 | CuratedReflecti
   };
 }
 
-function promotionModelInput(bundle: PureCuePromotionBundleV1) {
+function promotionModelInput(bundle: PureCuePromotionBundleV2) {
   assertMandarinStagedInput(bundle.studyProfile);
   const { studyProfile: _studyProfile, ...content } = bundle;
   return content;
@@ -413,8 +413,8 @@ export function createReflectionProvider(
         reasoningEffort: config.reasoningEffort,
         systemPrompt,
         userPrompt: JSON.stringify(modelInput),
-        outputSchemaName: STAGED_REFLECTION_DIAGNOSIS_RESULT_V1_WIRE_SCHEMA_NAME,
-        outputSchema: stagedReflectionDiagnosisResultV1WireSchema,
+        outputSchemaName: STAGED_REFLECTION_DIAGNOSIS_RESULT_V2_WIRE_SCHEMA_NAME,
+        outputSchema: stagedReflectionDiagnosisResultV2WireSchema,
         maxOutputTokens: config.maxOutputTokens,
         temperature: null,
         timeoutMs: config.timeoutMs,
@@ -451,7 +451,7 @@ export function createReflectionProvider(
     }
     const schemaIssues = validateJsonSchemaIssues(
       parsed,
-      stagedReflectionDiagnosisResultV1WireSchema,
+      stagedReflectionDiagnosisResultV2WireSchema,
     );
     if (schemaIssues.length > 0) {
       throw new LunaReflectionProviderError(
@@ -459,7 +459,7 @@ export function createReflectionProvider(
         diagnostic('structural_schema', schemaIssuesToDiagnostics(schemaIssues), providerResult.rawText),
       );
     }
-    const wireResult = parsed as StagedReflectionDiagnosisResultV1Wire;
+    const wireResult = parsed as StagedReflectionDiagnosisResultV2Wire;
     const unknownItemErrors = wireResult.itemResults
       .filter((result) => !bundle.items.some((item) => item.itemId === result.itemId))
       .map((result) => `Unknown staged reflection item: ${result.itemId}`);
@@ -469,11 +469,11 @@ export function createReflectionProvider(
         diagnostic('domain_validation', textIssuesToDiagnostics(unknownItemErrors), providerResult.rawText),
       );
     }
-    const normalized = normalizeStagedReflectionDiagnosisResultV1(
+    const normalized = normalizeStagedReflectionDiagnosisResultV2(
       wireResult,
       bundle,
     );
-    const contractErrors = validateStagedReflectionDiagnosisResultV1(normalized, bundle);
+    const contractErrors = validateStagedReflectionDiagnosisResultV2(normalized, bundle);
     if (contractErrors.length > 0) {
       throw new LunaReflectionProviderError(
         'domain_contract_invalid', contractErrors.length, clientRequestId, metadata,
@@ -484,7 +484,7 @@ export function createReflectionProvider(
   }
 
   async function generatePromotion(
-    bundle: PureCuePromotionBundleV1,
+    bundle: PureCuePromotionBundleV2,
     requestOptions: { clientRequestId?: string } = {},
   ): Promise<LunaPureCuePromotionSuccess> {
     const modelInput = promotionModelInput(bundle);
@@ -511,8 +511,8 @@ export function createReflectionProvider(
         reasoningEffort: config.reasoningEffort,
         systemPrompt,
         userPrompt: JSON.stringify(modelInput),
-        outputSchemaName: PURE_CUE_PROMOTION_RESULT_V1_WIRE_SCHEMA_NAME,
-        outputSchema: pureCuePromotionResultV1WireSchema,
+        outputSchemaName: PURE_CUE_PROMOTION_RESULT_V2_WIRE_SCHEMA_NAME,
+        outputSchema: pureCuePromotionResultV2WireSchema,
         maxOutputTokens: config.maxOutputTokens,
         temperature: null,
         timeoutMs: config.timeoutMs,
@@ -546,21 +546,21 @@ export function createReflectionProvider(
         diagnostic('json_parse', [], providerResult.rawText),
       );
     }
-    const schemaIssues = validateJsonSchemaIssues(parsed, pureCuePromotionResultV1WireSchema);
+    const schemaIssues = validateJsonSchemaIssues(parsed, pureCuePromotionResultV2WireSchema);
     if (schemaIssues.length > 0) {
       throw new LunaReflectionProviderError(
         'schema_invalid', schemaIssues.length, clientRequestId, metadata,
         diagnostic('structural_schema', schemaIssuesToDiagnostics(schemaIssues), providerResult.rawText),
       );
     }
-    const contractErrors = validatePureCuePromotionResultV1(parsed, bundle);
+    const contractErrors = validatePureCuePromotionResultV2(parsed, bundle);
     if (contractErrors.length > 0) {
       throw new LunaReflectionProviderError(
         'domain_contract_invalid', contractErrors.length, clientRequestId, metadata,
         diagnostic('domain_validation', textIssuesToDiagnostics(contractErrors), providerResult.rawText),
       );
     }
-    return { result: parsed as PureCuePromotionResultV1Wire, metadata };
+    return { result: parsed as PureCuePromotionResultV2Wire, metadata };
   }
 
   return {

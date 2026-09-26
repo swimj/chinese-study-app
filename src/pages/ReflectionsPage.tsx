@@ -63,7 +63,7 @@ const REFLECTION_HANDLE_OPTIONS = [
   { value: 'repair_production_cue@1', label: 'Repair production cue (v1)' },
   { value: 'repair_production_cue@2', label: 'Repair production cue (v2)' },
   { value: 'accept_production_alternate@1', label: 'Accept production alternate' },
-  { value: 'promote_pure_elicitation@1', label: 'Promote pure elicitation' },
+  { value: 'reconcile_production_cues@1', label: 'Reconcile production cues' },
 ] as const;
 
 // Keep `enabledByDefault` in sync with `server/reflection/model-arms.ts`.
@@ -431,6 +431,8 @@ function compactReflectionOperationLabel(operation: ReflectionOperation): string
       return 'Alternate';
     case 'promote_pure_elicitation':
       return 'Pure cue';
+    case 'reconcile_production_cues':
+      return 'Cue cleanup';
   }
 }
 

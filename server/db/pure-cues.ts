@@ -22,6 +22,7 @@ type PureCueContentRow = {
   id: string;
   stimulus: string;
   axis_note: string;
+  teaching_note: string;
   active: number;
 };
 
@@ -40,6 +41,7 @@ type ServedSnapshotRow = {
   served_at: string;
   stimulus: string;
   axis_note: string;
+  teaching_note: string;
   accepted_answers_json: string;
   consumed_attempt_id: string | null;
 };
@@ -98,6 +100,7 @@ export type CreatePureCueInput = {
   id?: string;
   stimulus: string;
   axisNote?: string;
+  teachingNote?: string;
   acceptedWordIds: string[];
   createdAt: string;
 };
@@ -183,12 +186,13 @@ export function createPureCueWithoutTransaction(input: CreatePureCueInput): Pure
   assertVisibleWords(acceptedWordIds);
 
   getDb().prepare(`
-    INSERT INTO pure_cues (id, stimulus, axis_note, created_at)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO pure_cues (id, stimulus, axis_note, teaching_note, created_at)
+    VALUES (?, ?, ?, ?, ?)
   `).run(
     id,
     stimulus,
     axisNote,
+    (input.teachingNote ?? '').trim(),
     input.createdAt,
   );
   insertAcceptedWords(id, acceptedWordIds, 0);
@@ -198,6 +202,7 @@ export function createPureCueWithoutTransaction(input: CreatePureCueInput): Pure
 export function extendPureCueAcceptedWordsWithoutTransaction(input: {
   id: string;
   acceptedWordIds: string[];
+  teachingRevision?: { teachingNote: string; invocationId: string; revisedAt: string };
 }): PureCueContent {
   requireLearnerId();
   const existing = getPureCueContent(input.id);
@@ -206,6 +211,35 @@ export function extendPureCueAcceptedWordsWithoutTransaction(input: {
   assertVisibleWords(requested);
   const existingSet = new Set(existing.acceptedWordIds);
   const additions = requested.filter((wordId) => !existingSet.has(wordId));
+  const revision = input.teachingRevision;
+  if (revision !== undefined) {
+    const invocation = getDb().prepare(`
+      SELECT operation_kind, operation_version, operation_json, application_state
+      FROM reflection_operation_invocations WHERE invocation_id = ?
+    `).get(revision.invocationId) as {
+      operation_kind: string; operation_version: number; operation_json: string; application_state: string;
+    } | undefined;
+    const envelope = invocation === undefined ? null : JSON.parse(invocation.operation_json) as {
+      operation?: { destination?: { kind?: string; pureCueId?: string; teachingNote?: string } };
+    };
+    const destination = envelope?.operation?.destination;
+    if (invocation?.operation_kind !== 'reconcile_production_cues'
+      || invocation.operation_version !== 1 || invocation.application_state !== 'pending'
+      || destination?.kind !== 'existing' || destination.pureCueId !== input.id
+      || destination.teachingNote !== revision.teachingNote) {
+      throw new Error('Pure cue teaching rewrite requires its pending learner-authorized reconciliation.');
+    }
+    assertCanonicalIso(revision.revisedAt, 'Teaching revision time');
+    if (revision.teachingNote !== existing.teachingNote) {
+      getDb().prepare(`INSERT INTO pure_cue_teaching_revisions
+        (learner_id, invocation_id, pure_cue_id, previous_teaching_note, teaching_note, revised_at)
+        VALUES (?, ?, ?, ?, ?, ?)`)
+        .run(requireLearnerId(), revision.invocationId, input.id, existing.teachingNote,
+          revision.teachingNote, revision.revisedAt);
+      getDb().prepare('UPDATE pure_cues SET teaching_note = ? WHERE id = ?')
+        .run(revision.teachingNote, input.id);
+    }
+  }
   insertAcceptedWords(input.id, additions, existing.acceptedWordIds.length);
   return getPureCueContent(input.id)!;
 }
@@ -280,9 +314,9 @@ export function issuePureCueServedSnapshot(
   assertNonEmpty(snapshotId, 'Pure cue snapshot id');
   getDb().prepare(`
     INSERT INTO pure_cue_served_snapshots (
-      learner_id, snapshot_id, pure_cue_id, served_at, stimulus, axis_note,
+      learner_id, snapshot_id, pure_cue_id, served_at, stimulus, axis_note, teaching_note,
       accepted_answers_json, consumed_attempt_id, consumed_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
   `).run(
     learnerId,
     snapshotId,
@@ -290,6 +324,7 @@ export function issuePureCueServedSnapshot(
     input.servedAt,
     cue.stimulus,
     cue.axisNote,
+    cue.teachingNote,
     JSON.stringify(acceptedAnswers),
   );
   return getPureCueServedSnapshot(snapshotId)!;
@@ -686,7 +721,7 @@ function mapCompensationSnapshot(
 }
 
 function pureCueSelect(): string {
-  return `SELECT cue.id, cue.stimulus, cue.axis_note,
+  return `SELECT cue.id, cue.stimulus, cue.axis_note, cue.teaching_note,
     state.interval_hours, state.ease_factor, state.last_studied_at,
     state.next_due_at, state.strong_since, state.strong_successes,
     COALESCE(publication.publication_status IN ('shared_trial', 'available'), 0) AS active
@@ -697,7 +732,7 @@ function pureCueSelect(): string {
 }
 
 function pureCueContentSelect(): string {
-  return `SELECT cue.id, cue.stimulus, cue.axis_note,
+  return `SELECT cue.id, cue.stimulus, cue.axis_note, cue.teaching_note,
     COALESCE(publication.publication_status IN ('shared_trial', 'available'), 0) AS active
     FROM pure_cues AS cue
     LEFT JOIN shared_content_publications AS publication
@@ -724,6 +759,7 @@ function mapPureCueContentRow(row: PureCueContentRow): PureCueContent {
     id: row.id,
     stimulus: row.stimulus,
     axisNote: row.axis_note,
+    teachingNote: row.teaching_note,
     acceptedWordIds,
     active: row.active === 1,
   };
@@ -761,6 +797,7 @@ function mapServedSnapshotRow(row: ServedSnapshotRow): PureCueServedSnapshot {
     servedAt: row.served_at,
     stimulus: row.stimulus,
     axisNote: row.axis_note,
+    teachingNote: row.teaching_note,
     acceptedAnswers: JSON.parse(row.accepted_answers_json) as PureCueAcceptedAnswer[],
   };
 }

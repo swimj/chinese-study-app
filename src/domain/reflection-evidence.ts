@@ -14,6 +14,9 @@ import type {
   SessionReflectionBundleV4,
   SessionReflectionBundleV5,
   PureCuePromotionBundleV1,
+  PureCuePromotionBundleV2,
+  SessionReflectionBundleV6,
+  CuratedReflectionBundleV3,
   CuratedReflectionBundleV1,
   CuratedReflectionBundleV2,
   CuratedReflectionDiagnosisBundleV2,
@@ -611,6 +614,8 @@ export function parseCuratedReflectionBundleV1(value: unknown): CuratedReflectio
 }
 
 export function parseStoredSessionReflectionBundle(value: unknown): SessionReflectionBundle {
+  if (isRecord(value) && value.schemaVersion === 'session_reflection_bundle.v6') return parseSessionReflectionBundleV6(value);
+  if (isRecord(value) && value.schemaVersion === 'curated_reflection_bundle.v3') return parseCuratedReflectionBundleV3(value);
   if (isRecord(value) && value.schemaVersion === 'session_reflection_bundle.v2') {
     return parseSessionReflectionBundleV2(value);
   }
@@ -1012,6 +1017,7 @@ function validatePureCuePromotionEvidence(
   path: string,
   targetWordId: string | null,
   responseWordId: string | null,
+  current = false,
 ): string[] {
   const errors = validateObjectFields(
     value,
@@ -1099,13 +1105,29 @@ function validatePureCuePromotionEvidence(
       const cuePath = `${path}.intersectingPureCues[${cueIndex}]`;
       errors.push(...validateObjectFields(
         cue,
-        ['id', 'stimulus', 'axisNote', 'acceptedWordIds'],
+        current ? ['id', 'stimulus', 'axisNote', 'acceptedWordIds', 'teachingNote', 'acceptedMembers'] : ['id', 'stimulus', 'axisNote', 'acceptedWordIds'],
         cuePath,
       ));
       if (!isRecord(cue)) return;
       errors.push(...validateUniqueId(cue.id, `${cuePath}.id`, pureCueIds, 'pure cue id'));
       errors.push(...validateNonEmptyString(cue.stimulus, `${cuePath}.stimulus`));
       errors.push(...validateString(cue.axisNote, `${cuePath}.axisNote`));
+      if (current) {
+        errors.push(...validateString(cue.teachingNote, `${cuePath}.teachingNote`));
+        if (!Array.isArray(cue.acceptedMembers)) errors.push(`${cuePath}.acceptedMembers: expected array`);
+        else {
+          const ids = new Set<string>();
+          cue.acceptedMembers.forEach((member, index) => {
+            const memberPath = `${cuePath}.acceptedMembers[${index}]`;
+            errors.push(...validateObjectFields(member, ['wordId', 'hanzi'], memberPath));
+            if (!isRecord(member)) return;
+            errors.push(...validateUniqueId(member.wordId, `${memberPath}.wordId`, ids, 'member id'));
+            errors.push(...validateNonEmptyString(member.hanzi, `${memberPath}.hanzi`));
+          });
+          if (Array.isArray(cue.acceptedWordIds) && (ids.size !== cue.acceptedWordIds.length || cue.acceptedWordIds.some((id) => !ids.has(id)))) errors.push(`${cuePath}.acceptedMembers: must identify every accepted member exactly once`);
+        }
+      }
+
       errors.push(...validateIdArray(cue.acceptedWordIds, `${cuePath}.acceptedWordIds`));
       if (
         Array.isArray(cue.acceptedWordIds)
@@ -1334,3 +1356,164 @@ type _CanonicalShapesAreReferenced =
   | ReflectionCueSnapshotV0
   | ReflectionExistingContentV0;
 type _KeepCanonicalShapesReferenced = _CanonicalShapesAreReferenced;
+
+function validateSessionReflectionBundleV6WithOptions(
+  value: unknown,
+  requireUniqueSessionActionIds: boolean,
+): string[] {
+  if (!isRecord(value)) return validateSessionReflectionBundleV4(value);
+  const items = Array.isArray(value.items) ? value.items.map((item) => {
+    if (!isRecord(item)) return item;
+    const { promotionEvidence: _promotionEvidence, ...base } = item;
+    return base;
+  }) : value.items;
+  const errors = validateSessionReflectionBundleV4WithOptions(
+    {
+      ...value,
+      schemaVersion: 'session_reflection_bundle.v4',
+      items,
+    },
+    requireUniqueSessionActionIds,
+  );
+  if (value.schemaVersion !== 'session_reflection_bundle.v6') {
+    errors.push('$.schemaVersion: expected session_reflection_bundle.v6');
+  }
+  if (Array.isArray(value.items)) value.items.forEach((item, index) => {
+    const path = `$.items[${index}]`;
+    if (!isRecord(item)) return;
+    if (!Object.hasOwn(item, 'promotionEvidence')) {
+      errors.push(`${path}.promotionEvidence: required property is missing`);
+      return;
+    }
+    if (item.promotionEvidence === null) return;
+    const targetWordId = isRecord(item.targetWord) && typeof item.targetWord.wordId === 'string'
+      ? item.targetWord.wordId
+      : null;
+    const responseWordId = isRecord(item.submittedWord) && typeof item.submittedWord.wordId === 'string'
+      ? item.submittedWord.wordId
+      : null;
+    errors.push(...validatePureCuePromotionEvidence(
+      item.promotionEvidence,
+      `${path}.promotionEvidence`,
+      targetWordId,
+      responseWordId,
+      true,
+    ));
+  });
+  return errors;
+}
+
+export function validateSessionReflectionBundleV6(value: unknown): string[] {
+  return validateSessionReflectionBundleV6WithOptions(value, true);
+}
+
+export function parseSessionReflectionBundleV6(value: unknown): SessionReflectionBundleV6 {
+  const errors = validateSessionReflectionBundleV6(value);
+  if (errors.length > 0) throw new Error(`Invalid session reflection bundle V6:\n${errors.join('\n')}`);
+  return value as SessionReflectionBundleV6;
+}
+
+export function parsePureCuePromotionBundleV2(value: unknown): PureCuePromotionBundleV2 {
+  const errors = validateObjectFields(
+    value,
+    ['schemaVersion', 'generatedAt', 'sourceSessionId', 'studyProfile', 'items'],
+    '$',
+  );
+  if (isRecord(value)) {
+    if (value.schemaVersion !== 'pure_cue_promotion_bundle.v2') {
+      errors.push('$.schemaVersion: expected pure_cue_promotion_bundle.v2');
+    }
+    errors.push(...validateUtcTimestamp(value.generatedAt, '$.generatedAt'));
+    if (value.sourceSessionId !== null) {
+      errors.push(...validateId(value.sourceSessionId, '$.sourceSessionId'));
+    }
+    if (typeof value.studyProfile !== 'string' || !studyProfiles.has(value.studyProfile)) {
+      errors.push('$.studyProfile: value is not in the allowed enum');
+    }
+    if (!Array.isArray(value.items)) {
+      errors.push('$.items: expected array');
+    } else {
+      const itemIds = new Set<string>();
+      const attemptIds = new Set<string>();
+      value.items.forEach((item, index) => {
+        const path = `$.items[${index}]`;
+        errors.push(...validateObjectFields(
+          item,
+          [
+            'itemId',
+            'sourceAttemptId',
+            'targetWord',
+            'responseWord',
+            'servedCue',
+            'handoff',
+            'promotionEvidence',
+          ],
+          path,
+        ));
+        if (!isRecord(item)) return;
+        errors.push(...validateUniqueId(item.itemId, `${path}.itemId`, itemIds, 'item id'));
+        errors.push(...validateUniqueId(
+          item.sourceAttemptId,
+          `${path}.sourceAttemptId`,
+          attemptIds,
+          'source attempt id',
+        ));
+        errors.push(...validateWord(item.targetWord, `${path}.targetWord`));
+        errors.push(...validateWord(item.responseWord, `${path}.responseWord`));
+        const targetWordId = isRecord(item.targetWord) && typeof item.targetWord.wordId === 'string'
+          ? item.targetWord.wordId
+          : null;
+        const responseWordId = isRecord(item.responseWord) && typeof item.responseWord.wordId === 'string'
+          ? item.responseWord.wordId
+          : null;
+        errors.push(...validateServedCueSnapshotV2(
+          item.servedCue,
+          `${path}.servedCue`,
+          targetWordId,
+        ));
+        errors.push(...validateAmbiguousPairHandoff(item.handoff, `${path}.handoff`));
+        errors.push(...validatePureCuePromotionEvidence(
+          item.promotionEvidence,
+          `${path}.promotionEvidence`,
+          targetWordId,
+          responseWordId,
+          true,
+        ));
+      });
+    }
+  }
+  if (errors.length > 0) throw new Error(`Invalid pure-cue promotion bundle V2:\n${errors.join('\n')}`);
+  return value as PureCuePromotionBundleV2;
+}
+
+export function parseCuratedReflectionBundleV3(value: unknown): CuratedReflectionBundleV3 {
+  if (!isRecord(value)) throw new Error('Invalid curated reflection bundle V3');
+  const { items, studyProfile, ...envelope } = value;
+  const profile = typeof studyProfile === 'string' && studyProfiles.has(studyProfile)
+    ? studyProfile
+    : 'mandarin';
+  const errors = validateSessionReflectionBundleV6WithOptions(
+    {
+      generatedAt: value.generatedAt,
+      session: { sessionId: 'validation-only', startedAt: null, endedAt: null, studyProfile: profile },
+      items,
+      schemaVersion: 'session_reflection_bundle.v6',
+    },
+    false,
+  );
+  errors.push(...validateObjectFields(envelope, ['schemaVersion', 'generatedAt'], '$'));
+  if (value.schemaVersion !== 'curated_reflection_bundle.v3') {
+    errors.push('$.schemaVersion: expected curated_reflection_bundle.v3');
+  }
+  if (typeof studyProfile !== 'string' || !studyProfiles.has(studyProfile)) {
+    errors.push('$.studyProfile: value is not in the allowed enum');
+  }
+  if (errors.length > 0) throw new Error(`Invalid curated reflection bundle V3:\n${errors.join('\n')}`);
+  return value as CuratedReflectionBundleV3;
+}
+
+function validateAmbiguousPairHandoff(value: unknown, path: string): string[] {
+  const errors = validateObjectFields(value, ['ambiguityReason'], path);
+  if (isRecord(value)) errors.push(...validateNonEmptyString(value.ambiguityReason, `${path}.ambiguityReason`));
+  return errors;
+}

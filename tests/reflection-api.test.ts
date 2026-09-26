@@ -7,8 +7,8 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import type {
   ReflectionOperation,
-  SessionReflectionBundleV5,
-  SessionReflectionResultV8,
+  SessionReflectionBundleV6,
+  SessionReflectionResultV9,
 } from '../src/domain/reflection.ts';
 import {
   RetiredReflectionSourceModelError,
@@ -359,7 +359,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       'pending',
     );
     assert.equal(
-      (detail.json as { result: SessionReflectionResultV8 }).result.itemResults[0]?.learnerExplanation,
+      (detail.json as { result: SessionReflectionResultV9 }).result.itemResults[0]?.learnerExplanation,
       'The production goal is not useful.',
     );
 
@@ -383,13 +383,13 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       artifacts: [{
         artifactId: artifact.artifactId,
         sourceSessionId: 'unreadable-session',
-        reflectionFlowVersion: 'initial_post_session_reflection.v4',
+        reflectionFlowVersion: 'initial_post_session_reflection.v5',
         generatedAt,
         provider: 'openai',
         model: 'gpt-5.6-luna-high',
-        promptVersion: 'reflection-staged-v2',
-        bundleSchemaVersion: 'session_reflection_bundle.v5',
-        resultSchemaVersion: 'session_reflection_result.v8',
+        promptVersion: 'reflection-staged-v3',
+        bundleSchemaVersion: 'session_reflection_bundle.v6',
+        resultSchemaVersion: 'session_reflection_result.v9',
         proposalCount: 1,
         openProposalCount: 1,
         readState: 'unreadable',
@@ -1184,14 +1184,14 @@ function materializeInformational(
   `).run(sessionId, generatedAt, generatedAt);
   return dbModule.materializeReflectionArtifact({
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v4',
+    reflectionFlowVersion: 'initial_post_session_reflection.v5',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-staged-v2',
+    promptVersion: 'reflection-staged-v3',
     evidenceBundle: bundle(sessionId),
     result: {
-      schemaVersion: 'session_reflection_result.v8',
+      schemaVersion: 'session_reflection_result.v9',
       itemResults: [{
         itemId: 'item-1',
         diagnosisTags: ['ordinary_retrieval_noise'],
@@ -1214,19 +1214,19 @@ function materializationInput(
   `).run(sessionId, generatedAt, generatedAt);
   return {
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v4',
+    reflectionFlowVersion: 'initial_post_session_reflection.v5',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-staged-v2',
+    promptVersion: 'reflection-staged-v3',
     evidenceBundle: bundle(sessionId),
     result: result(operation),
   };
 }
 
-function bundle(sessionId: string): SessionReflectionBundleV5 {
+function bundle(sessionId: string): SessionReflectionBundleV6 {
   return {
-    schemaVersion: 'session_reflection_bundle.v5',
+    schemaVersion: 'session_reflection_bundle.v6',
     generatedAt,
     session: {
       sessionId,
@@ -1269,9 +1269,9 @@ function bundle(sessionId: string): SessionReflectionBundleV5 {
   };
 }
 
-function result(operation: ReflectionOperation): SessionReflectionResultV8 {
+function result(operation: ReflectionOperation): SessionReflectionResultV9 {
   return {
-    schemaVersion: 'session_reflection_result.v8',
+    schemaVersion: 'session_reflection_result.v9',
     itemResults: [{
       itemId: 'item-1',
       diagnosisTags: ['persistent_confusion'],

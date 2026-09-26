@@ -105,18 +105,18 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
     assert.deepEqual({ ...run, runId: 'generated-run-id' }, {
       runId: 'generated-run-id',
       sourceSessionId: 'session-1',
-      reflectionFlowVersion: 'initial_post_session_reflection.v4',
+      reflectionFlowVersion: 'initial_post_session_reflection.v5',
       startedAt: generatedAt,
       completedAt: generatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-staged-v2',
+      promptVersion: 'reflection-staged-v3',
       responseId: null,
       clientRequestId: run.clientRequestId,
       finishReason: null,
       bundleSchemaVersion: 'session_reflection_bundle.v4',
-      resultSchemaVersion: 'staged_reflection_diagnosis_result.v1',
+      resultSchemaVersion: 'staged_reflection_diagnosis_result.v2',
       diagnostic: {
         schemaVersion: 'reflection_generation_diagnostic.v1',
         phase: 'provider_transport',
@@ -142,7 +142,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       environment: { OPENAI_API_KEY: 'test-only-key' },
       systemPrompt: 'Test reflection prompt.',
       fetchImplementation: providerFetch(responseEnvelope({
-        schemaVersion: 'staged_reflection_diagnosis_result.v1',
+        schemaVersion: 'staged_reflection_diagnosis_result.v2',
         itemResults: [{
           kind: 'ordinary',
           itemId: 'unknown-item',
@@ -244,7 +244,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
         async generateDiagnosis(bundle) {
           return {
             result: {
-              schemaVersion: 'staged_reflection_diagnosis_result.v1',
+              schemaVersion: 'staged_reflection_diagnosis_result.v2',
               itemResults: bundle.items.map((item) => ({
                 kind: 'ordinary' as const,
                 itemId: item.itemId,
@@ -254,7 +254,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
                 questions: [],
               })),
             },
-            metadata: stagedMetadata('reflection-staged-v2'),
+            metadata: stagedMetadata('reflection-staged-v3'),
           };
         },
         async generatePromotion() {
@@ -271,14 +271,14 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
     );
     const artifact = dbModule.getReflectionArtifactDetail(generated.artifactId);
     assert.equal(promotionCalls, 0);
-    assert.equal(artifact.resultSchemaVersion, 'session_reflection_result.v8');
+    assert.equal(artifact.resultSchemaVersion, 'session_reflection_result.v9');
     assert.equal(
       artifact.result.itemResults[0]?.learnerExplanation,
       'Keep this as an ordinary item despite the diagnosis tag.',
     );
     assert.equal(
       artifact.result.itemResults.some((item) => item.proposals.some((proposal) => (
-        proposal.operation.kind === 'promote_pure_elicitation'
+        proposal.operation.kind === 'reconcile_production_cues'
       ))),
       false,
     );
@@ -288,7 +288,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
     const sourceDiagnosisEvidence = stagedSourceBundle();
     const sourceEvidence = {
       ...sourceDiagnosisEvidence,
-      schemaVersion: 'session_reflection_bundle.v5' as const,
+      schemaVersion: 'session_reflection_bundle.v6' as const,
       items: sourceDiagnosisEvidence.items.map((item) => ({
         ...item,
         promotionEvidence: null,
@@ -296,14 +296,14 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
     };
     const sourceArtifact = dbModule.materializeReflectionArtifact({
       sourceSessionId: 'session-1',
-      reflectionFlowVersion: 'initial_post_session_reflection.v4',
+      reflectionFlowVersion: 'initial_post_session_reflection.v5',
       generatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
-      promptVersion: 'reflection-staged-v2',
+      promptVersion: 'reflection-staged-v3',
       evidenceBundle: sourceEvidence,
       result: {
-        schemaVersion: 'session_reflection_result.v8',
+        schemaVersion: 'session_reflection_result.v9',
         itemResults: [{
           itemId: 'source-item',
           diagnosisTags: ['production_cue_overloaded'],
@@ -333,31 +333,31 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
           deferredItemId = bundle.items[0]!.itemId;
           return {
             result: {
-              schemaVersion: 'staged_reflection_diagnosis_result.v1',
+              schemaVersion: 'staged_reflection_diagnosis_result.v2',
               itemResults: bundle.items.map((item) => ({
-                kind: 'shared_axis' as const,
+                kind: 'ambiguous_pair' as const,
                 itemId: item.itemId,
                 diagnosisTags: ['production_cue_overloaded'],
-                handoff: sharedAxisHandoff(),
+                handoff: ambiguousPairHandoff(),
               })),
             },
-            metadata: stagedMetadata('reflection-staged-v2'),
+            metadata: stagedMetadata('reflection-staged-v3'),
           };
         },
         async generatePromotion(bundle) {
           promotionBundle = bundle;
           return {
             result: {
-              schemaVersion: 'pure_cue_promotion_result.v1',
+              schemaVersion: 'pure_cue_promotion_result.v2',
               itemResults: bundle.items.map((item) => ({
                 itemId: item.itemId,
                 decision: {
-                  kind: 'disagreement' as const,
+                  kind: 'explanation_only' as const,
                   learnerExplanation: 'On review, the two words should stay separate.',
                 },
               })),
             },
-            metadata: stagedMetadata('pure-cue-promotion-v1'),
+            metadata: stagedMetadata('pure-cue-promotion-v2'),
           };
         },
       },
@@ -369,8 +369,8 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
     );
     const artifact = dbModule.getReflectionArtifactDetail(generated.artifactId);
     assert.equal(artifact.sourceSessionId, null);
-    assert.equal(artifact.reflectionFlowVersion, 'deferred_second_opinion.v3');
-    assert.equal(artifact.evidenceBundle.schemaVersion, 'curated_reflection_bundle.v2');
+    assert.equal(artifact.reflectionFlowVersion, 'deferred_second_opinion.v4');
+    assert.equal(artifact.evidenceBundle.schemaVersion, 'curated_reflection_bundle.v3');
     assert.equal('studyProfile' in artifact.evidenceBundle && artifact.evidenceBundle.studyProfile, 'mandarin');
     assert.equal(
       isRecord(diagnosisBundle) && diagnosisBundle.schemaVersion,
@@ -382,24 +382,24 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       itemId: deferredItemId,
       diagnosisTags: ['production_cue_overloaded'],
       learnerExplanation: 'On review, the two words should stay separate.',
-      promotionOutcome: 'disagreement',
+      promotionOutcome: 'explanation_only',
       proposals: [],
       questions: [],
     });
 
     const runs = dbModule.listReflectionGenerationRuns().filter((run) => (
-      run.reflectionFlowVersion === 'deferred_second_opinion.v3'
+      run.reflectionFlowVersion === 'deferred_second_opinion.v4'
     ));
     assert.equal(runs.length, 2);
     assert.deepEqual(new Set(runs.map((run) => run.resultSchemaVersion)), new Set([
-      'staged_reflection_diagnosis_result.v1',
-      'pure_cue_promotion_result.v1',
+      'staged_reflection_diagnosis_result.v2',
+      'pure_cue_promotion_result.v2',
     ]));
     assert.ok(runs.every((run) => run.state === 'succeeded' && run.retryable === false));
     const provenance = sqlite.prepare(`
       SELECT source_proposal_ids_json
       FROM reflection_generation_runs
-      WHERE reflection_flow_version = 'deferred_second_opinion.v3'
+      WHERE reflection_flow_version = 'deferred_second_opinion.v4'
     `).all() as Array<{ source_proposal_ids_json: string | null }>;
     assert.deepEqual(
       provenance.map((row) => JSON.parse(row.source_proposal_ids_json ?? 'null')),
@@ -438,12 +438,12 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
         async generateDiagnosis(bundle) {
           return {
             result: {
-              schemaVersion: 'staged_reflection_diagnosis_result.v1',
+              schemaVersion: 'staged_reflection_diagnosis_result.v2',
               itemResults: [{
-                kind: 'shared_axis' as const,
+                kind: 'ambiguous_pair' as const,
                 itemId: bundle.items[0]!.itemId,
                 diagnosisTags: ['production_cue_overloaded'],
-                handoff: sharedAxisHandoff(),
+                handoff: ambiguousPairHandoff(),
               }, {
                 kind: 'ordinary' as const,
                 itemId: bundle.items[1]!.itemId,
@@ -461,13 +461,13 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
                 questions: [],
               }],
             },
-            metadata: stagedMetadata('reflection-staged-v2'),
+            metadata: stagedMetadata('reflection-staged-v3'),
           };
         },
         async generatePromotion(bundle) {
           assert.equal(bundle.items.length, 1);
           assert.equal(bundle.items[0]!.sourceAttemptId, 'attempt-1');
-          assert.deepEqual(bundle.items[0]!.handoff, sharedAxisHandoff());
+          assert.deepEqual(bundle.items[0]!.handoff, ambiguousPairHandoff());
           assert.equal('learnerExplanation' in bundle.items[0]!, false);
           assert.deepEqual(
             bundle.items[0]!.promotionEvidence.words.map((word) => word.wordId),
@@ -475,18 +475,20 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
           );
           return {
             result: {
-              schemaVersion: 'pure_cue_promotion_result.v1',
+              schemaVersion: 'pure_cue_promotion_result.v2',
               itemResults: [{
                 itemId: bundle.items[0]!.itemId,
                 decision: {
-                  kind: 'promote' as const,
+                  kind: 'reconcile' as const,
                   rationale: 'Practice the shared axis directly.',
                   learnerExplanation: 'Practice a shared cue, then use owner-only cues for the distinction.',
                   operation: {
+                    sourceAttemptFairness: 'misleading_or_overloaded_cue' as const,
                     destination: {
                       kind: 'create' as const,
                       stimulus: 'goal or substitute',
                       axisNote: 'Choose the word that matches the intended role.',
+                      teachingNote: 'The words describe distinct roles in other contexts.',
                     },
                     wordPlans: [{
                       wordId: 'target',
@@ -504,7 +506,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
                 },
               }],
             },
-            metadata: stagedMetadata('pure-cue-promotion-v1'),
+            metadata: stagedMetadata('pure-cue-promotion-v2'),
           };
         },
       },
@@ -516,15 +518,15 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       'openai:gpt-5.6-luna-high',
     );
     const artifact = dbModule.getReflectionArtifactDetail(generated.artifactId);
-    assert.equal(artifact.bundleSchemaVersion, 'session_reflection_bundle.v5');
-    assert.equal(artifact.resultSchemaVersion, 'session_reflection_result.v8');
+    assert.equal(artifact.bundleSchemaVersion, 'session_reflection_bundle.v6');
+    assert.equal(artifact.resultSchemaVersion, 'session_reflection_result.v9');
     assert.equal(
       artifact.result.itemResults.find((item) => item.itemId === 'promotion-item')?.learnerExplanation,
       'Practice a shared cue, then use owner-only cues for the distinction.',
     );
     assert.equal(
       artifact.result.itemResults.find((item) => item.itemId === 'promotion-item')?.promotionOutcome,
-      'promoted',
+      'reconciled',
     );
     const savedContinuation = sqlite.prepare(`
       SELECT diagnosis_result_json, promotion_bundle_json
@@ -541,22 +543,22 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       items: Array<Record<string, unknown>>;
     };
     assert.deepEqual(savedDiagnosis.itemResults[0], {
-      kind: 'shared_axis',
+      kind: 'ambiguous_pair',
       itemId: 'promotion-item',
       diagnosisTags: ['production_cue_overloaded'],
-      handoff: sharedAxisHandoff(),
+      handoff: ambiguousPairHandoff(),
     });
-    assert.deepEqual(savedPromotion.items[0]?.handoff, sharedAxisHandoff());
+    assert.deepEqual(savedPromotion.items[0]?.handoff, ambiguousPairHandoff());
     const operations = artifact.result.itemResults.flatMap((item) => (
       item.proposals.map((proposal) => proposal.operation)
     ));
     assert.deepEqual(
       operations.map((operation) => operation.kind),
-      ['promote_pure_elicitation', 'suppress_definition_production'],
+      ['reconcile_production_cues', 'suppress_definition_production'],
     );
     const promotion = operations[0]!;
-    assert.equal(promotion.kind, 'promote_pure_elicitation');
-    if (promotion.kind !== 'promote_pure_elicitation') return;
+    assert.equal(promotion.kind, 'reconcile_production_cues');
+    if (promotion.kind !== 'reconcile_production_cues') return;
     assert.deepEqual({
       sourceAttemptId: promotion.sourceAttemptId,
       targetWordId: promotion.targetWordId,
@@ -575,7 +577,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
     );
 
     const promotionProposal = artifact.proposals.find((proposal) => (
-      proposal.proposal.operation.kind === 'promote_pure_elicitation'
+      proposal.proposal.operation.kind === 'reconcile_production_cues'
     ));
     assert.ok(promotionProposal);
     const accepted = dbModule.acceptReflectionProposal({
@@ -691,11 +693,9 @@ function stagedMetadata(promptVersion: string) {
   };
 }
 
-function sharedAxisHandoff() {
+function ambiguousPairHandoff() {
   return {
-    axis: 'Choosing between an intended goal and a substitute.',
-    boundaries: 'Use 目标 for the intended outcome and 替代 for what takes its place.',
-    responseValidity: '替代 was valid for the overly broad served cue.',
+    ambiguityReason: '替代 plausibly fits the overly broad served cue.',
   };
 }
 

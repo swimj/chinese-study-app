@@ -9,10 +9,12 @@ import type {
   ReflectionOperation,
   SessionReflectionBundleV1,
   SessionReflectionBundleV2,
+  SessionReflectionBundleV6,
   SessionReflectionBundleV5,
   SessionReflectionResultV4,
   SessionReflectionResultV5,
   SessionReflectionResultV6,
+  SessionReflectionResultV9,
   SessionReflectionResultV8,
 } from '../src/domain/reflection.js';
 
@@ -448,15 +450,15 @@ describe('reflection durable store', { concurrency: false }, () => {
     assert.equal(materialized.artifact.resultSchemaVersion, 'session_reflection_result.v6');
   });
 
-  test('pairs V5 evidence only with V8 and authorizes only its exact promotion references', () => {
-    const input = materializationInputV8('v8-round-trip-session');
+  test('pairs V6 evidence only with V9 and authorizes only its exact promotion references', () => {
+    const input = materializationInputV9('v8-round-trip-session');
     const materialized = dbModule.materializeReflectionArtifact(input);
-    assert.equal(materialized.artifact.bundleSchemaVersion, 'session_reflection_bundle.v5');
-    assert.equal(materialized.artifact.resultSchemaVersion, 'session_reflection_result.v8');
+    assert.equal(materialized.artifact.bundleSchemaVersion, 'session_reflection_bundle.v6');
+    assert.equal(materialized.artifact.resultSchemaVersion, 'session_reflection_result.v9');
     const proposal = materialized.artifact.proposals[0]!;
     const operation = proposal.proposal.operation;
-    assert.equal(operation.kind, 'promote_pure_elicitation');
-    if (operation.kind !== 'promote_pure_elicitation') return;
+    assert.equal(operation.kind, 'reconcile_production_cues');
+    if (operation.kind !== 'reconcile_production_cues') return;
 
     assert.throws(() => dbModule.acceptReflectionProposal({
       proposalId: proposal.review.proposalId,
@@ -464,7 +466,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       createdAt: updatedAt,
       operation: {
         ...operation,
-        destination: { kind: 'existing', pureCueId: 'not-in-evidence' },
+        destination: { kind: 'existing', pureCueId: 'not-in-evidence', teachingNote: 'Revised teaching', expectedAcceptedWordIds: ['target', 'alternate'], expectedTeachingNote: '' },
       },
     }), /enriched intersecting pure cue/);
 
@@ -477,11 +479,38 @@ describe('reflection durable store', { concurrency: false }, () => {
     assert.equal(accepted.invocation.application.state.kind, 'pending');
   });
 
-  test('V8 authorization keeps revised, replacement, and manual word cues owner-only', () => {
+  test('current manual and replacement authorization cannot revive legacy implicit compensation', () => {
+    for (const mode of ['manual', 'replacement'] as const) {
+      const input = materializationInputV9(`legacy-promotion-${mode}`);
+      const source = input.result.itemResults[0]!.proposals[0]!.operation;
+      if (mode === 'manual') {
+        input.result.itemResults[0]!.proposals = [];
+        input.result.itemResults[0]!.promotionOutcome = 'explanation_only';
+      }
+      const { artifact } = dbModule.materializeReflectionArtifact(input);
+      assert.equal(source.kind, 'reconcile_production_cues');
+      if (source.kind !== 'reconcile_production_cues') return;
+      const legacy: ReflectionOperation = {
+        kind: 'promote_pure_elicitation', version: 1,
+        sourceAttemptId: source.sourceAttemptId, targetWordId: source.targetWordId,
+        responseWordId: source.responseWordId, wordPlans: source.wordPlans,
+        destination: { kind: 'create', stimulus: 'shared exercise', axisNote: 'legacy pair commentary' },
+      };
+      const identity = { operation: legacy, invocationId: `legacy-bypass-${mode}`, createdAt: updatedAt };
+      assert.throws(() => mode === 'manual'
+        ? dbModule.authorizeManualReflectionOperation({ ...identity, artifactId: artifact.artifactId, itemId: artifact.result.itemResults[0]!.itemId })
+        : dbModule.replaceReflectionProposal({ ...identity, proposalId: artifact.proposals[0]!.review.proposalId }),
+      /Legacy pure-cue promotion cannot authorize new changes/);
+      assert.equal(sqlite.prepare('SELECT count(*) AS n FROM reflection_operation_invocations WHERE invocation_id = ?').get(identity.invocationId)?.n, 0);
+      if (mode === 'replacement') assert.equal(dbModule.getReflectionArtifactDetail(artifact.artifactId).proposals[0]!.review.disposition.kind, 'pending');
+    }
+  });
+
+  test('V9 authorization keeps revised, replacement, and manual word cues owner-only', () => {
     for (const mode of ['revised', 'replacement', 'manual'] as const) {
-      const input = materializationInputV8(`v8-owner-only-${mode}`);
-      assert.equal(input.result.schemaVersion, 'session_reflection_result.v8');
-      if (input.result.schemaVersion !== 'session_reflection_result.v8') continue;
+      const input = materializationInputV9(`v8-owner-only-${mode}`);
+      assert.equal(input.result.schemaVersion, 'session_reflection_result.v9');
+      if (input.result.schemaVersion !== 'session_reflection_result.v9') continue;
       const repair: ReflectionOperation = {
         kind: 'repair_production_cue', version: 2,
         wordId: 'target', taskId: 'production-task:target:default_production',
@@ -493,7 +522,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       if (mode === 'revised') input.result.itemResults[0]!.proposals[0]!.operation = repair;
       if (mode === 'manual') input.result.itemResults[0]!.proposals = [];
       if (mode !== 'replacement') {
-        // These exercise ordinary V8 items, not a stage-two outcome.
+        // These exercise ordinary V9 items, not a stage-two outcome.
         input.evidenceBundle.items[0]!.promotionEvidence = null;
         delete input.result.itemResults[0]!.promotionOutcome;
       }
@@ -772,8 +801,8 @@ describe('reflection durable store', { concurrency: false }, () => {
     );
   });
 
-  test('disagreement feedback is durable but cannot authorize manual changes', () => {
-    const input = materializationInputV8('disagreement-session');
+  test('historical V8 disagreement remains readable and cannot authorize manual changes', () => {
+    const input = legacyMaterializationInputV8('disagreement-session');
     assert.equal(input.result.schemaVersion, 'session_reflection_result.v8');
     const result: SessionReflectionResultV8 = {
       schemaVersion: 'session_reflection_result.v8',
@@ -795,14 +824,14 @@ describe('reflection durable store', { concurrency: false }, () => {
       itemId: 'item',
       operation: suppressOperation('target'),
       createdAt: updatedAt,
-    }), /Stage disagreement is non-actionable/);
+    }), /older contract.*read-only/i);
     assert.equal(sqlite.prepare('SELECT COUNT(*) AS count FROM reflection_operation_invocations').get()?.count, 0);
     assert.equal(dbModule.getWordSkillRelevance('target', 'production'), null);
   });
 
   test('checkpoints the explicit handoff and exposes the actual in-flight stage contract', () => {
-    const input = materializationInputV8('handoff-checkpoint');
-    if (input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v5') throw new Error('Expected enriched evidence');
+    const input = materializationInputV9('handoff-checkpoint');
+    if (input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v6') throw new Error('Expected enriched evidence');
     const diagnosisBundle = {
       ...input.evidenceBundle,
       schemaVersion: 'session_reflection_bundle.v4' as const,
@@ -814,16 +843,14 @@ describe('reflection durable store', { concurrency: false }, () => {
       createdAt: generatedAt, eligibleItemCount: 1, includedItemCount: 1, diagnosisBundle,
     });
     const handoff = {
-      axis: 'Expressing the shared instinct.',
-      boundaries: 'Only in this bounded situation, not every sense.',
-      responseValidity: 'The learner response naturally satisfies the exact original cue.',
+      ambiguityReason: 'The cue may not communicate the distinction between the pair.',
     };
     const prepared = dbModule.prepareReflectionGenerationPromotion({
       continuationId: continuation.continuationId,
       preparedAt: updatedAt,
       diagnosisResult: {
-        schemaVersion: 'staged_reflection_diagnosis_result.v1',
-        itemResults: [{ kind: 'shared_axis', itemId: 'item', diagnosisTags: [], handoff }],
+        schemaVersion: 'staged_reflection_diagnosis_result.v2',
+        itemResults: [{ kind: 'ambiguous_pair', itemId: 'item', diagnosisTags: [], handoff }],
       },
     });
     assert.deepEqual(prepared.promotionBundle?.items[0]?.handoff, handoff);
@@ -835,7 +862,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       dbModule.startReflectionGenerationRun({
         runId, sourceSessionId: 'handoff-checkpoint', reflectionFlowVersion: dbModule.STAGED_INITIAL_REFLECTION_FLOW_VERSION,
         startedAt: updatedAt, provider: 'openai', model: 'gpt-5.6-luna-high', providerModel: 'gpt-5.6-luna',
-        promptVersion: stage === 'diagnosis' ? 'reflection-staged-v2' : 'pure-cue-promotion-v1',
+        promptVersion: stage === 'diagnosis' ? 'reflection-staged-v3' : 'pure-cue-promotion-v2',
         clientRequestId: `request-${stage}`,
         eligibleItemCount: stage === 'promotion' ? 19 : 1,
         includedItemCount: stage === 'promotion' ? 19 : 1,
@@ -843,11 +870,11 @@ describe('reflection durable store', { concurrency: false }, () => {
       });
     }
     const runs = dbModule.listReflectionGenerationRuns();
-    assert.equal(runs.find((run) => run.runId === 'in-flight-diagnosis')?.resultSchemaVersion, 'staged_reflection_diagnosis_result.v1');
+    assert.equal(runs.find((run) => run.runId === 'in-flight-diagnosis')?.resultSchemaVersion, 'staged_reflection_diagnosis_result.v2');
     assert.equal(runs.find((run) => run.runId === 'in-flight-diagnosis')?.eligibleItemCount, 1);
     const inFlightPromotion = runs.find((run) => run.runId === 'in-flight-promotion');
-    assert.equal(inFlightPromotion?.resultSchemaVersion, 'pure_cue_promotion_result.v1');
-    assert.equal(inFlightPromotion?.bundleSchemaVersion, 'pure_cue_promotion_bundle.v1');
+    assert.equal(inFlightPromotion?.resultSchemaVersion, 'pure_cue_promotion_result.v2');
+    assert.equal(inFlightPromotion?.bundleSchemaVersion, 'pure_cue_promotion_bundle.v2');
     assert.equal(inFlightPromotion?.eligibleItemCount, prepared.promotionBundle?.items.length);
     assert.equal(inFlightPromotion?.includedItemCount, prepared.promotionBundle?.items.length);
     const concluded = dbModule.recordReflectionGenerationRun({
@@ -859,11 +886,11 @@ describe('reflection durable store', { concurrency: false }, () => {
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'pure-cue-promotion-v1',
+      promptVersion: 'pure-cue-promotion-v2',
       responseId: null,
       clientRequestId: 'request-concluded-promotion',
       finishReason: 'stop',
-      resultSchemaVersion: 'pure_cue_promotion_result.v1',
+      resultSchemaVersion: 'pure_cue_promotion_result.v2',
       state: 'succeeded',
       failureCode: null,
       eligibleItemCount: 19,
@@ -915,14 +942,14 @@ describe('reflection durable store', { concurrency: false }, () => {
       sourceSessionId: null,
       reflectionFlowVersion: dbModule.STAGED_DEFERRED_SECOND_OPINION_FLOW_VERSION,
       generatedAt: appliedAt,
-      provider: 'openai', model: 'gpt-5.6-luna-high', promptVersion: 'reflection-staged-v2',
+      provider: 'openai', model: 'gpt-5.6-luna-high', promptVersion: 'reflection-staged-v3',
       sourceProposalIds: first.sourceProposalIds,
       evidenceBundle: {
-        ...first.bundle, schemaVersion: 'curated_reflection_bundle.v2',
+        ...first.bundle, schemaVersion: 'curated_reflection_bundle.v3',
         items: first.bundle.items.map((item) => ({ ...item, promotionEvidence: null })),
       },
       result: {
-        schemaVersion: 'session_reflection_result.v8',
+        schemaVersion: 'session_reflection_result.v9',
         itemResults: first.bundle.items.map((item) => ({
           itemId: item.itemId, diagnosisTags: [], learnerExplanation: 'Keep practicing.', proposals: [], questions: [],
         })),
@@ -958,15 +985,15 @@ describe('reflection durable store', { concurrency: false }, () => {
       generatedAt: appliedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
-      promptVersion: 'reflection-staged-v2',
+      promptVersion: 'reflection-staged-v3',
       evidenceBundle: {
         ...bundle,
-        schemaVersion: 'curated_reflection_bundle.v2',
+        schemaVersion: 'curated_reflection_bundle.v3',
         items: bundle.items.map((item) => ({ ...item, promotionEvidence: null })),
       },
       sourceProposalIds,
       result: {
-        schemaVersion: 'session_reflection_result.v8',
+        schemaVersion: 'session_reflection_result.v9',
         itemResults: [{
           itemId: bundle.items[0]!.itemId,
           diagnosisTags: ['ordinary_retrieval_noise'],
@@ -1012,7 +1039,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       'second-opinion-cross-session-b',
       suppressOperation('other-target'),
     );
-    if (secondInput.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v5') throw new Error('Expected V5 evidence');
+    if (secondInput.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v6') throw new Error('Expected V5 evidence');
     const secondItem = secondInput.evidenceBundle.items[0]!;
     secondItem.targetWord = { ...secondItem.targetWord, wordId: 'other-target' };
     secondItem.submittedWord = { ...secondItem.submittedWord!, wordId: 'other-response' };
@@ -1292,9 +1319,9 @@ function materializationInput(
 ): Parameters<DbModule['materializeReflectionArtifact']>[0] {
   const legacy = legacyMaterializationInput(sessionId, operation);
   const v2 = bundleV2(sessionId);
-  const evidenceBundle: SessionReflectionBundleV5 = {
+  const evidenceBundle: SessionReflectionBundleV6 = {
     ...v2,
-    schemaVersion: 'session_reflection_bundle.v5',
+    schemaVersion: 'session_reflection_bundle.v6',
     items: v2.items.map((item) => ({
       ...item,
       servedCue: { ...item.servedCue, supplement: null },
@@ -1303,8 +1330,8 @@ function materializationInput(
   };
   return {
     ...legacy,
-    reflectionFlowVersion: 'initial_post_session_reflection.v4',
-    promptVersion: 'reflection-staged-v2',
+    reflectionFlowVersion: 'initial_post_session_reflection.v5',
+    promptVersion: 'reflection-staged-v3',
     evidenceBundle,
     result: currentResult(operation),
   };
@@ -1383,7 +1410,7 @@ function materializationInputV6(
   };
 }
 
-function materializationInputV8(
+function materializationInputV9(
   sessionId: string,
 ): Parameters<DbModule['materializeReflectionArtifact']>[0] {
   sqlite.prepare(`
@@ -1425,9 +1452,9 @@ function materializationInputV8(
     }),
     generatedAt,
   );
-  const evidenceBundle: SessionReflectionBundleV5 = {
+  const evidenceBundle: SessionReflectionBundleV6 = {
     ...base,
-    schemaVersion: 'session_reflection_bundle.v5',
+    schemaVersion: 'session_reflection_bundle.v6',
     items: [{
       ...item,
       servedCue: { ...item.servedCue, acceptedWordIds: ['target'], supplement: null },
@@ -1447,28 +1474,31 @@ function materializationInputV8(
           id: 'pure-1',
           stimulus: 'shared axis',
           axisNote: 'explicit axis',
-          acceptedWordIds: ['target'],
+          teachingNote: '',
+          acceptedMembers: [{ wordId: 'target', hanzi: '目标' }, { wordId: 'alternate', hanzi: '替代' }],
+          acceptedWordIds: ['target', 'alternate'],
         }],
       },
     }],
   };
-  const result: SessionReflectionResultV8 = {
-    schemaVersion: 'session_reflection_result.v8',
+  const result: SessionReflectionResultV9 = {
+    schemaVersion: 'session_reflection_result.v9',
     itemResults: [{
       itemId: item.itemId,
       diagnosisTags: ['production_cue_overloaded'],
       learnerExplanation: 'The pair shares a broad axis.',
-      promotionOutcome: 'promoted',
+      promotionOutcome: 'reconciled',
       proposals: [{
         proposalGroupKey: null,
         rationale: 'Promote the explicit pair.',
         operation: {
-          kind: 'promote_pure_elicitation',
+          kind: 'reconcile_production_cues',
           version: 1,
           sourceAttemptId: item.sourceAttemptId,
           targetWordId: 'target',
           responseWordId,
-          destination: { kind: 'existing', pureCueId: 'pure-1' },
+          destination: { kind: 'existing', pureCueId: 'pure-1', teachingNote: 'Revised teaching', expectedAcceptedWordIds: ['target', 'alternate'], expectedTeachingNote: '' },
+          sourceAttemptFairness: 'misleading_or_overloaded_cue',
           wordPlans: ['target', responseWordId].map((wordId) => ({
             wordId,
             deactivateCueIds: [`cue-${wordId}`],
@@ -1481,11 +1511,11 @@ function materializationInputV8(
   };
   return {
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v4',
+    reflectionFlowVersion: 'initial_post_session_reflection.v5',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna',
-    promptVersion: 'pure-cue-promotion-v1',
+    promptVersion: 'pure-cue-promotion-v2',
     evidenceBundle,
     result,
   };
@@ -1632,9 +1662,9 @@ function legacyResult(operation: ReflectionOperation): SessionReflectionResultV4
   };
 }
 
-function currentResult(operation: ReflectionOperation): SessionReflectionResultV8 {
+function currentResult(operation: ReflectionOperation): SessionReflectionResultV9 {
   return {
-    schemaVersion: 'session_reflection_result.v8',
+    schemaVersion: 'session_reflection_result.v9',
     itemResults: [{
       itemId: 'item',
       diagnosisTags: ['persistent_confusion'],
@@ -1649,7 +1679,7 @@ function currentResult(operation: ReflectionOperation): SessionReflectionResultV
   };
 }
 
-function informationalResult(itemId: string): SessionReflectionResultV8['itemResults'][number] {
+function informationalResult(itemId: string): SessionReflectionResultV9['itemResults'][number] {
   return {
     itemId,
     diagnosisTags: ['ordinary_retrieval_noise'],
@@ -1759,4 +1789,32 @@ function insertWord(wordId: string, hanzi: string): void {
       last_learning_covered_on
     ) VALUES (?, ?, 'pin1yin1', 'meaning', '["meaning"]', '', '[]', 'review', 1, ?, 0, NULL, NULL)
   `).run(wordId, hanzi, generatedAt);
+}
+
+function legacyMaterializationInputV8(
+  sessionId: string,
+): Parameters<DbModule['materializeReflectionArtifact']>[0] {
+  const current = materializationInputV9(sessionId);
+  if (current.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v6') throw new Error('Expected V6 fixture');
+  const evidenceBundle: SessionReflectionBundleV5 = {
+    ...current.evidenceBundle,
+    schemaVersion: 'session_reflection_bundle.v5',
+    items: current.evidenceBundle.items.map((item) => ({
+      ...item,
+      promotionEvidence: item.promotionEvidence === null ? null : {
+        ...item.promotionEvidence,
+        intersectingPureCues: item.promotionEvidence.intersectingPureCues.map(({ teachingNote: _teaching, acceptedMembers: _members, ...cue }) => cue),
+      },
+    })),
+  };
+  return {
+    ...current,
+    reflectionFlowVersion: 'initial_post_session_reflection.v4',
+    promptVersion: 'pure-cue-promotion-v1',
+    evidenceBundle,
+    result: {
+      schemaVersion: 'session_reflection_result.v8',
+      itemResults: [{ itemId: 'item', diagnosisTags: [], learnerExplanation: 'Historical explanation', proposals: [], questions: [] }],
+    },
+  };
 }

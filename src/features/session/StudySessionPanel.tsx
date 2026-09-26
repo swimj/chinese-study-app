@@ -374,8 +374,8 @@ export function StudySessionPanel({
             <div className="prompt-block">
               <span className="prompt-label">Cue</span>
               <strong className="prompt-value">{frozenPureCueCard.item.snapshot.stimulus}</strong>
-              {frozenPureCueCard.item.snapshot.axisNote ? (
-                <span className="prompt-meta">{frozenPureCueCard.item.snapshot.axisNote}</span>
+              {frozenPureCueCard.item.snapshot.teachingNote ? (
+                <span className="prompt-meta">{frozenPureCueCard.item.snapshot.teachingNote}</span>
               ) : null}
             </div>
             <div className="answer-block">
@@ -576,8 +576,8 @@ export function StudySessionPanel({
                     presentation={characterPresentation}
                   />
                 ))}
-                {activePureCue.snapshot.axisNote ? (
-                  <span className="prompt-meta">{activePureCue.snapshot.axisNote}</span>
+                {activePureCue.snapshot.teachingNote ? (
+                  <span className="prompt-meta">{activePureCue.snapshot.teachingNote}</span>
                 ) : null}
               </div>
             ) : (

@@ -97,15 +97,19 @@ evidence into service-owned data.
 - Reusable production content currently represented by `production_tasks`,
   `production_cues`, `production_cue_accepted_words`, and post-reveal
   `production_cue_supplements`.
-- Pure-cue stimulus/axis identity (`pure_cues`) and additive accepted membership
-  (`pure_cue_accepted_words`). No learner schedule lives on these content rows.
+- Pure-cue stimulus/axis identity and holistic reveal-time teaching note
+  (`pure_cues`), with additive accepted membership (`pure_cue_accepted_words`).
+  No learner schedule lives on these content rows.
 - A new or explicitly repurposed shared publication lifecycle records
   `shared_trial`, `available`, `quarantined`, and `retired`. It is separate
   from the current learner activation history and from learner suppression.
 
 Shared stimulus identity is immutable. Pure cues explicitly allow authorized
-set-add membership expansion; this affects future snapshots, never historical
-grading. Other corrections create distinct attributable content
+set-add membership expansion and an accompanying holistic teaching-note update,
+attributed to the accepted cleanup operation. Stimulus and semantic axis stay
+unchanged; current member/note evidence must still match before a rewrite.
+This affects future snapshots, never historical grading or reveal text.
+Other corrections create distinct attributable content
 or an explicit disposition rather than rewriting history. A repair operation
 preserves causal provenance without assuming that its inputs and outputs are
 versions of one stable artifact. Attempts and evidence retain the exact content
