@@ -150,18 +150,28 @@ require explicit proposal acceptance.
 
 Capture the originating production skill state and word admission state before
 projecting a new lapsed review action. All source events in that action share
-one snapshot and one restore-once marker. Promotion restores that snapshot,
-including interval/ease and recency/admission, without editing attempt history
-or the response word's scheduler. Restored production `nextDueAt` is the later of
+one snapshot and one restore-once marker. Restoring it puts back production
+interval, ease, and recency/admission without editing attempt history or the
+response word's scheduler. Restored production `nextDueAt` is the later of
 the snapshot due time and six hours after restoration, so remaining (non-proxied)
 production does not become immediately due.
+
+Two accepted proposals can restore that snapshot. Promotion does, when it
+publishes or extends a pure cue. An ordinary cue repair does, when it installs
+a fairer cue (`create` or `replace`) and judges the served exercise
+`misleading_or_overloaded_cue`. Deactivation alone does not restore it, and a
+repair that only improves a fair cue does not. The repair addresses that
+action-level snapshot through the action's first attempt, the mistake.
+Naming a later attempt, or more than one attempt, fails the application.
+The same action restores once, whichever proposal runs first.
 
 Intervening study can be overwritten by this restoration: this is an accepted
 quirk of asynchronous reflection, not a replay/rebase feature. Promotion requires
 a strict target-only source lapse and a distinct resolved response word; a clean
 success is an invalid source, not a `not_applicable` compensation outcome.
-Missing snapshots report `unavailable`; repeated promotion reports
-`already_restored` and cannot restore the same action twice. Obsolete reflection
+Missing snapshots report `unavailable`; a repeated restore reports
+`already_restored`. Stage-two disagreement does not fall back to ordinary
+cue-repair forgiveness; that remains a known gap. Obsolete reflection
 work is read-only after the generation-contract cutover.
 
 ## Non-goals
