@@ -196,8 +196,10 @@ diagnosis tags alone do not route an item. New targeted cues are owner-only.
 The active staged prompts target Mandarin; French is retired experimentation,
 not a supported staged-reflection path. The model receives a content-focused
 projection, not the complete durable evidence bundle. Stage-one input omits
-cue/task/attempt identities, deterministic answer membership, and study-profile
-configuration. The full evidence remains available internally for validation,
+cue/task/attempt identities, deterministic answer membership, study-profile
+configuration, and the persistence source label. A correct requested review,
+stored with a null response kind, is shown to the model as
+`responseKind: correct`. The full evidence remains available internally for validation,
 normalization, and exact continuation checkpoints.
 
 Stage-one repair, suppression, and supplement wire operations omit `wordId`.

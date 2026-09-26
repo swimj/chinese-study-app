@@ -188,7 +188,7 @@ function materialize(
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-staged-v1',
+    promptVersion: 'reflection-staged-v2',
     evidenceBundle: bundle(sessionId),
     result: result(operation),
   });
@@ -208,7 +208,7 @@ function materializeInformational(
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-staged-v1',
+    promptVersion: 'reflection-staged-v2',
     evidenceBundle: bundle(sessionId),
     result: {
       schemaVersion: 'session_reflection_result.v8',

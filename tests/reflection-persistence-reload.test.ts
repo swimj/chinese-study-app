@@ -128,7 +128,7 @@ describe('reflection persistence across process reload', { concurrency: false },
         generatedAt,
         provider: 'openai',
         model: 'gpt-5.6-luna-high',
-        promptVersion: 'reflection-staged-v1',
+        promptVersion: 'reflection-staged-v2',
         evidenceBundle,
         result,
       }).artifact;

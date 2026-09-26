@@ -472,7 +472,7 @@ function insertInvocation(invocationId: string, operation: ReflectionOperation):
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-staged-v1',
+    promptVersion: 'reflection-staged-v2',
     evidenceBundle: {
       schemaVersion: 'session_reflection_bundle.v5',
       generatedAt,

@@ -306,7 +306,7 @@ describe('reflection quality item tags', { concurrency: false }, () => {
 
     const stats = dbModule.getReflectionQualityStats();
     const luna = stats.arms.find((arm) => (
-      arm.modelArm === 'gpt-5.6-luna-high' && arm.promptVersion === 'reflection-staged-v1'
+      arm.modelArm === 'gpt-5.6-luna-high' && arm.promptVersion === 'reflection-staged-v2'
     ));
     assert(luna);
 
@@ -338,7 +338,7 @@ describe('reflection quality item tags', { concurrency: false }, () => {
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-staged-v1',
+      promptVersion: 'reflection-staged-v2',
       responseId: 'response-1',
       clientRequestId: null,
       finishReason: 'stop',
@@ -372,7 +372,7 @@ describe('reflection quality item tags', { concurrency: false }, () => {
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-staged-v1',
+      promptVersion: 'reflection-staged-v2',
       responseId: 'response-2',
       clientRequestId: null,
       finishReason: 'stop',
@@ -411,7 +411,7 @@ describe('reflection quality item tags', { concurrency: false }, () => {
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-staged-v1',
+      promptVersion: 'reflection-staged-v2',
       responseId: null,
       clientRequestId: null,
       finishReason: null,
@@ -439,7 +439,7 @@ describe('reflection quality item tags', { concurrency: false }, () => {
 
     const stats = dbModule.getReflectionQualityStats();
     const lunaArm = stats.arms.find((arm) => (
-      arm.modelArm === 'gpt-5.6-luna-high' && arm.promptVersion === 'reflection-staged-v1'
+      arm.modelArm === 'gpt-5.6-luna-high' && arm.promptVersion === 'reflection-staged-v2'
     ));
     assert(lunaArm);
     assert.equal(lunaArm.failedRunCount, 2);
@@ -486,7 +486,7 @@ describe('reflection quality item tags', { concurrency: false }, () => {
     const stats = dbModule.getReflectionQualityStats();
     const arm = stats.arms.find((candidate) => candidate.modelArm === 'gpt-5.6-luna-high');
     assert(arm);
-    assert.equal(arm.promptVersion, 'reflection-staged-v1');
+    assert.equal(arm.promptVersion, 'reflection-staged-v2');
     assert.equal(stats.arms.some((candidate) => candidate.promptVersion === 'pure-cue-promotion-v1'), false);
     assert.equal(arm.exactAcceptCount, 1);
     assert.equal(arm.totalCostUsd, 0.1);
@@ -534,7 +534,7 @@ describe('reflection quality item tags', { concurrency: false }, () => {
     const stats = dbModule.getReflectionQualityStats();
     assert.equal(stats.arms.length, 1);
     assert.equal(stats.arms[0]!.modelArm, 'glm-5.3-flash-max → gpt-5.6-luna-high');
-    assert.equal(stats.arms[0]!.promptVersion, 'reflection-staged-v1');
+    assert.equal(stats.arms[0]!.promptVersion, 'reflection-staged-v2');
     assert.equal(stats.arms[0]!.exactAcceptCount, 1);
     assert.equal(stats.arms[0]!.failedRunCount, 1);
     assert.equal(stats.arms[0]!.totalCostUsd, 0.05);
@@ -593,7 +593,7 @@ function materialize(
     generatedAt,
     provider: 'openai',
     model,
-    promptVersion: provenance.promptVersion ?? 'reflection-staged-v1',
+    promptVersion: provenance.promptVersion ?? 'reflection-staged-v2',
     ...(provenance.sourceRunId === undefined ? {} : { sourceRunId: provenance.sourceRunId }),
     evidenceBundle: bundle(sessionId),
     result: result(operation),
@@ -684,7 +684,7 @@ function materializeInformational(
     generatedAt,
     provider: 'openai',
     model,
-    promptVersion: 'reflection-staged-v1',
+    promptVersion: 'reflection-staged-v2',
     evidenceBundle: bundle(sessionId),
     result: {
       schemaVersion: 'session_reflection_result.v8',

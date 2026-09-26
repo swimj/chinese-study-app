@@ -835,7 +835,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       dbModule.startReflectionGenerationRun({
         runId, sourceSessionId: 'handoff-checkpoint', reflectionFlowVersion: dbModule.STAGED_INITIAL_REFLECTION_FLOW_VERSION,
         startedAt: updatedAt, provider: 'openai', model: 'gpt-5.6-luna-high', providerModel: 'gpt-5.6-luna',
-        promptVersion: stage === 'diagnosis' ? 'reflection-staged-v1' : 'pure-cue-promotion-v1',
+        promptVersion: stage === 'diagnosis' ? 'reflection-staged-v2' : 'pure-cue-promotion-v1',
         clientRequestId: `request-${stage}`,
         eligibleItemCount: stage === 'promotion' ? 19 : 1,
         includedItemCount: stage === 'promotion' ? 19 : 1,
@@ -915,7 +915,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       sourceSessionId: null,
       reflectionFlowVersion: dbModule.STAGED_DEFERRED_SECOND_OPINION_FLOW_VERSION,
       generatedAt: appliedAt,
-      provider: 'openai', model: 'gpt-5.6-luna-high', promptVersion: 'reflection-staged-v1',
+      provider: 'openai', model: 'gpt-5.6-luna-high', promptVersion: 'reflection-staged-v2',
       sourceProposalIds: first.sourceProposalIds,
       evidenceBundle: {
         ...first.bundle, schemaVersion: 'curated_reflection_bundle.v2',
@@ -958,7 +958,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       generatedAt: appliedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
-      promptVersion: 'reflection-staged-v1',
+      promptVersion: 'reflection-staged-v2',
       evidenceBundle: {
         ...bundle,
         schemaVersion: 'curated_reflection_bundle.v2',
@@ -1304,7 +1304,7 @@ function materializationInput(
   return {
     ...legacy,
     reflectionFlowVersion: 'initial_post_session_reflection.v4',
-    promptVersion: 'reflection-staged-v1',
+    promptVersion: 'reflection-staged-v2',
     evidenceBundle,
     result: currentResult(operation),
   };

@@ -128,7 +128,7 @@ export function createTestReflectionContinuationBoundaries(): Pick<
         model: 'gpt-5.6-luna-high',
         providerModel: 'gpt-5.6-luna',
         promptVersion: link.stage === 'diagnosis'
-          ? 'reflection-staged-v1'
+          ? 'reflection-staged-v2'
           : 'pure-cue-promotion-v1',
       };
     },

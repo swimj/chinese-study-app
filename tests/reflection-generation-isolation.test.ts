@@ -111,7 +111,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-staged-v1',
+      promptVersion: 'reflection-staged-v2',
       responseId: null,
       clientRequestId: run.clientRequestId,
       finishReason: null,
@@ -254,7 +254,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
                 questions: [],
               })),
             },
-            metadata: stagedMetadata('reflection-staged-v1'),
+            metadata: stagedMetadata('reflection-staged-v2'),
           };
         },
         async generatePromotion() {
@@ -300,7 +300,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       generatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
-      promptVersion: 'reflection-staged-v1',
+      promptVersion: 'reflection-staged-v2',
       evidenceBundle: sourceEvidence,
       result: {
         schemaVersion: 'session_reflection_result.v8',
@@ -341,7 +341,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
                 handoff: sharedAxisHandoff(),
               })),
             },
-            metadata: stagedMetadata('reflection-staged-v1'),
+            metadata: stagedMetadata('reflection-staged-v2'),
           };
         },
         async generatePromotion(bundle) {
@@ -461,7 +461,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
                 questions: [],
               }],
             },
-            metadata: stagedMetadata('reflection-staged-v1'),
+            metadata: stagedMetadata('reflection-staged-v2'),
           };
         },
         async generatePromotion(bundle) {

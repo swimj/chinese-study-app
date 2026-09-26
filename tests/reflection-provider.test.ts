@@ -538,8 +538,26 @@ describe('production Luna reflection provider', () => {
     assert.equal(projected.items[0].sessionNote, item.sessionNote);
     assert.deepEqual(projected.items[0].submittedWord, item.submittedWord);
     assert.equal(projected.items[0].rawResponse, item.rawResponse);
+    assert.equal(projected.items[0].source, undefined);
+    assert.equal(projected.items[0].responseKind, 'matched_known_word');
     assert.doesNotMatch(JSON.stringify(projected), /"(?:studyProfile|cueId|taskId|sourceAttemptId|acceptedWordIds|supplementId)"/);
     assert.deepEqual(evidence, before);
+
+    item.responseKind = null;
+    const correctCapture: CapturedRequest[] = [];
+    const correctProvider = createLunaReflectionProvider({
+      environment: { OPENAI_API_KEY: 'unit-test-secret' },
+      fetchImplementation: capturingFetch(
+        responseEnvelope(JSON.stringify(validStagedDiagnosisWireResult)),
+        correctCapture,
+      ),
+    });
+    await assert.rejects(correctProvider.generateDiagnosis(evidence));
+    const correctMessages = correctCapture[0]!.body.messages as Array<Record<string, JsonValue>>;
+    const correctInput = JSON.parse(String(correctMessages[1]!.content));
+    assert.equal(correctInput.items[0].responseKind, 'correct');
+    assert.equal(correctInput.items[0].source, undefined);
+    assert.equal(evidence.items[0]!.responseKind, null);
   });
 
   test('retains a non-negative provider-reported request cost', async () => {
