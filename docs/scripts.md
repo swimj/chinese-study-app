@@ -26,7 +26,9 @@ Most of these require an explicit absolute `--data-dir` and force study/Clerk
 runtime configuration. `hosted:upgrade` is the exception: it runs on an
 operator checkout against Fly, not against a local data directory. Human and
 automated terminal-driver procedures are in the
-[release and maintenance runbook](./ops/hosted-beta-deployment.md).
+[release and maintenance runbook](./ops/hosted-beta-deployment.md). RC restore,
+manual acceptance, and lifecycle procedures are in the
+[release-candidate runbook](./ops/hosted-release-candidate.md).
 
 | npm command | Purpose |
 | --- | --- |
@@ -42,8 +44,9 @@ automated terminal-driver procedures are in the
 | `npm run hosted:inspect-client-incidents -- --data-dir=/data --limit=20` | Read uploaded client transport incidents; optionally select one with `--diagnostic-id=<id>` |
 | `npm run hosted:inspect-study-commits -- --data-dir=/data --limit=20` | Read recent private study-commit failure records; optionally select one with `--diagnostic-id=<id>` |
 | `npm run hosted:smoke -- --data-dir=/data` | Mint a short-lived Clerk session for the designated smoke user and perform a read-only authenticated GET |
-| `npm run hosted:upgrade -- --app=<app> --actor-id=<id> --confirm-source-revision=<sha> --confirm-eligible-release=true` | Drive one app-only hosted upgrade from quiesce through smoke and reopen |
-| `npm run hosted:verify-restore -- --data-dir=<isolated-dir> --sentinel-id=<id> --minimum-learners=2` | Validate an isolated restored database |
+| `npm run hosted:upgrade -- --app=<app> --actor-id=<id> --confirm-source-revision=<sha> --confirm-eligible-release=true [--image=registry.fly.io/<app>@sha256:<digest>]` | Drive one app-only hosted upgrade from quiesce through smoke and reopen; an optional immutable image promotes the exact RC-tested artifact without rebuilding |
+| `npm run hosted:rc -- --action=<deploy\|restore\|activate\|quiesce\|idle\|status> --app=<rc-app> ...` | Manage the restore-backed Fly RC lifecycle; deploy/restore require an explicit schema declaration and disposable-data confirmation |
+| `npm run hosted:verify-restore -- --data-dir=<isolated-dir> [--sentinel-id=<id>] --minimum-learners=2 [--minimum-sentinels=1]` | Validate an isolated restored database; require either an exact sentinel or the default minimum historical sentinel count |
 
 ## Libraries (`scripts/lib/`)
 

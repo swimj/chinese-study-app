@@ -28,6 +28,7 @@ COPY server ./server
 COPY src ./src
 COPY scripts ./scripts
 COPY deploy/fly/litestream.yml ./deploy/fly/litestream.yml
+COPY deploy/fly/litestream.rc.yml ./deploy/fly/litestream.rc.yml
 COPY --from=frontend-build /app/dist ./dist
 
 RUN mkdir -p /data && chown -R node:node /app /data

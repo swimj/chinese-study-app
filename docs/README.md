@@ -44,6 +44,7 @@ When a map doc and code disagree, fix the map in the same change as the code (or
 - [scripts.md](./scripts.md) — maintenance scripts catalog
 - [ops/schema-migrations.md](./ops/schema-migrations.md) — explicit offline migrations, baseline adoption, and migration authoring
 - [ops/hosted-beta-deployment.md](./ops/hosted-beta-deployment.md) — invite, upgrade, maintenance, backup, restore, and human/agent release procedures
+- [ops/hosted-release-candidate.md](./ops/hosted-release-candidate.md) — restore-backed Fly RC deploys, manual acceptance, quiesce/idle/activate, and exact-image promotion
 - [ops/hosted-observability.md](./ops/hosted-observability.md) — private Fly/Grafana performance dashboard and metrics runbook
 - [ops/error-diagnostics.md](./ops/error-diagnostics.md) — current error surfaces, retention/privacy boundaries, incident correlation, and operator triage
 - [reflection-frontend-architecture.md](./reflection-frontend-architecture.md) — feature-specific session-finalization, evidence, and review-UI map

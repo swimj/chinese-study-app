@@ -30,6 +30,7 @@ export const HOSTED_IMAGE_SOURCE_PATHS = [
   'scripts',
   'deploy/fly/Dockerfile',
   'deploy/fly/litestream.yml',
+  'deploy/fly/litestream.rc.yml',
 ] as const;
 
 export const DEFAULT_FLY_CONFIG_PATH = 'deploy/fly/.generated/fly.toml';
@@ -113,6 +114,7 @@ export type HostedUpgradeInput = {
   actorId: string;
   confirmSourceRevision: string;
   confirmEligibleRelease: boolean;
+  image?: string;
   flyConfigPath?: string;
 };
 
@@ -192,6 +194,7 @@ export async function runHostedUpgrade(
       );
     }
     const appVersion = readPackageVersion(input.repoRoot, deps);
+    const promotedImage = input.image === undefined ? null : requireDigestQualifiedFlyImage(input.image);
     plannedRelease = { appVersion, sourceRevision };
     const publicOrigin = flyConfig.publicOrigin;
     const inspectBefore = await inspectHostedService(app, deps);
@@ -227,14 +230,16 @@ export async function runHostedUpgrade(
     recordStage('backup-sync', 'ok');
 
     currentStage = 'build-deploy';
-    await deps.run('fly', [
+    const deployArgs = [
       'deploy',
       '--app', app,
       '--config', flyConfig.configPath,
-      '--remote-only',
       '--ha=false',
-      '--build-arg', `APP_REVISION=${sourceRevision}`,
-    ], {
+      ...(promotedImage
+        ? ['--image', promotedImage]
+        : ['--remote-only', '--build-arg', `APP_REVISION=${sourceRevision}`]),
+    ];
+    await deps.run('fly', deployArgs, {
       cwd: input.repoRoot,
       timeoutMs: DEPLOY_TIMEOUT_MS,
       env: flyCommandEnv(),
@@ -246,6 +251,12 @@ export async function runHostedUpgrade(
     };
     if (!actualBuild.imageDigest && !actualBuild.imageRef) {
       throw new Error('Fly did not report an image reference or digest after deploy.');
+    }
+    if (promotedImage) {
+      const expectedDigest = promotedImage.slice(promotedImage.indexOf('@') + 1);
+      if (actualBuild.imageDigest !== expectedDigest) {
+        throw new Error('Fly deployed image digest does not match the promoted RC image.');
+      }
     }
     recordStage('build-deploy', 'ok', { actualBuild, actualDeployment });
 
@@ -421,7 +432,7 @@ export function createDefaultHostedUpgradeDeps(repoRoot: string): HostedUpgradeD
   };
 }
 
-async function inspectHostedService(app: string, deps: HostedUpgradeDeps): Promise<Record<string, unknown>> {
+export async function inspectHostedService(app: string, deps: HostedUpgradeDeps): Promise<Record<string, unknown>> {
   const raw = await ssh(
     app,
     'npm run --silent hosted:inspect -- --data-dir=/data --litestream-socket=/data/litestream.sock',
@@ -451,7 +462,7 @@ async function clearHostedBanner(
   return { status: value.status };
 }
 
-async function setHostedControl(
+export async function setHostedControl(
   app: string,
   actorId: string,
   control: 'maintenance' | 'provider-work',
@@ -470,7 +481,7 @@ async function setHostedControl(
   }
 }
 
-async function ssh(
+export async function ssh(
   app: string,
   command: string,
   deps: HostedUpgradeDeps,
@@ -483,7 +494,7 @@ async function ssh(
   return result.stdout;
 }
 
-async function readFlyDeploymentIdentity(app: string, deps: HostedUpgradeDeps): Promise<FlyDeploymentIdentity> {
+export async function readFlyDeploymentIdentity(app: string, deps: HostedUpgradeDeps): Promise<FlyDeploymentIdentity> {
   const machines = await deps.run('fly', ['machines', 'list', '--app', app, '--json'], {
     timeoutMs: 30_000,
     env: flyCommandEnv(),
@@ -508,7 +519,7 @@ async function readFlyDeploymentIdentity(app: string, deps: HostedUpgradeDeps): 
   return identity;
 }
 
-async function pollHealthz<T>(
+export async function pollHealthz<T>(
   origin: string,
   deps: HostedUpgradeDeps,
   timeoutMs: number,
@@ -533,7 +544,7 @@ async function pollHealthz<T>(
   }
 }
 
-async function readHealthz(origin: string, deps: HostedUpgradeDeps): Promise<HealthzResponse> {
+export async function readHealthz(origin: string, deps: HostedUpgradeDeps): Promise<HealthzResponse> {
   const response = await deps.fetch(`${trimTrailingSlash(origin)}/healthz`);
   if (!response.ok) throw new Error(`/healthz returned HTTP ${response.status}.`);
   const body = await response.json();
@@ -554,7 +565,7 @@ async function readHealthz(origin: string, deps: HostedUpgradeDeps): Promise<Hea
   };
 }
 
-async function assertServedFrontend(origin: string, deps: HostedUpgradeDeps): Promise<void> {
+export async function assertServedFrontend(origin: string, deps: HostedUpgradeDeps): Promise<void> {
   const response = await deps.fetch(`${trimTrailingSlash(origin)}/`);
   if (!response.ok) throw new Error(`Served frontend returned HTTP ${response.status}.`);
   const contentType = response.headers.get('content-type') ?? '';
@@ -564,7 +575,7 @@ async function assertServedFrontend(origin: string, deps: HostedUpgradeDeps): Pr
   }
 }
 
-function assertReleaseIdentityMatch(
+export function assertReleaseIdentityMatch(
   inspect: Record<string, unknown>,
   planned: PlannedReleaseIdentity,
 ): void {
@@ -595,7 +606,7 @@ function assertDeploymentIdentityMatch(expected: FlyDeploymentIdentity, actual: 
   }
 }
 
-function assertPersistedControls(
+export function assertPersistedControls(
   inspect: Record<string, unknown>,
   expected: { maintenanceMode: boolean; providerWorkEnabled: boolean },
 ): void {
@@ -609,7 +620,7 @@ function assertPersistedControls(
   }
 }
 
-function readControls(inspect: Record<string, unknown>): { maintenanceMode: boolean; providerWorkEnabled: boolean } | null {
+export function readControls(inspect: Record<string, unknown>): { maintenanceMode: boolean; providerWorkEnabled: boolean } | null {
   const diagnostics = isRecord(inspect.diagnostics) ? inspect.diagnostics : inspect;
   const controls = isRecord(diagnostics.controls) ? diagnostics.controls : null;
   if (
@@ -630,7 +641,7 @@ function readSchemaMigrationCount(inspect: Record<string, unknown>): number | nu
   return typeof diagnostics.schemaMigrationCount === 'number' ? diagnostics.schemaMigrationCount : null;
 }
 
-function parseHostedCommandJson(stdout: string): unknown {
+export function parseHostedCommandJson(stdout: string): unknown {
   return parseJsonValue(stdout);
 }
 
@@ -638,7 +649,7 @@ function readFailureDetail(value: unknown): string | null {
   return isRecord(value) && typeof value.failure === 'string' ? value.failure : null;
 }
 
-function readPackageVersion(repoRoot: string, deps: Pick<HostedUpgradeDeps, 'readFile'>): string {
+export function readPackageVersion(repoRoot: string, deps: Pick<HostedUpgradeDeps, 'readFile'>): string {
   const raw = JSON.parse(deps.readFile(path.join(repoRoot, 'package.json'))) as { version?: unknown };
   if (typeof raw.version !== 'string' || raw.version.trim() === '') {
     throw new Error('package.json is missing a version string.');
@@ -646,10 +657,18 @@ function readPackageVersion(repoRoot: string, deps: Pick<HostedUpgradeDeps, 'rea
   return raw.version.trim();
 }
 
-function requireFullGitSha(value: string): string {
+export function requireFullGitSha(value: string): string {
   const normalized = value.trim();
   if (!/^[a-f0-9]{40}$/.test(normalized)) {
     throw new Error('Source revision must be the full 40-character Git SHA.');
+  }
+  return normalized;
+}
+
+export function requireDigestQualifiedFlyImage(value: string): string {
+  const normalized = value.trim();
+  if (!/^registry\.fly\.io\/[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}$/.test(normalized)) {
+    throw new Error('--image must be an immutable registry.fly.io digest-qualified reference.');
   }
   return normalized;
 }
@@ -666,7 +685,7 @@ function matchTomlString(text: string, key: string): string {
   return match[1];
 }
 
-function matchTomlAssignment(text: string, key: string): string | null {
+export function matchTomlAssignment(text: string, key: string): string | null {
   const match = text.match(new RegExp(`^\\s*${key}\\s*=\\s*"([^"]+)"`, 'm'));
   return match?.[1] ?? null;
 }
@@ -699,7 +718,7 @@ function readNumberField(row: Record<string, unknown>, keys: string[]): number |
   return null;
 }
 
-function flyCommandEnv(): NodeJS.ProcessEnv {
+export function flyCommandEnv(): NodeJS.ProcessEnv {
   return {
     ...process.env,
     FLY_NO_UPDATE_CHECK: '1',
@@ -711,14 +730,14 @@ function trimTrailingSlash(value: string): string {
   return value.endsWith('/') ? value.slice(0, -1) : value;
 }
 
-function shellSingleQuote(value: string): string {
+export function shellSingleQuote(value: string): string {
   if (!/^[A-Za-z0-9._@-]+$/.test(value)) {
     throw new Error('actor-id contains characters that are not safe to pass through fly ssh.');
   }
   return value;
 }
 
-type HealthzResponse = {
+export type HealthzResponse = {
   status: string;
   maintenanceMode: boolean;
   providerWorkEnabled: boolean;

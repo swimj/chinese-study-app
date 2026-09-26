@@ -14,6 +14,7 @@ kill_timeout = "60s"
   # Do not put a placeholder revision here.
 
 [env]
+  APP_DEPLOYMENT_TIER = "beta"
   APP_AUTH_MODE = "clerk"
   APP_DATA_DIR = "/data"
   APP_MODE = "study"

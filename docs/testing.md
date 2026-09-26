@@ -58,6 +58,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `hosted-dogfood-cutover.test.ts` | Coherent offline dogfood preparation, strict Clerk binding, manifest validation, source preservation, stopped-process promotion, and retained fixture rollback | Hosted dogfood cutover scripts and library |
 | `hosted-operations.test.ts` | Hosted service controls, service banner, sentinels, learner disablement, and restore-validation helpers | `server/db/hosted-operations.ts` |
 | `hosted-upgrade.test.ts` | App-only upgrade command: identity confirmation, dirty-tree refusal, deploy build-arg, smoke-failure stays closed, reopen banner clear | `scripts/lib/hosted-upgrade.ts` |
+| `hosted-rc.test.ts` | RC config boundary, T-minus restore selection, app-only/schema workflows, migration ordering, exact-image identity, and fail-closed behavior | `scripts/lib/hosted-rc.ts` |
 | `hosted-smoke.test.ts` | Read-only Clerk smoke: existing-learner gate, token mint/revoke, no token leakage | `scripts/lib/hosted-smoke.ts` |
 | `observability.test.ts` | Bounded route labels, request/response histograms, private Prometheus listener, and metrics-port validation | `server/observability.ts` |
 | `usage-pulse.test.ts` | Daily cohort snapshot compute/idempotency, smoke-learner inactive exclusion, operator allowlist, and usage-pulse API gate | `server/db/usage-pulse.ts`, `server/operator-access.ts` |
@@ -84,6 +85,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | Schema or bootstrap | `dev-db-bootstrap.test.ts` + any db-touching tests above |
 | Hosted metrics / Grafana export | `observability.test.ts`, `hosted-runtime.test.ts` |
 | Hosted app-only upgrade pipeline | `hosted-upgrade.test.ts`, `hosted-smoke.test.ts` |
+| Hosted RC restore and deployment pipeline | `hosted-rc.test.ts`, `hosted-upgrade.test.ts`, `hosted-operations.test.ts`, `clerk-authentication.test.ts` |
 | Hosted service banner | `hosted-operations.test.ts`, `hosted-runtime.test.ts`, `app-chrome-nav.test.ts` |
 | Hosted study-commit failures | `study-commit-diagnostics.test.ts` |
 | Client transport incident capture/upload | `client-incident-diagnostics.test.ts`, `study-commit-diagnostics.test.ts` |
