@@ -14,6 +14,14 @@ exercise, called a pure cue, presents one stimulus that naturally accepts each
 of its members. Those words need not be interchangeable in every use: their
 distinctive capabilities may also deserve word-specific practice.
 
+Repeated practice should build the instinct to reach for words that fit natural
+production patterns: sentence structure, familiar word combinations, and how
+an utterance continues. Shared practice is useful when either answer sustains
+that pattern, even with differences in emphasis, register, or expressive
+precision. Teaching and further exposure can refine those choices. The teaching
+note should refine a sound production instinct, not repair a misleading habit
+created by the exercise itself.
+
 Each item concerns a known word rejected by a word-specific exercise. You
 receive a tentative reason why that answer may fit, along with the current
 exercises for both words. Judge the original attempt and propose one coherent
@@ -99,9 +107,17 @@ determine which word deserves better exercises.
 ### 3. Decide whether shared practice is useful
 
 Ask whether one graspable meaning or intention can be expressed naturally by
-both words in the same exercise. A broad gloss may admit both words without
-making a useful exercise. Word-specific repairs are a normal outcome when
-shared practice would add little value.
+both words in the same exercise. Then ask: what production habit would repeated
+practice of this exercise build, and is that habit useful beyond this particular
+comparison?
+
+A recurring construction that naturally supports both words can be worth
+practicing even when their uses differ elsewhere. Finding one sentence where
+both fit is not by itself a reason to create shared practice. When their useful
+production patterns chiefly call for different constructions or word
+combinations, prefer word-specific exercises over a broad shared gloss that
+hides those differences. Neither complete interchangeability nor exhaustive
+coverage is required; choose the practice that builds a useful instinct.
 
 Prefer extending a supplied pure cue when its unchanged stimulus and semantic
 axis fit the incoming pair. Otherwise create a shared exercise if useful, or
@@ -203,3 +219,58 @@ plus its own pair, without assuming another proposal will be accepted.
 - Keep semantic scope in the axis and member guidance in the teaching note.
 - Check that retained and proposed exercises form a useful repertoire and that
   the explanation describes the judgment and changes you actually propose.
+
+
+## Worked decision patterns
+
+These illustrate how to choose useful practice, not fixed rules about which
+word pairs may share a cue. The actual served exercise grounds source fairness;
+the examples of future content below do not settle that separate judgment.
+
+### A shared conversational move: 难怪 / 怪不得
+
+A cue such as `原来你昨晚没睡，____今天这么困。` lets either word express
+recognizing why something is unsurprising. Repeating it builds a useful
+conversational pattern with either answer, so shared practice is appropriate
+if that capability is not already covered. The axis describes that explanatory
+move; the teaching note can explain both expressions without manufacturing a
+distinction merely to give each word a separate exercise.
+
+### A useful shared construction: 中断 / 打断
+
+`突然响起的电话铃声____了我们的谈话。` supports either word in describing an
+interruption of an ongoing conversation. This is a recurring, useful production
+pattern even though the words are not generally interchangeable.
+
+Shared practice can cover this construction. The teaching note can explain
+that 中断 foregrounds a break in continuity, while 打断 foregrounds the
+interruption of an ongoing activity. Separate cues can practice other useful
+patterns, such as `通信____了几个小时才恢复。` for 中断. Do not reduce the
+distinction to whether a human actor exists: 中断 can have an explicit actor,
+and a sound can 打断 a conversation.
+
+### Similar meanings, different sentence patterns: 违反 / 违法
+
+An English gloss such as “to violate the law” obscures how these words enter
+a sentence. Compare `这样做____了规定。` for 违反 with `这样做是____的。` for
+违法. The first names what is violated; the second characterizes the conduct
+as unlawful. Substituting the other word does not preserve either pattern.
+
+Prefer word-specific cues that build these constructions, with no shared
+destination merely on the strength of the English gloss. Explain the related
+meanings and the different ways to use them. Useful word-only cleanup is a
+successful outcome, not a failed attempt to produce a pure cue.
+
+### An overlap need not be the most useful thing to practice: 遭到 / 遭受
+
+A broad cue such as “to experience something adverse” can obscure the word
+combinations the learner needs to acquire. Word-specific exercises can evoke
+`遭到批评` and `遭受巨大损失`, putting those combinations into natural sentences.
+
+The pair also has genuine overlap, such as with 攻击. That does not require
+publishing a shared cue: if the current gap is learning the different familiar
+combinations, separate practice may do more good. A shared exercise is still
+possible when its particular recurring pattern is worth reinforcing. Make the
+choice from the resulting learning value, rather than treating one common
+object as proof of broad interchangeability or different preferences as proof
+that overlap never exists.
