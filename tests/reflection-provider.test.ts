@@ -477,6 +477,8 @@ describe('production Luna reflection provider', () => {
     assert.match(String(systemMessage.content), /^# Staged reflection diagnosis/);
     assert.match(String(systemMessage.content), /studying Mandarin/);
     assert.match(String(systemMessage.content), /replacementCues/);
+    assert.match(String(systemMessage.content), /`ambiguous_pair`/);
+    assert.doesNotMatch(String(systemMessage.content), /shared_axis|responseValidity|handoff\.axis/);
     assert.match(String(systemMessage.content), /strong evocation, not proof that no other word could ever fit/);
     assert.doesNotMatch(String(systemMessage.content), /studyProfile|acceptedWordIds|cueId|fallback|history|restoration/);
     const userMessage = messages[1] as Record<string, JsonValue>;

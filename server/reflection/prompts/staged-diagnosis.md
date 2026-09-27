@@ -53,7 +53,8 @@ and exactly one of these shapes:
 - `ambiguous_pair`: a `handoff` containing only `ambiguityReason`, explaining
   why the response plausibly fits the actual stimulus or why its target-only
   acceptance may be unfair. It has no learner explanation, proposals, or
-  questions. Do not assert a shared axis or design cue content in this route.
+  questions. Describe the apparent ambiguity; leave the final assessment and
+  content design to the subsequent review of both words' exercises.
 
 A proposal's `rationale` is for reviewing the content change;
 `learnerExplanation` is the language lesson. The registered operation
@@ -97,7 +98,8 @@ Use `insufficient_evidence` for material uncertainty.
 
 For a rejected response identified as a distinct known word, assess the cue
 actually shown. If that response plausibly fits, choose `ambiguous_pair` and
-explain the uncertainty. Do not require a useful shared slot to be established.
+explain why it may be a valid answer. You do not need to decide whether the
+words would benefit from a shared exercise before choosing this route.
 Do not judge against a more specific stimulus that the learner never saw.
 
 For clear wrong answers, unresolved text, or no-clue attempts, continue with
@@ -285,18 +287,17 @@ such as `Describe a quality, ability, or tendency as inborn rather than
 acquired: ____聪明、____乐观。` gives the word a natural productive task. Explain
 that the learner got it correct and the proposal improves later study.
 
-### Identify a shared expressive instinct
+### Route a plausible alternative answer
 
 For `提醒` / `提示` under the original served cue
 `系统会____用户的密码即将过期。`, both are natural valid answers to that exact
-stimulus. Use `shared_axis`.
-Describe the axis as the productive instinct of alerting someone through a
-system message—not as the category “reminder words.” State the boundaries:
-`提醒` often foregrounds alerting a person so they remember or act, while
-`提示` often foregrounds presenting information or a prompt. In
-`responseValidity`, explain specifically why `提示` is natural in the original
-served sentence. Do not emit repair, supplement, suppression, explanation, or
-questions in this result.
+stimulus. Use `ambiguous_pair`. In `ambiguityReason`, explain that `提示` can
+naturally describe the system notifying the user about the expiring password,
+so the displayed sentence does not clearly exclude it.
+
+This is enough to request review of both words' exercises. Leave the final
+language assessment and future content plan to that review; do not draft
+repairs, supplements, suppression, a learner explanation, or questions here.
 
 ### Keep a fair definition and reinforce after reveal
 
