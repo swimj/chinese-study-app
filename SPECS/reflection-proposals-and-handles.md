@@ -184,14 +184,14 @@ V4, V5, and V6 results remain readable under their frozen contracts. V6 removes
 item-level text surface, and removes `unhandledNeeds` because the current model
 and product do not use them reliably. V7 retains that item shape and adds the
 strict `add_production_cue_supplement@1` wire operation. New generation uses
-V8 through staged diagnosis/promotion; stage one uses the exclusive
-`staged_reflection_diagnosis_result.v1` ordinary/shared-axis contract. V7 is the
+V9 through staged diagnosis/cleanup; stage one uses the exclusive
+`staged_reflection_diagnosis_result.v2` ordinary/ambiguous-pair contract. V7 is the
 legacy one-shot result contract. Stored V4/V5/V6/V7 artifacts
 remain immutable. Execution requires the current staged flow and prompt contract:
 obsolete proposals cannot be accepted, revised, replaced, used as manual-operation
 evidence, sent for second opinion, or applied. No legacy retry path is retained.
 
-V8 retains the ordinary item-result shape and adds `promote_pure_elicitation@1`
+Historical V8 retains the ordinary item-result shape and adds `promote_pure_elicitation@1`
 and `promotionOutcome` (`promoted` or `disagreement`) on routed items. A
 disagreement has a stage-two learner explanation but no proposals or questions;
 it cannot be used for manual-operation authorization. It remains visible in Help
@@ -205,6 +205,16 @@ New word-owned cue drafts in V8 accept only their owner. A V8 result cannot
 contain ordinary repair, supplement, or suppression proposals for either word
 affected by a promotion, even under another item. Different semantic axes may
 still have overlapping accepted membership. Legacy contracts remain frozen.
+
+Current V9 adds `reconcile_production_cues@1` and uses `promotionOutcome`
+`reconciled` or `explanation_only` for routed items. Stage one hands off suspected
+ambiguity, not an asserted shared axis. Stage two owns both words' cue plans,
+an optional pure-cue destination, an independent source-fairness judgment, and
+the final explanation. Word-only cleanup is a successful actionable outcome.
+Explanation-only results propose no durable effects. Ordinary contrast proposals
+remain stage one's responsibility because contrast is a separate content space.
+Current cue evidence includes each existing pure cue's holistic teaching note;
+legacy evidence and results are not upgraded in place.
 
 The current diagnosis vocabulary is:
 
@@ -517,7 +527,7 @@ and creates cues for fallback evidence or replaces the presented durable cue.
 The model does not choose this persistence distinction and cannot request a
 standalone deactivation through this wire. Normalized durable operations and
 manual editing retain their explicit identities and lifecycle operations.
-Shared-axis handling, not ordinary repair, owns accepted-alternate findings.
+Coordinated pair cleanup, not ordinary repair, owns accepted-alternate findings.
 
 The behavioral contract is:
 
@@ -547,7 +557,7 @@ referenced cues, accepted words, and any source attempt against current state.
 Every referenced cue must belong to the named task. A cue draft's accepted set
 must contain only the task word. Historical accepted-answer-space omission
 judgments remain readable but cannot expand word-owned acceptance. Shared-axis
-answers belong to pure-cue promotion instead. A misleading or overloaded judgment must repair
+answers belong to coordinated pair cleanup instead. A misleading or overloaded judgment must repair
 the exact served cue or create a durable cue for fallback evidence.
 
 Application activates every created or replacement cue immediately and records
@@ -648,7 +658,37 @@ Non-effects:
 - it does not attach reinforcement to `minimal_context` or `circumstance`
   cues, whose existing prompt already supplies natural context.
 
-### `promote_pure_elicitation` version 1
+### `reconcile_production_cues` version 1
+
+The operation identifies one source production attempt and its distinct target
+and response words. Exactly two word plans retain the existing promotion plan
+shape: explicit cue IDs to deactivate and owner-only cue drafts to create.
+`destination` is null for word-only cleanup, an existing pure cue with a revised
+`teachingNote`, or a new stimulus, axis note, and teaching note. At least one
+actual content change is required; otherwise return explanation only.
+
+`sourceAttemptFairness` is `fair` or `misleading_or_overloaded_cue`, independent
+of destination selection. Compensation requires the unfair judgment and a repair
+of the originating exercise, not merely unrelated edits to the response word.
+The original target/action is the only scheduling subject; both words' content
+can change without changing both schedules. Ordinary unfair-cue replacement
+continues to use the same restore-once mechanism.
+
+Review exposes both cue plans, optional shared destination, source fairness,
+and the holistic teaching note. Pair identities and accepted membership remain
+evidence-bound. Extension preserves existing stimulus/axis and members while
+adding the incoming pair and revising reveal guidance for the whole membership.
+An unseen intervening membership or teaching-note change makes the proposal
+stale rather than allowing an older aggregate note to overwrite newer teaching.
+
+Preflight all evidence and content references before one atomic application.
+Publish eligible new shared content, retire only explicitly selected cues,
+attribute the teaching-note update, and apply eligible compensation in the same
+transaction. Preserve private evidence, learner ownership, source attempts,
+existing suppression, and frozen served snapshots. Word-only cleanup must not
+silently create a shared destination or suppress either word.
+
+### `promote_pure_elicitation` version 1 (historical)
 
 The operation identifies the source production attempt, target word, and
 response word from enriched evidence. Its destination is either an explicitly

@@ -55,6 +55,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
     new URL('./migrations/0011_reflection_generation_continuations.sql', import.meta.url),
     'utf8',
   ),
+}, {
+  id: 'app_schema:0012_pure_cue_teaching_notes',
+  sql: fs.readFileSync(new URL('./migrations/0012_pure_cue_teaching_notes.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

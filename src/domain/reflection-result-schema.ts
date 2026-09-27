@@ -455,3 +455,58 @@ export const pureCuePromotionResultV1WireSchema: JsonSchema = objectSchema({
 }, 'Promotion-only decisions over server-enriched pure-cue evidence.');
 
 export const PURE_CUE_PROMOTION_RESULT_V1_WIRE_SCHEMA_NAME = 'pure_cue_promotion_result_v1';
+
+
+const reconcileProductionCuesOperationV1Wire = objectSchema({
+  destination: { anyOf: [
+    { type: 'null' },
+    objectSchema({ kind: enumSchema(['existing']), pureCueId: stringSchema, teachingNote: stringSchema }),
+    objectSchema({ kind: enumSchema(['create']), stimulus: stringSchema, axisNote: stringSchema, teachingNote: stringSchema }),
+  ] },
+  wordPlans: promotePureElicitationOperationV1Wire.properties!.wordPlans!,
+  sourceAttemptFairness: enumSchema(['fair', 'misleading_or_overloaded_cue']),
+});
+const stagedReflectionDiagnosisAmbiguousPairResultV2Wire = objectSchema({
+  kind: enumSchema(['ambiguous_pair']),
+  itemId: stringSchema,
+  diagnosisTags: stagedReflectionDiagnosisOrdinaryResultV1Wire.properties!.diagnosisTags!,
+  handoff: objectSchema({
+    ambiguityReason: stringSchema,
+  }),
+});
+
+export const stagedReflectionDiagnosisResultV2WireSchema: JsonSchema = objectSchema({
+  schemaVersion: enumSchema(['staged_reflection_diagnosis_result.v2']),
+  itemResults: arraySchema({
+    anyOf: [
+      stagedReflectionDiagnosisOrdinaryResultV1Wire,
+      stagedReflectionDiagnosisAmbiguousPairResultV2Wire,
+    ],
+  }),
+}, 'Exclusive ordinary results or best-effort ambiguous-pair handoffs.');
+
+export const STAGED_REFLECTION_DIAGNOSIS_RESULT_V2_WIRE_SCHEMA_NAME =
+  'staged_reflection_diagnosis_result_v2';
+
+export const pureCuePromotionResultV2WireSchema: JsonSchema = objectSchema({
+  schemaVersion: enumSchema(['pure_cue_promotion_result.v2']),
+  itemResults: arraySchema(objectSchema({
+    itemId: stringSchema,
+    decision: {
+      anyOf: [
+        objectSchema({
+          kind: enumSchema(['reconcile']),
+          rationale: stringSchema,
+          learnerExplanation: stringSchema,
+          operation: reconcileProductionCuesOperationV1Wire,
+        }),
+        objectSchema({
+          kind: enumSchema(['explanation_only']),
+          learnerExplanation: stringSchema,
+        }),
+      ],
+    },
+  })),
+}, 'Coordinated production-cue cleanup with optional shared publication or explanation only.');
+
+export const PURE_CUE_PROMOTION_RESULT_V2_WIRE_SCHEMA_NAME = 'pure_cue_promotion_result_v2';

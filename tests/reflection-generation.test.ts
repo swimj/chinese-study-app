@@ -4,7 +4,7 @@ import type {
   ReflectionOperation,
   SessionReflectionBundleV4,
   SessionReflectionResultV7,
-  StagedReflectionDiagnosisResultV1,
+  StagedReflectionDiagnosisResultV2,
 } from '../src/domain/reflection.ts';
 import type {
   MaterializeReflectionArtifactInput,
@@ -124,36 +124,36 @@ describe('initial reflection generation orchestration', () => {
     const { sourceRunId: _sourceRunId, continuationId, ...persistedWithoutRun } = persisted!;
     assert.equal(continuationId, 'test-continuation-1');
     const finalEvidence = {
-      schemaVersion: 'session_reflection_bundle.v5' as const,
+      schemaVersion: 'session_reflection_bundle.v6' as const,
       generatedAt,
       session: evidenceBundle.session,
       items: evidenceBundle.items.map((item) => ({ ...item, promotionEvidence: null })),
     };
     assert.deepEqual(persistedWithoutRun, {
       sourceSessionId: 'session-1',
-      reflectionFlowVersion: 'initial_post_session_reflection.v4',
+      reflectionFlowVersion: 'initial_post_session_reflection.v5',
       generatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
-      promptVersion: 'reflection-staged-v2',
+      promptVersion: 'reflection-staged-v3',
       evidenceBundle: finalEvidence,
-      result: { ...ordinaryDiagnosisResult(), schemaVersion: 'session_reflection_result.v8' },
+      result: { ...ordinaryDiagnosisResult(), schemaVersion: 'session_reflection_result.v9' },
     });
     assert.match(recordedRun!.clientRequestId ?? '', /^[0-9a-f-]{36}$/);
     const { runId: _runId, clientRequestId: _clientRequestId, ...recordedRunWithoutId } = recordedRun!;
     assert.deepEqual(recordedRunWithoutId, {
       sourceSessionId: 'session-1',
-      reflectionFlowVersion: 'initial_post_session_reflection.v4',
+      reflectionFlowVersion: 'initial_post_session_reflection.v5',
       startedAt: generatedAt,
       completedAt: generatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-staged-v2',
+      promptVersion: 'reflection-staged-v3',
       responseId: 'response-1',
       finishReason: 'stop',
       bundleSchemaVersion: 'session_reflection_bundle.v4',
-      resultSchemaVersion: 'staged_reflection_diagnosis_result.v1',
+      resultSchemaVersion: 'staged_reflection_diagnosis_result.v2',
       diagnostic: null,
       state: 'succeeded',
       failureCode: null,
@@ -350,7 +350,7 @@ describe('initial reflection generation orchestration', () => {
     assert.equal(materializeCalls, 2);
     assert.equal(persisted[1]!.provider, 'openai');
     assert.equal(persisted[1]!.model, 'gpt-5.6-luna-high');
-    assert.equal(persisted[1]!.promptVersion, 'reflection-staged-v2');
+    assert.equal(persisted[1]!.promptVersion, 'reflection-staged-v3');
     assert.equal(persisted[1]!.sourceRunId, failedRunId);
   });
 
@@ -364,9 +364,9 @@ describe('initial reflection generation orchestration', () => {
     const sharedDiagnosisSuccess = {
       ...diagnosisSuccess(),
       result: {
-        schemaVersion: 'staged_reflection_diagnosis_result.v1' as const,
+        schemaVersion: 'staged_reflection_diagnosis_result.v2' as const,
         itemResults: [{
-          kind: 'shared_axis' as const,
+          kind: 'ambiguous_pair' as const,
           itemId: 'item-1',
           diagnosisTags: ['production_cue_overloaded'],
           handoff: sharedAxisHandoff(),
@@ -402,11 +402,11 @@ describe('initial reflection generation orchestration', () => {
           stageTwoBundles.push(input);
           return {
             result: {
-              schemaVersion: 'pure_cue_promotion_result.v1',
+              schemaVersion: 'pure_cue_promotion_result.v2',
               itemResults: input.items.map((item) => ({
                 itemId: item.itemId,
                 decision: {
-                  kind: 'disagreement' as const,
+                  kind: 'explanation_only' as const,
                   learnerExplanation: 'The saved evidence supports keeping these as separate tasks.',
                 },
               })),
@@ -416,7 +416,7 @@ describe('initial reflection generation orchestration', () => {
               provider: 'zai',
               modelConfig: 'glm-5.3-flash-max',
               providerModel: 'glm-5.3-flash',
-              promptVersion: 'pure-cue-promotion-v1',
+              promptVersion: 'pure-cue-promotion-v2',
             },
           };
         },
@@ -448,14 +448,14 @@ describe('initial reflection generation orchestration', () => {
       itemId: 'item-1',
       diagnosisTags: ['production_cue_overloaded'],
       learnerExplanation: 'The saved evidence supports keeping these as separate tasks.',
-      promotionOutcome: 'disagreement',
+      promotionOutcome: 'explanation_only',
       proposals: [],
       questions: [],
     });
     assert.deepEqual(runRecords.map((run) => [run.state, run.model, run.resultSchemaVersion]), [
-      ['succeeded', 'gpt-5.6-luna-high', 'staged_reflection_diagnosis_result.v1'],
-      ['failed', 'gpt-5.6-luna-high', 'pure_cue_promotion_result.v1'],
-      ['succeeded', 'glm-5.3-flash-max', 'pure_cue_promotion_result.v1'],
+      ['succeeded', 'gpt-5.6-luna-high', 'staged_reflection_diagnosis_result.v2'],
+      ['failed', 'gpt-5.6-luna-high', 'pure_cue_promotion_result.v2'],
+      ['succeeded', 'glm-5.3-flash-max', 'pure_cue_promotion_result.v2'],
     ]);
   });
 
@@ -500,9 +500,9 @@ describe('initial reflection generation orchestration', () => {
         async generateDiagnosis() {
           return {
             result: {
-              schemaVersion: 'staged_reflection_diagnosis_result.v1' as const,
+              schemaVersion: 'staged_reflection_diagnosis_result.v2' as const,
               itemResults: [{
-                kind: 'shared_axis' as const,
+                kind: 'ambiguous_pair' as const,
                 itemId: 'item-1',
                 diagnosisTags: ['production_cue_overloaded'],
                 handoff: sharedAxisHandoff(),
@@ -521,18 +521,18 @@ describe('initial reflection generation orchestration', () => {
         async generatePromotion(input) {
           return {
             result: {
-              schemaVersion: 'pure_cue_promotion_result.v1' as const,
+              schemaVersion: 'pure_cue_promotion_result.v2' as const,
               itemResults: input.items.map((item) => ({
                 itemId: item.itemId,
                 decision: {
-                  kind: 'disagreement' as const,
+                  kind: 'explanation_only' as const,
                   learnerExplanation: 'The saved evidence supports keeping these as separate tasks.',
                 },
               })),
             },
             metadata: {
               ...diagnosisSuccess().metadata,
-              promptVersion: 'pure-cue-promotion-v1',
+              promptVersion: 'pure-cue-promotion-v2',
             },
           };
         },
@@ -554,7 +554,7 @@ describe('initial reflection generation orchestration', () => {
 
     const expected = [
       { schema: 'session_reflection_bundle.v4', eligibleItemCount: 2, includedItemCount: 2 },
-      { schema: 'pure_cue_promotion_bundle.v1', eligibleItemCount: 1, includedItemCount: 1 },
+      { schema: 'pure_cue_promotion_bundle.v2', eligibleItemCount: 1, includedItemCount: 1 },
     ];
     assert.deepEqual(started, expected);
     assert.deepEqual(recorded, expected);
@@ -933,7 +933,7 @@ function diagnosisSuccess() {
       provider: 'openai',
       modelConfig: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-staged-v2',
+      promptVersion: 'reflection-staged-v3',
       responseId: 'response-1',
       finishReason: 'stop',
       usage: {
@@ -1039,11 +1039,11 @@ function currentDiagnosisRetrySource(
     provider: overrides.provider ?? 'openai',
     model: overrides.model ?? 'gpt-5.6-luna-high',
     providerModel: overrides.providerModel ?? 'gpt-5.6-luna',
-    promptVersion: 'reflection-staged-v2',
+    promptVersion: 'reflection-staged-v3',
     continuation: {
       continuationId: `continuation-${runId}`,
       sourceSessionId: 'session-1',
-      reflectionFlowVersion: 'initial_post_session_reflection.v4',
+      reflectionFlowVersion: 'initial_post_session_reflection.v5',
       createdAt: generatedAt,
       eligibleItemCount: overrides.eligibleItemCount ?? 1,
       includedItemCount: overrides.includedItemCount ?? 1,
@@ -1058,9 +1058,9 @@ function currentDiagnosisRetrySource(
   };
 }
 
-function stagedDiagnosisResult(): StagedReflectionDiagnosisResultV1 {
+function stagedDiagnosisResult(): StagedReflectionDiagnosisResultV2 {
   return {
-    schemaVersion: 'staged_reflection_diagnosis_result.v1',
+    schemaVersion: 'staged_reflection_diagnosis_result.v2',
     itemResults: [{
       kind: 'ordinary',
       itemId: 'item-1',
@@ -1079,16 +1079,14 @@ function stagedDiagnosisResult(): StagedReflectionDiagnosisResultV1 {
 function ordinaryDiagnosisResult() {
   const { kind: _kind, ...ordinary } = stagedDiagnosisResult().itemResults[0]!;
   return {
-    schemaVersion: 'session_reflection_result.v8' as const,
+    schemaVersion: 'session_reflection_result.v9' as const,
     itemResults: [ordinary],
   };
 }
 
 function sharedAxisHandoff() {
   return {
-    axis: 'Choosing between an intended goal and a substitute.',
-    boundaries: 'Use 目标 for the intended outcome and 替代 for what takes its place.',
-    responseValidity: '替代 was valid for the overly broad served cue.',
+    ambiguityReason: '替代 plausibly fits the overly broad served cue.',
   };
 }
 

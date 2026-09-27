@@ -1,6 +1,6 @@
 # Pure-cue elicitation
 
-Status: accepted implementation contract, updated 2026-09-20. This specifies the full
+Status: accepted implementation contract, updated 2026-09-26. This specifies the full
 vertical authorized in the pure-cue task; individual stack layers implement
 the foundation, session integration, and reflection integration in order.
 It supersedes the exploratory choices in
@@ -17,7 +17,7 @@ subsequent practice and reflection make those semantic decisions. Old in-flight
 multi-answer/recheck commits are rejected; restart study after this cutover.
 
 A pure cue is a shared standalone elicitation: stimulus, semantic-axis note,
-and accepted word IDs. Its scheduling and assessment history are learner-private.
+teaching note, and accepted word IDs. Its scheduling and assessment history are learner-private.
 It has no hidden target word. Targeted and pure cues share the core content,
 accepted-answer, frozen-snapshot, and deterministic matching concepts, while
 retaining their distinct scheduling policies.
@@ -26,15 +26,28 @@ success. Frozen server-issued answer forms govern an assessment; extending
 membership later does not change a served assessment. Matching is deterministic
 and study-profile-aware. No model participates in live grading.
 
+The axis describes a useful communicative slot: a referent, act, or situation
+that each accepted word naturally expresses. Overlapping dictionary glosses
+alone do not establish such a slot. Prefer a natural Mandarin cloze, optionally
+with a concise English frame; a simple referent can warrant a bare gloss.
+The frame and cloze together are one stimulus, not two retrieval routes.
+
 The stimulus may be a minimal-context cloze. Accepted members need not be exact
 synonyms: they may express different emphasis, tone, or nuance while each is a
 natural valid answer to the exercise as phrased. The shared axis must not imply
-universal interchangeability. Per-member explanatory notes are a possible
-future extension, not additional grading conditions or part of this release.
+universal interchangeability. The axis note describes the shared purpose, not
+an exhaustive comparison of the originating pair. One compact teaching note
+provides reveal-time nuance and boundaries. It is edited holistically, not
+stored as separate per-member records, and never adds hidden grading conditions.
 
 Successful authorized promotion publishes new content as `shared_trial`.
-Extensions update shared accepted membership for all future assessments;
-they do not revise frozen history. No extra per-learner content approval is
+Extensions update shared accepted membership and the holistic teaching note
+for future assessments, preserving the stimulus and axis. The existing teaching
+note and member identities serve as accumulated context alongside the incoming
+pair; fetching every member's full lexical context is not required. The proposal
+must not overwrite a newer membership or teaching-note state unseen in its
+evidence. Served snapshots freeze reveal text as well as accepted answers;
+extensions do not revise frozen history. No extra per-learner content approval is
 required. Shared publication retirement/quarantine controls serving globally.
 Proposal evidence, source responses, provenance, and compensation remain private.
 
@@ -73,21 +86,32 @@ The frontend owns covering, reinforcement, drain, and Undo. A covered pure-cue
 assessment uses its own deferred commit intent, independent attempt history,
 and server-validated, idempotent scheduler projection.
 
-## Promotion and production coverage
+## Coordinated cleanup and production coverage
 
 Reflection, not set membership alone, decides whether the stimulus expresses a
 shared semantic axis. The model explicitly selects an existing pure cue to
 extend or proposes a new one. The adapter supplies current intersecting cues
 and validates the selected identity; it does not infer semantic equivalence.
 
-One authorized promotion atomically:
+Stage two owns both words' production-cue repertoire. One authorized cleanup
+atomically:
 
-1. Creates and publishes, or extends, the shared pure cue with target and response word IDs.
+1. Optionally creates and publishes, or extends, a shared pure cue with target
+   and response word IDs and a holistic teaching note.
 2. Retires explicitly identified overbroad shared targeted cues globally
    (deactivating unshared cues only for their owner).
 3. Keeps or drafts distinctive single-answer cues for each of the two words.
 4. Makes the resulting shared content coverage visible to all learners.
-5. Compensates the originating target's false lapse when a snapshot exists.
+5. Compensates the originating target's unfair lapse when the independent
+   source-fairness judgment and applied repair qualify and a snapshot exists.
+
+No useful shared exercise is a successful cleanup outcome: useful word-owned
+repairs need no pure destination. Expect natural word-specific cues in that
+case. Failure to author one is not evidence for suppression. Inspect the final
+repertoire, including the dictionary-derived fallback exposed when all targeted
+cues are retired without shared coverage; do not claim that retirement alone
+has repaired a recurring fallback ambiguity. No new suppression policy follows
+from this edge case.
 
 The policy is symmetric, but the two words may have different leftovers.
 Unrelated cues are not implicitly removed. `proxied` is a derived word-level
@@ -110,22 +134,22 @@ diagnostics. Omitted second-opinion proposals remain deferred. This is a
 word-pair guard, not complete collision detection across pure-cue destinations.
 
 Stage one chooses exactly one path per item, before drafting interventions:
-ordinary reflection with explanation/proposals, or an explicit shared-axis
-handoff with no proposals or questions. The handoff states the expressive
-instinct, its boundaries, and why the actual response was valid for the served
-cue. A merely possible shared category is insufficient. Handoffs require a
+ordinary reflection with explanation/proposals, or a suspected-entanglement
+handoff with no proposals or questions. This is a best-effort filter, not a
+declaration of shared meaning or final source fairness. Ground the handoff in
+the cue actually displayed, never a more specific hypothetical task. Ordinary
+single-word repair and contrast authoring remain in stage one; contrast is a
+separate content space from coordinated production-cue management. Handoffs require a
 strict target-only rejected/Forgot source with a distinct known response word.
 Pure-cue attempts themselves are not yet reflection inputs.
 
-Stage two normally trusts that premise and reconciles it with both words'
-existing production cues and intersecting pure cues. It owns the coordinated
-content repair and the final learner explanation for routed items. The original
-served cue grounds the premise; it does not dictate the new stimulus wording.
-Stage two either proposes a promotion or explicitly reports disagreement if the
-premise is materially wrong. Disagreement is visible, non-actionable feedback:
-no proposals, manual override, or compensation for that item. Done and quality
-feedback remain available. There is no conflict-resolution workflow yet and no
-provider-directed database tool loop.
+Stage two assesses the handoff against both words' existing production cues and
+intersecting pure cues. It owns coordinated content repair, independent judgment
+of the original exercise's fairness, and the final learner explanation. It may
+publish shared practice plus word repairs, repair only word cues, or explain
+without proposing changes. It can revise stage one's assessment. No-slot cleanup
+does not assert that the pair cannot overlap in any possible context. There is
+no provider-directed database tool loop.
 
 The stage chain is versioned separately from legacy one-shot history. Persist
 the exact stage input before calling the provider; a retry of stage two reuses
@@ -141,7 +165,7 @@ There is no age-based compatibility window. Learners continue with new study.
 
 Final new results cannot propose new multi-answer word-owned cues. Ordinary
 items keep stage one's explanation/proposals; routed items use stage two's
-explanation and promotion or disagreement outcome. There are no competing
+explanation and cleanup or explanation-only outcome. There are no competing
 first-stage content deltas for routed items to merge or discard. Unrelated
 ordinary items remain available. All content and compensation effects still
 require explicit proposal acceptance.
@@ -156,8 +180,10 @@ response word's scheduler. Restored production `nextDueAt` is the later of
 the snapshot due time and six hours after restoration, so remaining (non-proxied)
 production does not become immediately due.
 
-Two accepted proposals can restore that snapshot. Promotion does, when it
-publishes or extends a pure cue. An ordinary cue repair does, when it installs
+Coordinated cleanup can restore that snapshot when it remedies an independently
+judged unfair source exercise. Pure-cue publication alone does not establish
+past unfairness; absence of a shared slot does not establish a fair lapse.
+An ordinary cue repair restores it when it installs
 a fairer cue (`create` or `replace`) and judges the served exercise
 `misleading_or_overloaded_cue`. Deactivation alone does not restore it, and a
 repair that only improves a fair cue does not. The repair addresses that
@@ -166,16 +192,21 @@ Naming a later attempt, or more than one attempt, fails the application.
 The same action restores once, whichever proposal runs first.
 
 Intervening study can be overwritten by this restoration: this is an accepted
-quirk of asynchronous reflection, not a replay/rebase feature. Promotion requires
+quirk of asynchronous reflection, not a replay/rebase feature. Pair cleanup requires
 a strict target-only source lapse and a distinct resolved response word; a clean
 success is an invalid source, not a `not_applicable` compensation outcome.
 Missing snapshots report `unavailable`; a repeated restore reports
-`already_restored`. Stage-two disagreement does not fall back to ordinary
-cue-repair forgiveness; that remains a known gap. Obsolete reflection
-work is read-only after the generation-contract cutover.
+`already_restored`. Explanation or retirement alone has no independent
+compensation effect. Obsolete reflection work is read-only after the
+generation-contract cutover.
 
 ## Non-goals
 
 No live model grading, refinement ladder, member-balancing penalty, scripted
 semantic promotion of legacy cues, global session time planner, or daily
 strong-cue debt.
+General pure-cue stimulus/axis repair, member removal, retirement, and multiple
+stimuli remain deferred. Existing mixed axis notes are not semantically migrated
+or repaired by the generation prompt; the new teaching field supplies a landing
+spot for separate operator cleanup. New and upgraded databases initialize that
+field without interpreting existing text.

@@ -4,7 +4,7 @@ import type {
   CreateContrastClusterOperationV1,
   ProductionMistakeReflectionItemV2,
   ReflectionOperation,
-  ReflectionItemV5,
+  ReflectionItemV6,
   RepairProductionCueOperationV2,
   SessionReflectionBundleV1,
   SessionReflectionResultV4,
@@ -719,6 +719,76 @@ describe('reflection page model', () => {
     );
   });
 
+  test('edits word-only cleanup and source fairness independently of shared publication', () => {
+    const evidence = promotionEvidence();
+    let draft = createManualOperation('reconcile_production_cues', 1, evidence);
+    assert.equal(draft.kind, 'reconcile_production_cues');
+    if (draft.kind !== 'reconcile_production_cues') return;
+    assert.equal(draft.destination, null);
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'toggle_promotion_deactivation', wordId: 'target', cueId: 'cue-1',
+    }) as typeof draft;
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'add_promotion_distinctive_cue', wordId: 'target',
+    }) as typeof draft;
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'update_promotion_distinctive_cue', wordId: 'target', index: 0,
+      patch: { text: 'a natural target-specific context' },
+    }) as typeof draft;
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'set_reconciliation_fairness', fairness: 'misleading_or_overloaded_cue',
+    }) as typeof draft;
+    assert.equal(draft.destination, null);
+    assert.equal(draft.sourceAttemptFairness, 'misleading_or_overloaded_cue');
+    assert.equal(draft.wordPlans[0]!.distinctiveCueDrafts[0]!.text, 'a natural target-specific context');
+    assert.deepEqual(getOperationDraftState(draft, draft, evidence).validationErrors, []);
+
+    const destination = {
+      kind: 'existing' as const, pureCueId: 'pure-1', teachingNote: 'Teaching for the complete membership',
+      expectedAcceptedWordIds: ['target'], expectedTeachingNote: '',
+    };
+    draft = reduceReflectionOperationDraft(draft, { type: 'set_promotion_destination', destination }) as typeof draft;
+    const clone = cloneReflectionOperation(draft);
+    assert.equal(clone.kind, 'reconcile_production_cues');
+    if (clone.kind !== 'reconcile_production_cues' || clone.destination?.kind !== 'existing') return;
+    clone.destination.expectedAcceptedWordIds.push('unrelated');
+    assert.deepEqual(destination.expectedAcceptedWordIds, ['target']);
+    draft = reduceReflectionOperationDraft(draft, { type: 'set_promotion_destination', destination: null }) as typeof draft;
+    assert.equal(draft.sourceAttemptFairness, 'misleading_or_overloaded_cue');
+    assert.deepEqual(draft.wordPlans[0]!.deactivateCueIds, ['cue-1']);
+  });
+
+  test('editing holistic teaching content preserves the shared stimulus, axis, and extension preconditions', () => {
+    const evidence = promotionEvidence();
+    let draft = createManualOperation('reconcile_production_cues', 1, evidence);
+    assert.equal(draft.kind, 'reconcile_production_cues');
+    if (draft.kind !== 'reconcile_production_cues') return;
+    const createDestination = {
+      kind: 'create' as const, stimulus: 'A concrete shared context', axisNote: 'Shared expressive purpose',
+      teachingNote: 'Initial member comparison',
+    };
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'set_promotion_destination', destination: createDestination,
+    }) as typeof draft;
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'set_promotion_destination', destination: { ...createDestination, teachingNote: 'Revised complete explanation' },
+    }) as typeof draft;
+    assert.deepEqual(draft.destination, { ...createDestination, teachingNote: 'Revised complete explanation' });
+    const extension = {
+      kind: 'existing' as const, pureCueId: 'pure-1', teachingNote: 'Existing aggregate teaching',
+      expectedAcceptedWordIds: ['target'], expectedTeachingNote: 'Existing aggregate teaching',
+    };
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'set_promotion_destination', destination: extension,
+    }) as typeof draft;
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'set_promotion_destination', destination: { ...extension, teachingNote: 'Aggregate teaching including alternate' },
+    }) as typeof draft;
+    assert.deepEqual(draft.destination, { ...extension, teachingNote: 'Aggregate teaching including alternate' });
+    assert.equal(draft.sourceAttemptFairness, 'fair');
+    assert.equal(draft.sourceAttemptId, 'attempt-1');
+  });
+
   test('builds and edits a promotion without changing the server-stamped pair', () => {
     const evidence = promotionEvidence();
     let draft = createManualOperation('promote_pure_elicitation', 1, evidence);
@@ -965,7 +1035,7 @@ function v2Evidence(): ProductionMistakeReflectionItemV2 {
   };
 }
 
-function promotionEvidence(): ReflectionItemV5 {
+function promotionEvidence(): ReflectionItemV6 {
   const evidence = v2Evidence();
   return {
     ...evidence,
@@ -986,7 +1056,9 @@ function promotionEvidence(): ReflectionItemV5 {
         id: 'pure-1',
         stimulus: 'shared axis',
         axisNote: 'explicit axis',
-        acceptedWordIds: ['target'],
+        teachingNote: '',
+        acceptedWordIds: ['target', 'third'],
+        acceptedMembers: [{ wordId: 'target', hanzi: '目标' }, { wordId: 'third', hanzi: '其他' }],
       }],
     },
   };

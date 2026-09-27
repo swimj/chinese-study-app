@@ -7,8 +7,8 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import type {
   ReflectionOperation,
-  SessionReflectionBundleV5,
-  SessionReflectionResultV8,
+  SessionReflectionBundleV6,
+  SessionReflectionResultV9,
 } from '../src/domain/reflection.js';
 
 type DbModule = typeof import('../server/db.ts');
@@ -94,7 +94,7 @@ describe('attention badges', { concurrency: false }, () => {
       generatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
-      promptVersion: 'reflection-staged-v2',
+      promptVersion: 'reflection-staged-v3',
       evidenceBundle: bundle(sessionId),
       result: result(suppressOperation('target')),
     }).artifact;
@@ -244,11 +244,11 @@ function materialize(
   insertSession(sessionId);
   return dbModule.materializeReflectionArtifact({
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v4',
+    reflectionFlowVersion: 'initial_post_session_reflection.v5',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-staged-v2',
+    promptVersion: 'reflection-staged-v3',
     evidenceBundle: bundle(sessionId),
     result: result(operation),
   });
@@ -260,14 +260,14 @@ function materializeInformational(
   insertSession(sessionId);
   return dbModule.materializeReflectionArtifact({
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v4',
+    reflectionFlowVersion: 'initial_post_session_reflection.v5',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-staged-v2',
+    promptVersion: 'reflection-staged-v3',
     evidenceBundle: bundle(sessionId),
     result: {
-      schemaVersion: 'session_reflection_result.v8',
+      schemaVersion: 'session_reflection_result.v9',
       itemResults: [{
         itemId: 'item',
         diagnosisTags: ['ordinary_retrieval_noise'],
@@ -291,13 +291,13 @@ function recordFailedRun(sessionId: string, runId: string, completedAt: string):
   dbModule.recordReflectionGenerationRun({
     runId,
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v4',
+    reflectionFlowVersion: 'initial_post_session_reflection.v5',
     startedAt: generatedAt,
     completedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
     providerModel: 'gpt-5.6-luna',
-    promptVersion: 'reflection-staged-v2',
+    promptVersion: 'reflection-staged-v3',
     responseId: null,
     finishReason: null,
     state: 'failed',
@@ -324,13 +324,13 @@ function recordSucceededRun(sessionId: string, runId: string, completedAt: strin
   dbModule.recordReflectionGenerationRun({
     runId,
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v4',
+    reflectionFlowVersion: 'initial_post_session_reflection.v5',
     startedAt: generatedAt,
     completedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
     providerModel: 'gpt-5.6-luna',
-    promptVersion: 'reflection-staged-v2',
+    promptVersion: 'reflection-staged-v3',
     responseId: 'response-1',
     finishReason: 'stop',
     state: 'succeeded',
@@ -353,9 +353,9 @@ function recordSucceededRun(sessionId: string, runId: string, completedAt: strin
   });
 }
 
-function bundle(sessionId: string): SessionReflectionBundleV5 {
+function bundle(sessionId: string): SessionReflectionBundleV6 {
   return {
-    schemaVersion: 'session_reflection_bundle.v5',
+    schemaVersion: 'session_reflection_bundle.v6',
     generatedAt,
     session: {
       sessionId,
@@ -393,9 +393,9 @@ function bundle(sessionId: string): SessionReflectionBundleV5 {
   };
 }
 
-function result(operation: ReflectionOperation): SessionReflectionResultV8 {
+function result(operation: ReflectionOperation): SessionReflectionResultV9 {
   return {
-    schemaVersion: 'session_reflection_result.v8',
+    schemaVersion: 'session_reflection_result.v9',
     itemResults: [{
       itemId: 'item',
       diagnosisTags: ['persistent_confusion'],

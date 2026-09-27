@@ -1,17 +1,17 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
-  normalizeStagedReflectionDiagnosisResultV1,
-  validatePureCuePromotionResultV1,
-  validateStagedReflectionDiagnosisResultV1,
-  type PureCuePromotionBundleV1,
+  normalizeStagedReflectionDiagnosisResultV2,
+  validatePureCuePromotionResultV2,
+  validateStagedReflectionDiagnosisResultV2,
+  type PureCuePromotionBundleV2,
   type ReflectionItemV4,
   type SessionReflectionBundleV4,
-  type StagedReflectionDiagnosisResultV1Wire,
+  type StagedReflectionDiagnosisResultV2Wire,
 } from '../src/domain/reflection.ts';
 import {
-  pureCuePromotionResultV1WireSchema,
-  stagedReflectionDiagnosisResultV1WireSchema,
+  pureCuePromotionResultV2WireSchema,
+  stagedReflectionDiagnosisResultV2WireSchema,
 } from '../src/domain/reflection-result-schema.ts';
 import { validateJsonSchema } from '../server/llm/json-schema-validator.ts';
 
@@ -60,17 +60,15 @@ function bundle(inputItem = item()): SessionReflectionBundleV4 {
   };
 }
 
-function sharedAxisWire(): StagedReflectionDiagnosisResultV1Wire {
+function ambiguousPairWire(): StagedReflectionDiagnosisResultV2Wire {
   return {
-    schemaVersion: 'staged_reflection_diagnosis_result.v1',
+    schemaVersion: 'staged_reflection_diagnosis_result.v2',
     itemResults: [{
-      kind: 'shared_axis',
+      kind: 'ambiguous_pair',
       itemId: 'item-1',
       diagnosisTags: ['cue_overlap_hides_usage_difference'],
       handoff: {
-        axis: 'one bounded shared meaning',
-        boundaries: 'The words differ outside this meaning and in common constructions.',
-        responseValidity: 'The rejected response naturally answers the exact shared meaning.',
+        ambiguityReason: 'The rejected response plausibly answers the broad cue.',
       },
     }],
   };
@@ -79,8 +77,8 @@ function sharedAxisWire(): StagedReflectionDiagnosisResultV1Wire {
 describe('staged reflection diagnosis contract', () => {
   test('derives repair identity, ownership and create/replace from retained evidence', () => {
     const evidence = bundle();
-    const wire: StagedReflectionDiagnosisResultV1Wire = {
-      schemaVersion: 'staged_reflection_diagnosis_result.v1',
+    const wire: StagedReflectionDiagnosisResultV2Wire = {
+      schemaVersion: 'staged_reflection_diagnosis_result.v2',
       itemResults: [{
         kind: 'ordinary',
         itemId: 'item-1',
@@ -99,9 +97,9 @@ describe('staged reflection diagnosis contract', () => {
       }],
     };
 
-    assert.deepEqual(validateJsonSchema(wire, stagedReflectionDiagnosisResultV1WireSchema), []);
-    const normalized = normalizeStagedReflectionDiagnosisResultV1(wire, evidence);
-    assert.deepEqual(validateStagedReflectionDiagnosisResultV1(normalized, evidence), []);
+    assert.deepEqual(validateJsonSchema(wire, stagedReflectionDiagnosisResultV2WireSchema), []);
+    const normalized = normalizeStagedReflectionDiagnosisResultV2(wire, evidence);
+    assert.deepEqual(validateStagedReflectionDiagnosisResultV2(normalized, evidence), []);
     const result = normalized.itemResults[0]!;
     assert.equal(result.kind, 'ordinary');
     if (result.kind !== 'ordinary') throw new Error('Expected ordinary result.');
@@ -117,8 +115,8 @@ describe('staged reflection diagnosis contract', () => {
     }]);
 
     const fallback = bundle(item({ servedCue: { ...evidence.items[0]!.servedCue, cueId: null } }));
-    const fallbackResult = normalizeStagedReflectionDiagnosisResultV1(wire, fallback);
-    assert.deepEqual(validateStagedReflectionDiagnosisResultV1(fallbackResult, fallback), []);
+    const fallbackResult = normalizeStagedReflectionDiagnosisResultV2(wire, fallback);
+    assert.deepEqual(validateStagedReflectionDiagnosisResultV2(fallbackResult, fallback), []);
     const fallbackItem = fallbackResult.itemResults[0]!;
     if (fallbackItem.kind !== 'ordinary') throw new Error('Expected ordinary result.');
     const fallbackOperation = fallbackItem.proposals[0]!.operation;
@@ -128,7 +126,7 @@ describe('staged reflection diagnosis contract', () => {
     }]);
 
     const synthetic = bundle(item({ sourceAttemptId: 'synthetic-reflection-attempt:review' }));
-    const syntheticItem = normalizeStagedReflectionDiagnosisResultV1(wire, synthetic).itemResults[0]!;
+    const syntheticItem = normalizeStagedReflectionDiagnosisResultV2(wire, synthetic).itemResults[0]!;
     if (syntheticItem.kind !== 'ordinary') throw new Error('Expected ordinary result.');
     const syntheticOperation = syntheticItem.proposals[0]!.operation;
     if (syntheticOperation.kind !== 'repair_production_cue') throw new Error('Expected repair');
@@ -141,7 +139,7 @@ describe('staged reflection diagnosis contract', () => {
       const malformedOperation = malformedItem.proposals[0]!.operation;
       if (malformedOperation.kind !== 'repair_production_cue') throw new Error('Expected repair');
       Object.assign(malformedOperation.replacementCues[0]!, extra);
-      assert.notDeepEqual(validateJsonSchema(malformed, stagedReflectionDiagnosisResultV1WireSchema), []);
+      assert.notDeepEqual(validateJsonSchema(malformed, stagedReflectionDiagnosisResultV2WireSchema), []);
     }
     const wrongOwner = structuredClone(wire);
     const wrongOwnerItem = wrongOwner.itemResults[0]!;
@@ -149,7 +147,7 @@ describe('staged reflection diagnosis contract', () => {
     const wrongOwnerOperation = wrongOwnerItem.proposals[0]!.operation;
     if (wrongOwnerOperation.kind !== 'repair_production_cue') throw new Error('Expected repair');
     Object.assign(wrongOwnerOperation, { wordId: 'response' });
-    assert.notDeepEqual(validateJsonSchema(wrongOwner, stagedReflectionDiagnosisResultV1WireSchema), []);
+    assert.notDeepEqual(validateJsonSchema(wrongOwner, stagedReflectionDiagnosisResultV2WireSchema), []);
 
     for (const targetOperation of [
       { kind: 'suppress_definition_production' as const, version: 1 as const },
@@ -160,17 +158,17 @@ describe('staged reflection diagnosis contract', () => {
       const targetItem = targetWire.itemResults[0]!;
       if (targetItem.kind !== 'ordinary') throw new Error('Expected ordinary');
       targetItem.proposals[0]!.operation = targetOperation;
-      assert.deepEqual(validateJsonSchema(targetWire, stagedReflectionDiagnosisResultV1WireSchema), []);
-      const targetResult = normalizeStagedReflectionDiagnosisResultV1(targetWire, evidence).itemResults[0]!;
+      assert.deepEqual(validateJsonSchema(targetWire, stagedReflectionDiagnosisResultV2WireSchema), []);
+      const targetResult = normalizeStagedReflectionDiagnosisResultV2(targetWire, evidence).itemResults[0]!;
       if (targetResult.kind !== 'ordinary') throw new Error('Expected ordinary');
       assert.equal('wordId' in targetResult.proposals[0]!.operation
         && targetResult.proposals[0]!.operation.wordId, 'target');
       Object.assign(targetItem.proposals[0]!.operation, { wordId: 'response' });
-      assert.notDeepEqual(validateJsonSchema(targetWire, stagedReflectionDiagnosisResultV1WireSchema), []);
+      assert.notDeepEqual(validateJsonSchema(targetWire, stagedReflectionDiagnosisResultV2WireSchema), []);
     }
     const unknownItem = structuredClone(wire);
     unknownItem.itemResults[0]!.itemId = 'missing';
-    assert.throws(() => normalizeStagedReflectionDiagnosisResultV1(unknownItem, evidence), /Unknown staged reflection item/);
+    assert.throws(() => normalizeStagedReflectionDiagnosisResultV2(unknownItem, evidence), /Unknown staged reflection item/);
 
     const emptyRepair = structuredClone(wire);
     const emptyItem = emptyRepair.itemResults[0]!;
@@ -178,20 +176,20 @@ describe('staged reflection diagnosis contract', () => {
     const emptyOperation = emptyItem.proposals[0]!.operation;
     if (emptyOperation.kind !== 'repair_production_cue') throw new Error('Expected repair');
     emptyOperation.replacementCues = [];
-    assert.notDeepEqual(validateJsonSchema(emptyRepair, stagedReflectionDiagnosisResultV1WireSchema), []);
+    assert.notDeepEqual(validateJsonSchema(emptyRepair, stagedReflectionDiagnosisResultV2WireSchema), []);
     const unsupportedJudgment = structuredClone(wire);
     const judgmentItem = unsupportedJudgment.itemResults[0]!;
     if (judgmentItem.kind !== 'ordinary') throw new Error('Expected ordinary');
     const judgmentOperation = judgmentItem.proposals[0]!.operation;
     if (judgmentOperation.kind !== 'repair_production_cue') throw new Error('Expected repair');
     Object.assign(judgmentOperation.sourceAttemptJudgments[0]!, { sourceAttemptId: 'forged' });
-    assert.notDeepEqual(validateJsonSchema(unsupportedJudgment, stagedReflectionDiagnosisResultV1WireSchema), []);
+    assert.notDeepEqual(validateJsonSchema(unsupportedJudgment, stagedReflectionDiagnosisResultV2WireSchema), []);
   });
 
   test('fails loudly when an ordinary result drafts a multi-answer word-owned cue', () => {
     const evidence = bundle();
     const wire = {
-      schemaVersion: 'staged_reflection_diagnosis_result.v1',
+      schemaVersion: 'staged_reflection_diagnosis_result.v2',
       itemResults: [{
         kind: 'ordinary',
         itemId: 'item-1',
@@ -221,26 +219,26 @@ describe('staged reflection diagnosis contract', () => {
         questions: [],
       }],
     };
-    assert.notDeepEqual(validateJsonSchema(wire, stagedReflectionDiagnosisResultV1WireSchema), []);
+    assert.notDeepEqual(validateJsonSchema(wire, stagedReflectionDiagnosisResultV2WireSchema), []);
   });
 
-  test('keeps shared-axis output exclusive and rejects ineligible routing without tag heuristics', () => {
+  test('keeps ambiguous-pair output exclusive and rejects ineligible routing without tag heuristics', () => {
     const evidence = bundle();
-    const wire = sharedAxisWire();
-    assert.deepEqual(validateJsonSchema(wire, stagedReflectionDiagnosisResultV1WireSchema), []);
-    assert.deepEqual(validateStagedReflectionDiagnosisResultV1(wire, evidence), []);
+    const wire = ambiguousPairWire();
+    assert.deepEqual(validateJsonSchema(wire, stagedReflectionDiagnosisResultV2WireSchema), []);
+    assert.deepEqual(validateStagedReflectionDiagnosisResultV2(wire, evidence), []);
 
     const muddy = structuredClone(wire) as unknown as { itemResults: Array<Record<string, unknown>> };
     muddy.itemResults[0]!.learnerExplanation = 'Not allowed on a shared-axis handoff.';
     assert.match(
-      validateJsonSchema(muddy, stagedReflectionDiagnosisResultV1WireSchema).join('\n'),
+      validateJsonSchema(muddy, stagedReflectionDiagnosisResultV2WireSchema).join('\n'),
       /does not match any allowed schema/,
     );
 
     const unrelatedTags = structuredClone(wire);
     unrelatedTags.itemResults[0]!.diagnosisTags = ['ordinary_retrieval_noise'];
     assert.deepEqual(
-      validateStagedReflectionDiagnosisResultV1(unrelatedTags, evidence),
+      validateStagedReflectionDiagnosisResultV2(unrelatedTags, evidence),
       [],
       'routing is explicit and does not depend on a diagnosis-tag heuristic',
     );
@@ -252,22 +250,22 @@ describe('staged reflection diagnosis contract', () => {
       },
     }));
     assert.match(
-      validateStagedReflectionDiagnosisResultV1(wire, ineligible).join('\n'),
-      /shared_axis requires a rejected strict target-only production attempt/,
+      validateStagedReflectionDiagnosisResultV2(wire, ineligible).join('\n'),
+      /ambiguous_pair requires a rejected strict target-only production attempt/,
     );
   });
 
   test('does not offer unsupported persistence claims in the staged diagnosis tags', () => {
-    const wire = sharedAxisWire();
+    const wire = ambiguousPairWire();
     Object.assign(wire.itemResults[0]!, { diagnosisTags: ['persistent_confusion'] });
-    assert.notDeepEqual(validateJsonSchema(wire, stagedReflectionDiagnosisResultV1WireSchema), []);
-    assert.match(validateStagedReflectionDiagnosisResultV1(wire, bundle()).join('\n'), /persistent_confusion is not available/);
+    assert.notDeepEqual(validateJsonSchema(wire, stagedReflectionDiagnosisResultV2WireSchema), []);
+    assert.match(validateStagedReflectionDiagnosisResultV2(wire, bundle()).join('\n'), /persistent_confusion is not available/);
   });
 });
 
 describe('promotion reconciliation contract', () => {
-  const promotionBundle: PureCuePromotionBundleV1 = {
-    schemaVersion: 'pure_cue_promotion_bundle.v1',
+  const promotionBundle: PureCuePromotionBundleV2 = {
+    schemaVersion: 'pure_cue_promotion_bundle.v2',
     generatedAt,
     sourceSessionId: 'session-1',
     studyProfile: 'mandarin',
@@ -277,9 +275,7 @@ describe('promotion reconciliation contract', () => {
       targetWord: word('target'),
       responseWord: word('response'),
       servedCue: item().servedCue,
-      handoff: sharedAxisWire().itemResults[0]!.kind === 'shared_axis'
-        ? sharedAxisWire().itemResults[0]!.handoff
-        : { axis: '', boundaries: '', responseValidity: '' },
+      handoff: { ambiguityReason: 'The response plausibly fits the cue.' },
       promotionEvidence: {
         diagnosisTags: ['cue_overlap_hides_usage_difference'],
         words: ['target', 'response'].map((wordId) => ({
@@ -291,20 +287,22 @@ describe('promotion reconciliation contract', () => {
     }],
   };
 
-  test('requires learner-facing text for promote and permits only explicit disagreement otherwise', () => {
+  test('requires learner-facing text for cleanup and permits explanation-only without content', () => {
     const promote = {
-      schemaVersion: 'pure_cue_promotion_result.v1',
+      schemaVersion: 'pure_cue_promotion_result.v2',
       itemResults: [{
         itemId: 'item-1',
         decision: {
-          kind: 'promote',
+          kind: 'reconcile',
           rationale: 'The explicit shared axis is useful.',
           learnerExplanation: 'Both words fit this bounded prompt, while their broader uses remain distinct.',
           operation: {
+            sourceAttemptFairness: 'fair',
             destination: {
               kind: 'create',
               stimulus: 'one bounded shared meaning',
-              axisNote: 'The shared axis described by stage 1.',
+              axisNote: 'A useful shared expressive purpose.',
+              teachingNote: 'These words have distinct uses elsewhere.',
             },
             wordPlans: ['target', 'response'].map((wordId) => ({
               wordId,
@@ -315,21 +313,21 @@ describe('promotion reconciliation contract', () => {
         },
       }],
     };
-    assert.deepEqual(validateJsonSchema(promote, pureCuePromotionResultV1WireSchema), []);
-    assert.deepEqual(validatePureCuePromotionResultV1(promote, promotionBundle), []);
+    assert.deepEqual(validateJsonSchema(promote, pureCuePromotionResultV2WireSchema), []);
+    assert.deepEqual(validatePureCuePromotionResultV2(promote, promotionBundle), []);
 
     const disagreement = {
-      schemaVersion: 'pure_cue_promotion_result.v1',
+      schemaVersion: 'pure_cue_promotion_result.v2',
       itemResults: [{
         itemId: 'item-1',
         decision: {
-          kind: 'disagreement',
+          kind: 'explanation_only',
           learnerExplanation: 'On review, the proposed shared axis would erase an important usage boundary.',
         },
       }],
     };
-    assert.deepEqual(validateJsonSchema(disagreement, pureCuePromotionResultV1WireSchema), []);
-    assert.deepEqual(validatePureCuePromotionResultV1(disagreement, promotionBundle), []);
+    assert.deepEqual(validateJsonSchema(disagreement, pureCuePromotionResultV2WireSchema), []);
+    assert.deepEqual(validatePureCuePromotionResultV2(disagreement, promotionBundle), []);
 
     const retiredNoPromotion = structuredClone(disagreement) as unknown as {
       itemResults: Array<{ decision: Record<string, unknown> }>;
@@ -338,6 +336,6 @@ describe('promotion reconciliation contract', () => {
       kind: 'no_promotion',
       rationale: 'Retired shape.',
     };
-    assert.notDeepEqual(validateJsonSchema(retiredNoPromotion, pureCuePromotionResultV1WireSchema), []);
+    assert.notDeepEqual(validateJsonSchema(retiredNoPromotion, pureCuePromotionResultV2WireSchema), []);
   });
 });

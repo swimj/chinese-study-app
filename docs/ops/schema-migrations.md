@@ -187,6 +187,14 @@ pre-upgrade backup if historical inspection of that state is needed.
 continuations and per-provider-call links. Legacy generation runs and artifacts
 are preserved without synthetic continuation links.
 
+`0012_pure_cue_teaching_notes.sql` separates holistic reveal teaching from the
+semantic axis on pure cues and served snapshots. Existing rows receive empty
+teaching notes; axis text and historical answers are not interpreted or moved.
+Separate operator cleanup of old mixed axis notes is outside this migration.
+Authorized extension rewrites retain immutable private teaching revisions and
+leave already-served snapshots unchanged. Reflection execution cuts over to the
+new diagnosis/cleanup contracts; historical results remain readable.
+
 This is a schema-changing release: use the stopped-writer migration procedure
 above, not the application-only hosted upgrade. Fresh databases apply the same
 migration automatically; existing databases require the explicit offline step.

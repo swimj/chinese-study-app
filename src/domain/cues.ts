@@ -21,6 +21,7 @@ export type TargetedCueContent = CueContentBase & {
 export type PureCueContent = CueContentBase & {
   kind: 'pure';
   axisNote: string;
+  teachingNote: string;
 };
 
 export type CueContent = TargetedCueContent | PureCueContent;

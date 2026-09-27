@@ -399,7 +399,7 @@ export function publishAuthorizedProductionCueWithoutTransaction(input: {
     !invocation
     || !(
       (invocation.operation_kind === 'repair_production_cue' && invocation.operation_version === 2)
-      || (invocation.operation_kind === 'promote_pure_elicitation' && invocation.operation_version === 1)
+      || (['promote_pure_elicitation', 'reconcile_production_cues'].includes(invocation.operation_kind) && invocation.operation_version === 1)
     )
     || (invocation.application_state !== 'pending' && invocation.application_state !== 'applied')
     || !effectRefsContain(invocation.effect_refs_json, 'production_cue', input.cueId, invocation.application_state)
@@ -472,7 +472,8 @@ export function publishAuthorizedPureCueWithoutTransaction(input: {
     ? null
     : authorizedPureCueCreate(invocation.operation_json, input.invocationId);
   if (
-    invocation?.operation_kind !== 'promote_pure_elicitation'
+    invocation === undefined
+    || !['promote_pure_elicitation', 'reconcile_production_cues'].includes(invocation.operation_kind)
     || invocation.operation_version !== 1
     || invocation.application_state !== 'pending'
     || authorizedCreate === null
@@ -484,13 +485,14 @@ export function publishAuthorizedPureCueWithoutTransaction(input: {
   }
 
   const cue = getDb().prepare(`
-    SELECT id, stimulus, axis_note, created_at
+    SELECT id, stimulus, axis_note, teaching_note, created_at
     FROM pure_cues
     WHERE id = ?
   `).get(input.pureCueId) as {
     id: string;
     stimulus: string;
     axis_note: string;
+    teaching_note: string;
     created_at: string;
   } | undefined;
   const acceptedWordIds = cue === undefined ? [] : (getDb().prepare(`
@@ -503,6 +505,7 @@ export function publishAuthorizedPureCueWithoutTransaction(input: {
     cue === undefined
     || cue.stimulus !== authorizedCreate.stimulus
     || cue.axis_note !== authorizedCreate.axisNote
+    || cue.teaching_note !== authorizedCreate.teachingNote
     || cue.created_at !== input.authorizedAt
     || acceptedWordIds.length !== 2
     || !authorizedCreate.acceptedWordIds.every((wordId) => acceptedWordIds.includes(wordId))
@@ -586,7 +589,7 @@ export function retireSharedProductionCuePublicationWithoutTransaction(input: {
     || invocation.application_state !== 'pending'
     || !(
       (invocation.operation_kind === 'repair_production_cue' && invocation.operation_version === 2)
-      || (invocation.operation_kind === 'promote_pure_elicitation' && invocation.operation_version === 1)
+      || (['promote_pure_elicitation', 'reconcile_production_cues'].includes(invocation.operation_kind) && invocation.operation_version === 1)
     )
     || !authorizedProductionCueRetirement(invocation.operation_json, input.cueId)
   ) {
@@ -1227,12 +1230,13 @@ function authorizedPureCueCreate(rawOperation: string, invocationId: string): {
   pureCueId: string;
   stimulus: string;
   axisNote: string;
+  teachingNote: string;
   acceptedWordIds: [string, string];
 } | null {
   const operation = parsedInvocationOperation(rawOperation);
   if (
-    operation?.kind !== 'promote_pure_elicitation'
-    || operation.version !== 1
+    !['promote_pure_elicitation', 'reconcile_production_cues'].includes(String(operation?.kind))
+    || operation?.version !== 1
     || !isRecord(operation.destination)
     || operation.destination.kind !== 'create'
     || typeof operation.destination.stimulus !== 'string'
@@ -1244,6 +1248,7 @@ function authorizedPureCueCreate(rawOperation: string, invocationId: string): {
     pureCueId: `pure-cue:reflection:${invocationId}`,
     stimulus: operation.destination.stimulus.trim(),
     axisNote: operation.destination.axisNote.trim(),
+    teachingNote: typeof operation.destination.teachingNote === 'string' ? operation.destination.teachingNote.trim() : '',
     acceptedWordIds: [operation.targetWordId, operation.responseWordId],
   };
 }
@@ -1257,7 +1262,7 @@ function authorizedProductionCueRetirement(rawOperation: string, cueId: string):
       && change.cueId === cueId
     ));
   }
-  if (operation?.kind === 'promote_pure_elicitation' && operation.version === 1) {
+  if (['promote_pure_elicitation', 'reconcile_production_cues'].includes(String(operation?.kind)) && operation?.version === 1) {
     return Array.isArray(operation.wordPlans) && operation.wordPlans.some((plan) => (
       isRecord(plan)
       && Array.isArray(plan.deactivateCueIds)

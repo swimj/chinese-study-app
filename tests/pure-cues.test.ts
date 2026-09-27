@@ -22,6 +22,7 @@ function cue(overrides: Partial<PureCue> = {}): PureCue {
     id: 'cue-a',
     stimulus: 'to tell an untruth',
     axisNote: 'ordinary speech',
+    teachingNote: '',
     acceptedWordIds: ['word-a', 'word-b'],
     intervalHours: 24,
     easeFactor: 2.5,
@@ -41,6 +42,7 @@ function servedSnapshot(): PureCueServedSnapshot {
     servedAt: now,
     stimulus: 'to tell an untruth',
     axisNote: 'ordinary speech',
+    teachingNote: '',
     acceptedAnswers: [
       { wordId: 'word-a', hanzi: '撒谎', traditional: '撒謊' },
       { wordId: 'word-b', hanzi: '说谎', traditional: '說謊' },
@@ -245,7 +247,7 @@ describe('pure cue persistence', { concurrency: false }, () => {
     });
     assert.deepEqual(created, {
       kind: 'pure',
-      id: 'pure-a', stimulus: 'to tell an untruth', axisNote: 'ordinary speech',
+      id: 'pure-a', stimulus: 'to tell an untruth', axisNote: 'ordinary speech', teachingNote: '',
       acceptedWordIds: ['word-a', 'word-b'], active: false,
     });
     assert.equal(dbModule.getPureCue('pure-a'), null);

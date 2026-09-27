@@ -168,6 +168,7 @@ describe('reflection operation registry and validation', () => {
         ['repair_production_cue', 2, true, 'supported'],
         ['add_production_cue_supplement', 1, true, 'supported'],
         ['accept_production_alternate', 1, true, 'unsupported'],
+        ['reconcile_production_cues', 1, true, 'supported'],
         ['promote_pure_elicitation', 1, true, 'supported'],
       ],
     );

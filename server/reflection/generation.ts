@@ -1,14 +1,14 @@
 import type {
   SessionReflectionBundleV4,
-  SessionReflectionBundleV5,
-  CuratedReflectionBundleV2,
+  SessionReflectionBundleV6,
+  CuratedReflectionBundleV3,
   CuratedReflectionDiagnosisBundleV2,
-  PureCuePromotionBundleV1,
-  PureCuePromotionResultV1Wire,
-  StagedReflectionDiagnosisResultV1,
-  SessionReflectionResultV8,
+  PureCuePromotionBundleV2,
+  PureCuePromotionResultV2Wire,
+  StagedReflectionDiagnosisResultV2,
+  SessionReflectionResultV9,
 } from '../../src/domain/reflection.ts';
-import { validateSessionReflectionResultV8 } from '../../src/domain/reflection.ts';
+import { validateSessionReflectionResultV9, stampReconcileProductionCuesOperation } from '../../src/domain/reflection.ts';
 import {
   createReflectionGenerationContinuation,
   getReflectionGenerationContinuationRetrySource,
@@ -415,9 +415,9 @@ type StagedRunSuccess<T> = {
 };
 
 type PreparedReflectionGenerationContinuation = ReflectionGenerationContinuation & {
-  diagnosisResult: StagedReflectionDiagnosisResultV1;
-  finalEvidenceBundle: SessionReflectionBundleV5 | CuratedReflectionBundleV2;
-  promotionBundle: PureCuePromotionBundleV1;
+  diagnosisResult: StagedReflectionDiagnosisResultV2;
+  finalEvidenceBundle: SessionReflectionBundleV6 | CuratedReflectionBundleV3;
+  promotionBundle: PureCuePromotionBundleV2;
 };
 
 function assertPreparedReflectionGenerationContinuation(
@@ -448,7 +448,7 @@ async function runStagedContinuation(input: {
   resumeMetadata?: LunaReflectionRunMetadata;
 }): Promise<InitialReflectionGenerationResult> {
   let continuation = input.continuation;
-  let diagnosisCall: StagedRunSuccess<StagedReflectionDiagnosisResultV1> | null = null;
+  let diagnosisCall: StagedRunSuccess<StagedReflectionDiagnosisResultV2> | null = null;
   if (input.startingStage === 'diagnosis' && continuation.diagnosisResult === null) {
     diagnosisCall = await runDiagnosisStage({ ...input, continuation });
     try {
@@ -510,7 +510,7 @@ function materializeStagedResult(
     'materializeArtifact' | 'now'
   >,
   continuation: PreparedReflectionGenerationContinuation,
-  promotionResult: PureCuePromotionResultV1Wire | null,
+  promotionResult: PureCuePromotionResultV2Wire | null,
   finalCall: { metadata: LunaReflectionRunMetadata; runId: string },
 ): InitialReflectionGenerationResult {
   const result = assembleStagedReflectionResult(
@@ -528,7 +528,7 @@ function materializeStagedResult(
     model: finalCall.metadata.modelConfig,
     promptVersion: finalCall.metadata.promptVersion,
   };
-  const materialized = continuation.finalEvidenceBundle.schemaVersion === 'curated_reflection_bundle.v2'
+  const materialized = continuation.finalEvidenceBundle.schemaVersion === 'curated_reflection_bundle.v3'
     ? input.materializeArtifact({
         ...materializationBase,
         evidenceBundle: continuation.finalEvidenceBundle,
@@ -555,7 +555,7 @@ async function runDiagnosisStage(input: {
   recordRun: NonNullable<InitialReflectionGenerationDependencies['recordRun']>;
   linkContinuationRun: NonNullable<InitialReflectionGenerationDependencies['linkContinuationRun']>;
   lifecycleLogger: ReflectionLifecycleLogger | undefined;
-}): Promise<StagedRunSuccess<StagedReflectionDiagnosisResultV1>> {
+}): Promise<StagedRunSuccess<StagedReflectionDiagnosisResultV2>> {
   if (input.provider.generateDiagnosis === undefined) {
     throw new Error('The selected reflection provider does not implement the staged diagnosis contract.');
   }
@@ -564,7 +564,7 @@ async function runDiagnosisStage(input: {
     stage: 'diagnosis',
     bundle: input.continuation.diagnosisBundle,
     promptVersion: STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
-    resultSchemaVersion: 'staged_reflection_diagnosis_result.v1',
+    resultSchemaVersion: 'staged_reflection_diagnosis_result.v2',
     sourceProposalIds: input.continuation.sourceProposalIds ?? undefined,
     invoke: (options) => (
       input.provider.generateDiagnosis!(input.continuation.diagnosisBundle, options)
@@ -581,7 +581,7 @@ async function runPromotionStage(input: {
   recordRun: NonNullable<InitialReflectionGenerationDependencies['recordRun']>;
   linkContinuationRun: NonNullable<InitialReflectionGenerationDependencies['linkContinuationRun']>;
   lifecycleLogger: ReflectionLifecycleLogger | undefined;
-}): Promise<StagedRunSuccess<PureCuePromotionResultV1Wire>> {
+}): Promise<StagedRunSuccess<PureCuePromotionResultV2Wire>> {
   const bundle = input.continuation.promotionBundle;
   if (bundle === null) throw new Error('Reflection continuation promotion input is missing.');
   if (input.provider.generatePromotion === undefined) {
@@ -592,7 +592,7 @@ async function runPromotionStage(input: {
     stage: 'promotion',
     bundle,
     promptVersion: PURE_CUE_PROMOTION_PROMPT_VERSION,
-    resultSchemaVersion: 'pure_cue_promotion_result.v1',
+    resultSchemaVersion: 'pure_cue_promotion_result.v2',
     sourceProposalIds: input.continuation.sourceProposalIds ?? undefined,
     invoke: (options) => input.provider.generatePromotion!(bundle, options),
   });
@@ -738,15 +738,15 @@ function recordStagedRunOutcome(
 }
 
 export function assembleStagedReflectionResult(
-  diagnosis: StagedReflectionDiagnosisResultV1,
-  evidence: SessionReflectionBundleV5 | CuratedReflectionBundleV2,
-  promotion: PureCuePromotionResultV1Wire | null,
-): SessionReflectionResultV8 {
+  diagnosis: StagedReflectionDiagnosisResultV2,
+  evidence: SessionReflectionBundleV6 | CuratedReflectionBundleV3,
+  promotion: PureCuePromotionResultV2Wire | null,
+): SessionReflectionResultV9 {
   const promotionByItemId = new Map(
     promotion?.itemResults.map((itemResult) => [itemResult.itemId, itemResult.decision]) ?? [],
   );
   const evidenceByItemId = new Map(evidence.items.map((item) => [item.itemId, item]));
-  const itemResults: SessionReflectionResultV8['itemResults'] = diagnosis.itemResults.map((itemResult) => {
+  const itemResults: SessionReflectionResultV9['itemResults'] = diagnosis.itemResults.map((itemResult) => {
     const item = evidenceByItemId.get(itemResult.itemId)!;
     const decision = promotionByItemId.get(itemResult.itemId);
     if (itemResult.kind === 'ordinary') {
@@ -755,12 +755,12 @@ export function assembleStagedReflectionResult(
       return ordinary;
     }
     if (decision === undefined) throw new Error('Shared-axis handoff is missing its content-reconciliation decision.');
-    if (decision.kind === 'disagreement') {
+    if (decision.kind === 'explanation_only') {
       return {
         itemId: itemResult.itemId,
         diagnosisTags: itemResult.diagnosisTags,
         learnerExplanation: decision.learnerExplanation,
-        promotionOutcome: 'disagreement',
+        promotionOutcome: 'explanation_only',
         proposals: [],
         questions: [],
       };
@@ -770,27 +770,24 @@ export function assembleStagedReflectionResult(
       itemId: itemResult.itemId,
       diagnosisTags: itemResult.diagnosisTags,
       learnerExplanation: decision.learnerExplanation,
-      promotionOutcome: 'promoted',
+      promotionOutcome: 'reconciled',
       questions: [],
       proposals: [{
         proposalGroupKey: null,
         rationale: decision.rationale,
-        operation: {
-          ...decision.operation,
-          kind: 'promote_pure_elicitation',
-          version: 1,
-          sourceAttemptId: item.sourceAttemptId,
-          targetWordId: item.targetWord.wordId,
-          responseWordId: item.submittedWord.wordId,
-        },
+        operation: stampReconcileProductionCuesOperation(decision.operation, {
+          ...item,
+          responseWord: item.submittedWord,
+          promotionEvidence: item.promotionEvidence!,
+        }),
       }],
     };
   });
-  const result: SessionReflectionResultV8 = {
-    schemaVersion: 'session_reflection_result.v8',
+  const result: SessionReflectionResultV9 = {
+    schemaVersion: 'session_reflection_result.v9',
     itemResults,
   };
-  const errors = validateSessionReflectionResultV8(result, evidence);
+  const errors = validateSessionReflectionResultV9(result, evidence);
   if (errors.length > 0) {
     throw new Error(`Cannot assemble invalid staged reflection result:\n${errors.join('\n')}`);
   }

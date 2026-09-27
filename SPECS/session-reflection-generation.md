@@ -144,7 +144,7 @@ All newly constructed initial diagnosis bundles use V4, including sessions conta
 only ordinary failure evidence or no served supplement. V2 and V3 remain
 readable for immutable stored artifacts and exact-bundle retries, but new
 diagnosis does not branch by marker or supplement presence. The staged flow
-then retains V5 enriched evidence with a final V8 result, as described below.
+then retains V6 enriched evidence with a final V9 result, as described below.
 
 Learner-authored session notes, contrast-selection signals, learning/unstudied
 actions, and broader history require explicit evidence-kind and bundle-schema
@@ -176,20 +176,22 @@ Provider credentials and calls remain backend concerns. Provider/model identity,
 prompt version, bundle schema, result schema, and available response metadata are
 preserved so later review can distinguish what actually ran.
 
-### Staged pure-cue promotion
+### Staged production-cue cleanup
 
-New initial requests use `initial_post_session_reflection.v4`; new deferred
-second opinions use `deferred_second_opinion.v3`. Only the current staged
+New initial requests use `initial_post_session_reflection.v5`; new deferred
+second opinions use `deferred_second_opinion.v4`. Only the current staged
 generation contract and prompt identities can execute. Older artifacts remain
 readable, but their runs cannot be retried or their evidence repackaged into
 second opinions. Pending obsolete proposals cannot be authorized or applied.
 There is no one-shot retry compatibility path and no silent evidence upgrade.
 
 The server persists a continuation and exact diagnosis input before calling the
-provider. Diagnosis uses `staged_reflection_diagnosis_result.v1`: each item is
-either ordinary explanation/proposals or a shared-axis handoff, never both.
-The handoff describes an expressive instinct, its boundaries, and why the
-original response was valid for the served cue. Only explicit handoffs trigger
+provider. Diagnosis uses `staged_reflection_diagnosis_result.v2`: each item is
+either ordinary explanation/proposals or an `ambiguous_pair` handoff, never both.
+The handoff's `ambiguityReason` describes why the response plausibly answers
+the exact displayed cue, without asserting a shared slot or final fairness.
+Stage one is a best-effort filter; stage two may revise its assessment.
+Only explicit handoffs trigger
 enrichment with both words' active production cues and intersecting pure cues;
 diagnosis tags alone do not route an item. New targeted cues are owner-only.
 
@@ -222,27 +224,35 @@ item. Initial admission then applies its item cap. Continuations record
 `overlapOmittedItemCount` separately from eligible/included counts. This bounded
 best-effort policy does not detect every shared destination conflict.
 
-The exact diagnosis, enriched final evidence, and bounded promotion input are
-saved before the conditional promotion-only call. That call uses a separate
-strict wire contract and Mandarin prompt, without model-facing study-profile
-configuration. It may
-return explicit disagreement or leave either word without distinctive drafts;
-the latter is the accepted production-proxy policy, not a generation failure.
-Stage two normally trusts the handoff and owns content reconciliation and the
-final learner explanation, including when it disagrees. Disagreement yields
-visible non-actionable feedback, never an ordinary proposal fallback. No model
-directs a database tool loop, and no intermediate learner artifact is created.
+The exact diagnosis, enriched final evidence, and bounded
+`pure_cue_promotion_bundle.v2` input are saved before the conditional cleanup call.
+The durable stage name remains `promotion`. It uses a separate strict
+`pure_cue_promotion_result.v2` contract and Mandarin prompt, without model-facing
+study-profile configuration. It returns `reconcile` with both word plans and
+an optional shared destination, or `explanation_only`. A no-slot repair is a
+successful result, not disagreement. Source fairness is judged independently
+of whether a pure cue is published. Ordinary contrast remains in stage one.
+No model directs a database tool loop, and no intermediate learner artifact is
+created.
 
-The final V8 result excludes multi-answer word-owned drafts. Ordinary items
+Existing pure-cue evidence contains member identities and one aggregate teaching
+note. Extension revises that note holistically for all members, while keeping
+stimulus and axis unchanged. It does not fetch every existing member's full
+lexical context. Axis authoring describes the shared communicative slot;
+member-specific teaching belongs in the reveal note. Legacy mixed notes are not
+repaired by the prompt. The server stamps current-member and teaching-note
+preconditions from evidence so application rejects unseen changes.
+
+The final V9 result excludes multi-answer word-owned drafts. Ordinary items
 retain stage-one feedback; routed items receive only stage-two feedback and
-its coordinated promotion or explicit disagreement outcome. Stage-one handoffs
+its coordinated cleanup or explanation-only outcome. Stage-one handoffs
 have no ordinary proposals to merge or discard. Each actual provider call has its own
 run, prompt/schema identity, usage, and failure accounting. A promotion run's
 eligible and included counts are the items in its retained promotion input,
 not the diagnosis bundle size. The final artifact
 links to the completing run; its continuation retains the chain.
 
-See [`pure-cue-elicitation.md`](./pure-cue-elicitation.md) for promotion,
+See [`pure-cue-elicitation.md`](./pure-cue-elicitation.md) for cleanup,
 compensation, and standalone scheduling policy.
 
 ## 5. Failure And Deliberate Retry
@@ -299,8 +309,8 @@ prior proposal/review identifiers. It remaps provider item
 ids to avoid collisions between original artifacts. Model/provider/run/result
 validation now follows the same staged diagnosis/promotion flow. Its diagnosis
 envelope is `curated_reflection_diagnosis_bundle.v2`; final enriched evidence is
-`curated_reflection_bundle.v2`, with explicit study profile and no fabricated
-source session. Stored V1 curated evidence remains readable. A provider or validation failure
+`curated_reflection_bundle.v3`, with explicit study profile and no fabricated
+source session. Stored V1/V2 curated evidence remains readable. A provider or validation failure
 leaves every selected original deferred. On successful durable materialization,
 only included selections that remain deferred are retired atomically. Selections
 omitted by word-overlap admission remain deferred. The current

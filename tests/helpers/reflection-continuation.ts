@@ -1,9 +1,9 @@
 import type {
-  CuratedReflectionBundleV2,
-  PureCuePromotionEvidenceV1,
+  CuratedReflectionBundleV3,
+  PureCuePromotionEvidenceV2,
   ReflectionItemV4,
-  SessionReflectionBundleV5,
-  StagedReflectionDiagnosisSharedAxisResultV1,
+  SessionReflectionBundleV6,
+  StagedReflectionDiagnosisAmbiguousPairResultV2,
 } from '../../src/domain/reflection.ts';
 import type {
   InitialReflectionGenerationDependencies,
@@ -55,7 +55,7 @@ export function createTestReflectionContinuationBoundaries(): Pick<
         const itemResult = resultByItemId.get(item.itemId)!;
         return {
           ...item,
-          promotionEvidence: itemResult.kind === 'shared_axis'
+          promotionEvidence: itemResult.kind === 'ambiguous_pair'
             ? testPromotionEvidence(item, itemResult)
             : null,
         };
@@ -63,29 +63,29 @@ export function createTestReflectionContinuationBoundaries(): Pick<
       const studyProfile = 'session' in current.diagnosisBundle
         ? current.diagnosisBundle.session.studyProfile
         : current.diagnosisBundle.studyProfile;
-      const finalEvidenceBundle: SessionReflectionBundleV5 | CuratedReflectionBundleV2 =
+      const finalEvidenceBundle: SessionReflectionBundleV6 | CuratedReflectionBundleV3 =
         'session' in current.diagnosisBundle
           ? {
-              schemaVersion: 'session_reflection_bundle.v5',
+              schemaVersion: 'session_reflection_bundle.v6',
               generatedAt: input.preparedAt,
               session: current.diagnosisBundle.session,
               items,
             }
           : {
-              schemaVersion: 'curated_reflection_bundle.v2',
+              schemaVersion: 'curated_reflection_bundle.v3',
               generatedAt: input.preparedAt,
               studyProfile,
               items,
             };
       const promotionBundle = {
-        schemaVersion: 'pure_cue_promotion_bundle.v1' as const,
+        schemaVersion: 'pure_cue_promotion_bundle.v2' as const,
         generatedAt: input.preparedAt,
         sourceSessionId: current.sourceSessionId,
         studyProfile,
         items: items.flatMap((item) => {
           const result = resultByItemId.get(item.itemId)!;
           if (
-            result.kind !== 'shared_axis'
+            result.kind !== 'ambiguous_pair'
             || item.promotionEvidence === null
             || item.submittedWord === null
           ) return [];
@@ -128,8 +128,8 @@ export function createTestReflectionContinuationBoundaries(): Pick<
         model: 'gpt-5.6-luna-high',
         providerModel: 'gpt-5.6-luna',
         promptVersion: link.stage === 'diagnosis'
-          ? 'reflection-staged-v2'
-          : 'pure-cue-promotion-v1',
+          ? 'reflection-staged-v3'
+          : 'pure-cue-promotion-v2',
       };
     },
   };
@@ -137,8 +137,8 @@ export function createTestReflectionContinuationBoundaries(): Pick<
 
 function testPromotionEvidence(
   item: ReflectionItemV4,
-  result: StagedReflectionDiagnosisSharedAxisResultV1,
-): PureCuePromotionEvidenceV1 | null {
+  result: StagedReflectionDiagnosisAmbiguousPairResultV2,
+): PureCuePromotionEvidenceV2 | null {
   const responseWordId = item.submittedWord?.wordId;
   if (
     item.responseKind !== 'matched_known_word'

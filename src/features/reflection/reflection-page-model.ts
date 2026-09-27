@@ -14,6 +14,7 @@ import type {
   ProductionCueDraftV2,
   PureCueDistinctiveProductionCueDraftV1,
   PromotePureElicitationDestinationV1,
+  ReconcileProductionCuesOperationV1,
   RepairProductionCueOperationV1,
   RepairProductionCueOperationV2,
 } from '../../domain/reflection';
@@ -527,6 +528,18 @@ export function cloneReflectionOperation(operation: ReflectionOperation): Reflec
       return { ...operation };
     case 'add_production_cue_supplement':
       return { ...operation };
+    case 'reconcile_production_cues':
+      return {
+        ...operation,
+        destination: operation.destination === null ? null : operation.destination.kind === 'existing'
+          ? { ...operation.destination, expectedAcceptedWordIds: [...operation.destination.expectedAcceptedWordIds] }
+          : { ...operation.destination },
+        wordPlans: operation.wordPlans.map((plan) => ({
+          ...plan,
+          deactivateCueIds: [...plan.deactivateCueIds],
+          distinctiveCueDrafts: plan.distinctiveCueDrafts.map((draft) => ({ ...draft })),
+        })),
+      };
     case 'promote_pure_elicitation':
       return {
         ...operation,
@@ -606,7 +619,8 @@ export type ReflectionOperationDraftAction =
   | { type: 'set_supplement_english_frame'; englishFrame: string }
   | { type: 'set_supplement_example_sentence'; exampleSentence: string }
   | { type: 'set_supplement_example_translation'; exampleTranslation: string }
-  | { type: 'set_promotion_destination'; destination: PromotePureElicitationDestinationV1 }
+  | { type: 'set_promotion_destination'; destination: PromotePureElicitationDestinationV1 | ReconcileProductionCuesOperationV1['destination'] }
+  | { type: 'set_reconciliation_fairness'; fairness: ReconcileProductionCuesOperationV1['sourceAttemptFairness'] }
   | { type: 'toggle_promotion_deactivation'; wordId: string; cueId: string }
   | { type: 'add_promotion_distinctive_cue'; wordId: string }
   | {
@@ -987,17 +1001,27 @@ export function reduceReflectionOperationDraft(
         action.type,
         (current) => ({ ...current, exampleTranslation: action.exampleTranslation }),
       );
+    case 'set_reconciliation_fairness':
+      return editOperation(operation, 'reconcile_production_cues', action.type,
+        (current) => ({ ...current, sourceAttemptFairness: action.fairness }));
     case 'set_promotion_destination':
-      return editOperation(
+      return editCueReconciliation(
         operation,
-        'promote_pure_elicitation',
         action.type,
-        (current) => ({ ...current, destination: action.destination }),
+        (current) => {
+          if (current.kind === 'reconcile_production_cues') {
+            if (action.destination !== null && !('teachingNote' in action.destination)) {
+              throw new Error('Cue reconciliation requires teaching content.');
+            }
+            return { ...current, destination: action.destination };
+          }
+          if (action.destination === null) throw new Error('Historical promotion requires a destination.');
+          return { ...current, destination: action.destination };
+        },
       );
     case 'toggle_promotion_deactivation':
-      return editOperation(
+      return editCueReconciliation(
         operation,
-        'promote_pure_elicitation',
         action.type,
         (current) => ({
           ...current,
@@ -1012,9 +1036,8 @@ export function reduceReflectionOperationDraft(
         }),
       );
     case 'add_promotion_distinctive_cue':
-      return editOperation(
+      return editCueReconciliation(
         operation,
-        'promote_pure_elicitation',
         action.type,
         (current) => ({
           ...current,
@@ -1030,9 +1053,8 @@ export function reduceReflectionOperationDraft(
         }),
       );
     case 'restore_promotion_distinctive_cue':
-      return editOperation(
+      return editCueReconciliation(
         operation,
-        'promote_pure_elicitation',
         action.type,
         (current) => ({
           ...current,
@@ -1045,9 +1067,8 @@ export function reduceReflectionOperationDraft(
         }),
       );
     case 'remove_promotion_distinctive_cue':
-      return editOperation(
+      return editCueReconciliation(
         operation,
-        'promote_pure_elicitation',
         action.type,
         (current) => ({
           ...current,
@@ -1064,9 +1085,8 @@ export function reduceReflectionOperationDraft(
         }),
       );
     case 'update_promotion_distinctive_cue':
-      return editOperation(
+      return editCueReconciliation(
         operation,
-        'promote_pure_elicitation',
         action.type,
         (current) => ({
           ...current,
@@ -1179,6 +1199,19 @@ export function createReplacementOperation(
         targetWordId,
         alternateWordId: submittedWordId,
       };
+    case 'reconcile_production_cues':
+      return {
+        kind,
+        version: 1,
+        sourceAttemptId: evidence !== null && 'sourceAttemptId' in evidence ? evidence.sourceAttemptId : '',
+        targetWordId,
+        responseWordId: submittedWordId,
+        destination: null,
+        sourceAttemptFairness: 'fair',
+        wordPlans: [targetWordId, submittedWordId]
+          .filter((wordId, index, values) => wordId.length > 0 && values.indexOf(wordId) === index)
+          .map((wordId) => ({ wordId, deactivateCueIds: [], distinctiveCueDrafts: [] })),
+      };
     case 'promote_pure_elicitation': {
       const promotionEvidence = evidence !== null && 'promotionEvidence' in evidence
         ? evidence.promotionEvidence
@@ -1238,6 +1271,8 @@ export function reflectionOperationLabel(operation: ReflectionOperation): string
       return 'Accept production alternate';
     case 'promote_pure_elicitation':
       return 'Promote pure elicitation';
+    case 'reconcile_production_cues':
+      return 'Reconcile production cues';
   }
 }
 
@@ -1249,6 +1284,7 @@ function primaryWordId(operation: ReflectionOperation): string {
       return operation.wordId;
     case 'accept_production_alternate':
       return operation.targetWordId;
+    case 'reconcile_production_cues':
     case 'promote_pure_elicitation':
       return operation.targetWordId;
     case 'create_contrast_cluster':
@@ -1260,6 +1296,7 @@ function secondaryWordId(operation: ReflectionOperation): string {
   switch (operation.kind) {
     case 'accept_production_alternate':
       return operation.alternateWordId;
+    case 'reconcile_production_cues':
     case 'promote_pure_elicitation':
       return operation.responseWordId;
     case 'create_contrast_cluster':
@@ -1528,3 +1565,14 @@ export type {
   ReflectionSpendCapDto,
 } from '../../services/api';
 export type { AcceptProductionAlternateOperationV1 };
+
+function editCueReconciliation(
+  operation: ReflectionOperation,
+  actionType: string,
+  update: (current: Extract<ReflectionOperation, { kind: 'promote_pure_elicitation' | 'reconcile_production_cues' }>) => ReflectionOperation,
+): ReflectionOperation {
+  if (operation.kind !== 'promote_pure_elicitation' && operation.kind !== 'reconcile_production_cues') {
+    throw new Error(`${actionType} requires a cue reconciliation operation.`);
+  }
+  return update(operation);
+}
