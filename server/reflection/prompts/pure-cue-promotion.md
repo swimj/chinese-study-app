@@ -245,9 +245,7 @@ pattern even though the words are not generally interchangeable.
 Shared practice can cover this construction. The teaching note can explain
 that 中断 foregrounds a break in continuity, while 打断 foregrounds the
 interruption of an ongoing activity. Separate cues can practice other useful
-patterns, such as `通信____了几个小时才恢复。` for 中断. Do not reduce the
-distinction to whether a human actor exists: 中断 can have an explicit actor,
-and a sound can 打断 a conversation.
+patterns, such as `通信____了几个小时才恢复。` for 中断.
 
 ### Similar meanings, different sentence patterns: 违反 / 违法
 
