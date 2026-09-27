@@ -117,9 +117,7 @@ new drafts when retained or shared content suffices.
 
 Consider the whole resulting repertoire. If no word-specific cues remain,
 the app may use a dictionary-derived fallback when shared practice does not
-cover the word. Do not remove content merely to reintroduce the same ambiguity
-through that fallback while claiming a repair. Difficulty authoring a cue is
-not evidence that the word should be suppressed.
+cover the word.
 
 ### 5. Check the combined content and teaching
 
