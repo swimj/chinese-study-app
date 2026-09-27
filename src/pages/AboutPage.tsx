@@ -10,6 +10,15 @@ const ABOUT_VIEWS = [
 // Entry dates follow the change history; add new posts at the top.
 const UPDATES = [
   {
+    date: '2026-09-27',
+    displayDate: 'September 27, 2026',
+    title: 'Reflection proposals for vague production prompts',
+    paragraphs: [
+      'We’ve made some changes to how reflection generates content improvement proposals, especially when a production mistake comes from a vague prompt.',
+      'If a proposal looks questionable, or anything else behaves oddly, please capture it and share it with Justin.',
+    ],
+  },
+  {
     date: '2026-09-23',
     displayDate: 'September 23, 2026',
     title: 'Choose simplified, traditional, or both on study cards',
