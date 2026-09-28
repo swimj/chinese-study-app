@@ -73,6 +73,7 @@ import {
   PURE_CUE_PROMOTION_PROMPT_VERSION,
   STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
   isCurrentReflectionArtifactContract,
+  supportsReflectionSecondOpinionEvidence,
   isCurrentReflectionFlowVersion,
   isCurrentReflectionGenerationStage,
 } from '../../src/domain/reflection-contracts.ts';
@@ -2121,9 +2122,9 @@ export function buildStagedDeferredSecondOpinionBundle(
   const studyProfiles = new Set<string>();
   for (const row of rows) {
     const artifact = getReflectionArtifactDetail(row.artifact_id);
-    if (!reflectionArtifactSupportsCurrentActions(artifact)) {
+    if (!supportsReflectionSecondOpinionEvidence(artifact)) {
       throw new DeferredSecondOpinionError(
-        'Second opinions are only available for proposals from the current reflection version. '
+        'Second opinions require a supported retained evidence format. '
         + 'This older proposal remains viewable.',
       );
     }

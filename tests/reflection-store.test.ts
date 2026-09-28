@@ -913,6 +913,48 @@ describe('reflection durable store', { concurrency: false }, () => {
     assert.equal(concluded.includedItemCount, prepared.promotionBundle?.items.length);
   });
 
+  for (const historicalResult of [false, true]) {
+    test(`second opinions reuse compatible evidence despite obsolete output contracts (historical result: ${historicalResult})`, () => {
+      const input = historicalResult
+        ? legacyMaterializationInputV8('old-compatible-v8')
+        : materializationInput('old-compatible-evidence', suppressOperation('target'));
+      if (historicalResult) {
+        if (input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v5') throw new Error('Expected historical evidence');
+        input.evidenceBundle.items = input.evidenceBundle.items.map((item) => ({ ...item, promotionEvidence: null }));
+        input.result.itemResults[0]!.proposals = [{
+          proposalGroupKey: null, rationale: 'Historical proposal', operation: suppressOperation('target'),
+        }];
+      }
+      const artifact = dbModule.materializeReflectionArtifact({
+        ...input,
+        reflectionFlowVersion: 'initial_post_session_reflection.v4',
+        promptVersion: 'reflection-staged-v2',
+      }).artifact;
+      const proposalId = artifact.proposals[0]!.review.proposalId;
+      // Reproduce a proposal deferred before the contract cutover.
+      sqlite.prepare("UPDATE reflection_proposal_reviews SET disposition = 'deferred' WHERE proposal_id = ?").run(proposalId);
+      const built = dbModule.buildStagedDeferredSecondOpinionBundle([proposalId], appliedAt);
+      assert.equal(built.bundle.items.length, 1);
+      assert.equal(built.bundle.schemaVersion, 'curated_reflection_diagnosis_bundle.v2');
+      assert.equal('promotionEvidence' in built.bundle.items[0]!, false);
+      assert.deepEqual(built.sourceProposalIds, [proposalId]);
+      assert.throws(() => dbModule.authorizeManualReflectionOperation({
+        artifactId: artifact.artifactId, itemId: 'item', operation: suppressOperation('target'), createdAt: appliedAt,
+      }), /older contract.*read-only/i);
+      assert.deepEqual(dbModule.getReflectionArtifactDetail(artifact.artifactId).proposals[0]!.review.disposition, { kind: 'deferred' });
+    });
+  }
+
+  test('second opinions reject incompatible retained evidence', () => {
+    const artifact = dbModule.materializeReflectionArtifact(
+      legacyMaterializationInput('old-incompatible-evidence', suppressOperation('target')),
+    ).artifact;
+    const proposalId = artifact.proposals[0]!.review.proposalId;
+    // Reproduce a proposal deferred before the contract cutover.
+    sqlite.prepare("UPDATE reflection_proposal_reviews SET disposition = 'deferred' WHERE proposal_id = ?").run(proposalId);
+    assert.throws(() => dbModule.buildStagedDeferredSecondOpinionBundle([proposalId]), /supported retained evidence format/);
+  });
+
   test('overlapping second-opinion evidence is omitted without retiring omitted proposals', () => {
     const originals = ['overlap-a', 'overlap-b'].map((sessionId) => {
       const artifact = dbModule.materializeReflectionArtifact(materializationInput(sessionId, suppressOperation('target'))).artifact;

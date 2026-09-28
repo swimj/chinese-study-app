@@ -189,7 +189,9 @@ V9 through staged diagnosis/cleanup; stage one uses the exclusive
 legacy one-shot result contract. Stored V4/V5/V6/V7 artifacts
 remain immutable. Execution requires the current staged flow and prompt contract:
 obsolete proposals cannot be accepted, revised, replaced, used as manual-operation
-evidence, sent for second opinion, or applied. No legacy retry path is retained.
+evidence, or applied. Second opinions may reuse compatible original diagnosis
+evidence under the eligibility rules in `session-reflection-generation.md`,
+without executing the old proposal. No legacy retry path is retained.
 
 Historical V8 retains the ordinary item-result shape and adds `promote_pure_elicitation@1`
 and `promotionOutcome` (`promoted` or `disagreement`) on routed items. A

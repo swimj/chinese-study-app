@@ -51,3 +51,17 @@ export function isCurrentReflectionFlowVersion(value: string): boolean {
   return value === CURRENT_INITIAL_REFLECTION_FLOW_VERSION
     || value === CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION;
 }
+
+/** Second opinions consume original diagnosis evidence, not prior generated output. */
+export function supportsReflectionSecondOpinionEvidence(input: {
+  bundleSchemaVersion: string;
+}): boolean {
+  return [
+    'session_reflection_bundle.v4',
+    'session_reflection_bundle.v5',
+    'session_reflection_bundle.v6',
+    'curated_reflection_bundle.v1',
+    'curated_reflection_bundle.v2',
+    'curated_reflection_bundle.v3',
+  ].includes(input.bundleSchemaVersion);
+}

@@ -144,6 +144,20 @@ describe('reflection run log presentation', () => {
     assert.doesNotMatch(markup, />Accept</);
   });
 
+  test('compatible old deferred evidence is selectable without enabling proposal execution', () => {
+    const artifact = deferredProposalArtifact('old-deferred', '目标', 'Old proposal');
+    const currentEvidence = explanationArtifact().evidenceBundle;
+    artifact.evidenceBundle = { ...currentEvidence, items: currentEvidence.items.map((item) => ({ ...item, itemId: 'mistake' })) };
+    artifact.bundleSchemaVersion = currentEvidence.schemaVersion;
+    const markup = renderToStaticMarkup(createElement(ReflectionsPage, {
+      controller: idleController({ artifactDetails: [artifact] }),
+    }));
+    assert.match(markup, /Second opinion/);
+    assert.match(markup, /Show deferred proposals \(0\)/);
+    assert.doesNotMatch(markup, />Accept</);
+    assert.match(markup, /reflection-view-rail-count[^>]*>1</);
+  });
+
   test('second-opinion packaging uses compact chips and a Help-style bottom rail', () => {
     const markup = renderToStaticMarkup(createElement(DeferredSecondOpinionQueue, {
       cards: deferredSecondOpinionCards(),

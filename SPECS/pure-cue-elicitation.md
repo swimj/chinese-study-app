@@ -159,9 +159,11 @@ validated result becomes a learner artifact. Generation never authorizes an
 operation automatically.
 
 This release is a hard execution cutover: only current flow, evidence, and
-prompt contracts support retries, second opinions, or proposal authorization
+prompt contracts support retries or proposal authorization
 and application. Older results stay readable but cannot be upgraded in place.
-There is no age-based compatibility window. Learners continue with new study.
+Second opinions may reuse compatible original diagnosis evidence independently
+of old flow, prompt, and result versions; see `session-reflection-generation.md`.
+There is no age-based compatibility window.
 
 Final new results cannot propose new multi-answer word-owned cues. Ordinary
 items keep stage one's explanation/proposals; routed items use stage two's
