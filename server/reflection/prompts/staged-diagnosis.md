@@ -162,6 +162,12 @@ that best matches the capability:
   normally in English and optionally followed by one or two short Mandarin
   stems, that evokes what the learner wants to say.
 
+Check each new cue as the learner will see it before answering. Its text must
+not give away the target's written form or pinyin, including inside an English
+frame, Mandarin example, or fixed phrase. For `滥用`, `to abuse one's power, as
+in 滥用权力` spoils the exercise. Evoke the use without printing the answer;
+target-bearing examples belong in post-reveal teaching instead.
+
 A minimal-context exercise need not constrain every possible communication to
 the target. When the blank admits a very wide range of valid communications,
 add a concise English frame so the learner can respond by feel. For example:

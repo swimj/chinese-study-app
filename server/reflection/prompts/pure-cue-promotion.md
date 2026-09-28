@@ -171,6 +171,11 @@ with a concise English frame making the intended meaning clear. A simple
 English gloss is appropriate when it faithfully evokes a shared referent.
 The frame and cloze form one stimulus, not separate retrieval routes.
 
+For a newly created stimulus, check what the learner sees before answering.
+Do not include the written form or pinyin of any accepted member anywhere in
+that text, even in a contextual example or fixed phrase. Put member-bearing
+examples in the post-reveal teaching note instead.
+
 The `axisNote` describes the shared expressive purpose and its scope, not an
 exhaustive list or pair-specific comparison. All constraints needed to answer
 correctly belong in the visible stimulus; an axis cannot rescue wording that
@@ -195,6 +200,9 @@ Choose `definition_gloss`, `minimal_context`, or `circumstance` according to
 the capability. Use Mandarin for natural clozes and concise English for meaning
 or situation frames. Evoke the word through useful language, not awkward
 selectivity or a quiz about its distinction from the other word.
+Each new word-specific cue must likewise avoid revealing its target's written
+form or pinyin in any pre-answer text. A gloss such as `to abuse one's power,
+as in 滥用权力` spoils a cue for `滥用`; evoke the use without printing the answer.
 
 Preserve lexical-unit integrity: completing part of a compound can exercise
 the compound rather than the word being studied. Add useful dimensions rather

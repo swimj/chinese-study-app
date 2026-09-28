@@ -219,6 +219,10 @@ The current visible-meaning-to-Hanzi prompt is a compatibility implementation,
 not a durable claim that lexical meanings are production cues or that one word
 can have only one useful production exercise.
 
+Newly authored pre-reveal cues should evoke the answer without displaying the
+accepted word's written form or pinyin, even as part of a contextual example.
+Post-reveal teaching may show the word in full.
+
 The durable V0 production-cue model separates:
 
 - the word and its production skill state as the source of scheduling demand;

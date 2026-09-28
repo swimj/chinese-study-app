@@ -1,8 +1,8 @@
 export const CURRENT_INITIAL_REFLECTION_FLOW_VERSION = 'initial_post_session_reflection.v5' as const;
 export const CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION = 'deferred_second_opinion.v4' as const;
 
-export const STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION = 'reflection-staged-v3' as const;
-export const PURE_CUE_PROMOTION_PROMPT_VERSION = 'pure-cue-promotion-v2' as const;
+export const STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION = 'reflection-staged-v3.1' as const;
+export const PURE_CUE_PROMOTION_PROMPT_VERSION = 'pure-cue-promotion-v2.1' as const;
 
 /** Bare major versions shipped before minor numbering are equivalent to .0. */
 export function promptMajorVersion(version: string): string {
