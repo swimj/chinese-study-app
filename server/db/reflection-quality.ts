@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION } from '../../src/domain/reflection-contracts.ts';
+import { promptMajorVersion } from '../../src/domain/reflection-contracts.ts';
 import {
   isReflectionQualityTag,
   REFLECTION_QUALITY_TAGS,
@@ -189,6 +189,7 @@ type QualityArmIdentity = {
 type ContinuationStageRun = {
   stage: string;
   model: string;
+  promptVersion: string;
   createdAt: string;
 };
 
@@ -199,6 +200,7 @@ export function stagedContinuationQualityIdentity(
     left.createdAt.localeCompare(right.createdAt) || left.stage.localeCompare(right.stage)
   ));
   const diagnosis = uniqueModels(ordered.filter((run) => run.stage === 'diagnosis'));
+  const diagnosisVersion = ordered.find((run) => run.stage === 'diagnosis')?.promptVersion;
   const promotion = uniqueModels(ordered.filter((run) => run.stage === 'promotion'));
   if (diagnosis.length === 0) {
     throw new Error('A staged continuation requires a diagnosis stage before promotion.');
@@ -211,7 +213,7 @@ export function stagedContinuationQualityIdentity(
       : `${diagnosis.join(' + ')} → ${promotion.join(' + ')}`;
   return {
     modelArm,
-    promptVersion: STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
+    promptVersion: promptMajorVersion(diagnosisVersion!),
   };
 }
 
@@ -289,7 +291,7 @@ export function getReflectionQualityStats(): ReflectionQualityStats {
   for (const row of runRows) {
     if (row.continuation_id === null || row.stage === null || row.link_created_at === null) continue;
     const runs = continuationRuns.get(row.continuation_id) ?? [];
-    runs.push({ stage: row.stage, model: row.model_arm, createdAt: row.link_created_at });
+    runs.push({ stage: row.stage, model: row.model_arm, promptVersion: row.prompt_version, createdAt: row.link_created_at });
     continuationRuns.set(row.continuation_id, runs);
   }
   const continuationIdentity = new Map<string, QualityArmIdentity>();
@@ -315,6 +317,7 @@ export function getReflectionQualityStats(): ReflectionQualityStats {
   }
 
   function ensureArm(modelArm: string, promptVersion: string): ReflectionQualityArmStats {
+    promptVersion = promptMajorVersion(promptVersion);
     const key = armKey(modelArm, promptVersion);
     const existing = arms.get(key);
     if (existing) return existing;

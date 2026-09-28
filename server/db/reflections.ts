@@ -72,6 +72,8 @@ import {
   CURRENT_INITIAL_REFLECTION_FLOW_VERSION,
   PURE_CUE_PROMOTION_PROMPT_VERSION,
   STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
+  compatiblePromptVersions,
+  isCompatiblePromptVersion,
   isCurrentReflectionArtifactContract,
   supportsReflectionSecondOpinionEvidence,
   isCurrentReflectionFlowVersion,
@@ -1557,9 +1559,9 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
       clientRequestId: row.client_request_id,
       finishReason: null,
       bundleSchemaVersion: evidenceBundle.schemaVersion,
-      resultSchemaVersion: row.prompt_version === PURE_CUE_PROMOTION_PROMPT_VERSION
+      resultSchemaVersion: isCompatiblePromptVersion(row.prompt_version, PURE_CUE_PROMOTION_PROMPT_VERSION)
         ? 'pure_cue_promotion_result.v2'
-        : row.prompt_version === STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION
+        : isCompatiblePromptVersion(row.prompt_version, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION)
           ? 'staged_reflection_diagnosis_result.v2'
           : 'session_reflection_result.v7',
       diagnostic: null,
@@ -1599,7 +1601,7 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
           AND (
             (
               links.stage = 'diagnosis'
-              AND runs.prompt_version = '${STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION}'
+              AND runs.prompt_version IN (${compatiblePromptVersions(STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION).map((version) => `'${version}'`).join(', ')})
               AND (
                 (runs.reflection_flow_version = '${CURRENT_INITIAL_REFLECTION_FLOW_VERSION}'
                   AND runs.bundle_schema_version = 'session_reflection_bundle.v4')
@@ -1614,7 +1616,7 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
                 '${CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION}'
               )
               AND runs.bundle_schema_version = 'pure_cue_promotion_bundle.v2'
-              AND runs.prompt_version = '${PURE_CUE_PROMOTION_PROMPT_VERSION}'
+              AND runs.prompt_version IN (${compatiblePromptVersions(PURE_CUE_PROMOTION_PROMPT_VERSION).map((version) => `'${version}'`).join(', ')})
             )
           )
       ) THEN 1 ELSE 0 END AS retryable
@@ -1652,7 +1654,7 @@ function getReflectionGenerationRun(runId: string): ReflectionGenerationRunRecor
           AND (
             (
               links.stage = 'diagnosis'
-              AND runs.prompt_version = '${STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION}'
+              AND runs.prompt_version IN (${compatiblePromptVersions(STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION).map((version) => `'${version}'`).join(', ')})
               AND (
                 (runs.reflection_flow_version = '${CURRENT_INITIAL_REFLECTION_FLOW_VERSION}'
                   AND runs.bundle_schema_version = 'session_reflection_bundle.v4')
@@ -1667,7 +1669,7 @@ function getReflectionGenerationRun(runId: string): ReflectionGenerationRunRecor
                 '${CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION}'
               )
               AND runs.bundle_schema_version = 'pure_cue_promotion_bundle.v2'
-              AND runs.prompt_version = '${PURE_CUE_PROMOTION_PROMPT_VERSION}'
+              AND runs.prompt_version IN (${compatiblePromptVersions(PURE_CUE_PROMOTION_PROMPT_VERSION).map((version) => `'${version}'`).join(', ')})
             )
           )
       ) THEN 1 ELSE 0 END AS retryable

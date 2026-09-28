@@ -459,7 +459,7 @@ describe('reflection quality item tags', { concurrency: false }, () => {
       runId: diagnosisRunId,
       sessionId,
       model: 'gpt-5.6-luna-high',
-      promptVersion: 'reflection-staged-v1',
+      promptVersion: 'reflection-staged-v3.0',
       costUsd: 0.04,
     });
     recordPricedRun({
@@ -505,7 +505,7 @@ describe('reflection quality item tags', { concurrency: false }, () => {
       runId: diagnosisRunId,
       sessionId,
       model: 'glm-5.3-flash-max',
-      promptVersion: 'reflection-staged-v1',
+      promptVersion: 'reflection-staged-v3.0',
       costUsd: 0.02,
       state: 'failed',
       failureCode: 'domain_contract_invalid',
@@ -549,6 +549,22 @@ describe('reflection quality item tags', { concurrency: false }, () => {
       }]),
       /diagnosis stage before promotion/,
     );
+  });
+
+  test('quality combines minor revisions but separates major revisions', () => {
+    materializeInformational('quality-versions', 'gpt-5.6-luna-high');
+    for (const [runId, promptVersion, costUsd] of [
+      ['quality-v3', 'reflection-staged-v3', 0.01],
+      ['quality-v3.1', 'reflection-staged-v3.1', 0.02],
+      ['quality-v4', 'reflection-staged-v4', 0.04],
+    ] as const) {
+      recordPricedRun({ runId, sessionId: 'quality-versions', model: 'gpt-5.6-luna-high', promptVersion, costUsd });
+    }
+
+    const arms = dbModule.getReflectionQualityStats().arms;
+    assert.equal(arms.find((arm) => arm.promptVersion === 'reflection-staged-v3')?.totalCostUsd, 0.03);
+    assert.equal(arms.find((arm) => arm.promptVersion === 'reflection-staged-v4')?.totalCostUsd, 0.04);
+    assert.equal(arms.some((arm) => arm.promptVersion === 'reflection-staged-v3.1'), false);
   });
 
   test('clear removes tags without changing disposition', () => {
