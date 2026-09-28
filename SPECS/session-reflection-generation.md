@@ -181,8 +181,9 @@ preserved so later review can distinguish what actually ran.
 New initial requests use `initial_post_session_reflection.v5`; new deferred
 second opinions use `deferred_second_opinion.v4`. Only the current staged
 generation contract and prompt identities can execute. Older artifacts remain
-readable, but their runs cannot be retried or their evidence repackaged into
-second opinions. Pending obsolete proposals cannot be authorized or applied.
+readable, but their runs cannot be retried. Second opinions may reuse compatible
+original diagnosis evidence regardless of the source flow, prompt, or result
+version. Pending obsolete proposals cannot be authorized or applied.
 There is no one-shot retry compatibility path and no silent evidence upgrade.
 
 The server persists a continuation and exact diagnosis input before calling the
@@ -291,6 +292,13 @@ artifact-persistence failure remains visible and retryable, with usage retained.
 ## 6. Bounded Resource Exposure
 
 ### Deferred second-opinion requests
+
+Second-opinion eligibility is separate from proposal execution eligibility.
+Supported retained evidence is session bundle V4/V5/V6 or curated bundle V1/V2/V3.
+These contain the current original diagnosis item format; any prior promotion
+evidence is discarded and the composed diagnosis bundle is strictly validated.
+Other evidence formats remain ineligible; no implicit evidence upgrade is made.
+Old artifacts stay immutable and their proposals remain ineligible for execution.
 
 A learner may deliberately compose a non-session reflection request from one
 or more deferred proposals. The backend resolves each selection to its

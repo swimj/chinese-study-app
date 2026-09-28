@@ -12,7 +12,7 @@ import type {
   ReflectionQualityTag,
 } from '../domain/reflection';
 import { CURRENT_REFLECTION_PROMPT_VERSION } from '../domain/reflection';
-import { isCurrentReflectionArtifactContract } from '../domain/reflection-contracts';
+import { isCurrentReflectionArtifactContract, supportsReflectionSecondOpinionEvidence } from '../domain/reflection-contracts';
 import type { ReflectionModelChoice, ReflectionQualityStatsDto } from '../services/api';
 import { NestedNav } from '../components/AppChrome';
 import { ReflectionOperationEditor } from '../features/reflection/ReflectionOperationEditor';
@@ -116,10 +116,15 @@ export function ReflectionsPage({
   const currentArtifacts = controller.artifactDetails.filter(isCurrentReflectionArtifactContract);
   const helpCards = buildReflectionHelpCards(currentArtifacts);
   const deferredCards = toDeferredHelpCards(
-    buildReflectionProposalPresentations(currentArtifacts),
+    buildReflectionProposalPresentations(
+      controller.artifactDetails.filter(supportsReflectionSecondOpinionEvidence),
+    ),
   );
+  const actionableDeferredCards = deferredCards.filter((card) => (
+    isCurrentReflectionArtifactContract(card.artifact)
+  ));
   const displayedHelpCards = showDeferredInHelp
-    ? [...helpCards, ...deferredCards]
+    ? [...helpCards, ...actionableDeferredCards]
     : helpCards;
   const views: Array<{ key: ReflectionView; label: string; count?: number }> = [
     { key: 'help', label: 'Proposals', count: helpCards.length },
@@ -196,7 +201,7 @@ export function ReflectionsPage({
                 checked={showDeferredInHelp}
                 onChange={(event) => setShowDeferredInHelp(event.target.checked)}
               />
-              Show deferred proposals ({deferredCards.length})
+              Show deferred proposals ({actionableDeferredCards.length})
             </label>
             <HelpQueueView
               key={showDeferredInHelp ? 'help-with-deferred' : 'help'}

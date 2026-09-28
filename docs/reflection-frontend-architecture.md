@@ -63,7 +63,7 @@ conditional production-cue cleanup stages. The client receives only the final V9
 artifact, never an intermediate diagnosis artifact. The run log retains each
 provider call separately; retry resolves its durable continuation and reuses
 saved diagnosis/promotion input within the current contract. Stored legacy
-artifacts remain readable, but obsolete retries, second opinions, authorization,
+artifacts remain readable, but obsolete retries, authorization,
 and application are rejected. No live session grading uses this pipeline.
 
 Diagnosis explicitly chooses ordinary feedback/proposals or a best-effort
@@ -188,6 +188,11 @@ scroll inside the pane. Production evidence is a quiet tested-cue line
 is a packaging surface, not a second Help pager: compact selected-by-default
 chips occupy the main viewport, drill-in details stay secondary, and Select all /
 Clear / model / Get a second opinion sit on a Help-style bottom rail.
+Second-opinion selection uses retained-evidence compatibility independently of
+source flow, prompt, and result versions. Compatible old deferred proposals
+appear in the Second opinion queue, while the Proposals view (including its
+Show deferred toggle) continues to require the current execution contract.
+The backend validates the composed diagnosis input before generation.
 When the daily spend cap has been surpassed, non-Luna model options are
 disabled and a tip names the next UTC reset in the browser timezone.
 **By session** retains the artifact-oriented dogfood view, including
