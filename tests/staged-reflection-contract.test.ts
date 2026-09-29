@@ -14,6 +14,30 @@ import {
   stagedReflectionDiagnosisResultV2WireSchema,
 } from '../src/domain/reflection-result-schema.ts';
 import { validateJsonSchema } from '../server/llm/json-schema-validator.ts';
+import {
+  compatiblePromptVersions,
+  isCompatiblePromptVersion,
+  isCurrentReflectionArtifactContract,
+  promptMajorVersion,
+} from '../src/domain/reflection-contracts.ts';
+
+test('prompt minor versions share a major and preserve current contract compatibility', () => {
+  assert.equal(promptMajorVersion('reflection-staged-v3.1'), 'reflection-staged-v3');
+  assert.equal(promptMajorVersion('reflection-staged-v3'), 'reflection-staged-v3');
+  assert.deepEqual(compatiblePromptVersions('reflection-staged-v3.1'), [
+    'reflection-staged-v3', 'reflection-staged-v3.0', 'reflection-staged-v3.1',
+  ]);
+  assert.equal(isCompatiblePromptVersion('reflection-staged-v3', 'reflection-staged-v3.1'), true);
+  assert.equal(isCompatiblePromptVersion('reflection-staged-v3.2', 'reflection-staged-v3.1'), false);
+  assert.equal(isCompatiblePromptVersion('reflection-staged-v2.9', 'reflection-staged-v3.1'), false);
+  assert.equal(isCompatiblePromptVersion('pure-cue-promotion-v3', 'reflection-staged-v3.1'), false);
+  assert.equal(isCurrentReflectionArtifactContract({
+    reflectionFlowVersion: 'initial_post_session_reflection.v5',
+    bundleSchemaVersion: 'session_reflection_bundle.v6',
+    resultSchemaVersion: 'session_reflection_result.v9',
+    promptVersion: 'reflection-staged-v3',
+  }), true);
+});
 
 const generatedAt = '2026-09-21T08:00:00.000Z';
 

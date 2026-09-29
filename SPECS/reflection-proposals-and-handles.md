@@ -1101,7 +1101,8 @@ There is no disposition↔tag domain validation. Tags may be written anytime whi
 reviewing; accept/dismiss/replace neither require nor clear them.
 
 Tags join to artifact `model` (the fused **model arm** config id) and
-`promptVersion` at read time. Aggregating accept/exact/revised/user-replace/dismiss
+the prompt's major version at read time. The full major/minor version remains
+stored on each artifact and run for provenance. Aggregating accept/exact/revised/user-replace/dismiss
 rates by model arm remains a read of existing review rows (pending, deferred, and
 non-user system supersession excluded). Second-opinion retirement is included in
 the terminal count but not in dismiss rates. Tag rates

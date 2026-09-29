@@ -1,4 +1,4 @@
-import { STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION } from './reflection-contracts';
+import { promptMajorVersion, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION } from './reflection-contracts';
 
 export type StudyProfileV0 = 'mandarin' | 'french';
 
@@ -819,7 +819,7 @@ export type ReflectionQualityTag =
  * Quality-comparison identity for the current staged flow.
  * Diagnosis and promotion calls share this version instead of splitting by stage prompt.
  */
-export const CURRENT_REFLECTION_PROMPT_VERSION = STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION;
+export const CURRENT_REFLECTION_PROMPT_VERSION = promptMajorVersion(STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION);
 
 export const REFLECTION_QUALITY_TAGS = [
   'praise',

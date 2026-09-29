@@ -180,7 +180,9 @@ preserved so later review can distinguish what actually ran.
 
 New initial requests use `initial_post_session_reflection.v5`; new deferred
 second opinions use `deferred_second_opinion.v4`. Only the current staged
-generation contract and prompt identities can execute. Older artifacts remain
+generation contract and prompt major identities can execute. Earlier minor
+versions of the current prompt major remain compatible with the current
+contract; future minors and earlier majors do not. Older-major artifacts remain
 readable, but their runs cannot be retried. Second opinions may reuse compatible
 original diagnosis evidence regardless of the source flow, prompt, or result
 version. Pending obsolete proposals cannot be authorized or applied.
