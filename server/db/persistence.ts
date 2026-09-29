@@ -5021,6 +5021,9 @@ function queryLegacyDietRows(remainingQuota: number, excludeIds?: Set<string>): 
 }
 
 function getReviewSessionStudyItems(now: string, random: () => number): SessionStudyItem[] {
+  // Compensation restores old recency/strength, which can already be urgent.
+  // Its due date is an eligibility floor until a later production assessment
+  // replaces that schedule; ordinary due dates remain urgency/tiebreak inputs.
   const rows = getDb()
     .prepare(`
       SELECT
@@ -5057,9 +5060,19 @@ function getReviewSessionStudyItems(now: string, random: () => number): SessionS
       WHERE words.status = 'review'
         AND word_skill_state.enabled != 0
         AND word_skill_state.skill_id IN ('recognition', 'production', 'contextual_selection')
+        AND NOT (
+          word_skill_state.skill_id = 'production'
+          AND COALESCE(word_skill_state.next_due_at > ?, 0)
+          AND EXISTS (
+            SELECT 1 FROM pure_cue_scheduler_compensation_snapshots AS compensation
+            WHERE compensation.learner_id = ?
+              AND compensation.target_word_id = word_skill_state.word_id
+              AND compensation.compensated_at >= word_skill_state.last_studied_at
+          )
+        )
       ORDER BY words.id ASC, word_skill_state.skill_id ASC
     `)
-    .all() as ReviewSessionItemWithSkillRow[];
+    .all(now, requireLearnerId()) as ReviewSessionItemWithSkillRow[];
 
   const bestCandidateByWordId = new Map<string, ReviewSessionItemCandidate>();
 

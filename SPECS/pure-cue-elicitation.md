@@ -182,6 +182,13 @@ response word's scheduler. Restored production `nextDueAt` is the later of
 the snapshot due time and six hours after restoration, so remaining (non-proxied)
 production does not become immediately due.
 
+Session admission enforces that restored deadline as a production-only
+eligibility guard, even when restored recency and interval already yield an
+overdue urgency score. A later production assessment replaces the restored
+schedule and ends this special guard. Recognition and ordinary urgency-based
+admission are unchanged; retrying an already restored action does not restart
+the delay.
+
 Coordinated cleanup can restore that snapshot when it remedies an independently
 judged unfair source exercise. Pure-cue publication alone does not establish
 past unfairness; absence of a shared slot does not establish a fair lapse.
