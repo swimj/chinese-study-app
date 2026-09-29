@@ -135,7 +135,7 @@ describe('initial reflection generation orchestration', () => {
       generatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
-      promptVersion: 'reflection-staged-v3',
+      promptVersion: 'reflection-staged-v3.1',
       evidenceBundle: finalEvidence,
       result: { ...ordinaryDiagnosisResult(), schemaVersion: 'session_reflection_result.v9' },
     });
@@ -149,7 +149,7 @@ describe('initial reflection generation orchestration', () => {
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-staged-v3',
+      promptVersion: 'reflection-staged-v3.1',
       responseId: 'response-1',
       finishReason: 'stop',
       bundleSchemaVersion: 'session_reflection_bundle.v4',
@@ -350,7 +350,7 @@ describe('initial reflection generation orchestration', () => {
     assert.equal(materializeCalls, 2);
     assert.equal(persisted[1]!.provider, 'openai');
     assert.equal(persisted[1]!.model, 'gpt-5.6-luna-high');
-    assert.equal(persisted[1]!.promptVersion, 'reflection-staged-v3');
+    assert.equal(persisted[1]!.promptVersion, 'reflection-staged-v3.1');
     assert.equal(persisted[1]!.sourceRunId, failedRunId);
   });
 
@@ -416,7 +416,7 @@ describe('initial reflection generation orchestration', () => {
               provider: 'zai',
               modelConfig: 'glm-5.3-flash-max',
               providerModel: 'glm-5.3-flash',
-              promptVersion: 'pure-cue-promotion-v2',
+              promptVersion: 'pure-cue-promotion-v2.1',
             },
           };
         },
@@ -532,7 +532,7 @@ describe('initial reflection generation orchestration', () => {
             },
             metadata: {
               ...diagnosisSuccess().metadata,
-              promptVersion: 'pure-cue-promotion-v2',
+              promptVersion: 'pure-cue-promotion-v2.1',
             },
           };
         },
@@ -933,7 +933,7 @@ function diagnosisSuccess() {
       provider: 'openai',
       modelConfig: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-staged-v3',
+      promptVersion: 'reflection-staged-v3.1',
       responseId: 'response-1',
       finishReason: 'stop',
       usage: {
@@ -1039,7 +1039,7 @@ function currentDiagnosisRetrySource(
     provider: overrides.provider ?? 'openai',
     model: overrides.model ?? 'gpt-5.6-luna-high',
     providerModel: overrides.providerModel ?? 'gpt-5.6-luna',
-    promptVersion: 'reflection-staged-v3',
+    promptVersion: 'reflection-staged-v3.1',
     continuation: {
       continuationId: `continuation-${runId}`,
       sourceSessionId: 'session-1',

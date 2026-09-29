@@ -111,7 +111,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-staged-v3',
+      promptVersion: 'reflection-staged-v3.1',
       responseId: null,
       clientRequestId: run.clientRequestId,
       finishReason: null,
@@ -254,7 +254,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
                 questions: [],
               })),
             },
-            metadata: stagedMetadata('reflection-staged-v3'),
+            metadata: stagedMetadata('reflection-staged-v3.1'),
           };
         },
         async generatePromotion() {
@@ -300,7 +300,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       generatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
-      promptVersion: 'reflection-staged-v3',
+      promptVersion: 'reflection-staged-v3.1',
       evidenceBundle: sourceEvidence,
       result: {
         schemaVersion: 'session_reflection_result.v9',
@@ -341,7 +341,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
                 handoff: ambiguousPairHandoff(),
               })),
             },
-            metadata: stagedMetadata('reflection-staged-v3'),
+            metadata: stagedMetadata('reflection-staged-v3.1'),
           };
         },
         async generatePromotion(bundle) {
@@ -357,7 +357,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
                 },
               })),
             },
-            metadata: stagedMetadata('pure-cue-promotion-v2'),
+            metadata: stagedMetadata('pure-cue-promotion-v2.1'),
           };
         },
       },
@@ -461,7 +461,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
                 questions: [],
               }],
             },
-            metadata: stagedMetadata('reflection-staged-v3'),
+            metadata: stagedMetadata('reflection-staged-v3.1'),
           };
         },
         async generatePromotion(bundle) {
@@ -506,7 +506,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
                 },
               }],
             },
-            metadata: stagedMetadata('pure-cue-promotion-v2'),
+            metadata: stagedMetadata('pure-cue-promotion-v2.1'),
           };
         },
       },

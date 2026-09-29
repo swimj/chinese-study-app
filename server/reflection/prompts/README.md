@@ -1,8 +1,8 @@
 # Reflection prompt versioning
 
 `staged-diagnosis.md` is the current first-stage prompt, stamped
-`reflection-staged-v3`. `pure-cue-promotion.md` is stamped
-`pure-cue-promotion-v2`. `reflection.md` retains the shipped one-shot guidance
+`reflection-staged-v3.1`. `pure-cue-promotion.md` is stamped
+`pure-cue-promotion-v2.1`. `reflection.md` retains the shipped one-shot guidance
 for historical/provider-contract coverage; new staged generation does not append
 overrides to that older prompt.
 
