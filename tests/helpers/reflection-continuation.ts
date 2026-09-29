@@ -1,3 +1,4 @@
+import { STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION } from '../../src/domain/reflection-contracts.ts';
 import type {
   CuratedReflectionBundleV3,
   PureCuePromotionEvidenceV2,
@@ -128,7 +129,7 @@ export function createTestReflectionContinuationBoundaries(): Pick<
         model: 'gpt-5.6-luna-high',
         providerModel: 'gpt-5.6-luna',
         promptVersion: link.stage === 'diagnosis'
-          ? 'reflection-staged-v4.0'
+          ? STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION
           : 'pure-cue-promotion-v3.0',
       };
     },

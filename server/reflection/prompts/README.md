@@ -1,7 +1,7 @@
 # Reflection prompt versioning
 
 `staged-diagnosis.md` is the current first-stage prompt, stamped
-`reflection-staged-v4.0`. `pure-cue-promotion.md` is stamped
+`reflection-staged-v4.1`. `pure-cue-promotion.md` is stamped
 `pure-cue-promotion-v3.0`. `reflection.md` retains the shipped one-shot guidance
 for historical/provider-contract coverage; new staged generation does not append
 overrides to that older prompt.
@@ -14,6 +14,13 @@ is projected as `correct`. Stage-one cue
 repair asks for replacement content, not database identities or accepted-answer
 lists; normalization derives those from the retained evidence. Cue quality
 means natural, strong evocation, not proof that no alternative can ever fit.
+
+Diagnosis v4.1 makes that quality assessment independent of answer correctness:
+coherent glosses can stay together, while overloaded or misleading lists merit
+repair before considering post-reveal reinforcement. Existing supplements are
+teaching evidence only and cannot narrow the pre-answer cue. Contrasting examples
+illustrate repair, optional reinforcement, and supplement visibility without
+changing the staged flow or wire contracts.
 
 Prompt versions use `<prompt-family>-v<major>.<minor>`. Existing whole-number
 versions are minor zero: `reflection-staged-v3` means `reflection-staged-v3.0`.

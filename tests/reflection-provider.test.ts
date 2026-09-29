@@ -481,6 +481,12 @@ describe('production Luna reflection provider', () => {
     assert.match(String(systemMessage.content), /`ambiguous_pair`/);
     assert.doesNotMatch(String(systemMessage.content), /shared_axis|responseValidity|handoff\.axis/);
     assert.match(String(systemMessage.content), /strong evocation, not proof that no other word could ever fit/);
+    const guidance = String(systemMessage.content).replace(/\s+/g, ' ');
+    assert.match(guidance, /`servedCue.text` is the production cue visible before answering/);
+    assert.match(guidance, /never to narrow the original cue, resolve its ambiguity, or justify rejecting an alternate answer/);
+    assert.match(guidance, /A correct answer shows successful recall of the intended word; it does not establish that the cue is a good production exercise/);
+    assert.match(guidance, /judge semantic coherence, not the number of glosses/);
+    assert.match(guidance, /Reinforcement enriches an already adequate meaning/);
     assert.doesNotMatch(String(systemMessage.content), /studyProfile|acceptedWordIds|cueId|fallback|history|restoration/);
     const userMessage = messages[1] as Record<string, JsonValue>;
     const modelInput = JSON.parse(String(userMessage.content));
