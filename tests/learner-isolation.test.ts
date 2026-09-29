@@ -468,11 +468,11 @@ function insertInvocation(invocationId: string, operation: ReflectionOperation):
   `).run(sessionId, generatedAt, generatedAt, generatedAt);
   const artifact = dbModule.runWithLearnerId(rawLearnerId, () => dbModule.materializeReflectionArtifact({
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v5',
+    reflectionFlowVersion: 'initial_post_session_reflection.v6',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-staged-v3',
+    promptVersion: 'reflection-staged-v4',
     evidenceBundle: {
       schemaVersion: 'session_reflection_bundle.v6',
       generatedAt,
@@ -488,7 +488,7 @@ function insertInvocation(invocationId: string, operation: ReflectionOperation):
       }],
     },
     result: {
-      schemaVersion: 'session_reflection_result.v9',
+      schemaVersion: 'session_reflection_result.v10',
       itemResults: [{ itemId: 'item', diagnosisTags: ['ordinary_retrieval_noise'], learnerExplanation: 'Review the cue.', proposals: [], questions: [] }],
     },
   }).artifact);

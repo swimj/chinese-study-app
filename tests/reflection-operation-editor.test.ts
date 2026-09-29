@@ -36,6 +36,30 @@ describe('reflection operation editor', () => {
     assert.doesNotMatch(markup, /No actionable change/);
   });
 
+  test('suppression recommendation leaves only response-word editing available', () => {
+    const operation: ReconcileProductionCuesOperationV1 = {
+      kind: 'reconcile_production_cues', version: 1, sourceAttemptId: 'attempt-1',
+      targetWordId: 'target', responseWordId: 'alternate', destination: null,
+      sourceAttemptFairness: 'fair',
+      wordPlans: [
+        { wordId: 'target', deactivateCueIds: [], distinctiveCueDrafts: [] },
+        { wordId: 'alternate', deactivateCueIds: [], distinctiveCueDrafts: [
+          { cueType: 'minimal_context', text: 'A useful response context' },
+        ] },
+      ],
+    };
+    const markup = renderToStaticMarkup(createElement(ReflectionOperationEditor, {
+      operation, evidence: promotionEvidence(), targetProductionSuppressed: true,
+      onChange: () => {},
+    }));
+    assert.match(markup, /Only response-word cues can be changed here/);
+    assert.match(markup, /Misleading or overloaded cue — no lapse change/);
+    assert.doesNotMatch(markup, /restore eligible lapse/);
+    assert.match(markup, /Keep cue: broad alternate/);
+    assert.match(markup, /A useful response context/);
+    assert.doesNotMatch(markup, /Keep cue: broad target|Edit shared cue|Shared practice/);
+  });
+
   test('extension preview names existing members beyond the triggering pair', () => {
     const evidence = promotionEvidence();
     assert.ok(evidence.promotionEvidence);

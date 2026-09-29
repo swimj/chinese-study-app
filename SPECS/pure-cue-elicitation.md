@@ -93,7 +93,12 @@ shared semantic axis. The model explicitly selects an existing pure cue to
 extend or proposes a new one. The adapter supplies current intersecting cues
 and validates the selected identity; it does not infer semantic equivalence.
 
-Stage two owns both words' production-cue repertoire. One authorized cleanup
+Stage two normally owns both words' production-cue repertoire. When stage one
+recommends target suppression, it owns only response-word cue changes: the
+target plan stays empty and no shared destination is allowed. Final assembly
+retains unexpected target/shared suggestions as non-actionable information and
+carries target suppression as a separate learner-authorized proposal. This
+composed result does not compensate the target lapse. One authorized cleanup
 atomically:
 
 1. Optionally creates and publishes, or extends, a shared pure cue with target
@@ -222,3 +227,13 @@ stimuli remain deferred. Existing mixed axis notes are not semantically migrated
 or repaired by the generation prompt; the new teaching field supplies a landing
 spot for separate operator cleanup. New and upgraded databases initialize that
 field without interpreting existing text.
+
+
+### Communicative cue wording
+
+Pre-answer cues evoke a meaning, intention, or natural utterance rather than
+asking the learner to identify a linguistic category. In particular, cues do
+not reference “bound form” as the reason to retrieve a target. Linguistic
+analysis can support diagnosis or useful post-answer teaching, but is not a
+substitute for a communicative production cue. Difficulty writing a natural
+cue still does not, by itself, establish low production value.

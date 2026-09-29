@@ -4,7 +4,7 @@ import type {
   ReflectionOperation,
   SessionReflectionBundleV4,
   SessionReflectionResultV7,
-  StagedReflectionDiagnosisResultV2,
+  StagedReflectionDiagnosisResultV3,
 } from '../src/domain/reflection.ts';
 import type {
   MaterializeReflectionArtifactInput,
@@ -131,29 +131,29 @@ describe('initial reflection generation orchestration', () => {
     };
     assert.deepEqual(persistedWithoutRun, {
       sourceSessionId: 'session-1',
-      reflectionFlowVersion: 'initial_post_session_reflection.v5',
+      reflectionFlowVersion: 'initial_post_session_reflection.v6',
       generatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
-      promptVersion: 'reflection-staged-v3.1',
+      promptVersion: 'reflection-staged-v4.0',
       evidenceBundle: finalEvidence,
-      result: { ...ordinaryDiagnosisResult(), schemaVersion: 'session_reflection_result.v9' },
+      result: { ...ordinaryDiagnosisResult(), schemaVersion: 'session_reflection_result.v10' },
     });
     assert.match(recordedRun!.clientRequestId ?? '', /^[0-9a-f-]{36}$/);
     const { runId: _runId, clientRequestId: _clientRequestId, ...recordedRunWithoutId } = recordedRun!;
     assert.deepEqual(recordedRunWithoutId, {
       sourceSessionId: 'session-1',
-      reflectionFlowVersion: 'initial_post_session_reflection.v5',
+      reflectionFlowVersion: 'initial_post_session_reflection.v6',
       startedAt: generatedAt,
       completedAt: generatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-staged-v3.1',
+      promptVersion: 'reflection-staged-v4.0',
       responseId: 'response-1',
       finishReason: 'stop',
       bundleSchemaVersion: 'session_reflection_bundle.v4',
-      resultSchemaVersion: 'staged_reflection_diagnosis_result.v2',
+      resultSchemaVersion: 'staged_reflection_diagnosis_result.v3',
       diagnostic: null,
       state: 'succeeded',
       failureCode: null,
@@ -350,7 +350,7 @@ describe('initial reflection generation orchestration', () => {
     assert.equal(materializeCalls, 2);
     assert.equal(persisted[1]!.provider, 'openai');
     assert.equal(persisted[1]!.model, 'gpt-5.6-luna-high');
-    assert.equal(persisted[1]!.promptVersion, 'reflection-staged-v3.1');
+    assert.equal(persisted[1]!.promptVersion, 'reflection-staged-v4.0');
     assert.equal(persisted[1]!.sourceRunId, failedRunId);
   });
 
@@ -364,12 +364,12 @@ describe('initial reflection generation orchestration', () => {
     const sharedDiagnosisSuccess = {
       ...diagnosisSuccess(),
       result: {
-        schemaVersion: 'staged_reflection_diagnosis_result.v2' as const,
+        schemaVersion: 'staged_reflection_diagnosis_result.v3' as const,
         itemResults: [{
           kind: 'ambiguous_pair' as const,
           itemId: 'item-1',
           diagnosisTags: ['production_cue_overloaded'],
-          handoff: sharedAxisHandoff(),
+          handoff: { ...sharedAxisHandoff(), targetSuppression: { reason: 'The target is not useful in isolation.' } },
         }],
       },
     };
@@ -416,7 +416,7 @@ describe('initial reflection generation orchestration', () => {
               provider: 'zai',
               modelConfig: 'glm-5.3-flash-max',
               providerModel: 'glm-5.3-flash',
-              promptVersion: 'pure-cue-promotion-v2.1',
+              promptVersion: 'pure-cue-promotion-v3.0',
             },
           };
         },
@@ -449,11 +449,12 @@ describe('initial reflection generation orchestration', () => {
       diagnosisTags: ['production_cue_overloaded'],
       learnerExplanation: 'The saved evidence supports keeping these as separate tasks.',
       promotionOutcome: 'explanation_only',
-      proposals: [],
+      targetSuppression: { reason: 'The target is not useful in isolation.' },
+      proposals: [{ proposalGroupKey: null, rationale: 'The target is not useful in isolation.', operation: { kind: 'suppress_definition_production', version: 1, wordId: 'target' } }],
       questions: [],
     });
     assert.deepEqual(runRecords.map((run) => [run.state, run.model, run.resultSchemaVersion]), [
-      ['succeeded', 'gpt-5.6-luna-high', 'staged_reflection_diagnosis_result.v2'],
+      ['succeeded', 'gpt-5.6-luna-high', 'staged_reflection_diagnosis_result.v3'],
       ['failed', 'gpt-5.6-luna-high', 'pure_cue_promotion_result.v2'],
       ['succeeded', 'glm-5.3-flash-max', 'pure_cue_promotion_result.v2'],
     ]);
@@ -500,7 +501,7 @@ describe('initial reflection generation orchestration', () => {
         async generateDiagnosis() {
           return {
             result: {
-              schemaVersion: 'staged_reflection_diagnosis_result.v2' as const,
+              schemaVersion: 'staged_reflection_diagnosis_result.v3' as const,
               itemResults: [{
                 kind: 'ambiguous_pair' as const,
                 itemId: 'item-1',
@@ -532,7 +533,7 @@ describe('initial reflection generation orchestration', () => {
             },
             metadata: {
               ...diagnosisSuccess().metadata,
-              promptVersion: 'pure-cue-promotion-v2.1',
+              promptVersion: 'pure-cue-promotion-v3.0',
             },
           };
         },
@@ -554,7 +555,7 @@ describe('initial reflection generation orchestration', () => {
 
     const expected = [
       { schema: 'session_reflection_bundle.v4', eligibleItemCount: 2, includedItemCount: 2 },
-      { schema: 'pure_cue_promotion_bundle.v2', eligibleItemCount: 1, includedItemCount: 1 },
+      { schema: 'pure_cue_promotion_bundle.v3', eligibleItemCount: 1, includedItemCount: 1 },
     ];
     assert.deepEqual(started, expected);
     assert.deepEqual(recorded, expected);
@@ -933,7 +934,7 @@ function diagnosisSuccess() {
       provider: 'openai',
       modelConfig: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-staged-v3.1',
+      promptVersion: 'reflection-staged-v4.0',
       responseId: 'response-1',
       finishReason: 'stop',
       usage: {
@@ -1039,11 +1040,11 @@ function currentDiagnosisRetrySource(
     provider: overrides.provider ?? 'openai',
     model: overrides.model ?? 'gpt-5.6-luna-high',
     providerModel: overrides.providerModel ?? 'gpt-5.6-luna',
-    promptVersion: 'reflection-staged-v3.1',
+    promptVersion: 'reflection-staged-v4.0',
     continuation: {
       continuationId: `continuation-${runId}`,
       sourceSessionId: 'session-1',
-      reflectionFlowVersion: 'initial_post_session_reflection.v5',
+      reflectionFlowVersion: 'initial_post_session_reflection.v6',
       createdAt: generatedAt,
       eligibleItemCount: overrides.eligibleItemCount ?? 1,
       includedItemCount: overrides.includedItemCount ?? 1,
@@ -1058,9 +1059,9 @@ function currentDiagnosisRetrySource(
   };
 }
 
-function stagedDiagnosisResult(): StagedReflectionDiagnosisResultV2 {
+function stagedDiagnosisResult(): StagedReflectionDiagnosisResultV3 {
   return {
-    schemaVersion: 'staged_reflection_diagnosis_result.v2',
+    schemaVersion: 'staged_reflection_diagnosis_result.v3',
     itemResults: [{
       kind: 'ordinary',
       itemId: 'item-1',
@@ -1079,7 +1080,7 @@ function stagedDiagnosisResult(): StagedReflectionDiagnosisResultV2 {
 function ordinaryDiagnosisResult() {
   const { kind: _kind, ...ordinary } = stagedDiagnosisResult().itemResults[0]!;
   return {
-    schemaVersion: 'session_reflection_result.v9' as const,
+    schemaVersion: 'session_reflection_result.v10' as const,
     itemResults: [ordinary],
   };
 }
@@ -1087,6 +1088,7 @@ function ordinaryDiagnosisResult() {
 function sharedAxisHandoff() {
   return {
     ambiguityReason: '替代 plausibly fits the overly broad served cue.',
+      targetSuppression: null,
   };
 }
 

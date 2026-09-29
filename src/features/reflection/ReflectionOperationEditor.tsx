@@ -29,11 +29,13 @@ export function ReflectionOperationEditor({
   operation,
   evidence = null,
   disabled = false,
+  targetProductionSuppressed = false,
   onChange,
 }: {
   operation: ReflectionOperation;
   evidence?: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV5 | null;
   disabled?: boolean;
+  targetProductionSuppressed?: boolean;
   onChange?: (operation: ReflectionOperation) => void;
 }) {
   const wordOptions = collectEvidenceWordOptions(evidence);
@@ -56,7 +58,7 @@ export function ReflectionOperationEditor({
             <EvidenceWordPicker
               value={operation.wordId}
               options={wordOptions}
-              disabled={disabled}
+              disabled={disabled || targetProductionSuppressed}
               onChange={(wordId) => dispatch({
                 type: 'set_suppression_word',
                 wordId,
@@ -170,6 +172,7 @@ export function ReflectionOperationEditor({
         <PureElicitationPromotionEditor
           operation={operation}
           evidence={evidence}
+          targetProductionSuppressed={targetProductionSuppressed}
           wordOptions={wordOptions}
           disabled={disabled}
           dispatch={dispatch}
@@ -183,9 +186,11 @@ function PureElicitationPromotionEditor({
   evidence,
   wordOptions,
   disabled,
+  targetProductionSuppressed,
   dispatch,
 }: {
   operation: PromotePureElicitationOperationV1 | ReconcileProductionCuesOperationV1;
+  targetProductionSuppressed: boolean;
   evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV5 | null;
   wordOptions: EvidenceWordOption[];
   disabled: boolean;
@@ -285,12 +290,14 @@ function PureElicitationPromotionEditor({
           <select value={operation.sourceAttemptFairness} disabled={disabled}
             onChange={(event) => dispatchLocal({ type: 'set_reconciliation_fairness', fairness: event.target.value as ReconcileProductionCuesOperationV1['sourceAttemptFairness'] })}>
             <option value="fair">Fair cue — preserve the original assessment</option>
-            <option value="misleading_or_overloaded_cue">Misleading or overloaded cue — restore eligible lapse</option>
+            <option value="misleading_or_overloaded_cue">{targetProductionSuppressed
+              ? 'Misleading or overloaded cue — no lapse change'
+              : 'Misleading or overloaded cue — restore eligible lapse'}</option>
           </select>
         </Field>
       ) : null}
       <section className="reflection-promotion-preview" aria-label="Resulting cue set">
-        <section className="reflection-promotion-group reflection-promotion-shared-group">
+        {targetProductionSuppressed ? <p className="notes">Target production suppression is recommended. Only response-word cues can be changed here.</p> : <section className="reflection-promotion-group reflection-promotion-shared-group">
           <header className="reflection-promotion-group-heading">
             <h5>{operation.destination === null ? 'Word-specific cleanup' : destinationAcceptedWordIds.map(wordHeading).join(' / ')}</h5>
           </header>
@@ -367,9 +374,9 @@ function PureElicitationPromotionEditor({
               </div>
             ) : null}
           </div>
-        </section>
+        </section>}
 
-        {operation.wordPlans.map((plan) => {
+        {operation.wordPlans.filter((plan) => !targetProductionSuppressed || plan.wordId !== operation.targetWordId).map((plan) => {
           const activeCues = wordEvidence.get(plan.wordId)?.activeProductionCues ?? [];
           const excludedDrafts = excludedDraftsByWord[plan.wordId] ?? [];
           return (

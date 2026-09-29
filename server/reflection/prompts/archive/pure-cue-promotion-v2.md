@@ -34,7 +34,7 @@ merely because the words appeared together in an ambiguous attempt.
 
 ## Input and output map
 
-The user message is a `pure_cue_promotion_bundle.v3`. For each item:
+The user message is a `pure_cue_promotion_bundle.v2`. For each item:
 
 - `targetWord` is the word originally expected; `responseWord` is the known
   word supplied by the learner. These roles describe the attempt, not a
@@ -44,14 +44,6 @@ The user message is a `pure_cue_promotion_bundle.v3`. For each item:
 - `handoff.ambiguityReason` explains why the response may fit that exercise.
   Treat it as a hypothesis to assess, not an established conclusion about
   fairness or the value of shared practice.
-- `handoff.targetSuppression` is null or a stage-one recommendation with a
-  `reason` explaining why deliberate production of the exact target is low-value
-  even under an ideal cue. When present, this recommendation is carried into
-  the final learner review separately. Do not re-decide suppression. Keep the
-  target word plan empty (both arrays empty), use `destination: null`, and
-  propose useful changes only for the response word. Do not deactivate target
-  cues either. If no response-word change is useful, return `explanation_only`;
-  the final item will still contain the suppression recommendation.
 - `promotionEvidence.words[].activeProductionCues` supplies each word's
   current word-specific exercises, which you may retain or deactivate.
 - `promotionEvidence.intersectingPureCues` supplies shared exercises already
@@ -106,18 +98,13 @@ does not prove it was fair.
 
 ### 2. Inspect both words' existing repertoire
 
-When target suppression is recommended, understand both words to explain the
-attempt, but inspect the response word for actionable content improvements.
-Otherwise consider both words symmetrically. Identify useful capabilities already
+Consider both words symmetrically. Identify useful capabilities already
 covered, misleading exercises, and worthwhile uses missing from the current
 content. Consider ordinary meanings, constructions, and situations without
 trying to cover every dictionary sense. Target and response roles should not
 determine which word deserves better exercises.
 
 ### 3. Decide whether shared practice is useful
-
-Skip shared practice when target suppression is recommended. A shared cue
-would train the target too, so its destination must be null.
 
 Ask whether one graspable meaning or intention can be expressed naturally by
 both words in the same exercise. Then ask: what production habit would repeated
@@ -139,8 +126,7 @@ overlap or whether the existing teaching note happens to discuss this pair.
 
 ### 4. Reconcile the word-specific exercises
 
-With target suppression recommended, leave the target plan empty and make
-changes only to the response word. Otherwise preserve useful cues, deactivate misleading or displaced ones, and add
+Preserve useful cues, deactivate misleading or displaced ones, and add
 natural word-specific cues for worthwhile capabilities not already covered.
 Return a plan for each word, but do not force equal numbers of changes or
 new drafts when retained or shared content suffices.
@@ -167,10 +153,7 @@ teaching and avoid unsupported additions.
 Write concise, natural English, retaining Mandarin examples where useful.
 Explain the original attempt, meaningful distinctions, and the practical
 lesson. Describe content changes as proposed, not already applied. The
-explanation should agree with your judgment and plan. When target suppression
-is recommended, explain that proposed outcome using the supplied reason and
-teach the word relationship; do not promise new practice for the target or
-claim that suppression restores the source lapse. Otherwise do not repeat the
+explanation should agree with your judgment and plan rather than repeat the
 supplied ambiguity hypothesis regardless of the result.
 
 Use the rationale to explain the value of the proposed arrangement without
@@ -178,14 +161,6 @@ repeating the entire lesson. If no useful change is needed, explain the
 attempt directly and return `explanation_only`.
 
 ## Content-design guidance
-
-A cue should evoke an intended meaning or utterance, not ask the learner to
-identify a linguistic category. Do not refer to a target as a “bound form” in
-pre-answer cue text or use that classification to distinguish it from another
-answer. Such analysis can inform diagnosis or a helpful post-answer explanation;
-it is not a communicative reason to retrieve the word. If useful production
-cannot be evoked without a classification quiz, reconsider the practice rather
-than adding technical wording to make the cue selective.
 
 ### One useful shared exercise
 
@@ -243,11 +218,6 @@ plus its own pair, without assuming another proposal will be accepted.
 ## Output checks
 
 - Return only the requested structured fields, with every item exactly once.
-- If `targetSuppression` is present, keep the target plan empty and destination
-  null; only response-word changes may be proposed. The backend will withhold
-  conflicting target/shared suggestions as non-actionable diagnostic information.
-  If response cue retirements accompany a conflicting shared destination, the
-  whole dependent content plan is withheld; do not rely on partial application.
 - Ground source fairness in the original visible exercise, independently of
   whether the proposed plan includes shared practice.
 - Select existing destinations only from the item's supplied pure cues, and

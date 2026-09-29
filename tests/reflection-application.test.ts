@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import type {
   ReflectionOperation,
   SessionReflectionBundleV6,
-  SessionReflectionResultV9,
+  SessionReflectionResultV10,
 } from '../src/domain/reflection.js';
 
 type DbModule = typeof import('../server/db.ts');
@@ -343,8 +343,8 @@ describe('reflection application adapters', { concurrency: false }, () => {
     };
     const { artifact } = dbModule.materializeReflectionArtifact({
       sourceSessionId: 'cue-evidence-session:retire-only-attempt',
-      reflectionFlowVersion: 'initial_post_session_reflection.v5', generatedAt: appliedAt,
-      provider: 'openai', model: 'gpt-5.6-luna', promptVersion: 'pure-cue-promotion-v2',
+      reflectionFlowVersion: 'initial_post_session_reflection.v6', generatedAt: appliedAt,
+      provider: 'openai', model: 'gpt-5.6-luna', promptVersion: 'pure-cue-promotion-v3.0',
       evidenceBundle: {
         schemaVersion: 'session_reflection_bundle.v6', generatedAt: appliedAt,
         session: { sessionId: 'cue-evidence-session:retire-only-attempt', startedAt: createdAt, endedAt: appliedAt, studyProfile: 'mandarin' },
@@ -364,7 +364,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
           },
         }],
       },
-      result: { schemaVersion: 'session_reflection_result.v9', itemResults: [{
+      result: { schemaVersion: 'session_reflection_result.v10', itemResults: [{
         itemId: 'retire-only', diagnosisTags: ['production_cue_overloaded'], promotionOutcome: 'reconciled',
         learnerExplanation: 'Retain the useful cue and remove this misleading one.', questions: [],
         proposals: [{ proposalGroupKey: null, rationale: 'The remaining exercise provides coverage.', operation }],
@@ -378,6 +378,79 @@ describe('reflection application adapters', { concurrency: false }, () => {
     if (state.kind === 'applied') assert.equal(state.effectRefs.some((ref) => ref.type === 'production_scheduler_compensation'), false);
     assert.equal(dbModule.getProductionCue(sourceCue)?.active, false);
     assert.equal(dbModule.getProductionCue(retainedCue)?.active, true);
+    assert.equal(sqlite.prepare("SELECT interval_hours FROM word_skill_state WHERE word_id = 'target' AND skill_id = 'production'").get()?.interval_hours, 6);
+    assert.equal(sqlite.prepare('SELECT compensated_by_invocation_id FROM pure_cue_scheduler_compensation_snapshots').get()?.compensated_by_invocation_id, null);
+  });
+
+  for (const suppressionFirst of [true, false]) test(`composed suppression and response fixes apply in either order (${suppressionFirst}) without compensation`, () => {
+    const sourceCue = seedBroadCue('retire-only-source', 'target');
+    const retainedCue = seedBroadCue('retire-only-retained', 'alternate');
+    insertStudyAttempt('retire-only-attempt', { cueId: sourceCue });
+    sqlite.prepare(`INSERT INTO word_skill_state
+      (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor)
+      VALUES ('target', 'production', 1, 240, ?, ?, 2.4)`).run(createdAt, createdAt);
+    dbModule.captureProductionSchedulerSnapshotForAttemptBatchWithoutTransaction({
+      sourceAttemptId: 'retire-only-attempt', capturedAt: appliedAt,
+    });
+    sqlite.prepare("UPDATE word_skill_state SET interval_hours = 6, ease_factor = 2.1 WHERE word_id = 'target' AND skill_id = 'production'").run();
+    const operation: Extract<ReflectionOperation, { kind: 'reconcile_production_cues' }> = {
+      kind: 'reconcile_production_cues', version: 1, sourceAttemptId: 'retire-only-attempt',
+      targetWordId: 'target', responseWordId: 'alternate', destination: null,
+      sourceAttemptFairness: 'misleading_or_overloaded_cue',
+      wordPlans: [{ wordId: 'target', deactivateCueIds: [], distinctiveCueDrafts: [] },
+        { wordId: 'alternate', deactivateCueIds: [retainedCue], distinctiveCueDrafts: [{ cueType: 'minimal_context', text: 'A precise response cue.' }] }],
+    };
+    const { artifact } = dbModule.materializeReflectionArtifact({
+      sourceSessionId: 'cue-evidence-session:retire-only-attempt',
+      reflectionFlowVersion: 'initial_post_session_reflection.v6', generatedAt: appliedAt,
+      provider: 'openai', model: 'gpt-5.6-luna', promptVersion: 'pure-cue-promotion-v3.0',
+      evidenceBundle: {
+        schemaVersion: 'session_reflection_bundle.v6', generatedAt: appliedAt,
+        session: { sessionId: 'cue-evidence-session:retire-only-attempt', startedAt: createdAt, endedAt: appliedAt, studyProfile: 'mandarin' },
+        items: [{ itemId: 'retire-only', sessionActionId: 'cue-action:retire-only-attempt', occurredAt: appliedAt,
+          source: 'production_mistake', sourceActionKind: 'production', sourceAttemptId: 'retire-only-attempt',
+          targetWord: wordSnapshot('target', '目标'), submittedWord: wordSnapshot('alternate', '替代'),
+          responseKind: 'matched_known_word', rawResponse: '替代', sessionNote: null,
+          existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+          servedCue: { cueId: sourceCue, cueType: 'definition_gloss', text: 'broad target', acceptedWordIds: ['target'], supplement: null },
+          promotionEvidence: {
+            diagnosisTags: ['production_cue_overloaded'], intersectingPureCues: [],
+            words: ['target', 'alternate'].map((wordId) => ({ wordId,
+              activeProductionCues: dbModule.getActiveProductionCuesForWord(wordId).map((cue) => ({
+                cueId: cue.cueId, taskId: cue.taskId, cueType: cue.cueType, text: cue.text, acceptedWordIds: cue.acceptedWordIds,
+              })),
+            })),
+          },
+        }],
+      },
+      result: { schemaVersion: 'session_reflection_result.v10', itemResults: [{
+        itemId: 'retire-only', diagnosisTags: ['production_cue_overloaded'], promotionOutcome: 'reconciled',
+        learnerExplanation: 'Suppress the target; repair the response.', questions: [],
+        targetSuppression: { reason: 'The target is not useful for isolated production.' },
+        proposals: [{ proposalGroupKey: null, rationale: 'The target is not useful for isolated production.', operation: suppressOperation('target') },
+          { proposalGroupKey: null, rationale: 'Repair the response cue.', operation }],
+      }] },
+    });
+    const suppression = artifact.proposals.find(p => p.proposal.operation.kind === 'suppress_definition_production')!;
+    const response = artifact.proposals.find(p => p.proposal.operation.kind === 'reconcile_production_cues')!;
+    const forbidden: ReflectionOperation = { ...operation, wordPlans: [
+      { wordId: 'target', deactivateCueIds: [sourceCue], distinctiveCueDrafts: [] }, operation.wordPlans[1]!,
+    ] };
+    for (const proposal of [suppression, response]) {
+      assert.throws(() => dbModule.acceptReflectionProposal({ proposalId: proposal.review.proposalId, operation: forbidden, createdAt: appliedAt }), /suppression|target/i);
+      if (proposal === suppression) assert.throws(() => dbModule.replaceReflectionProposal({ proposalId: proposal.review.proposalId, operation: forbidden, createdAt: appliedAt }), /suppression|target/i);
+      assert.throws(() => dbModule.replaceReflectionProposal({ proposalId: proposal.review.proposalId, operation: cueRepairOperation({ changes: [{ kind: 'create', cue: { cueType: 'minimal_context', text: 'A forbidden target exercise.', acceptedWordIds: ['target'] } }] }), createdAt: appliedAt }), /suppression|target/i);
+    }
+    for (const [index, proposal] of (suppressionFirst ? [suppression, response] : [response, suppression]).entries()) {
+      const authorized = dbModule.acceptReflectionProposal({ proposalId: proposal.review.proposalId, invocationId: `composed-${index}`, operation: proposal.proposal.operation, createdAt: appliedAt });
+      const state = dbModule.applyReflectionInvocation(authorized.invocation.invocation.invocationId, appliedAt).application.state;
+      assert.equal(state.kind, 'applied', JSON.stringify(state));
+      if (state.kind === 'applied') assert.equal(state.effectRefs.some(ref => ref.type === 'production_scheduler_compensation'), false);
+    }
+    assert.equal(dbModule.getWordSkillRelevance('target', 'production')?.relevanceState, 'suppressed');
+    assert.equal(dbModule.getProductionCue(sourceCue)?.active, true);
+    assert.equal(dbModule.getProductionCue(retainedCue)?.active, false);
+    assert.equal(dbModule.getActiveProductionCuesForWord('alternate')[0]?.text, 'A precise response cue.');
     assert.equal(sqlite.prepare("SELECT interval_hours FROM word_skill_state WHERE word_id = 'target' AND skill_id = 'production'").get()?.interval_hours, 6);
     assert.equal(sqlite.prepare('SELECT compensated_by_invocation_id FROM pure_cue_scheduler_compensation_snapshots').get()?.compensated_by_invocation_id, null);
   });
@@ -2027,8 +2100,8 @@ function materializeProposal(
       responseKind: 'matched_known_word',
     }],
   };
-  const result: SessionReflectionResultV9 = {
-    schemaVersion: 'session_reflection_result.v9',
+  const result: SessionReflectionResultV10 = {
+    schemaVersion: 'session_reflection_result.v10',
     itemResults: [{
       itemId: 'item',
       diagnosisTags: ['persistent_confusion'],
@@ -2043,11 +2116,11 @@ function materializeProposal(
   };
   return dbModule.materializeReflectionArtifact({
     sourceSessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v5',
+    reflectionFlowVersion: 'initial_post_session_reflection.v6',
     generatedAt: createdAt,
     provider: 'openai',
     model: 'gpt-5.6-luna',
-    promptVersion: 'reflection-staged-v3',
+    promptVersion: 'reflection-staged-v4.0',
     evidenceBundle,
     result,
   }).artifact;
@@ -2064,11 +2137,11 @@ function materializeCurrentSourceArtifact(
   `).run(sourceSessionId, createdAt, createdAt);
   return dbModule.materializeReflectionArtifact({
     sourceSessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v5',
+    reflectionFlowVersion: 'initial_post_session_reflection.v6',
     generatedAt: createdAt,
     provider: 'openai',
     model: 'gpt-5.6-luna',
-    promptVersion: 'reflection-staged-v3',
+    promptVersion: 'reflection-staged-v4.0',
     evidenceBundle: {
       schemaVersion: 'session_reflection_bundle.v6',
       generatedAt: createdAt,
@@ -2102,7 +2175,7 @@ function materializeCurrentSourceArtifact(
       }],
     },
     result: {
-      schemaVersion: 'session_reflection_result.v9',
+      schemaVersion: 'session_reflection_result.v10',
       itemResults: [{
         itemId: 'item',
         diagnosisTags: ['ordinary_retrieval_noise'],

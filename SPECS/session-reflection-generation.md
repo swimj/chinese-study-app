@@ -144,7 +144,7 @@ All newly constructed initial diagnosis bundles use V4, including sessions conta
 only ordinary failure evidence or no served supplement. V2 and V3 remain
 readable for immutable stored artifacts and exact-bundle retries, but new
 diagnosis does not branch by marker or supplement presence. The staged flow
-then retains V6 enriched evidence with a final V9 result, as described below.
+then retains V6 enriched evidence with a final V10 result, as described below.
 
 Learner-authored session notes, contrast-selection signals, learning/unstudied
 actions, and broader history require explicit evidence-kind and bundle-schema
@@ -178,8 +178,8 @@ preserved so later review can distinguish what actually ran.
 
 ### Staged production-cue cleanup
 
-New initial requests use `initial_post_session_reflection.v5`; new deferred
-second opinions use `deferred_second_opinion.v4`. Only the current staged
+New initial requests use `initial_post_session_reflection.v6`; new deferred
+second opinions use `deferred_second_opinion.v5`. Only the current staged
 generation contract and prompt major identities can execute. Earlier minor
 versions of the current prompt major remain compatible with the current
 contract; future minors and earlier majors do not. Older-major artifacts remain
@@ -189,8 +189,13 @@ version. Pending obsolete proposals cannot be authorized or applied.
 There is no one-shot retry compatibility path and no silent evidence upgrade.
 
 The server persists a continuation and exact diagnosis input before calling the
-provider. Diagnosis uses `staged_reflection_diagnosis_result.v2`: each item is
+provider. Diagnosis uses `staged_reflection_diagnosis_result.v3`: each item is
 either ordinary explanation/proposals or an `ambiguous_pair` handoff, never both.
+The handoff includes required nullable `targetSuppression: { reason } | null`.
+A non-null value is stage one's recommendation that deliberate production of
+this exact target remains low-value even under an ideal cue. It survives routing
+and does not require stage-two ratification. It is independent of source-cue
+fairness and cannot be inferred merely from difficulty writing a good cue.
 The handoff's `ambiguityReason` describes why the response plausibly answers
 the exact displayed cue, without asserting a shared slot or final fairness.
 Stage one is a best-effort filter; stage two may revise its assessment.
@@ -228,7 +233,7 @@ item. Initial admission then applies its item cap. Continuations record
 best-effort policy does not detect every shared destination conflict.
 
 The exact diagnosis, enriched final evidence, and bounded
-`pure_cue_promotion_bundle.v2` input are saved before the conditional cleanup call.
+`pure_cue_promotion_bundle.v3` input are saved before the conditional cleanup call.
 The durable stage name remains `promotion`. It uses a separate strict
 `pure_cue_promotion_result.v2` contract and Mandarin prompt, without model-facing
 study-profile configuration. It returns `reconcile` with both word plans and
@@ -246,10 +251,32 @@ member-specific teaching belongs in the reveal note. Legacy mixed notes are not
 repaired by the prompt. The server stamps current-member and teaching-note
 preconditions from evidence so application rejects unseen changes.
 
-The final V9 result excludes multi-answer word-owned drafts. Ordinary items
-retain stage-one feedback; routed items receive only stage-two feedback and
-its coordinated cleanup or explanation-only outcome. Stage-one handoffs
-have no ordinary proposals to merge or discard. Each actual provider call has its own
+The final V10 result excludes multi-answer word-owned drafts. Ordinary items
+retain stage-one feedback. Routed items normally receive stage-two feedback and
+its coordinated cleanup or explanation-only outcome. When target suppression
+is recommended, assembly creates a separate target suppression proposal from
+the stage-one reason, preserves response-word cue changes, empties the target
+plan, and removes the shared destination. Reconciliation is omitted if no
+response-word change remains. If a withheld shared destination accompanies
+response-word cue retirements, the entire stage-two content plan is withheld:
+those retirements may depend on the shared replacement. The complete response
+plan is retained as `withheldTargetChanges.dependentResponsePlan`, without an
+actionable reconciliation. Response-only fixes and independent response additions
+remain eligible. Its `promotionOutcome` describes stage-two
+content only: `explanation_only` can therefore accompany the suppression
+proposal. Suppression and response cleanup are independently reviewable and
+can apply in either order; neither depends on accepting the other.
+
+Unexpected target cue changes or shared destinations are retained in
+`withheldTargetChanges`, with the original stage-two rationale and explanation,
+for subdued informational display. These are not proposals, cannot be accepted,
+and never receive review rows or invocations. A conflicting stage-two
+explanation is shown with that withheld material; the main explanation uses the
+stage-one reason and describes the surviving response-only plan. The reason
+remains independently visible even when stage two produces no conflict.
+Authorization also rejects revisions/replacements that reintroduce target cue
+changes or a shared destination from this item. No target lapse compensation
+is introduced by suppression or by response-only cleanup. Each actual provider call has its own
 run, prompt/schema identity, usage, and failure accounting. A promotion run's
 eligible and included counts are the items in its retained promotion input,
 not the diagnosis bundle size. The final artifact

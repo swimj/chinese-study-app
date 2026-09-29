@@ -43,23 +43,18 @@ The user message contains the exercises and responses to review.
 - `learnerRequestedReview` means the learner wants feedback on this exercise.
   It is not proof of an error or an instruction to change content.
 
-Return only one `staged_reflection_diagnosis_result.v3`, containing each
+Return only one `staged_reflection_diagnosis_result.v2`, containing each
 supplied `itemId` exactly once. Each result has descriptive `diagnosisTags`
 and exactly one of these shapes:
 
 - `ordinary`: a substantive `learnerExplanation`, zero or more reviewable
   `proposals`, and `questions` only when a learner choice is necessary.
   This completes this item's feedback in your response.
-- `ambiguous_pair`: a `handoff` containing `ambiguityReason` and `targetSuppression`. The reason explains
+- `ambiguous_pair`: a `handoff` containing only `ambiguityReason`, explaining
   why the response plausibly fits the actual stimulus or why its target-only
   acceptance may be unfair. It has no learner explanation, proposals, or
-  questions. Set `targetSuppression` to null unless your independent assessment
-  finds that production of the exact target remains low-value even under an ideal
-  cue. In that case set it to `{ "reason": "..." }`, with a self-contained,
-  learner-facing explanation of that judgment. This is your suppression
-  recommendation, carried into the final review; stage two does not decide it
-  again. Describe the apparent ambiguity separately and leave cue fairness and
-  compatible content design to the subsequent review.
+  questions. Describe the apparent ambiguity; leave the final assessment and
+  content design to the subsequent review of both words' exercises.
 
 A proposal's `rationale` is for reviewing the content change;
 `learnerExplanation` is the language lesson. The registered operation
@@ -112,11 +107,7 @@ ordinary reflection. Contrast selection for genuine substitutions remains your
 responsibility: it is a separate content space from production cues. Ordinary
 single-word cue repair and its unfair-cue judgment remain available without a
 comparison word. The next stage may conclude that an apparent ambiguity was
-actually a fair distinction; the handoff does not commit it to your fairness
-judgment. A non-null `targetSuppression` is independent: the next stage may
-improve the response word but must not propose target or shared cue changes.
-Do not omit an apparent ambiguity merely to keep a suppression proposal on
-this stage's ordinary path.
+actually a fair distinction; the handoff does not commit it to your judgment.
 
 ### 4. Choose the useful ordinary response
 
@@ -159,14 +150,6 @@ situation frames that help evoke the intended meaning. Keep Mandarin words
 and phrases within explanations where they carry the language point.
 
 ### Cue repair
-
-A cue should evoke an intended meaning or utterance, not ask the learner to
-identify a linguistic category. Do not refer to a target as a “bound form” in
-pre-answer cue text or use that classification to distinguish it from another
-answer. Such analysis can inform diagnosis or a helpful post-answer explanation;
-it is not a communicative reason to retrieve the word. If useful production
-cannot be evoked without a classification quiz, reconsider the practice rather
-than adding technical wording to make the cue selective.
 
 Do not default automatically to `minimal_context`. Choose the cue mechanism
 that best matches the capability:
@@ -384,15 +367,3 @@ Before returning, confirm that:
   useful presented cue; and
 - every field and echoed item or word id belongs to the schema and the
   containing evidence item.
-
-
-### Ambiguity with a low-value production target
-
-If an exercise targeting `式` rejects `样式`, assess whether `样式` fits the
-actual displayed cue. Independently assess useful production of `式` itself;
-its occurrence inside compounds does not by itself justify retrieving the
-smaller lexical unit. If production remains low-value even under an ideal cue,
-use `ambiguous_pair` with both the ambiguity reason and a reasoned
-`targetSuppression`. This is not an automatic rule for `式`, single characters,
-or bound morphemes; useful independent capabilities would change the judgment.
-The later stage may still improve exercises for `样式`.

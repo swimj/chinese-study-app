@@ -1,8 +1,8 @@
 # Reflection prompt versioning
 
 `staged-diagnosis.md` is the current first-stage prompt, stamped
-`reflection-staged-v3.1`. `pure-cue-promotion.md` is stamped
-`pure-cue-promotion-v2.1`. `reflection.md` retains the shipped one-shot guidance
+`reflection-staged-v4.0`. `pure-cue-promotion.md` is stamped
+`pure-cue-promotion-v3.0`. `reflection.md` retains the shipped one-shot guidance
 for historical/provider-contract coverage; new staged generation does not append
 overrides to that older prompt.
 
@@ -30,9 +30,14 @@ the full version for provenance. Quality reporting combines minor versions
 within a major, while current contract checks accept earlier minors of the
 current major. Future minors and earlier majors are not current contracts.
 
-Staged diagnosis has an exclusive ordinary/shared-axis output contract. The
-handoff supplies an expressive instinct, boundaries, and original-response
-validity without drafting competing content changes.
+Staged diagnosis V3 has an ordinary/ambiguous-pair output contract. The
+handoff supplies an ambiguity reason and a nullable target-suppression
+recommendation. Stage one owns this recommendation; stage two owns compatible
+cue changes and explains the attempt. Final V10 assembly retains response-word
+changes, carries suppression as a separate reviewable proposal, and withholds
+any target/shared changes as informational metadata. Withheld suggestions never
+become proposals or invocations. New flows use initial V6/deferred V5 and
+promotion bundle V3; the stage-two result shape remains V2.
 The conditional second call loads `pure-cue-promotion.md` with its own strict
 output contract. Major changes to either shipped staged prompt preserve the
 prior text. Archived prompts are historical documentation, not executable

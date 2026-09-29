@@ -32,10 +32,10 @@ test('prompt minor versions share a major and preserve current contract compatib
   assert.equal(isCompatiblePromptVersion('reflection-staged-v2.9', 'reflection-staged-v3.1'), false);
   assert.equal(isCompatiblePromptVersion('pure-cue-promotion-v3', 'reflection-staged-v3.1'), false);
   assert.equal(isCurrentReflectionArtifactContract({
-    reflectionFlowVersion: 'initial_post_session_reflection.v5',
+    reflectionFlowVersion: 'initial_post_session_reflection.v6',
     bundleSchemaVersion: 'session_reflection_bundle.v6',
-    resultSchemaVersion: 'session_reflection_result.v9',
-    promptVersion: 'reflection-staged-v3',
+    resultSchemaVersion: 'session_reflection_result.v10',
+    promptVersion: 'reflection-staged-v4.0',
   }), true);
 });
 

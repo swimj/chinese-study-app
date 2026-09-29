@@ -15,6 +15,7 @@ import { CURRENT_REFLECTION_PROMPT_VERSION } from '../domain/reflection';
 import { isCurrentReflectionArtifactContract, supportsReflectionSecondOpinionEvidence } from '../domain/reflection-contracts';
 import type { ReflectionModelChoice, ReflectionQualityStatsDto } from '../services/api';
 import { NestedNav } from '../components/AppChrome';
+import { ReflectionStageCompositionNotice } from '../features/reflection/ReflectionStageCompositionNotice';
 import { ReflectionOperationEditor } from '../features/reflection/ReflectionOperationEditor';
 import type { ReflectionPageController } from '../features/reflection/useReflectionPageController';
 import { qualityItemKey } from '../features/reflection/useReflectionPageController';
@@ -347,6 +348,7 @@ export function DeferredSecondOpinionQueue({
             <p className="notes">{reflectionOperationLabel(inspected.proposal.proposal.operation)}</p>
             <EvidenceView evidence={inspected.evidence} />
             <p>{reflectionLearnerFeedback(inspected.result)}</p>
+            <ReflectionStageCompositionNotice result={inspected.result} />
             <p>{inspected.proposal.proposal.rationale}</p>
           </aside>
         )}
@@ -594,6 +596,7 @@ function HelpExplanationCard({
         <section className="reflection-analysis">
           <h3>Feedback</h3>
           <p>{reflectionLearnerFeedback(card.result)}</p>
+          <ReflectionStageCompositionNotice result={card.result} />
         </section>
         {nonActionableDisagreement ? <DisagreementNotice /> : null}
         {card.result.questions.length > 0 ? (
@@ -729,6 +732,7 @@ function HelpProposalCard({
         <section className="reflection-analysis">
           <h3>Feedback</h3>
           <p>{reflectionLearnerFeedback(card.result)}</p>
+          <ReflectionStageCompositionNotice result={card.result} />
         </section>
         {card.result.questions.length > 0 ? (
           <InfoList
@@ -744,6 +748,7 @@ function HelpProposalCard({
         <ReflectionOperationEditor
           operation={draft}
           evidence={card.evidence}
+          targetProductionSuppressed={'targetSuppression' in card.result && card.result.targetSuppression !== undefined}
           onChange={setDraft}
         />
       </div>
@@ -926,6 +931,7 @@ export function SessionWorkspace({ controller }: { controller: ReflectionPageCon
                 <section className="reflection-analysis">
                   <h3>Feedback</h3>
                   <p>{reflectionLearnerFeedback(item.result)}</p>
+                  <ReflectionStageCompositionNotice result={item.result} />
                 </section>
 
                 {isPromotionDisagreement(item.result) ? <DisagreementNotice /> : null}
@@ -985,6 +991,7 @@ export function SessionWorkspace({ controller }: { controller: ReflectionPageCon
                         <ProposalCard
                           key={proposal.review.proposalId}
                           proposal={proposal}
+                          targetProductionSuppressed={'targetSuppression' in item.result && item.result.targetSuppression !== undefined}
                           evidence={item.evidence}
                           readOnly={!isCurrentReflectionArtifactContract(selectedArtifact)}
                           qualityArtifactId={selectedArtifact.artifactId}
@@ -1523,6 +1530,7 @@ function formatUsd(value: number): string {
 
 function ProposalCard({
   proposal,
+  targetProductionSuppressed,
   evidence,
   readOnly,
   qualityArtifactId,
@@ -1541,6 +1549,7 @@ function ProposalCard({
   onClearQuality,
 }: {
   proposal: ReflectionProposalDetailDto;
+  targetProductionSuppressed: boolean;
   evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null;
   readOnly: boolean;
   qualityArtifactId: string;
@@ -1608,12 +1617,13 @@ function ProposalCard({
           <ReflectionOperationEditor
             operation={draft}
             evidence={evidence}
+            targetProductionSuppressed={targetProductionSuppressed}
             onChange={setDraft}
           />
           <label className="reflection-field">
             <span>Handle</span>
             <ReflectionHandleSelect
-              disabled={submitting}
+              disabled={submitting || targetProductionSuppressed}
               value={`${draft.kind}@${draft.version}`}
               onChange={(value) => {
                 const [kind, versionText] = value.split('@');

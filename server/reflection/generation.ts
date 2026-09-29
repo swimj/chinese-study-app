@@ -3,12 +3,12 @@ import type {
   SessionReflectionBundleV6,
   CuratedReflectionBundleV3,
   CuratedReflectionDiagnosisBundleV2,
-  PureCuePromotionBundleV2,
+  PureCuePromotionBundleV3,
   PureCuePromotionResultV2Wire,
-  StagedReflectionDiagnosisResultV2,
-  SessionReflectionResultV9,
+  StagedReflectionDiagnosisResultV3,
+  SessionReflectionResultV10,
 } from '../../src/domain/reflection.ts';
-import { validateSessionReflectionResultV9, stampReconcileProductionCuesOperation } from '../../src/domain/reflection.ts';
+import { validateSessionReflectionResultV10, stampReconcileProductionCuesOperation } from '../../src/domain/reflection.ts';
 import {
   createReflectionGenerationContinuation,
   getReflectionGenerationContinuationRetrySource,
@@ -415,9 +415,9 @@ type StagedRunSuccess<T> = {
 };
 
 type PreparedReflectionGenerationContinuation = ReflectionGenerationContinuation & {
-  diagnosisResult: StagedReflectionDiagnosisResultV2;
+  diagnosisResult: StagedReflectionDiagnosisResultV3;
   finalEvidenceBundle: SessionReflectionBundleV6 | CuratedReflectionBundleV3;
-  promotionBundle: PureCuePromotionBundleV2;
+  promotionBundle: PureCuePromotionBundleV3;
 };
 
 function assertPreparedReflectionGenerationContinuation(
@@ -425,8 +425,10 @@ function assertPreparedReflectionGenerationContinuation(
 ): asserts continuation is PreparedReflectionGenerationContinuation {
   if (
     continuation.diagnosisResult === null
+    || continuation.diagnosisResult.schemaVersion !== 'staged_reflection_diagnosis_result.v3'
     || continuation.finalEvidenceBundle === null
     || continuation.promotionBundle === null
+    || continuation.promotionBundle.schemaVersion !== 'pure_cue_promotion_bundle.v3'
   ) {
     throw new Error('Reflection continuation preparation did not persist exact stage-two evidence.');
   }
@@ -448,7 +450,7 @@ async function runStagedContinuation(input: {
   resumeMetadata?: LunaReflectionRunMetadata;
 }): Promise<InitialReflectionGenerationResult> {
   let continuation = input.continuation;
-  let diagnosisCall: StagedRunSuccess<StagedReflectionDiagnosisResultV2> | null = null;
+  let diagnosisCall: StagedRunSuccess<StagedReflectionDiagnosisResultV3> | null = null;
   if (input.startingStage === 'diagnosis' && continuation.diagnosisResult === null) {
     diagnosisCall = await runDiagnosisStage({ ...input, continuation });
     try {
@@ -463,8 +465,10 @@ async function runStagedContinuation(input: {
     }
   } else if (
     continuation.diagnosisResult === null
+    || continuation.diagnosisResult.schemaVersion !== 'staged_reflection_diagnosis_result.v3'
     || continuation.finalEvidenceBundle === null
     || continuation.promotionBundle === null
+    || continuation.promotionBundle.schemaVersion !== 'pure_cue_promotion_bundle.v3'
   ) {
     throw new Error('The saved reflection continuation has no exact promotion-stage input.');
   }
@@ -555,7 +559,7 @@ async function runDiagnosisStage(input: {
   recordRun: NonNullable<InitialReflectionGenerationDependencies['recordRun']>;
   linkContinuationRun: NonNullable<InitialReflectionGenerationDependencies['linkContinuationRun']>;
   lifecycleLogger: ReflectionLifecycleLogger | undefined;
-}): Promise<StagedRunSuccess<StagedReflectionDiagnosisResultV2>> {
+}): Promise<StagedRunSuccess<StagedReflectionDiagnosisResultV3>> {
   if (input.provider.generateDiagnosis === undefined) {
     throw new Error('The selected reflection provider does not implement the staged diagnosis contract.');
   }
@@ -564,7 +568,7 @@ async function runDiagnosisStage(input: {
     stage: 'diagnosis',
     bundle: input.continuation.diagnosisBundle,
     promptVersion: STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
-    resultSchemaVersion: 'staged_reflection_diagnosis_result.v2',
+    resultSchemaVersion: 'staged_reflection_diagnosis_result.v3',
     sourceProposalIds: input.continuation.sourceProposalIds ?? undefined,
     invoke: (options) => (
       input.provider.generateDiagnosis!(input.continuation.diagnosisBundle, options)
@@ -738,15 +742,15 @@ function recordStagedRunOutcome(
 }
 
 export function assembleStagedReflectionResult(
-  diagnosis: StagedReflectionDiagnosisResultV2,
+  diagnosis: StagedReflectionDiagnosisResultV3,
   evidence: SessionReflectionBundleV6 | CuratedReflectionBundleV3,
   promotion: PureCuePromotionResultV2Wire | null,
-): SessionReflectionResultV9 {
+): SessionReflectionResultV10 {
   const promotionByItemId = new Map(
     promotion?.itemResults.map((itemResult) => [itemResult.itemId, itemResult.decision]) ?? [],
   );
   const evidenceByItemId = new Map(evidence.items.map((item) => [item.itemId, item]));
-  const itemResults: SessionReflectionResultV9['itemResults'] = diagnosis.itemResults.map((itemResult) => {
+  const itemResults: SessionReflectionResultV10['itemResults'] = diagnosis.itemResults.map((itemResult) => {
     const item = evidenceByItemId.get(itemResult.itemId)!;
     const decision = promotionByItemId.get(itemResult.itemId);
     if (itemResult.kind === 'ordinary') {
@@ -755,39 +759,90 @@ export function assembleStagedReflectionResult(
       return ordinary;
     }
     if (decision === undefined) throw new Error('Shared-axis handoff is missing its content-reconciliation decision.');
-    if (decision.kind === 'explanation_only') {
-      return {
-        itemId: itemResult.itemId,
-        diagnosisTags: itemResult.diagnosisTags,
-        learnerExplanation: decision.learnerExplanation,
-        promotionOutcome: 'explanation_only',
-        proposals: [],
-        questions: [],
-      };
-    }
-    if (item.submittedWord === null) throw new Error('Promotion requires an identified response word.');
-    return {
+    const targetSuppression = itemResult.handoff.targetSuppression;
+    const suppressionProposals = targetSuppression === null ? [] : [{
+      proposalGroupKey: null,
+      rationale: targetSuppression.reason,
+      operation: {
+        kind: 'suppress_definition_production' as const,
+        version: 1 as const,
+        wordId: item.targetWord.wordId,
+      },
+    }];
+    const base = {
       itemId: itemResult.itemId,
       diagnosisTags: itemResult.diagnosisTags,
       learnerExplanation: decision.learnerExplanation,
-      promotionOutcome: 'reconciled',
       questions: [],
-      proposals: [{
-        proposalGroupKey: null,
-        rationale: decision.rationale,
-        operation: stampReconcileProductionCuesOperation(decision.operation, {
-          ...item,
-          responseWord: item.submittedWord,
-          promotionEvidence: item.promotionEvidence!,
-        }),
-      }],
+      ...(targetSuppression === null ? {} : { targetSuppression }),
+    };
+    if (decision.kind === 'explanation_only') {
+      return { ...base, promotionOutcome: 'explanation_only', proposals: suppressionProposals };
+    }
+    if (item.submittedWord === null) throw new Error('Promotion requires an identified response word.');
+    const operation = stampReconcileProductionCuesOperation(decision.operation, {
+      ...item,
+      responseWord: item.submittedWord,
+      promotionEvidence: item.promotionEvidence!,
+    });
+    if (targetSuppression === null) {
+      return {
+        ...base,
+        promotionOutcome: 'reconciled',
+        proposals: [{ proposalGroupKey: null, rationale: decision.rationale, operation }],
+      };
+    }
+    const targetPlan = operation.wordPlans.find((plan) => plan.wordId === item.targetWord.wordId);
+    const responsePlan = operation.wordPlans.find((plan) => plan.wordId === item.submittedWord!.wordId);
+    if (!targetPlan || !responsePlan) throw new Error('Reconciliation requires both word plans.');
+    const withheld = operation.destination !== null || targetPlan.deactivateCueIds.length > 0
+      || targetPlan.distinctiveCueDrafts.length > 0;
+    const dependentResponsePlan = operation.destination !== null && responsePlan.deactivateCueIds.length > 0;
+    const responseChanged = !dependentResponsePlan
+      && (responsePlan.deactivateCueIds.length > 0 || responsePlan.distinctiveCueDrafts.length > 0);
+    // Stage one owns target suppression. Preserve the response plan exactly and
+    // keep conflicting target/shared content outside the actionable proposal set.
+    // Response retirements may depend on a withheld shared replacement, so that
+    // entire dependent plan is informational rather than partially applied.
+    const responseOperation = {
+      ...operation,
+      destination: null,
+      wordPlans: operation.wordPlans.map((plan) => plan.wordId === item.targetWord.wordId
+        ? { wordId: plan.wordId, deactivateCueIds: [], distinctiveCueDrafts: [] }
+        : plan),
+    };
+    return {
+      ...base,
+      ...(withheld ? {
+        learnerExplanation: targetSuppression.reason + (dependentResponsePlan
+          ? ' The content plan was withheld because its cue removals may depend on the shared exercise. It is shown separately and cannot be applied.'
+          : responseChanged
+          ? ` Cue changes for ${item.submittedWord.hanzi} remain proposed. Conflicting suggestions for ${item.targetWord.hanzi} are shown separately and cannot be applied.`
+          : ' Conflicting cue suggestions are shown separately and cannot be applied.'),
+        withheldTargetChanges: {
+          wordPlan: targetPlan,
+          destination: operation.destination,
+          rationale: decision.rationale,
+          learnerExplanation: decision.learnerExplanation,
+          ...(dependentResponsePlan ? { dependentResponsePlan: responsePlan } : {}),
+        },
+      } : {}),
+      promotionOutcome: responseChanged ? 'reconciled' : 'explanation_only',
+      proposals: [
+        ...suppressionProposals,
+        ...(responseChanged ? [{
+          proposalGroupKey: null,
+          rationale: withheld ? `Apply only the proposed cue changes for ${item.submittedWord.hanzi}; target and shared changes have been withheld.` : decision.rationale,
+          operation: responseOperation,
+        }] : []),
+      ],
     };
   });
-  const result: SessionReflectionResultV9 = {
-    schemaVersion: 'session_reflection_result.v9',
+  const result: SessionReflectionResultV10 = {
+    schemaVersion: 'session_reflection_result.v10',
     itemResults,
   };
-  const errors = validateSessionReflectionResultV9(result, evidence);
+  const errors = validateSessionReflectionResultV10(result, evidence);
   if (errors.length > 0) {
     throw new Error(`Cannot assemble invalid staged reflection result:\n${errors.join('\n')}`);
   }

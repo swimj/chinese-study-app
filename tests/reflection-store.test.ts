@@ -14,7 +14,7 @@ import type {
   SessionReflectionResultV4,
   SessionReflectionResultV5,
   SessionReflectionResultV6,
-  SessionReflectionResultV9,
+  SessionReflectionResultV10,
   SessionReflectionResultV8,
 } from '../src/domain/reflection.js';
 
@@ -450,11 +450,27 @@ describe('reflection durable store', { concurrency: false }, () => {
     assert.equal(materialized.artifact.resultSchemaVersion, 'session_reflection_result.v6');
   });
 
-  test('pairs V6 evidence only with V9 and authorizes only its exact promotion references', () => {
-    const input = materializationInputV9('v8-round-trip-session');
+  test('prior V9 artifacts remain readable but cannot authorize new actions', () => {
+    const current = materializationInputV10('legacy-v9-read');
+    const input = {
+      ...current,
+      reflectionFlowVersion: 'initial_post_session_reflection.v5',
+      promptVersion: 'pure-cue-promotion-v2.1',
+      result: { ...current.result, schemaVersion: 'session_reflection_result.v9' as const },
+    };
+    const { artifact } = dbModule.materializeReflectionArtifact(input);
+    assert.deepEqual(dbModule.getReflectionArtifactDetail(artifact.artifactId).result, input.result);
+    const proposal = artifact.proposals[0]!;
+    assert.throws(() => dbModule.acceptReflectionProposal({
+      proposalId: proposal.review.proposalId, operation: proposal.proposal.operation, createdAt: updatedAt,
+    }), /older contract.*read-only/i);
+  });
+
+  test('pairs V6 evidence with V10 and authorizes only its exact promotion references', () => {
+    const input = materializationInputV10('v8-round-trip-session');
     const materialized = dbModule.materializeReflectionArtifact(input);
     assert.equal(materialized.artifact.bundleSchemaVersion, 'session_reflection_bundle.v6');
-    assert.equal(materialized.artifact.resultSchemaVersion, 'session_reflection_result.v9');
+    assert.equal(materialized.artifact.resultSchemaVersion, 'session_reflection_result.v10');
     const proposal = materialized.artifact.proposals[0]!;
     const operation = proposal.proposal.operation;
     assert.equal(operation.kind, 'reconcile_production_cues');
@@ -481,7 +497,7 @@ describe('reflection durable store', { concurrency: false }, () => {
 
   test('current manual and replacement authorization cannot revive legacy implicit compensation', () => {
     for (const mode of ['manual', 'replacement'] as const) {
-      const input = materializationInputV9(`legacy-promotion-${mode}`);
+      const input = materializationInputV10(`legacy-promotion-${mode}`);
       const source = input.result.itemResults[0]!.proposals[0]!.operation;
       if (mode === 'manual') {
         input.result.itemResults[0]!.proposals = [];
@@ -506,11 +522,11 @@ describe('reflection durable store', { concurrency: false }, () => {
     }
   });
 
-  test('V9 authorization keeps revised, replacement, and manual word cues owner-only', () => {
+  test('V10 authorization keeps revised, replacement, and manual word cues owner-only', () => {
     for (const mode of ['revised', 'replacement', 'manual'] as const) {
-      const input = materializationInputV9(`v8-owner-only-${mode}`);
-      assert.equal(input.result.schemaVersion, 'session_reflection_result.v9');
-      if (input.result.schemaVersion !== 'session_reflection_result.v9') continue;
+      const input = materializationInputV10(`v8-owner-only-${mode}`);
+      assert.equal(input.result.schemaVersion, 'session_reflection_result.v10');
+      if (input.result.schemaVersion !== 'session_reflection_result.v10') continue;
       const repair: ReflectionOperation = {
         kind: 'repair_production_cue', version: 2,
         wordId: 'target', taskId: 'production-task:target:default_production',
@@ -830,7 +846,7 @@ describe('reflection durable store', { concurrency: false }, () => {
   });
 
   test('checkpoints the explicit handoff and exposes the actual in-flight stage contract', () => {
-    const input = materializationInputV9('handoff-checkpoint');
+    const input = materializationInputV10('handoff-checkpoint');
     if (input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v6') throw new Error('Expected enriched evidence');
     const diagnosisBundle = {
       ...input.evidenceBundle,
@@ -844,12 +860,13 @@ describe('reflection durable store', { concurrency: false }, () => {
     });
     const handoff = {
       ambiguityReason: 'The cue may not communicate the distinction between the pair.',
+      targetSuppression: { reason: 'The target has no useful isolated production goal.' },
     };
     const prepared = dbModule.prepareReflectionGenerationPromotion({
       continuationId: continuation.continuationId,
       preparedAt: updatedAt,
       diagnosisResult: {
-        schemaVersion: 'staged_reflection_diagnosis_result.v2',
+        schemaVersion: 'staged_reflection_diagnosis_result.v3',
         itemResults: [{ kind: 'ambiguous_pair', itemId: 'item', diagnosisTags: [], handoff }],
       },
     });
@@ -862,7 +879,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       dbModule.startReflectionGenerationRun({
         runId, sourceSessionId: 'handoff-checkpoint', reflectionFlowVersion: dbModule.STAGED_INITIAL_REFLECTION_FLOW_VERSION,
         startedAt: updatedAt, provider: 'openai', model: 'gpt-5.6-luna-high', providerModel: 'gpt-5.6-luna',
-        promptVersion: stage === 'diagnosis' ? 'reflection-staged-v3' : 'pure-cue-promotion-v2',
+        promptVersion: stage === 'diagnosis' ? 'reflection-staged-v4.0' : 'pure-cue-promotion-v3.0',
         clientRequestId: `request-${stage}`,
         eligibleItemCount: stage === 'promotion' ? 19 : 1,
         includedItemCount: stage === 'promotion' ? 19 : 1,
@@ -870,11 +887,11 @@ describe('reflection durable store', { concurrency: false }, () => {
       });
     }
     const runs = dbModule.listReflectionGenerationRuns();
-    assert.equal(runs.find((run) => run.runId === 'in-flight-diagnosis')?.resultSchemaVersion, 'staged_reflection_diagnosis_result.v2');
+    assert.equal(runs.find((run) => run.runId === 'in-flight-diagnosis')?.resultSchemaVersion, 'staged_reflection_diagnosis_result.v3');
     assert.equal(runs.find((run) => run.runId === 'in-flight-diagnosis')?.eligibleItemCount, 1);
     const inFlightPromotion = runs.find((run) => run.runId === 'in-flight-promotion');
     assert.equal(inFlightPromotion?.resultSchemaVersion, 'pure_cue_promotion_result.v2');
-    assert.equal(inFlightPromotion?.bundleSchemaVersion, 'pure_cue_promotion_bundle.v2');
+    assert.equal(inFlightPromotion?.bundleSchemaVersion, 'pure_cue_promotion_bundle.v3');
     assert.equal(inFlightPromotion?.eligibleItemCount, prepared.promotionBundle?.items.length);
     assert.equal(inFlightPromotion?.includedItemCount, prepared.promotionBundle?.items.length);
     const concluded = dbModule.recordReflectionGenerationRun({
@@ -886,7 +903,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'pure-cue-promotion-v2',
+      promptVersion: 'pure-cue-promotion-v3.0',
       responseId: null,
       clientRequestId: 'request-concluded-promotion',
       finishReason: 'stop',
@@ -984,14 +1001,14 @@ describe('reflection durable store', { concurrency: false }, () => {
       sourceSessionId: null,
       reflectionFlowVersion: dbModule.STAGED_DEFERRED_SECOND_OPINION_FLOW_VERSION,
       generatedAt: appliedAt,
-      provider: 'openai', model: 'gpt-5.6-luna-high', promptVersion: 'reflection-staged-v3',
+      provider: 'openai', model: 'gpt-5.6-luna-high', promptVersion: 'reflection-staged-v4.0',
       sourceProposalIds: first.sourceProposalIds,
       evidenceBundle: {
         ...first.bundle, schemaVersion: 'curated_reflection_bundle.v3',
         items: first.bundle.items.map((item) => ({ ...item, promotionEvidence: null })),
       },
       result: {
-        schemaVersion: 'session_reflection_result.v9',
+        schemaVersion: 'session_reflection_result.v10',
         itemResults: first.bundle.items.map((item) => ({
           itemId: item.itemId, diagnosisTags: [], learnerExplanation: 'Keep practicing.', proposals: [], questions: [],
         })),
@@ -1027,7 +1044,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       generatedAt: appliedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
-      promptVersion: 'reflection-staged-v3',
+      promptVersion: 'reflection-staged-v4.0',
       evidenceBundle: {
         ...bundle,
         schemaVersion: 'curated_reflection_bundle.v3',
@@ -1035,7 +1052,7 @@ describe('reflection durable store', { concurrency: false }, () => {
       },
       sourceProposalIds,
       result: {
-        schemaVersion: 'session_reflection_result.v9',
+        schemaVersion: 'session_reflection_result.v10',
         itemResults: [{
           itemId: bundle.items[0]!.itemId,
           diagnosisTags: ['ordinary_retrieval_noise'],
@@ -1372,8 +1389,8 @@ function materializationInput(
   };
   return {
     ...legacy,
-    reflectionFlowVersion: 'initial_post_session_reflection.v5',
-    promptVersion: 'reflection-staged-v3',
+    reflectionFlowVersion: 'initial_post_session_reflection.v6',
+    promptVersion: 'reflection-staged-v4.0',
     evidenceBundle,
     result: currentResult(operation),
   };
@@ -1452,7 +1469,7 @@ function materializationInputV6(
   };
 }
 
-function materializationInputV9(
+function materializationInputV10(
   sessionId: string,
 ): Parameters<DbModule['materializeReflectionArtifact']>[0] {
   sqlite.prepare(`
@@ -1523,8 +1540,8 @@ function materializationInputV9(
       },
     }],
   };
-  const result: SessionReflectionResultV9 = {
-    schemaVersion: 'session_reflection_result.v9',
+  const result: SessionReflectionResultV10 = {
+    schemaVersion: 'session_reflection_result.v10',
     itemResults: [{
       itemId: item.itemId,
       diagnosisTags: ['production_cue_overloaded'],
@@ -1553,11 +1570,11 @@ function materializationInputV9(
   };
   return {
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v5',
+    reflectionFlowVersion: 'initial_post_session_reflection.v6',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna',
-    promptVersion: 'pure-cue-promotion-v2',
+    promptVersion: 'pure-cue-promotion-v3.0',
     evidenceBundle,
     result,
   };
@@ -1704,9 +1721,9 @@ function legacyResult(operation: ReflectionOperation): SessionReflectionResultV4
   };
 }
 
-function currentResult(operation: ReflectionOperation): SessionReflectionResultV9 {
+function currentResult(operation: ReflectionOperation): SessionReflectionResultV10 {
   return {
-    schemaVersion: 'session_reflection_result.v9',
+    schemaVersion: 'session_reflection_result.v10',
     itemResults: [{
       itemId: 'item',
       diagnosisTags: ['persistent_confusion'],
@@ -1721,7 +1738,7 @@ function currentResult(operation: ReflectionOperation): SessionReflectionResultV
   };
 }
 
-function informationalResult(itemId: string): SessionReflectionResultV9['itemResults'][number] {
+function informationalResult(itemId: string): SessionReflectionResultV10['itemResults'][number] {
   return {
     itemId,
     diagnosisTags: ['ordinary_retrieval_noise'],
@@ -1836,7 +1853,7 @@ function insertWord(wordId: string, hanzi: string): void {
 function legacyMaterializationInputV8(
   sessionId: string,
 ): Parameters<DbModule['materializeReflectionArtifact']>[0] {
-  const current = materializationInputV9(sessionId);
+  const current = materializationInputV10(sessionId);
   if (current.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v6') throw new Error('Expected V6 fixture');
   const evidenceBundle: SessionReflectionBundleV5 = {
     ...current.evidenceBundle,
