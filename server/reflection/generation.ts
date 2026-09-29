@@ -118,6 +118,7 @@ export type InitialReflectionGenerationService = {
   generateDeferredSecondOpinion(
     proposalIds: string[],
     model: ReflectionModelChoice,
+    helpInboxIds?: string[],
   ): Promise<InitialReflectionGenerationResult>;
 };
 
@@ -137,9 +138,10 @@ export type InitialReflectionGenerationDependencies = {
     supplement: unknown,
     generatedAt: string,
   ) => InitialReflectionBundleBuild;
-  buildDeferredBundle?: (proposalIds: string[], generatedAt: string) => {
+  buildDeferredBundle?: (proposalIds: string[], generatedAt: string, helpInboxIds?: string[]) => {
     bundle: CuratedReflectionDiagnosisBundleV2;
     sourceProposalIds: string[];
+    sourceHelpInboxIds?: string[];
     eligibleItemCount?: number;
     overlapOmittedItemCount?: number;
   };
@@ -366,12 +368,14 @@ export function createInitialReflectionGenerationService(
     async generateDeferredSecondOpinion(
       proposalIds: string[],
       model: ReflectionModelChoice,
+      helpInboxIds: string[] = [],
     ): Promise<InitialReflectionGenerationResult> {
       const normalizedProposalIds = [...new Set(proposalIds.map((proposalId) => proposalId.trim()))].sort();
-      const key = `deferred-second-opinion\u0000${normalizedProposalIds.join('\u0000')}\u0000${model}`;
+      const normalizedHelpInboxIds = [...new Set(helpInboxIds.map((id) => id.trim()))].sort();
+      const key = `deferred-second-opinion\u0000${normalizedProposalIds.join('\u0000')}\u0000${normalizedHelpInboxIds.join('\u0000')}\u0000${model}`;
       return runCoalesced(key, async () => {
         const generatedAt = now();
-        const deferred = buildDeferredBundle(normalizedProposalIds, generatedAt);
+        const deferred = buildDeferredBundle(normalizedProposalIds, generatedAt, normalizedHelpInboxIds);
         const selectedProvider = selectProvider(model);
         const continuation = createContinuation({
           sourceSessionId: null,
@@ -382,6 +386,7 @@ export function createInitialReflectionGenerationService(
           overlapOmittedItemCount: deferred.overlapOmittedItemCount ?? 0,
           diagnosisBundle: deferred.bundle,
           sourceProposalIds: deferred.sourceProposalIds,
+          sourceHelpInboxIds: deferred.sourceHelpInboxIds,
         });
         return runStagedContinuation({
           continuation,
@@ -541,6 +546,7 @@ function materializeStagedResult(
           ?? (() => {
             throw new Error('A curated staged continuation requires source proposal provenance.');
           })(),
+        sourceHelpInboxIds: continuation.sourceHelpInboxIds ?? undefined,
       })
     : input.materializeArtifact({
         ...materializationBase,

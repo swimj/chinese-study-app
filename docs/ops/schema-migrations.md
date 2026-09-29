@@ -152,6 +152,9 @@ nonempty keys. Its `after` hook backfills the Mandarin production
 punctuation/whitespace strip. Display `hanzi` is unchanged. Fresh installations
 start with the frozen baseline
 and apply this same SQL.
+`0013_deferred_explanation_items.sql` gives explanation-only Help rows a
+learner-scoped deferred/retired disposition and stores selected explanation
+inbox ids on staged generation continuations. Existing inbox rows remain open.
 `tests/deferred-second-opinion-migration.test.ts` and
 `tests/requested-second-opinion-disposition-migration.test.ts` verify history
 preservation, ownership, immutability, repeat execution, and fresh/upgrade

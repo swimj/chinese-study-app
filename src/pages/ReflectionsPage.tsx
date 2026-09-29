@@ -41,6 +41,7 @@ import {
   reflectionSpendCapTip,
   type NoDurableChangeReflectionGist,
   type ReflectionArtifactSummaryDto,
+  type ReflectionArtifactDetailDto,
   type ReflectionGenerationRunDto,
   type ReflectionProposalPresentation,
   type ReflectionProposalDetailDto,
@@ -116,11 +117,11 @@ export function ReflectionsPage({
   const [showDeferredInHelp, setShowDeferredInHelp] = useState(false);
   const currentArtifacts = controller.artifactDetails.filter(isCurrentReflectionArtifactContract);
   const helpCards = buildReflectionHelpCards(currentArtifacts);
-  const deferredCards = toDeferredHelpCards(
+  const deferredCards: ReflectionHelpCard[] = [...toDeferredHelpCards(
     buildReflectionProposalPresentations(
       controller.artifactDetails.filter(supportsReflectionSecondOpinionEvidence),
     ),
-  );
+  ), ...toDeferredExplanationCards(controller.artifactDetails.filter(supportsReflectionSecondOpinionEvidence))];
   const actionableDeferredCards = deferredCards.filter((card) => (
     isCurrentReflectionArtifactContract(card.artifact)
   ));
@@ -225,11 +226,11 @@ export function DeferredSecondOpinionQueue({
   cards,
   controller,
 }: {
-  cards: Array<Extract<ReflectionHelpCard, { kind: 'proposal' }>>;
+  cards: ReflectionHelpCard[];
   controller: ReflectionPageController;
 }) {
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
-    () => new Set(cards.map((card) => card.proposal.review.proposalId)),
+    () => new Set(cards.map(secondOpinionCardId)),
   );
   const selectionInitialized = useRef(cards.length > 0);
   const [inspectedId, setInspectedId] = useState<string | null>(null);
@@ -238,7 +239,7 @@ export function DeferredSecondOpinionQueue({
   useEffect(() => {
     if (lunaOnly) setModel(LUNA_REFLECTION_MODEL_CHOICE);
   }, [lunaOnly]);
-  const cardIds = cards.map((card) => card.proposal.review.proposalId).join('\u0000');
+  const cardIds = cards.map(secondOpinionCardId).join('\u0000');
   useEffect(() => {
     const availableIds = new Set(cardIds.length === 0 ? [] : cardIds.split('\u0000'));
     setSelectedIds((current) => {
@@ -252,18 +253,18 @@ export function DeferredSecondOpinionQueue({
     setInspectedId((current) => (current !== null && availableIds.has(current) ? current : null));
   }, [cardIds]);
   const selectedCount = [...selectedIds].filter((id) => cards.some(
-    (card) => card.proposal.review.proposalId === id,
+    (card) => secondOpinionCardId(card) === id,
   )).length;
   const generating = controller.deferredSecondOpinionStatus === 'generating';
   const failed = controller.deferredSecondOpinionStatus === 'failed';
   const allSelected = cards.length > 0 && selectedCount === cards.length;
-  const inspected = cards.find((card) => card.proposal.review.proposalId === inspectedId) ?? null;
+  const inspected = cards.find((card) => secondOpinionCardId(card) === inspectedId) ?? null;
 
   if (cards.length === 0) {
     return (
       <main className="reflection-help-shell is-empty">
         <section className="panel reflection-empty-state">
-          <p className="notes">No deferred proposals are available for a second opinion.</p>
+          <p className="notes">No deferred items are available for a second opinion.</p>
         </section>
       </main>
     );
@@ -278,7 +279,7 @@ export function DeferredSecondOpinionQueue({
           aria-label="Second-opinion bundle selection"
         >
           {cards.map((card) => {
-            const proposalId = card.proposal.review.proposalId;
+            const proposalId = secondOpinionCardId(card);
             const selected = selectedIds.has(proposalId);
             const inspecting = inspectedId === proposalId;
             const parts = secondOpinionChipParts(card);
@@ -334,7 +335,7 @@ export function DeferredSecondOpinionQueue({
           })}
         </div>
         {inspected === null ? null : (
-          <aside className="reflection-second-opinion-inspect" aria-label="Proposal details">
+          <aside className="reflection-second-opinion-inspect" aria-label="Item details">
             <header className="reflection-second-opinion-inspect-head">
               <ItemIdentityHeading evidence={inspected.evidence} />
               <button
@@ -345,11 +346,11 @@ export function DeferredSecondOpinionQueue({
                 Close
               </button>
             </header>
-            <p className="notes">{reflectionOperationLabel(inspected.proposal.proposal.operation)}</p>
+            <p className="notes">{inspected.kind === 'proposal' ? reflectionOperationLabel(inspected.proposal.proposal.operation) : 'Explanation only'}</p>
             <EvidenceView evidence={inspected.evidence} />
             <p>{reflectionLearnerFeedback(inspected.result)}</p>
             <ReflectionStageCompositionNotice result={inspected.result} />
-            <p>{inspected.proposal.proposal.rationale}</p>
+            {inspected.kind === 'proposal' ? <p>{inspected.proposal.proposal.rationale}</p> : null}
           </aside>
         )}
       </div>
@@ -367,7 +368,7 @@ export function DeferredSecondOpinionQueue({
             type="button"
             className="secondary-button"
             disabled={generating || allSelected}
-            onClick={() => setSelectedIds(new Set(cards.map((card) => card.proposal.review.proposalId)))}
+            onClick={() => setSelectedIds(new Set(cards.map(secondOpinionCardId)))}
           >
             Select all
           </button>
@@ -399,8 +400,18 @@ export function DeferredSecondOpinionQueue({
           <button
             type="button"
             disabled={selectedCount === 0 || generating}
-            title="Reflects again on the original study evidence. A successful result replaces only the selected deferred proposals."
-            onClick={() => void controller.generateDeferredSecondOpinion([...selectedIds], model).catch(() => undefined)}
+            title="Reflects again on the original study evidence. A successful result retires only selected deferred items whose evidence was included."
+            onClick={() => {
+              const selectedCards = cards.filter((card) => selectedIds.has(secondOpinionCardId(card)));
+              const proposalIds = selectedCards.flatMap((card) => (
+                card.kind === 'proposal' ? [card.proposal.review.proposalId] : []
+              ));
+              const helpInboxIds = selectedCards.flatMap((card) => (
+                card.kind === 'explanation' ? [secondOpinionCardId(card)] : []
+              ));
+              void controller.generateDeferredSecondOpinion(proposalIds, model, helpInboxIds)
+                .catch(() => undefined);
+            }}
           >
             {generating ? 'Getting second opinion...' : `Get a second opinion (${selectedCount})`}
           </button>
@@ -411,7 +422,7 @@ export function DeferredSecondOpinionQueue({
 }
 
 function secondOpinionChipParts(
-  card: Extract<ReflectionHelpCard, { kind: 'proposal' }>,
+  card: ReflectionHelpCard,
 ): { word: string; pinyin: string | null; typed: string | null; operation: string } {
   const word = card.evidence?.targetWord ?? null;
   return {
@@ -420,7 +431,9 @@ function secondOpinionChipParts(
     typed: card.evidence?.source === 'production_mistake'
       ? (card.evidence.rawResponse ?? 'No response')
       : null,
-    operation: compactReflectionOperationLabel(card.proposal.proposal.operation),
+    operation: card.kind === 'proposal'
+      ? compactReflectionOperationLabel(card.proposal.proposal.operation)
+      : 'Explanation only',
   };
 }
 
@@ -451,6 +464,31 @@ function toDeferredHelpCards(
     cardKey: `proposal:${presentation.proposal.review.proposalId}`,
     ...presentation,
   }));
+}
+
+function toDeferredExplanationCards(
+  details: ReflectionArtifactDetailDto[],
+): Array<Extract<ReflectionHelpCard, { kind: 'explanation' }>> {
+  return details.flatMap((artifact) => artifact.deferredHelpInbox.flatMap((entry) => {
+    const result = artifact.result.itemResults.find((item) => item.itemId === entry.itemId);
+    if (!result || result.proposals.length > 0) return [];
+    const evidence = artifact.evidenceBundle.items.find((item) => item.itemId === entry.itemId) ?? null;
+    return [{
+      kind: 'explanation' as const,
+      actionability: isPromotionDisagreement(result) ? 'non_actionable_disagreement' as const : 'manual' as const,
+      cardKey: `explanation:${artifact.artifactId}:${entry.itemId}`,
+      artifact,
+      evidence,
+      result,
+    }];
+  }));
+}
+
+function secondOpinionCardId(card: ReflectionHelpCard): string {
+  if (card.kind === 'proposal') return card.proposal.review.proposalId;
+  const entry = card.artifact.deferredHelpInbox.find((row) => row.itemId === card.result.itemId);
+  if (!entry) throw new Error('Deferred explanation item is missing its staging row.');
+  return entry.inboxId;
 }
 
 function helpCardSeenRequest(card: ReflectionHelpCard): MarkReflectionInboxSeenRequest {
@@ -649,6 +687,19 @@ function HelpExplanationCard({
           <div className="reflection-help-toolbar">
             <button
               type="button"
+              className="secondary-button"
+              disabled={submitting}
+              onClick={() => {
+                void controller.deferHelpInboxItem({
+                  artifactId: card.artifact.artifactId,
+                  itemId: card.result.itemId,
+                }).catch(() => undefined);
+              }}
+            >
+              Defer
+            </button>
+            <button
+              type="button"
               disabled={submitting}
               onClick={() => {
                 void controller.markHelpInboxDone({
@@ -675,8 +726,13 @@ function HelpExplanationCard({
             }}
             resetDisabled={submitting || draft === null}
             onReset={() => setDraft(null)}
-            deferDisabled
-            onDefer={() => undefined}
+            deferDisabled={submitting}
+            onDefer={() => {
+              void controller.deferHelpInboxItem({
+                artifactId: card.artifact.artifactId,
+                itemId: card.result.itemId,
+              }).catch(() => undefined);
+            }}
             acceptDisabled={
               submitting
               || (draftState !== null && draftState.validationErrors.length > 0)

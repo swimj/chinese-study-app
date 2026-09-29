@@ -87,7 +87,7 @@ export function countUnseenReflectionHelpItems(): number {
         UNION ALL
         SELECT inbox.artifact_id
         FROM reflection_help_inbox AS inbox
-        WHERE inbox.inbox_seen_at IS NULL
+        WHERE inbox.inbox_seen_at IS NULL AND inbox.disposition = 'open'
           AND NOT EXISTS (
             SELECT 1
             FROM reflection_proposal_reviews AS review
@@ -195,7 +195,7 @@ function markExplanationInboxSeen(
   const existing = getDb().prepare(`
     SELECT inbox_id, inbox_seen_at
     FROM reflection_help_inbox
-    WHERE artifact_id = ? AND item_id = ?
+    WHERE artifact_id = ? AND item_id = ? AND disposition = 'open'
   `).get(artifactId, itemId) as { inbox_id: string; inbox_seen_at: string | null } | undefined;
   if (!existing) {
     return {

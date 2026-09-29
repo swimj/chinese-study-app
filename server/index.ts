@@ -73,6 +73,7 @@ import {
   updateWordUserPriority,
   upsertReflectionQualityAnnotation,
   markReflectionHelpInboxDone,
+  deferReflectionHelpInboxItem,
   withdrawReflectionInvocationAuthorization,
   getUsagePulse,
   type ReviewAttemptCommitIntent,
@@ -1081,9 +1082,14 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.post('/api/deferred-reflection-second-opinions', async (req, res) => {
     const proposalIds = req.body?.proposalIds;
+    const helpInboxIds = req.body?.helpInboxIds ?? [];
     const requestedModel = req.body?.model;
     if (!Array.isArray(proposalIds) || !proposalIds.every((proposalId) => typeof proposalId === 'string')) {
       res.status(400).json({ error: 'Expected an array of selected reflection proposal ids' });
+      return;
+    }
+    if (!Array.isArray(helpInboxIds) || !helpInboxIds.every((id) => typeof id === 'string')) {
+      res.status(400).json({ error: 'Expected an array of selected explanation item ids' });
       return;
     }
     if (!isReflectionModelChoice(requestedModel)) {
@@ -1097,7 +1103,7 @@ export function createApp(options: CreateAppOptions = {}) {
     });
     try {
       const result = await runHostedProviderWork(
-        () => reflectionGenerationService.generateDeferredSecondOpinion(proposalIds, requestedModel),
+        () => reflectionGenerationService.generateDeferredSecondOpinion(proposalIds, requestedModel, helpInboxIds),
       );
       reflectionLifecycleLogger.emit({
         event: 'reflection.generation_succeeded',
@@ -1497,6 +1503,23 @@ export function createApp(options: CreateAppOptions = {}) {
         return;
       }
       res.status(500).json({ error: 'Failed to mark reflection help inbox item done' });
+    }
+  });
+
+  app.post('/api/reflection-help-inbox/defer', (req, res) => {
+    const request = readMarkReflectionHelpInboxDoneRequest(req.body);
+    if (request === null) {
+      res.status(400).json({ error: 'Expected a valid reflection help item' });
+      return;
+    }
+    try {
+      res.json(deferReflectionHelpInboxItem(request));
+    } catch (error) {
+      if (isReflectionQualityNotFoundError(error)) {
+        res.status(404).json({ error: error.message.replace(/\.$/, '') });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to defer reflection help item' });
     }
   });
 

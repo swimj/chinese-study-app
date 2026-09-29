@@ -328,7 +328,7 @@ Request/result types live in
 | Method | Path | Purpose |
 | --- | --- | --- |
 | POST | `/api/study-sessions/:sessionId/reflections` | Generate or return the session's initial reflection |
-| POST | `/api/deferred-reflection-second-opinions` | Generate a selected deferred-proposal second opinion |
+| POST | `/api/deferred-reflection-second-opinions` | Generate a selected deferred-item second opinion |
 | GET | `/api/reflection-artifacts?review=open\|all` | Load the unresolved queue or recent history |
 | GET | `/api/reflection-generation-runs` | Load the compact dogfood log of concluded provider attempts |
 | POST | `/api/reflection-generation-runs/:runId/retry` | Retry a failed run from its saved bounded evidence bundle |
@@ -344,6 +344,7 @@ Request/result types live in
 | POST | `/api/failed-reflection-runs-seen` | Advance the failed-reflection-run seen-through timestamp |
 | GET | `/api/reflection-help-inbox` | List open explanation-only Help inbox rows |
 | DELETE | `/api/reflection-help-inbox` | Mark one explanation-only Help item Done by deleting its inbox row |
+| POST | `/api/reflection-help-inbox/defer` | Move one explanation-only Help item into second-opinion staging |
 | POST | `/api/reflection-artifacts/:artifactId/items/:itemId/manual-invocations` | Authorize a registered operation against an explanation-only item |
 
 ### Generate
@@ -585,7 +586,8 @@ The Help inbox is the open set of explanation-only items still in Help. Items
 with empty proposal lists are added when their artifact is materialized. Items
 that carry proposals are not inbox members; their Help presence follows
 proposal review. Artifact detail includes `helpInbox` for explanation-only
-items still open in Help.
+items still open in Help, plus `deferredHelpInbox` for explanation items staged
+for a second opinion.
 
 `GET /api/reflection-help-inbox` returns `{ entries }` for every still-open
 explanation item. Success returns `200` with:
@@ -596,16 +598,21 @@ type ReflectionHelpInboxEntry = {
   artifactId: string;
   itemId: string;
   openedAt: string;
+  disposition: 'open' | 'deferred' | 'requested_second_opinion';
 };
 ```
 
 `DELETE /api/reflection-help-inbox` accepts `{ artifactId, itemId }` and
 removes that item from Help. Success returns `200` with `{ done: true }` when
-a row existed or `{ done: false }` when none did. Missing artifact/item still
-return `404`. There is no learner-facing undo.
+a still-open row existed or `{ done: false }` when none did. Missing artifact/item
+still return `404`. There is no learner-facing undo.
 
 Done leaves the artifact body unchanged, so By session and raw artifact reads
 still show the item.
+
+`POST /api/reflection-help-inbox/defer` accepts `{ artifactId, itemId }` and
+returns `{ deferred: true }` when an open row moved to second-opinion staging.
+The second-opinion request accepts `helpInboxIds` alongside `proposalIds`.
 
 ### Attention badges
 

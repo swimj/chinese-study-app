@@ -903,6 +903,7 @@ export type ReflectionHelpInboxEntry = {
   artifactId: string;
   itemId: string;
   openedAt: string;
+  disposition: 'open' | 'deferred' | 'requested_second_opinion';
 };
 
 export type MarkReflectionHelpInboxDoneRequest = {

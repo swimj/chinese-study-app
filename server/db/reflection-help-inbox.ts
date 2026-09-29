@@ -11,6 +11,7 @@ const helpInboxColumns = [
   'artifact_id',
   'item_id',
   'opened_at',
+  'disposition',
 ] as const;
 
 type HelpInboxRow = {
@@ -18,6 +19,7 @@ type HelpInboxRow = {
   artifact_id: string;
   item_id: string;
   opened_at: string;
+  disposition: ReflectionHelpInboxEntry['disposition'];
 };
 
 /**
@@ -109,7 +111,7 @@ export function markReflectionHelpInboxDone(
 ): { done: boolean } {
   resolveItem(request.artifactId, request.itemId);
   const existing = findInboxRow(request.artifactId, request.itemId);
-  if (!existing) {
+  if (!existing || existing.disposition !== 'open') {
     return { done: false };
   }
   getDb().prepare(`
@@ -119,10 +121,30 @@ export function markReflectionHelpInboxDone(
   return { done: true };
 }
 
+export function deferReflectionHelpInboxItem(
+  request: MarkReflectionHelpInboxDoneRequest,
+  deferredAt = new Date().toISOString(),
+): { deferred: boolean } {
+  resolveItem(request.artifactId, request.itemId);
+  assertIsoTimestamp(deferredAt, 'deferral timestamp');
+  const existing = findInboxRow(request.artifactId, request.itemId);
+  if (!existing || existing.disposition !== 'open') {
+    return { deferred: false };
+  }
+  getDb().prepare(`
+    UPDATE reflection_help_inbox
+    SET disposition = 'deferred', disposition_at = ?,
+        inbox_seen_at = COALESCE(inbox_seen_at, ?)
+    WHERE inbox_id = ? AND disposition = 'open'
+  `).run(deferredAt, deferredAt, existing.inbox_id);
+  return { deferred: true };
+}
+
 export function listReflectionHelpInbox(): ReflectionHelpInboxEntry[] {
   const rows = getDb().prepare(`
     SELECT ${helpInboxColumns.join(', ')}
     FROM reflection_help_inbox
+    WHERE disposition = 'open'
     ORDER BY opened_at ASC, inbox_id ASC
   `).all() as unknown as HelpInboxRow[];
   return rows.map(mapInboxRow);
@@ -136,6 +158,20 @@ export function listReflectionHelpInboxForArtifact(
     SELECT ${helpInboxColumns.join(', ')}
     FROM reflection_help_inbox
     WHERE artifact_id = ?
+      AND disposition = 'open'
+    ORDER BY opened_at ASC, inbox_id ASC
+  `).all(artifactId) as unknown as HelpInboxRow[];
+  return rows.map(mapInboxRow);
+}
+
+export function listDeferredReflectionHelpInboxForArtifact(
+  artifactId: string,
+): ReflectionHelpInboxEntry[] {
+  assertNonEmpty(artifactId, 'artifact id');
+  const rows = getDb().prepare(`
+    SELECT ${helpInboxColumns.join(', ')}
+    FROM reflection_help_inbox
+    WHERE artifact_id = ? AND disposition = 'deferred'
     ORDER BY opened_at ASC, inbox_id ASC
   `).all(artifactId) as unknown as HelpInboxRow[];
   return rows.map(mapInboxRow);
@@ -187,6 +223,7 @@ function mapInboxRow(row: HelpInboxRow): ReflectionHelpInboxEntry {
     artifactId: row.artifact_id,
     itemId: row.item_id,
     openedAt: row.opened_at,
+    disposition: row.disposition,
   };
 }
 

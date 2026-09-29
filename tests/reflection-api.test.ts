@@ -36,7 +36,7 @@ let receivedGenerationRequest: {
 let generationImplementation: InitialReflectionGenerationService['generate'];
 let retryImplementation: InitialReflectionGenerationService['retry'];
 let secondOpinionImplementation: InitialReflectionGenerationService['generateDeferredSecondOpinion'];
-let receivedSecondOpinionRequest: { proposalIds: string[]; model: string } | null = null;
+let receivedSecondOpinionRequest: { proposalIds: string[]; model: string; helpInboxIds: string[] } | null = null;
 let receivedRetryRunId: string | null = null;
 let lifecycleEvents: ReflectionLifecycleEvent[];
 let errorLogs: Array<{ message: string; metadata: Record<string, string> }>;
@@ -70,9 +70,9 @@ describe('reflection HTTP API', { concurrency: false }, () => {
         receivedRetryRunId = runId;
         return retryImplementation(runId);
       },
-      generateDeferredSecondOpinion(proposalIds, model) {
-        receivedSecondOpinionRequest = { proposalIds, model };
-        return secondOpinionImplementation(proposalIds, model);
+      generateDeferredSecondOpinion(proposalIds, model, helpInboxIds = []) {
+        receivedSecondOpinionRequest = { proposalIds, model, helpInboxIds };
+        return secondOpinionImplementation(proposalIds, model, helpInboxIds);
       },
     };
     app = indexModule.createApp({
@@ -203,6 +203,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     assert.deepEqual(receivedSecondOpinionRequest, {
       proposalIds: ['proposal-b', 'proposal-a'],
       model: 'openai:gpt-5.6-luna-high',
+      helpInboxIds: [],
     });
     assert.deepEqual(lifecycleEvents.map((event) => event.event), [
       'reflection.generation_requested',
@@ -210,6 +211,17 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     ]);
     assert.equal(lifecycleEvents[0]?.sessionId, null);
     assert.equal(lifecycleEvents[1]?.sessionId, null);
+  });
+
+  test('passes selected explanation inbox ids to second-opinion generation', async () => {
+    const response = await request('/api/deferred-reflection-second-opinions', {
+      method: 'POST',
+      body: { proposalIds: [], helpInboxIds: ['inbox-a'], model: 'openai:gpt-5.6-luna-high' },
+    });
+    assert.equal(response.status, 201);
+    assert.deepEqual(receivedSecondOpinionRequest, {
+      proposalIds: [], model: 'openai:gpt-5.6-luna-high', helpInboxIds: ['inbox-a'],
+    });
   });
 
   test('correlates unexpected deferred second-opinion failures without exposing details to the learner', async () => {
@@ -748,6 +760,21 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       method: 'DELETE',
       body: { artifactId: informational.artifactId, itemId: 'missing-item' },
     })).status, 404);
+  });
+
+  test('moves an explanation-only Help item to the second-opinion pen', async () => {
+    const artifact = materializeInformational('inbox-api-defer').artifact;
+    const response = await request('/api/reflection-help-inbox/defer', {
+      method: 'POST',
+      body: { artifactId: artifact.artifactId, itemId: 'item-1' },
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.json, { deferred: true });
+    const detail = await request(`/api/reflection-artifacts/${artifact.artifactId}`);
+    assert.equal((detail.json as { helpInbox: unknown[] }).helpInbox.length, 0);
+    assert.equal((detail.json as { deferredHelpInbox: unknown[] }).deferredHelpInbox.length, 1);
+    assert.equal((await request('/api/reflection-help-inbox')).json.entries.length, 0);
+    assert.equal((await request('/api/reflection-artifacts?review=open')).status, 200);
   });
 
   test('attention badges count unseen help cards and mark one proposal seen', async () => {

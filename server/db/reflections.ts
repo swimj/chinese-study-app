@@ -106,7 +106,7 @@ import {
 import {
   createReflectionHelpInboxSchema,
   listReflectionHelpInboxForArtifact,
-  markReflectionHelpInboxDone,
+  listDeferredReflectionHelpInboxForArtifact,
   seedReflectionHelpInboxWithoutTransaction,
   validateReflectionHelpInboxSchema,
 } from './reflection-help-inbox.ts';
@@ -168,6 +168,7 @@ type MaterializeReflectionArtifactBase = {
   promptVersion: string;
   continuationId?: string;
   sourceProposalIds?: string[];
+  sourceHelpInboxIds?: string[];
 };
 
 export type MaterializeReflectionArtifactInput = MaterializeReflectionArtifactBase & (
@@ -271,6 +272,7 @@ export type ReflectionGenerationContinuation = {
   includedItemCount: number;
   diagnosisBundle: SessionReflectionBundleV4 | CuratedReflectionDiagnosisBundleV2;
   sourceProposalIds: string[] | null;
+  sourceHelpInboxIds: string[] | null;
   overlapOmittedItemCount: number;
   diagnosisResult: StagedReflectionDiagnosisResultV2 | StagedReflectionDiagnosisResultV3 | null;
   finalEvidenceBundle: SessionReflectionBundleV6 | CuratedReflectionBundleV3 | null;
@@ -342,6 +344,7 @@ export type ReflectionArtifactDetail = ReflectionArtifactRecord & {
   proposals: ReflectionProposalDetail[];
   qualityItemTags: ReflectionQualityItemTags[];
   helpInbox: ReflectionHelpInboxEntry[];
+  deferredHelpInbox: ReflectionHelpInboxEntry[];
 };
 
 export function reflectionArtifactSupportsCurrentActions(
@@ -1083,6 +1086,7 @@ export function materializeReflectionArtifact(
     throw new Error('The current reflection flow requires current final bundle, result, and prompt versions.');
   }
   assertCuratedSourceProposalProvenance(input.evidenceBundle, input.sourceProposalIds);
+  assertSourceHelpInboxProvenance(input.evidenceBundle, input.sourceHelpInboxIds);
   const validationErrors = validateReflectionArtifactPair(input.result, input.evidenceBundle);
   if (validationErrors.length > 0) {
     throw new Error(`Cannot materialize invalid reflection result:\n${validationErrors.join('\n')}`);
@@ -1181,25 +1185,40 @@ export function materializeReflectionArtifact(
         || input.evidenceBundle.schemaVersion === 'curated_reflection_bundle.v3'
       ) {
         const selection = input.sourceProposalIds;
-        if (selection === undefined || selection.length === 0) {
+        const selectedHelpInboxIds = input.sourceHelpInboxIds ?? [];
+        if ((selection === undefined || selection.length === 0) && selectedHelpInboxIds.length === 0) {
           throw new DeferredSecondOpinionError('Second-opinion selection provenance is required.');
         }
-        const placeholders = selection.map(() => '?').join(', ');
-        const eligible = database.prepare(`
-          SELECT proposal_id
-          FROM reflection_proposal_reviews
-          WHERE proposal_id IN (${placeholders}) AND disposition = 'deferred'
-        `).all(...selection) as Array<{ proposal_id: string }>;
-        if (eligible.length !== selection.length) {
-          throw new DeferredSecondOpinionError(
-            'One or more selected deferred proposals were already resolved.',
-          );
+        if (selection && selection.length > 0) {
+          const placeholders = selection.map(() => '?').join(', ');
+          const eligible = database.prepare(`
+            SELECT proposal_id FROM reflection_proposal_reviews
+            WHERE proposal_id IN (${placeholders}) AND disposition = 'deferred'
+          `).all(...selection) as Array<{ proposal_id: string }>;
+          if (eligible.length !== selection.length) {
+            throw new DeferredSecondOpinionError('One or more selected deferred proposals were already resolved.');
+          }
+          database.prepare(`
+            UPDATE reflection_proposal_reviews
+            SET disposition = 'requested_second_opinion', updated_at = ?
+            WHERE proposal_id IN (${placeholders}) AND disposition = 'deferred'
+          `).run(input.generatedAt, ...selection);
         }
-        database.prepare(`
-          UPDATE reflection_proposal_reviews
-          SET disposition = 'requested_second_opinion', updated_at = ?
-          WHERE proposal_id IN (${placeholders}) AND disposition = 'deferred'
-        `).run(input.generatedAt, ...selection);
+        if (selectedHelpInboxIds.length > 0) {
+          const placeholders = selectedHelpInboxIds.map(() => '?').join(', ');
+          const eligible = database.prepare(`
+            SELECT inbox_id FROM reflection_help_inbox
+            WHERE inbox_id IN (${placeholders}) AND disposition = 'deferred'
+          `).all(...selectedHelpInboxIds) as Array<{ inbox_id: string }>;
+          if (eligible.length !== selectedHelpInboxIds.length) {
+            throw new DeferredSecondOpinionError('One or more selected deferred explanation items were already resolved.');
+          }
+          database.prepare(`
+            UPDATE reflection_help_inbox
+            SET disposition = 'requested_second_opinion', disposition_at = ?
+            WHERE inbox_id IN (${placeholders}) AND disposition = 'deferred'
+          `).run(input.generatedAt, ...selectedHelpInboxIds);
+        }
       }
       created = true;
       database.exec('COMMIT');
@@ -1284,6 +1303,7 @@ export function getReflectionArtifactDetail(artifactId: string): ReflectionArtif
     proposals,
     qualityItemTags: listReflectionQualityAnnotationsForArtifact(artifactId),
     helpInbox: listReflectionHelpInboxForArtifact(artifactId),
+    deferredHelpInbox: listDeferredReflectionHelpInboxForArtifact(artifactId),
   };
 }
 
@@ -1304,6 +1324,10 @@ export function listReflectionArtifacts(
         FROM reflection_proposal_reviews AS open_review
         WHERE open_review.artifact_id = reflection_artifacts.artifact_id
           AND open_review.disposition IN ('pending', 'deferred')
+      ) OR EXISTS (
+        SELECT 1 FROM reflection_help_inbox AS deferred_item
+        WHERE deferred_item.artifact_id = reflection_artifacts.artifact_id
+          AND deferred_item.disposition = 'deferred'
       )`
     : '';
   const rows = getDb().prepare(`
@@ -1726,6 +1750,7 @@ export function createReflectionGenerationContinuation(input: {
   overlapOmittedItemCount?: number;
   diagnosisBundle: SessionReflectionBundleV4 | CuratedReflectionDiagnosisBundleV2;
   sourceProposalIds?: string[];
+  sourceHelpInboxIds?: string[];
 }): ReflectionGenerationContinuation {
   const continuationId = input.continuationId ?? randomUUID();
   assertNonEmpty(continuationId, 'reflection continuation id');
@@ -1753,13 +1778,17 @@ export function createReflectionGenerationContinuation(input: {
     throw new Error('Reflection continuation source session does not match its diagnosis bundle.');
   }
   assertCuratedSourceProposalProvenance(input.diagnosisBundle, input.sourceProposalIds);
+  assertSourceHelpInboxProvenance(input.diagnosisBundle, input.sourceHelpInboxIds);
+  if (input.sourceProposalIds?.length === 0 && !input.sourceHelpInboxIds?.length) {
+    throw new Error('Curated reflection requires a deferred selection.');
+  }
   getDb().prepare(`
     INSERT INTO reflection_generation_continuations (
       learner_id, continuation_id, source_session_id, reflection_flow_version,
       created_at, eligible_item_count, included_item_count, diagnosis_bundle_json,
-      source_proposal_ids_json, diagnosis_result_json, final_evidence_bundle_json,
+      source_proposal_ids_json, source_help_inbox_ids_json, diagnosis_result_json, final_evidence_bundle_json,
       promotion_bundle_json, artifact_id, overlap_omitted_item_count
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)
   `).run(
     requireLearnerId(),
     continuationId,
@@ -1770,6 +1799,7 @@ export function createReflectionGenerationContinuation(input: {
     input.includedItemCount,
     JSON.stringify(input.diagnosisBundle),
     input.sourceProposalIds === undefined ? null : JSON.stringify(input.sourceProposalIds),
+    input.sourceHelpInboxIds === undefined ? null : JSON.stringify(input.sourceHelpInboxIds),
     overlapOmittedItemCount,
   );
   return getReflectionGenerationContinuation(continuationId);
@@ -1998,6 +2028,7 @@ type ReflectionGenerationContinuationRow = {
   overlap_omitted_item_count: number;
   diagnosis_bundle_json: string;
   source_proposal_ids_json: string | null;
+  source_help_inbox_ids_json: string | null;
   diagnosis_result_json: string | null;
   final_evidence_bundle_json: string | null;
   promotion_bundle_json: string | null;
@@ -2061,6 +2092,9 @@ function mapReflectionGenerationContinuation(
     sourceProposalIds: row.source_proposal_ids_json === null
       ? null
       : parseSourceProposalIds(row.source_proposal_ids_json, row.continuation_id),
+    sourceHelpInboxIds: row.source_help_inbox_ids_json === null
+      ? null
+      : parseSourceProposalIds(row.source_help_inbox_ids_json, row.continuation_id),
     diagnosisResult,
     finalEvidenceBundle,
     promotionBundle,
@@ -2084,7 +2118,11 @@ function assertCuratedSourceProposalProvenance(
     }
     return;
   }
-  if (sourceProposalIds === null || sourceProposalIds === undefined || sourceProposalIds.length === 0) {
+  if (sourceProposalIds === null || sourceProposalIds === undefined || (
+    sourceProposalIds.length === 0 && bundle.schemaVersion !== 'curated_reflection_bundle.v3'
+    && bundle.schemaVersion !== 'curated_reflection_diagnosis_bundle.v2'
+    && bundle.schemaVersion !== 'pure_cue_promotion_bundle.v2'
+  )) {
     throw new Error('Curated reflection bundles require selected proposal provenance.');
   }
   const unique = new Set<string>();
@@ -2092,6 +2130,20 @@ function assertCuratedSourceProposalProvenance(
     assertNonEmpty(proposalId, 'selected source proposal id');
     if (unique.has(proposalId)) throw new Error('Selected source proposal ids must be unique.');
     unique.add(proposalId);
+  }
+}
+
+function assertSourceHelpInboxProvenance(
+  bundle: ReflectionGenerationProviderBundle,
+  ids: string[] | undefined,
+): void {
+  if (ids === undefined) return;
+  if (bundle.schemaVersion !== 'curated_reflection_diagnosis_bundle.v2'
+    && bundle.schemaVersion !== 'curated_reflection_bundle.v3') {
+    throw new Error('Only current curated reflection bundles may retain explanation selection provenance.');
+  }
+  if (new Set(ids).size !== ids.length || ids.some((id) => typeof id !== 'string' || id.trim().length === 0)) {
+    throw new Error('Selected explanation inbox ids must be unique and non-empty.');
   }
 }
 
@@ -2117,26 +2169,38 @@ export function deferReflectionProposal(
 export function buildStagedDeferredSecondOpinionBundle(
   proposalIds: string[],
   generatedAt = new Date().toISOString(),
-): { bundle: CuratedReflectionDiagnosisBundleV2; sourceProposalIds: string[]; eligibleItemCount: number; overlapOmittedItemCount: number } {
+  helpInboxIds: string[] = [],
+): { bundle: CuratedReflectionDiagnosisBundleV2; sourceProposalIds: string[]; sourceHelpInboxIds: string[]; eligibleItemCount: number; overlapOmittedItemCount: number } {
   const normalizedProposalIds = [...new Set(proposalIds.map((proposalId) => proposalId.trim()))].sort();
-  if (normalizedProposalIds.length === 0) {
-    throw new DeferredSecondOpinionError('Select at least one deferred proposal.');
+  const normalizedHelpInboxIds = [...new Set(helpInboxIds.map((id) => id.trim()))].sort();
+  if (normalizedProposalIds.length + normalizedHelpInboxIds.length === 0) {
+    throw new DeferredSecondOpinionError('Select at least one deferred item.');
   }
-  if (normalizedProposalIds.some((proposalId) => proposalId.length === 0)) {
-    throw new DeferredSecondOpinionError('Selected proposal ids must be non-empty.');
+  if (normalizedProposalIds.some((id) => id.length === 0)
+    || normalizedHelpInboxIds.some((id) => id.length === 0)) {
+    throw new DeferredSecondOpinionError('Selected ids must be non-empty.');
   }
-  const placeholders = normalizedProposalIds.map(() => '?').join(', ');
-  const rows = getDb().prepare(`
+  const proposalRows = normalizedProposalIds.length === 0 ? [] : getDb().prepare(`
     SELECT proposal_id, artifact_id, item_id
     FROM reflection_proposal_reviews
-    WHERE proposal_id IN (${placeholders}) AND disposition = 'deferred'
+    WHERE proposal_id IN (${normalizedProposalIds.map(() => '?').join(', ')}) AND disposition = 'deferred'
     ORDER BY proposal_id
   `).all(...normalizedProposalIds) as Array<{ proposal_id: string; artifact_id: string; item_id: string }>;
-  if (rows.length !== normalizedProposalIds.length) {
+  if (proposalRows.length !== normalizedProposalIds.length) {
     throw new DeferredSecondOpinionError(
       'Every selected proposal must still be deferred and available for a second opinion.',
     );
   }
+  const helpRows = normalizedHelpInboxIds.length === 0 ? [] : getDb().prepare(`
+    SELECT inbox_id, artifact_id, item_id FROM reflection_help_inbox
+    WHERE inbox_id IN (${normalizedHelpInboxIds.map(() => '?').join(', ')})
+      AND disposition = 'deferred'
+    ORDER BY inbox_id
+  `).all(...normalizedHelpInboxIds) as Array<{ inbox_id: string; artifact_id: string; item_id: string }>;
+  if (helpRows.length !== normalizedHelpInboxIds.length) {
+    throw new DeferredSecondOpinionError('Every selected explanation item must still be deferred.');
+  }
+  const rows = [...proposalRows, ...helpRows];
 
   const sourceItems = new Map<string, ReflectionItemV4>();
   const studyProfiles = new Set<string>();
@@ -2183,9 +2247,12 @@ export function buildStagedDeferredSecondOpinionBundle(
   const includedSourceKeys = new Set([...sourceItems.entries()]
     .filter(([, item]) => includedSourceItems.has(item)).map(([key]) => key));
   // Omitted proposals stay deferred; only evidence actually reconsidered is retired.
-  const includedProposalIds = rows.filter((row) => (
+  const includedProposalIds = proposalRows.filter((row) => (
     includedSourceKeys.has(`${row.artifact_id}\u0000${row.item_id}`)
   )).map((row) => row.proposal_id);
+  const includedHelpInboxIds = helpRows.filter((row) => (
+    includedSourceKeys.has(`${row.artifact_id}\u0000${row.item_id}`)
+  )).map((row) => row.inbox_id);
   const items = selection.items.map((item, index) => ({
     ...item,
     itemId: `${requestId}:item:${index + 1}`,
@@ -2203,6 +2270,7 @@ export function buildStagedDeferredSecondOpinionBundle(
   return {
     bundle,
     sourceProposalIds: includedProposalIds,
+    sourceHelpInboxIds: includedHelpInboxIds,
     eligibleItemCount: sourceItems.size,
     overlapOmittedItemCount: selection.overlapOmittedItemCount,
   };
@@ -2574,10 +2642,10 @@ export function authorizeManualReflectionOperation(
       applicationColumns.effectRefsJson,
       applicationColumns.satisfyingEffectRefsJson,
     );
-    markReflectionHelpInboxDone({
-      artifactId: input.artifactId,
-      itemId: input.itemId,
-    });
+    database.prepare(`
+      DELETE FROM reflection_help_inbox
+      WHERE artifact_id = ? AND item_id = ? AND disposition IN ('open', 'deferred')
+    `).run(input.artifactId, input.itemId);
     database.exec('COMMIT');
   } catch (error) {
     database.exec('ROLLBACK');
