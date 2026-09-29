@@ -38,6 +38,7 @@ import {
   isWordProductionProxied,
   selectStoredPureCuesForSession,
   captureProductionSchedulerSnapshotForAttemptBatchWithoutTransaction,
+  getProductionCompensationEligibilityDeadlines,
 } from './pure-cues.ts';
 import type { StudyProfileId } from '../../src/study-profile.ts';
 import {
@@ -5021,6 +5022,7 @@ function queryLegacyDietRows(remainingQuota: number, excludeIds?: Set<string>): 
 }
 
 function getReviewSessionStudyItems(now: string, random: () => number): SessionStudyItem[] {
+  const compensationDeadlines = getProductionCompensationEligibilityDeadlines();
   const rows = getDb()
     .prepare(`
       SELECT
@@ -5064,6 +5066,10 @@ function getReviewSessionStudyItems(now: string, random: () => number): SessionS
   const bestCandidateByWordId = new Map<string, ReviewSessionItemCandidate>();
 
   for (const row of rows) {
+    const compensationDeadline = compensationDeadlines.get(row.id);
+    if (row.skill_id === 'production' && compensationDeadline !== undefined && now < compensationDeadline) {
+      continue;
+    }
     const content = getReviewSkillContentIfAvailable(row, random);
     if (content === undefined) {
       continue;

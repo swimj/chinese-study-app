@@ -680,6 +680,43 @@ export function restoreProductionSchedulerSnapshotWithoutTransaction(input: {
   return { kind: 'restored', snapshot: mapCompensationSnapshot(restored, learnerId) };
 }
 
+/** Derive admission guards from restoration evidence, independently of live due dates. */
+export function getProductionCompensationEligibilityDeadlines(): Map<string, string> {
+  const rows = getDb().prepare(`
+    SELECT snapshot.target_word_id, snapshot.compensated_at, snapshot.production_skill_state_json
+    FROM pure_cue_scheduler_compensation_snapshots AS snapshot
+    JOIN learner_owned_word_skill_state AS skill
+      ON skill.learner_id = snapshot.learner_id
+     AND skill.word_id = snapshot.target_word_id
+     AND skill.skill_id = 'production'
+    WHERE snapshot.learner_id = ?
+      AND snapshot.compensated_at >= skill.last_studied_at
+    ORDER BY snapshot.compensated_at DESC
+  `).all(requireLearnerId()) as Array<{
+    target_word_id: string;
+    compensated_at: string;
+    production_skill_state_json: string;
+  }>;
+  const deadlines = new Map<string, string>();
+  const latestRestorations = new Map<string, string>();
+  for (const row of rows) {
+    // A later restoration replaces the schedule even if it restores an older
+    // action. Do not let another snapshot's longer deadline survive that restore.
+    const latestRestoration = latestRestorations.get(row.target_word_id);
+    if (latestRestoration !== undefined && latestRestoration !== row.compensated_at) continue;
+    latestRestorations.set(row.target_word_id, row.compensated_at);
+    const state = JSON.parse(row.production_skill_state_json) as ProductionSchedulerStateSnapshot['productionSkillState'];
+    if (state === null) continue;
+    const deadline = dueAtWithResetDelay(row.compensated_at, state.nextDueAt);
+    // Millisecond timestamps cannot order simultaneous restores. Honor the
+    // later deadline in that tie rather than inventing order from capture time.
+    if (!deadlines.has(row.target_word_id) || deadline > deadlines.get(row.target_word_id)!) {
+      deadlines.set(row.target_word_id, deadline);
+    }
+  }
+  return deadlines;
+}
+
 function mapAssessmentRecord(row: PureCueAttemptRow): PureCueAssessmentRecord {
   const events = JSON.parse(row.events_json) as PureCueAssessmentEvent[];
   return {

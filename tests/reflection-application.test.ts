@@ -1202,6 +1202,129 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.equal(dbModule.getProductionCue(cueId)?.active, false);
   });
 
+  for (const repairKind of ['ordinary', 'pair_cleanup'] as const) {
+    for (const previousDueAt of ['2026-07-29T00:00:00.000Z', '2026-07-30T00:00:00.000Z']) {
+      test(`${repairKind} compensation gates production until its restored deadline (${previousDueAt})`, (t) => {
+        const lastStudiedAt = '2026-07-01T00:00:00.000Z';
+        const deadline = previousDueAt > '2026-07-29T18:01:00.000Z'
+          ? previousDueAt : '2026-07-29T18:01:00.000Z';
+        t.mock.timers.enable({ apis: ['Date'], now: new Date(appliedAt) });
+        const cueId = seedBroadCue('delay-source-cue', 'target');
+        insertStudyAttempt('delay-source', { cueId });
+        sqlite.prepare(`UPDATE study_attempt_events
+          SET metadata_json = json_set(metadata_json, '$.production.text', 'broad target')
+          WHERE id = 'delay-source'`).run();
+        dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
+          evidenceId: 'delay-source-evidence', occurredAt: appliedAt,
+          taskId: 'production-task:target:default_production', cueId,
+          sourceAttemptId: 'delay-source', attemptResult: 'rejected', submittedWordId: 'alternate',
+        });
+        sqlite.prepare(`INSERT INTO word_skill_state
+          (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor)
+          VALUES ('target', 'production', 1, 240, ?, ?, 2.4)`)
+          .run(lastStudiedAt, previousDueAt);
+        sqlite.prepare(`INSERT INTO word_study_admission_state
+          (word_id, study_phase, earliest_next_study_at) VALUES ('target', 'review', NULL)`).run();
+        const targetSkills = () => dbModule.getSessionPayload(new Date().toISOString().slice(0, 10))
+          .buckets.review.filter((item) => item.itemType !== 'pure_cue_production' && item.word.id === 'target')
+          .map((item) => item.actionKind);
+        // Ordinary urgency still wins over a future due date before compensation.
+        assert.deepEqual(targetSkills(), ['production']);
+        dbModule.captureProductionSchedulerSnapshotForAttemptBatchWithoutTransaction({
+          sourceAttemptId: 'delay-source', capturedAt: appliedAt,
+        });
+        sqlite.prepare(`UPDATE word_skill_state SET interval_hours = 6,
+          last_studied_at = ?, next_due_at = ?, ease_factor = 2.1
+          WHERE word_id = 'target' AND skill_id = 'production'`).run(appliedAt, appliedAt);
+        const draft = { cueType: 'minimal_context' as const, text: 'A distinctive target context' };
+        const operation: ReflectionOperation = repairKind === 'ordinary' ? {
+          ...cueRepairOperation({ changes: [{ kind: 'replace', cueId,
+            replacements: [{ ...draft, acceptedWordIds: ['target'] }] }] }),
+          sourceAttemptJudgments: [{ kind: 'misleading_or_overloaded_cue', sourceAttemptId: 'delay-source' }],
+        } : {
+          kind: 'reconcile_production_cues', version: 1, sourceAttemptId: 'delay-source',
+          targetWordId: 'target', responseWordId: 'alternate', destination: null,
+          sourceAttemptFairness: 'misleading_or_overloaded_cue',
+          wordPlans: [{ wordId: 'target', deactivateCueIds: [cueId], distinctiveCueDrafts: [draft] },
+            { wordId: 'alternate', deactivateCueIds: [], distinctiveCueDrafts: [] }],
+        };
+        insertInvocation('delay-repair', operation);
+        const result = dbModule.applyReflectionInvocation('delay-repair', appliedAt).application.state;
+        assert.equal(result.kind, 'applied', JSON.stringify(result));
+        assert.deepEqual({ ...sqlite.prepare(`SELECT interval_hours, next_due_at FROM word_skill_state
+          WHERE word_id = 'target' AND skill_id = 'production'`).get() },
+        { interval_hours: 240, next_due_at: deadline });
+        // Admission must derive its guard from the snapshot, not the mutable
+        // nextDueAt field (including when that ordinary field is absent).
+        sqlite.prepare("UPDATE word_skill_state SET next_due_at = NULL WHERE word_id = 'target' AND skill_id = 'production'").run();
+        assert.deepEqual(targetSkills(), []);
+        t.mock.timers.setTime(new Date(deadline).getTime() - 1);
+        assert.deepEqual(targetSkills(), []);
+
+        // The compensation delay belongs to production, not other skills of the word.
+        sqlite.prepare(`INSERT INTO word_skill_state
+          (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor)
+          VALUES ('target', 'recognition', 1, 24, ?, ?, 2.5)`).run(lastStudiedAt, previousDueAt);
+        assert.deepEqual(targetSkills(), ['recognition']);
+        sqlite.prepare("DELETE FROM word_skill_state WHERE word_id = 'target' AND skill_id = 'recognition'").run();
+
+        t.mock.timers.setTime(new Date(deadline).getTime());
+        sqlite.prepare(`UPDATE word_skill_state SET next_due_at = '2026-08-01T00:00:00.000Z'
+          WHERE word_id = 'target' AND skill_id = 'production'`).run();
+        assert.deepEqual(targetSkills(), ['production']);
+        // Restore-once retries must not restart the waiting period.
+        dbModule.applyReflectionInvocation('delay-repair', deadline);
+        assert.deepEqual(targetSkills(), ['production']);
+
+        // A later production assessment replaces the restored schedule. Historical
+        // compensation must not turn ordinary due dates into eligibility gates.
+        sqlite.prepare(`UPDATE word_skill_state SET interval_hours = 6,
+          last_studied_at = ?, next_due_at = '2026-08-01T00:00:00.000Z'
+          WHERE word_id = 'target' AND skill_id = 'production'`).run(deadline);
+        t.mock.timers.setTime(new Date(deadline).getTime() + 6 * 60 * 60 * 1000);
+        assert.deepEqual(targetSkills(), ['production']);
+      });
+    }
+  }
+
+  test('derives compensation guards from the latest learner-owned restoration, not capture order', (t) => {
+    t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-07-29T12:00:00.000Z') });
+    dbModule.bootstrapLearner({ learnerId: 'other-delay-learner', displayName: 'Other' });
+    sqlite.prepare(`INSERT INTO word_skill_state
+      (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor)
+      VALUES ('target', 'production', 1, 240, '2026-07-01T00:00:00.000Z', NULL, 2.4)`).run();
+    sqlite.prepare(`INSERT INTO word_study_admission_state
+      (word_id, study_phase, earliest_next_study_at) VALUES ('target', 'review', NULL)`).run();
+    const insertSnapshot = (id: string, learnerId: string, capturedAt: string,
+      compensatedAt: string | null, nextDueAt: string | null) => {
+      sqlite.prepare(`INSERT INTO pure_cue_scheduler_compensation_snapshots
+        (learner_id, session_id, session_action_id, target_word_id, captured_at,
+         production_skill_state_json, admission_state_json, compensated_by_invocation_id, compensated_at)
+        VALUES (?, ?, ?, 'target', ?, ?, 'null', ?, ?)`).run(
+        learnerId, id, id, capturedAt, JSON.stringify({ enabled: true, intervalHours: 240,
+          lastStudiedAt: '2026-07-01T00:00:00.000Z', nextDueAt, easeFactor: 2.4 }),
+        compensatedAt === null ? null : id, compensatedAt,
+      );
+    };
+    insertSnapshot('earlier-restore', 'test-learner', '2026-07-28T00:00:00.000Z',
+      '2026-07-29T00:00:00.000Z', '2026-08-01T00:00:00.000Z');
+    insertSnapshot('latest-restore', 'test-learner', '2026-07-27T00:00:00.000Z',
+      '2026-07-29T06:00:00.000Z', null);
+    insertSnapshot('unrestored', 'test-learner', '2026-07-29T07:00:00.000Z', null,
+      '2026-08-02T00:00:00.000Z');
+    insertSnapshot('other-learner', 'other-delay-learner', '2026-07-29T07:00:00.000Z',
+      '2026-07-29T08:00:00.000Z', '2026-08-03T00:00:00.000Z');
+    assert.equal(dbModule.getProductionCompensationEligibilityDeadlines().get('target'),
+      '2026-07-29T12:00:00.000Z');
+    assert.deepEqual(dbModule.getSessionPayload('2026-07-29').buckets.review.map((item) => item.actionKind),
+      ['production']);
+    insertSnapshot('tied-restore', 'test-learner', '2026-07-26T00:00:00.000Z',
+      '2026-07-29T06:00:00.000Z', '2026-07-29T13:00:00.000Z');
+    assert.equal(dbModule.getProductionCompensationEligibilityDeadlines().get('target'),
+      '2026-07-29T13:00:00.000Z');
+    assert.deepEqual(dbModule.getSessionPayload('2026-07-29').buckets.review, []);
+  });
+
   test('rejects unfair-cue compensation that does not name the action\'s first mistake', () => {
     const cueId = seedBroadCue('later-attempt-seed', 'target');
     insertStudyAttempt('later-attempt-first', { cueId });
