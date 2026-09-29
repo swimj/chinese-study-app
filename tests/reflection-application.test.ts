@@ -1254,6 +1254,9 @@ describe('reflection application adapters', { concurrency: false }, () => {
         assert.deepEqual({ ...sqlite.prepare(`SELECT interval_hours, next_due_at FROM word_skill_state
           WHERE word_id = 'target' AND skill_id = 'production'`).get() },
         { interval_hours: 240, next_due_at: deadline });
+        // Admission must derive its guard from the snapshot, not the mutable
+        // nextDueAt field (including when that ordinary field is absent).
+        sqlite.prepare("UPDATE word_skill_state SET next_due_at = NULL WHERE word_id = 'target' AND skill_id = 'production'").run();
         assert.deepEqual(targetSkills(), []);
         t.mock.timers.setTime(new Date(deadline).getTime() - 1);
         assert.deepEqual(targetSkills(), []);
@@ -1266,6 +1269,8 @@ describe('reflection application adapters', { concurrency: false }, () => {
         sqlite.prepare("DELETE FROM word_skill_state WHERE word_id = 'target' AND skill_id = 'recognition'").run();
 
         t.mock.timers.setTime(new Date(deadline).getTime());
+        sqlite.prepare(`UPDATE word_skill_state SET next_due_at = '2026-08-01T00:00:00.000Z'
+          WHERE word_id = 'target' AND skill_id = 'production'`).run();
         assert.deepEqual(targetSkills(), ['production']);
         // Restore-once retries must not restart the waiting period.
         dbModule.applyReflectionInvocation('delay-repair', deadline);
@@ -1281,6 +1286,44 @@ describe('reflection application adapters', { concurrency: false }, () => {
       });
     }
   }
+
+  test('derives compensation guards from the latest learner-owned restoration, not capture order', (t) => {
+    t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-07-29T12:00:00.000Z') });
+    dbModule.bootstrapLearner({ learnerId: 'other-delay-learner', displayName: 'Other' });
+    sqlite.prepare(`INSERT INTO word_skill_state
+      (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor)
+      VALUES ('target', 'production', 1, 240, '2026-07-01T00:00:00.000Z', NULL, 2.4)`).run();
+    sqlite.prepare(`INSERT INTO word_study_admission_state
+      (word_id, study_phase, earliest_next_study_at) VALUES ('target', 'review', NULL)`).run();
+    const insertSnapshot = (id: string, learnerId: string, capturedAt: string,
+      compensatedAt: string | null, nextDueAt: string | null) => {
+      sqlite.prepare(`INSERT INTO pure_cue_scheduler_compensation_snapshots
+        (learner_id, session_id, session_action_id, target_word_id, captured_at,
+         production_skill_state_json, admission_state_json, compensated_by_invocation_id, compensated_at)
+        VALUES (?, ?, ?, 'target', ?, ?, 'null', ?, ?)`).run(
+        learnerId, id, id, capturedAt, JSON.stringify({ enabled: true, intervalHours: 240,
+          lastStudiedAt: '2026-07-01T00:00:00.000Z', nextDueAt, easeFactor: 2.4 }),
+        compensatedAt === null ? null : id, compensatedAt,
+      );
+    };
+    insertSnapshot('earlier-restore', 'test-learner', '2026-07-28T00:00:00.000Z',
+      '2026-07-29T00:00:00.000Z', '2026-08-01T00:00:00.000Z');
+    insertSnapshot('latest-restore', 'test-learner', '2026-07-27T00:00:00.000Z',
+      '2026-07-29T06:00:00.000Z', null);
+    insertSnapshot('unrestored', 'test-learner', '2026-07-29T07:00:00.000Z', null,
+      '2026-08-02T00:00:00.000Z');
+    insertSnapshot('other-learner', 'other-delay-learner', '2026-07-29T07:00:00.000Z',
+      '2026-07-29T08:00:00.000Z', '2026-08-03T00:00:00.000Z');
+    assert.equal(dbModule.getProductionCompensationEligibilityDeadlines().get('target'),
+      '2026-07-29T12:00:00.000Z');
+    assert.deepEqual(dbModule.getSessionPayload('2026-07-29').buckets.review.map((item) => item.actionKind),
+      ['production']);
+    insertSnapshot('tied-restore', 'test-learner', '2026-07-26T00:00:00.000Z',
+      '2026-07-29T06:00:00.000Z', '2026-07-29T13:00:00.000Z');
+    assert.equal(dbModule.getProductionCompensationEligibilityDeadlines().get('target'),
+      '2026-07-29T13:00:00.000Z');
+    assert.deepEqual(dbModule.getSessionPayload('2026-07-29').buckets.review, []);
+  });
 
   test('rejects unfair-cue compensation that does not name the action\'s first mistake', () => {
     const cueId = seedBroadCue('later-attempt-seed', 'target');

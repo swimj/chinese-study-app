@@ -497,10 +497,12 @@ and word urgency >= 1
 The session admits the most urgent eligible words under the user's load budget.
 
 False-lapse compensation adds a production-only eligibility guard: the restored
-production schedule cannot be selected before its restored `nextDueAt`, even
-when urgency is already at least 1. This is the later of the original deadline
-and six hours after application. It ends when a later production assessment
-replaces the restored schedule; other skills still follow the ordinary policy.
+production schedule cannot be selected before a deadline derived from the
+latest applied compensation snapshot, even when urgency is already at least 1.
+This is the later of the snapshot's original due time and six hours after
+application; it does not use the live skill's `nextDueAt`. It ends when a later
+production assessment replaces the restored schedule; other skills still follow
+the ordinary policy.
 See [false-lapse compensation](./pure-cue-elicitation.md#false-lapse-compensation).
 
 Once a word is admitted, the selector usually chooses the enabled skill with
