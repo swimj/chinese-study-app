@@ -37,6 +37,19 @@ test('prompt minor versions share a major and preserve current contract compatib
     resultSchemaVersion: 'session_reflection_result.v10',
     promptVersion: 'reflection-staged-v4.0',
   }), true);
+  for (const [promptVersion, expected] of [
+    ['reflection-staged-v4.0', true],
+    ['reflection-staged-v4.1', true],
+    ['reflection-staged-v4.2', false],
+    ['reflection-staged-v3.2', false],
+  ] as const) {
+    assert.equal(isCurrentReflectionArtifactContract({
+      reflectionFlowVersion: 'initial_post_session_reflection.v6',
+      bundleSchemaVersion: 'session_reflection_bundle.v6',
+      resultSchemaVersion: 'session_reflection_result.v10',
+      promptVersion,
+    }), expected, promptVersion);
+  }
 });
 
 const generatedAt = '2026-09-21T08:00:00.000Z';

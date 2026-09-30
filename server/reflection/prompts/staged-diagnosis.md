@@ -31,8 +31,15 @@ experimentation.
 The user message contains the exercises and responses to review.
 
 - `targetWord` identifies the lexical unit being exercised.
-- `servedCue` records the exact production exercise the learner saw: its
-  wording, cue type, and any example or usage note revealed after answering.
+- `servedCue.text` is the production cue visible before answering;
+  `servedCue.cueType` identifies its mechanism. Judge the response and the
+  cue's quality against this text alone.
+- `servedCue.supplement`, when present, contains teaching shown only after
+  answering. None of its English frame, example, or translation was a clue.
+  Use it to understand existing reinforcement and avoid proposing a duplicate,
+  never to narrow the original cue, resolve its ambiguity, or justify rejecting
+  an alternate answer. You may teach from it, but distinguish its context from
+  what the learner was asked to produce.
 - The response fields record what the learner supplied. For production,
   `rawResponse`, `responseKind`, and `submittedWord` distinguish an
   identified comparison word from unresolved text or no answer.
@@ -86,6 +93,29 @@ production targets. A poor cue does not prove the word lacks useful production
 capabilities. Consider important ordinary uses without trying to cover every
 dictionary sense.
 
+Assess the existing cue before choosing explanation, reinforcement, or repair.
+A correct answer shows successful recall of the intended word; it does not
+establish that the cue is a good production exercise. Ask whether the visible
+wording itself evokes a coherent, useful meaning without mentally supplying
+restrictions from your knowledge of the target or from post-reveal teaching.
+
+For a definition gloss, judge semantic coherence, not the number of glosses.
+The repair guidance below applies where useful production exists; it does not
+override an independent suppression judgment or the ambiguity routing in step 3:
+
+- Several close glosses may circle the same expressive idea and work together.
+- Repair a list that mixes materially different meanings or invites misleading
+  readings that need unstated restrictions to fit the target. Finding one
+  useful meaning somewhere in the list is not enough to keep the whole cue.
+- Retain distinct ordinary productive capabilities in separate cues when
+  useful. Omit marginal or low-value senses from the proposed practice rather
+  than reproducing every dictionary entry; do not split close paraphrases
+  merely to make each cue contain one gloss.
+
+If your explanation must narrow or correct the cue's meaning to make it fit,
+apply that finding to the cue-quality judgment. Post-reveal teaching cannot
+repair the retrieval exercise the learner actually faced.
+
 ### 2. Interpret the exact attempt
 
 Determine whether the response is the intended target, a natural valid
@@ -120,7 +150,8 @@ this stage's ordinary path.
 
 ### 4. Choose the useful ordinary response
 
-Choose the smallest faithful response:
+Choose the smallest faithful response that addresses the cue assessment above.
+Correctness alone is not a reason to prefer explanation or reinforcement:
 
 - Explanation only for retrieval noise, weak evidence, or content that should
   remain unchanged. Still make the attempt useful to the learner.
@@ -227,6 +258,14 @@ fair production prompt worth keeping unchanged. The supplement is revealed
 after the response, never used as another clue, and never changes accepted
 answers or grading.
 
+First assess the cue without the proposed supplement. Reinforcement enriches
+an already adequate meaning with a useful example or usage; it may not be
+treated as a restriction that refines away ambiguity in the visible cue. If
+the retrieval task needs that restriction, repair the cue instead. A correct
+response or an empty supplement field is not itself a reason to add reinforcement.
+Explanation only remains appropriate when the cue is sound and no durable
+reinforcement adds useful practice value.
+
 Draft all three parts:
 
 - `englishFrame`: a concise usage, register, relationship, or situation frame;
@@ -320,7 +359,9 @@ so the displayed sentence does not clearly exclude it.
 
 This is enough to request review of both words' exercises. Leave the final
 language assessment and future content plan to that review; do not draft
-repairs, supplements, suppression, a learner explanation, or questions here.
+repairs, supplements, a learner explanation, or questions here. Set
+`targetSuppression` to null in this example: useful production of `提醒` remains
+available independently of this cue's ambiguity.
 
 ### Route ambiguity while suppressing low-value production
 
@@ -332,16 +373,42 @@ the cue more selective would not give isolated recall a useful communicative
 purpose. Include that reason in `targetSuppression`. The later review can
 still improve exercises for `样式`.
 
-### Keep a fair definition and reinforce after reveal
+### Repair an overloaded gloss even after a correct answer
 
-For correct `包庇` under “to shield; to harbor; to cover up,” keep the fair
-definition cue and add a supplement such as:
+For correct `动摇` under “to sway; to waver; to rock; to rattle; to destabilize;
+to pose a challenge to,” do not retain the list merely because a post-reveal
+supplement can explain the commonly intended figurative uses. The unqualified
+physical readings and broad “pose a challenge to” do not clearly evoke those
+uses. A faithful repair
+could practice “to waver in one's resolve or convictions” and “to shake or
+undermine someone's confidence or resolve” as distinct useful capabilities.
+The answer was correct, but the cue still merits repair. A supplement explaining
+the figurative restriction would leave the same retrieval problem in place.
+
+### Keep coherent glosses; reinforce only when useful
+
+For correct `包庇` under “to shield or cover for someone who has done wrong,”
+the visible cue already supplies the central meaning. Keep it; a supplement
+can add a useful natural example such as:
 
 - `englishFrame`: `knowingly shielding a wrongdoer from responsibility or discovery`;
 - `exampleSentence`: `他明知儿子犯了罪，却包庇了他。`; and
 - `exampleTranslation`: `He knew his son had committed a crime but shielded him.`
 
-The sentence is post-reveal reinforcement, not a replacement cue.
+The sentence is post-reveal reinforcement, not a replacement cue. Explanation
+only is also appropriate if no useful durable reinforcement is needed. Under
+the broader “to shield; to harbor; to cover up,” the missing wrongdoing context
+would instead warrant cue repair. Several glosses are acceptable when they
+already converge on the useful meaning; success on a broad list does not
+establish that convergence.
+
+### Do not use a supplement to reinterpret the attempt
+
+For `遇见` under “to meet,” a supplement about unexpectedly encountering someone
+on the street was not part of the question. Assess a submitted comparison word
+against “to meet,” not that later scene. If the known response plausibly fits,
+route the apparent ambiguity even if it would not fit the supplement's example.
+The example can teach one use of `遇见`; it cannot make the original cue narrower.
 
 ### Suppress only when ideal production stays low-value
 
@@ -383,6 +450,8 @@ Before returning, confirm that:
 - every item appears once and takes one result path only;
 - every ordinary item has a substantive explanation and its proposed exercises
   naturally evoke the target;
+- cue quality was assessed independently of answer correctness, and neither
+  the explanation nor a supplement was used to rescue missing cue meaning;
 - suppression reflects low production value under an ideal cue and is not
   paired with active cue repair for the same target;
 - a supplement keeps a fair definition cue unchanged, is absent when one was

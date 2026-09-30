@@ -1,3 +1,4 @@
+import { STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION } from '../src/domain/reflection-contracts.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -111,7 +112,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
       providerModel: 'gpt-5.6-luna',
-      promptVersion: 'reflection-staged-v4.0',
+      promptVersion: STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
       responseId: null,
       clientRequestId: run.clientRequestId,
       finishReason: null,
@@ -254,7 +255,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
                 questions: [],
               })),
             },
-            metadata: stagedMetadata('reflection-staged-v4.0'),
+            metadata: stagedMetadata(STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION),
           };
         },
         async generatePromotion() {
@@ -300,7 +301,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       generatedAt,
       provider: 'openai',
       model: 'gpt-5.6-luna-high',
-      promptVersion: 'reflection-staged-v4.0',
+      promptVersion: STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
       evidenceBundle: sourceEvidence,
       result: {
         schemaVersion: 'session_reflection_result.v10',
@@ -341,7 +342,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
                 handoff: ambiguousPairHandoff(),
               })),
             },
-            metadata: stagedMetadata('reflection-staged-v4.0'),
+            metadata: stagedMetadata(STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION),
           };
         },
         async generatePromotion(bundle) {
@@ -461,7 +462,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
                 questions: [],
               }],
             },
-            metadata: stagedMetadata('reflection-staged-v4.0'),
+            metadata: stagedMetadata(STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION),
           };
         },
         async generatePromotion(bundle) {
