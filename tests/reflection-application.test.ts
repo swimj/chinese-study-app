@@ -1239,6 +1239,11 @@ describe('reflection application adapters', { concurrency: false }, () => {
         last_studied_at = ?, next_due_at = '2026-07-29T18:00:00.000Z'
       WHERE word_id = 'target' AND skill_id = 'production'
     `).run(appliedAt);
+    sqlite.prepare(`
+      UPDATE word_study_admission_state
+      SET earliest_next_study_at = '2026-07-29T18:01:00.000Z'
+      WHERE word_id = 'target'
+    `).run();
 
     insertInvocation('unfair-reset-repair', {
       ...cueRepairOperation({
@@ -1265,6 +1270,12 @@ describe('reflection application adapters', { concurrency: false }, () => {
         WHERE word_id = 'target' AND skill_id = 'production'
       `).get() as Record<string, unknown> },
       { interval_hours: 240, ease_factor: 2.4, next_due_at: '2026-07-29T18:01:00.000Z' },
+    );
+    assert.equal(
+      (sqlite.prepare(`SELECT earliest_next_study_at FROM word_study_admission_state
+        WHERE word_id = 'target'`).get() as { earliest_next_study_at: string } | undefined)
+        ?.earliest_next_study_at,
+      '2026-07-29T18:01:00.000Z',
     );
     const refs = repaired.application.state.kind === 'applied'
       ? repaired.application.state.effectRefs

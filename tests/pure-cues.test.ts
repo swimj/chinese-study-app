@@ -487,7 +487,7 @@ describe('pure cue persistence', { concurrency: false }, () => {
     assert.equal(dbModule.getPureCueServedSnapshot('before-quarantine'), null);
   });
 
-  test('captures one pre-lapse scheduler snapshot for every event in a batch and restores it once', () => {
+  test('captures one pre-lapse scheduler snapshot for every event in a batch and restores it without rewinding word recency', () => {
     sqlite.prepare(`
       INSERT INTO word_skill_state (
         word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor
@@ -558,7 +558,7 @@ describe('pure cue persistence', { concurrency: false }, () => {
     `).get()?.next_due_at, '2026-09-18T08:00:00.000Z');
     assert.equal(sqlite.prepare(`
       SELECT earliest_next_study_at FROM word_study_admission_state WHERE word_id = 'word-b'
-    `).get()?.earliest_next_study_at, '2026-09-18T06:00:00.000Z');
+    `).get()?.earliest_next_study_at, '2026-09-19T00:00:00.000Z');
     assert.equal(dbModule.restoreProductionSchedulerSnapshotWithoutTransaction({
       sourceAttemptId: 'scheduler-event-1',
       compensationInvocationId: 'different-invocation',

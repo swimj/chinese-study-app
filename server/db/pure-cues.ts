@@ -583,6 +583,11 @@ export function assertActionLapseCompensationAttempt(sourceAttemptId: string): v
   }
 }
 
+/**
+ * Restore the pre-lapse production scheduler state without rewinding the
+ * word-level admission state. The learner still studied the word, so its live
+ * recency guard must continue to prevent short-term-memory reassessment.
+ */
 export function restoreProductionSchedulerSnapshotWithoutTransaction(input: {
   sourceAttemptId: string;
   compensationInvocationId: string;
@@ -638,26 +643,6 @@ export function restoreProductionSchedulerSnapshotWithoutTransaction(input: {
       state.lastStudiedAt,
       nextDueAt,
       state.easeFactor,
-    );
-  }
-  if (snapshot.admissionState === null) {
-    getDb().prepare(`
-      DELETE FROM learner_owned_word_study_admission_state
-      WHERE learner_id = ? AND word_id = ?
-    `).run(learnerId, snapshot.targetWordId);
-  } else {
-    getDb().prepare(`
-      INSERT INTO learner_owned_word_study_admission_state (
-        learner_id, word_id, study_phase, earliest_next_study_at
-      ) VALUES (?, ?, ?, ?)
-      ON CONFLICT(learner_id, word_id) DO UPDATE SET
-        study_phase = excluded.study_phase,
-        earliest_next_study_at = excluded.earliest_next_study_at
-    `).run(
-      learnerId,
-      snapshot.targetWordId,
-      snapshot.admissionState.studyPhase,
-      snapshot.admissionState.earliestNextStudyAt,
     );
   }
   const updated = getDb().prepare(`
