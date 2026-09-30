@@ -24,6 +24,7 @@ import {
   withdrawReflectionAuthorization,
   fetchReflectionHelpInbox,
   markReflectionHelpInboxDone,
+  deferReflectionHelpInboxItem,
   authorizeManualReflectionOperation,
   flushPendingClientTransportIncidents,
 } from './services/api';
@@ -102,6 +103,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
       getQualityStats: fetchReflectionQualityStats,
       listHelpInbox: fetchReflectionHelpInbox,
       markHelpInboxDone: markReflectionHelpInboxDone,
+      deferHelpInboxItem: deferReflectionHelpInboxItem,
       authorizeManualOperation: authorizeManualReflectionOperation,
     },
   });

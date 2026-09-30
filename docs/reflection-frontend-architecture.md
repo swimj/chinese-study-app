@@ -138,11 +138,9 @@ details for ordinary navigation. Help membership is the union of pending
 proposal reviews and open explanation inbox rows; artifact JSON is fetched to
 render those cards. Proposal review, authorization withdrawal, and Help Done
 reload the affected artifact plus both lists so queues remain coherent without
-a manual refresh. Successful deferred second opinion patches selected deferred
-proposals out of the client detail cache (matching durable
-`requested_second_opinion` retirement) and reloads lists plus the new result
-artifact, so the chip bank and deferred counts update without refetching those
-known source dispositions.
+a manual refresh. Successful deferred second opinion reloads source details and
+the new result artifact, so proposal and explanation-item retirement update the
+chip bank and deferred counts together.
 
 **Refresh** is a full coherent reread of the reflection workspace from the
 backend. It reloads open/history summaries, generation runs, quality stats,
@@ -180,7 +178,7 @@ pane with the target / typed-response identity line. Item quality chips, handle
 selection, reset, and Accept / Defer / Dismiss sit together below the
 pane. Explanation-only cards use that same toolbar. Handle is enabled so the
 learner can pick a registered operation and edit it in place; Reset clears that
-draft; Defer stays disabled; Accept authorizes the draft when one is present
+draft; Defer stages the original evidence item for a second opinion; Accept authorizes the draft when one is present
 and otherwise marks the Help inbox item Done; Dismiss marks Done without
 applying a draft. Help does not show diagnosis tags or a dedicated dismissal-note field;
 dismiss records a null reason and the quality note remains the single note
@@ -192,6 +190,7 @@ chips occupy the main viewport, drill-in details stay secondary, and Select all 
 Clear / model / Get a second opinion sit on a Help-style bottom rail.
 Second-opinion selection uses retained-evidence compatibility independently of
 source flow, prompt, and result versions. Compatible old deferred proposals
+and deferred explanation-only items
 appear in the Second opinion queue, while the Proposals view (including its
 Show deferred toggle) continues to require the current execution contract.
 The backend validates the composed diagnosis input before generation.

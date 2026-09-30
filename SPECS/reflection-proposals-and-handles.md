@@ -137,12 +137,14 @@ without a fabricated reflection proposal.
 
 ### Deferred second-opinion retirement
 
-Deferred proposals can be selected for one fresh reflection over their original
-evidence. Successful materialization retires only the selected originals; it
-does not accept, authorize, apply, compare, or otherwise reconcile either old
+Deferred proposals and explanation-only items can be selected for one fresh
+reflection over their original evidence. Successful materialization retires only
+the included selected originals; it does not accept, authorize, apply, compare,
+or otherwise reconcile either old
 or new advice. Retirement is the terminal review disposition
-`requested_second_opinion`. That kind means the learner requested a replacement
-reading, not that they judged the proposal poor. Explicit learner dismissals
+`requested_second_opinion` for proposals and the matching inbox disposition for
+explanation-only items. That kind means the learner requested a replacement
+reading, not that they judged the original poor. Explicit learner dismissals
 remain `dismissed` with an optional learner-entered reason.
 
 ## 3. Reflection Result Contract
@@ -857,10 +859,14 @@ disposition. Conversely, an unaccepted proposal made unnecessary during review
 is superseded rather than given an application result.
 
 Explanation-only items enter Help when their artifact is materialized. Done
-removes them from Help. The item remains on the artifact, so By session still
-shows it.
+removes them from Help. Defer moves their original evidence item to the
+second-opinion staging pen without creating a proposal or authorizing an
+operation. The item remains on the artifact, so By session still shows it.
 
-Help membership for those items is separate from proposal review. Learner-facing
+Help membership for those items is separate from proposal review. A deferred
+explanation item can be selected with deferred proposals for a second opinion.
+Successful materialization retires only selected items whose evidence was
+included; failed or overlap-omitted selections remain deferred. Learner-facing
 undo of Done is not offered. Artifact-level read/archive remains deferred.
 
 Help "new" attention is not a review disposition. Each pending proposal review

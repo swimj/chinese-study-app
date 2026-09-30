@@ -330,7 +330,7 @@ Other evidence formats remain ineligible; no implicit evidence upgrade is made.
 Old artifacts stay immutable and their proposals remain ineligible for execution.
 
 A learner may deliberately compose a non-session reflection request from one
-or more deferred proposals. The backend resolves each selection to its
+or more deferred proposals or explanation-only items. The backend resolves each selection to its
 learner-owned immutable source evidence, deduplicates a shared evidence item,
 and sends no prior proposal text, disposition, later attempt, or refreshed
 content state to diagnosis. A subsequent promotion stage enriches current cue
@@ -339,8 +339,8 @@ evidence items as initial reflection; an over-limit request is rejected rather
 than truncated or partitioned automatically.
 
 The composed envelope is versioned separately from a session bundle and has no
-source-session id. Private generation-run provenance retains selected proposal
-ids, while the provider envelope contains only its version, generation time,
+source-session id. Private generation provenance retains selected proposal and
+explanation-inbox ids, while the provider envelope contains only its version, generation time,
 and remapped original evidence items. It never fabricates a session or sends
 prior proposal/review identifiers. It remaps provider item
 ids to avoid collisions between original artifacts. Model/provider/run/result
@@ -351,8 +351,9 @@ source session. Stored V1/V2 curated evidence remains readable. A provider or va
 leaves every selected original deferred. On successful durable materialization,
 only included selections that remain deferred are retired atomically. Selections
 omitted by word-overlap admission remain deferred. The current
-implementation records that retirement as the terminal review disposition
-`requested_second_opinion`; it is distinct from an explicit learner dismissal.
+implementation records proposal retirement as the terminal review disposition
+`requested_second_opinion` and explanation-item retirement on its inbox row;
+both are distinct from an explicit learner dismissal.
 
 Every reflection flow must put an explicit upper bound on model resource
 exposure. The mechanism may be a fixed evidence-item cap, deterministic

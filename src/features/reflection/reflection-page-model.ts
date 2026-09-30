@@ -394,41 +394,6 @@ export function buildReflectionProposalPresentations(
 }
 
 /**
- * Apply the known second-opinion success outcome in the client detail cache:
- * selected deferred proposals leave the deferred bank as dismissed with
- * `requested_second_opinion`, matching durable retirement without a refetch.
- */
-export function retireSelectedDeferredProposalsAfterSecondOpinion(
-  details: ReflectionArtifactDetailDto[],
-  selectedProposalIds: ReadonlyArray<string>,
-): ReflectionArtifactDetailDto[] {
-  const selected = new Set(selectedProposalIds);
-  return details.map((detail) => {
-    let changed = false;
-    const proposals = detail.proposals.map((proposal) => {
-      if (
-        !selected.has(proposal.review.proposalId)
-        || proposal.review.disposition.kind !== 'deferred'
-      ) {
-        return proposal;
-      }
-      changed = true;
-      return {
-        ...proposal,
-        review: {
-          ...proposal.review,
-          disposition: {
-            kind: 'dismissed' as const,
-            reason: 'requested_second_opinion',
-          },
-        },
-      };
-    });
-    return changed ? { ...detail, proposals } : detail;
-  });
-}
-
-/**
  * Refresh / mutation policy for which artifact details to fetch.
  * `'all'` bypasses the client detail cache for every workspace-scoped artifact.
  */

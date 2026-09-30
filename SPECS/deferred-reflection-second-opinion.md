@@ -3,6 +3,12 @@
 Status: implemented first-cut feature specification, based on the 2026-09-07
 product discussion.
 
+Later extension: explanation-only Help items can now be deferred and selected
+alongside proposals. They retain their own inbox disposition and item identity;
+no proposal is synthesized. The selection and retirement rules below apply to
+both kinds, while the first-cut statements about proposal-only eligibility
+describe the original implementation boundary.
+
 Origin: [SWI-55 — Let learners re-reflect on a curated batch of deferred items](https://linear.app/swimj/issue/SWI-55).
 Related: [SWI-52 — Let learners request a second opinion on a reflection proposal](https://linear.app/swimj/issue/SWI-52).
 

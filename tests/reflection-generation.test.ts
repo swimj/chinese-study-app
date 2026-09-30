@@ -979,6 +979,7 @@ function artifactDetail(artifactId: string, proposalCount: number): ReflectionAr
     })),
     qualityItemTags: [],
     helpInbox: [],
+    deferredHelpInbox: [],
   };
 }
 

@@ -9,7 +9,7 @@ import type {
   AuthorizeManualReflectionOperationRequest,
 } from '../../domain/reflection';
 import type { ReflectionModelChoice, ReflectionSpendCapDto } from '../../services/api';
-import { artifactDetailIdsToFetch, retireSelectedDeferredProposalsAfterSecondOpinion } from './reflection-page-model';
+import { artifactDetailIdsToFetch } from './reflection-page-model';
 import type {
   ReflectionArtifactDetailDto,
   ReflectionArtifactSummaryDto,
@@ -46,6 +46,7 @@ export type ReflectionPageController = {
   generateDeferredSecondOpinion: (
     proposalIds: string[],
     model: ReflectionModelChoice,
+    helpInboxIds?: string[],
   ) => Promise<void>;
   deferProposal: (proposalId: string) => Promise<void>;
   dismissProposal: (
@@ -59,6 +60,7 @@ export type ReflectionPageController = {
   upsertQuality: (request: UpsertReflectionQualityRequest) => Promise<void>;
   clearQuality: (request: ClearReflectionQualityRequest) => Promise<void>;
   markHelpInboxDone: (request: MarkReflectionHelpInboxDoneRequest) => Promise<void>;
+  deferHelpInboxItem: (request: MarkReflectionHelpInboxDoneRequest) => Promise<void>;
   authorizeManualOperation: (
     request: AuthorizeManualReflectionOperationRequest,
   ) => Promise<void>;
@@ -268,20 +270,14 @@ export function useReflectionPageController({
   async function generateDeferredSecondOpinion(
     proposalIds: string[],
     model: ReflectionModelChoice,
+    helpInboxIds: string[] = [],
   ): Promise<void> {
     if (deferredSecondOpinionStatus === 'generating') return;
     setDeferredSecondOpinionStatus('generating');
     setError(null);
     try {
-      const result = await requireApi().generateDeferredSecondOpinion(proposalIds, model);
-      // Success already means the selected originals are retired. Patch the client
-      // cache so the chip bank / deferred counts update, then load lists + the new
-      // result without refetching those known source dispositions.
-      const retiredDetails = retireSelectedDeferredProposalsAfterSecondOpinion(
-        artifactDetails,
-        proposalIds,
-      );
-      await loadListsAndDetail(result.artifactId, new Set(), retiredDetails);
+      const result = await requireApi().generateDeferredSecondOpinion(proposalIds, model, helpInboxIds);
+      await loadListsAndDetail(result.artifactId, 'all');
       setDeferredSecondOpinionStatus(null);
       notifyHelpQueueChanged();
     } catch (error) {
@@ -431,6 +427,22 @@ export function useReflectionPageController({
     }
   }
 
+  async function deferHelpInboxItem(request: MarkReflectionHelpInboxDoneRequest): Promise<void> {
+    const key = qualityItemKey(request.artifactId, request.itemId);
+    setSubmittingHelpInboxItemKey(key);
+    setError(null);
+    try {
+      await requireApi().deferHelpInboxItem(request);
+      await loadListsAndDetail(selectedArtifact?.artifactId ?? null, new Set([request.artifactId]));
+      notifyHelpQueueChanged();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to defer reflection help item');
+      throw error;
+    } finally {
+      setSubmittingHelpInboxItemKey(null);
+    }
+  }
+
   async function authorizeManualOperation(
     request: AuthorizeManualReflectionOperationRequest,
   ): Promise<void> {
@@ -498,6 +510,7 @@ export function useReflectionPageController({
     upsertQuality,
     clearQuality,
     markHelpInboxDone,
+    deferHelpInboxItem,
     authorizeManualOperation,
   };
 }

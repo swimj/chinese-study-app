@@ -324,6 +324,7 @@ export type ReflectionArtifactDetailDto = {
   proposals: ReflectionProposalDetailDto[];
   qualityItemTags: ReflectionQualityItemTags[];
   helpInbox: ReflectionHelpInboxEntry[];
+  deferredHelpInbox: ReflectionHelpInboxEntry[];
 };
 
 export type ReflectionQualityArmStatsDto = {
@@ -352,6 +353,7 @@ export type ReflectionReviewApi = {
   generateDeferredSecondOpinion: (
     proposalIds: string[],
     model: ReflectionModelChoice,
+    helpInboxIds?: string[],
   ) => Promise<GenerateSessionReflectionResult>;
   getArtifact: (artifactId: string) => Promise<ReflectionArtifactDetailDto>;
   reviewProposal: (
@@ -366,6 +368,9 @@ export type ReflectionReviewApi = {
   markHelpInboxDone: (
     request: MarkReflectionHelpInboxDoneRequest,
   ) => Promise<{ done: boolean }>;
+  deferHelpInboxItem: (
+    request: MarkReflectionHelpInboxDoneRequest,
+  ) => Promise<{ deferred: boolean }>;
   authorizeManualOperation: (
     request: AuthorizeManualReflectionOperationRequest,
   ) => Promise<unknown>;
@@ -806,11 +811,12 @@ export async function retryReflectionGenerationRun(
 export async function generateDeferredReflectionSecondOpinion(
   proposalIds: string[],
   model: ReflectionModelChoice,
+  helpInboxIds: string[] = [],
 ): Promise<GenerateSessionReflectionResult> {
   const response = await apiFetch(`${API_BASE}/api/deferred-reflection-second-opinions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ proposalIds, model }),
+    body: JSON.stringify({ proposalIds, helpInboxIds, model }),
   });
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to generate a second opinion'));
@@ -989,6 +995,20 @@ export async function markReflectionHelpInboxDone(
   });
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to mark reflection help inbox item done'));
+  }
+  return response.json();
+}
+
+export async function deferReflectionHelpInboxItem(
+  request: MarkReflectionHelpInboxDoneRequest,
+): Promise<{ deferred: boolean }> {
+  const response = await apiFetch(`${API_BASE}/api/reflection-help-inbox/defer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to defer reflection help item'));
   }
   return response.json();
 }

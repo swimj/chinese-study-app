@@ -48,6 +48,7 @@ describe('reflection run log presentation', () => {
       upsertQuality: async () => {},
       clearQuality: async () => {},
       markHelpInboxDone: async () => {},
+      deferHelpInboxItem: async () => {},
       authorizeManualOperation: async () => {},
     };
 
@@ -93,7 +94,7 @@ describe('reflection run log presentation', () => {
     assert.match(markup, /aria-label="Handle"/);
     assert.doesNotMatch(markup, /disabled=""[^>]*aria-label="Handle"/);
     assert.match(markup, /disabled=""[^>]*>Reset</);
-    assert.match(markup, /disabled=""[^>]*>Defer</);
+    assert.match(markup, /class="secondary-button">Defer</);
     assert.match(markup, /disabled=""[^>]*>Dismiss</);
     assert.match(markup, />Accept</);
     assert.doesNotMatch(markup, />Done</);
@@ -111,6 +112,7 @@ describe('reflection run log presentation', () => {
     assert.match(markup, /informational only, so it cannot create or authorize a proposal/);
     assert.match(markup, /aria-label="Quality tags"/);
     assert.match(markup, />Done</);
+    assert.match(markup, />Defer</);
     assert.doesNotMatch(markup, /aria-label="Handle"/);
     assert.doesNotMatch(markup, />Accept</);
     assert.doesNotMatch(markup, />Dismiss</);
@@ -209,10 +211,26 @@ describe('reflection run log presentation', () => {
       controller: idleController(),
     }));
 
-    assert.match(markup, /No deferred proposals are available for a second opinion/);
+    assert.match(markup, /No deferred items are available for a second opinion/);
     assert.match(markup, /reflection-help-shell is-empty/);
     assert.doesNotMatch(markup, /Build a second-opinion bundle/);
     assert.doesNotMatch(markup, /Get a second opinion/);
+  });
+
+  test('second-opinion pen accepts a deferred explanation without a proposal', () => {
+    const artifact = explanationArtifact();
+    artifact.deferredHelpInbox = artifact.helpInbox.map((entry) => ({ ...entry, disposition: 'deferred' }));
+    artifact.helpInbox = [];
+    const result = artifact.result.itemResults[0]!;
+    const markup = renderToStaticMarkup(createElement(DeferredSecondOpinionQueue, {
+      cards: [{
+        kind: 'explanation', actionability: 'manual', cardKey: `explanation:${artifact.artifactId}:${result.itemId}`,
+        artifact, evidence: artifact.evidenceBundle.items[0]!, result,
+      }],
+      controller: idleController(),
+    }));
+    assert.match(markup, /Explanation only/);
+    assert.match(markup, /Get a second opinion \(1\)/);
   });
 
   test('renders the empty dogfood state', () => {
@@ -349,6 +367,7 @@ function idleController(
     upsertQuality: async () => {},
     clearQuality: async () => {},
     markHelpInboxDone: async () => {},
+    deferHelpInboxItem: async () => {},
     authorizeManualOperation: async () => {},
     ...overrides,
   };
@@ -428,7 +447,9 @@ function explanationArtifact(): ReflectionArtifactDetailDto {
       artifactId: 'artifact',
       itemId: 'informational',
       openedAt: generatedAt,
+      disposition: 'open',
     }],
+    deferredHelpInbox: [],
   };
 }
 
@@ -567,6 +588,7 @@ function deferredProposalArtifact(
     }],
     qualityItemTags: [],
     helpInbox: [],
+    deferredHelpInbox: [],
   };
 }
 
