@@ -30,6 +30,7 @@ import type {
   CuratedReflectionBundleV3,
   CuratedReflectionDiagnosisBundleV2,
   PureCuePromotionBundleV2,
+  PureCuePromotionBundleV3,
   PureCuePromotionResultV2Wire,
   SessionReflectionResult,
   SessionReflectionResultV4,
@@ -39,7 +40,9 @@ import type {
   SessionReflectionResultV6,
   SessionReflectionResultV7,
   StagedReflectionDiagnosisResultV2,
+  StagedReflectionDiagnosisResultV3,
   SessionReflectionResultV9,
+  SessionReflectionResultV10,
   PromotePureElicitationOperationV1,
   ReconcileProductionCuesOperationV1,
 } from '../../src/domain/reflection.ts';
@@ -50,18 +53,22 @@ import {
   getReflectionOperationRegistration,
   reflectionOperationWordReferences,
   validateReflectionOperationEvidenceContext,
+  validateTargetSuppressionOperation,
   validateReflectionOperation,
   validateSessionReflectionResult,
   validateSessionReflectionResultV5,
   validateSessionReflectionResultV6,
   validateSessionReflectionResultV7,
   validateStagedReflectionDiagnosisResultV2,
+  validateStagedReflectionDiagnosisResultV3,
   validateSessionReflectionResultV9,
+  validateSessionReflectionResultV10,
   validateSessionReflectionResultV8,
 } from '../../src/domain/reflection.ts';
 import {
   parseCuratedReflectionDiagnosisBundleV2,
   parsePureCuePromotionBundleV2,
+  parsePureCuePromotionBundleV3,
   parsePureCuePromotionBundleV1,
   parseStoredSessionReflectionBundle,
 } from '../../src/domain/reflection-evidence.ts';
@@ -174,10 +181,10 @@ export type MaterializeReflectionArtifactInput = MaterializeReflectionArtifactBa
   | { evidenceBundle: SessionReflectionBundleV3; result: SessionReflectionResultV7 }
   | { evidenceBundle: SessionReflectionBundleV5; result: SessionReflectionResultV8 }
   | { evidenceBundle: CuratedReflectionBundleV2; result: SessionReflectionResultV8; sourceProposalIds: string[] }
-  | { evidenceBundle: SessionReflectionBundleV6; result: SessionReflectionResultV9 }
+  | { evidenceBundle: SessionReflectionBundleV6; result: SessionReflectionResultV9 | SessionReflectionResultV10 }
   | {
       evidenceBundle: CuratedReflectionBundleV3;
-      result: SessionReflectionResultV9;
+      result: SessionReflectionResultV9 | SessionReflectionResultV10;
       sourceProposalIds: string[];
     }
   | {
@@ -191,7 +198,8 @@ export type ReflectionGenerationProviderBundle =
   | SessionReflectionBundle
   | CuratedReflectionDiagnosisBundleV2
   | PureCuePromotionBundleV1
-  | PureCuePromotionBundleV2;
+  | PureCuePromotionBundleV2
+  | PureCuePromotionBundleV3;
 
 export type ReflectionGenerationRunState = 'in_flight' | 'succeeded' | 'failed';
 
@@ -264,9 +272,9 @@ export type ReflectionGenerationContinuation = {
   diagnosisBundle: SessionReflectionBundleV4 | CuratedReflectionDiagnosisBundleV2;
   sourceProposalIds: string[] | null;
   overlapOmittedItemCount: number;
-  diagnosisResult: StagedReflectionDiagnosisResultV2 | null;
+  diagnosisResult: StagedReflectionDiagnosisResultV2 | StagedReflectionDiagnosisResultV3 | null;
   finalEvidenceBundle: SessionReflectionBundleV6 | CuratedReflectionBundleV3 | null;
-  promotionBundle: PureCuePromotionBundleV2 | null;
+  promotionBundle: PureCuePromotionBundleV2 | PureCuePromotionBundleV3 | null;
   artifactId: string | null;
 };
 
@@ -527,7 +535,7 @@ const artifactColumns = [
 
 const promotionRunItemCountSelect = `
   CASE
-    WHEN runs.bundle_schema_version IN ('pure_cue_promotion_bundle.v1', 'pure_cue_promotion_bundle.v2')
+    WHEN runs.bundle_schema_version IN ('pure_cue_promotion_bundle.v1', 'pure_cue_promotion_bundle.v2', 'pure_cue_promotion_bundle.v3')
       THEN json_array_length(json_extract(runs.evidence_bundle_json, '$.items'))
     ELSE NULL
   END AS promotion_considered_item_count`;
@@ -1542,7 +1550,7 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
     const evidenceBundle = parseReflectionGenerationProviderBundle(
       parseJson(row.evidence_bundle_json, `reflection run ${row.run_id} input`),
     );
-    const consideredItemCount = (evidenceBundle.schemaVersion === 'pure_cue_promotion_bundle.v1' || evidenceBundle.schemaVersion === 'pure_cue_promotion_bundle.v2')
+    const consideredItemCount = (evidenceBundle.schemaVersion === 'pure_cue_promotion_bundle.v1' || evidenceBundle.schemaVersion === 'pure_cue_promotion_bundle.v2' || evidenceBundle.schemaVersion === 'pure_cue_promotion_bundle.v3')
       ? evidenceBundle.items.length
       : null;
     return {
@@ -1562,7 +1570,7 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
       resultSchemaVersion: isCompatiblePromptVersion(row.prompt_version, PURE_CUE_PROMOTION_PROMPT_VERSION)
         ? 'pure_cue_promotion_result.v2'
         : isCompatiblePromptVersion(row.prompt_version, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION)
-          ? 'staged_reflection_diagnosis_result.v2'
+          ? 'staged_reflection_diagnosis_result.v3'
           : 'session_reflection_result.v7',
       diagnostic: null,
       state: 'in_flight',
@@ -1615,7 +1623,7 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
                 '${CURRENT_INITIAL_REFLECTION_FLOW_VERSION}',
                 '${CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION}'
               )
-              AND runs.bundle_schema_version = 'pure_cue_promotion_bundle.v2'
+              AND runs.bundle_schema_version = 'pure_cue_promotion_bundle.v3'
               AND runs.prompt_version IN (${compatiblePromptVersions(PURE_CUE_PROMOTION_PROMPT_VERSION).map((version) => `'${version}'`).join(', ')})
             )
           )
@@ -1668,7 +1676,7 @@ function getReflectionGenerationRun(runId: string): ReflectionGenerationRunRecor
                 '${CURRENT_INITIAL_REFLECTION_FLOW_VERSION}',
                 '${CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION}'
               )
-              AND runs.bundle_schema_version = 'pure_cue_promotion_bundle.v2'
+              AND runs.bundle_schema_version = 'pure_cue_promotion_bundle.v3'
               AND runs.prompt_version IN (${compatiblePromptVersions(PURE_CUE_PROMOTION_PROMPT_VERSION).map((version) => `'${version}'`).join(', ')})
             )
           )
@@ -1690,7 +1698,7 @@ function parseSourceProposalIds(value: string, runId: string): string[] {
 
 function providerBundleSourceSessionId(bundle: ReflectionGenerationProviderBundle): string | null {
   if ('session' in bundle) return bundle.session.sessionId;
-  if (bundle.schemaVersion === 'pure_cue_promotion_bundle.v1' || bundle.schemaVersion === 'pure_cue_promotion_bundle.v2') return bundle.sourceSessionId;
+  if (bundle.schemaVersion === 'pure_cue_promotion_bundle.v1' || bundle.schemaVersion === 'pure_cue_promotion_bundle.v2' || bundle.schemaVersion === 'pure_cue_promotion_bundle.v3') return bundle.sourceSessionId;
   return null;
 }
 
@@ -1698,6 +1706,7 @@ function parseReflectionGenerationProviderBundle(
   value: unknown,
 ): ReflectionGenerationProviderBundle {
   if (isRecord(value) && value.schemaVersion === 'pure_cue_promotion_bundle.v1') return parsePureCuePromotionBundleV1(value);
+  if (isRecord(value) && value.schemaVersion === 'pure_cue_promotion_bundle.v3') return parsePureCuePromotionBundleV3(value);
   if (isRecord(value) && value.schemaVersion === 'pure_cue_promotion_bundle.v2') {
     return parsePureCuePromotionBundleV2(value);
   }
@@ -1787,12 +1796,15 @@ export function linkReflectionGenerationContinuationRun(input: {
 
 export function prepareReflectionGenerationPromotion(input: {
   continuationId: string;
-  diagnosisResult: StagedReflectionDiagnosisResultV2;
+  diagnosisResult: StagedReflectionDiagnosisResultV3;
   preparedAt: string;
 }): ReflectionGenerationContinuation {
   assertIsoTimestamp(input.preparedAt, 'reflection promotion preparation time');
   const continuation = getReflectionGenerationContinuation(input.continuationId);
-  const validationErrors = validateStagedReflectionDiagnosisResultV2(
+  if (!isCurrentReflectionFlowVersion(continuation.reflectionFlowVersion)) {
+    throw new Error('Cannot prepare an obsolete reflection continuation.');
+  }
+  const validationErrors = validateStagedReflectionDiagnosisResultV3(
     input.diagnosisResult,
     continuation.diagnosisBundle,
   );
@@ -1859,8 +1871,8 @@ export function prepareReflectionGenerationPromotion(input: {
           items: enrichedItems,
         };
   parseStoredSessionReflectionBundle(finalEvidenceBundle);
-  const promotionBundle: PureCuePromotionBundleV2 = {
-    schemaVersion: 'pure_cue_promotion_bundle.v2',
+  const promotionBundle: PureCuePromotionBundleV3 = {
+    schemaVersion: 'pure_cue_promotion_bundle.v3',
     generatedAt: input.preparedAt,
     sourceSessionId: continuation.sourceSessionId,
     studyProfile,
@@ -1878,7 +1890,7 @@ export function prepareReflectionGenerationPromotion(input: {
       }];
     }),
   };
-  parsePureCuePromotionBundleV2(promotionBundle);
+  parsePureCuePromotionBundleV3(promotionBundle);
 
   const database = getDb();
   const stored = database.prepare(`
@@ -2007,9 +2019,11 @@ function mapReflectionGenerationContinuation(
   }
   const diagnosisResult = row.diagnosis_result_json === null
     ? null
-    : parseJson(row.diagnosis_result_json, `reflection continuation ${row.continuation_id} diagnosis result`) as StagedReflectionDiagnosisResultV2;
+    : parseJson(row.diagnosis_result_json, `reflection continuation ${row.continuation_id} diagnosis result`) as StagedReflectionDiagnosisResultV2 | StagedReflectionDiagnosisResultV3;
   if (diagnosisResult !== null) {
-    const errors = validateStagedReflectionDiagnosisResultV2(diagnosisResult, diagnosisBundle);
+    const errors = diagnosisResult.schemaVersion === 'staged_reflection_diagnosis_result.v2'
+      ? validateStagedReflectionDiagnosisResultV2(diagnosisResult, diagnosisBundle)
+      : validateStagedReflectionDiagnosisResultV3(diagnosisResult, diagnosisBundle);
     if (errors.length > 0) throw corruptionError(errors.join('; '));
   }
   const finalEvidenceBundle = row.final_evidence_bundle_json === null
@@ -2027,10 +2041,14 @@ function mapReflectionGenerationContinuation(
   }
   const promotionBundle = row.promotion_bundle_json === null
     ? null
-    : parsePureCuePromotionBundleV2(parseJson(
+    : parseReflectionGenerationProviderBundle(parseJson(
         row.promotion_bundle_json,
         `reflection continuation ${row.continuation_id} promotion bundle`,
       ));
+  if (promotionBundle !== null && promotionBundle.schemaVersion !== 'pure_cue_promotion_bundle.v2'
+    && promotionBundle.schemaVersion !== 'pure_cue_promotion_bundle.v3') {
+    throw corruptionError(`reflection continuation ${row.continuation_id} has an invalid promotion bundle`);
+  }
   return {
     continuationId: row.continuation_id,
     sourceSessionId: row.source_session_id,
@@ -2059,7 +2077,7 @@ function assertCuratedSourceProposalProvenance(
     && bundle.schemaVersion !== 'curated_reflection_diagnosis_bundle.v2'
     && bundle.schemaVersion !== 'curated_reflection_bundle.v2'
     && bundle.schemaVersion !== 'curated_reflection_bundle.v3'
-    && !(bundle.schemaVersion === 'pure_cue_promotion_bundle.v2' && bundle.sourceSessionId === null)
+    && !((bundle.schemaVersion === 'pure_cue_promotion_bundle.v2' || bundle.schemaVersion === 'pure_cue_promotion_bundle.v3') && bundle.sourceSessionId === null)
   ) {
     if (sourceProposalIds !== null && sourceProposalIds !== undefined) {
       throw new Error('Only curated reflection bundles may retain proposal selection provenance.');
@@ -2254,6 +2272,7 @@ export function supersedeReflectionProposal(
 function requireRegisteredOperationForEvidence(
   operation: ReflectionOperation,
   evidenceItem: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4 | ReflectionItemV5 | ReflectionItemV6,
+  hasTargetSuppression = false,
 ): NonNullable<ReturnType<typeof getReflectionOperationRegistration>> {
   // All callers authorize only current artifacts. Retain the legacy operation
   // for historical reads, but never reopen its implicit-compensation contract.
@@ -2264,6 +2283,10 @@ function requireRegisteredOperationForEvidence(
     allowedWordIds: visibleWordIds(evidenceItem),
     evidenceItemId: evidenceItem.itemId,
   });
+  if (hasTargetSuppression) {
+    if (evidenceItem.targetWord === null) throw new Error('Target suppression requires a target word.');
+    itemValidationErrors.push(...validateTargetSuppressionOperation(operation, evidenceItem.targetWord.wordId));
+  }
   if ('servedCue' in evidenceItem) {
     itemValidationErrors.push(...validateReflectionOperationEvidenceContext(
       operation,
@@ -2308,8 +2331,8 @@ export function acceptReflectionProposal(
       reviewRow.disposition as ProposalReviewDisposition['kind'],
       'accepted',
     );
-    const { proposal: originalProposal, evidenceItem } = originalProposalContextForReview(reviewRow);
-    const registration = requireRegisteredOperationForEvidence(input.operation, evidenceItem);
+    const { proposal: originalProposal, evidenceItem, hasTargetSuppression } = originalProposalContextForReview(reviewRow);
+    const registration = requireRegisteredOperationForEvidence(input.operation, evidenceItem, hasTargetSuppression);
     const acceptanceMode = classifyProposalAcceptance(
       originalProposal.operation,
       input.operation,
@@ -2397,14 +2420,14 @@ export function replaceReflectionProposal(
       reviewRow.disposition as ProposalReviewDisposition['kind'],
       'superseded',
     );
-    const { proposal: originalProposal, evidenceItem } = originalProposalContextForReview(reviewRow);
+    const { proposal: originalProposal, evidenceItem, hasTargetSuppression } = originalProposalContextForReview(reviewRow);
     if (
       originalProposal.operation.kind === input.operation.kind
       && originalProposal.operation.version === input.operation.version
     ) {
       throw new Error('A replacement proposal must change operation kind or version.');
     }
-    const registration = requireRegisteredOperationForEvidence(input.operation, evidenceItem);
+    const registration = requireRegisteredOperationForEvidence(input.operation, evidenceItem, hasTargetSuppression);
     const initialApplication: OperationApplicationState = registration.applySupport === 'supported'
       ? { kind: 'pending' }
       : { kind: 'unsupported', reason: unsupportedApplicationReason(input.operation) };
@@ -2511,7 +2534,7 @@ export function authorizeManualReflectionOperation(
         'Manual authorization is only available for explanation-only reflection items.',
       );
     }
-    const registration = requireRegisteredOperationForEvidence(input.operation, evidenceItem);
+    const registration = requireRegisteredOperationForEvidence(input.operation, evidenceItem, 'targetSuppression' in itemResult && itemResult.targetSuppression !== undefined);
     const initialApplication: OperationApplicationState = registration.applySupport === 'supported'
       ? { kind: 'pending' }
       : { kind: 'unsupported', reason: unsupportedApplicationReason(input.operation) };
@@ -2769,6 +2792,7 @@ function requireProposalReviewRow(proposalId: string): ProposalReviewRow {
 
 function originalProposalContextForReview(row: ProposalReviewRow): {
   proposal: ReflectionProposalV1;
+  hasTargetSuppression: boolean;
   evidenceItem: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4 | ReflectionItemV5 | ReflectionItemV6;
 } {
   const artifactRow = getDb().prepare(`
@@ -2790,11 +2814,11 @@ function originalProposalContextForReview(row: ProposalReviewRow): {
       `proposal review ${row.proposal_id} cannot be traced to immutable proposal content`,
     );
   }
-  return { proposal, evidenceItem };
+  return { proposal, evidenceItem, hasTargetSuppression: itemResult !== undefined && 'targetSuppression' in itemResult && itemResult.targetSuppression !== undefined };
 }
 
 function reportedPromotionItemCount(row: ReflectionGenerationRunRow): number | null {
-  if (row.bundle_schema_version !== 'pure_cue_promotion_bundle.v1' && row.bundle_schema_version !== 'pure_cue_promotion_bundle.v2') return null;
+  if (row.bundle_schema_version !== 'pure_cue_promotion_bundle.v1' && row.bundle_schema_version !== 'pure_cue_promotion_bundle.v2' && row.bundle_schema_version !== 'pure_cue_promotion_bundle.v3') return null;
   const count = row.promotion_considered_item_count;
   if (count === undefined || count === null) return null;
   if (!Number.isInteger(count) || count < 0) {
@@ -2992,6 +3016,10 @@ function validateReflectionArtifactPair(
   ) {
     return validateSessionReflectionResultV7(result, evidenceBundle);
   }
+  if (
+    (evidenceBundle.schemaVersion === 'session_reflection_bundle.v6' || evidenceBundle.schemaVersion === 'curated_reflection_bundle.v3')
+    && result.schemaVersion === 'session_reflection_result.v10'
+  ) return validateSessionReflectionResultV10(result, evidenceBundle);
   if (
     evidenceBundle.schemaVersion === 'session_reflection_bundle.v6'
     && result.schemaVersion === 'session_reflection_result.v9'

@@ -59,7 +59,7 @@ failed/retry state.
 ## Staged generation
 
 New initial reflections and new second opinions run server-owned diagnosis and
-conditional production-cue cleanup stages. The client receives only the final V9
+conditional production-cue cleanup stages. The client receives only the final V10
 artifact, never an intermediate diagnosis artifact. The run log retains each
 provider call separately; retry resolves its durable continuation and reuses
 saved diagnosis/promotion input within the current contract. Stored legacy
@@ -67,8 +67,10 @@ artifacts remain readable, but obsolete retries, authorization,
 and application are rejected. No live session grading uses this pipeline.
 
 Diagnosis explicitly chooses ordinary feedback/proposals or a best-effort
-ambiguous-pair handoff with no ordinary interventions. Routed items use stage
-two's final explanation and either coordinated cleanup or explanation only.
+ambiguous-pair handoff with an optional target-suppression recommendation.
+Routed items normally use stage two's final explanation and either coordinated
+cleanup or explanation only; composed suppression and withheld conflicts are
+described below.
 Cleanup without a pure destination remains a normal actionable proposal.
 Historical V8 disagreements remain non-actionable, without a manual override.
 Unrelated ordinary items retain stage one's feedback/proposals, including
@@ -293,3 +295,16 @@ immutable artifact history.
 - Reflection operation validation and registry semantics are shared from
   `src/domain/reflection.ts`; UI editors do not infer application behavior from
   rationale or free text.
+
+
+### Composed target suppression
+
+V10 items can carry stage-one `targetSuppression` alongside a response-only
+cue reconciliation. `ReflectionStageCompositionNotice` shows the suppression
+reason and optional `withheldTargetChanges` as subdued informational details.
+When a withheld shared cue may be the replacement for response cue retirements,
+the whole dependent plan is shown here too. Withheld content never enters proposal cards or receives accept/edit controls.
+For these items the operation editor allows response cue edits, hides target
+and shared edits, and disables changing the operation kind or suppression
+word. Server authorization independently enforces the same boundary. Source
+fairness labels do not imply lapse restoration for response-only cleanup.

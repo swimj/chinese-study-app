@@ -184,8 +184,9 @@ V4, V5, and V6 results remain readable under their frozen contracts. V6 removes
 item-level text surface, and removes `unhandledNeeds` because the current model
 and product do not use them reliably. V7 retains that item shape and adds the
 strict `add_production_cue_supplement@1` wire operation. New generation uses
-V9 through staged diagnosis/cleanup; stage one uses the exclusive
-`staged_reflection_diagnosis_result.v2` ordinary/ambiguous-pair contract. V7 is the
+V10 through staged diagnosis/cleanup; stage one uses the
+`staged_reflection_diagnosis_result.v3` ordinary/ambiguous-pair contract with an
+optional target-suppression recommendation (required nullable handoff field). V7 is the
 legacy one-shot result contract. Stored V4/V5/V6/V7 artifacts
 remain immutable. Execution requires the current staged flow and prompt contract:
 obsolete proposals cannot be accepted, revised, replaced, used as manual-operation
@@ -208,7 +209,7 @@ contain ordinary repair, supplement, or suppression proposals for either word
 affected by a promotion, even under another item. Different semantic axes may
 still have overlapping accepted membership. Legacy contracts remain frozen.
 
-Current V9 adds `reconcile_production_cues@1` and uses `promotionOutcome`
+Historical V9 adds `reconcile_production_cues@1` and uses `promotionOutcome`
 `reconciled` or `explanation_only` for routed items. Stage one hands off suspected
 ambiguity, not an asserted shared axis. Stage two owns both words' cue plans,
 an optional pure-cue destination, an independent source-fairness judgment, and
@@ -659,6 +660,32 @@ Non-effects:
 - it does not turn the example into a cloze or show it before recall; and
 - it does not attach reinforcement to `minimal_context` or `circumstance`
   cues, whose existing prompt already supplies natural context.
+
+### Composed target suppression and response cue cleanup (V10)
+
+For an ambiguous-pair handoff, stage one may recommend target suppression with
+a self-contained reason. Stage two receives this recommendation, leaves the
+target plan empty and shared destination null, and can still improve the
+response word. Assembly places `suppress_definition_production@1` alongside
+any response-only `reconcile_production_cues@1` proposal. The two effects are
+independently authorized; suppression does not depend on accepting cleanup.
+A response-only reconciliation has both required word plans but makes no target
+changes and has no shared destination. This is the sole same-item exception
+to the suppression/reconciliation conflict rule; other overlap stays invalid.
+
+If stage two emits conflicting target/shared changes, the backend removes them
+from actionable content and stores them in `withheldTargetChanges`, alongside
+the original rationale and explanation. When response cue retirements accompany
+a withheld shared destination, the entire dependent content plan is withheld
+and its complete response plan is also retained for inspection. This prevents
+applying removals without their proposed shared replacement. Response-only
+fixes remain unchanged. Withheld plans appear as subdued informational
+details, without proposal review or application controls. Revisions and
+replacements from this item cannot reintroduce target cue changes or shared
+practice. Target suppression remains a proposal requiring learner acceptance.
+Neither suppression nor response-only cue edits restore the source target's
+lapse. Recognition and contextual selection are unchanged; unsuppression policy
+is outside this change.
 
 ### `reconcile_production_cues` version 1
 

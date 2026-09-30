@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import type {
   ReflectionOperation,
   SessionReflectionBundleV6,
-  SessionReflectionResultV9,
+  SessionReflectionResultV10,
 } from '../src/domain/reflection.js';
 
 type DbModule = typeof import('../server/db.ts');
@@ -184,11 +184,11 @@ function materialize(
   `).run(sessionId, generatedAt, generatedAt);
   return dbModule.materializeReflectionArtifact({
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v5',
+    reflectionFlowVersion: 'initial_post_session_reflection.v6',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-staged-v3',
+    promptVersion: 'reflection-staged-v4',
     evidenceBundle: bundle(sessionId),
     result: result(operation),
   });
@@ -204,14 +204,14 @@ function materializeInformational(
   `).run(sessionId, generatedAt, generatedAt);
   return dbModule.materializeReflectionArtifact({
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v5',
+    reflectionFlowVersion: 'initial_post_session_reflection.v6',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-staged-v3',
+    promptVersion: 'reflection-staged-v4',
     evidenceBundle: bundle(sessionId),
     result: {
-      schemaVersion: 'session_reflection_result.v9',
+      schemaVersion: 'session_reflection_result.v10',
       itemResults: [{
         itemId: 'item',
         diagnosisTags: ['ordinary_retrieval_noise'],
@@ -263,9 +263,9 @@ function bundle(sessionId: string): SessionReflectionBundleV6 {
   };
 }
 
-function result(operation: ReflectionOperation): SessionReflectionResultV9 {
+function result(operation: ReflectionOperation): SessionReflectionResultV10 {
   return {
-    schemaVersion: 'session_reflection_result.v9',
+    schemaVersion: 'session_reflection_result.v10',
     itemResults: [{
       itemId: 'item',
       diagnosisTags: ['persistent_confusion'],

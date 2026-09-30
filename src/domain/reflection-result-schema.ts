@@ -510,3 +510,20 @@ export const pureCuePromotionResultV2WireSchema: JsonSchema = objectSchema({
 }, 'Coordinated production-cue cleanup with optional shared publication or explanation only.');
 
 export const PURE_CUE_PROMOTION_RESULT_V2_WIRE_SCHEMA_NAME = 'pure_cue_promotion_result_v2';
+
+export const stagedReflectionDiagnosisResultV3WireSchema: JsonSchema = objectSchema({
+  schemaVersion: enumSchema(['staged_reflection_diagnosis_result.v3']),
+  itemResults: arraySchema({ anyOf: [
+    stagedReflectionDiagnosisOrdinaryResultV1Wire,
+    objectSchema({
+      kind: enumSchema(['ambiguous_pair']),
+      itemId: stringSchema,
+      diagnosisTags: stagedReflectionDiagnosisOrdinaryResultV1Wire.properties!.diagnosisTags!,
+      handoff: objectSchema({
+        ambiguityReason: stringSchema,
+        targetSuppression: { anyOf: [objectSchema({ reason: stringSchema }), { type: 'null' }] },
+      }),
+    }),
+  ] }),
+}, 'Ordinary results or ambiguous-pair handoffs with an explicit optional target suppression recommendation.');
+export const STAGED_REFLECTION_DIAGNOSIS_RESULT_V3_WIRE_SCHEMA_NAME = 'staged_reflection_diagnosis_result_v3';

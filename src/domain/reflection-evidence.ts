@@ -15,6 +15,7 @@ import type {
   SessionReflectionBundleV5,
   PureCuePromotionBundleV1,
   PureCuePromotionBundleV2,
+  PureCuePromotionBundleV3,
   SessionReflectionBundleV6,
   CuratedReflectionBundleV3,
   CuratedReflectionBundleV1,
@@ -1516,4 +1517,31 @@ function validateAmbiguousPairHandoff(value: unknown, path: string): string[] {
   const errors = validateObjectFields(value, ['ambiguityReason'], path);
   if (isRecord(value)) errors.push(...validateNonEmptyString(value.ambiguityReason, `${path}.ambiguityReason`));
   return errors;
+}
+
+export function parsePureCuePromotionBundleV3(value: unknown): PureCuePromotionBundleV3 {
+  if (!isRecord(value)) throw new Error('Invalid pure-cue promotion bundle V3: expected object');
+  const errors: string[] = [];
+  if (value.schemaVersion !== 'pure_cue_promotion_bundle.v3') {
+    errors.push('$.schemaVersion: expected pure_cue_promotion_bundle.v3');
+  }
+  const items = Array.isArray(value.items) ? value.items.map((item, index) => {
+    if (!isRecord(item) || !isRecord(item.handoff)) return item;
+    const path = `$.items[${index}].handoff`;
+    errors.push(...validateObjectFields(item.handoff, ['ambiguityReason', 'targetSuppression'], path));
+    if (item.handoff.targetSuppression !== null) {
+      errors.push(...validateObjectFields(item.handoff.targetSuppression, ['reason'], `${path}.targetSuppression`));
+      if (isRecord(item.handoff.targetSuppression)) {
+        errors.push(...validateNonEmptyString(
+          item.handoff.targetSuppression.reason,
+          `${path}.targetSuppression.reason`,
+        ));
+      }
+    }
+    const { targetSuppression: _suppression, ...handoff } = item.handoff;
+    return { ...item, handoff };
+  }) : value.items;
+  parsePureCuePromotionBundleV2({ ...value, schemaVersion: 'pure_cue_promotion_bundle.v2', items });
+  if (errors.length > 0) throw new Error(`Invalid pure-cue promotion bundle V3:\n${errors.join('\n')}`);
+  return value as PureCuePromotionBundleV3;
 }

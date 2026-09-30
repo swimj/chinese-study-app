@@ -11,7 +11,7 @@ import {
   TokenUsageView,
 } from '../src/pages/ReflectionsPage.tsx';
 import type { ReflectionArtifactDetailDto } from '../src/services/api.ts';
-import type { SessionReflectionBundleV6, SessionReflectionResultV9 } from '../src/domain/reflection.ts';
+import type { SessionReflectionBundleV6, SessionReflectionResultV10 } from '../src/domain/reflection.ts';
 import { CURRENT_INITIAL_REFLECTION_FLOW_VERSION, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION } from '../src/domain/reflection-contracts.ts';
 
 describe('reflection run log presentation', () => {
@@ -398,8 +398,8 @@ function explanationArtifact(): ReflectionArtifactDetailDto {
       responseKind: 'matched_known_word',
     }],
   };
-  const result: SessionReflectionResultV9 = {
-    schemaVersion: 'session_reflection_result.v9',
+  const result: SessionReflectionResultV10 = {
+    schemaVersion: 'session_reflection_result.v10',
     itemResults: [{
       itemId: 'informational',
       diagnosisTags: ['ordinary_retrieval_noise'],

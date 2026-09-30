@@ -5,17 +5,17 @@ import {
   pureCuePromotionResultV2WireSchema,
   SESSION_REFLECTION_RESULT_V7_WIRE_SCHEMA_NAME,
   sessionReflectionResultV7WireSchema,
-  STAGED_REFLECTION_DIAGNOSIS_RESULT_V2_WIRE_SCHEMA_NAME,
-  stagedReflectionDiagnosisResultV2WireSchema,
+  STAGED_REFLECTION_DIAGNOSIS_RESULT_V3_WIRE_SCHEMA_NAME,
+  stagedReflectionDiagnosisResultV3WireSchema,
 } from '../src/domain/reflection-result-schema.js';
 import type {
-  PureCuePromotionBundleV2,
+  PureCuePromotionBundleV3,
   PureCuePromotionResultV2Wire,
   SessionReflectionBundleV2,
   SessionReflectionBundleV4,
   SessionReflectionResultV7,
   SessionReflectionResultV7Wire,
-  StagedReflectionDiagnosisResultV2Wire,
+  StagedReflectionDiagnosisResultV3Wire,
 } from '../src/domain/reflection.js';
 import {
   createLunaReflectionProvider,
@@ -150,20 +150,21 @@ const diagnosisBundle: SessionReflectionBundleV4 = {
   })),
 };
 
-const validStagedDiagnosisWireResult: StagedReflectionDiagnosisResultV2Wire = {
-  schemaVersion: 'staged_reflection_diagnosis_result.v2',
+const validStagedDiagnosisWireResult: StagedReflectionDiagnosisResultV3Wire = {
+  schemaVersion: 'staged_reflection_diagnosis_result.v3',
   itemResults: [{
     kind: 'ambiguous_pair',
     itemId: 'item-1',
     diagnosisTags: ['valid_or_near_valid_alternate'],
     handoff: {
       ambiguityReason: 'The response plausibly fits the original cue.',
+      targetSuppression: null,
     },
   }],
 };
 
-const promotionBundle: PureCuePromotionBundleV2 = {
-  schemaVersion: 'pure_cue_promotion_bundle.v2',
+const promotionBundle: PureCuePromotionBundleV3 = {
+  schemaVersion: 'pure_cue_promotion_bundle.v3',
   generatedAt: bundle.generatedAt,
   sourceSessionId: bundle.session.sessionId,
   studyProfile: bundle.session.studyProfile,
@@ -175,7 +176,7 @@ const promotionBundle: PureCuePromotionBundleV2 = {
     servedCue: { ...bundle.items[0]!.servedCue, supplement: null },
     handoff: validStagedDiagnosisWireResult.itemResults[0]!.kind === 'ambiguous_pair'
       ? validStagedDiagnosisWireResult.itemResults[0]!.handoff
-      : { ambiguityReason: '' },
+      : { ambiguityReason: '', targetSuppression: null },
     promotionEvidence: {
       diagnosisTags: ['production_cue_overloaded'],
       words: [{
@@ -466,9 +467,9 @@ describe('production Luna reflection provider', () => {
     assert.deepEqual(request.body.response_format, {
       type: 'json_schema',
       json_schema: {
-        name: STAGED_REFLECTION_DIAGNOSIS_RESULT_V2_WIRE_SCHEMA_NAME,
+        name: STAGED_REFLECTION_DIAGNOSIS_RESULT_V3_WIRE_SCHEMA_NAME,
         strict: true,
-        schema: stagedReflectionDiagnosisResultV2WireSchema,
+        schema: stagedReflectionDiagnosisResultV3WireSchema,
       },
     });
     const messages = request.body.messages;

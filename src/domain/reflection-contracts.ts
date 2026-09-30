@@ -1,8 +1,8 @@
-export const CURRENT_INITIAL_REFLECTION_FLOW_VERSION = 'initial_post_session_reflection.v5' as const;
-export const CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION = 'deferred_second_opinion.v4' as const;
+export const CURRENT_INITIAL_REFLECTION_FLOW_VERSION = 'initial_post_session_reflection.v6' as const;
+export const CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION = 'deferred_second_opinion.v5' as const;
 
-export const STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION = 'reflection-staged-v3.1' as const;
-export const PURE_CUE_PROMOTION_PROMPT_VERSION = 'pure-cue-promotion-v2.1' as const;
+export const STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION = 'reflection-staged-v4.0' as const;
+export const PURE_CUE_PROMOTION_PROMPT_VERSION = 'pure-cue-promotion-v3.0' as const;
 
 /** Bare major versions shipped before minor numbering are equivalent to .0. */
 export function promptMajorVersion(version: string): string {
@@ -32,7 +32,7 @@ export function isCurrentReflectionGenerationStage(input: {
 }): boolean {
   if (input.stage === 'promotion') {
     return isCurrentReflectionFlowVersion(input.reflectionFlowVersion)
-      && input.bundleSchemaVersion === 'pure_cue_promotion_bundle.v2'
+      && input.bundleSchemaVersion === 'pure_cue_promotion_bundle.v3'
       && isCompatiblePromptVersion(input.promptVersion, PURE_CUE_PROMOTION_PROMPT_VERSION);
   }
   if (!isCompatiblePromptVersion(input.promptVersion, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION)) return false;
@@ -51,7 +51,7 @@ export function isCurrentReflectionArtifactContract(input: {
   resultSchemaVersion: string;
   promptVersion: string;
 }): boolean {
-  if (input.resultSchemaVersion !== 'session_reflection_result.v9') return false;
+  if (input.resultSchemaVersion !== 'session_reflection_result.v10') return false;
   if (
     !isCompatiblePromptVersion(input.promptVersion, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION)
     && !isCompatiblePromptVersion(input.promptVersion, PURE_CUE_PROMOTION_PROMPT_VERSION)

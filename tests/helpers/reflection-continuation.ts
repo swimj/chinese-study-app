@@ -3,7 +3,7 @@ import type {
   PureCuePromotionEvidenceV2,
   ReflectionItemV4,
   SessionReflectionBundleV6,
-  StagedReflectionDiagnosisAmbiguousPairResultV2,
+  StagedReflectionDiagnosisAmbiguousPairResultV3,
 } from '../../src/domain/reflection.ts';
 import type {
   InitialReflectionGenerationDependencies,
@@ -78,7 +78,7 @@ export function createTestReflectionContinuationBoundaries(): Pick<
               items,
             };
       const promotionBundle = {
-        schemaVersion: 'pure_cue_promotion_bundle.v2' as const,
+        schemaVersion: 'pure_cue_promotion_bundle.v3' as const,
         generatedAt: input.preparedAt,
         sourceSessionId: current.sourceSessionId,
         studyProfile,
@@ -128,8 +128,8 @@ export function createTestReflectionContinuationBoundaries(): Pick<
         model: 'gpt-5.6-luna-high',
         providerModel: 'gpt-5.6-luna',
         promptVersion: link.stage === 'diagnosis'
-          ? 'reflection-staged-v3.1'
-          : 'pure-cue-promotion-v2.1',
+          ? 'reflection-staged-v4.0'
+          : 'pure-cue-promotion-v3.0',
       };
     },
   };
@@ -137,7 +137,7 @@ export function createTestReflectionContinuationBoundaries(): Pick<
 
 function testPromotionEvidence(
   item: ReflectionItemV4,
-  result: StagedReflectionDiagnosisAmbiguousPairResultV2,
+  result: StagedReflectionDiagnosisAmbiguousPairResultV3,
 ): PureCuePromotionEvidenceV2 | null {
   const responseWordId = item.submittedWord?.wordId;
   if (
