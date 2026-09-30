@@ -322,6 +322,16 @@ This is enough to request review of both words' exercises. Leave the final
 language assessment and future content plan to that review; do not draft
 repairs, supplements, suppression, a learner explanation, or questions here.
 
+### Route ambiguity while suppressing low-value production
+
+For `式` / `样式` under “style; pattern,” `样式` is a plausible answer. Use
+`ambiguous_pair` and explain why the cue admits it. Separately consider whether
+any natural cue would make deliberate production of `式` useful; its presence
+inside compounds does not establish that capability. If no useful task remains
+even under an ideal cue, include the reason in `targetSuppression`. The later
+review can still improve exercises for `样式`. A useful independent use of `式`
+would change the suppression judgment.
+
 ### Keep a fair definition and reinforce after reveal
 
 For correct `包庇` under “to shield; to harbor; to cover up,” keep the fair
@@ -384,15 +394,3 @@ Before returning, confirm that:
   useful presented cue; and
 - every field and echoed item or word id belongs to the schema and the
   containing evidence item.
-
-
-### Ambiguity with a low-value production target
-
-If an exercise targeting `式` rejects `样式`, assess whether `样式` fits the
-actual displayed cue. Independently assess useful production of `式` itself;
-its occurrence inside compounds does not by itself justify retrieving the
-smaller lexical unit. If production remains low-value even under an ideal cue,
-use `ambiguous_pair` with both the ambiguity reason and a reasoned
-`targetSuppression`. This is not an automatic rule for `式`, single characters,
-or bound morphemes; useful independent capabilities would change the judgment.
-The later stage may still improve exercises for `样式`.
