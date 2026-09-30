@@ -325,12 +325,12 @@ repairs, supplements, suppression, a learner explanation, or questions here.
 ### Route ambiguity while suppressing low-value production
 
 For `式` / `样式` under “style; pattern,” `样式` is a plausible answer. Use
-`ambiguous_pair` and explain why the cue admits it. Separately consider whether
-any natural cue would make deliberate production of `式` useful; its presence
-inside compounds does not establish that capability. If no useful task remains
-even under an ideal cue, include the reason in `targetSuppression`. The later
-review can still improve exercises for `样式`. A useful independent use of `式`
-would change the suppression judgment.
+`ambiguous_pair` and explain why the cue admits it. In this sense, `式` is a
+bound form used within larger expressions, not a useful standalone word to
+retrieve for “style.” Its productive value lies in those expressions; making
+the cue more selective would not give isolated recall a useful communicative
+purpose. Include that reason in `targetSuppression`. The later review can
+still improve exercises for `样式`.
 
 ### Keep a fair definition and reinforce after reveal
 
