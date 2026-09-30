@@ -259,10 +259,10 @@ after the response, never used as another clue, and never changes accepted
 answers or grading.
 
 First assess the cue without the proposed supplement. Reinforcement enriches
-an already adequate meaning with a useful example or usage; it must not supply
-a missing restriction needed to make the cue adequate. If that restriction
-belongs in the retrieval task, repair the cue instead. A correct response or
-an empty supplement field is not itself a reason to add reinforcement.
+an already adequate meaning with a useful example or usage; it may not be
+treated as a restriction that refines away ambiguity in the visible cue. If
+the retrieval task needs that restriction, repair the cue instead. A correct
+response or an empty supplement field is not itself a reason to add reinforcement.
 Explanation only remains appropriate when the cue is sound and no durable
 reinforcement adds useful practice value.
 
