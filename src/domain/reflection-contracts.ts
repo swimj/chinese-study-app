@@ -1,3 +1,5 @@
+export const PURE_CUE_REFLECTION_FLOW_VERSION = 'pure_cue_post_session_reflection.v1' as const;
+export const PURE_CUE_REFLECTION_PROMPT_VERSION = 'pure-cue-reflection-v1.0' as const;
 export const CURRENT_INITIAL_REFLECTION_FLOW_VERSION = 'initial_post_session_reflection.v6' as const;
 export const CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION = 'deferred_second_opinion.v5' as const;
 
@@ -51,6 +53,7 @@ export function isCurrentReflectionArtifactContract(input: {
   resultSchemaVersion: string;
   promptVersion: string;
 }): boolean {
+  if (input.reflectionFlowVersion === PURE_CUE_REFLECTION_FLOW_VERSION) return input.bundleSchemaVersion === 'pure_cue_reflection_bundle.v1' && input.resultSchemaVersion === 'pure_cue_reflection_result.v1' && isCompatiblePromptVersion(input.promptVersion, PURE_CUE_REFLECTION_PROMPT_VERSION);
   if (input.resultSchemaVersion !== 'session_reflection_result.v10') return false;
   if (
     !isCompatiblePromptVersion(input.promptVersion, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION)
@@ -66,7 +69,7 @@ export function isCurrentReflectionArtifactContract(input: {
 }
 
 export function isCurrentReflectionFlowVersion(value: string): boolean {
-  return value === CURRENT_INITIAL_REFLECTION_FLOW_VERSION
+  return value === PURE_CUE_REFLECTION_FLOW_VERSION || value === CURRENT_INITIAL_REFLECTION_FLOW_VERSION
     || value === CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION;
 }
 

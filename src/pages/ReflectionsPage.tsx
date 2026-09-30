@@ -1,3 +1,4 @@
+import type { PureCueReflectionItemV1 } from '../domain/pure-cue-reflection';
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import type {
   EffectRef,
@@ -122,9 +123,10 @@ export function ReflectionsPage({
       controller.artifactDetails.filter(supportsReflectionSecondOpinionEvidence),
     ),
   ), ...toDeferredExplanationCards(controller.artifactDetails.filter(supportsReflectionSecondOpinionEvidence))];
-  const actionableDeferredCards = deferredCards.filter((card) => (
-    isCurrentReflectionArtifactContract(card.artifact)
-  ));
+  const actionableDeferredCards: ReflectionHelpCard[] = [
+    ...toDeferredHelpCards(buildReflectionProposalPresentations(currentArtifacts)),
+    ...toDeferredExplanationCards(currentArtifacts),
+  ];
   const displayedHelpCards = showDeferredInHelp
     ? [...helpCards, ...actionableDeferredCards]
     : helpCards;
@@ -453,6 +455,8 @@ function compactReflectionOperationLabel(operation: ReflectionOperation): string
       return 'Pure cue';
     case 'reconcile_production_cues':
       return 'Cue cleanup';
+    case 'reconcile_pure_cue_response':
+      return 'Pure cue response';
   }
 }
 
@@ -626,6 +630,7 @@ function HelpExplanationCard({
     ? null
     : getOperationDraftState(draft, draft, card.evidence);
   const nonActionableDisagreement = card.actionability === 'non_actionable_disagreement';
+  const explanationOnly = nonActionableDisagreement || card.evidence?.source === 'pure_cue_mistake';
 
   return (
     <>
@@ -683,7 +688,7 @@ function HelpExplanationCard({
             </ul>
           </div>
         ) : null}
-        {nonActionableDisagreement ? (
+        {explanationOnly ? (
           <div className="reflection-help-toolbar">
             <button
               type="button"
@@ -839,7 +844,7 @@ function HelpProposalCard({
         <HelpReviewToolbar
           submitting={submitting}
           handleValue={`${draft.kind}@${draft.version}`}
-          handleDisabled={submitting}
+          handleDisabled={submitting || card.evidence?.source === 'pure_cue_mistake'}
           onHandleChange={(value) => {
             const [kind, versionText] = value.split('@');
             setDraft(createReplacementOperation(
@@ -1606,7 +1611,7 @@ function ProposalCard({
 }: {
   proposal: ReflectionProposalDetailDto;
   targetProductionSuppressed: boolean;
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null;
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null;
   readOnly: boolean;
   qualityArtifactId: string;
   qualityItemId: string;
@@ -1679,7 +1684,7 @@ function ProposalCard({
           <label className="reflection-field">
             <span>Handle</span>
             <ReflectionHandleSelect
-              disabled={submitting || targetProductionSuppressed}
+              disabled={submitting || targetProductionSuppressed || evidence?.source === 'pure_cue_mistake'}
               value={`${draft.kind}@${draft.version}`}
               onChange={(value) => {
                 const [kind, versionText] = value.split('@');
@@ -2321,7 +2326,7 @@ function effectRefLabel(ref: EffectRef): string {
 function EvidenceView({
   evidence,
 }: {
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null;
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null;
 }) {
   if (evidence === null) {
     return (
@@ -2329,6 +2334,10 @@ function EvidenceView({
         <p className="notes">The evidence item could not be reconstructed for display.</p>
       </section>
     );
+  }
+
+  if (evidence.source === 'pure_cue_mistake') {
+    return <TestedCueLine label="Tested pure cue" texts={[evidence.servedSnapshot.stimulus, `Response: ${evidence.rawResponse}`]} />;
   }
 
   if (evidence.source === 'production_mistake') {
@@ -2392,7 +2401,7 @@ function TestedCueLine({
 function ItemIdentityHeading({
   evidence,
 }: {
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null;
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null;
 }) {
   const target = itemTitle(evidence);
   const typed = evidence?.source === 'production_mistake'
@@ -2528,10 +2537,11 @@ function InfoList({
   );
 }
 
-function itemTitle(evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null): string {
+function itemTitle(evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null): string {
   if (evidence?.targetWord !== null && evidence?.targetWord !== undefined) {
     return wordLabel(evidence.targetWord);
   }
+  if (evidence?.source === 'pure_cue_mistake') return `Pure cue · ${wordLabel(evidence.submittedWord)}`;
   return evidence?.source === 'session_note' ? 'Session note' : 'Reflection evidence';
 }
 

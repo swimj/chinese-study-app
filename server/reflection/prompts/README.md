@@ -1,5 +1,10 @@
 # Reflection prompt versioning
 
+`pure-cue-reflection.md` is the independent pure-cue response prompt, stamped
+`pure-cue-reflection-v1.0`. It evaluates extension by C and only C's word-owned
+cue plan, preserving the original members' cues. It does not route through
+staged word-pair diagnosis/promotion.
+
 `staged-diagnosis.md` is the current first-stage prompt, stamped
 `reflection-staged-v4.1`. `pure-cue-promotion.md` is stamped
 `pure-cue-promotion-v3.0`. `reflection.md` retains the shipped one-shot guidance

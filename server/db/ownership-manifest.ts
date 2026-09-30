@@ -328,6 +328,12 @@ function pureCueEntries(): DurableOwnershipEntry[] {
       'immutable assessment batch and scheduler projection evidence',
     ),
     privateEntry(
+      'pure_cue_assessment_scheduler_snapshots',
+      'learner plus same-learner pure-cue assessment',
+      'create empty; historical assessments have no fabricated pre-lapse state',
+      'immutable pre-projection pure-cue schedule with one authorized restoration marker',
+    ),
+    privateEntry(
       'pure_cue_scheduler_compensation_snapshots',
       'learner plus originating session-action batch',
       'create empty; historical attempts return unavailable rather than fabricated state',

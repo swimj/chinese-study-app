@@ -1,6 +1,6 @@
 # Pure-cue elicitation
 
-Status: accepted implementation contract, updated 2026-09-26. This specifies the full
+Status: accepted implementation contract, updated 2026-09-30. This specifies the full
 vertical authorized in the pure-cue task; individual stack layers implement
 the foundation, session integration, and reflection integration in order.
 It supersedes the exploratory choices in
@@ -146,7 +146,7 @@ the cue actually displayed, never a more specific hypothetical task. Ordinary
 single-word repair and contrast authoring remain in stage one; contrast is a
 separate content space from coordinated production-cue management. Handoffs require a
 strict target-only rejected/Forgot source with a distinct known response word.
-Pure-cue attempts themselves are not yet reflection inputs.
+Pure-cue attempts use the separate response-reflection flow below.
 
 Stage two assesses the handoff against both words' existing production cues and
 intersecting pure cues. It owns coordinated content repair, independent judgment
@@ -178,6 +178,43 @@ ordinary items remain available. All content and compensation effects still
 require explicit proposal acceptance.
 
 ## False-lapse compensation
+
+### Pure-cue response reflection
+
+A completed pure-cue assessment whose first response was rejected, nonempty,
+and resolves unambiguously to a known word C is eligible for a separate provider
+call. The existing stimulus, axis, and accepted members A/B are trusted context.
+The decision is whether C naturally answers that exact stimulus. This does not
+require universal interchangeability or permit hidden grading restrictions in
+the teaching note. Uncertain or invalid responses receive explanations only.
+
+An extension proposal preserves stimulus, axis, and all existing members, adds C,
+and revises the holistic teaching note. It also evaluates C's word-owned cues:
+it may retire explicitly identified C cues and draft distinctive C cues. A/B's
+word-owned cues remain outside its authority. Resulting proxied coverage for C
+is intentional; C's word scheduler, enrollment, and recognition stay unchanged.
+The learner accepts the combined operation in the ordinary reflection inbox.
+Membership and teaching-note preconditions reject unseen concurrent changes.
+
+The backend reconstructs evidence from the learner's durable first assessment
+event and frozen served snapshot, enriching only C's production repertoire.
+It admits at most 25 items, stably omitting repeated cue or response-word
+identities in that call. Unknown/ambiguous lexical responses and cues that
+already accept C in current content are omitted. Pure and word reflection run
+independently; one failed call does not discard the other's artifact. Failed
+calls retain exact bounded evidence for retry. This flow does not yet support
+deferred second opinions.
+
+Before projecting a pure-cue lapse, save its learner-private interval, ease,
+recency, due time, strong-tier entry, and strong-success count. Accepted extension
+restores that snapshot once without rewriting attempt history or granting success
+credit. The first response governs restoration even if later reinforcement was
+also wrong. Fragile cues receive a due date no earlier than six hours after
+restoration; restored strong cues cannot be sampled during that six-hour window.
+Intervening study may be overwritten, matching existing asynchronous word
+compensation. Historical assessments lacking a snapshot report unavailable.
+
+### Word-production compensation
 
 Capture the originating production skill state and word admission state before
 projecting a new lapsed review action. All source events in that action share

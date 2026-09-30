@@ -61,6 +61,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0013_deferred_explanation_items',
   sql: fs.readFileSync(new URL('./migrations/0013_deferred_explanation_items.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0014_pure_cue_reflection',
+  sql: fs.readFileSync(new URL('./migrations/0014_pure_cue_reflection.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

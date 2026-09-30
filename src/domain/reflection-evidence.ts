@@ -1,3 +1,4 @@
+import { parsePureCueReflectionBundle } from './pure-cue-reflection';
 import type {
   ContrastSelectionReflectionItemV1,
   ProductionMistakeReflectionItemV1,
@@ -615,6 +616,7 @@ export function parseCuratedReflectionBundleV1(value: unknown): CuratedReflectio
 }
 
 export function parseStoredSessionReflectionBundle(value: unknown): SessionReflectionBundle {
+  if (isRecord(value) && value.schemaVersion === 'pure_cue_reflection_bundle.v1') return parsePureCueReflectionBundle(value);
   if (isRecord(value) && value.schemaVersion === 'session_reflection_bundle.v6') return parseSessionReflectionBundleV6(value);
   if (isRecord(value) && value.schemaVersion === 'curated_reflection_bundle.v3') return parseCuratedReflectionBundleV3(value);
   if (isRecord(value) && value.schemaVersion === 'session_reflection_bundle.v2') {

@@ -96,6 +96,78 @@ export type RestoreProductionSchedulerSnapshotResult =
   | { kind: 'already_restored'; snapshot: ProductionSchedulerStateSnapshot }
   | { kind: 'unavailable'; reason: 'pre_release_snapshot_unavailable' };
 
+export type PureCueSchedulerStateSnapshot = {
+  sourceAttemptId: string;
+  pureCueId: string;
+  capturedAt: string;
+  schedulerState: Pick<PureCue, 'intervalHours' | 'easeFactor' | 'lastStudiedAt'
+    | 'nextDueAt' | 'strongSince' | 'strongSuccesses'>;
+  compensatedByInvocationId: string | null;
+  compensatedAt: string | null;
+};
+
+export type RestorePureCueSchedulerSnapshotResult =
+  | { kind: 'restored' | 'already_restored'; snapshot: PureCueSchedulerStateSnapshot }
+  | { kind: 'unavailable'; reason: 'pre_release_snapshot_unavailable' };
+
+/** The first submitted response owns reflection eligibility, including reinforcement lapses. */
+export function restorePureCueSchedulerSnapshotWithoutTransaction(input: {
+  sourceAttemptId: string;
+  compensationInvocationId: string;
+  restoredAt: string;
+}): RestorePureCueSchedulerSnapshotResult {
+  const learnerId = requireLearnerId();
+  assertNonEmpty(input.sourceAttemptId, 'Source attempt id');
+  assertNonEmpty(input.compensationInvocationId, 'Compensation invocation id');
+  assertCanonicalIso(input.restoredAt, 'Scheduler snapshot restoredAt');
+  const attempt = getDb().prepare(`SELECT pure_cue_id, events_json FROM pure_cue_attempts
+    WHERE learner_id = ? AND attempt_id = ?`).get(learnerId, input.sourceAttemptId) as
+    { pure_cue_id: string; events_json: string } | undefined;
+  if (!attempt || (JSON.parse(attempt.events_json) as PureCueAssessmentEvent[])[0]?.outcome !== 'rejected') {
+    throw new Error('Pure cue compensation requires the current learner\'s first rejected response.');
+  }
+  const row = getDb().prepare(`SELECT * FROM pure_cue_assessment_scheduler_snapshots
+    WHERE learner_id = ? AND source_attempt_id = ?`).get(learnerId, input.sourceAttemptId) as {
+      pure_cue_id: string; captured_at: string; scheduler_state_json: string;
+      compensated_by_invocation_id: string | null; compensated_at: string | null;
+    } | undefined;
+  if (!row) return { kind: 'unavailable', reason: 'pre_release_snapshot_unavailable' };
+  const snapshot: PureCueSchedulerStateSnapshot = {
+    sourceAttemptId: input.sourceAttemptId, pureCueId: row.pure_cue_id, capturedAt: row.captured_at,
+    schedulerState: JSON.parse(row.scheduler_state_json),
+    compensatedByInvocationId: row.compensated_by_invocation_id, compensatedAt: row.compensated_at,
+  };
+  if (snapshot.compensatedByInvocationId !== null) return { kind: 'already_restored', snapshot };
+  const invocation = getDb().prepare(`SELECT operation_kind, operation_version, operation_json,
+    application_state FROM reflection_operation_invocations WHERE invocation_id = ?`)
+    .get(input.compensationInvocationId) as {
+      operation_kind: string; operation_version: number; operation_json: string; application_state: string;
+    } | undefined;
+  const operation = invocation ? (JSON.parse(invocation.operation_json) as {
+    operation?: { sourceAttemptId?: string; pureCueId?: string };
+  }).operation : undefined;
+  if (invocation?.operation_kind !== 'reconcile_pure_cue_response' || invocation.operation_version !== 1
+    || invocation.application_state !== 'pending' || operation?.sourceAttemptId !== input.sourceAttemptId
+    || operation.pureCueId !== attempt.pure_cue_id || row.pure_cue_id !== attempt.pure_cue_id) {
+    throw new Error('Pure cue compensation requires its pending learner-authorized reconciliation.');
+  }
+  const state = snapshot.schedulerState;
+  const updated = getDb().prepare(`UPDATE learner_pure_cue_state
+    SET interval_hours = ?, ease_factor = ?, last_studied_at = ?, next_due_at = ?,
+      strong_since = ?, strong_successes = ? WHERE learner_id = ? AND pure_cue_id = ?`)
+    .run(state.intervalHours, state.easeFactor, state.lastStudiedAt,
+      dueAtWithResetDelay(input.restoredAt, state.nextDueAt), state.strongSince, state.strongSuccesses,
+      learnerId, row.pure_cue_id);
+  if (updated.changes !== 1) throw new Error('Pure cue scheduler state is unavailable.');
+  const marked = getDb().prepare(`UPDATE pure_cue_assessment_scheduler_snapshots
+    SET compensated_by_invocation_id = ?, compensated_at = ?
+    WHERE learner_id = ? AND source_attempt_id = ? AND compensated_by_invocation_id IS NULL`)
+    .run(input.compensationInvocationId, input.restoredAt, learnerId, input.sourceAttemptId);
+  if (marked.changes !== 1) throw new Error('Pure cue scheduler snapshot was concurrently restored.');
+  return { kind: 'restored', snapshot: { ...snapshot,
+    compensatedByInvocationId: input.compensationInvocationId, compensatedAt: input.restoredAt } };
+}
+
 export type CreatePureCueInput = {
   id?: string;
   stimulus: string;
@@ -220,13 +292,17 @@ export function extendPureCueAcceptedWordsWithoutTransaction(input: {
       operation_kind: string; operation_version: number; operation_json: string; application_state: string;
     } | undefined;
     const envelope = invocation === undefined ? null : JSON.parse(invocation.operation_json) as {
-      operation?: { destination?: { kind?: string; pureCueId?: string; teachingNote?: string } };
+      operation?: { pureCueId?: string; teachingNote?: string; destination?: { kind?: string; pureCueId?: string; teachingNote?: string } };
     };
     const destination = envelope?.operation?.destination;
-    if (invocation?.operation_kind !== 'reconcile_production_cues'
-      || invocation.operation_version !== 1 || invocation.application_state !== 'pending'
-      || destination?.kind !== 'existing' || destination.pureCueId !== input.id
-      || destination.teachingNote !== revision.teachingNote) {
+    const matchesProduction = invocation?.operation_kind === 'reconcile_production_cues'
+      && destination?.kind === 'existing' && destination.pureCueId === input.id
+      && destination.teachingNote === revision.teachingNote;
+    const matchesPureCue = invocation?.operation_kind === 'reconcile_pure_cue_response'
+      && envelope?.operation?.pureCueId === input.id
+      && envelope.operation.teachingNote === revision.teachingNote;
+    if ((!matchesProduction && !matchesPureCue)
+      || invocation?.operation_version !== 1 || invocation.application_state !== 'pending') {
       throw new Error('Pure cue teaching rewrite requires its pending learner-authorized reconciliation.');
     }
     assertCanonicalIso(revision.revisedAt, 'Teaching revision time');
@@ -299,7 +375,16 @@ export function selectStoredPureCuesForSession(input: {
     WHERE state.learner_id = ? AND ${reviewMembershipExistsSql()}
     ORDER BY cue.created_at, cue.id
   `).all(requireLearnerId()) as PureCueRow[];
-  return selectPureCuesForSession({ ...input, cues: rows.map(mapPureCueRow) });
+  // Strong sampling ignores next_due_at. Keep restoration's reset delay without
+  // inventing a study success or overwriting the saved pre-lapse recency.
+  const restorations = getDb().prepare(`SELECT pure_cue_id, MAX(compensated_at) AS restored_at
+    FROM pure_cue_assessment_scheduler_snapshots
+    WHERE learner_id = ? AND compensated_at IS NOT NULL GROUP BY pure_cue_id`)
+    .all(requireLearnerId()) as Array<{ pure_cue_id: string; restored_at: string }>;
+  const resetUntil = new Map(restorations.map((row) => [row.pure_cue_id, dueAtWithResetDelay(row.restored_at)]));
+  const eligible = rows.filter((row) => row.strong_since === null
+    || !resetUntil.has(row.id) || resetUntil.get(row.id)! <= input.now);
+  return selectPureCuesForSession({ ...input, cues: eligible.map(mapPureCueRow) });
 }
 
 export function issuePureCueServedSnapshot(
@@ -411,6 +496,20 @@ export function recordPureCueAssessmentWithoutTransaction(
     summary.failureCount,
     summary.terminalRating,
   );
+  if (input.events[0]?.outcome === 'rejected') {
+    const state: PureCueSchedulerStateSnapshot['schedulerState'] = {
+      intervalHours: cue.intervalHours,
+      easeFactor: cue.easeFactor,
+      lastStudiedAt: cue.lastStudiedAt,
+      nextDueAt: cue.nextDueAt,
+      strongSince: cue.strongSince,
+      strongSuccesses: cue.strongSuccesses,
+    };
+    getDb().prepare(`INSERT INTO pure_cue_assessment_scheduler_snapshots
+      (learner_id, source_attempt_id, pure_cue_id, captured_at, scheduler_state_json)
+      VALUES (?, ?, ?, ?, ?)`)
+      .run(learnerId, input.attemptId, cue.id, input.committedAt, JSON.stringify(state));
+  }
   getDb().prepare(`
     UPDATE learner_pure_cue_state
     SET interval_hours = ?, ease_factor = ?, last_studied_at = ?, next_due_at = ?,

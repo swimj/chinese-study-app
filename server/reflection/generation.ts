@@ -1,3 +1,7 @@
+import { buildPureCueReflectionBundle } from './pure-cue-evidence.ts';
+import { type PureCueReflectionBundleV1, normalizePureCueReflectionResult } from '../../src/domain/pure-cue-reflection.ts';
+import { PURE_CUE_REFLECTION_FLOW_VERSION, PURE_CUE_REFLECTION_PROMPT_VERSION } from '../../src/domain/reflection-contracts.ts';
+import { getPureCueReflectionRetrySource } from '../db/reflections.ts';
 import type {
   SessionReflectionBundleV4,
   SessionReflectionBundleV6,
@@ -70,6 +74,8 @@ export type InitialReflectionGenerationResult = {
   artifactId: string;
   proposalCount: number;
   status: 'created' | 'existing';
+  additionalArtifactIds?: string[];
+  partialFailure?: string;
 };
 
 export { isReflectionModelChoice, type ReflectionModelChoice } from './model-arms.ts';
@@ -128,6 +134,8 @@ export type InitialReflectionGenerationDependencies = {
   comparisonProviders?: Partial<Record<ReflectionModelChoice, LunaReflectionProvider>>;
   random?: () => number;
   now?: () => string;
+  buildPureCueBundle?: typeof buildPureCueReflectionBundle;
+  getPureCueRetrySource?: typeof getPureCueReflectionRetrySource;
   buildBundle?: (
     sessionId: string,
     supplement: unknown,
@@ -188,6 +196,10 @@ export function createInitialReflectionGenerationService(
             includedItemCount: bundle.items.length,
           };
         });
+  const buildPureBundle = dependencies.buildPureCueBundle
+    ?? ((dependencies.buildBundle || dependencies.buildBundleWithMetrics) ? () => null : buildPureCueReflectionBundle);
+  const pureRetrySource = dependencies.getPureCueRetrySource
+    ?? (dependencies.getContinuationRetrySource ? () => null : getPureCueReflectionRetrySource);
   const findExistingArtifact = dependencies.findExistingArtifact
     ?? getReflectionArtifactBySessionAndFlow;
   const buildDeferredBundle = dependencies.buildDeferredBundle ?? buildStagedDeferredSecondOpinionBundle;
@@ -279,6 +291,41 @@ export function createInitialReflectionGenerationService(
     }
   }
 
+  async function runPureCue(bundle: PureCueReflectionBundleV1, selected: {
+    provider: LunaReflectionProvider; config: ReflectionProviderConfig;
+  }): Promise<InitialReflectionGenerationResult> {
+    const runId = randomUUID();
+    const clientRequestId = randomUUID();
+    const startedAt = now();
+    const config = { ...selected.config, promptVersion: PURE_CUE_REFLECTION_PROMPT_VERSION };
+    let metadata = failureMetadataForConfig(null, null, config, PURE_CUE_REFLECTION_PROMPT_VERSION);
+    const common = {
+      runId, sourceSessionId: bundle.session.sessionId, reflectionFlowVersion: PURE_CUE_REFLECTION_FLOW_VERSION,
+      startedAt, clientRequestId, eligibleItemCount: bundle.items.length, includedItemCount: bundle.items.length,
+      evidenceBundle: bundle, resultSchemaVersion: 'pure_cue_reflection_result.v1',
+    };
+    startRun({ ...common, provider: config.provider, model: config.modelConfig,
+      providerModel: config.providerModel, promptVersion: config.promptVersion });
+    try {
+      if (!selected.provider.generatePureCueReflection) throw new Error('Provider does not support pure cue reflection.');
+      const generated = await selected.provider.generatePureCueReflection(bundle, { clientRequestId });
+      metadata = generated.metadata;
+      if (metadata.promptVersion !== PURE_CUE_REFLECTION_PROMPT_VERSION) throw new Error('Unexpected pure cue reflection prompt version.');
+      const result = normalizePureCueReflectionResult(generated.result, bundle);
+      const artifact = materializeArtifact({ sourceSessionId: bundle.session.sessionId, sourceRunId: runId,
+        reflectionFlowVersion: PURE_CUE_REFLECTION_FLOW_VERSION, generatedAt: now(),
+        provider: metadata.provider, model: metadata.modelConfig, promptVersion: metadata.promptVersion,
+        evidenceBundle: bundle, result,
+      });
+      recordRun(runRecordInput({ ...common, completedAt: now(), metadata, state: 'succeeded', failureCode: null, error: null }));
+      return { artifactId: artifact.artifact.artifactId, proposalCount: result.itemResults.reduce((n, item) => n + item.proposals.length, 0), status: artifact.created ? 'created' : 'existing' };
+    } catch (error) {
+      metadata = failureMetadataForConfig(error, metadata, config, PURE_CUE_REFLECTION_PROMPT_VERSION);
+      recordRun(runRecordInput({ ...common, completedAt: now(), metadata, state: 'failed', failureCode: failureCode(error), error }));
+      throw error;
+    }
+  }
+
   return {
     async generate(
       sessionId: string,
@@ -297,40 +344,68 @@ export function createInitialReflectionGenerationService(
       const selectedProvider = selectProvider(model);
       const coalescingModelKey = model ?? 'initial-routed';
       return runCoalesced(`${normalizedSessionId}\u0000${coalescingModelKey}`, async () => {
-        const built = buildBundleWithMetrics(
-          normalizedSessionId,
-          evidenceSupplement,
-          generatedAt,
-        );
-        if (built.bundle.schemaVersion !== 'session_reflection_bundle.v4') {
-          throw new Error('New staged initial reflection requires a V4 diagnosis bundle.');
-        }
-        const continuation = createContinuation({
-          sourceSessionId: normalizedSessionId,
-          reflectionFlowVersion: STAGED_INITIAL_REFLECTION_FLOW_VERSION,
-          createdAt: generatedAt,
-          eligibleItemCount: built.eligibleItemCount,
-          includedItemCount: built.includedItemCount,
-          overlapOmittedItemCount: built.overlapOmittedItemCount ?? 0,
-          diagnosisBundle: built.bundle,
-        });
-        return runStagedContinuation({
-          continuation,
-          startingStage: 'diagnosis',
-          provider: selectedProvider.provider,
-          providerConfig: selectedProvider.config,
-          now,
-          startRun,
-          recordRun,
-          materializeArtifact,
-          linkContinuationRun,
-          preparePromotion,
-          lifecycleLogger,
-        });
+        const ordinary = async (): Promise<InitialReflectionGenerationResult | null> => {
+          try {
+            const built = buildBundleWithMetrics(
+              normalizedSessionId,
+              evidenceSupplement,
+              generatedAt,
+            );
+            if (built.bundle.schemaVersion !== 'session_reflection_bundle.v4') {
+              throw new Error('New staged initial reflection requires a V4 diagnosis bundle.');
+            }
+            const continuation = createContinuation({
+              sourceSessionId: normalizedSessionId,
+              reflectionFlowVersion: STAGED_INITIAL_REFLECTION_FLOW_VERSION,
+              createdAt: generatedAt,
+              eligibleItemCount: built.eligibleItemCount,
+              includedItemCount: built.includedItemCount,
+              overlapOmittedItemCount: built.overlapOmittedItemCount ?? 0,
+              diagnosisBundle: built.bundle,
+            });
+            return runStagedContinuation({
+              continuation,
+              startingStage: 'diagnosis',
+              provider: selectedProvider.provider,
+              providerConfig: selectedProvider.config,
+              now,
+              startRun,
+              recordRun,
+              materializeArtifact,
+              linkContinuationRun,
+              preparePromotion,
+              lifecycleLogger,
+            });
+          } catch (error) {
+            if (error instanceof ReflectionEvidenceError && error.code === 'no_qualifying_evidence') return null;
+            throw error;
+          }
+        };
+        const outcomes = await Promise.allSettled([
+          ordinary(),
+          (async () => {
+            const bundle = buildPureBundle(normalizedSessionId, generatedAt);
+            return bundle === null ? null : runPureCue(bundle, selectedProvider);
+          })(),
+        ]);
+        const successes = outcomes.flatMap((outcome) => outcome.status === 'fulfilled' && outcome.value !== null ? [outcome.value] : []);
+        const failures = outcomes.flatMap((outcome) => outcome.status === 'rejected' ? [outcome.reason as unknown] : []);
+        if (successes.length === 0) throw failures[0] ?? new ReflectionEvidenceError('no_qualifying_evidence', 'No qualifying reflection evidence.');
+        return {
+          ...successes[0]!, proposalCount: successes.reduce((count, result) => count + result.proposalCount, 0),
+          ...(successes.length > 1 ? { additionalArtifactIds: successes.slice(1).map((result) => result.artifactId) } : {}),
+          ...(failures.length ? { partialFailure: 'One reflection call failed. Retry its saved run in Reflections.' } : {}),
+        };
       });
     },
 
     async retry(runId: string, model?: ReflectionModelChoice): Promise<InitialReflectionGenerationResult> {
+      const pureRetry = pureRetrySource(runId);
+      if (pureRetry !== null) {
+        const choice = model ?? offeredChoiceForStoredModel(pureRetry.model);
+        if (choice === null) throw new RetiredReflectionSourceModelError(pureRetry.model);
+        return runCoalesced(`pure-retry\u0000${runId}`, () => runPureCue(pureRetry.bundle, selectProvider(choice)));
+      }
       const stagedRetry = continuationRetrySource(runId);
       if (stagedRetry === null) {
         throw new Error('Reflection generation run is not retryable by the current flow.');

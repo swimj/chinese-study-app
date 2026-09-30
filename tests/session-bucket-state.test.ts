@@ -7,6 +7,7 @@ import type {
   StudySkillId,
 } from '../src/domain/study-actions.ts';
 import type { ReviewRating, Word } from '../src/types.ts';
+import { hasPureCueReflectionEvidence } from '../src/features/session/session-finalization.ts';
 import { cloneBucketSessionState } from '../src/features/session/session-state-copy.ts';
 
 const testSessionId = 'bucket-session-test';
@@ -457,6 +458,11 @@ describe('bucket session state covering contract', () => {
       reinforced = completed.state;
     }
     assert.equal(completed?.commit.type, 'commit-pure-cue-production-session');
+    assert.deepEqual(reinforced.pureCueReviewProgress, {});
+    assert.equal(hasPureCueReflectionEvidence(reinforced.pureCueReviewProgress), false);
+    if (completed?.commit.type !== 'commit-pure-cue-production-session') throw new Error('Missing pure cue commit');
+    assert.equal(hasPureCueReflectionEvidence({ [completed.commit.sessionActionId]: { events: completed.commit.events } }), true);
+
 
     const cleanStarted = markActiveSessionUnitStarted(createBucketSessionState({
       buckets: { review: [createPureCueReviewItem()], learning: [], unstudied: [] },

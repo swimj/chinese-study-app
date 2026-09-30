@@ -350,14 +350,17 @@ Request/result types live in
 ### Generate
 
 The request body is a `SessionReflectionEvidenceSupplementV1` or V2 object
-itself, not a wrapper. It contains one or more qualifying review-production
+itself, not a wrapper. It contains qualifying review-production
 items, including the cue as shown, nullable raw response, complete ordered ids
 of the accepted attempt batch, and the optional V2 learner-request marker. The
 backend uses those ids only to validate durable session/action identity, then
 enriches each into a canonical V4 `production_mistake` bundle item without
 attempt rows, attempt summaries, or production-management metadata. V4 keeps
 the exact nullable post-reveal supplement separate from the pre-reveal cue;
-new generation returns the strict V7 result contract.
+new staged generation materializes the current V10 result contract. The items
+array may be empty for a pure-cue-only session: the server reconstructs eligible
+pure-cue first responses from durable assessments and invokes the independent
+pure-cue provider flow. Either call can succeed if the other fails.
 
 A successful response is exactly:
 
@@ -366,6 +369,8 @@ A successful response is exactly:
   artifactId: string;
   proposalCount: number;
   status: 'created' | 'existing';
+  additionalArtifactIds?: string[];
+  partialFailure?: string;
 }
 ```
 
