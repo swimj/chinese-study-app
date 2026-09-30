@@ -376,9 +376,10 @@ still improve exercises for `样式`.
 ### Repair an overloaded gloss even after a correct answer
 
 For correct `动摇` under “to sway; to waver; to rock; to rattle; to destabilize;
-to pose a challenge to,” do not retain the list merely because you can explain
-its intended figurative uses afterward. The unqualified physical readings and
-broad “pose a challenge to” do not clearly evoke those uses. A faithful repair
+to pose a challenge to,” do not retain the list merely because a post-reveal
+supplement can explain the commonly intended figurative uses. The unqualified
+physical readings and broad “pose a challenge to” do not clearly evoke those
+uses. A faithful repair
 could practice “to waver in one's resolve or convictions” and “to shake or
 undermine someone's confidence or resolve” as distinct useful capabilities.
 The answer was correct, but the cue still merits repair. A supplement explaining
