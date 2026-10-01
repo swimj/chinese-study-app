@@ -1304,3 +1304,23 @@ function getCurrentStudyDayKey(): string {
 
   return `${year}-${month}-${day}`;
 }
+
+
+export type PreparationFailure = {
+  workId: string; wordId: string; hanzi: string; stage: 'bootstrap' | 'teaching' | 'review';
+  status: 'queued' | 'running' | 'ready' | 'paused'; attemptCount: number;
+  nextAttemptAt: string; lastError: string | null;
+  attempts: Array<{ attemptId: string; startedAt: string; finishedAt: string | null;
+    outcome: 'ready' | 'failed' | 'interrupted' | null; diagnostic: string | null }>;
+};
+export async function fetchPreparationFailures(): Promise<PreparationFailure[]> {
+  const response = await apiFetch(`${API_BASE}/api/operator/word-preparation/failures`);
+  if (!response.ok) throw new Error('Failed to load word preparation failures');
+  return (await response.json() as { failures: PreparationFailure[] }).failures;
+}
+export async function retryPreparationWork(workId: string): Promise<void> {
+  const response = await apiFetch(`${API_BASE}/api/operator/word-preparation/${encodeURIComponent(workId)}/retry`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+  });
+  if (!response.ok) throw new Error('Failed to retry word preparation');
+}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { PreparationFailuresPanel } from './PreparationFailuresPanel';
 import {
   fetchOperatorUsagePulse,
   type UsageDailySnapshot,
@@ -98,6 +99,7 @@ export function OperatorUsagePulsePage() {
           <p className="notes">Generated at {payload.generatedAt}</p>
         </>
       ) : null}
+      <PreparationFailuresPanel />
     </section>
   );
 }

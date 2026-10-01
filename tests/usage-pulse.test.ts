@@ -390,6 +390,32 @@ describe('operator usage pulse API', { concurrency: false }, () => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
+  test('preparation diagnostics and retries are operator-only and audit the authenticated actor', async () => {
+    const { getDb } = await import('../server/db/connection.ts');
+    const { enqueueWordPreparation } = await import('../server/db/preparation-work.ts');
+    const sql = getDb();
+    sql.prepare(`INSERT INTO lexical_words (id, hanzi, traditional, pinyin, meaning, meanings_json, examples_json, priority, created_at)
+      VALUES ('operator-word', '词', NULL, 'cí', 'word', '["word"]', '[]', 1, '2026-10-01T00:00:00.000Z')`).run();
+    const work = enqueueWordPreparation('operator-word', 'bootstrap');
+    sql.prepare(`UPDATE word_preparation_work SET status = 'paused', attempt_count = 3, last_error = 'Invalid output' WHERE work_id = ?`).run(work.workId);
+    const endpoint = `${baseUrl}/api/operator/word-preparation`;
+    const retry = (body: object) => fetch(`${endpoint}/${work.workId}/retry`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    process.env.APP_OPERATOR_CLERK_USER_IDS = '';
+    assert.equal((await fetch(`${endpoint}/failures`)).status, 403);
+    assert.equal((await retry({})).status, 403);
+    process.env.APP_OPERATOR_CLERK_USER_IDS = 'trusted_local';
+    const listed = await fetch(`${endpoint}/failures`);
+    assert.equal(listed.status, 200);
+    assert.equal((await listed.json()).failures[0].workId, work.workId);
+    assert.equal((await retry({ actorId: 'spoofed' })).status, 400);
+    assert.equal((await retry({})).status, 200);
+    assert.equal((await retry({})).status, 409);
+    assert.equal(sql.prepare('SELECT actor_id FROM word_preparation_retry_events WHERE work_id = ?').get(work.workId)!.actor_id, 'operator-local');
+    assert.equal(sql.prepare('SELECT attempt_count FROM word_preparation_work WHERE work_id = ?').get(work.workId)!.attempt_count, 0);
+  });
+
   test('allows trusted_local operators and rejects empty allowlist', async () => {
     const allowed = await fetch(`${baseUrl}/api/operator/usage-pulse`);
     assert.equal(allowed.status, 200);
