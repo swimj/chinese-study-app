@@ -154,7 +154,7 @@ legacy lifecycle/evidence compatibility.
 
 ## What the fixtures establish
 
-[tests/fixtures/word-content.ts](../tests/fixtures/word-content.ts) represents all
+[src/features/introduction-lab/samples.ts](../src/features/introduction-lab/samples.ts) represents all
 six explored words: 报备, 藤椒, 泡沫, 不堪, 石沉大海, 为所欲为. The model handles
 multiple uses, literary parsing, independent translation beats, contextual
 notes, private questions, and direct-text or source-backed rehearsal without

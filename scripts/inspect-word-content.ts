@@ -18,7 +18,7 @@ import {
   authoredReviewMetadata,
   legacyReviewFixture,
   wordContentFixtures,
-} from '../tests/fixtures/word-content.js';
+} from '../src/features/introduction-lab/samples.js';
 
 /** The report is intentionally local and pure: no database, provider, or learner state. */
 export function buildWordContentReport() {

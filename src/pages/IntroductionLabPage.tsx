@@ -34,7 +34,7 @@ import {
   authoredReviewMetadata,
   legacyReviewFixture,
   wordContentFixtures,
-} from '../../tests/fixtures/word-content';
+} from '../features/introduction-lab/samples';
 import '../features/introduction-lab/styles.css';
 
 const sampleDrafts: IntroductionDraft[] = wordContentFixtures.map(({ content, teaching }) => ({
