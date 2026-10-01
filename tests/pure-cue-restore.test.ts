@@ -27,13 +27,19 @@ before(async () => {
 });
 after(() => { sqlite?.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
 
-function fixture(id: string, firstAccepted = false): string {
+function fixture(id: string, firstAccepted = false, schedule?: { strong: boolean; nextDueAt: string }): string {
   db.createPureCueWithoutTransaction({ id, stimulus: 'to tell an untruth', acceptedWordIds: ['a', 'b'], createdAt: now });
   sqlite.prepare(`INSERT INTO shared_content_publications VALUES (?, 'pure_cue', ?, ?, 'shared_trial', ?, ?)`)
     .run(`pub-${id}`, id, `pure:${id}`, now, now);
   sqlite.prepare(`INSERT INTO learner_pure_cue_state VALUES
     ('restore-learner', ?, 900, 2.65, '2026-09-10T00:00:00.000Z', ?, '2026-09-01T00:00:00.000Z', 7, ?)`)
     .run(id, now, now);
+  if (schedule) {
+    sqlite.prepare(`UPDATE learner_pure_cue_state SET interval_hours = ?, strong_since = ?, next_due_at = ?
+      WHERE learner_id = 'restore-learner' AND pure_cue_id = ?`)
+      .run(schedule.strong ? 900 : 24, schedule.strong ? '2026-09-01T00:00:00.000Z' : null,
+        schedule.nextDueAt, id);
+  }
   sqlite.prepare(`INSERT OR IGNORE INTO learner_word_state (learner_id, word_id, status)
     VALUES ('restore-learner', 'a', 'review')`).run();
   sqlite.prepare(`INSERT OR IGNORE INTO learner_owned_word_study_admission_state
@@ -81,6 +87,40 @@ test('restores the whole pre-lapse cue schedule once despite invalid reinforceme
   assert.deepEqual(sqlite.prepare('SELECT * FROM pure_cue_attempts').all(), history);
   assert.throws(() => db.runWithLearnerId('other', () => db.restorePureCueSchedulerSnapshotWithoutTransaction(input)), /current learner/);
 });
+
+for (const scenario of [
+  { id: 'fragile-delay', strong: false, nextDueAt: now, deadline: '2026-09-18T08:00:00.000Z' },
+  { id: 'fragile-later-due', strong: false, nextDueAt: '2026-09-19T00:00:00.000Z', deadline: '2026-09-19T00:00:00.000Z' },
+  { id: 'strong-delay', strong: true, nextDueAt: now, deadline: '2026-09-18T08:00:00.000Z' },
+]) {
+  test(`session composition honors restoration eligibility: ${scenario.id}`, (t) => {
+    const restoredAt = '2026-09-18T02:00:00.000Z';
+    t.mock.timers.enable({ apis: ['Date'], now: new Date(restoredAt) });
+    // Isolate sampling from cues created by earlier tests.
+    sqlite.prepare(`UPDATE learner_pure_cue_state SET strong_since = NULL, next_due_at = '2027-01-01T00:00:00.000Z'`).run();
+    const sourceAttemptId = fixture(scenario.id, false, scenario);
+    authorize(`op-${scenario.id}`, sourceAttemptId, scenario.id);
+    db.restorePureCueSchedulerSnapshotWithoutTransaction({ sourceAttemptId,
+      compensationInvocationId: `op-${scenario.id}`, restoredAt });
+
+    // A due fragile control both proves composition works and supplies a strong
+    // sampling slot with random=0, so absence cannot be a sampling false positive.
+    const controlId = `control-${scenario.id}`;
+    fixture(controlId);
+    sqlite.prepare(`UPDATE learner_pure_cue_state SET next_due_at = ? WHERE pure_cue_id = ?`)
+      .run(now, controlId);
+    const assertAdmission = (at: string, expected: boolean) => {
+      t.mock.timers.setTime(new Date(at).getTime());
+      const items = db.getSessionPayload(at.slice(0, 10), { random: () => 0 }).buckets.review;
+      const cueIds = items.flatMap(item => item.itemType === 'pure_cue_production' ? [item.snapshot.pureCueId] : []);
+      assert.ok(cueIds.includes(controlId), 'due control must be served');
+      assert.equal(cueIds.includes(scenario.id), expected, `restored cue admission at ${at}`);
+    };
+    assertAdmission(restoredAt, false);
+    assertAdmission(new Date(new Date(scenario.deadline).getTime() - 1).toISOString(), false);
+    assertAdmission(scenario.deadline, true);
+  });
+}
 
 test('rejects incorrect authorization and accepted first attempts', () => {
   const sourceAttemptId = fixture('unauthorized');
