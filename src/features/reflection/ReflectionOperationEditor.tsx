@@ -1,3 +1,4 @@
+import type { PureCueReflectionItemV1 } from '../../domain/pure-cue-reflection';
 import { useEffect, useRef, useState } from 'react';
 import type {
   CreateContrastClusterOperation,
@@ -33,7 +34,7 @@ export function ReflectionOperationEditor({
   onChange,
 }: {
   operation: ReflectionOperation;
-  evidence?: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV5 | null;
+  evidence?: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV5 | PureCueReflectionItemV1 | null;
   disabled?: boolean;
   targetProductionSuppressed?: boolean;
   onChange?: (operation: ReflectionOperation) => void;
@@ -51,6 +52,50 @@ export function ReflectionOperationEditor({
   }
 
   switch (operation.kind) {
+    case 'reconcile_pure_cue_response': {
+      if (evidence?.source !== 'pure_cue_mistake') {
+        return <p className="notes">Pure cue evidence is unavailable.</p>;
+      }
+      const plan = operation.responseWordPlan;
+      const updatePlan = (patch: Partial<typeof plan>) => onChange?.({
+        ...operation, responseWordPlan: { ...plan, ...patch },
+      });
+      return (
+        <div className="reflection-operation-fields">
+          <p>{evidence.servedSnapshot.stimulus}</p>
+          <p className="notes">Accepted answers: {evidence.currentCue.acceptedWords.map((word) => word.hanzi).join('、')}
+            {' → add '}{evidence.submittedWord.hanzi}</p>
+          <p className="notes">Accepting restores the pure cue's progress before this first response. Existing members' word cues stay unchanged.</p>
+          <Field label="Teaching note">
+            <textarea value={operation.teachingNote} disabled={disabled}
+              onChange={(event) => onChange?.({ ...operation, teachingNote: event.target.value })} />
+          </Field>
+          <h5>{evidenceWordSurfaceLabel(evidence.submittedWord)} — individual cues</h5>
+          {evidence.activeProductionCues.filter((cue): cue is typeof cue & { cueId: string } => cue.cueId !== null).map((cue) => (
+            <label key={cue.cueId}>
+              <input type="checkbox" checked={!plan.deactivateCueIds.includes(cue.cueId)} disabled={disabled}
+                onChange={(event) => updatePlan({ deactivateCueIds: event.target.checked
+                  ? plan.deactivateCueIds.filter((id) => id !== cue.cueId)
+                  : [...plan.deactivateCueIds, cue.cueId] })} />
+              Keep {cue.text}
+            </label>
+          ))}
+          {plan.distinctiveCueDrafts.map((draft, index) => (
+            <div className="stack" key={index}>
+              <Field label="Distinctive cue">
+                <textarea value={draft.text} disabled={disabled} onChange={(event) => updatePlan({
+                  distinctiveCueDrafts: plan.distinctiveCueDrafts.map((entry, entryIndex) =>
+                    entryIndex === index ? { ...entry, text: event.target.value } : entry),
+                })} />
+              </Field>
+              <button type="button" disabled={disabled} onClick={() => updatePlan({
+                distinctiveCueDrafts: plan.distinctiveCueDrafts.filter((_, entryIndex) => entryIndex !== index),
+              })}>Exclude new cue</button>
+            </div>
+          ))}
+        </div>
+      );
+    }
     case 'suppress_definition_production':
       return (
         <div className="reflection-operation-fields">
@@ -191,7 +236,7 @@ function PureElicitationPromotionEditor({
 }: {
   operation: PromotePureElicitationOperationV1 | ReconcileProductionCuesOperationV1;
   targetProductionSuppressed: boolean;
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV5 | null;
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV5 | PureCueReflectionItemV1 | null;
   wordOptions: EvidenceWordOption[];
   disabled: boolean;
   dispatch: (action: ReflectionOperationDraftAction) => void;

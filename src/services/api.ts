@@ -210,6 +210,8 @@ export type SessionPayload = {
 };
 
 export type GenerateSessionReflectionResult = {
+  additionalArtifactIds?: string[];
+  partialFailure?: string;
   artifactId: string;
   proposalCount: number;
   status: 'created' | 'existing';
@@ -742,6 +744,8 @@ export async function recordReviewSessionSummary({
   }
 }
 
+export class NoQualifyingReflectionEvidenceError extends Error {}
+
 export async function generateSessionReflection({
   sessionId,
   evidence,
@@ -761,6 +765,8 @@ export async function generateSessionReflection({
   );
 
   if (!response.ok) {
+    const payload = await response.clone().json().catch(() => null) as { code?: string } | null;
+    if (payload?.code === 'no_qualifying_evidence') throw new NoQualifyingReflectionEvidenceError('No qualifying reflection evidence.');
     throw new Error(await readApiErrorMessage(response, 'Failed to generate session reflection'));
   }
 

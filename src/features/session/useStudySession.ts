@@ -18,6 +18,7 @@ import {
   dismissWordFromStudy,
   fetchWordMeanings,
   generateSessionReflection,
+  NoQualifyingReflectionEvidenceError,
   recordStudyManagementAction,
   recordReviewSessionSummary,
   updateWordMeaningVisibility,
@@ -115,6 +116,8 @@ import {
   addInFlightSessionReflection,
   completeSessionFinalization,
   completeSessionReflectionGeneration,
+  skipSessionReflectionGeneration,
+  hasPureCueReflectionEvidence,
   createInFlightSessionReflectionIds,
   createSessionFinalizationState,
   hasInFlightSessionReflection,
@@ -308,6 +311,7 @@ export function useStudySession({
     createLearnerRequestedReflectionAccumulator(),
   );
   const pendingReflectionSupplementRef = useRef<unknown>(null);
+  const hasCommittedPureCueReflectionRef = useRef(false);
   const activeSessionIdRef = useRef<string | null>(null);
   const [sessionFinalization, setSessionFinalization] = useState<SessionFinalizationState>(
     createSessionFinalizationState,
@@ -568,6 +572,11 @@ export function useStudySession({
           })
         : learnerRequestedReflectionRef.current;
       await applySessionCommit(commit);
+      if (commit.type === 'commit-pure-cue-production-session') {
+        hasCommittedPureCueReflectionRef.current ||= hasPureCueReflectionEvidence({
+          [commit.sessionActionId]: { events: commit.events },
+        });
+      }
       reflectionEvidenceRef.current = acceptedEvidence;
       learnerRequestedReflectionRef.current = acceptedRequests;
       setPendingSessionCommit(null);
@@ -594,6 +603,7 @@ export function useStudySession({
       const sessionId = createFrontendSessionId();
       activeSessionIdRef.current = sessionId;
       reflectionEvidenceRef.current = createSessionReflectionEvidenceAccumulator();
+      hasCommittedPureCueReflectionRef.current = false;
       learnerRequestedReflectionRef.current = createLearnerRequestedReflectionAccumulator();
       pendingReflectionSupplementRef.current = null;
       updateSessionFinalization(() => createSessionFinalizationState());
@@ -701,7 +711,8 @@ export function useStudySession({
       return;
     }
 
-    const hasReflectionEvidence = evidence.items.length > 0
+    const hasReflectionEvidence = hasCommittedPureCueReflectionRef.current
+      || evidence.items.length > 0
       || learnerRequestedReflectionRef.current.items.length > 0;
     updateSessionFinalization((current) =>
       completeSessionFinalization({
@@ -752,6 +763,10 @@ export function useStudySession({
         activeSessionId: activeSessionIdRef.current,
         requestSessionId: sessionId,
       })) {
+        if (err instanceof NoQualifyingReflectionEvidenceError) {
+          updateSessionFinalization(skipSessionReflectionGeneration);
+          return;
+        }
         updateSessionFinalization((current) =>
           failSessionReflectionGeneration(
             current,
@@ -793,6 +808,7 @@ export function useStudySession({
     updateSessionFinalization(() => createSessionFinalizationState());
     activeSessionClockRef.current = null;
     reflectionEvidenceRef.current = createSessionReflectionEvidenceAccumulator();
+    hasCommittedPureCueReflectionRef.current = false;
     learnerRequestedReflectionRef.current = createLearnerRequestedReflectionAccumulator();
     pendingReflectionSupplementRef.current = null;
     resetSessionScopedUi();

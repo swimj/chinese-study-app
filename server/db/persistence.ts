@@ -2566,6 +2566,7 @@ export function dismissWordFromStudy(wordId: string): void {
   }
 }
 
+// Versioned migrations add pure-cue restore snapshots without inventing historical pre-lapse state.
 export function initializeDatabase() {
   if (!dbExistedOnStartup) {
     createBaselineSchema();

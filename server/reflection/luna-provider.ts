@@ -1,3 +1,11 @@
+import {
+  projectPureCueReflectionInput,
+  type PureCueReflectionBundleV1,
+  type PureCueReflectionResultV1Wire,
+  validatePureCueReflectionResultV1Wire,
+  PURE_CUE_REFLECTION_RESULT_JSON_SCHEMA,
+} from '../../src/domain/pure-cue-reflection.ts';
+import { PURE_CUE_REFLECTION_PROMPT_VERSION } from '../../src/domain/reflection-contracts.ts';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import {
@@ -156,7 +164,17 @@ export type LunaStagedDiagnosisSuccess = {
   metadata: LunaReflectionRunMetadata;
 };
 
+export type LunaPureCueReflectionSuccess = {
+  result: PureCueReflectionResultV1Wire;
+  metadata: LunaReflectionRunMetadata;
+};
+
 export type LunaReflectionProvider = {
+  generatePureCueReflection?(
+    bundle: PureCueReflectionBundleV1,
+    options?: { clientRequestId?: string },
+  ): Promise<LunaPureCueReflectionSuccess>;
+
   generate(
     bundle: SessionReflectionBundleV2 | SessionReflectionBundleV3 | SessionReflectionBundleV4 | CuratedReflectionBundleV1 | CuratedReflectionDiagnosisBundleV2,
     options?: { clientRequestId?: string },
@@ -563,10 +581,91 @@ export function createReflectionProvider(
     return { result: parsed as PureCuePromotionResultV2Wire, metadata };
   }
 
+  async function generatePureCueReflection(
+    bundle: PureCueReflectionBundleV1,
+    requestOptions: { clientRequestId?: string } = {},
+  ): Promise<LunaPureCueReflectionSuccess> {
+    const modelInput = projectPureCueReflectionInput(bundle);
+    const effectiveConfig: ReflectionProviderConfig = {
+      ...config,
+      promptVersion: PURE_CUE_REFLECTION_PROMPT_VERSION,
+    };
+    const apiKey = configuredValue(environment[config.apiKeyEnvironmentVariable]);
+    if (apiKey === null) {
+      throw new LunaReflectionProviderError(
+        'missing_config', 0, null, runMetadataWithoutProviderResult(effectiveConfig),
+      );
+    }
+    const baseUrl = config.baseUrlEnvironmentVariable === undefined
+      ? null
+      : configuredValue(environment[config.baseUrlEnvironmentVariable]);
+    const systemPrompt = await readFile(new URL('./prompts/pure-cue-reflection.md', import.meta.url), 'utf8');
+    const clientRequestId = requestOptions.clientRequestId ?? randomUUID();
+
+    let providerResult;
+    try {
+      providerResult = await adapter.run({
+        model: config.providerModel,
+        reasoningEffort: config.reasoningEffort,
+        systemPrompt,
+        userPrompt: JSON.stringify(modelInput),
+        outputSchemaName: 'pure_cue_reflection_result_v1',
+        outputSchema: PURE_CUE_REFLECTION_RESULT_JSON_SCHEMA,
+        maxOutputTokens: config.maxOutputTokens,
+        temperature: null,
+        timeoutMs: config.timeoutMs,
+        cachePrompt: true,
+        clientRequestId,
+      }, { apiKey, baseUrl });
+    } catch (error) {
+      options.diagnosticSink?.record(describeReflectionProviderFailure({
+        sessionId: bundle.session.sessionId,
+        clientRequestId,
+        error,
+      }));
+      throw new LunaReflectionProviderError(
+        'upstream_failure', 0, clientRequestId, runMetadataWithoutProviderResult(effectiveConfig),
+      );
+    }
+
+    const metadata = runMetadataFromProviderResult(providerResult, effectiveConfig);
+    if (isOutputTruncationFinishReason(providerResult.finishReason)) {
+      throw new LunaReflectionProviderError(
+        'output_truncated', 0, clientRequestId, metadata,
+        diagnostic('truncation', [], providerResult.rawText),
+      );
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(providerResult.rawText);
+    } catch {
+      throw new LunaReflectionProviderError(
+        'invalid_json', 0, clientRequestId, metadata,
+        diagnostic('json_parse', [], providerResult.rawText),
+      );
+    }
+    const schemaIssues = validateJsonSchemaIssues(parsed, PURE_CUE_REFLECTION_RESULT_JSON_SCHEMA);
+    if (schemaIssues.length > 0) {
+      throw new LunaReflectionProviderError(
+        'schema_invalid', schemaIssues.length, clientRequestId, metadata,
+        diagnostic('structural_schema', schemaIssuesToDiagnostics(schemaIssues), providerResult.rawText),
+      );
+    }
+    const contractErrors = validatePureCueReflectionResultV1Wire(parsed, bundle);
+    if (contractErrors.length > 0) {
+      throw new LunaReflectionProviderError(
+        'domain_contract_invalid', contractErrors.length, clientRequestId, metadata,
+        diagnostic('domain_validation', textIssuesToDiagnostics(contractErrors), providerResult.rawText),
+      );
+    }
+    return { result: parsed as PureCueReflectionResultV1Wire, metadata };
+  }
+
   return {
     generate: (bundle, requestOptions = {}) => generateReflection(bundle, requestOptions),
     generateDiagnosis,
     generatePromotion,
+    generatePureCueReflection,
   };
 }
 

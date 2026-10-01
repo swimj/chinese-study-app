@@ -10,6 +10,8 @@ import {
   failSessionReflectionGeneration,
   finalizeSessionBeforeReflection,
   hasInFlightSessionReflection,
+  hasPureCueReflectionEvidence,
+  skipSessionReflectionGeneration,
   isCurrentSessionReflectionRequest,
   isSessionReflectionGenerating,
   removeInFlightSessionReflection,
@@ -240,4 +242,18 @@ describe('completed-session finalization', () => {
     inFlight = removeInFlightSessionReflection(inFlight, 'session-2');
     assert.equal(hasInFlightSessionReflection(inFlight), false);
   });
+});
+
+test('pure cue reflection qualifies only a nonempty rejected first response', () => {
+  const rejected = { eventId: 'first', occurredAt: '2026-09-30T00:00:00.000Z', response: 'C', outcome: 'rejected' as const, submittedWordId: null, rating: 'forgot' as const };
+  assert.equal(hasPureCueReflectionEvidence({ cue: { events: [rejected] } }), true);
+  assert.equal(hasPureCueReflectionEvidence({ cue: { events: [{ ...rejected, response: null }, rejected] } }), false);
+  assert.equal(hasPureCueReflectionEvidence({ cue: { events: [{ ...rejected, outcome: 'accepted' }, rejected] } }), false);
+  assert.equal(hasPureCueReflectionEvidence({ cue: { events: [{ ...rejected, response: ' ' }] } }), false);
+});
+
+test('durable evidence filtering can finish generation as skipped without failing the session', () => {
+  const state = completeSessionFinalization({ state: beginSessionFinalization(createSessionFinalizationState()), hasReflectionEvidence: true });
+  assert.deepEqual(skipSessionReflectionGeneration(state), { kind: 'finalized', reflection: { kind: 'skipped' } });
+  assert.throws(() => skipSessionReflectionGeneration(createSessionFinalizationState()), /expected finalized\/generating/);
 });

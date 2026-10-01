@@ -1,3 +1,4 @@
+import { validateReconcilePureCueResponseOperation, type ReconcilePureCueResponseOperationV1, type PureCueReflectionBundleV1, type PureCueReflectionResultV1, type PureCueReflectionItemV1 } from './pure-cue-reflection';
 import { promptMajorVersion, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION } from './reflection-contracts';
 
 export type StudyProfileV0 = 'mandarin' | 'french';
@@ -268,6 +269,7 @@ export type ReflectionDiagnosisBundle =
   | CuratedReflectionDiagnosisBundleV2;
 
 export type SessionReflectionBundle =
+  | PureCueReflectionBundleV1
   | SessionReflectionBundleV1
   | SessionReflectionBundleV2
   | SessionReflectionBundleV3
@@ -553,6 +555,7 @@ export type SessionReflectionResultV9 = {
 };
 
 export type ReflectionOperation =
+  | ReconcilePureCueResponseOperationV1
   | SuppressDefinitionProductionOperationV1
   | CreateContrastClusterOperation
   | RepairProductionCueOperationV1
@@ -736,6 +739,7 @@ export type SessionReflectionResultV8 = {
 };
 
 export type SessionReflectionResult =
+  | PureCueReflectionResultV1
   | SessionReflectionResultV4
   | SessionReflectionResultV5
   | SessionReflectionResultV6
@@ -951,6 +955,7 @@ export type ReflectionOperationRegistration = {
 };
 
 export const REFLECTION_OPERATION_REGISTRY = [
+  { kind: 'reconcile_pure_cue_response', version: 1, editorAvailable: true, applySupport: 'supported' },
   {
     kind: 'suppress_definition_production',
     version: 1,
@@ -1128,6 +1133,7 @@ function validateWordReference(
 
 export function reflectionOperationWordReferences(operation: ReflectionOperation): string[] {
   switch (operation.kind) {
+    case 'reconcile_pure_cue_response': return [operation.responseWordId];
     case 'suppress_definition_production':
       return [operation.wordId];
     case 'repair_production_cue':
@@ -1184,6 +1190,7 @@ export function validateReflectionOperation(
 
   const errors: string[] = [];
   switch (kind) {
+    case 'reconcile_pure_cue_response': return [...validateReconcilePureCueResponseOperation(value), ...validateWordReference(value.responseWordId, `${path}.responseWordId`, options)];
     case 'suppress_definition_production': {
       errors.push(...validateObjectFields(value, ['kind', 'version', 'wordId'], path));
       errors.push(...validateWordReference(value.wordId, `${path}.wordId`, options));
@@ -1699,7 +1706,7 @@ function validateRepairProductionCueOperationV2(
 }
 
 export function visibleWordIds(
-  item: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4 | ReflectionItemV5,
+  item: PureCueReflectionItemV1 | ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4 | ReflectionItemV5,
 ): Set<string> {
   const ids = new Set<string>();
   if (item.targetWord !== null) ids.add(item.targetWord.wordId);
@@ -2577,6 +2584,7 @@ export function validateReflectionOperationEvidenceContext(
   path: string,
 ): string[] {
   if (!isRecord(value)) return [];
+  if (value.kind === 'reconcile_pure_cue_response') return [`${path}: pure cue reconciliation requires pure cue evidence`];
   const errors: string[] = [];
   if ('promotionEvidence' in item) {
     errors.push(...validateOwnerOnlyCueDrafts(value, path));

@@ -47,6 +47,14 @@ Domain-oriented re-export shims (navigation only; implementation stays in `persi
 
 ## Reflection persistence
 
+Pure-cue response reflection has an independent provider call and stored bundle,
+using the same artifacts, run log, authorization, and inbox. Its
+`reconcile_pure_cue_response` adapter can extend the source cue, revise teaching,
+and change only C's word-owned cues. `pure_cue_assessment_scheduler_snapshots`
+stores immutable pre-lapse pure-cue state and its restore-once marker; historical
+assessments are not backfilled. Migration `0014_pure_cue_reflection` adds this
+table and extends teaching-revision authorization.
+
 Staged generation additionally uses `reflection_generation_continuations` for
 immutable diagnosis input, overlap-omission counts, the saved diagnosis result,
 exact promotion input/final evidence checkpoint, and completed artifact link.

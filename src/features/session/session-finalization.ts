@@ -1,8 +1,12 @@
+import type { PureCueAssessmentEvent } from '../../domain/pure-cues';
+
 export type SessionReflectionGenerationState =
   | { kind: 'skipped' }
   | { kind: 'generating' }
   | {
       kind: 'succeeded';
+      additionalArtifactIds?: string[];
+      partialFailure?: string;
       artifactId: string;
       proposalCount: number;
       status: 'created' | 'existing';
@@ -130,6 +134,8 @@ export function resetFailedSessionFinalization(
 export function completeSessionReflectionGeneration(
   state: SessionFinalizationState,
   result: {
+    additionalArtifactIds?: string[];
+    partialFailure?: string;
     artifactId: string;
     proposalCount: number;
     status: 'created' | 'existing';
@@ -231,4 +237,19 @@ function assertReflectionState<TKind extends SessionReflectionGenerationState['k
       `Session finalization invariant violated: expected finalized/${expectedKind}, received "${actualKind}".`,
     );
   }
+}
+
+/** Only the first response can originate pure-cue reflection, including after reinforcement. */
+export function hasPureCueReflectionEvidence(
+  progress: Record<string, { events: PureCueAssessmentEvent[] }>,
+): boolean {
+  return Object.values(progress).some(({ events }) => {
+    const first = events[0];
+    return first?.outcome === 'rejected' && first.response !== null && first.response.trim().length > 0;
+  });
+}
+
+export function skipSessionReflectionGeneration(state: SessionFinalizationState): SessionFinalizationState {
+  assertReflectionState(state, 'generating');
+  return { kind: 'finalized', reflection: { kind: 'skipped' } };
 }

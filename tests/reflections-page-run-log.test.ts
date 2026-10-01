@@ -1,3 +1,4 @@
+import { PURE_CUE_REFLECTION_FLOW_VERSION, PURE_CUE_REFLECTION_PROMPT_VERSION } from '../src/domain/reflection-contracts.ts';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -664,3 +665,44 @@ function run(overrides: {
     retryable: overrides.state === 'failed',
   };
 }
+
+
+function pureReflectionArtifact(): ReflectionArtifactDetailDto {
+  const base = explanationArtifact();
+  const word = (wordId: string) => ({ wordId, hanzi: wordId, pinyin: wordId, meanings: [wordId] });
+  const item = {
+    source: 'pure_cue_mistake' as const, sourceActionKind: 'pure_cue' as const, itemId: 'informational', sourceAttemptId: 'assessment', firstEventId: 'first', sessionActionId: 'action', occurredAt: base.generatedAt, rawResponse: 'C', submittedWord: word('C'), targetWord: null, sessionNote: null,
+    existingContent: { contrastClusters: [] as [], knownAcceptedAlternates: [] as [] },
+    servedSnapshot: { snapshotId: 'snapshot', pureCueId: 'cue', servedAt: base.generatedAt, stimulus: 'Shared situation', axisNote: '', teachingNote: 'A and B', acceptedAnswers: ['A', 'B'].map(wordId => ({ wordId, hanzi: wordId, traditional: null })) },
+    currentCue: { id: 'cue', stimulus: 'Shared situation', axisNote: '', teachingNote: 'A and B', acceptedWordIds: ['A', 'B'], acceptedWords: [word('A'), word('B')] }, activeProductionCues: [],
+  };
+  return { ...base, reflectionFlowVersion: PURE_CUE_REFLECTION_FLOW_VERSION, promptVersion: PURE_CUE_REFLECTION_PROMPT_VERSION,
+    bundleSchemaVersion: 'pure_cue_reflection_bundle.v1', resultSchemaVersion: 'pure_cue_reflection_result.v1',
+    evidenceBundle: { schemaVersion: 'pure_cue_reflection_bundle.v1', generatedAt: base.generatedAt, session: { sessionId: 'session', startedAt: base.generatedAt, endedAt: base.generatedAt, studyProfile: 'mandarin' }, items: [item] },
+    result: { schemaVersion: 'pure_cue_reflection_result.v1', itemResults: [{ itemId: item.itemId, diagnosisTags: [], learnerExplanation: 'C does not fit.', questions: [], proposals: [] }] },
+  };
+}
+
+test('deferred pure cue proposals remain discoverable without entering second opinions', () => {
+  const artifact = pureReflectionArtifact();
+  artifact.proposals = deferredProposalArtifact('deferred-pure', 'C', 'C fits').proposals;
+  artifact.proposals[0].itemId = 'informational';
+  artifact.proposals[0].proposal.operation = { kind: 'reconcile_pure_cue_response', version: 1, sourceAttemptId: 'assessment', responseWordId: 'C', pureCueId: 'cue', expectedAcceptedWordIds: ['A', 'B'], expectedTeachingNote: 'A and B', teachingNote: 'A, B, and C', responseWordPlan: { wordId: 'C', deactivateCueIds: [], distinctiveCueDrafts: [] } };
+  artifact.result.itemResults[0].proposals = [artifact.proposals[0].proposal];
+  const controller = idleController({ artifactDetails: [artifact] });
+  const markup = renderToStaticMarkup(createElement(ReflectionsPage, { controller }));
+  assert.match(markup, /Show deferred proposals \(1\)/);
+  assert.doesNotMatch(markup, /Second opinion.*?reflection-view-count[^>]*>1/);
+  artifact.proposals[0].review.disposition = { kind: 'pending' };
+  const pendingMarkup = renderToStaticMarkup(createElement(ReflectionsPage, { controller }));
+  assert.match(pendingMarkup, /class="reflection-handle-select" aria-label="Handle" disabled/);
+});
+
+test('pure cue explanation cards offer Done and Defer without ordinary manual handles', () => {
+  const artifact = pureReflectionArtifact();
+  const markup = renderToStaticMarkup(createElement(ReflectionsPage, { controller: idleController({ artifactDetails: [artifact] }) }));
+  assert.match(markup, /C does not fit/);
+  assert.match(markup, />Done</);
+  assert.match(markup, />Defer</);
+  assert.doesNotMatch(markup, /Suppress definition production|Accept replacement|reflection-handle-select/);
+});

@@ -1,3 +1,5 @@
+import { validatePureCueReflectionOperationEvidenceContext } from '../../domain/pure-cue-reflection';
+import type { PureCueReflectionItemV1 } from '../../domain/pure-cue-reflection';
 import type {
   AcceptProductionAlternateOperationV1,
   CreateContrastClusterOperation,
@@ -169,6 +171,7 @@ export type ReflectionItemPresentation = {
   evidence: ReflectionInputItemV1
     | ReflectionInputItemV2
     | ReflectionItemV3
+    | PureCueReflectionItemV1
     | null;
   result: ReflectionItemResult;
   proposals: ReflectionProposalDetailDto[];
@@ -191,6 +194,7 @@ export type LearnerRequestedReflectionPresentation = {
   evidence: ReflectionInputItemV1
     | ReflectionInputItemV2
     | ReflectionItemV3
+    | PureCueReflectionItemV1
     | null;
   result: ReflectionItemResult;
 };
@@ -214,6 +218,7 @@ export type ReflectionProposalPresentation = {
   evidence: ReflectionInputItemV1
     | ReflectionInputItemV2
     | ReflectionItemV3
+    | PureCueReflectionItemV1
     | null;
   result: ReflectionItemResult;
   proposal: ReflectionProposalDetailDto;
@@ -232,6 +237,7 @@ export type ReflectionHelpCard =
       evidence: ReflectionInputItemV1
         | ReflectionInputItemV2
         | ReflectionItemV3
+        | PureCueReflectionItemV1
         | null;
       result: ReflectionItemResult;
     };
@@ -449,6 +455,8 @@ export function formatRunDuration(startedAt: string, completedAt: string): strin
 
 export function cloneReflectionOperation(operation: ReflectionOperation): ReflectionOperation {
   switch (operation.kind) {
+    case 'reconcile_pure_cue_response':
+      return structuredClone(operation);
     case 'suppress_definition_production':
       return { ...operation };
     case 'create_contrast_cluster':
@@ -1074,7 +1082,7 @@ export function reduceReflectionOperationDraft(
 export function getOperationDraftState(
   original: ReflectionOperation,
   draft: ReflectionOperation,
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null = null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null = null,
 ): {
   acceptanceMode: 'exact' | 'revised' | 'replacement';
   validationErrors: string[];
@@ -1084,13 +1092,17 @@ export function getOperationDraftState(
   if (registration === null) {
     throw new Error(`Invariant violated: unregistered operation ${draft.kind}@${draft.version}.`);
   }
-  const allowedWordIds = evidence === null ? undefined : visibleWordIds(evidence);
+  const allowedWordIds = evidence === null ? undefined : evidence.source === 'pure_cue_mistake'
+    ? new Set([evidence.submittedWord.wordId]) : visibleWordIds(evidence);
   const validationErrors = validateReflectionOperation(
     draft,
     evidence === null || allowedWordIds === undefined
       ? {}
       : { allowedWordIds, evidenceItemId: evidence.itemId },
   );
+  if (evidence?.source === 'pure_cue_mistake' && draft.kind === 'reconcile_pure_cue_response') {
+    validationErrors.push(...validatePureCueReflectionOperationEvidenceContext(draft, evidence));
+  }
   if (evidence !== null && 'servedCue' in evidence) {
     validationErrors.push(...validateReflectionOperationEvidenceContext(draft, evidence, '$'));
   }
@@ -1107,7 +1119,7 @@ export function createReplacementOperation(
   kind: ReflectionOperation['kind'],
   version: number,
   original: ReflectionOperation,
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV5 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV5 | PureCueReflectionItemV1 | null,
 ): ReflectionOperation {
   const targetWordId = evidence?.targetWord?.wordId ?? primaryWordId(original);
   const submittedWordId = evidence !== null && 'submittedWord' in evidence
@@ -1115,6 +1127,9 @@ export function createReplacementOperation(
     : secondaryWordId(original);
 
   switch (kind) {
+    case 'reconcile_pure_cue_response':
+      if (original.kind === kind) return cloneReflectionOperation(original);
+      throw new Error('Pure cue response reconciliation requires its original evidence.');
     case 'suppress_definition_production':
       return { kind, version: 1, wordId: targetWordId };
     case 'create_contrast_cluster':
@@ -1208,7 +1223,7 @@ export function createReplacementOperation(
 export function createManualOperation(
   kind: ReflectionOperation['kind'],
   version: number,
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV5 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV5 | PureCueReflectionItemV1 | null,
 ): ReflectionOperation {
   return createReplacementOperation(
     kind,
@@ -1238,11 +1253,15 @@ export function reflectionOperationLabel(operation: ReflectionOperation): string
       return 'Promote pure elicitation';
     case 'reconcile_production_cues':
       return 'Reconcile production cues';
+    case 'reconcile_pure_cue_response':
+      return 'Accept pure cue response';
   }
 }
 
 function primaryWordId(operation: ReflectionOperation): string {
   switch (operation.kind) {
+    case 'reconcile_pure_cue_response':
+      return operation.responseWordId;
     case 'suppress_definition_production':
     case 'repair_production_cue':
     case 'add_production_cue_supplement':
@@ -1259,6 +1278,8 @@ function primaryWordId(operation: ReflectionOperation): string {
 
 function secondaryWordId(operation: ReflectionOperation): string {
   switch (operation.kind) {
+    case 'reconcile_pure_cue_response':
+      return '';
     case 'accept_production_alternate':
       return operation.alternateWordId;
     case 'reconcile_production_cues':
@@ -1406,18 +1427,20 @@ function assertIndex(values: unknown[], index: number, label: string): void {
 }
 
 function reflectionEvidenceTitle(
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null,
 ): string {
   if (evidence?.targetWord !== null && evidence?.targetWord !== undefined) {
     return reflectionWordLabel(evidence.targetWord);
   }
+  if (evidence?.source === 'pure_cue_mistake') return `Pure cue · ${reflectionWordLabel(evidence.submittedWord)}`;
   return evidence?.source === 'session_note' ? 'Session note' : 'Reflection evidence';
 }
 
 function reflectionResponseSummary(
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null,
 ): string | null {
   if (evidence === null) return null;
+  if (evidence.source === 'pure_cue_mistake') return `Typed ${reflectionWordLabel(evidence.submittedWord)}`;
   if (evidence.source === 'production_mistake') {
     if (evidence.responseKind === 'no_clue') return 'No clue';
     if (evidence.submittedWord !== null) {
@@ -1436,9 +1459,10 @@ function reflectionResponseSummary(
 }
 
 function reflectionCueSummary(
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null,
 ): string | null {
   if (evidence === null) return null;
+  if (evidence.source === 'pure_cue_mistake') return evidence.servedSnapshot.stimulus;
   if (evidence.source === 'production_mistake') {
     if ('servedCue' in evidence) return evidence.servedCue.text;
     return evidence.cuesAsShown[0]?.text ?? null;
@@ -1460,7 +1484,7 @@ export type EvidenceWordOption = {
 };
 
 export function collectEvidenceWordOptions(
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null,
 ): EvidenceWordOption[] {
   if (evidence === null) return [];
   const byId = new Map<string, EvidenceWordOption>();
@@ -1475,6 +1499,7 @@ export function collectEvidenceWordOptions(
     }
   }
   add(evidence.targetWord);
+  if (evidence.source === 'pure_cue_mistake') evidence.currentCue.acceptedWords.forEach(add);
   if ('submittedWord' in evidence) add(evidence.submittedWord);
   if (evidence.source === 'session_note') {
     for (const relatedWord of evidence.relatedWords) add(relatedWord);
@@ -1490,16 +1515,17 @@ export function evidenceWordSurfaceLabel(word: EvidenceWordOption): string {
 }
 
 export function servedCueDisplayText(
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null,
 ): string | null {
   if (evidence === null) return null;
+  if (evidence.source === 'pure_cue_mistake') return evidence.servedSnapshot.stimulus;
   if ('servedCue' in evidence) return evidence.servedCue.text;
   if (evidence.source === 'production_mistake') return evidence.cuesAsShown[0]?.text ?? null;
   return null;
 }
 
 export function servedCueId(
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null,
 ): string | null {
   if (evidence === null || !('servedCue' in evidence)) return null;
   return evidence.servedCue.cueId;

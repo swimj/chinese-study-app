@@ -82,6 +82,14 @@ action, and attempt references before constructing a provider-facing bundle.
 
 ### Initial evidence kinds
 
+Pure-cue failures additionally use `pure_cue_post_session_reflection.v1` with
+`pure_cue_reflection_bundle.v1` and `pure_cue_reflection_result.v1`. They are
+reconstructed from durable assessments, separately from the word-production
+supplement, and receive a separate provider call and artifact. See
+[`pure-cue-elicitation.md`](pure-cue-elicitation.md#pure-cue-response-reflection).
+The existing generation endpoint can return additional artifact IDs and a
+partial-failure notice; successful artifacts remain available in the inbox.
+
 The initial flow includes review-phase production failures that are either an
 explicit no-clue response or a non-empty typed response outside the accepted
 answer space snapshotted on the served cue. A learner may mark an otherwise

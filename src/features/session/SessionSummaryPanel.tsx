@@ -114,7 +114,7 @@ function SessionReflectionStatus({
     case 'skipped':
       return (
         <p className="notes">
-          Reflection skipped: this session had no qualifying production failures.
+          Reflection skipped: this session had no qualifying reflection evidence.
         </p>
       );
     case 'generating':
@@ -128,6 +128,9 @@ function SessionReflectionStatus({
         <p className="notes">
           Reflection ready with {finalization.reflection.proposalCount} proposal
           {finalization.reflection.proposalCount === 1 ? '' : 's'}.
+          {finalization.reflection.partialFailure ? (
+            <> Some reflection could not be generated: {finalization.reflection.partialFailure} Retry the failed run in Reflections.</>
+          ) : null}
         </p>
       );
     case 'failed':

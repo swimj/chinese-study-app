@@ -386,7 +386,7 @@ export function publishAuthorizedProductionCueWithoutTransaction(input: {
   }
 
   const invocation = getDb().prepare(`
-    SELECT operation_kind, operation_version, application_state, effect_refs_json
+    SELECT operation_kind, operation_version, operation_json, application_state, effect_refs_json
     FROM reflection_operation_invocations
     WHERE invocation_id = ?
   `).get(input.invocationId) as {
@@ -394,15 +394,18 @@ export function publishAuthorizedProductionCueWithoutTransaction(input: {
     operation_version: number;
     application_state: string;
     effect_refs_json: string;
+    operation_json: string;
   } | undefined;
   if (
     !invocation
     || !(
       (invocation.operation_kind === 'repair_production_cue' && invocation.operation_version === 2)
-      || (['promote_pure_elicitation', 'reconcile_production_cues'].includes(invocation.operation_kind) && invocation.operation_version === 1)
+      || (['promote_pure_elicitation', 'reconcile_production_cues', 'reconcile_pure_cue_response'].includes(invocation.operation_kind) && invocation.operation_version === 1)
     )
     || (invocation.application_state !== 'pending' && invocation.application_state !== 'applied')
     || !effectRefsContain(invocation.effect_refs_json, 'production_cue', input.cueId, invocation.application_state)
+    || (invocation.operation_kind === 'reconcile_pure_cue_response'
+      && !authorizedPureCueResponseProductionCue(invocation.operation_json, cue))
   ) {
     throw new Error(`Reflection invocation ${input.invocationId} does not authorize cue ${input.cueId}.`);
   }
@@ -589,7 +592,7 @@ export function retireSharedProductionCuePublicationWithoutTransaction(input: {
     || invocation.application_state !== 'pending'
     || !(
       (invocation.operation_kind === 'repair_production_cue' && invocation.operation_version === 2)
-      || (['promote_pure_elicitation', 'reconcile_production_cues'].includes(invocation.operation_kind) && invocation.operation_version === 1)
+      || (['promote_pure_elicitation', 'reconcile_production_cues', 'reconcile_pure_cue_response'].includes(invocation.operation_kind) && invocation.operation_version === 1)
     )
     || !authorizedProductionCueRetirement(invocation.operation_json, input.cueId)
   ) {
@@ -1253,8 +1256,35 @@ function authorizedPureCueCreate(rawOperation: string, invocationId: string): {
   };
 }
 
+/** Pure-cue reflection grants publication authority only for C's explicit draft plan. */
+function authorizedPureCueResponseProductionCue(rawOperation: string, cue: SourceCueRow): boolean {
+  const operation = parsedInvocationOperation(rawOperation);
+  if (operation?.kind !== 'reconcile_pure_cue_response' || operation.version !== 1
+    || typeof operation.responseWordId !== 'string' || !isRecord(operation.responseWordPlan)
+    || operation.responseWordPlan.wordId !== operation.responseWordId
+    || !Array.isArray(operation.responseWordPlan.distinctiveCueDrafts)) return false;
+  const task = getDb().prepare('SELECT word_id FROM production_tasks WHERE task_id = ?')
+    .get(cue.task_id) as { word_id: string } | undefined;
+  return task?.word_id === operation.responseWordId
+    && operation.responseWordPlan.distinctiveCueDrafts.some((draft) => (
+      isRecord(draft) && draft.cueType === cue.cue_type
+      && typeof draft.text === 'string' && draft.text.trim() === cue.cue_text
+    ));
+}
+
 function authorizedProductionCueRetirement(rawOperation: string, cueId: string): boolean {
   const operation = parsedInvocationOperation(rawOperation);
+  if (operation?.kind === 'reconcile_pure_cue_response' && operation.version === 1) {
+    if (typeof operation.responseWordId !== 'string' || !isRecord(operation.responseWordPlan)
+      || operation.responseWordPlan.wordId !== operation.responseWordId
+      || !Array.isArray(operation.responseWordPlan.deactivateCueIds)
+      || !operation.responseWordPlan.deactivateCueIds.includes(cueId)) return false;
+    const owner = getDb().prepare(`
+      SELECT task.word_id FROM ${scopedContentStorageTableName('production_cues')} AS cue
+      JOIN production_tasks AS task ON task.task_id = cue.task_id WHERE cue.cue_id = ?
+    `).get(cueId) as { word_id: string } | undefined;
+    return owner?.word_id === operation.responseWordId;
+  }
   if (operation?.kind === 'repair_production_cue' && operation.version === 2) {
     return Array.isArray(operation.changes) && operation.changes.some((change) => (
       isRecord(change)

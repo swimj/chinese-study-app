@@ -1,3 +1,14 @@
+import { normalizeMandarinHanziLookup } from './hanzi-lookup.ts';
+import type { PureCueAssessmentEvent } from '../../src/domain/pure-cues.ts';
+import type { RepairProductionCueOperationV2 } from '../../src/domain/reflection.ts';
+import {
+  type PureCueReflectionBundleV1, type PureCueReflectionItemV1,
+  type PureCueReflectionResultV1, type ReconcilePureCueResponseOperationV1,
+  validatePureCueReflectionResult, validatePureCueReflectionOperationEvidenceContext,
+  parsePureCueReflectionBundle,
+} from '../../src/domain/pure-cue-reflection.ts';
+import { PURE_CUE_REFLECTION_FLOW_VERSION, PURE_CUE_REFLECTION_PROMPT_VERSION } from '../../src/domain/reflection-contracts.ts';
+import { restorePureCueSchedulerSnapshotWithoutTransaction } from './pure-cues.ts';
 import { randomUUID } from 'node:crypto';
 import { selectNonOverlappingReflectionItems } from '../reflection/bundle-admission.ts';
 import type {
@@ -172,6 +183,7 @@ type MaterializeReflectionArtifactBase = {
 };
 
 export type MaterializeReflectionArtifactInput = MaterializeReflectionArtifactBase & (
+  | { evidenceBundle: PureCueReflectionBundleV1; result: PureCueReflectionResultV1 }
   | { evidenceBundle: SessionReflectionBundleV1; result: SessionReflectionResultV4 }
   | { evidenceBundle: SessionReflectionBundleV2; result: SessionReflectionResultV5 }
   | { evidenceBundle: SessionReflectionBundleV3; result: SessionReflectionResultV5 }
@@ -1591,7 +1603,9 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
       clientRequestId: row.client_request_id,
       finishReason: null,
       bundleSchemaVersion: evidenceBundle.schemaVersion,
-      resultSchemaVersion: isCompatiblePromptVersion(row.prompt_version, PURE_CUE_PROMOTION_PROMPT_VERSION)
+      resultSchemaVersion: row.prompt_version === PURE_CUE_REFLECTION_PROMPT_VERSION
+        ? 'pure_cue_reflection_result.v1'
+        : isCompatiblePromptVersion(row.prompt_version, PURE_CUE_PROMOTION_PROMPT_VERSION)
         ? 'pure_cue_promotion_result.v2'
         : isCompatiblePromptVersion(row.prompt_version, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION)
           ? 'staged_reflection_diagnosis_result.v3'
@@ -1651,7 +1665,14 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
               AND runs.prompt_version IN (${compatiblePromptVersions(PURE_CUE_PROMOTION_PROMPT_VERSION).map((version) => `'${version}'`).join(', ')})
             )
           )
-      ) THEN 1 ELSE 0 END AS retryable
+      ) THEN 1 WHEN runs.state = 'failed' AND runs.evidence_bundle_json IS NOT NULL
+        AND runs.reflection_flow_version = '${PURE_CUE_REFLECTION_FLOW_VERSION}'
+        AND runs.bundle_schema_version = 'pure_cue_reflection_bundle.v1'
+        AND runs.prompt_version = '${PURE_CUE_REFLECTION_PROMPT_VERSION}'
+        AND NOT EXISTS (SELECT 1 FROM reflection_artifacts AS artifact
+          WHERE artifact.reflection_flow_version = runs.reflection_flow_version
+            AND artifact.evidence_bundle_json = runs.evidence_bundle_json)
+        THEN 1 ELSE 0 END AS retryable
     FROM reflection_generation_runs AS runs
     ORDER BY completed_at DESC, run_id ASC
     LIMIT ?
@@ -1704,7 +1725,14 @@ function getReflectionGenerationRun(runId: string): ReflectionGenerationRunRecor
               AND runs.prompt_version IN (${compatiblePromptVersions(PURE_CUE_PROMOTION_PROMPT_VERSION).map((version) => `'${version}'`).join(', ')})
             )
           )
-      ) THEN 1 ELSE 0 END AS retryable
+      ) THEN 1 WHEN runs.state = 'failed' AND runs.evidence_bundle_json IS NOT NULL
+        AND runs.reflection_flow_version = '${PURE_CUE_REFLECTION_FLOW_VERSION}'
+        AND runs.bundle_schema_version = 'pure_cue_reflection_bundle.v1'
+        AND runs.prompt_version = '${PURE_CUE_REFLECTION_PROMPT_VERSION}'
+        AND NOT EXISTS (SELECT 1 FROM reflection_artifacts AS artifact
+          WHERE artifact.reflection_flow_version = runs.reflection_flow_version
+            AND artifact.evidence_bundle_json = runs.evidence_bundle_json)
+        THEN 1 ELSE 0 END AS retryable
     FROM reflection_generation_runs AS runs
     WHERE runs.run_id = ?
   `).get(runId) as ReflectionGenerationRunRow | undefined;
@@ -2339,7 +2367,7 @@ export function supersedeReflectionProposal(
 
 function requireRegisteredOperationForEvidence(
   operation: ReflectionOperation,
-  evidenceItem: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4 | ReflectionItemV5 | ReflectionItemV6,
+  evidenceItem: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4 | ReflectionItemV5 | ReflectionItemV6 | PureCueReflectionItemV1,
   hasTargetSuppression = false,
 ): NonNullable<ReturnType<typeof getReflectionOperationRegistration>> {
   // All callers authorize only current artifacts. Retain the legacy operation
@@ -2354,6 +2382,10 @@ function requireRegisteredOperationForEvidence(
   if (hasTargetSuppression) {
     if (evidenceItem.targetWord === null) throw new Error('Target suppression requires a target word.');
     itemValidationErrors.push(...validateTargetSuppressionOperation(operation, evidenceItem.targetWord.wordId));
+  }
+  if (evidenceItem.source === 'pure_cue_mistake') {
+    if (operation.kind !== 'reconcile_pure_cue_response') throw new Error('Pure cue evidence only authorizes response reconciliation.');
+    itemValidationErrors.push(...validatePureCueReflectionOperationEvidenceContext(operation, evidenceItem));
   }
   if ('servedCue' in evidenceItem) {
     itemValidationErrors.push(...validateReflectionOperationEvidenceContext(
@@ -2861,7 +2893,7 @@ function requireProposalReviewRow(proposalId: string): ProposalReviewRow {
 function originalProposalContextForReview(row: ProposalReviewRow): {
   proposal: ReflectionProposalV1;
   hasTargetSuppression: boolean;
-  evidenceItem: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4 | ReflectionItemV5 | ReflectionItemV6;
+  evidenceItem: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4 | ReflectionItemV5 | ReflectionItemV6 | PureCueReflectionItemV1;
 } {
   const artifactRow = getDb().prepare(`
     SELECT ${artifactColumns.join(', ')}
@@ -3035,6 +3067,7 @@ function validateReflectionArtifactPair(
   evidenceBundle: SessionReflectionBundle,
 ): string[] {
   if (!isRecord(result)) return ['$: expected object'];
+  if (evidenceBundle.schemaVersion === 'pure_cue_reflection_bundle.v1') return validatePureCueReflectionResult(result, evidenceBundle);
   if (
     evidenceBundle.schemaVersion === 'session_reflection_bundle.v1'
     && result.schemaVersion === 'session_reflection_result.v4'
@@ -3441,6 +3474,8 @@ function applyPendingOperationWithoutTransaction(
       throw new Error(
         `No faithful application adapter is available for ${operation.kind}@${operation.version}.`,
       );
+    case 'reconcile_pure_cue_response':
+      return applyPureCueResponseWithoutTransaction(operation, invocationId, appliedAt);
     case 'reconcile_production_cues':
     case 'promote_pure_elicitation':
       return applyPureElicitationPromotionWithoutTransaction(
@@ -4305,7 +4340,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function visibleWordIds(
-  item: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4 | ReflectionItemV5 | ReflectionItemV6,
+  item: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4 | ReflectionItemV5 | ReflectionItemV6 | PureCueReflectionItemV1,
 ): Set<string> {
   const wordIds = new Set<string>();
   if (item.targetWord !== null) {
@@ -4332,4 +4367,80 @@ function visibleWordIds(
 
 function corruptionError(detail: string): Error {
   return new Error(`Reflection store corruption: ${detail}.`);
+}
+
+/** Exact saved input for the independent pure-cue provider call. */
+export function getPureCueReflectionRetrySource(runId: string): {
+  bundle: PureCueReflectionBundleV1; model: string;
+} | null {
+  const row = getDb().prepare(`SELECT reflection_flow_version, model, state, prompt_version,
+    evidence_bundle_json FROM reflection_generation_runs WHERE run_id = ?`).get(runId) as {
+      reflection_flow_version: string; model: string; state: string; prompt_version: string;
+      evidence_bundle_json: string | null;
+    } | undefined;
+  if (!row || row.reflection_flow_version !== PURE_CUE_REFLECTION_FLOW_VERSION) return null;
+  if (row.state !== 'failed' || row.prompt_version !== PURE_CUE_REFLECTION_PROMPT_VERSION || row.evidence_bundle_json === null) {
+    throw new Error('Pure cue reflection run is not retryable.');
+  }
+  if (getDb().prepare(`SELECT 1 FROM reflection_artifacts WHERE reflection_flow_version = ?
+    AND evidence_bundle_json = ? LIMIT 1`).get(PURE_CUE_REFLECTION_FLOW_VERSION, row.evidence_bundle_json)) {
+    throw new Error('Pure cue reflection evidence already has a successful artifact.');
+  }
+  return { bundle: parsePureCueReflectionBundle(JSON.parse(row.evidence_bundle_json)), model: row.model };
+}
+
+function applyPureCueResponseWithoutTransaction(
+  operation: ReconcilePureCueResponseOperationV1,
+  invocationId: string,
+  appliedAt: string,
+): OperationApplicationState {
+  const source = getDb().prepare(`SELECT pure_cue_id, events_json FROM pure_cue_attempts
+    WHERE learner_id = ? AND attempt_id = ?`).get(requireLearnerId(), operation.sourceAttemptId) as {
+      pure_cue_id: string; events_json: string;
+    } | undefined;
+  const first = source ? (JSON.parse(source.events_json) as PureCueAssessmentEvent[])[0] : undefined;
+  const response = getDb().prepare('SELECT normalized_hanzi FROM lexical_words WHERE id = ?')
+    .get(operation.responseWordId) as { normalized_hanzi: string } | undefined;
+  if (source?.pure_cue_id !== operation.pureCueId || first?.outcome !== 'rejected'
+    || !first.response?.trim() || !response || response.normalized_hanzi !== normalizeMandarinHanziLookup(first.response)) {
+    throw new Error('Pure cue reconciliation must address its learner-owned first rejected response.');
+  }
+  const current = getPureCueContent(operation.pureCueId);
+  if (!current?.active || current.teachingNote !== operation.expectedTeachingNote
+    || JSON.stringify([...current.acceptedWordIds].sort()) !== JSON.stringify([...operation.expectedAcceptedWordIds].sort())) {
+    return { kind: 'stale', reason: 'Pure cue membership or teaching note changed since reflection.' };
+  }
+  const plan = operation.responseWordPlan;
+  const repair: RepairProductionCueOperationV2 = {
+    kind: 'repair_production_cue', version: 2, wordId: operation.responseWordId,
+    taskId: defaultProductionTaskId(operation.responseWordId), sourceAttemptJudgments: [],
+    changes: [
+      ...plan.deactivateCueIds.map((cueId) => ({ kind: 'deactivate' as const, cueId })),
+      ...plan.distinctiveCueDrafts.map((draft) => ({ kind: 'create' as const,
+        cue: { ...draft, acceptedWordIds: [operation.responseWordId] } })),
+    ],
+  };
+  const invalid = validateProductionCueRepairCurrentStateWithoutTransaction(repair);
+  if (invalid !== null) return { kind: 'stale', reason: invalid };
+  // Authorization revalidates C-only evidence; all effects share the caller's transaction.
+  extendPureCueAcceptedWordsWithoutTransaction({ id: operation.pureCueId,
+    acceptedWordIds: [operation.responseWordId],
+    teachingRevision: { teachingNote: operation.teachingNote, invocationId, revisedAt: appliedAt },
+  });
+  const effects: EffectRef[] = [];
+  if (!current.acceptedWordIds.includes(operation.responseWordId)) effects.push({
+    type: 'pure_cue_membership', id: `${encodeURIComponent(operation.pureCueId)}/${encodeURIComponent(operation.responseWordId)}`,
+  });
+  if (current.teachingNote !== operation.teachingNote) effects.push({ type: 'pure_cue_teaching_note', id: operation.pureCueId });
+  if (repair.changes.length > 0) {
+    const state = applyProductionCueRepairWithoutTransaction(repair, invocationId, appliedAt);
+    if (state.kind === 'applied') effects.push(...state.effectRefs);
+    else if (state.kind === 'already_satisfied') effects.push(...state.satisfyingEffectRefs);
+    else throw new Error('Response word cue repair failed after preflight.');
+  }
+  const compensation = restorePureCueSchedulerSnapshotWithoutTransaction({
+    sourceAttemptId: operation.sourceAttemptId, compensationInvocationId: invocationId, restoredAt: appliedAt,
+  });
+  effects.push({ type: 'pure_cue_scheduler_compensation', id: `${encodeURIComponent(operation.sourceAttemptId)}/${compensation.kind}` });
+  return { kind: 'applied', appliedAt, effectRefs: effects };
 }

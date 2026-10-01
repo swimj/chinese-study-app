@@ -1,3 +1,4 @@
+import type { PureCueReflectionItemV1, ReconcilePureCueResponseOperationV1 } from '../src/domain/pure-cue-reflection.ts';
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type {
@@ -1202,3 +1203,28 @@ function qualityArm(
     ),
   };
 }
+
+
+test('pure cue proposal edits preserve source binding and isolate C cue changes', () => {
+  const evidence: PureCueReflectionItemV1 = {
+    source: 'pure_cue_mistake', sourceActionKind: 'pure_cue', itemId: 'pure-item',
+    sourceAttemptId: 'assessment', firstEventId: 'event', sessionActionId: 'action',
+    occurredAt: '2026-09-30T00:00:00.000Z', rawResponse: 'C',
+    targetWord: null, submittedWord: wordSnapshot('C', 'C'), sessionNote: null,
+    servedSnapshot: { snapshotId: 'snapshot', pureCueId: 'pure', servedAt: '2026-09-30T00:00:00.000Z', stimulus: 'Shared situation', axisNote: '', teachingNote: 'A and B', acceptedAnswers: [] },
+    currentCue: { id: 'pure', stimulus: 'Shared situation', axisNote: '', teachingNote: 'A and B', acceptedWordIds: ['A', 'B'], acceptedWords: [wordSnapshot('A', 'A'), wordSnapshot('B', 'B')] },
+    activeProductionCues: [], existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+  };
+  const original: ReconcilePureCueResponseOperationV1 = {
+    kind: 'reconcile_pure_cue_response', version: 1, sourceAttemptId: 'assessment', responseWordId: 'C', pureCueId: 'pure',
+    expectedAcceptedWordIds: ['A', 'B'], expectedTeachingNote: 'A and B', teachingNote: 'A, B, and C',
+    responseWordPlan: { wordId: 'C', deactivateCueIds: [], distinctiveCueDrafts: [] },
+  };
+  const draft = cloneReflectionOperation(original);
+  assert.equal(draft.kind, 'reconcile_pure_cue_response');
+  if (draft.kind !== 'reconcile_pure_cue_response') throw new Error('Unexpected draft kind');
+  assert.deepEqual(getOperationDraftState(original, draft, evidence).validationErrors, []);
+  draft.responseWordPlan.wordId = 'A';
+  assert.ok(getOperationDraftState(original, draft, evidence).validationErrors.length > 0);
+  assert.equal(original.responseWordPlan.wordId, 'C');
+});

@@ -719,6 +719,23 @@ transaction. Preserve private evidence, learner ownership, source attempts,
 existing suppression, and frozen served snapshots. Word-only cleanup must not
 silently create a shared destination or suppress either word.
 
+### `reconcile_pure_cue_response` version 1
+
+This operation belongs only to `pure_cue_reflection_bundle.v1` evidence. It
+identifies the learner-owned pure-cue assessment, its first rejected response C,
+and the existing shared pure cue. The backend stamps these identities and the
+expected current membership/teaching note. The only editable word plan belongs
+to C; no original member's cues may be changed. Extension adds C, revises the
+holistic teaching note, applies C's explicit cue retirements/distinctive drafts,
+and restores eligible pure-cue pre-lapse state in one transaction. Stimulus,
+axis, original members, and word scheduler state stay fixed.
+
+Review and acceptance use the ordinary proposal inbox. Unseen membership or
+teaching changes make the operation stale. Source history remains immutable;
+restoration is first-attempt based and restore-once. Invalid/uncertain responses
+produce explanation-only inbox items. See the complete policy in
+[`pure-cue-elicitation.md`](pure-cue-elicitation.md#pure-cue-response-reflection).
+
 ### `promote_pure_elicitation` version 1 (historical)
 
 The operation identifies the source production attempt, target word, and
