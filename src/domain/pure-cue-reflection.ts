@@ -20,6 +20,28 @@ export type PureCueReflectionBundleV1 = {
   schemaVersion: 'pure_cue_reflection_bundle.v1'; generatedAt: string;
   session: SessionReflectionBundleV1['session']; items: PureCueReflectionItemV1[];
 };
+/** Project only the language evidence needed by the provider; retain full provenance internally. */
+export function projectPureCueReflectionInput(bundle: PureCueReflectionBundleV1) {
+  const words = bundle.items.map(item => item.submittedWord.hanzi);
+  if (new Set(words).size !== words.length) {
+    throw new Error('Pure cue reflection requires unambiguous submitted words in its saved evidence.');
+  }
+  const lexical = ({ hanzi, pinyin, meanings }: ReflectionWordSnapshotV1) => ({ hanzi, pinyin, meanings });
+  return {
+    items: bundle.items.map(item => ({
+      stimulus: item.servedSnapshot.stimulus,
+      rawResponse: item.rawResponse,
+      submittedWord: lexical(item.submittedWord),
+      currentCue: {
+        acceptedWords: item.currentCue.acceptedWords.map(lexical),
+        axisNote: item.currentCue.axisNote,
+        teachingNote: item.currentCue.teachingNote,
+      },
+      activeProductionCues: item.activeProductionCues.map(({ cueId, cueType, text }) => ({ cueId, cueType, text })),
+    })),
+  };
+}
+
 export type ReconcilePureCueResponseOperationV1 = {
   kind: 'reconcile_pure_cue_response'; version: 1; sourceAttemptId: string;
   responseWordId: string; pureCueId: string;
@@ -29,7 +51,7 @@ export type ReconcilePureCueResponseOperationV1 = {
 export type PureCueReflectionResultV1Wire = {
   schemaVersion: 'pure_cue_reflection_result.v1';
   itemResults: Array<{
-    itemId: string; learnerExplanation: string; rationale: string;
+    submittedWord: string; learnerExplanation: string; rationale: string;
     decision: 'extend' | 'explanation_only'; reason: 'does_not_fit' | 'uncertain' | null;
     extension: { teachingNote: string; responseWordPlan: Omit<PromotePureElicitationWordPlanV1, 'wordId'> } | null;
   }>;
@@ -175,10 +197,10 @@ export function validatePureCueReflectionResultV1Wire(value: unknown, bundle?: P
   if (!Array.isArray(value.itemResults)) return [...errors, 'result.itemResults: expected array'];
   const ids = new Set<string>();
   for (const item of value.itemResults) {
-    errors.push(...fields(item, ['itemId','learnerExplanation','rationale','decision','reason','extension'], 'item'));
+    errors.push(...fields(item, ['submittedWord','learnerExplanation','rationale','decision','reason','extension'], 'item'));
     if (!record(item)) continue;
-    if (!text(item.itemId) || ids.has(item.itemId)) errors.push('item.itemId: missing or duplicate');
-    else { ids.add(item.itemId); if (bundle && !bundle.items.some(e => e.itemId === item.itemId)) errors.push('item.itemId: unknown evidence'); }
+    if (!text(item.submittedWord) || ids.has(item.submittedWord)) errors.push('item.submittedWord: missing or duplicate');
+    else { ids.add(item.submittedWord); if (bundle && bundle.items.filter(e => e.submittedWord.hanzi === item.submittedWord).length !== 1) errors.push('item.submittedWord: unknown or ambiguous evidence'); }
     if (!text(item.learnerExplanation) || !text(item.rationale)) errors.push('item: explanation and rationale required');
     if (item.decision === 'extend') {
       if (item.reason !== null) errors.push('item.reason: extend requires null');
@@ -186,7 +208,7 @@ export function validatePureCueReflectionResultV1Wire(value: unknown, bundle?: P
       if (record(item.extension)) {
         if (!text(item.extension.teachingNote)) errors.push('extension.teachingNote: required');
         errors.push(...planErrors(item.extension.responseWordPlan, false));
-        const evidence = bundle?.items.find(e => e.itemId === item.itemId);
+        const evidence = bundle?.items.find(e => e.submittedWord.hanzi === item.submittedWord);
         if (evidence && record(item.extension.responseWordPlan) && strings(item.extension.responseWordPlan.deactivateCueIds) && item.extension.responseWordPlan.deactivateCueIds.some(id => !evidence.activeProductionCues.some(c => c.cueId === id))) errors.push('extension: may only deactivate active C cues');
       }
     } else if (item.decision === 'explanation_only') {
@@ -201,8 +223,8 @@ export function normalizePureCueReflectionResult(value: unknown, bundle: PureCue
   if (errors.length) throw new Error(errors.join('\n'));
   const wire = value as PureCueReflectionResultV1Wire;
   return { schemaVersion: wire.schemaVersion, itemResults: wire.itemResults.map(result => {
-    const item = bundle.items.find(e => e.itemId === result.itemId)!;
-    return { itemId: result.itemId, diagnosisTags: result.decision === 'extend' ? ['valid_or_near_valid_alternate'] : [], learnerExplanation: result.learnerExplanation, questions: [], proposals: result.extension === null ? [] : [{ proposalGroupKey: null, rationale: result.rationale, operation: { kind: 'reconcile_pure_cue_response', version: 1, sourceAttemptId: item.sourceAttemptId, responseWordId: item.submittedWord.wordId, pureCueId: item.currentCue.id, expectedAcceptedWordIds: [...item.currentCue.acceptedWordIds], expectedTeachingNote: item.currentCue.teachingNote, teachingNote: result.extension.teachingNote, responseWordPlan: { ...result.extension.responseWordPlan, wordId: item.submittedWord.wordId } } }] };
+    const item = bundle.items.find(e => e.submittedWord.hanzi === result.submittedWord)!;
+    return { itemId: item.itemId, diagnosisTags: result.decision === 'extend' ? ['valid_or_near_valid_alternate'] : [], learnerExplanation: result.learnerExplanation, questions: [], proposals: result.extension === null ? [] : [{ proposalGroupKey: null, rationale: result.rationale, operation: { kind: 'reconcile_pure_cue_response', version: 1, sourceAttemptId: item.sourceAttemptId, responseWordId: item.submittedWord.wordId, pureCueId: item.currentCue.id, expectedAcceptedWordIds: [...item.currentCue.acceptedWordIds], expectedTeachingNote: item.currentCue.teachingNote, teachingNote: result.extension.teachingNote, responseWordPlan: { ...result.extension.responseWordPlan, wordId: item.submittedWord.wordId } } }] };
   }) };
 }
 export function validatePureCueReflectionResult(value: unknown, bundle: PureCueReflectionBundleV1): string[] {
@@ -241,7 +263,7 @@ const object = (properties: Record<string, JsonSchema>): JsonSchema => ({ type:'
 const string: JsonSchema = {type:'string'};
 export const PURE_CUE_REFLECTION_RESULT_JSON_SCHEMA: JsonSchema = object({
   schemaVersion:{type:'string',enum:['pure_cue_reflection_result.v1']},
-  itemResults:{type:'array',items:object({itemId:string,learnerExplanation:string,rationale:string,decision:{type:'string',enum:['extend','explanation_only']},reason:{type:['string','null'],enum:['does_not_fit','uncertain',null]},extension:{anyOf:[{type:'null'},object({teachingNote:string,responseWordPlan:object({deactivateCueIds:{type:'array',items:string},distinctiveCueDrafts:{type:'array',items:object({cueType:{type:'string',enum:['definition_gloss','minimal_context','circumstance']},text:string})}})})]}})}
+  itemResults:{type:'array',items:object({submittedWord:string,learnerExplanation:string,rationale:string,decision:{type:'string',enum:['extend','explanation_only']},reason:{type:['string','null'],enum:['does_not_fit','uncertain',null]},extension:{anyOf:[{type:'null'},object({teachingNote:string,responseWordPlan:object({deactivateCueIds:{type:'array',items:string},distinctiveCueDrafts:{type:'array',items:object({cueType:{type:'string',enum:['definition_gloss','minimal_context','circumstance']},text:string})}})})]}})}
 });
 
 export type PureCueMistakeReflectionItemV1 = PureCueReflectionItemV1;

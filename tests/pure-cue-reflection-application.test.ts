@@ -59,7 +59,7 @@ function sourceFixture(id: string) {
 function fixture(id: string, drafts = false) {
   const { words, bundle } = sourceFixture(id);
   const result = normalizePureCueReflectionResult({ schemaVersion: 'pure_cue_reflection_result.v1', itemResults: [{
-    itemId: bundle.items[0]!.itemId, learnerExplanation: 'Your answer fits.', rationale: 'Same requested situation.',
+    submittedWord: bundle.items[0]!.submittedWord.hanzi, learnerExplanation: 'Your answer fits.', rationale: 'Same requested situation.',
     decision: 'extend', reason: null, extension: { teachingNote: 'All three fit; each has different usage.',
       responseWordPlan: { deactivateCueIds: [`cue-${words[2]}`], distinctiveCueDrafts: drafts
         ? [{ cueType: 'minimal_context', text: 'A specific context for C.' }] : [] } },
@@ -151,7 +151,7 @@ test('real failed provider run retains exact evidence and retry materializes the
       if (fail) throw new Error('Temporary pure cue provider failure');
       return {
         result: { schemaVersion: 'pure_cue_reflection_result.v1', itemResults: [{
-          itemId: input.items[0]!.itemId, learnerExplanation: 'C also fits this cue.', rationale: 'C is valid.',
+          submittedWord: input.items[0]!.submittedWord.hanzi, learnerExplanation: 'C also fits this cue.', rationale: 'C is valid.',
           decision: 'extend', reason: null, extension: { teachingNote: 'A, B and C all fit.',
             responseWordPlan: { deactivateCueIds: [], distinctiveCueDrafts: [] } },
         }] },

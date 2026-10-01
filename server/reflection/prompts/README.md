@@ -8,7 +8,12 @@ staged word-pair diagnosis/promotion.
 The prompt follows the staged prompts' purpose, evidence map, decision process,
 content-design guidance, and worked patterns. It judges the first response
 against the frozen visible stimulus before planning C's resulting repertoire;
-current membership and teaching supply the extension context. A valid extension
+current membership and teaching supply the extension context. The provider
+receives the stimulus once, current teaching and member descriptions, C's lexical
+information, and C's cues. Historical notes and source identities stay in the
+saved evidence. Results echo C's exact supplied hanzi; the backend requires one
+unambiguous match per saved item and attaches durable identities. Cue IDs remain
+available only to select retirements. A valid extension
 does not require new targeted cues, and distinctive cues aim for natural strong
 evocation rather than absolute exclusivity.
 

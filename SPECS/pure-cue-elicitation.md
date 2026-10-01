@@ -202,8 +202,13 @@ It admits at most 25 items, stably omitting repeated cue or response-word
 identities in that call. Unknown/ambiguous lexical responses and cues that
 already accept C in current content are omitted. Pure and word reflection run
 independently; one failed call does not discard the other's artifact. Failed
-calls retain exact bounded evidence for retry. This flow does not yet support
-deferred second opinions.
+calls retain exact bounded evidence for retry. The provider receives a projection
+with the displayed stimulus, response and lexical information, current accepted
+members, axis and teaching note, and C's active cues. Historical teaching and
+source identities remain internal. Results identify the response by its exact
+supplied hanzi; the backend resolves it only against saved evidence, rejects
+unknown, ambiguous, duplicate, or omitted results, and stamps durable identities. This flow does not yet support deferred second
+opinions.
 
 Before projecting a pure-cue lapse, save its learner-private interval, ease,
 recency, due time, strong-tier entry, and strong-success count. Accepted extension

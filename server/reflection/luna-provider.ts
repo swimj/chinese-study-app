@@ -1,4 +1,5 @@
 import {
+  projectPureCueReflectionInput,
   type PureCueReflectionBundleV1,
   type PureCueReflectionResultV1Wire,
   validatePureCueReflectionResultV1Wire,
@@ -584,7 +585,7 @@ export function createReflectionProvider(
     bundle: PureCueReflectionBundleV1,
     requestOptions: { clientRequestId?: string } = {},
   ): Promise<LunaPureCueReflectionSuccess> {
-    const modelInput = bundle;
+    const modelInput = projectPureCueReflectionInput(bundle);
     const effectiveConfig: ReflectionProviderConfig = {
       ...config,
       promptVersion: PURE_CUE_REFLECTION_PROMPT_VERSION,

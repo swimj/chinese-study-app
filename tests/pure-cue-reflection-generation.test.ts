@@ -22,7 +22,7 @@ const bundle: PureCueReflectionBundleV1 = {
   }],
 };
 const wire: PureCueReflectionResultV1Wire = {
-  schemaVersion: 'pure_cue_reflection_result.v1', itemResults: [{ itemId: 'pure-item', decision: 'extend', reason: null, learnerExplanation: 'C fits this situation.', rationale: 'C is valid.', extension: { teachingNote: 'A, B or C', responseWordPlan: { deactivateCueIds: [], distinctiveCueDrafts: [] } } }],
+  schemaVersion: 'pure_cue_reflection_result.v1', itemResults: [{ submittedWord: 'C', decision: 'extend', reason: null, learnerExplanation: 'C fits this situation.', rationale: 'C is valid.', extension: { teachingNote: 'A, B or C', responseWordPlan: { deactivateCueIds: [], distinctiveCueDrafts: [] } } }],
 };
 const metadata = (promptVersion = PURE_CUE_REFLECTION_PROMPT_VERSION): LunaReflectionRunMetadata => ({
   provider: 'openai', modelConfig: 'gpt-5.6-luna-high', providerModel: 'gpt-5.6-luna', promptVersion, responseId: 'response', finishReason: 'stop',
@@ -103,7 +103,15 @@ test('dedicated provider sends its own prompt and strict wire schema, then norma
   const request = body as unknown as { messages: Array<{ content: string }>; response_format: { json_schema: { name: string; strict: boolean } } };
   assert.equal(request.response_format.json_schema.name, 'pure_cue_reflection_result_v1');
   assert.equal(request.response_format.json_schema.strict, true);
-  assert.deepEqual(JSON.parse(request.messages[1].content), bundle);
+  assert.deepEqual(JSON.parse(request.messages[1].content), { items: [{
+    stimulus: 'shared situation', rawResponse: 'C',
+    submittedWord: { hanzi: 'C', pinyin: 'C', meanings: ['C'] },
+    currentCue: { acceptedWords: [
+      { hanzi: 'A', pinyin: 'A', meanings: ['A'] },
+      { hanzi: 'B', pinyin: 'B', meanings: ['B'] },
+    ], axisNote: '', teachingNote: 'A or B' },
+    activeProductionCues: [],
+  }] });
   assert.match(request.messages[0].content, /pure cue/i);
   const operation = normalizePureCueReflectionResult(output.result, bundle).itemResults[0].proposals[0].operation;
   assert.equal(operation.kind, 'reconcile_pure_cue_response');
@@ -111,9 +119,9 @@ test('dedicated provider sends its own prompt and strict wire schema, then norma
 });
 
 
-test('dedicated provider rejects unknown item ids before normalization', async () => {
+test('dedicated provider rejects unknown submitted words before normalization', async () => {
   const invalid = structuredClone(wire);
-  invalid.itemResults[0].itemId = 'unserved-item';
+  invalid.itemResults[0].submittedWord = 'unserved-item';
   const provider = createLunaReflectionProvider({ environment: { OPENAI_API_KEY: 'test' }, fetchImplementation: async () => new Response(JSON.stringify({
     id: 'response', choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(invalid) } }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
   }), { status: 200, headers: { 'content-type': 'application/json' } }) });

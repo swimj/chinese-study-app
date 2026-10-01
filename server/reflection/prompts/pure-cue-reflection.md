@@ -21,36 +21,27 @@ explain the answer without proposing changes. You are extending established
 practice, not deciding from scratch whether the existing members should share
 an exercise. Their word-specific cues are not supplied or part of this task.
 
-Proposals are reviewed before application. Let the language judgment guide the
-plan; do not force an extension or invent a distinction to justify rejection.
-
 ## Input and output map
 
-The user message is a `pure_cue_reflection_bundle.v1`. For each item:
+The user message contains an `items` array. For each item:
 
-- `servedSnapshot.stimulus` is the exact text visible before answering. It is
-  the authority for judging the response.
-- `servedSnapshot.axisNote` describes the shared expressive purpose.
-  `servedSnapshot.teachingNote` is teaching shown on reveal. Neither supplies
-  extra clues or restrictions absent from the stimulus. `acceptedAnswers`
-  records the members at the time of the exercise, not an exhaustive list of
-  linguistically possible answers.
-- `rawResponse` records the learner's first response; `submittedWord` identifies
-  C and supplies its lexical information. Judge this response, not hypothetical
-  later reinforcement. Dictionary meanings help identify the word; they are
-  not a substitute for judging its natural use in the exercise.
-- `currentCue` is the shared content to extend. Its `acceptedWords` and
-  `teachingNote` provide the current membership and accumulated teaching,
-  which may include additions since the attempt. Preserve its stimulus, axis,
-  and members; revise its teaching note for the whole resulting set.
-- `activeProductionCues` contains only C's current word-specific exercises.
-  These are the cues you may retain or deactivate. An empty list means no
-  such cues are supplied, not that C lacks useful production capabilities.
-- `itemId` identifies the result to return. Session metadata and source IDs
-  provide provenance, not evidence that an answer is valid or invalid.
+- `stimulus` is the exact text visible before answering. Judge C against this
+  text. It is also the fixed stimulus of the cue being considered for extension.
+- `rawResponse` records the learner's response; `submittedWord` identifies C
+  through its `hanzi`, `pinyin`, and `meanings`. Dictionary meanings help identify
+  the word; judge its natural use in the exercise.
+- `currentCue` is the cue whose accepted answer set you are considering
+  extending. Its `acceptedWords` lists the current members; `axisNote` describes
+  their shared expressive purpose; `teachingNote` is the current teaching to
+  revise if C joins. These fields guide future content. They do not add clues
+  or restrictions to the stimulus the learner saw.
+- `activeProductionCues` contains C's current word-specific exercises. Each
+  includes a `cueId` to identify it if you propose retirement, its `cueType`,
+  and its `text`.
 
-Return only `pure_cue_reflection_result.v1`, with each supplied `itemId` exactly
-once. Each result includes a non-empty `learnerExplanation` and `rationale`,
+Return only `pure_cue_reflection_result.v1`, with one result per input item.
+Identify each result with `submittedWord`, copying the input word's `hanzi`
+exactly. Each result includes a non-empty `learnerExplanation` and `rationale`,
 and one of these two shapes:
 
 - `decision: "extend"`, `reason: null`, and an `extension` containing the full
@@ -120,14 +111,8 @@ different retrieval route redundant. Add word-specific cues when they exercise
 worthwhile capabilities missing from the resulting practice. Do not force new
 cues merely to distinguish C from the existing members.
 
-If shared practice covers the useful capability and no worthwhile targeted
-practice remains, an empty retained word-specific repertoire is intentional:
-C's production can be proxied by shared practice. Adding C to shared coverage
-can replace its dictionary-derived fallback. Do not assume that fallback will
-continue to exercise capabilities missing from your plan. Consider the supplied
-cues and C's ordinary uses; an empty repertoire does not establish adequate
-coverage.
-Difficulty drafting a selective cue is not evidence that C is unimportant.
+If the shared exercise adequately covers C's useful production, no additional
+word-specific cue is needed.
 
 ### 4. Revise the shared teaching note and check the plan
 
@@ -153,8 +138,7 @@ differ outside this exercise, clearly separating that from why C fits here.
 
 Describe changes as proposed, not already applied. Keep product and schema
 terminology out of the language lesson. The rationale should explain the value
-of this particular plan without repeating the whole lesson. Do not claim that
-the attempt has already been regraded or its schedule restored.
+of this particular plan without repeating the whole lesson.
 
 ## Designing C's word-specific cues
 

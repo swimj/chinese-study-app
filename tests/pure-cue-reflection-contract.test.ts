@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizePureCueReflectionResult, parsePureCueReflectionBundle, validatePureCueReflectionResultV1Wire, validatePureCueReflectionResult, type PureCueReflectionBundleV1, type PureCueReflectionResultV1Wire } from '../src/domain/pure-cue-reflection';
+import { projectPureCueReflectionInput, normalizePureCueReflectionResult, parsePureCueReflectionBundle, validatePureCueReflectionResultV1Wire, validatePureCueReflectionResult, type PureCueReflectionBundleV1, type PureCueReflectionResultV1Wire } from '../src/domain/pure-cue-reflection';
 import { reflectionOperationWordReferences, validateReflectionOperation } from '../src/domain/reflection';
 import { parseStoredSessionReflectionBundle } from '../src/domain/reflection-evidence';
 const word = (wordId: string) => ({ wordId, hanzi: wordId, pinyin: '', meanings: [wordId] });
@@ -9,7 +9,7 @@ const bundle: PureCueReflectionBundleV1 = {
   session: {sessionId:'session', startedAt:null, endedAt:null, studyProfile:'mandarin'},
   items: [{ source:'pure_cue_mistake', sourceActionKind:'pure_cue', itemId:'item', sourceAttemptId:'assessment', firstEventId:'first', sessionActionId:'action', occurredAt:'2026-09-30T00:00:00.000Z', rawResponse:'C', submittedWord:word('C'), targetWord:null,sessionNote:null,existingContent:{contrastClusters:[],knownAcceptedAlternates:[]}, activeProductionCues:[{cueId:'C-cue',cueType:'definition_gloss',text:'a C cue',acceptedWordIds:['C']}], currentCue:{id:'pure',stimulus:'shared stimulus',axisNote:'axis',teachingNote:'old note',acceptedWordIds:['A','B'],acceptedWords:[word('A'),word('B')]}, servedSnapshot:{snapshotId:'snapshot',pureCueId:'pure',servedAt:'2026-09-30T00:00:00.000Z',stimulus:'shared stimulus',axisNote:'axis',teachingNote:'old note',acceptedAnswers:[{wordId:'A',hanzi:'A',traditional:null},{wordId:'B',hanzi:'B',traditional:null}]} }],
 };
-const wire = (): PureCueReflectionResultV1Wire => ({schemaVersion:'pure_cue_reflection_result.v1', itemResults:[{itemId:'item',decision:'extend',reason:null,learnerExplanation:'C fits this cue.',rationale:'The response expresses this situation.',extension:{teachingNote:'A, B, and C fit with differences.',responseWordPlan:{deactivateCueIds:[],distinctiveCueDrafts:[]}}}]});
+const wire = (): PureCueReflectionResultV1Wire => ({schemaVersion:'pure_cue_reflection_result.v1', itemResults:[{submittedWord:'C',decision:'extend',reason:null,learnerExplanation:'C fits this cue.',rationale:'The response expresses this situation.',extension:{teachingNote:'A, B, and C fit with differences.',responseWordPlan:{deactivateCueIds:[],distinctiveCueDrafts:[]}}}]});
 test('pure cue evidence remains distinct and normalization stamps only the response identity', () => {
   assert.deepEqual(parseStoredSessionReflectionBundle(bundle), bundle);
   const result = normalizePureCueReflectionResult(wire(), bundle);
@@ -73,4 +73,55 @@ test('malformed wire and durable nested data yield validation errors', () => {
   Object.assign(result.itemResults[0]!, {questions:[{question:'Unexpected',reason:'Unsupported'}]});
   Object.assign(result.itemResults[0]!.proposals[0]!, {proposalGroupKey:'external-group',rationale:null});
   assert.ok(validatePureCueReflectionResult(result,bundle).length >= 3);
+});
+
+
+test('resolves reordered results by supplied word, then attaches saved source identities', () => {
+  const evidence = structuredClone(bundle);
+  const second = structuredClone(evidence.items[0]!);
+  second.itemId = 'second-item';
+  second.sourceAttemptId = 'second-attempt';
+  second.submittedWord = { ...word('internal-D-id'), hanzi: 'D' };
+  evidence.items.push(second);
+  const response = wire();
+  const other = structuredClone(response.itemResults[0]!);
+  other.submittedWord = 'D';
+  response.itemResults.unshift(other);
+  const normalized = normalizePureCueReflectionResult(response, evidence);
+  assert.deepEqual(normalized.itemResults.map(item => item.itemId), ['second-item', 'item']);
+  const operation = normalized.itemResults[0]!.proposals[0]!.operation;
+  assert.equal('sourceAttemptId' in operation && operation.sourceAttemptId, 'second-attempt');
+  assert.equal('responseWordId' in operation && operation.responseWordId, 'internal-D-id');
+  response.itemResults.pop();
+  assert.throws(() => normalizePureCueReflectionResult(response, evidence), /exactly one/);
+});
+
+test('rejects unknown or ambiguous word references rather than choosing a source', () => {
+  const response = wire();
+  response.itemResults[0]!.submittedWord = 'not supplied';
+  assert.throws(() => normalizePureCueReflectionResult(response, bundle), /unknown or ambiguous/);
+  const ambiguous = structuredClone(bundle);
+  const second = structuredClone(ambiguous.items[0]!);
+  second.itemId = 'second-item';
+  second.submittedWord.wordId = 'different-identity-same-hanzi';
+  ambiguous.items.push(second);
+  assert.throws(() => projectPureCueReflectionInput(ambiguous), /unambiguous/);
+  assert.throws(() => normalizePureCueReflectionResult(wire(), ambiguous), /unknown or ambiguous/);
+});
+
+test('provider projection uses current teaching and omits historical notes and provenance', () => {
+  const evidence = structuredClone(bundle);
+  evidence.items[0]!.servedSnapshot.teachingNote = 'obsolete teaching';
+  evidence.items[0]!.servedSnapshot.axisNote = 'historical axis';
+  const projected = projectPureCueReflectionInput(evidence);
+  assert.deepEqual(projected, { items: [{
+    stimulus: 'shared stimulus', rawResponse: 'C',
+    submittedWord: { hanzi: 'C', pinyin: '', meanings: ['C'] },
+    currentCue: { acceptedWords: [
+      { hanzi: 'A', pinyin: '', meanings: ['A'] },
+      { hanzi: 'B', pinyin: '', meanings: ['B'] },
+    ], axisNote: 'axis', teachingNote: 'old note' },
+    activeProductionCues: [{ cueId: 'C-cue', cueType: 'definition_gloss', text: 'a C cue' }],
+  }] });
+  assert.equal(evidence.items[0]!.servedSnapshot.teachingNote, 'obsolete teaching');
 });
