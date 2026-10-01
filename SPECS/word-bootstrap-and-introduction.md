@@ -1,6 +1,6 @@
 # Word Bootstrap, Introduction, And Early Rehearsal
 
-Status: accepted design direction, with initial in-app policies agreed 2026-09-25.
+Status: accepted design direction, with preparation-reserve policy agreed 2026-10-01.
 The [local authoring lab](../docs/word-introduction-lab.md) remains available alongside
 shared preparation, paced introductions, and package-based early learning. See the
 [executable model and compatibility guide](../docs/word-content-model.md).
@@ -264,8 +264,8 @@ reconciliation is required to proceed with this work.
 
 ### Initial in-app policy (2026-09-25)
 
-- **Shared preparation:** the first request prepares lexical word content and then
-  its teaching package. Both publish immediately after deterministic validation,
+- **Shared preparation:** reserve or explicit preparation demand queues lexical
+  word content and then its teaching package. Both publish immediately after deterministic validation,
   with no learner quality-review step. Later learners reuse the result. Each stage
   has durable shared readiness and an expiring generation claim. A failed teaching
   stage retains the completed bootstrap. A withdrawn ready result is unavailable;
@@ -276,8 +276,9 @@ reconciliation is required to proceed with this work.
 - **First encounter:** an unstudied Mandarin word opens its introduction before
   ordinary cards. Completing the introduction and its rehearsal satisfies the
   first-encounter word unit through the existing deferred commit and Undo path.
-  On-demand completion in My Words alone does not advance word status. Skipping
-  or unavailable content falls back to the existing first-encounter cards.
+  On-demand completion in My Words alone does not advance word status. Explicit
+  skipping retains the existing first-encounter cards. Missing preparation excludes
+  the word at session entry rather than triggering generation during study.
 - **Learning:** one recognition direction and one production direction remain
   the daily obligation. Production can use a cloze or direct definition/situation
   from a pinned package whose introduction the learner has completed. Rotate available rehearsals with a simple deterministic
@@ -297,9 +298,10 @@ use `targeted_review`, rather than relabeling teaching rehearsals. At least one
 contextual production cue is required; definition cues may carry an exact
 post-reveal example. Validated results publish automatically under the same
 application-authorized shared-trial policy, with a separate recoverable readiness
-claim. Preparing an existing introduction retries missing review preparation.
-Failure preserves usable teaching and ordinary fallback; completion does not
-regenerate retired review content.
+claim. The first durable study commit requests missing review preparation
+asynchronously; merely preparing or opening an introduction does not. Failure
+preserves usable teaching and ordinary fallback; completion does not regenerate
+retired review content.
 
 Ordinary review uses these durable cues through its existing lifecycle and
 evidence paths. Recognition may reveal eligible bootstrap material. Source
@@ -315,3 +317,52 @@ exercise revision without changing schedule identity. Compatibility projections
 remain in existing tables; the set of legacy-only authored records stops growing
 for these reflection effects. Model-authored structured cloze proposals and bulk
 legacy unification remain separate later work.
+
+### Preparation reserve and session readiness (2026-10-01)
+
+This policy supersedes on-demand generation inside an active Mandarin session.
+The learner's focus is the release boundary: teaching and its source content
+must be ready and frozen in the session payload before study begins. The player
+must neither invoke a model nor fetch missing introduction content mid-session.
+An explicit entry-time preparation wait is acceptable; unexpected long waits
+inside study are not.
+
+- **Bounded demand:** retain a stable per-learner candidate reserve targeting twice
+  the configured daily new-word limit. The daily limit is at most 20, so the
+  reserve targets at most 40. Existing larger settings migrate to 20. Queued and
+  ready candidates both occupy reserve slots; visits must not grow speculative
+  work while earlier requests are running. Failed candidates retain their slots
+  until an explicit selection change or operator recovery, preventing failures
+  from automatically generating an unbounded replacement stream.
+- **Selection:** candidates follow the learner's stash/diet source, split, deck
+  distribution and priorities. Readiness can influence selection within those
+  pools. Compute pool quotas from all eligible candidates before filtering for
+  readiness: genuinely missing stash candidates may spill into diet, but stash
+  candidates still preparing do not transfer their slots to diet. Selection and
+  advance preparation remain invisible to the learner, preserving surprise.
+- **Entry:** wait up to 30 seconds total for relevant preparation, including
+  best-effort top-priority words, then admit only ready new words. Fewer or no new
+  words are acceptable; existing learning/review remains available. If no useful
+  session exists yet, explain preparation and offer waiting again or returning
+  later. Legacy require-next-session flags do not bypass Mandarin readiness or
+  intake limits; that public feature is out of scope pending a future design.
+- **Replenishment:** reconcile on app entry, meaningful priority/settings changes,
+  and after new words durably enter learning. Preserve eligible membership;
+  consuming or displacing candidates creates vacancies. Session composition,
+  opening, and abandonment do not consume the reserve. Generation is shared
+  across learners and never records a private opening or learning transition.
+- **Stages:** reserve preparation includes bootstrap and teaching. Request review
+  only after first study commits, leaving the normal several-day interval before
+  ordinary review. A successful earlier stage survives later-stage failure.
+- **Recovery:** allow three failed attempts total per shared word/stage, with
+  increasing delays, then pause for operator intervention. Another learner's
+  demand never resets the budget. The operator sees stage/attempt diagnostics and
+  can authorize an attributable retry; everyday users see preparation status,
+  not model internals. Withdrawn content requires an operator disposition rather
+  than automatic regeneration.
+- **Reuse:** prompt changes do not invalidate compatible prepared content. Schema
+  migrations should preserve it or convert deterministically where practical,
+  reserving model work for missing material. Full regeneration is appropriate
+  only when conversion would be disproportionately complex. This release changes
+  neither authoring prompts nor existing content schemas and performs no bulk
+  corpus generation.

@@ -41,7 +41,9 @@ export function HomeOverviewPanel({
   const prefetchedSessionItemCount = !sessionStarted && sessionPrefetch.status === 'ready'
     ? displayedSessionItemCount
     : null;
-  const canStartSession = sessionStarted || (prefetchedSessionItemCount ?? 0) > 0;
+  const preparationPending = sessionPrefetch.payload?.preparation?.pending === true;
+  const entryWaiting = sessionPrefetch.status === 'pending';
+  const canStartSession = sessionStarted || sessionPrefetch.status === 'ready' || sessionPrefetch.status === 'error';
 
   return (
     <div className="panel">
@@ -54,10 +56,15 @@ export function HomeOverviewPanel({
             disabled={sessionSettingsOpen || sessionLoading || dietIntakeStartBlocked || !canStartSession}
           >
             <span className="session-start-card-label">
-              {sessionLoading || dietIntakeStartBlocked ? 'Preparing session...' : 'Start session'}
+              {sessionLoading || dietIntakeStartBlocked || entryWaiting ? 'Preparing session...'
+                : prefetchedSessionItemCount === 0 ? 'Check again' : 'Start session'}
             </span>
             <span className="session-start-card-helper">
-              items: {prefetchedSessionItemCount ?? '...'}
+              {entryWaiting ? 'Getting your study material ready. This may take about 30 seconds.'
+                : preparationPending && prefetchedSessionItemCount === 0
+                ? 'Preparing your session. You can check again shortly.'
+                : prefetchedSessionItemCount === 0 ? 'No study material is ready right now. You can check again or return later.'
+                : <>items: {prefetchedSessionItemCount ?? '...'}</>}
             </span>
           </button>
           <button
@@ -199,8 +206,8 @@ export function SessionSettingsPanel({
 
     if (limitDirty) {
       const dailyNewWordLimit = Number(limitDraft);
-      if (limitDraft.trim().length === 0 || !Number.isSafeInteger(dailyNewWordLimit) || dailyNewWordLimit < 0) {
-        setLimitError('Enter a non-negative integer.');
+      if (limitDraft.trim().length === 0 || !Number.isSafeInteger(dailyNewWordLimit) || dailyNewWordLimit < 0 || dailyNewWordLimit > 20) {
+        setLimitError('Enter a whole number from 0 to 20.');
         setLimitEditing(true);
         return;
       }
@@ -296,6 +303,7 @@ export function SessionSettingsPanel({
               className="session-settings-limit-input"
               type="number"
               min={0}
+              max={20}
               step={1}
               inputMode="numeric"
               value={limitDraft}

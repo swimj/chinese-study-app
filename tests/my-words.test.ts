@@ -1,3 +1,4 @@
+import { clearWordPreparationFixtures } from './helpers/prepared-word-fixtures.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -52,6 +53,7 @@ describe('My words collections', { concurrency: false }, () => {
   });
 
   beforeEach(() => {
+    clearWordPreparationFixtures(sqlite);
     rawLearner = 'test-learner';
     sqlite.exec('DELETE FROM study_attempt_events; DELETE FROM study_sessions; DELETE FROM word_skill_state; DELETE FROM user_word_priority; DELETE FROM words;');
     sqlite.exec("DELETE FROM learner_settings WHERE setting_key = 'diet_profile'");

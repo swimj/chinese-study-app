@@ -64,7 +64,7 @@ export function MyWordsPage(props: MyWordsPageProps) {
         else if (selected) { event.stopPropagation(); closeDetails(); }
       }}>
       {introductionOpen ? <WordIntroductionExperience key={selected.word.id}
-        wordId={selected.word.id} onClose={() => setIntroductionWordId(null)} autoPrepare /> : <>
+        wordId={selected.word.id} onClose={() => setIntroductionWordId(null)} /> : <>
       <header className="my-words-header">
         <h1>My words</h1>
         <div className="my-words-toolbar">

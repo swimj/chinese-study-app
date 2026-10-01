@@ -18,6 +18,7 @@ export type WordIntroductionLibrary = {
 };
 export type WordIntroductionResponse = WordIntroductionLibrary & {
   generationAvailable: boolean;
+  preparationPending?: boolean;
   model: string;
   /** A prepared source has been withdrawn; ordinary cards remain available. */
   preparationUnavailable?: boolean;

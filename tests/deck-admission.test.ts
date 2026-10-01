@@ -1,3 +1,4 @@
+import { clearWordPreparationFixtures, prepareWordFixture } from './helpers/prepared-word-fixtures.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -56,6 +57,7 @@ describe('deck-aware diet admission', { concurrency: false }, () => {
   });
 
   beforeEach(() => {
+    clearWordPreparationFixtures(sqlite);
     sqlite.exec(`
       DELETE FROM study_events;
       DELETE FROM study_attempt_events;
@@ -248,6 +250,7 @@ describe('deck-aware diet admission', { concurrency: false }, () => {
           priority, created_at, learning_streak, last_learning_success_on, last_learning_covered_on
         ) VALUES (?, ?, NULL, ?, '', '[]', 'unstudied', ?, '2026-01-01T00:00:00.000Z', 0, NULL, NULL)
       `).run(word.id, word.hanzi, word.pinyin, word.priority);
+      prepareWordFixture(sqlite, dbModule, word.id);
     }
   }
 });

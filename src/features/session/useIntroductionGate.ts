@@ -1,34 +1,47 @@
-import { useEffect, useState } from 'react';
-import { fetchWordIntroduction } from '../../services/api';
+import { useState } from 'react';
+import type { WordIntroductionResponse } from '../../domain/word-content/application';
 import {
-  checkIntroductionGate, introductionGateCandidate, settleIntroductionGate,
+  introductionGateCandidate, introductionGateStatus,
   type IntroductionGateEntry, type IntroductionGateLedger,
 } from './introduction-gate';
 
-export type SessionIntroductionGate = IntroductionGateEntry & { dismiss: () => void; complete?: () => void };
+export type SessionIntroductionGate = IntroductionGateEntry & {
+  preloadedIntroduction: WordIntroductionResponse;
+  dismiss: () => void;
+  complete?: () => void;
+};
 
-export function useIntroductionGate(input: Parameters<typeof introductionGateCandidate>[0]): { gate: SessionIntroductionGate | null; reopen: (sessionId: string, wordId: string) => void } {
+type GateInput = Parameters<typeof introductionGateCandidate>[0] & {
+  introductions?: Readonly<Record<string, WordIntroductionResponse>>;
+};
+
+export function useIntroductionGate(input: GateInput): {
+  gate: SessionIntroductionGate | null;
+  reopen: (sessionId: string, wordId: string) => void;
+} {
   const candidate = introductionGateCandidate(input);
-  const key = candidate?.key ?? null;
-  const wordId = candidate?.wordId ?? null;
   const [ledger, setLedger] = useState<IntroductionGateLedger>({});
-  const status = key === null ? null : ledger[key] ?? 'checking';
-
-  useEffect(() => {
-    if (key === null || wordId === null || status !== 'checking') return;
-    return checkIntroductionGate(wordId, fetchWordIntroduction, (nextStatus) => {
-      setLedger((previous) => settleIntroductionGate(previous, key, nextStatus));
-    });
-  }, [key, wordId, status]);
-
-  const gate = candidate === null || status === null || status === 'passed' ? null : {
-    ...candidate, status,
-    dismiss: () => setLedger((previous) => settleIntroductionGate(previous, candidate.key, 'passed')),
-  };
+  if (candidate === null || ledger[candidate.key] === 'passed') {
+    return {
+      gate: null,
+      reopen: (sessionId, wordId) => setLedger((previous) => ({
+        ...previous, [JSON.stringify([sessionId, wordId])]: 'introduction',
+      })),
+    };
+  }
+  const preloadedIntroduction = input.introductions?.[candidate.wordId];
+  if (!preloadedIntroduction || preloadedIntroduction.wordId !== candidate.wordId) {
+    throw new Error('An admitted Mandarin word has no introduction snapshot.');
+  }
   return {
-    gate,
-    reopen: (sessionId, restoredWordId) => setLedger((previous) => ({
-      ...previous, [JSON.stringify([sessionId, restoredWordId])]: 'introduction',
+    gate: {
+      ...candidate,
+      status: introductionGateStatus(preloadedIntroduction),
+      preloadedIntroduction,
+      dismiss: () => setLedger((previous) => ({ ...previous, [candidate.key]: 'passed' })),
+    },
+    reopen: (sessionId, wordId) => setLedger((previous) => ({
+      ...previous, [JSON.stringify([sessionId, wordId])]: 'introduction',
     })),
   };
 }

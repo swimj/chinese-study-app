@@ -1,4 +1,5 @@
 import type { ContentExerciseSnapshot, WordContentDocument } from './word-content/types';
+import type { WordIntroductionResponse } from './word-content/application';
 import type { ReviewRating, Word } from '../types';
 import {
   assertTargetedCueAcceptsOnlyOwner,
@@ -164,6 +165,7 @@ export function isPureCueSessionReviewItem(item: SessionReviewItem): item is Pur
 }
 
 export type SessionStudyItemBuckets = {
+  introductions?: Record<string, WordIntroductionResponse>;
   learningRehearsals?: Record<string, LearningRehearsalSnapshot>;
   learningContent?: Record<string, WordContentDocument>;
   review: SessionReviewItem[];

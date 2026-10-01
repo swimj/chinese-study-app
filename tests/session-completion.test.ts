@@ -1,3 +1,4 @@
+import { clearWordPreparationFixtures } from './helpers/prepared-word-fixtures.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -73,6 +74,7 @@ describe('session completion', { concurrency: false }, () => {
   });
 
   beforeEach(() => {
+    clearWordPreparationFixtures(sqlite);
     const deleteGuards = sqlite.prepare(`
       SELECT name, sql FROM sqlite_schema
       WHERE type = 'trigger' AND name LIKE '%_no_delete'

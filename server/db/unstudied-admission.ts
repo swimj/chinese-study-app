@@ -17,6 +17,8 @@ export type UnstudiedAdmissionInput = {
   /** Fraction of the remaining quota offered to stash; defaults to 0.5. */
   stashRatio?: number;
   source?: UnstudiedAdmissionSource;
+  preferredIds?: ReadonlySet<string>;
+  eligibleIds?: ReadonlySet<string>;
 };
 
 export type UnstudiedStashAdmissionPlan = {
@@ -98,25 +100,31 @@ export function selectAdmittedUnstudiedWordIds(input: UnstudiedAdmissionInput): 
  * demand. Callers that load diet candidates use this plan before apportioning
  * deck targets so a full stash does not distort the diet mix.
  */
-export function planUnstudiedStashAdmission(input: Pick<UnstudiedAdmissionInput, 'stash' | 'remainingQuota' | 'seedSource' | 'stashRatio' | 'source'>): UnstudiedStashAdmissionPlan {
+export function planUnstudiedStashAdmission(input: Pick<UnstudiedAdmissionInput, 'stash' | 'remainingQuota' | 'seedSource' | 'stashRatio' | 'source' | 'preferredIds' | 'eligibleIds'>): UnstudiedStashAdmissionPlan {
   const { stashSlots } = splitRemainingUnstudiedQuota(input.remainingQuota, input.source, input.stashRatio);
   indexStashCandidates(input.stash);
 
   const tops = input.stash
     .filter((candidate) => candidate.isTop)
     .sort(compareStashNewestFirst);
-  const selectedTops = tops.slice(0, stashSlots);
+  const eligible = (candidate: UnstudiedStashCandidate) => !input.eligibleIds || input.eligibleIds.has(candidate.id);
+  const selectedTops = tops.filter(eligible).slice(0, stashSlots);
 
   const nonTops = input.stash
     .filter((candidate) => !candidate.isTop)
     .sort(compareIdAsc);
   const shuffledNonTops = seededShuffle(nonTops, input.seedSource);
-  const selectedNonTops = shuffledNonTops.slice(0, Math.max(0, stashSlots - selectedTops.length));
+  const preferred = input.preferredIds;
+  const orderedNonTops = preferred
+    ? [...shuffledNonTops.filter((item) => preferred.has(item.id)), ...shuffledNonTops.filter((item) => !preferred.has(item.id))]
+    : shuffledNonTops;
+  const selectedNonTops = orderedNonTops.filter(eligible).slice(0, Math.max(0, stashSlots - selectedTops.length));
 
   const selectedStash = [...selectedTops, ...selectedNonTops];
   return {
     selectedStashIds: selectedStash.map((candidate) => candidate.id),
-    dietDemand: input.source === 'stash_only' ? 0 : input.remainingQuota - selectedStash.length,
+    // Readiness does not turn pending stash slots into diet slots.
+    dietDemand: input.source === 'stash_only' ? 0 : input.remainingQuota - Math.min(stashSlots, input.stash.length),
   };
 }
 
@@ -179,6 +187,9 @@ export type DeckDietSelectionInput = {
   seedSource: string;
   /** Maximum words to return (the remaining quota). */
   limit: number;
+  preferredIds?: ReadonlySet<string>;
+  eligibleIds?: ReadonlySet<string>;
+  onPlanned?: (count: number, ids: ReadonlySet<string>) => void;
 };
 
 /**
@@ -193,38 +204,34 @@ export function selectDeckDietWordIds(input: DeckDietSelectionInput): string[] {
 
   const selected: string[] = [];
   const selectedIds = new Set<string>();
+  const plannedIds = new Set<string>();
+  let plannedCount = 0;
   const take = (deckId: string, count: number): void => {
     const candidates = input.loadCandidatesForDeck(deckId);
     const shuffled = seededShuffle([...candidates].sort(), `${input.seedSource}:deck:${deckId}`);
-    for (const id of shuffled) {
-      if (selected.length >= input.limit || count <= 0) {
-        break;
-      }
-      if (selectedIds.has(id)) {
-        throw new Error(`Deck diet invariant violated: word "${id}" selected twice (deck "${deckId}").`);
-      }
+    const preferred = input.preferredIds;
+    const ordered = preferred
+      ? [...shuffled.filter((id) => preferred.has(id)), ...shuffled.filter((id) => !preferred.has(id))]
+      : shuffled;
+    const allocation = Math.min(count, input.limit - plannedCount, ordered.length);
+    for (const id of ordered.slice(0, allocation)) plannedIds.add(id);
+    plannedCount += allocation;
+    for (const id of ordered.filter((id) => !input.eligibleIds || input.eligibleIds.has(id)).slice(0, allocation)) {
+      if (selectedIds.has(id)) throw new Error(`Deck diet invariant violated: word "${id}" selected twice (deck "${deckId}").`);
       selectedIds.add(id);
+      plannedIds.add(id);
       selected.push(id);
-      count -= 1;
     }
   };
-
   for (const [deckId, target] of input.targets) {
-    if (selected.length >= input.limit) {
-      break;
-    }
-    if (target > 0) {
-      take(deckId, target);
-    }
+    if (plannedCount >= input.limit) break;
+    if (target > 0) take(deckId, target);
   }
-
   for (const deckId of input.spillDeckIds) {
-    if (selected.length >= input.limit) {
-      break;
-    }
-    take(deckId, input.limit - selected.length);
+    if (plannedCount >= input.limit) break;
+    take(deckId, input.limit - plannedCount);
   }
-
+  input.onPlanned?.(plannedCount, plannedIds);
   return selected;
 }
 

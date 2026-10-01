@@ -76,6 +76,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0018_word_preparation_work',
   sql: fs.readFileSync(new URL('./migrations/0018_word_preparation_work.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0019_word_preparation_reserve',
+  sql: fs.readFileSync(new URL('./migrations/0019_word_preparation_reserve.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

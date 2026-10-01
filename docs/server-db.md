@@ -24,6 +24,8 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`identity.ts`](../server/db/identity.ts) | Stable learner records, auth-provider mappings, learner settings, learner params, and explicit Clerk-free bootstrap |
 | [`shared-content-bootstrap.ts`](../server/db/shared-content-bootstrap.ts) | Strict checksummed shared-only hosted Mandarin import and provenance validation |
 | [`hosted-operations.ts`](../server/db/hosted-operations.ts) | Persisted service controls, current service banner, attributable learner disablement, diagnostics, sentinels, and restore validation |
+| [`word-introductions.ts`](../server/db/word-introductions.ts) | Immutable shared bootstrap/teaching, publication leases, explicit shared reads, and private exact-package opening/completion |
+| [`preparation-work.ts`](../server/db/preparation-work.ts) | Shared word/stage demand, three-attempt budget, restart recovery, failure diagnostics and audited operator retry; migration 0018 |
 | [`usage-pulse.ts`](../server/db/usage-pulse.ts) | Content-free daily cohort usage snapshots and live today pulse for the operator page |
 | [`learner-context.ts`](../server/db/learner-context.ts) | Required learner context for private persistence operations |
 | [`hanzi-lookup.ts`](../server/db/hanzi-lookup.ts) | Mandarin punctuation-stripped hanzi lookup key, matching production normalization |
@@ -285,3 +287,20 @@ shared bootstrap-review preparation claims (migration 0014). Production cue and
 pure-cue modules write/rematerialize these records while retaining legacy
 projection identities for lifecycle/evidence. See
 [structured-review-content.md](structured-review-content.md).
+
+## Prepared-word reserve
+
+Migration 0019 adds `learner_word_preparation_reserve` and
+`learner_word_reserve_requests`, and normalizes daily
+new-word limits above 20. Reserve candidates remain private demand; authored
+bootstrap, teaching, review and their operational attempts are shared. The
+reserve target is twice the configured limit, at most 40, counting queued and
+ready candidates. Reconciliation must preserve stash/diet/deck policy and compute
+quotas before filtering for preparation readiness. Failed slots remain reserved
+to bound replacement demand. `server/db/word-reserve.ts` owns reconciliation.
+
+The worker in `server/word-content/preparation-worker.ts` runs in the backend
+process, polls every five seconds, and permits two concurrent stages. Existing
+introduction/review leases remain publication authority; the work journal does
+not replace them. Maintenance/provider controls and shutdown draining apply.
+No migration regenerates the corpus or invalidates compatible authored content.

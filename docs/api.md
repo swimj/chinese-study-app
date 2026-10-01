@@ -111,7 +111,7 @@ The status payload also returns `dailyNewWordLimit` and
 `unstudiedAdmissionSource`, the durable configured limit and unstudied
 admission source used when composing a new session. `unstudiedAdmissionSource`
 is `"mixed"` (default 50/50 stash/diet split) or `"stash_only"`. Update them
-with JSON bodies containing `dailyNewWordLimit` as a non-negative integer or
+with JSON bodies containing `dailyNewWordLimit` as an integer from 0 through 20 or
 `unstudiedAdmissionSource` as `"mixed"` or `"stash_only"`:
 
 | Method | Path | Handler domain |
@@ -141,6 +141,8 @@ Send `{ "characterPresentation": "simplified" | "traditional" | "both" }`.
 | Method | Path | Handler domain |
 | --- | --- | --- |
 | GET | `/api/operator/usage-pulse` | Operational cohort pulse |
+| GET | `/api/operator/word-preparation/failures` | Shared preparation failures and attempt history |
+| POST | `/api/operator/word-preparation/:workId/retry` | Retry paused work; empty `{}` body and operator actor audit |
 
 Bookmark-only frontend surface: `#operator-usage` (not in primary nav).
 Requires the caller’s Clerk user id (or trusted-local learner id / `trusted_local`
@@ -149,7 +151,9 @@ cohort aggregates: live `today` plus the last 7 completed UTC-day snapshots
 (`dau`, sessions, new words, model spend, median stash, median session time,
 and sparse scenario counts). The configured hosted smoke learner
 (`APP_SMOKE_CLERK_USER_ID`) is omitted from the inactive-7d count. Empty
-allowlist fails closed with `403 OPERATOR_FORBIDDEN`.
+allowlist fails closed with `403 OPERATOR_FORBIDDEN`. The same allowlist protects
+preparation diagnostics and retries. Retry preserves successful earlier stages;
+ordinary learner requests do not reset exhausted budgets.
 
 ## Words and meanings
 
@@ -264,7 +268,8 @@ No member-word scheduler or admission state is changed.
 
 | Method | Path | Handler domain |
 | --- | --- | --- |
-| GET | `/api/session-payload` | `session-composition` |
+| GET | `/api/session-payload` | Immediate composition from currently ready content |
+| POST | `/api/session-payload` | `{ "studyDayKey": "YYYY-MM-DD" }`; bounded session-entry preparation and ready payload |
 
 The session payload contains the three study-item buckets. Review production
 items freeze their selected durable cue or meaning-derived fallback, the canonical
@@ -273,7 +278,12 @@ client grading, and nullable recheck-demand id. Unstudied membership is the
 experimental dual-pool admitted set from
 [`SPECS/study-action-model.md`](../SPECS/study-action-model.md#experimental-dual-pool-unstudied-admission)
 (mixed stash/diet split of remaining daily new-word quota, or stash-only when
-that source is selected, plus require bypass).
+that source is selected). Mandarin applies readiness within those pools without
+a require bypass; legacy non-Mandarin selection remains unchanged. Entry waits
+up to 30 seconds total, then may return fewer or no new words. Mandarin new-word
+items include exact teaching/source snapshots; the active player does not fetch
+or generate missing introductions. Quotas are computed before readiness filtering,
+so temporary stash preparation delays do not transfer slots to diet.
 The nullable `traditional` form is canonical content; lookup aliases are excluded.
 Typed production grading uses only that frozen accepted-answer snapshot. The
 server derives `submittedWordId` at commit: accepted results from the frozen
@@ -740,14 +750,16 @@ Mounted after authentication and maintenance controls. See
 | Method | Route | Effect |
 | --- | --- | --- |
 | GET | `/api/words/:wordId/introduction` | Eligible shared library + private pin/completion |
-| POST | `/api/words/:wordId/introduction/prepare` | Empty body; claim/reuse, validate, publish, privately pin |
+| POST | `/api/words/:wordId/introduction/prepare` | Empty `{}` body; enqueue/reuse shared work, return current state for polling |
+| POST | `/api/words/:wordId/introduction/open` | Exact packageId; privately pin an eligible ready package without generation |
 | POST | `/api/words/:wordId/introduction/complete` | Exact packageId; private navigation marker only |
 
-Preparation accepts no lexical or learner overrides. Missing words return 404;
-unavailable/withdrawn sources return 409; provider unavailability returns 503;
-provider/validation failures return sanitized 502 responses.
+Preparation accepts no lexical or learner overrides and never pins a package.
+GET exposes pending/ready/unavailable state without provider diagnostics. Missing
+words return 404; unavailable/withdrawn sources return 409; unavailable generation
+may return 503. Opening and completing accept only `{ "packageId": "..." }`.
 
-Preparation also claims or reuses shared ordinary-review exercises over the
-bootstrap source. If that separate stage fails, the response still contains the
-usable introduction, with an optional `reviewPreparationError` message. Reopening
-preparation retries the missing review stage without regenerating the lesson.
+Review preparation is independent and requested after the first durable study
+commit. Preparing or opening a lesson does not wait for, trigger, or retry review.
+Automatic retries and operator recovery own failures; usable teaching and existing
+review fallback remain available.
