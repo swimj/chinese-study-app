@@ -21,6 +21,8 @@ export type WordIntroductionResponse = WordIntroductionLibrary & {
   model: string;
   /** A prepared source has been withdrawn; ordinary cards remain available. */
   preparationUnavailable?: boolean;
+  /** Non-blocking failure: teaching remains available and a later prepare retries review. */
+  reviewPreparationError?: string;
 };
 
 /** Lexical input only; never learner notes, attempts, or profile data. */

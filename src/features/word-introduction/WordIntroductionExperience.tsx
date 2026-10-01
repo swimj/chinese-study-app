@@ -166,6 +166,7 @@ export function WordIntroductionExperience({
         </>}
       </header>
 
+      {library?.reviewPreparationError && <p className="word-intro-status" role="status">{library.reviewPreparationError}</p>}
       {loading && <p className="word-intro-status" role="status">Loading introduction…</p>}
       {busy === 'prepare' && <p className="word-intro-status" role="status">Preparing this introduction…</p>}
       {error && <p className="intro-lab-error" role="alert">{error}</p>}

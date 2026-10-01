@@ -10,6 +10,7 @@ import type {
   SessionReflectionBundleV6,
   SessionReflectionResultV10,
 } from '../src/domain/reflection.js';
+import { getCanonicalReviewContent } from '../server/db/review-content.ts';
 
 type DbModule = typeof import('../server/db.ts');
 
@@ -63,8 +64,10 @@ describe('reflection application adapters', { concurrency: false }, () => {
       DROP TRIGGER IF EXISTS pure_cue_served_snapshots_no_delete;
       DROP TRIGGER IF EXISTS pure_cue_attempts_no_delete;
       DROP TRIGGER IF EXISTS pure_cue_teaching_revisions_no_delete;
+      DROP TRIGGER IF EXISTS review_content_records_no_delete;
       PRAGMA defer_foreign_keys = ON;
       BEGIN;
+      DELETE FROM scoped_review_content_records;
       DELETE FROM shared_content_publication_events;
       DELETE FROM shared_content_reports;
       DELETE FROM shared_content_publication_provenance;
@@ -286,6 +289,18 @@ describe('reflection application adapters', { concurrency: false }, () => {
       'production_cue_lifecycle_event',
     ]);
     const cue = dbModule.getProductionCue(refs[0]!.id);
+    const canonical = getCanonicalReviewContent('production_cue', refs[0]!.id);
+    assert.equal(canonical?.kind, 'production_cue');
+    if (canonical?.kind !== 'production_cue') throw new Error('Missing canonical review cue.');
+    assert.deepEqual(canonical.exercise, {
+      id: refs[0]!.id,
+      responseMode: 'hanzi_entry',
+      contract: { kind: 'targeted_review', wordId: 'target' },
+      instruction: '',
+      stimulus: { kind: 'direct_text', text: 'What you know about a fact' },
+      acceptedAnswers: [{ wordId: 'target', hanzi: '目标', traditional: null }],
+    });
+    assert.deepEqual(canonical.contents, []);
     assert.deepEqual(cue, {
       cueId: refs[0]!.id,
       taskId: 'production-task:target:default_production',
@@ -469,6 +484,10 @@ describe('reflection application adapters', { concurrency: false }, () => {
     const cue = dbModule.getPureCueContent('pure-cue:reflection:new-teaching');
     assert.equal(cue?.teachingNote, 'a compact comparison');
     assert.equal(cue?.active, true);
+    const canonical = getCanonicalReviewContent('pure_cue', 'pure-cue:reflection:new-teaching');
+    assert.equal(canonical?.kind, 'pure_cue');
+    if (canonical?.kind !== 'pure_cue') throw new Error('Missing canonical pure review.');
+    assert.deepEqual(canonical.exercise.acceptedAnswers.map((answer) => answer.wordId), ['target', 'alternate']);
   });
 
   test('fair reconciliation and unrelated target drafting do not forgive the source lapse', () => {
@@ -500,6 +519,9 @@ describe('reflection application adapters', { concurrency: false }, () => {
     sqlite.prepare("INSERT INTO word_study_admission_state (word_id, study_phase) VALUES ('target', 'review')").run();
     dbModule.adoptEligiblePureCuesForCurrentLearner(createdAt);
     const snapshot = dbModule.issuePureCueServedSnapshot({ pureCueId: 'teaching-pure', servedAt: createdAt });
+    const previousCanonical = getCanonicalReviewContent('pure_cue', 'teaching-pure');
+    assert.equal(previousCanonical?.kind, 'pure_cue');
+    if (previousCanonical?.kind !== 'pure_cue') throw new Error('Missing original canonical pure review.');
     insertStudyAttempt('teaching-source');
     const operation: Extract<ReflectionOperation, { kind: 'reconcile_production_cues' }> = {
       kind: 'reconcile_production_cues', version: 1, sourceAttemptId: 'teaching-source',
@@ -514,6 +536,18 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.equal(state.kind, 'applied', JSON.stringify(state));
     assert.equal(dbModule.getPureCueContent('teaching-pure')?.teachingNote, 'all three members compared');
     assert.equal(dbModule.getPureCueServedSnapshot(snapshot.snapshotId)?.teachingNote, 'original comparison');
+    const extendedCanonical = getCanonicalReviewContent('pure_cue', 'teaching-pure');
+    assert.equal(extendedCanonical?.kind, 'pure_cue');
+    if (extendedCanonical?.kind !== 'pure_cue') throw new Error('Missing revised canonical pure review.');
+    assert.equal(extendedCanonical.revision, previousCanonical.revision + 1);
+    assert.equal(extendedCanonical.createdAt, appliedAt);
+    assert.notEqual(extendedCanonical.exercise.id, previousCanonical.exercise.id);
+    assert.deepEqual(previousCanonical.exercise.acceptedAnswers.map((answer) => answer.wordId), ['target', 'third']);
+    assert.deepEqual(extendedCanonical.exercise.acceptedAnswers.map((answer) => answer.wordId), ['target', 'third', 'alternate']);
+    assert.equal((sqlite.prepare(`
+      SELECT document_json FROM scoped_review_content_records WHERE record_id = ?
+    `).get(previousCanonical.recordId) as { document_json: string }).document_json,
+    JSON.stringify({ schemaVersion: 1, exercise: previousCanonical.exercise, contents: previousCanonical.contents }));
     assert.equal(sqlite.prepare("SELECT invocation_id FROM pure_cue_teaching_revisions").get()?.invocation_id, 'teaching-extension');
     assert.equal(dbModule.applyReflectionInvocation('stale-teaching-extension', appliedAt).application.state.kind, 'stale');
     assert.deepEqual(dbModule.getPureCueContent('teaching-pure')?.acceptedWordIds, ['target', 'third', 'alternate']);
@@ -603,6 +637,17 @@ describe('reflection application adapters', { concurrency: false }, () => {
       'third',
       'alternate',
     ]);
+    const canonicalPure = getCanonicalReviewContent('pure_cue', 'existing-pure');
+    assert.equal(canonicalPure?.kind, 'pure_cue');
+    if (canonicalPure?.kind !== 'pure_cue') throw new Error('Missing canonical pure review.');
+    assert.equal(canonicalPure.revision, 2);
+    assert.deepEqual(canonicalPure.exercise.acceptedAnswers.map((answer) => answer.wordId), [
+      'target', 'third', 'alternate',
+    ]);
+    assert.equal((sqlite.prepare(`
+      SELECT COUNT(*) AS count FROM scoped_review_content_records
+      WHERE kind = 'pure_cue' AND content_id = 'existing-pure'
+    `).get() as { count: number }).count, 2);
     assert.deepEqual(dbModule.getPureCue('existing-pure')?.acceptedWordIds, [
       'target',
       'third',
@@ -797,6 +842,15 @@ describe('reflection application adapters', { concurrency: false }, () => {
       ? result.application.state.effectRefs[0]
       : null;
     assert.equal(ref?.type, 'production_cue_supplement');
+    const canonicalSupplement = getCanonicalReviewContent('production_cue_supplement', ref!.id);
+    assert.equal(canonicalSupplement?.kind, 'production_cue_supplement');
+    if (canonicalSupplement?.kind !== 'production_cue_supplement') {
+      throw new Error('Missing canonical supplement.');
+    }
+    assert.equal(canonicalSupplement.source.kind, 'example');
+    assert.equal(canonicalSupplement.contents[0]?.word.wordId, 'target');
+    assert.equal(canonicalSupplement.contents[0]?.examples[0]?.text, operation.exampleSentence);
+    assert.equal(countRows('word_content_documents'), 0);
     assert.deepEqual(
       dbModule.getProductionCueSupplement('production-task:target:default_production', null),
       {
