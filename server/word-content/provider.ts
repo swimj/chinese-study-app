@@ -84,6 +84,8 @@ const reviewSchema = object({
 export function createWordIntroductionProvider(options: {
   environment?: NodeJS.ProcessEnv;
   fetchImplementation?: FetchImplementation;
+  /** Local diagnostics hook; never receives request headers or credentials. */
+  onRawText?: (stage: 'bootstrap' | 'teaching' | 'review', rawText: string) => void;
 } = {}): WordIntroductionProvider {
   const environment = options.environment ?? process.env;
   const adapter = createOpenAiCompatibleAdapter({
@@ -116,6 +118,7 @@ export function createWordIntroductionProvider(options: {
       apiKey,
       baseUrl: environment.OPENAI_BASE_URL?.trim() || null,
     });
+    options.onRawText?.(stage, result.rawText);
     if (isOutputTruncationFinishReason(result.finishReason)) {
       throw new Error('Introduction generation output was truncated.');
     }
