@@ -157,6 +157,7 @@ import {
   type IntroductionLabService,
 } from './word-content-lab/service.ts';
 
+import { listWordPreparationFailures, retryWordPreparation } from './db/preparation-work.ts';
 import { prepareSessionPayload } from './word-content/session-preparation.ts';
 import { startWordPreparationRuntime } from './word-content/preparation-runtime.ts';
 
@@ -357,6 +358,28 @@ export function createApp(options: CreateAppOptions = {}) {
       }
     },
   );
+
+  app.get('/api/operator/word-preparation/failures', createOperatorAllowlistMiddleware(), (_req, res) => {
+    res.json({ failures: listWordPreparationFailures() });
+  });
+  app.post('/api/operator/word-preparation/:workId/retry', createOperatorAllowlistMiddleware(), (req, res) => {
+    if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object' || Object.keys(req.body).length !== 0
+      || !req.params.workId || req.params.workId.length > 200) {
+      res.status(400).json({ error: 'Expected an empty retry request.' });
+      return;
+    }
+    try {
+      retryWordPreparation(req.params.workId, res.locals.operatorSubject);
+      options.wakeWordPreparation?.();
+      res.json({ queued: true });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Only paused preparation can be retried') {
+        res.status(409).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Could not retry word preparation.' });
+    }
+  });
 
   app.get('/api/words/search', (req, res) => {
     const query = req.query?.q;
