@@ -13,8 +13,16 @@ a session only with a ready teaching/source snapshot.
 Space advances a complete teaching beat; private reflection questions do not
 require answers. Rehearsal asks for the taught expression in hanzi.
 
-Completing the package inside an active first encounter completes that word
-unit through the usual deferred commit/Undo path. Opening or completing a lesson
+Inside a first encounter, the player shows teaching beats only. Finishing the
+walkthrough returns to the ordinary session scheduler for interleaved recognition
+and production: each direction needs three consecutive `Good` ratings, with a
+non-`Good` rating resetting only that direction. Recognition reveals the curated
+source material; production selects the package rehearsal at its current streak
+modulo the rehearsal count. This preserves word-level coverage rather than
+requiring every authored exercise. Weighted interleaving can still select the
+same word consecutively, especially when other work runs out.
+Completing both streaks commits the word through the usual deferred commit/Undo
+path. Finishing the walkthrough alone grants no study credit. Opening or completing a lesson
 in My Words only records navigation, not study credit. A previously completed
 navigation marker does not silently grant credit in a later study session.
 Explicit skips retain the ordinary card path. Unprepared new words are omitted

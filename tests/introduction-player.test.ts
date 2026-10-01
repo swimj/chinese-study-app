@@ -92,3 +92,14 @@ describe('local introduction player', () => {
     }
   });
 });
+
+test('session teaching-only mode finishes beats without local massed rehearsal', () => {
+  const snapshot = materializeTeachingPackage(wordContentFixtures[0]!.teaching, [wordContentFixtures[0]!.content]);
+  let state = initialIntroductionPlayerState();
+  for (let index = 0; index < snapshot.beats.length; index += 1) {
+    assert.equal(state.phase, 'introduction');
+    state = reduceIntroductionPlayer(state, { type: 'advance' }, snapshot, 'teaching-only');
+  }
+  assert.equal(state.phase, 'finished');
+  assert.equal(state.result, null);
+});

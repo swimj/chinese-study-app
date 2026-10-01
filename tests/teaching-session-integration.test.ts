@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { buildWordLifecycleSessionStudyItems } from '../src/domain/study-actions.ts';
+import type { WordIntroductionResponse } from '../src/domain/word-content/application.ts';
 import type { Word } from '../src/types.ts';
 import { wordContentFixtures } from './fixtures/word-content.ts';
 import { materializeTeachingPackage, resolveContentExerciseResponse } from '../src/domain/word-content/materialize.ts';
 import {
   completeActiveUnstudiedIntro, completeActiveUnstudiedTeaching, createBucketSessionState,
-  getActiveSessionUnit, markActiveSessionUnitStarted, rateActiveSessionUnit,
+  getActiveSessionUnit, markActiveSessionUnitStarted, rateActiveSessionUnit, beginBucketDrainSession,
 } from '../src/lib/session-state.ts';
 import { cloneBucketSessionState } from '../src/features/session/session-state-copy.ts';
 import { getActiveAnswerText, getActivePrompt } from '../src/features/session/session-selectors.ts';
@@ -91,22 +93,120 @@ test('snapshot copies keep learning content through Undo; legacy words still use
   assert.equal(active.item.wordContent, undefined);
 });
 
-test('explicit teaching completion replaces 3x3 via deferred word completion, preserving a restorable snapshot', () => {
-  const state = createBucketSessionState({ sessionId: 'intro', buckets: {
+const library: WordIntroductionResponse = {
+  wordId: word.id,
+  contents: [{ content: fixture.content, createdAt: word.createdAt }],
+  packages: [{ teaching: { ...fixture.teaching, rehearsals: [
+    fixture.teaching.rehearsals[0]!,
+    { ...fixture.teaching.rehearsals[0]!, id: 'second-rehearsal' },
+  ] }, createdAt: word.createdAt }],
+  selectedPackageId: fixture.teaching.id, completed: false, generationAvailable: false, model: 'prepared',
+};
+
+function unstudiedState() {
+  return createBucketSessionState({ sessionId: 'intro', seed: 1, buckets: {
     review: [], learning: [], unstudied: [{ ...word, status: 'unstudied' }],
+    introductions: { [word.id]: library },
   } });
+}
+
+test('teaching starts interleaved 3x3 recall without credit; Undo restores the introduction', () => {
+  const state = unstudiedState();
   const before = cloneBucketSessionState(state);
   const result = completeActiveUnstudiedTeaching(state, word.id);
-  assert.deepEqual(result.commit, { type: 'commit-unstudied-word-session', wordId: word.id });
-  assert.equal(result.state.phase, 'completed');
-  assert.equal(result.state.answeredCount, 1);
-  assert.deepEqual(result.state.reviewProgress, {});
-  assert.deepEqual(state, before);
+  assert.deepEqual(result.commit, { type: 'none' });
+  assert.equal(result.state.phase, 'active');
+  assert.equal(result.state.answeredCount, 0);
+  assert.deepEqual(result.state.progress.unstudied[word.id], {
+    introComplete: true, successStreaks: { recognition: 0, production: 0 },
+  });
+  assert.equal(state.scheduler.unstudiedTeaching, undefined);
   assert.equal(getActiveSessionUnit(before).type, 'unstudied_intro');
   assert.throws(() => completeActiveUnstudiedTeaching(state, 'wrong-word'));
   assert.throws(() => completeActiveUnstudiedTeaching(learningState(), word.id));
-  // Bypassing the package retains the existing intro-to-drill path, not completion.
+  assert.throws(() => completeActiveUnstudiedTeaching(result.state, word.id));
+  assert.throws(() => completeActiveUnstudiedTeaching({ ...state, introductions: {} }, word.id));
   const bypass = completeActiveUnstudiedIntro(state);
   assert.deepEqual(bypass.commit, { type: 'none' });
-  assert.equal(bypass.state.phase, 'active');
+  const active = getActiveSessionUnit(bypass.state);
+  if (active.type !== 'study' || 'itemType' in active.item) throw new Error('Expected word item');
+  assert.equal(active.item.rehearsal, undefined);
+  assert.equal(active.item.wordContent, undefined);
+});
+
+test('first encounter rotates taught production, trains recognition, and commits only after both streaks', () => {
+  let state = completeActiveUnstudiedTeaching(unstudiedState(), word.id).state;
+  const successes = { recognition: 0, production: 0 };
+  for (let count = 0; count < 6; count += 1) {
+    const active = getActiveSessionUnit(state);
+    if (active.type !== 'study' || 'itemType' in active.item) throw new Error('Expected word item');
+    const item = active.item;
+    if (item.actionKind === 'production') {
+      assert.equal(item.rehearsal?.exerciseId, library.packages[0]!.teaching.rehearsals[successes.production % 2]!.id);
+      assert.equal(item.rehearsal?.packageId, fixture.teaching.id);
+      assert.equal(resolveContentExerciseResponse(item.rehearsal!, word.hanzi).outcome, 'accepted');
+      successes.production += 1;
+    } else {
+      assert.equal(item.actionKind, 'recognition');
+      assert.equal(item.wordContent?.id, fixture.content.id);
+      successes.recognition += 1;
+    }
+    const undo = cloneBucketSessionState(state);
+    const result = rateActiveSessionUnit(markActiveSessionUnitStarted(state), 'good');
+    assert.deepEqual(result.commit, count === 5
+      ? { type: 'commit-unstudied-word-session', wordId: word.id } : { type: 'none' });
+    assert.deepEqual(getActiveSessionUnit(undo), active);
+    assert.deepEqual(undo.scheduler.unstudiedTeaching, state.scheduler.unstudiedTeaching);
+    assert.notEqual(undo.scheduler.unstudiedTeaching, state.scheduler.unstudiedTeaching);
+    state = result.state;
+  }
+  assert.deepEqual(successes, { recognition: 3, production: 3 });
+  assert.equal(state.phase, 'completed');
+  assert.equal(state.answeredCount, 6);
+  assert.deepEqual(state.reviewProgress, {});
+});
+
+test('first-encounter failure resets only that direction and survives draining', () => {
+  let state = completeActiveUnstudiedTeaching(unstudiedState(), word.id).state;
+  state = { ...state, progress: { ...state.progress, unstudied: {
+    [word.id]: { introComplete: true, successStreaks: { recognition: 2, production: 2 } },
+  } } };
+  const active = getActiveSessionUnit(state);
+  if (active.type !== 'study' || 'itemType' in active.item) throw new Error('Expected word item');
+  const skill = active.item.actionKind === 'production' ? 'production' : 'recognition';
+  state = rateActiveSessionUnit(markActiveSessionUnitStarted(state), 'forgot').state;
+  assert.equal(state.progress.unstudied[word.id]!.successStreaks[skill], 0);
+  assert.equal(state.progress.unstudied[word.id]!.successStreaks[skill === 'production' ? 'recognition' : 'production'], 2);
+  state = beginBucketDrainSession(state);
+  assert.equal(state.scheduler.unstudiedPool.length, 1);
+  for (let count = 0; count < 4; count += 1) {
+    const result = rateActiveSessionUnit(markActiveSessionUnitStarted(state), 'good');
+    assert.equal(result.commit.type, count === 3 ? 'commit-unstudied-word-session' : 'none');
+    state = result.state;
+  }
+  assert.equal(state.phase, 'completed');
+});
+
+test('review items interleave between teaching and first-encounter reinforcement', () => {
+  const initial = unstudiedState();
+  const review = Array.from({ length: 12 }, (_, index) => ({
+    ...buildWordLifecycleSessionStudyItems({ source: 'learning', word: { ...word, id: `review-${index}`, status: 'learning' } })[0]!,
+    word: { ...word, id: `review-${index}`, status: 'review' as const },
+    actionKind: 'recognition' as const, sampledSkillIds: ['recognition' as const],
+  }));
+  let state = completeActiveUnstudiedTeaching({
+    ...initial, scheduler: { ...initial.scheduler, reviewQueue: review },
+  }, word.id).state;
+  const sequence: string[] = ['teaching'];
+  for (let count = 0; count < 25 && state.phase !== 'completed'; count += 1) {
+    const active = getActiveSessionUnit(state);
+    assert.equal(active.type, 'study');
+    if (active.type !== 'study') throw new Error('Expected study');
+    sequence.push(active.bucket);
+    state = rateActiveSessionUnit(markActiveSessionUnitStarted(state), 'good').state;
+  }
+  assert.equal(state.phase, 'completed');
+  assert.equal(sequence.filter((bucket) => bucket === 'unstudied').length, 6);
+  const lastRecall = sequence.lastIndexOf('unstudied');
+  assert.ok(sequence.slice(1, lastRecall).includes('review'), sequence.join(','));
 });

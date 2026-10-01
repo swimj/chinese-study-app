@@ -1344,18 +1344,9 @@ export function useStudySession({
         ui: createSessionUiSnapshot(),
         reflectionEvidence: snapshotSessionReflectionEvidence(reflectionEvidenceRef.current),
       });
-      if (transition.commit.type !== 'commit-unstudied-word-session') throw new Error('Teaching completion must commit its word unit.');
-      setPendingSessionCommit(transition.commit);
+      if (transition.commit.type !== 'none') throw new Error('Teaching alone must not commit its word unit.');
+      setPendingSessionCommit(null);
       setSessionState(transition.state);
-      setSessionSummary((summary) => summary === null ? null : ({
-        ...summary,
-        answeredCount: transition.state.answeredCount,
-        completedUnstudiedWords: summary.completedUnstudiedWords + 1,
-        completedAt: transition.state.phase === 'completed' && summary.completedAt === null
-          ? new Date().toISOString() : summary.completedAt,
-        completionMode: transition.state.phase === 'completed' && sourceState.phase === 'draining'
-          ? 'drain' : summary.completionMode,
-      }));
       dismiss();
       resetAnswerAndProductionUi();
     } catch (error) {

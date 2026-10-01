@@ -59,6 +59,7 @@ export function reduceIntroductionPlayer(
   state: IntroductionPlayerState,
   action: IntroductionPlayerAction,
   packageSnapshot: TeachingPackageSnapshot,
+  mode: 'full' | 'teaching-only' = 'full',
 ): IntroductionPlayerState {
   switch (action.type) {
     case 'advance':
@@ -66,7 +67,7 @@ export function reduceIntroductionPlayer(
       if (state.beatIndex < packageSnapshot.beats.length - 1) {
         return { ...state, beatIndex: state.beatIndex + 1 };
       }
-      return { ...state, phase: packageSnapshot.rehearsals.length > 0 ? 'rehearsal' : 'finished' };
+      return { ...state, phase: mode === 'full' && packageSnapshot.rehearsals.length > 0 ? 'rehearsal' : 'finished' };
     case 'back':
       if (state.phase === 'introduction') {
         return state.beatIndex > 0 ? { ...state, beatIndex: state.beatIndex - 1 } : state;

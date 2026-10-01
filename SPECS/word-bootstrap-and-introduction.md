@@ -274,8 +274,12 @@ reconciliation is required to proceed with this work.
   Completion is a private navigation marker, separate from study credit. A
   withdrawn private pin is not silently replaced with another package.
 - **First encounter:** an unstudied Mandarin word opens its introduction before
-  ordinary cards. Completing the introduction and its rehearsal satisfies the
-  first-encounter word unit through the existing deferred commit and Undo path.
+  ordinary cards. Completing the teaching beats opens interleaved recognition and
+  target rehearsal through the existing session scheduler. Both directions must
+  reach three consecutive `Good` ratings before the first-encounter word unit
+  completes through the existing deferred commit and Undo path. Recognition uses
+  curated source content; production selects a rehearsal by its current streak
+  modulo the package rehearsal count, returning to the first on a streak reset.
   On-demand completion in My Words alone does not advance word status. Explicit
   skipping retains the existing first-encounter cards. Missing preparation excludes
   the word at session entry rather than triggering generation during study.

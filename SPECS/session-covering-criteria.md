@@ -3,8 +3,8 @@
 This document defines what it means for a study unit to be considered covered within a live session.
 
 The accepted [word bootstrap and introduction design](word-bootstrap-and-introduction.md)
-defines future pinned teaching/rehearsal content. Its learning-transition and
-coverage rules remain open; it does not yet replace the covering rules below.
+defines pinned teaching/rehearsal content. The covering rules below apply to
+both prepared teaching and the legacy card path.
 
 It complements [`SPECS/learning-review-model.md`](/Users/jw/dev/chinese-study-app/SPECS/learning-review-model.md).
 
@@ -68,11 +68,25 @@ For the purposes of this spec:
 
 ## Unstudied Word Covering
 
-An `unstudied` Mandarin word can use a pinned paced introduction and its target
-rehearsals. Explicitly finishing that package inside the session completes the
-word unit through the existing deferred commit and Undo path. Merely opening or
-completing it in My Words grants no study credit; a saved navigation-completion
-marker does not automatically complete a later session unit.
+An `unstudied` Mandarin word uses its pinned teaching beats for the initial
+introduction. Finishing those beats opens the existing recall phase; it does not
+complete the word unit or award study credit. Recognition uses the package's
+curated source material, and production uses its constrained target rehearsals.
+Both directions still require three consecutive `Good` ratings. A non-`Good`
+rating resets only the corresponding direction's streak.
+
+Recall appearances use the ordinary weighted bucket scheduler, interleaving with
+review, learning, and other new words when present. This is probabilistic
+interleaving, not a guaranteed minimum gap; a lone remaining word can repeat.
+Production selects the rehearsal at the current production streak modulo the
+package's rehearsal count. A reset therefore returns to the first rehearsal;
+coverage is per direction, not a requirement to complete every authored exercise.
+The package and content remain frozen through the session and Undo.
+
+Only completing both recall streaks covers the word through the existing
+deferred commit and Undo path. Merely opening or completing it in My Words grants
+no study credit; a saved navigation-completion marker does not automatically
+complete a later session unit.
 
 Mandarin admits a new word only when its teaching/source snapshot is ready at
 session entry. Missing preparation reduces the new-word count; it never causes a

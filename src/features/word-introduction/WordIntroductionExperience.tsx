@@ -21,6 +21,7 @@ export type WordIntroductionExperienceProps = {
   onCompleted?: (library: WordIntroductionResponse) => void;
   preloadedIntroduction?: WordIntroductionResponse;
   closeLabel?: string;
+  mode?: 'full' | 'teaching-only';
 };
 
 function errorMessage(error: unknown): string {
@@ -29,6 +30,7 @@ function errorMessage(error: unknown): string {
 
 export function WordIntroductionExperience({
   wordId, onClose, onCompleted, preloadedIntroduction, closeLabel = 'Back to word',
+  mode = 'full',
 }: WordIntroductionExperienceProps) {
   const [library, setLibrary] = useState<WordIntroductionResponse | null>(preloadedIntroduction ?? null);
   const [loading, setLoading] = useState(preloadedIntroduction === undefined);
@@ -196,7 +198,7 @@ export function WordIntroductionExperience({
 
   function handlePlayerAction(action: IntroductionPlayerAction): void {
     if (!selected.value) return;
-    setPlayerState((current) => reduceIntroductionPlayer(current, action, selected.value!.snapshot));
+    setPlayerState((current) => reduceIntroductionPlayer(current, action, selected.value!.snapshot, mode));
   }
 
   const lexical = selected.value?.content.content.word ?? library?.contents[0]?.content.word;
@@ -242,6 +244,7 @@ export function WordIntroductionExperience({
       </div>}
 
       {playing && selected.value && <IntroductionPlayer
+        mode={mode}
         snapshot={selected.value.snapshot}
         state={playerState}
         onAction={handlePlayerAction}
