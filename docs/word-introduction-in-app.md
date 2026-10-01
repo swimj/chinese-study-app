@@ -25,7 +25,9 @@ Completing both streaks commits the word through the usual deferred commit/Undo
 path. Finishing the walkthrough alone grants no study credit. Opening or completing a lesson
 in My Words only records navigation, not study credit. A previously completed
 navigation marker does not silently grant credit in a later study session.
-Explicit skips retain the ordinary card path. Unprepared new words are omitted
+The session walkthrough has no skip-to-cards button or Escape bypass. Normal
+session controls remain available for leaving; leaving does not complete teaching.
+Standalone My Words introductions retain their Back button. Unprepared new words are omitted
 at session entry; established learning words retain their existing fallback.
 
 Learning keeps the existing recognition + production coverage and first-try

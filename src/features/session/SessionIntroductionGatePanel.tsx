@@ -6,8 +6,7 @@ export function SessionIntroductionGatePanel({ gate, onUndo }: { gate: SessionIn
     <WordIntroductionExperience
       mode="teaching-only"
       key={gate.key} wordId={gate.wordId} preloadedIntroduction={gate.preloadedIntroduction}
-      closeLabel="Continue with study cards"
-      onClose={gate.dismiss} onCompleted={gate.complete ?? gate.dismiss}
+      onCompleted={gate.complete}
     />
     {onUndo && <button type="button" className="secondary-button" onClick={onUndo}>Undo last study action</button>}
   </section>;

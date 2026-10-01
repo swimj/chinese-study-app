@@ -29,7 +29,7 @@ test('completion marker never grants coverage; available content allows teaching
   assert.throws(() => introductionGateStatus({ ...prepared, preparationUnavailable: true }), /no prepared introduction/);
 });
 
-test('skip and completion are navigation only; another word or session remains gated', () => {
+test('passing one teaching gate leaves another word or session gated', () => {
   const { key } = introductionGateCandidate(base)!;
   const passed = settleIntroductionGate({}, key, 'passed');
   assert.deepEqual(passed, { [key]: 'passed' });
