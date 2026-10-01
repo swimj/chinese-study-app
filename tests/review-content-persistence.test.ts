@@ -130,7 +130,8 @@ test('0016 to 0017 migration preserves existing publication and word content', (
     try {
       upgrade.exec('PRAGMA foreign_keys=ON');
       upgrade.function('current_learner_id', () => 'learner-a');
-      migrateDatabase(upgrade, schemaMigrations.slice(0, -1));
+      const beforeReview = schemaMigrations.findIndex((migration) => migration.id === 'app_schema:0017_review_content_records');
+      migrateDatabase(upgrade, schemaMigrations.slice(0, beforeReview));
       upgrade.prepare(`INSERT INTO learners (learner_id,display_name,created_at,disabled_at)
         VALUES ('learner-a','A','2026-09-25T00:00:00.000Z',NULL)`).run();
       upgrade.prepare(`INSERT INTO lexical_words
@@ -144,7 +145,7 @@ test('0016 to 0017 migration preserves existing publication and word content', (
         (content_id,word_id,content_json,model,created_at,publication_id)
         VALUES ('old-content',?,?, 'old-model',?,'old-pub')`)
         .run(wordId, JSON.stringify({ ...content, id: 'old-content' }), '2026-09-25T00:00:00.000Z');
-      assert.deepEqual(migrateDatabase(upgrade), ['app_schema:0017_review_content_records']);
+      assert.deepEqual(migrateDatabase(upgrade), schemaMigrations.slice(beforeReview).map((migration) => migration.id));
       assertSchemaCurrent(upgrade);
       assert.deepEqual(migrateDatabase(upgrade), []);
       assert.equal((upgrade.prepare(`SELECT model FROM word_content_documents WHERE content_id='old-content'`)
