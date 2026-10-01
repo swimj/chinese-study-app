@@ -166,7 +166,7 @@ test('migration upgrades populated history without inventing snapshots and reope
       INSERT INTO pure_cue_attempts VALUES
         ('legacy', 'legacy-attempt', 'legacy-cue', 'legacy-snapshot', 'session', 'action', 'now', '[{"outcome":"rejected"}]', 1, NULL);`);
     const history = connection.prepare('SELECT * FROM pure_cue_attempts').all();
-    assert.deepEqual(migrateDatabase(connection), ['app_schema:0014_pure_cue_reflection', 'app_schema:0015_pure_cue_stimulus_repair']);
+    assert.deepEqual(migrateDatabase(connection), ['app_schema:0014_pure_cue_reflection', 'app_schema:0015_pure_cue_stimulus_repair', 'app_schema:0016_word_introduction_content']);
     assert.deepEqual(connection.prepare('SELECT * FROM pure_cue_attempts').all(), history);
     assert.equal(connection.prepare('SELECT COUNT(*) AS count FROM pure_cue_assessment_scheduler_snapshots').get()?.count, 0);
     assert.deepEqual(connection.prepare('PRAGMA foreign_key_check').all(), []);
