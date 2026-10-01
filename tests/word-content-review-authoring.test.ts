@@ -110,3 +110,17 @@ test('review provider receives lexical content only and a bounded review schema'
   assert.deepEqual(JSON.parse(messages.find((message) => message.role === 'user')!.content), content);
   assert.match(messages[0]!.content, /not automatically a fair cloze/);
 });
+
+
+test('provider exposes raw review text to local diagnostics before JSON validation', async () => {
+  let rawText: string | undefined;
+  const provider = createWordIntroductionProvider({
+    environment: { OPENAI_API_KEY: 'test-key' },
+    onRawText: (stage, value) => { if (stage === 'review') rawText = value; },
+    fetchImplementation: (async () => new Response(JSON.stringify({
+      id: 'test', model: 'model', choices: [{ message: { content: 'not json' }, finish_reason: 'stop' }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as typeof globalThis.fetch,
+  });
+  await assert.rejects(provider.generateReview(content), /invalid JSON/);
+  assert.equal(rawText, 'not json');
+});
