@@ -78,6 +78,9 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
   operationalEntry('word_introduction_preparation', 'shared per-word generation stage and recoverable lease'),
   scopedContentEntry('scoped_review_content_records', 'immutable review source version', 'new structured authoring source'),
   operationalEntry('word_review_preparation', 'shared per-word first-review generation claim'),
+  operationalEntry('word_preparation_work', 'shared word and stage preparation demand and bounded retry state'),
+  operationalEntry('word_preparation_attempts', 'shared preparation attempt history without learner evidence'),
+  operationalEntry('word_preparation_retry_events', 'attributable operator preparation retry ledger'),
   privateEntry(
     'learner_word_introduction_events',
     'learner plus word and shared teaching package',

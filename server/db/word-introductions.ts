@@ -36,10 +36,9 @@ function lexicalRow(wordId: string): LexicalRow | null {
   `).get(wordId) as LexicalRow | undefined ?? null;
 }
 
-export function getIntroductionLexicalWord(wordId: string): {
+export function getSharedIntroductionLexicalWord(wordId: string): {
   wordId: string; hanzi: string; traditional: string | null; pinyin: string; meanings: string[];
 } | null {
-  requireLearnerId();
   const word = lexicalRow(wordId);
   if (!word) return null;
   const meanings = getDb().prepare(`
@@ -183,10 +182,9 @@ function preparationRow(wordId: string): PreparationRow | null {
   `).get(wordId) as PreparationRow | undefined ?? null;
 }
 
-export function getWordIntroductionPreparation(wordId: string): {
+export function getSharedWordIntroductionPreparation(wordId: string): {
   contentId: string | null; packageId: string | null; activeStage: WordIntroductionStage | null;
 } | null {
-  requireLearnerId();
   if (!lexicalRow(wordId)) return null;
   const row = preparationRow(wordId);
   return { contentId: row?.content_id ?? null, packageId: row?.package_id ?? null,
@@ -201,10 +199,9 @@ function canonicalTime(value: string, name: string): string {
   return value;
 }
 
-export function claimWordIntroductionStage(
+export function claimSharedWordIntroductionStage(
   wordId: string, stage: WordIntroductionStage, token: string, now: string, expiresAt: string,
 ): 'claimed' | 'busy' | 'ready' {
-  requireLearnerId();
   if (stage !== 'bootstrap' && stage !== 'teaching') {
     throw new WordIntroductionError('invalid_source', 'Unknown introduction stage');
   }
@@ -243,10 +240,9 @@ function requireLiveClaim(wordId: string, stage: WordIntroductionStage, token: s
   return row;
 }
 
-export function finishWordIntroductionBootstrap(
+export function finishSharedWordIntroductionBootstrap(
   wordId: string, token: string, input: WordContentDocument, model: string,
 ): SavedWordContent {
-  requireLearnerId();
   const content = parseWordContent(input);
   const sourceModel = modelName(model);
   if (content.word.wordId !== wordId) {
@@ -266,10 +262,9 @@ export function finishWordIntroductionBootstrap(
   });
 }
 
-export function finishWordIntroductionTeaching(
+export function finishSharedWordIntroductionTeaching(
   wordId: string, token: string, input: TeachingPackage, model: string,
 ): SavedTeachingPackage {
-  requireLearnerId();
   const teaching = parseTeachingPackage(input);
   const sourceModel = modelName(model);
   return transaction(() => {
@@ -288,8 +283,7 @@ export function finishWordIntroductionTeaching(
   });
 }
 
-export function releaseWordIntroductionStage(wordId: string, token: string): void {
-  requireLearnerId();
+export function releaseSharedWordIntroductionStage(wordId: string, token: string): void {
   if (typeof token !== 'string' || !token.trim()) return;
   transaction(() => {
     getDb().prepare(`
@@ -397,4 +391,50 @@ export function completeWordTeachingPackage(wordId: string, packageId: string): 
       VALUES (?, ?, ?, ?, 'completed', ?)
     `).run(randomUUID(), learnerId, wordId, packageId, new Date().toISOString());
   });
+}
+
+export function getIntroductionLexicalWord(wordId: string) {
+  requireLearnerId();
+  return getSharedIntroductionLexicalWord(wordId);
+}
+
+export function getWordIntroductionPreparation(wordId: string) {
+  requireLearnerId();
+  return getSharedWordIntroductionPreparation(wordId);
+}
+
+export function claimWordIntroductionStage(wordId: string, stage: WordIntroductionStage, token: string, now: string, expiresAt: string) {
+  requireLearnerId();
+  return claimSharedWordIntroductionStage(wordId, stage, token, now, expiresAt);
+}
+
+export function finishWordIntroductionBootstrap(wordId: string, token: string, input: WordContentDocument, model: string) {
+  requireLearnerId();
+  return finishSharedWordIntroductionBootstrap(wordId, token, input, model);
+}
+
+export function finishWordIntroductionTeaching(wordId: string, token: string, input: TeachingPackage, model: string) {
+  requireLearnerId();
+  return finishSharedWordIntroductionTeaching(wordId, token, input, model);
+}
+
+export function releaseWordIntroductionStage(wordId: string, token: string) {
+  requireLearnerId();
+  return releaseSharedWordIntroductionStage(wordId, token);
+}
+
+/** Shared-only source read: never consults private pins, events, or learner views. */
+export function getSharedWordIntroductionContent(wordId: string): WordContentDocument | null {
+  const contentId = preparationRow(wordId)?.content_id;
+  if (!contentId) return null;
+  const row = getDb().prepare(`
+    SELECT content.content_json FROM word_content_documents content
+    JOIN shared_content_publications publication ON publication.publication_id = content.publication_id
+    WHERE content.word_id = ? AND content.content_id = ?
+      AND publication.publication_status IN ('shared_trial', 'available')
+  `).get(wordId, contentId) as { content_json: string } | undefined;
+  return row ? parseWordContent(JSON.parse(row.content_json)) : null;
+}
+export function getSharedWordTeachingPackageId(wordId: string): string | null {
+  return eligiblePackageRows(wordId)[0]?.package_id ?? null;
 }

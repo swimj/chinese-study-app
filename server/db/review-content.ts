@@ -280,10 +280,9 @@ function preparationRow(wordId: string): PreparationRow | null {
   `).get(wordId) as PreparationRow | undefined ?? null;
 }
 
-export function getWordReviewPreparation(wordId: string): {
+export function getSharedWordReviewPreparation(wordId: string): {
   sourceContentId: string; ready: boolean;
 } | null {
-  requireLearnerId();
   const row = preparationRow(wordId);
   return row ? { sourceContentId: row.source_content_id, ready: row.ready_at !== null } : null;
 }
@@ -299,10 +298,9 @@ function eligibleSharedContent(wordId: string, contentId: string): WordContentDo
   return row ? parseWordContent(JSON.parse(row.content_json)) : null;
 }
 
-export function claimWordReviewPreparation(
+export function claimSharedWordReviewPreparation(
   wordId: string, sourceContentId: string, token: string, now: string, expiresAt: string,
 ): 'claimed' | 'busy' | 'ready' {
-  requireLearnerId();
   if (!wordId.trim() || !sourceContentId.trim() || !token.trim()) {
     throw new Error('Review preparation requires word, source, and token');
   }
@@ -332,8 +330,7 @@ export function claimWordReviewPreparation(
   });
 }
 
-export function releaseWordReviewPreparation(wordId: string, token: string): void {
-  requireLearnerId();
+export function releaseSharedWordReviewPreparation(wordId: string, token: string): void {
   if (!token.trim()) return;
   transaction(() => {
     getDb().prepare(`
@@ -359,10 +356,9 @@ function publishReviewProjection(kind: 'production_cue' | 'production_cue_supple
   `).run(randomUUID(), publicationId, 'automatic validated bootstrap review publication', now);
 }
 
-export function finishWordReviewPreparation(
+export function finishSharedWordReviewPreparation(
   wordId: string, token: string, exercises: readonly AuthoredReviewExercise[], model: string,
 ): { cueIds: string[]; supplementIds: string[] } {
-  requireLearnerId();
   if (!Array.isArray(exercises) || exercises.length < 1 || exercises.length > 3) {
     throw new Error('Review preparation needs one to three authored exercises');
   }
@@ -415,8 +411,8 @@ export function finishWordReviewPreparation(
         INSERT INTO scoped_production_cue_accepted_words (cue_id, word_id, position) VALUES (?, ?, 0)
       `).run(exercise.id, wordId);
       publishReviewProjection('production_cue', exercise.id, task.task_id, now);
-      appendCanonicalReviewExercise({ kind: 'production_cue', contentId: exercise.id,
-        exercise, contents: [content], sourceWordContentId: content.id, createdAt: now, model });
+      insertSharedReviewRecord('production_cue', exercise.id, exercise.id, wordId, content,
+        { schemaVersion: 1, exercise, contents: [content] }, now, model);
       cueIds.push(exercise.id);
       if (authored.supplement !== null) {
         const supplement = snapshot.supplement;
@@ -431,9 +427,8 @@ export function finishWordReviewPreparation(
         `).run(supplement.supplementId, task.task_id, exercise.id, supplement.englishFrame,
           supplement.exampleSentence, supplement.exampleTranslation, now);
         publishReviewProjection('production_cue_supplement', supplement.supplementId, task.task_id, now);
-        appendCanonicalReviewSupplement({ supplementId: supplement.supplementId,
-          source: authored.supplement, contents: [content], sourceWordContentId: content.id,
-          createdAt: now, model });
+        insertSharedReviewRecord('production_cue_supplement', supplement.supplementId, null, wordId, content,
+          { schemaVersion: 1, source: authored.supplement, contents: [content] }, now, model);
         supplementIds.push(supplement.supplementId);
       }
     }
@@ -444,4 +439,34 @@ export function finishWordReviewPreparation(
     `).run(now, wordId);
     return { cueIds, supplementIds };
   });
+}
+
+export function getWordReviewPreparation(wordId: string) {
+  requireLearnerId();
+  return getSharedWordReviewPreparation(wordId);
+}
+
+export function claimWordReviewPreparation(wordId: string, sourceContentId: string, token: string, now: string, expiresAt: string) {
+  requireLearnerId();
+  return claimSharedWordReviewPreparation(wordId, sourceContentId, token, now, expiresAt);
+}
+
+export function releaseWordReviewPreparation(wordId: string, token: string) {
+  requireLearnerId();
+  return releaseSharedWordReviewPreparation(wordId, token);
+}
+
+export function finishWordReviewPreparation(wordId: string, token: string, exercises: readonly AuthoredReviewExercise[], model: string) {
+  requireLearnerId();
+  return finishSharedWordReviewPreparation(wordId, token, exercises, model);
+}
+
+// Only called after the shared preparation lease and complete materialized projection validate.
+function insertSharedReviewRecord(kind: 'production_cue' | 'production_cue_supplement',
+  contentId: string, exerciseId: string | null, wordId: string, content: WordContentDocument,
+  document: object, now: string, model: string): void {
+  getDb().prepare(`INSERT INTO scoped_review_content_records
+    (record_id, kind, content_id, exercise_id, revision, word_id, source_word_content_id,
+     document_json, created_at, model) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`)
+    .run(randomUUID(), kind, contentId, exerciseId, wordId, content.id, JSON.stringify(document), now, model);
 }
