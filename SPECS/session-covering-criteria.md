@@ -90,9 +90,10 @@ complete a later session unit.
 
 Mandarin admits a new word only when its teaching/source snapshot is ready at
 session entry. Missing preparation reduces the new-word count; it never causes a
-generation wait or content fetch inside the session. An explicit skip can still
-use the existing two-phase first encounter below. Other profiles retain that
-path. First-study preparation/replenishment effects follow the durable commit,
+generation wait or content fetch inside the session. The prepared walkthrough
+has no skip-to-legacy-cards control or Escape bypass. The learner can leave via
+the normal session controls without advancing the teaching gate. Other profiles
+retain the existing two-phase first encounter below. First-study preparation/replenishment effects follow the durable commit,
 not provisional covering or navigation, preserving deferred commit and Undo.
 
 ### Phase 1: Intro

@@ -8,7 +8,7 @@ import {
 export type SessionIntroductionGate = IntroductionGateEntry & {
   preloadedIntroduction: WordIntroductionResponse;
   dismiss: () => void;
-  complete?: () => void;
+  complete: () => void;
 };
 
 type GateInput = Parameters<typeof introductionGateCandidate>[0] & {
@@ -16,7 +16,7 @@ type GateInput = Parameters<typeof introductionGateCandidate>[0] & {
 };
 
 export function useIntroductionGate(input: GateInput): {
-  gate: SessionIntroductionGate | null;
+  gate: Omit<SessionIntroductionGate, 'complete'> | null;
   reopen: (sessionId: string, wordId: string) => void;
 } {
   const candidate = introductionGateCandidate(input);

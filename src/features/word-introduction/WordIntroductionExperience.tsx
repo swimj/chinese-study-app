@@ -17,7 +17,7 @@ import { assertIntroductionWord, selectedIntroduction } from './model';
 
 export type WordIntroductionExperienceProps = {
   wordId: string;
-  onClose: () => void;
+  onClose?: () => void;
   onCompleted?: (library: WordIntroductionResponse) => void;
   preloadedIntroduction?: WordIntroductionResponse;
   closeLabel?: string;
@@ -185,7 +185,7 @@ export function WordIntroductionExperience({
       if (requestVersion.current !== version) return;
       setLibrary(completed);
       if (onCompleted) onCompleted(completed);
-      else onClose();
+      else onClose?.();
     } catch (cause) {
       if (requestVersion.current === version) setError(errorMessage(cause));
     } finally {
@@ -207,11 +207,11 @@ export function WordIntroductionExperience({
 
   return <section className="intro-lab word-intro-experience" aria-label="Word introduction"
     onKeyDown={(event) => {
-      if (event.key === 'Escape') { event.stopPropagation(); onClose(); }
+      if (event.key === 'Escape') { event.stopPropagation(); onClose?.(); }
     }}>
     <div className="word-intro-shell">
       <div className="word-intro-topline">
-        <button type="button" className="intro-lab-button outline" onClick={onClose}>← {closeLabel}</button>
+        {onClose && <button type="button" className="intro-lab-button outline" onClick={onClose}>← {closeLabel}</button>}
         {!focusedRehearsal && library?.completed && <span className="word-intro-completed">Previously introduced</span>}
       </div>
       <header className="word-intro-heading">

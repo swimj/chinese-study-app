@@ -280,8 +280,9 @@ reconciliation is required to proceed with this work.
   completes through the existing deferred commit and Undo path. Recognition uses
   curated source content; production selects a rehearsal by its current streak
   modulo the package rehearsal count, returning to the first on a streak reset.
-  On-demand completion in My Words alone does not advance word status. Explicit
-  skipping retains the existing first-encounter cards. Missing preparation excludes
+  On-demand completion in My Words alone does not advance word status. The
+  in-session walkthrough has no skip-to-cards or Escape bypass; leaving uses
+  normal session controls and grants no teaching completion. Missing preparation excludes
   the word at session entry rather than triggering generation during study.
 - **Learning:** one recognition direction and one production direction remain
   the daily obligation. Production can use a cloze or direct definition/situation
