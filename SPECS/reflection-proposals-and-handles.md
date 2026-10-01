@@ -879,6 +879,9 @@ Explanation-only items enter Help when their artifact is materialized. Done
 removes them from Help. Defer moves their original evidence item to the
 second-opinion staging pen without creating a proposal or authorizing an
 operation. The item remains on the artifact, so By session still shows it.
+Done from a deferred explanation item reaches the same end state as Done from
+open Help: the inbox row is deleted, so the item leaves both Help and the
+staging pen.
 
 Help membership for those items is separate from proposal review. A deferred
 explanation item can be selected with deferred proposals for a second opinion.

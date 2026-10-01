@@ -609,8 +609,10 @@ type ReflectionHelpInboxEntry = {
 
 `DELETE /api/reflection-help-inbox` accepts `{ artifactId, itemId }` and
 removes that item from Help. Success returns `200` with `{ done: true }` when
-a still-open row existed or `{ done: false }` when none did. Missing artifact/item
-still return `404`. There is no learner-facing undo.
+an open or deferred row existed (same end state: gone from Help and from
+second-opinion staging) or `{ done: false }` when none did. Terminal
+`requested_second_opinion` rows are not deleted. Missing artifact/item still
+return `404`. There is no learner-facing undo.
 
 Done leaves the artifact body unchanged, so By session and raw artifact reads
 still show the item.

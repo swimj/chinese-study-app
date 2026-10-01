@@ -172,8 +172,8 @@ page. Same-tab generation (post-session, retry, or second opinion) can show a
 spinner on the tab instead of the count. A failed concluded generation run
 still takes priority over both until Run meta is opened, which
 durably acknowledges it and also marks the Run meta rail. Accept, Dismiss, Defer, and
-Done are durable and advance the pager; Done leaves Help with no learner-facing
-undo. Prev/Next are ephemeral. Compact pager chrome stays above the reading
+Done are durable and advance the pager; Done leaves Help (including a deferred
+explanation card shown via Show deferred) with no learner-facing undo. Prev/Next are ephemeral. Compact pager chrome stays above the reading
 pane with the target / typed-response identity line. Item quality chips, handle
 selection, reset, and Accept / Defer / Dismiss sit together below the
 pane. Explanation-only cards use that same toolbar. Handle is enabled so the
