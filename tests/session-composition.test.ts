@@ -1,3 +1,4 @@
+import { clearWordPreparationFixtures, prepareWordFixture } from './helpers/prepared-word-fixtures.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -78,6 +79,7 @@ describe('session composition', { concurrency: false }, () => {
   });
 
   beforeEach(() => {
+    clearWordPreparationFixtures(sqlite);
     const deleteGuards = sqlite.prepare(`
       SELECT name, sql FROM sqlite_schema
       WHERE type = 'trigger' AND name LIKE '%_no_delete'
@@ -1254,11 +1256,11 @@ describe('session composition', { concurrency: false }, () => {
     assert.equal(dbModule.getLearningPolicy(studyDayKey).unstudiedAdmissionSource, 'mixed');
     assert.throws(
       () => dbModule.setDailyNewWordLimit(-1),
-      /Expected non-negative integer dailyNewWordLimit/,
+      /Expected integer dailyNewWordLimit between 0 and 20/,
     );
     assert.throws(
       () => dbModule.setDailyNewWordLimit(1.5),
-      /Expected non-negative integer dailyNewWordLimit/,
+      /Expected integer dailyNewWordLimit between 0 and 20/,
     );
 
     dbModule.setDailyNewWordLimit(3);
@@ -1347,7 +1349,7 @@ describe('session composition', { concurrency: false }, () => {
     assert.equal(dbModule.getSessionPayload(nextDayKey).buckets.unstudied.length, 1);
   });
 
-  test('zero limit blocks normal new words but preserves required overflow', () => {
+  test('zero limit blocks all new words including legacy required flags', () => {
     insertUnstudiedWordPair('zero-limit-normal', 100, '2026-01-01T00:00:00.000Z');
     insertUnstudiedWordPair('zero-limit-required', 10, '2026-01-02T00:00:00.000Z');
     dbModule.updateWordUserPriority('zero-limit-required', { requiredForNextSession: true });
@@ -1355,7 +1357,7 @@ describe('session composition', { concurrency: false }, () => {
 
     assert.deepEqual(
       dbModule.getSessionPayload(studyDayKey).buckets.unstudied.map((word) => word.id),
-      ['zero-limit-required'],
+      [],
     );
   });
 
@@ -1409,7 +1411,7 @@ describe('session composition', { concurrency: false }, () => {
     assert.equal(sessionIds.includes(`unstudied/unstudied-${totalUnstudiedWords}`), false);
   });
 
-  test('includes required unstudied words beyond the split even when the stash half is full of tops', () => {
+  test('legacy required flags do not bypass the intake split or cap', () => {
     dbModule.setDailyNewWordLimit(2);
     insertUnstudiedWordPair('diet-high', 100, '2026-01-01T00:00:00.000Z');
     insertUnstudiedWordPair('diet-low', 10, '2026-01-02T00:00:00.000Z');
@@ -1422,7 +1424,6 @@ describe('session composition', { concurrency: false }, () => {
     assert.deepEqual(new Set(sessionIds), new Set([
       'unstudied/top-fills-stash',
       'unstudied/diet-high',
-      'unstudied/required-extra',
     ]));
   });
 
@@ -2026,6 +2027,7 @@ function insertWord(record: WordRecord) {
     record.lastLearningSuccessOn ?? null,
     record.lastLearningCoveredOn ?? null,
   );
+  if (record.status === 'unstudied') prepareWordFixture(sqlite, dbModule, record.id);
 }
 
 function insertReviewSkillState(record: ReviewSkillStateRecord) {

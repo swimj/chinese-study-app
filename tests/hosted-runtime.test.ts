@@ -211,11 +211,18 @@ describe('hosted application runtime', { concurrency: false }, () => {
       additionalServer.once('error', reject);
     });
     let databaseCloseCount = 0;
+    let drained = false;
+    let finishDrain!: () => void;
+    const drain = new Promise<void>((resolve) => { finishDrain = resolve; });
     const shutdown = indexModule.installGracefulShutdown(disposableServer, () => {
+      assert.equal(drained, true);
       databaseCloseCount += 1;
-    }, [additionalServer]);
+    }, [additionalServer], async () => { await drain; drained = true; });
 
-    await Promise.all([shutdown(), shutdown()]);
+    const firstShutdown = shutdown();
+    assert.equal(databaseCloseCount, 0);
+    finishDrain();
+    await Promise.all([firstShutdown, shutdown()]);
 
     assert.equal(disposableServer.listening, false);
     assert.equal(additionalServer.listening, false);

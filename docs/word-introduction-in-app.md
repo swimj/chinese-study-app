@@ -6,9 +6,10 @@ The [lab](word-introduction-lab.md) remains a separate local authoring sandbox.
 
 ## Learner flow
 
-**My Words → Prepare introduction** prepares and opens a lesson in one action.
-The learner never needs to approve the content's quality or publication. New
-unstudied Mandarin words also offer the lesson inside the study session.
+**My Words → Prepare introduction** requests shared background preparation and
+polls readiness; opening is a separate exact-package association. The learner
+never needs to approve content quality or publication. New Mandarin words enter
+a session only with a ready teaching/source snapshot.
 Space advances a complete teaching beat; private reflection questions do not
 require answers. Rehearsal asks for the taught expression in hanzi.
 
@@ -16,7 +17,8 @@ Completing the package inside an active first encounter completes that word
 unit through the usual deferred commit/Undo path. Opening or completing a lesson
 in My Words only records navigation, not study credit. A previously completed
 navigation marker does not silently grant credit in a later study session.
-Unavailable content and explicit skips retain the ordinary card path.
+Explicit skips retain the ordinary card path. Unprepared new words are omitted
+at session entry; established learning words retain their existing fallback.
 
 Learning keeps the existing recognition + production coverage and first-try
 success rules. An eligible package whose introduction this learner has completed supplies the production rehearsal and
@@ -46,13 +48,33 @@ there is no separate definition or sentence table. Example identities remain
 local to an immutable content document. Legacy cue and supplement tables are
 unchanged; no backfill converts or removes their data.
 
-Each stage claims a five-minute lease before provider work. Claims are atomic
-across callers/processes using the shared database. Finishing validates ownership
-and publishes the document plus its readiness pointer in one transaction. A
-stale worker cannot publish after its lease expires. Failures release ownership;
-teaching failure retains bootstrap. Waiting requests poll readiness and reuse
-work already running, with a bounded wait. The per-process three-word limit is
-an additional resource bound, not the concurrency authority.
+Migration `0018_word_preparation_work` adds shared operational work, attempt
+history, and attributable operator retry events. Migration `0019` adds `learner_word_preparation_reserve` membership and durable
+`learner_word_reserve_requests`, and clamps existing daily limits above 20 in all
+profiles. Only Mandarin uses the preparation reserve.
+The reserve targets twice each learner's configured limit (at most 40), counting
+queued, ready and failed candidates. Failed slots stay reserved to prevent
+unbounded replacement spending. App entry, priority/settings changes, and durable
+first-study commits reconcile it; composition and abandonment do not consume it.
+Shared generation is reused across accounts and never writes private pins.
+
+The in-process worker polls every five seconds, with two concurrent stages.
+Each stage uses the existing five-minute shared generation lease; the work journal
+records attempts rather than granting a competing publication claim. Publication
+is atomic and stale lease owners cannot publish. Restart recovery recognizes
+already-published success or consumes the interrupted attempt. Three failed
+attempts exhaust the shared word/stage budget, with increasing retry delays.
+Successful earlier stages survive. Operator retry resets the budget with an
+actor audit. Provider-wide failures back off the worker; maintenance/provider
+controls pause work without spending attempts. Shutdown drains active work.
+
+Session entry waits at most 30 seconds total, then admits ready candidates within
+the existing stash/diet quotas. Compute quotas before readiness filtering; words
+still preparing do not transfer stash demand to diet. Top priority is best effort.
+A reduced or empty new-word set is valid. When no other study work exists, the UI
+explains preparation and offers waiting again or returning later. The complete
+lesson snapshot travels in the payload, so study neither generates nor fetches
+missing introduction content mid-session.
 
 The existing shared publication registry accepts `word_content` and
 `teaching_package`. Application-authorized validated results immediately enter
@@ -70,21 +92,28 @@ Historical immutable payloads remain stored.
 
 - `server/word-content/`: shared authoring normalization, provider, service and routes.
 - `server/db/word-introductions.ts`: shared persistence and private association.
+- `server/db/preparation-work.ts`: shared work journal, retries and operator diagnostics.
+- `server/word-content/preparation-worker.ts`: bounded backend worker lifecycle.
+- `server/db/word-reserve.ts`: stable learner membership and reconciliation requests.
+- `server/word-content/session-preparation.ts`: bounded entry wait and prepared payload.
+- `server/word-content/preparation-runtime.ts`: backend worker integration.
 - `src/features/word-introduction/`: app workspace, using the lab's shared player.
-- `src/features/session/`: introduction gate and learning snapshot runtime.
+- `src/features/session/`: entry preparation and frozen introduction/learning snapshots.
 
 Authenticated Mandarin endpoints:
 
 - `GET /api/words/:wordId/introduction`: eligible library, learner selection/completion,
-  generation availability and terminal preparation-unavailable flag.
-- `POST /api/words/:wordId/introduction/prepare`, body `{}`: reuse or prepare both
-  stages, publish validated results, and privately pin the selected package.
+  generation availability, pending state and terminal preparation-unavailable flag.
+- `POST /api/words/:wordId/introduction/prepare`, body `{}`: enqueue/reuse shared
+  bootstrap and teaching; return current state for polling, without a private pin.
+- `POST /api/words/:wordId/introduction/open`, body `{ "packageId": "..." }`:
+  privately associate the exact eligible prepared package, without generation.
 - `POST /api/words/:wordId/introduction/complete`, body `{ "packageId": "..." }`:
   idempotent private navigation completion of the exact opened eligible package.
 
 Provider credentials stay backend-owned. Configuration and maintenance controls
-use the same provider infrastructure as the lab/reflection. Preparation can take
-several minutes; failure is recoverable and ordinary study remains available.
+use the same provider infrastructure as the lab/reflection. Repeated failures appear on the operator
+page rather than exposing provider internals to everyday learners.
 
 ## Local verification and migration
 
@@ -107,7 +136,14 @@ startup deliberately does not silently migrate. See [schema migrations](ops/sche
 for the full backup and deployment procedure. This feature does not itself deploy
 or migrate the hosted production database.
 
-Opening/preparing an introduction now also prepares independent ordinary-review
-exercises. Review-generation failure is non-blocking and reported in the lesson;
-reopening retries it. Migration 0017 adds canonical review records and review
-preparation claims on top of 0016; it preserves existing introduction data.
+Review generation is requested asynchronously after a first-study commit, not
+when a lesson is prepared or opened. Migration 0017's canonical review records
+and claims remain in use. Review failures preserve teaching and ordinary fallback.
+All migrations preserve compatible authored content; no bulk regeneration or
+prompt changes are part of the reserve implementation.
+
+The existing operator allowlist protects `GET /api/operator/word-preparation/failures`
+and `POST /api/operator/word-preparation/:workId/retry` (body `{}`). Diagnostics
+identify shared words/stages and attempt histories without learner evidence or
+provider response bodies. Retrying withdrawn content does not authorize
+regeneration; its publication disposition must first be resolved.

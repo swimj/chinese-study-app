@@ -37,6 +37,15 @@ export function createWordIntroductionRouter(service: WordIntroductionService): 
     }
     response.json(await service.prepare(request.params.wordId));
   }));
+  router.post('/:wordId/introduction/open', handle((request, response) => {
+    const body = bodyRecord(request.body);
+    if (body === null || Object.keys(body).length !== 1 || typeof body.packageId !== 'string'
+      || body.packageId.length === 0 || body.packageId.length > 200) {
+      response.status(400).json({ error: 'An exact introduction package ID is required.' });
+      return;
+    }
+    response.json(service.open(request.params.wordId, body.packageId));
+  }));
   router.post('/:wordId/introduction/complete', handle((request, response) => {
     const body = bodyRecord(request.body);
     if (body === null || Object.keys(body).length !== 1 || typeof body.packageId !== 'string'

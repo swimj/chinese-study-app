@@ -74,8 +74,12 @@ word unit through the existing deferred commit and Undo path. Merely opening or
 completing it in My Words grants no study credit; a saved navigation-completion
 marker does not automatically complete a later session unit.
 
-If the learner skips that path or content is unavailable, the existing two-phase
-first encounter below remains the fallback. Other profiles also retain it.
+Mandarin admits a new word only when its teaching/source snapshot is ready at
+session entry. Missing preparation reduces the new-word count; it never causes a
+generation wait or content fetch inside the session. An explicit skip can still
+use the existing two-phase first encounter below. Other profiles retain that
+path. First-study preparation/replenishment effects follow the durable commit,
+not provisional covering or navigation, preserving deferred commit and Undo.
 
 ### Phase 1: Intro
 

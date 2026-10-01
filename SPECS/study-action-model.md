@@ -608,7 +608,8 @@ diet_slots  = remaining - stash_slots
 ```
 
 With the default ratio the odd leftover slot goes to diet. If `remaining` is
-`0`, this split admits nobody; require-bypass may still apply.
+`0`, this split admits nobody. The legacy require bypass described below applies
+only outside the prepared Mandarin flow.
 
 ### Stash-only source
 
@@ -623,8 +624,8 @@ diet_slots  = 0
 ```
 
 Diet is not a candidate pool. Leftover stash slots stay empty; they are not
-filled from diet. Require-next-session bypass still unions in after the
-split. Tops still cannot exceed `stash_slots`, which is now the full remaining
+filled from diet. The legacy require-next-session bypass applies only outside
+the prepared Mandarin flow. Tops still cannot exceed `stash_slots`, which is now the full remaining
 quota.
 
 The source is a durable `learner_settings` value. Changing it does not rewrite
@@ -639,15 +640,17 @@ frontend session.
    means last overlay write. Tie-break by word `id` ascending.
 2. Tops **cannot exceed the stash half**. Extra tops wait until a later
    session. This is a behavior change from "all tops beat everything."
-3. Remaining stash slots are a **random sample** of non-top stash. The draw
-   happens once per composition. The selected unstudied set is frozen in the
+3. Remaining stash slots are a **random sample** of non-top stash. In Mandarin,
+   stable reserve membership and readiness constrain the draw as described below.
+   In the legacy flow, the draw happens once per composition. The selected unstudied set is frozen in the
    existing frontend session payload snapshot, so reload/undo/rebuild of the
    same session does not re-roll. Backend composition has no frontend session
    id yet, so the RNG is seeded from `unstudied-admission:${studyDayKey}:${remainingQuota}`
    (stable for identical remaining quota on that UTC day). Tests may depend
    on that seed.
-4. The actual selected stash contribution is determined before diet candidates
-   are loaded. If stash cannot fill `stash_slots`, diet takes its own slots
+4. The stash contribution available under the selection policy is determined
+   before diet candidates are loaded. Mandarin computes this before applying
+   preparation readiness; temporarily unready stash does not become diet demand. If stash cannot fill `stash_slots`, diet takes its own slots
    plus the unfilled stash slots (in the deck-mode draw order when a manifest
    is present, else frequency order). In `stash_only` mode, diet demand is zero
    and unfilled stash slots stay empty.
@@ -663,7 +666,7 @@ frequency-ranked fill applies unchanged.
   unset it defaults to 100% on the first deck by manifest order. Deck
   membership comes from the manifest's word→deck assignments; words absent
   from assignments belong to the `beyond-hsk` tail.
-- Diet demand is `remaining quota − actual selected stash count`, so stash
+- Diet demand is `remaining quota − stash contribution before readiness`, so stash
   underfill is absorbed without letting a full stash distort the deck mix. It
   is split across positively weighted decks by largest-remainder rounding, then
   each deck contributes a **seeded uniform sample** of its unstudied,
@@ -681,12 +684,17 @@ frequency-ranked fill applies unchanged.
 The composed unstudied admitted set is:
 
 ```text
-selected_stash ∪ selected_diet ∪ required_bypass
+selected_stash ∪ selected_diet
+# Legacy non-Mandarin flow additionally unions required_bypass.
 ```
 
 ### Require-next-session bypass
 
-Require-next-session is the one interrupt above the mix. Existing require
+Require-next-session has been removed from the public Mandarin interface.
+Stored flags do not bypass Mandarin readiness, source quotas, or the daily cap.
+Its reintroduction needs an explicit preparation/teaching policy.
+
+For the legacy non-Mandarin flow, existing require
 behavior is kept as a **post-split cap-bypass union**: required unstudied
 words that are not sunk still enter even when the cap/split is full,
 including when `remaining` is `0`.
@@ -694,6 +702,29 @@ including when `remaining` is `0`.
 Required words are overlay/stash. If the split already selected a required
 word, it is **not** double-counted. Extra tops that are also required still
 enter via this bypass.
+
+### Mandarin preparation readiness
+
+The configured daily new-word limit is an integer from 0 through 20; migration
+clamps existing larger values to 20. The Mandarin reserve targets twice that
+configured limit, independent of how much of today's intake has been consumed.
+Reserve membership is stable across visits, follows the selection policy above,
+and counts queued as well as ready candidates toward its bound.
+
+Readiness is an additional admission constraint within each pool, after quotas
+have been computed from all eligible candidates. A missing ready candidate may
+leave its slot empty; it must not silently change the stash/diet mix. Top priority
+is best effort. Session entry may spend up to 30 seconds total preparing relevant
+words, then returns only prepared new-word lessons. The session snapshot already
+contains the teaching/source content needed by the player. No generation or
+missing-content fetch occurs when a new word appears during active study.
+
+App entry and priority/settings changes reconcile the reserve. A durable first
+study commit requests replenishment and asynchronous review preparation; mere
+composition, preview, or abandonment does not consume a candidate. The detailed
+shared generation, retry and operator policies are owned by
+[word-bootstrap-and-introduction.md](word-bootstrap-and-introduction.md#preparation-reserve-and-session-readiness-2026-10-01).
+French retains its existing first-encounter and selection path.
 
 ### Non-goals
 

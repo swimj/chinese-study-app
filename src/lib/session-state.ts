@@ -1,4 +1,5 @@
 import type { ReviewRating, Word } from '../types';
+import type { WordIntroductionResponse } from '../domain/word-content/application';
 import type {
   ProductionResponseResolution,
   SessionStudyItem,
@@ -59,6 +60,8 @@ type ReviewStudySkillId = Extract<StudySkillId, 'recognition' | 'production'>;
 type ContrastSelectionRating = ReviewRating;
 
 export type BucketSessionState = {
+  /** Frozen at session admission; never refreshed while a session is active. */
+  introductions: Readonly<Record<string, WordIntroductionResponse>>;
   sessionId: string;
   phase: SessionPhase;
   scheduler: BucketSessionScheduler;
@@ -165,6 +168,7 @@ export function createBucketSessionState({
   };
 
   return {
+    introductions: structuredClone(buckets.introductions ?? {}),
     sessionId,
     phase: 'active',
     scheduler: createBucketSessionScheduler({

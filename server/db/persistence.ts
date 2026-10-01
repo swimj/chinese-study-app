@@ -53,6 +53,10 @@ import {
 import { config, getConfig, getDb, dbPath, seedDataPath, dbExistedOnStartup } from './connection.ts';
 import { fillMissingNormalizedHanzi, normalizeMandarinHanziLookup } from './hanzi-lookup.ts';
 import { getWordIntroductionLibrary, getWordIntroductionPreparation } from './word-introductions.ts';
+import { enqueueWordPreparation } from './preparation-work.ts';
+import { getWordReserveCandidates, replaceWordReserveCandidates, requestWordReserveReconciliation,
+  finishWordReserveReconciliation, getBlockedPreparationWordIds } from './word-reserve.ts';
+import type { WordIntroductionResponse } from '../../src/domain/word-content/application.ts';
 import { getCanonicalReviewContent, isCanonicalReviewSourceEligible } from './review-content.ts';
 import { assertSchemaCurrent, migrateDatabase } from './migrations.ts';
 import { createHostedOperationsSchema } from './hosted-operations.ts';
@@ -793,6 +797,53 @@ function resolveUnstudiedPriorityWordIdsByTarget(targetText: string): Array<{ id
   });
 }
 
+/** Reconciliation is bounded, synchronous and provider-free. Day changes never reshuffle retained candidates. */
+export function reconcileWordPreparationReserve(studyDayKey = getTodayKey()): void {
+  assertStudyDayKey(studyDayKey);
+  if (config.studyProfile !== 'mandarin') { finishWordReserveReconciliation(); return; }
+  const existing = new Set(getWordReserveCandidates());
+  const target = 2 * getDailyNewWordLimit();
+  const blocked = getBlockedPreparationWordIds();
+  // Failed current candidates retain their slots: failure alone cannot expand speculative spend.
+  // Priority, pool, intake-limit and lifecycle changes still reconcile membership normally.
+  const excludedIds = new Set([...blocked].filter((id) => !existing.has(id)));
+  const candidates = getAdmittedUnstudiedWords(target, 'reserve', getUnstudiedAdmissionSource(), {
+    preferredIds: existing, excludedIds, ignoreRequired: true,
+  });
+  getDb().exec('SAVEPOINT reconcile_word_reserve');
+  try {
+    replaceWordReserveCandidates(candidates.map((word) => word.id));
+    for (const word of candidates) {
+      if (!blocked.has(word.id) && !getWordIntroductionLibrary(word.id)?.selectedPackageId) enqueueWordPreparation(word.id, 'teaching');
+    }
+    finishWordReserveReconciliation();
+    getDb().exec('RELEASE SAVEPOINT reconcile_word_reserve');
+  } catch (error) {
+    getDb().exec('ROLLBACK TO SAVEPOINT reconcile_word_reserve');
+    getDb().exec('RELEASE SAVEPOINT reconcile_word_reserve');
+    throw error;
+  }
+}
+function getReadyReserveIds(): Set<string> {
+  return new Set(getWordReserveCandidates().filter((id) => getWordIntroductionLibrary(id)?.selectedPackageId != null));
+}
+/** No composition here: polling must not repeatedly issue served review snapshots. */
+export function inspectSessionPreparation(studyDayKey: string): { targetCount: number; readyCount: number; pending: boolean } {
+  assertStudyDayKey(studyDayKey);
+  if (config.studyProfile !== 'mandarin') return { targetCount: 0, readyCount: 0, pending: false };
+  const quota = getRemainingDailyNewWordSlots(studyDayKey);
+  const source = getUnstudiedAdmissionSource();
+  const blocked = getBlockedPreparationWordIds();
+  const reserveIds = new Set(getWordReserveCandidates().filter((id) => !blocked.has(id)));
+  const intended = getAdmittedUnstudiedWords(quota, studyDayKey, source, { eligibleIds: reserveIds, ignoreRequired: true });
+  const ready = getAdmittedUnstudiedWords(quota, studyDayKey, source, { eligibleIds: getReadyReserveIds(), ignoreRequired: true });
+  const readyIds = new Set(ready.map((word) => word.id));
+  const pendingTop = intended.some((word) => !readyIds.has(word.id) && Boolean(getDb().prepare(
+    'SELECT 1 FROM user_word_priority WHERE word_id = ? AND priority_tier = ?',
+  ).get(word.id, PRIORITY_TIER_TOP)));
+  return { targetCount: intended.length, readyCount: ready.length, pending: ready.length < intended.length || pendingTop };
+}
+
 export function getSessionPayload(
   studyDayKey: string,
   options: { random?: () => number } = {},
@@ -800,6 +851,7 @@ export function getSessionPayload(
   assertStudyDayKey(studyDayKey);
   ensureAcceptedReviewAttemptEventsProjectedBeforeSessionComposition();
 
+  if (config.studyProfile === 'mandarin') reconcileWordPreparationReserve(studyDayKey);
   return {
     buckets: getSessionItemBucketsWithWords(studyDayKey, options.random ?? Math.random),
   };
@@ -2283,6 +2335,10 @@ export function completeUnstudiedWordSession(wordId: string, studyDayKey: string
     `).run(new Date().toISOString(), wordId);
 
     incrementDailyNewStudyCount(studyDayKey);
+    if (config.studyProfile === 'mandarin') {
+      enqueueWordPreparation(wordId, 'review');
+      requestWordReserveReconciliation();
+    }
     getDb().exec('COMMIT');
   } catch (error) {
     getDb().exec('ROLLBACK');
@@ -4860,12 +4916,24 @@ function getSessionItemBucketsWithWords(
     }
   }
 
+  const introductions: Record<string, WordIntroductionResponse> = {};
+  const unstudied = config.studyProfile === 'mandarin'
+    ? getAdmittedUnstudiedWords(remainingDailyNewWordSlots, studyDayKey, unstudiedAdmissionSource, {
+      eligibleIds: getReadyReserveIds(), ignoreRequired: true,
+    })
+    : getAdmittedUnstudiedWords(remainingDailyNewWordSlots, studyDayKey, unstudiedAdmissionSource);
+  for (const word of config.studyProfile === 'mandarin' ? unstudied : []) {
+    const library = getWordIntroductionLibrary(word.id);
+    if (!library?.selectedPackageId) throw new Error('Admitted word has no prepared introduction');
+    introductions[word.id] = { ...library, generationAvailable: false, model: '' };
+  }
   return {
+    ...(config.studyProfile === 'mandarin' ? { introductions } : {}),
     review: interleavePureCueReviewItems(wordReviewItems, pureCueReviewItems, random),
     learning,
     learningContent,
     learningRehearsals,
-    unstudied: getAdmittedUnstudiedWords(remainingDailyNewWordSlots, studyDayKey, unstudiedAdmissionSource),
+    unstudied,
   };
 }
 
@@ -4882,10 +4950,18 @@ function interleavePureCueReviewItems(
   return interleaved;
 }
 
+type PreparationSelection = {
+  preferredIds?: ReadonlySet<string>;
+  eligibleIds?: ReadonlySet<string>;
+  excludedIds?: ReadonlySet<string>;
+  ignoreRequired?: boolean;
+};
+
 function getAdmittedUnstudiedWords(
   remainingDailyNewWordSlots: number,
   studyDayKey: string,
   source: UnstudiedAdmissionSource,
+  selection: PreparationSelection = {},
 ): Word[] {
   const stashRows = getDb()
     .prepare(`
@@ -4918,11 +4994,11 @@ function getAdmittedUnstudiedWords(
       overlay_updated_at: string;
     }>;
 
-  const stash: UnstudiedStashCandidate[] = stashRows.map((row) => ({
+  const stash: UnstudiedStashCandidate[] = stashRows.filter((row) => !selection.excludedIds?.has(row.id)).map((row) => ({
     id: row.id,
     overlayUpdatedAt: row.overlay_updated_at,
     isTop: row.priority_tier === PRIORITY_TIER_TOP,
-    isRequired: row.required_for_next_session !== 0,
+    isRequired: !selection.ignoreRequired && row.required_for_next_session !== 0,
   }));
   const seedSource = buildUnstudiedAdmissionSeedSource(studyDayKey, remainingDailyNewWordSlots);
   const stashRatio = getStashDietSplit();
@@ -4932,10 +5008,12 @@ function getAdmittedUnstudiedWords(
     seedSource,
     stashRatio,
     source,
+    ...selection,
   });
-  const dietRows = getDietCandidateRows(stashPlan.dietDemand, seedSource);
+  const dietRows = getDietCandidateRows(stashPlan.dietDemand, seedSource, selection);
   const admittedIds = selectAdmittedUnstudiedWordIds({
     stash,
+    ...selection,
     dietIds: dietRows.map((row) => row.id),
     remainingQuota: remainingDailyNewWordSlots,
     seedSource,
@@ -4970,18 +5048,18 @@ function getAdmittedUnstudiedWords(
  * legacy corpus-priority fill applies unchanged (French profile, dev seeds).
  * SPECS/diet-deck-distribution.md §2.4.
  */
-function getDietCandidateRows(remainingQuota: number, seedSource: string): WordRow[] {
+function getDietCandidateRows(remainingQuota: number, seedSource: string, selection: PreparationSelection = {}): WordRow[] {
   if (remainingQuota === 0) {
     return [];
   }
   const manifest = config.studyProfile === 'mandarin' ? loadDeckManifest() : null;
   if (!manifest) {
-    return queryLegacyDietRows(remainingQuota);
+    return selectLegacyDietRows(remainingQuota, selection);
   }
-  return getDeckedDietRows(remainingQuota, manifest, seedSource);
+  return getDeckedDietRows(remainingQuota, manifest, seedSource, selection);
 }
 
-function getDeckedDietRows(remainingQuota: number, manifest: DeckManifest, seedSource: string): WordRow[] {
+function getDeckedDietRows(remainingQuota: number, manifest: DeckManifest, seedSource: string, selection: PreparationSelection = {}): WordRow[] {
   const profile = getDietProfile(manifest);
   if (!profile) {
     throw new Error('Diet profile invariant violated: manifest present but no effective profile.');
@@ -5007,12 +5085,17 @@ function getDeckedDietRows(remainingQuota: number, manifest: DeckManifest, seedS
     .map((deck) => deck.id);
 
   const rowsById = new Map<string, WordRow>();
+  let plannedCount = 0;
+  let plannedIds: ReadonlySet<string> = new Set();
   const selectedIds = selectDeckDietWordIds({
+    ...selection,
+    onPlanned: (count, ids) => { plannedCount = count; plannedIds = ids; },
     targets,
     spillDeckIds,
     seedSource,
     limit: remainingQuota,
-    loadCandidatesForDeck: (deckId) => queryDeckDietCandidatesForDeck(manifest, deckId, rowsById),
+    loadCandidatesForDeck: (deckId) => queryDeckDietCandidatesForDeck(manifest, deckId, rowsById)
+      .filter((id) => !selection.excludedIds?.has(id)),
   });
 
   const rows: WordRow[] = selectedIds.map((id) => {
@@ -5023,8 +5106,10 @@ function getDeckedDietRows(remainingQuota: number, manifest: DeckManifest, seedS
     return row;
   });
 
-  if (rows.length < remainingQuota) {
-    rows.push(...queryLegacyDietRows(remainingQuota - rows.length, new Set(selectedIds)));
+  if (plannedCount < remainingQuota) {
+    rows.push(...selectLegacyDietRows(remainingQuota - plannedCount, {
+      ...selection, excludedIds: new Set([...(selection.excludedIds ?? []), ...plannedIds]),
+    }));
   }
   return rows;
 }
@@ -5038,6 +5123,16 @@ function queryDeckDietCandidatesForDeck(
   const rows = queryManifestDeckWords(manifest, [deckId], 'diet');
   for (const row of rows) rowsById.set(row.id, row);
   return rows.map((row) => row.id);
+}
+
+function selectLegacyDietRows(limit: number, selection: PreparationSelection): WordRow[] {
+  if (!selection.preferredIds && !selection.eligibleIds && !selection.excludedIds) return queryLegacyDietRows(limit);
+  const rows = queryLegacyDietRows(-1, selection.excludedIds ? new Set(selection.excludedIds) : undefined);
+  const preferred = selection.preferredIds;
+  const ordered = preferred
+    ? [...rows.filter((row) => preferred.has(row.id)), ...rows.filter((row) => !preferred.has(row.id))]
+    : rows;
+  return ordered.filter((row) => !selection.eligibleIds || selection.eligibleIds.has(row.id)).slice(0, limit);
 }
 
 function queryLegacyDietRows(remainingQuota: number, excludeIds?: Set<string>): WordRow[] {
@@ -5841,8 +5936,8 @@ function incrementDailyNewStudyCount(studyDayKey: string) {
 }
 
 function assertDailyNewWordLimit(value: number) {
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new Error('Expected non-negative integer dailyNewWordLimit');
+  if (!Number.isSafeInteger(value) || value < 0 || value > 20) {
+    throw new Error('Expected integer dailyNewWordLimit between 0 and 20');
   }
 }
 

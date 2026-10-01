@@ -157,6 +157,9 @@ import {
   type IntroductionLabService,
 } from './word-content-lab/service.ts';
 
+import { prepareSessionPayload } from './word-content/session-preparation.ts';
+import { startWordPreparationRuntime } from './word-content/preparation-runtime.ts';
+
 const port = dbConfig.port;
 const defaultJsonBodyLimit = '100kb';
 
@@ -173,6 +176,8 @@ export type CreateAppOptions = {
   clientIncidentDiagnosticSink?: ClientIncidentDiagnosticSink;
   introductionLabService?: IntroductionLabService;
   wordIntroductionService?: WordIntroductionService;
+  wakeWordPreparation?: () => void;
+  canPrepareWords?: () => boolean;
 };
 
 function parseMyWordsStatusQuery(value: unknown): MyWordsStatus[] | undefined | 'invalid' {
@@ -254,7 +259,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
   if (dbConfig.studyProfile === 'mandarin') {
     app.use('/api/words', createWordIntroductionRouter(
-      options.wordIntroductionService ?? createWordIntroductionService(),
+      options.wordIntroductionService ?? createWordIntroductionService({ wake: options.wakeWordPreparation }),
     ));
   }
 
@@ -385,6 +390,22 @@ export function createApp(options: CreateAppOptions = {}) {
       }
 
       res.status(500).json({ error: 'Failed to load word meanings' });
+    }
+  });
+
+  app.post('/api/session-payload', async (req, res) => {
+    const studyDayKey = readStudyDayKeyFromQuery(req.body?.studyDayKey);
+    if (!studyDayKey || Object.keys(req.body ?? {}).some((key) => key !== 'studyDayKey')) {
+      res.status(400).json({ error: 'Expected YYYY-MM-DD studyDayKey' });
+      return;
+    }
+    try {
+      res.json(await prepareSessionPayload(studyDayKey, {
+        wake: options.wakeWordPreparation ?? (() => {}),
+        budgetMs: options.canPrepareWords?.() ? 30_000 : 0,
+      }));
+    } catch {
+      res.status(500).json({ error: 'Could not prepare your session. Please try again.' });
     }
   });
 
@@ -595,7 +616,7 @@ export function createApp(options: CreateAppOptions = {}) {
     try {
       res.json(setDailyNewWordLimit(dailyNewWordLimit));
     } catch (error) {
-      if (error instanceof Error && error.message === 'Expected non-negative integer dailyNewWordLimit') {
+      if (error instanceof Error && error.message === 'Expected integer dailyNewWordLimit between 0 and 20') {
         res.status(400).json({ error: error.message });
         return;
       }
@@ -2242,7 +2263,8 @@ export type StartServerOptions = {
   port?: number;
   app?: ReturnType<typeof createApp>;
   additionalServers?: Server[];
-  closeDatabase?: () => void;
+  closeDatabase?: () => void | Promise<void>;
+  stopBackgroundWork?: () => Promise<void>;
 };
 
 export function startServer(options: StartServerOptions = {}): Server {
@@ -2258,29 +2280,30 @@ export function startServer(options: StartServerOptions = {}): Server {
     server,
     options.closeDatabase ?? closeDbConnection,
     options.additionalServers ?? [],
+    options.stopBackgroundWork,
   );
   return server;
 }
 
 export function installGracefulShutdown(
   server: Server,
-  closeDatabase: () => void = closeDbConnection,
+  closeDatabase: () => void | Promise<void> = closeDbConnection,
   additionalServers: Server[] = [],
+  stopBackgroundWork: () => Promise<void> = async () => {},
 ): () => Promise<void> {
   let shutdownPromise: Promise<void> | null = null;
   const shutdown = () => {
-    shutdownPromise ??= new Promise<void>((resolve, reject) => {
-      closeServers([server, ...additionalServers], (serverError) => {
-        try {
-          closeDatabase();
-        } catch (databaseError) {
-          reject(databaseError);
-          return;
-        }
-        if (serverError) reject(serverError);
-        else resolve();
+    shutdownPromise ??= (async () => {
+      // Stop claiming immediately, while HTTP requests and active publications drain.
+      const background = stopBackgroundWork();
+      const closing = new Promise<void>((resolve, reject) => {
+        closeServers([server, ...additionalServers], (error) => error ? reject(error) : resolve());
       });
-    });
+      const results = await Promise.allSettled([background, closing]);
+      await closeDatabase();
+      const failure = results.find((result) => result.status === 'rejected');
+      if (failure?.status === 'rejected') throw failure.reason;
+    })();
     return shutdownPromise;
   };
   const handleSignal = () => {
@@ -2329,8 +2352,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         readOperationalMetrics: () => readServiceOperationalMetrics(),
       });
   const usagePulseScheduler = startUsagePulseScheduler();
+  const wordPreparation = startWordPreparationRuntime();
   startServer({
-    app: createApp({ serviceMetrics }),
+    app: createApp({ serviceMetrics, wakeWordPreparation: wordPreparation.wake, canPrepareWords: wordPreparation.canPrepare }),
+    stopBackgroundWork: wordPreparation.stop,
     additionalServers: metricsServer ? [metricsServer] : [],
     closeDatabase: () => {
       usagePulseScheduler.stop();

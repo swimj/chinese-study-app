@@ -195,6 +195,12 @@ export function prepareWordIntroduction(wordId: string): Promise<WordIntroductio
   });
 }
 
+export function openWordIntroduction(wordId: string, packageId: string): Promise<WordIntroductionResponse> {
+  return wordIntroductionRequest(wordId, '/open', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ packageId }),
+  });
+}
+
 export function completeWordIntroduction(wordId: string, packageId: string): Promise<WordIntroductionResponse> {
   return wordIntroductionRequest(wordId, '/complete', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ packageId }),
@@ -284,6 +290,7 @@ type LearningPolicyResponse = {
 
 export type SessionPayload = {
   buckets: SessionStudyItemBuckets;
+  preparation?: { pending: boolean };
 };
 
 export type GenerateSessionReflectionResult = {
@@ -494,7 +501,10 @@ type PriorityWordsResponse = {
 
 export async function fetchSessionPayload(): Promise<SessionPayload> {
   const studyDayKey = getCurrentStudyDayKey();
-  const response = await apiFetch(`${API_BASE}/api/session-payload?studyDayKey=${encodeURIComponent(studyDayKey)}`);
+  const response = await apiFetch(`${API_BASE}/api/session-payload`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ studyDayKey }),
+  });
   if (!response.ok) {
     throw new Error('Failed to load session payload');
   }
@@ -1265,6 +1275,10 @@ async function readApiErrorMessage(response: Response, fallbackMessage: string) 
   }
 
   return fallbackMessage;
+}
+
+export function getSessionPayloadCacheKey(): string {
+  return JSON.stringify([getCurrentStudyDayKey(), clientIncidentStorageScope]);
 }
 
 function getCurrentStudyDayKey(): string {

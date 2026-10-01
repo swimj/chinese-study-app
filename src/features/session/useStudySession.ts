@@ -1,5 +1,6 @@
 import { resolveContentExerciseResponse } from '../../domain/word-content/materialize';
 import { useIntroductionGate, type SessionIntroductionGate } from './useIntroductionGate';
+import { selectedIntroduction } from '../word-introduction/model';
 import { sameIntroductionCompletionTarget } from './introduction-gate';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { ReviewRating, Word, WordMeaning } from '../../types';
@@ -380,6 +381,7 @@ export function useStudySession({
       && frozenPureCueCard === null && frozenContrastCard === null,
     profile: studyProfile.id, word: activeWord,
     completedSession: sessionState?.phase === 'completed',
+    introductions: sessionState?.introductions,
   });
   const introductionGate = introductionController.gate;
   const currentIntroductionTargetRef = useRef({ state: sessionState, wordId: activeWord?.id, gateKey: introductionGate?.key });
@@ -613,8 +615,20 @@ export function useStudySession({
       const sessionPayload = await ensureSessionPrefetch(syncSessionPrefetchState);
       const sessionItemCount = getSessionPayloadItemCount(sessionPayload) ?? 0;
       if (sessionItemCount === 0) {
-        setError('No session items are currently available.');
+        setError(sessionPayload.preparation?.pending
+          ? 'Your session is being prepared. Please try Start session again shortly.'
+          : 'No session items are currently available.');
         return;
+      }
+
+      if (studyProfile.id === 'mandarin') {
+        for (const word of sessionPayload.buckets.unstudied) {
+          const library = sessionPayload.buckets.introductions?.[word.id];
+          if (!library || library.wordId !== word.id || library.selectedPackageId === null
+            || library.preparationUnavailable || !selectedIntroduction(library)) {
+            throw new Error('This session is still preparing a new-word introduction. Please try again shortly.');
+          }
+        }
       }
 
       const startedAt = new Date().toISOString();

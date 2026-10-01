@@ -1,3 +1,4 @@
+import { clearWordPreparationFixtures, prepareWordFixture } from './helpers/prepared-word-fixtures.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -48,6 +49,7 @@ describe('user priority layer', { concurrency: false }, () => {
   });
 
   beforeEach(() => {
+    clearWordPreparationFixtures(sqlite);
     sqlite.exec(`
       DELETE FROM daily_new_word_intake;
       DELETE FROM user_word_priority;
@@ -312,6 +314,7 @@ function insertWord(id: string, priority: number, status: WordStatus, createdAt:
     SET normalized_hanzi = ?
     WHERE id = ?
   `).run(normalizeMandarinHanziLookup(hanzi), id);
+  if (status === 'unstudied') prepareWordFixture(sqlite, dbModule, id);
 }
 
 function getSessionItemIds(db: DbModule): string[] {
