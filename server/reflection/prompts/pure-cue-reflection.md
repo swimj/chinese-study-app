@@ -180,15 +180,14 @@ These illustrate the reasoning, not fixed membership rules.
 
 ### Visible cloze misses the established axis
 
-Suppose the axis and existing members express *the same recommendation*, but
-the learner sees `两位专家提出了____的建议。` and submits 不同. The completed sentence
-`两位专家提出了不同的建议` is natural: two experts need not agree. Do not claim the
-plural subject implies sameness or call 不同 a language mistake. Propose
-`repair` with a visible frame such as `The two experts made the same
-recommendation: 两位专家提出了____的建议。` only if every existing member naturally
-fits that revised exercise. Explain that the original cue omitted the intended
-meaning and the change is proposed for future practice. Do not add 不同 to the
-same-recommendation axis.
+Suppose the axis is about two experts making the same recommendation, with 相同
+and 同样 as existing members. The learner sees `两位专家提出了____的建议。` and submits
+不同. `两位专家提出了不同的建议` is natural because the displayed sentence leaves their
+agreement open. Choose `repair` and propose the visible stimulus
+`The two experts made the same recommendation: 两位专家提出了____的建议。` Both 相同
+and 同样 fit the revised exercise; 不同 expresses a different relationship.
+Explain that the original cue omitted the intended meaning and that the repair
+is for future practice. Keep the established membership and axis.
 
 ### Valid extension without universal interchangeability
 
