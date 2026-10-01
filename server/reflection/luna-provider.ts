@@ -609,7 +609,7 @@ export function createReflectionProvider(
         reasoningEffort: config.reasoningEffort,
         systemPrompt,
         userPrompt: JSON.stringify(modelInput),
-        outputSchemaName: 'pure_cue_reflection_result_v1',
+        outputSchemaName: 'pure_cue_reflection_result_v2',
         outputSchema: PURE_CUE_REFLECTION_RESULT_JSON_SCHEMA,
         maxOutputTokens: config.maxOutputTokens,
         temperature: null,

@@ -48,16 +48,24 @@ export type ReconcilePureCueResponseOperationV1 = {
   expectedAcceptedWordIds: string[]; expectedTeachingNote: string; teachingNote: string;
   responseWordPlan: PromotePureElicitationWordPlanV1;
 };
+export type RepairPureCueStimulusOperationV1 = {
+  kind: 'repair_pure_cue_stimulus'; version: 1; sourceAttemptId: string;
+  responseWordId: string; pureCueId: string;
+  expectedStimulus: string; expectedAxisNote: string;
+  expectedAcceptedWordIds: string[]; expectedTeachingNote: string;
+  stimulus: string;
+};
 export type PureCueReflectionResultV1Wire = {
-  schemaVersion: 'pure_cue_reflection_result.v1';
+  schemaVersion: 'pure_cue_reflection_result.v1' | 'pure_cue_reflection_result.v2';
   itemResults: Array<{
     submittedWord: string; learnerExplanation: string; rationale: string;
-    decision: 'extend' | 'explanation_only'; reason: 'does_not_fit' | 'uncertain' | null;
+    decision: 'extend' | 'repair' | 'explanation_only'; reason: 'does_not_fit' | 'uncertain' | null;
     extension: { teachingNote: string; responseWordPlan: Omit<PromotePureElicitationWordPlanV1, 'wordId'> } | null;
+    repair?: { stimulus: string } | null;
   }>;
 };
 export type PureCueReflectionResultV1 = {
-  schemaVersion: 'pure_cue_reflection_result.v1'; itemResults: ReflectionItemResultV2[];
+  schemaVersion: 'pure_cue_reflection_result.v1' | 'pure_cue_reflection_result.v2'; itemResults: ReflectionItemResultV2[];
 };
 const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const text = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
@@ -88,6 +96,27 @@ export function validateReconcilePureCueResponseOperation(value: unknown): strin
   else if (value.expectedAcceptedWordIds.includes(String(value.responseWordId))) errors.push('operation: response already accepted');
   errors.push(...planErrors(value.responseWordPlan, true));
   if (record(value.responseWordPlan) && value.responseWordPlan.wordId !== value.responseWordId) errors.push('operation: only response word C may be changed');
+  return errors;
+}
+export function validateRepairPureCueStimulusOperation(value: unknown): string[] {
+  const errors = fields(value, ['kind','version','sourceAttemptId','responseWordId','pureCueId','expectedStimulus','expectedAxisNote','expectedAcceptedWordIds','expectedTeachingNote','stimulus'], 'operation');
+  if (!record(value)) return errors;
+  if (value.kind !== 'repair_pure_cue_stimulus' || value.version !== 1) errors.push('operation: unsupported contract');
+  for (const key of ['sourceAttemptId','responseWordId','pureCueId','expectedStimulus','stimulus']) if (!text(value[key])) errors.push(`operation.${key}: required`);
+  if (typeof value.expectedAxisNote !== 'string' || typeof value.expectedTeachingNote !== 'string') errors.push('operation: invalid expected content');
+  if (!strings(value.expectedAcceptedWordIds) || value.expectedAcceptedWordIds.length < 2) errors.push('operation.expectedAcceptedWordIds: expected at least two members');
+  else if (value.expectedAcceptedWordIds.includes(String(value.responseWordId))) errors.push('operation: response already accepted');
+  if (typeof value.stimulus === 'string' && value.stimulus.trim() === value.expectedStimulus) errors.push('operation: stimulus must change');
+  if (typeof value.stimulus === 'string' && value.stimulus !== value.stimulus.trim()) errors.push('operation.stimulus: trim surrounding whitespace');
+  return errors;
+}
+export function validateRepairPureCueStimulusEvidenceContext(operation: RepairPureCueStimulusOperationV1, item: PureCueReflectionItemV1): string[] {
+  const errors = validateRepairPureCueStimulusOperation(operation);
+  if (errors.length) return errors;
+  if (operation.sourceAttemptId !== item.sourceAttemptId || operation.responseWordId !== item.submittedWord.wordId || operation.pureCueId !== item.currentCue.id) errors.push('operation: source identity does not match evidence');
+  if (operation.expectedStimulus !== item.currentCue.stimulus || operation.expectedAxisNote !== item.currentCue.axisNote
+    || operation.expectedTeachingNote !== item.currentCue.teachingNote
+    || [...operation.expectedAcceptedWordIds].sort().join('\0') !== [...item.currentCue.acceptedWordIds].sort().join('\0')) errors.push('operation: expected content does not match evidence');
   return errors;
 }
 export function validatePureCueReflectionOperationEvidenceContext(operation: ReconcilePureCueResponseOperationV1, item: PureCueReflectionItemV1): string[] {
@@ -193,17 +222,18 @@ export function parsePureCueReflectionBundle(value: unknown): PureCueReflectionB
 export function validatePureCueReflectionResultV1Wire(value: unknown, bundle?: PureCueReflectionBundleV1): string[] {
   const errors = fields(value, ['schemaVersion','itemResults'], 'result');
   if (!record(value)) return errors;
-  if (value.schemaVersion !== 'pure_cue_reflection_result.v1') errors.push('result: invalid schema version');
+  if (!['pure_cue_reflection_result.v1','pure_cue_reflection_result.v2'].includes(String(value.schemaVersion))) errors.push('result: invalid schema version');
   if (!Array.isArray(value.itemResults)) return [...errors, 'result.itemResults: expected array'];
   const ids = new Set<string>();
   for (const item of value.itemResults) {
-    errors.push(...fields(item, ['submittedWord','learnerExplanation','rationale','decision','reason','extension'], 'item'));
+    const v2 = value.schemaVersion === 'pure_cue_reflection_result.v2';
+    errors.push(...fields(item, v2 ? ['submittedWord','learnerExplanation','rationale','decision','reason','extension','repair'] : ['submittedWord','learnerExplanation','rationale','decision','reason','extension'], 'item'));
     if (!record(item)) continue;
     if (!text(item.submittedWord) || ids.has(item.submittedWord)) errors.push('item.submittedWord: missing or duplicate');
     else { ids.add(item.submittedWord); if (bundle && bundle.items.filter(e => e.submittedWord.hanzi === item.submittedWord).length !== 1) errors.push('item.submittedWord: unknown or ambiguous evidence'); }
     if (!text(item.learnerExplanation) || !text(item.rationale)) errors.push('item: explanation and rationale required');
     if (item.decision === 'extend') {
-      if (item.reason !== null) errors.push('item.reason: extend requires null');
+      if (item.reason !== null || (v2 && item.repair !== null)) errors.push('item: extend requires null reason and repair');
       errors.push(...fields(item.extension, ['teachingNote','responseWordPlan'], 'extension'));
       if (record(item.extension)) {
         if (!text(item.extension.teachingNote)) errors.push('extension.teachingNote: required');
@@ -211,8 +241,14 @@ export function validatePureCueReflectionResultV1Wire(value: unknown, bundle?: P
         const evidence = bundle?.items.find(e => e.submittedWord.hanzi === item.submittedWord);
         if (evidence && record(item.extension.responseWordPlan) && strings(item.extension.responseWordPlan.deactivateCueIds) && item.extension.responseWordPlan.deactivateCueIds.some(id => !evidence.activeProductionCues.some(c => c.cueId === id))) errors.push('extension: may only deactivate active C cues');
       }
+    } else if (item.decision === 'repair' && v2) {
+      if (item.reason !== null || item.extension !== null) errors.push('item: repair requires null reason and extension');
+      errors.push(...fields(item.repair, ['stimulus'], 'repair'));
+      if (!record(item.repair) || !text(item.repair.stimulus)) errors.push('repair.stimulus: required');
+      const evidence = bundle?.items.find(e => e.submittedWord.hanzi === item.submittedWord);
+      if (evidence && record(item.repair) && item.repair.stimulus === evidence.currentCue.stimulus) errors.push('repair: stimulus must change');
     } else if (item.decision === 'explanation_only') {
-      if (!['does_not_fit','uncertain'].includes(String(item.reason)) || item.extension !== null) errors.push('item: explanation only requires reason and null extension');
+      if (!['does_not_fit','uncertain'].includes(String(item.reason)) || item.extension !== null || (v2 && item.repair !== null)) errors.push('item: explanation only requires reason and null changes');
     } else errors.push('item.decision: invalid');
   }
   if (bundle && ids.size !== bundle.items.length) errors.push('result: exactly one result per evidence item required');
@@ -224,13 +260,16 @@ export function normalizePureCueReflectionResult(value: unknown, bundle: PureCue
   const wire = value as PureCueReflectionResultV1Wire;
   return { schemaVersion: wire.schemaVersion, itemResults: wire.itemResults.map(result => {
     const item = bundle.items.find(e => e.submittedWord.hanzi === result.submittedWord)!;
-    return { itemId: item.itemId, diagnosisTags: result.decision === 'extend' ? ['valid_or_near_valid_alternate'] : [], learnerExplanation: result.learnerExplanation, questions: [], proposals: result.extension === null ? [] : [{ proposalGroupKey: null, rationale: result.rationale, operation: { kind: 'reconcile_pure_cue_response', version: 1, sourceAttemptId: item.sourceAttemptId, responseWordId: item.submittedWord.wordId, pureCueId: item.currentCue.id, expectedAcceptedWordIds: [...item.currentCue.acceptedWordIds], expectedTeachingNote: item.currentCue.teachingNote, teachingNote: result.extension.teachingNote, responseWordPlan: { ...result.extension.responseWordPlan, wordId: item.submittedWord.wordId } } }] };
+    const proposals = result.decision === 'repair' && result.repair
+      ? [{ proposalGroupKey: null, rationale: result.rationale, operation: { kind: 'repair_pure_cue_stimulus' as const, version: 1 as const, sourceAttemptId: item.sourceAttemptId, responseWordId: item.submittedWord.wordId, pureCueId: item.currentCue.id, expectedStimulus: item.currentCue.stimulus, expectedAxisNote: item.currentCue.axisNote, expectedAcceptedWordIds: [...item.currentCue.acceptedWordIds], expectedTeachingNote: item.currentCue.teachingNote, stimulus: result.repair.stimulus } }]
+      : result.extension === null ? [] : [{ proposalGroupKey: null, rationale: result.rationale, operation: { kind: 'reconcile_pure_cue_response' as const, version: 1 as const, sourceAttemptId: item.sourceAttemptId, responseWordId: item.submittedWord.wordId, pureCueId: item.currentCue.id, expectedAcceptedWordIds: [...item.currentCue.acceptedWordIds], expectedTeachingNote: item.currentCue.teachingNote, teachingNote: result.extension.teachingNote, responseWordPlan: { ...result.extension.responseWordPlan, wordId: item.submittedWord.wordId } } }];
+    return { itemId: item.itemId, diagnosisTags: result.decision === 'extend' || result.decision === 'repair' ? ['valid_or_near_valid_alternate'] : [], learnerExplanation: result.learnerExplanation, questions: [], proposals };
   }) };
 }
 export function validatePureCueReflectionResult(value: unknown, bundle: PureCueReflectionBundleV1): string[] {
   const errors = fields(value, ['schemaVersion', 'itemResults'], 'result');
   if (!record(value)) return errors;
-  if (value.schemaVersion !== 'pure_cue_reflection_result.v1') errors.push('Invalid pure cue result version');
+  if (!['pure_cue_reflection_result.v1','pure_cue_reflection_result.v2'].includes(String(value.schemaVersion))) errors.push('Invalid pure cue result version');
   if (!Array.isArray(value.itemResults)) return [...errors, 'Expected result items'];
   const ids = new Set<string>();
   for (const result of value.itemResults) {
@@ -245,15 +284,19 @@ export function validatePureCueReflectionResult(value: unknown, bundle: PureCueR
     if (!item || !text(result.itemId) || ids.has(result.itemId)) { errors.push('Unknown or duplicate result item'); continue; }
     ids.add(result.itemId);
     if (!Array.isArray(result.proposals)) { errors.push('Expected proposal array'); continue; }
-    if (result.proposals.length > 1) errors.push('Only one extension proposal allowed');
+    if (result.proposals.length > 1) errors.push('Only one pure cue proposal allowed');
     for (const proposal of result.proposals) {
       errors.push(...fields(proposal, ['proposalGroupKey', 'rationale', 'operation'], 'proposal'));
       if (!record(proposal)) continue;
       if (proposal.proposalGroupKey !== null) errors.push('Pure cue proposal group must be null');
       if (!text(proposal.rationale)) errors.push('Proposal rationale required');
-      const structural = validateReconcilePureCueResponseOperation(proposal.operation);
+      const structural = record(proposal.operation) && proposal.operation.kind === 'repair_pure_cue_stimulus'
+        ? validateRepairPureCueStimulusOperation(proposal.operation)
+        : validateReconcilePureCueResponseOperation(proposal.operation);
       errors.push(...structural);
-      if (!structural.length) errors.push(...validatePureCueReflectionOperationEvidenceContext(proposal.operation as ReconcilePureCueResponseOperationV1, item));
+      if (!structural.length) errors.push(...(record(proposal.operation) && proposal.operation.kind === 'repair_pure_cue_stimulus'
+        ? validateRepairPureCueStimulusEvidenceContext(proposal.operation as RepairPureCueStimulusOperationV1, item)
+        : validatePureCueReflectionOperationEvidenceContext(proposal.operation as ReconcilePureCueResponseOperationV1, item)));
     }
   }
   if (ids.size !== bundle.items.length) errors.push('Exactly one result per evidence item required');
@@ -262,8 +305,8 @@ export function validatePureCueReflectionResult(value: unknown, bundle: PureCueR
 const object = (properties: Record<string, JsonSchema>): JsonSchema => ({ type:'object',properties,required:Object.keys(properties),additionalProperties:false });
 const string: JsonSchema = {type:'string'};
 export const PURE_CUE_REFLECTION_RESULT_JSON_SCHEMA: JsonSchema = object({
-  schemaVersion:{type:'string',enum:['pure_cue_reflection_result.v1']},
-  itemResults:{type:'array',items:object({submittedWord:string,learnerExplanation:string,rationale:string,decision:{type:'string',enum:['extend','explanation_only']},reason:{type:['string','null'],enum:['does_not_fit','uncertain',null]},extension:{anyOf:[{type:'null'},object({teachingNote:string,responseWordPlan:object({deactivateCueIds:{type:'array',items:string},distinctiveCueDrafts:{type:'array',items:object({cueType:{type:'string',enum:['definition_gloss','minimal_context','circumstance']},text:string})}})})]}})}
+  schemaVersion:{type:'string',enum:['pure_cue_reflection_result.v2']},
+  itemResults:{type:'array',items:object({submittedWord:string,learnerExplanation:string,rationale:string,decision:{type:'string',enum:['extend','repair','explanation_only']},reason:{type:['string','null'],enum:['does_not_fit','uncertain',null]},extension:{anyOf:[{type:'null'},object({teachingNote:string,responseWordPlan:object({deactivateCueIds:{type:'array',items:string},distinctiveCueDrafts:{type:'array',items:object({cueType:{type:'string',enum:['definition_gloss','minimal_context','circumstance']},text:string})}})})]},repair:{anyOf:[{type:'null'},object({stimulus:string})]}})}
 });
 
 export type PureCueMistakeReflectionItemV1 = PureCueReflectionItemV1;

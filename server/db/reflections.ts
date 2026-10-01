@@ -3,12 +3,13 @@ import type { PureCueAssessmentEvent } from '../../src/domain/pure-cues.ts';
 import type { RepairProductionCueOperationV2 } from '../../src/domain/reflection.ts';
 import {
   type PureCueReflectionBundleV1, type PureCueReflectionItemV1,
-  type PureCueReflectionResultV1, type ReconcilePureCueResponseOperationV1,
+  type PureCueReflectionResultV1, type ReconcilePureCueResponseOperationV1, type RepairPureCueStimulusOperationV1,
   validatePureCueReflectionResult, validatePureCueReflectionOperationEvidenceContext,
+  validateRepairPureCueStimulusEvidenceContext,
   parsePureCueReflectionBundle,
 } from '../../src/domain/pure-cue-reflection.ts';
 import { PURE_CUE_REFLECTION_FLOW_VERSION, PURE_CUE_REFLECTION_PROMPT_VERSION } from '../../src/domain/reflection-contracts.ts';
-import { restorePureCueSchedulerSnapshotWithoutTransaction } from './pure-cues.ts';
+import { restorePureCueSchedulerSnapshotWithoutTransaction, repairPureCueStimulusWithoutTransaction } from './pure-cues.ts';
 import { randomUUID } from 'node:crypto';
 import { selectNonOverlappingReflectionItems } from '../reflection/bundle-admission.ts';
 import type {
@@ -1604,7 +1605,7 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
       finishReason: null,
       bundleSchemaVersion: evidenceBundle.schemaVersion,
       resultSchemaVersion: row.prompt_version === PURE_CUE_REFLECTION_PROMPT_VERSION
-        ? 'pure_cue_reflection_result.v1'
+        ? 'pure_cue_reflection_result.v2'
         : isCompatiblePromptVersion(row.prompt_version, PURE_CUE_PROMOTION_PROMPT_VERSION)
         ? 'pure_cue_promotion_result.v2'
         : isCompatiblePromptVersion(row.prompt_version, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION)
@@ -2384,8 +2385,9 @@ function requireRegisteredOperationForEvidence(
     itemValidationErrors.push(...validateTargetSuppressionOperation(operation, evidenceItem.targetWord.wordId));
   }
   if (evidenceItem.source === 'pure_cue_mistake') {
-    if (operation.kind !== 'reconcile_pure_cue_response') throw new Error('Pure cue evidence only authorizes response reconciliation.');
-    itemValidationErrors.push(...validatePureCueReflectionOperationEvidenceContext(operation, evidenceItem));
+    if (operation.kind === 'reconcile_pure_cue_response') itemValidationErrors.push(...validatePureCueReflectionOperationEvidenceContext(operation, evidenceItem));
+    else if (operation.kind === 'repair_pure_cue_stimulus') itemValidationErrors.push(...validateRepairPureCueStimulusEvidenceContext(operation, evidenceItem));
+    else throw new Error('Pure cue evidence only authorizes response reconciliation or stimulus repair.');
   }
   if ('servedCue' in evidenceItem) {
     itemValidationErrors.push(...validateReflectionOperationEvidenceContext(
@@ -3476,6 +3478,8 @@ function applyPendingOperationWithoutTransaction(
       );
     case 'reconcile_pure_cue_response':
       return applyPureCueResponseWithoutTransaction(operation, invocationId, appliedAt);
+    case 'repair_pure_cue_stimulus':
+      return applyPureCueStimulusRepairWithoutTransaction(operation, invocationId, appliedAt);
     case 'reconcile_production_cues':
     case 'promote_pure_elicitation':
       return applyPureElicitationPromotionWithoutTransaction(
@@ -3594,10 +3598,16 @@ function applyPureElicitationPromotionWithoutTransaction(
 
   if (operation.kind === 'reconcile_production_cues' && operation.destination?.kind === 'existing') {
     const destination = operation.destination;
+    const historicalStimulusRevision = destination.expectedStimulus === undefined
+      && getDb().prepare('SELECT 1 FROM pure_cue_stimulus_revisions WHERE pure_cue_id = ? LIMIT 1')
+        .get(destination.pureCueId) !== undefined;
     if (existingDestination!.teachingNote !== destination.expectedTeachingNote
+      || (destination.expectedStimulus !== undefined && existingDestination!.stimulus !== destination.expectedStimulus)
+      || (destination.expectedAxisNote !== undefined && existingDestination!.axisNote !== destination.expectedAxisNote)
+      || historicalStimulusRevision
       || JSON.stringify([...existingDestination!.acceptedWordIds].sort())
         !== JSON.stringify([...destination.expectedAcceptedWordIds].sort())) {
-      return { kind: 'stale', reason: 'Pure cue membership or teaching note changed since reconciliation evidence was captured.' };
+      return { kind: 'stale', reason: 'Pure cue content changed since reconciliation evidence was captured.' };
     }
   }
 
@@ -4394,9 +4404,9 @@ function applyPureCueResponseWithoutTransaction(
   invocationId: string,
   appliedAt: string,
 ): OperationApplicationState {
-  const source = getDb().prepare(`SELECT pure_cue_id, events_json FROM pure_cue_attempts
+  const source = getDb().prepare(`SELECT pure_cue_id, snapshot_id, events_json FROM pure_cue_attempts
     WHERE learner_id = ? AND attempt_id = ?`).get(requireLearnerId(), operation.sourceAttemptId) as {
-      pure_cue_id: string; events_json: string;
+      pure_cue_id: string; snapshot_id: string; events_json: string;
     } | undefined;
   const first = source ? (JSON.parse(source.events_json) as PureCueAssessmentEvent[])[0] : undefined;
   const response = getDb().prepare('SELECT normalized_hanzi FROM lexical_words WHERE id = ?')
@@ -4406,7 +4416,10 @@ function applyPureCueResponseWithoutTransaction(
     throw new Error('Pure cue reconciliation must address its learner-owned first rejected response.');
   }
   const current = getPureCueContent(operation.pureCueId);
+  const served = source && getDb().prepare('SELECT stimulus, axis_note FROM pure_cue_served_snapshots WHERE learner_id = ? AND snapshot_id = ?')
+    .get(requireLearnerId(), source.snapshot_id) as { stimulus: string; axis_note: string } | undefined;
   if (!current?.active || current.teachingNote !== operation.expectedTeachingNote
+    || served?.stimulus !== current.stimulus || served?.axis_note !== current.axisNote
     || JSON.stringify([...current.acceptedWordIds].sort()) !== JSON.stringify([...operation.expectedAcceptedWordIds].sort())) {
     return { kind: 'stale', reason: 'Pure cue membership or teaching note changed since reflection.' };
   }
@@ -4443,4 +4456,43 @@ function applyPureCueResponseWithoutTransaction(
   });
   effects.push({ type: 'pure_cue_scheduler_compensation', id: `${encodeURIComponent(operation.sourceAttemptId)}/${compensation.kind}` });
   return { kind: 'applied', appliedAt, effectRefs: effects };
+}
+
+function applyPureCueStimulusRepairWithoutTransaction(
+  operation: RepairPureCueStimulusOperationV1,
+  invocationId: string,
+  appliedAt: string,
+): OperationApplicationState {
+  const source = getDb().prepare(`SELECT attempt.pure_cue_id, attempt.events_json, snapshot.stimulus
+    FROM pure_cue_attempts AS attempt
+    JOIN pure_cue_served_snapshots AS snapshot
+      ON snapshot.learner_id = attempt.learner_id AND snapshot.snapshot_id = attempt.snapshot_id
+    WHERE attempt.learner_id = ? AND attempt.attempt_id = ?`).get(requireLearnerId(), operation.sourceAttemptId) as {
+      pure_cue_id: string; events_json: string; stimulus: string;
+    } | undefined;
+  const first = source ? (JSON.parse(source.events_json) as PureCueAssessmentEvent[])[0] : undefined;
+  const response = getDb().prepare('SELECT normalized_hanzi FROM lexical_words WHERE id = ?')
+    .get(operation.responseWordId) as { normalized_hanzi: string } | undefined;
+  if (source?.pure_cue_id !== operation.pureCueId || source.stimulus !== operation.expectedStimulus
+    || first?.outcome !== 'rejected' || !first.response?.trim() || !response
+    || response.normalized_hanzi !== normalizeMandarinHanziLookup(first.response)) {
+    throw new Error('Pure cue stimulus repair must address its learner-owned first rejected response and served stimulus.');
+  }
+  const current = getPureCueContent(operation.pureCueId);
+  if (!current?.active || current.stimulus !== operation.expectedStimulus
+    || current.axisNote !== operation.expectedAxisNote
+    || current.teachingNote !== operation.expectedTeachingNote
+    || JSON.stringify([...current.acceptedWordIds].sort()) !== JSON.stringify([...operation.expectedAcceptedWordIds].sort())) {
+    return { kind: 'stale', reason: 'Pure cue content changed since reflection.' };
+  }
+  repairPureCueStimulusWithoutTransaction({ id: operation.pureCueId,
+    expectedStimulus: operation.expectedStimulus, stimulus: operation.stimulus,
+    invocationId, revisedAt: appliedAt });
+  const compensation = restorePureCueSchedulerSnapshotWithoutTransaction({
+    sourceAttemptId: operation.sourceAttemptId, compensationInvocationId: invocationId, restoredAt: appliedAt,
+  });
+  return { kind: 'applied', appliedAt, effectRefs: [
+    { type: 'pure_cue_stimulus', id: operation.pureCueId },
+    { type: 'pure_cue_scheduler_compensation', id: `${encodeURIComponent(operation.sourceAttemptId)}/${compensation.kind}` },
+  ] };
 }

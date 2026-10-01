@@ -104,10 +104,18 @@ evidence into service-owned data.
   `shared_trial`, `available`, `quarantined`, and `retired`. It is separate
   from the current learner activation history and from learner suppression.
 
-Shared stimulus identity is immutable. Pure cues explicitly allow authorized
-set-add membership expansion and an accompanying holistic teaching-note update,
-attributed to the accepted cleanup operation. Stimulus and semantic axis stay
-unchanged; current member/note evidence must still match before a rewrite.
+Shared stimulus identity is immutable by default. Pure cues explicitly allow
+authorized set-add membership expansion and an accompanying holistic
+teaching-note update, attributed to the accepted cleanup operation. An
+extension leaves stimulus and semantic axis unchanged; current member/note
+evidence must still match before a rewrite.
+The bounded `repair_pure_cue_stimulus` operation also permits an authorized,
+attributed in-place stimulus revision for an underspecified shared pure cue.
+It preserves cue ID, axis, members, teaching note, publication status, and
+ordinary scheduling policy, with exact current-content preconditions and an
+immutable before/after revision record. An unfair source lapse can receive the
+existing restore-once learner-private compensation. It does not generalize to
+other shared content.
 This affects future snapshots, never historical grading or reveal text.
 Other corrections create distinct attributable content
 or an explicit disposition rather than rewriting history. A repair operation

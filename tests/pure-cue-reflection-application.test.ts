@@ -58,9 +58,9 @@ function sourceFixture(id: string) {
 }
 function fixture(id: string, drafts = false) {
   const { words, bundle } = sourceFixture(id);
-  const result = normalizePureCueReflectionResult({ schemaVersion: 'pure_cue_reflection_result.v1', itemResults: [{
+  const result = normalizePureCueReflectionResult({ schemaVersion: 'pure_cue_reflection_result.v2', itemResults: [{
     submittedWord: bundle.items[0]!.submittedWord.hanzi, learnerExplanation: 'Your answer fits.', rationale: 'Same requested situation.',
-    decision: 'extend', reason: null, extension: { teachingNote: 'All three fit; each has different usage.',
+    decision: 'extend', reason: null, repair: null, extension: { teachingNote: 'All three fit; each has different usage.',
       responseWordPlan: { deactivateCueIds: [`cue-${words[2]}`], distinctiveCueDrafts: drafts
         ? [{ cueType: 'minimal_context', text: 'A specific context for C.' }] : [] } },
   }] }, bundle);
@@ -89,6 +89,55 @@ test('acceptance extends pure cue, intentionally proxies C, keeps A/B cues stabl
   db.applyReflectionInvocation(invocationId, '2026-09-20T00:00:00.000Z');
   assert.deepEqual(sqlite.prepare('SELECT * FROM pure_cue_attempts WHERE attempt_id = ?').get('attempt-extend'), history);
   assert.throws(() => db.runWithLearnerId('other', f.authorize), /not found|unavailable/i);
+});
+
+test('accepted stimulus repair preserves identity, axis and members, audits the revision, and restores the unfair lapse', () => {
+  const { words, bundle } = sourceFixture('stimulusrepair');
+  const repaired = 'Tell an untruth: to tell an untruth';
+  const result = normalizePureCueReflectionResult({ schemaVersion: 'pure_cue_reflection_result.v2', itemResults: [{
+    submittedWord: bundle.items[0]!.submittedWord.hanzi,
+    learnerExplanation: 'Your answer fit the wording shown, which omitted the intended axis.',
+    rationale: 'Clarify the same axis in the visible stimulus.',
+    decision: 'repair', reason: null, extension: null, repair: { stimulus: repaired },
+  }] }, bundle);
+  const { artifact } = db.materializeReflectionArtifact({ sourceSessionId: 'session-stimulusrepair',
+    reflectionFlowVersion: PURE_CUE_REFLECTION_FLOW_VERSION, generatedAt: now,
+    provider: 'openai', model: 'gpt-5.6-luna', promptVersion: PURE_CUE_REFLECTION_PROMPT_VERSION,
+    evidenceBundle: bundle, result });
+  const proposal = artifact.proposals[0]!;
+  const oldExtension = normalizePureCueReflectionResult({ schemaVersion: 'pure_cue_reflection_result.v2', itemResults: [{
+    submittedWord: bundle.items[0]!.submittedWord.hanzi,
+    learnerExplanation: 'C fits the old wording.', rationale: 'Add C.',
+    decision: 'extend', reason: null, repair: null,
+    extension: { teachingNote: 'All three fit.', responseWordPlan: { deactivateCueIds: [], distinctiveCueDrafts: [] } },
+  }] }, bundle);
+  const extensionArtifact = db.materializeReflectionArtifact({ sourceSessionId: 'session-stimulusrepair',
+    reflectionFlowVersion: PURE_CUE_REFLECTION_FLOW_VERSION, generatedAt: now,
+    provider: 'openai', model: 'gpt-5.6-luna', promptVersion: PURE_CUE_REFLECTION_PROMPT_VERSION,
+    evidenceBundle: bundle, result: oldExtension }).artifact;
+  const oldAuthorized = db.acceptReflectionProposal({ proposalId: extensionArtifact.proposals[0]!.review.proposalId,
+    invocationId: 'old-stimulus-extension', operation: extensionArtifact.proposals[0]!.proposal.operation, createdAt: appliedAt });
+  const authorized = db.acceptReflectionProposal({ proposalId: proposal.review.proposalId,
+    invocationId: 'accept-stimulusrepair', operation: proposal.proposal.operation, createdAt: appliedAt });
+  assert.equal(db.applyReflectionInvocation(authorized.invocation.invocation.invocationId, appliedAt).application.state.kind, 'applied');
+  const content = db.getPureCueContent('stimulusrepair')!;
+  assert.equal(content.stimulus, repaired);
+  assert.equal(content.axisNote, bundle.items[0]!.currentCue.axisNote);
+  assert.deepEqual(content.acceptedWordIds, words.slice(0, 2));
+  assert.equal(db.getPureCue('stimulusrepair')?.intervalHours, 900);
+  const revision = sqlite.prepare('SELECT previous_stimulus, stimulus FROM pure_cue_stimulus_revisions WHERE invocation_id = ?')
+    .get('accept-stimulusrepair') as { previous_stimulus: string; stimulus: string };
+  assert.equal(revision.previous_stimulus, 'to tell an untruth');
+  assert.equal(revision.stimulus, repaired);
+  assert.equal(bundle.items[0]!.servedSnapshot.stimulus, 'to tell an untruth');
+  assert.equal(evidence.buildPureCueReflectionBundle('session-stimulusrepair', appliedAt), null);
+  assert.equal(db.applyReflectionInvocation(oldAuthorized.invocation.invocation.invocationId, appliedAt).application.state.kind, 'stale');
+  assert.deepEqual(db.getPureCueContent('stimulusrepair')?.acceptedWordIds, words.slice(0, 2));
+  assert.throws(() => sqlite.prepare('UPDATE pure_cues SET stimulus = ? WHERE id = ?')
+    .run('Unauthorized', 'stimulusrepair'), /authorized revision/);
+  assert.equal(db.applyReflectionInvocation('accept-stimulusrepair', appliedAt).application.state.kind, 'applied');
+  assert.equal((sqlite.prepare('SELECT COUNT(*) AS count FROM pure_cue_stimulus_revisions WHERE pure_cue_id = ?')
+    .get('stimulusrepair') as { count: number }).count, 1);
 });
 
 test('C can retain targeted practice through a new distinctive cue without editing A/B', () => {
@@ -150,9 +199,9 @@ test('real failed provider run retains exact evidence and retry materializes the
       assert.deepEqual(input, bundle);
       if (fail) throw new Error('Temporary pure cue provider failure');
       return {
-        result: { schemaVersion: 'pure_cue_reflection_result.v1', itemResults: [{
+        result: { schemaVersion: 'pure_cue_reflection_result.v2', itemResults: [{
           submittedWord: input.items[0]!.submittedWord.hanzi, learnerExplanation: 'C also fits this cue.', rationale: 'C is valid.',
-          decision: 'extend', reason: null, extension: { teachingNote: 'A, B and C all fit.',
+          decision: 'extend', reason: null, repair: null, extension: { teachingNote: 'A, B and C all fit.',
             responseWordPlan: { deactivateCueIds: [], distinctiveCueDrafts: [] } },
         }] },
         metadata: { provider: 'openai', modelConfig: 'gpt-5.6-luna-high', providerModel: 'gpt-5.6-luna',

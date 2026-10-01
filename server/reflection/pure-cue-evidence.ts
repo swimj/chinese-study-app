@@ -44,6 +44,9 @@ export function buildPureCueReflectionBundle(
     if (!snapshot) throw new Error('Pure cue attempt has no owned served snapshot.');
     const currentCue = getPureCueContent(snapshot.pureCueId);
     if (!currentCue?.active || currentCue.acceptedWordIds.includes(wordId) || seenCues.has(currentCue.id) || seenWords.has(wordId)) continue;
+    // A later stimulus repair must not reinterpret an old attempt as evidence
+    // for another edit to the new wording. Saved generation bundles remain exact.
+    if (snapshot.stimulus !== currentCue.stimulus || snapshot.axisNote !== currentCue.axisNote) continue;
     if (snapshot.acceptedAnswers.some((answer) => answer.wordId === wordId)) continue;
     items.push({
       source: 'pure_cue_mistake', sourceActionKind: 'pure_cue',

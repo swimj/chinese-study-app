@@ -162,6 +162,7 @@ describe('reflection operation registry and validation', () => {
       )),
       [
         ['reconcile_pure_cue_response', 1, true, 'supported'],
+        ['repair_pure_cue_stimulus', 1, true, 'supported'],
         ['suppress_definition_production', 1, true, 'supported'],
         ['create_contrast_cluster', 1, true, 'supported'],
         ['create_contrast_cluster', 2, true, 'supported'],

@@ -18,7 +18,7 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`intake-triage.ts`](../server/db/intake-triage.ts) | Dormant intake-triage schema creation and validation retained for database compatibility |
 | [`domain-commands.ts`](../server/db/domain-commands.ts) | Shared transaction-aware domain commands used by reflection and manual paths; definition-production suppression and contextual-selection eligibility |
 | [`production-cues.ts`](../server/db/production-cues.ts) | Default production tasks, strict target-only word cues, immutable lifecycle/evidence state, one immutable post-reveal supplement per definition cue or fallback, and cue/supplement application adapters |
-| [`pure-cues.ts`](../server/db/pure-cues.ts) | Shared standalone cue content, holistic teaching notes, and indexed membership lookup; automatic adoption into private learner schedules; frozen answer/reveal snapshots, independent assessment projection, restore-once pre-lapse scheduler snapshots, and batched derivation of production compensation eligibility deadlines |
+| [`pure-cues.ts`](../server/db/pure-cues.ts) | Shared standalone cue content, authorized stimulus revisions and holistic teaching notes, and indexed membership lookup; automatic adoption into private learner schedules; frozen answer/reveal snapshots, independent assessment projection, restore-once pre-lapse scheduler snapshots, and batched derivation of production compensation eligibility deadlines |
 | [`schema.ts`](../server/db/schema.ts) | Re-exports `applyProductionContrastExerciseSeed` and `initializeDatabase` for init ordering |
 | [`ownership-manifest.ts`](../server/db/ownership-manifest.ts) | Auditable ownership, enforcement, history, migration, and lifecycle classification for every durable application table |
 | [`identity.ts`](../server/db/identity.ts) | Stable learner records, auth-provider mappings, learner settings, learner params, and explicit Clerk-free bootstrap |
@@ -70,6 +70,14 @@ row holds current teaching, while `pure_cue_served_snapshots` freezes the text
 shown for each assessment. Membership/note preconditions reject stale extension
 plans before any writes; teaching, word-cue changes, and compensation commit in
 one transaction.
+
+`repair_pure_cue_stimulus` is a separate, stimulus-only application path. Its
+append-only revision row records the authorizing learner invocation and exact
+before/after wording. Application checks the expected current stimulus, axis,
+membership, and teaching note before updating `pure_cues.stimulus` in the same
+transaction. Served snapshots and attempts stay frozen; an eligible unfair
+source lapse restores its saved learner-private schedule once under the
+existing compensation marker.
 
 Reflection uses six SQLite tables initialized and validated from
 [`reflections.ts`](../server/db/reflections.ts) (quality overlay from

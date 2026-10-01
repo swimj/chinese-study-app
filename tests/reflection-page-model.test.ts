@@ -1227,4 +1227,18 @@ test('pure cue proposal edits preserve source binding and isolate C cue changes'
   draft.responseWordPlan.wordId = 'A';
   assert.ok(getOperationDraftState(original, draft, evidence).validationErrors.length > 0);
   assert.equal(original.responseWordPlan.wordId, 'C');
+
+  const repair = createReplacementOperation('repair_pure_cue_stimulus', 1, original, evidence);
+  assert.equal(repair.kind, 'repair_pure_cue_stimulus');
+  if (repair.kind !== 'repair_pure_cue_stimulus') throw new Error('Unexpected repair kind');
+  assert.equal(repair.expectedStimulus, evidence.currentCue.stimulus);
+  assert.deepEqual(repair.expectedAcceptedWordIds, ['A', 'B']);
+  assert.ok(getOperationDraftState(repair, repair, evidence).validationErrors.length > 0);
+  const revisedRepair = { ...repair, stimulus: 'Both experts agreed: they offered ____ advice.' };
+  assert.deepEqual(getOperationDraftState(repair, revisedRepair, evidence).validationErrors, []);
+  const clonedRepair = cloneReflectionOperation(revisedRepair);
+  assert.equal(clonedRepair.kind, 'repair_pure_cue_stimulus');
+  if (clonedRepair.kind !== 'repair_pure_cue_stimulus') throw new Error('Unexpected cloned repair kind');
+  clonedRepair.expectedAcceptedWordIds.push('D');
+  assert.deepEqual(revisedRepair.expectedAcceptedWordIds, ['A', 'B']);
 });

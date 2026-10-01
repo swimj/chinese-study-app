@@ -1,4 +1,4 @@
-# Reviewing an existing shared production exercise
+# Extending an existing shared production exercise
 
 ## Purpose and learning model
 
@@ -14,21 +14,19 @@ by earlier content review. The learner supplied another known word, called C
 below, which was rejected because it was not in the accepted set. That rejection
 establishes that C is unlisted, not whether C is linguistically wrong.
 
-Your central decision is whether C naturally answers the exact visible exercise
-and the established shared axis. If it fits both, propose adding it. If C fits
-the visible stimulus but not the axis, and the stimulus can be clarified while
-preserving the axis and all current members, propose repairing the stimulus.
-Treat the original rejection as unfair in that case. If C does not naturally
-fit the visible stimulus, or the judgment is materially uncertain, explain
-without proposing changes. Existing members' word-specific cues are not
-supplied or part of this task.
+Your central decision is whether C naturally answers this exact exercise. If
+so, propose adding it and consider how shared practice should coexist with C's
+word-specific exercises. If not, or if the judgment is materially uncertain,
+explain the answer without proposing changes. You are extending established
+practice, not deciding from scratch whether the existing members should share
+an exercise. Their word-specific cues are not supplied or part of this task.
 
 ## Input and output map
 
 The user message contains an `items` array. For each item:
 
 - `stimulus` is the exact text visible before answering. Judge C against this
-  text. A repair may revise the stimulus only for future exercises.
+  text. It is also the fixed stimulus of the cue being considered for extension.
 - `rawResponse` records the learner's response; `submittedWord` identifies C
   through its `hanzi`, `pinyin`, and `meanings`. Dictionary meanings help identify
   the word; judge its natural use in the exercise.
@@ -41,23 +39,21 @@ The user message contains an `items` array. For each item:
   includes a `cueId` to identify it if you propose retirement, its `cueType`,
   and its `text`.
 
-Return only `pure_cue_reflection_result.v2`, with one result per input item.
+Return only `pure_cue_reflection_result.v1`, with one result per input item.
 Identify each result with `submittedWord`, copying the input word's `hanzi`
 exactly. Each result includes a non-empty `learnerExplanation` and `rationale`,
-and one of these three shapes. Include all fields in every result:
+and one of these two shapes:
 
-- `decision: "extend"`, `reason: null`, `repair: null`, and an `extension`
-  containing the full revised `teachingNote` and `responseWordPlan`.
-- `decision: "repair"`, `reason: null`, `extension: null`, and a `repair`
-  containing only a revised `stimulus`.
+- `decision: "extend"`, `reason: null`, and an `extension` containing the full
+  revised `teachingNote` and `responseWordPlan`.
 - `decision: "explanation_only"`, `extension: null`, and
-  `repair: null`, with `reason: "does_not_fit"` or `"uncertain"`.
+  `reason: "does_not_fit"` or `"uncertain"`.
 
 `responseWordPlan` contains `deactivateCueIds` and `distinctiveCueDrafts`.
 Unselected existing cues remain unchanged. Each draft has `cueType` and `text`
 and accepts C alone. Both arrays may be empty: adding a valid member does not
-require additional cue changes. A stimulus repair changes no membership, axis,
-teaching note, or word-specific cues.
+require additional cue changes. This task has no word-only repair outcome when
+C does not join the shared exercise.
 
 `learnerExplanation` teaches the language and the attempt's practical lesson.
 `rationale` explains the proposed practice arrangement, or why no change is
@@ -90,15 +86,8 @@ register tendency may be useful teaching without disqualifying an otherwise
 natural answer. Conversely, shared English glosses or a related topic are not
 enough when the actual meaning or construction differs.
 
-- If C naturally fits both the visible stimulus and the established axis, choose
-  `extend`. Its absence from the accepted list and teaching note is not a reason
-  to withhold it.
-- If C naturally fits the visible stimulus but expresses a different idea from
-  the established axis, choose `repair` only when a revised visible stimulus
-  can clearly evoke that axis and naturally admit every existing member. Do
-  not change the axis or membership, or call C wrong for the text shown. A
-  short English frame may clarify a Mandarin cloze; together they form one
-  stimulus.
+- If C naturally fits, choose `extend`. Its absence from the accepted list and
+  from the old teaching note are not reasons to withhold it.
 - If it does not fit, choose `explanation_only` with `does_not_fit`. Explain the
   concrete meaning, grammar, or usage mismatch in this exercise.
 - If evidence does not support a reliable judgment, choose `explanation_only`
@@ -178,17 +167,6 @@ when the goal is to evoke something they would want to say.
 
 These illustrate the reasoning, not fixed membership rules.
 
-### Visible cloze misses the established axis
-
-Suppose the axis is about two experts making the same recommendation, with 相同
-and 同样 as existing members. The learner sees `两位专家提出了____的建议。` and submits
-不同. `两位专家提出了不同的建议` is natural because the displayed sentence leaves their
-agreement open. Choose `repair` and propose the visible stimulus
-`The two experts made the same recommendation: 两位专家提出了____的建议。` Both 相同
-and 同样 fit the revised exercise; 不同 expresses a different relationship.
-Explain that the original cue omitted the intended meaning and that the repair
-is for future practice. Keep the established membership and axis.
-
 ### Valid extension without universal interchangeability
 
 Suppose the stimulus is “happy; pleased,” with 高兴 and 快乐 accepted, and the
@@ -219,8 +197,6 @@ useful production.
 ## Final checks
 
 - Judge C against the visible stimulus, without hidden teaching restrictions.
-- For repair, preserve axis, accepted members, teaching, and word cues; make
-  the revised stimulus itself convey the intended shared meaning.
 - For an extension, preserve established shared content except membership and
   the holistic teaching note; deactivate only supplied C cue IDs.
 - Make C's resulting practice useful in its own right. Empty change arrays are

@@ -736,6 +736,36 @@ restoration is first-attempt based and restore-once. Invalid/uncertain responses
 produce explanation-only inbox items. See the complete policy in
 [`pure-cue-elicitation.md`](pure-cue-elicitation.md#pure-cue-response-reflection).
 
+### `repair_pure_cue_stimulus` version 1
+
+This operation belongs only to pure-cue response reflection evidence for a
+learner-owned assessment with a first rejected response that resolves to a
+known word. It applies when that response reasonably fits the exact served
+stimulus but falls outside the existing cue's semantic axis. Its learner-facing
+explanation acknowledges the flaw in the displayed exercise rather than
+mislabeling the response as invalid. The provider proposes a revised stimulus;
+the backend stamps the source attempt and pure-cue identities and the expected
+current stimulus, axis, accepted member IDs, and teaching note.
+
+Review presents the before/after stimulus and fixed cue context. The learner
+may accept or edit the proposed wording. The revision must still express the
+same axis, naturally admit all existing members, and make the triggering
+response unsuitable on the stated grounds. Application preflights the exact
+source, current content, and authorization; stale content rejects the whole
+operation. One transaction records an immutable, learner-private before/after
+stimulus revision attributed to the invocation, updates the shared cue's
+current stimulus in place, and restores the eligible source pre-lapse pure-cue
+schedule once. Future served snapshots use the new wording; historical snapshots
+and attempts remain untouched. No membership, axis, teaching note, word-owned
+cue, or ordinary scheduling policy changes. Compensation uses the existing
+restore-once marker and reports unavailable when the historical snapshot is
+missing.
+
+This is a bounded exception to the shared-content stimulus immutability rule;
+it does not authorize general axis repair or rewriting other content types.
+See the worked example in
+[`pure-cue-elicitation.md`](pure-cue-elicitation.md#pure-cue-response-reflection).
+
 ### `promote_pure_elicitation` version 1 (historical)
 
 The operation identifies the source production attempt, target word, and

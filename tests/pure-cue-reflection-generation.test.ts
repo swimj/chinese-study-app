@@ -22,7 +22,7 @@ const bundle: PureCueReflectionBundleV1 = {
   }],
 };
 const wire: PureCueReflectionResultV1Wire = {
-  schemaVersion: 'pure_cue_reflection_result.v1', itemResults: [{ submittedWord: 'C', decision: 'extend', reason: null, learnerExplanation: 'C fits this situation.', rationale: 'C is valid.', extension: { teachingNote: 'A, B or C', responseWordPlan: { deactivateCueIds: [], distinctiveCueDrafts: [] } } }],
+  schemaVersion: 'pure_cue_reflection_result.v2', itemResults: [{ submittedWord: 'C', decision: 'extend', reason: null, repair: null, learnerExplanation: 'C fits this situation.', rationale: 'C is valid.', extension: { teachingNote: 'A, B or C', responseWordPlan: { deactivateCueIds: [], distinctiveCueDrafts: [] } } }],
 };
 const metadata = (promptVersion = PURE_CUE_REFLECTION_PROMPT_VERSION): LunaReflectionRunMetadata => ({
   provider: 'openai', modelConfig: 'gpt-5.6-luna-high', providerModel: 'gpt-5.6-luna', promptVersion, responseId: 'response', finishReason: 'stop',
@@ -101,7 +101,7 @@ test('dedicated provider sends its own prompt and strict wire schema, then norma
   const output = await provider.generatePureCueReflection!(bundle);
   assert.equal(output.metadata.promptVersion, PURE_CUE_REFLECTION_PROMPT_VERSION);
   const request = body as unknown as { messages: Array<{ content: string }>; response_format: { json_schema: { name: string; strict: boolean } } };
-  assert.equal(request.response_format.json_schema.name, 'pure_cue_reflection_result_v1');
+  assert.equal(request.response_format.json_schema.name, 'pure_cue_reflection_result_v2');
   assert.equal(request.response_format.json_schema.strict, true);
   assert.deepEqual(JSON.parse(request.messages[1].content), { items: [{
     stimulus: 'shared situation', rawResponse: 'C',

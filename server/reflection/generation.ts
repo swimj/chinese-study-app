@@ -302,7 +302,7 @@ export function createInitialReflectionGenerationService(
     const common = {
       runId, sourceSessionId: bundle.session.sessionId, reflectionFlowVersion: PURE_CUE_REFLECTION_FLOW_VERSION,
       startedAt, clientRequestId, eligibleItemCount: bundle.items.length, includedItemCount: bundle.items.length,
-      evidenceBundle: bundle, resultSchemaVersion: 'pure_cue_reflection_result.v1',
+      evidenceBundle: bundle, resultSchemaVersion: 'pure_cue_reflection_result.v2',
     };
     startRun({ ...common, provider: config.provider, model: config.modelConfig,
       providerModel: config.providerModel, promptVersion: config.promptVersion });

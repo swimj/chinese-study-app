@@ -441,6 +441,8 @@ function secondOpinionChipParts(
 
 function compactReflectionOperationLabel(operation: ReflectionOperation): string {
   switch (operation.kind) {
+    case 'repair_pure_cue_stimulus':
+      return 'Cue repair';
     case 'suppress_definition_production':
       return 'Suppress';
     case 'create_contrast_cluster':

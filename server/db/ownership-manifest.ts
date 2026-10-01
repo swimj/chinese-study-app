@@ -296,7 +296,7 @@ function pureCueEntries(): DurableOwnershipEntry[] {
   return [
     sharedEntry(
       'pure_cues',
-      'shared immutable stimulus/axis with authorized holistic teaching revisions',
+      'shared immutable axis with authorized stimulus and holistic teaching revisions',
       'create empty; pure cues are post-release shared content',
     ),
     sharedEntry(
@@ -320,6 +320,12 @@ function pureCueEntries(): DurableOwnershipEntry[] {
       'learner plus authorized cleanup invocation and shared pure cue',
       'create empty; do not invent revisions for legacy axis commentary',
       'immutable before/after reveal teaching and private authorization provenance',
+    ),
+    privateEntry(
+      'pure_cue_stimulus_revisions',
+      'learner plus authorized stimulus repair invocation and shared pure cue',
+      'create empty; historical stimuli stay in served snapshots',
+      'immutable before/after stimulus and private authorization provenance',
     ),
     privateEntry(
       'pure_cue_attempts',
