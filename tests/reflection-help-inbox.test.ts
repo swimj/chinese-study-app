@@ -125,6 +125,26 @@ describe('reflection help inbox', { concurrency: false }, () => {
     assert.equal(dbModule.listReflectionHelpInbox().length, 0);
   });
 
+  test('Done after defer deletes the staging row the same as Done from open Help', () => {
+    const informational = materializeInformational('inbox-done-after-defer').artifact;
+    assert.deepEqual(dbModule.deferReflectionHelpInboxItem({
+      artifactId: informational.artifactId,
+      itemId: 'item',
+    }, generatedAt), { deferred: true });
+    assert.equal(dbModule.getReflectionArtifactDetail(informational.artifactId).deferredHelpInbox.length, 1);
+
+    assert.deepEqual(dbModule.markReflectionHelpInboxDone({
+      artifactId: informational.artifactId,
+      itemId: 'item',
+    }), { done: true });
+    assert.equal(dbModule.getReflectionArtifactDetail(informational.artifactId).helpInbox.length, 0);
+    assert.equal(dbModule.getReflectionArtifactDetail(informational.artifactId).deferredHelpInbox.length, 0);
+    assert.deepEqual(dbModule.markReflectionHelpInboxDone({
+      artifactId: informational.artifactId,
+      itemId: 'item',
+    }), { done: false });
+  });
+
   test('defers an explanation item into second-opinion selection and retires it on success', () => {
     const informational = materializeInformational('inbox-deferred-explanation').artifact;
     const inboxId = informational.helpInbox[0]!.inboxId;
@@ -139,7 +159,6 @@ describe('reflection help inbox', { concurrency: false }, () => {
       [inboxId],
     );
     assert.equal(dbModule.listReflectionArtifacts('open').some((row) => row.artifactId === informational.artifactId), true);
-    assert.deepEqual(dbModule.markReflectionHelpInboxDone({ artifactId: informational.artifactId, itemId: 'item' }), { done: false });
 
     const selection = dbModule.buildStagedDeferredSecondOpinionBundle([], generatedAt, [inboxId]);
     assert.equal(selection.bundle.items.length, 1);

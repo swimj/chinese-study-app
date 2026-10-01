@@ -104,14 +104,19 @@ export function seedReflectionHelpInboxWithoutTransaction(
 }
 
 /**
- * Done removes the open inbox row. No tombstone and no learner-facing undo.
+ * Done removes an open or deferred inbox row. Same end state either way: the
+ * item leaves Help and the second-opinion staging pen. No tombstone and no
+ * learner-facing undo. Terminal `requested_second_opinion` rows are untouched.
  */
 export function markReflectionHelpInboxDone(
   request: MarkReflectionHelpInboxDoneRequest,
 ): { done: boolean } {
   resolveItem(request.artifactId, request.itemId);
   const existing = findInboxRow(request.artifactId, request.itemId);
-  if (!existing || existing.disposition !== 'open') {
+  if (
+    !existing
+    || (existing.disposition !== 'open' && existing.disposition !== 'deferred')
+  ) {
     return { done: false };
   }
   getDb().prepare(`
