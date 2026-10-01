@@ -68,7 +68,14 @@ For the purposes of this spec:
 
 ## Unstudied Word Covering
 
-An `unstudied` word has a two-phase first encounter.
+An `unstudied` Mandarin word can use a pinned paced introduction and its target
+rehearsals. Explicitly finishing that package inside the session completes the
+word unit through the existing deferred commit and Undo path. Merely opening or
+completing it in My Words grants no study credit; a saved navigation-completion
+marker does not automatically complete a later session unit.
+
+If the learner skips that path or content is unavailable, the existing two-phase
+first encounter below remains the fallback. Other profiles also retain it.
 
 ### Phase 1: Intro
 

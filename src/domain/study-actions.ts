@@ -1,3 +1,4 @@
+import type { ContentExerciseSnapshot, WordContentDocument } from './word-content/types';
 import type { ReviewRating, Word } from '../types';
 import {
   assertTargetedCueAcceptsOnlyOwner,
@@ -123,6 +124,11 @@ export type StudyAction = {
 export type SessionStudyItemSource = 'unstudied' | 'learning' | 'review';
 export type WordLifecycleSessionStudyItemSource = Exclude<SessionStudyItemSource, 'review'>;
 
+export type LearningRehearsalSnapshot = ContentExerciseSnapshot & {
+  readonly packageId: string;
+  readonly wordContentId: string;
+};
+
 export type SessionStudyItem = {
   sessionActionId: string;
   actionKind: StudyActionKind;
@@ -133,6 +139,9 @@ export type SessionStudyItem = {
   word: Word;
   contrastSelection: ContrastSelectionContent | null;
   production: ProductionExerciseSnapshot | null;
+  /** Frozen target rehearsal, separate from review cues and reflection evidence. */
+  rehearsal?: LearningRehearsalSnapshot;
+  wordContent?: WordContentDocument;
 };
 
 /**
@@ -155,6 +164,8 @@ export function isPureCueSessionReviewItem(item: SessionReviewItem): item is Pur
 }
 
 export type SessionStudyItemBuckets = {
+  learningRehearsals?: Record<string, LearningRehearsalSnapshot>;
+  learningContent?: Record<string, WordContentDocument>;
   review: SessionReviewItem[];
   learning: Word[];
   unstudied: Word[];

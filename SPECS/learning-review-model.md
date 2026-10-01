@@ -163,6 +163,12 @@ A `learning` word has a failed session outcome when:
 
 For now, aborted-session behavior is explicitly deferred.
 
+For Mandarin words with an eligible pinned teaching package, learning production
+uses one frozen target-rehearsal exercise, rotated by UTC study-day ordinal. The
+recognition reveal can use the package's curated source material. This changes
+content, not the coverage or first-try success criteria. Words without an eligible
+package use existing cards; no per-example mastery state is required.
+
 ## Learning To Review Graduation
 
 Each word in `learning` tracks the number of consecutive successful sessions.
@@ -170,6 +176,7 @@ Each word in `learning` tracks the number of consecutive successful sessions.
 Graduation rule:
 
 - after 3 consecutive successful sessions, the word transitions from `learning` to `review`
+- these need not fall on adjacent calendar days
 
 This success count is tracked at the word level, not the direction level.
 

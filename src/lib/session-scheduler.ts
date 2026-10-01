@@ -1,3 +1,5 @@
+import type { LearningRehearsalSnapshot } from '../domain/study-actions';
+import type { WordContentDocument } from '../domain/word-content/types';
 import type {
   SessionStudyItem,
   SessionReviewItem,
@@ -47,6 +49,8 @@ export type ActiveBucketSchedulerUnit =
     };
 
 export type BucketSessionScheduler = {
+  learningRehearsals?: Record<string, LearningRehearsalSnapshot>;
+  learningContent?: Record<string, WordContentDocument>;
   reviewQueue: SessionReviewItem[];
   learningPool: Word[];
   unstudiedPool: Word[];
@@ -79,6 +83,8 @@ export function createBucketSessionScheduler({
   seed?: number;
 }): BucketSessionScheduler {
   const scheduler: BucketSessionScheduler = {
+    learningRehearsals: structuredClone(buckets.learningRehearsals ?? {}),
+    learningContent: structuredClone(buckets.learningContent ?? {}),
     reviewQueue: [...buckets.review],
     learningPool: [...buckets.learning],
     unstudiedPool: [...buckets.unstudied],
@@ -213,6 +219,8 @@ export function pruneBucketSchedulerWords(
 
 export function cloneBucketSessionScheduler(scheduler: BucketSessionScheduler): BucketSessionScheduler {
   return {
+    learningRehearsals: structuredClone(scheduler.learningRehearsals ?? {}),
+    learningContent: structuredClone(scheduler.learningContent ?? {}),
     reviewQueue: scheduler.reviewQueue.map(cloneSessionStudyItem),
     learningPool: scheduler.learningPool.map(cloneWord),
     unstudiedPool: scheduler.unstudiedPool.map(cloneWord),
@@ -263,6 +271,8 @@ function cloneSessionStudyItem(item: SessionReviewItem): SessionReviewItem {
   }
   return {
     ...item,
+    ...(item.rehearsal ? { rehearsal: structuredClone(item.rehearsal) } : {}),
+    ...(item.wordContent ? { wordContent: structuredClone(item.wordContent) } : {}),
     sampledSkillIds: [...item.sampledSkillIds],
     contentRef: item.contentRef ? { ...item.contentRef } : null,
     production: item.production
@@ -373,6 +383,8 @@ function pickActiveBucketSchedulerUnit(
       bucket,
       word,
       skillId: pickOpenBucketWordSkill(progress, bucket, word.id, lcg(rngState)),
+      rehearsal: bucket === 'learning' ? scheduler.learningRehearsals?.[word.id] : undefined,
+      wordContent: bucket === 'learning' ? scheduler.learningContent?.[word.id] : undefined,
     }),
   };
 }
@@ -429,15 +441,35 @@ function buildBucketWordStudyItem({
   bucket,
   word,
   skillId,
+  rehearsal,
+  wordContent,
 }: {
   bucket: 'learning' | 'unstudied';
   word: Word;
   skillId: ReviewStudySkillId;
+  rehearsal?: LearningRehearsalSnapshot;
+  wordContent?: WordContentDocument;
 }): SessionStudyItem {
   const item = buildWordLifecycleSessionStudyItems({ source: bucket, word })
     .find((candidate) => candidate.sampledSkillIds.length === 1 && candidate.sampledSkillIds[0] === skillId);
 
-  return item ?? assertLifecycleSessionStudyItemPresent(bucket, word.id, skillId);
+  if (!item) return assertLifecycleSessionStudyItemPresent(bucket, word.id, skillId);
+  if (rehearsal && (!rehearsal.packageId || !rehearsal.wordContentId
+    || rehearsal.contract.kind !== 'target_rehearsal'
+    || rehearsal.contract.wordId !== word.id || rehearsal.acceptedAnswers.length !== 1
+    || rehearsal.acceptedAnswers[0]?.wordId !== word.id
+    || rehearsal.acceptedAnswers[0]?.hanzi !== word.hanzi
+    || rehearsal.acceptedAnswers[0]?.traditional !== word.traditional)) {
+    throw new Error('Learning rehearsal must use the admitted word and target-only answer contract.');
+  }
+  if (wordContent && (wordContent.word.wordId !== word.id
+    || (rehearsal && rehearsal.wordContentId !== wordContent.id))) {
+    throw new Error('Learning content must belong to the admitted word.');
+  }
+  return { ...item,
+    ...(skillId === 'production' && rehearsal ? { rehearsal } : {}),
+    ...(skillId === 'recognition' && wordContent ? { wordContent } : {}),
+  };
 }
 
 export function createInitialBucketLearningProgress(): BucketSchedulerLearningProgress {
