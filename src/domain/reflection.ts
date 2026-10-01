@@ -1,4 +1,4 @@
-import { validateReconcilePureCueResponseOperation, type ReconcilePureCueResponseOperationV1, type PureCueReflectionBundleV1, type PureCueReflectionResultV1, type PureCueReflectionItemV1 } from './pure-cue-reflection';
+import { validateReconcilePureCueResponseOperation, validateRepairPureCueStimulusOperation, type ReconcilePureCueResponseOperationV1, type RepairPureCueStimulusOperationV1, type PureCueReflectionBundleV1, type PureCueReflectionResultV1, type PureCueReflectionItemV1 } from './pure-cue-reflection';
 import { promptMajorVersion, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION } from './reflection-contracts';
 
 export type StudyProfileV0 = 'mandarin' | 'french';
@@ -518,7 +518,7 @@ export type SessionReflectionResultV10 = {
   schemaVersion: 'session_reflection_result.v10'; itemResults: ReflectionItemResultV2[];
 };
 export type ReconcileProductionCuesDestinationV1 =
-  | { kind: 'existing'; pureCueId: string; teachingNote: string; expectedAcceptedWordIds: string[]; expectedTeachingNote: string }
+  | { kind: 'existing'; pureCueId: string; teachingNote: string; expectedAcceptedWordIds: string[]; expectedTeachingNote: string; expectedStimulus?: string; expectedAxisNote?: string }
   | { kind: 'create'; stimulus: string; axisNote: string; teachingNote: string };
 export type ReconcileProductionCuesOperationV1 = {
   kind: 'reconcile_production_cues'; version: 1;
@@ -556,6 +556,7 @@ export type SessionReflectionResultV9 = {
 
 export type ReflectionOperation =
   | ReconcilePureCueResponseOperationV1
+  | RepairPureCueStimulusOperationV1
   | SuppressDefinitionProductionOperationV1
   | CreateContrastClusterOperation
   | RepairProductionCueOperationV1
@@ -956,6 +957,7 @@ export type ReflectionOperationRegistration = {
 
 export const REFLECTION_OPERATION_REGISTRY = [
   { kind: 'reconcile_pure_cue_response', version: 1, editorAvailable: true, applySupport: 'supported' },
+  { kind: 'repair_pure_cue_stimulus', version: 1, editorAvailable: true, applySupport: 'supported' },
   {
     kind: 'suppress_definition_production',
     version: 1,
@@ -1133,7 +1135,8 @@ function validateWordReference(
 
 export function reflectionOperationWordReferences(operation: ReflectionOperation): string[] {
   switch (operation.kind) {
-    case 'reconcile_pure_cue_response': return [operation.responseWordId];
+    case 'reconcile_pure_cue_response':
+    case 'repair_pure_cue_stimulus': return [operation.responseWordId];
     case 'suppress_definition_production':
       return [operation.wordId];
     case 'repair_production_cue':
@@ -1191,6 +1194,7 @@ export function validateReflectionOperation(
   const errors: string[] = [];
   switch (kind) {
     case 'reconcile_pure_cue_response': return [...validateReconcilePureCueResponseOperation(value), ...validateWordReference(value.responseWordId, `${path}.responseWordId`, options)];
+    case 'repair_pure_cue_stimulus': return [...validateRepairPureCueStimulusOperation(value), ...validateWordReference(value.responseWordId, `${path}.responseWordId`, options)];
     case 'suppress_definition_production': {
       errors.push(...validateObjectFields(value, ['kind', 'version', 'wordId'], path));
       errors.push(...validateWordReference(value.wordId, `${path}.wordId`, options));
@@ -1364,9 +1368,14 @@ export function validateReflectionOperation(
           const fields = destination.kind === 'existing'
             ? ['kind', 'pureCueId', 'teachingNote', 'expectedAcceptedWordIds', 'expectedTeachingNote']
             : ['kind', 'stimulus', 'axisNote', 'teachingNote'];
-          errors.push(...validateObjectFields(destination, fields, `${path}.destination`));
+          errors.push(...(destination.kind === 'existing'
+            ? validateObjectFieldsWithOptional(destination, fields, ['expectedStimulus', 'expectedAxisNote'], `${path}.destination`)
+            : validateObjectFields(destination, fields, `${path}.destination`)));
           errors.push(...validateString(destination.teachingNote, `${path}.destination.teachingNote`, true));
           if (destination.kind === 'existing') {
+            if (destination.expectedStimulus !== undefined) errors.push(...validateString(destination.expectedStimulus, `${path}.destination.expectedStimulus`, true));
+            if (destination.expectedAxisNote !== undefined) errors.push(...validateString(destination.expectedAxisNote, `${path}.destination.expectedAxisNote`));
+            if ((destination.expectedStimulus === undefined) !== (destination.expectedAxisNote === undefined)) errors.push(`${path}.destination: expected stimulus and axis must appear together`);
             errors.push(...validateString(destination.pureCueId, `${path}.destination.pureCueId`, true));
             errors.push(...validateString(destination.expectedTeachingNote, `${path}.destination.expectedTeachingNote`, false));
             if (!Array.isArray(destination.expectedAcceptedWordIds) || destination.expectedAcceptedWordIds.length < 2
@@ -2584,7 +2593,7 @@ export function validateReflectionOperationEvidenceContext(
   path: string,
 ): string[] {
   if (!isRecord(value)) return [];
-  if (value.kind === 'reconcile_pure_cue_response') return [`${path}: pure cue reconciliation requires pure cue evidence`];
+  if (value.kind === 'reconcile_pure_cue_response' || value.kind === 'repair_pure_cue_stimulus') return [`${path}: pure cue operation requires pure cue evidence`];
   const errors: string[] = [];
   if ('promotionEvidence' in item) {
     errors.push(...validateOwnerOnlyCueDrafts(value, path));
@@ -3138,7 +3147,9 @@ export function validateReconcileProductionCuesEvidenceContext(value: unknown, i
   if (isRecord(value.destination) && value.destination.kind === 'existing') {
     const destination = value.destination;
     const saved = item.promotionEvidence?.intersectingPureCues.find((cue) => cue.id === destination.pureCueId);
-    if (saved && (!structurallyEqual(destination.expectedAcceptedWordIds, saved.acceptedWordIds) || destination.expectedTeachingNote !== saved.teachingNote)) errors.push(`${path}.destination: expected state must match the supplied pure cue`);
+    if (saved && (!structurallyEqual(destination.expectedAcceptedWordIds, saved.acceptedWordIds) || destination.expectedTeachingNote !== saved.teachingNote
+      || (destination.expectedStimulus !== undefined && destination.expectedStimulus !== saved.stimulus)
+      || (destination.expectedAxisNote !== undefined && destination.expectedAxisNote !== saved.axisNote))) errors.push(`${path}.destination: expected state must match the supplied pure cue`);
     const changesWords = Array.isArray(value.wordPlans) && value.wordPlans.some((plan) => isRecord(plan)
       && ((Array.isArray(plan.deactivateCueIds) && plan.deactivateCueIds.length > 0)
         || (Array.isArray(plan.distinctiveCueDrafts) && plan.distinctiveCueDrafts.length > 0)));
@@ -3160,7 +3171,7 @@ export function stampReconcileProductionCuesOperation(
   if (destination?.kind === 'existing') {
     const existing = item.promotionEvidence.intersectingPureCues.find((cue) => cue.id === destination.pureCueId);
     if (!existing) throw new Error(`Unknown pure cue destination: ${destination.pureCueId}`);
-    stampedDestination = { ...destination, expectedAcceptedWordIds: [...existing.acceptedWordIds], expectedTeachingNote: existing.teachingNote };
+    stampedDestination = { ...destination, expectedAcceptedWordIds: [...existing.acceptedWordIds], expectedTeachingNote: existing.teachingNote, expectedStimulus: existing.stimulus, expectedAxisNote: existing.axisNote };
   } else stampedDestination = destination;
   return { ...operation, destination: stampedDestination, kind: 'reconcile_production_cues', version: 1, sourceAttemptId: item.sourceAttemptId, targetWordId: item.targetWord.wordId, responseWordId: item.responseWord.wordId };
 }

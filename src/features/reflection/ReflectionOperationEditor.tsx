@@ -52,6 +52,19 @@ export function ReflectionOperationEditor({
   }
 
   switch (operation.kind) {
+    case 'repair_pure_cue_stimulus':
+      return (
+        <div className="reflection-operation-fields">
+          <Field label="Stimulus shown to the learner">
+            <p>{operation.expectedStimulus}</p>
+          </Field>
+          <Field label="Repaired stimulus">
+            <textarea value={operation.stimulus} disabled={disabled}
+              onChange={(event) => onChange?.({ ...operation, stimulus: event.target.value })} />
+          </Field>
+          <p className="notes">The existing axis and accepted answers stay the same. The repaired stimulus will be used for future attempts.</p>
+        </div>
+      );
     case 'reconcile_pure_cue_response': {
       if (evidence?.source !== 'pure_cue_mistake') {
         return <p className="notes">Pure cue evidence is unavailable.</p>;
@@ -321,7 +334,8 @@ function PureElicitationPromotionEditor({
     const teachingNote = 'teachingNote' in cue && typeof cue.teachingNote === 'string' ? cue.teachingNote : '';
     return operation.kind === 'reconcile_production_cues'
       ? { kind: 'existing' as const, pureCueId: cue.id, teachingNote,
-          expectedAcceptedWordIds: [...cue.acceptedWordIds], expectedTeachingNote: teachingNote }
+          expectedAcceptedWordIds: [...cue.acceptedWordIds], expectedTeachingNote: teachingNote,
+          expectedStimulus: cue.stimulus, expectedAxisNote: cue.axisNote }
       : { kind: 'existing' as const, pureCueId: cue.id };
   }
 

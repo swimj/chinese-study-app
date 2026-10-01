@@ -20,6 +20,23 @@ test('pure cue evidence remains distinct and normalization stamps only the respo
   assert.deepEqual(validateReflectionOperation(operation),[]);
   assert.equal('targetWordId' in operation,false);
 });
+test('repair result preserves axis and members while changing only the visible stimulus', () => {
+  const result = normalizePureCueReflectionResult({ schemaVersion: 'pure_cue_reflection_result.v2', itemResults: [{
+    submittedWord: 'C', decision: 'repair', reason: null, extension: null,
+    repair: { stimulus: 'The experts agreed: shared stimulus' },
+    learnerExplanation: 'C fit the wording shown; the cue omitted its intended meaning.',
+    rationale: 'Make the existing axis visible.',
+  }] }, bundle);
+  assert.deepEqual(validatePureCueReflectionResult(result, bundle), []);
+  const operation = result.itemResults[0]!.proposals[0]!.operation;
+  assert.equal(operation.kind, 'repair_pure_cue_stimulus');
+  if (operation.kind !== 'repair_pure_cue_stimulus') throw new Error('wrong kind');
+  assert.equal(operation.expectedAxisNote, 'axis');
+  assert.deepEqual(operation.expectedAcceptedWordIds, ['A', 'B']);
+  assert.deepEqual(reflectionOperationWordReferences(operation), ['C']);
+  operation.expectedAxisNote = 'changed';
+  assert.ok(validatePureCueReflectionResult(result, bundle).some(e => e.includes('expected content')));
+});
 test('provider cannot supply durable identity or alter A/B owned cues', () => {
   const value = wire();
   Object.assign(value.itemResults[0]!.extension!.responseWordPlan, {wordId:'A'});

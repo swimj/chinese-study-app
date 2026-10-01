@@ -1,9 +1,13 @@
 # Reflection prompt versioning
 
 `pure-cue-reflection.md` is the independent pure-cue response prompt, stamped
-`pure-cue-reflection-v1.0`. It evaluates extension by C and only C's word-owned
-cue plan, preserving the original members' cues. It does not route through
-staged word-pair diagnosis/promotion.
+`pure-cue-reflection-v2.0`. It evaluates extension by C or a stimulus-only
+repair when the displayed wording admits C outside the established axis.
+Extension may revise only C's word-owned cue plan; repair preserves the axis,
+members, teaching note, and word cues. It does not route through staged
+word-pair diagnosis/promotion. The shipped V1 prompt is archived.
+Already materialized V1 pure-cue extension proposals remain reviewable; old
+failed provider runs are not sent through the V2 prompt.
 
 The prompt follows the staged prompts' purpose, evidence map, decision process,
 content-design guidance, and worked patterns. It judges the first response

@@ -1,11 +1,10 @@
 # Pure-cue elicitation
 
-Status: accepted implementation contract, updated 2026-09-30. This specifies the full
+Status: accepted implementation contract, updated 2026-10-01. This specifies the full
 vertical authorized in the pure-cue task; individual stack layers implement
 the foundation, session integration, and reflection integration in order.
 It supersedes the exploratory choices in
 [`pure-cue design memo`](../notes/active/2026-09-18-pure-cue-elicitation-memo.md).
-The stability-frontier document is intentionally not rewritten by this task.
 
 ## Ownership and admission
 
@@ -42,11 +41,17 @@ stored as separate per-member records, and never adds hidden grading conditions.
 
 Successful authorized promotion publishes new content as `shared_trial`.
 Extensions update shared accepted membership and the holistic teaching note
-for future assessments, preserving the stimulus and axis. The existing teaching
-note and member identities serve as accumulated context alongside the incoming
+for future assessments, preserving the stimulus and axis. An explicitly
+authorized pure-cue repair may instead revise only the stimulus in place when
+the displayed wording admitted a reasonable response outside the established
+axis. The cue ID, axis, accepted members, and teaching note remain fixed. Each
+stimulus revision retains its before/after text and authorizing learner-private
+invocation. For an extension, the existing teaching note and member identities
+serve as accumulated context alongside the incoming
 pair; fetching every member's full lexical context is not required. The proposal
 must not overwrite a newer membership or teaching-note state unseen in its
-evidence. Served snapshots freeze reveal text as well as accepted answers;
+evidence. Existing-cue extensions also become stale if a stimulus repair has
+changed the wording they assessed. Served snapshots freeze reveal text as well as accepted answers;
 extensions do not revise frozen history. No extra per-learner content approval is
 required. Shared publication retirement/quarantine controls serving globally.
 Proposal evidence, source responses, provenance, and compensation remain private.
@@ -166,6 +171,11 @@ operation automatically.
 This release is a hard execution cutover: only current flow, evidence, and
 prompt contracts support retries or proposal authorization
 and application. Older results stay readable but cannot be upgraded in place.
+The later pure-cue reflection V2 prompt is a narrow exception for already
+materialized V1 pure-cue artifacts: their existing extension proposals remain
+reviewable and applicable under their V1 operation contract. New pure-cue
+generation and failed-run retries use only V2; old results are not regenerated
+or reinterpreted as stimulus repairs.
 Second opinions may reuse compatible original diagnosis evidence independently
 of old flow, prompt, and result versions; see `session-reflection-generation.md`.
 There is no age-based compatibility window.
@@ -195,6 +205,37 @@ word-owned cues remain outside its authority. Resulting proxied coverage for C
 is intentional; C's word scheduler, enrollment, and recognition stay unchanged.
 The learner accepts the combined operation in the ordinary reflection inbox.
 Membership and teaching-note preconditions reject unseen concurrent changes.
+An intervening stimulus repair also makes an extension based on the earlier
+wording stale.
+
+A cue-repair proposal applies when C naturally fits the displayed stimulus but
+does not belong on the established axis. It acknowledges that the rejected
+answer was reasonable for the exercise shown; it does not call C bad Chinese or
+silently add C to the accepted set. It proposes a new stimulus that expresses
+the same axis and naturally admits every existing member while excluding C on
+the stated grounds. Only the shared stimulus changes: cue identity, axis,
+accepted members, teaching note, word-owned cues, and ordinary scheduling policy
+stay as they are. The unfair source lapse qualifies for existing restore-once
+pre-lapse scheduler compensation.
+
+Review shows the old and proposed stimulus, the fixed axis and membership, and
+the fairness explanation. Acceptance revises the shared cue for future
+assessments with attributable before/after provenance and restores an eligible
+pre-lapse pure-cue scheduler snapshot once. It leaves the source attempt and its
+grading intact. The operation checks the expected current stimulus, axis,
+membership, and teaching note; intervening changes make it stale.
+
+For example, `两位专家提出了____的建议。` admits both `相同` and `不同` without further
+context. If the cue's established axis is sameness, a response of `不同` exposes
+an underspecified stimulus rather than invalid Mandarin. A proposed revision
+can add an English frame to the cloze:
+
+> The two experts' recommendations agree in content.
+> 两位专家提出了____的建议。
+
+The reviewer must verify that all existing accepted members remain natural in
+the revised exercise. This same diagnosis may arise for a word-owned cue, but
+this operation changes only a shared pure cue.
 
 The backend reconstructs evidence from the learner's durable first assessment
 event and frozen served snapshot, enriching only C's production repertoire.
@@ -218,6 +259,9 @@ also wrong. Fragile cues receive a due date no earlier than six hours after
 restoration; restored strong cues cannot be sampled during that six-hour window.
 Intervening study may be overwritten, matching existing asynchronous word
 compensation. Historical assessments lacking a snapshot report unavailable.
+Accepted stimulus repair for an unfair source response uses this same
+restore-once mechanism. It preserves cue identity and the scheduling policy for
+future assessments; restoration compensates only the source lapse.
 
 ### Word-production compensation
 
@@ -266,8 +310,9 @@ generation-contract cutover.
 No live model grading, refinement ladder, member-balancing penalty, scripted
 semantic promotion of legacy cues, global session time planner, or daily
 strong-cue debt.
-General pure-cue stimulus/axis repair, member removal, retirement, and multiple
-stimuli remain deferred. Existing mixed axis notes are not semantically migrated
+General axis repair, member removal, retirement, and multiple stimuli remain
+deferred. The bounded stimulus-only cue repair above does not rename an axis or
+revise membership. Existing mixed axis notes are not semantically migrated
 or repaired by the generation prompt; the new teaching field supplies a landing
 spot for separate operator cleanup. New and upgraded databases initialize that
 field without interpreting existing text.

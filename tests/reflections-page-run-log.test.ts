@@ -677,9 +677,9 @@ function pureReflectionArtifact(): ReflectionArtifactDetailDto {
     currentCue: { id: 'cue', stimulus: 'Shared situation', axisNote: '', teachingNote: 'A and B', acceptedWordIds: ['A', 'B'], acceptedWords: [word('A'), word('B')] }, activeProductionCues: [],
   };
   return { ...base, reflectionFlowVersion: PURE_CUE_REFLECTION_FLOW_VERSION, promptVersion: PURE_CUE_REFLECTION_PROMPT_VERSION,
-    bundleSchemaVersion: 'pure_cue_reflection_bundle.v1', resultSchemaVersion: 'pure_cue_reflection_result.v1',
+    bundleSchemaVersion: 'pure_cue_reflection_bundle.v1', resultSchemaVersion: 'pure_cue_reflection_result.v2',
     evidenceBundle: { schemaVersion: 'pure_cue_reflection_bundle.v1', generatedAt: base.generatedAt, session: { sessionId: 'session', startedAt: base.generatedAt, endedAt: base.generatedAt, studyProfile: 'mandarin' }, items: [item] },
-    result: { schemaVersion: 'pure_cue_reflection_result.v1', itemResults: [{ itemId: item.itemId, diagnosisTags: [], learnerExplanation: 'C does not fit.', questions: [], proposals: [] }] },
+    result: { schemaVersion: 'pure_cue_reflection_result.v2', itemResults: [{ itemId: item.itemId, diagnosisTags: [], learnerExplanation: 'C does not fit.', questions: [], proposals: [] }] },
   };
 }
 

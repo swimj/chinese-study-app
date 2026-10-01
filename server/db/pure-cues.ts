@@ -146,7 +146,7 @@ export function restorePureCueSchedulerSnapshotWithoutTransaction(input: {
   const operation = invocation ? (JSON.parse(invocation.operation_json) as {
     operation?: { sourceAttemptId?: string; pureCueId?: string };
   }).operation : undefined;
-  if (invocation?.operation_kind !== 'reconcile_pure_cue_response' || invocation.operation_version !== 1
+  if (!['reconcile_pure_cue_response', 'repair_pure_cue_stimulus'].includes(invocation?.operation_kind ?? '') || invocation?.operation_version !== 1
     || invocation.application_state !== 'pending' || operation?.sourceAttemptId !== input.sourceAttemptId
     || operation.pureCueId !== attempt.pure_cue_id || row.pure_cue_id !== attempt.pure_cue_id) {
     throw new Error('Pure cue compensation requires its pending learner-authorized reconciliation.');
@@ -317,6 +317,36 @@ export function extendPureCueAcceptedWordsWithoutTransaction(input: {
     }
   }
   insertAcceptedWords(input.id, additions, existing.acceptedWordIds.length);
+  return getPureCueContent(input.id)!;
+}
+
+export function repairPureCueStimulusWithoutTransaction(input: {
+  id: string; expectedStimulus: string; stimulus: string;
+  invocationId: string; revisedAt: string;
+}): PureCueContent {
+  const learnerId = requireLearnerId();
+  const current = getPureCueContent(input.id);
+  if (current === null || current.stimulus !== input.expectedStimulus) throw new Error('Pure cue stimulus repair is stale.');
+  const stimulus = input.stimulus.trim();
+  assertNonEmpty(stimulus, 'Repaired pure cue stimulus');
+  if (stimulus === current.stimulus) throw new Error('Repaired pure cue stimulus must differ.');
+  assertCanonicalIso(input.revisedAt, 'Stimulus revision time');
+  const invocation = getDb().prepare(`SELECT operation_kind, operation_version, operation_json, application_state
+    FROM reflection_operation_invocations WHERE invocation_id = ?`).get(input.invocationId) as {
+      operation_kind: string; operation_version: number; operation_json: string; application_state: string;
+    } | undefined;
+  const operation = invocation ? (JSON.parse(invocation.operation_json) as { operation?: {
+    pureCueId?: string; expectedStimulus?: string; stimulus?: string;
+  } }).operation : undefined;
+  if (invocation?.operation_kind !== 'repair_pure_cue_stimulus' || invocation.operation_version !== 1
+    || invocation.application_state !== 'pending' || operation?.pureCueId !== input.id
+    || operation.expectedStimulus !== current.stimulus || operation.stimulus?.trim() !== stimulus) {
+    throw new Error('Pure cue stimulus rewrite requires its pending learner-authorized repair.');
+  }
+  getDb().prepare(`INSERT INTO pure_cue_stimulus_revisions
+    (learner_id, invocation_id, pure_cue_id, previous_stimulus, stimulus, revised_at)
+    VALUES (?, ?, ?, ?, ?, ?)`).run(learnerId, input.invocationId, input.id, current.stimulus, stimulus, input.revisedAt);
+  getDb().prepare('UPDATE pure_cues SET stimulus = ? WHERE id = ?').run(stimulus, input.id);
   return getPureCueContent(input.id)!;
 }
 

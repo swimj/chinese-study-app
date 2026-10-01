@@ -98,14 +98,20 @@ not a speculative infrastructure rewrite or broad observability program.
 - Initial onboarding may be concierge-assisted. A polished self-service
   onboarding system is deferred until the steady-state experience is more
   settled.
-- Shared reusable content is immutable and has explicit publication status and
-  attributable publication provenance; there is no canonical or blessed tier.
+- Shared reusable content is immutable by default and has explicit publication
+  status and attributable publication provenance; there is no canonical or
+  blessed tier.
   The beta does not assume that corrections form a stable artifact identity or
   numbered version series. Imported
   content is an `available` bootstrap snapshot. Validated reusable content
   normally enters `shared_trial` after source-learner authorization and
   sanitization, while source evidence and all learner state remain private.
-  Eligible content is initially selected uniformly at random.
+  Eligible content is initially selected uniformly at random. A narrow,
+  authorized pure-cue stimulus repair may revise wording in place with an
+  immutable, attributed before/after record while preserving the cue's axis,
+  members, teaching note, publication status, and ordinary scheduling policy.
+  The unfair source lapse can receive restore-once private scheduler
+  compensation. Served snapshots preserve the historical exercise.
 - One externally authenticated account maps to one stable local learner
   identity. The server derives request identity; clients never choose a learner
   id; authorization is enforced below HTTP handlers; and support uses a

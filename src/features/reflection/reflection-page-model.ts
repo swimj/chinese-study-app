@@ -1,4 +1,4 @@
-import { validatePureCueReflectionOperationEvidenceContext } from '../../domain/pure-cue-reflection';
+import { validatePureCueReflectionOperationEvidenceContext, validateRepairPureCueStimulusEvidenceContext } from '../../domain/pure-cue-reflection';
 import type { PureCueReflectionItemV1 } from '../../domain/pure-cue-reflection';
 import type {
   AcceptProductionAlternateOperationV1,
@@ -455,6 +455,8 @@ export function formatRunDuration(startedAt: string, completedAt: string): strin
 
 export function cloneReflectionOperation(operation: ReflectionOperation): ReflectionOperation {
   switch (operation.kind) {
+    case 'repair_pure_cue_stimulus':
+      return { ...operation, expectedAcceptedWordIds: [...operation.expectedAcceptedWordIds] };
     case 'reconcile_pure_cue_response':
       return structuredClone(operation);
     case 'suppress_definition_production':
@@ -1103,6 +1105,9 @@ export function getOperationDraftState(
   if (evidence?.source === 'pure_cue_mistake' && draft.kind === 'reconcile_pure_cue_response') {
     validationErrors.push(...validatePureCueReflectionOperationEvidenceContext(draft, evidence));
   }
+  if (evidence?.source === 'pure_cue_mistake' && draft.kind === 'repair_pure_cue_stimulus') {
+    validationErrors.push(...validateRepairPureCueStimulusEvidenceContext(draft, evidence));
+  }
   if (evidence !== null && 'servedCue' in evidence) {
     validationErrors.push(...validateReflectionOperationEvidenceContext(draft, evidence, '$'));
   }
@@ -1127,6 +1132,22 @@ export function createReplacementOperation(
     : secondaryWordId(original);
 
   switch (kind) {
+    case 'repair_pure_cue_stimulus':
+      if (evidence?.source !== 'pure_cue_mistake') {
+        throw new Error('Pure cue stimulus repair requires its original evidence.');
+      }
+      return {
+        kind,
+        version: 1,
+        sourceAttemptId: evidence.sourceAttemptId,
+        responseWordId: evidence.submittedWord.wordId,
+        pureCueId: evidence.currentCue.id,
+        expectedStimulus: evidence.currentCue.stimulus,
+        expectedAxisNote: evidence.currentCue.axisNote,
+        expectedAcceptedWordIds: [...evidence.currentCue.acceptedWordIds],
+        expectedTeachingNote: evidence.currentCue.teachingNote,
+        stimulus: '',
+      };
     case 'reconcile_pure_cue_response':
       if (original.kind === kind) return cloneReflectionOperation(original);
       throw new Error('Pure cue response reconciliation requires its original evidence.');
@@ -1239,6 +1260,8 @@ export function createManualOperation(
 
 export function reflectionOperationLabel(operation: ReflectionOperation): string {
   switch (operation.kind) {
+    case 'repair_pure_cue_stimulus':
+      return 'Repair pure cue stimulus';
     case 'suppress_definition_production':
       return 'Suppress definition production';
     case 'create_contrast_cluster':
@@ -1260,6 +1283,7 @@ export function reflectionOperationLabel(operation: ReflectionOperation): string
 
 function primaryWordId(operation: ReflectionOperation): string {
   switch (operation.kind) {
+    case 'repair_pure_cue_stimulus':
     case 'reconcile_pure_cue_response':
       return operation.responseWordId;
     case 'suppress_definition_production':
@@ -1278,6 +1302,7 @@ function primaryWordId(operation: ReflectionOperation): string {
 
 function secondaryWordId(operation: ReflectionOperation): string {
   switch (operation.kind) {
+    case 'repair_pure_cue_stimulus':
     case 'reconcile_pure_cue_response':
       return '';
     case 'accept_production_alternate':
