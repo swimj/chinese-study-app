@@ -6,6 +6,10 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 
 | Test file | Domain | Imports |
 | --- | --- | --- |
+| `word-content-lab-provider.test.ts` | Real request shape, strict teaching output, truncation and malformed output | Provider with injected fetch |
+| `word-content-lab-service.test.ts` | Two-stage local generation, immutable archive, exact references, invalid output and identity conflicts | Injected lab provider + temporary draft archive |
+| `word-content-lab-api.test.ts` | Local opt-in, host/origin gates, route response contracts | Express lab router |
+| `introduction-player.test.ts` | Paced navigation, rehearsal matching, retry/finish, IME and keyboard guards | Pure local player |
 | `session-composition.test.ts` | Session payload / scheduling composition | Dynamic `server/db.ts` |
 | `unstudied-admission.test.ts` | Experimental dual-pool unstudied admission selector, including stash-only source | `server/db/unstudied-admission.ts` |
 | `session-completion.test.ts` | Session completion commits | Dynamic `server/db.ts` |

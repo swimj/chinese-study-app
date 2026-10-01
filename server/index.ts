@@ -149,6 +149,11 @@ import {
   createClientIncidentDiagnosticSink,
   type ClientIncidentDiagnosticSink,
 } from './client-incident-diagnostics.ts';
+import { createIntroductionLabRouter, introductionLabEnabled } from './word-content-lab/routes.ts';
+import {
+  createIntroductionLabService,
+  type IntroductionLabService,
+} from './word-content-lab/service.ts';
 
 const port = dbConfig.port;
 const defaultJsonBodyLimit = '100kb';
@@ -164,6 +169,7 @@ export type CreateAppOptions = {
   serviceMetrics?: ServiceMetrics | null;
   studyCommitDiagnosticSink?: StudyCommitDiagnosticSink;
   clientIncidentDiagnosticSink?: ClientIncidentDiagnosticSink;
+  introductionLabService?: IntroductionLabService;
 };
 
 function parseMyWordsStatusQuery(value: unknown): MyWordsStatus[] | undefined | 'invalid' {
@@ -242,6 +248,12 @@ export function createApp(options: CreateAppOptions = {}) {
     }
     next();
   });
+
+  if (introductionLabEnabled(dbConfig, process.env.APP_WORD_CONTENT_WORKBENCH)) {
+    app.use('/api/intro-lab', createIntroductionLabRouter(
+      options.introductionLabService ?? createIntroductionLabService({ dataDir: dbConfig.dataDir }),
+    ));
+  }
 
   app.post('/api/client-incidents', (req, res) => {
     const incidents = req.body?.incidents;

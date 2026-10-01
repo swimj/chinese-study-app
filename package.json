@@ -48,7 +48,8 @@
     "spike:platform:sentinel": "node --import tsx spikes/hosted-beta-platform/scripts/seed-sentinel.ts",
     "test": "node --import tsx --test tests/*.test.ts",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:intro-lab": "node --env-file-if-exists=.env --import tsx scripts/dev-introduction-lab.ts"
   },
   "dependencies": {
     "@clerk/express": "^2.1.60",

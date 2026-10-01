@@ -18,3 +18,5 @@ artifacts/*
 spikes/hosted-beta-platform/.generated/
 spikes/hosted-beta-platform/evidence/private/
 deploy/fly/.generated/
+data/intro-lab/
+data/word-content-workbench/
