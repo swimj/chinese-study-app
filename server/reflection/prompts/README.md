@@ -5,6 +5,13 @@
 cue plan, preserving the original members' cues. It does not route through
 staged word-pair diagnosis/promotion.
 
+The prompt follows the staged prompts' purpose, evidence map, decision process,
+content-design guidance, and worked patterns. It judges the first response
+against the frozen visible stimulus before planning C's resulting repertoire;
+current membership and teaching supply the extension context. A valid extension
+does not require new targeted cues, and distinctive cues aim for natural strong
+evocation rather than absolute exclusivity.
+
 `staged-diagnosis.md` is the current first-stage prompt, stamped
 `reflection-staged-v4.1`. `pure-cue-promotion.md` is stamped
 `pure-cue-promotion-v3.0`. `reflection.md` retains the shipped one-shot guidance
