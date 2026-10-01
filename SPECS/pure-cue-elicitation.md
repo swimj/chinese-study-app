@@ -223,9 +223,11 @@ compensation. Historical assessments lacking a snapshot report unavailable.
 
 Capture the originating production skill state and word admission state before
 projecting a new lapsed review action. All source events in that action share
-one snapshot and one restore-once marker. Restoring it puts back production
-interval, ease, and recency/admission without editing attempt history or the
-response word's scheduler. Restored production `nextDueAt` is the later of
+one snapshot and one restore-once marker. Restoring it puts back the production
+interval and ease without editing attempt history or the response word's
+scheduler. It does not restore word admission state: the learner did see the
+word, so its recency guard remains in effect. Restored production `nextDueAt`
+is the later of
 the snapshot due time and six hours after restoration, so remaining (non-proxied)
 production does not become immediately due.
 

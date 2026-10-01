@@ -506,7 +506,8 @@ latest applied compensation snapshot, even when urgency is already at least 1.
 This is the later of the snapshot's original due time and six hours after
 application; it does not use the live skill's `nextDueAt`. It ends when a later
 production assessment replaces the restored schedule; other skills still follow
-the ordinary policy.
+the ordinary policy. Compensation does not restore the word-level recency
+guard: the word was still studied even if the lapse judgment was later corrected.
 See [false-lapse compensation](./pure-cue-elicitation.md#false-lapse-compensation).
 
 Once a word is admitted, the selector usually chooses the enabled skill with
