@@ -49,6 +49,11 @@ export type ActiveBucketSchedulerUnit =
     };
 
 export type BucketSessionScheduler = {
+  /** Activated only after the in-session teaching beats are completed. */
+  unstudiedTeaching?: Record<string, {
+    rehearsals: LearningRehearsalSnapshot[];
+    content: WordContentDocument;
+  }>;
   learningRehearsals?: Record<string, LearningRehearsalSnapshot>;
   learningContent?: Record<string, WordContentDocument>;
   reviewQueue: SessionReviewItem[];
@@ -219,6 +224,7 @@ export function pruneBucketSchedulerWords(
 
 export function cloneBucketSessionScheduler(scheduler: BucketSessionScheduler): BucketSessionScheduler {
   return {
+    unstudiedTeaching: structuredClone(scheduler.unstudiedTeaching ?? {}),
     learningRehearsals: structuredClone(scheduler.learningRehearsals ?? {}),
     learningContent: structuredClone(scheduler.learningContent ?? {}),
     reviewQueue: scheduler.reviewQueue.map(cloneSessionStudyItem),
@@ -383,10 +389,23 @@ function pickActiveBucketSchedulerUnit(
       bucket,
       word,
       skillId: pickOpenBucketWordSkill(progress, bucket, word.id, lcg(rngState)),
-      rehearsal: bucket === 'learning' ? scheduler.learningRehearsals?.[word.id] : undefined,
-      wordContent: bucket === 'learning' ? scheduler.learningContent?.[word.id] : undefined,
+      rehearsal: bucket === 'learning' ? scheduler.learningRehearsals?.[word.id]
+        : getUnstudiedRehearsal(scheduler, progress, word.id),
+      wordContent: bucket === 'learning' ? scheduler.learningContent?.[word.id]
+        : scheduler.unstudiedTeaching?.[word.id]?.content,
     }),
   };
+}
+
+function getUnstudiedRehearsal(
+  scheduler: BucketSessionScheduler, progress: BucketSchedulerProgress, wordId: string,
+): LearningRehearsalSnapshot | undefined {
+  const teaching = scheduler.unstudiedTeaching?.[wordId];
+  if (!teaching) return undefined;
+  const streak = progress.unstudied[wordId]?.successStreaks.production ?? 0;
+  const rehearsal = teaching.rehearsals[streak % teaching.rehearsals.length];
+  if (!rehearsal) throw new Error('Unstudied teaching must contain a rehearsal.');
+  return rehearsal;
 }
 
 function getBucketSchedulerCandidateWords(

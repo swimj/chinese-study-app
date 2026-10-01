@@ -12,13 +12,14 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
   );
 }
 
-export function IntroductionPlayer({ snapshot, state, onAction, onRestart, onFinish, finishing }: {
+export function IntroductionPlayer({ snapshot, state, onAction, onRestart, onFinish, finishing, mode = 'full' }: {
   snapshot: TeachingPackageSnapshot;
   state: IntroductionPlayerState;
   onAction: (action: IntroductionPlayerAction) => void;
   onRestart: () => void;
   onFinish?: () => void;
   finishing?: boolean;
+  mode?: 'full' | 'teaching-only';
 }) {
   const newestRef = useRef<HTMLElement>(null);
   const answerRef = useRef<HTMLInputElement>(null);
@@ -77,7 +78,7 @@ export function IntroductionPlayer({ snapshot, state, onAction, onRestart, onFin
       <div className="intro-lab-player-actions">
         <button type="button" className="intro-lab-button outline" disabled={state.beatIndex === 0} onClick={() => act({ type: 'back' })}>Back</button>
         <button type="button" className="intro-lab-button primary" onClick={() => act({ type: 'advance' })}>
-          {state.beatIndex === snapshot.beats.length - 1 ? 'Try the expression' : 'Next beat'} <kbd>Space</kbd>
+          {state.beatIndex === snapshot.beats.length - 1 ? mode === 'teaching-only' ? 'Finish walkthrough' : 'Try the expression' : 'Next beat'} <kbd>Space</kbd>
         </button>
       </div>
     </>}
@@ -126,7 +127,9 @@ export function IntroductionPlayer({ snapshot, state, onAction, onRestart, onFin
     {state.phase === 'finished' && <div className="intro-lab-finished">
       <p className="intro-lab-kicker">Introduction complete</p>
       <h3>One word, a little more familiar.</h3>
-      <p>This introduction does not grade your answer or record mastery.</p>
+      <p>{mode === 'teaching-only'
+        ? 'Next, practice recognizing and recalling this word alongside the other items in your session.'
+        : 'This introduction does not grade your answer or record mastery.'}</p>
       <div className="intro-lab-player-actions">
         {onFinish && <button type="button" className="intro-lab-button primary" disabled={finishing}
           onClick={onFinish}>{finishing ? 'Saving…' : 'Continue'}</button>}

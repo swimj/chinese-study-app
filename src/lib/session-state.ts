@@ -1,4 +1,5 @@
 import type { ReviewRating, Word } from '../types';
+import { materializeTeachingPackage } from '../domain/word-content';
 import type { WordIntroductionResponse } from '../domain/word-content/application';
 import type {
   ProductionResponseResolution,
@@ -249,27 +250,40 @@ export function completeActiveUnstudiedIntro(state: BucketSessionState): BucketS
   };
 }
 
-/** The taught package and its rehearsal replace the legacy new-word drill.
- * This completes one word unit; it does not manufacture recognition/production ratings.
- */
+/** Teaching opens the existing interleaved 3x3 recall phase, without study credit. */
 export function completeActiveUnstudiedTeaching(
   state: BucketSessionState, wordId: string,
 ): BucketSessionTransitionResult {
   const active = getBucketSchedulerActiveUnit(state.scheduler);
-  const word = active.type === 'unstudied_intro' ? active.word
-    : active.bucket === 'unstudied' && !isPureCueReviewItem(active.item) ? active.item.word : null;
+  const word = active.type === 'unstudied_intro' ? active.word : null;
   if (!word || word.id !== wordId || word.status !== 'unstudied') {
     throw new Error('Session invariant violated: completed teaching must match the active unstudied word.');
   }
-  return {
-    state: refreshBucketSessionScheduler({
-      ...state,
-      answeredCount: state.answeredCount + 1,
-      progress: { ...state.progress, unstudied: removeKey(state.progress.unstudied, wordId) },
-      scheduler: removeBucketSchedulerWord(state.scheduler, 'unstudied', wordId),
-    }),
-    commit: { type: 'commit-unstudied-word-session', wordId },
-  };
+  const library = state.introductions[wordId];
+  const teaching = library?.packages.find(({ teaching }) => teaching.id === library.selectedPackageId)?.teaching;
+  const content = library?.contents.find(({ content }) => content.id === teaching?.wordContentId)?.content;
+  if (!teaching || !content || library.preparationUnavailable || library.wordId !== wordId) {
+    throw new Error('Session invariant violated: completed teaching requires its admitted package and content.');
+  }
+  const snapshot = materializeTeachingPackage(teaching, [content]);
+  if (snapshot.wordId !== wordId || snapshot.rehearsals.length === 0) {
+    throw new Error('Session invariant violated: teaching must rehearse the active word.');
+  }
+  return completeActiveUnstudiedIntro({
+    ...state,
+    scheduler: {
+      ...state.scheduler,
+      unstudiedTeaching: {
+        ...state.scheduler.unstudiedTeaching,
+        [wordId]: {
+          content: structuredClone(content),
+          rehearsals: snapshot.rehearsals.map((exercise) => ({
+            ...exercise, packageId: teaching.id, wordContentId: content.id,
+          })),
+        },
+      },
+    },
+  });
 }
 
 export function rateActiveSessionUnit(
