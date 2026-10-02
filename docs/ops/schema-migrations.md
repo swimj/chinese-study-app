@@ -219,6 +219,14 @@ is insufficient. Existing browser sessions retain their original snapshots;
 session presentation suppresses this exact preamble without rewriting those
 snapshots. Fresh databases apply the same migration automatically.
 
+## Content quality overlay
+
+`0021_content_quality.sql` adds immutable authored-content snapshots, private
+idempotent encounter records, and one optional standing rating per learner and
+content revision. Existing content, study history, and reflection annotations
+are untouched. No previous encounters or votes are inferred. This requires the
+ordinary stopped-writer migration; see [content quality](../content-quality.md).
+
 ## Failure and rollback
 
 On migration failure, keep the app stopped, inspect the error, correct the

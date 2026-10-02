@@ -343,3 +343,27 @@ describe('session rating labels', () => {
     assert.equal(getRatingForKey('2', options), 'good');
   });
 });
+
+
+test('native quality button activation never grades, submits, or advances a study card', () => {
+  const states: Partial<SessionKeyboardContext>[] = [
+    { productionInputActive: true, isProductionItem: true },
+    { answerRevealed: true, ratingAvailable: true },
+    { productionAwaitingNext: true },
+    { productionAwaitingSupplement: true },
+    { contrastSelectionActive: true, contrastHasSelection: true },
+  ];
+  for (const state of states) {
+    const context = createContext({ ...state, isQualityControlTarget: true });
+    assert.equal(resolveSessionKey(key('Enter'), context), null);
+    assert.equal(resolveSessionKey(key(' '), context), null);
+  }
+  assert.deepEqual(resolveSessionKey(key('Enter'), createContext({
+    productionInputActive: true, isProductionItem: true,
+  })), { type: 'submit_production' });
+  assert.deepEqual(resolveSessionKey(key(' '), createContext({
+    answerRevealed: true, ratingAvailable: true,
+  })), { type: 'rate_default' });
+  assert.deepEqual(resolveSessionKey(key('?'), createContext({ isQualityControlTarget: true })),
+    { type: 'toggle_shortcut_guide' });
+});

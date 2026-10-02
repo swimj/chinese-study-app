@@ -1,3 +1,4 @@
+import { validateContentQualitySchema } from './content-quality.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -3372,6 +3373,7 @@ function validateSchema() {
     'prompt_text',
     'explanation',
   ]);
+  validateContentQualitySchema();
   validateReflectionSchema();
   validateProductionCueSchema();
   validateSharedContentSchema();

@@ -253,6 +253,16 @@ For an incorrect contrast selection, undo from either the frozen correction card
 or the next active card restores the original contrast prompt to an unanswered
 state: no selected choice, no revealed answer, and no pending contrast commit.
 
+## Content quality overlay
+
+Optional thumbs-up/down feedback is one standing rating per learner and exact
+content revision, reused across encounters. It saves independently of session
+commits; Undo changes neither this rating nor the fact that content was shown.
+Quality is descriptive only and has no effect on grading, coverage, scheduling,
+publication, or reflection generation. Feedback failures must not block study.
+See [content quality](../docs/content-quality.md) for supported surfaces,
+keyboard behavior, exposure semantics, and operator analytics.
+
 ## Completed-Session Reflection Boundary
 
 Reaching the session summary does not by itself close the final Undo window.

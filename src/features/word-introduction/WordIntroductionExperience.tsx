@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { WordIntroductionResponse } from '../../domain/word-content/application';
+import { ContentQualityControls } from '../content-quality/ContentQualityControls';
 import { IntroductionPlayer } from '../introduction-lab/IntroductionPlayer';
 import {
   initialIntroductionPlayerState,
@@ -15,6 +16,7 @@ import { assertIntroductionWord, selectedIntroduction } from './model';
 
 export type WordIntroductionExperienceProps = {
   wordId: string;
+  qualityEncounterId: string;
   onCompleted: (library: WordIntroductionResponse) => void;
   preloadedIntroduction: WordIntroductionResponse;
 };
@@ -24,7 +26,7 @@ function errorMessage(error: unknown): string {
 }
 
 export function WordIntroductionExperience({
-  wordId, onCompleted, preloadedIntroduction,
+  wordId, onCompleted, preloadedIntroduction, qualityEncounterId,
 }: WordIntroductionExperienceProps) {
   const [library, setLibrary] = useState<WordIntroductionResponse>(preloadedIntroduction);
   const [busy, setBusy] = useState<'complete' | null>(null);
@@ -125,6 +127,12 @@ export function WordIntroductionExperience({
       {error && <p className="intro-lab-error" role="alert">{error}</p>}
       {selected.error && <p className="intro-lab-error" role="alert">{selected.error}</p>}
 
+      {selected.value && <ContentQualityControls
+        target={{ kind: 'teaching_package', packageId: selected.value.snapshot.packageId }}
+        encounterId={qualityEncounterId}
+        label="Introduction quality"
+        hotkeysActive
+      />}
       {selected.value && <IntroductionPlayer
         mode="teaching-only"
         snapshot={selected.value.snapshot}

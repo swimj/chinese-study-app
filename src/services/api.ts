@@ -1315,3 +1315,39 @@ export async function retryPreparationWork(workId: string): Promise<void> {
   });
   if (!response.ok) throw new Error('Failed to retry word preparation');
 }
+
+export async function recordContentQualityEncounter(
+  target: import('../domain/content-quality').ContentQualityTarget,
+  encounterId: string,
+): Promise<import('../domain/content-quality').ContentQualityState> {
+  const response = await apiFetch(`${API_BASE}/api/content-quality/encounters`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target, encounterId }),
+  });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not load content feedback'));
+  return response.json();
+}
+
+export async function saveContentQualityRating(
+  contentKey: string,
+  rating: import('../domain/content-quality').ContentQualityRating,
+): Promise<import('../domain/content-quality').ContentQualityState> {
+  const response = await apiFetch(`${API_BASE}/api/content-quality/ratings`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contentKey, rating }),
+  });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not save content feedback'));
+  return response.json();
+}
+
+export async function fetchContentQualityStats(
+  filters: import('../domain/content-quality').ContentQualityFilters = {},
+): Promise<import('../domain/content-quality').ContentQualityAnalytics> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined) params.set(key, String(value));
+  }
+  const response = await apiFetch(`${API_BASE}/api/operator/content-quality?${params}`);
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not load content quality'));
+  return response.json();
+}

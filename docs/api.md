@@ -760,3 +760,19 @@ Review preparation is independent and requested after the first durable study
 commit. Opening a lesson does not wait for, trigger, or retry review.
 Automatic retries and operator recovery own failures; usable teaching and existing
 review fallback remain available.
+
+## Content quality
+
+- `POST /api/content-quality/encounters`, body `{target, encounterId}`: record an
+  idempotent visible-content encounter and return `{contentKey, rating}` for the
+  authenticated learner. References are validated against accessible content.
+- `PUT /api/content-quality/ratings`, body `{contentKey, rating}`: set `up`,
+  `down`, or `null` to clear the learner's standing vote; requires a prior own
+  encounter. This does not modify study or content state.
+- `GET /api/operator/content-quality`: operator-allowlisted aggregate triage.
+  Optional `kind`, `since`, `until` (inclusive UTC dates), `limit`, and `offset`
+  select an exposure cohort with current standing votes. Returns full-filter
+  totals and paginated exact-content snapshots without learner identifiers.
+
+See [content quality](content-quality.md) for supported target shapes and
+interpretation; the shared wire types live in `src/domain/content-quality.ts`.
