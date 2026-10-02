@@ -60,6 +60,7 @@ export type ContentExercise = {
   /** One typed answer; for multiple gaps, that same answer fills every gap. */
   readonly responseMode: 'hanzi_entry';
   readonly contract: ExerciseContract;
+  /** Content-specific instruction, or empty; generic UI framing is not content. */
   readonly instruction: string;
   readonly stimulus: ContentStimulus;
   readonly acceptedAnswers: readonly Readonly<AcceptedCueAnswer>[];
@@ -97,6 +98,7 @@ export type ContentExerciseSnapshot = {
   readonly responseMode: 'hanzi_entry';
   readonly matchingProfile: StudyProfileId;
   readonly contract: ExerciseContract;
+  /** Content-specific instruction, or empty; generic UI framing is not content. */
   readonly instruction: string;
   readonly stimulus: MaterializedStimulus;
   readonly acceptedAnswers: readonly Readonly<AcceptedCueAnswer>[];

@@ -72,7 +72,7 @@ test('bootstrap and teaching save separate immutable drafts with exact occurrenc
   assert.notEqual(second.id, first.id);
   assert.equal(second.content.id, first.content.id);
   assert.equal(second.teaching?.wordContentId, first.content.id);
-  assert.match(second.teaching!.rehearsals[0]!.instruction, /Enter only that expression/);
+  assert.equal(second.teaching!.rehearsals[0]!.instruction, '');
   assert.deepEqual(second.teaching?.rehearsals[0]?.stimulus, {
     kind: 'example_cloze', example: { contentId: first.content.id, exampleId: 'visit' },
     blanks: [{ start: 1, end: 3, expectedText: '报备' }, { start: 6, end: 8, expectedText: '报备' }], frame: null,
@@ -171,4 +171,16 @@ test('generated rehearsal cannot reveal its answer in instructions or unhidden o
   await assert.rejects(lab.generateTeaching(content.id), (error) => (
     error instanceof IntroductionLabError && error.status === 502
   ));
+});
+
+
+test('direct-text rehearsal saves its base cue without generic instructions', async () => {
+  const stimulus = { kind: 'direct_text', text: 'Let the responsible person know about your visit ahead of time.' };
+  const { lab } = await service(provider({ generateTeaching: async () => ({
+    ...teachingWire(), rehearsals: [{ id: 'direct', stimulus }],
+  }) }));
+  const first = await lab.bootstrap(lexical);
+  const generated = await lab.generateTeaching(first.id);
+  assert.equal(generated.teaching!.rehearsals[0].instruction, '');
+  assert.deepEqual(generated.teaching!.rehearsals[0].stimulus, stimulus);
 });

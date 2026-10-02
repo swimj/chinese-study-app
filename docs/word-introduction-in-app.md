@@ -157,3 +157,17 @@ and `POST /api/operator/word-preparation/:workId/retry` (body `{}`). Diagnostics
 identify shared words/stages and attempt histories without learner evidence or
 provider response bodies. Retrying withdrawn content does not authorize
 regeneration; its publication disposition must first be resolved.
+
+## Rehearsal presentation
+
+Generated rehearsals persist an empty `instruction` with their base stimulus and
+answer contract. `src/features/rehearsal-presentation.ts` owns session-time
+wording for study and the introduction player, so display experiments do not
+require rewriting teaching packages. The default adds no preamble. Existing
+content-specific instructions are preserved. The formatter also suppresses the
+exact former generic instruction in already-open snapshots and lab drafts.
+
+Offline migration `0020_rehearsal_presentation` clears only that exact instruction
+in stored teaching-package rehearsals. Use the normal
+[offline migration procedure](ops/schema-migrations.md); this is not an app-only
+release. Historical evidence and learner progress are unchanged.

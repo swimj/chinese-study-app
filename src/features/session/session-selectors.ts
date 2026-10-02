@@ -1,3 +1,4 @@
+import { formatRehearsalPrompt } from '../rehearsal-presentation';
 import {
   DEFAULT_CHARACTER_PRESENTATION,
   formatCardCharacters,
@@ -179,7 +180,7 @@ export function getActivePrompt({
   }
 
   if (item.actionKind === 'production' && item.rehearsal) {
-    return `${item.rehearsal.instruction}\n${item.rehearsal.stimulus.text}`;
+    return formatRehearsalPrompt(item.rehearsal);
   }
 
   if (item.actionKind === 'production' && item.production) {

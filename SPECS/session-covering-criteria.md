@@ -81,7 +81,10 @@ interleaving, not a guaranteed minimum gap; a lone remaining word can repeat.
 Production selects the rehearsal at the current production streak modulo the
 package's rehearsal count. A reset therefore returns to the first rehearsal;
 coverage is per direction, not a requirement to complete every authored exercise.
-The package and content remain frozen through the session and Undo.
+The package and content remain frozen through the session and Undo. Generic
+rehearsal framing is presentation owned by the frontend, separate from the
+persisted base cue and answer contract. The default shows the cue without a
+generic preamble; content-specific instructions, when present, remain visible.
 
 Only completing both recall streaks covers the word through the existing
 deferred commit and Undo path. Merely opening or completing it in My Words grants

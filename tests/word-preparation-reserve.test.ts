@@ -118,7 +118,8 @@ test('migration caps all saved intake limits without provisioning dormant reserv
   sqlite.exec('PRAGMA foreign_keys = ON');
   sqlite.function('current_learner_id', () => 'old');
   try {
-    migrateDatabase(sqlite, schemaMigrations.filter((item) => !item.id.endsWith('0019_word_preparation_reserve')));
+    const reserveMigrationIndex = schemaMigrations.findIndex((item) => item.id === 'app_schema:0019_word_preparation_reserve');
+    migrateDatabase(sqlite, schemaMigrations.slice(0, reserveMigrationIndex));
     sqlite.prepare(`INSERT INTO learners (learner_id, display_name, created_at) VALUES ('old', 'Old', '2026-01-01')`).run();
     sqlite.prepare(`INSERT INTO learner_settings (learner_id, setting_key, value_json, updated_at)
       VALUES ('old', 'daily_new_word_limit', '100', '2026-01-01')`).run();

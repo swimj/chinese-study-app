@@ -84,7 +84,8 @@ export function normalizeTeachingPackage(value: unknown, content: WordContentDoc
       id: item.id,
       responseMode: 'hanzi_entry',
       contract: { kind: 'target_rehearsal', wordId: content.word.wordId },
-      instruction: 'Recall the expression you just met. Enter only that expression in Chinese characters, not the whole sentence.',
+      // Generic task wording belongs to session presentation, not stored content.
+      instruction: '',
       stimulus: normalizeStimulus(item.stimulus, content),
       acceptedAnswers: [{
         wordId: content.word.wordId,

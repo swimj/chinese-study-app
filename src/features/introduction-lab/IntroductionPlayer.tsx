@@ -1,3 +1,4 @@
+import { getRehearsalInstruction } from '../rehearsal-presentation';
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { TeachingPackageSnapshot } from '../../domain/word-content';
 import {
@@ -55,6 +56,7 @@ export function IntroductionPlayer({ snapshot, state, onAction, onRestart, onFin
   }, [snapshot, state.phase, onAction]);
 
   const exercise = snapshot.rehearsals[state.exerciseIndex];
+  const instruction = exercise ? getRehearsalInstruction(exercise) : '';
   return <div className="intro-lab-player">
     {state.phase === 'introduction' && <>
       <div className="intro-lab-progress"><span>Introduction</span><span>{state.beatIndex + 1} of {snapshot.beats.length}</span></div>
@@ -85,8 +87,7 @@ export function IntroductionPlayer({ snapshot, state, onAction, onRestart, onFin
     {state.phase === 'rehearsal' && exercise && <>
       <div className="intro-lab-progress"><span>Target rehearsal</span><span>{state.exerciseIndex + 1} of {snapshot.rehearsals.length}</span></div>
       <div className="intro-lab-practice-card">
-        <p className="intro-lab-kicker">Bring back the word you just met</p>
-        <h3>{exercise.instruction}</h3>
+        {instruction && <h3>{instruction}</h3>}
         <p className="intro-lab-stimulus" lang={exercise.stimulus.source.kind === 'example_cloze' ? 'zh-Hans' : undefined}>{exercise.stimulus.text}</p>
         <form onSubmit={(event) => {
           event.preventDefault();

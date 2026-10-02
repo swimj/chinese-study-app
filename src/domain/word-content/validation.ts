@@ -189,7 +189,7 @@ function exercise(value: unknown, path: string): ContentExercise {
     id: string(item.id, `${path}.id`),
     responseMode: literal(item.responseMode, 'hanzi_entry', `${path}.responseMode`),
     contract: intent,
-    instruction: string(item.instruction, `${path}.instruction`, intent.kind !== 'target_rehearsal'),
+    instruction: string(item.instruction, `${path}.instruction`, true),
     stimulus: stimulus(item.stimulus, `${path}.stimulus`),
     acceptedAnswers: array(item.acceptedAnswers, `${path}.acceptedAnswers`, answer, 1),
   };
