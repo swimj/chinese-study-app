@@ -207,7 +207,7 @@ This specification defines the implemented first cut. It fits one cohesive PR
 across the existing generation and review boundaries.
 
 The implementation uses a versioned curated-source envelope, the existing
-twenty-five-item bound, and the `requested_second_opinion` review disposition
+fifty-item bound, and the `requested_second_opinion` review disposition
 for closure. It preserves the current prompt's evidence-item
 semantics and needs no broader lifecycle model.
 

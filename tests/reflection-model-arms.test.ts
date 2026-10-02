@@ -14,7 +14,7 @@ import {
 } from '../server/reflection/model-arms.ts';
 
 describe('reflection comparison-arm registry', () => {
-  test('registers five comparison arms and offers four by default', () => {
+  test('registers five comparison arms and offers three by default', () => {
     const choices = REFLECTION_MODEL_ARMS.map((arm) => arm.choice);
     assert.deepEqual(choices, [
       'openai:gpt-5.6-luna-high',
@@ -26,9 +26,11 @@ describe('reflection comparison-arm registry', () => {
     assert.equal(LUNA_REFLECTION_MODEL_CHOICE, 'openai:gpt-5.6-luna-high');
     assert.equal(isReflectionModelChoice('openai:gpt-5.6-terra-high'), true);
     assert.equal(isReflectionModelChoice('zai:glm-5.3-flash-high'), true);
+    assert.equal(isReflectionModelChoice('zai:glm-5.3-flash-max'), true);
     assert.equal(isReflectionModelChoice('openrouter:gemini-3.6-flash'), true);
     assert.equal(isOfferedReflectionModelChoice('openai:gpt-5.6-terra-high'), true);
     assert.equal(isOfferedReflectionModelChoice('zai:glm-5.3-flash-high'), true);
+    assert.equal(isOfferedReflectionModelChoice('zai:glm-5.3-flash-max'), false);
     assert.equal(isOfferedReflectionModelChoice('openrouter:gemini-3.6-flash'), false);
     assert.equal(isReflectionModelChoice('openrouter:claude-sonnet-5'), false);
     assert.equal(isReflectionModelChoice('dashscope:qwen3.8-max'), false);
@@ -38,19 +40,29 @@ describe('reflection comparison-arm registry', () => {
       REFLECTION_MODEL_ARMS.filter((arm) => arm.enabledByDefault).map((arm) => arm.choice),
       [
         'openai:gpt-5.6-luna-high',
-        'zai:glm-5.3-flash-max',
         'zai:glm-5.3-flash-high',
         'openai:gpt-5.6-terra-high',
       ],
     );
     assert.equal(
+      REFLECTION_MODEL_ARMS.find((arm) => arm.choice === 'zai:glm-5.3-flash-max')?.enabledByDefault,
+      false,
+    );
+    assert.equal(
       REFLECTION_MODEL_ARMS.find((arm) => arm.choice === 'openrouter:gemini-3.6-flash')?.enabledByDefault,
       false,
     );
-    assert.ok(
-      REFLECTION_MODEL_ARMS
-        .filter((arm) => arm.enabledByDefault)
-        .every((arm) => arm.dogfoodSelectionWeight === 1),
+    assert.deepEqual(
+      Object.fromEntries(
+        REFLECTION_MODEL_ARMS
+          .filter((arm) => arm.enabledByDefault)
+          .map((arm) => [arm.choice, arm.dogfoodSelectionWeight]),
+      ),
+      {
+        'openai:gpt-5.6-luna-high': 30,
+        'zai:glm-5.3-flash-high': 50,
+        'openai:gpt-5.6-terra-high': 20,
+      },
     );
   });
 
