@@ -185,16 +185,6 @@ async function wordIntroductionRequest(
   return response.json() as Promise<WordIntroductionResponse>;
 }
 
-export function fetchWordIntroduction(wordId: string, signal?: AbortSignal): Promise<WordIntroductionResponse> {
-  return wordIntroductionRequest(wordId, '', { signal });
-}
-
-export function prepareWordIntroduction(wordId: string): Promise<WordIntroductionResponse> {
-  return wordIntroductionRequest(wordId, '/prepare', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-  });
-}
-
 export function openWordIntroduction(wordId: string, packageId: string): Promise<WordIntroductionResponse> {
   return wordIntroductionRequest(wordId, '/open', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ packageId }),

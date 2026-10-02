@@ -4,7 +4,7 @@ import {
   pinWordTeachingPackage, completeWordTeachingPackage,
 } from '../db/word-introductions.ts';
 import { requireLearnerId } from '../db/learner-context.ts';
-import { enqueueWordPreparation, getWordPreparationWork } from '../db/preparation-work.ts';
+import { getWordPreparationWork } from '../db/preparation-work.ts';
 import { createWordIntroductionProvider, type WordIntroductionProvider } from './provider.ts';
 
 export class WordIntroductionServiceError extends Error {
@@ -13,7 +13,6 @@ export class WordIntroductionServiceError extends Error {
 
 export type WordIntroductionService = {
   get(wordId: string): WordIntroductionResponse;
-  prepare(wordId: string): Promise<WordIntroductionResponse>;
   open(wordId: string, packageId: string): WordIntroductionResponse;
   complete(wordId: string, packageId: string): WordIntroductionResponse;
 };
@@ -25,13 +24,12 @@ export type WordIntroductionStore = {
   complete: typeof completeWordTeachingPackage;
 };
 
-/** HTTP reads and explicit preparation are queue-backed. Only the worker may call a model. */
+/** Introduction navigation reads prepared content; only the worker may call a model. */
 export function createWordIntroductionService(options: {
   provider?: Pick<WordIntroductionProvider, 'model' | 'isConfigured'>;
   store?: WordIntroductionStore;
-  queue?: { enqueue: typeof enqueueWordPreparation; get: typeof getWordPreparationWork };
+  queue?: { get: typeof getWordPreparationWork };
   requireLearner?: () => string;
-  wake?: () => void;
 } = {}): WordIntroductionService {
   const provider = options.provider ?? createWordIntroductionProvider();
   const store = options.store ?? {
@@ -40,7 +38,7 @@ export function createWordIntroductionService(options: {
     pin: pinWordTeachingPackage,
     complete: completeWordTeachingPackage,
   };
-  const queue = options.queue ?? { enqueue: enqueueWordPreparation, get: getWordPreparationWork };
+  const queue = options.queue ?? { get: getWordPreparationWork };
   const requireLearner = options.requireLearner ?? requireLearnerId;
 
   function get(wordId: string): WordIntroductionResponse {
@@ -68,13 +66,6 @@ export function createWordIntroductionService(options: {
 
   return {
     get,
-    async prepare(wordId) {
-      const current = get(wordId);
-      if (current.selectedPackageId !== null || current.preparationUnavailable) return current;
-      const work = queue.enqueue(wordId, 'teaching');
-      if (work.status === 'queued') options.wake?.();
-      return get(wordId);
-    },
     open(wordId, packageId) {
       const current = get(wordId);
       if (!current.packages.some(({ teaching }) => teaching.id === packageId)) {

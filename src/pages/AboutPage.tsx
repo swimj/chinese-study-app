@@ -16,7 +16,7 @@ const UPDATES = [
     paragraphs: [
       'A new word no longer opens as one card with the characters, pronunciation, and a single example. You read a short introduction one beat at a time. Space or Next beat shows the next thought, and earlier beats stay on the page. Finish walkthrough at the end. There is no skip straight to the drills.',
       'Reading it does not count as learning the word. Continue, and the session mixes in the usual practice: recognize the word, and type the expression the introduction taught. That prompt wants the taught expression, so another natural answer may not count. When you reveal an answer, you may see the uses and examples from the introduction.',
-      'If an introduction is not ready, that new word waits instead of using the old card. Start session may wait up to about 30 seconds while material is prepared, or ask you to check again later, and you may get fewer new words than your daily limit. Words you are already learning keep their existing cards. From Words → My words you can also open Prepare introduction on a word. The daily new-word limit now stops at 20.',
+      'If an introduction is not ready, that new word waits instead of using the old card. Start session may wait up to about 30 seconds while material is prepared, or ask you to check again later, and you may get fewer new words than your daily limit. Words you are already learning keep their existing cards. The daily new-word limit now stops at 20.',
     ],
   },
   {

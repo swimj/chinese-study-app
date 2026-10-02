@@ -19,48 +19,33 @@ function queuedWork(status: WordPreparationWork['status']): WordPreparationWork 
   };
 }
 
-test('prepare only enqueues durable teaching work and returns pending without calling a model or pinning', async () => {
+test('service reports preparation state without queuing work', () => {
   let work: WordPreparationWork | null = null;
-  let enqueues = 0;
-  let wakes = 0;
-  let pins = 0;
   const service = createWordIntroductionService({
     provider: { model: 'model', isConfigured: () => true },
     requireLearner: () => 'learner-1',
     store: {
       library: (id) => id === wordId ? initialLibrary : null,
       preparation: () => null,
-      pin: () => { pins += 1; },
+      pin: () => { throw new Error('unexpected pin'); },
       complete: () => { throw new Error('unexpected completion'); },
     },
-    queue: {
-      get: () => work,
-      enqueue: () => { enqueues += 1; work ??= queuedWork('queued'); return work; },
-    },
-    wake: () => { wakes += 1; },
+    queue: { get: () => work },
   });
   assert.equal(service.get(wordId).preparationPending, false);
-  const first = await service.prepare(wordId);
-  assert.equal(first.preparationPending, true);
-  assert.equal(first.selectedPackageId, null);
-  assert.equal(enqueues, 1);
-  assert.equal(wakes, 1);
-  assert.equal(pins, 0);
+  work = queuedWork('queued');
+  assert.equal(service.get(wordId).preparationPending, true);
   work = queuedWork('running');
   assert.equal(service.get(wordId).preparationPending, true);
   work = queuedWork('paused');
-  const paused = await service.prepare(wordId);
-  assert.equal(paused.preparationPending, false);
-  assert.equal(enqueues, 1);
-  assert.equal(wakes, 1);
-  await assert.rejects(service.prepare('missing'),
+  assert.equal(service.get(wordId).preparationPending, false);
+  assert.throws(() => service.get('missing'),
     (error: unknown) => error instanceof WordIntroductionServiceError && error.status === 404);
 });
 
-test('open pins only an exact eligible package and completion follows that open', async () => {
+test('open pins only an exact eligible package and completion follows that open', () => {
   let pinned: string | null = null;
   let completed = false;
-  let enqueues = 0;
   const library: WordIntroductionLibrary = {
     wordId,
     contents: [{ content, createdAt: '2026-09-25T00:00:00.000Z' }],
@@ -80,10 +65,9 @@ test('open pins only an exact eligible package and completion follows that open'
         completed = true;
       },
     },
-    queue: { get: () => null, enqueue: () => { enqueues += 1; return queuedWork('queued'); } },
+    queue: { get: () => null },
   });
-  assert.equal((await service.prepare(wordId)).selectedPackageId, teaching.id);
-  assert.equal(enqueues, 0);
+  assert.equal(service.get(wordId).selectedPackageId, teaching.id);
   assert.equal(pinned, null);
   assert.throws(() => service.open(wordId, 'another-package'),
     (error: unknown) => error instanceof WordIntroductionServiceError && error.status === 409);
@@ -93,8 +77,7 @@ test('open pins only an exact eligible package and completion follows that open'
   assert.equal(service.complete(wordId, teaching.id).completed, true);
 });
 
-test('a paused bootstrap dependency stops pending even while teaching remains queued', async () => {
-  let enqueues = 0;
+test('a paused bootstrap dependency stops pending even while teaching remains queued', () => {
   const service = createWordIntroductionService({
     provider: { model: 'model', isConfigured: () => true },
     requireLearner: () => 'learner-1',
@@ -106,13 +89,10 @@ test('a paused bootstrap dependency stops pending even while teaching remains qu
     },
     queue: {
       get: (_id, stage) => queuedWork(stage === 'bootstrap' ? 'paused' : 'queued'),
-      enqueue: () => { enqueues += 1; return queuedWork('queued'); },
     },
   });
   assert.equal(service.get(wordId).preparationPending, false);
-  assert.equal((await service.prepare(wordId)).preparationPending, false);
   assert.equal(service.get(wordId).preparationUnavailable, true);
-  assert.equal(enqueues, 0);
 });
 
 test('opening a selected package is private to each learner and cannot open a withdrawn package', async () => {
@@ -139,7 +119,7 @@ test('opening a selected package is private to each learner and cannot open a wi
           completed.add(learnerId);
         },
       },
-      queue: { get: () => null, enqueue: () => { throw new Error('unexpected enqueue'); } },
+      queue: { get: () => null },
     });
   }
   const learnerA = forLearner('learner-a');
@@ -150,7 +130,6 @@ test('opening a selected package is private to each learner and cannot open a wi
   assert.equal(learnerA.complete(wordId, secondTeaching.id).completed, true);
   assert.equal(learnerB.get(wordId).completed, false);
 
-  let enqueues = 0;
   const withdrawn = createWordIntroductionService({
     provider: { model: 'model', isConfigured: () => true },
     requireLearner: () => 'learner-c',
@@ -160,14 +139,9 @@ test('opening a selected package is private to each learner and cannot open a wi
       pin: () => { throw new Error('withdrawn package must not be pinned'); },
       complete: () => { throw new Error('withdrawn package must not be completed'); },
     },
-    queue: {
-      get: () => null,
-      enqueue: () => { enqueues += 1; return queuedWork('queued'); },
-    },
+    queue: { get: () => null },
   });
   assert.equal(withdrawn.get(wordId).preparationUnavailable, true);
-  assert.equal((await withdrawn.prepare(wordId)).preparationUnavailable, true);
-  assert.equal(enqueues, 0);
   assert.throws(() => withdrawn.open(wordId, secondTeaching.id),
     (error: unknown) => error instanceof WordIntroductionServiceError && error.status === 409);
 });

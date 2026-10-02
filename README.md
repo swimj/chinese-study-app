@@ -78,8 +78,8 @@ server and `VITE_API_BASE` are not required for the hosted beta.
 
 ## Word introduction prototype
 
-Mandarin My Words offers **Prepare introduction**; first encounters can open the
-same paced lesson in a study session. Validated content publishes automatically
+First encounters open a paced lesson in a Mandarin study session. The preparation
+workflow supplies ready content before the session admits a new word. Validated content publishes automatically
 and is reused across learners. See [the in-app guide](docs/word-introduction-in-app.md)
 for the learning policy and required offline database migration.
 

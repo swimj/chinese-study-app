@@ -264,7 +264,7 @@ reconciliation is required to proceed with this work.
 
 ### Initial in-app policy (2026-09-25)
 
-- **Shared preparation:** reserve or explicit preparation demand queues lexical
+- **Shared preparation:** the preparation reserve queues lexical
   word content and then its teaching package. Both publish immediately after deterministic validation,
   with no learner quality-review step. Later learners reuse the result. Each stage
   has durable shared readiness and an expiring generation claim. A failed teaching
@@ -280,7 +280,6 @@ reconciliation is required to proceed with this work.
   completes through the existing deferred commit and Undo path. Recognition uses
   curated source content; production selects a rehearsal by its current streak
   modulo the package rehearsal count, returning to the first on a streak reset.
-  On-demand completion in My Words alone does not advance word status. The
   in-session walkthrough has no skip-to-cards or Escape bypass; leaving uses
   normal session controls and grants no teaching completion. Missing preparation excludes
   the word at session entry rather than triggering generation during study.
@@ -304,7 +303,7 @@ contextual production cue is required; definition cues may carry an exact
 post-reveal example. Validated results publish automatically under the same
 application-authorized shared-trial policy, with a separate recoverable readiness
 claim. The first durable study commit requests missing review preparation
-asynchronously; merely preparing or opening an introduction does not. Failure
+asynchronously; merely opening an introduction does not. Failure
 preserves usable teaching and ordinary fallback; completion does not regenerate
 retired review content.
 

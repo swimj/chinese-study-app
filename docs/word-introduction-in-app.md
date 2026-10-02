@@ -6,8 +6,8 @@ The [lab](word-introduction-lab.md) remains a separate local authoring sandbox.
 
 ## Learner flow
 
-**My Words → Prepare introduction** requests shared background preparation and
-polls readiness; opening is a separate exact-package association. The learner
+The preparation reserve requests shared background preparation. Opening a lesson
+is a separate exact-package association. The learner
 never needs to approve content quality or publication. New Mandarin words enter
 a session only with a ready teaching/source snapshot.
 Space advances a complete teaching beat; private reflection questions do not
@@ -23,12 +23,12 @@ requiring every authored exercise. Weighted interleaving can still select the
 same word consecutively, especially when other work runs out.
 Completing both streaks commits the word through the usual deferred commit/Undo
 path. Finishing the walkthrough alone grants no study credit. Opening or completing a lesson
-in My Words only records navigation, not study credit. A previously completed
+records navigation rather than study credit. A previously completed
 navigation marker does not silently grant credit in a later study session.
 The session walkthrough has no skip-to-cards button or Escape bypass. Normal
 session controls remain available for leaving; leaving does not complete teaching.
-Standalone My Words introductions retain their Back button. Unprepared new words are omitted
-at session entry; established learning words retain their existing fallback.
+Unprepared new words are omitted at session entry; established learning words
+retain their existing fallback.
 
 Learning keeps the existing recognition + production coverage and first-try
 success rules. An eligible package whose introduction this learner has completed supplies the production rehearsal and
@@ -107,15 +107,11 @@ Historical immutable payloads remain stored.
 - `server/db/word-reserve.ts`: stable learner membership and reconciliation requests.
 - `server/word-content/session-preparation.ts`: bounded entry wait and prepared payload.
 - `server/word-content/preparation-runtime.ts`: backend worker integration.
-- `src/features/word-introduction/`: app workspace, using the lab's shared player.
+- `src/features/word-introduction/`: session lesson, using the lab's shared player.
 - `src/features/session/`: entry preparation and frozen introduction/learning snapshots.
 
 Authenticated Mandarin endpoints:
 
-- `GET /api/words/:wordId/introduction`: eligible library, learner selection/completion,
-  generation availability, pending state and terminal preparation-unavailable flag.
-- `POST /api/words/:wordId/introduction/prepare`, body `{}`: enqueue/reuse shared
-  bootstrap and teaching; return current state for polling, without a private pin.
 - `POST /api/words/:wordId/introduction/open`, body `{ "packageId": "..." }`:
   privately associate the exact eligible prepared package, without generation.
 - `POST /api/words/:wordId/introduction/complete`, body `{ "packageId": "..." }`:

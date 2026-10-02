@@ -260,7 +260,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
   if (dbConfig.studyProfile === 'mandarin') {
     app.use('/api/words', createWordIntroductionRouter(
-      options.wordIntroductionService ?? createWordIntroductionService({ wake: options.wakeWordPreparation }),
+      options.wordIntroductionService ?? createWordIntroductionService(),
     ));
   }
 
