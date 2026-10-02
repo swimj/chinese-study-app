@@ -27,6 +27,10 @@ export function IntroductionPlayer({ snapshot, state, onAction, onRestart, onFin
   const resultRef = useRef<HTMLDivElement>(null);
 
   function act(action: IntroductionPlayerAction) {
+    if (action.type === 'continue') {
+      if (!finishing) onFinish?.();
+      return;
+    }
     onAction(action);
   }
 
@@ -132,7 +136,7 @@ export function IntroductionPlayer({ snapshot, state, onAction, onRestart, onFin
         : 'This introduction does not grade your answer or record mastery.'}</p>
       <div className="intro-lab-player-actions">
         {onFinish && <button type="button" className="intro-lab-button primary" disabled={finishing}
-          onClick={onFinish}>{finishing ? 'Saving…' : 'Continue'}</button>}
+          onClick={onFinish}>{finishing ? 'Saving…' : <>Continue <kbd>Enter</kbd></>}</button>}
         <button type="button" className={`intro-lab-button ${onFinish ? 'outline' : 'primary'}`} onClick={onRestart}>Start again</button>
       </div>
     </div>}
