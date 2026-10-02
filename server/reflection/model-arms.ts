@@ -7,8 +7,9 @@ import type { ReflectionProviderConfig } from './luna-provider.ts';
  * or requires credentials. Each arm uses the fixed reflection prompt and
  * strict V7 validator supplied by createReflectionProvider. Arms with
  * enabledByDefault enter the initial-generation random pool and learner-facing
- * model pickers. Keep withdrawn arms registered so they can be re-offered by
- * flipping that flag rather than deleting the arm.
+ * model pickers. Offered arms are drawn with dogfoodSelectionWeight shares
+ * (currently flash-high 50 / luna 30 / terra 20). Keep withdrawn arms registered
+ * so they can be re-offered by flipping that flag rather than deleting the arm.
  */
 const OPENROUTER = {
   provider: 'openrouter',
@@ -27,13 +28,13 @@ export const REFLECTION_MODEL_ARMS = [
     choice: 'openai:gpt-5.6-luna-high',
     label: 'Luna high',
     enabledByDefault: true,
-    dogfoodSelectionWeight: 1,
+    dogfoodSelectionWeight: 30,
     config: null,
   },
   {
     choice: 'zai:glm-5.3-flash-max',
     label: 'GLM-5.3 Flash max',
-    enabledByDefault: true,
+    enabledByDefault: false,
     dogfoodSelectionWeight: 1,
     config: null,
   },
@@ -41,7 +42,7 @@ export const REFLECTION_MODEL_ARMS = [
     choice: 'zai:glm-5.3-flash-high',
     label: 'GLM-5.3 Flash high',
     enabledByDefault: true,
-    dogfoodSelectionWeight: 1,
+    dogfoodSelectionWeight: 50,
     config: GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG satisfies ReflectionProviderConfig,
   },
   {
@@ -59,7 +60,7 @@ export const REFLECTION_MODEL_ARMS = [
     choice: 'openai:gpt-5.6-terra-high',
     label: 'GPT-5.6 Terra high',
     enabledByDefault: true,
-    dogfoodSelectionWeight: 1,
+    dogfoodSelectionWeight: 20,
     config: {
       provider: 'openai',
       modelConfig: 'gpt-5.6-terra-high',

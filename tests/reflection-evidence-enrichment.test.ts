@@ -205,7 +205,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
       generatedAt,
     );
 
-    assert.equal(INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS, 25);
+    assert.equal(INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS, 50);
     assert.equal(built.eligibleItemCount, 2);
     assert.equal(built.includedItemCount, 2);
     assert.deepEqual(built.bundle.items.map((item) => item.itemId), [
@@ -215,7 +215,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
   });
 
   test('admits non-overlapping evidence before applying the backend item cap', () => {
-    const additionalItems = Array.from({ length: 25 }, (_, index) => (
+    const additionalItems = Array.from({ length: 50 }, (_, index) => (
       insertEligibleProductionMistake(`additional-${index + 1}`)
     ));
     const repeatedTarget = insertEligibleRepeatedTargetMistake('repeated-target');
@@ -229,13 +229,13 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
       generatedAt,
     );
 
-    assert.equal(built.eligibleItemCount, 27);
-    assert.equal(built.includedItemCount, 25);
+    assert.equal(built.eligibleItemCount, 52);
+    assert.equal(built.includedItemCount, 50);
     assert.equal(built.overlapOmittedItemCount, 1);
     assert.equal(built.bundle.items.length, INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS);
     assert.deepEqual(
       built.bundle.items.map((item) => item.itemId),
-      ['production-mistake:action-1', ...additionalItems.slice(0, 24).map((item) => item.itemId)],
+      ['production-mistake:action-1', ...additionalItems.slice(0, 49).map((item) => item.itemId)],
     );
   });
 

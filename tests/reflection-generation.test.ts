@@ -671,7 +671,7 @@ describe('initial reflection generation orchestration', () => {
     assert.equal(recordedRun?.responseId, 'response-1');
   });
 
-  test('routes the initial run across offered comparison arms with equal probability', async () => {
+  test('routes the initial run across offered comparison arms by dogfood weight', async () => {
     const selected: string[] = [];
     const makeArm = (label: string) => stagedProvider(
       async () => {
@@ -690,8 +690,9 @@ describe('initial reflection generation orchestration', () => {
         'openrouter:gemini-3.6-flash': makeArm('gemini'),
         'openai:gpt-5.6-terra-high': makeArm('terra'),
       },
+      // Offered weights are luna 30 / flash-high 50 / terra 20.
       random: () => {
-        const values = [0, 0.3, 0.6, 0.9];
+        const values = [0, 0.29, 0.3, 0.79, 0.8, 0.99];
         return values[randomCalls++]!;
       },
       materializeArtifact: () => ({
@@ -701,10 +702,10 @@ describe('initial reflection generation orchestration', () => {
       recordRun: () => {},
     });
 
-    for (let index = 0; index < 4; index += 1) {
+    for (let index = 0; index < 6; index += 1) {
       await service.generate(`session-${index}`, {});
     }
-    assert.deepEqual(selected, ['luna', 'glm', 'glm-high', 'terra']);
+    assert.deepEqual(selected, ['luna', 'luna', 'glm-high', 'glm-high', 'terra', 'terra']);
   });
 
   test('still routes an explicit request to a registered arm that is not offered by default', async () => {
@@ -862,7 +863,7 @@ describe('initial reflection generation orchestration', () => {
       getSpendCap: () => cappedSpendCap(),
       getContinuationRetrySource: () => currentDiagnosisRetrySource('failed-run', bundle(), {
         provider: 'zai',
-        model: 'glm-5.3-flash-max',
+        model: 'glm-5.3-flash-high',
         providerModel: 'glm-5.3-flash',
       }),
       materializeArtifact: () => ({

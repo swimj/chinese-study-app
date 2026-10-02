@@ -238,9 +238,11 @@ export function createInitialReflectionGenerationService(
     choice: arm.choice,
     provider: configuredProviders[arm.choice]!,
   }));
-  const defaultComparisonArms = comparisonArms.filter((arm) => (
-    isOfferedReflectionModelChoice(arm.choice)
-  ));
+  const defaultComparisonArms = comparisonArms.flatMap((arm) => {
+    const registry = REFLECTION_MODEL_ARMS.find((entry) => entry.choice === arm.choice);
+    if (registry === undefined || !registry.enabledByDefault) return [];
+    return [{ ...arm, weight: registry.dogfoodSelectionWeight }];
+  });
 
   function selectProvider(choice: ReflectionModelChoice | undefined): {
     provider: LunaReflectionProvider;
@@ -271,8 +273,18 @@ export function createInitialReflectionGenerationService(
       }
       return { provider: luna.provider, config: reflectionProviderConfigForChoice(LUNA_REFLECTION_MODEL_CHOICE) };
     }
-    const index = Math.floor(random() * defaultComparisonArms.length);
-    const selected = defaultComparisonArms[index]!;
+    const totalWeight = defaultComparisonArms.reduce((sum, arm) => sum + arm.weight, 0);
+    if (totalWeight <= 0 || defaultComparisonArms.length === 0) {
+      throw new Error('No offered reflection comparison arms have a positive selection weight.');
+    }
+    let ticket = random() * totalWeight;
+    for (const arm of defaultComparisonArms) {
+      if (ticket < arm.weight) {
+        return { provider: arm.provider, config: reflectionProviderConfigForChoice(arm.choice) };
+      }
+      ticket -= arm.weight;
+    }
+    const selected = defaultComparisonArms[defaultComparisonArms.length - 1]!;
     return { provider: selected.provider, config: reflectionProviderConfigForChoice(selected.choice) };
   }
 
