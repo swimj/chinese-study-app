@@ -2642,8 +2642,8 @@ export function dismissWordFromStudy(wordId: string): void {
   }
 }
 
-// Versioned migrations add pure-cue restore snapshots and attributed stimulus
-// revisions without changing historical attempts or served cue snapshots.
+// Versioned migrations include content-only cleanup (such as rehearsal framing).
+// Existing databases must apply these offline; startup never rewrites content.
 export function initializeDatabase() {
   if (!dbExistedOnStartup) {
     createBaselineSchema();

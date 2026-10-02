@@ -53,7 +53,7 @@ const teachingPartSchema: JsonSchema = { anyOf: [
 ] };
 const teachingStimulusSchema: JsonSchema = { anyOf: [
   oneOfKinds('direct_text', { text: string }),
-  // Rehearsal already has a separate instruction; no extra frame is needed here.
+  // The cloze is the base cue; generic task framing belongs to presentation.
   oneOfKinds('example_cloze', { exampleId: string, occurrenceIndexes: array(integer, 1), frame: { type: 'null' } }),
 ] };
 const teachingSchema = object({

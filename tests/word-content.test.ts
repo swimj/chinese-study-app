@@ -107,7 +107,8 @@ test('JSON boundary rejects malformed structures, unsupported fields and danglin
   assert.throws(() => parseWordContent({ ...original, uses: [{ ...original.uses[0], exampleIds: ['missing'] }] }), /unknown example/);
   assert.throws(() => parseTeachingPackage({ ...teaching(), beats: [{ id: 'empty', parts: [] }] }), /at least 1/);
   assert.throws(() => parseTeachingPackage({ ...teaching(), rehearsals: [] }), /at least 1/);
-  assert.throws(() => parseContentExercise({ ...rehearsal(), instruction: '' }), /nonempty/);
+  assert.equal(parseContentExercise({ ...rehearsal(), instruction: '' }).instruction, '');
+  assert.throws(() => parseContentExercise({ ...rehearsal(), instruction: null }), /string/);
   assert.throws(() => parseContentExercise({ ...rehearsal(), acceptedAnswers: [{ wordId: 'other', hanzi: '别的', traditional: null }] }), /exactly its owner/);
 });
 

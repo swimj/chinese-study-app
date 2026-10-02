@@ -202,6 +202,23 @@ This is a schema-changing release: use the stopped-writer migration procedure
 above, not the application-only hosted upgrade. Fresh databases apply the same
 migration automatically; existing databases require the explicit offline step.
 
+## Rehearsal presentation cleanup
+
+`0020_rehearsal_presentation.sql` clears only an exact match for the former
+hard-coded recall preamble in `word_teaching_packages.package_json` rehearsal
+instructions. It retains the instruction field as an empty string. All packages
+are eligible, including quarantined and retired publications; their publication
+status, identity, provenance, stimuli, answer contracts, and other content stay
+unchanged. Custom or extended instructions are preserved, as are persisted
+session snapshots and learner history. Nonmatching package JSON is not rewritten.
+
+This data migration temporarily removes and restores the package immutability
+trigger within the runner's transaction. Use the stopped-writer procedure above
+with a backup and rehearsal on a database copy; an application-only hosted upgrade
+is insufficient. Existing browser sessions retain their original snapshots;
+session presentation suppresses this exact preamble without rewriting those
+snapshots. Fresh databases apply the same migration automatically.
+
 ## Failure and rollback
 
 On migration failure, keep the app stopped, inspect the error, correct the
