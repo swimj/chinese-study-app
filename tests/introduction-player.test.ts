@@ -20,11 +20,13 @@ describe('local introduction player', () => {
     assert.equal(shouldConcealIntroductionAnswers('finished'), false);
   });
 
-  test('Space respects typing, IME composition, held keys, and command modifiers', () => {
+  test('Space and finished-state Enter respect typing, IME composition, held keys, and command modifiers', () => {
     const base = { key: ' ', repeat: false, composing: false, editable: false, modified: false };
     assert.deepEqual(introductionPlayerKeyAction(base, 'introduction'), { type: 'advance' });
     assert.deepEqual(introductionPlayerKeyAction(base, 'result'), { type: 'next' });
     assert.equal(introductionPlayerKeyAction(base, 'rehearsal'), null);
+    assert.equal(introductionPlayerKeyAction(base, 'finished'), null);
+    assert.deepEqual(introductionPlayerKeyAction({ ...base, key: 'Enter' }, 'finished'), { type: 'continue' });
     assert.deepEqual(introductionPlayerKeyAction({ ...base, key: 'ArrowLeft' }, 'rehearsal'), { type: 'back' });
     for (const flag of ['repeat', 'composing', 'editable', 'modified'] as const) {
       assert.equal(introductionPlayerKeyAction({ ...base, [flag]: true }, 'introduction'), null);

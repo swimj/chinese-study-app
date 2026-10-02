@@ -18,7 +18,8 @@ export type IntroductionPlayerAction =
   | { type: 'submit' }
   | { type: 'reveal' }
   | { type: 'retry' }
-  | { type: 'next' };
+  | { type: 'next' }
+  | { type: 'continue' };
 
 export function initialIntroductionPlayerState(): IntroductionPlayerState {
   return {
@@ -48,6 +49,7 @@ export function introductionPlayerKeyAction(
   if (event.repeat || event.composing || event.editable || event.modified) return null;
   if (event.key === ' ' && phase === 'introduction') return { type: 'advance' };
   if (event.key === ' ' && phase === 'result') return { type: 'next' };
+  if (event.key === 'Enter' && phase === 'finished') return { type: 'continue' };
   if (event.key === 'ArrowLeft' && (phase === 'introduction' || phase === 'rehearsal')) {
     return { type: 'back' };
   }
@@ -96,5 +98,7 @@ export function reduceIntroductionPlayer(
       return state.exerciseIndex < packageSnapshot.rehearsals.length - 1
         ? { ...state, phase: 'rehearsal', exerciseIndex: state.exerciseIndex + 1, response: '', result: null }
         : { ...state, phase: 'finished' };
+    case 'continue':
+      return state;
   }
 }
