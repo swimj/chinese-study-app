@@ -43,9 +43,10 @@ teaching evidence only and cannot narrow the pre-answer cue. Contrasting example
 illustrate repair, optional reinforcement, and supplement visibility without
 changing the staged flow or wire contracts.
 
-Diagnosis v4.2 adds a worked single-word repair for `储备`: separate verb and
-noun cues preserve both useful capabilities, even after a correct answer and
-without a comparison word.
+Diagnosis v4.2 clarifies that gloss coherence is judged as a production
+exercise: related meanings can call for distinct sentence roles or
+constructions worth practicing separately. Grammatical labels alone do not
+require a split.
 
 Prompt versions use `<prompt-family>-v<major>.<minor>`. Existing whole-number
 versions are minor zero: `reflection-staged-v3` means `reflection-staged-v3.0`.
