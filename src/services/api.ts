@@ -296,7 +296,8 @@ export type ReflectionModelChoice =
   | 'zai:glm-5.3-flash-max'
   | 'zai:glm-5.3-flash-high'
   | 'openrouter:gemini-3.6-flash'
-  | 'openai:gpt-5.6-terra-high';
+  | 'openai:gpt-5.6-terra-high'
+  | 'openai:gpt-6-sol-high';
 
 export type ReflectionSpendCapDto = {
   lunaOnly: boolean;

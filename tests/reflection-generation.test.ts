@@ -689,10 +689,11 @@ describe('initial reflection generation orchestration', () => {
         'zai:glm-5.3-flash-high': makeArm('glm-high'),
         'openrouter:gemini-3.6-flash': makeArm('gemini'),
         'openai:gpt-5.6-terra-high': makeArm('terra'),
+        'openai:gpt-6-sol-high': makeArm('sol'),
       },
-      // Offered weights are luna 30 / flash-high 50 / terra 20.
+      // Offered weights are luna 30 / flash-high 50 / terra 10 / sol 10.
       random: () => {
-        const values = [0, 0.29, 0.3, 0.79, 0.8, 0.99];
+        const values = [0, 0.29, 0.3, 0.79, 0.8, 0.89, 0.9, 0.99];
         return values[randomCalls++]!;
       },
       materializeArtifact: () => ({
@@ -702,10 +703,10 @@ describe('initial reflection generation orchestration', () => {
       recordRun: () => {},
     });
 
-    for (let index = 0; index < 6; index += 1) {
+    for (let index = 0; index < 8; index += 1) {
       await service.generate(`session-${index}`, {});
     }
-    assert.deepEqual(selected, ['luna', 'luna', 'glm-high', 'glm-high', 'terra', 'terra']);
+    assert.deepEqual(selected, ['luna', 'luna', 'glm-high', 'glm-high', 'terra', 'terra', 'sol', 'sol']);
   });
 
   test('still routes an explicit request to a registered arm that is not offered by default', async () => {
@@ -724,6 +725,7 @@ describe('initial reflection generation orchestration', () => {
       comparisonProviders: {
         'openrouter:gemini-3.6-flash': makeArm('gemini'),
         'openai:gpt-5.6-terra-high': makeArm('terra'),
+        'openai:gpt-6-sol-high': makeArm('sol'),
       },
       materializeArtifact: () => ({
         created: true,
@@ -756,6 +758,7 @@ describe('initial reflection generation orchestration', () => {
       comparisonProviders: {
         'openrouter:gemini-3.6-flash': makeArm('gemini'),
         'openai:gpt-5.6-terra-high': makeArm('terra'),
+        'openai:gpt-6-sol-high': makeArm('sol'),
       },
       materializeArtifact: () => ({
         created: true,
@@ -793,6 +796,7 @@ describe('initial reflection generation orchestration', () => {
       comparisonProviders: {
         'openrouter:gemini-3.6-flash': makeArm('gemini'),
         'openai:gpt-5.6-terra-high': makeArm('terra'),
+        'openai:gpt-6-sol-high': makeArm('sol'),
       },
       getSpendCap: () => cappedSpendCap(),
       random: () => 0.99,

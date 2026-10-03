@@ -81,13 +81,14 @@ const REFLECTION_RETRY_MODEL_OPTIONS: ReadonlyArray<Omit<ReflectionRetryMenuOpti
   { id: 'zai:glm-5.3-flash-high', label: 'GLM-5.3 Flash high', model: 'zai:glm-5.3-flash-high', enabledByDefault: true },
   { id: 'openrouter:gemini-3.6-flash', label: 'Gemini 3.6 Flash', model: 'openrouter:gemini-3.6-flash', enabledByDefault: false },
   { id: 'openai:gpt-5.6-terra-high', label: 'GPT-5.6 Terra high', model: 'openai:gpt-5.6-terra-high', enabledByDefault: true },
+  { id: 'openai:gpt-6-sol-high', label: 'GPT-6 Sol high', model: 'openai:gpt-6-sol-high', enabledByDefault: true },
 ];
 
 const OFFERED_REFLECTION_MODEL_OPTIONS = REFLECTION_RETRY_MODEL_OPTIONS.filter(
   (option) => option.enabledByDefault,
 );
 
-const DEFAULT_SECOND_OPINION_MODEL: ReflectionModelChoice = 'openai:gpt-5.6-terra-high';
+const DEFAULT_SECOND_OPINION_MODEL: ReflectionModelChoice = 'openai:gpt-6-sol-high';
 
 function sourceModelIsCurrentlyAvailable(storedModel: string): boolean {
   return OFFERED_REFLECTION_MODEL_OPTIONS.some((option) => option.model.endsWith(`:${storedModel}`));

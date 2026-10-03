@@ -19,6 +19,7 @@ import type {
 } from '../src/domain/reflection.js';
 import {
   createLunaReflectionProvider,
+  createReflectionProvider,
   LUNA_REFLECTION_MODEL_CONFIG,
   LUNA_REFLECTION_PROMPT_VERSION,
   PURE_CUE_PROMOTION_PROMPT_VERSION,
@@ -31,6 +32,7 @@ import {
   GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG,
   GLM_REFLECTION_MODEL_CONFIG,
 } from '../server/reflection/glm-provider.js';
+import { REFLECTION_MODEL_ARMS } from '../server/reflection/model-arms.ts';
 import { PROVIDER_REQUEST_TIMEOUT_MS, type JsonValue } from '../server/llm/types.js';
 import { validateJsonSchema } from '../server/llm/json-schema-validator.js';
 import {
@@ -411,6 +413,41 @@ describe('production Luna reflection provider', () => {
     assert.equal(serialized.includes('unit-test-secret'), false);
     assert.equal(serialized.includes('transportDebug'), false);
     assert.equal(serialized.includes('must-not-be-returned'), false);
+  });
+
+  test('runs both staged contracts through the registered GPT-6 Sol high provider', async () => {
+    const arm = REFLECTION_MODEL_ARMS.find((entry) => entry.choice === 'openai:gpt-6-sol-high');
+    assert.ok(arm?.config);
+    for (const stage of ['diagnosis', 'promotion'] as const) {
+      const capture: CapturedRequest[] = [];
+      const wireResult = stage === 'diagnosis' ? validStagedDiagnosisWireResult : validPromotionWireResult;
+      const provider = createReflectionProvider(arm.config, {
+        environment: { OPENAI_API_KEY: 'unit-test-secret' },
+        fetchImplementation: capturingFetch(
+          responseEnvelope(JSON.stringify(wireResult), { model: 'gpt-6-sol' }),
+          capture,
+        ),
+      });
+      const generated = stage === 'diagnosis'
+        ? await provider.generateDiagnosis(diagnosisBundle)
+        : await provider.generatePromotion(promotionBundle);
+      assert.equal(capture.length, 1);
+      assert.equal(capture[0]!.url, 'https://api.openai.com/v1/chat/completions');
+      assert.equal(capture[0]!.body.model, 'gpt-6-sol');
+      assert.equal(capture[0]!.body.reasoning_effort, 'high');
+      assert.equal(capture[0]!.body.max_completion_tokens, 50_000);
+      assert.deepEqual(capture[0]!.body.response_format, {
+        type: 'json_schema',
+        json_schema: {
+          name: stage === 'diagnosis' ? STAGED_REFLECTION_DIAGNOSIS_RESULT_V3_WIRE_SCHEMA_NAME : PURE_CUE_PROMOTION_RESULT_V2_WIRE_SCHEMA_NAME,
+          strict: true,
+          schema: stage === 'diagnosis' ? stagedReflectionDiagnosisResultV3WireSchema : pureCuePromotionResultV2WireSchema,
+        },
+      });
+      assert.deepEqual(generated.result, wireResult);
+      assert.equal(generated.metadata.modelConfig, 'gpt-6-sol-high');
+      assert.equal(generated.metadata.providerModel, 'gpt-6-sol');
+    }
   });
 
   test('uses the separate strict promotion contract and returns the validated wire decision', async () => {

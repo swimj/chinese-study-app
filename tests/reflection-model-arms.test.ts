@@ -14,7 +14,7 @@ import {
 } from '../server/reflection/model-arms.ts';
 
 describe('reflection comparison-arm registry', () => {
-  test('registers five comparison arms and offers three by default', () => {
+  test('registers six comparison arms and offers four by default', () => {
     const choices = REFLECTION_MODEL_ARMS.map((arm) => arm.choice);
     assert.deepEqual(choices, [
       'openai:gpt-5.6-luna-high',
@@ -22,6 +22,7 @@ describe('reflection comparison-arm registry', () => {
       'zai:glm-5.3-flash-high',
       'openrouter:gemini-3.6-flash',
       'openai:gpt-5.6-terra-high',
+      'openai:gpt-6-sol-high',
     ]);
     assert.equal(LUNA_REFLECTION_MODEL_CHOICE, 'openai:gpt-5.6-luna-high');
     assert.equal(isReflectionModelChoice('openai:gpt-5.6-terra-high'), true);
@@ -42,6 +43,7 @@ describe('reflection comparison-arm registry', () => {
         'openai:gpt-5.6-luna-high',
         'zai:glm-5.3-flash-high',
         'openai:gpt-5.6-terra-high',
+        'openai:gpt-6-sol-high',
       ],
     );
     assert.equal(
@@ -61,7 +63,8 @@ describe('reflection comparison-arm registry', () => {
       {
         'openai:gpt-5.6-luna-high': 30,
         'zai:glm-5.3-flash-high': 50,
-        'openai:gpt-5.6-terra-high': 20,
+        'openai:gpt-5.6-terra-high': 10,
+        'openai:gpt-6-sol-high': 10,
       },
     );
   });
