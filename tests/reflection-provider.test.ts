@@ -485,7 +485,7 @@ describe('production Luna reflection provider', () => {
     assert.match(guidance, /`servedCue.text` is the production cue visible before answering/);
     assert.match(guidance, /never to narrow the original cue, resolve its ambiguity, or justify rejecting an alternate answer/);
     assert.match(guidance, /A correct answer shows successful recall of the intended word; it does not establish that the cue is a good production exercise/);
-    assert.match(guidance, /judge semantic coherence, not the number of glosses/);
+    assert.match(guidance, /judge coherence as a production exercise/);
     assert.match(guidance, /Reinforcement enriches an already adequate meaning/);
     assert.doesNotMatch(String(systemMessage.content), /studyProfile|acceptedWordIds|cueId|fallback|history|restoration/);
     const userMessage = messages[1] as Record<string, JsonValue>;

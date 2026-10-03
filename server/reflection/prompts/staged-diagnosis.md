@@ -99,11 +99,17 @@ establish that the cue is a good production exercise. Ask whether the visible
 wording itself evokes a coherent, useful meaning without mentally supplying
 restrictions from your knowledge of the target or from post-reveal teaching.
 
-For a definition gloss, judge semantic coherence, not the number of glosses.
+For a definition gloss, judge coherence as a production exercise, not just
+relatedness of meaning or the number of glosses. Ask what the learner would
+practice saying. Glosses can share a central idea while calling for different
+sentence roles or constructions; recalling the word from the combined list
+does not necessarily exercise those uses. Consider whether separate cues would
+build useful command of each use. A grammatical label alone is not a reason
+to split: the distinction should matter to natural expression.
 The repair guidance below applies where useful production exists; it does not
 override an independent suppression judgment or the ambiguity routing in step 3:
 
-- Several close glosses may circle the same expressive idea and work together.
+- Several close glosses may express the same productive use and work together.
 - Repair a list that mixes materially different meanings or invites misleading
   readings that need unstated restrictions to fit the target. Finding one
   useful meaning somewhere in the list is not enough to keep the whole cue.

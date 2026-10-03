@@ -40,7 +40,8 @@ test('prompt minor versions share a major and preserve current contract compatib
   for (const [promptVersion, expected] of [
     ['reflection-staged-v4.0', true],
     ['reflection-staged-v4.1', true],
-    ['reflection-staged-v4.2', false],
+    ['reflection-staged-v4.2', true],
+    ['reflection-staged-v4.3', false],
     ['reflection-staged-v3.2', false],
   ] as const) {
     assert.equal(isCurrentReflectionArtifactContract({
