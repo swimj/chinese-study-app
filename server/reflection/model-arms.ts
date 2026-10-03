@@ -8,7 +8,7 @@ import type { ReflectionProviderConfig } from './luna-provider.ts';
  * strict V7 validator supplied by createReflectionProvider. Arms with
  * enabledByDefault enter the initial-generation random pool and learner-facing
  * model pickers. Offered arms are drawn with dogfoodSelectionWeight shares
- * (currently flash-high 50 / luna 30 / terra 20). Keep withdrawn arms registered
+ * (currently flash-high 50 / luna 30 / terra 10 / sol 10). Keep withdrawn arms registered
  * so they can be re-offered by flipping that flag rather than deleting the arm.
  */
 const OPENROUTER = {
@@ -60,11 +60,31 @@ export const REFLECTION_MODEL_ARMS = [
     choice: 'openai:gpt-5.6-terra-high',
     label: 'GPT-5.6 Terra high',
     enabledByDefault: true,
-    dogfoodSelectionWeight: 20,
+    dogfoodSelectionWeight: 10,
     config: {
       provider: 'openai',
       modelConfig: 'gpt-5.6-terra-high',
       providerModel: 'gpt-5.6-terra',
+      reasoningEffort: 'high',
+      maxOutputTokens: 50_000,
+      timeoutMs: PROVIDER_REQUEST_TIMEOUT_MS,
+      promptVersion: 'reflection-v9',
+      defaultBaseUrl: 'https://api.openai.com/v1',
+      apiKeyEnvironmentVariable: 'OPENAI_API_KEY',
+      structuredOutputMode: 'json_schema',
+      maxTokensField: 'max_completion_tokens',
+      baseUrlEnvironmentVariable: 'OPENAI_BASE_URL',
+    } satisfies ReflectionProviderConfig,
+  },
+  {
+    choice: 'openai:gpt-6-sol-high',
+    label: 'GPT-6 Sol high',
+    enabledByDefault: true,
+    dogfoodSelectionWeight: 10,
+    config: {
+      provider: 'openai',
+      modelConfig: 'gpt-6-sol-high',
+      providerModel: 'gpt-6-sol',
       reasoningEffort: 'high',
       maxOutputTokens: 50_000,
       timeoutMs: PROVIDER_REQUEST_TIMEOUT_MS,

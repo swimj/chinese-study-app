@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { LUNA_REFLECTION_MODEL_CHOICE } from '../server/reflection/model-arms.ts';
+import { LUNA_REFLECTION_MODEL_CHOICE, REFLECTION_MODEL_ARMS } from '../server/reflection/model-arms.ts';
 import {
   assertReflectionModelAllowedUnderSpendCap,
   buildReflectionSpendCap,
@@ -36,16 +36,18 @@ describe('reflection daily spend cap', () => {
     assert.doesNotThrow(() => (
       assertReflectionModelAllowedUnderSpendCap(LUNA_REFLECTION_MODEL_CHOICE, spendCap)
     ));
-    assert.throws(
-      () => assertReflectionModelAllowedUnderSpendCap('openai:gpt-5.6-terra-high', spendCap),
-      (error: unknown) => {
-        assert.equal(error instanceof ReflectionSpendCapError, true);
-        assert.equal(
-          (error as ReflectionSpendCapError).message,
-          'Daily reflection spend cap reached. Only Luna is available until 2026-09-11T00:00:00.000Z.',
-        );
-        return true;
-      },
-    );
+    for (const arm of REFLECTION_MODEL_ARMS.filter((entry) => entry.choice !== LUNA_REFLECTION_MODEL_CHOICE)) {
+      assert.throws(
+        () => assertReflectionModelAllowedUnderSpendCap(arm.choice, spendCap),
+        (error: unknown) => {
+          assert.equal(error instanceof ReflectionSpendCapError, true);
+          assert.equal(
+            (error as ReflectionSpendCapError).message,
+            'Daily reflection spend cap reached. Only Luna is available until 2026-09-11T00:00:00.000Z.',
+          );
+          return true;
+        },
+      );
+    }
   });
 });

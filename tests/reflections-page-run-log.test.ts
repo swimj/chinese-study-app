@@ -178,7 +178,7 @@ describe('reflection run log presentation', () => {
     assert.match(markup, /aria-label="Model"/);
     assert.match(
       markup,
-      /<option value="openai:gpt-5.6-terra-high" selected="">GPT-5.6 Terra high<\/option>/,
+      /<option value="openai:gpt-6-sol-high" selected="">GPT-6 Sol high<\/option>/,
     );
     assert.doesNotMatch(
       markup,
@@ -204,6 +204,7 @@ describe('reflection run log presentation', () => {
     assert.doesNotMatch(markup, /value="zai:glm-5.3-flash-max"/);
     assert.match(markup, /value="zai:glm-5.3-flash-high" disabled=""/);
     assert.match(markup, /value="openai:gpt-5.6-terra-high" disabled=""/);
+    assert.match(markup, /value="openai:gpt-6-sol-high" disabled=""/);
   });
 
   test('second-opinion empty state stays compact', () => {

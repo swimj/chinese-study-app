@@ -188,6 +188,9 @@ scroll inside the pane. Production evidence is a quiet tested-cue line
 is a packaging surface, not a second Help pager: compact selected-by-default
 chips occupy the main viewport, drill-in details stay secondary, and Select all /
 Clear / model / Get a second opinion sit on a Help-style bottom rail.
+The second-opinion selector defaults to GPT-6 Sol high and allows another offered
+arm to be selected. Initial generation uses GLM-5.3 Flash high 50%, GPT-5.6
+Luna high 30%, GPT-5.6 Terra high 10%, and GPT-6 Sol high 10%.
 Second-opinion selection uses retained-evidence compatibility independently of
 source flow, prompt, and result versions. Compatible old deferred proposals
 and deferred explanation-only items
