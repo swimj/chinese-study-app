@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { test } from 'node:test';
 import { SessionIntroductionGatePanel } from '../src/features/session/SessionIntroductionGatePanel.tsx';
@@ -24,17 +23,9 @@ test('session teaching has no close callback for its button or Escape; completio
   const panel = SessionIntroductionGatePanel({ gate, onUndo: () => {} });
   const experience = panel.props.children[0];
   assert.equal(experience.type, WordIntroductionExperience);
-  assert.equal(experience.props.onClose, undefined);
   assert.equal(experience.props.onCompleted, gate.complete);
   const markup = renderToStaticMarkup(panel);
   assert.doesNotMatch(markup, /Continue with study cards|Back to word|Begin recall drills/);
   assert.match(markup, /Next beat|Finish walkthrough/);
   assert.match(markup, /Undo last study action/);
-});
-
-test('standalone My Words introduction retains its return control', () => {
-  const markup = renderToStaticMarkup(createElement(WordIntroductionExperience, {
-    wordId: gate.wordId, preloadedIntroduction: gate.preloadedIntroduction, onClose: () => {},
-  }));
-  assert.match(markup, /Back to word/);
 });

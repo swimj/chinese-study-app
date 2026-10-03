@@ -749,17 +749,14 @@ Mounted after authentication and maintenance controls. See
 
 | Method | Route | Effect |
 | --- | --- | --- |
-| GET | `/api/words/:wordId/introduction` | Eligible shared library + private pin/completion |
-| POST | `/api/words/:wordId/introduction/prepare` | Empty `{}` body; enqueue/reuse shared work, return current state for polling |
 | POST | `/api/words/:wordId/introduction/open` | Exact packageId; privately pin an eligible ready package without generation |
 | POST | `/api/words/:wordId/introduction/complete` | Exact packageId; private navigation marker only |
 
-Preparation accepts no lexical or learner overrides and never pins a package.
-GET exposes pending/ready/unavailable state without provider diagnostics. Missing
-words return 404; unavailable/withdrawn sources return 409; unavailable generation
-may return 503. Opening and completing accept only `{ "packageId": "..." }`.
+Preparation uses the stored lexical word through the reserve workflow and never pins a package.
+Missing words return 404; unavailable/withdrawn sources return 409.
+Opening and completing accept only `{ "packageId": "..." }`.
 
 Review preparation is independent and requested after the first durable study
-commit. Preparing or opening a lesson does not wait for, trigger, or retry review.
+commit. Opening a lesson does not wait for, trigger, or retry review.
 Automatic retries and operator recovery own failures; usable teaching and existing
 review fallback remain available.

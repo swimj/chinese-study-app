@@ -35,6 +35,7 @@ test('waiting personal words show their stage and full details without invented 
   assert.match(markup, /this day/);
   assert.match(markup, /From a book/);
   assert.match(markup, /aria-controls="my-word-detail"/);
+  assert.doesNotMatch(markup, /Prepare introduction/);
   assert.doesNotMatch(markup, /First studied|Last added|Jan 2/);
 });
 

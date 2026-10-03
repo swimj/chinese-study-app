@@ -35,27 +35,17 @@ function jsonPost(url: string, value: unknown): Promise<Response> {
 }
 
 describe('word introduction HTTP routes', () => {
-  test('accepts exact prepare, open, and complete requests, rejecting lexical and learner overrides', async () => {
+  test('accepts exact open and complete requests, rejecting overrides', async () => {
     const calls: string[] = [];
     const service: WordIntroductionService = {
       get: (wordId) => { calls.push(`get:${wordId}`); return emptyLibrary; },
-      prepare: async (wordId) => { calls.push(`prepare:${wordId}`); return emptyLibrary; },
       open: (wordId, packageId) => { calls.push(`open:${wordId}:${packageId}`); return emptyLibrary; },
       complete: (wordId, packageId) => { calls.push(`complete:${wordId}:${packageId}`); return emptyLibrary; },
     };
     await withRouter(service, async (base) => {
       const url = `${base}/api/words/word-1/introduction`;
-      const get = await fetch(url);
-      assert.equal(get.status, 200);
-      assert.deepEqual(await get.json(), emptyLibrary);
-
-      for (const extra of [{ hanzi: '你好' }, { learnerId: 'other' }, { pinyin: 'nǐ hǎo' }]) {
-        const rejected = await jsonPost(`${url}/prepare`, extra);
-        assert.equal(rejected.status, 400);
-      }
-      const prepared = await jsonPost(`${url}/prepare`, {});
-      assert.equal(prepared.status, 200);
-      assert.deepEqual(await prepared.json(), emptyLibrary);
+      assert.equal((await fetch(url)).status, 404);
+      assert.equal((await jsonPost(`${url}/prepare`, {})).status, 404);
 
       for (const action of ['open', 'complete']) {
         for (const invalid of [{}, { packageId: '' }, { packageId: 'package-1', learnerId: 'other' }]) {
@@ -70,22 +60,17 @@ describe('word introduction HTTP routes', () => {
       assert.equal(completed.status, 200);
       assert.deepEqual(await completed.json(), emptyLibrary);
     });
-    assert.deepEqual(calls, ['get:word-1', 'prepare:word-1', 'open:word-1:package-1', 'complete:word-1:package-1']);
+    assert.deepEqual(calls, ['open:word-1:package-1', 'complete:word-1:package-1']);
   });
 
   test('maps availability, conflict, and unexpected failures to meaningful statuses', async () => {
     const service: WordIntroductionService = {
       get: () => { throw new WordIntroductionServiceError(404, 'Word not found.'); },
-      prepare: async () => { throw new WordIntroductionServiceError(503, 'Generation unavailable.'); },
       open: () => { throw new WordIntroductionError('conflict', 'Unavailable package.'); },
       complete: () => { throw new WordIntroductionError('conflict', 'Unavailable package.'); },
     };
     await withRouter(service, async (base) => {
       const url = `${base}/api/words/word-1/introduction`;
-      const missing = await fetch(url);
-      assert.equal(missing.status, 404);
-      const unavailable = await jsonPost(`${url}/prepare`, {});
-      assert.equal(unavailable.status, 503);
       const openConflict = await jsonPost(`${url}/open`, { packageId: 'package-1' });
       assert.equal(openConflict.status, 409);
       const conflict = await jsonPost(`${url}/complete`, { packageId: 'package-1' });
