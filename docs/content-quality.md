@@ -12,6 +12,7 @@ throughout playback. Rehearsal ratings appear on the subsequent study cards.
 Dictionary fallback prompts and the local authoring lab are outside this scope.
 
 Controls use `]` for thumbs up and `[` for thumbs down outside editable fields.
+The physical bracket keys also work with Chinese/Pinyin punctuation enabled.
 The visible controls advertise which item owns those shortcuts. A visible
 supplement takes shortcut priority over its cue; both remain clickable. Typing,
 IME composition, modifier combinations, and held-key repeats do not vote.
