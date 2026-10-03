@@ -1,6 +1,6 @@
 # Chinese Study App
 
-A Mandarin study app currently built for a local-browser-first PoC workflow, with a React/Vite frontend and a local backend.
+A Mandarin study app with a React/Vite frontend, Express backend, local development workflow, and invite-only hosted beta.
 
 ## Architecture Direction
 
@@ -8,11 +8,13 @@ The implementation still supports fast local iteration, but the primary
 dogfood history now runs in the invite-only hosted Mandarin service. The
 accepted beta boundary includes explicit learner ownership, shared content,
 Clerk identity, Fly/Litestream operation, and deterministic dogfood cutover.
-The current build wave is making releases, recovery, and bounded support
-repeatable before widening beyond operator-controlled use.
+The current emphasis is polish, maturity, and debt in the existing learner
+experience, building confidence for test-learner invitations and future additions.
+Operational readiness still needs evidence; this direction does not declare
+all release, recovery, or support concerns resolved.
 
-See [`STABILITY_FRONTIER.md`](./STABILITY_FRONTIER.md) for the accepted outcome,
-non-goals, and advancement test, and
+See [`STABILITY_FRONTIER.md`](./STABILITY_FRONTIER.md) for safe architectural assumptions,
+invariants, and unsettled decisions, and
 [`docs/private-beta-service-boundary.md`](./docs/private-beta-service-boundary.md)
 for the accepted hosted architecture contract. The first beta deliberately uses
 one shared embedded SQLite database; Postgres remains an evidence-triggered

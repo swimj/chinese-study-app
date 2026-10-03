@@ -4,11 +4,11 @@ Guidance for AI coding agents working in this repository.
 
 ## 1) Project Snapshot
 
-- App type: Chinese study app in local-browser-first PoC phase.
+- App type: Mandarin study app with an invite-only hosted beta and local development workflow.
 - Frontend: React + Vite + TypeScript in `src/`.
 - Backend: Express + TypeScript in `server/`.
 - Persistence: SQLite (`app.db`) via Node `DatabaseSync`, modules under `server/db/`.
-- Direction: treat current local setup as an implementation phase, not a permanent architecture. Prefer decisions that keep a future web-service migration feasible.
+- Direction: polish, maturity, and debt in the existing learner experience; preserve the hosted ownership and data-safety boundaries while improving it.
 - Documentation taxonomy: [`docs/README.md`](docs/README.md), [`SPECS/README.md`](SPECS/README.md), and [`notes/README.md`](notes/README.md) (medium-lived working memory).
 - Product behavior source of truth:
   - `SPECS/learning-review-model.md` — word lifecycle
@@ -27,11 +27,17 @@ Guidance for AI coding agents working in this repository.
 4. `SPECS/learning-review-model.md`
 5. `SPECS/session-covering-criteria.md`
 6. `SPECS/study-action-model.md`
-7. `STABILITY_FRONTIER.md` — how to interpret and maintain the current build-wave boundary (see §12)
-8. Task-spec notes linked from the relevant Linear item or supplied dispatch context, followed by only the working notes relevant to the task (working memory only; defer to SPECS on conflict — see [`notes/README.md`](notes/README.md))
+7. `STABILITY_FRONTIER.md` — safe architectural assumptions and unsettled decisions (see §12)
+8. Task-spec notes linked from the relevant Linear item or supplied dispatch context, followed by only the working notes relevant to the task (working memory only; surface conflicts as described below — see [`notes/README.md`](notes/README.md))
 9. Relevant tests under `tests/` (see [`docs/testing.md`](docs/testing.md))
 
-When code and spec conflict, treat the spec as intended behavior and update code + tests together.
+The direct task instruction and subsequent clarifications supply execution scope.
+Canonical specs describe intended behavior; code and tests show implemented
+behavior. If they conflict with each other or with an explicit instruction,
+surface the discrepancy. Apply a clear authorized change with matching docs and
+tests; do not silently fix code to a stale spec or treat existing code as product
+intent. Continue well-defined work and ask only when a consequential unresolved
+product or architectural choice is needed. Old plans do not override the task.
 
 ### Task routing
 
@@ -156,47 +162,47 @@ This repo contains real DB artifacts and backups under `data/`.
 - Favor explicitness over hidden magic in learning/review logic.
 - Leave concise comments only where logic is non-obvious.
 
-## 11) Working With Linear And Current Project State
+## 11) Project Context And Task Scope
 
-Effective 2026-08-02, Linear is the source of truth for current idea intake,
-classification, portfolio priority, readiness, themes, debt, parked work,
-declared Focus/Async work, and portfolio disposition. The successful steward
-operating model is recorded in
-[`PLANS/project-steward-linear-trial.md`](PLANS/project-steward-linear-trial.md).
-The former repository task catalog has been retired; use Git history only when
-historical context is needed. Do not create a replacement repository backlog.
+- Justin's task prompt and subsequent conversation own the execution contract.
+  A direct one-off needs no Linear item to authorize it. Linked task specs add
+  context; later issue edits do not silently steer an ongoing task.
+- Linear is useful for issue intake and retrieval, but bookkeeping is incomplete.
+  Do not infer the full set of current work, priority, or disposition from it.
+  GitHub/Git provide review and integration evidence; task threads provide
+  execution context. Distinguish implemented, merged, deployed, and observed.
+- The persistent steward lives at `/Users/jw/dev/chinese-study-steward`:
+  `vision.md` holds the north star, `outlook.md` weekly priorities, and
+  `chewing.md` unresolved thinking, not commitments. Its `AGENTS.md` defines
+  that role, not this one. Consult for alignment when available; do not require
+  that workspace to implement a well-scoped application task or copy it here.
+- The old steward/Linear trial is historical. Its WIP counts, lane transitions,
+  and dispatch rituals are not implementation-agent prerequisites. Justin
+  selects work; do not autonomously dispatch additional portfolio tasks or
+  invent replacement bookkeeping rules. Flag material overlap or capacity
+  concerns in the handoff rather than assuming a complete ledger.
+- Keep independently dispatched tasks in separate worktrees and stage changes
+  deliberately. Preserve unrelated work. Implementation normally returns via
+  the review workflow in §3; standalone documentation/research may return in chat.
+- Report worthwhile out-of-scope ideas for later capture; do not create a
+  replacement repository backlog or update external records without authorization.
 
-- **Authority split**: Linear records the current portfolio and which cataloged tasks the human has declared in flight. A task remains in flight through execution, review, and revision. The initiating Codex prompt, task-spec note when one exists, and subsequent task thread own its detailed execution contract and context. GitHub pull requests and Git history own review, CI, integration, and merge truth. Durable product behavior, architecture, vision, and frontier decisions remain in Git.
-- **WIP policy**: Focus maximum 1; async tasks in flight maximum 2; work awaiting review maximum 2; Linear `Todo` maximum 5. The human selects or dispatches work and supplies disposition facts; agents must not dispatch additional work autonomously. A steward with authorized Linear access may record an explicitly supplied Focus/Async or disposition transition but must not infer unreported execution state.
-- **Direct prompts and one-offs**: a direct human prompt is sufficient authorization for the requested in-scope work. Brief one-offs do not need a Linear item merely to legitimize them and may remain unknown to the steward.
-- **Capture without Linear access**: if work surfaces a worthwhile new idea and the agent lacks authorized Linear access, report it in the handoff for the human or steward to capture. Do not create a parallel repository backlog.
-- **Capture is not dispatch**: creating or updating a Linear item does not focus or dispatch it. The human controls selection, readiness, Focus/Async transitions, and final disposition.
-- **Dispatch-ready packet**: work promoted to `Todo` for independent dispatch should state its outcome, deliverable, scope, required inputs, done criteria, non-goals, dependencies/overlap, execution constraints, and when to stop for input. Keep this in Linear when short; otherwise link one task-spec note that consolidates the executable context.
-- **Potential staleness**: before focus or dispatch, the human revalidates that the outcome is still wanted, inputs are stable enough, no in-flight task owns the same decision boundary, semantic and merge overlap are acceptable, and review capacity exists.
-- **Task identity and context**: the first prompt plus subsequent task thread define an agent task's semantic identity and execution contract. A Linear identifier improves traceability but is not required for a brief one-off. Once dispatched, the worker follows that prompt and the specs/docs at its base revision; later Linear edits do not silently steer it.
-- **Worktree ownership**: each independently dispatched async task runs in its own worktree. Do not place multiple independently dispatched tasks in one worktree. Worktrees prevent simultaneous filesystem interference; they do not prevent logical conflicts, overlapping diffs, stale assumptions, or integration cost.
-- **Working notes vs task specs**: ordinary working notes stay lightweight and do not need a catalog backlink. When their content becomes critical to a cataloged task, consolidate the necessary context into a task-spec note and link it from Linear. Do not copy volatile execution or review state into note metadata.
-- **Review disposition**: review results are accepted/merged, returned for revision, discarded, or converted into a new decision/task. Finished agent execution is not completed project work until the human supplies or confirms its disposition.
-- **PR handoff**: implementation work normally returns through a GitHub PR, whether dispatched async or directly prompted. Its title and description should make the originating task recognizable and record the outcome, material deviations, verification, open decisions, dependencies/overlap, and follow-up work. Standalone research, planning, and documentation-only work, plus a no-diff conclusion, may return through the Codex task unless review publication is requested.
-- **Commits and task identity**: stage deliberately so unrelated changes are not swept in. Every commit should be relatable to a Linear item, linked task spec, or directly requested one-off; items and commits need not be one-to-one.
+## 12) Using The Stability Frontier
 
-## 12) Working With The Stability Frontier
+Read [STABILITY_FRONTIER.md](STABILITY_FRONTIER.md) for safe architectural
+assumptions, invariants, and unsettled decisions. Use canonical specs and feature
+contracts for detailed intended behavior, architecture maps to locate code, and
+runbooks for operations. Plans and working notes supply dated context, not
+automatic execution authority; an `active` label alone does not establish
+current priority or unfinished implementation.
 
-Read [`STABILITY_FRONTIER.md`](STABILITY_FRONTIER.md) before treating the
-current frontier as an implementation contract.
+The frontier is neither a weekly task list nor a release-readiness certificate.
+A direct task can change earlier direction explicitly; stale prose must not
+silently veto it. Surface consequential contradictions as described in §2,
+preserve unaffected constraints, and avoid speculative policy choices.
 
-- The frontier summarizes the current near-term product outcome, settled build
-  assumptions, invariants, blocking decisions, non-goals, and advancement test.
-- Canonical specs remain authoritative for product behavior. If the frontier
-  conflicts with a spec or verified implementation constraint, flag it as stale
-  and request human resolution.
-- A frontier marked draft is not accepted implementation authority.
-- Work within settled blocks and preserve frontier invariants. Do not resolve a
-  named blocking decision speculatively merely to complete a task.
-- Proactively call out a **frontier movement candidate** when evidence shows
-  that a block is stable enough to promote, an assumption is invalid, a
-  non-goal needs reconsideration, or the advancement test appears satisfied.
-- Do not independently change the frontier's product outcome, invariants,
-  settled-vs-blocking classifications, major non-goals, or advancement test.
-  Propose the change and seek human confirmation. After explicit approval,
-  update the frontier and its owning durable docs together.
+Correct stale descriptions and reflect already-authorized decisions in owning
+docs. Propose material changes to assumptions or invariants when evidence calls
+for them; do not independently declare a disputed boundary settled or a proof
+gate satisfied because code exists. Each checkout's frontier is a snapshot, not
+a cross-worktree status channel.

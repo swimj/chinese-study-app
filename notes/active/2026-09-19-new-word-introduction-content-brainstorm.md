@@ -17,8 +17,9 @@ related:
 Snapshot as of 2026-09-24. The accepted content-model direction has graduated to
 [Word Bootstrap, Introduction, And Early Rehearsal](../../SPECS/word-bootstrap-and-introduction.md).
 That spec supersedes provisional proposals here. This note retains worked
-explorations and feedback; the draft prompt remains linked below. Current
-learning/covering behavior is unchanged until its open decisions are settled.
+explorations and feedback; the draft prompt remains linked below. The earlier learning-transition questions below do not describe an unimplemented
+feature: prepared introductions and early learning are now integrated. See
+[the in-app guide](../../docs/word-introduction-in-app.md) for current behavior.
 The first executable representation checkpoint is described in
 [the model/compatibility guide](../../docs/word-content-model.md): all six
 introductions, explicit rehearsal contracts, exact-span clozes, and existing

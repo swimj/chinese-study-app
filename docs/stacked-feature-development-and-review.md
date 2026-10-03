@@ -33,12 +33,13 @@ design, stack evolution where needed, feedback placement, validation,
 publication mechanics, and handoff. Graphite-specific setup and commands apply
 only to a multi-branch stack.
 
-Use the repository's normal authority order when sources disagree. Canonical
-product specs and accepted architecture contracts own behavior. The stability
-frontier owns the current build-wave boundary. The task prompt and task spec
-own the detailed execution contract. This model supplies workflow defaults;
-an explicit task-specific workflow rule may override a default. Stop and report
-any conflict that cannot be resolved through that order.
+The task prompt and subsequent clarifications supply execution scope. Canonical
+specs and accepted architecture contracts describe intended behavior; the
+frontier summarizes safe assumptions and unsettled decisions. Surface conflicts
+with instructions or verified implementation rather than silently resolving them
+by document rank. Old planning prose does not veto a direct task. This model
+supplies workflow defaults; explicit task-specific workflow rules may override
+them. Ask when an unresolved consequential decision is necessary to proceed.
 
 One implementation or feature stack still represents one dispatched task or
 portfolio outcome. Creating several branches does not create new Linear items
@@ -341,8 +342,9 @@ with draft/ready state. For a stack, also report:
 
 > Follow `docs/stacked-feature-development-and-review.md` as the delivery and
 > review model, composed with `<task-spec-path>` as the task-specific execution
-> contract. Use the repository's canonical specs and accepted stability frontier
-> as higher product authority. State whether the implementation is one cohesive
+> contract. Use canonical specs and the frontier for intended behavior and safe
+> assumptions; surface material conflicts with the task or code. State whether
+> the implementation is one cohesive
 > pull request or likely needs a stack, honoring any orientation gates. Publish
 > the verified implementation for review; if it needs a multi-branch stack, use
 > the installed `gt` CLI directly and publish the complete stack through

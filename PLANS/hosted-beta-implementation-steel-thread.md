@@ -1,8 +1,16 @@
 # Hosted-Beta Implementation Steel Thread
 
-Status: accepted implementation plan (2026-08-19). Slices through hosted
-dogfood cutover are complete; the intentional release and recovery proof
-remains tracked by SWI-51. Dispatch remains controlled through Linear.
+Status: historical implementation sequence (accepted 2026-08-19; status
+clarified 2026-10-03). Slices through hosted dogfood cutover are recorded complete.
+Application-only upgrade tooling has since landed; use the current
+[operator runbook](../docs/ops/hosted-beta-deployment.md). The broader intentional
+schema-release and recovery proof below is not certified complete by the
+existence of that tooling. SWI-51 is a historical issue reference, not a next-Focus
+assignment or evidence of current execution state. Current direction and safe
+assumptions are in [the frontier](../STABILITY_FRONTIER.md).
+
+The slice instructions and gates below are retained for rationale and proof
+context; they do not dispatch unfinished work automatically.
 
 This plan converts the accepted
 [`private-beta service boundary`](../docs/private-beta-service-boundary.md) into

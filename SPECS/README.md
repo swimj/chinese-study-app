@@ -4,7 +4,8 @@ Product and planning documents under `SPECS/`. See [docs/README.md](../docs/READ
 
 ## Canonical product and feature contracts
 
-Behavior changes must align with these and update tests in the same change.
+These define intended behavior. Surface conflicts with explicit instructions or
+verified implementation; agreed behavior changes update contracts and tests together.
 
 | Document | Role |
 | --- | --- |
@@ -44,11 +45,15 @@ These describe versioned feature behavior alongside the canonical contracts.
 | Document | Role |
 | --- | --- |
 | [pure-cue-elicitation.md](./pure-cue-elicitation.md) | Accepted standalone elicitation contract: independent scheduling, proportional strong-cue sampling, staged promotion, and false-lapse compensation |
-| [word-bootstrap-and-introduction.md](./word-bootstrap-and-introduction.md) | Accepted design with executable representation checkpoint: reusable word content, pinned introduction/rehearsal packages, and independent review-reflection lifecycle; live learning integration remains open |
+| [word-bootstrap-and-introduction.md](./word-bootstrap-and-introduction.md) | Accepted content contract with live preparation, pinned introduction/rehearsal packages, and independent review-reflection lifecycle; see the in-app guide for implemented policy |
 | [deferred-reflection-second-opinion.md](./deferred-reflection-second-opinion.md) | SWI-55 implemented first cut: selected deferred evidence, chosen-model reflection, and replacement in active review without prompt changes |
 | [my-words.md](./my-words.md) | Words navigation, personal vocabulary collections, bounded browsing, and word details |
 
-## Active plans
+## Design and planning references
+
+These labels do not establish current work or priority. The diet design has live
+implementation; its original delivery sequencing is historical. French plans
+remain context for retired experimentation, not a hosted compatibility promise.
 
 | Document | Role |
 | --- | --- |
@@ -75,4 +80,4 @@ Repo-level plans: [PLANS/](../PLANS/).
 | --- | --- |
 | [adaptive_vocabulary_training_product_notes.md](./adaptive_vocabulary_training_product_notes.md) | Long-term product vision |
 
-Misc backlog dump: [docs/vision/todos-dump.md](../docs/vision/todos-dump.md).
+Historical idea dump (not a current backlog): [docs/vision/todos-dump.md](../docs/vision/todos-dump.md).

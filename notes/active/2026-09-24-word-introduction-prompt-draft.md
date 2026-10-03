@@ -9,14 +9,14 @@ related:
 
 This checkpoint captures the teaching stance and editorial judgment developed
 through six word/phrase explorations. It is not an implementation contract.
-Input and output structure remain TBD. The prompt below is intended to stand
-alone for an agent without the brainstorming conversation.
+Input/output TBDs below belong to the original September 24 snapshot, not
+the current runtime contract.
 
 The accepted content-model north star is
 [Word Bootstrap, Introduction, And Early Rehearsal](../../SPECS/word-bootstrap-and-introduction.md).
 It couples introduction and associated rehearsal in a pinned package. This
-prompt currently covers the introduction portion; rehearsal authoring and the
-learning transition still need their concrete contracts.
+historical prompt covers the introduction portion. Rehearsal and learning
+contracts now exist; see [the in-app guide](../../docs/word-introduction-in-app.md).
 
 The [local introduction lab](../../docs/word-introduction-lab.md) now exercises
 this stance with separate [bootstrap](../../server/word-content/prompts/bootstrap.md)

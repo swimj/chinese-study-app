@@ -10,12 +10,14 @@ to an exact example as a post-reveal supplement.
 
 ## Preparation and ordinary serving
 
-Preparing/opening a word introduction also prepares its review content. Existing
-completed bootstrap and teaching stages are reused. The review stage has its own
-shared per-word readiness and expiring claim, so concurrent learners do not
-create duplicate cues. Once prepared, retry never resurrects a cue retired by
-reflection. Review failure leaves the introduction usable; a later prepare
-retries only the missing review work.
+A durable first-study commit requests review generation asynchronously. Preparing
+or opening an introduction, session composition, and abandonment do not request
+review work. The worker reuses completed bootstrap content; review has separate
+shared per-word readiness and an expiring claim, preventing duplicate publication
+across learners. Once prepared, retry never resurrects a cue retired by
+reflection. Review failure preserves teaching and ordinary review fallback.
+Bounded automatic retries and attributable operator retry use the
+[shared preparation worker](word-introduction-in-app.md#storage-and-concurrency).
 
 Publication inserts structured content and its compatibility projection in one
 transaction. Generated cues enter the existing shared-trial registry under an
@@ -86,14 +88,14 @@ directly. No bulk legacy parsing, sentence deduplication, or scheduler redesign
 is required in this slice.
 
 Use the standard [offline migration procedure](ops/schema-migrations.md) with a
-backup and stopped application. Migration 0014 preserves existing data, including
-0013's introduction records. It does not run provider calls during migration.
-For words bootstrapped before this stage existed, reopening **Prepare
-introduction** authors only the missing review content.
+backup and stopped application. Migration `0017_review_content_records` preserves
+existing data, including `0016_word_introduction_content` records; it does not
+run provider calls. The preparation worker and reserve were added by migrations
+0018 and 0019. There is no learner-facing **Prepare introduction** retry action;
+failed review work uses the worker/operator path linked above.
 
-The unmerged prototype originally used 0012 for introductions and 0013 for
-review content. After main's pure-cue teaching migration took 0012, these became
-0013 and 0014. A database created from the old prototype chain cannot run the
-new chain directly: preserve a backup and export its application data into a
-fresh database migrated through the new chain. Do not relabel applied migration
-ledger entries; their ordering and schema fingerprints are intentional checks.
+Old unmerged prototypes used different migration numbers. Those historical
+chains are not the current upgrade procedure. If a database comes from such a
+prototype, preserve a backup and assess its actual ledger/schema before choosing
+an explicit migration or export into a fresh migrated database. Never relabel
+applied migration entries to bypass ordering or fingerprint checks.

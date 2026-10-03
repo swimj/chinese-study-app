@@ -1,7 +1,16 @@
 # Project Steward + Linear Trial
 
-Status: graduated 2026-08-02; the pilot's Linear-based steward operating model
-is now the project's durable portfolio workflow.
+Status: historical trial and graduation record (2026-08-02), superseded as
+current agent guidance on 2026-10-03. The persistent steward now lives at
+`/Users/jw/dev/chinese-study-steward`; its `AGENTS.md` owns that role. Application
+workers follow [AGENTS.md](../AGENTS.md). Linear remains useful for intake and
+retrieval, but its bookkeeping is incomplete.
+
+The authority claims, WIP limits, dispatch procedures, trial prompts, and
+`TASKS.md` references below preserve the old operating model, not current
+instructions. Do not reinstate them or reconstruct the retired catalog from
+this record. Whether Justin wants any portfolio capacity limits again is a
+separate choice; this reconciliation establishes no replacement policy.
 
 Prepared: 2026-07-23
 Approved: 2026-07-24
@@ -11,7 +20,6 @@ Graduated: 2026-08-02
 Related:
 
 - [`AGENTS.md`](../AGENTS.md)
-- [`STABILITY_FRONTIER.md`](../STABILITY_FRONTIER.md)
 - [`STABILITY_FRONTIER.md`](../STABILITY_FRONTIER.md)
 - [`notes/archive/2026-07-22-project-steward-linear-trial-task-spec.md`](../notes/archive/2026-07-22-project-steward-linear-trial-task-spec.md)
 - [`docs/vision/agentic_adaptive_language_learning_vision.md`](../docs/vision/agentic_adaptive_language_learning_vision.md)

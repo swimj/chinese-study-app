@@ -1,9 +1,9 @@
 # Pure-cue elicitation (design memo)
 
-status: active
+status: winding-down
 type: research
 created: 2026-09-18
-retire-when: graduated into a spec/plan, or declined as a direction
+retire-when: original design rationale is no longer needed
 related:
   - SPECS/study-action-model.md
   - SPECS/session-reflection-generation.md
@@ -14,8 +14,8 @@ related:
 
 The accepted task decisions are now consolidated in
 [`SPECS/pure-cue-elicitation.md`](../../SPECS/pure-cue-elicitation.md).
-This memo remains the original design inventory, not an implementation contract. Canonical specs and
-the stability frontier still describe current behavior. A parked composition
+This memo remains the original design inventory, not an implementation contract. Canonical specs describe intended behavior; the frontier summarizes safe
+architectural assumptions. A parked composition
 patch ([PR 222](https://github.com/swimj/chinese-study-app/pull/222)) collapses
 duplicate shared accepted-sets inside one session; it does not encode this
 memo.

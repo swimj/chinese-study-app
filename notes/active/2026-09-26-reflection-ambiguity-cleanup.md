@@ -1,9 +1,9 @@
 # Reflection ambiguity cleanup
 
-status: active
+status: winding-down
 type: research
 created: 2026-09-26
-retire-when: this direction is accepted into the reflection specs, or declined
+retire-when: motivating examples are no longer needed
 related:
   - SPECS/pure-cue-elicitation.md
   - SPECS/session-reflection-generation.md
@@ -16,9 +16,13 @@ implementation in the 2026-09-26 task discussion. The canonical contracts now
 live in the related specs above; this note retains the motivating examples and
 scope decisions.
 
-## What the current cut forces
+## Historical problem before the accepted cleanup
 
-Stage one sees one served cue and one response. It either finishes the item
+The pre-cleanup stage one saw one served cue and one response. The following
+describes that historical limitation; current staged cleanup can keep word
+repairs without a shared destination (see the canonical specs above).
+
+In that version, stage one either finished the item
 or hands off a declared shared instinct. Stage two then has two outcomes:
 `promote`, which must name a pure-cue destination and nests both word plans
 inside that operation, or `disagreement`, which drops the content plan.

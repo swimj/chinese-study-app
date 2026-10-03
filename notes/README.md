@@ -6,7 +6,9 @@ coordination context, but they are not a live task-status system.
 
 Prefer **one note per artifact** (e.g. one spike output, one paste-capture memo) rather than consolidating unrelated outputs into a single doc.
 
-**Lifetime:** days to a few weeks. **Authority:** provisional only; defer to `SPECS/` on conflict.
+**Lifetime:** days to a few weeks. **Authority:** provisional context. Canonical
+specs describe intended behavior; surface conflicts with current instructions or
+implementation rather than silently resolving them from a note.
 
 Most notes are lightweight **working notes**: capture what is useful and avoid
 adding structure that has no clear consumer. When a body of work becomes
@@ -73,19 +75,20 @@ that state; agents should not assume shared access to those views.
    owning document) — the note is scaffolding, not the artifact.
 4. **Archive** when `retire-by` passes or `retire-when` is satisfied: move to `notes/archive/`, set `status: archived`, remove from the active index below.
 
-Agents may propose archive; triage and confirmation follow the same human-led
-portfolio-disposition pattern as Linear.
+Archive maintenance does not establish task disposition. Do not infer completion
+or current priority from a note's location, expiry date, or Linear bookkeeping.
 
 ## Active index
 
-*(Update at session boundary or when creating/retiring a note.)*
+This is a working-memory index, not a verified list of active work. Older entries
+may retain superseded plans; check the task context and owning docs before use.
 
 | Note | Type | Retire by |
 | --- | --- | --- |
-| [2026-09-26-reflection-ambiguity-cleanup.md](active/2026-09-26-reflection-ambiguity-cleanup.md) | research | when accepted into the reflection specs, or declined |
+| [2026-09-26-reflection-ambiguity-cleanup.md](active/2026-09-26-reflection-ambiguity-cleanup.md) | research | when motivating examples are no longer needed |
 | [2026-09-24-word-introduction-prompt-draft.md](active/2026-09-24-word-introduction-prompt-draft.md) | research | when replaced by a tested generation prompt or declined |
 | [2026-09-19-new-word-introduction-content-brainstorm.md](active/2026-09-19-new-word-introduction-content-brainstorm.md) | research | when remaining authoring/learning questions are resolved and exploration history is no longer needed |
-| [2026-09-18-pure-cue-elicitation-memo.md](active/2026-09-18-pure-cue-elicitation-memo.md) | research | when graduated into a spec/plan, or declined |
+| [2026-09-18-pure-cue-elicitation-memo.md](active/2026-09-18-pure-cue-elicitation-memo.md) | research | when original design rationale is no longer needed |
 | [2026-09-04-swi-51-app-only-upgrade-pipeline.md](active/2026-09-04-swi-51-app-only-upgrade-pipeline.md) | work-bundle | when the first app-only upgrade pipeline is dispositioned |
 | [2026-09-04-swi-51-release-maturity-map.md](active/2026-09-04-swi-51-release-maturity-map.md) | work-bundle | when SWI-51's accepted contract graduates |
 | [2026-09-03-swi-51-hosted-release-design.md](active/2026-09-03-swi-51-hosted-release-design.md) | work-bundle | when SWI-51 is dispositioned and its accepted release contract has graduated |
