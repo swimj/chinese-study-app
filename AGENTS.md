@@ -56,6 +56,8 @@ When code and spec conflict, treat the spec as intended behavior and update code
 | `APP_LEARNER_ID` | Backend | Stable learner id; required in study mode unless `--learner-id` is supplied |
 | `APP_STUDY_PROFILE` | Backend | `mandarin` or `french` |
 | `APP_METRICS_PORT` | Backend | Optional private Prometheus listener; hosted Fly config uses `9091` |
+| `APP_ALLOWED_CLERK_USER_IDS` | Backend | Optional comma-separated Clerk user-id allowlist; RC uses this to prevent copied accounts from bootstrapping or accessing the restored database. |
+| `APP_DEPLOYMENT_TIER` | Backend | Deployment label (`beta` or `release_candidate`) used by destructive RC-only maintenance scripts. |
 | `APP_OPERATOR_CLERK_USER_IDS` | Backend | Comma-separated Clerk user ids allowed to open the operator usage-pulse page/API. In `trusted_local` mode, include the learner id or the sentinel `trusted_local`. |
 | `APP_SEED_DATA_PATH` | Backend | Required in dev mode; seed JSON path |
 | `PORT` | Backend | API port (default `5174`) |
@@ -64,6 +66,7 @@ When code and spec conflict, treat the spec as intended behavior and update code
 | `APP_SMOKE_CLERK_EMAIL` | Hosted | Optional resolver for that smoke user when the `user_…` id is not yet set |
 | `VITE_API_BASE` | Frontend | API origin (default `http://localhost:5174`) |
 | `VITE_STUDY_PROFILE` | Frontend | Client study profile (`mandarin` / `french`) |
+| `LITESTREAM_REPLICA_PATH` | Hosted | Replica key prefix; RC assigns a new prefix for every restored database generation. |
 
 CLI flags mirror env where applicable (`--mode`, `--data-dir`, `--study-profile`, `--seed-data`).
 

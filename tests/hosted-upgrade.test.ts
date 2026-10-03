@@ -116,6 +116,31 @@ describe('hosted upgrade pipeline', () => {
     assert.equal(JSON.stringify(harness.events).includes('sk_test'), false);
   });
 
+  test('promotes a digest-qualified RC image without rebuilding and confirms its digest', async () => {
+    const digest = `sha256:${'a'.repeat(64)}`;
+    const harness = createHarness({ imageDigest: digest });
+    const image = `registry.fly.io/chinese-study-rc@${digest}`;
+    const result = await runHostedUpgrade({ ...harness.input, image }, harness.deps);
+    assert.equal(result.status, 'ok', result.failure ?? '');
+    const deploy = harness.commands.find((command) => command.args[0] === 'deploy');
+    assert.ok(deploy?.args.includes('--image'));
+    assert.ok(deploy?.args.includes(image));
+    assert.equal(deploy?.args.includes('--build-arg'), false);
+    assert.equal(deploy?.args.includes('--remote-only'), false);
+  });
+
+  test('rejects a mutable promotion image before touching Fly', async () => {
+    const harness = createHarness();
+    const result = await runHostedUpgrade({
+      ...harness.input,
+      image: `registry.fly.io/chinese-study-rc:latest`,
+    }, harness.deps);
+    assert.equal(result.status, 'failed');
+    assert.equal(result.failedStage, 'declare');
+    assert.match(result.failure ?? '', /digest-qualified/);
+    assert.equal(harness.mutations.length, 0);
+  });
+
   test('leaves maintenance and provider work disabled after a smoke failure', async () => {
     const harness = createHarness({ smokeStatus: 'failed' });
     const result = await runHostedUpgrade(harness.input, harness.deps);
@@ -176,6 +201,7 @@ describe('hosted upgrade pipeline', () => {
 function createHarness(options: {
   smokeStatus?: 'ok' | 'failed';
   postDeployRevision?: string;
+  imageDigest?: string;
 } = {}) {
   const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hosted-upgrade-repo-'));
   fs.writeFileSync(path.join(repoRoot, 'package.json'), JSON.stringify({ version: '2.3.0' }));
@@ -258,7 +284,14 @@ function createHarness(options: {
       mutations.push('deploy');
       return { stdout: 'image: registry.fly.io/chinese-study-beta-swimj:deployment-01HNEW\n', stderr: '' };
     }
-    if (args[0] === 'machines') return { stdout: MACHINE_LIST, stderr: '' };
+    if (args[0] === 'machines') {
+      return {
+        stdout: options.imageDigest
+          ? MACHINE_LIST.replace('sha256:abc123def456', options.imageDigest)
+          : MACHINE_LIST,
+        stderr: '',
+      };
+    }
     if (args[0] === 'releases') return { stdout: RELEASE_LIST, stderr: '' };
     const command = args[args.indexOf('--command') + 1] ?? '';
     if (command.includes('hosted:inspect')) {

@@ -93,6 +93,42 @@ describe('Clerk learner authentication', { concurrency: false }, () => {
     assert.equal(authenticationModule.clerkUserIdFromAuth({ userId: null }, party), null);
   });
 
+  test('parses an optional environment access allowlist strictly', () => {
+    assert.deepEqual(
+      [...authenticationModule.parseClerkUserAllowlist(' user_alpha,user_beta,user_alpha ')],
+      ['user_alpha', 'user_beta'],
+    );
+    assert.throws(() => authenticationModule.parseClerkUserAllowlist(''), /at least one Clerk user id/);
+    assert.throws(() => authenticationModule.parseClerkUserAllowlist('learner-not-clerk'), /invalid Clerk user id/);
+  });
+
+  test('rejects a valid Clerk identity outside an environment access allowlist', () => {
+    const handler = authenticationModule.createLearnerContextMiddleware(
+      () => 'user_not_allowed',
+      new Set(['user_allowed']),
+    );
+    let statusCode = 200;
+    let body: unknown;
+    handler({} as Request, {
+      status(code: number) {
+        statusCode = code;
+        return this;
+      },
+      json(value: unknown) {
+        body = value;
+        return this;
+      },
+    } as Response, (() => {
+      throw new Error('disallowed learner work must not run');
+    }) as NextFunction);
+    assert.equal(statusCode, 403);
+    assert.deepEqual(body, {
+      error: 'Account is not allowed in this environment.',
+      code: 'ACCOUNT_NOT_ALLOWED',
+    });
+    assert.equal(dbModule.resolveLearnerId(dbModule.CLERK_AUTH_PROVIDER, 'user_not_allowed'), null);
+  });
+
   test('rejects unauthenticated and disabled Clerk subjects before private work', () => {
     const unauthenticated = invokeForSubject(null, () => {
       throw new Error('private work must not run');
