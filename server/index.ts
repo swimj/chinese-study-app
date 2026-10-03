@@ -1,3 +1,5 @@
+import { ContentQualityInputError, parseContentQualityTarget, recordContentQualityEncounter, setContentQualityRating, getContentQualityAnalytics } from './db/content-quality.ts';
+import type { ContentQualityKind } from '../src/domain/content-quality.ts';
 import cors from 'cors';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { randomUUID } from 'node:crypto';
@@ -343,6 +345,39 @@ export function createApp(options: CreateAppOptions = {}) {
       res.json(getMyWords({ view, query, statuses, recentLapses, limit, offset }));
     } catch {
       res.status(500).json({ error: 'Failed to load my words' });
+    }
+  });
+
+  app.post('/api/content-quality/encounters', (req, res) => {
+    try {
+      res.json(recordContentQualityEncounter(parseContentQualityTarget(req.body?.target), req.body?.encounterId));
+    } catch (error) {
+      if (error instanceof ContentQualityInputError) { res.status(400).json({ error: error.message }); return; }
+      console.error('Content quality encounter failed', error);
+      res.status(500).json({ error: 'Failed to record content quality encounter' });
+    }
+  });
+  app.put('/api/content-quality/ratings', (req, res) => {
+    try { res.json(setContentQualityRating(req.body?.contentKey, req.body?.rating)); }
+    catch (error) {
+      if (error instanceof ContentQualityInputError) { res.status(400).json({ error: error.message }); return; }
+      console.error('Content quality rating failed', error);
+      res.status(500).json({ error: 'Failed to save content quality rating' });
+    }
+  });
+  app.get('/api/operator/content-quality', createOperatorAllowlistMiddleware(), (req, res) => {
+    if (Object.values(req.query).some(value => typeof value !== 'string')) {
+      res.status(400).json({ error: 'Expected string quality filters' }); return;
+    }
+    try {
+      res.json(getContentQualityAnalytics({ kind: req.query.kind as ContentQualityKind | undefined,
+        since: req.query.since as string | undefined, until: req.query.until as string | undefined,
+        limit: req.query.limit === undefined ? undefined : Number(req.query.limit),
+        offset: req.query.offset === undefined ? undefined : Number(req.query.offset) }));
+    } catch (error) {
+      if (error instanceof ContentQualityInputError) { res.status(400).json({ error: error.message }); return; }
+      console.error('Content quality analytics failed', error);
+      res.status(500).json({ error: 'Failed to load content quality analytics' });
     }
   });
 

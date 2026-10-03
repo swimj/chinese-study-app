@@ -55,6 +55,8 @@ discrepancies. Historical plans and vision documents do not assign current work.
 - [ops/error-diagnostics.md](./ops/error-diagnostics.md) — current error surfaces, retention/privacy boundaries, incident correlation, and operator triage
 - [reflection-frontend-architecture.md](./reflection-frontend-architecture.md) — feature-specific session-finalization, evidence, and review-UI map
 
+- [content-quality.md](./content-quality.md) — in-session thumbs, exact content identity, and operator triage
+
 ## Development and review workflows
 
 - [stacked-feature-development-and-review.md](./stacked-feature-development-and-review.md) — default proportional implementation delivery and review model; it scales from one PR to a Graphite stack

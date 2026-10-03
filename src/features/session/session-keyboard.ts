@@ -43,6 +43,7 @@ export type SessionKeyEvent = {
 export type SessionKeyboardContext = {
   sessionStarted: boolean;
   isEditableTarget: boolean;
+  isQualityControlTarget?: boolean;
   productionInputActive: boolean;
   productionAwaitingNext: boolean;
   pureCueAwaitingNext?: boolean;
@@ -227,6 +228,11 @@ export function resolveSessionKey(
   context: SessionKeyboardContext,
 ): SessionKeyCommand | null {
   if (!context.sessionStarted) {
+    return null;
+  }
+
+  // Native activation of feedback controls must not submit or grade the exercise.
+  if (context.isQualityControlTarget && (event.key === ' ' || event.key === 'Enter')) {
     return null;
   }
 

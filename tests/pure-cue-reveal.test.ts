@@ -3,6 +3,7 @@ import { createElement, createRef, type ComponentProps } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { test } from 'node:test';
 import { StudySessionPanel } from '../src/features/session/StudySessionPanel.tsx';
+import { createSessionSummary } from '../src/features/session/session-summary.ts';
 import type { PureCueSessionReviewItem } from '../src/domain/study-actions.ts';
 
 const cue: PureCueSessionReviewItem = {
@@ -70,4 +71,35 @@ test('auto-forgot reveal uses the frozen teaching snapshot even when another cue
   assert.match(markup, /Frozen teaching about the accepted words/);
   assert.match(markup, /古怪/);
   assert.doesNotMatch(markup, /Newer active teaching|Semantic classification/);
+});
+
+
+test('pure cue quality is available before recall without leaking its accepted answers', () => {
+  const markup = render({ sessionSummary: createSessionSummary({ sessionId: 'quality-session',
+    startedAt: '2026-09-26T00:00:00.000Z', initialQueueLength: 1 }) });
+  assert.match(markup, /Thumbs up: Cue quality/);
+  assert.match(markup, /Thumbs down: Cue quality/);
+  assert.doesNotMatch(markup, /Frozen teaching|Semantic classification|古怪/);
+});
+
+test('frozen production keeps cue feedback and gives the visible supplement the shortcut', () => {
+  const markup = render({
+    sessionSummary: createSessionSummary({ sessionId: 'quality-session', startedAt: '2026-09-26T00:00:00.000Z', initialQueueLength: 1 }),
+    productionAwaitingNext: true,
+    frozenProductionCard: {
+      sessionActionId: 'production-action', targetWordId: 'word', actionKind: 'production', sampledSkillIds: ['production'],
+      contentRef: { type: 'production_cue', taskId: 'task', cueId: 'cue' },
+      attemptedHanzi: null, status: 'review', reviewedCount: 0, queuedCount: 1,
+      promptDisplayedMeanings: [], fallbackPrompt: 'A prompt', answerPinyin: 'ci', answerText: '词',
+      allMeanings: ['word'], personalNotes: '', intervalHours: 24, example: '',
+      production: { taskId: 'task', cueId: 'cue', cueType: 'definition_gloss', text: 'A prompt',
+        acceptedAnswers: [{ wordId: 'word', hanzi: '词', traditional: null }],
+        supplement: { supplementId: 'supplement', englishFrame: 'Frame', exampleSentence: 'Example', exampleTranslation: 'Translation' },
+      },
+    },
+  });
+  assert.match(markup, /Thumbs up: Cue quality/);
+  assert.match(markup, /Thumbs up: Supplement quality/);
+  assert.equal((markup.match(/Useful content \(\]\)/g) ?? []).length, 1);
+  assert.doesNotMatch(markup, /Describe unusual behavior/);
 });

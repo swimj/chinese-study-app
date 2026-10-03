@@ -1,4 +1,7 @@
 import { useRef, useState, type ReactNode, type RefObject } from 'react';
+import { ContentQualityControls } from '../content-quality/ContentQualityControls';
+import { getSessionContentQualityTarget, sessionContentQualityEncounterId } from './session-content-quality';
+import type { ContentQualityTarget } from '../../domain/content-quality';
 import { MeaningList } from '../../components/MeaningList';
 import type {
   LearningWordProgress,
@@ -51,6 +54,7 @@ export type FrozenProductionCard = {
   intervalHours: number;
   example: string;
   production?: SessionStudyItem['production'];
+  rehearsal?: SessionStudyItem['rehearsal'];
 };
 
 export type FrozenContrastCard = {
@@ -235,6 +239,16 @@ export function StudySessionPanel({
   );
   const showProductionSupplementAside =
     answerRevealed && hasServedProductionCueSupplement(activeItem?.production);
+  const qualityHotkeysActive = !personalNotesEditorOpen && !shortcutGuideOpen;
+  function qualityControls(target: ContentQualityTarget | null, actionId: string, count: number, label: string, hotkeys = true) {
+    if (!target || !sessionSummary) return null;
+    return <ContentQualityControls
+      target={target}
+      encounterId={sessionContentQualityEncounterId(sessionSummary.sessionId, actionId, count)}
+      label={label}
+      hotkeysActive={hotkeys && qualityHotkeysActive}
+    />;
+  }
   const sessionEndDisabled = sessionPhase === 'draining' || personalNotesEditorOpen;
   const sessionEndLabel = sessionPhase === 'draining' ? 'Session draining' : 'End session';
   const keyboardContext = createSessionKeyboardContext({
@@ -289,6 +303,9 @@ export function StudySessionPanel({
                 <span className="prompt-meta meaning-list-prompt">{frozenProductionCard.fallbackPrompt}</span>
               )}
             </div>
+            {qualityControls(getSessionContentQualityTarget({ ...frozenProductionCard, production: frozenProductionCard.production ?? null }),
+              frozenProductionCard.sessionActionId, frozenProductionCard.reviewedCount,
+              frozenProductionCard.rehearsal ? 'Rehearsal quality' : 'Cue quality', !frozenProductionCard.production?.supplement)}
             <div className="answer-block">
               <span className="prompt-label">Answer</span>
               <span className="answer-pinyin">{frozenProductionCard.answerPinyin}</span>
@@ -304,6 +321,8 @@ export function StudySessionPanel({
                   <span className="prompt-meta">
                     {frozenProductionCard.production.supplement.exampleTranslation}
                   </span>
+                  {qualityControls({ kind: 'supplement', id: frozenProductionCard.production.supplement.supplementId },
+                    frozenProductionCard.sessionActionId, frozenProductionCard.reviewedCount, 'Supplement quality')}
                 </div>
               ) : null}
               {frozenProductionCard.personalNotes.trim().length > 0 ? (
@@ -378,6 +397,8 @@ export function StudySessionPanel({
                 <span className="prompt-meta">{frozenPureCueCard.item.snapshot.teachingNote}</span>
               ) : null}
             </div>
+            {qualityControls({ kind: 'pure_cue', snapshotId: frozenPureCueCard.item.snapshot.snapshotId },
+              frozenPureCueCard.item.sessionActionId, frozenPureCueCard.reviewedCount, 'Cue quality')}
             <div className="answer-block">
               <span className="prompt-label">Accepted answers</span>
               {frozenPureCueCard.item.snapshot.acceptedAnswers.map((answer) => (
@@ -428,6 +449,8 @@ export function StudySessionPanel({
               <span className="prompt-label">Prompt</span>
               <strong className="contrast-prompt-text">{frozenContrastCard.item.contrastSelection?.prompt.promptText}</strong>
             </div>
+            {qualityControls(getSessionContentQualityTarget(frozenContrastCard.item),
+              frozenContrastCard.item.sessionActionId, frozenContrastCard.reviewedCount, 'Cue quality')}
             <ContrastSelectionDrill
               item={frozenContrastCard.item}
               selectedWordId={frozenContrastCard.selectedWordId}
@@ -566,6 +589,8 @@ export function StudySessionPanel({
                 {activeReviewState} · Failures {activePureCueFailureCount}
               </span>
             </div>
+            {qualityControls({ kind: 'pure_cue', snapshotId: activePureCue.snapshot.snapshotId },
+              activePureCue.sessionActionId, reviewedCount, 'Cue quality')}
             {answerRevealed ? (
               <div className="answer-block">
                 <span className="prompt-label">Accepted answers</span>
@@ -732,6 +757,8 @@ export function StudySessionPanel({
                     : `Binary recall · Consecutive successes ${activeUnstudiedProgress?.consecutiveSuccesses.forward ?? 0}/3 recognition · ${activeUnstudiedProgress?.consecutiveSuccesses.reverse ?? 0}/3 production`}
               </span>
             </div>
+            {qualityControls(getSessionContentQualityTarget(activeItem), activeItem.sessionActionId, reviewedCount,
+              activeItem.rehearsal ? 'Rehearsal quality' : 'Cue quality', !showProductionSupplementAside)}
             {activeItem.actionKind === 'contrast_selection' ? (
               <ContrastSelectionDrill
                 item={activeItem}
@@ -749,6 +776,8 @@ export function StudySessionPanel({
                     <strong className="production-supplement-target">{activeAnswerText}</strong>
                     <span className="answer-pinyin">{activeAnswerPinyin}</span>
                     <ProductionSupplementAside supplement={activeItem.production.supplement} />
+                    {qualityControls({ kind: 'supplement', id: activeItem.production.supplement.supplementId },
+                      activeItem.sessionActionId, reviewedCount, 'Supplement quality')}
                   </>
                 ) : (
                   <>
@@ -1038,6 +1067,8 @@ function KeyboardShortcutsOverlay({
             <ShortcutHint shortcut="Escape" persist />
           </button>
         </div>
+        <p className="notes">Content quality: [ thumbs down · ] thumbs up. Press the selected vote again to clear it.
+          When a supplement is shown, these keys rate the supplement. Shortcuts pause while typing.</p>
         {sections.map((section) => (
           <section key={section.title} className="keyboard-shortcuts-section">
             <h4 className="keyboard-shortcuts-section-title">{section.title}</h4>

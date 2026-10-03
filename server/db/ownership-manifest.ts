@@ -27,6 +27,9 @@ export type DurableOwnershipEntry = {
  * new durable object cannot land without an explicit classification.
  */
 export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
+  operationalEntry('content_quality_items', 'immutable authored-content snapshots for authorized operator triage; no learner answers'),
+  privateEntry('learner_content_quality_encounters', 'learner plus exact content revision', 'create empty; explicitly scoped module and operator aggregate only'),
+  privateEntry('learner_content_quality_ratings', 'learner plus exact content revision', 'create empty; standing per-learner vote with own-encounter guard'),
   privateEntry('learner_word_preparation_reserve', 'bounded new-word preparation candidates', 'create empty; reconcile on learner activity'),
   privateEntry('learner_word_reserve_requests', 'durable preparation reconciliation requests', 'create empty; record settings and priority changes'),
   operationalEntry('learners', 'stable local learner identity'),

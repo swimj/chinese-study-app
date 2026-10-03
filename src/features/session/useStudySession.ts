@@ -1143,6 +1143,7 @@ export function useStudySession({
       sampledSkillIds: [...itemAtResponse.sampledSkillIds],
       contentRef: itemAtResponse.contentRef,
       production: itemAtResponse.production ?? null,
+      rehearsal: itemAtResponse.rehearsal,
       attemptedHanzi,
       status: wordAtResponse.status,
       reviewedCount,
@@ -1751,6 +1752,8 @@ export function useStudySession({
         {
           sessionStarted: true,
           isEditableTarget: isEditableKeyboardTarget(event.target),
+          isQualityControlTarget: event.target instanceof Element
+            && event.target.closest('[data-content-quality-controls]') !== null,
           productionInputActive: productionSubmissionInputActive,
           productionAwaitingNext,
           pureCueAwaitingNext,

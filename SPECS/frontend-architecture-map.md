@@ -41,6 +41,10 @@ src/
     words/
       useMyWordsController.ts     # learner collection search, bounded loading, selection
 
+    content-quality/
+      ContentQualityControls.tsx  # independent standing thumbs and display notification
+      keyboard.ts                # typing-safe bracket shortcuts
+
     session/
       useStudySession.ts          # session runtime controller
       StudySessionPanel.tsx       # active/completed session UI
