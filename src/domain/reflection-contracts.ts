@@ -3,7 +3,7 @@ export const PURE_CUE_REFLECTION_PROMPT_VERSION = 'pure-cue-reflection-v2.0' as 
 export const CURRENT_INITIAL_REFLECTION_FLOW_VERSION = 'initial_post_session_reflection.v6' as const;
 export const CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION = 'deferred_second_opinion.v5' as const;
 
-export const STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION = 'reflection-staged-v4.1' as const;
+export const STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION = 'reflection-staged-v4.2' as const;
 export const PURE_CUE_PROMOTION_PROMPT_VERSION = 'pure-cue-promotion-v3.0' as const;
 
 /** Bare major versions shipped before minor numbering are equivalent to .0. */

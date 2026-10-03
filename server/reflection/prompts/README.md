@@ -22,7 +22,7 @@ does not require new targeted cues, and distinctive cues aim for natural strong
 evocation rather than absolute exclusivity.
 
 `staged-diagnosis.md` is the current first-stage prompt, stamped
-`reflection-staged-v4.1`. `pure-cue-promotion.md` is stamped
+`reflection-staged-v4.2`. `pure-cue-promotion.md` is stamped
 `pure-cue-promotion-v3.0`. `reflection.md` retains the shipped one-shot guidance
 for historical/provider-contract coverage; new staged generation does not append
 overrides to that older prompt.
@@ -42,6 +42,10 @@ repair before considering post-reveal reinforcement. Existing supplements are
 teaching evidence only and cannot narrow the pre-answer cue. Contrasting examples
 illustrate repair, optional reinforcement, and supplement visibility without
 changing the staged flow or wire contracts.
+
+Diagnosis v4.2 adds a worked single-word repair for `储备`: separate verb and
+noun cues preserve both useful capabilities, even after a correct answer and
+without a comparison word.
 
 Prompt versions use `<prompt-family>-v<major>.<minor>`. Existing whole-number
 versions are minor zero: `reflection-staged-v3` means `reflection-staged-v3.0`.

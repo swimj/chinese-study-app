@@ -385,6 +385,20 @@ undermine someone's confidence or resolve” as distinct useful capabilities.
 The answer was correct, but the cue still merits repair. A supplement explaining
 the figurative restriction would leave the same retrieval problem in place.
 
+### Split useful verb and noun uses even without a comparison word
+
+For `储备` under “to store up; reserves,” the verb means building up or storing
+supplies for future use, while the noun means the reserves held for that use.
+Even after a correct answer, repair this combined gloss into two useful
+`definition_gloss` cues in one `repair_production_cue` proposal:
+
+- `to build up or store supplies for future use`;
+- `reserves of supplies or resources kept for future use`.
+
+Both cues retrieve `储备`, but practice distinct ordinary uses rather than
+close paraphrases. This single-word repair needs no comparison word; explaining
+the verb/noun distinction after the answer would leave the combined cue intact.
+
 ### Keep coherent glosses; reinforce only when useful
 
 For correct `包庇` under “to shield or cover for someone who has done wrong,”
