@@ -169,7 +169,12 @@ defined by the reflection proposal specification.
 For dogfood model comparison, an explicit generation request creates a distinct
 candidate artifact even when the source session and reflection flow match an
 earlier candidate. The initial post-session request may select a configured
-model randomly; a deliberate retry reuses the exact stored bundle and defaults
+model randomly after building each bundle: at most 10 included items use
+GLM-5.3 Flash high / GPT-5.6 Luna high at 70/30; more than 10 use GPT-6 Sol
+high / GLM / Luna at 60/20/20. Ordinary and pure-cue initial bundles are routed
+independently. Terra is not offered by default. Explicit model choices and
+manual second opinions bypass these weights; the Luna-only daily spend cap
+still takes precedence. A deliberate retry reuses the exact stored bundle and defaults
 to the source run's model when that model is still a configured comparison arm.
 Same-model retry of a retired model is refused; the operator must select another
 configured model. Each candidate retains its originating generation-run identity.

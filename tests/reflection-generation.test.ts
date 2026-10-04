@@ -671,45 +671,49 @@ describe('initial reflection generation orchestration', () => {
     assert.equal(recordedRun?.responseId, 'response-1');
   });
 
-  test('routes the initial run across offered comparison arms by dogfood weight', async () => {
-    const selected: string[] = [];
-    const makeArm = (label: string) => stagedProvider(
-      async () => {
+  for (const itemCount of [1, 10, 11, 50]) {
+    test(`routes initial ${itemCount}-item bundles with the size-specific weights`, async () => {
+      const selected: string[] = [];
+      const evidence = bundle();
+      evidence.items = Array.from({ length: itemCount }, (_, index) => ({
+        ...evidence.items[0]!, itemId: `item-${index + 1}`,
+      }));
+      const makeArm = (label: string) => stagedProvider(async () => {
         selected.push(label);
-        return diagnosisSuccess();
-      },
-    );
-    let randomCalls = 0;
-    const service = createInitialReflectionGenerationService({
-      findExistingArtifact: () => null,
-      buildBundle: () => bundle(),
-      provider: makeArm('luna'),
-      glmProvider: makeArm('glm'),
-      comparisonProviders: {
-        'zai:glm-5.3-flash-high': makeArm('glm-high'),
-        'openrouter:gemini-3.6-flash': makeArm('gemini'),
-        'openai:gpt-5.6-terra-high': makeArm('terra'),
-        'openai:gpt-6-sol-high': makeArm('sol'),
-      },
-      // Offered weights are luna 30 / flash-high 50 / terra 10 / sol 10.
-      random: () => {
-        const values = [0, 0.29, 0.3, 0.79, 0.8, 0.89, 0.9, 0.99];
-        return values[randomCalls++]!;
-      },
-      materializeArtifact: () => ({
-        created: true,
-        artifact: artifactDetail('routed-artifact', 1),
-      }),
-      recordRun: () => {},
+        const success = diagnosisSuccess();
+        success.result.itemResults = evidence.items.map((item) => ({
+          ...success.result.itemResults[0]!, itemId: item.itemId,
+        }));
+        return success;
+      });
+      let randomCalls = 0;
+      const service = createInitialReflectionGenerationService({
+        // Route by included items, even when many more items were eligible.
+        buildBundleWithMetrics: () => ({ bundle: evidence, eligibleItemCount: 100, includedItemCount: itemCount }),
+        provider: makeArm('luna'),
+        glmProvider: makeArm('glm-max'),
+        comparisonProviders: {
+          'zai:glm-5.3-flash-high': makeArm('glm-high'),
+          'openrouter:gemini-3.6-flash': makeArm('gemini'),
+          'openai:gpt-5.6-terra-high': makeArm('terra'),
+          'openai:gpt-6-sol-high': makeArm('sol'),
+        },
+        random: () => randomCalls++ / 100,
+        materializeArtifact: () => ({ created: true, artifact: artifactDetail('routed-artifact', 0) }),
+        recordRun: () => {},
+      });
+
+      for (let index = 0; index < 100; index += 1) {
+        await service.generate(`session-${index}`, {});
+      }
+      assert.deepEqual(selected, itemCount <= 10
+        ? [...Array<string>(30).fill('luna'), ...Array<string>(70).fill('glm-high')]
+        : [...Array<string>(20).fill('luna'), ...Array<string>(20).fill('glm-high'), ...Array<string>(60).fill('sol')]);
+      assert.equal(randomCalls, 100);
     });
+  }
 
-    for (let index = 0; index < 8; index += 1) {
-      await service.generate(`session-${index}`, {});
-    }
-    assert.deepEqual(selected, ['luna', 'luna', 'glm-high', 'glm-high', 'terra', 'terra', 'sol', 'sol']);
-  });
-
-  test('still routes an explicit request to a registered arm that is not offered by default', async () => {
+  test('honors explicit registered models, including Sol for a small initial bundle', async () => {
     const selected: string[] = [];
     const makeArm = (label: string) => stagedProvider(
       async () => {
@@ -729,13 +733,14 @@ describe('initial reflection generation orchestration', () => {
       },
       materializeArtifact: () => ({
         created: true,
-        artifact: artifactDetail('explicit-gemini', 1),
+        artifact: artifactDetail('explicit-model', 1),
       }),
       recordRun: () => {},
     });
 
     await service.generate('session-explicit', {}, 'openrouter:gemini-3.6-flash');
-    assert.deepEqual(selected, ['gemini']);
+    await service.generate('session-explicit-sol', {}, 'openai:gpt-6-sol-high');
+    assert.deepEqual(selected, ['gemini', 'sol']);
   });
 
   test('refuses same-model retry when the stored model is registered but not currently offered', async () => {

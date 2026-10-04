@@ -465,11 +465,13 @@ whose session/flow does not already have a successful artifact.
 
 ### Comparison arms
 
-The reflection service has a backend-only comparison-arm registry. Luna,
-GLM-5.3 Flash max, GLM-5.3 Flash high, and GPT-5.6 Terra are sampled with equal
-probability for initial generation.
-Gemini 3.6 Flash remains registered so it can be re-offered later, but it is
-not in the default candidate pool or learner-facing pickers. Once that learner's
+The reflection service has a backend-only comparison-arm registry. Initial
+bundles with at most 10 included items sample GLM-5.3 Flash high at 70% and
+GPT-5.6 Luna high at 30%. Larger bundles sample GPT-6 Sol high at 60%, GLM at
+20%, and Luna at 20%. Ordinary and pure-cue bundles are routed independently
+using their actual item counts. Explicit choices and manual second opinions
+do not use these weights. Terra, GLM Flash max, and Gemini remain registered
+but are withdrawn from the default pool and learner-facing pickers. Once that learner's
 UTC-day estimated spend surpasses $0.50, unselected initial generation uses only
 Luna. OpenRouter arms require
 `OPENROUTER_API_KEY` and use OpenRouter's normal eligible-provider routing;

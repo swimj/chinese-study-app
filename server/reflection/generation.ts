@@ -238,13 +238,7 @@ export function createInitialReflectionGenerationService(
     choice: arm.choice,
     provider: configuredProviders[arm.choice]!,
   }));
-  const defaultComparisonArms = comparisonArms.flatMap((arm) => {
-    const registry = REFLECTION_MODEL_ARMS.find((entry) => entry.choice === arm.choice);
-    if (registry === undefined || !registry.enabledByDefault) return [];
-    return [{ ...arm, weight: registry.dogfoodSelectionWeight }];
-  });
-
-  function selectProvider(choice: ReflectionModelChoice | undefined): {
+  function selectProvider(choice: ReflectionModelChoice | undefined, initialItemCount?: number): {
     provider: LunaReflectionProvider;
     config: ReflectionProviderConfig;
   } {
@@ -273,6 +267,17 @@ export function createInitialReflectionGenerationService(
       }
       return { provider: luna.provider, config: reflectionProviderConfigForChoice(LUNA_REFLECTION_MODEL_CHOICE) };
     }
+    if (initialItemCount === undefined || !Number.isInteger(initialItemCount) || initialItemCount < 1) {
+      throw new Error('Automatic reflection routing requires a positive initial bundle item count.');
+    }
+    const defaultComparisonArms = comparisonArms.flatMap((arm) => {
+      const registry = REFLECTION_MODEL_ARMS.find((entry) => entry.choice === arm.choice)!;
+      if (!registry.enabledByDefault) return [];
+      const weight = initialItemCount <= 10
+        ? registry.dogfoodSelectionWeight.smallBundle
+        : registry.dogfoodSelectionWeight.largeBundle;
+      return weight > 0 ? [{ ...arm, weight }] : [];
+    });
     const totalWeight = defaultComparisonArms.reduce((sum, arm) => sum + arm.weight, 0);
     if (totalWeight <= 0 || defaultComparisonArms.length === 0) {
       throw new Error('No offered reflection comparison arms have a positive selection weight.');
@@ -353,7 +358,6 @@ export function createInitialReflectionGenerationService(
       }
 
       const generatedAt = now();
-      const selectedProvider = selectProvider(model);
       const coalescingModelKey = model ?? 'initial-routed';
       return runCoalesced(`${normalizedSessionId}\u0000${coalescingModelKey}`, async () => {
         const ordinary = async (): Promise<InitialReflectionGenerationResult | null> => {
@@ -366,6 +370,7 @@ export function createInitialReflectionGenerationService(
             if (built.bundle.schemaVersion !== 'session_reflection_bundle.v4') {
               throw new Error('New staged initial reflection requires a V4 diagnosis bundle.');
             }
+            const selectedProvider = selectProvider(model, built.bundle.items.length);
             const continuation = createContinuation({
               sourceSessionId: normalizedSessionId,
               reflectionFlowVersion: STAGED_INITIAL_REFLECTION_FLOW_VERSION,
@@ -397,7 +402,7 @@ export function createInitialReflectionGenerationService(
           ordinary(),
           (async () => {
             const bundle = buildPureBundle(normalizedSessionId, generatedAt);
-            return bundle === null ? null : runPureCue(bundle, selectedProvider);
+            return bundle === null ? null : runPureCue(bundle, selectProvider(model, bundle.items.length));
           })(),
         ]);
         const successes = outcomes.flatMap((outcome) => outcome.status === 'fulfilled' && outcome.value !== null ? [outcome.value] : []);

@@ -192,8 +192,9 @@ is a packaging surface, not a second Help pager: compact selected-by-default
 chips occupy the main viewport, drill-in details stay secondary, and Select all /
 Clear / model / Get a second opinion sit on a Help-style bottom rail.
 The second-opinion selector defaults to GPT-6 Sol high and allows another offered
-arm to be selected. Initial generation uses GLM-5.3 Flash high 50%, GPT-5.6
-Luna high 30%, GPT-5.6 Terra high 10%, and GPT-6 Sol high 10%.
+arm to be selected. Initial bundles with at most 10 items use GLM-5.3 Flash high 70% and
+GPT-5.6 Luna high 30%; larger bundles use GPT-6 Sol high 60%, GLM 20%,
+and Luna 20%. Terra is withdrawn from the default options.
 Second-opinion selection uses retained-evidence compatibility independently of
 source flow, prompt, and result versions. Compatible old deferred proposals
 and deferred explanation-only items
