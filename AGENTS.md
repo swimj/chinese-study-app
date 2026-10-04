@@ -100,6 +100,21 @@ CLI flags mirror env where applicable (`--mode`, `--data-dir`, `--study-profile`
   Codex without a pull request unless review publication is requested; docs
   changed alongside implementation remain part of that implementation's PR.
 
+### GitHub review publication
+
+- Justin authorizes agents to push task branches and create or update review
+  pull requests in this project's configured GitHub repository as part of the
+  implementation workflow above. Verify `origin` points to
+  `https://github.com/swimj/chinese-study-app.git` before publishing. This
+  standing authorization does not include merging, deploying, force-pushing,
+  or publishing to a different repository.
+- In a Codex worktree, the shared Git metadata and GitHub network access may
+  require sandbox escalation. A failed sandboxed `git push` or `gh auth status`
+  does not by itself establish that the host's GitHub login is broken. Diagnose
+  the execution context, request the appropriate supported permission, and
+  continue publication when allowed. Respect an explicit approval denial;
+  report its reason rather than retrying through an indirect route.
+
 ## 4) Runbook Commands
 
 ### Child-worktree bootstrap
