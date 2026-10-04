@@ -162,6 +162,11 @@ function studyHistoryEntries(): DurableOwnershipEntry[] {
   return [
     privateEntry('learner_owned_study_sessions', 'learner session root', 'assign current sessions to the legacy learner'),
     privateEntry(
+      'learner_exercise_compensation_days',
+      'direct learner analytics root',
+      'start empty; count new scheduler restorations without historical backfill',
+    ),
+    privateEntry(
       'learner_owned_review_session_summaries',
       'direct learner analytics root',
       'assign legacy summaries to the explicit learner; session ids remain descriptive rather than authorization roots',

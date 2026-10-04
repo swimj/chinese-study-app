@@ -167,6 +167,7 @@ export function restorePureCueSchedulerSnapshotWithoutTransaction(input: {
     WHERE learner_id = ? AND source_attempt_id = ? AND compensated_by_invocation_id IS NULL`)
     .run(input.compensationInvocationId, input.restoredAt, learnerId, input.sourceAttemptId);
   if (marked.changes !== 1) throw new Error('Pure cue scheduler snapshot was concurrently restored.');
+  recordExerciseCompensationWithoutTransaction(learnerId, input.restoredAt);
   return { kind: 'restored', snapshot: { ...snapshot,
     compensatedByInvocationId: input.compensationInvocationId, compensatedAt: input.restoredAt } };
 }
@@ -817,6 +818,7 @@ export function restoreProductionSchedulerSnapshotWithoutTransaction(input: {
     snapshot.sessionActionId,
   );
   if (updated.changes !== 1) throw new Error('Scheduler compensation snapshot was concurrently restored.');
+  recordExerciseCompensationWithoutTransaction(learnerId, input.restoredAt);
   const restored = getDb().prepare(`
     SELECT * FROM pure_cue_scheduler_compensation_snapshots
     WHERE learner_id = ? AND session_id = ? AND session_action_id = ?
@@ -1049,4 +1051,14 @@ function assertCanonicalIso(value: string, label: string): void {
   if (!Number.isFinite(milliseconds) || new Date(milliseconds).toISOString() !== value) {
     throw new Error(`${label} must be a canonical ISO timestamp.`);
   }
+}
+
+
+// Called only after the restore-once marker changes, inside its application transaction.
+function recordExerciseCompensationWithoutTransaction(learnerId: string, restoredAt: string): void {
+  getDb().prepare(`INSERT INTO learner_exercise_compensation_days
+    (learner_id, day_key, compensated_count) VALUES (?, ?, 1)
+    ON CONFLICT(learner_id, day_key) DO UPDATE SET
+      compensated_count = compensated_count + 1`)
+    .run(learnerId, restoredAt.slice(0, 10));
 }

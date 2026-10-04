@@ -56,6 +56,7 @@ import type { ActiveBucketSchedulerUnit } from '../../lib/session-scheduler';
 import {
   beginDrainSessionSummary,
   createSessionSummary,
+  getCompletedExerciseCounts,
   updateSessionSummaryForPureCueRating,
   updateSessionSummaryForRating,
   type SessionSummary,
@@ -732,8 +733,7 @@ export function useStudySession({
           await recordReviewSessionSummary({
             sessionId: finalizingSummary.sessionId,
             completedAt: finalizingSummary.completedAt ?? new Date().toISOString(),
-            completedReviewActionCount: finalizingSummary.completedReviewActions,
-            failedReviewActionCount: finalizingSummary.lapsedReviewActionIds.length,
+            ...getCompletedExerciseCounts(finalizingSummary),
             activeDurationMs,
           });
         },

@@ -63,6 +63,14 @@ export function createSessionSummary({
   };
 }
 
+/** Legacy API field names now cover all review exercises, including standalone pure cues. */
+export function getCompletedExerciseCounts(summary: SessionSummary) {
+  return {
+    completedReviewActionCount: summary.completedReviewActions + summary.completedPureCueActions,
+    failedReviewActionCount: summary.lapsedReviewActionIds.length + summary.lapsedPureCueActions,
+  };
+}
+
 export function beginDrainSessionSummary({
   summary,
   drainedState,

@@ -2376,35 +2376,17 @@ export function getReviewFailureRateDays(limit = 14): ReviewFailureRateDay[] {
     throw new Error('Expected positive integer limit');
   }
 
-  // Summary counters remain word-only; derive pure-cue totals from durable
-  // assessments, including historical sessions, without counting retries twice.
+  // New summaries include pure cues. Historical summaries stay as recorded;
+  // compensation is a forward-only daily counter, not a scan of restoration history.
   const rows = getDb()
     .prepare(`
-      WITH pure_cue_totals AS (
-        SELECT session_id, COUNT(*) AS completed_count,
-          SUM(CASE WHEN failure_count > 0 THEN 1 ELSE 0 END) AS failed_count
-        FROM pure_cue_attempts
+      WITH daily_counts AS (
+        SELECT day_key, completed_count, failed_count, 0 AS compensated_count
+        FROM review_session_summaries
+        UNION ALL
+        SELECT day_key, 0, 0, compensated_count
+        FROM learner_exercise_compensation_days
         WHERE learner_id = ?
-        GROUP BY session_id
-      ), daily_counts AS (
-        SELECT
-          summary.day_key,
-          SUM(summary.completed_count + COALESCE(pure.completed_count, 0)) AS completed_count,
-          SUM(summary.failed_count + COALESCE(pure.failed_count, 0)) AS failed_count,
-          0 AS compensated_count
-        FROM review_session_summaries AS summary
-        LEFT JOIN pure_cue_totals AS pure ON pure.session_id = summary.session_id
-        GROUP BY summary.day_key
-        UNION ALL
-        SELECT substr(compensated_at, 1, 10), 0, 0, COUNT(*)
-        FROM pure_cue_scheduler_compensation_snapshots
-        WHERE learner_id = ? AND compensated_at IS NOT NULL
-        GROUP BY substr(compensated_at, 1, 10)
-        UNION ALL
-        SELECT substr(compensated_at, 1, 10), 0, 0, COUNT(*)
-        FROM pure_cue_assessment_scheduler_snapshots
-        WHERE learner_id = ? AND compensated_at IS NOT NULL
-        GROUP BY substr(compensated_at, 1, 10)
       )
       SELECT day_key, SUM(completed_count) AS completed_count,
         SUM(failed_count) AS failed_count, SUM(compensated_count) AS compensated_count
@@ -2413,7 +2395,7 @@ export function getReviewFailureRateDays(limit = 14): ReviewFailureRateDay[] {
       ORDER BY day_key DESC
       LIMIT ?
     `)
-    .all(requireLearnerId(), requireLearnerId(), requireLearnerId(), limit) as
+    .all(requireLearnerId(), limit) as
       Array<ReviewSessionResultRow & { compensated_count: number }>;
 
   const ascendingRows = [...rows].reverse();

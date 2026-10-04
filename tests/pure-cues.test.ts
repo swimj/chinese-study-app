@@ -1,3 +1,4 @@
+import { getDb } from '../server/db/connection.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -540,6 +541,14 @@ describe('pure cue persistence', { concurrency: false }, () => {
         '{}', 'pending', ?, NULL, NULL, NULL, NULL, '[]', '[]')
     `).run(now, now);
 
+    getDb().exec('BEGIN');
+    dbModule.restoreProductionSchedulerSnapshotWithoutTransaction({
+      sourceAttemptId: 'scheduler-event-2', compensationInvocationId: 'compensation-invocation',
+      restoredAt: '2026-09-18T02:00:00.000Z',
+    });
+    assert.equal(getDb().prepare('SELECT compensated_count FROM learner_exercise_compensation_days').get()?.compensated_count, 1);
+    getDb().exec('ROLLBACK');
+    assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM learner_exercise_compensation_days').get()?.n, 0);
     const restored = dbModule.restoreProductionSchedulerSnapshotWithoutTransaction({
       sourceAttemptId: 'scheduler-event-2',
       compensationInvocationId: 'compensation-invocation',
@@ -569,5 +578,7 @@ describe('pure cue persistence', { concurrency: false }, () => {
       compensationInvocationId: 'compensation-invocation',
       restoredAt: '2026-09-18T03:00:00.000Z',
     }), { kind: 'unavailable', reason: 'pre_release_snapshot_unavailable' });
+    assert.deepEqual(sqlite.prepare('SELECT learner_id, day_key, compensated_count FROM learner_exercise_compensation_days').all()
+      .map(row => ({ ...row })), [{ learner_id: 'test-learner', day_key: '2026-09-18', compensated_count: 1 }]);
   });
 });

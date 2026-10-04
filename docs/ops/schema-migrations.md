@@ -239,3 +239,15 @@ and its matching application image. Pre-infrastructure releases cannot enforce
 this version check: do not use them against a migrated database. Restore before
 reopening writes whenever possible; after reopening, restoration can discard
 accepted learner activity and needs an explicit recovery decision.
+
+
+## Exercise compensation counters (0022)
+
+`0022_exercise_compensation_days` creates an empty learner-private daily counter
+table. It performs no backfill or rewrite of summaries, attempts, or restoration
+history. New session completions include pure-cue totals in the existing summary
+fields; only newly applied compensations increment the daily counter.
+
+This is a schema-changing release and requires the offline migration procedure
+above, not an application-only upgrade. Windows crossing rollout intentionally
+mix earlier word-only summaries with new combined exercise totals.
