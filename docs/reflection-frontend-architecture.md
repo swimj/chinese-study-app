@@ -86,8 +86,9 @@ rows. Extension keeps stimulus/axis fixed while editing reveal teaching for the
 whole resulting membership. Application outcomes include explicit restored,
 already-restored, or unavailable compensation feedback when an unfair source
 exercise is remedied. A non-lapse pair-cleanup source is invalid.
-Pure-cue response extension uses the same cue rows for the response word's
-individual cues, including keep/deactivate status and editable new cue drafts.
+Pure-cue response extension and ordinary cleanup share one word cue plan editor
+for keep/deactivate status and editable new cue drafts. Each flow maps those
+edits to its own operation contract.
 Pure-cue membership is
 not a word-scheduler projection.
 
