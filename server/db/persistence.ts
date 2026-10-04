@@ -52,6 +52,7 @@ import {
   type ProductionAnswerLookup,
 } from '../../src/domain/production-response.ts';
 import { config, getConfig, getDb, dbPath, seedDataPath, dbExistedOnStartup } from './connection.ts';
+import { seedWordIntroductionFixtures } from '../seeds/word-introductions.ts';
 import { fillMissingNormalizedHanzi, normalizeMandarinHanziLookup } from './hanzi-lookup.ts';
 import { getWordIntroductionLibrary, getWordIntroductionPreparation } from './word-introductions.ts';
 import { enqueueWordPreparation } from './preparation-work.ts';
@@ -3433,6 +3434,7 @@ function seedDatabase() {
 
   if (config.authMode === 'clerk') {
     seedSharedDevelopmentFixtureData(seedData);
+    seedWordIntroductionFixtures(seedData.wordIntroductionFixtureIds ?? []);
     return;
   }
 
@@ -3622,6 +3624,7 @@ function seedDatabase() {
     getDb().exec('ROLLBACK');
     throw error;
   }
+  seedWordIntroductionFixtures(seedData.wordIntroductionFixtureIds ?? []);
 }
 
 /**
@@ -3692,6 +3695,7 @@ function readSeedData(): SeedData | null {
   const words = parsed.words.map(normalizeSeedWord);
   return {
     words,
+    wordIntroductionFixtureIds: parsed.wordIntroductionFixtureIds,
     wordMeanings: buildWordMeaningsFromWords(words),
     wordStudyAdmissionStates: parsed.wordStudyAdmissionStates.map(normalizeSeedWordStudyAdmissionState),
     wordSkillStates: parsed.wordSkillStates.map(normalizeSeedWordSkillState),
@@ -3799,6 +3803,9 @@ function withDevContrastSeedData(seedData: SeedData): SeedData {
 
 function mergeSeedData(seedData: SeedData, addition: SeedData): SeedData {
   return {
+    wordIntroductionFixtureIds: [...new Set([
+      ...seedData.wordIntroductionFixtureIds ?? [], ...addition.wordIntroductionFixtureIds ?? [],
+    ])],
     words: mergeBy(seedData.words, addition.words, (word) => word.id),
     wordMeanings: mergeBy(seedData.wordMeanings, addition.wordMeanings, (meaning) => meaning.id),
     wordStudyAdmissionStates: mergeBy(

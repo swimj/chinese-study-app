@@ -29,9 +29,9 @@ describe('dev database bootstrap', { concurrency: false }, () => {
     const dbPath = path.join(dataDir, 'app.db');
     const sourceSeedPath = path.resolve('server/seeds/mandarin-dev.json');
     const seedData = JSON.parse(fs.readFileSync(sourceSeedPath, 'utf8')) as {
-      words: Array<{ id: string }>;
+      words: Array<{ id: string; status: 'unstudied' | 'learning' | 'review' }>;
     };
-    const reviewWordCount = seedData.words.length;
+    const reviewWordCount = seedData.words.filter((word) => word.status === 'review').length;
 
     const previousMode = process.env.APP_MODE;
     const previousDataDir = process.env.APP_DATA_DIR;
@@ -45,7 +45,8 @@ describe('dev database bootstrap', { concurrency: false }, () => {
       const moduleUrl = `${pathToFileURL(path.resolve('server/db.ts')).href}?test=${Date.now()}`;
       const dbModule = await import(moduleUrl);
 
-      assert.equal(seedData.words.length, 10);
+      assert.equal(reviewWordCount, 10);
+      assert.equal(seedData.words.length - reviewWordCount, 6);
       assert.equal(dbModule.getWords().length, seedData.words.length + mandarinDevContrastWordCount);
       assert.equal(dbModule.getWordStudyAdmissionStates().length, reviewWordCount + mandarinDevContrastWordCount);
       assert.equal(
@@ -128,9 +129,9 @@ describe('dev database bootstrap', { concurrency: false }, () => {
     const dbPath = path.join(dataDir, 'app.db');
     const sourceSeedPath = path.resolve('server/seeds/mandarin-dev.json');
     const seedData = JSON.parse(fs.readFileSync(sourceSeedPath, 'utf8')) as {
-      words: Array<{ id: string }>;
+      words: Array<{ id: string; status: 'unstudied' | 'learning' | 'review' }>;
     };
-    const reviewWordCount = seedData.words.length;
+    const reviewWordCount = seedData.words.filter((word) => word.status === 'review').length;
 
     const previousMode = process.env.APP_MODE;
     const previousDataDir = process.env.APP_DATA_DIR;

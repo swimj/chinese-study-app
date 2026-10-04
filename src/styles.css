@@ -4413,9 +4413,10 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1
 .navbar { padding: 1.75rem 0.85rem 1rem; gap: 2rem; }
 .nav-brand strong {
   padding: 0 0.65rem;
+  font-family: 'Kaiti SC', KaiTi, STKaiti, serif;
   font-size: 1.4rem;
   line-height: 1.5;
-  font-weight: 650;
+  font-weight: 400;
   word-break: normal;
   overflow-wrap: normal;
   letter-spacing: 0.04em;
