@@ -41,6 +41,7 @@ export function HomeOverviewPanel({
   const prefetchedSessionItemCount = !sessionStarted && sessionPrefetch.status === 'ready'
     ? displayedSessionItemCount
     : null;
+  const failureRatePeriods = getReviewFailureRatePeriods(backendStatus?.reviewFailureRateDays ?? []);
   const preparationPending = sessionPrefetch.payload?.preparation?.pending === true;
   const entryWaiting = sessionPrefetch.status === 'pending';
   const canStartSession = sessionStarted || sessionPrefetch.status === 'ready' || sessionPrefetch.status === 'error';
@@ -109,19 +110,51 @@ export function HomeOverviewPanel({
       )}
       <section className="failure-rate-section" aria-label="Exercise failure rate">
         <h3>Exercise failure rate</h3>
-        <div className="failure-rate-list">
-          {getReviewFailureRatePeriods(backendStatus?.reviewFailureRateDays ?? []).map((period) => (
-            <div key={period.days} className="failure-rate-period">
-              <span>{period.days}-day</span>
-              <span>Adjusted failure</span>
-              <strong>{formatFailureRate(period.adjustedFailureRate)}</strong>
-              <span>Compensation</span>
-              <strong>{formatFailureRate(period.compensationRate)}</strong>
-              <span>{period.failedCount} recorded failures · {period.compensatedCount} compensations · {period.completedCount} exercises</span>
-            </div>
-          ))}
-        </div>
-        <p className="muted">Adjusted failure subtracts compensations, with a minimum of zero. Both rates use completed exercises. Compensations are counted when applied and may correct earlier failures.</p>
+        <table className="overview-rate-table" aria-label="Exercise rates by period">
+          <thead>
+            <tr>
+              <td />
+              {failureRatePeriods.map((period) => <th key={period.days} scope="col">{period.days}-day</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="overview-rate-primary">
+              <th scope="row">Adjusted failure</th>
+              {failureRatePeriods.map((period) => <td key={period.days}>{formatFailureRate(period.adjustedFailureRate)}</td>)}
+            </tr>
+            <tr>
+              <th scope="row">Compensation</th>
+              {failureRatePeriods.map((period) => <td key={period.days}>{formatFailureRate(period.compensationRate)}</td>)}
+            </tr>
+          </tbody>
+        </table>
+        <details className="overview-rate-details">
+          <summary>Rate details</summary>
+          <table className="overview-rate-table" aria-label="Exercise counts by period">
+            <thead>
+              <tr>
+                <td />
+                {failureRatePeriods.map((period) => <th key={period.days} scope="col">{period.days}-day</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Recorded failures</th>
+                {failureRatePeriods.map((period) => <td key={period.days}>{period.failedCount}</td>)}
+              </tr>
+              <tr>
+                <th scope="row">Compensations</th>
+                {failureRatePeriods.map((period) => <td key={period.days}>{period.compensatedCount}</td>)}
+              </tr>
+              <tr>
+                <th scope="row">Exercises</th>
+                {failureRatePeriods.map((period) => <td key={period.days}>{period.completedCount}</td>)}
+              </tr>
+            </tbody>
+          </table>
+          <p>Adjusted failure subtracts compensations from recorded failures, down to zero. Both rates divide by completed exercises.</p>
+          <p>Compensations count when applied and may correct earlier failures. Periods include today, in UTC.</p>
+        </details>
       </section>
       <section className="failure-rate-section" aria-label="Active study time">
         <h3>Active study time</h3>

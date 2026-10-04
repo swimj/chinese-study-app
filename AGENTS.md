@@ -157,6 +157,22 @@ This repo contains real DB artifacts and backups under `data/`.
 - Avoid introducing global state libraries unless required.
 - UI map: `SPECS/frontend-architecture-map.md`.
 
+### UI quality
+
+- Treat visual clarity as part of correctness. Preserve a clear hierarchy between
+  the main action or metric, secondary information, and optional explanations.
+- Keep routine screens concise. Put calculation notes, raw counts, and technical
+  caveats in an accessible disclosure when they are not needed for the next
+  decision; keep necessary choices and consequences visible.
+- Avoid repeating long labels and prose inside compact cards. Use shared labels
+  or a comparison table when several periods show the same metrics. Do not fix
+  crowding by shrinking text until it is hard to read or clipping information.
+- Check the rendered result in its actual container, including narrow desktop
+  panels and enlarged text. Use realistic long labels, large values, empty states,
+  and expanded details; check wrapping, overlap, alignment, and keyboard access.
+  A passing build alone does not verify a visual change. Report any missing
+  visual verification in the handoff.
+
 ## 8) Testing Expectations
 
 - Add or update tests for behavior changes when practical.

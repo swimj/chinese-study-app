@@ -379,7 +379,7 @@ let N be completed exercises, F recorded failures, and C actual scheduler
 compensations applied in that window across word production and pure cues.
 Adjusted failure is `max(0, F - C) / N`; compensation rate is `C / N`. Clamp only
 after summing the window. If N is zero, both rates are absent but counts remain
-visible. Compensation rate may exceed 100% when older proposals are applied.
+available in the rate details. Compensation rate may exceed 100% when older proposals are applied.
 
 Increment a learner-private daily counter in the same transaction that first
 marks a scheduler snapshot restored, using its UTC application date regardless
@@ -389,5 +389,7 @@ still count. Rollout-spanning windows intentionally mix old and new coverage. Pe
 restorations, and already-restored retries add nothing. Include compensation-only
 days. Preserve recorded failure counts and attempt history; compensation neither
 removes an exercise from the denominator nor grants success credit. Show the
-recorded failure, compensation, and exercise counts with a short explanation
-that compensations can correct an earlier period.
+recorded failure, compensation, and exercise counts in a collapsed-by-default
+“Rate details” disclosure, with a short explanation that compensations can correct
+an earlier period. Keep the two rates visible with shared period and metric labels;
+do not repeat calculation prose inside each period.
