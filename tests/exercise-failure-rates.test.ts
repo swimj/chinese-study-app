@@ -132,10 +132,56 @@ describe('exercise failure analytics', { concurrency: false }, () => {
     ]);
     assert.equal(days[1]?.rolling3DayFailureRate, 4 / 8);
     assert.equal(days[1]?.rolling7DayFailureRate, 4 / 8);
-    assert.deepEqual(getReviewFailureRatePeriods(days, '2026-09-19'), [
+    assert.deepEqual(getReviewFailureRatePeriods(days, '2026-09-19').map(({ days, failureRate }) => ({ days, failureRate })), [
       { days: 1, failureRate: 3 / 7 },
       { days: 3, failureRate: 4 / 8 },
       { days: 7, failureRate: 4 / 8 },
     ]);
+
+    function restorePure(learnerId: string, actionId: string, restoredAt: string) {
+      const sourceAttemptId = `attempt:${actionId}`;
+      const invocationId = `restore:${actionId}`;
+      sqlite.prepare(`INSERT INTO learner_owned_reflection_operation_invocations (
+        learner_id, invocation_id, created_at, origin_kind, operation_kind, operation_version, operation_json,
+        application_state, application_updated_at, effect_refs_json, satisfying_effect_refs_json
+      ) VALUES (?, ?, ?, 'manual', 'reconcile_pure_cue_response', 1, ?, 'pending', ?, '[]', '[]')`)
+        .run(learnerId, invocationId, now,
+          JSON.stringify({ operation: { sourceAttemptId, pureCueId: 'analytics-cue' } }), now);
+      dbModule.runWithLearnerId(learnerId, () => {
+        const input = { sourceAttemptId, compensationInvocationId: invocationId, restoredAt };
+        assert.equal(dbModule.restorePureCueSchedulerSnapshotWithoutTransaction(input).kind, 'restored');
+        assert.equal(dbModule.restorePureCueSchedulerSnapshotWithoutTransaction({ ...input,
+          restoredAt: '2026-09-23T00:00:00.000Z' }).kind, 'already_restored');
+      });
+    }
+    function wordCompensation(id: string, learnerId: string, restoredAt: string | null) {
+      sqlite.prepare(`INSERT INTO pure_cue_scheduler_compensation_snapshots
+        (learner_id, session_id, session_action_id, target_word_id, captured_at,
+         production_skill_state_json, admission_state_json, compensated_by_invocation_id, compensated_at)
+        VALUES (?, ?, ?, 'word-a', ?, '{}', 'null', ?, ?)`)
+        .run(learnerId, id, id, now, restoredAt === null ? null : id, restoredAt);
+    }
+    restorePure('test-learner', 'pure-failed', '2026-09-21T00:00:00.000Z');
+    restorePure('analytics-other', 'other-failed', '2026-09-21T00:00:00.000Z');
+    wordCompensation('word-restored', 'test-learner', '2026-09-21T23:59:59.000Z');
+    wordCompensation('word-next-day', 'test-learner', '2026-09-22T00:00:00.000Z');
+    wordCompensation('word-pending', 'test-learner', null);
+    wordCompensation('word-other', 'analytics-other', '2026-09-21T00:00:00.000Z');
+
+    const adjustedDays = dbModule.getReviewFailureRateDays();
+    assert.deepEqual(adjustedDays.map(day => [day.dayKey, day.compensatedReviewActionSessions]), [
+      ['2026-09-18', 0], ['2026-09-19', 0], ['2026-09-20', 0],
+      ['2026-09-21', 2], ['2026-09-22', 1],
+    ], 'unrestored snapshots and repeated restore attempts do not add compensation');
+    assert.equal(dbModule.getReviewFailureRateDays(1)[0]?.dayKey, '2026-09-22');
+    const adjusted = getReviewFailureRatePeriods(adjustedDays, '2026-09-21');
+    assert.equal(adjusted[0]?.compensatedCount, 2);
+    assert.equal(adjusted[0]?.compensationRate, null);
+    assert.equal(adjusted[1]?.adjustedFailureRate, 1 / 7);
+    assert.equal(adjusted[1]?.compensationRate, 2 / 7);
+    assert.equal(adjusted[2]?.adjustedFailureRate, 2 / 8);
+    assert.equal(adjusted[2]?.failureRate, 4 / 8, 'recorded failures are preserved');
+    const otherDays = dbModule.runWithLearnerId('analytics-other', () => dbModule.getReviewFailureRateDays());
+    assert.equal(otherDays.find(day => day.dayKey === '2026-09-21')?.compensatedReviewActionSessions, 2);
   });
 });

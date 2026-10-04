@@ -3,6 +3,11 @@ import type { ReviewFailureRateDay } from '../types';
 export type ReviewFailureRatePeriod = {
   days: 1 | 3 | 7;
   failureRate: number | null;
+  adjustedFailureRate: number | null;
+  compensationRate: number | null;
+  completedCount: number;
+  failedCount: number;
+  compensatedCount: number;
 };
 
 export function getReviewFailureRatePeriods(
@@ -15,6 +20,7 @@ export function getReviewFailureRatePeriods(
       {
         completedCount: day.completedReviewActionSessions,
         failedCount: day.failedReviewActionSessions,
+        compensatedCount: day.compensatedReviewActionSessions,
       },
     ]),
   );
@@ -22,6 +28,7 @@ export function getReviewFailureRatePeriods(
   return [1, 3, 7].map((days) => {
     let completedCount = 0;
     let failedCount = 0;
+    let compensatedCount = 0;
 
     for (let offset = 0; offset < days; offset += 1) {
       const counts = countsByDay.get(addDaysToDateKey(todayKey, -offset));
@@ -31,11 +38,18 @@ export function getReviewFailureRatePeriods(
 
       completedCount += counts.completedCount;
       failedCount += counts.failedCount;
+      compensatedCount += counts.compensatedCount;
     }
 
     return {
       days: days as 1 | 3 | 7,
       failureRate: completedCount === 0 ? null : failedCount / completedCount,
+      // Clamp after summing the window so delayed compensation can offset earlier failures.
+      adjustedFailureRate: completedCount === 0 ? null : Math.max(0, failedCount - compensatedCount) / completedCount,
+      compensationRate: completedCount === 0 ? null : compensatedCount / completedCount,
+      completedCount,
+      failedCount,
+      compensatedCount,
     };
   });
 }

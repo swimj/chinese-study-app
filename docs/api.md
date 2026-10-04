@@ -324,6 +324,15 @@ included on read; sessions without a saved summary are excluded. The summary
 write contract remains word-review-only, so clients must not add pure-cue counts
 to it. The legacy `reviewFailureRateDays` response field names now describe these
 combined exercise counts. All exercise types use the summary's UTC completion day.
+`compensatedReviewActionSessions` counts applied word-production and pure-cue
+scheduler restorations by their UTC `compensated_at` date, once per snapshot.
+Compensation-only days are included. Pending/unavailable restorations and
+already-restored retries add nothing. Original failure counts and daily/rolling
+failure-rate fields remain unadjusted; the homepage derives each window's
+adjusted failure rate as `max(0, sum(failures) - sum(compensations)) / sum(completions)`
+and compensation rate as `sum(compensations) / sum(completions)`. Both rates are
+null without completions; compensation counts remain visible and compensation
+rates are not capped at 100%. No matching of source-failure dates is required.
 
 `POST /api/review-session-summaries` accepts a non-negative integer `activeDurationMs` alongside the existing completion counts. The `sessionId` upsert replaces all summary fields, including the duration.
 Caught summary persistence failures use the same diagnostic-id contract so the

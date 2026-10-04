@@ -370,5 +370,19 @@ reinforcement later succeeds. Learning and new-word practice are excluded.
 The 1-, 3-, and 7-day windows include today and use UTC session-completion dates.
 Sum failures and completions across each window before dividing; show no rate
 when there are no completions. Existing durable pure-cue assessments participate
-in historical rates. These are recorded failure rates without compensation
-adjustments.
+in historical rates.
+
+The homepage headlines adjusted failure and compensation rates. For each window,
+let N be completed exercises, F recorded failures, and C actual scheduler
+compensations applied in that window across word production and pure cues.
+Adjusted failure is `max(0, F - C) / N`; compensation rate is `C / N`. Clamp only
+after summing the window. If N is zero, both rates are absent but counts remain
+visible. Compensation rate may exceed 100% when older proposals are applied.
+
+Count a restoration once using its durable snapshot marker and UTC application
+date, regardless of the original failure date. Pending proposals, unavailable
+restorations, and already-restored retries add nothing. Include compensation-only
+days. Preserve recorded failure counts and attempt history; compensation neither
+removes an exercise from the denominator nor grants success credit. Show the
+recorded failure, compensation, and exercise counts with a short explanation
+that compensations can correct an earlier period.
