@@ -207,3 +207,33 @@ test('rejects an unexpected missing view guard', () => {
     assert.equal(db.prepare("SELECT 1 FROM sqlite_schema WHERE name='reflection_artifacts_scoped_update'").get(), undefined);
   } finally { db.close(); }
 });
+
+
+test('exercise compensation migration starts empty and preserves existing summary and restoration history', () => {
+  const { db } = copy('exercise-compensation', true);
+  try {
+    const migrationIndex = schemaMigrations.findIndex(item => item.id === 'app_schema:0022_exercise_compensation_days');
+    assert.ok(migrationIndex > 0);
+    migrateDatabase(db, schemaMigrations.slice(0, migrationIndex));
+    db.prepare(`INSERT INTO learners (learner_id, display_name, created_at) VALUES ('test', 'Test', '2026-09-18')`).run();
+    db.prepare(`INSERT INTO lexical_words
+      (id, hanzi, pinyin, meaning, meanings_json, examples_json, priority, created_at)
+      VALUES ('word', '字', 'zi', 'character', '[]', '[]', 1, '2026-09-18')`).run();
+    db.prepare(`INSERT INTO learner_owned_review_session_summaries
+      (learner_id, session_id, completed_at, day_key, completed_count, failed_count, active_duration_ms)
+      VALUES ('test', 'old-session', '2026-09-18T00:00:00.000Z', '2026-09-18', 10, 2, 1000)`).run();
+    db.prepare(`INSERT INTO pure_cue_scheduler_compensation_snapshots
+      (learner_id, session_id, session_action_id, target_word_id, captured_at,
+       production_skill_state_json, admission_state_json, compensated_by_invocation_id, compensated_at)
+      VALUES ('test', 'old-session', 'action', 'word', '2026-09-18T00:00:00.000Z',
+        'null', 'null', 'old-invocation', '2026-09-19T00:00:00.000Z')`).run();
+    const summary = db.prepare('SELECT * FROM learner_owned_review_session_summaries').all();
+    const restorations = db.prepare('SELECT * FROM pure_cue_scheduler_compensation_snapshots').all();
+    migrateDatabase(db);
+    assertSchemaCurrent(db);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM learner_exercise_compensation_days').get()?.n, 0);
+    assert.deepEqual(db.prepare('SELECT * FROM learner_owned_review_session_summaries').all(), summary);
+    assert.deepEqual(db.prepare('SELECT * FROM pure_cue_scheduler_compensation_snapshots').all(), restorations);
+    assert.deepEqual(migrateDatabase(db), []);
+  } finally { db.close(); }
+});

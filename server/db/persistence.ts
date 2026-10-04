@@ -2376,18 +2376,27 @@ export function getReviewFailureRateDays(limit = 14): ReviewFailureRateDay[] {
     throw new Error('Expected positive integer limit');
   }
 
+  // New summaries include pure cues. Historical summaries stay as recorded;
+  // compensation is a forward-only daily counter, not a scan of restoration history.
   const rows = getDb()
     .prepare(`
-      SELECT
-        day_key,
-        SUM(completed_count) AS completed_count,
-        SUM(failed_count) AS failed_count
-      FROM review_session_summaries
+      WITH daily_counts AS (
+        SELECT day_key, completed_count, failed_count, 0 AS compensated_count
+        FROM review_session_summaries
+        UNION ALL
+        SELECT day_key, 0, 0, compensated_count
+        FROM learner_exercise_compensation_days
+        WHERE learner_id = ?
+      )
+      SELECT day_key, SUM(completed_count) AS completed_count,
+        SUM(failed_count) AS failed_count, SUM(compensated_count) AS compensated_count
+      FROM daily_counts
       GROUP BY day_key
       ORDER BY day_key DESC
       LIMIT ?
     `)
-    .all(limit) as ReviewSessionResultRow[];
+    .all(requireLearnerId(), limit) as
+      Array<ReviewSessionResultRow & { compensated_count: number }>;
 
   const ascendingRows = [...rows].reverse();
   const countsByDay = new Map(
@@ -2408,6 +2417,7 @@ export function getReviewFailureRateDays(limit = 14): ReviewFailureRateDay[] {
       dayKey: row.day_key,
       completedReviewActionSessions: row.completed_count,
       failedReviewActionSessions: row.failed_count,
+      compensatedReviewActionSessions: row.compensated_count,
       failureRate: calculateFailureRate(row.failed_count, row.completed_count),
       rolling3DayFailureRate: calculateFailureRate(rolling3.failedCount, rolling3.completedCount),
       rolling7DayFailureRate: calculateFailureRate(rolling7.failedCount, rolling7.completedCount),

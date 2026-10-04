@@ -316,6 +316,30 @@ lifecycle event with stable learner/session/action/event correlations, outcome,
 rating, and elapsed time so an ambiguous retry can be paired with an earlier
 durable success.
 
+The homepage exercise failure rate reads saved session totals and daily
+compensation counters. New session-summary writes include word reviews and
+standalone pure cues in the existing completion/failure fields: each exercise
+counts once, with one failure if it lapsed even when reinforcement succeeds.
+All exercise types use the summary's UTC completion day. Repeated summary writes
+replace totals rather than incrementing them.
+
+The legacy `reviewFailureRateDays` response field names describe these combined
+exercise counts. `compensatedReviewActionSessions` reads a learner-private daily
+counter incremented transactionally when a word-production or pure-cue scheduler
+restoration first applies. Pending/unavailable restorations and already-restored
+retries add nothing. Compensation-only days are included by UTC application date.
+Daily/rolling failure-rate fields remain unadjusted; the homepage derives each
+window's adjusted failure rate as
+`max(0, sum(failures) - sum(compensations)) / sum(completions)` and compensation
+rate as `sum(compensations) / sum(completions)`. Both rates are null without
+completions; compensation counts remain visible and rates are not capped at
+100%. No matching of source-failure dates is required.
+
+Migration `0022_exercise_compensation_days` starts the compensation table empty.
+There is no backfill: old summaries retain their word-only totals, and old
+restorations are not counted. New restorations of old failures do count. This is
+a forward-looking rough signal; rollout-spanning windows mix old and new coverage.
+
 `POST /api/review-session-summaries` accepts a non-negative integer `activeDurationMs` alongside the existing completion counts. The `sessionId` upsert replaces all summary fields, including the duration.
 Caught summary persistence failures use the same diagnostic-id contract so the
 otherwise-lost completion counts and active duration remain inspectable.

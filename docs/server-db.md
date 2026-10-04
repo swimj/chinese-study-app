@@ -46,7 +46,7 @@ Domain-oriented re-export shims (navigation only; implementation stays in `persi
 | [`study-sessions.ts`](../server/db/study-sessions.ts) | Session records, attempt batches |
 | [`study-management.ts`](../server/db/study-management.ts) | Suppress / bad-prompt / management actions |
 | [`scheduler.ts`](../server/db/scheduler.ts) | Skill/admission state, invariants |
-| [`analytics.ts`](../server/db/analytics.ts) | Failure rates, review summaries, active-session-time metrics |
+| [`analytics.ts`](../server/db/analytics.ts) | Failure rates from saved exercise summaries and forward-only daily compensation counters, active-session-time metrics |
 
 ## Reflection persistence
 

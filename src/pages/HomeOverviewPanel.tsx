@@ -107,16 +107,21 @@ export function HomeOverviewPanel({
           ) : null}
         </div>
       )}
-      <section className="failure-rate-section" aria-label="Review failure rate">
-        <h3>Review failure rate</h3>
+      <section className="failure-rate-section" aria-label="Exercise failure rate">
+        <h3>Exercise failure rate</h3>
         <div className="failure-rate-list">
           {getReviewFailureRatePeriods(backendStatus?.reviewFailureRateDays ?? []).map((period) => (
             <div key={period.days} className="failure-rate-period">
               <span>{period.days}-day</span>
-              <strong>{formatFailureRate(period.failureRate)}</strong>
+              <span>Adjusted failure</span>
+              <strong>{formatFailureRate(period.adjustedFailureRate)}</strong>
+              <span>Compensation</span>
+              <strong>{formatFailureRate(period.compensationRate)}</strong>
+              <span>{period.failedCount} recorded failures · {period.compensatedCount} compensations · {period.completedCount} exercises</span>
             </div>
           ))}
         </div>
+        <p className="muted">Adjusted failure subtracts compensations, with a minimum of zero. Both rates use completed exercises. Compensations are counted when applied and may correct earlier failures.</p>
       </section>
       <section className="failure-rate-section" aria-label="Active study time">
         <h3>Active study time</h3>

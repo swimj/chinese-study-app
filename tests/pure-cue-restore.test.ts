@@ -1,3 +1,4 @@
+import { getDb } from '../server/db/connection.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -72,6 +73,11 @@ test('restores the whole pre-lapse cue schedule once despite invalid reinforceme
   authorize('restore-op', sourceAttemptId, 'restore');
   const input = { sourceAttemptId, compensationInvocationId: 'restore-op', restoredAt: '2026-09-18T02:00:00.000Z' };
   const history = sqlite.prepare('SELECT * FROM pure_cue_attempts').all();
+  getDb().exec('BEGIN');
+  db.restorePureCueSchedulerSnapshotWithoutTransaction(input);
+  assert.equal(getDb().prepare('SELECT compensated_count FROM learner_exercise_compensation_days').get()?.compensated_count, 1);
+  getDb().exec('ROLLBACK');
+  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM learner_exercise_compensation_days').get()?.n, 0);
   const result = db.restorePureCueSchedulerSnapshotWithoutTransaction(input);
   assert.equal(result.kind, 'restored');
   const cue = db.getPureCue('restore')!;
@@ -80,6 +86,8 @@ test('restores the whole pre-lapse cue schedule once despite invalid reinforceme
   assert.equal(db.restorePureCueSchedulerSnapshotWithoutTransaction({ ...input,
     restoredAt: '2026-09-20T02:00:00.000Z' }).kind, 'already_restored');
   assert.deepEqual(db.getPureCue('restore'), cue);
+  assert.deepEqual(sqlite.prepare('SELECT learner_id, day_key, compensated_count FROM learner_exercise_compensation_days').all()
+    .map(row => ({ ...row })), [{ learner_id: 'restore-learner', day_key: '2026-09-18', compensated_count: 1 }]);
   assert.equal(db.selectStoredPureCuesForSession({ ordinaryReviewCount: 10,
     now: '2026-09-18T07:59:00.000Z' }).selected.some(item => item.id === 'restore'), false);
   assert.equal(db.selectStoredPureCuesForSession({ ordinaryReviewCount: 10,
