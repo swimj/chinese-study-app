@@ -936,26 +936,29 @@ export function useStudySession({
       const key = getSessionDeskUnitKey(activeUnit.bucket, activeUnit.item.sessionActionId, activeWord?.id);
       // Update metadata only once the learner chooses to leave this card.
       setDeskAgainKeys((keys) => updateSessionDeskAgainKeys(keys, key, outcome));
-      await sessionDeskRef.current?.depart(outcome);
-      setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
+      const showNext = () => {
+        setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
 
-      setSessionState(transition.state);
-      setSessionSummary((current) => activePureCue
-        ? updateSessionSummaryForPureCueRating({
+        setSessionState(transition.state);
+        setSessionSummary((current) => activePureCue
+          ? updateSessionSummaryForPureCueRating({
+              summary: current,
+              transition,
+              previousPhase: sessionState.phase,
+            })
+          : updateSessionSummaryForRating({
             summary: current,
             transition,
+            rating,
+            activeWord: activeWord!,
+            activeItem: activeItem!,
             previousPhase: sessionState.phase,
-          })
-        : updateSessionSummaryForRating({
-          summary: current,
-          transition,
-          rating,
-          activeWord: activeWord!,
-          activeItem: activeItem!,
-          previousPhase: sessionState.phase,
-          characterPresentation,
-        }));
-      resetAnswerAndProductionUi();
+            characterPresentation,
+          }));
+        resetAnswerAndProductionUi();
+      };
+      if (sessionDeskRef.current) await sessionDeskRef.current.depart(outcome, showNext);
+      else showNext();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -1250,9 +1253,9 @@ export function useStudySession({
         ? getSessionDeskUnitKey('review', frozenPureCueCard.item.sessionActionId)
         : getSessionDeskUnitKey(frozenProductionCard!.status, frozenProductionCard!.sessionActionId, frozenProductionCard!.targetWordId);
       setDeskAgainKeys((keys) => updateSessionDeskAgainKeys(keys, key, 'wrong'));
-      await sessionDeskRef.current?.depart('wrong');
-      // Domain state already advanced; the frozen answer remains until departure.
-      resetAnswerAndProductionUi();
+      // Domain state already advanced; uncover it beneath the departing clone.
+      if (sessionDeskRef.current) await sessionDeskRef.current.depart('wrong', resetAnswerAndProductionUi);
+      else resetAnswerAndProductionUi();
     } finally {
       deskBusyRef.current = false;
       setSubmittingRating(null);
@@ -1357,8 +1360,8 @@ export function useStudySession({
     setSubmittingRating('forgot');
     try {
       // Contrast is completed on its first answer; it does not enter reinforcement.
-      await sessionDeskRef.current?.depart('contrast-miss');
-      resetAnswerAndProductionUi();
+      if (sessionDeskRef.current) await sessionDeskRef.current.depart('contrast-miss', resetAnswerAndProductionUi);
+      else resetAnswerAndProductionUi();
     } finally {
       deskBusyRef.current = false;
       setSubmittingRating(null);

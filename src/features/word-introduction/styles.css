@@ -92,3 +92,16 @@
 .intro-lab.word-intro-experience .intro-teaching-viewport .intro-lab-part-sentence {
   color: var(--lab-ink);
 }
+
+.intro-lab.word-intro-experience .intro-lab-button.primary kbd {
+  color: #fff;
+  border-color: rgba(255, 255, 255, .65);
+  background: rgba(255, 255, 255, .12);
+  opacity: 1;
+}
+.intro-lab.word-intro-experience .intro-lab-finished {
+  border: 0;
+  background: var(--surface, #fffefa);
+  box-shadow: 0 8px 28px rgba(39, 51, 44, .08);
+}
+.intro-lab.word-intro-experience .intro-lab-word-recap h3 { font-size: clamp(2rem, 4vw, 3rem); }

@@ -177,7 +177,9 @@ bounded server-side selection and result loading.
   Continue beat before rating; cards without a supplement still rate immediately
 
 The study desk is presentation-only. The controller computes the existing domain
-transition, then awaits the outgoing card before displaying its successor. Covered
+transition when the learner leaves the card. The desk captures an outgoing clone,
+then displays the successor beneath it; controls stay locked until departure ends.
+The successor's content fades in over an opaque paper surface. Covered
 units leave right, ongoing units leave left, and misses settle into Practice again.
 Contrast misses leave without a reinforcement promise because their existing
 covering rule has no same-session retry. Automatic production failures retain the

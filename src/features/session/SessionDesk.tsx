@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, type ReactNode } from 'react';
 
 import type { SessionDeskOutcome } from './session-desk-model';
-export type SessionDeskHandle = { depart: (outcome: SessionDeskOutcome) => Promise<void> };
+export type SessionDeskHandle = { depart: (outcome: SessionDeskOutcome, showNext: () => void) => Promise<void> };
 
 /** Presentation only: the controller owns when the study transition is applied. */
 export const SessionDesk = forwardRef<SessionDeskHandle, {
@@ -19,18 +19,18 @@ export const SessionDesk = forwardRef<SessionDeskHandle, {
   const arriving = useRef(false);
   const running = useRef<Promise<void> | null>(null);
   useEffect(() => () => cleanup.current?.(), []);
-  // Wait for React to commit the successor before revealing the live surface.
-  // Releasing visibility inside the departure callback briefly exposed the old card.
+  // Render the successor underneath the moving clone, then lift its contents in.
+  // The paper surface stays opaque throughout the handoff.
   useLayoutEffect(() => {
     if (!arriving.current) return;
     arriving.current = false;
     const host = surface.current;
     host?.classList.remove('is-departing');
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    host?.querySelector('.desk-front')?.animate([
+    host?.querySelectorAll('.session-card-scroll, .session-action-bar').forEach((content) => content.animate([
       { opacity: 0, transform: 'translateY(5px)' },
       { opacity: 1, transform: 'translateY(0)' },
-    ], { duration: 320, easing: 'ease-out' });
+    ], { duration: 360, easing: 'ease-out' }));
   }, [children]);
   useEffect(() => {
     if (!mistakeKey || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -43,11 +43,14 @@ export const SessionDesk = forwardRef<SessionDeskHandle, {
     return () => animation?.cancel();
   }, [mistakeKey]);
   useImperativeHandle(ref, () => ({
-    depart(outcome) {
+    depart(outcome, showNext) {
       if (running.current) return running.current;
       const host = surface.current;
       const card = host?.querySelector<HTMLElement>('.session-card-shell');
-      if (!host || !card || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return Promise.resolve();
+      if (!host || !card || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        showNext();
+        return Promise.resolve();
+      }
       const pending = new Promise<void>((resolve) => {
         const rect = card.getBoundingClientRect();
         const ghost = document.createElement('div');
@@ -79,7 +82,6 @@ export const SessionDesk = forwardRef<SessionDeskHandle, {
           if (finished) return;
           finished = true;
           ghost.remove();
-          arriving.current = true;
           cleanup.current = null;
           running.current = null;
           resolve();
@@ -109,6 +111,8 @@ export const SessionDesk = forwardRef<SessionDeskHandle, {
         turn.animate([{ transform: 'rotateY(0deg)' }, { transform: `rotateY(${direction * 180}deg)` }], { duration, delay, fill: 'forwards', easing: 'ease-in-out' });
         const motion = ghost.animate(frames, { duration, delay, fill: 'forwards', easing: 'cubic-bezier(.3,.05,.25,1)' });
         motion.finished.then(finish, finish);
+        arriving.current = true;
+        showNext();
       });
       running.current = pending;
       return pending;

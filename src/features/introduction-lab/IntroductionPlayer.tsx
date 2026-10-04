@@ -1,6 +1,6 @@
 import { getRehearsalInstruction } from '../rehearsal-presentation';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { TeachingPackageSnapshot } from '../../domain/word-content';
+import type { TeachingPackageSnapshot, WordContentDocument } from '../../domain/word-content';
 import {
   type IntroductionPlayerAction,
   type IntroductionPlayerState,
@@ -14,8 +14,9 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
   );
 }
 
-export function IntroductionPlayer({ snapshot, state, onAction, onRestart, onFinish, finishing, mode = 'full' }: {
+export function IntroductionPlayer({ snapshot, content, state, onAction, onRestart, onFinish, finishing, mode = 'full' }: {
   snapshot: TeachingPackageSnapshot;
+  content: WordContentDocument;
   state: IntroductionPlayerState;
   onAction: (action: IntroductionPlayerAction) => void;
   onRestart: () => void;
@@ -169,7 +170,19 @@ export function IntroductionPlayer({ snapshot, state, onAction, onRestart, onFin
       </div>
     </div>}
     {state.phase === 'finished' && <div className="intro-lab-finished">
-      <h3>Introduction complete</h3>
+      <div className="intro-lab-word-recap" aria-label="Word summary">
+        <h3 lang="zh-Hans">{content.word.hanzi}</h3>
+        <p className="intro-lab-recap-pinyin">{content.word.pinyin}</p>
+        <div className="intro-lab-recap-uses">
+          {content.uses.map((use) => {
+            const example = content.examples.find((row) => row.id === use.exampleIds[0]);
+            return <div key={use.id}>
+              <strong>{use.label}</strong>
+              {example && <><p lang="zh-Hans">{example.text}</p><p>{example.translation}</p></>}
+            </div>;
+          })}
+        </div>
+      </div>
       <div className="intro-lab-player-actions">
         {onFinish && <button type="button" className="intro-lab-button primary" disabled={finishing}
           onClick={onFinish}>{finishing ? 'Saving…' : <>Continue <kbd>Enter</kbd></>}</button>}

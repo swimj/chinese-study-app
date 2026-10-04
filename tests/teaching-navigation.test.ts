@@ -35,6 +35,7 @@ test('teaching surface renders revealed beats once and keeps unrevealed material
   const snapshot = materializeTeachingPackage(teaching, [content]);
   const markup = renderToStaticMarkup(createElement(IntroductionPlayer, {
     snapshot,
+    content,
     state: { ...initialIntroductionPlayerState(), beatIndex: 1 },
     onAction: () => {},
     onRestart: () => {},
@@ -45,4 +46,35 @@ test('teaching surface renders revealed beats once and keeps unrevealed material
   assert.doesNotMatch(markup, /aria-label="Beat 3/);
   assert.equal((markup.match(/<article/g) ?? []).length, 2);
   assert.match(markup, /Teaching steps; scroll up to revisit/);
+});
+
+test('finished teaching shows pinned word uses and examples, with Enter continuing', async () => {
+  const { createElement } = await import('react');
+  const { renderToStaticMarkup } = await import('react-dom/server');
+  const { IntroductionPlayer } = await import('../src/features/introduction-lab/IntroductionPlayer.js');
+  for (const { content, teaching } of wordContentFixtures) {
+    const markup = renderToStaticMarkup(createElement(IntroductionPlayer, {
+      snapshot: materializeTeachingPackage(teaching, [content]),
+      content,
+      state: { ...initialIntroductionPlayerState(), phase: 'finished' },
+      onAction: () => {},
+      onRestart: () => {},
+      onFinish: () => {},
+      mode: 'teaching-only',
+    }));
+    const escapeHtml = (text: string) => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#x27;');
+    assert.ok(markup.includes(escapeHtml(content.word.hanzi)));
+    assert.ok(markup.includes(escapeHtml(content.word.pinyin)));
+    for (const use of content.uses) {
+      assert.ok(markup.includes(escapeHtml(use.label)));
+      const example = content.examples.find((row) => row.id === use.exampleIds[0]);
+      if (example) {
+        assert.ok(markup.includes(escapeHtml(example.text)));
+        assert.ok(markup.includes(escapeHtml(example.translation)));
+      }
+    }
+    assert.doesNotMatch(markup, /Introduction complete/);
+    assert.match(markup, /Continue <kbd>Enter<\/kbd>/);
+  }
 });
