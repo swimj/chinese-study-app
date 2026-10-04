@@ -92,6 +92,8 @@ import {
   applySessionCommit,
   type DeferredSessionCommit,
 } from './session-commit';
+import type { SessionDeskHandle } from './SessionDesk';
+import { getSessionDeskOutcome, getSessionDeskUnitKey, retainSessionDeskAgainKeys, updateSessionDeskAgainKeys } from './session-desk-model';
 import type { FrozenContrastCard, FrozenProductionCard, FrozenPureCueCard } from './StudySessionPanel';
 import {
   createActiveSessionClock,
@@ -149,6 +151,7 @@ type SessionUndoSnapshot = {
 type ProductionUiPhase = 'idle' | 'await-supplement' | 'await-rating' | 'await-next';
 
 type SessionUiSnapshot = {
+  deskAgainKeys: string[];
   answerRevealed: boolean;
   productionHanziInput: string;
   productionHanziError: string | null;
@@ -171,6 +174,9 @@ export type StudySessionControllerOptions = {
 };
 
 export type StudySessionHomePageProps = {
+  sessionDeskRef: RefObject<SessionDeskHandle>;
+  deskAgainCount: number;
+  deskRemainingCount: number;
   introductionGate: SessionIntroductionGate | null;
   sessionPrefetch: SessionPrefetchState;
   sessionStarted: boolean;
@@ -187,6 +193,7 @@ export type StudySessionHomePageProps = {
   activeUnstudiedProgress: UnstudiedWordProgress | undefined;
   activeReviewProgress: ReviewActionProgress | undefined;
   activePureCueFailureCount: number;
+  activePureCueReinforcementStreak: number;
   hasUndo: boolean;
   submittingRating: ReviewRating | null;
   personalNotesEditorOpen: boolean;
@@ -279,6 +286,10 @@ export function useStudySession({
   characterPresentation = DEFAULT_CHARACTER_PRESENTATION,
 }: StudySessionControllerOptions): StudySessionController {
   const [sessionPrefetch, setSessionPrefetch] = useState<SessionPrefetchState>(() => getSessionPrefetchSnapshot());
+  const sessionDeskRef = useRef<SessionDeskHandle>(null);
+  const deskBusyRef = useRef(false);
+  const [deskAgainKeys, setDeskAgainKeys] = useState<string[]>([]);
+  const [deskRemainingOverride, setDeskRemainingOverride] = useState<number | null>(null);
   const [sessionStarted, setSessionStarted] = useState(false);
   const [sessionState, setSessionState] = useState<BucketSessionState | null>(null);
   const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null);
@@ -523,6 +534,7 @@ export function useStudySession({
   }
 
   function resetAnswerAndProductionUi() {
+    setDeskRemainingOverride(null);
     setAnswerRevealed(false);
     resetProductionUi();
     resetContrastUi();
@@ -536,6 +548,8 @@ export function useStudySession({
   }
 
   function resetSessionScopedUi() {
+    setDeskAgainKeys([]);
+    setDeskRemainingOverride(null);
     setAnswerRevealed(false);
     setSessionPersonalNotesOverridesByWordId({});
     setSessionMeaningRowsByWordId({});
@@ -547,6 +561,7 @@ export function useStudySession({
 
   function createSessionUiSnapshot(): SessionUiSnapshot {
     return {
+      deskAgainKeys: [...deskAgainKeys],
       answerRevealed,
       productionHanziInput,
       productionHanziError,
@@ -562,6 +577,8 @@ export function useStudySession({
   }
 
   function restoreSessionUiSnapshot(snapshot: SessionUiSnapshot) {
+    setDeskAgainKeys([...snapshot.deskAgainKeys]);
+    setDeskRemainingOverride(null);
     setAnswerRevealed(snapshot.answerRevealed);
     setProductionHanziInput(snapshot.productionHanziInput);
     setProductionHanziError(snapshot.productionHanziError);
@@ -665,6 +682,7 @@ export function useStudySession({
   }
 
   async function handleEndSession() {
+    if (deskBusyRef.current) return;
     if (sessionStarted && sessionState && sessionState.phase === 'active') {
       const drainedState = beginBucketDrainSession(sessionState);
       setSessionState(drainedState);
@@ -859,7 +877,7 @@ export function useStudySession({
       restoreUi?: 'revealed' | 'production-input';
     },
   ) {
-    if (!sessionState || (!activeItem && !activePureCue) || (!activeWord && !activePureCue)) {
+    if (deskBusyRef.current || submittingRating !== null || !sessionState || (!activeItem && !activePureCue) || (!activeWord && !activePureCue)) {
       return;
     }
 
@@ -868,6 +886,7 @@ export function useStudySession({
       return;
     }
 
+    deskBusyRef.current = true;
     setSubmittingRating(rating);
     setError(null);
 
@@ -912,6 +931,12 @@ export function useStudySession({
                   ? productionResponseResolution
                   : null,
             });
+      const outcome = getSessionDeskOutcome(rating, transition.commit);
+      if (activeUnit?.type !== 'study') throw new Error('Session desk requires an active study unit.');
+      const key = getSessionDeskUnitKey(activeUnit.bucket, activeUnit.item.sessionActionId, activeWord?.id);
+      // Update metadata only once the learner chooses to leave this card.
+      setDeskAgainKeys((keys) => updateSessionDeskAgainKeys(keys, key, outcome));
+      await sessionDeskRef.current?.depart(outcome);
       setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
 
       setSessionState(transition.state);
@@ -934,11 +959,13 @@ export function useStudySession({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
+      deskBusyRef.current = false;
       setSubmittingRating(null);
     }
   }
 
   async function handleSubmitProductionHanzi() {
+    if (deskBusyRef.current || submittingRating !== null) return;
     if (
       personalNotesEditorOpen ||
       !sessionState ||
@@ -958,6 +985,7 @@ export function useStudySession({
       return;
     }
 
+    deskBusyRef.current = true;
     setSubmittingRating('good');
     setError(null);
 
@@ -1031,11 +1059,13 @@ export function useStudySession({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
+      deskBusyRef.current = false;
       setSubmittingRating(null);
     }
   }
 
   async function handleNoClueProduction() {
+    if (deskBusyRef.current || submittingRating !== null) return;
     if (
       personalNotesEditorOpen ||
       !sessionState ||
@@ -1046,6 +1076,7 @@ export function useStudySession({
       return;
     }
 
+    deskBusyRef.current = true;
     setSubmittingRating('forgot');
     setError(null);
 
@@ -1083,6 +1114,7 @@ export function useStudySession({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
+      deskBusyRef.current = false;
       setSubmittingRating(null);
     }
   }
@@ -1209,9 +1241,22 @@ export function useStudySession({
     setAnswerRevealed(true);
   }
 
-  function handleContinueAfterAutoForgot() {
-    // Unmask the active card after the queue already advanced due to an incorrect hanzi submission.
-    resetAnswerAndProductionUi();
+  async function handleContinueAfterAutoForgot() {
+    if (deskBusyRef.current || submittingRating !== null || (!frozenProductionCard && !frozenPureCueCard)) return;
+    deskBusyRef.current = true;
+    setSubmittingRating('forgot');
+    try {
+      const key = frozenPureCueCard
+        ? getSessionDeskUnitKey('review', frozenPureCueCard.item.sessionActionId)
+        : getSessionDeskUnitKey(frozenProductionCard!.status, frozenProductionCard!.sessionActionId, frozenProductionCard!.targetWordId);
+      setDeskAgainKeys((keys) => updateSessionDeskAgainKeys(keys, key, 'wrong'));
+      await sessionDeskRef.current?.depart('wrong');
+      // Domain state already advanced; the frozen answer remains until departure.
+      resetAnswerAndProductionUi();
+    } finally {
+      deskBusyRef.current = false;
+      setSubmittingRating(null);
+    }
   }
 
   function handleContinueAfterProductionSupplement() {
@@ -1237,6 +1282,7 @@ export function useStudySession({
   }
 
   async function handleSelectContrastChoice(wordId: string) {
+    if (deskBusyRef.current || submittingRating !== null) return;
     if (!activeItem || activeItem.actionKind !== 'contrast_selection' || answerRevealed || personalNotesEditorOpen) {
       return;
     }
@@ -1257,6 +1303,7 @@ export function useStudySession({
       return;
     }
 
+    deskBusyRef.current = true;
     setSubmittingRating('forgot');
     setError(null);
 
@@ -1277,6 +1324,7 @@ export function useStudySession({
         practiceMore: false,
       });
       setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
+      setDeskRemainingOverride(getBucketSessionTotalCount(sessionState));
       setSessionState(transition.state);
       setSessionSummary((current) =>
         updateSessionSummaryForRating({
@@ -1298,16 +1346,27 @@ export function useStudySession({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
+      deskBusyRef.current = false;
       setSubmittingRating(null);
     }
   }
 
-  function handleContinueAfterAutoContrastForgot() {
-    resetAnswerAndProductionUi();
+  async function handleContinueAfterAutoContrastForgot() {
+    if (deskBusyRef.current || submittingRating !== null || !frozenContrastCard) return;
+    deskBusyRef.current = true;
+    setSubmittingRating('forgot');
+    try {
+      // Contrast is completed on its first answer; it does not enter reinforcement.
+      await sessionDeskRef.current?.depart('contrast-miss');
+      resetAnswerAndProductionUi();
+    } finally {
+      deskBusyRef.current = false;
+      setSubmittingRating(null);
+    }
   }
 
   function handleUndoLastRating() {
-    if (!lastUndoSnapshot || submittingRating !== null) {
+    if (deskBusyRef.current || !lastUndoSnapshot || submittingRating !== null) {
       return;
     }
 
@@ -1360,10 +1419,13 @@ export function useStudySession({
   }
 
   async function handleDismissCurrentWord() {
+    if (deskBusyRef.current) return;
     if (!sessionState || !activeWord) {
       return;
     }
 
+    deskBusyRef.current = true;
+    setStudyManagementSubmitting(true);
     setError(null);
 
     try {
@@ -1396,10 +1458,14 @@ export function useStudySession({
       await dismissWordFromStudy(transition.dismiss.wordId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      deskBusyRef.current = false;
+      setStudyManagementSubmitting(false);
     }
   }
 
   async function handleManageStudyAction() {
+    if (deskBusyRef.current) return;
     if (!sessionState || !activeItem || !activeWord) {
       return;
     }
@@ -1414,6 +1480,7 @@ export function useStudySession({
       return;
     }
 
+    deskBusyRef.current = true;
     setStudyManagementSubmitting(true);
     setError(null);
 
@@ -1444,11 +1511,13 @@ export function useStudySession({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
+      deskBusyRef.current = false;
       setStudyManagementSubmitting(false);
     }
   }
 
   async function handleManageFrozenProductionAction() {
+    if (deskBusyRef.current) return;
     if (!sessionState || !frozenProductionCard) {
       return;
     }
@@ -1458,6 +1527,7 @@ export function useStudySession({
       return;
     }
 
+    deskBusyRef.current = true;
     setStudyManagementSubmitting(true);
     setError(null);
 
@@ -1499,15 +1569,18 @@ export function useStudySession({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
+      deskBusyRef.current = false;
       setStudyManagementSubmitting(false);
     }
   }
 
   async function handleDismissFrozenProductionWord() {
+    if (deskBusyRef.current) return;
     if (!sessionState || !frozenProductionCard) {
       return;
     }
 
+    deskBusyRef.current = true;
     setStudyManagementSubmitting(true);
     setError(null);
 
@@ -1546,6 +1619,7 @@ export function useStudySession({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
+      deskBusyRef.current = false;
       setStudyManagementSubmitting(false);
     }
   }
@@ -1737,7 +1811,10 @@ export function useStudySession({
     const summaryFinalizationKind = sessionFinalization.kind;
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (introductionBlockedRef.current || event.defaultPrevented || shortcutGuideOpen || submittingRating !== null || personalNotesEditorOpen) {
+      // Native disclosures (including the sidebar) retain their own activation keys.
+      if ((event.key === ' ' || event.key === 'Enter' || event.code === 'Space')
+        && event.target instanceof Element && event.target.closest('summary')) return;
+      if (deskBusyRef.current || event.repeat || introductionBlockedRef.current || event.defaultPrevented || shortcutGuideOpen || submittingRating !== null || personalNotesEditorOpen) {
         return;
       }
 
@@ -1897,6 +1974,9 @@ export function useStudySession({
     invalidateSessionPrefetch,
     finishCompletedSessionIfLeaving,
     homePageProps: {
+      sessionDeskRef,
+      deskAgainCount: sessionState ? retainSessionDeskAgainKeys(deskAgainKeys, sessionState).length : 0,
+      deskRemainingCount: deskRemainingOverride ?? displayedSessionItemCount,
       introductionGate: introductionGate ? { ...introductionGate, complete: () => { void handleCompleteTeaching(); } } : null,
       sessionPrefetch,
       sessionStarted,
@@ -1913,6 +1993,7 @@ export function useStudySession({
       activeUnstudiedProgress,
       activeReviewProgress,
       activePureCueFailureCount,
+      activePureCueReinforcementStreak: activePureCueReviewProgress?.reinforcementStreak ?? 0,
       hasUndo: lastUndoSnapshot !== null,
       submittingRating,
       personalNotesEditorOpen,

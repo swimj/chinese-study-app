@@ -1,0 +1,46 @@
+/* One continuous sheet: revealed teaching stays above the current reading place. */
+.intro-lab .intro-teaching-viewport {
+  --teaching-height: clamp(240px, 42vh, 420px);
+  position: relative;
+  height: var(--teaching-height);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+  border-radius: 18px;
+  background: var(--lab-paper, #fffdf8);
+  box-shadow: 0 10px 30px #332b2010, 0 2px 3px #332b2008;
+  scrollbar-width: thin;
+}
+.intro-lab .intro-teaching-viewport .intro-lab-beat-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 24px 20px calc(var(--teaching-height) - 80px);
+}
+.intro-lab .intro-teaching-viewport .intro-lab-beat {
+  flex: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 24px 10px 32px;
+  color: var(--lab-ink);
+  opacity: .6;
+  transition: opacity 180ms ease;
+}
+.intro-lab .intro-teaching-viewport .intro-lab-beat + .intro-lab-beat {
+  border-top: 1px solid var(--lab-line);
+  padding-top: 24px;
+}
+.intro-lab .intro-teaching-viewport .intro-lab-beat.newest,
+.intro-lab .intro-teaching-viewport.browsing .intro-lab-beat { opacity: 1; }
+.intro-teaching-location { min-height: 1.3em; margin-top: 12px; color: var(--lab-muted); font-size: .78rem; }
+@media (prefers-reduced-motion: reduce) {
+  .intro-lab .intro-teaching-viewport .intro-lab-beat { transition: none; }
+}
+
+.intro-lab .intro-teaching-viewport .intro-lab-beat:focus-visible { outline: none; }
+.intro-lab .intro-teaching-viewport .intro-lab-beat:focus-visible .intro-lab-beat-number {
+  text-decoration: underline; text-underline-offset: 5px;
+}

@@ -1,3 +1,5 @@
+@import './teaching-view.css';
+
 .intro-lab {
   --lab-ink: #163b3d;
   --lab-muted: #5a716f;

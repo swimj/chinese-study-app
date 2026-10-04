@@ -48,6 +48,8 @@ src/
     session/
       useStudySession.ts          # session runtime controller
       StudySessionPanel.tsx       # active/completed session UI
+      SessionDesk.tsx             # opaque stack, departure motion, peripheral progress
+      session-desk-model.ts       # presentation outcomes from existing covering decisions
       SessionSummaryPanel.tsx     # completed session summary UI
       PersonalNotesEditorOverlay.tsx
       session-keyboard.ts         # state-to-action/shortcut descriptors + key resolution
@@ -173,6 +175,21 @@ bounded server-side selection and result loading.
   summary
 - accepted production with a served cue supplement: an `await-supplement`
   Continue beat before rating; cards without a supplement still rate immediately
+
+The study desk is presentation-only. The controller computes the existing domain
+transition, then awaits the outgoing card before displaying its successor. Covered
+units leave right, ongoing units leave left, and misses settle into Practice again.
+Contrast misses leave without a reinforcement promise because their existing
+covering rule has no same-session retry. Automatic production failures retain the
+frozen reveal until Continue; visible pile metadata changes on that Continue,
+not on initial reveal. UI pile membership is included in the Undo snapshot and
+never changes scheduling. Reduced-motion preferences skip departures.
+
+The card frame stays fixed while its content scrolls. Controls sit below the
+prompt/input; full production glosses remain in a Word reference disclosure.
+Revealed production prompts fill explicit `____` placeholders for display only;
+served snapshots and response matching remain unchanged. Native disclosure keys
+are exempt from study shortcuts.
 
 The hook returns:
 

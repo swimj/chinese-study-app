@@ -1,3 +1,4 @@
+import type { SessionDeskHandle } from '../features/session/SessionDesk';
 import { SessionIntroductionGatePanel } from '../features/session/SessionIntroductionGatePanel';
 import type { SessionIntroductionGate } from '../features/session/useIntroductionGate';
 import type { RefObject } from 'react';
@@ -38,6 +39,9 @@ export function HomePage({
   onSaveSessionSettings,
   sessionPrefetch,
   sessionStarted,
+  sessionDeskRef,
+  deskAgainCount,
+  deskRemainingCount,
   sessionPhase,
   sessionLoading,
   displayedSessionItemCount,
@@ -51,6 +55,7 @@ export function HomePage({
   activeUnstudiedProgress,
   activeReviewProgress,
   activePureCueFailureCount,
+  activePureCueReinforcementStreak,
   hasUndo,
   submittingRating,
   personalNotesEditorOpen,
@@ -130,6 +135,9 @@ export function HomePage({
   }) => Promise<void>;
   sessionPrefetch: SessionPrefetchState;
   sessionStarted: boolean;
+  sessionDeskRef: RefObject<SessionDeskHandle>;
+  deskAgainCount: number;
+  deskRemainingCount: number;
   sessionPhase: BucketSessionState['phase'] | null;
   sessionLoading: boolean;
   displayedSessionItemCount: number;
@@ -143,6 +151,7 @@ export function HomePage({
   activeUnstudiedProgress: UnstudiedWordProgress | undefined;
   activeReviewProgress: ReviewActionProgress | undefined;
   activePureCueFailureCount: number;
+  activePureCueReinforcementStreak: number;
   hasUndo: boolean;
   submittingRating: ReviewRating | null;
   personalNotesEditorOpen: boolean;
@@ -267,8 +276,11 @@ export function HomePage({
           />
         ) : introductionGate ? (
           <SessionIntroductionGatePanel gate={introductionGate} onUndo={hasUndo && submittingRating === null ? onUndoLastRating : undefined} />
-        ) : (
+        ) : sessionStarted ? (
           <StudySessionPanel
+            sessionDeskRef={sessionDeskRef}
+            deskAgainCount={deskAgainCount}
+            deskRemainingCount={deskRemainingCount}
             sessionStarted={sessionStarted}
             sessionPhase={sessionPhase}
             sessionSummary={sessionSummary}
@@ -281,6 +293,7 @@ export function HomePage({
             activeUnstudiedProgress={activeUnstudiedProgress}
             activeReviewProgress={activeReviewProgress}
             activePureCueFailureCount={activePureCueFailureCount}
+            activePureCueReinforcementStreak={activePureCueReinforcementStreak}
             reviewedCount={reviewedCount}
             queuedCount={displayedSessionItemCount}
             hasUndo={hasUndo}
@@ -342,7 +355,7 @@ export function HomePage({
             onOpenShortcutGuide={onOpenShortcutGuide}
             onCloseShortcutGuide={onCloseShortcutGuide}
           />
-        )}
+        ) : null}
       </div>
     </div>
   );
