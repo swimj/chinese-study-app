@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, type ReactNode } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, type ReactNode } from 'react';
 
 import type { SessionDeskOutcome } from './session-desk-model';
 export type SessionDeskHandle = { depart: (outcome: SessionDeskOutcome) => Promise<void> };
@@ -16,8 +16,22 @@ export const SessionDesk = forwardRef<SessionDeskHandle, {
   const surface = useRef<HTMLDivElement>(null);
   const pile = useRef<HTMLDivElement>(null);
   const cleanup = useRef<(() => void) | null>(null);
+  const arriving = useRef(false);
   const running = useRef<Promise<void> | null>(null);
   useEffect(() => () => cleanup.current?.(), []);
+  // Wait for React to commit the successor before revealing the live surface.
+  // Releasing visibility inside the departure callback briefly exposed the old card.
+  useLayoutEffect(() => {
+    if (!arriving.current) return;
+    arriving.current = false;
+    const host = surface.current;
+    host?.classList.remove('is-departing');
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    host?.querySelector('.desk-front')?.animate([
+      { opacity: 0, transform: 'translateY(5px)' },
+      { opacity: 1, transform: 'translateY(0)' },
+    ], { duration: 320, easing: 'ease-out' });
+  }, [children]);
   useEffect(() => {
     if (!mistakeKey || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const card = surface.current?.querySelector<HTMLElement>('.session-card-shell');
@@ -65,7 +79,7 @@ export const SessionDesk = forwardRef<SessionDeskHandle, {
           if (finished) return;
           finished = true;
           ghost.remove();
-          host.classList.remove('is-departing');
+          arriving.current = true;
           cleanup.current = null;
           running.current = null;
           resolve();
@@ -77,7 +91,7 @@ export const SessionDesk = forwardRef<SessionDeskHandle, {
         const x = wrong && target ? target.left + target.width / 2 - rect.left - rect.width / 2 : direction * (window.innerWidth + rect.width) / 2;
         const y = wrong && target ? target.top + target.height / 2 - rect.top - rect.height / 2 : -35;
         const rattle = wrong && host.dataset.mistake !== 'true';
-        const duration = wrong ? rattle ? 780 : 620 : 470;
+        const duration = wrong ? rattle ? 940 : 780 : 650;
         const delay = !wrong && front.querySelector('.desk-chips') ? 160 : 0;
         const frames: Keyframe[] = wrong ? [
           { transform: 'translate(0,0) scale(1)', opacity: 1, offset: 0 },

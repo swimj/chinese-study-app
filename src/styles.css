@@ -4482,7 +4482,7 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1
 
 /* The resting home is a compact starting place, without an empty session pane. */
 .home-page:not(.home-session-active) .home-grid { grid-template-columns: minmax(0,1fr); max-width: 760px; margin: clamp(0px,4vh,48px) auto; }
-.home-page:not(.home-session-active) .home-overview { display: grid; grid-template-columns: 1fr 1fr; column-gap: 2rem; padding: clamp(1.5rem,4vw,3rem); }
+.home-page:not(.home-session-active) .home-overview { display: grid; grid-template-columns: 1fr 1fr; column-gap: 2rem; padding: 0; border: 0; background: transparent; box-shadow: none; }
 .home-overview-intro, .home-overview .session-start-shell { grid-column: 1 / -1; }
 .home-overview .session-start-shell { max-width: 420px; width: 100%; }
 @media (max-width: 520px) { .home-page:not(.home-session-active) .home-overview { grid-template-columns: 1fr; } }

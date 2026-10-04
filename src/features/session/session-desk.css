@@ -7,7 +7,7 @@
 .desk-overview summary { cursor: pointer; }
 .desk-overview > div { position: absolute; right: 0; top: 1.8rem; padding: 1rem; width: 210px; background: var(--surface); box-shadow: var(--shadow-card); border-radius: 12px; z-index: 20; display: grid; gap: .6rem; }
 .desk-stack { position: relative; min-height: 0; isolation: isolate; }
-.desk-under-card { position: absolute; inset: 0 9px -7px; border-radius: 20px; background: var(--surface-muted); box-shadow: 0 5px 15px #283a3410; transform: rotate(-.5deg); }
+.desk-under-card { position: absolute; inset: 0 9px -7px; border-radius: 20px; background: var(--surface); box-shadow: 0 5px 15px #283a3410; transform: rotate(-.5deg); }
 .desk-under-card::before { content: ''; position: absolute; inset: 0 5px -5px; z-index: -1; border-radius: inherit; background: var(--border); opacity: .55; transform: rotate(1deg); }
 .desk-front { height: 100%; position: relative; }
 .session-desk .session-card-shell { height: 100%; border: 0; border-radius: 20px; background: var(--surface); box-shadow: var(--shadow-card); display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr) auto; gap: 0; padding: 0; overflow: visible; }

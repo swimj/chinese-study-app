@@ -49,11 +49,6 @@ export function HomeOverviewPanel({
   return (
     <div className="panel home-overview">
       {!sessionStarted ? (
-        <header className="home-overview-intro">
-          <h1>Study</h1>
-        </header>
-      ) : null}
-      {!sessionStarted ? (
         <div className={`session-start-shell${sessionSettingsOpen ? ' is-settings-open' : ''}`}>
           <button
             type="button"
