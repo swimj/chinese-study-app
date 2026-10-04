@@ -128,3 +128,42 @@ test('dedicated provider rejects unknown submitted words before normalization', 
   await assert.rejects(provider.generatePureCueReflection!(bundle), (error: unknown) =>
     error instanceof LunaReflectionProviderError && error.code === 'domain_contract_invalid');
 });
+
+for (const itemCount of [10, 11]) {
+  test(`routes a ${itemCount}-item pure-cue bundle independently of ordinary bundle size`, async () => {
+    const selected: string[] = [];
+    const makeProvider = (label: string): LunaReflectionProvider => ({
+      async generate() { throw new Error('Legacy provider called'); },
+      async generateDiagnosis() {
+        selected.push(`ordinary:${label}`);
+        throw new Error('Routing probe');
+      },
+      async generatePureCueReflection() {
+        selected.push(`pure:${label}`);
+        throw new Error('Routing probe');
+      },
+    });
+    const service = createInitialReflectionGenerationService({
+      ...createTestReflectionContinuationBoundaries(),
+      provider: makeProvider('luna'),
+      comparisonProviders: {
+        'zai:glm-5.3-flash-high': makeProvider('glm'),
+        'openai:gpt-6-sol-high': makeProvider('sol'),
+        'openai:gpt-5.6-terra-high': makeProvider('terra'),
+      },
+      buildBundle: () => ({ ...ordinary, items: Array.from({ length: 21 - itemCount }, (_, index) => ({
+        ...ordinary.items[0]!, itemId: `ordinary-${index}`,
+      })) }),
+      buildPureCueBundle: () => ({ ...bundle, items: Array.from({ length: itemCount }, (_, index) => ({
+        ...bundle.items[0]!, itemId: `pure-${index}`,
+      })) }),
+      random: () => 0.9,
+      startRun: () => {},
+      recordRun: () => {},
+    });
+    await assert.rejects(service.generate('session', {}), /Routing probe/);
+    assert.deepEqual(selected.sort(), itemCount <= 10
+      ? ['ordinary:sol', 'pure:glm']
+      : ['ordinary:glm', 'pure:sol']);
+  });
+}

@@ -80,7 +80,7 @@ const REFLECTION_RETRY_MODEL_OPTIONS: ReadonlyArray<Omit<ReflectionRetryMenuOpti
   { id: 'zai:glm-5.3-flash-max', label: 'GLM-5.3 Flash max', model: 'zai:glm-5.3-flash-max', enabledByDefault: false },
   { id: 'zai:glm-5.3-flash-high', label: 'GLM-5.3 Flash high', model: 'zai:glm-5.3-flash-high', enabledByDefault: true },
   { id: 'openrouter:gemini-3.6-flash', label: 'Gemini 3.6 Flash', model: 'openrouter:gemini-3.6-flash', enabledByDefault: false },
-  { id: 'openai:gpt-5.6-terra-high', label: 'GPT-5.6 Terra high', model: 'openai:gpt-5.6-terra-high', enabledByDefault: true },
+  { id: 'openai:gpt-5.6-terra-high', label: 'GPT-5.6 Terra high', model: 'openai:gpt-5.6-terra-high', enabledByDefault: false },
   { id: 'openai:gpt-6-sol-high', label: 'GPT-6 Sol high', model: 'openai:gpt-6-sol-high', enabledByDefault: true },
 ];
 
