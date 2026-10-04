@@ -76,11 +76,17 @@ export const SessionDesk = forwardRef<SessionDeskHandle, {
         const direction = outcome === 'ongoing' ? -1 : 1;
         const x = wrong && target ? target.left + target.width / 2 - rect.left - rect.width / 2 : direction * (window.innerWidth + rect.width) / 2;
         const y = wrong && target ? target.top + target.height / 2 - rect.top - rect.height / 2 : -35;
-        const duration = wrong ? 620 : 470;
+        const rattle = wrong && host.dataset.mistake !== 'true';
+        const duration = wrong ? rattle ? 780 : 620 : 470;
         const delay = !wrong && front.querySelector('.desk-chips') ? 160 : 0;
         const frames: Keyframe[] = wrong ? [
-          { transform: 'translate(0,0) scale(1)', opacity: 1 },
-          { transform: `translate(${x * .55}px, -45px) scale(.74)`, opacity: 1, offset: .45 },
+          { transform: 'translate(0,0) scale(1)', opacity: 1, offset: 0 },
+          ...(rattle ? [
+            { transform: 'translate(-7px,0) scale(1)', opacity: 1, offset: .06 },
+            { transform: 'translate(6px,0) scale(1)', opacity: 1, offset: .12 },
+            { transform: 'translate(0,0) scale(1)', opacity: 1, offset: .2 },
+          ] : []),
+          { transform: `translate(${x * .55}px, -45px) scale(.74)`, opacity: 1, offset: .55 },
           { transform: `translate(${x}px, ${y}px) scale(.08)`, opacity: .1 },
         ] : [
           { transform: 'translate(0,0) rotate(0)', opacity: 1 },
@@ -102,7 +108,7 @@ export const SessionDesk = forwardRef<SessionDeskHandle, {
         <span>{answered} answered</span><span>{again} to practice again</span><span>{elapsed} elapsed</span>
       </div></details>
     </header>
-    <div className="desk-stack" ref={surface}>
+    <div className="desk-stack" ref={surface} data-mistake={Boolean(mistakeKey)}>
       <div className="desk-under-card" aria-hidden="true" />
       <div className="desk-front">{children}</div>
     </div>
