@@ -1,0 +1,63 @@
+.session-panel-active.study-session-panel { padding: .25rem 1rem; border: 0; background: transparent; box-shadow: none; grid-template-rows: minmax(0, 1fr); overflow: visible; }
+.session-panel-active.study-session-panel > h2 { display: none; }
+.session-desk { width: min(100%, 850px); margin: 0 auto; min-height: 0; display: grid; grid-template-rows: auto minmax(0,1fr) auto; gap: 1.15rem; }
+.desk-heading, .desk-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; font-size: .8rem; color: var(--text-muted); }
+.desk-heading { padding: 0 .65rem; }
+.desk-overview { position: relative; }
+.desk-overview summary { cursor: pointer; }
+.desk-overview > div { position: absolute; right: 0; top: 1.8rem; padding: 1rem; width: 210px; background: var(--surface); box-shadow: var(--shadow-card); border-radius: 12px; z-index: 20; display: grid; gap: .6rem; }
+.desk-stack { position: relative; min-height: 0; isolation: isolate; }
+.desk-under-card { position: absolute; inset: 0 9px -7px; border-radius: 20px; background: var(--surface); box-shadow: 0 5px 15px #283a3410; transform: rotate(-.5deg); }
+.desk-under-card::before { content: ''; position: absolute; inset: 0 5px -5px; z-index: -1; border-radius: inherit; background: var(--surface); box-shadow: 0 2px 5px #283a3410; transform: rotate(1deg); }
+.desk-front { height: 100%; position: relative; }
+.session-desk .session-card-shell { height: 100%; border: 0; border-radius: 20px; background: var(--surface); box-shadow: var(--shadow-card); display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr) auto; gap: 0; padding: 0; overflow: visible; }
+.session-desk .session-card-scroll { padding: clamp(1.2rem,3vw,2.5rem) clamp(1.2rem,4vw,3rem) 1.2rem; gap: 1.1rem; border-radius: 20px 20px 0 0; }
+.session-desk .session-card-scroll > .desk-legacy-counts { display: none; }
+.session-desk .session-action-bar { border: 0; border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent); padding: 1rem clamp(1.2rem,4vw,3rem); overflow: visible; gap: .7rem; background: color-mix(in srgb, var(--surface-muted) 32%, var(--surface)); border-radius: 0 0 20px 20px; display: flex; flex-wrap: wrap; align-items: center; }
+.session-desk .session-action-section { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; }
+.session-desk .session-action-section:first-child { flex: 1 0 100%; }
+.session-desk .session-action-section:not(:first-child) { font-size: .75rem; }
+.session-desk .session-action-section:not(:first-child) button { font-size: .75rem; padding: .35rem .5rem; background: transparent; box-shadow: none; border-color: transparent; color: var(--text-muted); }
+.session-desk .session-action-section:last-child { margin-left: auto; }
+.session-desk .session-action-bar button { width: auto; min-height: 2.25rem; }
+.session-desk .session-action-bar .rating-grid { display: flex; flex-wrap: wrap; width: auto; flex: 1; gap: .5rem; }
+.session-desk .rating-grid > button { flex: 1; }
+.session-desk .rating-button:not(.is-default) { background: var(--surface); color: var(--text-secondary); border-color: var(--border); }
+.session-desk .session-action-bar .inline-actions { display: flex; }
+.session-desk .session-action-bar .manage-study-popover { position: absolute; bottom: 100%; top: auto; left: 0; width: min(330px,75vw); z-index: 25; background: var(--surface); box-shadow: var(--shadow-card); }
+.session-desk .session-action-bar .manage-study-actions { display: grid; }
+.session-desk .prompt-block { border: 0; background: transparent; padding: 0; gap: .7rem; }
+.session-desk .prompt-value, .session-desk .contrast-prompt-text { font-size: clamp(1.45rem,2.6vw,2rem); font-weight: 500; line-height: 1.65; white-space: pre-line; }
+.session-desk .prompt-block.is-compact .prompt-value { font-size: clamp(1.45rem,2.6vw,2rem); }
+.session-desk .answer-block { border: 0; border-radius: 14px; background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface)); padding: 1.15rem 1.35rem; animation: desk-answer-lift 240ms ease-out; }
+.session-desk .answer-value { font-size: 1.75rem; }
+.session-desk .review-card-header .badge { background: transparent; padding: 0; color: var(--text-muted); font-weight: 500; }
+.session-desk .desk-reference { font-size: .9rem; color: var(--text-secondary); }
+.desk-reference > summary { cursor: pointer; padding: .35rem 0; color: var(--text-muted); }
+.desk-reference[open] > summary { margin-bottom: .7rem; }
+.desk-cloze-answer { color: var(--accent); background: var(--accent-soft); border-radius: .25rem; padding: 0 .15em; animation: desk-answer-lift 240ms ease-out; }
+.desk-recall-progress { display: flex; align-items: center; gap: .6rem; font-size: .75rem; color: var(--text-muted); }
+.desk-chips { display: inline-flex; gap: .3rem; }
+.desk-chips > span { display: grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: .45rem; background: var(--surface-muted); color: var(--text-muted); transition: background 160ms, color 160ms; }
+.desk-chips > .is-filled { background: var(--accent); color: white; }
+.desk-footer { padding: .3rem .6rem; }
+.desk-again-pile { display: flex; align-items: center; gap: .6rem; padding: .65rem .9rem; border-radius: 10px; }
+.desk-again-pile.has-cards { color: var(--danger); background: var(--danger-soft); }
+.desk-pile-mark { width: 22px; height: 16px; border-radius: 3px; background: var(--danger-soft); transform: rotate(-6deg); box-shadow: 2px 2px 0 color-mix(in srgb,var(--danger) 24%,transparent); }
+.desk-departure { position: fixed; pointer-events: none; z-index: 1000; perspective: 1400px; }
+.desk-departure-turn { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; }
+.desk-departure-front, .desk-departure-back { position: absolute; inset: 0; width: 100%; height: 100%; backface-visibility: hidden; border-radius: 20px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow-card); }
+.desk-departure-front.session-card-shell { display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr) auto; border: 0; padding: 0; }
+.desk-departure-back { transform: rotateY(180deg); background: linear-gradient(145deg,var(--surface),var(--surface-muted)); }
+.desk-departure.session-desk { display: block; margin: 0; }
+.desk-stack.is-departing .desk-front { visibility: hidden; pointer-events: none; }
+@keyframes desk-answer-lift { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 640px) { .session-panel-active.study-session-panel { padding: .15rem; } .session-desk { gap: .8rem; } .session-desk .session-action-bar { padding: .75rem 1rem; } .session-desk .session-action-section:not(:first-child) button { font-size: .7rem; } }
+@media (prefers-reduced-motion: reduce) { .session-desk *, .desk-cloze-answer { animation: none !important; transition: none !important; } }
+
+.session-desk .session-card-scroll { display: flex; flex-direction: column; }
+.session-desk .session-card-scroll > form { margin-top: auto; padding-top: 1rem; }
+.session-desk .session-card-scroll > * { flex-shrink: 0; }
+
+.session-desk #production-hanzi-input { width: 100%; min-height: 3rem; padding: .65rem .8rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font-size: 1.25rem; }
+.session-desk .recognition-prompt { font-size: clamp(2.6rem,6vw,4rem); line-height: 1.35; }

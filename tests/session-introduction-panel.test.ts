@@ -29,6 +29,6 @@ test('session teaching has no close callback for its button or Escape; completio
   assert.match(markup, /Thumbs up: Introduction quality/);
   assert.doesNotMatch(markup, /Thumbs up: Rehearsal quality/);
   assert.doesNotMatch(markup, /Continue with study cards|Back to word|Begin recall drills/);
-  assert.match(markup, /Next beat|Finish walkthrough/);
+  assert.match(markup, /Continue|Finish walkthrough/);
   assert.match(markup, /Undo last study action/);
 });

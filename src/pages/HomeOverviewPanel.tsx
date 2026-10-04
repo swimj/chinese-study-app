@@ -47,7 +47,7 @@ export function HomeOverviewPanel({
   const canStartSession = sessionStarted || sessionPrefetch.status === 'ready' || sessionPrefetch.status === 'error';
 
   return (
-    <div className="panel">
+    <div className="panel home-overview">
       {!sessionStarted ? (
         <div className={`session-start-shell${sessionSettingsOpen ? ' is-settings-open' : ''}`}>
           <button
@@ -65,7 +65,7 @@ export function HomeOverviewPanel({
                 : preparationPending && prefetchedSessionItemCount === 0
                 ? 'Preparing your session. You can check again shortly.'
                 : prefetchedSessionItemCount === 0 ? 'No study material is ready right now. You can check again or return later.'
-                : <>items: {prefetchedSessionItemCount ?? '...'}</>}
+                : <>{prefetchedSessionItemCount ?? '...'} study items ready</>}
             </span>
           </button>
           <button

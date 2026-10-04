@@ -7,6 +7,7 @@ import './features/content-quality/styles.css';
 import './pages/ContentQualityPanel.css';
 import './features/introduction-lab/styles.css';
 import './features/word-introduction/styles.css';
+import './features/session/session-desk.css';
 
 const root = ReactDOM.createRoot(document.getElementById('root')!);
 

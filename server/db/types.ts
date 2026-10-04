@@ -266,6 +266,7 @@ export type DailyNewWordIntakeRow = {
 };
 
 export type SeedData = {
+  wordIntroductionFixtureIds?: string[];
   words: Word[];
   wordMeanings: WordMeaning[];
   wordStudyAdmissionStates: WordStudyAdmissionState[];

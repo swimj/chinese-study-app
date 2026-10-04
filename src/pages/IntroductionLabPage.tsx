@@ -290,7 +290,7 @@ export function IntroductionLabPage() {
               </div>}
             </div>
             {snapshot ? (
-              <IntroductionPlayer snapshot={snapshot} state={playerState}
+              <IntroductionPlayer content={selected.content} snapshot={snapshot} state={playerState}
                 onAction={handlePlayerAction} onRestart={() => setPlayerState(initialIntroductionPlayerState())} />
             ) : (
               <div className="intro-lab-empty-lesson">

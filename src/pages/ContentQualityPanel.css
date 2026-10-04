@@ -1,7 +1,7 @@
 .content-quality-panel {
   margin: 2rem 0;
   padding-top: 1rem;
-  border-top: 1px solid rgba(148, 163, 184, 0.2);
+  border-top: 1px solid var(--border);
 }
 
 .content-quality-filters {
@@ -61,12 +61,12 @@
   gap: 1rem;
   max-width: 55rem;
   padding: 1rem;
-  border-left: 2px solid rgba(148, 163, 184, 0.3);
+  border-left: 2px solid var(--border);
 }
 
 .content-quality-readable dt {
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: var(--text-muted);
   margin-bottom: 0.3rem;
 }
 
@@ -79,7 +79,7 @@
 }
 
 .content-quality-metadata dt {
-  color: #94a3b8;
+  color: var(--text-muted);
 }
 
 .content-quality-metadata dd {
@@ -92,7 +92,7 @@
   overflow: auto;
   padding: 1rem;
   border-radius: 0.5rem;
-  background: rgba(15, 23, 42, 0.8);
+  background: var(--surface);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

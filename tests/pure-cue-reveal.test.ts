@@ -19,10 +19,10 @@ const cue: PureCueSessionReviewItem = {
 function props(): ComponentProps<typeof StudySessionPanel> {
   const noop = () => {};
   return {
-    sessionStarted: true, sessionPhase: 'active', sessionSummary: null,
+    sessionStarted: true, sessionDeskRef: createRef(), deskAgainCount: 0, deskRemainingCount: 1, sessionPhase: 'active', sessionSummary: null,
     sessionFinalization: { kind: 'unfinalized' }, activeItem: null, activePureCue: cue,
     activeWord: null, activeLearningProgress: undefined, activeUnstudiedProgress: undefined,
-    activeReviewProgress: undefined, activePureCueFailureCount: 0, reviewedCount: 0, queuedCount: 1,
+    activeReviewProgress: undefined, activePureCueFailureCount: 0, activePureCueReinforcementStreak: 0, reviewedCount: 0, queuedCount: 1,
     hasUndo: false, submittingRating: null, personalNotesEditorOpen: false, personalNotesEditorSaving: false,
     studyManagementSubmitting: false, productionAwaitingNext: false, pureCueAwaitingNext: false,
     productionAwaitingSupplement: false, frozenProductionCard: null, frozenPureCueCard: null,
@@ -130,4 +130,23 @@ test('recognition reuses supplement teaching only after reveal and retains dicti
     activeItem: { ...item, recognitionSupplement: undefined } });
   assert.match(fallback, /dictionary definition/);
   assert.match(fallback, /legacy example/);
+});
+
+test('production fills a cloze only after reveal and retains the full word reference', () => {
+  const word = { id: 'pepper', hanzi: '藤椒', traditional: null, pinyin: 'téng jiāo', meaning: 'rattan pepper', meanings: ['rattan pepper'], personalNotes: '', examples: [], status: 'review' as const, priority: 1, createdAt: '2026-01-01T00:00:00.000Z', learningStreak: 0, lastLearningSuccessOn: null, lastLearningCoveredOn: null };
+  const item = { sessionActionId: 'pepper-action', actionKind: 'production' as const, targetWordId: word.id, sampledSkillIds: ['production' as const], contentRef: null, intervalHours: 24, word, contrastSelection: null,
+    production: { taskId: 'task', cueId: 'cue', cueType: 'minimal_context' as const, text: '菜里加了____。', acceptedAnswers: [{ wordId: word.id, hanzi: word.hanzi, traditional: null }], supplement: null },
+  };
+  const presentation = { activePureCue: null, activeItem: item, activeWord: word, activePrompt: item.production.text, activeAnswerText: word.hanzi, activeAllMeanings: word.meanings };
+  const hidden = render(presentation);
+  assert.match(hidden, /菜里加了____。/);
+  assert.doesNotMatch(hidden, /藤椒|rattan pepper/);
+  const revealed = render({ ...presentation, answerRevealed: true, productionAwaitingRating: true });
+  assert.match(revealed, /<mark class="desk-cloze-answer">藤椒<\/mark>/);
+  assert.match(revealed, /<details class="desk-reference"><summary>Word reference<\/summary>/);
+  assert.match(revealed, /rattan pepper/);
+  const recognition = render({ ...presentation, isProductionItem: false, answerRevealed: true,
+    activeItem: { ...item, actionKind: 'recognition', sampledSkillIds: ['recognition'], production: undefined }, activePrompt: word.hanzi, activeAnswerText: 'rattan pepper',
+  });
+  assert.match(recognition, /<details class="desk-reference" open="">/);
 });

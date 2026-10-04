@@ -1,20 +1,22 @@
 import { getRehearsalInstruction } from '../rehearsal-presentation';
-import { useEffect, useLayoutEffect, useRef } from 'react';
-import type { TeachingPackageSnapshot } from '../../domain/word-content';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { TeachingPackageSnapshot, WordContentDocument } from '../../domain/word-content';
 import {
-  introductionPlayerKeyAction,
   type IntroductionPlayerAction,
   type IntroductionPlayerState,
 } from './player';
 
+import { teachingNavigationKeyAction } from './teaching-navigation';
+
 function isInteractiveTarget(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (
-    target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(target.tagName)
+    target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A', 'SUMMARY'].includes(target.tagName)
   );
 }
 
-export function IntroductionPlayer({ snapshot, state, onAction, onRestart, onFinish, finishing, mode = 'full' }: {
+export function IntroductionPlayer({ snapshot, content, state, onAction, onRestart, onFinish, finishing, mode = 'full' }: {
   snapshot: TeachingPackageSnapshot;
+  content: WordContentDocument;
   state: IntroductionPlayerState;
   onAction: (action: IntroductionPlayerAction) => void;
   onRestart: () => void;
@@ -22,10 +24,29 @@ export function IntroductionPlayer({ snapshot, state, onAction, onRestart, onFin
   finishing?: boolean;
   mode?: 'full' | 'teaching-only';
 }) {
+  const [browsing, setBrowsing] = useState(false);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const programmaticScrollRef = useRef(false);
   const newestRef = useRef<HTMLElement>(null);
   const answerRef = useRef<HTMLInputElement>(null);
   const composingRef = useRef(false);
   const resultRef = useRef<HTMLDivElement>(null);
+
+  function focusCurrent(smooth = true) {
+    const viewport = viewportRef.current;
+    const current = newestRef.current;
+    if (!viewport || !current) return;
+    setBrowsing(false);
+    programmaticScrollRef.current = true;
+    clearTimeout(scrollTimerRef.current);
+    viewport.scrollTo({
+      top: current.offsetTop - 24,
+      behavior: smooth && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'instant',
+    });
+    current.focus({ preventScroll: true });
+    scrollTimerRef.current = setTimeout(() => { programmaticScrollRef.current = false; }, 550);
+  }
 
   function act(action: IntroductionPlayerAction) {
     if (action.type === 'continue') {
@@ -36,34 +57,51 @@ export function IntroductionPlayer({ snapshot, state, onAction, onRestart, onFin
   }
 
   useLayoutEffect(() => {
-    if (state.phase === 'introduction') newestRef.current?.focus();
+    if (state.phase === 'introduction') focusCurrent();
     else if (state.phase === 'rehearsal') answerRef.current?.focus();
     else if (state.phase === 'result') resultRef.current?.focus();
   }, [snapshot, state.phase, state.beatIndex, state.exerciseIndex]);
 
+  useEffect(() => () => clearTimeout(scrollTimerRef.current), []);
+
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented) return;
-      const action = introductionPlayerKeyAction({
+      const action = teachingNavigationKeyAction({
         key: event.key,
         repeat: event.repeat,
         composing: event.isComposing || event.keyCode === 229,
         editable: isInteractiveTarget(event.target),
         modified: event.metaKey || event.ctrlKey || event.altKey,
-      }, state.phase);
-      if (!action) return;
+      }, state.phase, browsing);
+      if (!action) {
+        // A held Space must not fall through to native scrolling after returning.
+        if (event.repeat && event.key === ' ' && state.phase === 'introduction'
+          && !event.isComposing && !isInteractiveTarget(event.target)
+          && !event.metaKey && !event.ctrlKey && !event.altKey) event.preventDefault();
+        return;
+      }
       event.preventDefault();
-      act(action);
+      if (action.type === 'focus-current') focusCurrent();
+      else act(action);
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [snapshot, state.phase, onAction]);
+  }, [snapshot, state.phase, onAction, browsing, finishing, onFinish]);
 
   const exercise = snapshot.rehearsals[state.exerciseIndex];
   const instruction = exercise ? getRehearsalInstruction(exercise) : '';
   return <div className="intro-lab-player">
     {state.phase === 'introduction' && <>
       <div className="intro-lab-progress"><span>Introduction</span><span>{state.beatIndex + 1} of {snapshot.beats.length}</span></div>
+      <div className={`intro-teaching-viewport${browsing ? ' browsing' : ''}`}
+        ref={viewportRef} role="region" aria-label="Teaching steps; scroll up to revisit"
+        onWheel={() => { programmaticScrollRef.current = false; }}
+        onTouchStart={() => { programmaticScrollRef.current = false; }}
+        onScroll={() => {
+          if (programmaticScrollRef.current || !viewportRef.current || !newestRef.current) return;
+          setBrowsing(Math.abs(viewportRef.current.scrollTop - (newestRef.current.offsetTop - 24)) > 16);
+        }}>
       <div className="intro-lab-beat-stack">
         {snapshot.beats.slice(0, state.beatIndex + 1).map((beat, index) => (
           <article key={beat.id} ref={index === state.beatIndex ? newestRef : undefined}
@@ -81,10 +119,12 @@ export function IntroductionPlayer({ snapshot, state, onAction, onRestart, onFin
           </article>
         ))}
       </div>
+      </div>
+      <div className="intro-teaching-location" aria-live="polite">{state.beatIndex > 0 ? '↑ Earlier steps' : ''}</div>
       <div className="intro-lab-player-actions">
         <button type="button" className="intro-lab-button outline" disabled={state.beatIndex === 0} onClick={() => act({ type: 'back' })}>Back</button>
-        <button type="button" className="intro-lab-button primary" onClick={() => act({ type: 'advance' })}>
-          {state.beatIndex === snapshot.beats.length - 1 ? mode === 'teaching-only' ? 'Finish walkthrough' : 'Try the expression' : 'Next beat'} <kbd>Space</kbd>
+        <button type="button" className="intro-lab-button primary" onClick={() => browsing ? focusCurrent() : act({ type: 'advance' })}>
+          {browsing ? 'Back to current step' : state.beatIndex === snapshot.beats.length - 1 ? mode === 'teaching-only' ? 'Finish walkthrough' : 'Try the expression' : 'Continue'} <kbd>Space</kbd>
         </button>
       </div>
     </>}
@@ -130,17 +170,25 @@ export function IntroductionPlayer({ snapshot, state, onAction, onRestart, onFin
       </div>
     </div>}
     {state.phase === 'finished' && <div className="intro-lab-finished">
-      <p className="intro-lab-kicker">Introduction complete</p>
-      <h3>One word, a little more familiar.</h3>
-      <p>{mode === 'teaching-only'
-        ? 'Next, practice recognizing and recalling this word alongside the other items in your session.'
-        : 'This introduction does not grade your answer or record mastery.'}</p>
+      <div className="intro-lab-word-recap" aria-label="Word summary">
+        <h3 lang="zh-Hans">{content.word.hanzi}</h3>
+        <p className="intro-lab-recap-pinyin">{content.word.pinyin}</p>
+        <div className="intro-lab-recap-uses">
+          {content.uses.map((use) => {
+            const example = content.examples.find((row) => row.id === use.exampleIds[0]);
+            return <div key={use.id}>
+              <strong>{use.label}</strong>
+              {example && <><p lang="zh-Hans">{example.text}</p><p>{example.translation}</p></>}
+            </div>;
+          })}
+        </div>
+      </div>
       <div className="intro-lab-player-actions">
         {onFinish && <button type="button" className="intro-lab-button primary" disabled={finishing}
           onClick={onFinish}>{finishing ? 'Saving…' : <>Continue <kbd>Enter</kbd></>}</button>}
         <button type="button" className={`intro-lab-button ${onFinish ? 'outline' : 'primary'}`} onClick={onRestart}>Start again</button>
       </div>
     </div>}
-    <p className="intro-lab-preview-note">No mastery grade is recorded here.</p>
+    {mode === 'full' && <p className="intro-lab-preview-note">No mastery grade is recorded here.</p>}
   </div>;
 }

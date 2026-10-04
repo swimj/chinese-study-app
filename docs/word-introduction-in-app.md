@@ -11,7 +11,12 @@ is a separate exact-package association. The learner
 never needs to approve content quality or publication. New Mandarin words enter
 a session only with a ready teaching/source snapshot.
 Space advances a complete teaching beat; private reflection questions do not
-require answers. Rehearsal asks for the taught expression in hanzi.
+require answers. Teaching unfolds on one continuous paper surface, with each new
+beat settling at the same reading position. Scroll upward to read the revealed
+beats together; no future content is revealed by scrolling. In browse mode, Space
+returns to the current beat without advancing. A separate subsequent press advances;
+held keys, typing, and IME composition never trigger this navigation. Text sizes stay
+stable in both modes, and reduced-motion preferences disable smooth scrolling. Rehearsal asks for the taught expression in hanzi.
 
 Inside a first encounter, the player shows teaching beats only. Finishing the
 walkthrough returns to the ordinary session scheduler for interleaved recognition

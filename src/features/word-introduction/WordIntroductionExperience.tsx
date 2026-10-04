@@ -112,7 +112,7 @@ export function WordIntroductionExperience({
       <div className="word-intro-topline">
         {!focusedRehearsal && library.completed && <span className="word-intro-completed">Previously introduced</span>}
       </div>
-      <header className="word-intro-heading">
+      {playerState.phase !== 'finished' && <header className="word-intro-heading">
         {focusedRehearsal ? <>
           <p className="intro-lab-kicker">Focused recall</p>
           <h1>Try the expression</h1>
@@ -121,7 +121,7 @@ export function WordIntroductionExperience({
           <h1>{lexical?.hanzi ?? 'Meet this word'}</h1>
           {lexical && <p className="word-intro-pronunciation">{lexical.pinyin}</p>}
         </>}
-      </header>
+      </header>}
 
       {library.reviewPreparationError && selected.value && <p className="word-intro-status" role="status">{library.reviewPreparationError}</p>}
       {error && <p className="intro-lab-error" role="alert">{error}</p>}
@@ -136,6 +136,7 @@ export function WordIntroductionExperience({
       {selected.value && <IntroductionPlayer
         mode="teaching-only"
         snapshot={selected.value.snapshot}
+        content={selected.value.content.content}
         state={playerState}
         onAction={handlePlayerAction}
         onRestart={() => setPlayerState(initialIntroductionPlayerState())}

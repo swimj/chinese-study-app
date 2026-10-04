@@ -106,7 +106,7 @@ export function AppChrome({
       }>
         <nav className="navbar app-primary-nav" aria-label="Primary">
           <div className="nav-brand">
-            <strong>闲云无敌锤子</strong>
+            <strong lang="zh-Hans">闲云无敌锤子</strong>
           </div>
           <div className="nav-tabs">
             {PRIMARY_PAGES.map((page) => {

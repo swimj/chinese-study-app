@@ -1,3 +1,4 @@
+import { SessionDesk, RecallChips, type SessionDeskHandle } from './SessionDesk';
 import { useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ContentQualityControls } from '../content-quality/ContentQualityControls';
 import { getSessionContentQualityTarget, sessionContentQualityEncounterId } from './session-content-quality';
@@ -73,6 +74,9 @@ export type FrozenPureCueCard = {
 
 export function StudySessionPanel({
   sessionStarted,
+  sessionDeskRef,
+  deskAgainCount,
+  deskRemainingCount,
   sessionPhase,
   sessionSummary,
   sessionFinalization,
@@ -84,6 +88,7 @@ export function StudySessionPanel({
   activeUnstudiedProgress,
   activeReviewProgress,
   activePureCueFailureCount,
+  activePureCueReinforcementStreak,
   reviewedCount,
   queuedCount,
   hasUndo,
@@ -146,6 +151,9 @@ export function StudySessionPanel({
   onCloseShortcutGuide,
 }: {
   sessionStarted: boolean;
+  sessionDeskRef: RefObject<SessionDeskHandle>;
+  deskAgainCount: number;
+  deskRemainingCount: number;
   sessionPhase: BucketSessionState['phase'] | null;
   sessionSummary: SessionSummary | null;
   sessionFinalization: SessionFinalizationState;
@@ -157,6 +165,7 @@ export function StudySessionPanel({
   activeUnstudiedProgress: UnstudiedWordProgress | undefined;
   activeReviewProgress: ReviewActionProgress | undefined;
   activePureCueFailureCount: number;
+  activePureCueReinforcementStreak: number;
   reviewedCount: number;
   queuedCount: number;
   hasUndo: boolean;
@@ -239,7 +248,7 @@ export function StudySessionPanel({
   );
   const showProductionSupplementAside =
     answerRevealed && hasServedProductionCueSupplement(activeItem?.production);
-  const qualityHotkeysActive = !personalNotesEditorOpen && !shortcutGuideOpen;
+  const qualityHotkeysActive = !personalNotesEditorOpen && !shortcutGuideOpen && submittingRating === null && !studyManagementSubmitting;
   function qualityControls(target: ContentQualityTarget | null, actionId: string, count: number, label: string, hotkeys = true) {
     if (!target || !sessionSummary) return null;
     return <ContentQualityControls
@@ -249,7 +258,7 @@ export function StudySessionPanel({
       hotkeysActive={hotkeys && qualityHotkeysActive}
     />;
   }
-  const sessionEndDisabled = sessionPhase === 'draining' || personalNotesEditorOpen;
+  const sessionEndDisabled = sessionPhase === 'draining' || personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting;
   const sessionEndLabel = sessionPhase === 'draining' ? 'Session draining' : 'End session';
   const keyboardContext = createSessionKeyboardContext({
     sessionStarted,
@@ -277,8 +286,14 @@ export function StudySessionPanel({
     <div className={sessionStarted ? 'panel study-session-panel session-panel-active' : 'panel study-session-panel'}>
       <h2>Study session</h2>
       <div className={shortcutGuideOpen ? 'session-interaction-surface is-paused' : 'session-interaction-surface'}>
+        <SessionDesk ref={sessionDeskRef} enabled={sessionStarted && panelView !== 'completed' && panelView !== 'empty'}
+          remaining={deskRemainingCount} again={deskAgainCount}
+          answered={frozenProductionCard?.reviewedCount ?? frozenPureCueCard?.reviewedCount ?? frozenContrastCard?.reviewedCount ?? reviewedCount}
+          elapsed={activeElapsedTime}
+          mistakeKey={panelView.startsWith('frozen_') ? `${panelView}:${frozenProductionCard?.sessionActionId ?? frozenPureCueCard?.item.sessionActionId ?? frozenContrastCard?.item.sessionActionId}:${reviewedCount}` : null}>
+
         {panelView === 'not_started' ? (
-          <p className="notes">Start the session to freeze the current session snapshot into frontend state.</p>
+          <p className="notes">Start a session when you’re ready to study.</p>
         ) : panelView === 'frozen_production' && frozenProductionCard ? (
         <div className="review-card session-card-shell">
           <div className="session-card-scroll">
@@ -292,7 +307,7 @@ export function StudySessionPanel({
                 {` · ${studyProfile.labels.productionDirection}`}
               </p>
             </div>
-            <p className="notes">
+            <p className="notes desk-legacy-counts">
               Answered {frozenProductionCard.reviewedCount} this session · {frozenProductionCard.queuedCount} still queued
             </p>
             <div className="prompt-block">
@@ -300,7 +315,7 @@ export function StudySessionPanel({
               {frozenProductionCard.promptDisplayedMeanings.length > 0 ? (
                 <MeaningList meanings={frozenProductionCard.promptDisplayedMeanings} className="meaning-list-prompt" />
               ) : (
-                <span className="prompt-meta meaning-list-prompt">{frozenProductionCard.fallbackPrompt}</span>
+                <strong className="prompt-value"><ClozePrompt text={frozenProductionCard.fallbackPrompt} answer={frozenProductionCard.answerText} /></strong>
               )}
             </div>
             {qualityControls(getSessionContentQualityTarget({ ...frozenProductionCard, production: frozenProductionCard.production ?? null }),
@@ -310,7 +325,7 @@ export function StudySessionPanel({
               <span className="prompt-label">Answer</span>
               <span className="answer-pinyin">{frozenProductionCard.answerPinyin}</span>
               <strong className="answer-value">{frozenProductionCard.answerText}</strong>
-              <MeaningList meanings={frozenProductionCard.allMeanings} />
+              <details className="desk-reference"><summary>Word reference</summary><MeaningList meanings={frozenProductionCard.allMeanings} /></details>
               {frozenProductionCard.production?.supplement ? (
                 <div className="production-supplement">
                   <span className="prompt-label">In context</span>
@@ -337,16 +352,13 @@ export function StudySessionPanel({
               <div className="answer-block">
                 <span className="prompt-label">Your response</span>
                 <strong className="answer-value">{frozenProductionCard.attemptedHanzi}</strong>
-                <p className="notes">{studyProfile.labels.targetRecallIncorrect} This item was recorded as Forgot.</p>
               </div>
-            ) : (
-              <p className="notes">No clue. This item was recorded as Forgot.</p>
-            )}
+            ) : null}
           </div>
           <div className="session-action-bar">
             <SessionActionSection>
-              <button type="button" onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen}>
-                Next
+              <button type="button" onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}>
+                Continue
                 <ShortcutHint shortcut={shortcutFor(primaryAction, 'continue_after_auto_forgot')} />
               </button>
               <UndoButton
@@ -362,7 +374,7 @@ export function StudySessionPanel({
                   type="button"
                   className="secondary-button"
                   onClick={onToggleFrozenProductionLearnerRequestedReview}
-                  disabled={personalNotesEditorOpen}
+                  disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}
                 >
                   {frozenProductionLearnerRequestedReview ? 'Remove reflection request' : 'Ask reflection to review'}
                 </button>
@@ -387,7 +399,7 @@ export function StudySessionPanel({
             <div className="review-card-header">
               <p className="badge">Review · Pure cue production</p>
             </div>
-            <p className="notes">
+            <p className="notes desk-legacy-counts">
               Answered {frozenPureCueCard.reviewedCount} this session · {frozenPureCueCard.queuedCount} still queued
             </p>
             <div className="prompt-block">
@@ -410,15 +422,13 @@ export function StudySessionPanel({
               ))}
             </div>
             {frozenPureCueCard.attemptedResponse ? (
-              <p className="notes">Your response: {frozenPureCueCard.attemptedResponse}. This cue was recorded as Forgot.</p>
-            ) : (
-              <p className="notes">No clue. This cue was recorded as Forgot.</p>
-            )}
+              <p className="notes">Your response: {frozenPureCueCard.attemptedResponse}</p>
+            ) : null}
           </div>
           <div className="session-action-bar">
             <SessionActionSection>
-              <button type="button" onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen}>
-                Next
+              <button type="button" onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}>
+                Continue
                 <ShortcutHint shortcut={shortcutFor(primaryAction, 'continue_after_auto_forgot')} />
               </button>
               <UndoButton
@@ -442,7 +452,7 @@ export function StudySessionPanel({
             <div className="review-card-header">
               <p className="badge">Review · Contrast selection</p>
             </div>
-            <p className="notes">
+            <p className="notes desk-legacy-counts">
               Answered {frozenContrastCard.reviewedCount} this session · {frozenContrastCard.queuedCount} still queued
             </p>
             <div className="prompt-block">
@@ -459,12 +469,11 @@ export function StudySessionPanel({
               characterPresentation={characterPresentation}
               onSelectChoice={() => undefined}
             />
-            <p className="notes">Incorrect contrast choice. This item was recorded as Forgot.</p>
           </div>
           <div className="session-action-bar">
             <SessionActionSection>
-              <button type="button" onClick={onContinueAfterAutoContrastForgot} disabled={personalNotesEditorOpen}>
-                Next
+              <button type="button" onClick={onContinueAfterAutoContrastForgot} disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}>
+                Continue
                 <ShortcutHint shortcut={shortcutFor(primaryAction, 'continue_after_auto_forgot')} />
               </button>
               <UndoButton
@@ -540,7 +549,7 @@ export function StudySessionPanel({
               <button
                 type="button"
                 onClick={() => onBeginUnstudiedDrill(activeWord.id)}
-                disabled={personalNotesEditorOpen}
+                disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}
               >
                 Begin recall drills
                 <ShortcutHint shortcut={shortcutFor(primaryAction, 'begin_unstudied_drill')} />
@@ -579,15 +588,13 @@ export function StudySessionPanel({
                 {reviewInReinforcement ? 'Review reinforcement' : 'Review'} · Pure cue production
               </p>
             </div>
-            <p className="notes">
+            <p className="notes desk-legacy-counts">
               Answered {reviewedCount} this session · {queuedCount} still queued · Elapsed {activeElapsedTime}
             </p>
             <div className="prompt-block">
               <span className="prompt-label">Cue</span>
               <strong className="prompt-value">{activePureCue.snapshot.stimulus}</strong>
-              <span className="prompt-meta">
-                {activeReviewState} · Failures {activePureCueFailureCount}
-              </span>
+              {reviewInReinforcement ? <RecallChips count={activePureCueReinforcementStreak} label="Practice again" /> : null}
             </div>
             {qualityControls({ kind: 'pure_cue', snapshotId: activePureCue.snapshot.snapshotId },
               activePureCue.sessionActionId, reviewedCount, 'Cue quality')}
@@ -626,7 +633,7 @@ export function StudySessionPanel({
                   autoComplete="off"
                   autoCapitalize="none"
                   spellCheck={false}
-                  disabled={submittingRating !== null || personalNotesEditorOpen}
+                  disabled={submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
                 />
                 {productionHanziError ? <p className="notes">{productionHanziError}</p> : null}
               </form>
@@ -643,7 +650,7 @@ export function StudySessionPanel({
                       className={option.isDefault ? 'rating-button is-default' : 'rating-button'}
                       title={option.note}
                       onClick={() => onRate(option.value, { restoreUi: 'production-input' })}
-                      disabled={submittingRating !== null || personalNotesEditorOpen}
+                      disabled={submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
                     >
                       <strong>
                         {option.label}
@@ -658,7 +665,7 @@ export function StudySessionPanel({
                   <button
                     type="submit"
                     form={productionFormId}
-                    disabled={submittingRating !== null || personalNotesEditorOpen}
+                    disabled={submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
                   >
                     {studyProfile.labels.submitProductionInput}
                     <ShortcutHint shortcut={shortcutFor(primaryAction, 'submit_production')} />
@@ -667,7 +674,7 @@ export function StudySessionPanel({
                     type="button"
                     className="secondary-button"
                     onClick={onNoClueProduction}
-                    disabled={submittingRating !== null || personalNotesEditorOpen || productionHanziInput.trim().length > 0}
+                    disabled={submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting || productionHanziInput.trim().length > 0}
                   >
                     No clue
                   </button>
@@ -730,7 +737,7 @@ export function StudySessionPanel({
                   : studyProfile.labels.productionDirection}
               </p>
             </div>
-            <p className="notes">
+            <p className="notes desk-legacy-counts">
               Answered {reviewedCount} this session · {queuedCount} still queued · Unique lapse items{' '}
               {sessionSummary?.lapsedReviewActionIds.length ?? 0} · Elapsed {activeElapsedTime}
             </p>
@@ -741,21 +748,20 @@ export function StudySessionPanel({
                   <strong className="contrast-prompt-text">{activePrompt}</strong>
                 </>
               ) : activeItem.actionKind === 'recognition' ? (
-                <strong className="prompt-value">{activePrompt}</strong>
+                <strong className="prompt-value recognition-prompt">{activePrompt}</strong>
               ) : activeItem.production || activeItem.rehearsal ? (
-                <strong className="prompt-value">{activePrompt}</strong>
+                <strong className="prompt-value"><ClozePrompt text={activePrompt ?? ''} answer={answerRevealed ? activeAnswerText : null} /></strong>
               ) : activePromptDisplayedMeanings.length > 0 ? (
                 <MeaningList meanings={activePromptDisplayedMeanings} className="meaning-list-prompt" />
               ) : (
                 <span className="prompt-meta meaning-list-prompt">No production meanings selected</span>
               )}
-              <span className="prompt-meta">
-                {activeWord.status === 'review'
-                  ? `${activeReviewState} · Failures ${activeReviewProgress?.failureCount ?? 0}`
-                  : activeWord.status === 'learning'
-                    ? `Binary recall · Covered ${Number(activeLearningProgress?.coveredDirections.forward ?? false) + Number(activeLearningProgress?.coveredDirections.reverse ?? false)}/2 skills`
-                    : `Binary recall · Consecutive successes ${activeUnstudiedProgress?.consecutiveSuccesses.forward ?? 0}/3 recognition · ${activeUnstudiedProgress?.consecutiveSuccesses.reverse ?? 0}/3 production`}
-              </span>
+              {activeWord.status === 'unstudied' ? <RecallChips
+                count={activeUnstudiedProgress?.consecutiveSuccesses[activeItem.actionKind === 'recognition' ? 'forward' : 'reverse'] ?? 0}
+                label={activeItem.actionKind === 'recognition' ? 'Recognition' : 'Production'}
+              /> : activeWord.status === 'learning' ? <RecallChips total={2}
+                count={Number(activeLearningProgress?.coveredDirections.forward ?? false) + Number(activeLearningProgress?.coveredDirections.reverse ?? false)} label="Recall skills"
+              /> : reviewInReinforcement ? <RecallChips count={activeReviewProgress?.reinforcementStreak ?? 0} label="Practice again" /> : null}
             </div>
             {qualityControls(getSessionContentQualityTarget(activeItem), activeItem.sessionActionId, reviewedCount,
               activeItem.rehearsal ? 'Rehearsal quality' : 'Cue quality', !showProductionSupplementAside)}
@@ -764,7 +770,7 @@ export function StudySessionPanel({
                 item={activeItem}
                 selectedWordId={contrastSelectedWordId}
                 answerRevealed={answerRevealed}
-                disabled={submittingRating !== null || personalNotesEditorOpen}
+                disabled={submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
                 characterPresentation={characterPresentation}
                 onSelectChoice={onSelectContrastChoice}
               />
@@ -772,7 +778,6 @@ export function StudySessionPanel({
               <div className="answer-block">
                 {showProductionSupplementAside && activeItem.production?.supplement ? (
                   <>
-                    <p className="production-supplement-ack">You had it.</p>
                     <strong className="production-supplement-target">{activeAnswerText}</strong>
                     <span className="answer-pinyin">{activeAnswerPinyin}</span>
                     <ProductionSupplementAside supplement={activeItem.production.supplement} />
@@ -786,6 +791,8 @@ export function StudySessionPanel({
                     <strong className="answer-value">{activeAnswerText}</strong>
                   </>
                 )}
+                {!productionAwaitingSupplement ? <details className="desk-reference" open={isProductionItem ? undefined : true}>
+                  <summary>Word reference</summary>
                 {productionAwaitingSupplement ? null : activeItem.wordContent ? (
                   <div className="stack">
                     {activeItem.wordContent.uses.map((use) => {
@@ -850,6 +857,7 @@ export function StudySessionPanel({
                     {!activeItem.wordContent && !activeItem.recognitionSupplement && <span className="prompt-meta">{activeWord.examples[0]}</span>}
                   </>
                 )}
+                </details> : null}
               </div>
             ) : isProductionItem && !productionAwaitingRating ? (
               <form
@@ -872,7 +880,7 @@ export function StudySessionPanel({
                   autoComplete="off"
                   autoCapitalize="none"
                   spellCheck={false}
-                  disabled={submittingRating !== null || personalNotesEditorOpen}
+                  disabled={submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
                 />
                 {productionHanziError ? <p className="notes">{productionHanziError}</p> : null}
               </form>
@@ -882,11 +890,6 @@ export function StudySessionPanel({
             <SessionActionSection>
               {activeItem.actionKind === 'contrast_selection' && !showRatingButtons ? (
                 <div className="rating-grid">
-                  <p className="prompt-meta session-action-hint">
-                    {contrastSelectedWordId
-                      ? 'Confirm the selected choice to continue.'
-                      : 'Press 1 or 2 to preview a choice, then confirm. Clicking a choice confirms it immediately.'}
-                  </p>
                   <button
                     type="button"
                     onClick={() => {
@@ -908,7 +911,7 @@ export function StudySessionPanel({
                 <button
                   type="button"
                   onClick={onContinueAfterProductionSupplement}
-                  disabled={personalNotesEditorOpen}
+                  disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}
                 >
                   Continue
                   <ShortcutHint shortcut={shortcutFor(primaryAction, 'continue_after_supplement')} />
@@ -926,7 +929,7 @@ export function StudySessionPanel({
                           restoreUi: isProductionItem ? 'production-input' : 'revealed',
                         })
                       }
-                      disabled={submittingRating !== null || personalNotesEditorOpen}
+                      disabled={submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
                     >
                       <strong>
                         {option.label}
@@ -941,7 +944,7 @@ export function StudySessionPanel({
                   <button
                     type="submit"
                     form={productionFormId}
-                    disabled={submittingRating !== null || personalNotesEditorOpen}
+                    disabled={submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
                   >
                     {studyProfile.labels.submitProductionInput}
                     <ShortcutHint shortcut={shortcutFor(primaryAction, 'submit_production')} />
@@ -960,7 +963,7 @@ export function StudySessionPanel({
                   </button>
                 </div>
               ) : (
-                <button type="button" onClick={onRevealAnswer} disabled={personalNotesEditorOpen}>
+                <button type="button" onClick={onRevealAnswer} disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}>
                   Reveal answer
                   <ShortcutHint shortcut={shortcutFor(primaryAction, 'reveal')} />
                 </button>
@@ -978,7 +981,7 @@ export function StudySessionPanel({
                   type="button"
                   className="secondary-button"
                   onClick={onToggleLearnerRequestedReview}
-                  disabled={personalNotesEditorOpen}
+                  disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}
                 >
                   {learnerRequestedReview ? 'Remove reflection request' : 'Ask reflection to review'}
                 </button>
@@ -1002,6 +1005,7 @@ export function StudySessionPanel({
           </div>
         </div>
         ) : null}
+        </SessionDesk>
       </div>
       {shortcutGuideOpen ? (
         <KeyboardShortcutsOverlay
@@ -1475,4 +1479,9 @@ function createSessionKeyboardContext({
     completedSummary,
     summaryFinalizationKind,
   };
+}
+
+function ClozePrompt({ text, answer }: { text: string; answer: string | null }) {
+  if (!answer || !text.includes('____')) return <>{text}</>;
+  return <>{text.split('____').map((part, index) => <span key={index}>{index > 0 ? <mark className="desk-cloze-answer">{answer}</mark> : null}{part}</span>)}</>;
 }

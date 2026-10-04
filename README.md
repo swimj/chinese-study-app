@@ -102,6 +102,10 @@ progress. See [the lab guide](docs/word-introduction-lab.md).
 
 - Uses the repo-local database at [`data/app.db`](/Users/jw/dev/chinese-study-app/data/app.db)
 - Seeds sample data on first run
+- The Mandarin seed includes six ready new-word lessons (报备、藤椒、泡沫、不堪、石沉大海、为所欲为),
+  shared with the introduction lab. They appear through ordinary **Start session**
+  alongside the existing review examples, without provider calls. Existing databases
+  are not reseeded; reset only a disposable dev database to reload the fixture.
 - Safe to reset during development
 
 To reset the default dev database:
