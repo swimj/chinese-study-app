@@ -316,6 +316,15 @@ lifecycle event with stable learner/session/action/event correlations, outcome,
 rating, and elapsed time so an ambiguous retry can be paired with an earlier
 durable success.
 
+The homepage exercise failure rate combines word-review summary counts with
+standalone pure-cue assessments belonging to the same learner and finalized
+session. Each assessment contributes one completion and, when `failure_count > 0`,
+one failure regardless of reinforcement attempts. Existing pure-cue history is
+included on read; sessions without a saved summary are excluded. The summary
+write contract remains word-review-only, so clients must not add pure-cue counts
+to it. The legacy `reviewFailureRateDays` response field names now describe these
+combined exercise counts. All exercise types use the summary's UTC completion day.
+
 `POST /api/review-session-summaries` accepts a non-negative integer `activeDurationMs` alongside the existing completion counts. The `sessionId` upsert replaces all summary fields, including the duration.
 Caught summary persistence failures use the same diagnostic-id contract so the
 otherwise-lost completion counts and active duration remain inspectable.

@@ -2376,18 +2376,28 @@ export function getReviewFailureRateDays(limit = 14): ReviewFailureRateDay[] {
     throw new Error('Expected positive integer limit');
   }
 
+  // Summary counters remain word-only; derive pure-cue totals from durable
+  // assessments, including historical sessions, without counting retries twice.
   const rows = getDb()
     .prepare(`
+      WITH pure_cue_totals AS (
+        SELECT session_id, COUNT(*) AS completed_count,
+          SUM(CASE WHEN failure_count > 0 THEN 1 ELSE 0 END) AS failed_count
+        FROM pure_cue_attempts
+        WHERE learner_id = ?
+        GROUP BY session_id
+      )
       SELECT
-        day_key,
-        SUM(completed_count) AS completed_count,
-        SUM(failed_count) AS failed_count
-      FROM review_session_summaries
-      GROUP BY day_key
-      ORDER BY day_key DESC
+        summary.day_key,
+        SUM(summary.completed_count + COALESCE(pure.completed_count, 0)) AS completed_count,
+        SUM(summary.failed_count + COALESCE(pure.failed_count, 0)) AS failed_count
+      FROM review_session_summaries AS summary
+      LEFT JOIN pure_cue_totals AS pure ON pure.session_id = summary.session_id
+      GROUP BY summary.day_key
+      ORDER BY summary.day_key DESC
       LIMIT ?
     `)
-    .all(limit) as ReviewSessionResultRow[];
+    .all(requireLearnerId(), limit) as ReviewSessionResultRow[];
 
   const ascendingRows = [...rows].reverse();
   const countsByDay = new Map(

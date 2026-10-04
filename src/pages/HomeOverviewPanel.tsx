@@ -107,8 +107,8 @@ export function HomeOverviewPanel({
           ) : null}
         </div>
       )}
-      <section className="failure-rate-section" aria-label="Review failure rate">
-        <h3>Review failure rate</h3>
+      <section className="failure-rate-section" aria-label="Exercise failure rate">
+        <h3>Exercise failure rate</h3>
         <div className="failure-rate-list">
           {getReviewFailureRatePeriods(backendStatus?.reviewFailureRateDays ?? []).map((period) => (
             <div key={period.days} className="failure-rate-period">

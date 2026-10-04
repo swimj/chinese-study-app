@@ -357,3 +357,18 @@ The following remain intentionally open:
 - how repeated exposures are spaced relative to other items in the session
 - whether reinforcement of a failed review item should ever surface the opposite direction too
 - how an interrupted session should affect partial progress
+
+
+## Homepage exercise failure rate
+
+The homepage pools completed word-review actions (recognition, production, and
+contrast selection) and standalone pure-cue assessments from finalized sessions.
+Each exercise counts once in the denominator. A word-review action with a lapse
+or a pure-cue assessment with any failure counts once in the numerator, even if
+reinforcement later succeeds. Learning and new-word practice are excluded.
+
+The 1-, 3-, and 7-day windows include today and use UTC session-completion dates.
+Sum failures and completions across each window before dividing; show no rate
+when there are no completions. Existing durable pure-cue assessments participate
+in historical rates. These are recorded failure rates without compensation
+adjustments.
