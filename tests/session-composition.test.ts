@@ -339,67 +339,91 @@ describe('session composition', { concurrency: false }, () => {
     assert.equal(second?.production?.text, 'second shared cue');
   });
 
-  test('serves fallback reinforcement as a separate post-reveal supplement snapshot', () => {
-    insertWord({
-      id: 'supplemented-word',
-      hanzi: '包庇',
-      pinyin: 'baobi',
-      meaning: 'to shield; to harbor',
-      examples: [],
-      status: 'review',
-      priority: 100,
-      createdAt: isoHoursAgo(96),
-    });
-    insertWordStudyAdmissionState('supplemented-word', null);
-    insertWordSkillState({
-      wordId: 'supplemented-word',
-      skillId: 'production',
-      intervalHours: 24,
-      lastStudiedAt: isoHoursAgo(48),
-      nextDueAt: isoHoursAgo(24),
-    });
-    const operation = {
-      kind: 'add_production_cue_supplement' as const,
-      version: 1 as const,
-      wordId: 'supplemented-word',
-      taskId: 'production-task:supplemented-word:default_production',
-      cueId: null,
-      englishFrame: 'Knowingly shielding someone from responsibility.',
-      exampleSentence: '他明知儿子犯了罪，却包庇了他。',
-      exampleTranslation: 'He knew his son had committed a crime but shielded him.',
-    };
-    const appliedAt = new Date().toISOString();
-    sqlite.prepare(`
-      INSERT INTO reflection_operation_invocations (
-        invocation_id, created_at, origin_kind, origin_proposal_id,
-        origin_superseded_proposal_id, operation_kind, operation_version,
-        operation_json, application_state, application_updated_at,
-        unsupported_reason, applied_at, application_error, stale_reason,
-        effect_refs_json, satisfying_effect_refs_json
-      ) VALUES (
-        'supplement-session-invocation', ?, 'manual', NULL, NULL, ?, 1, ?,
-        'pending', ?, NULL, NULL, NULL, NULL, '[]', '[]'
-      )
-    `).run(appliedAt, operation.kind, JSON.stringify(operation), appliedAt);
-    const applied = dbModule.applyProductionCueSupplementWithoutTransaction(
-      operation,
-      'supplement-session-invocation',
-      appliedAt,
-    );
-    assert.equal(applied.kind, 'applied');
+  for (const cueId of [null, 'supplement-definition-cue']) {
+    test(`serves ${cueId ?? 'fallback'} reinforcement in production and recognition`, () => {
+      insertWord({
+        id: 'supplemented-word',
+        hanzi: '包庇',
+        pinyin: 'baobi',
+        meaning: 'to shield; to harbor',
+        examples: [],
+        status: 'review',
+        priority: 100,
+        createdAt: isoHoursAgo(96),
+      });
+      insertWordStudyAdmissionState('supplemented-word', null);
+      insertWordSkillState({
+        wordId: 'supplemented-word',
+        skillId: 'production',
+        intervalHours: 24,
+        lastStudiedAt: isoHoursAgo(48),
+        nextDueAt: isoHoursAgo(24),
+      });
+      if (cueId) insertProductionCue({ wordId: 'supplemented-word', cueId,
+        text: 'to shield; to harbor', acceptedWordIds: ['supplemented-word'], active: true,
+        cueType: 'definition_gloss' });
+      const operation = {
+        kind: 'add_production_cue_supplement' as const,
+        version: 1 as const,
+        wordId: 'supplemented-word',
+        taskId: 'production-task:supplemented-word:default_production',
+        cueId,
+        englishFrame: 'Knowingly shielding someone from responsibility.',
+        exampleSentence: '他明知儿子犯了罪，却包庇了他。',
+        exampleTranslation: 'He knew his son had committed a crime but shielded him.',
+      };
+      const appliedAt = new Date().toISOString();
+      sqlite.prepare(`
+        INSERT INTO reflection_operation_invocations (
+          invocation_id, created_at, origin_kind, origin_proposal_id,
+          origin_superseded_proposal_id, operation_kind, operation_version,
+          operation_json, application_state, application_updated_at,
+          unsupported_reason, applied_at, application_error, stale_reason,
+          effect_refs_json, satisfying_effect_refs_json
+        ) VALUES (
+          'supplement-session-invocation', ?, 'manual', NULL, NULL, ?, 1, ?,
+          'pending', ?, NULL, NULL, NULL, NULL, '[]', '[]'
+        )
+      `).run(appliedAt, operation.kind, JSON.stringify(operation), appliedAt);
+      const applied = dbModule.applyProductionCueSupplementWithoutTransaction(
+        operation,
+        'supplement-session-invocation',
+        appliedAt,
+      );
+      assert.equal(applied.kind, 'applied');
 
-    const item = dbModule.getSessionPayload(studyDayKey).buckets.review.find(
-      (candidate) => candidate.targetWordId === 'supplemented-word',
-    );
-    assert.equal(item?.production?.text, 'to shield; to harbor');
-    assert.equal(item?.production?.cueId, null);
-    assert.deepEqual(item?.production?.supplement, {
-      supplementId: applied.kind === 'applied' ? applied.effectRefs[0]!.id : '',
-      englishFrame: operation.englishFrame,
-      exampleSentence: operation.exampleSentence,
-      exampleTranslation: operation.exampleTranslation,
+      const item = dbModule.getSessionPayload(studyDayKey).buckets.review.find(
+        (candidate) => candidate.targetWordId === 'supplemented-word',
+      );
+      assert.equal(item?.production?.text, 'to shield; to harbor');
+      assert.equal(item?.production?.cueId, cueId);
+      assert.deepEqual(item?.production?.supplement, {
+        supplementId: applied.kind === 'applied' ? applied.effectRefs[0]!.id : '',
+        englishFrame: operation.englishFrame,
+        exampleSentence: operation.exampleSentence,
+        exampleTranslation: operation.exampleTranslation,
+      });
+      insertWordSkillState({ wordId: 'supplemented-word', skillId: 'recognition',
+        intervalHours: 12, lastStudiedAt: isoHoursAgo(48), nextDueAt: isoHoursAgo(36) });
+      const recognition = dbModule.getSessionPayload(studyDayKey).buckets.review.find(
+        (candidate) => candidate.targetWordId === 'supplemented-word',
+      );
+      assert.equal(recognition?.actionKind, 'recognition');
+      assert.equal(recognition?.wordContent, undefined);
+      assert.equal(recognition?.production, null);
+      assert.deepEqual(recognition?.recognitionSupplement, item?.production?.supplement);
+      if (cueId) {
+        sqlite.prepare('UPDATE production_cue_activation_state SET active = 0 WHERE cue_id = ?').run(cueId);
+        const afterRetirement = dbModule.getSessionPayload(studyDayKey).buckets.review.find(
+          (candidate) => candidate.targetWordId === 'supplemented-word');
+        assert.equal(afterRetirement?.recognitionSupplement, undefined);
+        assert.ok(recognition?.recognitionSupplement, 'existing session retains its snapshot');
+      }
+      dbModule.bootstrapLearner({ learnerId: 'supplement-other-learner' });
+      assert.equal(dbModule.runWithLearnerId('supplement-other-learner', () =>
+        dbModule.getProductionCueSupplement(operation.taskId, cueId)), null);
     });
-  });
+  }
 
   test('does not resurrect the legacy production gloss when every normalized meaning is hidden', () => {
     insertWord({
@@ -1934,20 +1958,22 @@ function insertProductionCue({
   text,
   acceptedWordIds,
   active,
+  cueType = 'minimal_context',
 }: {
   wordId: string;
   cueId: string;
   text: string;
   acceptedWordIds: string[];
   active: boolean;
+  cueType?: 'minimal_context' | 'definition_gloss';
 }) {
   const taskId = `production-task:${wordId}:default_production`;
   const eventId = `${cueId}-lifecycle`;
   sqlite.prepare(`
     INSERT INTO production_cues (
       cue_id, task_id, cue_type, cue_text, created_at, origin_kind, origin_invocation_id
-    ) VALUES (?, ?, 'minimal_context', ?, ?, 'manual', NULL)
-  `).run(cueId, taskId, text, isoHoursAgo(1));
+    ) VALUES (?, ?, ?, ?, ?, 'manual', NULL)
+  `).run(cueId, taskId, cueType, text, isoHoursAgo(1));
   const insertAccepted = sqlite.prepare(`
     INSERT INTO production_cue_accepted_words (cue_id, word_id, position)
     VALUES (?, ?, ?)

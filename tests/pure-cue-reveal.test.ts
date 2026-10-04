@@ -103,3 +103,31 @@ test('frozen production keeps cue feedback and gives the visible supplement the 
   assert.equal((markup.match(/Useful content \(\]\)/g) ?? []).length, 1);
   assert.doesNotMatch(markup, /Describe unusual behavior/);
 });
+
+test('recognition reuses supplement teaching only after reveal and retains dictionary fallback', () => {
+  const word = { id: 'recognition-word', hanzi: '包庇', traditional: null, pinyin: 'bāobì',
+    meaning: 'dictionary definition', meanings: ['dictionary definition'], personalNotes: '',
+    examples: ['legacy example'], status: 'review' as const, priority: 1, createdAt: '',
+    learningStreak: 0, lastLearningSuccessOn: null, lastLearningCoveredOn: null };
+  const item = { sessionActionId: 'recognition-action', actionKind: 'recognition' as const,
+    targetWordId: word.id, sampledSkillIds: ['recognition' as const], contentRef: null,
+    intervalHours: 24, word, contrastSelection: null, production: null,
+    recognitionSupplement: { supplementId: 'supplement', englishFrame: 'Knowingly shielding someone.',
+      exampleSentence: '他包庇了他。', exampleTranslation: 'He shielded him.' } };
+  const overrides = { activePureCue: null, activeItem: item, activeWord: word,
+    isProductionItem: false, activePrompt: word.hanzi, activeAllMeanings: word.meanings,
+    activeAnswerText: word.meaning, activeAnswerPinyin: word.pinyin,
+    sessionSummary: createSessionSummary({ sessionId: 'recognition-session',
+      startedAt: '2026-09-26T00:00:00.000Z', initialQueueLength: 1 }) };
+  assert.doesNotMatch(render(overrides), /Knowingly shielding|He shielded|Supplement quality/);
+  const revealed = render({ ...overrides, answerRevealed: true });
+  assert.match(revealed, /Knowingly shielding someone/);
+  assert.match(revealed, /他包庇了他。/);
+  assert.match(revealed, /He shielded him/);
+  assert.match(revealed, /Thumbs up: Supplement quality/);
+  assert.doesNotMatch(revealed, /legacy example/);
+  const fallback = render({ ...overrides, answerRevealed: true,
+    activeItem: { ...item, recognitionSupplement: undefined } });
+  assert.match(fallback, /dictionary definition/);
+  assert.match(fallback, /legacy example/);
+});

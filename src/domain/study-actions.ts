@@ -143,6 +143,8 @@ export type SessionStudyItem = {
   /** Frozen target rehearsal, separate from review cues and reflection evidence. */
   rehearsal?: LearningRehearsalSnapshot;
   wordContent?: WordContentDocument;
+  /** Existing eligible teaching shown only after a recognition review is revealed. */
+  recognitionSupplement?: ProductionCueSupplementSnapshot;
 };
 
 /**

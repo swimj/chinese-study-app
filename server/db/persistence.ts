@@ -5607,6 +5607,19 @@ function mapReviewSessionItemWithSkillRow(
     const sourceId = getWordIntroductionPreparation(row.id)?.contentId;
     const source = getWordIntroductionLibrary(row.id)?.contents.find((entry) => entry.content.id === sourceId)?.content;
     if (source) return { ...item, wordContent: source };
+    // Reuse existing visible teaching only; recognition never requests generation.
+    const taskId = defaultProductionTaskId(row.id);
+    const cueIds = [null, ...getActiveProductionCuesForWord(row.id)
+      .filter((cue) => cue.cueType === 'definition_gloss').map((cue) => cue.cueId)];
+    for (const cueId of cueIds) {
+      const supplement = eligibleReviewSupplement(taskId, cueId);
+      if (supplement) return { ...item, recognitionSupplement: {
+        supplementId: supplement.supplementId,
+        englishFrame: supplement.englishFrame,
+        exampleSentence: supplement.exampleSentence,
+        exampleTranslation: supplement.exampleTranslation,
+      } };
+    }
   }
   return item;
 }
