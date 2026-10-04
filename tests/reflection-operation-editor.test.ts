@@ -9,6 +9,7 @@ import type {
   RepairProductionCueOperationV2,
   ReconcileProductionCuesOperationV1,
 } from '../src/domain/reflection.ts';
+import type { PureCueReflectionItemV1, ReconcilePureCueResponseOperationV1 } from '../src/domain/pure-cue-reflection.ts';
 import { AcceptedWordChips, ReflectionOperationEditor } from '../src/features/reflection/ReflectionOperationEditor.tsx';
 
 describe('reflection operation editor', () => {
@@ -177,6 +178,49 @@ describe('reflection operation editor', () => {
     assert.doesNotMatch(markup, /Pure elicitation destination/);
     assert.doesNotMatch(markup, /Deactivate broad word-owned cues/);
     assert.doesNotMatch(markup, /not-in-evidence/);
+  });
+
+  test('pure cue extension presents individual cues like regular proposals', () => {
+    const evidence: PureCueReflectionItemV1 = {
+      source: 'pure_cue_mistake', sourceActionKind: 'pure_cue', itemId: 'item',
+      sourceAttemptId: 'assessment', firstEventId: 'event', sessionActionId: 'action',
+      occurredAt: '2026-09-30T00:00:00.000Z', rawResponse: '替代',
+      targetWord: null, submittedWord: { wordId: 'alternate', hanzi: '替代', pinyin: 'tìdài', meanings: ['alternate'] },
+      sessionNote: null,
+      servedSnapshot: { snapshotId: 'snapshot', pureCueId: 'pure', servedAt: '2026-09-30T00:00:00.000Z',
+        stimulus: 'Shared situation', axisNote: 'shared axis', teachingNote: 'Existing guidance', acceptedAnswers: [] },
+      currentCue: { id: 'pure', stimulus: 'Shared situation', axisNote: 'shared axis',
+        teachingNote: 'Existing guidance', acceptedWordIds: ['target'], acceptedWords: [
+          { wordId: 'target', hanzi: '目标', pinyin: 'mùbiāo', meanings: ['target'] },
+        ] },
+      activeProductionCues: [
+        { cueId: 'keep', cueType: 'definition_gloss', text: 'Precise cue', acceptedWordIds: ['alternate'] },
+        { cueId: 'retire', cueType: 'minimal_context', text: 'Overbroad cue', acceptedWordIds: ['alternate'] },
+      ],
+      existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+    };
+    const operation: ReconcilePureCueResponseOperationV1 = {
+      kind: 'reconcile_pure_cue_response', version: 1, sourceAttemptId: 'assessment',
+      responseWordId: 'alternate', pureCueId: 'pure', expectedAcceptedWordIds: ['target'],
+      expectedTeachingNote: 'Existing guidance', teachingNote: 'Revised guidance',
+      responseWordPlan: { wordId: 'alternate', deactivateCueIds: ['retire'], distinctiveCueDrafts: [
+        { cueType: 'circumstance', text: 'A distinctive context' },
+      ] },
+    };
+    const markup = renderToStaticMarkup(createElement(ReflectionOperationEditor, {
+      operation, evidence, onChange: () => {},
+    }));
+    assert.match(markup, /reflection-promotion-preview/);
+    assert.match(markup, /替代 — individual cues/);
+    assert.match(markup, /kind-keep is-included/);
+    assert.match(markup, /aria-pressed="true" aria-label="Keep cue: Precise cue"/);
+    assert.match(markup, /kind-deactivate is-excluded/);
+    assert.match(markup, /aria-pressed="false" aria-label="Deactivate cue: Overbroad cue"/);
+    assert.match(markup, /kind-create is-included/);
+    assert.match(markup, /A distinctive context/);
+    assert.match(markup, /Edit new cue/);
+    assert.match(markup, /\+ Add cue/);
+    assert.doesNotMatch(markup, /type="checkbox"|Exclude new cue/);
   });
 });
 

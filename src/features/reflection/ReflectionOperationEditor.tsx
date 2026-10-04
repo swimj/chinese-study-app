@@ -1,4 +1,4 @@
-import type { PureCueReflectionItemV1 } from '../../domain/pure-cue-reflection';
+import type { PureCueReflectionItemV1, ReconcilePureCueResponseOperationV1 } from '../../domain/pure-cue-reflection';
 import { useEffect, useRef, useState } from 'react';
 import type {
   CreateContrastClusterOperation,
@@ -69,44 +69,8 @@ export function ReflectionOperationEditor({
       if (evidence?.source !== 'pure_cue_mistake') {
         return <p className="notes">Pure cue evidence is unavailable.</p>;
       }
-      const plan = operation.responseWordPlan;
-      const updatePlan = (patch: Partial<typeof plan>) => onChange?.({
-        ...operation, responseWordPlan: { ...plan, ...patch },
-      });
       return (
-        <div className="reflection-operation-fields">
-          <p>{evidence.servedSnapshot.stimulus}</p>
-          <p className="notes">Accepted answers: {evidence.currentCue.acceptedWords.map((word) => word.hanzi).join('、')}
-            {' → add '}{evidence.submittedWord.hanzi}</p>
-          <p className="notes">Accepting restores the pure cue's progress before this first response. Existing members' word cues stay unchanged.</p>
-          <Field label="Teaching note">
-            <textarea value={operation.teachingNote} disabled={disabled}
-              onChange={(event) => onChange?.({ ...operation, teachingNote: event.target.value })} />
-          </Field>
-          <h5>{evidenceWordSurfaceLabel(evidence.submittedWord)} — individual cues</h5>
-          {evidence.activeProductionCues.filter((cue): cue is typeof cue & { cueId: string } => cue.cueId !== null).map((cue) => (
-            <label key={cue.cueId}>
-              <input type="checkbox" checked={!plan.deactivateCueIds.includes(cue.cueId)} disabled={disabled}
-                onChange={(event) => updatePlan({ deactivateCueIds: event.target.checked
-                  ? plan.deactivateCueIds.filter((id) => id !== cue.cueId)
-                  : [...plan.deactivateCueIds, cue.cueId] })} />
-              Keep {cue.text}
-            </label>
-          ))}
-          {plan.distinctiveCueDrafts.map((draft, index) => (
-            <div className="stack" key={index}>
-              <Field label="Distinctive cue">
-                <textarea value={draft.text} disabled={disabled} onChange={(event) => updatePlan({
-                  distinctiveCueDrafts: plan.distinctiveCueDrafts.map((entry, entryIndex) =>
-                    entryIndex === index ? { ...entry, text: event.target.value } : entry),
-                })} />
-              </Field>
-              <button type="button" disabled={disabled} onClick={() => updatePlan({
-                distinctiveCueDrafts: plan.distinctiveCueDrafts.filter((_, entryIndex) => entryIndex !== index),
-              })}>Exclude new cue</button>
-            </div>
-          ))}
-        </div>
+        <PureCueResponseEditor operation={operation} evidence={evidence} disabled={disabled} onChange={onChange} />
       );
     }
     case 'suppress_definition_production':
@@ -237,6 +201,139 @@ export function ReflectionOperationEditor({
         />
       );
   }
+}
+
+function PureCueResponseEditor({
+  operation, evidence, disabled, onChange,
+}: {
+  operation: ReconcilePureCueResponseOperationV1;
+  evidence: PureCueReflectionItemV1;
+  disabled: boolean;
+  onChange?: (operation: ReflectionOperation) => void;
+}) {
+  const plan = operation.responseWordPlan;
+  const cueTypes = ['definition_gloss', 'minimal_context', 'circumstance'] as const;
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [excludedDrafts, setExcludedDrafts] = useState<Array<{
+    key: number;
+    draft: typeof plan.distinctiveCueDrafts[number];
+  }>>([]);
+  const excludedDraftKey = useRef(0);
+  const localOperationChangePending = useRef(false);
+
+  useEffect(() => {
+    if (localOperationChangePending.current) {
+      localOperationChangePending.current = false;
+      return;
+    }
+    setExcludedDrafts([]);
+  }, [operation]);
+
+  function updatePlan(patch: Partial<typeof plan>) {
+    if (disabled || onChange === undefined) return;
+    localOperationChangePending.current = true;
+    onChange({ ...operation, responseWordPlan: { ...plan, ...patch } });
+  }
+
+  function toggleExpanded(key: string) {
+    setExpandedKey((current) => current === key ? null : key);
+  }
+
+  return (
+    <div className="reflection-operation-fields">
+      <p>{evidence.servedSnapshot.stimulus}</p>
+      <p className="notes">Accepted answers: {evidence.currentCue.acceptedWords.map((word) => word.hanzi).join('、')}
+        {' → add '}{evidence.submittedWord.hanzi}</p>
+      <p className="notes">Accepting restores the pure cue's progress before this first response. Existing members' word cues stay unchanged.</p>
+      <Field label="Teaching note">
+        <textarea value={operation.teachingNote} disabled={disabled}
+          onChange={(event) => onChange?.({ ...operation, teachingNote: event.target.value })} />
+      </Field>
+      <section className="reflection-promotion-preview" aria-label="Resulting cue set">
+        <section className="reflection-promotion-group">
+          <header className="reflection-promotion-group-heading">
+            <h5>{evidence.submittedWord.hanzi} — individual cues</h5>
+          </header>
+          <ul className="reflection-promotion-cues">
+            {evidence.activeProductionCues.filter((cue): cue is typeof cue & { cueId: string } => cue.cueId !== null).map((cue) => {
+              const included = !plan.deactivateCueIds.includes(cue.cueId);
+              return (
+                <li className={`reflection-promotion-cue ${included ? 'kind-keep is-included' : 'kind-deactivate is-excluded'}`} key={cue.cueId}>
+                  <button type="button" className="reflection-promotion-cue-toggle" aria-pressed={included}
+                    aria-label={`${included ? 'Keep' : 'Deactivate'} cue: ${cue.text}`} disabled={disabled}
+                    onClick={() => updatePlan({ deactivateCueIds: included
+                      ? [...plan.deactivateCueIds, cue.cueId]
+                      : plan.deactivateCueIds.filter((id) => id !== cue.cueId) })}>
+                    <PromotionCueStatus kind={included ? 'keep' : 'deactivate'} />
+                    <span className="reflection-promotion-cue-copy">{cue.text}</span>
+                  </button>
+                </li>
+              );
+            })}
+            {plan.distinctiveCueDrafts.map((draft, index) => {
+              const rowKey = `new:${index}`;
+              const expanded = expandedKey === rowKey;
+              const preview = draft.text.trim() || 'New distinctive cue';
+              return (
+                <li className={`reflection-promotion-cue kind-create is-included${expanded ? ' is-expanded' : ''}`} key={rowKey}>
+                  <div className="reflection-promotion-cue-row">
+                    <button type="button" className="reflection-promotion-cue-toggle" aria-pressed="true"
+                      aria-label={`New cue: ${preview}`} disabled={disabled}
+                      onClick={() => {
+                        setExcludedDrafts((current) => [...current, { key: excludedDraftKey.current++, draft: { ...draft } }]);
+                        setExpandedKey((current) => current === rowKey ? null : current);
+                        updatePlan({ distinctiveCueDrafts: plan.distinctiveCueDrafts.filter((_, draftIndex) => draftIndex !== index) });
+                      }}>
+                      <PromotionCueStatus kind="create" />
+                      <span className="reflection-promotion-cue-copy">{preview}</span>
+                    </button>
+                    <button type="button" className="reflection-promotion-expand" aria-expanded={expanded}
+                      aria-label={expanded ? 'Close new cue editor' : 'Edit new cue'}
+                      onClick={() => toggleExpanded(rowKey)}>{expanded ? '▴' : '▾'}</button>
+                  </div>
+                  {expanded ? <div className="reflection-promotion-cue-detail">
+                    <Field label={`Cue ${index + 1} type`}>
+                      <select value={draft.cueType} disabled={disabled} onChange={(event) => updatePlan({
+                        distinctiveCueDrafts: plan.distinctiveCueDrafts.map((entry, draftIndex) => draftIndex === index
+                          ? { ...entry, cueType: event.target.value as typeof cueTypes[number] } : entry),
+                      })}>
+                        {cueTypes.map((cueType) => <option value={cueType} key={cueType}>{humanize(cueType)}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="Cue text">
+                      <textarea value={draft.text} disabled={disabled} onChange={(event) => updatePlan({
+                        distinctiveCueDrafts: plan.distinctiveCueDrafts.map((entry, draftIndex) => draftIndex === index
+                          ? { ...entry, text: event.target.value } : entry),
+                      })} />
+                    </Field>
+                  </div> : null}
+                </li>
+              );
+            })}
+            {excludedDrafts.map(({ key, draft }) => (
+              <li className="reflection-promotion-cue kind-create is-excluded" key={key}>
+                <button type="button" className="reflection-promotion-cue-toggle" aria-pressed="false"
+                  aria-label={`New cue: ${draft.text.trim() || 'New distinctive cue'}`} disabled={disabled}
+                  onClick={() => {
+                    setExcludedDrafts((current) => current.filter((entry) => entry.key !== key));
+                    updatePlan({ distinctiveCueDrafts: [...plan.distinctiveCueDrafts, draft] });
+                  }}>
+                  <PromotionCueStatus kind="create" />
+                  <span className="reflection-promotion-cue-copy">{draft.text.trim() || 'New distinctive cue'}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {!disabled && onChange !== undefined ? <button type="button"
+            className="secondary-button reflection-promotion-add-cue"
+            onClick={() => {
+              setExpandedKey(`new:${plan.distinctiveCueDrafts.length}`);
+              updatePlan({ distinctiveCueDrafts: [...plan.distinctiveCueDrafts, { cueType: 'minimal_context', text: '' }] });
+            }}>+ Add cue</button> : null}
+        </section>
+      </section>
+    </div>
+  );
 }
 
 function PureElicitationPromotionEditor({
