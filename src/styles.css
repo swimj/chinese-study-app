@@ -1059,6 +1059,7 @@ button:hover {
 }
 
 .failure-rate-section {
+  container-type: inline-size;
   display: grid;
   gap: 0.75rem;
   margin: 1rem 0 1.25rem;
@@ -1088,6 +1089,95 @@ button:hover {
 .failure-rate-period strong {
   color: #f8fafc;
   font-size: 1.25rem;
+}
+
+.overview-rate-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  color: #cbd5e1;
+  font-variant-numeric: tabular-nums;
+}
+
+.overview-rate-table th,
+.overview-rate-table td {
+  padding: 0.6rem 0.25rem;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.overview-rate-table th {
+  font-weight: 400;
+}
+
+.overview-rate-table tr > :first-child {
+  width: 40%;
+  padding-left: 0;
+  text-align: left;
+}
+
+.overview-rate-table thead {
+  color: #94a3b8;
+}
+
+.overview-rate-table tbody tr {
+  border-top: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.overview-rate-primary td {
+  color: #f8fafc;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.overview-rate-details {
+  color: #94a3b8;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.overview-rate-details summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.overview-rate-details summary:hover {
+  color: #e2e8f0;
+}
+
+.overview-rate-details summary:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+.overview-rate-details table {
+  margin-top: 0.5rem;
+}
+
+.overview-rate-details p {
+  margin: 0.75rem 0 0;
+}
+
+@container (max-width: 17rem) {
+  .overview-rate-table tr {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .overview-rate-table tr > :first-child {
+    grid-column: 1 / -1;
+    width: auto;
+  }
+
+  .overview-rate-table thead td {
+    display: none;
+  }
+
+  .overview-rate-table tbody th {
+    padding-bottom: 0;
+  }
 }
 
 .form-error {
