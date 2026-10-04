@@ -796,6 +796,12 @@ export function StudySessionPanel({
                       </div>;
                     })}
                   </div>
+                ) : activeItem.actionKind === 'recognition' && activeItem.recognitionSupplement ? (
+                  <>
+                    <ProductionSupplementAside supplement={activeItem.recognitionSupplement} />
+                    {qualityControls({ kind: 'supplement', id: activeItem.recognitionSupplement.supplementId },
+                      activeItem.sessionActionId, reviewedCount, 'Supplement quality')}
+                  </>
                 ) : activeMeaningRows.length > 0 ? (
                   <div className="stack">
                     <div className="meaning-visibility-grid">
@@ -841,7 +847,7 @@ export function StudySessionPanel({
                     <span className="prompt-meta">
                       Interval {formatIntervalHours(activeItem.intervalHours)}
                     </span>
-                    {!activeItem.wordContent && <span className="prompt-meta">{activeWord.examples[0]}</span>}
+                    {!activeItem.wordContent && !activeItem.recognitionSupplement && <span className="prompt-meta">{activeWord.examples[0]}</span>}
                   </>
                 )}
               </div>

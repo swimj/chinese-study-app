@@ -24,7 +24,14 @@ transaction. Generated cues enter the existing shared-trial registry under an
 explicit application publication policy. No reflection invocation or learner
 approval is fabricated. Ordinary session composition selects them through the
 existing active-cue path instead of falling back to corpus dictionary meanings.
-Recognition reveals can also use eligible bootstrap uses/examples. Existing
+Recognition reveals prefer eligible bootstrap uses/examples. Without bootstrap
+content, recognition reviews reuse an existing visible, eligible production
+supplement: the default definition's supplement first, then the first active
+definition cue with one in stable creation order. The explanation and translated
+example replace the dictionary detail on reveal and retain supplement quality
+feedback. Selection is snapshotted during session composition; it requests no
+generation and preserves ordinary dictionary fallback when none is available.
+Retired cues and withdrawn sources cannot supply this fallback. Existing
 legacy cues remain in the pool; there is no rewrite of past material.
 
 The new reviewer still answers a normal review task. Rejections produce ordinary

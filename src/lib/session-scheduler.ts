@@ -279,6 +279,7 @@ function cloneSessionStudyItem(item: SessionReviewItem): SessionReviewItem {
     ...item,
     ...(item.rehearsal ? { rehearsal: structuredClone(item.rehearsal) } : {}),
     ...(item.wordContent ? { wordContent: structuredClone(item.wordContent) } : {}),
+    ...(item.recognitionSupplement ? { recognitionSupplement: { ...item.recognitionSupplement } } : {}),
     sampledSkillIds: [...item.sampledSkillIds],
     contentRef: item.contentRef ? { ...item.contentRef } : null,
     production: item.production
