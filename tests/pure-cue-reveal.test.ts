@@ -90,9 +90,9 @@ test('frozen production keeps cue feedback and gives the visible supplement the 
       sessionActionId: 'production-action', targetWordId: 'word', actionKind: 'production', sampledSkillIds: ['production'],
       contentRef: { type: 'production_cue', taskId: 'task', cueId: 'cue' },
       attemptedHanzi: null, status: 'review', reviewedCount: 0, queuedCount: 1,
-      promptDisplayedMeanings: [], fallbackPrompt: 'A prompt', answerPinyin: 'ci', answerText: '词',
+      promptDisplayedMeanings: [], fallbackPrompt: 'A prompt: （ ）', answerPinyin: 'ci', answerText: '词',
       allMeanings: ['word'], personalNotes: '', intervalHours: 24, example: '',
-      production: { taskId: 'task', cueId: 'cue', cueType: 'definition_gloss', text: 'A prompt',
+      production: { taskId: 'task', cueId: 'cue', cueType: 'definition_gloss', text: 'A prompt: （ ）',
         acceptedAnswers: [{ wordId: 'word', hanzi: '词', traditional: null }],
         supplement: { supplementId: 'supplement', englishFrame: 'Frame', exampleSentence: 'Example', exampleTranslation: 'Translation' },
       },
@@ -100,6 +100,7 @@ test('frozen production keeps cue feedback and gives the visible supplement the 
   });
   assert.match(markup, /Thumbs up: Cue quality/);
   assert.match(markup, /Thumbs up: Supplement quality/);
+  assert.match(markup, /<mark class="desk-cloze-answer">词<\/mark>/);
   assert.equal((markup.match(/Useful content \(\]\)/g) ?? []).length, 1);
   assert.doesNotMatch(markup, /Describe unusual behavior/);
 });
@@ -132,21 +133,23 @@ test('recognition reuses supplement teaching only after reveal and retains dicti
   assert.match(fallback, /legacy example/);
 });
 
-test('production fills a cloze only after reveal and retains the full word reference', () => {
-  const word = { id: 'pepper', hanzi: '藤椒', traditional: null, pinyin: 'téng jiāo', meaning: 'rattan pepper', meanings: ['rattan pepper'], personalNotes: '', examples: [], status: 'review' as const, priority: 1, createdAt: '2026-01-01T00:00:00.000Z', learningStreak: 0, lastLearningSuccessOn: null, lastLearningCoveredOn: null };
-  const item = { sessionActionId: 'pepper-action', actionKind: 'production' as const, targetWordId: word.id, sampledSkillIds: ['production' as const], contentRef: null, intervalHours: 24, word, contrastSelection: null,
-    production: { taskId: 'task', cueId: 'cue', cueType: 'minimal_context' as const, text: '菜里加了____。', acceptedAnswers: [{ wordId: word.id, hanzi: word.hanzi, traditional: null }], supplement: null },
-  };
-  const presentation = { activePureCue: null, activeItem: item, activeWord: word, activePrompt: item.production.text, activeAnswerText: word.hanzi, activeAllMeanings: word.meanings };
-  const hidden = render(presentation);
-  assert.match(hidden, /菜里加了____。/);
-  assert.doesNotMatch(hidden, /藤椒|rattan pepper/);
-  const revealed = render({ ...presentation, answerRevealed: true, productionAwaitingRating: true });
-  assert.match(revealed, /<mark class="desk-cloze-answer">藤椒<\/mark>/);
-  assert.match(revealed, /<details class="desk-reference"><summary>Word reference<\/summary>/);
-  assert.match(revealed, /rattan pepper/);
-  const recognition = render({ ...presentation, isProductionItem: false, answerRevealed: true,
-    activeItem: { ...item, actionKind: 'recognition', sampledSkillIds: ['recognition'], production: undefined }, activePrompt: word.hanzi, activeAnswerText: 'rattan pepper',
+for (const marker of ['____', '__', '_______', '（ ）']) {
+  test(`production fills ${marker} only after reveal and retains the full word reference`, () => {
+    const word = { id: 'pepper', hanzi: '藤椒', traditional: null, pinyin: 'téng jiāo', meaning: 'rattan pepper', meanings: ['rattan pepper'], personalNotes: '', examples: [], status: 'review' as const, priority: 1, createdAt: '2026-01-01T00:00:00.000Z', learningStreak: 0, lastLearningSuccessOn: null, lastLearningCoveredOn: null };
+    const item = { sessionActionId: 'pepper-action', actionKind: 'production' as const, targetWordId: word.id, sampledSkillIds: ['production' as const], contentRef: null, intervalHours: 24, word, contrastSelection: null,
+      production: { taskId: 'task', cueId: 'cue', cueType: 'minimal_context' as const, text: `菜里加了${marker}。`, acceptedAnswers: [{ wordId: word.id, hanzi: word.hanzi, traditional: null }], supplement: null },
+    };
+    const presentation = { activePureCue: null, activeItem: item, activeWord: word, activePrompt: item.production.text, activeAnswerText: word.hanzi, activeAllMeanings: word.meanings };
+    const hidden = render(presentation);
+    assert.match(hidden, /菜里加了____。/);
+    assert.doesNotMatch(hidden, /藤椒|rattan pepper/);
+    const revealed = render({ ...presentation, answerRevealed: true, productionAwaitingRating: true });
+    assert.match(revealed, /<mark class="desk-cloze-answer">藤椒<\/mark>/);
+    assert.match(revealed, /<details class="desk-reference"><summary>Word reference<\/summary>/);
+    assert.match(revealed, /rattan pepper/);
+    const recognition = render({ ...presentation, isProductionItem: false, answerRevealed: true,
+      activeItem: { ...item, actionKind: 'recognition', sampledSkillIds: ['recognition'], production: undefined }, activePrompt: word.hanzi, activeAnswerText: 'rattan pepper',
+    });
+    assert.match(recognition, /<details class="desk-reference" open="">/);
   });
-  assert.match(recognition, /<details class="desk-reference" open="">/);
-});
+}
