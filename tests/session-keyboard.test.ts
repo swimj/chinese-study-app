@@ -245,7 +245,7 @@ describe('session keyboard contract', () => {
     assert.equal(resolveSessionKey(key('/'), createContext()), null);
   });
 
-  test('completed summary uses Space to finish, then Space to close, and never rates or reveals', () => {
+  test('completed card uses Enter to open summary, which cannot undo, rate or reveal', () => {
     const unfinalized = createContext({
       completedSummary: true,
       answerRevealed: true,
@@ -255,10 +255,11 @@ describe('session keyboard contract', () => {
     assert.equal(getSessionInteractionKind(unfinalized), 'completed_summary');
     assert.deepEqual(getSessionPrimaryAction(unfinalized), {
       command: 'finish_session',
-      label: 'Finish session',
-      shortcut: 'Space',
+      label: 'See session summary',
+      shortcut: 'Enter',
     });
-    assert.deepEqual(resolveSessionKey(key(' '), unfinalized), { type: 'finish_session' });
+    assert.deepEqual(resolveSessionKey(key('Enter'), unfinalized), { type: 'finish_session' });
+    assert.equal(resolveSessionKey(key(' '), unfinalized), null);
     assert.deepEqual(resolveSessionKey(key('u'), unfinalized), { type: 'undo' });
     assert.equal(resolveSessionKey(key('1'), unfinalized), null);
     assert.equal(resolveSessionKey(key('3'), unfinalized), null);
@@ -271,6 +272,7 @@ describe('session keyboard contract', () => {
     assert.equal(getSessionPrimaryAction(finalizing)?.shortcut, null);
     assert.equal(resolveSessionKey(key(' '), finalizing), null);
     assert.equal(resolveSessionKey(key('u'), finalizing), null);
+    assert.equal(resolveSessionKey(key('Enter'), finalizing), null);
 
     const finalized = createContext({
       completedSummary: true,
@@ -283,8 +285,19 @@ describe('session keyboard contract', () => {
       shortcut: 'Space',
     });
     assert.deepEqual(resolveSessionKey(key(' '), finalized), { type: 'close_summary' });
+    assert.equal(resolveSessionKey(key('Enter'), finalized), null);
+    assert.equal(resolveSessionKey(key('u'), { ...finalized, hasUndo: true }), null);
     const thisCard = getSessionShortcutGuide(unfinalized).find((section) => section.title === 'This card');
-    assert.equal(thisCard?.rows[0]?.description, 'Finish the session');
+    assert.equal(thisCard?.rows[0]?.description, 'See session summary');
+  });
+
+  test('native completion controls keep Enter and Space for their own action', () => {
+    for (const summaryFinalizationKind of ['unfinalized', 'finalizing', 'finalized'] as const) {
+      const context = createContext({ completedSummary: true, summaryFinalizationKind,
+        isNativeActionTarget: true, hasUndo: true });
+      assert.equal(resolveSessionKey(key('Enter'), context), null);
+      assert.equal(resolveSessionKey(key(' '), context), null);
+    }
   });
 
   test('Space still reveals an in-session card rather than finishing', () => {

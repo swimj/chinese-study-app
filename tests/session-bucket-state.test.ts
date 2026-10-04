@@ -532,6 +532,32 @@ describe('bucket session state covering contract', () => {
     assert.equal(result.commit.promptTargetWordId, 'contrast-target');
   });
 
+  test('a final contrast miss can save a summary after drain and after Undo', async () => {
+    const { createBucketSessionState, markActiveSessionUnitStarted, beginBucketDrainSession,
+      rateActiveContrastSelectionUnit } = await import('../src/lib/session-state.ts');
+    const { createSessionSummary, updateSessionSummaryForRating, getCompletedExerciseCounts } =
+      await import('../src/features/session/session-summary.ts');
+    const item = createContrastStudyItem();
+    const state = beginBucketDrainSession(markActiveSessionUnitStarted(createBucketSessionState({
+      buckets: { review: [item], learning: [], unstudied: [] }, sessionId: testSessionId,
+    })));
+    const summary = createSessionSummary({ sessionId: testSessionId,
+      startedAt: '2026-10-05T00:00:00Z', initialQueueLength: 1 });
+    for (let replay = 0; replay < 2; replay += 1) {
+      const transition = rateActiveContrastSelectionUnit({ state, selectedWordId: 'contrast-distractor',
+        rating: 'forgot', practiceMore: false });
+      const completed = updateSessionSummaryForRating({ summary, transition, rating: 'forgot',
+        activeWord: item.word, activeItem: item, previousPhase: state.phase });
+      assert.ok(completed);
+      assert.equal(transition.state.phase, 'completed');
+      assert.deepEqual(getCompletedExerciseCounts(completed), {
+        completedReviewActionCount: 1, failedReviewActionCount: 1,
+      });
+      assert.deepEqual(completed.lapsedReviewActionIds, [item.sessionActionId]);
+      assert.equal(completed.completionMode, 'drain');
+    }
+  });
+
   test('defaults scheduler seed from sessionId so sessions interleave differently', async () => {
     const {
       createBucketSessionState,

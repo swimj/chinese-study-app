@@ -156,7 +156,9 @@ export function updateSessionSummaryForRating({
           ...nextSummary.lapsedReviewLabels,
           formatReviewEncounterLabel(activeItem, activeWord, characterPresentation),
         ];
-        nextSummary.lapsedReviewActionIds = [...nextSummary.lapsedReviewActionIds, activeItem.sessionActionId];
+        if (!nextSummary.lapsedReviewActionIds.includes(activeItem.sessionActionId)) {
+          nextSummary.lapsedReviewActionIds = [...nextSummary.lapsedReviewActionIds, activeItem.sessionActionId];
+        }
       }
       break;
     case 'commit-learning-word-session':
