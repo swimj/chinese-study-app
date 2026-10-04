@@ -169,17 +169,13 @@ export function IntroductionPlayer({ snapshot, state, onAction, onRestart, onFin
       </div>
     </div>}
     {state.phase === 'finished' && <div className="intro-lab-finished">
-      <p className="intro-lab-kicker">Introduction complete</p>
-      <h3>One word, a little more familiar.</h3>
-      <p>{mode === 'teaching-only'
-        ? 'Next, practice recognizing and recalling this word alongside the other items in your session.'
-        : 'This introduction does not grade your answer or record mastery.'}</p>
+      <h3>Introduction complete</h3>
       <div className="intro-lab-player-actions">
         {onFinish && <button type="button" className="intro-lab-button primary" disabled={finishing}
           onClick={onFinish}>{finishing ? 'Saving…' : <>Continue <kbd>Enter</kbd></>}</button>}
         <button type="button" className={`intro-lab-button ${onFinish ? 'outline' : 'primary'}`} onClick={onRestart}>Start again</button>
       </div>
     </div>}
-    <p className="intro-lab-preview-note">No mastery grade is recorded here.</p>
+    {mode === 'full' && <p className="intro-lab-preview-note">No mastery grade is recorded here.</p>}
   </div>;
 }

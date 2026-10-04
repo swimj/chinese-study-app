@@ -4429,7 +4429,7 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1
 .home-overview-intro { margin-bottom: 1.5rem; }
 .home-overview-intro h1 { font-size: 1.75rem; font-weight: 600; line-height: 1.2; margin: 0 0 0.6rem; letter-spacing: -0.035em; }
 .home-overview-intro p { color: var(--text-secondary); font-size: 0.95rem; line-height: 1.6; margin: 0; }
-.home-overview .failure-rate-section { margin-top: 1.6rem; }
+.home-overview .failure-rate-section { margin-top: 1.6rem; align-content: start; }
 .home-overview .failure-rate-section h3 { font-size: 0.85rem; font-weight: 550; color: var(--text-muted); }
 .home-overview .failure-rate-list { gap: 0.4rem; }
 .home-overview .failure-rate-period { padding: 0.65rem 0.4rem; font-size: 0.72rem; }
