@@ -1770,7 +1770,7 @@ export function useStudySession({
   }, [personalNotesEditorOpen]);
 
   useEffect(() => {
-    if (introductionBlocked || !sessionStarted || !isProductionItem || answerRevealed || (productionAwaitingNext || pureCueAwaitingNext) || personalNotesEditorOpen) {
+    if (submittingRating !== null || introductionBlocked || !sessionStarted || !isProductionItem || answerRevealed || (productionAwaitingNext || pureCueAwaitingNext) || personalNotesEditorOpen) {
       return;
     }
 
@@ -1780,6 +1780,7 @@ export function useStudySession({
 
     productionHanziInputRef.current?.focus();
   }, [
+    submittingRating,
     introductionBlocked,
     activeUnstudiedProgress?.introComplete,
     activeItem?.sessionActionId,
