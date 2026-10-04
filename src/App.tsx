@@ -88,7 +88,10 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     currentPage,
     setCurrentPage,
     setError,
-    onAcceptedProposal: studySession.invalidateSessionPrefetch,
+    onAcceptedProposal: async () => {
+      studySession.invalidateSessionPrefetch();
+      await reloadDashboard();
+    },
     onHelpQueueChanged: attention.refresh,
     api: {
       listArtifacts: fetchReflectionArtifacts,
