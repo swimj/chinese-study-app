@@ -185,6 +185,17 @@ materialized. Invalid or truncated output may be retained as a failed generation
 attempt for observability, but it is not a reflection artifact and creates no
 proposal or operation authority.
 
+At the provider-output boundary, returned `itemId` values first resolve by
+exact match against the current evidence bundle. If that fails for an id shaped
+as `source:Hanzi:pinyin`, a deterministic fallback compares the exact source and
+Hanzi plus tone-insensitive pinyin syllables (case, tone marks or trailing tone
+digits, and underscore/space/apostrophe/hyphen syllable separators). Syllable
+boundaries and the distinction between `u` and `ü` remain significant. Exactly
+one matching bundle item permits rewriting to its canonical `itemId` before
+normal validation; unresolved or ambiguous aliases still fail, as do duplicate
+results after rewriting. This does not relax canonical database ids, durable
+word references, or operation-level `wordId` validation.
+
 Provider credentials and calls remain backend concerns. Provider/model identity,
 prompt version, bundle schema, result schema, and available response metadata are
 preserved so later review can distinguish what actually ran.

@@ -294,6 +294,113 @@ async function expectProviderError(
 }
 
 describe('production Luna reflection provider', () => {
+  function appendItemCopy(items: Array<{ itemId: string }>, itemId: string) {
+    const copy = structuredClone(items[0]!);
+    copy.itemId = itemId;
+    items.push(copy);
+  }
+
+  for (const flow of ['legacy', 'diagnosis', 'promotion'] as const) {
+    function aliasFixture() {
+      const evidence = structuredClone(flow === 'legacy' ? bundle
+        : flow === 'diagnosis' ? diagnosisBundle : promotionBundle);
+      const wire = structuredClone(flow === 'legacy' ? validWireResult
+        : flow === 'diagnosis' ? validStagedDiagnosisWireResult : validPromotionWireResult);
+      evidence.items[0]!.itemId = 'cw:窘境:jiǒng_jìng';
+      wire.itemResults[0]!.itemId = 'cw:窘境:jiǒng_jing';
+      return { evidence, wire };
+    }
+
+    function generateAliasFixture({ evidence, wire }: ReturnType<typeof aliasFixture>) {
+      const provider = createLunaReflectionProvider({
+        environment: { OPENAI_API_KEY: 'unit-test-secret' },
+        systemPrompt: 'prompt', diagnosisSystemPrompt: 'prompt', promotionSystemPrompt: 'prompt',
+        fetchImplementation: capturingFetch(responseEnvelope(JSON.stringify(wire)), []),
+      });
+      if (flow === 'legacy') return provider.generate(evidence as SessionReflectionBundleV2);
+      if (flow === 'diagnosis') return provider.generateDiagnosis(evidence as SessionReflectionBundleV4);
+      return provider.generatePromotion!(evidence as PureCuePromotionBundleV3);
+    }
+
+    test(`${flow} resolves a unique tone-insensitive provider item alias without changing evidence`, async () => {
+      for (const alias of ['cw:窘境:jiǒng_jing', 'cw:窘境:JIONG3 JING4', 'cw:窘境:jiǒng_jìng'.normalize('NFD')]) {
+        const fixture = aliasFixture();
+        fixture.wire.itemResults[0]!.itemId = alias;
+        const before = structuredClone(fixture);
+        const generated = await generateAliasFixture(fixture);
+        assert.equal(generated.result.itemResults[0]!.itemId, 'cw:窘境:jiǒng_jìng');
+        assert.deepEqual(fixture, before);
+      }
+    });
+
+    test(`${flow} rejects unresolved aliases with different source, Hanzi, syllables, or boundaries`, async () => {
+      for (const alias of ['other:窘境:jiǒng_jing', 'cw:困境:jiǒng_jing', 'cw:窘境:jiǒng_jin', 'cw:窘境:jiongjing', 'unknown-item']) {
+        const fixture = aliasFixture();
+        fixture.wire.itemResults[0]!.itemId = alias;
+        const error = await expectProviderError(generateAliasFixture(fixture), 'domain_contract_invalid');
+        assert.ok(error.issueCount > 0);
+      }
+    });
+
+    test(`${flow} preserves the pinyin distinction between u and ü`, async () => {
+      const fixture = aliasFixture();
+      fixture.evidence.items[0]!.itemId = 'cw:绿境:lǜ_jìng';
+      fixture.wire.itemResults[0]!.itemId = 'cw:绿境:lu_jing';
+      await expectProviderError(generateAliasFixture(fixture), 'domain_contract_invalid');
+      fixture.wire.itemResults[0]!.itemId = 'cw:绿境:lü_jing';
+      const generated = await generateAliasFixture(fixture);
+      assert.equal(generated.result.itemResults[0]!.itemId, fixture.evidence.items[0]!.itemId);
+    });
+
+    test(`${flow} rejects ambiguous aliases but gives exact IDs precedence`, async () => {
+      const fixture = aliasFixture();
+      const secondId = 'cw:窘境:jiǒng_jīng';
+      appendItemCopy(fixture.evidence.items, secondId);
+      appendItemCopy(fixture.wire.itemResults, secondId);
+      await expectProviderError(generateAliasFixture(fixture), 'domain_contract_invalid');
+
+      fixture.wire.itemResults[0]!.itemId = fixture.evidence.items[0]!.itemId;
+      const generated = await generateAliasFixture(fixture);
+      assert.deepEqual(generated.result.itemResults.map((item) => item.itemId), fixture.evidence.items.map((item) => item.itemId));
+    });
+
+    test(`${flow} still rejects duplicate results after alias resolution`, async () => {
+      const fixture = aliasFixture();
+      appendItemCopy(fixture.wire.itemResults, fixture.evidence.items[0]!.itemId);
+      await expectProviderError(generateAliasFixture(fixture), 'domain_contract_invalid');
+    });
+  }
+
+  test('item alias resolution does not loosen operation wordId validation', async () => {
+    const evidence = structuredClone(bundle);
+    const canonicalId = 'cw:窘境:jiǒng_jìng';
+    const alias = 'cw:窘境:jiǒng_jing';
+    evidence.items[0]!.itemId = canonicalId;
+    evidence.items[0]!.targetWord = {
+      wordId: canonicalId, hanzi: '窘境', pinyin: 'jiǒng jìng', meanings: ['predicament'],
+    };
+    evidence.items[0]!.servedCue.acceptedWordIds = [canonicalId];
+    const wire = structuredClone(validWireResult);
+    wire.itemResults[0]!.itemId = alias;
+    const operation = wire.itemResults[0]!.proposals[0]!.operation;
+    assert.equal(operation.kind, 'repair_production_cue');
+    if (operation.kind !== 'repair_production_cue') throw new Error('Expected repair fixture');
+    operation.wordId = canonicalId;
+    const change = operation.changes[0]!;
+    if (change.kind !== 'replace') throw new Error('Expected replacement fixture');
+    change.replacements[0]!.acceptedWordIds = [canonicalId, 'word-2'];
+    const generate = () => createLunaReflectionProvider({
+      environment: { OPENAI_API_KEY: 'unit-test-secret' }, systemPrompt: 'prompt',
+      fetchImplementation: capturingFetch(responseEnvelope(JSON.stringify(wire)), []),
+    }).generate(evidence);
+    const generated = await generate();
+    assert.equal(generated.result.itemResults[0]!.itemId, canonicalId);
+    assert.equal(generated.result.itemResults[0]!.proposals[0]!.operation.kind, 'repair_production_cue');
+    operation.wordId = alias;
+    const error = await expectProviderError(generate(), 'domain_contract_invalid');
+    assert.match(JSON.stringify(error.diagnostic?.issues), /wordId/);
+  });
+
   test('uses Z.AI JSON-object transport for GLM-5.3 Flash max', async () => {
     const capture: CapturedRequest[] = [];
     const provider = createGlmReflectionProvider({
