@@ -44,7 +44,7 @@ const UPDATES = [
     title: 'Choose simplified, traditional, or both on study cards',
     paragraphs: [
       'Study cards can now follow the characters you want to practice. Open the gear beside Start session and set Card characters to Simplified, Traditional, or Both. Simplified stays the default. Both shows the two forms together when they differ, like 门 / 門.',
-      'The setting covers the characters on the card itself: a new-word introduction, a recognition prompt, a revealed answer, and the choices in a contrast. Examples, meanings, personal notes, and cue sentences stay as they were written, which is usually simplified. A word with no separate traditional form still shows its simplified characters.',
+      'Card characters controls word headings, recognition prompts, answers, and contrast choices. Sentences and examples follow that choice. If you choose Both, a second option lets you read sentences and examples in Simplified or Traditional. A revealed cloze uses one answer form matching its sentence; a separate answer can still show both. Personal notes stay as you wrote them.',
       'Typing works the same in every setting. A production answer still counts if you type the simplified form or the traditional one.',
     ],
   },

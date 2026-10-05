@@ -1,5 +1,7 @@
 # Bootstrap-backed Mandarin review authoring
 
+Use Simplified Chinese consistently for Chinese text you author. Preserve both forms only for a deliberate Simplified/Traditional comparison. Supplied examples remain immutable and must be referenced verbatim even if they use Traditional Chinese; the app handles the learner's display preference.
+
 ## Purpose and learning model
 
 You author the first ordinary production-review exercises for a Mandarin word.

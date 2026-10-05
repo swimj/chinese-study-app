@@ -1,3 +1,5 @@
+import { formatCardCharacters, type CharacterPresentation, type SentenceCharacterPresentation } from '../../domain/card-characters';
+import { convertSentenceCharacters, sentenceCharacterLanguage } from '../../domain/sentence-characters';
 import { getRehearsalInstruction } from '../rehearsal-presentation';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { TeachingPackageSnapshot, WordContentDocument } from '../../domain/word-content';
@@ -14,7 +16,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
   );
 }
 
-export function IntroductionPlayer({ snapshot, content, state, onAction, onRestart, onFinish, finishing, mode = 'full' }: {
+export function IntroductionPlayer({ snapshot, content, state, onAction, onRestart, onFinish, finishing, mode = 'full', characterPresentation, sentenceCharacterPresentation }: {
   snapshot: TeachingPackageSnapshot;
   content: WordContentDocument;
   state: IntroductionPlayerState;
@@ -23,6 +25,8 @@ export function IntroductionPlayer({ snapshot, content, state, onAction, onResta
   onFinish?: () => void;
   finishing?: boolean;
   mode?: 'full' | 'teaching-only';
+  characterPresentation?: CharacterPresentation;
+  sentenceCharacterPresentation?: SentenceCharacterPresentation;
 }) {
   const [browsing, setBrowsing] = useState(false);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -89,6 +93,12 @@ export function IntroductionPlayer({ snapshot, content, state, onAction, onResta
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [snapshot, state.phase, onAction, browsing, finishing, onFinish]);
 
+  // The authoring lab keeps its raw source preview; the session supplies preferences.
+  const sentenceText = (text: string) => sentenceCharacterPresentation
+    ? convertSentenceCharacters(text, sentenceCharacterPresentation) : text;
+  const sentenceLang = sentenceCharacterPresentation ? sentenceCharacterLanguage(sentenceCharacterPresentation) : 'zh-Hans';
+  const wordText = (word: { hanzi: string; traditional: string | null }) => characterPresentation
+    ? formatCardCharacters(word, characterPresentation) : word.hanzi;
   const exercise = snapshot.rehearsals[state.exerciseIndex];
   const instruction = exercise ? getRehearsalInstruction(exercise) : '';
   return <div className="intro-lab-player">
@@ -111,9 +121,9 @@ export function IntroductionPlayer({ snapshot, content, state, onAction, onResta
             <span className="intro-lab-beat-number">{String(index + 1).padStart(2, '0')}</span>
             <div className="intro-lab-beat-copy">
               {beat.parts.map((part, partIndex) => <p key={partIndex}
-                lang={part.source.kind === 'example' && part.source.field === 'sentence' ? 'zh-Hans' : undefined}
+                lang={part.source.kind === 'example' && part.source.field === 'sentence' ? sentenceLang : undefined}
                 className={part.source.kind === 'example' ? `intro-lab-part-${part.source.field}` : undefined}>
-                {part.text}
+                {sentenceText(part.text)}
               </p>)}
             </div>
           </article>
@@ -131,8 +141,8 @@ export function IntroductionPlayer({ snapshot, content, state, onAction, onResta
     {state.phase === 'rehearsal' && exercise && <>
       <div className="intro-lab-progress"><span>Target rehearsal</span><span>{state.exerciseIndex + 1} of {snapshot.rehearsals.length}</span></div>
       <div className="intro-lab-practice-card">
-        {instruction && <h3>{instruction}</h3>}
-        <p className="intro-lab-stimulus" lang={exercise.stimulus.source.kind === 'example_cloze' ? 'zh-Hans' : undefined}>{exercise.stimulus.text}</p>
+        {instruction && <h3>{sentenceText(instruction)}</h3>}
+        <p className="intro-lab-stimulus" lang={exercise.stimulus.source.kind === 'example_cloze' ? sentenceLang : undefined}>{sentenceText(exercise.stimulus.text)}</p>
         <form onSubmit={(event) => {
           event.preventDefault();
           if (!composingRef.current) act({ type: 'submit' });
@@ -158,8 +168,8 @@ export function IntroductionPlayer({ snapshot, content, state, onAction, onResta
     </>}
     {state.phase === 'result' && exercise && <div ref={resultRef} tabIndex={-1} className="intro-lab-result">
       <p className="intro-lab-kicker">{state.result === 'accepted' ? 'That is the taught expression' : state.result === 'revealed' ? 'The taught expression' : 'Keep this expression in mind'}</p>
-      <h3 lang="zh-Hans">{exercise.acceptedAnswers[0]?.hanzi}</h3>
-      {exercise.acceptedAnswers[0]?.traditional && exercise.acceptedAnswers[0].traditional !== exercise.acceptedAnswers[0].hanzi &&
+      <h3>{exercise.acceptedAnswers[0] && wordText(exercise.acceptedAnswers[0])}</h3>
+      {!characterPresentation && exercise.acceptedAnswers[0]?.traditional && exercise.acceptedAnswers[0].traditional !== exercise.acceptedAnswers[0].hanzi &&
         <p>Traditional: {exercise.acceptedAnswers[0].traditional}</p>}
       {state.result === 'rejected' && <p>Your answer did not match this constrained rehearsal. Another expression may be natural in the sentence; this exercise asks for the one just taught.</p>}
       <div className="intro-lab-player-actions">
@@ -171,14 +181,14 @@ export function IntroductionPlayer({ snapshot, content, state, onAction, onResta
     </div>}
     {state.phase === 'finished' && <div className="intro-lab-finished">
       <div className="intro-lab-word-recap" aria-label="Word summary">
-        <h3 lang="zh-Hans">{content.word.hanzi}</h3>
+        <h3>{wordText(content.word)}</h3>
         <p className="intro-lab-recap-pinyin">{content.word.pinyin}</p>
         <div className="intro-lab-recap-uses">
           {content.uses.map((use) => {
             const example = content.examples.find((row) => row.id === use.exampleIds[0]);
             return <div key={use.id}>
-              <strong>{use.label}</strong>
-              {example && <><p lang="zh-Hans">{example.text}</p><p>{example.translation}</p></>}
+              <strong>{sentenceText(use.label)}</strong>
+              {example && <><p lang={sentenceLang}>{sentenceText(example.text)}</p><p>{sentenceText(example.translation)}</p></>}
             </div>;
           })}
         </div>

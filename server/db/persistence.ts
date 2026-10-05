@@ -113,6 +113,9 @@ import {
 } from './unstudied-admission.ts';
 import {
   assertCharacterPresentation,
+  assertSentenceCharacterPresentation,
+  DEFAULT_SENTENCE_CHARACTER_PRESENTATION,
+  type SentenceCharacterPresentation,
   DEFAULT_CHARACTER_PRESENTATION,
   type CharacterPresentation,
 } from '../../src/domain/card-characters.ts';
@@ -2273,6 +2276,28 @@ export function setCharacterPresentation(characterPresentation: CharacterPresent
   assertCharacterPresentation(characterPresentation);
   upsertLearnerSetting('character_presentation', characterPresentation);
   return { characterPresentation: readCharacterPresentation() };
+}
+
+export function getSentenceCharacterPresentation(): SentenceCharacterPresentation {
+  const row = getDb()
+    .prepare(`
+      SELECT value_json
+      FROM learner_settings
+      WHERE learner_id = ? AND setting_key = 'sentence_character_presentation'
+    `)
+    .get(requireLearnerId()) as { value_json: string } | undefined;
+  if (!row) {
+    return DEFAULT_SENTENCE_CHARACTER_PRESENTATION;
+  }
+  const presentation: unknown = JSON.parse(row.value_json);
+  assertSentenceCharacterPresentation(presentation);
+  return presentation;
+}
+
+export function setSentenceCharacterPresentation(sentenceCharacterPresentation: SentenceCharacterPresentation) {
+  assertSentenceCharacterPresentation(sentenceCharacterPresentation);
+  upsertLearnerSetting('sentence_character_presentation', sentenceCharacterPresentation);
+  return { sentenceCharacterPresentation: getSentenceCharacterPresentation() };
 }
 
 export function completeUnstudiedWordSession(wordId: string, studyDayKey: string): Word {

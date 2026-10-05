@@ -1,3 +1,5 @@
+import { DEFAULT_CHARACTER_PRESENTATION, formatCardCharacters, type CharacterPresentation, type SentenceCharacterPresentation } from '../../domain/card-characters';
+import { convertSentenceCharacters, effectiveSentenceCharacterPresentation, sentenceCharacterLanguage } from '../../domain/sentence-characters';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { WordIntroductionResponse } from '../../domain/word-content/application';
 import { ContentQualityControls } from '../content-quality/ContentQualityControls';
@@ -16,6 +18,8 @@ import { assertIntroductionWord, selectedIntroduction } from './model';
 
 export type WordIntroductionExperienceProps = {
   wordId: string;
+  characterPresentation?: CharacterPresentation;
+  sentenceCharacterPresentation?: SentenceCharacterPresentation;
   qualityEncounterId: string;
   onCompleted: (library: WordIntroductionResponse) => void;
   preloadedIntroduction: WordIntroductionResponse;
@@ -27,6 +31,7 @@ function errorMessage(error: unknown): string {
 
 export function WordIntroductionExperience({
   wordId, onCompleted, preloadedIntroduction, qualityEncounterId,
+  characterPresentation = DEFAULT_CHARACTER_PRESENTATION, sentenceCharacterPresentation = 'simplified',
 }: WordIntroductionExperienceProps) {
   const [library, setLibrary] = useState<WordIntroductionResponse>(preloadedIntroduction);
   const [busy, setBusy] = useState<'complete' | null>(null);
@@ -106,6 +111,8 @@ export function WordIntroductionExperience({
     setPlayerState((current) => reduceIntroductionPlayer(current, action, selected.value!.snapshot, 'teaching-only'));
   }
 
+  const sentenceScript = effectiveSentenceCharacterPresentation(characterPresentation, sentenceCharacterPresentation);
+  const sentenceText = (text: string) => convertSentenceCharacters(text, sentenceScript);
   const lexical = selected.value?.content.content.word ?? library?.contents[0]?.content.word;
   return <section className="intro-lab word-intro-experience" aria-label="Word introduction">
     <div className="word-intro-shell">
@@ -118,7 +125,7 @@ export function WordIntroductionExperience({
           <h1>Try the expression</h1>
         </> : <>
           <p className="intro-lab-kicker">Word introduction</p>
-          <h1>{lexical?.hanzi ?? 'Meet this word'}</h1>
+          <h1>{lexical ? formatCardCharacters(lexical, characterPresentation) : 'Meet this word'}</h1>
           {lexical && <p className="word-intro-pronunciation">{lexical.pinyin}</p>}
         </>}
       </header>}
@@ -135,6 +142,8 @@ export function WordIntroductionExperience({
       />}
       {selected.value && <IntroductionPlayer
         mode="teaching-only"
+        characterPresentation={characterPresentation}
+        sentenceCharacterPresentation={sentenceScript}
         snapshot={selected.value.snapshot}
         content={selected.value.content.content}
         state={playerState}
@@ -149,11 +158,11 @@ export function WordIntroductionExperience({
           {library.contents.map(({ content }) => <div key={content.id} className="word-intro-source-document">
             <p>Content <code>{content.id}</code></p>
             {content.uses.map((use) => <div key={use.id}>
-              <strong>{use.label}</strong>
-              {use.notes.map((note, index) => <p key={index}>{note}</p>)}
+              <strong>{sentenceText(use.label)}</strong>
+              {use.notes.map((note, index) => <p key={index}>{sentenceText(note)}</p>)}
             </div>)}
             {content.examples.map((example) => <div key={example.id} className="word-intro-source-example">
-              <p lang="zh-Hans">{example.text}</p><p>{example.translation}</p>
+              <p lang={sentenceCharacterLanguage(sentenceScript)}>{sentenceText(example.text)}</p><p>{sentenceText(example.translation)}</p>
             </div>)}
           </div>)}
           {library.packages.map(({ teaching }) => <p key={teaching.id}>Package <code>{teaching.id}</code> · source <code>{teaching.wordContentId}</code></p>)}

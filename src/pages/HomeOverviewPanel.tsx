@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { BackendStatus, UnstudiedAdmissionSource } from '../services/api';
-import type { CharacterPresentation } from '../domain/card-characters';
+import type { CharacterPresentation, SentenceCharacterPresentation } from '../domain/card-characters';
 import type { SessionPrefetchState } from '../features/session/session-prefetch';
 import type { SessionPhase } from '../lib/session-state';
 import { getReviewFailureRatePeriods } from '../lib/review-failure-rates';
@@ -179,6 +179,7 @@ export function SessionSettingsPanel({
     dailyNewWordLimit?: number;
     unstudiedAdmissionSource?: UnstudiedAdmissionSource;
     characterPresentation?: CharacterPresentation;
+    sentenceCharacterPresentation?: SentenceCharacterPresentation;
   }) => Promise<void>;
   onSavingChange: (saving: boolean) => void;
   onClose: () => void;
@@ -196,16 +197,22 @@ export function SessionSettingsPanel({
   const [presentationDraft, setPresentationDraft] = useState<CharacterPresentation>(
     backendStatus?.characterPresentation ?? 'simplified',
   );
+  const [sentencePresentationDraft, setSentencePresentationDraft] = useState<SentenceCharacterPresentation>(
+    backendStatus?.sentenceCharacterPresentation ?? 'simplified',
+  );
   const [limitSaving, setLimitSaving] = useState(false);
   const [limitError, setLimitError] = useState<string | null>(null);
 
   const committedLimit = backendStatus?.dailyNewWordLimit ?? null;
   const committedSource = backendStatus?.unstudiedAdmissionSource ?? 'mixed';
   const committedPresentation = backendStatus?.characterPresentation ?? 'simplified';
+  const committedSentencePresentation = backendStatus?.sentenceCharacterPresentation ?? 'simplified';
   const limitDirty = committedLimit !== null && limitDraft.trim() !== String(committedLimit);
   const sourceDirty = sourceDraft !== committedSource;
   const presentationDirty = backendStatus?.studyProfile === 'mandarin' && presentationDraft !== committedPresentation;
-  const settingsDirty = limitDirty || sourceDirty || presentationDirty;
+  const sentencePresentationDirty = backendStatus?.studyProfile === 'mandarin'
+    && sentencePresentationDraft !== committedSentencePresentation;
+  const settingsDirty = limitDirty || sourceDirty || presentationDirty || sentencePresentationDirty;
 
   function beginLimitEdit() {
     setLimitDraft(committedLimit === null ? '' : String(committedLimit));
@@ -217,6 +224,7 @@ export function SessionSettingsPanel({
     setLimitDraft(committedLimit === null ? '' : String(committedLimit));
     setSourceDraft(committedSource);
     setPresentationDraft(committedPresentation);
+    setSentencePresentationDraft(committedSentencePresentation);
     setLimitEditing(false);
     setLimitError(null);
     onClose();
@@ -240,6 +248,7 @@ export function SessionSettingsPanel({
       dailyNewWordLimit?: number;
       unstudiedAdmissionSource?: UnstudiedAdmissionSource;
       characterPresentation?: CharacterPresentation;
+      sentenceCharacterPresentation?: SentenceCharacterPresentation;
     } = {};
 
     if (limitDirty) {
@@ -258,6 +267,10 @@ export function SessionSettingsPanel({
 
     if (presentationDirty) {
       patch.characterPresentation = presentationDraft;
+    }
+
+    if (sentencePresentationDirty) {
+      patch.sentenceCharacterPresentation = sentencePresentationDraft;
     }
 
     setLimitSaving(true);
@@ -301,7 +314,7 @@ export function SessionSettingsPanel({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [limitDraft, sourceDraft, presentationDraft, limitSaving, settingsDirty, committedLimit, committedSource, committedPresentation]);
+  }, [limitDraft, sourceDraft, presentationDraft, sentencePresentationDraft, limitSaving, settingsDirty, committedLimit, committedSource, committedPresentation, committedSentencePresentation]);
 
   useEffect(() => {
     if (limitEditing) {
@@ -323,6 +336,10 @@ export function SessionSettingsPanel({
   useEffect(() => {
     setPresentationDraft(committedPresentation);
   }, [committedPresentation]);
+
+  useEffect(() => {
+    setSentencePresentationDraft(committedSentencePresentation);
+  }, [committedSentencePresentation]);
 
   return (
     <div
@@ -399,6 +416,29 @@ export function SessionSettingsPanel({
               <option value="simplified">Simplified</option>
               <option value="traditional">Traditional</option>
               <option value="both">Both</option>
+            </select>
+          </div>
+        ) : null}
+        {backendStatus?.studyProfile === 'mandarin' && presentationDraft === 'both' ? (
+          <div className="session-settings-row">
+            <label className="session-settings-label" htmlFor="sentence-character-presentation">
+              Sentences and examples:
+            </label>
+            <select
+              id="sentence-character-presentation"
+              className="session-settings-select"
+              value={sentencePresentationDraft}
+              disabled={backendStatus.sentenceCharacterPresentation === undefined || limitSaving}
+              onChange={(event) => {
+                const next = event.target.value;
+                if (next === 'simplified' || next === 'traditional') {
+                  setSentencePresentationDraft(next);
+                  setLimitError(null);
+                }
+              }}
+            >
+              <option value="simplified">Simplified</option>
+              <option value="traditional">Traditional</option>
             </select>
           </div>
         ) : null}

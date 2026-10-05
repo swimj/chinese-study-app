@@ -260,6 +260,13 @@ a missing row reads as `"mixed"`. These settings are independent of
 `daily_new_word_intake.new_study_count`, the per-UTC-day counter incremented
 only when an unstudied word is completed.
 
+Character display preferences also use `learner_settings`: `character_presentation`
+stores `"simplified"`, `"traditional"`, or `"both"`; `sentence_character_presentation`
+stores `"simplified"` or `"traditional"`. Both default to `"simplified"` without a row.
+The sentence preference is independent of the card preference and survives
+switches away from Both. These are display preferences, with no corpus rewrite
+or schema migration.
+
 `learner_params` is the sibling per-learner key-value store for non-setting
 parameters (`learner_id`, `param_key`, `value_json`, `updated_at`). The first
 key, `whats_new_seen_through_date`, stores the learner’s What’s New YYYY-MM-DD
