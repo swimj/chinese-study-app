@@ -70,11 +70,13 @@ export function hasInFlightSessionReflection(
 export function sessionHidesAppChrome({
   sessionStarted,
   sessionPhase,
+  finalizationKind,
 }: {
   sessionStarted: boolean;
   sessionPhase: SessionLeavePhase;
+  finalizationKind: SessionFinalizationState['kind'];
 }): boolean {
-  return sessionStarted && sessionPhase !== null && sessionPhase !== 'completed';
+  return sessionStarted && sessionPhase !== null && (sessionPhase !== 'completed' || finalizationKind !== 'finalized');
 }
 
 export function shouldFinishSessionOnLeave({

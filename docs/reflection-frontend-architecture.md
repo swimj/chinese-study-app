@@ -24,27 +24,20 @@ App.tsx
 
 ## Completed-session finalization
 
-The summary preserves the final Undo opportunity until the session is finished.
-Finish is the **Finish session** control, Space on that surface, or in-app
-navigation away from the completed summary (another primary page or sign-out).
-The live session still hides primary nav during active/draining study; nav
-returns on the completed summary so leaving is possible. Mid-session leave is
-unchanged and does not finish. Tab close and refresh are not treated as finish.
+The last exercise stays visible after completion, with **See session summary**
+(Enter) and final Undo. `StudySessionPanel` retains the committed card presentation
+while the controller's scheduler state is completed; study action bars are
+replaced by entry controls. The final card skips departure motion.
 
-All of those finish entries call the same `finishCompletedSession` path.
-Overlapping Finish and leave share one in-flight run. Finishing:
+Entry locks Undo during saving and calls `finishCompletedSession`. The same
+exclusive path protects programmatic in-app leave. It flushes the final deferred
+commit, records the durable summary, then opens the summary and starts qualifying
+reflection. Primary navigation stays hidden until successful finalization.
 
-1. flushes the final deferred commit;
-2. records the durable review-session summary;
-3. transitions the UI to finalized; and
-4. starts reflection only when qualifying evidence exists.
-
-If the final commit fails, finalization returns to `unfinalized`, retains Undo,
-and does not record the summary or generate reflection. If the later summary
-write fails, finalization also returns to `unfinalized`, but the now-durable
-final commit has correctly closed the Undo window; retrying Finish resumes from
-that durable state. Failed implicit finish stays on the summary so the learner
-can retry rather than navigating away with an unfinished persist.
+If either write fails, the card remains visible for retry. Undo remains available
+if the final commit failed, but stays closed after an accepted commit.
+A summary-write retry does not reapply a successfully flushed commit. Active or
+draining leave, tab close, and refresh do not finalize a session.
 
 Once finalized, **Close summary** is a separate action and remains available
 while reflection is generating. Provider or validation failure is displayed as
@@ -213,7 +206,7 @@ proposal removes it from the current queue when its new lifecycle state no
 longer matches that filter. By session can restore a learner-dismissed proposal
 to pending with **Undo dismiss**; second-opinion retirement cannot be undone.
 Questions remain informational and do not receive
-synthetic review state. Finish session returns Home; there is no post-session
+synthetic review state. Close summary returns Home; there is no post-session
 jump or Open-reflection deep link.
 
 Each proposal has a purpose-built editor for each registered operation family:

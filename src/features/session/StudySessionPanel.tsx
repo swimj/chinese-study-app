@@ -1,6 +1,6 @@
 import { SessionDesk, RecallChips, type SessionDeskHandle } from './SessionDesk';
 import { ClozePrompt } from './ClozePrompt';
-import { useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ContentQualityControls } from '../content-quality/ContentQualityControls';
 import { getSessionContentQualityTarget, sessionContentQualityEncounterId } from './session-content-quality';
 import type { ContentQualityTarget } from '../../domain/content-quality';
@@ -73,7 +73,48 @@ export type FrozenPureCueCard = {
   queuedCount: number;
 };
 
-export function StudySessionPanel({
+type StudySessionPanelProps = Omit<Parameters<typeof StudySessionPanelContent>[0], 'completionGate'>;
+
+// Retain the last committed card presentation, independently of the scheduler's
+// completed state. Undo still restores the controller's authoritative snapshot.
+export function StudySessionPanel(props: StudySessionPanelProps) {
+  const lastCard = useRef<StudySessionPanelProps | null>(null);
+  const completed = props.sessionPhase === 'completed';
+  useLayoutEffect(() => {
+    if (!props.sessionStarted) lastCard.current = null;
+    else if (!completed || props.frozenProductionCard || props.frozenPureCueCard || props.frozenContrastCard) {
+      lastCard.current = props;
+    }
+  });
+  if (completed && props.sessionFinalization.kind !== 'finalized' && lastCard.current
+    && (lastCard.current.answerRevealed || props.frozenProductionCard || props.frozenPureCueCard || props.frozenContrastCard)) {
+    const card = props.frozenProductionCard || props.frozenPureCueCard || props.frozenContrastCard ? props : lastCard.current;
+    return <StudySessionPanelContent {...card}
+      completionGate
+      deskRemainingCount={0}
+      deskAgainCount={0}
+      reviewedCount={props.reviewedCount}
+      activeElapsedTime={props.activeElapsedTime}
+      sessionFinalization={props.sessionFinalization}
+      sessionSummary={props.sessionSummary}
+      hasUndo={props.hasUndo}
+      submittingRating={props.submittingRating}
+      shortcutGuideOpen={props.shortcutGuideOpen}
+      onEndSession={props.onEndSession}
+      onUndoLastRating={props.onUndoLastRating}
+      onOpenShortcutGuide={props.onOpenShortcutGuide}
+      onCloseShortcutGuide={props.onCloseShortcutGuide}
+    />;
+  }
+  return <StudySessionPanelContent {...props}
+    {...(completed && props.sessionFinalization.kind === 'finalized' ? {
+      frozenProductionCard: null, frozenPureCueCard: null, frozenContrastCard: null,
+      productionAwaitingNext: false, pureCueAwaitingNext: false, contrastAwaitingNext: false,
+    } : {})} />;
+}
+
+function StudySessionPanelContent({
+  completionGate = false,
   sessionStarted,
   sessionDeskRef,
   deskAgainCount,
@@ -151,6 +192,7 @@ export function StudySessionPanel({
   onOpenShortcutGuide,
   onCloseShortcutGuide,
 }: {
+  completionGate?: boolean;
   sessionStarted: boolean;
   sessionDeskRef: RefObject<SessionDeskHandle>;
   deskAgainCount: number;
@@ -231,7 +273,7 @@ export function StudySessionPanel({
   const productionFormId = 'production-hanzi-input-form';
   const panelView = getStudySessionPanelView({
     sessionStarted,
-    sessionCompletedWithSummary: sessionPhase === 'completed' && sessionSummary !== null,
+    sessionCompletedWithSummary: !completionGate && sessionPhase === 'completed' && sessionSummary !== null,
     productionAwaitingNext,
     pureCueAwaitingNext,
     frozenProductionCardPresent: frozenProductionCard !== null,
@@ -251,7 +293,7 @@ export function StudySessionPanel({
     answerRevealed && hasServedProductionCueSupplement(activeItem?.production);
   const qualityHotkeysActive = !personalNotesEditorOpen && !shortcutGuideOpen && submittingRating === null && !studyManagementSubmitting;
   function qualityControls(target: ContentQualityTarget | null, actionId: string, count: number, label: string, hotkeys = true) {
-    if (!target || !sessionSummary) return null;
+    if (completionGate || !target || !sessionSummary) return null;
     return <ContentQualityControls
       target={target}
       encounterId={sessionContentQualityEncounterId(sessionSummary.sessionId, actionId, count)}
@@ -275,13 +317,28 @@ export function StudySessionPanel({
     contrastHasSelection: contrastSelectedWordId !== null,
     ratingAvailable: showRatingButtons,
     hasUndo,
-    hasActiveWord: activeWord !== null,
+    hasActiveWord: !completionGate && activeWord !== null,
     ratingOptions: activeRatingOptions,
-    completedSummary: panelView === 'completed',
+    completedSummary: completionGate || panelView === 'completed',
     summaryFinalizationKind: sessionFinalization.kind,
   });
   const primaryAction = getSessionPrimaryAction(keyboardContext);
   const shortcutGuide = getSessionShortcutGuide(keyboardContext, { includeDialogClose: shortcutGuideOpen });
+
+  const completionActions = (
+    <div className="session-action-bar">
+      <SessionActionSection>
+        <button type="button" onClick={onEndSession} disabled={sessionFinalization.kind === 'finalizing'}>
+          {sessionFinalization.kind === 'finalizing' ? 'Saving session…' : 'See session summary'}
+          <ShortcutHint shortcut={sessionFinalization.kind === 'finalizing' ? null : 'Enter'} />
+        </button>
+        <UndoButton hasUndo={hasUndo && sessionFinalization.kind === 'unfinalized'}
+          submittingRating={submittingRating} personalNotesEditorOpen={personalNotesEditorOpen}
+          onUndoLastRating={onUndoLastRating} />
+        <KeyboardGuideButton onClick={onOpenShortcutGuide} />
+      </SessionActionSection>
+    </div>
+  );
 
   return (
     <div className={sessionStarted ? 'panel study-session-panel session-panel-active' : 'panel study-session-panel'}>
@@ -356,7 +413,9 @@ export function StudySessionPanel({
               </div>
             ) : null}
           </div>
-          <div className="session-action-bar">
+          {completionGate ? (
+            completionActions
+          ) : (<div className="session-action-bar">
             <SessionActionSection>
               <button type="button" onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}>
                 Continue
@@ -392,7 +451,7 @@ export function StudySessionPanel({
               </button>
               <KeyboardGuideButton onClick={onOpenShortcutGuide} />
             </SessionActionSection>
-          </div>
+          </div>)}
         </div>
       ) : panelView === 'frozen_pure_cue' && frozenPureCueCard ? (
         <div className="review-card session-card-shell">
@@ -426,7 +485,9 @@ export function StudySessionPanel({
               <p className="notes">Your response: {frozenPureCueCard.attemptedResponse}</p>
             ) : null}
           </div>
-          <div className="session-action-bar">
+          {completionGate ? (
+            completionActions
+          ) : (<div className="session-action-bar">
             <SessionActionSection>
               <button type="button" onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}>
                 Continue
@@ -445,7 +506,7 @@ export function StudySessionPanel({
               </button>
               <KeyboardGuideButton onClick={onOpenShortcutGuide} />
             </SessionActionSection>
-          </div>
+          </div>)}
         </div>
       ) : panelView === 'frozen_contrast' && frozenContrastCard ? (
         <div className="review-card session-card-shell">
@@ -471,7 +532,9 @@ export function StudySessionPanel({
               onSelectChoice={() => undefined}
             />
           </div>
-          <div className="session-action-bar">
+          {completionGate ? (
+            completionActions
+          ) : (<div className="session-action-bar">
             <SessionActionSection>
               <button type="button" onClick={onContinueAfterAutoContrastForgot} disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}>
                 Continue
@@ -490,43 +553,27 @@ export function StudySessionPanel({
               </button>
               <KeyboardGuideButton onClick={onOpenShortcutGuide} />
             </SessionActionSection>
-          </div>
+          </div>)}
         </div>
       ) : panelView === 'completed' && sessionSummary ? (
         <div className="review-card session-card-shell">
           <div className="session-card-scroll">
-            <SessionSummaryPanel
-              summary={sessionSummary}
-              finalization={sessionFinalization}
-              onRetryReflection={onRetrySessionReflection}
-            />
+            {sessionFinalization.kind === 'finalized' ? (
+              <SessionSummaryPanel summary={sessionSummary} finalization={sessionFinalization}
+                onRetryReflection={onRetrySessionReflection} />
+            ) : <p>Your session is ready to finish.</p>}
           </div>
-          <div className="session-action-bar">
-            <SessionActionSection>
-              <button
-                type="button"
-                onClick={onEndSession}
-                disabled={sessionFinalization.kind === 'finalizing'}
-              >
-                {sessionFinalization.kind === 'finalized'
-                  ? 'Close summary'
-                  : sessionFinalization.kind === 'finalizing'
-                    ? 'Finishing...'
-                    : 'Finish session'}
-                <ShortcutHint
-                  shortcut={shortcutFor(primaryAction, 'finish_session')
-                    ?? shortcutFor(primaryAction, 'close_summary')}
-                />
-              </button>
-              <KeyboardGuideButton onClick={onOpenShortcutGuide} />
-              <UndoButton
-                hasUndo={hasUndo && sessionFinalization.kind === 'unfinalized'}
-                submittingRating={submittingRating}
-                personalNotesEditorOpen={personalNotesEditorOpen}
-                onUndoLastRating={onUndoLastRating}
-              />
-            </SessionActionSection>
-          </div>
+          {sessionFinalization.kind !== 'finalized' ? completionActions : (
+            <div className="session-action-bar">
+              <SessionActionSection>
+                <button type="button" onClick={onEndSession}>
+                  Close summary
+                  <ShortcutHint shortcut={shortcutFor(primaryAction, 'close_summary')} />
+                </button>
+                <KeyboardGuideButton onClick={onOpenShortcutGuide} />
+              </SessionActionSection>
+            </div>
+          )}
         </div>
       ) : panelView === 'unstudied_intro' && activeWord ? (
         <div className="review-card session-card-shell">
@@ -545,7 +592,9 @@ export function StudySessionPanel({
               ) : null}
             </div>
           </div>
-          <div className="session-action-bar">
+          {completionGate ? (
+            completionActions
+          ) : (<div className="session-action-bar">
             <SessionActionSection>
               <button
                 type="button"
@@ -579,7 +628,7 @@ export function StudySessionPanel({
               </button>
               <KeyboardGuideButton onClick={onOpenShortcutGuide} />
             </SessionActionSection>
-          </div>
+          </div>)}
         </div>
       ) : activePureCue ? (
         <div className="review-card session-card-shell">
@@ -619,7 +668,7 @@ export function StudySessionPanel({
                 className="stack"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  onSubmitProductionHanzi();
+                  if (!completionGate) onSubmitProductionHanzi();
                 }}
               >
                 <label className="prompt-label" htmlFor="production-hanzi-input">
@@ -634,13 +683,15 @@ export function StudySessionPanel({
                   autoComplete="off"
                   autoCapitalize="none"
                   spellCheck={false}
-                  disabled={submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
+                  disabled={completionGate || submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
                 />
                 {productionHanziError ? <p className="notes">{productionHanziError}</p> : null}
               </form>
             )}
           </div>
-          <div className="session-action-bar">
+          {completionGate ? (
+            completionActions
+          ) : (<div className="session-action-bar">
             <SessionActionSection>
               {showRatingButtons ? (
                 <div className="rating-grid">
@@ -651,7 +702,7 @@ export function StudySessionPanel({
                       className={option.isDefault ? 'rating-button is-default' : 'rating-button'}
                       title={option.note}
                       onClick={() => onRate(option.value, { restoreUi: 'production-input' })}
-                      disabled={submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
+                      disabled={completionGate || submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
                     >
                       <strong>
                         {option.label}
@@ -666,7 +717,7 @@ export function StudySessionPanel({
                   <button
                     type="submit"
                     form={productionFormId}
-                    disabled={submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
+                    disabled={completionGate || submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
                   >
                     {studyProfile.labels.submitProductionInput}
                     <ShortcutHint shortcut={shortcutFor(primaryAction, 'submit_production')} />
@@ -694,14 +745,16 @@ export function StudySessionPanel({
               </button>
               <KeyboardGuideButton onClick={onOpenShortcutGuide} />
             </SessionActionSection>
-          </div>
+          </div>)}
         </div>
       ) : panelView === 'empty' ? (
         <div className="review-card session-card-shell">
           <div className="session-card-scroll">
             <p className="notes">No session items remain in the active snapshot.</p>
           </div>
-          <div className="session-action-bar">
+          {completionGate ? (
+            completionActions
+          ) : (<div className="session-action-bar">
             <SessionActionSection>
               <UndoButton
                 hasUndo={hasUndo}
@@ -714,7 +767,7 @@ export function StudySessionPanel({
               </button>
               <KeyboardGuideButton onClick={onOpenShortcutGuide} />
             </SessionActionSection>
-          </div>
+          </div>)}
         </div>
       ) : activeItem && activeWord ? (
         <div className="review-card session-card-shell">
@@ -771,7 +824,7 @@ export function StudySessionPanel({
                 item={activeItem}
                 selectedWordId={contrastSelectedWordId}
                 answerRevealed={answerRevealed}
-                disabled={submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
+                disabled={completionGate || submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
                 characterPresentation={characterPresentation}
                 onSelectChoice={onSelectContrastChoice}
               />
@@ -824,7 +877,7 @@ export function StudySessionPanel({
                             type="button"
                             className={`meaning-toggle-icon-button ${meaning.showOnProductionPrompt ? 'is-on' : 'is-off'}`}
                             onClick={() => onToggleMeaningVisibility(meaning)}
-                            disabled={meaningVisibilitySavingKey === meaning.id}
+                            disabled={completionGate || meaningVisibilitySavingKey === meaning.id}
                             aria-label={
                               meaning.showOnProductionPrompt
                                 ? `Hide "${meaning.text}" from production prompt`
@@ -866,7 +919,7 @@ export function StudySessionPanel({
                 className="stack"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  onSubmitProductionHanzi();
+                  if (!completionGate) onSubmitProductionHanzi();
                 }}
               >
                 <label className="prompt-label" htmlFor="production-hanzi-input">
@@ -881,13 +934,15 @@ export function StudySessionPanel({
                   autoComplete="off"
                   autoCapitalize="none"
                   spellCheck={false}
-                  disabled={submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
+                  disabled={completionGate || submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
                 />
                 {productionHanziError ? <p className="notes">{productionHanziError}</p> : null}
               </form>
             ) : null}
           </div>
-          <div className="session-action-bar">
+          {completionGate ? (
+            completionActions
+          ) : (<div className="session-action-bar">
             <SessionActionSection>
               {activeItem.actionKind === 'contrast_selection' && !showRatingButtons ? (
                 <div className="rating-grid">
@@ -930,7 +985,7 @@ export function StudySessionPanel({
                           restoreUi: isProductionItem ? 'production-input' : 'revealed',
                         })
                       }
-                      disabled={submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
+                      disabled={completionGate || submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
                     >
                       <strong>
                         {option.label}
@@ -945,7 +1000,7 @@ export function StudySessionPanel({
                   <button
                     type="submit"
                     form={productionFormId}
-                    disabled={submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
+                    disabled={completionGate || submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
                   >
                     {studyProfile.labels.submitProductionInput}
                     <ShortcutHint shortcut={shortcutFor(primaryAction, 'submit_production')} />
@@ -1003,7 +1058,7 @@ export function StudySessionPanel({
               </button>
               <KeyboardGuideButton onClick={onOpenShortcutGuide} />
             </SessionActionSection>
-          </div>
+          </div>)}
         </div>
         ) : null}
         </SessionDesk>

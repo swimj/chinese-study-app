@@ -42,11 +42,10 @@ It does not choose:
 
 ## 2. Finalized-Session Boundary
 
-Reaching a session summary does not itself make the session immutable. The final
-session-affecting transition may remain undoable until the learner finishes the
-session. Finish is any of: **Finish session**, Space on that summary, or in-app
-navigation away from the completed summary. Mid-session leave does not finish.
-Tab close and refresh are not a reliable finish path.
+After the last rating, the revealed exercise remains visible with its final
+Undo opportunity. **See session summary** (Enter) locks Undo and finalizes the
+session before opening the summary. Active/draining leave does not finish.
+Tab close and refresh are not reliable finish paths.
 
 Finalization proceeds in this order:
 
@@ -57,7 +56,8 @@ Finalization proceeds in this order:
 
 If the final study commit or session-summary write fails, reflection must not
 start. The learner may retry finalization without fabricating a completed
-session or duplicate attempt evidence.
+session or duplicate attempt evidence. The last card stays visible for retry;
+Undo stays closed after the final commit succeeds; a failed commit retains it.
 
 Once finalization succeeds, reflection is best-effort. Generation is kicked off
 after the durable finish writes succeed and does not require the summary page
