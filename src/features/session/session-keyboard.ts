@@ -44,6 +44,7 @@ export type SessionKeyboardContext = {
   sessionStarted: boolean;
   isEditableTarget: boolean;
   isQualityControlTarget?: boolean;
+  isNativeActionTarget?: boolean;
   productionInputActive: boolean;
   productionAwaitingNext: boolean;
   pureCueAwaitingNext?: boolean;
@@ -167,12 +168,12 @@ export function getSessionPrimaryAction(context: SessionKeyboardContext): Sessio
       return { command: 'continue_after_auto_forgot', label: 'Next', shortcut: 'Space' };
     case 'completed_summary':
       if (context.summaryFinalizationKind === 'unfinalized') {
-        return { command: 'finish_session', label: 'Finish session', shortcut: 'Space' };
+        return { command: 'finish_session', label: 'See session summary', shortcut: 'Enter' };
       }
       if (context.summaryFinalizationKind === 'finalized') {
         return { command: 'close_summary', label: 'Close summary', shortcut: 'Space' };
       }
-      return { command: 'finish_session', label: 'Finishing...', shortcut: null };
+      return { command: 'finish_session', label: 'Saving session…', shortcut: null };
     default:
       return null;
   }
@@ -266,10 +267,10 @@ export function resolveSessionKey(
   }
 
   if (context.completedSummary) {
+    if (context.isNativeActionTarget && (event.key === 'Enter' || event.key === ' ')) return null;
+    if (event.key === 'Enter' && context.summaryFinalizationKind === 'unfinalized') return { type: 'finish_session' };
     if (event.key === ' ') {
-      if (context.summaryFinalizationKind === 'unfinalized') {
-        return { type: 'finish_session' };
-      }
+      if (context.summaryFinalizationKind === 'unfinalized') return null;
       if (context.summaryFinalizationKind === 'finalized') {
         return { type: 'close_summary' };
       }
@@ -408,12 +409,12 @@ function getThisCardShortcutRows(
       return [{ key: 'Space', description: 'Continue to the next card', available: true }];
     case 'completed_summary':
       if (context.summaryFinalizationKind === 'unfinalized') {
-        return [{ key: 'Space', description: 'Finish the session', available: true }];
+        return [{ key: 'Enter', description: 'See session summary', available: true }];
       }
       if (context.summaryFinalizationKind === 'finalized') {
         return [{ key: 'Space', description: 'Close the summary', available: true }];
       }
-      return [{ key: 'Space', description: 'Finish the session', available: false }];
+      return [{ key: 'Enter', description: 'See session summary', available: false }];
     default:
       return [];
   }

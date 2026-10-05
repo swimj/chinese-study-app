@@ -168,10 +168,12 @@ describe('completed-session finalization', () => {
   });
 
   test('hides app chrome only while a live session has not reached the summary', () => {
-    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'active' }), true);
-    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'draining' }), true);
-    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'completed' }), false);
-    assert.equal(sessionHidesAppChrome({ sessionStarted: false, sessionPhase: null }), false);
+    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'active', finalizationKind: 'finalized' }), true);
+    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'draining', finalizationKind: 'finalized' }), true);
+    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'completed', finalizationKind: 'finalized' }), false);
+    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'completed', finalizationKind: 'unfinalized' }), true);
+    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'completed', finalizationKind: 'finalizing' }), true);
+    assert.equal(sessionHidesAppChrome({ sessionStarted: false, sessionPhase: null, finalizationKind: 'finalized' }), false);
   });
 
   test('overlapping finish callers share one in-flight run', async () => {

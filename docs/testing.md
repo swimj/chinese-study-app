@@ -40,7 +40,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `reflection-help-inbox.test.ts` | Explanation-only Help inbox seed at materialize, Done delete, manual authorization, independence from proposal disposition, 404 | `server/db/reflection-help-inbox.ts` + temporary SQLite |
 | `attention-badges.test.ts` | Unseen Help count, sticky `inbox_seen_at`, dismiss/reopen, durable failed-run seen-through cursor, What’s New cursor | `server/db/attention.ts` + temporary SQLite |
 | `reflection-attention.test.ts` | Reflections nav badge hiding, failure-over-count priority, and failed-run seen-through comparison | `src/features/attention/reflection-attention.ts` |
-| `session-finalization.test.ts` | Explicit Finish boundary, commit-before-summary ordering, reflection isolation/retry and stale-response guards | `session-finalization.ts` |
+| `session-finalization.test.ts` | Explicit summary-entry boundary, commit-before-summary ordering, reflection isolation/retry and stale-response guards | `session-finalization.ts` |
 | `reflection-page-model.test.ts` | Item/proposal grouping, help-queue cards from Help inbox membership, deep draft edits for four operations, support and validation presentation | `reflection-page-model.ts` |
 | `reflection-operation-editor.test.ts` | Compact V2 cue-change list, hidden restated Hanzi field, and accepted-word chips | `ReflectionOperationEditor.tsx` |
 | `reflections-page-run-log.test.ts` | Empty, unavailable-cost, priced run-log, and Luna-only spend-cap selector rendering | `ReflectionsPage.tsx` server render |

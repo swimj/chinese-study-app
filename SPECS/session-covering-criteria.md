@@ -265,33 +265,27 @@ keyboard behavior, exposure semantics, and operator analytics.
 
 ## Completed-Session Reflection Boundary
 
-Reaching the session summary does not by itself close the final Undo window.
-The learner may still undo the final session-affecting transition while they
-remain on that summary.
+After the last rating, keep the last revealed exercise visible. Replace its
+study controls with **See session summary** (Enter) and the final Undo control.
+The last card does not depart. This also applies when draining or a final
+contrast response completes the work; a frozen incorrect answer remains visible.
 
-The session is finished, and post-session reflection becomes eligible, when
-they take any of these equivalent finish actions:
+Entering the summary locks Undo while saving and uses the existing finalization
+path: flush the final accepted deferred commit, then record the durable
+completed-session summary. Show the summary only after both writes succeed.
+Primary navigation returns at that point. There is no second Finish action;
+**Close summary** leaves the finalized summary.
 
-- choose **Finish session**
-- press Space on the finishable summary, which is the same primary action
-- leave the completed summary through in-app navigation (another primary page
-  or sign-out)
+During saving, disable entry and Undo. Duplicate entries share one in-flight
+finalization. A save failure leaves the last card visible with a retry and does
+not start reflection. If the commit failed, Undo remains available; after an
+accepted commit it stays closed. If the commit succeeded but the summary
+write failed, retry only the remaining durable work. Reflection starts after
+successful finalization and remains best-effort.
 
-Leaving an in-progress session (active or draining, before the summary) does
-not finish it. Refreshing or closing the tab is not a reliable finish path:
-the live session is still frontend-owned, and those unload events must not be
-treated as a completed finish.
-
-All finish actions share one finalization path. A second Finish or leave
-during an in-flight finish must not start a second commit, summary write, or
-reflection generation. Finishing is as final as an explicit **Finish session**:
-it closes Undo.
-
-Finishing must first flush the final accepted deferred commit and record the
-durable completed-session summary. Only after those steps succeed may the app
-freeze qualifying reflection evidence and start best-effort generation. If
-finalization fails, reflection does not start and must not fabricate a completed
-session. The learner remains on the summary so they can retry.
+Leaving an active or draining session does not finish it. Refresh and tab close
+are not reliable finish paths. The in-app leave guard still shares finalization
+for any programmatic leave from a completed but unsaved session.
 
 An undone transition contributes no reflection evidence. Reflection generation,
 validation, or later review failure never changes covering, accepted attempts,

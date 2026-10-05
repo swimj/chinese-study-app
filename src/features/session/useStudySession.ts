@@ -957,7 +957,7 @@ export function useStudySession({
           }));
         resetAnswerAndProductionUi();
       };
-      if (sessionDeskRef.current) await sessionDeskRef.current.depart(outcome, showNext);
+      if (transition.state.phase !== 'completed' && sessionDeskRef.current) await sessionDeskRef.current.depart(outcome, showNext);
       else showNext();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -1254,7 +1254,7 @@ export function useStudySession({
         : getSessionDeskUnitKey(frozenProductionCard!.status, frozenProductionCard!.sessionActionId, frozenProductionCard!.targetWordId);
       setDeskAgainKeys((keys) => updateSessionDeskAgainKeys(keys, key, 'wrong'));
       // Domain state already advanced; uncover it beneath the departing clone.
-      if (sessionDeskRef.current) await sessionDeskRef.current.depart('wrong', resetAnswerAndProductionUi);
+      if (sessionState?.phase !== 'completed' && sessionDeskRef.current) await sessionDeskRef.current.depart('wrong', resetAnswerAndProductionUi);
       else resetAnswerAndProductionUi();
     } finally {
       deskBusyRef.current = false;
@@ -1360,7 +1360,7 @@ export function useStudySession({
     setSubmittingRating('forgot');
     try {
       // Contrast is completed on its first answer; it does not enter reinforcement.
-      if (sessionDeskRef.current) await sessionDeskRef.current.depart('contrast-miss', resetAnswerAndProductionUi);
+      if (sessionState?.phase !== 'completed' && sessionDeskRef.current) await sessionDeskRef.current.depart('contrast-miss', resetAnswerAndProductionUi);
       else resetAnswerAndProductionUi();
     } finally {
       deskBusyRef.current = false;
@@ -1369,7 +1369,7 @@ export function useStudySession({
   }
 
   function handleUndoLastRating() {
-    if (deskBusyRef.current || !lastUndoSnapshot || submittingRating !== null) {
+    if (deskBusyRef.current || sessionFinalizationRef.current.kind !== 'unfinalized' || !lastUndoSnapshot || submittingRating !== null) {
       return;
     }
 
@@ -1833,6 +1833,7 @@ export function useStudySession({
         {
           sessionStarted: true,
           isEditableTarget: isEditableKeyboardTarget(event.target),
+          isNativeActionTarget: event.target instanceof Element && event.target.closest('button, a[href]') !== null,
           isQualityControlTarget: event.target instanceof Element
             && event.target.closest('[data-content-quality-controls]') !== null,
           productionInputActive: productionSubmissionInputActive,

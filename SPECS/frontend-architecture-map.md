@@ -171,8 +171,8 @@ bounded server-side selection and result loading.
 - active word meaning loading and visibility updates
 - keyboard shortcuts and focus effects, using `session-keyboard.ts` as the
   shared state-to-action/shortcut description so the panel and controller
-  cannot drift; Space on the completed summary is Finish session / Close
-  summary
+  cannot drift; Enter on the completed card opens the saved summary; Space on
+  the finalized summary closes it
 - accepted production with a served cue supplement: an `await-supplement`
   Continue beat before rating; cards without a supplement still rate immediately
 

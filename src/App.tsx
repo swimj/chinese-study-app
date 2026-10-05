@@ -262,6 +262,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
   const sessionActive = sessionHidesAppChrome({
     sessionStarted: studySession.sessionStarted,
     sessionPhase: studySession.homePageProps.sessionPhase,
+    finalizationKind: studySession.homePageProps.sessionFinalization.kind,
   });
 
   async function leaveCompletedSessionThen(navigate: () => void | Promise<void>) {
