@@ -10,6 +10,16 @@ const ABOUT_VIEWS = [
 // Entry dates follow the change history; add new posts at the top.
 const UPDATES = [
   {
+    date: '2026-10-05',
+    displayDate: 'October 5, 2026',
+    title: 'A quieter study desk, and a fairer failure rate',
+    paragraphs: [
+      'The app has a warmer, quieter palette: paper in the background, green for the ink and buttons. In a session, one card stays in the center, with the prompt, your answer, and the buttons together. The next card waits just behind it. A finished card moves off; a miss settles into Practice again at the bottom. On a fill-in-the-blank, the answer appears in the blank when you reveal it.',
+      'New-word introductions now keep the current beat in one reading place, with earlier beats still on the page above it. If you scroll back, Space returns you there before it advances. We are still tuning this walkthrough, so expect that part of a session to keep changing.',
+      'Sometimes a miss is the prompt’s fault: the cue was vague, or another answer was also fair. If you accept a reflection proposal that says so, that miss is compensated. The app puts the review back roughly where it was, so you are not punished for a bad prompt. The attempt itself stays in your history. On Home, Exercise failure rate now shows Adjusted failure and Compensation. Adjusted failure is your misses after those unfair ones are taken back, so the number can fall when a compensation is applied, even for an earlier miss. Compensation is how often that has happened. Open Rate details if you want the raw counts.',
+    ],
+  },
+  {
     date: '2026-10-02',
     displayDate: 'October 2, 2026',
     title: 'New words start with a short walkthrough',
