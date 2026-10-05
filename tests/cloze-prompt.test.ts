@@ -57,3 +57,22 @@ test('renders cue and answer as escaped text', () => {
   assert.match(revealed, /&lt;b&gt;词&lt;\/b&gt;/);
   assert.doesNotMatch(revealed, /<script>|<b>/);
 });
+
+test('script conversion uses hidden answer context without revealing it and matches revealed surrounding text', () => {
+  const base = { text: '他的头____了。', contextAnswer: '发', sentenceCharacterPresentation: 'traditional' as const };
+  const hidden = renderToStaticMarkup(createElement(ClozePrompt, { ...base, answer: null }));
+  const shown = renderToStaticMarkup(createElement(ClozePrompt, { ...base, answer: '發' }));
+  assert.equal(hidden, '他的頭____了。');
+  assert.doesNotMatch(hidden, /發|髮|desk-cloze-answer/);
+  assert.match(shown, /<mark class="desk-cloze-answer">發<\/mark>/);
+});
+
+test('converted cloze handles traditional and mixed source with multiple blanks and Unicode prefixes', () => {
+  const markup = renderToStaticMarkup(createElement(ClozePrompt, {
+    text: '📍這個学生____，那個學生也（ ）。', answer: '學習',
+    sentenceCharacterPresentation: 'traditional',
+  }));
+  assert.match(markup, /📍這個學生/);
+  assert.equal((markup.match(/<mark class="desk-cloze-answer">學習<\/mark>/g) ?? []).length, 2);
+  assert.doesNotMatch(markup, /____|学生/);
+});

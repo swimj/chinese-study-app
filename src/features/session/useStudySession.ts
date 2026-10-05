@@ -1187,6 +1187,7 @@ export function useStudySession({
       fallbackPrompt: activePrompt ?? wordAtResponse.meaning,
       answerPinyin: wordAtResponse.pinyin,
       answerText: formatCardCharacters(wordAtResponse, characterPresentation),
+      answerForms: { hanzi: wordAtResponse.hanzi, traditional: wordAtResponse.traditional },
       allMeanings: [...activeAllMeanings],
       personalNotes: activeWordPersonalNotes,
       intervalHours: itemAtResponse.intervalHours,

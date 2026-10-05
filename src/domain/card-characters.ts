@@ -4,6 +4,20 @@ export type CharacterPresentation = (typeof CHARACTER_PRESENTATIONS)[number];
 
 export const DEFAULT_CHARACTER_PRESENTATION: CharacterPresentation = 'simplified';
 
+export type SentenceCharacterPresentation = 'simplified' | 'traditional';
+
+export const DEFAULT_SENTENCE_CHARACTER_PRESENTATION: SentenceCharacterPresentation = 'simplified';
+
+export function isSentenceCharacterPresentation(value: unknown): value is SentenceCharacterPresentation {
+  return value === 'simplified' || value === 'traditional';
+}
+
+export function assertSentenceCharacterPresentation(value: unknown): asserts value is SentenceCharacterPresentation {
+  if (!isSentenceCharacterPresentation(value)) {
+    throw new Error('Expected sentenceCharacterPresentation to be "simplified" or "traditional"');
+  }
+}
+
 export type CardCharacterForms = {
   hanzi: string;
   traditional: string | null;

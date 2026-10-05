@@ -16,7 +16,7 @@ import type {
   StudyEvent,
 } from '../domain/study-actions';
 import type { PureCueAssessmentEvent } from '../domain/pure-cues';
-import type { CharacterPresentation } from '../domain/card-characters';
+import type { CharacterPresentation, SentenceCharacterPresentation } from '../domain/card-characters';
 import type {
   OperationApplicationStatus,
   OperationInvocation,
@@ -242,6 +242,7 @@ type BackendStatus = {
   dailyNewWordLimit: number;
   unstudiedAdmissionSource: UnstudiedAdmissionSource;
   characterPresentation: CharacterPresentation;
+  sentenceCharacterPresentation: SentenceCharacterPresentation;
   learningCoverageDate: string;
   /** True when deck-based diet admission is active (Mandarin profile with a manifest). */
   dietDecksActive: boolean;
@@ -566,6 +567,20 @@ export async function updateCharacterPresentation(
     throw new Error(await readApiErrorMessage(response, 'Failed to update character presentation'));
   }
 
+  return response.json();
+}
+
+export async function updateSentenceCharacterPresentation(
+  sentenceCharacterPresentation: SentenceCharacterPresentation,
+): Promise<{ sentenceCharacterPresentation: SentenceCharacterPresentation }> {
+  const response = await apiFetch(`${API_BASE}/api/learner-settings/sentence-character-presentation`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sentenceCharacterPresentation }),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to update sentence character presentation'));
+  }
   return response.json();
 }
 

@@ -47,6 +47,15 @@ content and exercise identities remain frozen in the active session and Undo
 snapshot. Learning commits still persist the existing word-level success result;
 this prototype adds no durable per-rehearsal attempt ledger.
 
+## Character presentation
+
+The [session character preference](../SPECS/character-presentation.md) controls
+word headings and authored Chinese text. Sentences and examples follow the main
+Simplified or Traditional choice. With Both, the learner separately chooses one
+script for sentences. Revealed clozes insert one answer form matching the
+sentence, while standalone answers can show both. Conversion happens for display
+and leaves pinned source documents, packages, and answer contracts unchanged.
+
 ## Storage and concurrency
 
 Migration `0016_word_introduction_content` adds:

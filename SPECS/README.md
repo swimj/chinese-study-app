@@ -47,6 +47,7 @@ These describe versioned feature behavior alongside the canonical contracts.
 | [pure-cue-elicitation.md](./pure-cue-elicitation.md) | Accepted standalone elicitation contract: independent scheduling, proportional strong-cue sampling, staged promotion, and false-lapse compensation |
 | [word-bootstrap-and-introduction.md](./word-bootstrap-and-introduction.md) | Accepted content contract with live preparation, pinned introduction/rehearsal packages, and independent review-reflection lifecycle; see the in-app guide for implemented policy |
 | [deferred-reflection-second-opinion.md](./deferred-reflection-second-opinion.md) | SWI-55 implemented first cut: selected deferred evidence, chosen-model reflection, and replacement in active review without prompt changes |
+| [character-presentation.md](./character-presentation.md) | Session word forms, sentence script preferences, and cloze display conversion |
 | [my-words.md](./my-words.md) | Words navigation, personal vocabulary collections, bounded browsing, and word details |
 
 ## Design and planning references

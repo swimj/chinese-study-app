@@ -90,7 +90,7 @@ test('frozen production keeps cue feedback and gives the visible supplement the 
       sessionActionId: 'production-action', targetWordId: 'word', actionKind: 'production', sampledSkillIds: ['production'],
       contentRef: { type: 'production_cue', taskId: 'task', cueId: 'cue' },
       attemptedHanzi: null, status: 'review', reviewedCount: 0, queuedCount: 1,
-      promptDisplayedMeanings: [], fallbackPrompt: 'A prompt: （ ）', answerPinyin: 'ci', answerText: '词',
+      promptDisplayedMeanings: [], fallbackPrompt: 'A prompt: （ ）', answerPinyin: 'ci', answerText: '词', answerForms: { hanzi: '词', traditional: '詞' },
       allMeanings: ['word'], personalNotes: '', intervalHours: 24, example: '',
       production: { taskId: 'task', cueId: 'cue', cueType: 'definition_gloss', text: 'A prompt: （ ）',
         acceptedAnswers: [{ wordId: 'word', hanzi: '词', traditional: null }],
@@ -131,6 +131,11 @@ test('recognition reuses supplement teaching only after reveal and retains dicti
     activeItem: { ...item, recognitionSupplement: undefined } });
   assert.match(fallback, /dictionary definition/);
   assert.match(fallback, /legacy example/);
+  const inlineChinese = render({ ...overrides, answerRevealed: true,
+    characterPresentation: 'traditional', sentenceCharacterPresentation: 'simplified',
+    activeAnswerText: 'Notice 学习 in this use label.' });
+  assert.match(inlineChinese, /Notice 學習 in this use label/);
+
 });
 
 for (const marker of ['____', '__', '_______', '（ ）']) {
@@ -153,3 +158,42 @@ for (const marker of ['____', '__', '_______', '（ ）']) {
     assert.match(recognition, /<details class="desk-reference" open="">/);
   });
 }
+
+test('session sentences use the effective script while standalone answers follow Card characters', () => {
+  const source = { ...cue, snapshot: { ...cue.snapshot,
+    stimulus: '這個學生在學習。', teachingNote: 'Notice 學習 in this sentence.',
+    acceptedAnswers: [{ wordId: 'word', hanzi: '学习', traditional: '學習' }],
+  } };
+  const bothTraditional = render({ activePureCue: source, characterPresentation: 'both',
+    sentenceCharacterPresentation: 'traditional', answerRevealed: true });
+  assert.match(bothTraditional, /這個學生在學習。/);
+  assert.match(bothTraditional, /学习 \/ 學習/);
+  const simplifiedOverride = render({ activePureCue: source, characterPresentation: 'simplified',
+    sentenceCharacterPresentation: 'traditional', answerRevealed: true });
+  assert.match(simplifiedOverride, /这个学生在学习。/);
+  assert.doesNotMatch(simplifiedOverride, /這個|學習/);
+  const traditionalOverride = render({ activePureCue: source, characterPresentation: 'traditional',
+    sentenceCharacterPresentation: 'simplified' });
+  assert.match(traditionalOverride, /這個學生在學習。/);
+  assert.deepEqual(source.snapshot.acceptedAnswers, [{ wordId: 'word', hanzi: '学习', traditional: '學習' }]);
+  assert.equal(source.snapshot.stimulus, '這個學生在學習。');
+});
+
+test('frozen failure card fills one canonical traditional cloze answer while keeping both standalone forms', () => {
+  const markup = render({ characterPresentation: 'both', sentenceCharacterPresentation: 'traditional',
+    productionAwaitingNext: true, frozenProductionCard: {
+      sessionActionId: 'production-action', targetWordId: 'word', actionKind: 'production', sampledSkillIds: ['production'],
+      contentRef: { type: 'production_cue', taskId: 'task', cueId: 'cue' },
+      attemptedHanzi: '学', status: 'review', reviewedCount: 0, queuedCount: 1,
+      promptDisplayedMeanings: [], fallbackPrompt: '这个学生正在____。', answerPinyin: 'xué xí',
+      answerText: '学习 / 學習', answerForms: { hanzi: '学习', traditional: '學習' },
+      allMeanings: ['to study'], personalNotes: 'My note: 学习', intervalHours: 24, example: '他喜欢学习。',
+    },
+  });
+  assert.match(markup, /這個學生正在/);
+  assert.match(markup, /<mark class="desk-cloze-answer">學習<\/mark>/);
+  assert.match(markup, /<strong class="answer-value">学习 \/ 學習<\/strong>/);
+  assert.match(markup, /他喜歡學習。/);
+  assert.match(markup, /My note: 学习/);
+  assert.doesNotMatch(markup, /<mark[^>]*>学习 \/ 學習/);
+});

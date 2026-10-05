@@ -1,3 +1,4 @@
+import { convertSentenceCharacters, effectiveSentenceCharacterPresentation, formatSentenceAnswer, sentenceCharacterLanguage } from '../../domain/sentence-characters';
 import { SessionDesk, RecallChips, type SessionDeskHandle } from './SessionDesk';
 import { ClozePrompt } from './ClozePrompt';
 import { useRef, useState, type ReactNode, type RefObject } from 'react';
@@ -21,6 +22,8 @@ import {
   DEFAULT_CHARACTER_PRESENTATION,
   formatCardCharacters,
   type CharacterPresentation,
+  type SentenceCharacterPresentation,
+  type CardCharacterForms,
 } from '../../domain/card-characters';
 import { studyProfile } from '../../study-profile';
 import type { RatingOption } from './session-rating';
@@ -51,6 +54,7 @@ export type FrozenProductionCard = {
   fallbackPrompt: string;
   answerPinyin: string;
   answerText: string;
+  answerForms: CardCharacterForms;
   allMeanings: string[];
   personalNotes: string;
   intervalHours: number;
@@ -85,6 +89,7 @@ export function StudySessionPanel({
   activePureCue,
   activeWord,
   characterPresentation = DEFAULT_CHARACTER_PRESENTATION,
+  sentenceCharacterPresentation = 'simplified',
   activeLearningProgress,
   activeUnstudiedProgress,
   activeReviewProgress,
@@ -162,6 +167,7 @@ export function StudySessionPanel({
   activePureCue: PureCueSessionReviewItem | null;
   activeWord: Word | null;
   characterPresentation?: CharacterPresentation;
+  sentenceCharacterPresentation?: SentenceCharacterPresentation;
   activeLearningProgress: LearningWordProgress | undefined;
   activeUnstudiedProgress: UnstudiedWordProgress | undefined;
   activeReviewProgress: ReviewActionProgress | undefined;
@@ -243,6 +249,9 @@ export function StudySessionPanel({
     activeWordStatus: activeWord?.status ?? null,
     activeUnstudiedIntroComplete: activeUnstudiedProgress?.introComplete ?? false,
   });
+  const sentenceScript = effectiveSentenceCharacterPresentation(characterPresentation, sentenceCharacterPresentation);
+  const sentenceText = (text: string) => convertSentenceCharacters(text, sentenceScript);
+  const sentenceLang = sentenceCharacterLanguage(sentenceScript);
   const showRatingButtons = answerRevealed && (
     (!isProductionItem || productionAwaitingRating) &&
     (!activeItem || activeItem.actionKind !== 'contrast_selection' || contrastAwaitingRating)
@@ -314,9 +323,9 @@ export function StudySessionPanel({
             <div className="prompt-block">
               <span className="prompt-label">Prompt</span>
               {frozenProductionCard.promptDisplayedMeanings.length > 0 ? (
-                <MeaningList meanings={frozenProductionCard.promptDisplayedMeanings} className="meaning-list-prompt" />
+                <MeaningList meanings={frozenProductionCard.promptDisplayedMeanings.map(sentenceText)} className="meaning-list-prompt" />
               ) : (
-                <strong className="prompt-value"><ClozePrompt text={frozenProductionCard.fallbackPrompt} answer={frozenProductionCard.answerText} /></strong>
+                <strong className="prompt-value"><ClozePrompt text={frozenProductionCard.fallbackPrompt} answer={formatSentenceAnswer(frozenProductionCard.answerForms, sentenceScript)} sentenceCharacterPresentation={sentenceScript} /></strong>
               )}
             </div>
             {qualityControls(getSessionContentQualityTarget({ ...frozenProductionCard, production: frozenProductionCard.production ?? null }),
@@ -326,16 +335,16 @@ export function StudySessionPanel({
               <span className="prompt-label">Answer</span>
               <span className="answer-pinyin">{frozenProductionCard.answerPinyin}</span>
               <strong className="answer-value">{frozenProductionCard.answerText}</strong>
-              <details className="desk-reference"><summary>Word reference</summary><MeaningList meanings={frozenProductionCard.allMeanings} /></details>
+              <details className="desk-reference"><summary>Word reference</summary><MeaningList meanings={frozenProductionCard.allMeanings.map(sentenceText)} /></details>
               {frozenProductionCard.production?.supplement ? (
                 <div className="production-supplement">
                   <span className="prompt-label">In context</span>
                   <span className="prompt-meta">
-                    {frozenProductionCard.production.supplement.englishFrame}
+                    {sentenceText(frozenProductionCard.production.supplement.englishFrame)}
                   </span>
-                  <span>{frozenProductionCard.production.supplement.exampleSentence}</span>
+                  <span>{sentenceText(frozenProductionCard.production.supplement.exampleSentence)}</span>
                   <span className="prompt-meta">
-                    {frozenProductionCard.production.supplement.exampleTranslation}
+                    {sentenceText(frozenProductionCard.production.supplement.exampleTranslation)}
                   </span>
                   {qualityControls({ kind: 'supplement', id: frozenProductionCard.production.supplement.supplementId },
                     frozenProductionCard.sessionActionId, frozenProductionCard.reviewedCount, 'Supplement quality')}
@@ -347,7 +356,7 @@ export function StudySessionPanel({
               <span className="prompt-meta">
                 Interval {formatIntervalHours(frozenProductionCard.intervalHours)}
               </span>
-              <span className="prompt-meta">{frozenProductionCard.example}</span>
+              <span className="prompt-meta">{sentenceText(frozenProductionCard.example)}</span>
             </div>
             {frozenProductionCard.attemptedHanzi ? (
               <div className="answer-block">
@@ -405,9 +414,9 @@ export function StudySessionPanel({
             </p>
             <div className="prompt-block">
               <span className="prompt-label">Cue</span>
-              <strong className="prompt-value">{frozenPureCueCard.item.snapshot.stimulus}</strong>
+              <strong className="prompt-value">{sentenceText(frozenPureCueCard.item.snapshot.stimulus)}</strong>
               {frozenPureCueCard.item.snapshot.teachingNote ? (
-                <span className="prompt-meta">{frozenPureCueCard.item.snapshot.teachingNote}</span>
+                <span className="prompt-meta">{sentenceText(frozenPureCueCard.item.snapshot.teachingNote)}</span>
               ) : null}
             </div>
             {qualityControls({ kind: 'pure_cue', snapshotId: frozenPureCueCard.item.snapshot.snapshotId },
@@ -458,7 +467,7 @@ export function StudySessionPanel({
             </p>
             <div className="prompt-block">
               <span className="prompt-label">Prompt</span>
-              <strong className="contrast-prompt-text">{frozenContrastCard.item.contrastSelection?.prompt.promptText}</strong>
+              <strong className="contrast-prompt-text">{sentenceText(frozenContrastCard.item.contrastSelection?.prompt.promptText ?? '')}</strong>
             </div>
             {qualityControls(getSessionContentQualityTarget(frozenContrastCard.item),
               frozenContrastCard.item.sessionActionId, frozenContrastCard.reviewedCount, 'Cue quality')}
@@ -468,6 +477,7 @@ export function StudySessionPanel({
               answerRevealed={true}
               disabled={true}
               characterPresentation={characterPresentation}
+              sentenceCharacterPresentation={sentenceScript}
               onSelectChoice={() => undefined}
             />
           </div>
@@ -538,8 +548,8 @@ export function StudySessionPanel({
               <span className="prompt-label">{studyProfile.labels.target}</span>
               <strong className="prompt-value">{formatCardCharacters(activeWord, characterPresentation)}</strong>
               <span className="prompt-meta">{activeWord.pinyin}</span>
-              <MeaningList meanings={activeAllMeanings} />
-              <span className="prompt-meta">{activeWord.examples[0]}</span>
+              <MeaningList meanings={activeAllMeanings.map(sentenceText)} />
+              <span className="prompt-meta">{sentenceText(activeWord.examples[0] ?? '')}</span>
               {activeWordPersonalNotes.trim().length > 0 ? (
                 <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
               ) : null}
@@ -594,7 +604,7 @@ export function StudySessionPanel({
             </p>
             <div className="prompt-block">
               <span className="prompt-label">Cue</span>
-              <strong className="prompt-value">{activePureCue.snapshot.stimulus}</strong>
+              <strong className="prompt-value">{sentenceText(activePureCue.snapshot.stimulus)}</strong>
               {reviewInReinforcement ? <RecallChips count={activePureCueReinforcementStreak} label="Practice again" /> : null}
             </div>
             {qualityControls({ kind: 'pure_cue', snapshotId: activePureCue.snapshot.snapshotId },
@@ -610,7 +620,7 @@ export function StudySessionPanel({
                   />
                 ))}
                 {activePureCue.snapshot.teachingNote ? (
-                  <span className="prompt-meta">{activePureCue.snapshot.teachingNote}</span>
+                  <span className="prompt-meta">{sentenceText(activePureCue.snapshot.teachingNote)}</span>
                 ) : null}
               </div>
             ) : (
@@ -746,14 +756,14 @@ export function StudySessionPanel({
               <span className="prompt-label">Prompt</span>
               {activeItem.actionKind === 'contrast_selection' ? (
                 <>
-                  <strong className="contrast-prompt-text">{activePrompt}</strong>
+                  <strong className="contrast-prompt-text">{sentenceText(activePrompt ?? '')}</strong>
                 </>
               ) : activeItem.actionKind === 'recognition' ? (
                 <strong className="prompt-value recognition-prompt">{activePrompt}</strong>
               ) : activeItem.production || activeItem.rehearsal ? (
-                <strong className="prompt-value"><ClozePrompt text={activePrompt ?? ''} answer={answerRevealed ? activeAnswerText : null} /></strong>
+                <strong className="prompt-value"><ClozePrompt text={activePrompt ?? ''} answer={answerRevealed ? formatSentenceAnswer(activeWord, sentenceScript) : null} contextAnswer={formatSentenceAnswer(activeWord, sentenceScript)} sentenceCharacterPresentation={sentenceScript} /></strong>
               ) : activePromptDisplayedMeanings.length > 0 ? (
-                <MeaningList meanings={activePromptDisplayedMeanings} className="meaning-list-prompt" />
+                <MeaningList meanings={activePromptDisplayedMeanings.map(sentenceText)} className="meaning-list-prompt" />
               ) : (
                 <span className="prompt-meta meaning-list-prompt">No production meanings selected</span>
               )}
@@ -773,6 +783,7 @@ export function StudySessionPanel({
                 answerRevealed={answerRevealed}
                 disabled={submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
                 characterPresentation={characterPresentation}
+                sentenceCharacterPresentation={sentenceScript}
                 onSelectChoice={onSelectContrastChoice}
               />
             ) : answerRevealed ? (
@@ -781,7 +792,7 @@ export function StudySessionPanel({
                   <>
                     <strong className="production-supplement-target">{activeAnswerText}</strong>
                     <span className="answer-pinyin">{activeAnswerPinyin}</span>
-                    <ProductionSupplementAside supplement={activeItem.production.supplement} />
+                    <ProductionSupplementAside supplement={activeItem.production.supplement} sentenceCharacterPresentation={sentenceScript} />
                     {qualityControls({ kind: 'supplement', id: activeItem.production.supplement.supplementId },
                       activeItem.sessionActionId, reviewedCount, 'Supplement quality')}
                   </>
@@ -789,7 +800,7 @@ export function StudySessionPanel({
                   <>
                     <span className="prompt-label">Answer</span>
                     <span className="answer-pinyin">{activeAnswerPinyin}</span>
-                    <strong className="answer-value">{activeAnswerText}</strong>
+                    <strong className="answer-value">{activeItem.actionKind === 'recognition' ? sentenceText(activeAnswerText ?? '') : activeAnswerText}</strong>
                   </>
                 )}
                 {!productionAwaitingSupplement ? <details className="desk-reference" open={isProductionItem ? undefined : true}>
@@ -799,14 +810,14 @@ export function StudySessionPanel({
                     {activeItem.wordContent.uses.map((use) => {
                       const example = activeItem.wordContent!.examples.find((row) => row.id === use.exampleIds[0]);
                       return <div key={use.id}>
-                        <strong>{use.label}</strong>
-                        {example && <><p lang="zh-Hans">{example.text}</p><p>{example.translation}</p></>}
+                        <strong>{sentenceText(use.label)}</strong>
+                        {example && <><p lang={sentenceLang}>{sentenceText(example.text)}</p><p>{sentenceText(example.translation)}</p></>}
                       </div>;
                     })}
                   </div>
                 ) : activeItem.actionKind === 'recognition' && activeItem.recognitionSupplement ? (
                   <>
-                    <ProductionSupplementAside supplement={activeItem.recognitionSupplement} />
+                    <ProductionSupplementAside supplement={activeItem.recognitionSupplement} sentenceCharacterPresentation={sentenceScript} />
                     {qualityControls({ kind: 'supplement', id: activeItem.recognitionSupplement.supplementId },
                       activeItem.sessionActionId, reviewedCount, 'Supplement quality')}
                   </>
@@ -819,7 +830,7 @@ export function StudySessionPanel({
                       </div>
                       {activeMeaningRows.map((meaning) => (
                         <div key={meaning.id} className="meaning-visibility-row">
-                          <span className="prompt-meta">{meaning.text}</span>
+                          <span className="prompt-meta">{sentenceText(meaning.text)}</span>
                           <button
                             type="button"
                             className={`meaning-toggle-icon-button ${meaning.showOnProductionPrompt ? 'is-on' : 'is-off'}`}
@@ -845,7 +856,7 @@ export function StudySessionPanel({
                     </div>
                   </div>
                 ) : (
-                  <MeaningList meanings={activeAllMeanings} />
+                  <MeaningList meanings={activeAllMeanings.map(sentenceText)} />
                 )}
                 {productionAwaitingSupplement ? null : activeWordPersonalNotes.trim().length > 0 ? (
                   <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
@@ -855,7 +866,7 @@ export function StudySessionPanel({
                     <span className="prompt-meta">
                       Interval {formatIntervalHours(activeItem.intervalHours)}
                     </span>
-                    {!activeItem.wordContent && !activeItem.recognitionSupplement && <span className="prompt-meta">{activeWord.examples[0]}</span>}
+                    {!activeItem.wordContent && !activeItem.recognitionSupplement && <span className="prompt-meta">{sentenceText(activeWord.examples[0] ?? '')}</span>}
                   </>
                 )}
                 </details> : null}
@@ -1124,6 +1135,7 @@ function ContrastSelectionDrill({
   answerRevealed,
   disabled,
   characterPresentation,
+  sentenceCharacterPresentation,
   onSelectChoice,
 }: {
   item: SessionStudyItem;
@@ -1131,8 +1143,10 @@ function ContrastSelectionDrill({
   answerRevealed: boolean;
   disabled: boolean;
   characterPresentation: CharacterPresentation;
+  sentenceCharacterPresentation: SentenceCharacterPresentation;
   onSelectChoice: (wordId: string) => void;
 }) {
+  const sentenceText = (text: string) => convertSentenceCharacters(text, sentenceCharacterPresentation);
   const contrastSelection = item.contrastSelection;
   if (!contrastSelection) {
     return <p className="notes">Contrast content is unavailable for this item.</p>;
@@ -1182,17 +1196,17 @@ function ContrastSelectionDrill({
             <>
               <span className="answer-pinyin">{targetChoice.word.pinyin}</span>
               <strong className="answer-value">{formatCardCharacters(targetChoice.word, characterPresentation)}</strong>
-              <MeaningList meanings={targetChoice.word.meanings.length > 0 ? targetChoice.word.meanings : [targetChoice.word.meaning]} />
+              <MeaningList meanings={(targetChoice.word.meanings.length > 0 ? targetChoice.word.meanings : [targetChoice.word.meaning]).map(sentenceText)} />
               {targetChoice.nuanceNote.trim().length > 0 ? (
-                <span className="prompt-meta">Nuance: {targetChoice.nuanceNote}</span>
+                <span className="prompt-meta">Nuance: {sentenceText(targetChoice.nuanceNote)}</span>
               ) : null}
             </>
           ) : null}
           {contrastSelection.prompt.explanation.trim().length > 0 ? (
-            <span className="prompt-meta">{contrastSelection.prompt.explanation}</span>
+            <span className="prompt-meta">{sentenceText(contrastSelection.prompt.explanation)}</span>
           ) : null}
           {contrastSelection.clusterNote.trim().length > 0 ? (
-            <span className="prompt-meta">{contrastSelection.clusterNote}</span>
+            <span className="prompt-meta">{sentenceText(contrastSelection.clusterNote)}</span>
           ) : null}
         </div>
       ) : null}
@@ -1405,14 +1419,17 @@ function shortcutFor(
 
 function ProductionSupplementAside({
   supplement,
+  sentenceCharacterPresentation,
 }: {
   supplement: ProductionCueSupplementSnapshot;
+  sentenceCharacterPresentation: SentenceCharacterPresentation;
 }) {
+  const sentenceText = (text: string) => convertSentenceCharacters(text, sentenceCharacterPresentation);
   return (
     <div className="production-supplement production-supplement-aside">
-      <p className="production-supplement-frame">{supplement.englishFrame}</p>
-      <p className="production-supplement-sentence">{`「${supplement.exampleSentence}」`}</p>
-      <p className="production-supplement-translation">{supplement.exampleTranslation}</p>
+      <p className="production-supplement-frame">{sentenceText(supplement.englishFrame)}</p>
+      <p className="production-supplement-sentence">{`「${sentenceText(supplement.exampleSentence)}」`}</p>
+      <p className="production-supplement-translation">{sentenceText(supplement.exampleTranslation)}</p>
     </div>
   );
 }

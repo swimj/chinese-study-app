@@ -33,6 +33,8 @@ import {
   recordDietIntake,
   getLearningPolicy,
   getCharacterPresentation,
+  getSentenceCharacterPresentation,
+  setSentenceCharacterPresentation,
   setCharacterPresentation,
   setUnstudiedAdmissionSource,
   getContentDiagnostics,
@@ -665,6 +667,7 @@ export function createApp(options: CreateAppOptions = {}) {
       serviceBanner: banner ? toPublicServiceBanner(banner) : null,
       ...getLearningPolicy(studyDayKey),
       characterPresentation: getCharacterPresentation(),
+      sentenceCharacterPresentation: getSentenceCharacterPresentation(),
     });
   });
 
@@ -713,6 +716,21 @@ export function createApp(options: CreateAppOptions = {}) {
       }
 
       res.status(500).json({ error: 'Failed to update character presentation' });
+    }
+  });
+
+  app.patch('/api/learner-settings/sentence-character-presentation', (req, res) => {
+    try {
+      res.json(setSentenceCharacterPresentation(req.body?.sentenceCharacterPresentation));
+    } catch (error) {
+      if (
+        error instanceof Error
+        && error.message === 'Expected sentenceCharacterPresentation to be "simplified" or "traditional"'
+      ) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to update sentence character presentation' });
     }
   });
 

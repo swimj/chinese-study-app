@@ -123,18 +123,32 @@ Changing either setting does not rewrite the current UTC day's
 completed-new-word count and does not mutate an already-started frontend
 session.
 
-The status payload also returns `characterPresentation`: `"simplified"`
-(default), `"traditional"`, or `"both"`. Study-session cards use it for stored
-character fields only. Examples, meanings, notes, cue text, and contrast prompt
-sentences stay in their stored form. A missing or identical traditional field
-is shown as the stored hanzi. `"both"` renders `simplified / traditional` when
-the forms differ, matching the pure-cue revealed answer.
+The status payload also returns learner-private character preferences:
+`characterPresentation`: `"simplified"` (default), `"traditional"`, or `"both"`,
+and `sentenceCharacterPresentation`: `"simplified"` (default) or `"traditional"`.
+Standalone session word labels use stored character fields; `"both"` renders
+`simplified / traditional` when the forms differ. A missing or identical
+traditional field is shown as the stored hanzi.
+
+Sentences, examples, Chinese explanation text, and clozes on the main session
+surfaces are converted for display. Simplified or Traditional card presentation
+also determines the sentence script. With Both, sentences follow the separate
+sentence preference; a revealed answer inserted into a sentence uses that one
+script. The sentence preference is retained when changing the card setting.
+Conversion preserves stored content and exact attempt evidence. See
+[character presentation](../SPECS/character-presentation.md).
 
 | Method | Path | Handler domain |
 | --- | --- | --- |
 | PATCH | `/api/learner-settings/character-presentation` | Learner settings |
+| PATCH | `/api/learner-settings/sentence-character-presentation` | Learner settings |
 
-Send `{ "characterPresentation": "simplified" | "traditional" | "both" }`.
+The first route accepts
+`{ "characterPresentation": "simplified" | "traditional" | "both" }` and returns
+that saved field. The second accepts
+`{ "sentenceCharacterPresentation": "simplified" | "traditional" }` and returns
+that saved field. Unsupported or missing values return `400`. Neither route
+accepts a client-selected learner; writes use the authenticated learner context.
 
 ## Operator usage pulse
 

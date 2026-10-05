@@ -78,3 +78,27 @@ test('finished teaching shows pinned word uses and examples, with Enter continui
     assert.match(markup, /Continue <kbd>Enter<\/kbd>/);
   }
 });
+
+test('session teaching converts source examples and inline explanation without rewriting the pinned package', async () => {
+  const { createElement } = await import('react');
+  const { renderToStaticMarkup } = await import('react-dom/server');
+  const { IntroductionPlayer } = await import('../src/features/introduction-lab/IntroductionPlayer.js');
+  const { content, teaching } = wordContentFixtures[0]!;
+  const source = { ...content, examples: content.examples.map(example => ({ ...example, text: '這份工作看似簡單，其實很考驗耐心。' })) };
+  const original = JSON.stringify(source);
+  const snapshot = { ...materializeTeachingPackage(teaching, [content]),
+    beats: [{ id: 'sentence', parts: [
+      { text: source.examples[0]!.text, source: { kind: 'example' as const, exampleId: source.examples[0]!.id, field: 'sentence' as const } },
+      { text: 'Contrast the appearance with 其實.', source: { kind: 'text' as const, text: 'Contrast the appearance with 其實.' } },
+    ] }],
+  };
+  const markup = renderToStaticMarkup(createElement(IntroductionPlayer, {
+    snapshot, content: source, state: initialIntroductionPlayerState(), onAction: () => {}, onRestart: () => {},
+    mode: 'teaching-only', characterPresentation: 'both', sentenceCharacterPresentation: 'simplified',
+  }));
+  assert.match(markup, /这份工作看似简单，其实很考验耐心。/);
+  assert.match(markup, /Contrast the appearance with 其实/);
+  assert.match(markup, /lang="zh-Hans"/);
+  assert.equal(JSON.stringify(source), original);
+  assert.equal(snapshot.beats[0]!.parts[0]!.text, source.examples[0]!.text);
+});

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   DEFAULT_CHARACTER_PRESENTATION,
   type CharacterPresentation,
+  type SentenceCharacterPresentation,
 } from './domain/card-characters';
 import type { BackendStatus, DietIntakeInput, DietSelfSelect } from './services/api';
 import {
@@ -20,6 +21,7 @@ import {
   updateDailyNewWordLimit,
   updateUnstudiedAdmissionSource,
   updateCharacterPresentation,
+  updateSentenceCharacterPresentation,
   upsertReflectionQuality,
   withdrawReflectionAuthorization,
   fetchReflectionHelpInbox,
@@ -208,6 +210,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     dailyNewWordLimit?: number;
     unstudiedAdmissionSource?: BackendStatus['unstudiedAdmissionSource'];
     characterPresentation?: CharacterPresentation;
+    sentenceCharacterPresentation?: SentenceCharacterPresentation;
   }) {
     const policyRequested = settings.dailyNewWordLimit !== undefined
       || settings.unstudiedAdmissionSource !== undefined;
@@ -236,12 +239,19 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
       characterPresentation = saved.characterPresentation;
     }
 
-    if (!policy && characterPresentation === undefined) {
+    let sentenceCharacterPresentation = settings.sentenceCharacterPresentation;
+    if (settings.sentenceCharacterPresentation !== undefined) {
+      const saved = await updateSentenceCharacterPresentation(settings.sentenceCharacterPresentation);
+      sentenceCharacterPresentation = saved.sentenceCharacterPresentation;
+    }
+
+    if (!policy && characterPresentation === undefined && sentenceCharacterPresentation === undefined) {
       return;
     }
 
     const nextPolicy = policy;
     const nextPresentation = characterPresentation;
+    const nextSentencePresentation = sentenceCharacterPresentation;
     setBackendStatus((currentStatus) => currentStatus
       ? {
           ...currentStatus,
@@ -252,6 +262,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
               }
             : {}),
           ...(nextPresentation !== undefined ? { characterPresentation: nextPresentation } : {}),
+          ...(nextSentencePresentation !== undefined ? { sentenceCharacterPresentation: nextSentencePresentation } : {}),
         }
       : currentStatus);
     if (policyRequested) {

@@ -7,6 +7,7 @@ import type { BackendStatus, UnstudiedAdmissionSource, DietIntakeInput, DietSelf
 import {
   DEFAULT_CHARACTER_PRESENTATION,
   type CharacterPresentation,
+  type SentenceCharacterPresentation,
 } from '../domain/card-characters';
 import { DietIntakePanel } from '../features/diet/DietIntakePanel';
 import {
@@ -132,6 +133,7 @@ export function HomePage({
     dailyNewWordLimit?: number;
     unstudiedAdmissionSource?: UnstudiedAdmissionSource;
     characterPresentation?: CharacterPresentation;
+    sentenceCharacterPresentation?: SentenceCharacterPresentation;
   }) => Promise<void>;
   sessionPrefetch: SessionPrefetchState;
   sessionStarted: boolean;
@@ -275,7 +277,10 @@ export function HomePage({
             onClose={() => setSessionSettingsOpen(false)}
           />
         ) : introductionGate ? (
-          <SessionIntroductionGatePanel gate={introductionGate} onUndo={hasUndo && submittingRating === null ? onUndoLastRating : undefined} />
+          <SessionIntroductionGatePanel gate={introductionGate}
+            characterPresentation={backendStatus?.characterPresentation ?? DEFAULT_CHARACTER_PRESENTATION}
+            sentenceCharacterPresentation={backendStatus?.sentenceCharacterPresentation ?? 'simplified'}
+            onUndo={hasUndo && submittingRating === null ? onUndoLastRating : undefined} />
         ) : sessionStarted ? (
           <StudySessionPanel
             sessionDeskRef={sessionDeskRef}
@@ -289,6 +294,7 @@ export function HomePage({
             activePureCue={activePureCue}
             activeWord={activeWord}
             characterPresentation={backendStatus?.characterPresentation ?? DEFAULT_CHARACTER_PRESENTATION}
+            sentenceCharacterPresentation={backendStatus?.sentenceCharacterPresentation ?? 'simplified'}
             activeLearningProgress={activeLearningProgress}
             activeUnstudiedProgress={activeUnstudiedProgress}
             activeReviewProgress={activeReviewProgress}
