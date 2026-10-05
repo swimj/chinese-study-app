@@ -286,6 +286,36 @@ function configuredValue(value: string | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
+/** A provider-only alias key; never use this to resolve durable word references. */
+function toneInsensitiveItemKey(itemId: string): string | null {
+  const parts = itemId.split(':');
+  if (parts.length !== 3) return null;
+  const [source, hanzi, pinyin] = parts;
+  if (!source || !hanzi || !pinyin) return null;
+  // Remove only tone marks, preserving the diaeresis that distinguishes ü from u.
+  // Keep syllable boundaries: joined and separated spellings are not guessed.
+  const syllables = pinyin.normalize('NFD').toLowerCase()
+    .replace(/[\u0304\u0301\u030c\u0300]/g, '')
+    .normalize('NFC').trim().split(/[_\s'-]+/);
+  if (!syllables.every((syllable) => /^[a-zü]+[1-5]?$/.test(syllable))) return null;
+  return JSON.stringify([source, hanzi, syllables.map((syllable) => syllable.replace(/[1-5]$/, ''))]);
+}
+
+function canonicalizeProviderItemIds<T extends { itemId: string }>(
+  itemResults: T[],
+  bundleItems: readonly { itemId: string }[],
+): T[] {
+  const exactIds = new Set(bundleItems.map((item) => item.itemId));
+  return itemResults.map((result) => {
+    if (exactIds.has(result.itemId)) return result;
+    const key = toneInsensitiveItemKey(result.itemId);
+    if (key === null) return result;
+    const matches = bundleItems.filter((item) => toneInsensitiveItemKey(item.itemId) === key);
+    // Leave unresolved/ambiguous aliases for the normal strict validator to reject.
+    return matches.length === 1 ? { ...result, itemId: matches[0]!.itemId } : result;
+  });
+}
+
 export function createLunaReflectionProvider(
   options: LunaReflectionProviderOptions = {},
 ): LunaReflectionProvider {
@@ -386,7 +416,12 @@ export function createReflectionProvider(
       }
 
       const normalized = normalizeSessionReflectionResultV7(
-        compatibleWire as SessionReflectionResultV7Wire,
+        {
+          ...compatibleWire as SessionReflectionResultV7Wire,
+          itemResults: canonicalizeProviderItemIds(
+            (compatibleWire as SessionReflectionResultV7Wire).itemResults, bundle.items,
+          ),
+        },
         bundle,
       );
       const contractErrors = validateSessionReflectionResultV7(normalized, bundle);
@@ -477,7 +512,12 @@ export function createReflectionProvider(
         diagnostic('structural_schema', schemaIssuesToDiagnostics(schemaIssues), providerResult.rawText),
       );
     }
-    const wireResult = parsed as StagedReflectionDiagnosisResultV3Wire;
+    const wireResult = {
+      ...parsed as StagedReflectionDiagnosisResultV3Wire,
+      itemResults: canonicalizeProviderItemIds(
+        (parsed as StagedReflectionDiagnosisResultV3Wire).itemResults, bundle.items,
+      ),
+    };
     const unknownItemErrors = wireResult.itemResults
       .filter((result) => !bundle.items.some((item) => item.itemId === result.itemId))
       .map((result) => `Unknown staged reflection item: ${result.itemId}`);
@@ -571,14 +611,20 @@ export function createReflectionProvider(
         diagnostic('structural_schema', schemaIssuesToDiagnostics(schemaIssues), providerResult.rawText),
       );
     }
-    const contractErrors = validatePureCuePromotionResultV2(parsed, bundle);
+    const wireResult = {
+      ...parsed as PureCuePromotionResultV2Wire,
+      itemResults: canonicalizeProviderItemIds(
+        (parsed as PureCuePromotionResultV2Wire).itemResults, bundle.items,
+      ),
+    };
+    const contractErrors = validatePureCuePromotionResultV2(wireResult, bundle);
     if (contractErrors.length > 0) {
       throw new LunaReflectionProviderError(
         'domain_contract_invalid', contractErrors.length, clientRequestId, metadata,
         diagnostic('domain_validation', textIssuesToDiagnostics(contractErrors), providerResult.rawText),
       );
     }
-    return { result: parsed as PureCuePromotionResultV2Wire, metadata };
+    return { result: wireResult, metadata };
   }
 
   async function generatePureCueReflection(
