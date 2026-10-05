@@ -1,4 +1,5 @@
 import { SessionDesk, RecallChips, type SessionDeskHandle } from './SessionDesk';
+import { ClozePrompt } from './ClozePrompt';
 import { useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ContentQualityControls } from '../content-quality/ContentQualityControls';
 import { getSessionContentQualityTarget, sessionContentQualityEncounterId } from './session-content-quality';
@@ -1479,9 +1480,4 @@ function createSessionKeyboardContext({
     completedSummary,
     summaryFinalizationKind,
   };
-}
-
-function ClozePrompt({ text, answer }: { text: string; answer: string | null }) {
-  if (!answer || !text.includes('____')) return <>{text}</>;
-  return <>{text.split('____').map((part, index) => <span key={index}>{index > 0 ? <mark className="desk-cloze-answer">{answer}</mark> : null}{part}</span>)}</>;
 }

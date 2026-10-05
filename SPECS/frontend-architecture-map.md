@@ -189,9 +189,15 @@ never changes scheduling. Reduced-motion preferences skip departures.
 
 The card frame stays fixed while its content scrolls. Controls sit below the
 prompt/input; full production glosses remain in a Word reference disclosure.
-Revealed production prompts fill explicit `____` placeholders for display only;
-served snapshots and response matching remain unchanged. Native disclosure keys
-are exempt from study shortcuts.
+`ClozePrompt.tsx` normalizes explicit blank markers for production/rehearsal
+display: runs of ASCII/full-width underscores (including spaced runs), and
+empty or underscore-only `()`, `（）`, `[]`, `［］`, or `【】` pairs become `____`.
+Reveal fills each recognized blank with the target answer, including frozen
+failure cards. Underscores embedded in non-Hanzi words or numbers, ordinary
+punctuation, nonempty brackets, and unknown symbols are preserved. With no
+recognized marker, the prompt stays unfilled and the separate answer remains
+available. Normalization is display-only; served snapshots and response
+matching remain unchanged. Native disclosure keys are exempt from study shortcuts.
 
 The hook returns:
 
