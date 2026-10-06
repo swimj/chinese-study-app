@@ -1,16 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { getDb } from './connection.ts';
+import { requireLearnerId } from './learner-context.ts';
 import { getSharedIntroductionLexicalWord, getSharedWordIntroductionPreparation,
   getSharedWordIntroductionContent, getSharedWordTeachingPackageId } from './word-introductions.ts';
 import { getSharedWordReviewPreparation } from './review-content.ts';
 
 export type WordPreparationStage = 'bootstrap' | 'teaching' | 'review';
 export type WordPreparationWork = {
-  workId: string; wordId: string; stage: WordPreparationStage; sourceContentId: string | null;
+  workId: string; requestedByLearnerId: string | null; wordId: string; stage: WordPreparationStage; sourceContentId: string | null;
   status: 'queued' | 'running' | 'ready' | 'paused'; attemptCount: number;
   nextAttemptAt: string; activeToken: string | null; expiresAt: string | null; lastError: string | null;
 };
-const projection = `work_id AS workId, word_id AS wordId, stage, source_content_id AS sourceContentId,
+const projection = `work_id AS workId, requested_by_learner_id AS requestedByLearnerId, word_id AS wordId, stage, source_content_id AS sourceContentId,
   status, attempt_count AS attemptCount, next_attempt_at AS nextAttemptAt,
   active_token AS activeToken, expires_at AS expiresAt, last_error AS lastError`;
 function transaction<T>(work: () => T): T {
@@ -30,14 +31,21 @@ export function getWordPreparationWork(wordId: string, stage: WordPreparationSta
 /** Demand is shared and idempotent. Enqueue never resets a failed budget. */
 export function enqueueWordPreparation(wordId: string, stage: WordPreparationStage, now = new Date().toISOString()): WordPreparationWork {
   time(now);
+  const learnerId = requireLearnerId();
   if (!['bootstrap', 'teaching', 'review'].includes(stage)) throw new Error('Unknown preparation stage');
   if (!getSharedIntroductionLexicalWord(wordId)) throw new Error('Word not found');
   if (stage !== 'bootstrap') enqueueWordPreparation(wordId, 'bootstrap', now);
   const source = stage === 'bootstrap' ? null : getSharedWordIntroductionPreparation(wordId)?.contentId ?? null;
   getDb().prepare(`INSERT OR IGNORE INTO word_preparation_work
-    (work_id, word_id, stage, source_content_id, status, next_attempt_at, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 'queued', ?, ?, ?)`)
-    .run(randomUUID(), wordId, stage, source, now, now, now);
+    (work_id, word_id, stage, source_content_id, status, next_attempt_at, created_at, updated_at, requested_by_learner_id)
+    VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)`)
+    .run(randomUUID(), wordId, stage, source, now, now, now, learnerId);
+  // Historical demand had no requester. Attribute only when fresh demand arrives.
+  getDb().prepare(`UPDATE word_preparation_work SET requested_by_learner_id = ?,
+    status = CASE WHEN last_error = 'Preparation needs a requesting learner.' THEN 'queued' ELSE status END,
+    last_error = CASE WHEN last_error = 'Preparation needs a requesting learner.' THEN NULL ELSE last_error END
+    WHERE word_id = ? AND stage = ? AND requested_by_learner_id IS NULL`)
+    .run(learnerId, wordId, stage);
   return getWordPreparationWork(wordId, stage)!;
 }
 export function listDueWordPreparation(now = new Date().toISOString(), limit = 100): WordPreparationWork[] {
@@ -141,8 +149,8 @@ export function retryWordPreparation(workId: string, actorId: string, now = new 
   if (!actorId.trim()) throw new Error('Operator identity required');
   transaction(() => {
     const result = getDb().prepare(`UPDATE word_preparation_work SET status = 'queued', attempt_count = 0,
-      next_attempt_at = ?, last_error = NULL, updated_at = ? WHERE work_id = ? AND status = 'paused'`)
-      .run(now, now, workId);
+      next_attempt_at = ?, last_error = NULL, updated_at = ?, requested_by_learner_id = ? WHERE work_id = ? AND status = 'paused'`)
+      .run(now, now, requireLearnerId(), workId);
     if (Number(result.changes) !== 1) throw new Error('Only paused preparation can be retried');
     getDb().prepare(`INSERT INTO word_preparation_retry_events (event_id, work_id, actor_id, occurred_at)
       VALUES (?, ?, ?, ?)`).run(randomUUID(), workId, actorId.trim(), now);

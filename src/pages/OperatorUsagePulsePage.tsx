@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { ModelInvocationsPanel } from './ModelInvocationsPanel';
+import './OperatorUsagePulsePage.css';
 import { PreparationFailuresPanel } from './PreparationFailuresPanel';
 import { ContentQualityPanel } from './ContentQualityPanel';
 import {
@@ -7,7 +9,46 @@ import {
   type UsagePulsePayload,
 } from '../services/api';
 
+const OPERATOR_TABS = [
+  { id: 'usage', label: 'Usage' },
+  { id: 'invocations', label: 'Model invocations' },
+  { id: 'quality', label: 'Content quality' },
+  { id: 'failures', label: 'Preparation failures' },
+] as const;
+type OperatorTab = typeof OPERATOR_TABS[number]['id'];
+
 export function OperatorUsagePulsePage() {
+  const [tab, setTab] = useState<OperatorTab>('usage');
+  return <section className="panel operator-usage-pulse">
+    <h2>Operator</h2>
+    <div className="operator-tabs" role="tablist" aria-label="Operator views">
+      {OPERATOR_TABS.map((item, index) => <button
+        key={item.id} type="button" role="tab" id={`operator-tab-${item.id}`}
+        aria-controls={`operator-panel-${item.id}`} aria-selected={tab === item.id}
+        tabIndex={tab === item.id ? 0 : -1}
+        className="secondary-button" onClick={() => setTab(item.id)}
+        onKeyDown={(event) => {
+          const nextIndex = event.key === 'ArrowRight' ? (index + 1) % OPERATOR_TABS.length
+            : event.key === 'ArrowLeft' ? (index + OPERATOR_TABS.length - 1) % OPERATOR_TABS.length
+            : event.key === 'Home' ? 0 : event.key === 'End' ? OPERATOR_TABS.length - 1 : null;
+          if (nextIndex === null) return;
+          event.preventDefault();
+          const next = OPERATOR_TABS[nextIndex].id;
+          setTab(next);
+          document.getElementById(`operator-tab-${next}`)?.focus();
+        }}
+      >{item.label}</button>)}
+    </div>
+    <div role="tabpanel" id={`operator-panel-${tab}`} aria-labelledby={`operator-tab-${tab}`} tabIndex={0}>
+      {tab === 'usage' && <UsagePulsePanel />}
+      {tab === 'invocations' && <ModelInvocationsPanel />}
+      {tab === 'quality' && <ContentQualityPanel />}
+      {tab === 'failures' && <PreparationFailuresPanel />}
+    </div>
+  </section>;
+}
+
+function UsagePulsePanel() {
   const [payload, setPayload] = useState<UsagePulsePayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -38,12 +79,13 @@ export function OperatorUsagePulsePage() {
   const rows = payload ? [...payload.days, payload.today] : [];
 
   return (
-    <section className="panel operator-usage-pulse">
+    <section>
       <h2>Usage pulse</h2>
       <p className="notes">
         Operator-only cohort view. Historical days are daily snapshots; today is live.
         Stash median is as-of each snapshot&apos;s capture time.
       </p>
+      <details className="operator-spend-notes"><summary>Spend coverage</summary><p className="notes">Usage snapshots include reflection and intake spend only. The Model invocations tab covers production model calls recorded since the ledger was introduced, including preparation and debriefs.</p></details>
       {loading ? <p className="notes">Loading…</p> : null}
       {error ? <p className="notes">{error}</p> : null}
       {payload ? (
@@ -52,7 +94,7 @@ export function OperatorUsagePulsePage() {
             <MetricTile label="DAU (today)" value={formatInt(payload.today.dau)} />
             <MetricTile label="Sessions (today)" value={formatInt(payload.today.sessionsCompleted)} />
             <MetricTile label="New words (today)" value={formatInt(payload.today.newWords)} />
-            <MetricTile label="Model spend (today)" value={formatUsd(payload.today.modelSpendUsd)} />
+            <MetricTile label="Reflection + intake spend (today)" value={formatUsd(payload.today.modelSpendUsd)} />
             <MetricTile label="Median stash" value={formatNullableNumber(payload.today.medianStashSize)} />
             <MetricTile
               label="Median session time"
@@ -77,7 +119,7 @@ export function OperatorUsagePulsePage() {
                   <th>DAU</th>
                   <th>Sessions</th>
                   <th>New words</th>
-                  <th>Spend</th>
+                  <th>Reflection + intake spend</th>
                   <th>Med stash</th>
                   <th>Med session</th>
                   <th>Inactive 7d</th>
@@ -100,8 +142,6 @@ export function OperatorUsagePulsePage() {
           <p className="notes">Generated at {payload.generatedAt}</p>
         </>
       ) : null}
-      <ContentQualityPanel />
-      <PreparationFailuresPanel />
     </section>
   );
 }

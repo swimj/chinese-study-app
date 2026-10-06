@@ -416,6 +416,19 @@ describe('operator usage pulse API', { concurrency: false }, () => {
     assert.equal(sql.prepare('SELECT attempt_count FROM word_preparation_work WHERE work_id = ?').get(work.workId)!.attempt_count, 0);
   });
 
+  test('model invocation ledger is operator-only and validates UTC date filters', async () => {
+    const endpoint = `${baseUrl}/api/operator/model-invocations`;
+    process.env.APP_OPERATOR_CLERK_USER_IDS = '';
+    assert.equal((await fetch(endpoint)).status, 403);
+    process.env.APP_OPERATOR_CLERK_USER_IDS = 'trusted_local';
+    const allowed = await fetch(endpoint);
+    assert.equal(allowed.status, 200);
+    assert.deepEqual(await allowed.json(), { rows: [] });
+    assert.equal((await fetch(`${endpoint}?from=2026-02-30`)).status, 400);
+    assert.equal((await fetch(`${endpoint}?from=2026-02-01&to=2026-01-01`)).status, 400);
+    assert.equal((await fetch(`${endpoint}?from=2026-01-01&to=2026-01-01`)).status, 200);
+  });
+
   test('allows trusted_local operators and rejects empty allowlist', async () => {
     const allowed = await fetch(`${baseUrl}/api/operator/usage-pulse`);
     assert.equal(allowed.status, 200);

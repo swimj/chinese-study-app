@@ -1,3 +1,4 @@
+import type { ModelInvocationRow } from '../domain/model-invocations';
 import type { SessionDebrief, SessionDebriefInventoryItem } from '../domain/session-debrief';
 import type {
   PriorityWord,
@@ -525,6 +526,15 @@ export async function fetchStatus(): Promise<BackendStatus> {
   const response = await apiFetch(`${API_BASE}/api/status?studyDayKey=${encodeURIComponent(studyDayKey)}`);
   if (!response.ok) {
     throw new Error('Failed to load backend status');
+  }
+  return response.json();
+}
+
+export async function fetchModelInvocations(from: string, to: string): Promise<{ rows: ModelInvocationRow[] }> {
+  const params = new URLSearchParams({ from, to });
+  const response = await apiFetch(`${API_BASE}/api/operator/model-invocations?${params}`);
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to load model invocations'));
   }
   return response.json();
 }

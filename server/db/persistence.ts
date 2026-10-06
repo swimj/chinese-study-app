@@ -3427,6 +3427,11 @@ function validateSchema() {
     'prompt_text',
     'explanation',
   ]);
+  assertTableColumns('model_invocations', [
+    'id', 'timestamp', 'provider', 'model', 'invocation_type', 'learner_id',
+    'spend_usd', 'spend_source', 'status', 'pricing_json',
+  ]);
+  assertTableColumns('word_preparation_work', ['requested_by_learner_id']);
   validateContentQualitySchema();
   validateReflectionSchema();
   validateProductionCueSchema();

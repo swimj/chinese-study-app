@@ -1,3 +1,4 @@
+import { beginInvocation, recordInvocationResponse, concludeInvocation } from './invocation-ledger.ts';
 import type {
   JsonValue,
   ProviderAdapter,
@@ -125,23 +126,33 @@ export function createOpenAiCompatibleAdapter(
       request: ProviderRunRequest,
       config: ProviderRunConfig,
     ): Promise<ProviderRawResult> {
-      const rawResponse = await postJson(
-        options.id,
-        fetchImplementation,
-        joinUrl(config.baseUrl ?? options.defaultBaseUrl, '/chat/completions'),
-        {
-          authorization: `Bearer ${config.apiKey}`,
-          ...(request.clientRequestId ? { 'x-client-request-id': request.clientRequestId } : {}),
-        },
-        requestBody(
-          request,
-          options.structuredOutputMode,
-          options.maxTokensField,
-          options.additionalRequestBody,
-        ),
-        request.timeoutMs,
-      );
-      return parseResponse(options.id, options.structuredOutputMode, rawResponse);
+      const invocation = { provider: options.id, model: request.model, invocationType: request.outputSchemaName };
+      const invocationId = beginInvocation(invocation);
+      try {
+        const rawResponse = await postJson(
+          options.id,
+          fetchImplementation,
+          joinUrl(config.baseUrl ?? options.defaultBaseUrl, '/chat/completions'),
+          {
+            authorization: `Bearer ${config.apiKey}`,
+            ...(request.clientRequestId ? { 'x-client-request-id': request.clientRequestId } : {}),
+          },
+          requestBody(
+            request,
+            options.structuredOutputMode,
+            options.maxTokensField,
+            options.additionalRequestBody,
+          ),
+          request.timeoutMs,
+        );
+        recordInvocationResponse(invocationId, invocation, rawResponse);
+        const result = parseResponse(options.id, options.structuredOutputMode, rawResponse);
+        concludeInvocation(invocationId, 'completed');
+        return result;
+      } catch (error) {
+        concludeInvocation(invocationId, 'failed');
+        throw error;
+      }
     },
   };
 }
