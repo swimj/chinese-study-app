@@ -66,14 +66,16 @@ describe('recovery highlights from durable learner evidence', { concurrency: fal
     assert.equal(db.runWithLearnerId('other-learner', () => db.getSessionRecoveryHighlights(events[5].sessionId)), null);
   });
 
-  test('same-session reinforcement never counts as a successful encounter', () => {
+  test('historical reinforcement cannot turn an initial miss into a successful encounter', () => {
     const events = history('reinforcement');
-    const last = events[5];
-    sqlite.prepare("UPDATE study_attempt_events SET outcome = 'incorrect', rating = 'forgot' WHERE id = ?").run(last.id);
-    db.insertStudyAttemptEvents([{ ...last, id: 'reinforcement-extra', actionAttemptSequence: 2,
+    const historical = events[4];
+    sqlite.prepare("UPDATE study_attempt_events SET outcome = 'incorrect', rating = 'forgot' WHERE id = ?").run(historical.id);
+    db.insertStudyAttemptEvents([{ ...historical, id: 'reinforcement-extra', actionAttemptSequence: 2,
       sessionEventSequence: 2 }]);
-    sqlite.prepare('UPDATE study_attempt_events SET projected_at = ? WHERE id = ?').run(last.occurredAt, 'reinforcement-extra');
-    assert.deepEqual(db.getSessionRecoveryHighlights(last.sessionId), []);
+    sqlite.prepare('UPDATE study_attempt_events SET projected_at = ? WHERE id = ?').run(historical.occurredAt, 'reinforcement-extra');
+    // Current session itself succeeded. Rejection must come from inspecting the
+    // historical first attempt, not from the current-session raw-lapse gate.
+    assert.deepEqual(db.getSessionRecoveryHighlights(events[5].sessionId), []);
   });
 
   test('production requires exact target success evidence; unprojected evidence is not accepted', () => {

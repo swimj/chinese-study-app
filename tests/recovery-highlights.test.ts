@@ -29,31 +29,46 @@ function later(day: number, result: RecoveryEncounter['result']): RecoveryEncoun
 const trouble = () => sequence(['miss', 'miss', 'miss']);
 
 describe('candidate recovery highlights', () => {
-  const cases: Array<{ name: string; results: RecoveryEncounter['result'][]; earns: boolean }> = [
-    { name: 'a single miss is insufficient', results: ['miss', 'success', 'success', 'success'], earns: false },
-    { name: 'two misses are insufficient', results: ['miss', 'miss', 'success', 'success', 'success'], earns: false },
-    { name: 'first success after trouble', results: ['miss', 'miss', 'miss', 'success'], earns: false },
-    { name: 'second success after trouble', results: ['miss', 'miss', 'miss', 'success', 'success'], earns: false },
-    { name: 'third success after trouble', results: ['miss', 'miss', 'miss', 'success', 'success', 'success'], earns: true },
-    { name: 'fourth success does not repeat recovery', results: ['miss', 'miss', 'miss', 'success', 'success', 'success', 'success'], earns: false },
-    { name: 'current miss cannot earn recovery', results: ['miss', 'miss', 'miss', 'success', 'success', 'miss'], earns: false },
-    { name: 'current compensation cannot earn recovery', results: ['miss', 'miss', 'miss', 'success', 'success', 'neutral'], earns: false },
-    { name: 'current unknown result cannot earn recovery', results: ['miss', 'miss', 'miss', 'success', 'success', 'excluded'], earns: false },
-    { name: 'uncompensated miss interrupts improvement', results: ['miss', 'miss', 'miss', 'success', 'success', 'miss', 'success', 'success'], earns: false },
-    { name: 'three fresh successes after interruption qualify', results: ['miss', 'miss', 'miss', 'success', 'success', 'miss', 'success', 'success', 'success'], earns: true },
-    { name: 'compensation neither counts nor interrupts successes', results: ['miss', 'miss', 'miss', 'success', 'neutral', 'success', 'neutral', 'success'], earns: true },
-    { name: 'compensation cannot replace third successful day', results: ['miss', 'miss', 'miss', 'success', 'neutral', 'success'], earns: false },
-    { name: 'compensation cannot establish trouble', results: ['miss', 'neutral', 'miss', 'success', 'success', 'success'], earns: false },
-    { name: 'unknown result interrupts success evidence', results: ['miss', 'miss', 'miss', 'success', 'excluded', 'success', 'success'], earns: false },
-    { name: 'unknown evidence between improvement and trouble blocks attribution', results: ['miss', 'miss', 'miss', 'excluded', 'success', 'success', 'success'], earns: false },
-    { name: 'unknown historical evidence interrupts an earlier success boundary', results: ['miss', 'miss', 'miss', 'success', 'success', 'excluded', 'success', 'success', 'miss', 'success', 'success', 'success'], earns: true },
-    { name: 'one fresh miss cannot reuse recovered trouble', results: ['miss', 'miss', 'miss', 'success', 'success', 'success', 'miss', 'success', 'success', 'success'], earns: false },
-    { name: 'three fresh misses allow another recovery', results: ['miss', 'miss', 'miss', 'success', 'success', 'success', 'miss', 'miss', 'miss', 'success', 'success', 'success'], earns: true },
-    { name: 'clipped old trouble cannot be combined with a fresh miss', results: ['miss', 'miss', 'success', 'success', 'success', 'miss', 'success', 'success', 'success'], earns: false },
-    { name: 'neutral evidence cannot hide an earlier episode boundary', results: ['miss', 'miss', 'miss', 'success', 'neutral', 'success', 'success', 'miss', 'success', 'success', 'success'], earns: false },
-  ];
-  for (const { name, results, earns } of cases) {
-    test(name, () => assert.equal(derive(sequence(results)) !== null, earns));
+  // Sequences are chronological; the final item is the single current candidate.
+  // The evaluator walks each sequence right-to-left, matching the flow chart.
+  type Case = { name: string; results: RecoveryEncounter['result'][]; earns: boolean };
+  const phases: Record<string, Case[]> = {
+    'candidate input guards (raw session lapses are also tested at the DB boundary)': [
+      { name: 'current miss cannot earn recovery', results: ['miss', 'miss', 'miss', 'success', 'success', 'miss'], earns: false },
+      { name: 'current compensation cannot earn recovery', results: ['miss', 'miss', 'miss', 'success', 'success', 'neutral'], earns: false },
+      { name: 'current unknown result cannot earn recovery', results: ['miss', 'miss', 'miss', 'success', 'success', 'excluded'], earns: false },
+    ],
+    'backward success search': [
+      { name: 'first success after trouble', results: ['miss', 'miss', 'miss', 'success'], earns: false },
+      { name: 'second success after trouble', results: ['miss', 'miss', 'miss', 'success', 'success'], earns: false },
+      { name: 'third success after trouble', results: ['miss', 'miss', 'miss', 'success', 'success', 'success'], earns: true },
+      { name: 'fourth success does not repeat recovery', results: ['miss', 'miss', 'miss', 'success', 'success', 'success', 'success'], earns: false },
+      { name: 'uncompensated miss interrupts improvement', results: ['miss', 'miss', 'miss', 'success', 'success', 'miss', 'success', 'success'], earns: false },
+      { name: 'three fresh successes after interruption qualify', results: ['miss', 'miss', 'miss', 'success', 'success', 'miss', 'success', 'success', 'success'], earns: true },
+      { name: 'compensation neither counts nor interrupts successes', results: ['miss', 'miss', 'miss', 'success', 'neutral', 'success', 'neutral', 'success'], earns: true },
+      { name: 'compensation cannot replace third successful day', results: ['miss', 'miss', 'miss', 'success', 'neutral', 'success'], earns: false },
+      { name: 'unknown result interrupts success evidence', results: ['miss', 'miss', 'miss', 'success', 'excluded', 'success', 'success'], earns: false },
+      { name: 'unknown evidence between improvement and trouble blocks attribution', results: ['miss', 'miss', 'miss', 'excluded', 'success', 'success', 'success'], earns: false },
+      { name: 'history ends before three successful days', results: ['success'], earns: false },
+    ],
+    'backward trouble search': [
+      { name: 'a single miss is insufficient', results: ['miss', 'success', 'success', 'success'], earns: false },
+      { name: 'two misses are insufficient', results: ['miss', 'miss', 'success', 'success', 'success'], earns: false },
+      { name: 'compensation cannot establish trouble', results: ['miss', 'neutral', 'miss', 'success', 'success', 'success'], earns: false },
+      { name: 'unknown historical evidence interrupts an earlier success boundary', results: ['miss', 'miss', 'miss', 'success', 'success', 'excluded', 'success', 'success', 'miss', 'success', 'success', 'success'], earns: true },
+      { name: 'one fresh miss cannot reuse recovered trouble', results: ['miss', 'miss', 'miss', 'success', 'success', 'success', 'miss', 'success', 'success', 'success'], earns: false },
+      { name: 'clipped old trouble cannot be combined with a fresh miss', results: ['miss', 'miss', 'success', 'success', 'success', 'miss', 'success', 'success', 'success'], earns: false },
+      { name: 'neutral evidence cannot hide an earlier episode boundary', results: ['miss', 'miss', 'miss', 'success', 'neutral', 'success', 'success', 'miss', 'success', 'success', 'success'], earns: false },
+      { name: 'history ends with three successes but no trouble', results: ['success', 'success', 'success'], earns: false },
+      { name: 'neutral-only older history cannot supply trouble', results: ['neutral', 'neutral', 'success', 'success', 'success'], earns: false },
+    ],
+  };
+  for (const [phase, cases] of Object.entries(phases)) {
+    describe(phase, () => {
+      for (const { name, results, earns } of cases) {
+        test(name, () => assert.equal(derive(sequence(results)) !== null, earns));
+      }
+    });
   }
 
   test('returns chronological supporting attempt references for the selected candidate', () => {
@@ -115,10 +130,19 @@ describe('candidate recovery highlights', () => {
     assert.deepEqual(highlight.successAttempts.map(item => item.attemptId), ['attempt-4', 'attempt-5', 'attempt-6']);
   });
 
-  test('a later same-day miss does not reopen the trouble consumed by an earlier session', () => {
+  test('backward trouble search stops at an earlier morning three-success boundary despite its afternoon miss', () => {
     const history = [...trouble(), ...sequence(['success', 'success', 'success'], 4)];
-    assert.ok(derive(history));
     assert.equal(derive([...history, later(6, 'miss'), ...sequence(['success', 'success', 'success'], 7)]), null);
+  });
+
+  test('a miss before same-day success prevents a false earlier three-success boundary', () => {
+    const highlight = derive([
+      ...trouble(), encounter(4, 'success'), encounter(5, 'success'),
+      encounter(6, 'miss'), later(6, 'success'), encounter(7, 'miss'),
+      ...sequence(['success', 'success', 'success'], 8),
+    ]);
+    assert.ok(highlight);
+    assert.deepEqual(highlight.troubleAttempts.map(item => item.attemptId), ['attempt-3', 'attempt-6', 'attempt-7']);
   });
 
   test('latest miss provenance names the later session when a day has multiple misses', () => {
