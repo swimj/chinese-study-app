@@ -853,3 +853,6 @@ use server-derived identity. A debrief DTO contains `sessionId`, `completedAt`
 exact input `refs`, and nullable `followUp`. No provider call is awaited by the
 summary or retry endpoint. Interrupted attempts require explicit retry; queued
 jobs resume after restart. See [the contract](../SPECS/session-debrief.md).
+### Session recovery highlights
+
+`GET /api/study-sessions/:sessionId/recovery-highlights` returns `{ highlights }` for a learner-owned completed summary. Missing, unfinished, and other-learner sessions return `404`; empty IDs return `400`. This independent read uses accepted attempts and currently applied corrections; it does not generate reflection or alter scheduling. See [the feature contract](../SPECS/session-recovery-highlights.md) for thresholds and evidence references.

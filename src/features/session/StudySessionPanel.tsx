@@ -113,6 +113,7 @@ export function StudySessionPanel(props: StudySessionPanelProps) {
   }
   if (completed && props.sessionFinalization.kind === 'finalized' && props.sessionSummary && studyProfile.id === 'mandarin') {
     return <SessionDebriefPanel key={props.sessionSummary.sessionId} sessionId={props.sessionSummary.sessionId}
+      characterPresentation={props.characterPresentation}
       completedAt={props.sessionSummary.completedAt ?? undefined} exerciseCount={props.sessionSummary.debriefInventory.length}
       onDone={props.onEndSession} finalization={props.sessionFinalization} onRetryReflection={props.onRetrySessionReflection} />;
   }
@@ -588,7 +589,7 @@ function StudySessionPanelContent({
           <div className="session-card-scroll">
             {sessionFinalization.kind === 'finalized' ? (
               <SessionSummaryPanel summary={sessionSummary} finalization={sessionFinalization}
-                onRetryReflection={onRetrySessionReflection} />
+                onRetryReflection={onRetrySessionReflection} characterPresentation={characterPresentation} />
             ) : <p>Your session is ready to finish.</p>}
           </div>
           {sessionFinalization.kind !== 'finalized' ? completionActions : (

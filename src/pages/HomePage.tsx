@@ -293,6 +293,7 @@ export function HomePage({
         ) : null}
 
         {showingDebrief ? <SessionDebriefPanel key={reopenedSessionId} sessionId={reopenedSessionId}
+          characterPresentation={backendStatus?.characterPresentation ?? DEFAULT_CHARACTER_PRESENTATION}
           onDone={() => { setReopenedSessionId(null); recent.reload(); }} /> : sessionSettingsOpen && !sessionStarted ? (
           <SessionSettingsPanel
             backendStatus={backendStatus}

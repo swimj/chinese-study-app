@@ -247,7 +247,9 @@ test('session debrief migration preserves valued completion rows and starts with
     db.prepare(`INSERT INTO learner_owned_review_session_summaries (learner_id,session_id,completed_at,day_key,completed_count,failed_count,active_duration_ms)
       VALUES ('test','historical','2026-10-05T00:00:00.000Z','2026-10-05',12,2,3456)`).run();
     const old = db.prepare('SELECT * FROM learner_owned_review_session_summaries').all();
-    assert.deepEqual(migrateDatabase(db), ['app_schema:0023_session_debrief']);
+    assert.deepEqual(migrateDatabase(db), schemaMigrations
+      .filter((migration) => migration.id >= 'app_schema:0023_session_debrief')
+      .map((migration) => migration.id));
     assert.deepEqual(db.prepare('SELECT * FROM learner_owned_review_session_summaries').all(), old);
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM learner_session_debrief_jobs').get()?.count, 0);
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM learner_session_debrief_attempts').get()?.count, 0);

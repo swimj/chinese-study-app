@@ -29,3 +29,4 @@ export * from './review-content.ts';
 export * from './content-quality.ts';
 
 export * from './session-debrief.ts';
+export * from './recovery-highlights.ts';
