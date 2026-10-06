@@ -12,7 +12,8 @@ export const SessionDesk = forwardRef<SessionDeskHandle, {
   again: number;
   answered: number;
   elapsed: string;
-}>(function SessionDesk({ children, enabled, mistakeKey, remaining, again, answered, elapsed }, ref) {
+  summaryDate?: string;
+}>(function SessionDesk({ children, enabled, mistakeKey, remaining, again, answered, elapsed, summaryDate }, ref) {
   const surface = useRef<HTMLDivElement>(null);
   const pile = useRef<HTMLDivElement>(null);
   const cleanup = useRef<(() => void) | null>(null);
@@ -121,18 +122,18 @@ export const SessionDesk = forwardRef<SessionDeskHandle, {
   if (!enabled) return <>{children}</>;
   return <div className="session-desk">
     <header className="desk-heading">
-      <span className="desk-remaining">{remaining} remaining</span>
+      {summaryDate !== undefined ? <><span>Session summary</span><span>{summaryDate}</span></> : <><span className="desk-remaining">{remaining} remaining</span>
       <details className="desk-overview"><summary>Session overview</summary><div>
         <span>{answered} answered</span><span>{again} to practice again</span><span>{elapsed} elapsed</span>
-      </div></details>
+      </div></details></>}
     </header>
     <div className="desk-stack" ref={surface} data-mistake={Boolean(mistakeKey)}>
       <div className="desk-under-card" aria-hidden="true" />
       <div className="desk-front">{children}</div>
     </div>
-    <footer className="desk-footer"><div ref={pile} className={`desk-again-pile${again ? ' has-cards' : ''}`} aria-live="polite">
+    {summaryDate === undefined ? <footer className="desk-footer"><div ref={pile} className={`desk-again-pile${again ? ' has-cards' : ''}`} aria-live="polite">
       <span className="desk-pile-mark" aria-hidden="true" /> Practice again <strong>{again}</strong>
-    </div></footer>
+    </div></footer> : null}
   </div>;
 });
 

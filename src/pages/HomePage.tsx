@@ -32,6 +32,8 @@ import {
   type FrozenProductionCard,
   type FrozenPureCueCard,
 } from '../features/session/StudySessionPanel';
+import { SessionDebriefPanel } from '../features/session/SessionDebriefPanel';
+import { useSessionDebrief } from '../features/session/useSessionDebrief';
 import { HomeOverviewPanel, SessionSettingsPanel } from './HomeOverviewPanel';
 
 export function HomePage({
@@ -135,6 +137,7 @@ export function HomePage({
     unstudiedAdmissionSource?: UnstudiedAdmissionSource;
     characterPresentation?: CharacterPresentation;
     sentenceCharacterPresentation?: SentenceCharacterPresentation;
+    debriefInterests?: string;
   }) => Promise<void>;
   sessionPrefetch: SessionPrefetchState;
   sessionStarted: boolean;
@@ -226,6 +229,9 @@ export function HomePage({
   dietIntakeStartBlocked: boolean;
   onNudgeDiet: (direction: 'easier' | 'harder') => Promise<void>;
 }) {
+  const [reopenedSessionId, setReopenedSessionId] = useState<string | null>(null);
+  const showingDebrief = reopenedSessionId !== null;
+  const recent = useSessionDebrief(undefined, !sessionStarted && !showingDebrief && backendStatus?.studyProfile === 'mandarin');
   const [sessionSettingsOpen, setSessionSettingsOpen] = useState(false);
   const [sessionSettingsSaving, setSessionSettingsSaving] = useState(false);
   useEffect(() => {
@@ -235,9 +241,9 @@ export function HomePage({
   }, [sessionStarted]);
 
   return (
-    <div className={sessionStarted ? 'home-page home-session-active' : 'home-page'}>
+    <div className={sessionStarted || showingDebrief ? 'home-page home-session-active' : 'home-page'}>
       <div className="grid home-grid">
-        {(backendStatus?.dietIntakeRequired || dietIntakeSubmission.phase === 'refreshing' || dietIntakeSubmission.phase === 'refresh-error') && !sessionStarted ? (
+        {!showingDebrief && (backendStatus?.dietIntakeRequired || dietIntakeSubmission.phase === 'refreshing' || dietIntakeSubmission.phase === 'refresh-error') && !sessionStarted ? (
           <DietIntakePanel
             submitting={isDietIntakeSubmitting(dietIntakeSubmission)}
             submission={dietIntakeSubmission}
@@ -250,7 +256,7 @@ export function HomePage({
             onRetryRefresh={() => void onRetryDietIntakeRefresh()}
           />
         ) : null}
-        <HomeOverviewPanel
+        {!showingDebrief ? <HomeOverviewPanel
           backendStatus={backendStatus}
           sessionPrefetch={sessionPrefetch}
           sessionStarted={sessionStarted}
@@ -269,9 +275,25 @@ export function HomePage({
           onStartSession={onStartSession}
           onEndSession={onEndSession}
           onNudgeDiet={onNudgeDiet}
-        />
+        /> : null}
 
-        {sessionSettingsOpen && !sessionStarted ? (
+        {!sessionStarted && !showingDebrief && !sessionSettingsOpen && recent.debrief ? (
+          <section className="recent-session-section" aria-label="Recent session">
+            <p className="debrief-kicker">Recent session</p>
+            <button type="button" className="recent-session-entry" onClick={() => setReopenedSessionId(recent.debrief!.sessionId)}>
+              <span><strong>{new Date(recent.debrief.completedAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}</strong>
+                <small>{recent.debrief.exerciseCount} exercise{recent.debrief.exerciseCount === 1 ? '' : 's'}</small></span>
+              <span className="recent-session-status">{recent.debrief.status === 'queued' || recent.debrief.status === 'running'
+                ? 'Connections on the way' : recent.debrief.status === 'failed' ? 'Try again' : 'Open summary'} <span aria-hidden="true">↗</span></span>
+            </button>
+            {recent.error ? <p className="notes" role="status">Couldn’t refresh the recent session. <button type="button" className="secondary-button" onClick={recent.reload}>Try again</button></p> : null}
+          </section>
+        ) : !sessionStarted && !showingDebrief && recent.error && backendStatus?.studyProfile === 'mandarin' ? (
+          <p className="notes" role="status">Couldn’t load the recent session. <button type="button" className="secondary-button" onClick={recent.reload}>Try again</button></p>
+        ) : null}
+
+        {showingDebrief ? <SessionDebriefPanel key={reopenedSessionId} sessionId={reopenedSessionId}
+          onDone={() => { setReopenedSessionId(null); recent.reload(); }} /> : sessionSettingsOpen && !sessionStarted ? (
           <SessionSettingsPanel
             backendStatus={backendStatus}
             onSaveSessionSettings={onSaveSessionSettings}

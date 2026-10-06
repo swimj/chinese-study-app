@@ -180,6 +180,7 @@ export function SessionSettingsPanel({
     unstudiedAdmissionSource?: UnstudiedAdmissionSource;
     characterPresentation?: CharacterPresentation;
     sentenceCharacterPresentation?: SentenceCharacterPresentation;
+    debriefInterests?: string;
   }) => Promise<void>;
   onSavingChange: (saving: boolean) => void;
   onClose: () => void;
@@ -200,6 +201,7 @@ export function SessionSettingsPanel({
   const [sentencePresentationDraft, setSentencePresentationDraft] = useState<SentenceCharacterPresentation>(
     backendStatus?.sentenceCharacterPresentation ?? 'simplified',
   );
+  const [interestsDraft, setInterestsDraft] = useState(backendStatus?.debriefInterests ?? '');
   const [limitSaving, setLimitSaving] = useState(false);
   const [limitError, setLimitError] = useState<string | null>(null);
 
@@ -212,7 +214,9 @@ export function SessionSettingsPanel({
   const presentationDirty = backendStatus?.studyProfile === 'mandarin' && presentationDraft !== committedPresentation;
   const sentencePresentationDirty = backendStatus?.studyProfile === 'mandarin'
     && sentencePresentationDraft !== committedSentencePresentation;
-  const settingsDirty = limitDirty || sourceDirty || presentationDirty || sentencePresentationDirty;
+  const committedInterests = backendStatus?.debriefInterests ?? '';
+  const interestsDirty = backendStatus?.studyProfile === 'mandarin' && interestsDraft !== committedInterests;
+  const settingsDirty = limitDirty || sourceDirty || presentationDirty || sentencePresentationDirty || interestsDirty;
 
   function beginLimitEdit() {
     setLimitDraft(committedLimit === null ? '' : String(committedLimit));
@@ -225,6 +229,7 @@ export function SessionSettingsPanel({
     setSourceDraft(committedSource);
     setPresentationDraft(committedPresentation);
     setSentencePresentationDraft(committedSentencePresentation);
+    setInterestsDraft(committedInterests);
     setLimitEditing(false);
     setLimitError(null);
     onClose();
@@ -249,6 +254,7 @@ export function SessionSettingsPanel({
       unstudiedAdmissionSource?: UnstudiedAdmissionSource;
       characterPresentation?: CharacterPresentation;
       sentenceCharacterPresentation?: SentenceCharacterPresentation;
+      debriefInterests?: string;
     } = {};
 
     if (limitDirty) {
@@ -272,6 +278,8 @@ export function SessionSettingsPanel({
     if (sentencePresentationDirty) {
       patch.sentenceCharacterPresentation = sentencePresentationDraft;
     }
+
+    if (interestsDirty) patch.debriefInterests = interestsDraft;
 
     setLimitSaving(true);
     onSavingChange(true);
@@ -314,7 +322,7 @@ export function SessionSettingsPanel({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [limitDraft, sourceDraft, presentationDraft, sentencePresentationDraft, limitSaving, settingsDirty, committedLimit, committedSource, committedPresentation, committedSentencePresentation]);
+  }, [limitDraft, sourceDraft, presentationDraft, sentencePresentationDraft, interestsDraft, committedInterests, limitSaving, settingsDirty, committedLimit, committedSource, committedPresentation, committedSentencePresentation]);
 
   useEffect(() => {
     if (limitEditing) {
@@ -340,6 +348,8 @@ export function SessionSettingsPanel({
   useEffect(() => {
     setSentencePresentationDraft(committedSentencePresentation);
   }, [committedSentencePresentation]);
+
+  useEffect(() => { setInterestsDraft(committedInterests); }, [committedInterests]);
 
   return (
     <div
@@ -442,6 +452,12 @@ export function SessionSettingsPanel({
             </select>
           </div>
         ) : null}
+        {backendStatus?.studyProfile === 'mandarin' ? <div className="session-settings-interests">
+          <label htmlFor="debrief-interests">Interests <span className="notes">(optional)</span></label>
+          <p className="notes" id="debrief-interests-help">Topics you’re curious about, to help connect the words after a session.</p>
+          <textarea id="debrief-interests" aria-describedby="debrief-interests-help" maxLength={1000} rows={3}
+            value={interestsDraft} disabled={limitSaving} onChange={(event) => setInterestsDraft(event.target.value)} />
+        </div> : null}
         {limitError ? <p className="form-error" role="alert">{limitError}</p> : null}
         <div className="session-settings-actions">
           <button

@@ -3,7 +3,8 @@ import {
   formatCardCharacters,
   type CharacterPresentation,
 } from '../../domain/card-characters';
-import type { SessionStudyItem } from '../../domain/study-actions';
+import type { SessionDebriefInventoryItem } from '../../domain/session-debrief';
+import type { PureCueSessionReviewItem, SessionStudyItem } from '../../domain/study-actions';
 import type { ReviewRating, Word } from '../../types';
 import type { BucketSessionCommitIntent, SessionPhase } from '../../lib/session-state';
 
@@ -33,6 +34,7 @@ export type SessionSummary = {
   completedLearningWords: number;
   completedUnstudiedWords: number;
   completionMode: 'natural' | 'drain';
+  debriefInventory: SessionDebriefInventoryItem[];
 };
 
 export function createSessionSummary({
@@ -60,6 +62,7 @@ export function createSessionSummary({
     completedLearningWords: 0,
     completedUnstudiedWords: 0,
     completionMode: 'natural',
+    debriefInventory: [],
   };
 }
 
@@ -171,10 +174,22 @@ export function updateSessionSummaryForRating({
       break;
   }
 
+  if (transition.commit.type !== 'none') {
+    const target = activeItem.actionKind === 'contrast_selection'
+      ? activeItem.contrastSelection?.choices.find((choice) => choice.word.id === activeItem.contrastSelection?.promptTargetWordId)?.word
+      : activeWord;
+    if (!target) throw new Error('Covered contrast exercise must have its frozen prompt target.');
+    nextSummary.debriefInventory = [...summary.debriefInventory, {
+      word: formatCardCharacters(target, characterPresentation), pinyin: target.pinyin,
+    }];
+  }
+
   return nextSummary;
 }
 
 export function updateSessionSummaryForPureCueRating({
+  activePureCue,
+  characterPresentation = DEFAULT_CHARACTER_PRESENTATION,
   summary,
   transition,
   previousPhase,
@@ -182,6 +197,8 @@ export function updateSessionSummaryForPureCueRating({
   summary: SessionSummary | null;
   transition: SessionSummaryTransition;
   previousPhase: SessionPhase;
+  activePureCue: PureCueSessionReviewItem;
+  characterPresentation?: CharacterPresentation;
 }): SessionSummary | null {
   if (!summary) return summary;
   const nextSummary: SessionSummary = {
@@ -196,6 +213,11 @@ export function updateSessionSummaryForPureCueRating({
   };
   if (transition.commit.type === 'commit-pure-cue-production-session') {
     nextSummary.completedPureCueActions += 1;
+    nextSummary.debriefInventory = [...summary.debriefInventory, {
+      word: activePureCue.snapshot.acceptedAnswers.map((answer) => formatCardCharacters(answer, characterPresentation)).join(' / '),
+      // The accepted-answer snapshot intentionally contains no pronunciation.
+      pinyin: '',
+    }];
     if (transition.commit.events.some((event) => event.rating === 'forgot')) {
       nextSummary.lapsedPureCueActions += 1;
     }

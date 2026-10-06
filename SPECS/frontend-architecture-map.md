@@ -50,7 +50,11 @@ src/
       StudySessionPanel.tsx       # active/completed session UI
       SessionDesk.tsx             # opaque stack, departure motion, peripheral progress
       session-desk-model.ts       # presentation outcomes from existing covering decisions
-      SessionSummaryPanel.tsx     # completed session summary UI
+      SessionSummaryPanel.tsx     # French summary + independent reflection status
+      SessionDebriefPanel.tsx     # shared live/reopened Mandarin connection cards
+      useSessionDebrief.ts        # mounted debrief request ownership
+      session-debrief-loader.ts  # status polling, request fencing, retry recovery
+      session-debrief-keyboard.ts # native-safe connection navigation
       PersonalNotesEditorOverlay.tsx
       session-keyboard.ts         # state-to-action/shortcut descriptors + key resolution
       session-dialog-focus.ts     # session dialog focus trap, Escape, restoration

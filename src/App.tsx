@@ -19,6 +19,7 @@ import {
   retryReflectionGenerationRun,
   generateDeferredReflectionSecondOpinion,
   updateDailyNewWordLimit,
+  updateDebriefInterests,
   updateUnstudiedAdmissionSource,
   updateCharacterPresentation,
   updateSentenceCharacterPresentation,
@@ -211,6 +212,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     unstudiedAdmissionSource?: BackendStatus['unstudiedAdmissionSource'];
     characterPresentation?: CharacterPresentation;
     sentenceCharacterPresentation?: SentenceCharacterPresentation;
+    debriefInterests?: string;
   }) {
     const policyRequested = settings.dailyNewWordLimit !== undefined
       || settings.unstudiedAdmissionSource !== undefined;
@@ -245,13 +247,19 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
       sentenceCharacterPresentation = saved.sentenceCharacterPresentation;
     }
 
-    if (!policy && characterPresentation === undefined && sentenceCharacterPresentation === undefined) {
+    let debriefInterests = settings.debriefInterests;
+    if (debriefInterests !== undefined) {
+      debriefInterests = (await updateDebriefInterests(debriefInterests)).debriefInterests;
+    }
+
+    if (!policy && characterPresentation === undefined && sentenceCharacterPresentation === undefined && debriefInterests === undefined) {
       return;
     }
 
     const nextPolicy = policy;
     const nextPresentation = characterPresentation;
     const nextSentencePresentation = sentenceCharacterPresentation;
+    const nextInterests = debriefInterests;
     setBackendStatus((currentStatus) => currentStatus
       ? {
           ...currentStatus,
@@ -263,6 +271,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
             : {}),
           ...(nextPresentation !== undefined ? { characterPresentation: nextPresentation } : {}),
           ...(nextSentencePresentation !== undefined ? { sentenceCharacterPresentation: nextSentencePresentation } : {}),
+          ...(nextInterests !== undefined ? { debriefInterests: nextInterests } : {}),
         }
       : currentStatus);
     if (policyRequested) {

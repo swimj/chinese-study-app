@@ -37,6 +37,7 @@ import {
   type SessionKeyCommand,
 } from './session-keyboard';
 import { useSessionDialogFocus } from './session-dialog-focus';
+import { SessionDebriefPanel } from './SessionDebriefPanel';
 import { SessionSummaryPanel } from './SessionSummaryPanel';
 import { formatIntervalHours } from '../../lib/format-interval';
 
@@ -109,6 +110,11 @@ export function StudySessionPanel(props: StudySessionPanelProps) {
       onOpenShortcutGuide={props.onOpenShortcutGuide}
       onCloseShortcutGuide={props.onCloseShortcutGuide}
     />;
+  }
+  if (completed && props.sessionFinalization.kind === 'finalized' && props.sessionSummary && studyProfile.id === 'mandarin') {
+    return <SessionDebriefPanel key={props.sessionSummary.sessionId} sessionId={props.sessionSummary.sessionId}
+      completedAt={props.sessionSummary.completedAt ?? undefined} exerciseCount={props.sessionSummary.debriefInventory.length}
+      onDone={props.onEndSession} finalization={props.sessionFinalization} onRetryReflection={props.onRetrySessionReflection} />;
   }
   return <StudySessionPanelContent {...props}
     {...(completed && props.sessionFinalization.kind === 'finalized' ? {

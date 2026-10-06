@@ -755,6 +755,7 @@ export function useStudySession({
             completedAt: finalizingSummary.completedAt ?? new Date().toISOString(),
             ...getCompletedExerciseCounts(finalizingSummary),
             activeDurationMs,
+            ...(studyProfile.id === 'mandarin' ? { debriefInventory: finalizingSummary.debriefInventory } : {}),
           });
         },
       });
@@ -945,6 +946,7 @@ export function useStudySession({
         setSessionState(transition.state);
         setSessionSummary((current) => activePureCue
           ? updateSessionSummaryForPureCueRating({
+              activePureCue, characterPresentation,
               summary: current,
               transition,
               previousPhase: sessionState.phase,
@@ -1228,6 +1230,7 @@ export function useStudySession({
     setSessionState(transition.state);
     setSessionSummary((current) =>
       updateSessionSummaryForPureCueRating({
+        activePureCue: item, characterPresentation,
         summary: current,
         transition,
         previousPhase: stateAtResponse.phase,
@@ -1816,6 +1819,8 @@ export function useStudySession({
     }
 
     const completedSummary = sessionState.phase === 'completed';
+    // The debrief owns finalized Mandarin summary shortcuts and its own guide.
+    if (completedSummary && sessionFinalization.kind === 'finalized' && studyProfile.id === 'mandarin') return;
     const summaryFinalizationKind = sessionFinalization.kind;
 
     function handleKeyDown(event: KeyboardEvent) {

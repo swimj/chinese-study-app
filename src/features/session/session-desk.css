@@ -60,3 +60,37 @@
 
 .session-desk #production-hanzi-input { width: 100%; min-height: 3rem; padding: .65rem .8rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font-size: 1.25rem; }
 .session-desk .recognition-prompt { font-size: clamp(2.6rem,6vw,4rem); line-height: 1.35; }
+
+/* The completed deck shares the study paper while reporting completion facts. */
+.session-debrief-panel .session-desk { grid-template-rows: auto minmax(0,1fr); }
+.session-debrief-panel .debrief-title { margin: 0; font-size: 1.55rem; letter-spacing: -.025em; }
+.debrief-kicker, .debrief-facts, .debrief-progress { margin: 0; color: var(--text-muted); font-size: .8rem; }
+.session-debrief-panel .session-card-scroll { gap: .65rem; }
+.debrief-connection { margin-top: 1.2rem; }
+.debrief-progress { margin-bottom: 1.2rem; }
+.debrief-note { margin: 0; font-size: 1.1rem; line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; }
+.debrief-waiting { min-height: 200px; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: .6rem; }
+.debrief-waiting p { margin: 0; }
+.debrief-waiting .notes { font-size: .9rem; }
+.debrief-breath { display: flex; gap: 5px; margin-bottom: .6rem; }
+.debrief-breath i { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); animation: debrief-breathe 2s infinite; }
+.debrief-breath i:nth-child(2) { animation-delay: .25s; }
+.debrief-breath i:nth-child(3) { animation-delay: .5s; }
+.debrief-reflection-details { margin-top: auto; padding-top: 1.5rem; color: var(--text-muted); font-size: .8rem; }
+.debrief-reflection-details summary { cursor: pointer; }
+.debrief-reflection-details .notes { font-size: .8rem; }
+.debrief-actions kbd { font-size: .7rem; margin-left: .4rem; opacity: .75; white-space: nowrap; }
+.debrief-actions .debrief-shortcuts { margin-left: auto; }
+.session-desk .debrief-actions .debrief-home, .session-desk .debrief-actions .debrief-shortcuts { background: transparent; color: var(--text-muted); border-color: transparent; box-shadow: none; }
+.recent-session-section { margin-top: 1rem; }
+.recent-session-section > .debrief-kicker { margin-bottom: .5rem; }
+.recent-session-entry { width: 100%; padding: 1.2rem 1.4rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; color: var(--text); box-shadow: none; }
+.recent-session-entry strong { font-weight: 500; }
+.recent-session-entry small { display: block; margin-top: .25rem; color: var(--text-muted); }
+.recent-session-status { color: var(--accent); font-size: .8rem; }
+.session-settings-interests { display: grid; gap: .4rem; }
+.session-settings-interests .notes { margin: 0; }
+.session-settings-interests textarea { width: 100%; min-height: 5rem; resize: vertical; font: inherit; color: var(--text); background: var(--surface); padding: .6rem; border: 1px solid var(--border); border-radius: 8px; }
+@keyframes debrief-breathe { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
+@media (max-width: 520px) { .debrief-note { font-size: 1rem; } .recent-session-entry { padding: 1rem; align-items: flex-start; } .recent-session-status { text-align: right; } .session-desk .debrief-actions { gap: .5rem; } }
+.home-session-active .home-grid > .session-debrief-panel:first-child { display: grid; }
