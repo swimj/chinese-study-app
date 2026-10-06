@@ -91,7 +91,7 @@ export function SessionSummaryPanel({
   );
 }
 
-function SessionReflectionStatus({
+export function SessionReflectionStatus({
   finalization,
   onRetryReflection,
 }: {

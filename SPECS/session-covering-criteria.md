@@ -276,7 +276,9 @@ Entering the summary locks Undo while saving and uses the existing finalization
 path: flush the final accepted deferred commit, then record the durable
 completed-session summary. Show the summary only after both writes succeed.
 Primary navigation returns at that point. There is no second Finish action;
-**Close summary** leaves the finalized summary.
+**Done** or **Home** leaves the finalized Mandarin debrief; French retains
+**Close summary**. The debrief inventory and display contract is defined in
+[`session-debrief.md`](./session-debrief.md).
 
 During saving, disable entry and Undo. Duplicate entries share one in-flight
 finalization. A save failure leaves the last card visible with a retry and does

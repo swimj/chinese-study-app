@@ -8,7 +8,11 @@ result from reflection, its evidence, proposal authorization, and application.
 After accepted deferred study commits succeed, the frontend supplies one exact
 inventory row per covered exercise with the durable session-summary write. Each
 row contains only the encountered word text and pinyin; slash-separated
-alternatives stay together. Learning and new-word exercises are included.
+alternatives stay together in their frozen accepted order, joined with ` / `.
+The encounter uses the selected card character presentation. Contrast rows use
+the actual prompt target rather than the scheduled anchor. Learning and new-word
+exercises are included once their word unit is covered. Reinforcement attempts
+add no extra row; separate covered actions can repeat the same word.
 Undone or uncovered work contributes no row. An empty pinyin string truthfully
 preserves an encounter without a pronunciation cue. Pure-cue accepted-answer
 snapshots currently contain hanzi without pinyin, so their exact alternatives
@@ -69,3 +73,31 @@ Every read, retry, and persistence transition preserves learner ownership.
 Migration `0023_session_debrief` creates empty job and attempt storage. No old
 summary receives a fabricated inventory or automatic provider call. Existing
 databases require the ordinary stopped-writer offline migration before startup.
+
+## Learner surface
+
+The last rated card and its Undo opportunity remain visible until **See session
+summary** (Enter) successfully finalizes the session. The Mandarin summary then
+uses the same paper deck as study, with completion date and covered-exercise
+count in place of study counters. It presents one exact provider paragraph per
+card, with **Next connection**, **Back**, and **Done** on the last card. It adds
+no note titles, subtitles, reference labels, follow-up questions, or chat UI.
+Space, Enter, and right arrow advance; left arrow goes back. Native controls,
+typing, IME composition, repeated keys, modifiers, and the shortcut guide pause
+these shortcuts. The finalized study keyboard handler yields to this surface.
+
+Queued and running summaries show a waiting state and may be left immediately.
+Home shows one durable recent-session entry, including pending and failed jobs,
+and opens that session in the same card component after refresh. A visible live
+summary reads its own immutable session id; latest retrieval cannot replace it.
+Only queued/running records poll. Requests and timers are cancelled on unmount,
+and old request completions cannot overwrite a retry or later surface. A lost
+retry response reads the durable job before allowing another retry. Read errors
+have a separate reload action; failed generation has deliberate **Try again**.
+Ready with zero notes is a successful empty result.
+
+The optional interests textarea participates in existing settings draft, Save,
+and Cancel behavior, starts empty, and accepts at most 1000 characters. Enter
+inside it inserts a newline. French retains its existing completed summary and
+shows neither debrief entry nor interests. Content-improvement reflection remains
+independent; the live debrief offers its status/retry in a collapsed disclosure.
