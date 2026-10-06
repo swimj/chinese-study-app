@@ -121,7 +121,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       diagnostic: {
         schemaVersion: 'reflection_generation_diagnostic.v1',
         phase: 'provider_transport',
-        issues: [],
+        issues: [{ path: '$', code: 'provider_http', message: 'ProviderHttpError; HTTP 503', valueType: null }],
         rejectedOutput: null,
       },
       state: 'failed',

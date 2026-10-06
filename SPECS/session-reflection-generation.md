@@ -311,6 +311,13 @@ compensation, and standalone scheduling policy.
 
 ## 5. Failure And Deliberate Retry
 
+Failed provider runs additionally produce best-effort private diagnostic files
+with exact evidence and full rejected output. These are operational artifacts,
+not successful reflection artifacts or proposal authority. Files expire after
+seven days and are collected on server startup; see the
+[diagnostics runbook](../docs/ops/error-diagnostics.md#reflection-diagnostics)
+for storage, privacy, and failure-isolation details.
+
 Every generation failure is isolated from session correctness. A failure may be
 shown to the learner or dogfood operator, but retry is an explicit reflection
 action rather than a retry of study completion.
