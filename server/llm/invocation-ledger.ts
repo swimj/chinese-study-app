@@ -1,4 +1,5 @@
-import { finishModelInvocation, recordModelInvocationSpend, startModelInvocation } from '../db/model-invocations.ts';
+import type { ModelInvocationRow } from '../../src/domain/model-invocations.ts';
+import { finishModelInvocation, invalidateModelInvocation, recordModelInvocationSpend, startModelInvocation } from '../db/model-invocations.ts';
 import { estimateInitialReflectionRunCost } from '../reflection/run-pricing.ts';
 import type { JsonValue, NormalizedTokenUsage } from './types.ts';
 
@@ -44,6 +45,10 @@ export function recordInvocationResponse(id: string | null, input: Invocation, r
     spendSource: reportedCostUsd !== null ? 'reported' : estimate ? 'estimated' : 'unknown',
     pricing: estimate?.pricing ?? null });
 }
-export function concludeInvocation(id: string | null, status: 'completed' | 'failed'): void {
-  if (id !== null) finishModelInvocation(id, status);
+export function concludeInvocation(id: string | null, status: Exclude<ModelInvocationRow['status'], 'running'>, latencyMs: number): void {
+  if (id !== null) finishModelInvocation(id, status, latencyMs);
+}
+
+export function invalidateInvocation(id: string | null | undefined): void {
+  if (id != null) invalidateModelInvocation(id);
 }

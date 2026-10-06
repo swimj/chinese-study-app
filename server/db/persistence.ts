@@ -3429,7 +3429,7 @@ function validateSchema() {
   ]);
   assertTableColumns('model_invocations', [
     'id', 'timestamp', 'provider', 'model', 'invocation_type', 'learner_id',
-    'spend_usd', 'spend_source', 'status', 'pricing_json',
+    'spend_usd', 'spend_source', 'status', 'pricing_json', 'latency_ms',
   ]);
   assertTableColumns('word_preparation_work', ['requested_by_learner_id']);
   validateContentQualitySchema();

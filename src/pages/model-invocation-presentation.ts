@@ -1,7 +1,7 @@
 import type { ModelInvocationRow } from '../domain/model-invocations';
 
 export type InvocationGroup = 'day' | 'model' | 'invocationType' | 'learnerId';
-export type InvocationSort = 'timestamp' | 'model' | 'invocationType' | 'spendUsd' | 'learnerId';
+export type InvocationSort = 'timestamp' | 'model' | 'invocationType' | 'spendUsd' | 'latencyMs' | 'learnerId';
 export type SpendSummary = { count: number; knownSpendUsd: number; unknownCount: number; estimatedCount: number; reportedCount: number };
 
 export function summarizeInvocations(rows: ModelInvocationRow[]): SpendSummary {
@@ -29,7 +29,7 @@ export function sortInvocations(rows: ModelInvocationRow[], by: InvocationSort, 
   return [...rows].sort((a, b) => {
     const av = a[by];
     const bv = b[by];
-    // Unknown spend stays last in either direction, rather than looking like zero.
+    // Unknown values stay last in either direction, rather than looking like zero.
     if (av === null) return bv === null ? a.id.localeCompare(b.id) : 1;
     if (bv === null) return -1;
     const comparison = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv));
@@ -48,3 +48,15 @@ export function formatInvocationSpend(value: number | null): string {
   if (value > 0 && value < 0.0001) return '<$0.0001';
   return `$${value.toFixed(4)}`;
 }
+
+
+export function formatInvocationLatency(value: number | null): string {
+  if (value === null) return '—';
+  const milliseconds = Math.round(value);
+  return milliseconds < 1000 ? `${milliseconds} ms` : `${milliseconds / 1000} s`;
+}
+
+export const invocationStatusLabels: Record<ModelInvocationRow['status'], string> = {
+  running: 'Running', completed: 'Completed', failed: 'Failed',
+  timed_out: 'Timed out', invalid_response: 'Invalid response',
+};

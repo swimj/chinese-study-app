@@ -1,4 +1,4 @@
-import { ProviderHttpError, type JsonValue } from './types.js';
+import { ProviderHttpError, ProviderTimeoutError, ProviderInvalidResponseError, type JsonValue } from './types.js';
 
 export type FetchImplementation = typeof globalThis.fetch;
 
@@ -14,25 +14,47 @@ export async function postJson(
   body: JsonValue,
   timeoutMs: number,
 ): Promise<JsonValue> {
-  const response = await fetchImplementation(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', ...headers },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  const responseText = await response.text();
+  const signal = AbortSignal.timeout(timeoutMs);
+  let response: Response;
+  let responseText: string;
+  try {
+    response = await fetchImplementation(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+      signal,
+    });
+    signal.throwIfAborted();
+    responseText = await response.text();
+    signal.throwIfAborted();
+  } catch (error) {
+    // Our deadline and explicit transport deadline codes prove timeouts; unrelated aborts do not.
+    if (signal.aborted || isTransportTimeout(error)) throw new ProviderTimeoutError(provider, timeoutMs);
+    throw error;
+  }
   if (!response.ok) throw new ProviderHttpError(provider, response.status, responseText, response.headers);
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(responseText);
   } catch {
-    throw new Error(`${provider} returned a non-JSON HTTP response: ${responseText.slice(0, 1_000)}`);
+    throw new ProviderInvalidResponseError(`${provider} returned a non-JSON HTTP response: ${responseText.slice(0, 1_000)}`);
   }
   if (!isJsonValue(parsed)) {
-    throw new Error(`${provider} returned a value that is not JSON-compatible.`);
+    throw new ProviderInvalidResponseError(`${provider} returned a value that is not JSON-compatible.`);
   }
   return parsed;
+}
+
+function isTransportTimeout(error: unknown): boolean {
+  const visited = new Set<unknown>();
+  let current = error;
+  while (current instanceof Error && !visited.has(current)) {
+    visited.add(current);
+    if ('code' in current && ['UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_CONNECT_TIMEOUT'].includes(String(current.code))) return true;
+    current = current.cause;
+  }
+  return false;
 }
 
 export function asRecord(value: JsonValue, location: string): Record<string, JsonValue> {

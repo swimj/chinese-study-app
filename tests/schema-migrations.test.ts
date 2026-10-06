@@ -257,3 +257,19 @@ test('session debrief migration preserves valued completion rows and starts with
     assertSchemaCurrent(db);
   } finally { db.close(); }
 });
+
+
+test('model invocation outcome migration preserves old accounting without inventing latency', () => {
+  const { db } = copy('model-invocation-outcomes', true);
+  try {
+    migrateDatabase(db, schemaMigrations.filter((migration) => migration.id < 'app_schema:0026_model_invocation_outcomes'));
+    db.prepare(`INSERT INTO learners (learner_id, display_name, created_at) VALUES ('ledger-history','History','2026-10-06')`).run();
+    db.prepare(`INSERT INTO model_invocations (id,timestamp,provider,model,invocation_type,learner_id,spend_usd,spend_source,status,pricing_json)
+      VALUES ('old-call','2026-10-06T12:00:00.000Z','openrouter','old-model','reflection','ledger-history',0.25,'reported','completed','{"source":"provider"}')`).run();
+    const old = db.prepare('SELECT * FROM model_invocations').get();
+    migrateDatabase(db);
+    assert.deepEqual({ ...db.prepare('SELECT * FROM model_invocations').get() }, { ...old, latency_ms: null });
+    assert.deepEqual(migrateDatabase(db), []);
+    assertSchemaCurrent(db);
+  } finally { db.close(); }
+});

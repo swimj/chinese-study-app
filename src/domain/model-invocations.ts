@@ -8,5 +8,6 @@ export type ModelInvocationRow = {
   userDisplayName: string | null;
   spendUsd: number | null;
   spendSource: 'reported' | 'estimated' | 'unknown';
-  status: 'running' | 'completed' | 'failed';
+  latencyMs: number | null;
+  status: 'running' | 'completed' | 'failed' | 'timed_out' | 'invalid_response';
 };

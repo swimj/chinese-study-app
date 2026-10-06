@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { ModelInvocationRow } from '../domain/model-invocations';
 import { fetchModelInvocations } from '../services/api';
-import { formatInvocationSpend, groupInvocations, invocationDateRange, sortInvocations, summarizeInvocations, type InvocationGroup, type InvocationSort } from './model-invocation-presentation';
+import { formatInvocationLatency, invocationStatusLabels, formatInvocationSpend, groupInvocations, invocationDateRange, sortInvocations, summarizeInvocations, type InvocationGroup, type InvocationSort } from './model-invocation-presentation';
 
 const PAGE_SIZE = 50;
 const GROUP_LABELS: Record<InvocationGroup, string> = { day: 'Day (UTC)', model: 'Model', invocationType: 'Invocation type', learnerId: 'User' };
@@ -65,7 +65,7 @@ export function ModelInvocationsPanel() {
       Production calls recorded since the ledger was introduced; older calls are not backfilled.
       Each invocation belongs to the user who initiated the work, including shared content preparation.
       Dates include both UTC days. Spend is in USD: provider-reported cost takes precedence over token-based estimates.
-      Unknown spend is excluded from sums, so totals may be incomplete. Running and failed calls are included.
+      Unknown spend is excluded from sums, so totals may be incomplete. Running and failed calls are included. Latency measures the provider request through response receipt; timed-out calls show the configured timeout. Later response validation can change Completed to Invalid response. Historical calls have no recorded latency.
     </p></details>
     {loading && <p role="status">Loading model invocations…</p>}
     {error && <p role="alert">{error} Use Refresh ledger to retry.</p>}
@@ -85,7 +85,7 @@ export function ModelInvocationsPanel() {
         {groupBy ? <label>Sort groups<select value={groupSort} onChange={(event) => { setGroupSort(event.target.value as typeof groupSort); setPage(0); }}>
           <option value="key">{GROUP_LABELS[groupBy]}</option><option value="count">Invocations</option><option value="knownSpendUsd">Known spend</option>
         </select></label> : <label>Sort calls<select value={sortBy} onChange={(event) => { setSortBy(event.target.value as InvocationSort); setPage(0); }}>
-          <option value="timestamp">Timestamp</option><option value="model">Model</option><option value="invocationType">Invocation type</option><option value="spendUsd">Spend</option><option value="learnerId">User</option>
+          <option value="timestamp">Timestamp</option><option value="model">Model</option><option value="invocationType">Invocation type</option><option value="spendUsd">Spend</option><option value="latencyMs">Latency</option><option value="learnerId">User</option>
         </select></label>}
         <label>Order<select value={direction} onChange={(event) => { setDirection(event.target.value as typeof direction); setPage(0); }}>
           <option value="desc">Descending</option><option value="asc">Ascending</option>
@@ -118,13 +118,13 @@ function LedgerMetric({ label, value }: { label: string; value: string }) {
 export function ModelInvocationTable({ rows }: { rows: ModelInvocationRow[] }) {
   return <table className="operator-usage-table operator-ledger-table">
     <caption>Individual model calls · timestamps in UTC</caption>
-    <thead><tr><th scope="col">Timestamp (UTC)</th><th scope="col">Model</th><th scope="col">Invocation type</th><th scope="col">Spend (USD)</th><th scope="col">User</th><th scope="col">Status</th></tr></thead>
+    <thead><tr><th scope="col">Timestamp (UTC)</th><th scope="col">Model</th><th scope="col">Invocation type</th><th scope="col">Spend (USD)</th><th scope="col">User</th><th scope="col">Latency</th><th scope="col">Status</th></tr></thead>
     <tbody>{rows.map((row) => <tr key={row.id}>
       <td><time dateTime={row.timestamp}>{row.timestamp.replace('T', ' ').replace(/\.\d+Z$/, '').replace(/Z$/, '')}</time></td>
       <td>{row.model}<span className="operator-ledger-secondary">{row.provider}</span></td>
       <td>{row.invocationType.replaceAll('_', ' ')}</td>
       <td>{formatInvocationSpend(row.spendUsd)}{row.spendUsd !== null && <span className="operator-ledger-secondary">{row.spendSource}</span>}</td>
-      <td><InvocationUser learnerId={row.learnerId} displayName={row.userDisplayName} /></td><td>{row.status}</td>
+      <td><InvocationUser learnerId={row.learnerId} displayName={row.userDisplayName} /></td><td>{formatInvocationLatency(row.latencyMs)}</td><td>{invocationStatusLabels[row.status]}</td>
     </tr>)}</tbody>
   </table>;
 }

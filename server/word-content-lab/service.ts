@@ -1,3 +1,4 @@
+import { validateWordProviderOutput } from '../word-content/provider.ts';
 import { randomUUID } from 'node:crypto';
 import { link, mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -176,10 +177,12 @@ export function createIntroductionLabService(options: {
       catch { throw new IntroductionLabError(400, 'Expected bounded lexical input.'); }
       return withGeneration(async () => {
         let output: unknown;
-        try { output = await provider.generateBootstrap(input); }
+        let invocationId: string | null | undefined;
+        const generationOptions = { onInvocation: (id: string | null | undefined) => { invocationId = id; } };
+        try { output = await provider.generateBootstrap(input, generationOptions); }
         catch { throw new IntroductionLabError(502, 'Bootstrap provider request failed.'); }
         let content: WordContentDocument;
-        try { content = normalizeWordContent(output, { wordId: `word-lab:${randomUUID()}`, hanzi: input.hanzi, traditional: input.traditional, pinyin: input.pinyin }, `content-lab:${randomUUID()}`); }
+        try { content = validateWordProviderOutput(invocationId, () => normalizeWordContent(output, { wordId: `word-lab:${randomUUID()}`, hanzi: input.hanzi, traditional: input.traditional, pinyin: input.pinyin }, `content-lab:${randomUUID()}`)); }
         catch { throw new IntroductionLabError(502, 'Bootstrap output failed validation.'); }
         return save(content, null, 'generated');
       });
@@ -188,11 +191,13 @@ export function createIntroductionLabService(options: {
       const source = await load(draftId);
       return withGeneration(async () => {
         let output: unknown;
-        try { output = await provider.generateTeaching(source.content); }
+        let invocationId: string | null | undefined;
+        const generationOptions = { onInvocation: (id: string | null | undefined) => { invocationId = id; } };
+        try { output = await provider.generateTeaching(source.content, generationOptions); }
         catch { throw new IntroductionLabError(502, 'Teaching provider request failed.'); }
         let teaching: TeachingPackage;
         try {
-          teaching = normalizeTeachingPackage(output, source.content, `teaching-lab:${randomUUID()}`);
+          teaching = validateWordProviderOutput(invocationId, () => normalizeTeachingPackage(output, source.content, `teaching-lab:${randomUUID()}`));
         } catch {
           throw new IntroductionLabError(502, 'Teaching output failed validation.');
         }

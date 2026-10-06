@@ -24,8 +24,21 @@ export function recordModelInvocationSpend(id: string, input: {
     input.pricing === null ? null : JSON.stringify(input.pricing), id);
 }
 
-export function finishModelInvocation(id: string, status: 'completed' | 'failed'): void {
-  getDb().prepare("UPDATE model_invocations SET status = ? WHERE id = ? AND status = 'running'").run(status, id);
+export function finishModelInvocation(id: string, status: Exclude<ModelInvocationRow['status'], 'running'>, latencyMs: number): void {
+  if (!Number.isFinite(latencyMs) || latencyMs < 0) throw new Error('Expected nonnegative invocation latency');
+  getDb().prepare("UPDATE model_invocations SET status = ?, latency_ms = ? WHERE id = ? AND learner_id = ? AND status = 'running'")
+    .run(status, latencyMs, id, requireLearnerId());
+}
+
+export function invalidateModelInvocation(id: string): void {
+  const learnerId = requireLearnerId();
+  const row = getDb().prepare('SELECT status FROM model_invocations WHERE id = ? AND learner_id = ?')
+    .get(id, learnerId) as { status: ModelInvocationRow['status'] } | undefined;
+  if (!row) throw new Error('Model invocation does not belong to current learner');
+  if (row.status === 'invalid_response') return;
+  if (row.status !== 'completed') throw new Error('Only completed model responses can be invalidated');
+  getDb().prepare("UPDATE model_invocations SET status = 'invalid_response' WHERE id = ? AND learner_id = ? AND status = 'completed'")
+    .run(id, learnerId);
 }
 
 function dateBound(value: unknown, name: string): string | undefined {
@@ -45,7 +58,7 @@ export function listModelInvocations(input: { from?: unknown; to?: unknown } = {
   const rows = getDb().prepare(`SELECT i.id, i.timestamp, i.provider, i.model,
       i.invocation_type AS invocationType, i.learner_id AS learnerId,
       l.display_name AS userDisplayName, i.spend_usd AS spendUsd,
-      i.spend_source AS spendSource, i.status
+      i.spend_source AS spendSource, i.status, i.latency_ms AS latencyMs
     FROM model_invocations i JOIN learners l ON l.learner_id = i.learner_id
     WHERE (? IS NULL OR i.timestamp >= ?) AND (? IS NULL OR i.timestamp <= ?)
     ORDER BY i.timestamp DESC, i.id DESC`).all(

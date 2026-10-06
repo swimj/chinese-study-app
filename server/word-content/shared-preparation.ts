@@ -13,7 +13,7 @@ import {
 import { isSharedWordPreparationReady, type WordPreparationStage } from '../db/preparation-work.ts';
 import { normalizeWordContent, normalizeTeachingPackage } from './authoring.ts';
 import { normalizeReviewExercises } from './review-authoring.ts';
-import { createWordIntroductionProvider, type WordIntroductionProvider } from './provider.ts';
+import { createWordIntroductionProvider, validateWordProviderOutput, type WordIntroductionProvider } from './provider.ts';
 
 export class WordPreparationProviderError extends Error {
   constructor(message: string, readonly providerWide: boolean) { super(message); }
@@ -55,30 +55,32 @@ export function createSharedWordPreparation(provider: WordIntroductionProvider =
       else releaseSharedWordIntroductionStage(wordId, token);
     },
     async generate(wordId: string, stage: WordPreparationStage, token: string): Promise<void> {
+      let invocationId: string | null | undefined;
+      const generationOptions = { onInvocation: (id: string | null | undefined) => { invocationId = id; } };
       if (stage === 'bootstrap') {
         const lexical = getSharedIntroductionLexicalWord(wordId);
         if (!lexical) throw new Error('Lexical word missing');
         let output: unknown;
         try {
           output = await provider.generateBootstrap({ hanzi: lexical.hanzi, traditional: lexical.traditional,
-            pinyin: lexical.pinyin, guidance: `Corpus meanings: ${lexical.meanings.join('; ')}`.slice(0, 2_000) });
+            pinyin: lexical.pinyin, guidance: `Corpus meanings: ${lexical.meanings.join('; ')}`.slice(0, 2_000) }, generationOptions);
         } catch (error) { throw providerFailure(error); }
-        const content = normalizeWordContent(output, { wordId, hanzi: lexical.hanzi, traditional: lexical.traditional, pinyin: lexical.pinyin }, `word-content:${randomUUID()}`);
+        const content = validateWordProviderOutput(invocationId, () => normalizeWordContent(output, { wordId, hanzi: lexical.hanzi, traditional: lexical.traditional, pinyin: lexical.pinyin }, `word-content:${randomUUID()}`));
         finishSharedWordIntroductionBootstrap(wordId, token, content, provider.model);
         return;
       }
       const content = getSharedWordIntroductionContent(wordId);
       if (!content) throw new Error('Eligible bootstrap content unavailable');
       let output: unknown;
-      try { output = await (stage === 'teaching' ? provider.generateTeaching(content) : provider.generateReview(content)); }
+      try { output = await (stage === 'teaching' ? provider.generateTeaching(content, generationOptions) : provider.generateReview(content, generationOptions)); }
       catch (error) { throw providerFailure(error); }
       // Validation diagnostics contain only shared model output identities, never learner evidence or provider bodies.
       if (stage === 'teaching') {
-        const teaching = normalizeTeachingPackage(output, content, `word-teaching:${randomUUID()}`);
+        const teaching = validateWordProviderOutput(invocationId, () => normalizeTeachingPackage(output, content, `word-teaching:${randomUUID()}`));
         finishSharedWordIntroductionTeaching(wordId, token, teaching, provider.model);
       } else {
         const batch = randomUUID();
-        const exercises = normalizeReviewExercises(output, content, (id) => `word-review:${batch}:${id}`);
+        const exercises = validateWordProviderOutput(invocationId, () => normalizeReviewExercises(output, content, (id) => `word-review:${batch}:${id}`));
         finishSharedWordReviewPreparation(wordId, token, exercises, provider.model);
       }
     },
