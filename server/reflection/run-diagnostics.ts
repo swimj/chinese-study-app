@@ -19,6 +19,8 @@ export type ReflectionGenerationDiagnostic = {
   phase: ReflectionDiagnosticPhase;
   issues: ReflectionDiagnosticIssue[];
   rejectedOutput: string | null;
+  /** Private, non-enumerable output for local failure artifacts only. */
+  readonly fullRejectedOutput?: string | null;
 };
 
 export const MAX_REJECTED_OUTPUT_CHARS = 4_000;

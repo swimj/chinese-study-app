@@ -1,3 +1,4 @@
+import { createFileReflectionFailureArtifactSink } from './reflection/failure-artifacts.ts';
 import { getDebriefInterests, setDebriefInterests, getLatestSessionDebrief, getSessionDebrief, retrySessionDebrief, SessionDebriefNotFoundError, SessionDebriefRetryConflictError } from './db/session-debrief.ts';
 import { SessionDebriefInputError, validateDebriefInventory } from '../src/domain/session-debrief.ts';
 import { startSessionDebriefRuntime } from './session-debrief/worker.ts';
@@ -214,9 +215,11 @@ export function createApp(options: CreateAppOptions = {}) {
   const frontendDistPath = resolveFrontendDistPath(options.frontendDistPath);
   const reflectionLifecycleLogger = options.reflectionLifecycleLogger
     ?? createStdoutReflectionLifecycleLogger();
+  const failureArtifactSink = createFileReflectionFailureArtifactSink(dbConfig.dataDir);
   const reflectionGenerationService = options.reflectionGenerationService
     ?? createInitialReflectionGenerationService({
       lifecycleLogger: reflectionLifecycleLogger,
+      failureArtifactSink,
       providerDiagnosticSink: createFileReflectionProviderDiagnosticSink(dbConfig.dataDir),
       getSpendCap: getReflectionSpendCap,
     });

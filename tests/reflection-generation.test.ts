@@ -596,7 +596,9 @@ describe('initial reflection generation orchestration', () => {
     assert.equal(materializeCalls, 0);
 
     let failProvider = true;
+    const failureArtifacts: import('../server/reflection/failure-artifacts.ts').ReflectionFailureArtifactInput[] = [];
     const providerFailureService = createInitialReflectionGenerationService({
+      failureArtifactSink: { record: (input) => { failureArtifacts.push(input); } },
       findExistingArtifact: () => null,
       buildBundle: () => bundle(),
       provider: stagedProvider(
@@ -616,7 +618,9 @@ describe('initial reflection generation orchestration', () => {
           artifact: artifactDetail('retry-artifact', 1),
         };
       },
-      recordRun: () => {},
+      recordRun: (input) => {
+        if (input.state === 'failed') throw new Error('run database unavailable');
+      },
     });
     await assert.rejects(
       providerFailureService.generate('session-1', {}),
@@ -626,6 +630,11 @@ describe('initial reflection generation orchestration', () => {
       ),
     );
     assert.equal(materializeCalls, 0);
+    assert.equal(failureArtifacts.length, 1);
+    assert.equal(failureArtifacts[0].failureCode, 'upstream_failure');
+    assert.equal(failureArtifacts[0].sourceSessionId, 'session-1');
+    assert.deepEqual(failureArtifacts[0].evidenceBundle, bundle());
+    assert.ok(failureArtifacts[0].runId);
     assert.deepEqual(await providerFailureService.generate('session-1', {}), {
       artifactId: 'retry-artifact',
       proposalCount: 1,
@@ -633,6 +642,7 @@ describe('initial reflection generation orchestration', () => {
     });
     assert.equal(providerCalls, 2);
     assert.equal(materializeCalls, 1);
+    assert.equal(failureArtifacts.length, 1);
   });
 
   test('retains the selected provider metadata when persistence fails after generation', async () => {

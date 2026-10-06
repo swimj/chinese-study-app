@@ -119,7 +119,7 @@ queries, dashboard interpretation, and the complete label policy.
 
 ## Reflection diagnostics
 
-Reflection work has three complementary surfaces:
+Reflection work has four complementary surfaces:
 
 1. `reflection.*` stdout lifecycle events cover summary recording, generation
    request, provider start, and terminal success/failure. They contain bounded
@@ -136,6 +136,43 @@ Reflection work has three complementary surfaces:
    Reflections page. There is no current retention policy; rejected raw model
    output is intentionally retained for dogfood diagnosis and therefore needs
    a retention/secret policy before broader productization.
+
+4. Private JSON failure artifacts are written to
+   `<APP_DATA_DIR>/reflection-failures/` (`/data/reflection-failures/` when
+   hosted). They include run/client-request/session IDs, model and prompt
+   metadata, exact evidence, diagnostic issues, full rejected model text, and
+   error messages/stacks/causes for validation or internal failures. Transport
+   failures retain only their safe wrapper and allowlisted classification;
+   arbitrary upstream bodies, transport messages, and credentials are excluded.
+   Files are mode `0600` inside a `0700` directory, are not served through HTTP,
+   and are not backed up by SQLite/Litestream. Treat them as private learner
+   data, including answers and model-generated text.
+
+On every server startup, the artifact sink removes its own regular files whose
+capture timestamp in the filename is at least seven days old. Fresh files,
+unrecognized names, directories, and symlinks are left alone. There is no
+periodic timer: files can live longer than a week until the next restart.
+Capture happens before recording the failed run in SQLite, so a database
+logging failure does not discard the independent file. Capture/cleanup errors
+emit content-free `reflection.failure_artifact_write_failed` or
+`reflection.failure_artifact_cleanup_failed` warnings and never block startup
+or replace the generation failure.
+
+To investigate, list `/data/reflection-failures` through authenticated Fly SSH,
+then read the JSON file matching the run ID or client request ID from the run
+log. Each filename is `failure-<capture epoch milliseconds>-<uuid>.json`.
+These diagnostic files are distinct from successful learner reflection artifacts
+and grant no proposal authority. Existing SQLite diagnostics keep their prior
+retention and bounded output; the seven-day policy applies to the new files.
+
+The UI text “No structured issue detail was recorded.” means an older diagnostic
+has an empty `issues` array. Previously, JSON parsing discarded the actual parser
+exception; truncation and provider failures also deliberately supplied empty
+arrays. New failures record the parse exception, truncation finish reason, or
+safe transport classification. Schema/domain failures already included structured
+issues. Full output in the private artifact avoids the existing 4,000-character
+SQLite/UI excerpt hiding a parse error near the end. Historical failures cannot
+recover details that were never retained.
 
 A process interruption can leave a reflection run in `in_flight`. Most
 reflection internal failures have only safe lifecycle information; unexpected

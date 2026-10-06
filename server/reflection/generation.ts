@@ -1,3 +1,4 @@
+import type { ReflectionFailureArtifactSink } from './failure-artifacts.ts';
 import { buildPureCueReflectionBundle } from './pure-cue-evidence.ts';
 import { type PureCueReflectionBundleV1, normalizePureCueReflectionResult } from '../../src/domain/pure-cue-reflection.ts';
 import { PURE_CUE_REFLECTION_FLOW_VERSION, PURE_CUE_REFLECTION_PROMPT_VERSION } from '../../src/domain/reflection-contracts.ts';
@@ -166,6 +167,7 @@ export type InitialReflectionGenerationDependencies = {
   getContinuationRetrySource?: typeof getReflectionGenerationContinuationRetrySource;
   lifecycleLogger?: ReflectionLifecycleLogger;
   providerDiagnosticSink?: ReflectionProviderDiagnosticSink;
+  failureArtifactSink?: ReflectionFailureArtifactSink;
   getSpendCap?: () => ReflectionSpendCap;
 };
 
@@ -205,6 +207,7 @@ export function createInitialReflectionGenerationService(
   const buildDeferredBundle = dependencies.buildDeferredBundle ?? buildStagedDeferredSecondOpinionBundle;
   const materializeArtifact = dependencies.materializeArtifact
     ?? materializeReflectionArtifact;
+  const failureArtifactSink = dependencies.failureArtifactSink;
   const recordRun = dependencies.recordRun ?? recordReflectionGenerationRun;
   const startRun = dependencies.startRun ?? startReflectionGenerationRun;
   const createContinuation = dependencies.createContinuation
@@ -338,7 +341,7 @@ export function createInitialReflectionGenerationService(
       return { artifactId: artifact.artifact.artifactId, proposalCount: result.itemResults.reduce((n, item) => n + item.proposals.length, 0), status: artifact.created ? 'created' : 'existing' };
     } catch (error) {
       metadata = failureMetadataForConfig(error, metadata, config, PURE_CUE_REFLECTION_PROMPT_VERSION);
-      recordRun(runRecordInput({ ...common, completedAt: now(), metadata, state: 'failed', failureCode: failureCode(error), error }));
+      recordRun(runRecordInput({ ...common, completedAt: now(), metadata, state: 'failed', failureCode: failureCode(error), error }, failureArtifactSink));
       throw error;
     }
   }
@@ -388,6 +391,7 @@ export function createInitialReflectionGenerationService(
               now,
               startRun,
               recordRun,
+              failureArtifactSink,
               materializeArtifact,
               linkContinuationRun,
               preparePromotion,
@@ -449,6 +453,7 @@ export function createInitialReflectionGenerationService(
           now,
           startRun,
           recordRun,
+          failureArtifactSink,
           materializeArtifact,
           linkContinuationRun,
           preparePromotion,
@@ -488,6 +493,7 @@ export function createInitialReflectionGenerationService(
           now,
           startRun,
           recordRun,
+          failureArtifactSink,
           materializeArtifact,
           linkContinuationRun,
           preparePromotion,
@@ -539,6 +545,7 @@ async function runStagedContinuation(input: {
   now: () => string;
   startRun: NonNullable<InitialReflectionGenerationDependencies['startRun']>;
   recordRun: NonNullable<InitialReflectionGenerationDependencies['recordRun']>;
+  failureArtifactSink?: ReflectionFailureArtifactSink;
   materializeArtifact: NonNullable<InitialReflectionGenerationDependencies['materializeArtifact']>;
   linkContinuationRun: NonNullable<InitialReflectionGenerationDependencies['linkContinuationRun']>;
   preparePromotion: NonNullable<InitialReflectionGenerationDependencies['preparePromotion']>;
@@ -655,6 +662,7 @@ async function runDiagnosisStage(input: {
   now: () => string;
   startRun: NonNullable<InitialReflectionGenerationDependencies['startRun']>;
   recordRun: NonNullable<InitialReflectionGenerationDependencies['recordRun']>;
+  failureArtifactSink?: ReflectionFailureArtifactSink;
   linkContinuationRun: NonNullable<InitialReflectionGenerationDependencies['linkContinuationRun']>;
   lifecycleLogger: ReflectionLifecycleLogger | undefined;
 }): Promise<StagedRunSuccess<StagedReflectionDiagnosisResultV3>> {
@@ -681,6 +689,7 @@ async function runPromotionStage(input: {
   now: () => string;
   startRun: NonNullable<InitialReflectionGenerationDependencies['startRun']>;
   recordRun: NonNullable<InitialReflectionGenerationDependencies['recordRun']>;
+  failureArtifactSink?: ReflectionFailureArtifactSink;
   linkContinuationRun: NonNullable<InitialReflectionGenerationDependencies['linkContinuationRun']>;
   lifecycleLogger: ReflectionLifecycleLogger | undefined;
 }): Promise<StagedRunSuccess<PureCuePromotionResultV2Wire>> {
@@ -731,6 +740,7 @@ async function runProviderStage<T>(input: {
   now: () => string;
   startRun: NonNullable<InitialReflectionGenerationDependencies['startRun']>;
   recordRun: NonNullable<InitialReflectionGenerationDependencies['recordRun']>;
+  failureArtifactSink?: ReflectionFailureArtifactSink;
   linkContinuationRun: NonNullable<InitialReflectionGenerationDependencies['linkContinuationRun']>;
   lifecycleLogger: ReflectionLifecycleLogger | undefined;
   sourceProposalIds?: string[];
@@ -803,7 +813,7 @@ async function runProviderStage<T>(input: {
         clientRequestId,
         resultSchemaVersion: input.resultSchemaVersion,
         sourceProposalIds: input.sourceProposalIds,
-      }));
+      }, input.failureArtifactSink));
     } catch {
       // Provider failure remains primary when operational logging also fails.
     }
@@ -814,7 +824,7 @@ async function runProviderStage<T>(input: {
 function recordStagedRunOutcome(
   input: Pick<
     Parameters<typeof runStagedContinuation>[0],
-    'continuation' | 'now' | 'recordRun' | 'providerConfig'
+    'continuation' | 'now' | 'recordRun' | 'providerConfig' | 'failureArtifactSink'
   >,
   run: StagedRunSuccess<unknown>,
   state: 'succeeded' | 'failed',
@@ -836,7 +846,7 @@ function recordStagedRunOutcome(
     clientRequestId: run.clientRequestId,
     resultSchemaVersion: run.resultSchemaVersion,
     sourceProposalIds: run.sourceProposalIds,
-  }));
+  }, input.failureArtifactSink));
 }
 
 export function assembleStagedReflectionResult(
@@ -963,7 +973,14 @@ function runRecordInput(input: {
   clientRequestId: string;
   resultSchemaVersion?: string;
   sourceProposalIds?: string[];
-}): RecordReflectionGenerationRunInput {
+}, failureArtifactSink?: ReflectionFailureArtifactSink): RecordReflectionGenerationRunInput {
+  if (input.state === 'failed') {
+    try {
+      failureArtifactSink?.record(input);
+    } catch {
+      console.error(JSON.stringify({ event: 'reflection.failure_artifact_write_failed', runId: input.runId }));
+    }
+  }
   const estimate = estimateInitialReflectionRunCost({
     provider: input.metadata.provider,
     providerModel: input.metadata.providerModel,

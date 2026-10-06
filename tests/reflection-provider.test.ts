@@ -784,7 +784,11 @@ describe('production Luna reflection provider', () => {
     const exposed = `${error.message}\n${JSON.stringify(error)}`;
     assert.equal(exposed.includes('super-secret-value'), false);
     assert.equal(exposed.includes('raw-upstream-private-response'), false);
-    assert.equal(error.issueCount, 0);
+    assert.equal(error.issueCount, 1);
+    assert.equal(error.diagnostic?.issues[0]?.code, 'provider_http');
+    assert.match(error.diagnostic?.issues[0]?.message ?? '', /HTTP 500/);
+    assert.equal(JSON.stringify(error.diagnostic).includes('super-secret-value'), false);
+    assert.equal(error.cause, undefined);
     assert.ok(error.clientRequestId);
     assert.deepEqual(diagnostics, [{
       at: diagnostics[0]?.at,
@@ -803,6 +807,36 @@ describe('production Luna reflection provider', () => {
     const serializedDiagnostic = JSON.stringify(diagnostics);
     assert.equal(serializedDiagnostic.includes('super-secret-value'), false);
     assert.equal(serializedDiagnostic.includes('raw-upstream-private-response'), false);
+  });
+
+  test('a throwing diagnostic sink preserves the provider failure without logging private details', async () => {
+    const warnings: string[] = [];
+    const original = console.error;
+    console.error = (value: string) => warnings.push(value);
+    try {
+      const provider = createLunaReflectionProvider({
+        environment: { OPENAI_API_KEY: 'secret' },
+        systemPrompt: 'prompt', diagnosisSystemPrompt: 'prompt', promotionSystemPrompt: 'prompt',
+        fetchImplementation: capturingFetch({ error: 'private upstream response' }, [], 503),
+        diagnosticSink: { record() { throw new Error('private sink failure'); } },
+      });
+      for (const invoke of [
+        () => provider.generate(bundle),
+        () => provider.generateDiagnosis(diagnosisBundle),
+        () => provider.generatePromotion!(promotionBundle),
+      ]) {
+        const error = await expectProviderError(invoke(), 'upstream_failure');
+        assert.equal(error.diagnostic?.issues[0]?.code, 'provider_http');
+        assert.match(error.diagnostic?.issues[0]?.message ?? '', /HTTP 503/);
+      }
+      assert.deepEqual(warnings.map((warning) => JSON.parse(warning)), [
+        { event: 'reflection.provider_diagnostic_write_failed' },
+        { event: 'reflection.provider_diagnostic_write_failed' },
+        { event: 'reflection.provider_diagnostic_write_failed' },
+      ]);
+    } finally {
+      console.error = original;
+    }
   });
 
   test('records transport error categories and codes without messages or stacks', () => {
@@ -849,6 +883,8 @@ describe('production Luna reflection provider', () => {
 
     const error = await expectProviderError(provider.generate(bundle), 'output_truncated');
     assert.equal(JSON.stringify(error).includes('partial-response'), false);
+    assert.equal(error.diagnostic?.issues[0]?.code, 'output_truncated');
+    assert.match(error.diagnostic?.issues[0]?.message ?? '', /length/);
     assert.deepEqual(error.metadata, {
       provider: 'openai',
       modelConfig: 'gpt-5.6-luna-high',
@@ -873,7 +909,7 @@ describe('production Luna reflection provider', () => {
       code: LunaReflectionProviderError['code'];
       hasIssues: boolean;
     }> = [
-      { content: '{not-json', code: 'invalid_json', hasIssues: false },
+      { content: '{not-json', code: 'invalid_json', hasIssues: true },
       {
         content: JSON.stringify({
           schemaVersion: 'session_reflection_result.v7',
@@ -906,6 +942,11 @@ describe('production Luna reflection provider', () => {
       const error = await expectProviderError(provider.generate(bundle), testCase.code);
       assert.equal(error.issueCount > 0, testCase.hasIssues);
       assert.equal(JSON.stringify(error).includes(testCase.content), false);
+      if (testCase.code === 'invalid_json') {
+        assert.ok(error.cause instanceof SyntaxError);
+        assert.equal(error.diagnostic?.issues[0]?.message, error.cause.message);
+        assert.equal(error.diagnostic?.fullRejectedOutput, testCase.content);
+      }
       if (testCase.code === 'schema_invalid') {
         assert.match(error.clientRequestId ?? '', /^[0-9a-f-]{36}$/);
         assert.equal(error.diagnostic?.phase, 'structural_schema');
@@ -935,6 +976,8 @@ describe('production Luna reflection provider', () => {
     assert.equal(error.diagnostic?.rejectedOutput?.includes('sk-secret-value-123456789'), true);
     assert.ok((error.diagnostic?.rejectedOutput?.length ?? 0) <= 4_020);
     assert.match(error.diagnostic?.rejectedOutput ?? '', /truncated/);
+    assert.ok((error.diagnostic?.fullRejectedOutput?.length ?? 0) > 10_000);
+    assert.equal(JSON.stringify(error.diagnostic).includes('fullRejectedOutput'), false);
   });
 
   test('loads the fixed active production prompt when no prompt is injected', async () => {

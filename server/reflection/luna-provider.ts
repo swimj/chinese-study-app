@@ -49,6 +49,7 @@ import {
 import {
   describeReflectionProviderFailure,
   type ReflectionProviderDiagnosticSink,
+  type ReflectionProviderDiagnostic,
 } from './provider-diagnostics.ts';
 import {
   boundRejectedOutput,
@@ -115,8 +116,9 @@ export class LunaReflectionProviderError extends Error {
     clientRequestId: string | null = null,
     metadata: LunaReflectionRunMetadata | null = null,
     diagnostic: ReflectionGenerationDiagnostic | null = null,
+    cause?: unknown,
   ) {
-    super(failureMessages[code]);
+    super(failureMessages[code], cause === undefined ? undefined : { cause });
     this.name = 'LunaReflectionProviderError';
     this.code = code;
     this.issueCount = issueCount;
@@ -129,7 +131,7 @@ export class LunaReflectionProviderError extends Error {
         ? {
             schemaVersion: 'reflection_generation_diagnostic.v1',
             phase: 'provider_transport',
-            issues: [],
+            issues: [{ path: '$', code, message: failureMessages[code], valueType: null }],
             rejectedOutput: null,
           }
         : null),
@@ -378,31 +380,34 @@ export function createReflectionProvider(
           baseUrl,
         });
       } catch (error) {
-        options.diagnosticSink?.record(describeReflectionProviderFailure({
+        const transportFailure = describeReflectionProviderFailure({
           sessionId: 'session' in bundle ? bundle.session.sessionId : null,
           clientRequestId,
           error,
-        }));
+        });
+        recordTransportFailure(options.diagnosticSink, transportFailure);
         throw new LunaReflectionProviderError(
-          'upstream_failure', 0, clientRequestId, runMetadataWithoutProviderResult(config),
+          'upstream_failure', 1, clientRequestId, runMetadataWithoutProviderResult(config),
+          transportDiagnostic(transportFailure),
         );
       }
 
       const metadata = runMetadataFromProviderResult(providerResult, config);
       if (isOutputTruncationFinishReason(providerResult.finishReason)) {
         throw new LunaReflectionProviderError(
-          'output_truncated', 0, clientRequestId, metadata,
-          diagnostic('truncation', [], providerResult.rawText),
+          'output_truncated', 1, clientRequestId, metadata,
+          truncationDiagnostic(providerResult.rawText, providerResult.finishReason),
         );
       }
 
       let parsed: unknown;
       try {
         parsed = JSON.parse(providerResult.rawText);
-      } catch {
+      } catch (error) {
         throw new LunaReflectionProviderError(
-          'invalid_json', 0, clientRequestId, metadata,
-          diagnostic('json_parse', [], providerResult.rawText),
+          'invalid_json', 1, clientRequestId, metadata,
+          jsonParseDiagnostic(providerResult.rawText, error),
+          error,
         );
       }
 
@@ -475,31 +480,34 @@ export function createReflectionProvider(
         clientRequestId,
       }, { apiKey, baseUrl });
     } catch (error) {
-      options.diagnosticSink?.record(describeReflectionProviderFailure({
+      const transportFailure = describeReflectionProviderFailure({
         sessionId: 'session' in bundle ? bundle.session.sessionId : null,
         clientRequestId,
         error,
-      }));
+      });
+      recordTransportFailure(options.diagnosticSink, transportFailure);
       throw new LunaReflectionProviderError(
-        'upstream_failure', 0, clientRequestId, runMetadataWithoutProviderResult(effectiveConfig),
+        'upstream_failure', 1, clientRequestId, runMetadataWithoutProviderResult(effectiveConfig),
+        transportDiagnostic(transportFailure),
       );
     }
 
     const metadata = runMetadataFromProviderResult(providerResult, effectiveConfig);
     if (isOutputTruncationFinishReason(providerResult.finishReason)) {
       throw new LunaReflectionProviderError(
-        'output_truncated', 0, clientRequestId, metadata,
-        diagnostic('truncation', [], providerResult.rawText),
+        'output_truncated', 1, clientRequestId, metadata,
+        truncationDiagnostic(providerResult.rawText, providerResult.finishReason),
       );
     }
 
     let parsed: unknown;
     try {
       parsed = JSON.parse(providerResult.rawText);
-    } catch {
+    } catch (error) {
       throw new LunaReflectionProviderError(
-        'invalid_json', 0, clientRequestId, metadata,
-        diagnostic('json_parse', [], providerResult.rawText),
+        'invalid_json', 1, clientRequestId, metadata,
+        jsonParseDiagnostic(providerResult.rawText, error),
+        error,
       );
     }
     const schemaIssues = validateJsonSchemaIssues(
@@ -578,30 +586,33 @@ export function createReflectionProvider(
         clientRequestId,
       }, { apiKey, baseUrl });
     } catch (error) {
-      options.diagnosticSink?.record(describeReflectionProviderFailure({
+      const transportFailure = describeReflectionProviderFailure({
         sessionId: bundle.sourceSessionId,
         clientRequestId,
         error,
-      }));
+      });
+      recordTransportFailure(options.diagnosticSink, transportFailure);
       throw new LunaReflectionProviderError(
-        'upstream_failure', 0, clientRequestId, runMetadataWithoutProviderResult(effectiveConfig),
+        'upstream_failure', 1, clientRequestId, runMetadataWithoutProviderResult(effectiveConfig),
+        transportDiagnostic(transportFailure),
       );
     }
 
     const metadata = runMetadataFromProviderResult(providerResult, effectiveConfig);
     if (isOutputTruncationFinishReason(providerResult.finishReason)) {
       throw new LunaReflectionProviderError(
-        'output_truncated', 0, clientRequestId, metadata,
-        diagnostic('truncation', [], providerResult.rawText),
+        'output_truncated', 1, clientRequestId, metadata,
+        truncationDiagnostic(providerResult.rawText, providerResult.finishReason),
       );
     }
     let parsed: unknown;
     try {
       parsed = JSON.parse(providerResult.rawText);
-    } catch {
+    } catch (error) {
       throw new LunaReflectionProviderError(
-        'invalid_json', 0, clientRequestId, metadata,
-        diagnostic('json_parse', [], providerResult.rawText),
+        'invalid_json', 1, clientRequestId, metadata,
+        jsonParseDiagnostic(providerResult.rawText, error),
+        error,
       );
     }
     const schemaIssues = validateJsonSchemaIssues(parsed, pureCuePromotionResultV2WireSchema);
@@ -664,30 +675,33 @@ export function createReflectionProvider(
         clientRequestId,
       }, { apiKey, baseUrl });
     } catch (error) {
-      options.diagnosticSink?.record(describeReflectionProviderFailure({
+      const transportFailure = describeReflectionProviderFailure({
         sessionId: bundle.session.sessionId,
         clientRequestId,
         error,
-      }));
+      });
+      recordTransportFailure(options.diagnosticSink, transportFailure);
       throw new LunaReflectionProviderError(
-        'upstream_failure', 0, clientRequestId, runMetadataWithoutProviderResult(effectiveConfig),
+        'upstream_failure', 1, clientRequestId, runMetadataWithoutProviderResult(effectiveConfig),
+        transportDiagnostic(transportFailure),
       );
     }
 
     const metadata = runMetadataFromProviderResult(providerResult, effectiveConfig);
     if (isOutputTruncationFinishReason(providerResult.finishReason)) {
       throw new LunaReflectionProviderError(
-        'output_truncated', 0, clientRequestId, metadata,
-        diagnostic('truncation', [], providerResult.rawText),
+        'output_truncated', 1, clientRequestId, metadata,
+        truncationDiagnostic(providerResult.rawText, providerResult.finishReason),
       );
     }
     let parsed: unknown;
     try {
       parsed = JSON.parse(providerResult.rawText);
-    } catch {
+    } catch (error) {
       throw new LunaReflectionProviderError(
-        'invalid_json', 0, clientRequestId, metadata,
-        diagnostic('json_parse', [], providerResult.rawText),
+        'invalid_json', 1, clientRequestId, metadata,
+        jsonParseDiagnostic(providerResult.rawText, error),
+        error,
       );
     }
     const schemaIssues = validateJsonSchemaIssues(parsed, PURE_CUE_REFLECTION_RESULT_JSON_SCHEMA);
@@ -718,14 +732,57 @@ export function createReflectionProvider(
 function diagnostic(
   phase: ReflectionGenerationDiagnostic['phase'],
   issues: ReflectionGenerationDiagnostic['issues'],
-  output: string,
+  output: string | null,
 ): ReflectionGenerationDiagnostic {
-  return {
+  const result: ReflectionGenerationDiagnostic = {
     schemaVersion: 'reflection_generation_diagnostic.v1',
     phase,
     issues,
     rejectedOutput: boundRejectedOutput(output),
   };
+  Object.defineProperty(result, 'fullRejectedOutput', { value: output, enumerable: false });
+  return result;
+}
+
+function truncationDiagnostic(output: string, finishReason: string | null): ReflectionGenerationDiagnostic {
+  return diagnostic('truncation', [{
+    path: '$', code: 'output_truncated',
+    message: `Provider stopped before completing its response (finish reason: ${finishReason}).`,
+    valueType: 'string',
+  }], output);
+}
+
+function jsonParseDiagnostic(output: string, error: unknown): ReflectionGenerationDiagnostic {
+  return diagnostic('json_parse', [{
+    path: '$', code: 'invalid_json',
+    message: error instanceof Error ? error.message : 'JSON parsing failed.',
+    valueType: 'string',
+  }], output);
+}
+
+function recordTransportFailure(
+  sink: ReflectionProviderDiagnosticSink | undefined,
+  failure: ReflectionProviderDiagnostic,
+): void {
+  try {
+    sink?.record(failure);
+  } catch {
+    // Observability must not replace the original provider error or expose sink details.
+    console.error(JSON.stringify({ event: 'reflection.provider_diagnostic_write_failed' }));
+  }
+}
+
+function transportDiagnostic(failure: ReflectionProviderDiagnostic): ReflectionGenerationDiagnostic {
+  const details = [
+    failure.errorName,
+    failure.errorCode,
+    failure.http ? `HTTP ${failure.http.status}` : null,
+    failure.cause ? `cause: ${failure.cause.name}${failure.cause.code ? ` (${failure.cause.code})` : ''}` : null,
+    failure.http?.requestId ? `request: ${failure.http.requestId}` : null,
+  ].filter(Boolean).join('; ');
+  return diagnostic('provider_transport', [{
+    path: '$', code: `provider_${failure.failureKind}`, message: details, valueType: null,
+  }], null);
 }
 
 function runMetadataFromProviderResult(input: {
