@@ -67,6 +67,7 @@ import {
   recordAcceptedReviewAttemptBatch,
   recordPureCueAssessment,
   recordReviewSessionSummary,
+  getSessionRecoveryHighlights,
   recordStudyManagementAction,
   getSharedContentPublicationForContent,
   getHostedServiceControls,
@@ -1676,6 +1677,23 @@ export function createApp(options: CreateAppOptions = {}) {
         return;
       }
       res.status(500).json({ error: 'Failed to defer reflection help item' });
+    }
+  });
+
+  app.get('/api/study-sessions/:sessionId/recovery-highlights', (req, res) => {
+    if (req.params.sessionId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty session id' });
+      return;
+    }
+    try {
+      const highlights = getSessionRecoveryHighlights(req.params.sessionId);
+      if (highlights === null) {
+        res.status(404).json({ error: 'Completed session not found' });
+        return;
+      }
+      res.json({ highlights });
+    } catch {
+      res.status(500).json({ error: 'Failed to load recovery highlights' });
     }
   });
 

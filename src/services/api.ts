@@ -18,6 +18,7 @@ import type {
 } from '../domain/study-actions';
 import type { PureCueAssessmentEvent } from '../domain/pure-cues';
 import type { CharacterPresentation, SentenceCharacterPresentation } from '../domain/card-characters';
+import type { RecoveryHighlight } from '../domain/recovery-highlights';
 import type {
   OperationApplicationStatus,
   OperationInvocation,
@@ -55,6 +56,19 @@ import {
   readPendingClientTransportIncidents,
   removeUploadedClientTransportIncidents,
 } from './client-incident-diagnostics';
+
+export async function fetchSessionRecoveryHighlights(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<RecoveryHighlight[]> {
+  const response = await apiFetch(
+    `${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/recovery-highlights`,
+    { signal },
+  );
+  if (!response.ok) throw new Error('Could not load session recovery highlights.');
+  const result: { highlights: RecoveryHighlight[] } = await response.json();
+  return result.highlights;
+}
 
 export async function fetchMyWords(
   view: MyWordsView,

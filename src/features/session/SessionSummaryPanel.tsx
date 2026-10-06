@@ -1,3 +1,7 @@
+import { useEffect, useState } from 'react';
+import { DEFAULT_CHARACTER_PRESENTATION, formatCardCharacters, type CharacterPresentation } from '../../domain/card-characters';
+import type { RecoveryHighlight } from '../../domain/recovery-highlights';
+import { fetchSessionRecoveryHighlights } from '../../services/api';
 import type { SessionSummary } from './session-summary';
 import type { SessionFinalizationState } from './session-finalization';
 
@@ -5,10 +9,12 @@ export function SessionSummaryPanel({
   summary,
   finalization,
   onRetryReflection,
+  characterPresentation = DEFAULT_CHARACTER_PRESENTATION,
 }: {
   summary: SessionSummary;
   finalization: SessionFinalizationState;
   onRetryReflection: () => void;
+  characterPresentation?: CharacterPresentation;
 }) {
   const elapsedLabel = formatElapsedTime(summary.activeDurationMs);
 
@@ -18,6 +24,13 @@ export function SessionSummaryPanel({
         {summary.completionMode === 'drain' ? 'Session complete via drain mode' : 'Session complete'}
       </p>
       <h3>Session summary</h3>
+      {finalization.kind === 'finalized' ? (
+        <SessionRecoveryHighlights
+          key={summary.sessionId}
+          sessionId={summary.sessionId}
+          characterPresentation={characterPresentation}
+        />
+      ) : null}
       <p className="notes">
         {summary.completionMode === 'drain'
           ? 'You ended intake and finished the remaining open work.'
@@ -88,6 +101,43 @@ export function SessionSummaryPanel({
         onRetryReflection={onRetryReflection}
       />
     </div>
+  );
+}
+
+function SessionRecoveryHighlights({ sessionId, characterPresentation }: {
+  sessionId: string;
+  characterPresentation: CharacterPresentation;
+}) {
+  const [highlights, setHighlights] = useState<RecoveryHighlight[]>([]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchSessionRecoveryHighlights(sessionId, controller.signal).then((result) => {
+      if (!controller.signal.aborted) setHighlights(result);
+    }).catch(() => {
+      // Optional acknowledgment must never obstruct session completion or reflection.
+    });
+    return () => controller.abort();
+  }, [sessionId]);
+  return <RecoveryHighlightList highlights={highlights} characterPresentation={characterPresentation} />;
+}
+
+export function RecoveryHighlightList({ highlights, characterPresentation }: {
+  highlights: readonly RecoveryHighlight[];
+  characterPresentation: CharacterPresentation;
+}) {
+  if (highlights.length === 0) return null;
+  return (
+    <section className="summary-recovery" aria-label="Coming back more reliably">
+      <h4>Coming back more reliably</h4>
+      <ul className="summary-recovery-words">
+        {highlights.map((highlight) => (
+          <li key={highlight.id}>
+            <strong>{formatCardCharacters(highlight, characterPresentation)}</strong>
+            <span>{highlight.skill === 'recognition' ? 'Meaning' : 'Word recall'}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
