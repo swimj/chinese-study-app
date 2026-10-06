@@ -8,7 +8,7 @@
 .operator-ledger-controls input, .operator-ledger-controls select { min-height: 2.5rem; width: auto; max-width: 100%; }
 .operator-spend-notes { margin: 0.75rem 0; }
 .operator-spend-notes summary { cursor: pointer; }
-.operator-ledger-table { min-width: 45rem; table-layout: fixed; }
+.operator-ledger-table { min-width: 52rem; table-layout: fixed; }
 .operator-usage-table.operator-ledger-table th, .operator-usage-table.operator-ledger-table td { white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
 .operator-ledger-table caption { text-align: left; padding: 0.5rem; color: var(--text-muted); }
 .operator-ledger-secondary { display: block; color: var(--text-muted); margin-top: 0.2rem; }

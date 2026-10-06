@@ -173,14 +173,20 @@ ordinary learner requests do not reset exhausted budgets.
 The operator surface has Usage, Model invocations, Content quality, and Preparation
 failures tabs. The invocation endpoint uses the same operator allowlist and returns
 `{ rows }`: timestamp, provider/model identifier, invocation type, learner identity
-and display name, transport status, USD spend, and its reported/estimated/unknown
+and display name, `latencyMs`, status, USD spend, and its reported/estimated/unknown
 basis. Dates are validated; rows cover the full selected range without silent
 truncation. The frontend supports sorting, grouping by day/model/type/user, and
 count/spend aggregates. Unknown costs remain unknown and are counted separately.
 
 The ledger records actual production transport attempts from this release onward,
-including failed attempts; a completed transport does not imply validated or
-published model output. It stores no prompts, answers, or response bodies. OpenRouter
+including failed attempts. Latency covers the provider request through response
+receipt, excluding later domain validation and persistence. A timeout records
+`timed_out` with the configured request timeout as its latency. Other transport
+failures record `failed` with measured latency. Invalid JSON, malformed responses,
+truncation, or rejected schema/domain output record `invalid_response`; validation
+may update an already `completed` call to this status without changing its cost or
+latency. Completed still does not imply published model output. Historical calls
+and unfinished calls have null latency; elapsed times are never invented. It stores no prompts, answers, or response bodies. OpenRouter
 `usage.cost` takes precedence over token-price estimates. Other current transports
 supply token usage rather than per-request USD charges; estimates use pinned pricing
 snapshots. Existing usage-pulse spend snapshots retain their reflection/intake scope.

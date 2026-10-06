@@ -353,3 +353,14 @@ unattributed pending work pauses until fresh learner demand or an operator retry
 provides a real requester; retries are attributed to the requesting operator's
 learner identity. This release requires the ordinary offline schema-migration
 procedure and is not eligible for an application-only upgrade.
+
+
+Migration `0026_model_invocation_outcomes` preserves existing invocation rows and
+pricing while adding nullable `latency_ms` and the `timed_out` / `invalid_response`
+statuses. Legacy latency remains unknown. Transport timing uses a monotonic clock;
+timeouts store the configured request budget. An internal invocation ID is returned
+to provider validation; word preparation passes it through an optional observer to
+its domain normalizers. A late same-learner validation update changes only
+`completed` to `invalid_response`, retaining measured latency and spend. Unrelated
+persistence, lease, or publication failures do not mislabel a valid model response.
+This is an offline schema migration, with no provider calls or history reclassification.

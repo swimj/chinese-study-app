@@ -4,10 +4,10 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ModelInvocationRow } from '../src/domain/model-invocations.ts';
 import { ModelInvocationTable } from '../src/pages/ModelInvocationsPanel.tsx';
-import { formatInvocationSpend, groupInvocations, invocationDateRange, sortInvocations, summarizeInvocations } from '../src/pages/model-invocation-presentation.ts';
+import { formatInvocationLatency, formatInvocationSpend, groupInvocations, invocationDateRange, sortInvocations, summarizeInvocations } from '../src/pages/model-invocation-presentation.ts';
 
 function row(id: string, overrides: Partial<ModelInvocationRow> = {}): ModelInvocationRow {
-  return { id, timestamp: '2026-10-06T02:03:04.000Z', provider: 'openai', model: 'model-a', invocationType: 'reflection', learnerId: 'learner-1', userDisplayName: 'Avery', spendUsd: 0.1, spendSource: 'estimated', status: 'completed', ...overrides };
+  return { id, timestamp: '2026-10-06T02:03:04.000Z', provider: 'openai', model: 'model-a', invocationType: 'reflection', learnerId: 'learner-1', userDisplayName: 'Avery', spendUsd: 0.1, spendSource: 'estimated', status: 'completed', latencyMs: null, ...overrides };
 }
 
 test('group totals preserve unknown spend and reported zero-cost calls', () => {
@@ -40,7 +40,22 @@ test('model/type/user grouping retains distinct values and combines repeated cal
 
 test('call table identifies users, provider, timestamp, source and unavailable spend', () => {
   const html = renderToStaticMarkup(createElement(ModelInvocationTable, { rows: [row('a'), row('b', { spendUsd: null, spendSource: 'unknown', status: 'failed' }), row('c', { spendUsd: 0, spendSource: 'reported' })] }));
-  for (const text of ['Avery', 'learner-1', 'model-a', 'openai', '2026-10-06 02:03:04', 'estimated', 'reported', 'Unknown', 'failed', '$0.0000']) assert.ok(html.includes(text), text);
+  for (const text of ['Avery', 'learner-1', 'model-a', 'openai', '2026-10-06 02:03:04', 'estimated', 'reported', 'Unknown', 'Failed', '$0.0000']) assert.ok(html.includes(text), text);
   assert.equal(formatInvocationSpend(0.0000001), '<$0.0001');
   assert.equal(formatInvocationSpend(null), 'Unknown');
+});
+
+
+test('latency sorts numerically with missing historical values last and displays timeout and validation status', () => {
+  const rows = [row('old'), row('timeout', { latencyMs: 180000, status: 'timed_out' }),
+    row('invalid', { latencyMs: 1234, status: 'invalid_response' })];
+  assert.deepEqual(sortInvocations(rows, 'latencyMs', 'asc').map((item) => item.id), ['invalid', 'timeout', 'old']);
+  assert.deepEqual(sortInvocations(rows, 'latencyMs', 'desc').map((item) => item.id), ['timeout', 'invalid', 'old']);
+  const markup = renderToStaticMarkup(createElement(ModelInvocationTable, { rows }));
+  assert.match(markup, /Timed out/);
+  assert.match(markup, /Invalid response/);
+  assert.match(markup, /180 s/);
+  assert.match(markup, /1.234 s/);
+  assert.equal(formatInvocationLatency(0), '0 ms');
+  assert.equal(formatInvocationLatency(null), '—');
 });

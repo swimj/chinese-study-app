@@ -1,3 +1,4 @@
+import { invalidateInvocation } from '../llm/invocation-ledger.ts';
 import { readFile } from 'node:fs/promises';
 import { createOpenAiCompatibleAdapter } from '../llm/openai-compatible.ts';
 import { fetchImplementationForProvider } from '../llm/proxy-fetch.ts';
@@ -57,15 +58,20 @@ export function createSessionDebriefProvider(options: { environment?: NodeJS.Pro
       const estimate = estimateDebriefCost(usage);
       const metadata: DebriefRunMetadata = { responseId: raw.responseId, finishReason: raw.finishReason, usage,
         pricing: estimate === null ? null : DEBRIEF_PRICING, estimatedCostUsd: estimate };
-      if (isOutputTruncationFinishReason(raw.finishReason)) throw new SessionDebriefProviderError('output_truncated', 'Debrief generation was cut short. You can retry.', metadata);
-      let parsed: unknown;
-      try { parsed = JSON.parse(raw.rawText); }
-      catch { throw new SessionDebriefProviderError('invalid_json', 'Debrief generation returned an unreadable result. You can retry.', metadata); }
       try {
-        if (validateJsonSchema(parsed, DEBRIEF_RESULT_SCHEMA).length > 0) throw new Error('schema');
-        validateSessionDebriefResult(parsed, input);
-      } catch { throw new SessionDebriefProviderError('invalid_result', 'Debrief generation returned an invalid result. You can retry.', metadata); }
-      return { result: parsed, metadata };
+        if (isOutputTruncationFinishReason(raw.finishReason)) throw new SessionDebriefProviderError('output_truncated', 'Debrief generation was cut short. You can retry.', metadata);
+        let parsed: unknown;
+        try { parsed = JSON.parse(raw.rawText); }
+        catch { throw new SessionDebriefProviderError('invalid_json', 'Debrief generation returned an unreadable result. You can retry.', metadata); }
+        try {
+          if (validateJsonSchema(parsed, DEBRIEF_RESULT_SCHEMA).length > 0) throw new Error('schema');
+          validateSessionDebriefResult(parsed, input);
+        } catch { throw new SessionDebriefProviderError('invalid_result', 'Debrief generation returned an invalid result. You can retry.', metadata); }
+        return { result: parsed, metadata };
+      } catch (error) {
+        invalidateInvocation(raw.invocationId);
+        throw error;
+      }
     },
   };
 }

@@ -41,6 +41,8 @@ export type ProviderRunConfig = {
  * provider services must validate and sanitize it before returning.
  */
 export type ProviderRawResult = {
+  /** Ledger handle for marking downstream validation failures; absent for standalone/fake adapters. */
+  invocationId?: string | null;
   provider: string;
   model: string;
   responseId: string | null;
@@ -95,5 +97,19 @@ export class ProviderHttpError extends Error {
     this.responseBody = responseBody;
     this.requestId = responseHeaders.get('x-request-id');
     this.processingMs = responseHeaders.get('openai-processing-ms');
+  }
+}
+
+export class ProviderTimeoutError extends Error {
+  constructor(readonly provider: string, readonly timeoutMs: number) {
+    super(`${provider} request timed out after ${timeoutMs} ms`);
+    this.name = 'TimeoutError';
+  }
+}
+
+export class ProviderInvalidResponseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProviderInvalidResponseError';
   }
 }

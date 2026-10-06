@@ -1,3 +1,4 @@
+import { invalidateInvocation } from '../llm/invocation-ledger.ts';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { dietIntakePlacementResultSchema, validateDietIntakePlacementResult, type DietIntakePlacementRequest, type DietIntakePlacementResult } from '../../src/domain/diet-intake-placement.ts';
@@ -33,12 +34,17 @@ export function createDietIntakePlacementProvider(options: { fetchImplementation
     let providerResult;
     try { providerResult = await adapter.run({ model: DIET_INTAKE_PLACEMENT_MODEL_CONFIG.providerModel, reasoningEffort: DIET_INTAKE_PLACEMENT_MODEL_CONFIG.reasoningEffort, systemPrompt: options.systemPrompt ?? await loadPrompt(), userPrompt: JSON.stringify(request), outputSchemaName: 'diet_intake_placement_result', outputSchema: dietIntakePlacementResultSchema, maxOutputTokens: DIET_INTAKE_PLACEMENT_MODEL_CONFIG.maxOutputTokens, temperature: null, timeoutMs: DIET_INTAKE_PLACEMENT_MODEL_CONFIG.timeoutMs, cachePrompt: true, clientRequestId }, { apiKey, baseUrl: configuredValue(environment[DIET_INTAKE_PLACEMENT_MODEL_CONFIG.baseUrlEnvironmentVariable]) }); } catch { throw new DietIntakePlacementProviderError('upstream_failure', emptyMetadata); }
     const metadata: DietIntakePlacementRunMetadata = { ...emptyMetadata, providerModel: providerResult.model, responseId: providerResult.responseId, finishReason: providerResult.finishReason, usage: providerResult.usage };
-    if (isOutputTruncationFinishReason(providerResult.finishReason)) throw new DietIntakePlacementProviderError('output_truncated', metadata);
-    let parsed: unknown; try { parsed = JSON.parse(providerResult.rawText); } catch { throw new DietIntakePlacementProviderError('invalid_json', metadata); }
-    if (validateJsonSchema(parsed, dietIntakePlacementResultSchema).length > 0) throw new DietIntakePlacementProviderError('schema_invalid', metadata);
-    const result = parsed as DietIntakePlacementResult;
-    if (validateDietIntakePlacementResult(result).length > 0) throw new DietIntakePlacementProviderError('domain_contract_invalid', metadata);
-    return { result: { ...result, rationale: result.rationale.trim() }, metadata };
+    try {
+      if (isOutputTruncationFinishReason(providerResult.finishReason)) throw new DietIntakePlacementProviderError('output_truncated', metadata);
+      let parsed: unknown; try { parsed = JSON.parse(providerResult.rawText); } catch { throw new DietIntakePlacementProviderError('invalid_json', metadata); }
+      if (validateJsonSchema(parsed, dietIntakePlacementResultSchema).length > 0) throw new DietIntakePlacementProviderError('schema_invalid', metadata);
+      const result = parsed as DietIntakePlacementResult;
+      if (validateDietIntakePlacementResult(result).length > 0) throw new DietIntakePlacementProviderError('domain_contract_invalid', metadata);
+      return { result: { ...result, rationale: result.rationale.trim() }, metadata };
+    } catch (error) {
+      invalidateInvocation(providerResult.invocationId);
+      throw error;
+    }
   } };
 }
 function loadPrompt(): Promise<string> { promptPromise ??= readFile(promptUrl, 'utf8'); return promptPromise; }

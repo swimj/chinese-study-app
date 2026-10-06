@@ -1,3 +1,4 @@
+import { invalidateInvocation } from '../llm/invocation-ledger.ts';
 import { readFile } from 'node:fs/promises';
 import type { WordBootstrapInput } from '../../src/domain/word-content/application.ts';
 import type { WordContentDocument } from '../../src/domain/word-content/types.ts';
@@ -12,12 +13,20 @@ export const WORD_INTRODUCTION_MODEL = 'gpt-5.6-luna';
 const TIMEOUT_MS = 180_000;
 const MAX_OUTPUT_TOKENS = 16_000;
 
+export type WordGenerationOptions = { onInvocation?: (id: string | null | undefined) => void };
+
+/** Keep validation accounting separate from publication and storage failures. */
+export function validateWordProviderOutput<T>(invocationId: string | null | undefined, validate: () => T): T {
+  try { return validate(); }
+  catch (error) { invalidateInvocation(invocationId); throw error; }
+}
+
 export type WordIntroductionProvider = {
   readonly model: string;
   isConfigured(): boolean;
-  generateBootstrap(input: WordBootstrapInput): Promise<unknown>;
-  generateTeaching(content: WordContentDocument): Promise<unknown>;
-  generateReview(content: WordContentDocument): Promise<unknown>;
+  generateBootstrap(input: WordBootstrapInput, options?: WordGenerationOptions): Promise<unknown>;
+  generateTeaching(content: WordContentDocument, options?: WordGenerationOptions): Promise<unknown>;
+  generateReview(content: WordContentDocument, options?: WordGenerationOptions): Promise<unknown>;
 };
 
 const string: JsonSchema = { type: 'string' };
@@ -98,6 +107,7 @@ export function createWordIntroductionProvider(options: {
   });
   async function generate(
     stage: 'bootstrap' | 'teaching' | 'review', input: WordBootstrapInput | WordContentDocument,
+    generationOptions: WordGenerationOptions = {},
   ): Promise<unknown> {
     const apiKey = environment.OPENAI_API_KEY?.trim();
     if (!apiKey) throw new Error('Introduction generation is not configured.');
@@ -118,23 +128,26 @@ export function createWordIntroductionProvider(options: {
       apiKey,
       baseUrl: environment.OPENAI_BASE_URL?.trim() || null,
     });
+    generationOptions.onInvocation?.(result.invocationId);
     options.onRawText?.(stage, result.rawText);
-    if (isOutputTruncationFinishReason(result.finishReason)) {
-      throw new Error('Introduction generation output was truncated.');
-    }
-    let parsed: unknown;
-    try { parsed = JSON.parse(result.rawText); }
-    catch { throw new Error('Introduction generation returned invalid JSON.'); }
-    if (validateJsonSchema(parsed, schema).length > 0) {
-      throw new Error('Introduction generation returned an invalid structure.');
-    }
-    return parsed;
+    return validateWordProviderOutput(result.invocationId, () => {
+      if (isOutputTruncationFinishReason(result.finishReason)) {
+        throw new Error('Introduction generation output was truncated.');
+      }
+      let parsed: unknown;
+      try { parsed = JSON.parse(result.rawText); }
+      catch { throw new Error('Introduction generation returned invalid JSON.'); }
+      if (validateJsonSchema(parsed, schema).length > 0) {
+        throw new Error('Introduction generation returned an invalid structure.');
+      }
+      return parsed;
+    });
   }
   return {
     model: WORD_INTRODUCTION_MODEL,
     isConfigured: () => Boolean(environment.OPENAI_API_KEY?.trim()),
-    generateBootstrap: (input) => generate('bootstrap', input),
-    generateTeaching: (content) => generate('teaching', content),
-    generateReview: (content) => generate('review', content),
+    generateBootstrap: (input, generationOptions) => generate('bootstrap', input, generationOptions),
+    generateTeaching: (content, generationOptions) => generate('teaching', content, generationOptions),
+    generateReview: (content, generationOptions) => generate('review', content, generationOptions),
   };
 }

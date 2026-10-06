@@ -4,7 +4,7 @@ import { claimWordReviewPreparation, finishWordReviewPreparation, releaseWordRev
 import { requireLearnerId } from '../db/learner-context.ts';
 import { runHostedProviderWork } from '../hosted-runtime-controls.ts';
 import { normalizeReviewExercises } from './review-authoring.ts';
-import { createWordIntroductionProvider, type WordIntroductionProvider } from './provider.ts';
+import { createWordIntroductionProvider, validateWordProviderOutput, type WordIntroductionProvider } from './provider.ts';
 
 export type WordReviewStore = {
   library: typeof getWordIntroductionLibrary;
@@ -46,9 +46,10 @@ export function createWordReviewPreparationService(options: {
         try {
           if (!provider.isConfigured()) throw new Error('Review generation is not configured.');
           await providerWork(async () => {
-            const output = await provider.generateReview(content);
+            let invocationId: string | null | undefined;
+            const output = await provider.generateReview(content, { onInvocation: (id) => { invocationId = id; } });
             const batchId = randomUUID();
-            const exercises = normalizeReviewExercises(output, content, (localId) => `word-review:${batchId}:${localId}`);
+            const exercises = validateWordProviderOutput(invocationId, () => normalizeReviewExercises(output, content, (localId) => `word-review:${batchId}:${localId}`));
             store.finish(wordId, token, exercises, provider.model);
           });
         } finally { store.release(wordId, token); }

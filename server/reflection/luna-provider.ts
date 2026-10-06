@@ -1,3 +1,4 @@
+import { invalidateInvocation } from '../llm/invocation-ledger.ts';
 import {
   projectPureCueReflectionInput,
   type PureCueReflectionBundleV1,
@@ -393,54 +394,59 @@ export function createReflectionProvider(
       }
 
       const metadata = runMetadataFromProviderResult(providerResult, config);
-      if (isOutputTruncationFinishReason(providerResult.finishReason)) {
-        throw new LunaReflectionProviderError(
-          'output_truncated', 1, clientRequestId, metadata,
-          truncationDiagnostic(providerResult.rawText, providerResult.finishReason),
-        );
-      }
-
-      let parsed: unknown;
       try {
-        parsed = JSON.parse(providerResult.rawText);
+        if (isOutputTruncationFinishReason(providerResult.finishReason)) {
+          throw new LunaReflectionProviderError(
+            'output_truncated', 1, clientRequestId, metadata,
+            truncationDiagnostic(providerResult.rawText, providerResult.finishReason),
+          );
+        }
+
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(providerResult.rawText);
+        } catch (error) {
+          throw new LunaReflectionProviderError(
+            'invalid_json', 1, clientRequestId, metadata,
+            jsonParseDiagnostic(providerResult.rawText, error),
+            error,
+          );
+        }
+
+        const compatibleWire = stripLegacySourceAttemptIdsFromReflectionWire(parsed);
+        const schemaIssues = validateJsonSchemaIssues(compatibleWire, sessionReflectionResultV7WireSchema);
+        if (schemaIssues.length > 0) {
+          throw new LunaReflectionProviderError(
+            'schema_invalid', schemaIssues.length, clientRequestId, metadata,
+            diagnostic('structural_schema', schemaIssuesToDiagnostics(schemaIssues), providerResult.rawText),
+          );
+        }
+
+        const normalized = normalizeSessionReflectionResultV7(
+          {
+            ...compatibleWire as SessionReflectionResultV7Wire,
+            itemResults: canonicalizeProviderItemIds(
+              (compatibleWire as SessionReflectionResultV7Wire).itemResults, bundle.items,
+            ),
+          },
+          bundle,
+        );
+        const contractErrors = validateSessionReflectionResultV7(normalized, bundle);
+        if (contractErrors.length > 0) {
+          throw new LunaReflectionProviderError(
+            'domain_contract_invalid', contractErrors.length, clientRequestId, metadata,
+            diagnostic('domain_validation', textIssuesToDiagnostics(contractErrors), providerResult.rawText),
+          );
+        }
+
+        return {
+          result: normalized,
+          metadata,
+        };
       } catch (error) {
-        throw new LunaReflectionProviderError(
-          'invalid_json', 1, clientRequestId, metadata,
-          jsonParseDiagnostic(providerResult.rawText, error),
-          error,
-        );
+        invalidateInvocation(providerResult.invocationId);
+        throw error;
       }
-
-      const compatibleWire = stripLegacySourceAttemptIdsFromReflectionWire(parsed);
-      const schemaIssues = validateJsonSchemaIssues(compatibleWire, sessionReflectionResultV7WireSchema);
-      if (schemaIssues.length > 0) {
-        throw new LunaReflectionProviderError(
-          'schema_invalid', schemaIssues.length, clientRequestId, metadata,
-          diagnostic('structural_schema', schemaIssuesToDiagnostics(schemaIssues), providerResult.rawText),
-        );
-      }
-
-      const normalized = normalizeSessionReflectionResultV7(
-        {
-          ...compatibleWire as SessionReflectionResultV7Wire,
-          itemResults: canonicalizeProviderItemIds(
-            (compatibleWire as SessionReflectionResultV7Wire).itemResults, bundle.items,
-          ),
-        },
-        bundle,
-      );
-      const contractErrors = validateSessionReflectionResultV7(normalized, bundle);
-      if (contractErrors.length > 0) {
-        throw new LunaReflectionProviderError(
-          'domain_contract_invalid', contractErrors.length, clientRequestId, metadata,
-          diagnostic('domain_validation', textIssuesToDiagnostics(contractErrors), providerResult.rawText),
-        );
-      }
-
-      return {
-        result: normalized,
-        metadata,
-      };
   }
 
   async function generateDiagnosis(
@@ -493,60 +499,65 @@ export function createReflectionProvider(
     }
 
     const metadata = runMetadataFromProviderResult(providerResult, effectiveConfig);
-    if (isOutputTruncationFinishReason(providerResult.finishReason)) {
-      throw new LunaReflectionProviderError(
-        'output_truncated', 1, clientRequestId, metadata,
-        truncationDiagnostic(providerResult.rawText, providerResult.finishReason),
-      );
-    }
-
-    let parsed: unknown;
     try {
-      parsed = JSON.parse(providerResult.rawText);
+      if (isOutputTruncationFinishReason(providerResult.finishReason)) {
+        throw new LunaReflectionProviderError(
+          'output_truncated', 1, clientRequestId, metadata,
+          truncationDiagnostic(providerResult.rawText, providerResult.finishReason),
+        );
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(providerResult.rawText);
+      } catch (error) {
+        throw new LunaReflectionProviderError(
+          'invalid_json', 1, clientRequestId, metadata,
+          jsonParseDiagnostic(providerResult.rawText, error),
+          error,
+        );
+      }
+      const schemaIssues = validateJsonSchemaIssues(
+        parsed,
+        stagedReflectionDiagnosisResultV3WireSchema,
+      );
+      if (schemaIssues.length > 0) {
+        throw new LunaReflectionProviderError(
+          'schema_invalid', schemaIssues.length, clientRequestId, metadata,
+          diagnostic('structural_schema', schemaIssuesToDiagnostics(schemaIssues), providerResult.rawText),
+        );
+      }
+      const wireResult = {
+        ...parsed as StagedReflectionDiagnosisResultV3Wire,
+        itemResults: canonicalizeProviderItemIds(
+          (parsed as StagedReflectionDiagnosisResultV3Wire).itemResults, bundle.items,
+        ),
+      };
+      const unknownItemErrors = wireResult.itemResults
+        .filter((result) => !bundle.items.some((item) => item.itemId === result.itemId))
+        .map((result) => `Unknown staged reflection item: ${result.itemId}`);
+      if (unknownItemErrors.length > 0) {
+        throw new LunaReflectionProviderError(
+          'domain_contract_invalid', unknownItemErrors.length, clientRequestId, metadata,
+          diagnostic('domain_validation', textIssuesToDiagnostics(unknownItemErrors), providerResult.rawText),
+        );
+      }
+      const normalized = normalizeStagedReflectionDiagnosisResultV3(
+        wireResult,
+        bundle,
+      );
+      const contractErrors = validateStagedReflectionDiagnosisResultV3(normalized, bundle);
+      if (contractErrors.length > 0) {
+        throw new LunaReflectionProviderError(
+          'domain_contract_invalid', contractErrors.length, clientRequestId, metadata,
+          diagnostic('domain_validation', textIssuesToDiagnostics(contractErrors), providerResult.rawText),
+        );
+      }
+      return { result: normalized, metadata };
     } catch (error) {
-      throw new LunaReflectionProviderError(
-        'invalid_json', 1, clientRequestId, metadata,
-        jsonParseDiagnostic(providerResult.rawText, error),
-        error,
-      );
+      invalidateInvocation(providerResult.invocationId);
+      throw error;
     }
-    const schemaIssues = validateJsonSchemaIssues(
-      parsed,
-      stagedReflectionDiagnosisResultV3WireSchema,
-    );
-    if (schemaIssues.length > 0) {
-      throw new LunaReflectionProviderError(
-        'schema_invalid', schemaIssues.length, clientRequestId, metadata,
-        diagnostic('structural_schema', schemaIssuesToDiagnostics(schemaIssues), providerResult.rawText),
-      );
-    }
-    const wireResult = {
-      ...parsed as StagedReflectionDiagnosisResultV3Wire,
-      itemResults: canonicalizeProviderItemIds(
-        (parsed as StagedReflectionDiagnosisResultV3Wire).itemResults, bundle.items,
-      ),
-    };
-    const unknownItemErrors = wireResult.itemResults
-      .filter((result) => !bundle.items.some((item) => item.itemId === result.itemId))
-      .map((result) => `Unknown staged reflection item: ${result.itemId}`);
-    if (unknownItemErrors.length > 0) {
-      throw new LunaReflectionProviderError(
-        'domain_contract_invalid', unknownItemErrors.length, clientRequestId, metadata,
-        diagnostic('domain_validation', textIssuesToDiagnostics(unknownItemErrors), providerResult.rawText),
-      );
-    }
-    const normalized = normalizeStagedReflectionDiagnosisResultV3(
-      wireResult,
-      bundle,
-    );
-    const contractErrors = validateStagedReflectionDiagnosisResultV3(normalized, bundle);
-    if (contractErrors.length > 0) {
-      throw new LunaReflectionProviderError(
-        'domain_contract_invalid', contractErrors.length, clientRequestId, metadata,
-        diagnostic('domain_validation', textIssuesToDiagnostics(contractErrors), providerResult.rawText),
-      );
-    }
-    return { result: normalized, metadata };
   }
 
   async function generatePromotion(
@@ -599,43 +610,48 @@ export function createReflectionProvider(
     }
 
     const metadata = runMetadataFromProviderResult(providerResult, effectiveConfig);
-    if (isOutputTruncationFinishReason(providerResult.finishReason)) {
-      throw new LunaReflectionProviderError(
-        'output_truncated', 1, clientRequestId, metadata,
-        truncationDiagnostic(providerResult.rawText, providerResult.finishReason),
-      );
-    }
-    let parsed: unknown;
     try {
-      parsed = JSON.parse(providerResult.rawText);
+      if (isOutputTruncationFinishReason(providerResult.finishReason)) {
+        throw new LunaReflectionProviderError(
+          'output_truncated', 1, clientRequestId, metadata,
+          truncationDiagnostic(providerResult.rawText, providerResult.finishReason),
+        );
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(providerResult.rawText);
+      } catch (error) {
+        throw new LunaReflectionProviderError(
+          'invalid_json', 1, clientRequestId, metadata,
+          jsonParseDiagnostic(providerResult.rawText, error),
+          error,
+        );
+      }
+      const schemaIssues = validateJsonSchemaIssues(parsed, pureCuePromotionResultV2WireSchema);
+      if (schemaIssues.length > 0) {
+        throw new LunaReflectionProviderError(
+          'schema_invalid', schemaIssues.length, clientRequestId, metadata,
+          diagnostic('structural_schema', schemaIssuesToDiagnostics(schemaIssues), providerResult.rawText),
+        );
+      }
+      const wireResult = {
+        ...parsed as PureCuePromotionResultV2Wire,
+        itemResults: canonicalizeProviderItemIds(
+          (parsed as PureCuePromotionResultV2Wire).itemResults, bundle.items,
+        ),
+      };
+      const contractErrors = validatePureCuePromotionResultV2(wireResult, bundle);
+      if (contractErrors.length > 0) {
+        throw new LunaReflectionProviderError(
+          'domain_contract_invalid', contractErrors.length, clientRequestId, metadata,
+          diagnostic('domain_validation', textIssuesToDiagnostics(contractErrors), providerResult.rawText),
+        );
+      }
+      return { result: wireResult, metadata };
     } catch (error) {
-      throw new LunaReflectionProviderError(
-        'invalid_json', 1, clientRequestId, metadata,
-        jsonParseDiagnostic(providerResult.rawText, error),
-        error,
-      );
+      invalidateInvocation(providerResult.invocationId);
+      throw error;
     }
-    const schemaIssues = validateJsonSchemaIssues(parsed, pureCuePromotionResultV2WireSchema);
-    if (schemaIssues.length > 0) {
-      throw new LunaReflectionProviderError(
-        'schema_invalid', schemaIssues.length, clientRequestId, metadata,
-        diagnostic('structural_schema', schemaIssuesToDiagnostics(schemaIssues), providerResult.rawText),
-      );
-    }
-    const wireResult = {
-      ...parsed as PureCuePromotionResultV2Wire,
-      itemResults: canonicalizeProviderItemIds(
-        (parsed as PureCuePromotionResultV2Wire).itemResults, bundle.items,
-      ),
-    };
-    const contractErrors = validatePureCuePromotionResultV2(wireResult, bundle);
-    if (contractErrors.length > 0) {
-      throw new LunaReflectionProviderError(
-        'domain_contract_invalid', contractErrors.length, clientRequestId, metadata,
-        diagnostic('domain_validation', textIssuesToDiagnostics(contractErrors), providerResult.rawText),
-      );
-    }
-    return { result: wireResult, metadata };
   }
 
   async function generatePureCueReflection(
@@ -688,37 +704,42 @@ export function createReflectionProvider(
     }
 
     const metadata = runMetadataFromProviderResult(providerResult, effectiveConfig);
-    if (isOutputTruncationFinishReason(providerResult.finishReason)) {
-      throw new LunaReflectionProviderError(
-        'output_truncated', 1, clientRequestId, metadata,
-        truncationDiagnostic(providerResult.rawText, providerResult.finishReason),
-      );
-    }
-    let parsed: unknown;
     try {
-      parsed = JSON.parse(providerResult.rawText);
+      if (isOutputTruncationFinishReason(providerResult.finishReason)) {
+        throw new LunaReflectionProviderError(
+          'output_truncated', 1, clientRequestId, metadata,
+          truncationDiagnostic(providerResult.rawText, providerResult.finishReason),
+        );
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(providerResult.rawText);
+      } catch (error) {
+        throw new LunaReflectionProviderError(
+          'invalid_json', 1, clientRequestId, metadata,
+          jsonParseDiagnostic(providerResult.rawText, error),
+          error,
+        );
+      }
+      const schemaIssues = validateJsonSchemaIssues(parsed, PURE_CUE_REFLECTION_RESULT_JSON_SCHEMA);
+      if (schemaIssues.length > 0) {
+        throw new LunaReflectionProviderError(
+          'schema_invalid', schemaIssues.length, clientRequestId, metadata,
+          diagnostic('structural_schema', schemaIssuesToDiagnostics(schemaIssues), providerResult.rawText),
+        );
+      }
+      const contractErrors = validatePureCueReflectionResultV1Wire(parsed, bundle);
+      if (contractErrors.length > 0) {
+        throw new LunaReflectionProviderError(
+          'domain_contract_invalid', contractErrors.length, clientRequestId, metadata,
+          diagnostic('domain_validation', textIssuesToDiagnostics(contractErrors), providerResult.rawText),
+        );
+      }
+      return { result: parsed as PureCueReflectionResultV1Wire, metadata };
     } catch (error) {
-      throw new LunaReflectionProviderError(
-        'invalid_json', 1, clientRequestId, metadata,
-        jsonParseDiagnostic(providerResult.rawText, error),
-        error,
-      );
+      invalidateInvocation(providerResult.invocationId);
+      throw error;
     }
-    const schemaIssues = validateJsonSchemaIssues(parsed, PURE_CUE_REFLECTION_RESULT_JSON_SCHEMA);
-    if (schemaIssues.length > 0) {
-      throw new LunaReflectionProviderError(
-        'schema_invalid', schemaIssues.length, clientRequestId, metadata,
-        diagnostic('structural_schema', schemaIssuesToDiagnostics(schemaIssues), providerResult.rawText),
-      );
-    }
-    const contractErrors = validatePureCueReflectionResultV1Wire(parsed, bundle);
-    if (contractErrors.length > 0) {
-      throw new LunaReflectionProviderError(
-        'domain_contract_invalid', contractErrors.length, clientRequestId, metadata,
-        diagnostic('domain_validation', textIssuesToDiagnostics(contractErrors), providerResult.rawText),
-      );
-    }
-    return { result: parsed as PureCueReflectionResultV1Wire, metadata };
   }
 
   return {

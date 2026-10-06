@@ -1,3 +1,4 @@
+import { ProviderTimeoutError, ProviderInvalidResponseError } from './types.ts';
 import { beginInvocation, recordInvocationResponse, concludeInvocation } from './invocation-ledger.ts';
 import type {
   JsonValue,
@@ -128,6 +129,8 @@ export function createOpenAiCompatibleAdapter(
     ): Promise<ProviderRawResult> {
       const invocation = { provider: options.id, model: request.model, invocationType: request.outputSchemaName };
       const invocationId = beginInvocation(invocation);
+      const startedAt = performance.now();
+      let transportLatencyMs: number | null = null;
       try {
         const rawResponse = await postJson(
           options.id,
@@ -145,12 +148,20 @@ export function createOpenAiCompatibleAdapter(
           ),
           request.timeoutMs,
         );
+        transportLatencyMs = performance.now() - startedAt;
         recordInvocationResponse(invocationId, invocation, rawResponse);
-        const result = parseResponse(options.id, options.structuredOutputMode, rawResponse);
-        concludeInvocation(invocationId, 'completed');
-        return result;
+        let result: ProviderRawResult;
+        try {
+          result = parseResponse(options.id, options.structuredOutputMode, rawResponse);
+        } catch (error) {
+          throw new ProviderInvalidResponseError(error instanceof Error ? error.message : 'Invalid provider response');
+        }
+        concludeInvocation(invocationId, 'completed', transportLatencyMs);
+        return { ...result, invocationId };
       } catch (error) {
-        concludeInvocation(invocationId, 'failed');
+        const status = error instanceof ProviderTimeoutError ? 'timed_out'
+          : error instanceof ProviderInvalidResponseError ? 'invalid_response' : 'failed';
+        concludeInvocation(invocationId, status, error instanceof ProviderTimeoutError ? request.timeoutMs : transportLatencyMs ?? performance.now() - startedAt);
         throw error;
       }
     },
