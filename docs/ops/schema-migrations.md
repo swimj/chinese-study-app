@@ -251,3 +251,13 @@ fields; only newly applied compensations increment the daily counter.
 This is a schema-changing release and requires the offline migration procedure
 above, not an application-only upgrade. Windows crossing rollout intentionally
 mix earlier word-only summaries with new combined exercise totals.
+
+## Session debrief (0023)
+
+`0023_session_debrief` creates empty learner-private debrief jobs and attempts,
+with composite ownership references to completed summaries. Existing summaries,
+study history and reflection records are unchanged. There is no historical
+inventory inference or provider backfill. Use the stopped-writer offline
+migration procedure; an application-only upgrade is insufficient. Queued jobs
+resume after restart; expired running attempts become failed and require an
+explicit learner retry to avoid replaying an unknown upstream outcome.

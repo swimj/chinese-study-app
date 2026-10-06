@@ -1,3 +1,4 @@
+import type { SessionDebrief, SessionDebriefInventoryItem } from '../domain/session-debrief';
 import type {
   PriorityWord,
   ReviewFailureRateDay,
@@ -243,6 +244,7 @@ type BackendStatus = {
   unstudiedAdmissionSource: UnstudiedAdmissionSource;
   characterPresentation: CharacterPresentation;
   sentenceCharacterPresentation: SentenceCharacterPresentation;
+  debriefInterests: string;
   learningCoverageDate: string;
   /** True when deck-based diet admission is active (Mandarin profile with a manifest). */
   dietDecksActive: boolean;
@@ -814,12 +816,14 @@ export async function recordReviewSessionSummary({
   completedReviewActionCount,
   failedReviewActionCount,
   activeDurationMs,
+  debriefInventory,
 }: {
   sessionId: string;
   completedAt: string;
   completedReviewActionCount: number;
   failedReviewActionCount: number;
   activeDurationMs: number;
+  debriefInventory?: SessionDebriefInventoryItem[];
 }): Promise<void> {
   const response = await apiFetch(`${API_BASE}/api/review-session-summaries`, {
     method: 'POST',
@@ -832,6 +836,7 @@ export async function recordReviewSessionSummary({
       completedReviewActionCount,
       failedReviewActionCount,
       activeDurationMs,
+      ...(debriefInventory === undefined ? {} : { debriefInventory }),
     }),
   });
 
@@ -1368,4 +1373,28 @@ export async function fetchContentQualityStats(
   const response = await apiFetch(`${API_BASE}/api/operator/content-quality?${params}`);
   if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not load content quality'));
   return response.json();
+}
+
+export async function updateDebriefInterests(debriefInterests: string): Promise<{ debriefInterests: string }> {
+  const response = await apiFetch(`${API_BASE}/api/learner-settings/debrief-interests`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ debriefInterests }),
+  });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not save interests'));
+  return response.json();
+}
+export async function fetchLatestSessionDebrief(signal?: AbortSignal): Promise<SessionDebrief | null> {
+  const response = await apiFetch(`${API_BASE}/api/session-debriefs/latest`, { signal });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not load session debrief'));
+  return (await response.json() as { debrief: SessionDebrief | null }).debrief;
+}
+export async function fetchSessionDebrief(sessionId: string, signal?: AbortSignal): Promise<SessionDebrief | null> {
+  const response = await apiFetch(`${API_BASE}/api/session-debriefs/${encodeURIComponent(sessionId)}`, { signal });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not load session debrief'));
+  return (await response.json() as { debrief: SessionDebrief }).debrief;
+}
+export async function retrySessionDebrief(sessionId: string, signal?: AbortSignal): Promise<SessionDebrief> {
+  const response = await apiFetch(`${API_BASE}/api/session-debriefs/${encodeURIComponent(sessionId)}/retry`, { method: 'POST', signal });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not retry session debrief'));
+  return (await response.json() as { debrief: SessionDebrief }).debrief;
 }

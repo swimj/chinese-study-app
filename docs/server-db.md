@@ -26,6 +26,7 @@ Persistence lives under [`server/db/`](../server/db/). The stable import path fo
 | [`shared-content-bootstrap.ts`](../server/db/shared-content-bootstrap.ts) | Strict checksummed shared-only hosted Mandarin import and provenance validation |
 | [`hosted-operations.ts`](../server/db/hosted-operations.ts) | Persisted service controls, current service banner, attributable learner disablement, diagnostics, sentinels, and restore validation |
 | [`word-introductions.ts`](../server/db/word-introductions.ts) | Immutable shared bootstrap/teaching, publication leases, explicit shared reads, and private exact-package opening/completion |
+| [`session-debrief.ts`](../server/db/session-debrief.ts) | Learner-private exact inventories and interests snapshots, debrief queue/results, attempt cost and latency records, fenced completion and explicit retry |
 | [`preparation-work.ts`](../server/db/preparation-work.ts) | Shared word/stage demand, three-attempt budget, restart recovery, failure diagnostics and audited operator retry; migration 0018 |
 | [`usage-pulse.ts`](../server/db/usage-pulse.ts) | Content-free daily cohort usage snapshots and live today pulse for the operator page |
 | [`learner-context.ts`](../server/db/learner-context.ts) | Required learner context for private persistence operations |
@@ -312,3 +313,20 @@ process, polls every five seconds, and permits two concurrent stages. Existing
 introduction/review leases remain publication authority; the work journal does
 not replace them. Maintenance/provider controls and shutdown draining apply.
 No migration regenerates the corpus or invalidates compatible authored content.
+
+## Session debrief persistence
+
+Migration `0023_session_debrief` adds `learner_session_debrief_jobs` and
+`learner_session_debrief_attempts`, both with required learner identities and
+composite same-owner foreign keys. Jobs reference completed summary rows;
+learning-only sessions need no accepted review-attempt record. All learner
+operations use explicit current-learner predicates. Operational worker routing
+reads only due identities before restoring each learner context.
+
+The optional summary inventory freezes exact encountered word/pinyin rows and
+the learner's `debrief_interests` setting. Missing interests read as empty text.
+Ready results and concluded attempts are immutable. Queue recovery, leases,
+token fencing, provider controls and draining shutdown live in
+`server/session-debrief/worker.ts`; provider transport/validation and the
+approved byte-identical v6 prompt live beside it. This flow does not use
+reflection artifacts, evidence, runs, proposals, or model-selection policy.

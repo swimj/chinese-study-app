@@ -827,3 +827,29 @@ review fallback remain available.
 
 See [content quality](content-quality.md) for supported target shapes and
 interpretation; the shared wire types live in `src/domain/content-quality.ts`.
+
+## Session debrief
+
+`POST /api/review-session-summaries` optionally accepts `debriefInventory`, an
+array of `{word,pinyin}` encounter snapshots (at most 1000 rows; nonempty word
+text and a pinyin string, which may be empty). The first Mandarin inventory and interests snapshot enqueue atomically
+with the completed summary; response remains 204. Missing inventory creates no
+job. Empty inventory is ready without a provider call. The existing 100kb JSON
+request-body limit also applies. Duplicate finalization preserves the first
+snapshot. No historical job is inferred.
+
+| Method | Path | Response |
+| --- | --- | --- |
+| GET | `/api/session-debriefs/latest` | `{debrief}` for the latest completed debrief record, or null |
+| GET | `/api/session-debriefs/:sessionId` | `{debrief}`, or 404 |
+| POST | `/api/session-debriefs/:sessionId/retry` | `{debrief}` requeued from failed; 404 for absent/private records, 409 for other states |
+| PATCH | `/api/learner-settings/debrief-interests` | Accept/return `{debriefInterests:string}`; at most 1000 characters, empty allowed |
+
+`GET /api/status` includes `debriefInterests` with an empty default. All routes
+use server-derived identity. A debrief DTO contains `sessionId`, `completedAt`
+(UTC), `exerciseCount` (inventory rows), `status` (`queued`, `running`, `ready`,
+`failed`), `notes` (null until ready, including an empty ready array), `error`
+(nullable learner-safe failure text), and `attemptCount`. Notes contain `text`,
+exact input `refs`, and nullable `followUp`. No provider call is awaited by the
+summary or retry endpoint. Interrupted attempts require explicit retry; queued
+jobs resume after restart. See [the contract](../SPECS/session-debrief.md).

@@ -27,3 +27,5 @@ export * from './word-introductions.ts';
 export * from './review-content.ts';
 
 export * from './content-quality.ts';
+
+export * from './session-debrief.ts';

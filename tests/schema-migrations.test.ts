@@ -237,3 +237,21 @@ test('exercise compensation migration starts empty and preserves existing summar
     assert.deepEqual(migrateDatabase(db), []);
   } finally { db.close(); }
 });
+
+test('session debrief migration preserves valued completion rows and starts with no historical jobs', () => {
+  const { db } = copy('session-debrief-forward', true);
+  try {
+    const earlier = schemaMigrations.filter((migration) => migration.id < 'app_schema:0023_session_debrief');
+    migrateDatabase(db, earlier);
+    db.prepare(`INSERT INTO learners (learner_id, display_name, created_at) VALUES ('test','Preserve me','2026-10-06')`).run();
+    db.prepare(`INSERT INTO learner_owned_review_session_summaries (learner_id,session_id,completed_at,day_key,completed_count,failed_count,active_duration_ms)
+      VALUES ('test','historical','2026-10-05T00:00:00.000Z','2026-10-05',12,2,3456)`).run();
+    const old = db.prepare('SELECT * FROM learner_owned_review_session_summaries').all();
+    assert.deepEqual(migrateDatabase(db), ['app_schema:0023_session_debrief']);
+    assert.deepEqual(db.prepare('SELECT * FROM learner_owned_review_session_summaries').all(), old);
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM learner_session_debrief_jobs').get()?.count, 0);
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM learner_session_debrief_attempts').get()?.count, 0);
+    assert.deepEqual(migrateDatabase(db), []);
+    assertSchemaCurrent(db);
+  } finally { db.close(); }
+});
