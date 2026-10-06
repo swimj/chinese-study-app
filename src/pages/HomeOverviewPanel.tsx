@@ -456,6 +456,7 @@ export function SessionSettingsPanel({
           <label htmlFor="debrief-interests">Interests <span className="notes">(optional)</span></label>
           <p className="notes" id="debrief-interests-help">Topics you’re curious about, to help connect the words after a session.</p>
           <textarea id="debrief-interests" aria-describedby="debrief-interests-help" maxLength={1000} rows={3}
+            placeholder="professional tennis, 汉服, wukong video game, ..."
             value={interestsDraft} disabled={limitSaving} onChange={(event) => setInterestsDraft(event.target.value)} />
         </div> : null}
         {limitError ? <p className="form-error" role="alert">{limitError}</p> : null}
