@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { test } from 'node:test';
+import { SessionRecoveryHighlights } from '../src/features/session/SessionSummaryPanel.tsx';
 import { SessionDebriefCard } from '../src/features/session/SessionDebriefPanel.tsx';
 import { resolveSessionDebriefKey } from '../src/features/session/session-debrief-keyboard.ts';
 import type { SessionDebriefLoadState } from '../src/features/session/session-debrief-loader.ts';
@@ -13,7 +14,7 @@ const state: SessionDebriefLoadState = { loading: false, retrying: false, error:
     notes: [{ text: 'First paragraph\nwith preserved breaks.', refs: ['w1'], followUp: 'Never show this chat invitation' }, { text: 'Second paragraph', refs: ['w2'], followUp: null }] } };
 function render(value = state, index = 0) {
   const noop = () => {};
-  return renderToStaticMarkup(createElement(SessionDebriefCard, { state: value, index, busy: false, onNext: noop, onBack: noop,
+  return renderToStaticMarkup(createElement(SessionDebriefCard, { sessionId: 'session', state: value, index, busy: false, onNext: noop, onBack: noop,
     onDone: noop, onRetry: noop, onReload: noop, onGuide: noop }));
 }
 test('one connection per card with only exact text and progress; final card has Done', () => {
@@ -52,4 +53,27 @@ test('optional interests are blank by default, remembered verbatim, bounded, and
   assert.match(settings('mandarin'), /<textarea[^>]*maxLength="1000"[^>]*><\/textarea>/);
   assert.match(settings('mandarin', '  A topic\nAnother  '), /  A topic\nAnother  /);
   assert.doesNotMatch(settings('french', 'A topic'), /debrief-interests|A topic/);
+});
+
+test('recovery highlights stay independent of generated connections and retain session identity and script', () => {
+  const noop = () => {};
+  const states: SessionDebriefLoadState[] = [
+    state,
+    { ...state, loading: true, debrief: null },
+    { ...state, debrief: { ...state.debrief!, status: 'running', notes: null } },
+    { ...state, debrief: { ...state.debrief!, status: 'failed', notes: null } },
+    { ...state, debrief: { ...state.debrief!, notes: [] } },
+    { ...state, error: 'Offline' },
+  ];
+  for (const value of states) {
+    const card = SessionDebriefCard({
+      sessionId: 'saved-session', characterPresentation: 'traditional', state: value, index: 0,
+      busy: false, onNext: noop, onBack: noop, onDone: noop, onRetry: noop, onReload: noop, onGuide: noop,
+    });
+    const recovery = card.props.children[0].props.children[3];
+    assert.equal(recovery.type, SessionRecoveryHighlights);
+    assert.equal(recovery.key, 'saved-session');
+    assert.equal(recovery.props.sessionId, 'saved-session');
+    assert.equal(recovery.props.characterPresentation, 'traditional');
+  }
 });

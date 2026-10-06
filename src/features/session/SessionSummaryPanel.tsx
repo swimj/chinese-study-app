@@ -104,7 +104,7 @@ export function SessionSummaryPanel({
   );
 }
 
-function SessionRecoveryHighlights({ sessionId, characterPresentation }: {
+export function SessionRecoveryHighlights({ sessionId, characterPresentation }: {
   sessionId: string;
   characterPresentation: CharacterPresentation;
 }) {

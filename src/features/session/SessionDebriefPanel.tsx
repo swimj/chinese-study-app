@@ -5,11 +5,13 @@ import type { SessionDebriefLoadState } from './session-debrief-loader';
 import { resolveSessionDebriefKey } from './session-debrief-keyboard';
 import { isEditableKeyboardTarget } from './session-keyboard';
 import { useSessionDialogFocus } from './session-dialog-focus';
-import { SessionReflectionStatus } from './SessionSummaryPanel';
+import { SessionRecoveryHighlights, SessionReflectionStatus } from './SessionSummaryPanel';
+import { DEFAULT_CHARACTER_PRESENTATION, type CharacterPresentation } from '../../domain/card-characters';
 import type { SessionFinalizationState } from './session-finalization';
 
-export function SessionDebriefPanel({ sessionId, completedAt, exerciseCount, onDone, finalization, onRetryReflection }: {
+export function SessionDebriefPanel({ sessionId, completedAt, exerciseCount, onDone, finalization, onRetryReflection, characterPresentation = DEFAULT_CHARACTER_PRESENTATION }: {
   sessionId: string; completedAt?: string; exerciseCount?: number; onDone: () => void;
+  characterPresentation?: CharacterPresentation;
   finalization?: SessionFinalizationState; onRetryReflection?: () => void;
 }) {
   const load = useSessionDebrief(sessionId);
@@ -55,7 +57,7 @@ export function SessionDebriefPanel({ sessionId, completedAt, exerciseCount, onD
     <div className={`session-interaction-surface${guideOpen ? ' is-paused' : ''}`}>
       <SessionDesk ref={desk} enabled mistakeKey={null} remaining={0} again={0} answered={0} elapsed=""
         summaryDate={date ? new Date(date).toLocaleDateString() : ''}>
-        <SessionDebriefCard state={load} index={index} date={date} exerciseCount={load.debrief?.exerciseCount ?? exerciseCount}
+        <SessionDebriefCard sessionId={sessionId} characterPresentation={characterPresentation} state={load} index={index} date={date} exerciseCount={load.debrief?.exerciseCount ?? exerciseCount}
           busy={busy} scrollRef={scroll} onNext={() => void move('next')} onBack={() => void move('back')}
           onDone={onDone} onRetry={load.retry} onReload={load.reload} onGuide={() => setGuideOpen(true)}>
           {finalization && onRetryReflection ? <details className="debrief-reflection-details">
@@ -69,7 +71,8 @@ export function SessionDebriefPanel({ sessionId, completedAt, exerciseCount, onD
   </div>;
 }
 
-export function SessionDebriefCard({ state, index, date, exerciseCount, busy, scrollRef, onNext, onBack, onDone, onRetry, onReload, onGuide, children }: {
+export function SessionDebriefCard({ sessionId, characterPresentation = DEFAULT_CHARACTER_PRESENTATION, state, index, date, exerciseCount, busy, scrollRef, onNext, onBack, onDone, onRetry, onReload, onGuide, children }: {
+  sessionId: string; characterPresentation?: CharacterPresentation;
   state: SessionDebriefLoadState; index: number; date?: string; exerciseCount?: number; busy: boolean;
   scrollRef?: RefObject<HTMLDivElement>; onNext: () => void; onBack: () => void; onDone: () => void;
   onRetry: () => void; onReload: () => void; onGuide: () => void; children?: ReactNode;
@@ -83,6 +86,7 @@ export function SessionDebriefCard({ state, index, date, exerciseCount, busy, sc
       <h2 className="debrief-title">Session complete</h2>
       <p className="debrief-facts">{exerciseCount !== undefined ? `${exerciseCount} exercise${exerciseCount === 1 ? '' : 's'}` : ''}
         {date ? ` · ${new Date(date).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}` : ''}</p>
+      <SessionRecoveryHighlights key={sessionId} sessionId={sessionId} characterPresentation={characterPresentation} />
       {error ? <div className="debrief-waiting" role="alert">
         <p>The connections couldn’t load.</p><p className="notes">{error}</p>
         <button type="button" className="secondary-button" onClick={onReload}>Try loading again</button>
