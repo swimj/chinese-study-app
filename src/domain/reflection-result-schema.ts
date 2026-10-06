@@ -14,6 +14,7 @@ export type JsonSchema = {
   items?: JsonSchema;
   anyOf?: JsonSchema[];
   minItems?: number;
+  maxItems?: number;
 };
 
 const stringSchema: JsonSchema = { type: 'string' };

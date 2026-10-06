@@ -24,7 +24,7 @@ export type SessionDebriefProvider = {
 };
 export const DEBRIEF_RESULT_SCHEMA: JsonSchema = {
   type: 'object', additionalProperties: false, required: ['notes'], properties: {
-    notes: { type: 'array', items: {
+    notes: { type: 'array', maxItems: 10, items: {
       type: 'object', additionalProperties: false, required: ['text', 'refs', 'followUp'], properties: {
         text: { type: 'string' }, refs: { type: 'array', items: { type: 'string' } }, followUp: { type: ['string', 'null'] },
       },
@@ -41,7 +41,7 @@ export function createSessionDebriefProvider(options: { environment?: NodeJS.Pro
     async generate(input, token) {
       const apiKey = environment.OPENAI_API_KEY?.trim();
       if (!apiKey) throw new SessionDebriefProviderError('missing_config', 'Debrief generation is not configured.');
-      const systemPrompt = await readFile(new URL('./prompts/debrief-v6.txt', import.meta.url), 'utf8');
+      const systemPrompt = await readFile(new URL('./prompts/debrief-v7.txt', import.meta.url), 'utf8');
       const { schemaVersion: _schemaVersion, ...modelInput } = input;
       let raw;
       try {
