@@ -1,4 +1,6 @@
 import { createFileReflectionFailureArtifactSink } from './reflection/failure-artifacts.ts';
+import { installModelInvocationLedger } from './llm/invocation-ledger.ts';
+import { listModelInvocations, ModelInvocationInputError } from './db/model-invocations.ts';
 import { getDebriefInterests, setDebriefInterests, getLatestSessionDebrief, getSessionDebrief, retrySessionDebrief, SessionDebriefNotFoundError, SessionDebriefRetryConflictError } from './db/session-debrief.ts';
 import { SessionDebriefInputError, validateDebriefInventory } from '../src/domain/session-debrief.ts';
 import { startSessionDebriefRuntime } from './session-debrief/worker.ts';
@@ -211,6 +213,7 @@ function parseMyWordsLapsesQuery(value: unknown): boolean | 'invalid' {
 }
 
 export function createApp(options: CreateAppOptions = {}) {
+  installModelInvocationLedger();
   const app = express();
   const frontendDistPath = resolveFrontendDistPath(options.frontendDistPath);
   const reflectionLifecycleLogger = options.reflectionLifecycleLogger
@@ -403,6 +406,19 @@ export function createApp(options: CreateAppOptions = {}) {
       }
     },
   );
+
+  app.get('/api/operator/model-invocations', createOperatorAllowlistMiddleware(), (req, res) => {
+    try {
+      res.json(listModelInvocations({ from: req.query.from, to: req.query.to }));
+    } catch (error) {
+      if (error instanceof ModelInvocationInputError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      console.error('Failed to load model invocations', error);
+      res.status(500).json({ error: 'Failed to load model invocations' });
+    }
+  });
 
   app.get('/api/operator/word-preparation/failures', createOperatorAllowlistMiddleware(), (_req, res) => {
     res.json({ failures: listWordPreparationFailures() });
@@ -2498,6 +2514,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         readOperationalMetrics: () => readServiceOperationalMetrics(),
       });
   const usagePulseScheduler = startUsagePulseScheduler();
+  installModelInvocationLedger();
   const wordPreparation = startWordPreparationRuntime();
   const sessionDebriefs = startSessionDebriefRuntime();
   startServer({

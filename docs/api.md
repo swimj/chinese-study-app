@@ -150,11 +150,12 @@ that saved field. The second accepts
 that saved field. Unsupported or missing values return `400`. Neither route
 accepts a client-selected learner; writes use the authenticated learner context.
 
-## Operator usage pulse
+## Operator view
 
 | Method | Path | Handler domain |
 | --- | --- | --- |
 | GET | `/api/operator/usage-pulse` | Operational cohort pulse |
+| GET | `/api/operator/model-invocations?from=YYYY-MM-DD&to=YYYY-MM-DD` | User-attributed model calls in an inclusive UTC date range |
 | GET | `/api/operator/word-preparation/failures` | Shared preparation failures and attempt history |
 | POST | `/api/operator/word-preparation/:workId/retry` | Retry paused work; empty `{}` body and operator actor audit |
 
@@ -168,6 +169,22 @@ and sparse scenario counts). The configured hosted smoke learner
 allowlist fails closed with `403 OPERATOR_FORBIDDEN`. The same allowlist protects
 preparation diagnostics and retries. Retry preserves successful earlier stages;
 ordinary learner requests do not reset exhausted budgets.
+
+The operator surface has Usage, Model invocations, Content quality, and Preparation
+failures tabs. The invocation endpoint uses the same operator allowlist and returns
+`{ rows }`: timestamp, provider/model identifier, invocation type, learner identity
+and display name, transport status, USD spend, and its reported/estimated/unknown
+basis. Dates are validated; rows cover the full selected range without silent
+truncation. The frontend supports sorting, grouping by day/model/type/user, and
+count/spend aggregates. Unknown costs remain unknown and are counted separately.
+
+The ledger records actual production transport attempts from this release onward,
+including failed attempts; a completed transport does not imply validated or
+published model output. It stores no prompts, answers, or response bodies. OpenRouter
+`usage.cost` takes precedence over token-price estimates. Other current transports
+supply token usage rather than per-request USD charges; estimates use pinned pricing
+snapshots. Existing usage-pulse spend snapshots retain their reflection/intake scope.
+No historical invocation rows or missing user attribution are fabricated.
 
 ## Words and meanings
 

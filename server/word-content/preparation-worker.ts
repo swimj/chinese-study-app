@@ -1,3 +1,4 @@
+import { runWithLearnerId } from '../db/learner-context.ts';
 import { randomUUID } from 'node:crypto';
 import {
   listDueWordPreparation, beginWordPreparationAttempt, markWordPreparationReady,
@@ -44,6 +45,10 @@ export function createWordPreparationWorker(options: {
         markWordPreparationReady(work.workId, isoNow());
         return true;
       }
+      if (work.requestedByLearnerId === null) {
+        pauseUnavailableWordPreparation(work.workId, 'Preparation needs a requesting learner.', isoNow());
+        return true;
+      }
       const source = preparation.source(work.wordId);
       if (work.stage !== 'bootstrap' && source === null) {
         pauseUnavailableWordPreparation(work.workId, 'Prepared bootstrap source is unavailable or withdrawn; operator disposition required.', isoNow());
@@ -64,7 +69,7 @@ export function createWordPreparationWorker(options: {
         try {
           if (!beginWordPreparationAttempt(work.workId, token, work.stage === 'bootstrap' ? null : source?.id ?? null, startedAt, expiresAt)) return false;
           try {
-            await preparation.generate(work.wordId, work.stage, token);
+            await runWithLearnerId(work.requestedByLearnerId!, () => preparation.generate(work.wordId, work.stage, token));
             markWordPreparationReady(work.workId, isoNow(), token);
           } catch (error) {
             failWordPreparationAttempt(work.workId, token,

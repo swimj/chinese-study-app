@@ -1,3 +1,4 @@
+import { requireLearnerId, runWithLearnerId } from '../server/db/learner-context.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -9,8 +10,8 @@ import { migrateDatabase } from '../server/db/migrations.ts';
 import { setDb } from '../server/db/connection.ts';
 import { wordContentFixtures } from './fixtures/word-content.ts';
 import {
-  enqueueWordPreparation, getWordPreparationWork, listWordPreparationFailures,
-  retryWordPreparation, beginWordPreparationAttempt, recoverExpiredWordPreparation,
+  enqueueWordPreparation as enqueue, getWordPreparationWork, listWordPreparationFailures,
+  retryWordPreparation as retry, beginWordPreparationAttempt, recoverExpiredWordPreparation,
   failWordPreparationAttempt, markWordPreparationReady,
 } from '../server/db/preparation-work.ts';
 import { getSharedWordIntroductionPreparation, claimSharedWordIntroductionStage } from '../server/db/word-introductions.ts';
@@ -19,6 +20,8 @@ import { createSharedWordPreparation } from '../server/word-content/shared-prepa
 import { createWordPreparationWorker } from '../server/word-content/preparation-worker.ts';
 import type { WordIntroductionProvider } from '../server/word-content/provider.ts';
 
+const enqueueWordPreparation: typeof enqueue = (...args) => runWithLearnerId('test-learner', () => enqueue(...args));
+const retryWordPreparation: typeof retry = (...args) => runWithLearnerId('test-learner', () => retry(...args));
 const fixture = wordContentFixtures[0]!;
 let dataDir: string;
 let sqlite: DatabaseSync;
@@ -29,6 +32,7 @@ before(() => {
   sqlite.function('current_learner_id', () => { throw new Error('Background work must not consult private context'); });
   migrateDatabase(sqlite);
   setDb(sqlite);
+  sqlite.prepare(`INSERT INTO learners (learner_id, display_name, created_at) VALUES ('test-learner', 'Test', '2026-01-01')`).run();
 });
 after(() => { sqlite.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
 function word(id: string) {
@@ -246,5 +250,41 @@ test('provider controls do not spend attempts; outages back off the worker and r
   clock += 60_001;
   await worker.drain();
   assert.equal(getWordPreparationWork('outage', 'bootstrap')?.attemptCount, 1);
+  await worker.stop();
+});
+
+
+test('shared preparation preserves the requesting learner across background execution', async () => {
+  word('attributed');
+  const demand = enqueueWordPreparation('attributed', 'bootstrap');
+  assert.equal(demand.requestedByLearnerId, 'test-learner');
+  sqlite.prepare(`INSERT INTO learners (learner_id, display_name, created_at) VALUES ('second-learner', 'Second', '2026-01-01')`).run();
+  runWithLearnerId('second-learner', () => enqueue('attributed', 'bootstrap'));
+  assert.equal(getWordPreparationWork('attributed', 'bootstrap')?.requestedByLearnerId, 'test-learner');
+  let observed: string | undefined;
+  const provider = fake();
+  const worker = createWordPreparationWorker({ controls, providerWork, provider: fake({
+    generateBootstrap: async (input) => { observed = requireLearnerId(); return provider.generateBootstrap(input); },
+  }) });
+  await worker.drain();
+  assert.equal(observed, 'test-learner');
+  await worker.stop();
+});
+
+test('unattributed historical demand waits for a real requester', async () => {
+  word('unattributed');
+  const demand = enqueueWordPreparation('unattributed', 'bootstrap');
+  sqlite.prepare('UPDATE word_preparation_work SET requested_by_learner_id = NULL WHERE work_id = ?').run(demand.workId);
+  let calls = 0;
+  const provider = fake();
+  const worker = createWordPreparationWorker({ controls, providerWork, provider: fake({
+    generateBootstrap: async (input) => { calls++; return provider.generateBootstrap(input); },
+  }) });
+  await worker.drain();
+  assert.equal(calls, 0);
+  assert.equal(getWordPreparationWork('unattributed', 'bootstrap')?.status, 'paused');
+  enqueueWordPreparation('unattributed', 'bootstrap');
+  await worker.drain();
+  assert.equal(calls, 1);
   await worker.stop();
 });

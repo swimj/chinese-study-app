@@ -4,17 +4,12 @@ import { fetchImplementationForProvider } from '../llm/proxy-fetch.ts';
 import type { FetchImplementation } from '../llm/http.ts';
 import { validateJsonSchema } from '../llm/json-schema-validator.ts';
 import { isOutputTruncationFinishReason, type NormalizedTokenUsage } from '../llm/types.ts';
-import { estimateRunCostFromSnapshot, type RunPricingSnapshot } from '../llm/run-pricing.ts';
+import { DEBRIEF_PRICING, estimateRunCostFromSnapshot, type RunPricingSnapshot } from '../llm/run-pricing.ts';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
 import { validateSessionDebriefResult, type SessionDebriefInput, type SessionDebriefResult } from '../../src/domain/session-debrief.ts';
 
 export const DEBRIEF_TIMEOUT_MS = 180_000;
-export const DEBRIEF_PRICING: RunPricingSnapshot = {
-  id: 'openai-gpt-6.1-sol-standard-short-context-2026-10-06', pricingAsOf: '2026-10-06',
-  provider: 'openai', providerModel: 'gpt-6.1-sol', serviceTier: 'standard', contextBand: 'short', currency: 'USD',
-  inputPerMillionUsd: 2, cachedInputPerMillionUsd: 0.1, cacheWriteInputPerMillionUsd: 2.5, outputPerMillionUsd: 10,
-};
-// Official Standard short-context rates: https://developers.openai.com/api/docs/pricing
+export { DEBRIEF_PRICING } from '../llm/run-pricing.ts';
 export type DebriefRunMetadata = {
   responseId: string | null; finishReason: string | null; usage: NormalizedTokenUsage;
   pricing: RunPricingSnapshot | null; estimatedCostUsd: number | null;

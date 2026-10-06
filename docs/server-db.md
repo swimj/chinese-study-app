@@ -335,3 +335,21 @@ token fencing, provider controls and draining shutdown live in
 `server/session-debrief/worker.ts`; provider transport/validation and the
 approved byte-identical v6 prompt live beside it. This flow does not use
 reflection artifacts, evidence, runs, proposals, or model-selection policy.
+
+
+## Model invocation ledger
+
+Migration `0025_model_invocations` adds the content-free, operator-only
+`model_invocations` journal with a required learner foreign key. The shared provider
+transport records the start before sending a request and stores spend and its
+pricing basis independently of domain validation. Requests interrupted by process exit can
+remain running with unknown spend; this is not proof that the provider charged zero.
+No historical backfill is attempted.
+
+The same migration adds a nullable historical requester column to shared
+`word_preparation_work`. New demand records its requesting learner; the background
+worker restores that identity for provider calls. Shared content stays shared. Old
+unattributed pending work pauses until fresh learner demand or an operator retry
+provides a real requester; retries are attributed to the requesting operator's
+learner identity. This release requires the ordinary offline schema-migration
+procedure and is not eligible for an application-only upgrade.

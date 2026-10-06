@@ -1,6 +1,7 @@
 import type { NormalizedTokenUsage } from '../llm/types.ts';
 import {
   estimateRunCostFromSnapshot,
+  DEBRIEF_PRICING,
   LUNA_STANDARD_SHORT_CONTEXT_PRICING,
   type RunPricingSnapshot,
 } from '../llm/run-pricing.ts';
@@ -155,6 +156,7 @@ export type ReflectionRunCostEstimate = {
 };
 
 const INITIAL_REFLECTION_RUN_PRICING: ReadonlyArray<ReflectionRunPricingSnapshot> = [
+  DEBRIEF_PRICING,
   INITIAL_LUNA_STANDARD_SHORT_CONTEXT_PRICING,
   INITIAL_GLM_5_2_STANDARD_SHORT_CONTEXT_PRICING,
   INITIAL_GLM_5_3_STANDARD_SHORT_CONTEXT_PRICING,
