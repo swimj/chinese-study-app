@@ -10,6 +10,17 @@ const ABOUT_VIEWS = [
 // Entry dates follow the change history; add new posts at the top.
 const UPDATES = [
   {
+    date: '2026-10-06',
+    displayDate: 'October 6, 2026',
+    title: 'Connect the words you studied to your interests',
+    paragraphs: [
+      'You can connect the words from a session to things you’re curious about. In the gear beside Start session, Interests is an optional place to name a few topics.',
+      'The summary may also show Coming back more reliably, when words that were repeatedly tricky have started to stick. It’s a highlight, not a change to when the word comes due.',
+      'Missed a review and don’t want the extra practice that follows? Skip reinforcement finishes that item for the session. The miss still counts in the moment, and compensation is determined on a slightly slower cadence.',
+      'Card characters still offers Simplified, Traditional, or Both. This will now apply to not just the exercise word(s) but also any Mandarin content associated with it (like an example sentence). When Both is set, the additional Sentences and examples setting lets you pick which character system the study content should use.',
+    ],
+  },
+  {
     date: '2026-10-05',
     displayDate: 'October 5, 2026',
     title: 'A quieter study desk, and a fairer failure rate',
