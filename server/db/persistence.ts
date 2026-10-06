@@ -1,4 +1,6 @@
 import { enqueueSessionDebrief } from './session-debrief.ts';
+import { allocateSessionBucketSlots } from '../../src/domain/session-limits.ts';
+import type { PureCue } from '../../src/domain/pure-cues.ts';
 import { validateDebriefInventory, type SessionDebriefInventoryItem } from '../../src/domain/session-debrief.ts';
 import { validateContentQualitySchema } from './content-quality.ts';
 import fs from 'node:fs';
@@ -4920,15 +4922,16 @@ function getSessionItemBucketsWithWords(
     random,
   });
   const fragileIds = new Set(pureCueSelection.fragile.map((cue) => cue.id));
-  const pureCueReviewItems: PureCueSessionReviewItem[] = pureCueSelection.selected.map((cue) => {
-    const snapshot = issuePureCueServedSnapshot({ pureCueId: cue.id, servedAt: now });
-    return {
-      itemType: 'pure_cue_production',
-      sessionActionId: `pure-cue/${snapshot.snapshotId}`,
-      snapshot,
-      tier: fragileIds.has(cue.id) ? 'fragile' : 'strong',
-    };
-  });
+  type PendingReviewItem = { kind: 'word'; item: SessionStudyItem } | { kind: 'pureCue'; cue: PureCue };
+  const pendingReview = interleavePureCueReviewItems<PendingReviewItem>(
+    wordReviewItems.map((item) => ({ kind: 'word', item })),
+    pureCueSelection.selected.map((cue) => ({ kind: 'pureCue', cue })), random,
+  );
+  const unstudiedCandidates = config.studyProfile === 'mandarin'
+    ? getAdmittedUnstudiedWords(remainingDailyNewWordSlots, studyDayKey, unstudiedAdmissionSource, {
+      eligibleIds: getReadyReserveIds(), ignoreRequired: true,
+    })
+    : getAdmittedUnstudiedWords(remainingDailyNewWordSlots, studyDayKey, unstudiedAdmissionSource);
 
   const learningRows = getDb()
     .prepare(`
@@ -4953,8 +4956,22 @@ function getSessionItemBucketsWithWords(
       ORDER BY words.created_at ASC, words.id ASC
     `)
     .all(today) as WordRow[];
+  const slots = allocateSessionBucketSlots({
+    review: pendingReview.length, learning: learningRows.length, unstudied: unstudiedCandidates.length,
+  });
+  const review = pendingReview.slice(0, slots.review).map((pending): SessionStudyItem | PureCueSessionReviewItem => {
+    if (pending.kind === 'word') return pending.item;
+    const cue = pending.cue;
+    const snapshot = issuePureCueServedSnapshot({ pureCueId: cue.id, servedAt: now });
+    return {
+      itemType: 'pure_cue_production',
+      sessionActionId: `pure-cue/${snapshot.snapshotId}`,
+      snapshot,
+      tier: fragileIds.has(cue.id) ? 'fragile' : 'strong',
+    };
+  });
 
-  const learning = learningRows.map(mapWordRow);
+  const learning = learningRows.slice(0, slots.learning).map(mapWordRow);
   const learningContent: Record<string, WordContentDocument> = {};
   const learningRehearsals: Record<string, LearningRehearsalSnapshot> = {};
   if (config.studyProfile === 'mandarin') {
@@ -4981,11 +4998,7 @@ function getSessionItemBucketsWithWords(
   }
 
   const introductions: Record<string, WordIntroductionResponse> = {};
-  const unstudied = config.studyProfile === 'mandarin'
-    ? getAdmittedUnstudiedWords(remainingDailyNewWordSlots, studyDayKey, unstudiedAdmissionSource, {
-      eligibleIds: getReadyReserveIds(), ignoreRequired: true,
-    })
-    : getAdmittedUnstudiedWords(remainingDailyNewWordSlots, studyDayKey, unstudiedAdmissionSource);
+  const unstudied = unstudiedCandidates.slice(0, slots.unstudied);
   for (const word of config.studyProfile === 'mandarin' ? unstudied : []) {
     const library = getWordIntroductionLibrary(word.id);
     if (!library?.selectedPackageId) throw new Error('Admitted word has no prepared introduction');
@@ -4993,7 +5006,7 @@ function getSessionItemBucketsWithWords(
   }
   return {
     ...(config.studyProfile === 'mandarin' ? { introductions } : {}),
-    review: interleavePureCueReviewItems(wordReviewItems, pureCueReviewItems, random),
+    review,
     learning,
     learningContent,
     learningRehearsals,
@@ -5001,9 +5014,9 @@ function getSessionItemBucketsWithWords(
   };
 }
 
-function interleavePureCueReviewItems(
-  wordItems: SessionStudyItem[],
-  pureCueItems: PureCueSessionReviewItem[],
+function interleavePureCueReviewItems<T>(
+  wordItems: T[],
+  pureCueItems: T[],
   random: () => number,
 ) {
   const interleaved = [...wordItems];

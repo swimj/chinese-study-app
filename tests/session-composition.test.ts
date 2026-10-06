@@ -1949,7 +1949,66 @@ describe('session composition', { concurrency: false }, () => {
     );
   });
 
+  for (const total of [999, 1000, 1001]) {
+    test(`caps ${total} mixed session candidates at 1000 without changing durable study state`, () => {
+      const stamp = isoHoursAgo(48);
+      for (let index = 0; index < 600; index++) {
+        const id = `cap-review-${String(index).padStart(4, '0')}`;
+        insertWord({ id, hanzi: id, pinyin: id, meaning: id, examples: [], status: 'review', priority: 1, createdAt: stamp });
+        insertWordStudyAdmissionState(id, null);
+        insertWordSkillState({ wordId: id, skillId: 'recognition', intervalHours: 24,
+          lastStudiedAt: stamp, nextDueAt: isoHoursAgo(24) });
+      }
+      for (let index = 0; index < total - 610; index++) {
+        const id = `cap-learning-${String(index).padStart(4, '0')}`;
+        insertWord({ id, hanzi: id, pinyin: id, meaning: id, examples: [], status: 'learning', priority: 1, createdAt: stamp });
+      }
+      for (let index = 0; index < 10; index++) insertUnstudiedWordPair(`cap-new-${index}`, 100, stamp);
+      const before = sqlite.prepare('SELECT * FROM learner_word_state ORDER BY word_id').all();
+      const skillBefore = sqlite.prepare('SELECT * FROM learner_owned_word_skill_state ORDER BY word_id, skill_id').all();
+      const { buckets } = dbModule.getSessionPayload(studyDayKey, { random: () => 0 });
+      assert.equal(buckets.review.length + buckets.learning.length + buckets.unstudied.length, Math.min(total, 1000));
+      assert.equal(buckets.review.length, 600); assert.equal(buckets.unstudied.length, 10);
+      assert.equal(buckets.learning.length, Math.min(total - 610, 390));
+      assert.equal(buckets.review[0].sessionActionId, 'review/cap-review-0000/recognition');
+      assert.equal(buckets.learning[0].id, 'cap-learning-0000');
+      assert.deepEqual(sqlite.prepare('SELECT * FROM learner_word_state ORDER BY word_id').all(), before);
+      assert.deepEqual(sqlite.prepare('SELECT * FROM learner_owned_word_skill_state ORDER BY word_id, skill_id').all(), skillBefore);
+      assert.equal(sqlite.prepare('SELECT COUNT(*) AS count FROM daily_new_word_intake').get()?.count, 0);
+      assert.equal(Object.keys(buckets.introductions ?? {}).length, buckets.unstudied.length);
+    });
+  }
+
   test.todo('keeps UTC date-key and ISO timestamp handling consistent across session composition boundaries');
+
+  test('counts pure cues within the same cap and issues snapshots only for admitted review rows', () => {
+    const stamp = isoHoursAgo(48);
+    for (let index = 0; index < 1001; index++) {
+      const id = `pure-cap-review-${String(index).padStart(4, '0')}`;
+      insertWord({ id, hanzi: id, pinyin: id, meaning: id, examples: [], status: 'review', priority: 1, createdAt: stamp });
+      insertWordStudyAdmissionState(id, null);
+      insertWordSkillState({ wordId: id, skillId: 'recognition', intervalHours: 24, lastStudiedAt: stamp, nextDueAt: isoHoursAgo(24) });
+    }
+    dbModule.createPureCueWithoutTransaction({ id: 'cap-pure-cue', stimulus: 'shared cap',
+      acceptedWordIds: ['pure-cap-review-0000', 'pure-cap-review-0001'], createdAt: stamp });
+    sqlite.prepare(`INSERT INTO shared_content_publications
+      (publication_id, content_kind, content_id, learning_purpose_key, publication_status, published_at, status_updated_at)
+      VALUES ('cap-pure-publication', 'pure_cue', 'cap-pure-cue', 'pure:cap', 'shared_trial', ?, ?)`)
+      .run(stamp, stamp);
+    dbModule.adoptEligiblePureCuesForCurrentLearner(stamp);
+    const snapshotCount = () => sqlite.prepare('SELECT COUNT(*) AS count FROM pure_cue_served_snapshots').get()?.count;
+    const before = snapshotCount();
+    const excluded = dbModule.getSessionPayload(studyDayKey, { random: () => 0.999999 }).buckets;
+    assert.equal(excluded.review.length, 1000);
+    assert.equal(excluded.review.some((item) => item.itemType === 'pure_cue_production'), false);
+    assert.equal(snapshotCount(), before);
+    const included = dbModule.getSessionPayload(studyDayKey, { random: () => 0 }).buckets;
+    assert.equal(included.review.length, 1000);
+    assert.equal(included.review[0].itemType, 'pure_cue_production');
+    assert.equal(Number(snapshotCount()), Number(before) + 1);
+    assert.equal(sqlite.prepare('SELECT last_studied_at FROM learner_pure_cue_state WHERE pure_cue_id = ?').get('cap-pure-cue')?.last_studied_at, null);
+  });
+
 });
 
 function insertProductionCue({

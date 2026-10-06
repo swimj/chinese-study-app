@@ -32,6 +32,16 @@ The live session interleaves nonempty buckets with weighted random selection:
 | learning | 30 |
 | unstudied | 20 |
 
+The backend admits at most 1000 units across all three buckets. Each word-level
+learning or unstudied unit counts once; each review action, including a standalone
+pure cue, counts once. Above the cap, admission allocates slots in the same
+50/30/20 proportions, redistributing unused slots from smaller buckets among
+the remaining buckets and rounding fractional slots by largest remainder.
+Each bucket retains its existing internal order. Excluded units retain their
+durable study state and remain eligible for future sessions; they add no covered
+inventory or commits. Pure-cue served snapshots are issued only for admitted
+review items.
+
 The scheduler RNG is seeded from the frontend session id so the
 new / learning / review cadence varies across sessions. Tests may pass an
 explicit seed to keep sequences deterministic.

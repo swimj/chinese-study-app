@@ -33,10 +33,10 @@ test('legacy completion stays204, latest is nullable, supplied inventory queues 
   assert.deepEqual(await fetch(`${base}/api/session-debriefs/latest`).then((response) => response.json()), { debrief: null });
   assert.equal((await fetch(`${base}/api/review-session-summaries`, json('POST', summary))).status, 204);
   assert.equal((await fetch(`${base}/api/session-debriefs/http-session`)).status, 404); assert.equal(wakes, 0);
-  const inventory = [{ word: '报备', pinyin: 'bào bèi' }];
+  const inventory = Array.from({ length: 15 }, () => ({ word: '报备', pinyin: 'bào bèi' }));
   assert.equal((await fetch(`${base}/api/review-session-summaries`, json('POST', { ...summary, debriefInventory: inventory }))).status, 204);
   const { debrief } = await fetch(`${base}/api/session-debriefs/latest`).then((response) => response.json());
-  assert.equal(debrief.sessionId, summary.sessionId); assert.equal(debrief.exerciseCount, 1); assert.equal(debrief.status, 'queued'); assert.equal(wakes, 1);
+  assert.equal(debrief.sessionId, summary.sessionId); assert.equal(debrief.exerciseCount, 15); assert.equal(debrief.status, 'queued'); assert.equal(wakes, 1);
   assert.equal((await fetch(`${base}/api/session-debriefs/http-session/retry`, { method: 'POST' })).status, 409);
   assert.equal((await fetch(`${base}/api/review-session-summaries`, json('POST', { ...summary, sessionId: 'bad', debriefInventory: [{ word: 'bad' }] }))).status, 400);
   assert.equal(getDb().prepare(`SELECT 1 FROM learner_owned_review_session_summaries WHERE session_id = 'bad'`).get(), undefined);
@@ -52,4 +52,17 @@ test('retry is explicit, preserves first input and does not leak another learner
   runWithLearnerId('other', () => recordReviewSessionSummary({ ...summary, sessionId: 'other-session', debriefInventory: [] }));
   assert.equal((await fetch(`${base}/api/session-debriefs/other-session/retry`, { method: 'POST' })).status, 404);
   assert.equal((await fetch(`${base}/api/session-debriefs/other-session`)).status, 404);
+});
+
+test('14-item completion is available as recent ready-empty without waking generation; 1001 rows are rejected atomically', async () => {
+  const inventory = Array.from({ length: 14 }, () => ({ word: '报备', pinyin: '' }));
+  const previousWakes = wakes;
+  const small = { ...summary, sessionId: 'small-http', completedAt: '2026-10-07T00:00:00.000Z' };
+  assert.equal((await fetch(`${base}/api/review-session-summaries`, json('POST', { ...small, debriefInventory: inventory }))).status, 204);
+  const { debrief } = await fetch(`${base}/api/session-debriefs/latest`).then((response) => response.json());
+  assert.equal(debrief.sessionId, 'small-http'); assert.equal(debrief.exerciseCount, 14); assert.equal(debrief.status, 'ready');
+  assert.deepEqual(debrief.notes, []); assert.equal(debrief.attemptCount, 0); assert.equal(wakes, previousWakes);
+  const oversized = { ...summary, sessionId: 'oversized-http', debriefInventory: Array(1001).fill(inventory[0]) };
+  assert.equal((await fetch(`${base}/api/review-session-summaries`, json('POST', oversized))).status, 400);
+  assert.equal(getDb().prepare(`SELECT 1 FROM learner_owned_review_session_summaries WHERE session_id = 'oversized-http'`).get(), undefined);
 });

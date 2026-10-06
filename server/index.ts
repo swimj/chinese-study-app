@@ -726,7 +726,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post('/api/session-debriefs/:sessionId/retry', (req, res) => {
     try {
       const debrief = retrySessionDebrief(req.params.sessionId);
-      try { options.wakeSessionDebriefs?.(); } catch { /* A durable retry survives a missed wake. */ }
+      if (debrief.status === 'queued') {
+        try { options.wakeSessionDebriefs?.(); } catch { /* A durable retry survives a missed wake. */ }
+      }
       res.json({ debrief });
     } catch (error) {
       res.status(error instanceof SessionDebriefNotFoundError ? 404 : error instanceof SessionDebriefRetryConflictError ? 409 : 500)
@@ -1737,7 +1739,7 @@ export function createApp(options: CreateAppOptions = {}) {
       } catch {
         // Observability must not turn a durable summary into a failed response.
       }
-      if (debriefInventory !== undefined) {
+      if (debriefInventory !== undefined && getSessionDebrief(sessionId)?.status === 'queued') {
         try { options.wakeSessionDebriefs?.(); } catch { /* The queue is already durable. */ }
       }
       res.status(204).end();

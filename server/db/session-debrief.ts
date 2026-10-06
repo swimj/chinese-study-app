@@ -2,6 +2,7 @@ import { getDb } from './connection.ts';
 import { requireLearnerId, runWithLearnerId } from './learner-context.ts';
 import {
   validateDebriefInterests, validateDebriefInventory, validateSessionDebriefResult,
+  MIN_SESSION_DEBRIEF_ITEMS,
   type SessionDebrief, type SessionDebriefInput, type SessionDebriefInventoryItem, type SessionDebriefResult,
 } from '../../src/domain/session-debrief.ts';
 import type { DebriefRunMetadata } from '../session-debrief/provider.ts';
@@ -32,11 +33,21 @@ export function enqueueSessionDebrief(sessionId: string, completedAt: string, in
     interests: interests.trim() ? [interests] : [],
     items: inventory.map((item, index) => ({ ...item, ref: `w${index + 1}` })),
   };
+  const generate = inventory.length >= MIN_SESSION_DEBRIEF_ITEMS;
   getDb().prepare(`INSERT INTO learner_session_debrief_jobs
     (learner_id, session_id, completed_at, exercise_count, input_json, status, result_json, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(learner_id, session_id) DO NOTHING`)
     .run(requireLearnerId(), sessionId, input.sessionDate, inventory.length, JSON.stringify(input),
-      inventory.length ? 'queued' : 'ready', inventory.length ? null : '{"notes":[]}', new Date().toISOString());
+      generate ? 'queued' : 'ready', generate ? null : '{"notes":[]}', new Date().toISOString());
+}
+
+/** Apply the current threshold to pending legacy jobs without touching ready results or attempts. */
+function completeSmallSessionDebriefs(learnerId: string | null = null, sessionId: string | null = null,
+  now = new Date().toISOString()): void {
+  getDb().prepare(`UPDATE learner_session_debrief_jobs SET status = 'ready', result_json = '{"notes":[]}',
+    last_error = NULL, updated_at = ? WHERE exercise_count < ? AND status IN ('queued', 'failed')
+    AND (? IS NULL OR learner_id = ?) AND (? IS NULL OR session_id = ?)`)
+    .run(now, MIN_SESSION_DEBRIEF_ITEMS, learnerId, learnerId, sessionId, sessionId);
 }
 
 type JobRow = {
@@ -64,6 +75,10 @@ export function retrySessionDebrief(sessionId: string): SessionDebrief {
   const job = getSessionDebrief(sessionId);
   if (!job) throw new SessionDebriefNotFoundError('Session debrief not found');
   if (job.status !== 'failed') throw new SessionDebriefRetryConflictError('Only failed debriefs can be retried');
+  if (job.exerciseCount < MIN_SESSION_DEBRIEF_ITEMS) {
+    completeSmallSessionDebriefs(requireLearnerId(), sessionId);
+    return getSessionDebrief(sessionId)!;
+  }
   getDb().prepare(`UPDATE learner_session_debrief_jobs SET status = 'queued', last_error = NULL, updated_at = ?
     WHERE learner_id = ? AND session_id = ? AND status = 'failed'`).run(new Date().toISOString(), requireLearnerId(), sessionId);
   return getSessionDebrief(sessionId)!;
@@ -71,15 +86,18 @@ export function retrySessionDebrief(sessionId: string): SessionDebrief {
 
 /** Operational enumeration exposes only routing identities, never private evidence. */
 export function listQueuedSessionDebriefs(): Array<{ learnerId: string; sessionId: string }> {
+  completeSmallSessionDebriefs();
   return getDb().prepare(`SELECT jobs.learner_id AS learnerId, session_id AS sessionId FROM learner_session_debrief_jobs AS jobs
     JOIN learners ON learners.learner_id = jobs.learner_id WHERE status = 'queued' AND disabled_at IS NULL
     ORDER BY completed_at LIMIT 100`).all() as Array<{ learnerId: string; sessionId: string }>;
 }
 export function claimSessionDebrief(sessionId: string, token: string, startedAt: string, expiresAt: string): SessionDebriefInput | null {
   return transaction(() => {
+    completeSmallSessionDebriefs(requireLearnerId(), sessionId, startedAt);
     const changed = getDb().prepare(`UPDATE learner_session_debrief_jobs SET status = 'running', active_token = ?, expires_at = ?,
-      attempt_count = attempt_count + 1, updated_at = ? WHERE learner_id = ? AND session_id = ? AND status = 'queued'`)
-      .run(token, expiresAt, startedAt, requireLearnerId(), sessionId).changes;
+      attempt_count = attempt_count + 1, updated_at = ? WHERE learner_id = ? AND session_id = ? AND status = 'queued'
+      AND exercise_count >= ?`)
+      .run(token, expiresAt, startedAt, requireLearnerId(), sessionId, MIN_SESSION_DEBRIEF_ITEMS).changes;
     if (changed !== 1) return null;
     getDb().prepare(`INSERT INTO learner_session_debrief_attempts
       (learner_id, attempt_id, session_id, started_at, provider, model, reasoning_effort, prompt_version)
@@ -125,6 +143,7 @@ export function recoverExpiredSessionDebriefs(now = new Date().toISOString()): v
       error_code = 'interrupted', duration_ms = MAX(0, CAST((julianday(?) - julianday(started_at)) * 86400000 AS INTEGER))
       WHERE learner_id = ? AND attempt_id = ? AND outcome IS NULL`).run(now, now, row.learner_id, row.active_token);
   }));
+  completeSmallSessionDebriefs(null, null, now);
 }
 function transaction<T>(work: () => T): T {
   getDb().exec('BEGIN IMMEDIATE');
