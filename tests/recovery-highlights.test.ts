@@ -129,6 +129,15 @@ describe('recovery highlights', () => {
     assert.equal(deriveRecoveryHighlights([...trouble(), encounter(100, 'success'), encounter(200, 'success'), encounter(300, 'success')]).length, 1);
   });
 
+  test('clipping an old trouble threshold cannot reuse its remaining misses after three successes', () => {
+    // The moving cutoff dropped the first miss of an earlier recovered episode.
+    // Two surviving old misses must not combine with a fresh miss to award again.
+    const results = deriveRecoveryHighlights(sequence([
+      'miss', 'miss', 'success', 'success', 'success', 'miss', 'success', 'success', 'success',
+    ]));
+    assert.deepEqual(results, []);
+  });
+
   test('words and skills cannot supply evidence for one another', () => {
     const history = [...trouble(),
       ...sequence(['success', 'success', 'success'], 4).map((item) => ({ ...item, skill: 'production' as const })),

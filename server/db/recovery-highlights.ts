@@ -17,8 +17,11 @@ export function getSessionRecoveryHighlights(sessionId: string): RecoveryHighlig
   const summary = db.prepare(`SELECT completed_at FROM review_session_summaries WHERE session_id = ?`)
     .get(sessionId) as { completed_at: string } | undefined;
   if (!summary) return null;
-  // Restrict history to words tested in this session, but retain both skills and
-  // all their earlier accepted encounters (including unfinished overall sessions).
+  const windowStart = new Date(summary.completed_at);
+  windowStart.setUTCHours(0, 0, 0, 0);
+  windowStart.setUTCDate(windowStart.getUTCDate() - 29);
+  // The partial learner/time index bounds reads before filtering and ranking.
+  // Retain earlier accepted encounters even from unfinished overall sessions.
   const rows = db.prepare(`
     WITH ranked AS (
       SELECT a.*, w.hanzi, w.traditional,
@@ -26,11 +29,11 @@ export function getSessionRecoveryHighlights(sessionId: string): RecoveryHighlig
           ORDER BY a.session_event_sequence, a.action_attempt_sequence, a.id) AS encounter_rank
       FROM study_attempt_events a
       JOIN words w ON w.id = a.target_word_id
-      WHERE a.projected_at IS NOT NULL AND a.occurred_at <= ?
+      WHERE a.projected_at IS NOT NULL AND a.occurred_at >= ? AND a.occurred_at <= ?
         AND a.action_kind IN ('recognition', 'production')
         AND a.target_word_id IN (SELECT target_word_id FROM study_attempt_events WHERE session_id = ?)
     ) SELECT * FROM ranked WHERE encounter_rank = 1
-  `).all(summary.completed_at, sessionId) as AttemptRow[];
+  `).all(windowStart.toISOString(), summary.completed_at, sessionId) as AttemptRow[];
   if (rows.length === 0) return [];
   const corrected = correctedProductionAttempts();
   const encounters: RecoveryEncounter[] = rows.map((row) => ({

@@ -146,6 +146,28 @@ describe('recovery highlights from durable learner evidence', { concurrency: fal
     assert.equal(db.getSessionRecoveryHighlights(events[5].sessionId)?.length, 1);
   });
 
+  test('only evidence within the inclusive thirty UTC days can establish trouble', () => {
+    const events = history('bounded');
+    const session = events[5].sessionId;
+    sqlite.prepare('UPDATE study_attempt_events SET occurred_at = ? WHERE id = ?')
+      .run('2026-09-06T23:59:59.999Z', events[0].id);
+    assert.deepEqual(db.getSessionRecoveryHighlights(session), []);
+    sqlite.prepare('UPDATE study_attempt_events SET occurred_at = ? WHERE id = ?')
+      .run('2026-09-07T00:00:00.000Z', events[0].id);
+    assert.equal(db.getSessionRecoveryHighlights(session)?.length, 1);
+  });
+
+  test('actual history query uses learner and time as index range boundaries', () => {
+    const source = fs.readFileSync(path.resolve('server/db/recovery-highlights.ts'), 'utf8');
+    const query = source.match(/const rows = db.prepare\(`([\s\S]*?)`\)/)?.[1];
+    assert.ok(query);
+    const details = sqlite.prepare(`EXPLAIN QUERY PLAN ${query}`)
+      .all('2026-09-07T00:00:00.000Z', '2026-10-06T12:00:00.000Z', 'bounded-session-6')
+      .map(row => String(row.detail));
+    assert.ok(details.some(detail => detail.includes('idx_study_attempt_events_learner_time')
+      && detail.includes('learner_id=? AND occurred_at>? AND occurred_at<?')), details.join('\n'));
+  });
+
   test('HTTP route distinguishes a completed empty summary from a missing summary', async () => {
     const { createApp } = await import('../server/index.ts');
     const server = createApp({ frontendDistPath: null }).listen(0, '127.0.0.1');

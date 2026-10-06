@@ -86,10 +86,10 @@ export function deriveRecoveryHighlights(encounters: readonly RecoveryEncounter[
           }
         } else if (encounter.result === 'excluded') {
           successes = [];
-        } else if (trouble && latestMiss) {
+        } else {
           successes.push(encounter);
           if (successes.length === 3) {
-            highlights.push({
+            if (trouble && latestMiss) highlights.push({
               id: `word_recovery.v1/${encounter.attemptId}`,
               ruleVersion: 'word_recovery.v1',
               wordId: encounter.wordId, hanzi: encounter.hanzi, traditional: encounter.traditional,
@@ -97,7 +97,8 @@ export function deriveRecoveryHighlights(encounters: readonly RecoveryEncounter[
               troubleAttempts: trouble.attempts.map(reference), latestMiss: reference(latestMiss),
               successAttempts: successes.map(reference),
             });
-            // Every milestone consumes its episode, whether or not its summary was viewed.
+            // Three successes end prior trouble even if the window clipped its start.
+            // Otherwise moving the cutoff could reuse misses from an earlier recovery.
             history = [];
             trouble = null;
             latestMiss = null;

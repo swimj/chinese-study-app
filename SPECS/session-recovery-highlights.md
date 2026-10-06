@@ -22,11 +22,13 @@ changes or mastery claim. V1 covers word review recognition and production only.
 - Establish trouble on a missed day if **either** at least 3 of the last 5 daily
   encounters were misses, **or** there were at least 3 missed days in the inclusive
   30-day window ending that day (today plus the previous 29 UTC days).
-- Once established, trouble remains eligible without a calendar expiry. Three
+- Trouble and improvement must both fit within the summary’s 30-UTC-day history window. Three
   consecutive successful encounter days earn a recovery milestone. Days without
   encounters are neutral. Misses and excluded evidence break the success streak.
 - A milestone ends that trouble episode whether or not it was displayed. Only
-  fresh encounters after it may establish a new trouble episode. Repeated later
+  fresh encounters after it may establish a new trouble episode. Every run of
+  three successful days clears preceding trouble evidence, even when the window
+  clipped the misses that originally established that episode. Repeated later
   successes do not earn repeated highlights.
 - Recognition and production are separate; cues may differ across production
   encounters. Do not imply equal exercise difficulty or general word mastery.
@@ -56,7 +58,8 @@ Display a shared **Coming back more reliably** heading and a wrapping list of
 words, with Meaning / Word recall labels and the learner's character preference.
 All words qualifying in that session may appear; no forced conversational copy.
 
-The query uses evidence through the requested summary's completion timestamp,
+The query uses evidence from midnight UTC 29 days before completion through
+the requested summary’s completion timestamp,
 including accepted actions from earlier unfinished overall sessions. It emits
 only milestones whose third successful day first qualifies in that session.
 The replay order is timestamp then stable attempt ID, with first-attempt
@@ -68,4 +71,7 @@ skill, which trouble rule(s) matched, supporting trouble attempts, latest miss,
 and the three success references (attempt/action/session IDs and timestamps).
 Raw outcomes, ratings and served production snapshots remain available through
 those durable references. No new table, analytics UI, exposure telemetry, model
-call, or history backfill is introduced.
+call, or history backfill is introduced. Migration `0024_recovery_attempt_window`
+adds a partial `(learner_id, occurred_at)` index for projected attempts so the
+SQL read seeks directly into the bounded range. Existing databases require the
+ordinary offline schema-migration procedure before running this release.

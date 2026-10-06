@@ -91,6 +91,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0023_session_debrief',
   sql: fs.readFileSync(new URL('./migrations/0023_session_debrief.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0024_recovery_attempt_window',
+  sql: fs.readFileSync(new URL('./migrations/0024_recovery_attempt_window.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {
