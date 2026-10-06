@@ -273,12 +273,23 @@ snapshot and no target word. Their admission is independent of word review;
 fragile cues are due-date admitted and strong cues use proportional sampling.
 
 `POST /api/study-sessions/:sessionId/pure-cue-assessments` accepts
-`{ attemptId, snapshotId, sessionActionId, events }`. Each event supplies
+`{ attemptId, snapshotId, sessionActionId, events, reinforcementSkipped? }`. Each event supplies
 `eventId`, `occurredAt`, `response`, `outcome`, `submittedWordId`, and `rating`.
 The server verifies outcomes against its saved snapshot and covering rules,
 uses its own commit clock, and returns 204. An identical retry is idempotent;
 conflicting evidence or a snapshot already consumed by another action is 400.
 No member-word scheduler or admission state is changed.
+
+Word-review completion accepts optional `commitIntent.reinforcementSkipped`;
+pure-cue completion accepts optional top-level `reinforcementSkipped`. Both are
+booleans and default to `false` when omitted. Only `true` allows a recorded lapse
+with fewer than three subsequent consecutive successful recalls to complete.
+`true` is rejected for clean or already-covered evidence; an unfinished batch
+without it is rejected. Validation also applies to retries. These commits preserve
+supplied attempts and ordinary lapse scheduling, add no successful recall, and
+imply no compensation. Empty batches, inconsistent evidence, and events after
+normal coverage remain invalid. The flag is a completion instruction, not a
+separate stored attempt or scheduler state.
 
 | Method | Path | Handler domain |
 | --- | --- | --- |

@@ -26,6 +26,7 @@ export type SessionKeyCommand =
   | { type: 'rate_default' }
   | { type: 'preview_contrast'; choiceIndex: 0 | 1 }
   | { type: 'confirm_contrast' }
+  | { type: 'skip_reinforcement' }
   | { type: 'undo' }
   | { type: 'rate'; rating: ReviewRating }
   | { type: 'finish_session' }
@@ -41,6 +42,7 @@ export type SessionKeyEvent = {
 };
 
 export type SessionKeyboardContext = {
+  canSkipReinforcement?: boolean;
   sessionStarted: boolean;
   isEditableTarget: boolean;
   isQualityControlTarget?: boolean;
@@ -185,6 +187,7 @@ export function getSessionShortcutGuide(
 ): SessionShortcutGuideSection[] {
   const kind = getSessionInteractionKind(context);
   const thisCard = getThisCardShortcutRows(kind, context);
+  if (context.canSkipReinforcement) thisCard.push({ key: 'Shift+Space', description: 'Skip reinforcement and complete this review', available: true });
   const sessionRows: SessionShortcutRow[] = [
     {
       key: 'U',
@@ -260,6 +263,10 @@ export function resolveSessionKey(
 
   if (context.isEditableTarget) {
     return null;
+  }
+
+  if (event.key === ' ' && event.shiftKey) {
+    return !composing && context.canSkipReinforcement ? { type: 'skip_reinforcement' } : null;
   }
 
   if ((event.key === 'e' || event.key === 'E') && context.hasActiveWord) {

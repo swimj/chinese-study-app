@@ -662,7 +662,7 @@ describe('session completion', { concurrency: false }, () => {
     `).get().count, 0);
   });
 
-  test('a covered production action with an initial rejection keeps ordinary lapse projection', () => {
+  for (const skipReinforcement of [false, true]) test(`a production lapse keeps ordinary projection with reinforcement skipped=${skipReinforcement}`, () => {
     insertReviewWordWithItem({
       wordId: 'production-lapse',
       sessionActionId: 'production-lapse-reverse',
@@ -686,7 +686,8 @@ describe('session completion', { concurrency: false }, () => {
       skillId: 'production',
       failureCount: 1,
       terminalRating: null,
-      attempts: [
+      reinforcementSkipped: skipReinforcement,
+      attempts: skipReinforcement ? [{ rating: 'forgot', outcome: 'incorrect' }] : [
         { rating: 'forgot', outcome: 'incorrect' },
         { rating: 'good', outcome: 'correct' },
         { rating: 'good', outcome: 'correct' },
@@ -701,7 +702,8 @@ describe('session completion', { concurrency: false }, () => {
       FROM production_cue_evidence_records
       WHERE task_id = 'production-task:production-lapse:default_production'
     `).get() as { count: number };
-    assert.equal(evidenceCount.count, 4);
+    assert.equal(evidenceCount.count, skipReinforcement ? 1 : 4);
+    assert.equal(Date.parse(state.nextDueAt) - Date.parse(state.lastStudiedAt), 6 * 60 * 60 * 1000);
   });
 
   test('an accepted typed response rated forgot keeps the ordinary lapse projection', () => {
@@ -1404,6 +1406,7 @@ function recordAcceptedReviewBatch({
   failureCount,
   terminalRating,
   attempts,
+  reinforcementSkipped,
 }: {
   sessionActionId: string;
   wordId: string;
@@ -1414,6 +1417,7 @@ function recordAcceptedReviewBatch({
   failureCount: number;
   terminalRating: 'hard' | 'good' | 'easy' | null;
   attempts?: ReviewAttemptInput[];
+  reinforcementSkipped?: boolean;
 }) {
   const computedSessionActionId = `review/${wordId}/${skillId}`;
   const attemptInputs = attempts ?? [
@@ -1483,6 +1487,7 @@ function recordAcceptedReviewBatch({
       sampledSkillIds: [skillId],
       failureCount,
       terminalRating,
+      reinforcementSkipped,
     },
   });
 

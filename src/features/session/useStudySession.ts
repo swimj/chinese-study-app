@@ -45,6 +45,7 @@ import {
   getBucketSessionTotalCount,
   markActiveSessionUnitStarted,
   rateActiveSessionUnit,
+  skipActiveReviewReinforcement,
   rateActivePureCueProductionUnit,
   rateActiveContrastSelectionUnit,
   type BucketSessionState,
@@ -249,6 +250,7 @@ export type StudySessionHomePageProps = {
   onRevealAnswer: () => void;
   onToggleLearnerRequestedReview: () => void;
   onToggleFrozenProductionLearnerRequestedReview: () => void;
+  onSkipReinforcement: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
   shortcutGuideOpen: boolean;
   onOpenShortcutGuide: () => void;
@@ -872,7 +874,7 @@ export function useStudySession({
   }
 
   async function handleRate(
-    rating: ReviewRating,
+    rating: ReviewRating | null,
     _options?: {
       restoreUi?: 'revealed' | 'production-input';
     },
@@ -886,8 +888,9 @@ export function useStudySession({
       return;
     }
 
+    if (rating === null && (!reviewInReinforcement || productionAwaitingNext || pureCueAwaitingNext || contrastAwaitingNext)) return;
     deskBusyRef.current = true;
-    setSubmittingRating(rating);
+    setSubmittingRating(rating ?? 'forgot');
     setError(null);
 
     try {
@@ -908,7 +911,7 @@ export function useStudySession({
       }
 
       const transition =
-        activePureCue
+        rating === null ? skipActiveReviewReinforcement(sessionState) : activePureCue
           ? rateActivePureCueProductionUnit(sessionState, rating, {
               response: productionSubmittedResponse,
               outcome: pureCueResponseResolution?.outcome ?? 'rejected',
@@ -931,7 +934,7 @@ export function useStudySession({
                   ? productionResponseResolution
                   : null,
             });
-      const outcome = getSessionDeskOutcome(rating, transition.commit);
+      const outcome = rating === null ? 'done' : getSessionDeskOutcome(rating, transition.commit);
       if (activeUnit?.type !== 'study') throw new Error('Session desk requires an active study unit.');
       const key = getSessionDeskUnitKey(activeUnit.bucket, activeUnit.item.sessionActionId, activeWord?.id);
       // Update metadata only once the learner chooses to leave this card.
@@ -949,7 +952,7 @@ export function useStudySession({
           : updateSessionSummaryForRating({
             summary: current,
             transition,
-            rating,
+            rating: rating ?? 'forgot',
             activeWord: activeWord!,
             activeItem: activeItem!,
             previousPhase: sessionState.phase,
@@ -1823,6 +1826,10 @@ export function useStudySession({
         return;
       }
 
+      if (!event.shiftKey && (event.key === ' ' || event.key === 'Enter')
+        && event.target instanceof Element && event.target.closest('[data-session-skip-reinforcement]')) return;
+      if (event.shiftKey && event.key === ' ' && (event.metaKey || event.ctrlKey || event.altKey)) return;
+
       const command = resolveSessionKey(
         {
           key: event.key,
@@ -1850,6 +1857,7 @@ export function useStudySession({
           ratingAvailable: answerRevealed && !productionAwaitingNext && !pureCueAwaitingNext && !productionAwaitingSupplement && !contrastAwaitingNext,
           hasUndo: lastUndoSnapshot !== null,
           hasActiveWord: activeWord !== null,
+          canSkipReinforcement: reviewInReinforcement && !productionAwaitingNext && !pureCueAwaitingNext && !contrastAwaitingNext,
           ratingOptions: activeRatingOptions,
           completedSummary,
           summaryFinalizationKind,
@@ -1876,6 +1884,9 @@ export function useStudySession({
           } else {
             productionHanziInputRef.current?.focus();
           }
+          return;
+        case 'skip_reinforcement':
+          void handleRate(null);
           return;
         case 'submit_production':
           void handleSubmitProductionHanzi();
@@ -1946,6 +1957,7 @@ export function useStudySession({
     return () => document.removeEventListener('keydown', handleKeyDown, true);
   }, [
     activeRatingOptions,
+    reviewInReinforcement,
     activeItem,
     activePureCue,
     activeUnstudiedProgress?.introComplete,
@@ -2082,6 +2094,7 @@ export function useStudySession({
         );
         setSessionNow(new Date().toISOString());
       },
+      onSkipReinforcement: () => void handleRate(null),
       onRate: (rating, options) => void handleRate(rating, options),
       shortcutGuideOpen,
       onOpenShortcutGuide: () => setShortcutGuideOpen(true),

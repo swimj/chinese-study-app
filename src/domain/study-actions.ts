@@ -346,7 +346,11 @@ export function buildWordLifecycleSessionStudyItems({
   ];
 }
 
-export function deriveReviewCommitFieldsFromAttemptEvents(events: StudyAttemptEvent[]): ReviewCommitFields {
+export function deriveReviewCommitFieldsFromAttemptEvents(
+  events: StudyAttemptEvent[],
+  { reinforcementSkipped = false }: { reinforcementSkipped?: boolean } = {},
+): ReviewCommitFields {
+  if (typeof reinforcementSkipped !== 'boolean') throw new Error('Expected boolean reinforcementSkipped');
   if (events.length === 0) {
     throw new Error('Cannot derive review commit fields from an empty attempt event batch.');
   }
@@ -407,6 +411,13 @@ export function deriveReviewCommitFieldsFromAttemptEvents(events: StudyAttemptEv
         terminalRating: null,
       };
     }
+  }
+
+  if (reinforcementSkipped) {
+    if (commitFields !== null || failureCount === 0) {
+      throw new Error('Expected unfinished lapsed review when reinforcementSkipped is true');
+    }
+    commitFields = { failureCount, terminalRating: null };
   }
 
   if (commitFields === null) {

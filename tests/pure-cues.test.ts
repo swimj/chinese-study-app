@@ -142,7 +142,14 @@ describe('pure cue domain policy', () => {
       rating: response === null ? 'forgot' as const : 'good' as const,
     }));
     assert.deepEqual(derivePureCueAssessment(servedSnapshot(), events), { failureCount: 1, terminalRating: null });
-    assert.throws(() => derivePureCueAssessment(servedSnapshot(), events.slice(0, 3)), /covered assessment/);
+    assert.throws(() => derivePureCueAssessment(servedSnapshot(), events, 'mandarin', { reinforcementSkipped: true }), /unfinished lapsed assessment/);
+    assert.throws(() => derivePureCueAssessment(servedSnapshot(), [events[1]!], 'mandarin', { reinforcementSkipped: true }), /unfinished lapsed assessment/);
+    for (const count of [1, 2, 3]) {
+      const partial = events.slice(0, count);
+      assert.throws(() => derivePureCueAssessment(servedSnapshot(), partial), /covered assessment/);
+      assert.throws(() => derivePureCueAssessment(servedSnapshot(), partial, 'mandarin', { reinforcementSkipped: false }), /covered assessment/);
+      assert.deepEqual(derivePureCueAssessment(servedSnapshot(), partial, 'mandarin', { reinforcementSkipped: true }), { failureCount: 1, terminalRating: null });
+    }
   });
 
   test('validates accepted outcomes against frozen answer forms and derives one clean assessment', () => {
@@ -581,4 +588,33 @@ describe('pure cue persistence', { concurrency: false }, () => {
     assert.deepEqual(sqlite.prepare('SELECT learner_id, day_key, compensated_count FROM learner_exercise_compensation_days').all()
       .map(row => ({ ...row })), [{ learner_id: 'test-learner', day_key: '2026-09-18', compensated_count: 1 }]);
   });
+  test('skipped pure-cue reinforcement persists only the miss and schedules six hours later', () => {
+    dbModule.createPureCueWithoutTransaction({
+      id: 'skip-cue', stimulus: 'skip fixture', acceptedWordIds: ['word-a', 'word-b'], createdAt: now,
+    });
+    publishFixture('skip-cue');
+    dbModule.adoptEligiblePureCuesForCurrentLearner(now);
+    const snapshot = dbModule.issuePureCueServedSnapshot({
+      snapshotId: 'skip-snapshot', pureCueId: 'skip-cue', servedAt: now,
+    });
+    const input = {
+      attemptId: 'skip-attempt', snapshotId: snapshot.snapshotId, reinforcementSkipped: true,
+      sessionId: 'skip-session', sessionActionId: 'skip-session/pure-a',
+      committedAt: now,
+      events: [{ eventId: 'skip-miss', occurredAt: now, response: 'wrong',
+        outcome: 'rejected' as const, submittedWordId: null, rating: 'forgot' as const }],
+    };
+    for (const reinforcementSkipped of [undefined, false]) {
+      assert.throws(() => dbModule.recordPureCueAssessment({ ...input, reinforcementSkipped }), /covered assessment/);
+    }
+    const result = dbModule.recordPureCueAssessment(input, () => 0.5);
+    assert.deepEqual(result.events, input.events);
+    assert.deepEqual(result.summary, { failureCount: 1, terminalRating: null });
+    assert.equal(result.scheduledCue.intervalHours, 6);
+    assert.equal(Date.parse(result.scheduledCue.nextDueAt) - Date.parse(now), 6 * 60 * 60 * 1000);
+    assert.deepEqual(dbModule.recordPureCueAssessment(input, () => 0.5), result);
+    assert.throws(() => dbModule.recordPureCueAssessment({ ...input, reinforcementSkipped: false }), /covered assessment/);
+  });
+
+
 });

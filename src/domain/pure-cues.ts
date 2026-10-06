@@ -179,7 +179,9 @@ export function derivePureCueAssessment(
   snapshot: PureCueServedSnapshot,
   events: readonly PureCueAssessmentEvent[],
   profileId: StudyProfileId = 'mandarin',
+  { reinforcementSkipped = false }: { reinforcementSkipped?: boolean } = {},
 ): PureCueAssessmentSummary {
+  if (typeof reinforcementSkipped !== 'boolean') throw new Error('Expected boolean reinforcementSkipped');
   if (events.length === 0) throw new Error('Pure cue assessment requires at least one event.');
 
   let failureCount = 0;
@@ -221,6 +223,13 @@ export function derivePureCueAssessment(
     if (reinforcementStreak >= 3) {
       covered = { failureCount, terminalRating: null };
     }
+  }
+
+  if (reinforcementSkipped) {
+    if (covered !== null || failureCount === 0) {
+      throw new Error('Expected unfinished lapsed assessment when reinforcementSkipped is true');
+    }
+    covered = { failureCount, terminalRating: null };
   }
 
   if (covered === null) throw new Error('Pure cue events do not represent a covered assessment.');

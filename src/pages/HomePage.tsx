@@ -113,6 +113,7 @@ export function HomePage({
   onToggleLearnerRequestedReview,
   onToggleFrozenProductionLearnerRequestedReview,
   onRate,
+  onSkipReinforcement,
   shortcutGuideOpen,
   onOpenShortcutGuide,
   onCloseShortcutGuide,
@@ -209,6 +210,7 @@ export function HomePage({
   onRevealAnswer: () => void;
   onToggleLearnerRequestedReview: () => void;
   onToggleFrozenProductionLearnerRequestedReview: () => void;
+  onSkipReinforcement: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
   shortcutGuideOpen: boolean;
   onOpenShortcutGuide: () => void;
@@ -357,6 +359,7 @@ export function HomePage({
             onToggleLearnerRequestedReview={onToggleLearnerRequestedReview}
             onToggleFrozenProductionLearnerRequestedReview={onToggleFrozenProductionLearnerRequestedReview}
             onRate={onRate}
+            onSkipReinforcement={onSkipReinforcement}
             shortcutGuideOpen={shortcutGuideOpen}
             onOpenShortcutGuide={onOpenShortcutGuide}
             onCloseShortcutGuide={onCloseShortcutGuide}

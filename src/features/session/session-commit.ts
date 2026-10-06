@@ -23,6 +23,7 @@ export async function applySessionCommit(commit: DeferredSessionCommit) {
           sampledSkillIds: commit.sampledSkillIds,
           failureCount: commit.failureCount,
           terminalRating: commit.terminalRating,
+          reinforcementSkipped: commit.reinforcementSkipped,
         },
       });
       return;
@@ -50,6 +51,7 @@ export async function applySessionCommit(commit: DeferredSessionCommit) {
         sessionId: commit.sessionId,
         attemptId: commit.attemptId,
         snapshotId: commit.snapshotId,
+        reinforcementSkipped: commit.reinforcementSkipped,
         sessionActionId: commit.sessionActionId,
         events: commit.events,
       });
