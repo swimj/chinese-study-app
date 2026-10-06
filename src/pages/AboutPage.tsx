@@ -14,7 +14,8 @@ const UPDATES = [
     displayDate: 'October 6, 2026',
     title: 'Connect the words you studied to your interests',
     paragraphs: [
-      'You can connect the words from a session to things you’re curious about. In the gear beside Start session, Interests is an optional place to name a few topics.',
+      'The words you study can take you somewhere unexpected. After a session, Connections brings a few of them to life with short notes: a surprising turn of phrase, a glimpse of Chinese culture, or a link to something you love. Look for them in your session summary. They can take a little time to arrive, so feel free to head back to Home and reopen your latest session later.',
+      'Give Connections a few starting points: open the gear beside Start session, add topics under Interests, and save. Tennis, historical dramas, video games, cooking—whatever has your curiosity. Future sessions can draw on those interests, and you can leave the field blank to let the words lead the way.',
       'The summary may also show Coming back more reliably, when words that were repeatedly tricky have started to stick. It’s a highlight, not a change to when the word comes due.',
       'Missed a review and don’t want the extra practice that follows? Skip reinforcement finishes that item for the session. The miss still counts in the moment, and compensation is determined on a slightly slower cadence.',
       'Card characters still offers Simplified, Traditional, or Both. This will now apply to not just the exercise word(s) but also any Mandarin content associated with it (like an example sentence). When Both is set, the additional Sentences and examples setting lets you pick which character system the study content should use.',
