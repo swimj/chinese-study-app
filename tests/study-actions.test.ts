@@ -314,24 +314,23 @@ describe('review attempt event derivation', () => {
     );
   });
 
-  test('rejects incomplete review reinforcement batches', () => {
-    assert.throws(
-      () =>
-        deriveReviewCommitFieldsFromAttemptEvents([
-          createAttemptEvent({
-            id: 'attempt-1',
-            actionAttemptSequence: 1,
-            rating: 'forgot',
-            outcome: 'incorrect',
-          }),
-          createAttemptEvent({
-            id: 'attempt-2',
-            actionAttemptSequence: 2,
-            rating: 'good',
-            outcome: 'correct',
-          }),
-        ]),
-      /do not represent a covered review action/,
+  test('commits skipped reinforcement with the recorded lapse', () => {
+    assert.deepEqual(
+      deriveReviewCommitFieldsFromAttemptEvents([
+        createAttemptEvent({
+          id: 'attempt-1',
+          actionAttemptSequence: 1,
+          rating: 'forgot',
+          outcome: 'incorrect',
+        }),
+        createAttemptEvent({
+          id: 'attempt-2',
+          actionAttemptSequence: 2,
+          rating: 'good',
+          outcome: 'correct',
+        }),
+      ]),
+      { failureCount: 1, terminalRating: null },
     );
   });
 

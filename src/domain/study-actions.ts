@@ -409,6 +409,9 @@ export function deriveReviewCommitFieldsFromAttemptEvents(events: StudyAttemptEv
     }
   }
 
+  // An explicit completion may skip remaining reinforcement; the lapse still owns scheduling.
+  if (commitFields === null && failureCount > 0) commitFields = { failureCount, terminalRating: null };
+
   if (commitFields === null) {
     throw new Error('Review attempt events do not represent a covered review action.');
   }

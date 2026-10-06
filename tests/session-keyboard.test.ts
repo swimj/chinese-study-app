@@ -380,3 +380,16 @@ test('native quality button activation never grades, submits, or advances a stud
   assert.deepEqual(resolveSessionKey(key('?'), createContext({ isQualityControlTarget: true })),
     { type: 'toggle_shortcut_guide' });
 });
+
+
+test('Shift+Space skips only reinforcement outside typing and IME composition', () => {
+  const context = createContext({ canSkipReinforcement: true });
+  assert.deepEqual(resolveSessionKey(key(' ', { shiftKey: true }), context), { type: 'skip_reinforcement' });
+  assert.deepEqual(resolveSessionKey(key(' '), context), { type: 'reveal' });
+  for (const overrides of [{ canSkipReinforcement: false }, { isEditableTarget: true }, { sessionStarted: false }]) {
+    assert.equal(resolveSessionKey(key(' ', { shiftKey: true }), { ...context, ...overrides }), null);
+  }
+  assert.equal(resolveSessionKey(key(' ', { shiftKey: true, isComposing: true }), context), null);
+  assert.equal(resolveSessionKey(key(' ', { shiftKey: true, keyCode: 229 }), context), null);
+  assert.ok(getSessionShortcutGuide(context).flatMap((section) => section.rows).some((row) => row.key === 'Shift+Space'));
+});

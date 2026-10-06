@@ -193,6 +193,7 @@ function StudySessionPanelContent({
   onToggleLearnerRequestedReview,
   onToggleFrozenProductionLearnerRequestedReview,
   onRate,
+  onSkipReinforcement,
   shortcutGuideOpen,
   onOpenShortcutGuide,
   onCloseShortcutGuide,
@@ -271,6 +272,7 @@ function StudySessionPanelContent({
   onRevealAnswer: () => void;
   onToggleLearnerRequestedReview: () => void;
   onToggleFrozenProductionLearnerRequestedReview: () => void;
+  onSkipReinforcement: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
   shortcutGuideOpen: boolean;
   onOpenShortcutGuide: () => void;
@@ -331,6 +333,16 @@ function StudySessionPanelContent({
     completedSummary: completionGate || panelView === 'completed',
     summaryFinalizationKind: sessionFinalization.kind,
   });
+  keyboardContext.canSkipReinforcement = !completionGate && reviewInReinforcement && !productionAwaitingNext && !pureCueAwaitingNext && !contrastAwaitingNext;
+  const skipReinforcementButton = keyboardContext.canSkipReinforcement ? (
+    <button type="button" className="secondary-button" onClick={onSkipReinforcement}
+      data-session-skip-reinforcement
+      aria-keyshortcuts="Shift+Space"
+      title="Complete this review with its recorded miss. Compensation is handled separately."
+      disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}>
+      Skip reinforcement<ShortcutHint shortcut="Shift+Space" persist />
+    </button>
+  ) : null;
   const primaryAction = getSessionPrimaryAction(keyboardContext);
   const shortcutGuide = getSessionShortcutGuide(keyboardContext, { includeDialogClose: shortcutGuideOpen });
 
@@ -742,6 +754,7 @@ function StudySessionPanelContent({
                   </button>
                 </div>
               )}
+              {skipReinforcementButton}
               <UndoButton
                 hasUndo={hasUndo}
                 submittingRating={submittingRating}
@@ -1035,6 +1048,7 @@ function StudySessionPanelContent({
                   <ShortcutHint shortcut={shortcutFor(primaryAction, 'reveal')} />
                 </button>
               )}
+              {skipReinforcementButton}
               <UndoButton
                 hasUndo={hasUndo}
                 submittingRating={submittingRating}

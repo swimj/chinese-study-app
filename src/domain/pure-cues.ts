@@ -223,6 +223,9 @@ export function derivePureCueAssessment(
     }
   }
 
+  // An explicit completion may skip remaining reinforcement; the lapse still owns scheduling.
+  if (covered === null && failureCount > 0) covered = { failureCount, terminalRating: null };
+
   if (covered === null) throw new Error('Pure cue events do not represent a covered assessment.');
   return covered;
 }

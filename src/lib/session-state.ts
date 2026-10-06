@@ -391,6 +391,58 @@ export function rateActiveContrastSelectionUnit({
   };
 }
 
+/** Finish a lapsed review without inventing a recall or changing its lapse evidence. */
+export function skipActiveReviewReinforcement(state: BucketSessionState): BucketSessionTransitionResult {
+  const active = getActiveSessionUnit(state);
+  if (active.type !== 'study' || active.bucket !== 'review') {
+    throw new Error('Session invariant violated: skipping reinforcement requires an active review.');
+  }
+  const item = active.item;
+  if (isPureCueReviewItem(item)) {
+    const progress = state.pureCueReviewProgress[item.sessionActionId];
+    if (!progress || progress.failureCount === 0) {
+      throw new Error('Session invariant violated: skipping reinforcement requires a recorded lapse.');
+    }
+    return {
+      state: refreshBucketSessionScheduler({
+        ...state,
+        scheduler: removeCompletedReviewAction(state.scheduler),
+        pureCueReviewProgress: removeKey(state.pureCueReviewProgress, item.sessionActionId),
+      }),
+      commit: {
+        type: 'commit-pure-cue-production-session',
+        sessionId: state.sessionId,
+        sessionActionId: item.sessionActionId,
+        attemptId: `${state.sessionId}/${item.sessionActionId}/assessment`,
+        snapshotId: item.snapshot.snapshotId,
+        events: [...progress.events],
+      },
+    };
+  }
+  const progress = state.reviewProgress[item.sessionActionId];
+  if (!progress || progress.failureCount === 0 || item.actionKind === 'contrast_selection') {
+    throw new Error('Session invariant violated: skipping reinforcement requires a recorded word-review lapse.');
+  }
+  return {
+    state: refreshBucketSessionScheduler({
+      ...state,
+      scheduler: removeCompletedReviewAction(state.scheduler),
+      reviewProgress: removeKey(state.reviewProgress, item.sessionActionId),
+    }),
+    commit: {
+      type: 'commit-review-action-session',
+      sessionId: state.sessionId,
+      sessionActionId: item.sessionActionId,
+      targetWordId: item.targetWordId,
+      actionKind: item.actionKind,
+      sampledSkillIds: item.sampledSkillIds.map(onlyReviewStudySkill),
+      failureCount: progress.failureCount,
+      terminalRating: null,
+      events: [...progress.attempts],
+    },
+  };
+}
+
 export function rateActivePureCueProductionUnit(
   state: BucketSessionState,
   rating: ReviewRating,

@@ -812,3 +812,45 @@ function createWord(overrides: Partial<Word> & Pick<Word, 'id' | 'status'>): Wor
     lastLearningCoveredOn: overrides.lastLearningCoveredOn ?? null,
   };
 }
+
+
+test('skipping reinforcement completes only the active review and preserves evidence and Undo state', async () => {
+  const api = await import('../src/lib/session-state.ts');
+  const { deriveReviewCommitFieldsFromAttemptEvents } = await import('../src/domain/study-actions.ts');
+  for (const pureCue of [false, true]) {
+    for (const recalls of [0, 1, 2]) {
+      const item = pureCue ? createPureCueReviewItem() : createReviewStudyItem('skip-review');
+      let state = api.markActiveSessionUnitStarted(api.createBucketSessionState({
+        buckets: { review: [item], learning: [], unstudied: [] },
+        sessionId: testSessionId, seed: 1,
+      }));
+      assert.throws(() => api.skipActiveReviewReinforcement(state), /recorded.*lapse/);
+      state = pureCue
+        ? api.rateActivePureCueProductionUnit(state, 'forgot', { response: 'wrong', outcome: 'rejected', submittedWordId: null }).state
+        : api.rateActiveSessionUnit(state, 'forgot').state;
+      for (let i = 0; i < recalls; i++) {
+        state = pureCue
+          ? api.rateActivePureCueProductionUnit(state, 'good', { response: '撒谎', outcome: 'accepted', submittedWordId: 'word-a' }).state
+          : api.rateActiveSessionUnit(state, 'good').state;
+      }
+      const undo = cloneBucketSessionState(state);
+      const skipped = api.skipActiveReviewReinforcement(state);
+      assert.equal(skipped.state.phase, 'completed');
+      assert.equal(skipped.state.answeredCount, state.answeredCount);
+      assert.deepEqual(cloneBucketSessionState(state), undo);
+      assert.equal(api.getBucketSessionUnitCounts(undo).review, 1);
+      assert.equal(api.getBucketSessionUnitCounts(skipped.state).review, 0);
+      assert.deepEqual(skipped.state.reviewProgress, {});
+      assert.deepEqual(skipped.state.pureCueReviewProgress, {});
+      if (skipped.commit.type === 'commit-review-action-session') {
+        assert.deepEqual(skipped.commit.events, state.reviewProgress[item.sessionActionId]!.attempts);
+        assert.deepEqual(deriveReviewCommitFieldsFromAttemptEvents(skipped.commit.events), { failureCount: 1, terminalRating: null });
+        assert.equal(skipped.commit.failureCount, 1);
+        assert.equal(skipped.commit.terminalRating, null);
+      } else if (skipped.commit.type === 'commit-pure-cue-production-session') {
+        assert.deepEqual(skipped.commit.events, state.pureCueReviewProgress[item.sessionActionId]!.events);
+        assert.equal(hasPureCueReflectionEvidence({ [item.sessionActionId]: { events: skipped.commit.events } }), true);
+      } else assert.fail('Skip must produce a review commit.');
+    }
+  }
+});

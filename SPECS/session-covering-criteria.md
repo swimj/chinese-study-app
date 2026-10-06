@@ -171,7 +171,9 @@ then the review item is immediately covered for the session.
 
 If the user's first outcome is `Forgot`, the item enters same-session reinforcement.
 
-The user must then successfully recall that same review item 3 times in a row before it is considered covered for the session.
+The user can successfully recall that same review item 3 times in a row, or choose **Skip reinforcement** to cover it for the session. This applies to word reviews and standalone pure cues. Skipping preserves every recorded attempt and failure, adds no recall attempt, and commits the ordinary lapse outcome (including its 6-hour scheduling reset). It neither requests nor assumes compensation. Undo restores reinforcement with its prior progress, following the ordinary rating Undo behavior (a submitted production answer returns to input).
+
+The skip button is available on an active reinforcement card, before or after revealing its answer. **Shift+Space** invokes it outside editable fields; it is suppressed during IME composition. The frozen feedback card for an automatic miss must first be continued with Continue.
 
 Any additional failures during this reinforcement count toward the item's session failure count.
 

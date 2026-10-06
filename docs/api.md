@@ -280,6 +280,13 @@ uses its own commit clock, and returns 204. An identical retry is idempotent;
 conflicting evidence or a snapshot already consumed by another action is 400.
 No member-word scheduler or admission state is changed.
 
+Word-review and pure-cue completion accept a recorded lapse with zero, one, or
+two subsequent successful reinforcement recalls when the learner skips the
+remaining practice. These commits preserve the supplied attempts and ordinary
+lapse scheduling; they add no successful recall and imply no compensation.
+Empty batches, inconsistent evidence, and events after normal coverage remain
+invalid.
+
 | Method | Path | Handler domain |
 | --- | --- | --- |
 | GET | `/api/session-payload` | Immediate composition from currently ready content |
