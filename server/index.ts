@@ -1,3 +1,6 @@
+import { getDebriefInterests, setDebriefInterests, getLatestSessionDebrief, getSessionDebrief, retrySessionDebrief, SessionDebriefNotFoundError, SessionDebriefRetryConflictError } from './db/session-debrief.ts';
+import { SessionDebriefInputError, validateDebriefInventory } from '../src/domain/session-debrief.ts';
+import { startSessionDebriefRuntime } from './session-debrief/worker.ts';
 import { ContentQualityInputError, parseContentQualityTarget, recordContentQualityEncounter, setContentQualityRating, getContentQualityAnalytics } from './db/content-quality.ts';
 import type { ContentQualityKind } from '../src/domain/content-quality.ts';
 import cors from 'cors';
@@ -183,6 +186,7 @@ export type CreateAppOptions = {
   wordIntroductionService?: WordIntroductionService;
   wakeWordPreparation?: () => void;
   canPrepareWords?: () => boolean;
+  wakeSessionDebriefs?: () => void;
 };
 
 function parseMyWordsStatusQuery(value: unknown): MyWordsStatus[] | undefined | 'invalid' {
@@ -668,6 +672,7 @@ export function createApp(options: CreateAppOptions = {}) {
       ...getLearningPolicy(studyDayKey),
       characterPresentation: getCharacterPresentation(),
       sentenceCharacterPresentation: getSentenceCharacterPresentation(),
+      debriefInterests: getDebriefInterests(),
     });
   });
 
@@ -698,6 +703,34 @@ export function createApp(options: CreateAppOptions = {}) {
       }
 
       res.status(500).json({ error: 'Failed to update unstudied admission source' });
+    }
+  });
+
+  app.patch('/api/learner-settings/debrief-interests', (req, res) => {
+    try { res.json(setDebriefInterests(req.body?.debriefInterests)); }
+    catch (error) {
+      res.status(error instanceof SessionDebriefInputError ? 400 : 500).json({ error: error instanceof SessionDebriefInputError ? error.message : 'Failed to update interests' });
+    }
+  });
+
+  app.get('/api/session-debriefs/latest', (_req, res) => {
+    res.json({ debrief: getLatestSessionDebrief() });
+  });
+
+  app.get('/api/session-debriefs/:sessionId', (req, res) => {
+    const debrief = getSessionDebrief(req.params.sessionId);
+    if (!debrief) { res.status(404).json({ error: 'Session debrief not found' }); return; }
+    res.json({ debrief });
+  });
+
+  app.post('/api/session-debriefs/:sessionId/retry', (req, res) => {
+    try {
+      const debrief = retrySessionDebrief(req.params.sessionId);
+      try { options.wakeSessionDebriefs?.(); } catch { /* A durable retry survives a missed wake. */ }
+      res.json({ debrief });
+    } catch (error) {
+      res.status(error instanceof SessionDebriefNotFoundError ? 404 : error instanceof SessionDebriefRetryConflictError ? 409 : 500)
+        .json({ error: error instanceof SessionDebriefNotFoundError || error instanceof SessionDebriefRetryConflictError ? error.message : 'Failed to retry session debrief' });
     }
   });
 
@@ -1647,6 +1680,11 @@ export function createApp(options: CreateAppOptions = {}) {
     const completedReviewActionCount = req.body?.completedReviewActionCount;
     const failedReviewActionCount = req.body?.failedReviewActionCount;
     const activeDurationMs = req.body?.activeDurationMs;
+    const debriefInventory: unknown = req.body?.debriefInventory;
+    if (debriefInventory !== undefined) {
+      try { validateDebriefInventory(debriefInventory); }
+      catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid debrief inventory' }); return; }
+    }
 
     if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
       res.status(400).json({ error: 'Expected non-empty string sessionId' });
@@ -1681,6 +1719,7 @@ export function createApp(options: CreateAppOptions = {}) {
         completedReviewActionCount,
         failedReviewActionCount,
         activeDurationMs,
+        ...(debriefInventory === undefined ? {} : { debriefInventory }),
       });
       try {
         reflectionLifecycleLogger.emit({
@@ -1692,6 +1731,9 @@ export function createApp(options: CreateAppOptions = {}) {
         });
       } catch {
         // Observability must not turn a durable summary into a failed response.
+      }
+      if (debriefInventory !== undefined) {
+        try { options.wakeSessionDebriefs?.(); } catch { /* The queue is already durable. */ }
       }
       res.status(204).end();
     } catch (error) {
@@ -2429,9 +2471,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       });
   const usagePulseScheduler = startUsagePulseScheduler();
   const wordPreparation = startWordPreparationRuntime();
+  const sessionDebriefs = startSessionDebriefRuntime();
   startServer({
-    app: createApp({ serviceMetrics, wakeWordPreparation: wordPreparation.wake, canPrepareWords: wordPreparation.canPrepare }),
-    stopBackgroundWork: wordPreparation.stop,
+    app: createApp({ serviceMetrics, wakeWordPreparation: wordPreparation.wake, canPrepareWords: wordPreparation.canPrepare, wakeSessionDebriefs: sessionDebriefs.wake }),
+    stopBackgroundWork: async () => { await Promise.all([wordPreparation.stop(), sessionDebriefs.stop()]); },
     additionalServers: metricsServer ? [metricsServer] : [],
     closeDatabase: () => {
       usagePulseScheduler.stop();

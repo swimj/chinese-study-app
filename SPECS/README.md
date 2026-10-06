@@ -12,6 +12,7 @@ verified implementation; agreed behavior changes update contracts and tests toge
 | [learning-review-model.md](./learning-review-model.md) | Word lifecycle (`unstudied` / `learning` / `review`), direction-level rules, session inclusion at word level |
 | [session-covering-criteria.md](./session-covering-criteria.md) | In-session covering, undo, commit payload intent (frontend-owned session snapshot) |
 | [study-action-model.md](./study-action-model.md) | Implemented scheduling architecture: study actions, word-skill state, attempt events, contrast selection, and the bounded production-task/cue model |
+| [session-debrief.md](./session-debrief.md) | Informational Mandarin debrief inventory, durable generation, interests, failure and retry |
 | [session-reflection-generation.md](./session-reflection-generation.md) | Completed-session boundary, reflection evidence, generation attempts, failure isolation, retry, and resource bounds |
 | [reflection-proposals-and-handles.md](./reflection-proposals-and-handles.md) | Reflection result, proposal review, authorized-operation, application, provenance, and handle contracts |
 

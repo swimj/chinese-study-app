@@ -88,6 +88,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0022_exercise_compensation_days',
   sql: fs.readFileSync(new URL('./migrations/0022_exercise_compensation_days.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0023_session_debrief',
+  sql: fs.readFileSync(new URL('./migrations/0023_session_debrief.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

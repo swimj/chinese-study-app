@@ -36,6 +36,8 @@ The current implementation includes:
 - mixed study sessions containing due review actions, active learning words, and unstudied words admitted by the current new-word intake policy
 - active session snapshot owned by the frontend after session start
 - frontend dashboard that loads words and due review actions from the backend API
+- durable Mandarin session debriefs with up to three notes from the exact session
+  vocabulary and optional learner interests, independently of reflection
 - durable post-session reflection with proposal review, explicit authorization,
   supported application, failure isolation, and retry diagnostics
 - immutable production tasks and cues with snapshotted answer spaces,

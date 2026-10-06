@@ -1,3 +1,5 @@
+import { enqueueSessionDebrief } from './session-debrief.ts';
+import { validateDebriefInventory, type SessionDebriefInventoryItem } from '../../src/domain/session-debrief.ts';
 import { validateContentQualitySchema } from './content-quality.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -2489,12 +2491,14 @@ export function recordReviewSessionSummary({
   completedReviewActionCount,
   failedReviewActionCount,
   activeDurationMs,
+  debriefInventory,
 }: {
   sessionId: string;
   completedAt: string;
   completedReviewActionCount: number;
   failedReviewActionCount: number;
   activeDurationMs: number;
+  debriefInventory?: SessionDebriefInventoryItem[];
 }) {
   const normalizedSessionId = sessionId.trim();
   if (normalizedSessionId.length === 0) {
@@ -2517,29 +2521,39 @@ export function recordReviewSessionSummary({
     throw new Error('Expected non-negative integer activeDurationMs');
   }
 
-  getDb().prepare(`
-    INSERT INTO learner_owned_review_session_summaries (
-      session_id,
-      completed_at,
-      day_key,
-      completed_count,
-      failed_count,
-      active_duration_ms
-    ) VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(learner_id, session_id) DO UPDATE SET
-      completed_at = excluded.completed_at,
-      day_key = excluded.day_key,
-      completed_count = excluded.completed_count,
-      failed_count = excluded.failed_count,
-      active_duration_ms = excluded.active_duration_ms
-  `).run(
-    normalizedSessionId,
-    completedAt,
-    completedAt.slice(0, 10),
-    completedReviewActionCount,
-    failedReviewActionCount,
-    activeDurationMs,
-  );
+  if (debriefInventory !== undefined) validateDebriefInventory(debriefInventory);
+  const ownsTransaction = debriefInventory !== undefined;
+  if (ownsTransaction) getDb().exec('BEGIN IMMEDIATE');
+  try {
+    getDb().prepare(`
+      INSERT INTO learner_owned_review_session_summaries (
+        session_id,
+        completed_at,
+        day_key,
+        completed_count,
+        failed_count,
+        active_duration_ms
+      ) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(learner_id, session_id) DO UPDATE SET
+        completed_at = excluded.completed_at,
+        day_key = excluded.day_key,
+        completed_count = excluded.completed_count,
+        failed_count = excluded.failed_count,
+        active_duration_ms = excluded.active_duration_ms
+    `).run(
+      normalizedSessionId,
+      completedAt,
+      completedAt.slice(0, 10),
+      completedReviewActionCount,
+      failedReviewActionCount,
+      activeDurationMs,
+    );
+    if (debriefInventory !== undefined && config.studyProfile === 'mandarin') enqueueSessionDebrief(normalizedSessionId, completedAt, debriefInventory);
+    if (ownsTransaction) getDb().exec('COMMIT');
+  } catch (error) {
+    if (ownsTransaction) getDb().exec('ROLLBACK');
+    throw error;
+  }
 }
 
 export function completeLearningWordSession(wordId: string, success: boolean): Word {
