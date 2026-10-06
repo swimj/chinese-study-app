@@ -8,7 +8,7 @@ import { getDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { bootstrapLearner, setLearnerDisabled } from '../server/db/identity.ts';
 import { recordReviewSessionSummary } from '../server/db/persistence.ts';
-import { claimSessionDebrief, finishSessionDebrief, getDebriefInterests, getLatestSessionDebrief, getSessionDebrief,
+import { claimSessionDebrief, finishSessionDebrief, getDebriefInterests, getLatestSessionDebrief, getSessionDebrief, listQueuedSessionDebriefs,
   recoverExpiredSessionDebriefs, retrySessionDebrief, setDebriefInterests } from '../server/db/session-debrief.ts';
 import { createSessionDebriefWorker } from '../server/session-debrief/worker.ts';
 import { SessionDebriefProviderError, DEBRIEF_PRICING, type DebriefRunMetadata } from '../server/session-debrief/provider.ts';
@@ -16,7 +16,8 @@ import type { SessionDebriefInput } from '../src/domain/session-debrief.ts';
 
 let dir: string;
 const owner = <T>(work: () => T) => runWithLearnerId('a', work);
-const inventory = [{ word: '学问 / 学识', pinyin: 'xué wèn / xué shí' }, { word: '报备', pinyin: 'bào bèi' }];
+const inventory = [{ word: '学问 / 学识', pinyin: 'xué wèn / xué shí' },
+  ...Array.from({ length: 14 }, (_, index) => ({ word: `报备${index + 1}`, pinyin: 'bào bèi' }))];
 const metadata: DebriefRunMetadata = { responseId: 'stub', finishReason: 'stop', usage: { inputTokens: 10, cachedInputTokens: 0,
   cacheWriteInputTokens: null, outputTokens: 5, reasoningTokens: 1, totalTokens: 15 }, pricing: DEBRIEF_PRICING, estimatedCostUsd: .00007 };
 function summary(sessionId: string, debriefInventory?: typeof inventory, completedAt = '2026-10-06T01:00:00.000Z') {
@@ -36,6 +37,29 @@ test('legacy summaries enqueue nothing; empty inventory is ready without provide
     sessionId: 'empty', completedAt: '2026-10-06T01:00:00.000Z', exerciseCount: 0, status: 'ready', notes: [], error: null, attemptCount: 0 });
   summary('empty', inventory); assert.equal(owner(() => getSessionDebrief('empty'))?.exerciseCount, 0);
 });
+test('completed inventories below 15 are ready and recent without provider calls or attempts', async () => {
+  for (let count = 1; count < 15; count++) {
+    const id = `small-${count}`;
+    summary(id, inventory.slice(0, count), `2026-10-06T01:${String(count).padStart(2, '0')}:00.000Z`);
+    const job = owner(() => getSessionDebrief(id))!;
+    assert.equal(job.exerciseCount, count); assert.equal(job.status, 'ready');
+    assert.deepEqual(job.notes, []); assert.equal(job.attemptCount, 0);
+    assert.equal(owner(() => claimSessionDebrief(id, id, '2026-10-06T02:00:00.000Z', '2026-10-06T03:00:00.000Z')), null);
+  }
+  assert.equal(owner(getLatestSessionDebrief)?.sessionId, 'small-14');
+  let calls = 0;
+  const worker = createSessionDebriefWorker({ controls: () => ({ maintenanceMode: false, providerWorkEnabled: true }),
+    providerWork: async (work) => work(), provider: { isConfigured: () => true, generate: async () => {
+      calls++; return { result: { notes: [] }, metadata };
+    } } });
+  assert.equal(await worker.step(), false); assert.equal(calls, 0); await worker.stop();
+  summary('threshold-15', inventory);
+  assert.equal(owner(() => getSessionDebrief('threshold-15'))?.status, 'queued');
+  // Resolve this fixture so later worker tests retain their exact routing assertions.
+  owner(() => claimSessionDebrief('threshold-15', 'threshold', '2026-10-06T02:00:00.000Z', '2026-10-06T03:00:00.000Z'));
+  owner(() => finishSessionDebrief({ sessionId: 'threshold-15', token: 'threshold', completedAt: '2026-10-06T02:01:00.000Z',
+    durationMs: 0, result: { notes: [] }, error: null, errorCode: null, metadata }));
+});
 test('settings and jobs are isolated; first exact input and interests survive duplicate finish and explicit retries', () => {
   assert.equal(owner(getDebriefInterests), ''); owner(() => setDebriefInterests('rock climbing'));
   assert.equal(runWithLearnerId('b', getDebriefInterests), '');
@@ -43,7 +67,7 @@ test('settings and jobs are isolated; first exact input and interests survive du
   owner(() => setDebriefInterests('reading')); summary('snapshot', [{ word: 'different', pinyin: 'other' }]);
   const input = owner(() => claimSessionDebrief('snapshot', 'first', '2026-10-06T02:00:00.000Z', '2026-10-06T03:00:00.000Z'))!;
   assert.deepEqual(input.interests, ['rock climbing']); assert.equal(input.items[0].word, inventory[0].word);
-  assert.equal(input.items.length, 2); assert.equal(input.items[1].ref, 'w2');
+  assert.equal(input.items.length, 15); assert.equal(input.items[1].ref, 'w2');
   assert.equal(runWithLearnerId('b', () => getSessionDebrief('snapshot')), null);
   assert.throws(() => runWithLearnerId('b', () => retrySessionDebrief('snapshot')), /not found/);
   assert.equal(owner(() => finishSessionDebrief({ sessionId: 'snapshot', token: 'first', completedAt: '2026-10-06T02:01:00.000Z', durationMs: 60000,
@@ -132,4 +156,28 @@ test('French completion never enqueues the Mandarin provider flow', () => {
   `], { encoding: 'utf8', env: { ...process.env, APP_AUTH_MODE: 'trusted_local', APP_STUDY_PROFILE: 'french',
     APP_LEARNER_ID: 'french-test', APP_DATA_DIR: path.join(dir, 'french') } });
   assert.equal(result.status, 0, result.stderr);
+});
+
+test('legacy small queued and failed jobs settle without new attempts, while ready results are preserved', () => {
+  function legacy(id: string, status: 'queued' | 'failed' | 'ready') {
+    summary(id);
+    const result = status === 'ready' ? JSON.stringify({ notes: [{ text: 'Preserved', refs: ['w1'], followUp: null }] }) : null;
+    getDb().prepare(`INSERT INTO learner_session_debrief_jobs
+      (learner_id, session_id, completed_at, exercise_count, input_json, status, result_json, updated_at)
+      VALUES ('a', ?, '2026-10-06T01:00:00.000Z', 14, ?, ?, ?, '2026-10-06T01:00:00.000Z')`)
+      .run(id, JSON.stringify({ schemaVersion: 'session_debrief_input.v1', sessionDate: '2026-10-06T01:00:00.000Z',
+        interests: [], items: inventory.slice(0, 14).map((item, i) => ({ ...item, ref: `w${i + 1}` })) }), status, result);
+  }
+  legacy('legacy-small-claim', 'queued'); legacy('legacy-small-retry', 'failed');
+  legacy('legacy-small-worker', 'queued'); legacy('legacy-small-failed', 'failed'); legacy('legacy-small-ready', 'ready');
+  const preserved = owner(() => getSessionDebrief('legacy-small-ready'));
+  assert.equal(owner(() => claimSessionDebrief('legacy-small-claim', 'never', '2026-10-06T02:00:00.000Z', '2026-10-06T03:00:00.000Z')), null);
+  assert.equal(owner(() => retrySessionDebrief('legacy-small-retry')).status, 'ready');
+  assert.deepEqual(listQueuedSessionDebriefs(), []);
+  for (const id of ['legacy-small-claim', 'legacy-small-retry', 'legacy-small-worker', 'legacy-small-failed']) {
+    const job = owner(() => getSessionDebrief(id))!;
+    assert.equal(job.status, 'ready'); assert.deepEqual(job.notes, []); assert.equal(job.attemptCount, 0);
+  }
+  assert.deepEqual(owner(() => getSessionDebrief('legacy-small-ready')), preserved);
+  assert.equal(getDb().prepare(`SELECT COUNT(*) AS count FROM learner_session_debrief_attempts WHERE session_id LIKE 'legacy-small-%'`).get()?.count, 0);
 });

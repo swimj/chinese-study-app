@@ -19,6 +19,10 @@ snapshots currently contain hanzi without pinyin, so their exact alternatives
 use empty pinyin; this feature does not expand those snapshots. The backend does not
 reinterpret or enrich this inventory from later lexical content.
 
+Sessions admit at most 1000 units under the shared session cap; the supplied
+inventory accepts at most that same 1000 rows. Completion preserves every
+covered exercise rather than truncating the inventory to satisfy validation.
+
 The completed summary and first debrief job are saved in one transaction.
 Finalization failure permits the existing retry; successful completion is never
 reopened by provider or debrief-result failure. Repeated finalization preserves
@@ -39,8 +43,9 @@ receives the whole inventory and shared interests, without mistakes, mastery
 claims, prompts, personal notes, or later history. The result contains zero to
 three notes, each with `text`, exact supporting `refs`, and nullable `followUp`.
 Validate shape and known references before storing or displaying notes. An empty
-successful result is ready with zero notes. An empty inventory becomes ready
-with zero notes without a provider call.
+successful result is ready with zero notes. Inventories with fewer than 15
+covered exercises become ready with zero notes without a provider call or
+generation attempt. At 15 exercises, ordinary queued generation applies.
 
 Jobs are learner-private and durable. Provider work continues when the learner
 leaves the summary, navigates away, refreshes, or closes the browser. A serial
@@ -55,7 +60,11 @@ the database.
 
 Provider failure, invalid or truncated output, and interruption are retryable
 through a deliberate learner action. Retry applies only to failed jobs and
-never regenerates ready results. Persist concluded attempt timestamps, duration,
+never regenerates ready results. Existing queued or failed jobs below the
+15-exercise threshold settle to ready with zero notes during worker recovery,
+queue enumeration, claim, or explicit failed-job retry, without a new attempt.
+Already ready results and concluded attempts remain immutable; active calls
+retain their ordinary lease and completion handling. Persist concluded attempt timestamps, duration,
 normalized token usage, response and finish identifiers when available, and the
 versioned price basis and cost estimate. Cached writes replace their ordinary
 input charge. Missing usage or a context outside the known short-context price

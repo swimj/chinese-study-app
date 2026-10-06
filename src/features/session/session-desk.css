@@ -91,6 +91,7 @@
 .session-settings-interests { display: grid; gap: .4rem; }
 .session-settings-interests .notes { margin: 0; }
 .session-settings-interests textarea { width: 100%; min-height: 5rem; resize: vertical; font: inherit; color: var(--text); background: var(--surface); padding: .6rem; border: 1px solid var(--border); border-radius: 8px; }
+.session-settings-interests textarea:focus::placeholder { color: transparent; }
 @keyframes debrief-breathe { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
 @media (max-width: 520px) { .debrief-note { font-size: 1rem; } .recent-session-entry { padding: 1rem; align-items: flex-start; } .recent-session-status { text-align: right; } .session-desk .debrief-actions { gap: .5rem; } }
 .home-session-active .home-grid > .session-debrief-panel:first-child { display: grid; }

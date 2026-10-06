@@ -1,3 +1,6 @@
+import { MAX_SESSION_ITEMS } from './session-limits';
+
+export const MIN_SESSION_DEBRIEF_ITEMS = 15;
 export type SessionDebriefInventoryItem = { word: string; pinyin: string };
 export type SessionDebriefNote = { text: string; refs: string[]; followUp: string | null };
 export type SessionDebriefResult = { notes: SessionDebriefNote[] };
@@ -26,8 +29,8 @@ export function validateDebriefInterests(value: unknown): asserts value is strin
 }
 
 export function validateDebriefInventory(value: unknown): asserts value is SessionDebriefInventoryItem[] {
-  if (!Array.isArray(value) || value.length > 1000) {
-    throw new SessionDebriefInputError('Expected debriefInventory array of at most 1000 exercises');
+  if (!Array.isArray(value) || value.length > MAX_SESSION_ITEMS) {
+    throw new SessionDebriefInputError(`Expected debriefInventory array of at most ${MAX_SESSION_ITEMS} exercises`);
   }
   for (const item of value) {
     if (!isRecord(item) || Object.keys(item).some((key) => key !== 'word' && key !== 'pinyin')

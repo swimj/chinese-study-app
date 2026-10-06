@@ -326,6 +326,10 @@ reads only due identities before restoring each learner context.
 
 The optional summary inventory freezes exact encountered word/pinyin rows and
 the learner's `debrief_interests` setting. Missing interests read as empty text.
+Inventories below 15 exercises persist as ready-empty without an attempt; larger
+inventories queue generation up to the shared 1000-unit session cap. Worker
+recovery, enumeration, claim and explicit retry settle old small queued/failed
+jobs without generating, preserving existing ready results and attempt records.
 Ready results and concluded attempts are immutable. Queue recovery, leases,
 token fencing, provider controls and draining shutdown live in
 `server/session-debrief/worker.ts`; provider transport/validation and the

@@ -296,7 +296,11 @@ separate stored attempt or scheduler state.
 | GET | `/api/session-payload` | Immediate composition from currently ready content |
 | POST | `/api/session-payload` | `{ "studyDayKey": "YYYY-MM-DD" }`; bounded session-entry preparation and ready payload |
 
-The session payload contains the three study-item buckets. Review production
+The session payload contains the three study-item buckets, admitting at most
+1000 units in total, including standalone pure cues in review. Above that cap,
+slots follow the live scheduler's 50/30/20 review/learning/unstudied weights,
+redistributing unused slots from smaller buckets and retaining internal order.
+Review production
 items freeze their selected durable cue or meaning-derived fallback, the canonical
 `{ wordId, hanzi, traditional }` rows whose ids define the accepted set used for
 client grading, and nullable recheck-demand id. Unstudied membership is the
@@ -834,7 +838,8 @@ interpretation; the shared wire types live in `src/domain/content-quality.ts`.
 array of `{word,pinyin}` encounter snapshots (at most 1000 rows; nonempty word
 text and a pinyin string, which may be empty). The first Mandarin inventory and interests snapshot enqueue atomically
 with the completed summary; response remains 204. Missing inventory creates no
-job. Empty inventory is ready without a provider call. The existing 100kb JSON
+job. Inventories of 0–14 exercises are ready with zero notes and no provider call
+or generation attempt; inventories of 15–1000 queue generation. The existing 100kb JSON
 request-body limit also applies. Duplicate finalization preserves the first
 snapshot. No historical job is inferred.
 
@@ -842,7 +847,7 @@ snapshot. No historical job is inferred.
 | --- | --- | --- |
 | GET | `/api/session-debriefs/latest` | `{debrief}` for the latest completed debrief record, or null |
 | GET | `/api/session-debriefs/:sessionId` | `{debrief}`, or 404 |
-| POST | `/api/session-debriefs/:sessionId/retry` | `{debrief}` requeued from failed; 404 for absent/private records, 409 for other states |
+| POST | `/api/session-debriefs/:sessionId/retry` | `{debrief}` requeued from failed, or ready-empty for a legacy failed inventory below 15; 404 for absent/private records, 409 for other states |
 | PATCH | `/api/learner-settings/debrief-interests` | Accept/return `{debriefInterests:string}`; at most 1000 characters, empty allowed |
 
 `GET /api/status` includes `debriefInterests` with an empty default. All routes

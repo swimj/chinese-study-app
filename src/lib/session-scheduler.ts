@@ -8,6 +8,7 @@ import type {
 } from '../domain/study-actions';
 import { buildWordLifecycleSessionStudyItems, cloneProductionExerciseSnapshot, isPureCueSessionReviewItem } from '../domain/study-actions';
 import type { Word } from '../types';
+import { DEFAULT_SESSION_BUCKET_WEIGHTS } from '../domain/session-limits';
 
 // Live sessions seed from sessionId. This fallback keeps scheduler unit tests
 // deterministic when they omit both a seed and a session id.
@@ -67,11 +68,7 @@ export type BucketSessionScheduler = {
 type ReviewStudySkillId = Extract<StudySkillId, 'recognition' | 'production'>;
 
 const DEFAULT_BUCKET_POLICY: BucketSessionSchedulerPolicy = {
-  bucketWeights: {
-    review: 50,
-    learning: 30,
-    unstudied: 20,
-  },
+  bucketWeights: DEFAULT_SESSION_BUCKET_WEIGHTS,
 };
 
 const REVIEW_STUDY_SKILLS: ReviewStudySkillId[] = ['recognition', 'production'];

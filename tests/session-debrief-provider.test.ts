@@ -60,6 +60,7 @@ test('inventory bounds and result references fail loudly without rewriting exact
   // must not prevent completion merely because that exact answer set is long.
   validateDebriefInventory([{ word: Array(80).fill('学问 / 学识').join(' / '), pinyin: '' }]);
   validateDebriefInventory([{ word: '学问', pinyin: 'xué wèn / '.repeat(50) }]);
+  for (const count of [999, 1000]) validateDebriefInventory(Array(count).fill(exact[0]));
   validateDebriefInventory(exact); assert.equal(exact[0].word, '  学问 / 学识  ');
   for (const invalid of [null, [{ word: '学问', pinyin: null }], [{ word: '学问', pinyin: 'xué wèn', extra: 'ignored?' }], Array(1001).fill(exact[0])]) {
     assert.throws(() => validateDebriefInventory(invalid));
