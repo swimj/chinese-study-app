@@ -18,9 +18,9 @@ function provider(text = JSON.stringify(result), finish = 'stop') {
       { status: 200, headers: { 'Content-Type': 'application/json' } });
     } }) };
 }
-test('approved v6 prompt is byte-identical and provider uses the pinned low arm and minimal inventory', async () => {
-  const prompt = readFileSync(new URL('../server/session-debrief/prompts/debrief-v6.txt', import.meta.url));
-  assert.equal(createHash('sha256').update(prompt).digest('hex'), '9dae8b2607ffea9dfd2ff5f060a166a9fee54733040c774161259dcf72317609');
+test('approved v7 prompt is byte-identical and provider uses the pinned low arm and minimal inventory', async () => {
+  const prompt = readFileSync(new URL('../server/session-debrief/prompts/debrief-v7.txt', import.meta.url));
+  assert.equal(createHash('sha256').update(prompt).digest('hex'), 'cf746ae1ee5074c7257549b7d7c093f3866e0f97d5331709fe7f272c5b8868c8');
   const stub = provider();
   const generated = await stub.instance.generate(input, 'attempt-1');
   assert.deepEqual(generated.result, result);
@@ -65,6 +65,7 @@ test('inventory bounds and result references fail loudly without rewriting exact
   for (const invalid of [null, [{ word: '学问', pinyin: null }], [{ word: '学问', pinyin: 'xué wèn', extra: 'ignored?' }], Array(1001).fill(exact[0])]) {
     assert.throws(() => validateDebriefInventory(invalid));
   }
-  assert.throws(() => validateSessionDebriefResult({ notes: Array(4).fill(result.notes[0]) }, input));
+  assert.doesNotThrow(() => validateSessionDebriefResult({ notes: Array(10).fill(result.notes[0]) }, input));
+  assert.throws(() => validateSessionDebriefResult({ notes: Array(11).fill(result.notes[0]) }, input));
   assert.throws(() => validateSessionDebriefResult({ notes: [{ ...result.notes[0], refs: ['w1', 'w1'] }] }, input));
 });

@@ -42,7 +42,7 @@ export function validateDebriefInventory(value: unknown): asserts value is Sessi
 }
 
 export function validateSessionDebriefResult(value: unknown, input: SessionDebriefInput): asserts value is SessionDebriefResult {
-  if (!isRecord(value) || Object.keys(value).length !== 1 || !Array.isArray(value.notes) || value.notes.length > 3) {
+  if (!isRecord(value) || Object.keys(value).length !== 1 || !Array.isArray(value.notes) || value.notes.length > 10) {
     throw new Error('Invalid debrief result');
   }
   const refs = new Set(input.items.map((item) => item.ref));

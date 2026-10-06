@@ -37,11 +37,11 @@ future snapshots; failed-job retries reuse the original input.
 
 ## Generation and results
 
-Use the approved v6 prompt verbatim, `gpt-6.1-sol` with low reasoning, strict JSON
+Use the approved v7 prompt verbatim, `gpt-6.1-sol` with low reasoning, strict JSON
 output, at most 4096 output tokens, and a 180-second transport timeout. The model
 receives the whole inventory and shared interests, without mistakes, mastery
 claims, prompts, personal notes, or later history. The result contains zero to
-three notes, each with `text`, exact supporting `refs`, and nullable `followUp`.
+ten notes, each with `text`, exact supporting `refs`, and nullable `followUp`.
 Validate shape and known references before storing or displaying notes. An empty
 successful result is ready with zero notes. Inventories with fewer than 15
 covered exercises become ready with zero notes without a provider call or
