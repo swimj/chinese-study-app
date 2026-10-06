@@ -842,15 +842,33 @@ test('skipping reinforcement completes only the active review and preserves evid
       assert.equal(api.getBucketSessionUnitCounts(skipped.state).review, 0);
       assert.deepEqual(skipped.state.reviewProgress, {});
       assert.deepEqual(skipped.state.pureCueReviewProgress, {});
+      assert.ok('reinforcementSkipped' in skipped.commit && skipped.commit.reinforcementSkipped === true);
       if (skipped.commit.type === 'commit-review-action-session') {
         assert.deepEqual(skipped.commit.events, state.reviewProgress[item.sessionActionId]!.attempts);
-        assert.deepEqual(deriveReviewCommitFieldsFromAttemptEvents(skipped.commit.events), { failureCount: 1, terminalRating: null });
+        assert.deepEqual(deriveReviewCommitFieldsFromAttemptEvents(skipped.commit.events, { reinforcementSkipped: skipped.commit.reinforcementSkipped }), { failureCount: 1, terminalRating: null });
         assert.equal(skipped.commit.failureCount, 1);
         assert.equal(skipped.commit.terminalRating, null);
       } else if (skipped.commit.type === 'commit-pure-cue-production-session') {
         assert.deepEqual(skipped.commit.events, state.pureCueReviewProgress[item.sessionActionId]!.events);
         assert.equal(hasPureCueReflectionEvidence({ [item.sessionActionId]: { events: skipped.commit.events } }), true);
       } else assert.fail('Skip must produce a review commit.');
+      const { applySessionCommit } = await import('../src/features/session/session-commit.ts');
+      const previousFetch = globalThis.fetch;
+      let postedBody: Record<string, unknown> | undefined;
+      globalThis.fetch = async (_input, init) => {
+        postedBody = JSON.parse(String(init?.body));
+        return new Response(null, { status: 204 });
+      };
+      try {
+        await applySessionCommit(skipped.commit);
+        assert.ok(postedBody);
+        const intent = pureCue ? postedBody : postedBody.commitIntent as Record<string, unknown>;
+        assert.equal(intent.reinforcementSkipped, true);
+        assert.deepEqual(postedBody.events, skipped.commit.events);
+      } finally {
+        globalThis.fetch = previousFetch;
+      }
+
     }
   }
 });

@@ -188,6 +188,7 @@ export type IssuePureCueServedSnapshotInput = {
 };
 
 export type RecordPureCueAssessmentInput = {
+  reinforcementSkipped?: boolean;
   attemptId: string;
   snapshotId: string;
   sessionId: string;
@@ -510,6 +511,16 @@ export function recordPureCueAssessmentWithoutTransaction(
   assertNonEmpty(input.sessionId, 'Pure cue session id');
   assertNonEmpty(input.sessionActionId, 'Pure cue session action id');
   assertCanonicalIso(input.committedAt, 'Pure cue committedAt');
+  // Validate completion intent on retries too, before returning a stored assessment.
+  const snapshotRow = getDb().prepare(`
+    SELECT * FROM pure_cue_served_snapshots
+    WHERE learner_id = ? AND snapshot_id = ?
+  `).get(learnerId, input.snapshotId) as ServedSnapshotRow | undefined;
+  if (!snapshotRow) throw new Error(`Pure cue served snapshot ${input.snapshotId} is unavailable.`);
+  const snapshot = mapServedSnapshotRow(snapshotRow);
+  const summary = derivePureCueAssessment(snapshot, input.events, getConfig().studyProfile, {
+    reinforcementSkipped: input.reinforcementSkipped,
+  });
   const eventsJson = JSON.stringify(input.events);
   const existing = getDb().prepare(`
     SELECT * FROM pure_cue_attempts
@@ -526,16 +537,9 @@ export function recordPureCueAssessmentWithoutTransaction(
     return mapAssessmentRecord(existing);
   }
 
-  const snapshotRow = getDb().prepare(`
-    SELECT * FROM pure_cue_served_snapshots
-    WHERE learner_id = ? AND snapshot_id = ?
-  `).get(learnerId, input.snapshotId) as ServedSnapshotRow | undefined;
-  if (!snapshotRow) throw new Error(`Pure cue served snapshot ${input.snapshotId} is unavailable.`);
   if (snapshotRow.consumed_attempt_id !== null) {
     throw new Error(`Pure cue served snapshot ${input.snapshotId} has already been consumed.`);
   }
-  const snapshot = mapServedSnapshotRow(snapshotRow);
-  const summary = derivePureCueAssessment(snapshot, input.events, getConfig().studyProfile);
   const cue = getPureCue(snapshot.pureCueId);
   if (cue === null) throw new Error(`Pure cue ${snapshot.pureCueId} is unavailable.`);
   const scheduledCue = schedulePureCueAssessment(cue, summary, input.committedAt, random);

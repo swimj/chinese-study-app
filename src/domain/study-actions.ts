@@ -346,7 +346,11 @@ export function buildWordLifecycleSessionStudyItems({
   ];
 }
 
-export function deriveReviewCommitFieldsFromAttemptEvents(events: StudyAttemptEvent[]): ReviewCommitFields {
+export function deriveReviewCommitFieldsFromAttemptEvents(
+  events: StudyAttemptEvent[],
+  { reinforcementSkipped = false }: { reinforcementSkipped?: boolean } = {},
+): ReviewCommitFields {
+  if (typeof reinforcementSkipped !== 'boolean') throw new Error('Expected boolean reinforcementSkipped');
   if (events.length === 0) {
     throw new Error('Cannot derive review commit fields from an empty attempt event batch.');
   }
@@ -409,8 +413,12 @@ export function deriveReviewCommitFieldsFromAttemptEvents(events: StudyAttemptEv
     }
   }
 
-  // An explicit completion may skip remaining reinforcement; the lapse still owns scheduling.
-  if (commitFields === null && failureCount > 0) commitFields = { failureCount, terminalRating: null };
+  if (reinforcementSkipped) {
+    if (commitFields !== null || failureCount === 0) {
+      throw new Error('Expected unfinished lapsed review when reinforcementSkipped is true');
+    }
+    commitFields = { failureCount, terminalRating: null };
+  }
 
   if (commitFields === null) {
     throw new Error('Review attempt events do not represent a covered review action.');

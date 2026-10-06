@@ -77,6 +77,7 @@ export type BucketSessionCommitIntent =
   | { type: 'none' }
   | {
       type: 'commit-review-action-session';
+      reinforcementSkipped?: boolean;
       sessionId: string;
       sessionActionId: string;
       targetWordId: string;
@@ -102,6 +103,7 @@ export type BucketSessionCommitIntent =
     }
   | {
       type: 'commit-pure-cue-production-session';
+      reinforcementSkipped?: boolean;
       sessionId: string;
       sessionActionId: string;
       attemptId: string;
@@ -411,6 +413,7 @@ export function skipActiveReviewReinforcement(state: BucketSessionState): Bucket
       }),
       commit: {
         type: 'commit-pure-cue-production-session',
+        reinforcementSkipped: true,
         sessionId: state.sessionId,
         sessionActionId: item.sessionActionId,
         attemptId: `${state.sessionId}/${item.sessionActionId}/assessment`,
@@ -431,6 +434,7 @@ export function skipActiveReviewReinforcement(state: BucketSessionState): Bucket
     }),
     commit: {
       type: 'commit-review-action-session',
+      reinforcementSkipped: true,
       sessionId: state.sessionId,
       sessionActionId: item.sessionActionId,
       targetWordId: item.targetWordId,

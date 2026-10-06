@@ -686,6 +686,7 @@ describe('session completion', { concurrency: false }, () => {
       skillId: 'production',
       failureCount: 1,
       terminalRating: null,
+      reinforcementSkipped: skipReinforcement,
       attempts: skipReinforcement ? [{ rating: 'forgot', outcome: 'incorrect' }] : [
         { rating: 'forgot', outcome: 'incorrect' },
         { rating: 'good', outcome: 'correct' },
@@ -1405,6 +1406,7 @@ function recordAcceptedReviewBatch({
   failureCount,
   terminalRating,
   attempts,
+  reinforcementSkipped,
 }: {
   sessionActionId: string;
   wordId: string;
@@ -1415,6 +1417,7 @@ function recordAcceptedReviewBatch({
   failureCount: number;
   terminalRating: 'hard' | 'good' | 'easy' | null;
   attempts?: ReviewAttemptInput[];
+  reinforcementSkipped?: boolean;
 }) {
   const computedSessionActionId = `review/${wordId}/${skillId}`;
   const attemptInputs = attempts ?? [
@@ -1484,6 +1487,7 @@ function recordAcceptedReviewBatch({
       sampledSkillIds: [skillId],
       failureCount,
       terminalRating,
+      reinforcementSkipped,
     },
   });
 

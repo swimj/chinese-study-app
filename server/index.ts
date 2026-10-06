@@ -852,7 +852,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.post('/api/study-sessions/:sessionId/pure-cue-assessments', (req, res) => {
     const sessionId = req.params.sessionId;
-    const { attemptId, snapshotId, sessionActionId, events } = req.body ?? {};
+    const { attemptId, snapshotId, sessionActionId, events, reinforcementSkipped } = req.body ?? {};
     if (
       typeof sessionId !== 'string' || sessionId.trim().length === 0
       || typeof attemptId !== 'string' || attemptId.trim().length === 0
@@ -861,6 +861,10 @@ export function createApp(options: CreateAppOptions = {}) {
       || !Array.isArray(events)
     ) {
       res.status(400).json({ error: 'Expected non-empty pure cue assessment identity and events array' });
+      return;
+    }
+    if (reinforcementSkipped !== undefined && typeof reinforcementSkipped !== 'boolean') {
+      res.status(400).json({ error: 'Expected boolean reinforcementSkipped' });
       return;
     }
     if (!events.every(isPureCueAssessmentEventInput)) {
@@ -875,6 +879,7 @@ export function createApp(options: CreateAppOptions = {}) {
         sessionId: sessionId.trim(),
         sessionActionId: sessionActionId.trim(),
         events: events as PureCueAssessmentEvent[],
+        reinforcementSkipped,
         committedAt: new Date().toISOString(),
       });
       recordStudyCommitSuccessSafely({

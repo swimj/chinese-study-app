@@ -73,6 +73,7 @@ export type ReviewPassRating = 'hard' | 'good' | 'easy';
 export type StudySessionProcessingState = StudySessionRecord['processingState'];
 
 export type ReviewAttemptCommitIntent = {
+  reinforcementSkipped?: boolean;
   type: 'commit-review-action-session';
   sessionActionId: string;
   targetWordId: string;

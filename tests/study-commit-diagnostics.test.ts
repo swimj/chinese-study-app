@@ -296,6 +296,92 @@ describe('study commit diagnostics', { concurrency: false }, () => {
     assert.equal(typeof (unknownSnapshot.json as { error?: unknown }).error, 'string');
   });
 
+  test('review commits require an explicit boolean skip for unfinished reinforcement', async () => {
+    const wordId = 'explicit-skip-word';
+    insertReviewWordForContrast(sqlite, wordId);
+    sqlite.prepare(`INSERT INTO word_skill_state
+      (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor)
+      VALUES (?, 'recognition', 1, 24, ?, ?, 2.5)`)
+      .run(wordId, '2026-09-03T00:00:00.000Z', '2026-09-04T00:00:00.000Z');
+    const app = indexModule.createApp({ frontendDistPath: null });
+    const sessionId = 'explicit-skip-session';
+    const sessionActionId = `review/${wordId}/recognition`;
+    const events = [false, true, true, true].map((correct, index) => ({
+      id: `${sessionId}/attempt-${index + 1}`,
+      occurredAt: `2026-09-05T04:05:0${index}.000Z`,
+      sessionId, sessionActionId, sessionEventSequence: index + 1, actionAttemptSequence: index + 1,
+      actionKind: 'recognition', targetWordId: wordId, sampledSkillIds: ['recognition'],
+      response: null, outcome: correct ? 'correct' : 'incorrect', rating: correct ? 'good' : 'forgot',
+      contentRef: null, metadata: {},
+    }));
+    const commitIntent = {
+      type: 'commit-review-action-session', sessionActionId, targetWordId: wordId,
+      actionKind: 'recognition', sampledSkillIds: ['recognition'], failureCount: 1, terminalRating: null,
+    };
+    const post = (body: unknown) => request(app,
+      `/api/study-sessions/${sessionId}/accepted-review-attempt-batch`, { method: 'POST', body });
+    for (const reinforcementSkipped of [undefined, false, 'true', 1, null]) {
+      const result = await post({ events: events.slice(0, 1), commitIntent: { ...commitIntent, reinforcementSkipped } });
+      assert.equal(result.status, 400, JSON.stringify(result.json));
+    }
+    const alreadyCovered = await post({ events, commitIntent: { ...commitIntent, reinforcementSkipped: true } });
+    assert.equal(alreadyCovered.status, 400, JSON.stringify(alreadyCovered.json));
+    const clean = await post({
+      events: [{ ...events[0], outcome: 'correct', rating: 'good' }],
+      commitIntent: { ...commitIntent, failureCount: 0, terminalRating: 'good', reinforcementSkipped: true },
+    });
+    assert.equal(clean.status, 400, JSON.stringify(clean.json));
+    assert.equal(sqlite.prepare('SELECT COUNT(*) AS count FROM study_attempt_events WHERE session_id = ?')
+      .get(sessionId)?.count, 0);
+    const accepted = await post({ events: events.slice(0, 1), commitIntent: { ...commitIntent, reinforcementSkipped: true } });
+    assert.equal(accepted.status, 204, JSON.stringify(accepted.json));
+    assert.equal(sqlite.prepare('SELECT COUNT(*) AS count FROM study_attempt_events WHERE session_id = ?')
+      .get(sessionId)?.count, 1);
+    assert.equal(sqlite.prepare("SELECT interval_hours FROM word_skill_state WHERE word_id = ? AND skill_id = 'recognition'")
+      .get(wordId)?.interval_hours, 6);
+  });
+
+  test('pure cue commits require an explicit boolean skip before consuming the snapshot', async () => {
+    const now = '2026-09-05T04:05:00.000Z';
+    sqlite.prepare(`INSERT INTO pure_cues (id, stimulus, axis_note, created_at)
+      VALUES ('explicit-skip-cue', 'diagnose', '', ?)`).run(now);
+    sqlite.prepare(`INSERT INTO learner_pure_cue_state
+      (learner_id, pure_cue_id, interval_hours, ease_factor, next_due_at, adopted_at)
+      VALUES ('test-learner', 'explicit-skip-cue', 24, 2.5, ?, ?)`).run(now, now);
+    sqlite.prepare(`INSERT INTO pure_cue_served_snapshots
+      (learner_id, snapshot_id, pure_cue_id, served_at, stimulus, axis_note, accepted_answers_json)
+      VALUES ('test-learner', 'explicit-skip-snapshot', 'explicit-skip-cue', ?, 'diagnose', '', ?)`)
+      .run(now, JSON.stringify([{ wordId: 'explicit-skip-word', hanzi: '诊断', traditional: null }]));
+    const app = indexModule.createApp({ frontendDistPath: null });
+    const events = [false, true, true, true].map((correct, index) => ({
+      eventId: `explicit-pure-event-${index}`, occurredAt: `2026-09-05T04:05:0${index}.000Z`,
+      response: correct ? '诊断' : 'wrong', outcome: correct ? 'accepted' : 'rejected',
+      submittedWordId: correct ? 'explicit-skip-word' : null, rating: correct ? 'good' : 'forgot',
+    }));
+    const body = {
+      attemptId: 'explicit-skip-assessment', snapshotId: 'explicit-skip-snapshot',
+      sessionActionId: 'pure-cue/explicit-skip-snapshot', events: events.slice(0, 1),
+    };
+    const post = (payload: unknown) => request(app,
+      '/api/study-sessions/explicit-pure-session/pure-cue-assessments', { method: 'POST', body: payload });
+    for (const reinforcementSkipped of [undefined, false, 'true', 1, null]) {
+      const result = await post({ ...body, reinforcementSkipped });
+      assert.equal(result.status, 400, JSON.stringify(result.json));
+    }
+    for (const coveredEvents of [events, [events[1]]]) {
+      const result = await post({ ...body, events: coveredEvents, reinforcementSkipped: true });
+      assert.equal(result.status, 400, JSON.stringify(result.json));
+    }
+    assert.equal(sqlite.prepare("SELECT consumed_attempt_id FROM pure_cue_served_snapshots WHERE snapshot_id = 'explicit-skip-snapshot'")
+      .get()?.consumed_attempt_id, null);
+    const accepted = await post({ ...body, reinforcementSkipped: true });
+    assert.equal(accepted.status, 204, JSON.stringify(accepted.json));
+    const stored = sqlite.prepare("SELECT failure_count, terminal_rating FROM pure_cue_attempts WHERE attempt_id = 'explicit-skip-assessment'").get();
+    assert.deepEqual({ ...stored }, { failure_count: 1, terminal_rating: null });
+    assert.equal(sqlite.prepare("SELECT interval_hours FROM learner_pure_cue_state WHERE pure_cue_id = 'explicit-skip-cue'")
+      .get()?.interval_hours, 6);
+  });
+
   test('records rejected session summary statistics and keeps successful summary logging failure-isolated', async () => {
     const diagnostics: StudyCommitFailureDiagnostic[] = [];
     const app = indexModule.createApp({

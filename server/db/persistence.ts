@@ -1558,7 +1558,9 @@ export function recordAcceptedReviewAttemptBatch({
   }
 
   assertReviewAttemptBatchMatchesCommitIntent(events, commitIntent);
-  const derivedCommitFields = deriveReviewCommitFieldsFromAttemptEvents(events);
+  const derivedCommitFields = deriveReviewCommitFieldsFromAttemptEvents(events, {
+    reinforcementSkipped: commitIntent.reinforcementSkipped,
+  });
   assertDerivedReviewCommitMatchesIntent(derivedCommitFields, commitIntent);
 
   const reviewedAt = new Date().toISOString();
@@ -4632,6 +4634,10 @@ function assertReviewAttemptCommitIntent(commitIntent: ReviewAttemptCommitIntent
 
   if (commitIntent.type !== 'commit-review-action-session') {
     throw new Error('Expected commit-review-action-session commit intent');
+  }
+
+  if (commitIntent.reinforcementSkipped !== undefined && typeof commitIntent.reinforcementSkipped !== 'boolean') {
+    throw new Error('Expected boolean reinforcementSkipped');
   }
 
   assertNonEmptyString(commitIntent.sessionActionId, 'Expected non-empty session action id');

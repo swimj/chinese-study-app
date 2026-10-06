@@ -652,6 +652,7 @@ export async function recordAcceptedReviewAttemptBatch({
   events: StudyAttemptEvent[];
   commitIntent: {
     type: 'commit-review-action-session';
+    reinforcementSkipped?: boolean;
     sessionActionId: string;
     targetWordId: string;
     actionKind: 'recognition' | 'production';
@@ -711,17 +712,19 @@ export async function recordPureCueAssessment({
   snapshotId,
   sessionActionId,
   events,
+  reinforcementSkipped,
 }: {
   sessionId: string;
   attemptId: string;
   snapshotId: string;
   sessionActionId: string;
   events: PureCueAssessmentEvent[];
+  reinforcementSkipped?: boolean;
 }): Promise<void> {
   const response = await apiFetch(`${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/pure-cue-assessments`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ attemptId, snapshotId, sessionActionId, events }),
+    body: JSON.stringify({ attemptId, snapshotId, sessionActionId, events, reinforcementSkipped }),
   }, {
     route: '/api/study-sessions/:sessionId/pure-cue-assessments',
     sessionId,
