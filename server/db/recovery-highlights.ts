@@ -1,4 +1,4 @@
-import { deriveRecoveryHighlights, type RecoveryEncounter, type RecoveryHighlight } from '../../src/domain/recovery-highlights.ts';
+import { deriveRecoveryHighlight, type RecoveryEncounter, type RecoveryHighlight } from '../../src/domain/recovery-highlights.ts';
 import type { ReflectionOperation } from '../../src/domain/reflection.ts';
 import { getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
@@ -17,11 +17,28 @@ export function getSessionRecoveryHighlights(sessionId: string): RecoveryHighlig
   const summary = db.prepare(`SELECT completed_at FROM review_session_summaries WHERE session_id = ?`)
     .get(sessionId) as { completed_at: string } | undefined;
   if (!summary) return null;
+  // Start with the actual current-session results. A raw lapse anywhere in a
+  // pair's accepted batch disqualifies it, even if later compensated. In that
+  // case there is no reason to fetch its history or inspect its corrections.
+  const current = db.prepare(`
+    WITH ranked AS (
+      SELECT a.*, w.hanzi, w.traditional,
+        ROW_NUMBER() OVER (PARTITION BY a.target_word_id, a.action_kind
+          ORDER BY a.session_event_sequence, a.action_attempt_sequence, a.id) AS encounter_rank,
+        MAX(CASE WHEN a.outcome = 'incorrect' OR a.rating = 'forgot' THEN 1 ELSE 0 END)
+          OVER (PARTITION BY a.target_word_id, a.action_kind) AS has_lapse
+      FROM study_attempt_events a JOIN words w ON w.id = a.target_word_id
+      WHERE a.session_id = ? AND a.projected_at IS NOT NULL
+        AND a.action_kind IN ('recognition', 'production')
+    ) SELECT * FROM ranked WHERE encounter_rank = 1 AND has_lapse = 0
+  `).all(sessionId) as AttemptRow[];
+  const candidates = current.filter(row => classifyAttempt(row, new Set()) === 'success');
+  if (candidates.length === 0) return [];
   const windowStart = new Date(summary.completed_at);
   windowStart.setUTCHours(0, 0, 0, 0);
   windowStart.setUTCDate(windowStart.getUTCDate() - 29);
-  // The partial learner/time index bounds reads before filtering and ranking.
-  // Retain earlier accepted encounters even from unfinished overall sessions.
+  // Fetch only surviving pairs in one bounded read. Each candidate is then
+  // inspected independently, backward through its own encounters.
   const rows = db.prepare(`
     WITH ranked AS (
       SELECT a.*, w.hanzi, w.traditional,
@@ -30,24 +47,42 @@ export function getSessionRecoveryHighlights(sessionId: string): RecoveryHighlig
       FROM study_attempt_events a
       JOIN words w ON w.id = a.target_word_id
       WHERE a.projected_at IS NOT NULL AND a.occurred_at >= ? AND a.occurred_at <= ?
-        AND a.action_kind IN ('recognition', 'production')
-        AND a.target_word_id IN (SELECT target_word_id FROM study_attempt_events WHERE session_id = ?)
+        AND (a.target_word_id, a.action_kind) IN (
+          SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') FROM json_each(?)
+        )
     ) SELECT * FROM ranked WHERE encounter_rank = 1
-  `).all(windowStart.toISOString(), summary.completed_at, sessionId) as AttemptRow[];
-  if (rows.length === 0) return [];
+  `).all(windowStart.toISOString(), summary.completed_at,
+    JSON.stringify(candidates.map(row => [row.target_word_id, row.action_kind]))) as AttemptRow[];
   const corrected = correctedProductionAttempts();
-  const encounters: RecoveryEncounter[] = rows.map((row) => ({
+  const byPair = new Map<string, RecoveryEncounter[]>();
+  for (const row of rows) {
+    const key = JSON.stringify([row.target_word_id, row.action_kind]);
+    const group = byPair.get(key) ?? [];
+    group.push(toEncounter(row, corrected));
+    byPair.set(key, group);
+  }
+  const highlights: RecoveryHighlight[] = [];
+  for (const row of candidates) {
+    const candidate = toEncounter(row, corrected);
+    const history = byPair.get(JSON.stringify([row.target_word_id, row.action_kind])) ?? [];
+    const highlight = deriveRecoveryHighlight(candidate, history);
+    if (highlight) highlights.push(highlight);
+  }
+  return highlights.sort((a, b) => a.successAttempts[2].occurredAt.localeCompare(b.successAttempts[2].occurredAt)
+    || a.id.localeCompare(b.id));
+}
+
+function toEncounter(row: AttemptRow, corrected: ReadonlySet<string>): RecoveryEncounter {
+  return {
     attemptId: row.id, sessionId: row.session_id, actionId: row.session_action_id,
     occurredAt: row.occurred_at, wordId: row.target_word_id, hanzi: row.hanzi,
-    traditional: row.traditional, skill: row.action_kind,
-    result: classifyAttempt(row, corrected),
-  }));
-  return deriveRecoveryHighlights(encounters)
-    .filter((highlight) => highlight.successAttempts.at(-1)?.sessionId === sessionId);
+    traditional: row.traditional, skill: row.action_kind, result: classifyAttempt(row, corrected),
+  };
 }
 
 function classifyAttempt(row: AttemptRow, corrected: ReadonlySet<string>): RecoveryEncounter['result'] {
-  if (row.action_attempt_sequence !== 1 || corrected.has(row.id)) return 'excluded';
+  if (row.action_attempt_sequence !== 1) return 'excluded';
+  if (corrected.has(row.id)) return 'neutral';
   if (row.outcome === 'incorrect' && row.rating === 'forgot') return 'miss';
   if (row.outcome !== 'correct' || !['hard', 'good', 'easy'].includes(row.rating ?? '')) return 'excluded';
   if (row.action_kind === 'production') {

@@ -162,10 +162,124 @@ describe('recovery highlights from durable learner evidence', { concurrency: fal
     const query = source.match(/const rows = db.prepare\(`([\s\S]*?)`\)/)?.[1];
     assert.ok(query);
     const details = sqlite.prepare(`EXPLAIN QUERY PLAN ${query}`)
-      .all('2026-09-07T00:00:00.000Z', '2026-10-06T12:00:00.000Z', 'bounded-session-6')
+      .all('2026-09-07T00:00:00.000Z', '2026-10-06T12:00:00.000Z', JSON.stringify([['bounded', 'recognition']]))
       .map(row => String(row.detail));
     assert.ok(details.some(detail => detail.includes('idx_study_attempt_events_learner_time')
       && detail.includes('learner_id=? AND occurred_at>? AND occurred_at<?')), details.join('\n'));
+  });
+
+  function appendEncounter(source: StudyAttemptEvent, day: number, outcome: 'correct' | 'incorrect') {
+    const event: StudyAttemptEvent = { ...source, id: `${source.targetWordId}-${day}`,
+      sessionId: `${source.targetWordId}-session-${day}`, sessionActionId: `${source.targetWordId}-action-${day}`,
+      occurredAt: `2026-10-${String(day).padStart(2, '0')}T10:00:00.000Z`,
+      outcome, rating: outcome === 'correct' ? 'good' : 'forgot' };
+    db.upsertStudySessionRecord({ id: event.sessionId, startedAt: event.occurredAt,
+      endedAt: null, processingState: 'open', processedAt: null });
+    db.insertStudyAttemptEvents([event]);
+    sqlite.prepare('UPDATE study_attempt_events SET projected_at = ? WHERE id = ?').run(event.occurredAt, event.id);
+    db.recordReviewSessionSummary({ sessionId: event.sessionId, completedAt: event.occurredAt,
+      completedReviewActionCount: 1, failedReviewActionCount: outcome === 'incorrect' ? 1 : 0, activeDurationMs: 1000 });
+    return event;
+  }
+
+  function compensate(source: StudyAttemptEvent) {
+    sqlite.prepare(`INSERT INTO pure_cue_scheduler_compensation_snapshots
+      (learner_id, session_id, session_action_id, target_word_id, captured_at,
+       production_skill_state_json, admission_state_json, compensated_by_invocation_id, compensated_at)
+      VALUES ('test-learner', ?, ?, ?, ?, '{}', '{}', ?, ?)`)
+      .run(source.sessionId, source.sessionActionId, source.targetWordId,
+        source.occurredAt, `${source.id}-restore`, source.occurredAt);
+    sqlite.prepare(`INSERT INTO pure_cue_scheduler_compensation_snapshot_attempts
+      (learner_id, source_attempt_id, session_id, session_action_id) VALUES ('test-learner', ?, ?, ?)`)
+      .run(source.id, source.sessionId, source.sessionActionId);
+  }
+
+  test('only the current third-success session earns a highlight; fourth success or a later lapse does not', () => {
+    const events = history('current-only');
+    assert.equal(db.getSessionRecoveryHighlights(events[5].sessionId)?.length, 1);
+    const seventh = appendEncounter(events[5], 7, 'correct');
+    assert.deepEqual(db.getSessionRecoveryHighlights(seventh.sessionId), []);
+    const eighth = appendEncounter(events[5], 8, 'incorrect');
+    assert.deepEqual(db.getSessionRecoveryHighlights(eighth.sessionId), []);
+    assert.equal(db.getSessionRecoveryHighlights(events[5].sessionId)?.length, 1);
+  });
+
+  test('historical compensation skips an encounter without counting it or breaking the success streak', () => {
+    const events = history('neutral-history', 'production');
+    sqlite.prepare("UPDATE study_attempt_events SET outcome = 'incorrect', rating = 'forgot' WHERE id = ?")
+      .run(events[4].id);
+    const seventh = appendEncounter(events[5], 7, 'correct');
+    assert.deepEqual(db.getSessionRecoveryHighlights(seventh.sessionId), []);
+    compensate(events[4]);
+    const highlights = db.getSessionRecoveryHighlights(seventh.sessionId)!;
+    assert.equal(highlights.length, 1);
+    assert.deepEqual(highlights[0].successAttempts.map(item => item.attemptId),
+      [events[3].id, events[5].id, seventh.id]);
+  });
+
+  test('any raw current-session lapse rejects the pair before history or correction reads, even if compensated', async () => {
+    const { getDb } = await import('../server/db/connection.ts');
+    const database = getDb();
+    for (const later of [false, true]) {
+      const events = history(`current-lapse-${later}`, 'production');
+      const current = events[5];
+      let miss = current;
+      if (later) {
+        miss = { ...current, id: `${current.id}-later`, actionAttemptSequence: 2, sessionEventSequence: 2,
+          outcome: 'incorrect', rating: 'forgot' };
+        db.insertStudyAttemptEvents([miss]);
+        sqlite.prepare('UPDATE study_attempt_events SET projected_at = ? WHERE id = ?').run(current.occurredAt, miss.id);
+      } else {
+        sqlite.prepare("UPDATE study_attempt_events SET outcome = 'incorrect', rating = 'forgot' WHERE id = ?").run(current.id);
+      }
+      compensate(miss);
+      const originalPrepare = database.prepare;
+      const queries: string[] = [];
+      database.prepare = function (sql: string) { queries.push(sql); return originalPrepare.call(this, sql); };
+      try {
+        assert.deepEqual(db.getSessionRecoveryHighlights(current.sessionId), []);
+        assert.equal(queries.length, 2, 'only summary ownership and current-session candidates should be read');
+        assert.ok(queries[1].includes('has_lapse'));
+      } finally { database.prepare = originalPrepare; }
+    }
+  });
+
+  test('a mixed session reads history only for the successful word-skill candidate', async () => {
+    const failed = history('mixed-failed');
+    const successful = history('mixed-successful');
+    const sessionId = 'mixed-current';
+    const occurredAt = '2026-10-06T11:00:00.000Z';
+    db.upsertStudySessionRecord({ id: sessionId, startedAt: occurredAt, endedAt: null,
+      processingState: 'open', processedAt: null });
+    for (const [index, events] of [failed, successful].entries()) {
+      sqlite.prepare('UPDATE study_attempt_events SET projected_at = NULL WHERE id = ?').run(events[5].id);
+      const event: StudyAttemptEvent = { ...events[5], id: `${events[5].id}-mixed`, sessionId,
+        occurredAt, sessionEventSequence: index + 1,
+        outcome: index === 0 ? 'incorrect' : 'correct', rating: index === 0 ? 'forgot' : 'good' };
+      db.insertStudyAttemptEvents([event]);
+      sqlite.prepare('UPDATE study_attempt_events SET projected_at = ? WHERE id = ?').run(occurredAt, event.id);
+    }
+    db.recordReviewSessionSummary({ sessionId, completedAt: occurredAt,
+      completedReviewActionCount: 2, failedReviewActionCount: 1, activeDurationMs: 1000 });
+    const { getDb } = await import('../server/db/connection.ts');
+    const database = getDb();
+    const originalPrepare = database.prepare;
+    let requestedPairs: unknown;
+    database.prepare = function (sql: string) {
+      const statement = originalPrepare.call(this, sql);
+      if (sql.includes('json_each(?)')) {
+        const originalAll = statement.all;
+        statement.all = function (...parameters: Parameters<typeof originalAll>) {
+          requestedPairs = JSON.parse(String(parameters[2]));
+          return originalAll.apply(this, parameters);
+        };
+      }
+      return statement;
+    };
+    try {
+      assert.deepEqual(db.getSessionRecoveryHighlights(sessionId)?.map(item => item.wordId), ['mixed-successful']);
+      assert.deepEqual(requestedPairs, [['mixed-successful', 'recognition']]);
+    } finally { database.prepare = originalPrepare; }
   });
 
   test('HTTP route distinguishes a completed empty summary from a missing summary', async () => {
