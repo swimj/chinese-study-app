@@ -10,6 +10,11 @@ The Home updates section is hidden while Connections occupies the centered,
 expanded view. Minimizing Connections restores the updates alongside the
 overview; notification badge behavior is unchanged.
 
+Home and About share a catalog loaded once when the app opens. Session changes,
+navigation, and window focus reuse that catalog; a browser page refresh loads
+new content. A failed load can be retried explicitly. Notification badges keep
+their independent refresh and acknowledgement behavior.
+
 ## Content and publication
 
 Posts contain a stable lowercase slug, a UTC `YYYY-MM-DD` date, a title, a

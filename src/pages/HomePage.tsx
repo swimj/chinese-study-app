@@ -1,3 +1,4 @@
+import type { WhatsNewCatalog } from '../features/attention/useWhatsNewCatalog';
 import type { SessionDeskHandle } from '../features/session/SessionDesk';
 import { SessionIntroductionGatePanel } from '../features/session/SessionIntroductionGatePanel';
 import type { SessionIntroductionGate } from '../features/session/useIntroductionGate';
@@ -35,6 +36,7 @@ import { HomeOverviewPanel, SessionSettingsPanel } from './HomeOverviewPanel';
 import { HomeUpdates } from './HomeUpdates';
 
 export function HomePage({
+  updatesCatalog,
   onOpenUpdate,
   onViewAllUpdates,
   introductionGate,
@@ -121,6 +123,7 @@ export function HomePage({
   onCloseShortcutGuide,
   onNudgeDiet,
 }: {
+  updatesCatalog?: WhatsNewCatalog;
   onOpenUpdate?: (id: string) => void;
   onViewAllUpdates?: () => void;
   introductionGate?: SessionIntroductionGate | null;
@@ -229,7 +232,7 @@ export function HomePage({
   return (
     <div className={sessionStarted ? 'home-page home-session-active' : `home-page${connectionsExpanded ? ' home-connections-expanded' : ''}`}>
       {connectionsExpanded ? <ConnectionSignals /> : null}
-      <div className={`grid home-grid${!sessionStarted && !connectionsExpanded && !sessionSettingsOpen && onOpenUpdate && onViewAllUpdates ? ' home-with-updates' : ''}`}>
+      <div className={`grid home-grid${!sessionStarted && !connectionsExpanded && !sessionSettingsOpen && updatesCatalog && onOpenUpdate && onViewAllUpdates ? ' home-with-updates' : ''}`}>
         <HomeOverviewPanel
           backendStatus={backendStatus}
           compact={connectionsExpanded}
@@ -259,8 +262,8 @@ export function HomePage({
           <p className="notes" role="status">Couldn’t load the recent session. <button type="button" className="secondary-button" onClick={recent.reload}>Try again</button></p>
         ) : null}
 
-        {!sessionStarted && !connectionsExpanded && !sessionSettingsOpen && onOpenUpdate && onViewAllUpdates
-          ? <HomeUpdates onOpenPost={onOpenUpdate} onViewAll={onViewAllUpdates} /> : null}
+        {!sessionStarted && !connectionsExpanded && !sessionSettingsOpen && updatesCatalog && onOpenUpdate && onViewAllUpdates
+          ? <HomeUpdates catalog={updatesCatalog} onOpenPost={onOpenUpdate} onViewAll={onViewAllUpdates} /> : null}
 
         {sessionSettingsOpen && !sessionStarted ? (
           <SessionSettingsPanel

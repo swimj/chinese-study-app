@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { WhatsNewPost } from '../src/domain/whats-new.ts';
 import { WhatsNewPosts, WhatsNewFeed } from '../src/pages/WhatsNewFeed.tsx';
-import { UpdatePreviews } from '../src/pages/HomeUpdates.tsx';
+import { HomeUpdates, UpdatePreviews } from '../src/pages/HomeUpdates.tsx';
 import { activeWhatsNewPostIds } from '../src/features/attention/whats-new-attention.ts';
 import { WHATS_NEW_BADGE_WINDOW_MS, type WhatsNewAttention } from '../src/domain/whats-new-attention.ts';
 import { observeVisibleElement } from '../src/features/attention/visible-element.ts';
@@ -32,7 +32,7 @@ test('learner posts render paragraphs as safe text with stable distinct article 
 
 test('initial loading does not acknowledge an unloaded feed', () => {
   let acknowledged = false;
-  const html = renderToStaticMarkup(createElement(WhatsNewFeed, { onRead: async () => { acknowledged = true; } }));
+  const html = renderToStaticMarkup(createElement(WhatsNewFeed, { catalog: { posts: null, error: null, retry: () => {} }, onRead: async () => { acknowledged = true; } }));
   assert.ok(html.includes('Loading updates'));
   assert.equal(acknowledged, false);
 });
@@ -101,4 +101,29 @@ test('exposure requires an intersecting element in a visible focused tab and cle
   stop();
   assert.equal(events.size, 0);
   assert.equal(disconnected, true);
+});
+
+
+test('Home and the archive immediately render the app-owned catalog when reopened', () => {
+  const catalog = { posts: [post('retained', 1)], error: null, retry: () => {} };
+  for (let visit = 0; visit < 2; visit++) {
+    const home = renderToStaticMarkup(createElement(HomeUpdates, {
+      catalog, onOpenPost: () => {}, onViewAll: () => {},
+    }));
+    const archive = renderToStaticMarkup(createElement(WhatsNewFeed, { catalog }));
+    assert.match(home, /A concise preview/);
+    assert.match(archive, /First paragraph/);
+    assert.doesNotMatch(home + archive, /Loading updates/);
+  }
+});
+
+test('both catalog views retain an explicit retry after a failed load', () => {
+  const catalog = { posts: null, error: 'Network unavailable', retry: () => {} };
+  const home = renderToStaticMarkup(createElement(HomeUpdates, {
+    catalog, onOpenPost: () => {}, onViewAll: () => {},
+  }));
+  const archive = renderToStaticMarkup(createElement(WhatsNewFeed, { catalog }));
+  assert.match(home, /Try again/);
+  assert.match(archive, /Retry loading updates/);
+  assert.doesNotMatch(home + archive, /Loading updates/);
 });

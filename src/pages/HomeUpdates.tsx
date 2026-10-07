@@ -1,5 +1,5 @@
 import type { WhatsNewPost } from '../domain/whats-new';
-import { useWhatsNewCatalog } from '../features/attention/useWhatsNewCatalog';
+import type { WhatsNewCatalog } from '../features/attention/useWhatsNewCatalog';
 import { formatWhatsNewDate } from './WhatsNewFeed';
 
 export function UpdatePreviews({ posts, onOpenPost }: {
@@ -14,10 +14,11 @@ export function UpdatePreviews({ posts, onOpenPost }: {
   </li>)}</ul>;
 }
 
-export function HomeUpdates({ onOpenPost, onViewAll }: {
+export function HomeUpdates({ catalog, onOpenPost, onViewAll }: {
+  catalog: WhatsNewCatalog;
   onOpenPost: (id: string) => void; onViewAll: () => void;
 }) {
-  const { posts, error, retry } = useWhatsNewCatalog();
+  const { posts, error, retry } = catalog;
   return <aside className="home-updates" aria-labelledby="home-updates-title">
     <div className="home-updates-heading"><h2 id="home-updates-title">Updates</h2>
       <button type="button" className="home-updates-all" onClick={onViewAll}>View all <span aria-hidden="true">→</span></button>

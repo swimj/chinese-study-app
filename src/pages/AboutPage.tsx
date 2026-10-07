@@ -1,3 +1,4 @@
+import type { WhatsNewCatalog } from '../features/attention/useWhatsNewCatalog';
 import { WhatsNewFeed } from './WhatsNewFeed';
 import { NestedNav } from '../components/AppChrome';
 
@@ -10,7 +11,8 @@ const ABOUT_VIEWS = [
 
 export type AboutView = typeof ABOUT_VIEWS[number][0];
 
-export function AboutPage({ view, onSelectView, whatsNewUnseenCount = 0, onWhatsNewRead, selectedPostId, onViewAllUpdates }: {
+export function AboutPage({ updatesCatalog, view, onSelectView, whatsNewUnseenCount = 0, onWhatsNewRead, selectedPostId, onViewAllUpdates }: {
+  updatesCatalog: WhatsNewCatalog;
   view: AboutView;
   onSelectView: (view: AboutView) => void;
   whatsNewUnseenCount?: number;
@@ -103,7 +105,7 @@ export function AboutPage({ view, onSelectView, whatsNewUnseenCount = 0, onWhats
         ) : (
           <>
             <p>Notes on how the app is evolving, newest first.</p>
-            <WhatsNewFeed onRead={onWhatsNewRead} selectedPostId={selectedPostId} onViewAll={onViewAllUpdates} />
+            <WhatsNewFeed catalog={updatesCatalog} onRead={onWhatsNewRead} selectedPostId={selectedPostId} onViewAll={onViewAllUpdates} />
           </>
         )}
       </article>
