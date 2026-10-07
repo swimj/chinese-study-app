@@ -1,7 +1,9 @@
 # Session debrief
 
-Status: current Mandarin debrief contract. Debrief is a separate informational
-result from reflection, its evidence, proposal authorization, and application.
+This contract helps contributors understand what the Mandarin session debrief
+promises: which completed work informs it, how results survive failures, and how
+learners return to their connections. Debrief is an informational result separate
+from reflection, its evidence, proposal authorization, and application.
 
 ## Completion and input
 
@@ -96,54 +98,27 @@ typing, IME composition, repeated keys, modifiers, and the shortcut guide pause
 these shortcuts. The finalized study keyboard handler yields to this surface.
 
 Queued and running summaries show a waiting state and may be left immediately.
-Home gives the latest completed session's connections the main reading area,
-using a turning ring of exact note text, without a visible heading in the focused
-view. The compact Home preview is headed **don't miss these connections...**.
-Left/right
-arrow keys turn the ring while expanded; editing, composition, modifier keys, and
-other interactive widgets retain their native keys. Neighboring cards turn the
-ring on click and offer hover feedback, without visible arrows. There is no
-separate pagination bar, visible position counter,
-or session date/exercise metadata in this Home surface. Position remains available
-to assistive technology. Moving forward from the final note to the first briefly
-traces a green dot around the main card, leaving a green border behind it. Once
-the outline is complete, it pulses once and returns to the base border. Reduced
-motion uses a still border cue without tracing or pulsing.
+Home makes the latest completed session's connections available for focused
+reading, with a compact preview that lets learners return to the ordinary Home
+overview. Both use the existing note text rather than generating additional
+content. Learners can navigate the notes with pointer and keyboard controls;
+reading and navigation remain usable on narrow screens and with reduced motion.
 
-The focused view has decorative green traces behind translucent cards and the
-Minimize control. Traces alternate broad curves and sparse angular turns,
-occasionally branching into strands that fan apart from the advancing tip.
-Each shape extends, lingers, and dissipates together. Centered text remains fully
-opaque; side-card excerpts are muted to limit bleed through the central card;
-the decoration is hidden under reduced motion and absent from the compact view.
-Neighbor previews and the compact preview are literal excerpts, not generated
-titles or new relationships. The left navigation stays in place. Start session,
-and settings remain available above the expanded connections. Study metrics are
-hidden while expanded and return when minimized. Small screens replace side-card
-previews with small arrow controls, leaving the main note at full reading width;
-long notes grow the page rather than shrinking the text.
+A newly completed session introduces its connections in the focused view;
+starting a session does not reset the learner's choice. The learner can minimize
+or reopen connections, and that choice is remembered in the same browser for the
+completed session. Minimizing while generation is pending holds through polling
+and in-app navigation for that visit. On a later page reload, ready notes are
+introduced again unless the learner has already explicitly reopened that batch,
+even while pending. Once introduced, subsequent presentation choices persist
+until another completed session. Empty results leave the ordinary Home overview
+available; pending and failed results remain accessible, with explicit recovery
+from generation failures or read errors.
 
-Minimize restores the ordinary Home overview with the first connection's preview
-and total count. Clicking that preview returns to the ring; there is no separate
-Expand button. Pending and failed compact previews also open the focused view.
-A newly completed session defaults
-to expanded; merely starting a session does not reset a choice. Browser-local
-preferences are keyed by the completed session id and contain only presentation
-booleans. Once ready notes are presented in the expanded view, the learner's
-subsequent toggle persists across page reloads for that session.
-
-Queued/running results can occupy the expanded area with a quiet orbital waiting
-animation (static under reduced motion). Minimizing while waiting holds through
-polling, settings, and in-app navigation for the rest of that document visit.
-If those notes have not been proactively opened, a later document reload expands
-them once ready. Explicitly expanding acknowledges
-that batch, including while it is pending, and cancels this deferred introduction.
-Ready-empty results keep the ordinary Home overview. Failed results retain an
-explicit retry, and read errors retain a separate reload action.
-
-Home does not reopen the old summary view. The immediate post-session summary,
-including recovery highlights, remains in the existing card component. A visible live
-summary reads its own immutable session id; latest retrieval cannot replace it.
+Home presents connections rather than reopening the post-session summary.
+The immediate summary, including recovery highlights, remains available after
+completion. A visible summary reads its own immutable session id; latest
+retrieval cannot replace it.
 Only queued/running records poll. Requests and timers are cancelled on unmount,
 and old request completions cannot overwrite a retry or later surface. A lost
 retry response reads the durable job before allowing another retry. Read errors
