@@ -110,7 +110,8 @@ The status payload also returns `dailyNewWordLimit` and
 `unstudiedAdmissionSource`, the durable configured limit and unstudied
 admission source used when composing a new session. An absent daily limit defaults
 to `5`; existing configured limits are preserved. `unstudiedAdmissionSource`
-is `"mixed"` (default 50/50 stash/diet split) or `"stash_only"`. Update them
+is `"stash_only"` for new learners or `"mixed"` (50/50 stash/diet split).
+Existing saved choices and the legacy mixed policy for absent settings are preserved. Update them
 with JSON bodies containing `dailyNewWordLimit` as an integer from 0 through 20 or
 `unstudiedAdmissionSource` as `"mixed"` or `"stash_only"`:
 

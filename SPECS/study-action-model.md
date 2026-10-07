@@ -613,7 +613,9 @@ only outside the prepared Mandarin flow.
 
 ### Stash-only source
 
-The mixed 50/50 split is the default. Session settings may set the unstudied
+New learners start with stash-only admission saved at creation. Existing saved
+choices remain authoritative; existing learners without a source setting retain
+the legacy mixed 50/50 split. Session settings may set the unstudied
 admission source to `stash_only`.
 
 When `stash_only`:

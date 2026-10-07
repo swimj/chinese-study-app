@@ -22,6 +22,7 @@ test('session entry hydrates lessons; open and complete stay model-free and defe
     VALUES (?, ?, ?, ?, 'meaning', '["meaning"]', '[]', 10, '2026-10-01T00:00:00.000Z')`)
     .run(id, lexical.hanzi, lexical.traditional, lexical.pinyin);
   db.setDailyNewWordLimit(1);
+  db.updateWordUserPriority(id, { bumpDelta: 1 });
   let calls = 0;
   const worker = createWordPreparationWorker({ provider: {
     model: 'fake', isConfigured: () => true,

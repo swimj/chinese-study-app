@@ -229,10 +229,16 @@ Final schema remains deferred with the data work (§2.8).
 
 ## 2.5 New-user defaults and retired placement intake
 
-New learners start with a daily new-word limit of **5** and an effective diet
+New learners start with **stash-only** new-word admission, a daily new-word
+limit of **5**, and an effective diet
 profile at 100% on the **first HSK 2.0 Level 6 deck** (`hsk2-l6-s1`). The
 manifest must contain an HSK 2.0 Level 6 deck for this default; an incomplete
 manifest fails explicitly rather than silently placing the learner elsewhere.
+Diet words enter sessions only if the learner turns off stash-only mode.
+Stash-only mode can leave a session with no new words when the stash is empty;
+existing learning and review work remains available. The source choice is saved
+at learner creation; existing learners retain their saved choice or legacy mixed
+policy when unset.
 The session settings control still allows the learner to change their daily limit;
 learner nudges and operator jumps remain the diet adjustment paths.
 
@@ -241,7 +247,8 @@ start studying directly, without questions, self-selection, skip, or a provider
 assessment. The evolving app no longer relies on a survey as its bootstrap
 surface. Both manual and provider-assessed intake endpoints are removed.
 
-These are defaults for absent settings, not a migration of existing learners.
+The word-limit and diet defaults apply to absent settings; stash-only is saved
+only at learner creation. This is not a migration of existing learners.
 Stored daily limits, diet weights, provenance, and historical intake evidence
 remain intact. Existing learners without those settings also receive the new
 defaults. No database migration or history rewrite is required.

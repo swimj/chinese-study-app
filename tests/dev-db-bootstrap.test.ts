@@ -46,6 +46,7 @@ describe('dev database bootstrap', { concurrency: false }, () => {
       const dbModule = await import(moduleUrl);
 
       assert.equal(dbModule.getLearningPolicy('2026-10-07').dailyNewWordLimit, 5);
+      assert.equal(dbModule.getLearningPolicy('2026-10-07').unstudiedAdmissionSource, 'stash_only');
       assert.equal(reviewWordCount, 10);
       assert.equal(seedData.words.length - reviewWordCount, 6);
       assert.equal(dbModule.getWords().length, seedData.words.length + mandarinDevContrastWordCount);
