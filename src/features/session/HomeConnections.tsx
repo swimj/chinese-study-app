@@ -47,6 +47,7 @@ export function HomeConnections({ debrief, expanded, error, retrying, onToggle, 
     focusAfterToggle.current = false;
     (expanded ? toggleRef : previewRef).current?.focus();
   }, [expanded]);
+  if (debrief.status === 'ready' && notes.length === 0) return null;
   return <section className={`home-connections${expanded ? ' is-expanded' : ' is-compact'}`} aria-label="Last session connections">
     <header className="home-connections-heading">
       {!expanded ? <h2>don't miss these connections...</h2> : null}
@@ -88,7 +89,7 @@ export function HomeConnections({ debrief, expanded, error, retrying, onToggle, 
       </div> : debrief.status === 'failed' ? <div className="home-connections-waiting">
         <p>The connections couldn’t load. Your session is saved.</p>
         <button type="button" className="secondary-button" disabled={retrying} onClick={onRetry}>Try again</button>
-      </div> : <p className="notes">Nothing extra to add this time.</p>}
+      </div> : null}
       {error ? <p className="home-connections-error" role="alert">Couldn’t refresh the connections. <button type="button" className="secondary-button" onClick={onReload}>Try loading again</button></p> : null}
     </div>
   </section>;
