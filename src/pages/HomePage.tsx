@@ -29,6 +29,7 @@ import {
 } from '../features/session/StudySessionPanel';
 import { useSessionDebrief } from '../features/session/useSessionDebrief';
 import { HomeConnections } from '../features/session/HomeConnections';
+import { ConnectionSignals } from '../features/session/ConnectionSignals';
 import { useHomeConnectionsView } from '../features/session/useHomeConnectionsView';
 import { HomeOverviewPanel, SessionSettingsPanel } from './HomeOverviewPanel';
 
@@ -222,6 +223,7 @@ export function HomePage({
 
   return (
     <div className={sessionStarted ? 'home-page home-session-active' : `home-page${connectionsExpanded ? ' home-connections-expanded' : ''}`}>
+      {connectionsExpanded ? <ConnectionSignals /> : null}
       <div className="grid home-grid">
         <HomeOverviewPanel
           backendStatus={backendStatus}
