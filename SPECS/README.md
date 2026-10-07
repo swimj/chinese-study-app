@@ -1,93 +1,69 @@
-# SPECS index
+# Product documentation routes
 
-Product and planning documents under `SPECS/`. See [docs/README.md](../docs/README.md) for how these relate to other documentation.
+This is a retrieval map for existing material under `SPECS/`, not a definition
+of the target taxonomy. The [documentation hierarchy](../docs/documentation-principles.md#target-hierarchy-and-ownership)
+defines ownership independently of this folder. The
+[adoption inventory](../docs/README.md#known-adoption-gaps) records the known gap
+between that target and the current corpus.
 
-## Canonical product and feature contracts
+Use these sources to recover intended behavior and its rationale. Existing
+guarantees do not disappear because their documents need restructuring, but a
+canonical label does not certify every sentence as deliberate or current.
+Distinguish promises from implementation details, and surface consequential
+conflicts rather than changing a promise solely to match the code.
 
-These define intended behavior. Surface conflicts with explicit instructions or
-verified implementation; agreed behavior changes update contracts and tests together.
-Canonical ownership does not certify every existing sentence as deliberate or
-current. Use the [documentation principles](../docs/documentation-principles.md)
-to recover intent and distinguish guarantees from implementation details; do
-not revise a promise solely because the code behaves differently.
+## Sources for the product-wide model
 
-| Document | Role |
+- [learning-review-model.md](learning-review-model.md): word lifecycle,
+  direction-level rules, and word-level session inclusion.
+- [study-action-model.md](study-action-model.md): skills, study actions,
+  scheduling, attempt events, contrast selection, and production tasks/cues.
+- [session-covering-criteria.md](session-covering-criteria.md): active-session
+  covering, Undo, and commit intent.
+
+These explain related parts of the product and currently carry both shared and
+area-specific concepts. This PR has not established a coherent product-wide
+owner or certified their layering. The target needs shared definitions and
+cross-cutting guarantees with explicit refinement by the area owners below.
+
+## Existing feature and domain sources
+
+| Area | Current sources and subject |
 | --- | --- |
-| [learning-review-model.md](./learning-review-model.md) | Word lifecycle (`unstudied` / `learning` / `review`), direction-level rules, session inclusion at word level |
-| [session-covering-criteria.md](./session-covering-criteria.md) | In-session covering, undo, commit payload intent (frontend-owned session snapshot) |
-| [study-action-model.md](./study-action-model.md) | Scheduling model and intended behavior: study actions, word-skill state, attempt events, contrast selection, and the bounded production-task/cue model |
-| [session-debrief.md](./session-debrief.md) | Informational Mandarin debrief inventory, durable generation, interests, failure and retry |
-| [session-recovery-highlights.md](./session-recovery-highlights.md) | Deterministic acknowledgment of repeated trouble followed by reliable recall |
-| [session-reflection-generation.md](./session-reflection-generation.md) | Completed-session boundary, reflection evidence, generation attempts, failure isolation, retry, and resource bounds |
-| [reflection-proposals-and-handles.md](./reflection-proposals-and-handles.md) | Reflection result, proposal review, authorized-operation, application, provenance, and handle contracts |
+| Word lifecycle, scheduling, and in-session behavior | The three sources above, pending reconciliation of shared versus area-specific ownership |
+| Introduction and preparation | [word-bootstrap-and-introduction.md](word-bootstrap-and-introduction.md): content, preparation, pinned packages, and review-reflection lifecycle; [current guide](../docs/word-introduction-in-app.md) |
+| Pure-cue practice | [pure-cue-elicitation.md](pure-cue-elicitation.md): independent scheduling, sampling, promotion, and compensation |
+| Session debrief | [session-debrief.md](session-debrief.md): inventory, durable generation, interests, failure, and retry |
+| Recovery highlights | [session-recovery-highlights.md](session-recovery-highlights.md): repeated trouble followed by reliable recall |
+| Reflection generation | [session-reflection-generation.md](session-reflection-generation.md): completed-session boundary, evidence, attempts, isolation, retry, and bounds |
+| Reflection effects and handles | [reflection-proposals-and-handles.md](reflection-proposals-and-handles.md): proposals, review, authorization, application, provenance, and handles |
+| Deferred reflection | [deferred-reflection-second-opinion.md](deferred-reflection-second-opinion.md): selected deferred evidence and replacement in active review |
+| Character presentation | [character-presentation.md](character-presentation.md): word forms, script preferences, and display conversion |
+| My Words | [my-words.md](my-words.md): personal collections, browsing, and word details |
+| New-word intake | [diet-deck-distribution.md](diet-deck-distribution.md): deck distribution and intake decisions alongside original delivery planning |
 
-**Layering:** `learning-review-model` defines word-status semantics;
-`study-action-model` defines how skills and actions are scheduled and projected;
-`session-covering-criteria` defines how the frontend treats items inside an
-active session; `session-reflection-generation` owns finalized evidence and
-generation; and `reflection-proposals-and-handles` owns review, authorization,
-application, and provenance after generation succeeds.
+For an area being reconciled, establish the owning model and promises, link or
+clearly separate its current realization, explain important decisions, and
+identify concrete gaps. The table records where material is found today, not
+a decision to preserve one file per row or the present boundaries forever.
 
-## Implementation descriptions and maps
+## Material with other destination roles
 
-These explain current mechanisms and code boundaries rather than establish new
-product guarantees. Keep any known gaps from intended behavior explicit.
-
-| Document | Role |
-| --- | --- |
-| [frontend-architecture-map.md](./frontend-architecture-map.md) | React directory map and controller boundaries |
-
-Also see [docs/architecture.md](../docs/architecture.md), [docs/api.md](../docs/api.md),
-[docs/server-db.md](../docs/server-db.md), and the feature-specific
-[reflection frontend architecture map](../docs/reflection-frontend-architecture.md).
-
-## Operations
-
-| Document | Role |
-| --- | --- |
-| [study-db-setup.md](./study-db-setup.md) | Study-mode DB setup and restore |
-
-## Feature specifications
-
-These describe versioned feature behavior alongside the canonical contracts.
-
-| Document | Role |
-| --- | --- |
-| [pure-cue-elicitation.md](./pure-cue-elicitation.md) | Accepted standalone elicitation contract: independent scheduling, proportional strong-cue sampling, staged promotion, and false-lapse compensation |
-| [word-bootstrap-and-introduction.md](./word-bootstrap-and-introduction.md) | Accepted content contract with live preparation, pinned introduction/rehearsal packages, and independent review-reflection lifecycle; see the in-app guide for implemented policy |
-| [deferred-reflection-second-opinion.md](./deferred-reflection-second-opinion.md) | SWI-55 implemented first cut: selected deferred evidence, chosen-model reflection, and replacement in active review without prompt changes |
-| [character-presentation.md](./character-presentation.md) | Session word forms, sentence script preferences, and cloze display conversion |
-| [my-words.md](./my-words.md) | Words navigation, personal vocabulary collections, bounded browsing, and word details |
-
-## Design and planning references
-
-These labels do not establish current work or priority. The diet design has live
-implementation; its original delivery sequencing is historical. French plans
-remain context for retired experimentation, not a hosted compatibility promise.
-
-| Document | Role |
-| --- | --- |
-| [diet-deck-distribution.md](./diet-deck-distribution.md) | **Accepted design** — decked new-word diet (distribution-over-decks vision sketch + HSK delta-tier deliverable, placement intake, gut-level nudges, triage retirement) |
-| [french-compatibility-profile-plan.md](./french-compatibility-profile-plan.md) | French study profile compatibility |
-| [french-priority-alias-first-cut-plan.md](./french-priority-alias-first-cut-plan.md) | Priority alias lookup first cut |
-| [french-reading-corpus-compatibility-plan.md](./french-reading-corpus-compatibility-plan.md) | French corpus ingestion plan |
-
-Repo-level plans: [PLANS/](../PLANS/).
-
-## Completed / historical
-
-| Document | Notes |
-| --- | --- |
-| [archive/milestone-6-retire-review-items-plan.md](./archive/milestone-6-retire-review-items-plan.md) | **Done** — `review_items` removed; scheduling uses word-skill state |
-| [archive/milestone-7-8-relevance-aware-contrast-plan.md](./archive/milestone-7-8-relevance-aware-contrast-plan.md) | **Done** — relevance-aware contrast practice (archived; gaps non-pressing) |
-| [archive/milestone-7-8-implementation-slices.md](./archive/milestone-7-8-implementation-slices.md) | **Done** — contrast/relevance implementation checklist (archived) |
-| [initial-reflection-steel-thread.md](../PLANS/initial-reflection-steel-thread.md) | **Done** — initial durable post-session reflection, proposal review, and supported application steel thread |
-| [archive/intake-triage-advisor.md](./archive/intake-triage-advisor.md) | **Retired** (2026-09-10) per `diet-deck-distribution` §2.7 — Triage subtab and advisor loop removed; accepted recognition-only suppressions persist as word-level state |
-
-## Vision (not implementation contracts)
-
-| Document | Role |
-| --- | --- |
-| [adaptive_vocabulary_training_product_notes.md](./adaptive_vocabulary_training_product_notes.md) | Long-term product vision |
-
-Historical idea dump (not a current backlog): [docs/vision/todos-dump.md](../docs/vision/todos-dump.md).
+- [frontend-architecture-map.md](frontend-architecture-map.md) is a technical
+  navigation source. Its placement under `SPECS/` does not make current React
+  structure a product guarantee. See the [technical routes](../docs/README.md#current-architecture-and-implementation).
+- [study-db-setup.md](study-db-setup.md) describes older study-mode setup and
+  restore. Assess current applicability for the task; it is not the default
+  hosted-service workflow. See the [operations routes](../docs/README.md#operations-and-contributor-workflows).
+- [diet-deck-distribution.md](diet-deck-distribution.md) mixes durable design
+  material with delivery planning; preserve the useful intent while separating
+  historical sequencing when this area is reconciled.
+- French [compatibility](french-compatibility-profile-plan.md),
+  [priority-alias](french-priority-alias-first-cut-plan.md), and
+  [reading-corpus](french-reading-corpus-compatibility-plan.md) plans are context
+  for retired experimentation, not a current hosted compatibility promise.
+- [archive/](archive/), [PLANS/](../PLANS/), and
+  [adaptive vocabulary product notes](adaptive_vocabulary_training_product_notes.md)
+  are supporting history or exploratory sources. They do not define required
+  documentation layers or assign current work. Their retention and ownership
+  are part of the bounded adoption review, not settled by this index.

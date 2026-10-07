@@ -4,28 +4,22 @@ Guidance for AI coding agents working in this repository.
 
 ## 1) Project Snapshot
 
-- App type: Mandarin study app with an invite-only hosted beta and local development workflow.
+- App type: Mandarin study app used through an invite-only hosted beta; contributor development and tests are separate from learner use.
 - Frontend: React + Vite + TypeScript in `src/`.
 - Backend: Express + TypeScript in `server/`.
 - Persistence: SQLite (`app.db`) via Node `DatabaseSync`, modules under `server/db/`.
 - Direction: polish, maturity, and debt in the existing learner experience; preserve the hosted ownership and data-safety boundaries while improving it.
-- Documentation taxonomy: [`docs/README.md`](docs/README.md), [`SPECS/README.md`](SPECS/README.md), and [`notes/README.md`](notes/README.md) (medium-lived working memory).
-- Intended product behavior (see §2 for reconciliation with implementation):
-  - `SPECS/learning-review-model.md` — word lifecycle
-  - `SPECS/session-covering-criteria.md` — in-session covering and commits
-  - `SPECS/study-action-model.md` — scheduling, study actions, attempt events
-  - `SPECS/session-reflection-generation.md` — post-session finalization,
-    reflection evidence, generation, failure isolation, and retry
-  - `SPECS/reflection-proposals-and-handles.md` — reflection proposals,
-    authorization, application, provenance, and handle operations
+- Documentation target: [`docs/documentation-principles.md`](docs/documentation-principles.md) defines the hierarchy independently of today's folders.
+- Documentation routes and known adoption gaps: [`docs/README.md`](docs/README.md). Existing files are sources to reconcile, not certified examples of the target.
 
 ## 2) Orientation And Task Routing
 
-Start with `README.md` for the app and local workflow, `docs/README.md` for the
-documentation map, and `STABILITY_FRONTIER.md` for safe architectural assumptions
-and unsettled decisions (see §12). Then follow the task routes below and the
-relevant entries in `SPECS/README.md`; the index is a map, not an additional
-required reading list.
+Use `README.md` for product/repository orientation and `docs/README.md` to locate
+the relevant product, implementation, or operations owner and known gaps. Read
+`STABILITY_FRONTIER.md` for preserved architectural assumptions and unsettled
+decisions when they affect the task (see §12). Then use the task routes below
+and `SPECS/README.md` to find existing sources; neither index is an additional
+mandatory reading sequence or a claim that its targets meet the standard.
 
 Read the owning contracts and implementation descriptions for the area being
 changed, the relevant tests (see [`docs/testing.md`](docs/testing.md)), and
@@ -34,7 +28,7 @@ only the working notes relevant to the task; they provide context rather than
 authority (see [`notes/README.md`](notes/README.md)).
 
 The direct task instruction and subsequent clarifications supply execution scope.
-Canonical specs describe intended behavior; code determines actual behavior
+Product contracts state intended behavior; code determines actual behavior
 and tests show what is checked. If these sources conflict with each other or
 with an explicit instruction, surface the discrepancy. Apply a clear authorized
 change with matching docs and tests; do not silently fix code to a stale spec or
@@ -44,7 +38,9 @@ Old plans do not override the task.
 
 For documentation work, use [`docs/documentation-principles.md`](docs/documentation-principles.md).
 Keep promises, current implementation, and rationale distinguishable; explain
-the model in human-readable prose and improve the owning explanation in place.
+the model in human-readable prose. Establish the right owner under the target
+hierarchy instead of preserving accidental structure; improve an existing
+explanation in place when it is the right owner.
 Existing specs may also contain accidental or stale choices, so recover intent
 deliberately rather than treating either code or every spec sentence as settled.
 
@@ -198,10 +194,11 @@ This repo contains real DB artifacts and backups under `data/`.
 4. Make a proportional, best-effort update to owning docs when behavior,
    mechanisms, or commands change; report meaningful remaining gaps.
 
-The [documentation principles](docs/documentation-principles.md) are an
-incremental target, not a blanket hard merge gate or a claim that all existing
-docs have been verified. Task-specific correctness and safety requirements
-still apply.
+The [documentation principles](docs/documentation-principles.md) define the
+target even where the corpus does not conform. Adoption is incremental without
+a blanket documentation merge gate. A touched file is not thereby certified;
+report the scope checked and meaningful gaps left. Task-specific correctness
+and safety requirements still apply.
 
 ## 10) If Unsure
 
@@ -237,9 +234,11 @@ still apply.
 ## 12) Using The Stability Frontier
 
 Read [STABILITY_FRONTIER.md](STABILITY_FRONTIER.md) for safe architectural
-assumptions, invariants, and unsettled decisions. Use canonical specs and feature
-contracts for detailed intended behavior, architecture maps to locate code, and
-runbooks for operations. Plans and working notes supply dated context, not
+assumptions, invariants, and unsettled decisions. Use product and feature
+contracts for detailed intended behavior, implementation explanations for
+current mechanisms, and runbooks for operations. The frontier's current mixed
+role is an [adoption gap](docs/README.md#known-adoption-gaps), not the target
+hierarchy. Plans and working notes supply dated context, not
 automatic execution authority; an `active` label alone does not establish
 current priority or unfinished implementation.
 

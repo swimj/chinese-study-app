@@ -1,6 +1,28 @@
 # Chinese Study App
 
-A Mandarin study app with a React/Vite frontend, Express backend, local development workflow, and invite-only hosted beta.
+A Mandarin study app used through an invite-only hosted beta, implemented with
+a React/Vite frontend and Express backend.
+
+This repository contains the application and its product, implementation, and
+operations documentation. Learners use the hosted service. Contributor setup
+and testing are separate from that learner experience.
+
+## Where to start
+
+- [Documentation index](docs/README.md): routes to product models, current
+  implementation, operations, and the documentation target and known gaps.
+- [Contributor guidance](AGENTS.md): task scope, conventions, safety,
+  verification, and review delivery.
+- [Hosted operations](docs/ops/hosted-beta-deployment.md): current release and
+  maintenance procedures; use the owning runbook for an operational task.
+
+**README adoption status, 2026-10-07:** the orientation above has been updated.
+The remaining sections below are legacy material pending reconciliation,
+including former local-study workflows, French experimentation, and
+machine-specific links. They are not current learner onboarding or an endorsed
+operating procedure. See the [bounded adoption gap](docs/README.md#known-adoption-gaps)
+and remove this notice when the retained material has been reconciled with
+the README's orientation-only role and the relevant owning guides.
 
 ## Architecture Direction
 
