@@ -113,7 +113,8 @@ motion uses a still border cue without tracing or pulsing.
 The focused view has decorative green traces behind translucent cards and the
 Minimize control. Traces alternate broad curves and sparse angular turns,
 occasionally branching into strands that fan apart from the advancing tip.
-Each shape extends, lingers, and dissipates together. Text remains fully opaque;
+Each shape extends, lingers, and dissipates together. Centered text remains fully
+opaque; side-card excerpts are muted to limit bleed through the central card;
 the decoration is hidden under reduced motion and absent from the compact view.
 Neighbor previews and the compact preview are literal excerpts, not generated
 titles or new relationships. The left navigation stays in place. Start session,
