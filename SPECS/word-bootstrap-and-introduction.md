@@ -98,9 +98,10 @@ coherent immutable assembly. Teaching and practice are authored in separate prov
 identity rather than silently changing an existing lesson.
 
 The introduction proceeds in small learner-advanced beats. Space advances
-the next thought; earlier content remains available. The usual starting rhythm
-is situation, Chinese sentence, translation, then an explanation of what the
-word does there. Additional scenes, light grammar, literary parsing, imagery,
+the next thought; earlier content remains available. When context helps, a useful rhythm is situation, Chinese sentence, translation,
+then an explanation of what the word does there. Familiar straightforward
+concepts may begin with a direct meaning and need only a brief usage example;
+a narrative or reflection question is optional, not a required lesson scaffold. Additional scenes, light grammar, literary parsing, imagery,
 and private reflection are chosen for their value to the particular word.
 
 Beats may combine authored prose with references to examples. Reusable lexical
