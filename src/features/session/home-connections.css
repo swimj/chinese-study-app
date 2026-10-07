@@ -20,34 +20,29 @@
 .home-overview.is-compact .session-start-card-label { font-size: 1rem; }
 .home-overview.is-compact .session-start-card-helper { color: var(--text-secondary); font-size: .8rem; }
 .home-overview.is-compact .session-settings-gear { color: var(--text-secondary); }
-.home-overview-activity { width: min(100%, 440px); font-size: .9rem; }
-.home-overview-activity > summary { padding: .85rem .5rem; cursor: pointer; color: var(--text-secondary); }
-.home-overview-activity[open] { padding: 0 1rem 1rem; background: var(--surface); border-radius: .75rem; }
 .home-connections { min-width: 0; }
 .home-connections-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .home-connections-heading h2 { font-size: 1.15rem; font-weight: 500; margin: 0; }
-.home-connections-heading p { margin: .35rem 0 0; font-size: .85rem; color: var(--text-muted); }
 .home-connections-heading button { font-size: .85rem; min-height: 44px; }
 .home-connections-ring { position: relative; isolation: isolate; perspective: 1200px; padding: 3rem 13%; min-height: 380px; display: grid; align-items: center; }
 .home-connections-note { position: relative; z-index: 2; margin: 0; padding: clamp(1.5rem, 3vw, 3rem); background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-card); }
 .home-connections-note-content { animation: home-connection-arrive 300ms ease-out; }
-.home-connections-position { color: var(--text-muted); font-size: .8rem; margin: 0 0 1rem; }
+.home-connections-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .home-connections-prose { white-space: pre-wrap; overflow-wrap: anywhere; font-size: clamp(1.1rem, 1.5vw, 1.35rem); line-height: 1.9; margin: 0; }
 .home-connections-neighbor { position: absolute; top: 50%; width: 27%; max-height: 300px; overflow: hidden; padding: 1.5rem; background: var(--surface-muted); color: var(--text-secondary); border: 1px solid var(--border); border-radius: 10px; text-align: left; font-size: 1rem; line-height: 1.8; overflow-wrap: anywhere; z-index: 1; }
 .home-connections-neighbor.is-previous { left: 0; transform: translateY(-50%) rotateY(48deg); transform-origin: left center; }
 .home-connections-neighbor.is-next { right: 0; transform: translateY(-50%) rotateY(-48deg); transform-origin: right center; }
 .home-connections-neighbor.is-previous:hover { transform: translateY(-50%) rotateY(42deg); background: var(--surface-hover); }
 .home-connections-neighbor.is-next:hover { transform: translateY(-50%) rotateY(-42deg); background: var(--surface-hover); }
-.home-connections-navigation { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 1rem; }
-.home-connections-navigation > span { color: var(--text-muted); font-size: .85rem; }
-.home-connections-navigation button { min-height: 44px; }
+.home-connections-neighbor:focus-visible { z-index: 3; }
+.home-connections-turn { display: none; }
+.home-connections-loop { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.home-connections-loop rect { fill: none; stroke: var(--accent); stroke-width: 5px; stroke-linecap: round; stroke-dasharray: .01 99.99; animation: home-connection-loop 1400ms ease-in-out both; }
+@keyframes home-connection-loop { 0% { stroke-dashoffset: 0; opacity: 0; } 8% { opacity: 1; } 92% { opacity: 1; } 100% { stroke-dashoffset: -100; opacity: 0; } }
 .home-connections-preview { display: block; width: 100%; background: var(--surface); color: var(--text); border: 1px solid var(--border); text-align: left; padding: 1.25rem 1.5rem; margin-top: 1rem; }
 .home-connections-preview:hover { background: var(--surface-hover); }
 .home-connections-preview > span { display: block; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1rem; line-height: 1.8; }
 .home-connections-preview > small { display: block; color: var(--accent); margin-top: .8rem; font-size: .85rem; }
-.home-connections footer { margin-top: 1rem; text-align: right; }
-.home-connections-summary { background: transparent; color: var(--text-secondary); font-size: .85rem; min-height: 44px; }
-.home-connections-summary:hover { background: var(--surface-hover); }
 .home-connections-waiting { padding: 1.5rem 0; }
 .home-connections.is-expanded .home-connections-waiting { min-height: 350px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .home-connections-waiting p { margin: .4rem 0; }
@@ -66,11 +61,14 @@
   .home-connections-heading h2 { font-size: 1rem; }
 }
 @media (max-width: 520px) {
-  .home-connections-ring { padding: 1.5rem 0; min-height: 0; }
-  .home-connections-neighbor { display: none; }
+  .home-connections-ring { padding: 4rem 0 1.5rem; min-height: 0; }
+  .home-connections-ring:not(:has(.home-connections-neighbor)) { padding-top: 1.5rem; }
+  .home-connections-neighbor { top: .5rem; width: 44px; height: 44px; padding: 0; border: 0; background: var(--accent-soft); overflow: visible; }
+  .home-connections-neighbor.is-previous, .home-connections-neighbor.is-next,
+  .home-connections-neighbor.is-previous:hover, .home-connections-neighbor.is-next:hover { transform: none; }
+  .home-connections-neighbor-text { display: none; }
+  .home-connections-turn { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; color: var(--accent); font-size: 1.4rem; }
   .home-connections-note { padding: 1.25rem; }
-  .home-connections-navigation { gap: .65rem; }
-  .home-connections-navigation button { padding: .65rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   .home-connections-note-content, .home-connections-astral b { animation: none; }
@@ -78,4 +76,6 @@
   .home-connections-astral b:nth-of-type(2) { transform: translate(35px, -50px); }
   .home-connections-astral b:nth-of-type(3) { transform: translate(45px, 40px); }
   .home-connections-neighbor { transition: none; }
+  .home-connections-loop rect { stroke-dasharray: none; stroke-width: 2px; animation: home-connection-loop-still 900ms linear both; }
 }
+@keyframes home-connection-loop-still { 0%, 90% { opacity: 1; } 100% { opacity: 0; } }

@@ -4,6 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { SessionDebrief } from '../src/domain/session-debrief.ts';
 import { HomeConnections } from '../src/features/session/HomeConnections.tsx';
+import { isHomeConnectionLoop, resolveHomeConnectionKey } from '../src/features/session/home-connections-keyboard.ts';
 import { beginHomeConnectionsVisit, connectionExcerpt, homeConnectionNeighbors,
   readHomeConnectionsPreference, receiveHomeConnections, toggleHomeConnections } from '../src/features/session/home-connections-state.ts';
 
@@ -66,32 +67,55 @@ test('one/two/ten note navigation has unique bounded neighbors and wraps', () =>
 function render(debrief = ready, expanded = true, error: string | null = null) {
   const noop = () => {};
   return renderToStaticMarkup(createElement(HomeConnections, { debrief, expanded, error, retrying: false,
-    onToggle: noop, onRetry: noop, onReload: noop, onSummary: noop }));
+    onToggle: noop, onRetry: noop, onReload: noop }));
 }
 
-test('expanded ring shows exact text, count and bounded neighbors, without generated fields or numbered pagination', () => {
+test('expanded ring shows exact text and clickable neighbors without summary, metadata, or visible pagination', () => {
   const html = render();
   assert.match(html, /Exact paragraph 1\n中文 &lt;literal text&gt;/);
   assert.match(html, /Connection 1 of 10/);
-  assert.match(html, /Session summary/);
-  assert.equal((html.match(/class="home-connections-neighbor/g) ?? []).length, 2);
+  assert.match(html, /Recent Connections/);
+  assert.match(html, /class="home-connections-sr-only">Connection 1 of 10/);
+  assert.doesNotMatch(html, /Session summary|home-connections-navigation|home-connections-position|October|20 exercises/);
+  assert.equal((html.match(/class="home-connections-neighbor /g) ?? []).length, 2);
   assert.doesNotMatch(html, /Do not display this|w1|Exact paragraph 5|>10<\/button>/);
-  assert.equal((render({ ...ready, notes: ready.notes!.slice(0, 1) }).match(/class="home-connections-neighbor/g) ?? []).length, 0);
+  assert.equal((render({ ...ready, notes: ready.notes!.slice(0, 1) }).match(/class="home-connections-neighbor /g) ?? []).length, 0);
 });
 
 test('compact preview always uses the first note and a count, with bounded text', () => {
   const html = render({ ...ready, notes: [{ ...ready.notes![0], text: '字'.repeat(1000) }, ...ready.notes!.slice(1)] }, false);
   assert.match(html, /10 connections · Open connections/);
+  assert.doesNotMatch(html, />Expand<|>Minimize</);
   assert.match(html, new RegExp('字'.repeat(240) + '…'));
   assert.doesNotMatch(html, /Exact paragraph 2|字{241}|home-connections-ring/);
 });
 
-test('pending, failure, empty and stale read errors retain correct recovery and summary actions', () => {
+test('pending, failure, empty and stale read errors retain correct recovery actions', () => {
   assert.match(render(pending), /home-connections-astral/);
   assert.doesNotMatch(render(pending, false), /home-connections-astral/);
+  assert.match(render(pending, false), /class="home-connections-preview"/);
+  assert.match(render({ ...pending, status: 'failed' }, false), /Open connections to try again/);
   assert.match(render({ ...pending, status: 'failed' }), /Try again/);
   assert.match(render({ ...ready, notes: [] }, false), /Nothing extra to add/);
   const stale = render(ready, true, 'Offline');
   assert.match(stale, /Exact paragraph 1/);
   assert.match(stale, /Try loading again/);
+});
+
+test('left/right navigate while modifiers, composition, repeats and editing leave native input alone', () => {
+  const event = { key: 'ArrowRight', isComposing: false, keyCode: 39 };
+  assert.equal(resolveHomeConnectionKey(event, false), 1);
+  assert.equal(resolveHomeConnectionKey({ ...event, key: 'ArrowLeft' }, false), -1);
+  assert.equal(resolveHomeConnectionKey(event, true), null);
+  for (const patch of [{ ctrlKey: true }, { altKey: true }, { metaKey: true }, { shiftKey: true },
+    { repeat: true }, { isComposing: true }, { keyCode: 229 }, { defaultPrevented: true }, { key: 'Enter' }, { key: ' ' }]) {
+    assert.equal(resolveHomeConnectionKey({ ...event, ...patch }, false), null);
+  }
+});
+
+test('loop trace occurs only on forward last-to-first navigation of multiple notes', () => {
+  assert.equal(isHomeConnectionLoop(9, 10, 1), true);
+  assert.equal(isHomeConnectionLoop(8, 10, 1), false);
+  assert.equal(isHomeConnectionLoop(0, 10, -1), false);
+  assert.equal(isHomeConnectionLoop(0, 1, 1), false);
 });

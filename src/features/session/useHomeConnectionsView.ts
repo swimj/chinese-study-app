@@ -41,10 +41,6 @@ export function useHomeConnectionsView(debrief: SessionDebrief | null, visible: 
   const hasContent = debrief !== null && (debrief.status !== 'ready' || !!debrief.notes?.length);
   return {
     expanded: hasContent && !!current?.view.expanded,
-    acknowledge: () => {
-      if (!current) throw new Error('Cannot acknowledge connections without a session.');
-      setEntry({ ...current, view: { ...current.view, introduced: true, promoteWhenReady: false } });
-    },
     toggle: () => {
       if (!debrief || !current || current.id !== debrief.sessionId) throw new Error('Cannot toggle connections without a session.');
       setEntry({ ...current, view: toggleHomeConnections(current.view, debrief.status === 'ready' && !!debrief.notes?.length) });

@@ -97,15 +97,25 @@ these shortcuts. The finalized study keyboard handler yields to this surface.
 
 Queued and running summaries show a waiting state and may be left immediately.
 Home gives the latest completed session's connections the main reading area,
-using a turning ring of exact note text with previous/next controls and a count.
+under **Recent Connections**, using a turning ring of exact note text. Left/right
+arrow keys turn the ring while expanded; editing, composition, modifier keys, and
+other interactive widgets retain their native keys. Neighboring cards turn the
+ring on click and offer hover feedback, without visible arrows. There is no
+separate pagination bar, visible position counter,
+or session date/exercise metadata in this Home surface. Position remains available
+to assistive technology. Moving forward from the final note to the first briefly
+traces a green dot around the main card; reduced motion uses a still border cue.
 Neighbor previews and the compact preview are literal excerpts, not generated
 titles or new relationships. The left navigation stays in place. Start session,
-settings, and a study-activity disclosure remain available above the expanded
-connections. Small screens use the same paged reading surface without side cards;
+and settings remain available above the expanded connections. Study metrics are
+hidden while expanded and return when minimized. Small screens replace side-card
+previews with small arrow controls, leaving the main note at full reading width;
 long notes grow the page rather than shrinking the text.
 
 Minimize restores the ordinary Home overview with the first connection's preview
-and total count. Expand returns to the ring. A newly completed session defaults
+and total count. Clicking that preview returns to the ring; there is no separate
+Expand button. Pending and failed compact previews also open the focused view.
+A newly completed session defaults
 to expanded; merely starting a session does not reset a choice. Browser-local
 preferences are keyed by the completed session id and contain only presentation
 booleans. Once ready notes are presented in the expanded view, the learner's
@@ -115,13 +125,13 @@ Queued/running results can occupy the expanded area with a quiet orbital waiting
 animation (static under reduced motion). Minimizing while waiting holds through
 polling, settings, and in-app navigation for the rest of that document visit.
 If those notes have not been proactively opened, a later document reload expands
-them once ready. Explicitly expanding or opening the session summary acknowledges
+them once ready. Explicitly expanding acknowledges
 that batch, including while it is pending, and cancels this deferred introduction.
 Ready-empty results keep the ordinary Home overview. Failed results retain an
 explicit retry, and read errors retain a separate reload action.
 
-Home also retains access to the complete session summary, including recovery
-highlights, in the existing card component. A visible live
+Home does not reopen the old summary view. The immediate post-session summary,
+including recovery highlights, remains in the existing card component. A visible live
 summary reads its own immutable session id; latest retrieval cannot replace it.
 Only queued/running records poll. Requests and timers are cancelled on unmount,
 and old request completions cannot overwrite a retry or later surface. A lost

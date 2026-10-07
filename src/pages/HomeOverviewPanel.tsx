@@ -167,7 +167,7 @@ export function HomeOverviewPanel({
           ) : null}
         </div>
       )}
-      {compact ? <details className="home-overview-activity"><summary>Study activity</summary>{metrics}</details> : metrics}
+      {compact ? null : metrics}
     </div>
   );
 }
