@@ -287,6 +287,8 @@ keyboard behavior, exposure semantics, and operator analytics.
 
 After the last rating, keep the last revealed exercise visible. Replace its
 study controls with **See session summary** (Enter) and the final Undo control.
+When the session ends on the third successful reinforcement, show all three
+completed recall steps on that retained card.
 The last card does not depart. This also applies when draining or a final
 contrast response completes the work; a frozen incorrect answer remains visible.
 

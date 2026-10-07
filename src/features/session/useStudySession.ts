@@ -74,6 +74,7 @@ import {
   getActiveMeaningSelection,
   getActivePrompt,
   getActiveReviewState,
+  getCompletedReinforcementStreak,
   getActiveWordPersonalNotes,
   getPersonalNotesEditorTarget,
   hasServedProductionCueSupplement,
@@ -164,6 +165,7 @@ type SessionUiSnapshot = {
   frozenPureCueCard: FrozenPureCueCard | null;
   contrastSelectedWordId: string | null;
   frozenContrastCard: FrozenContrastCard | null;
+  completedReinforcementStreak: number | null;
 };
 
 export type StudySessionControllerOptions = {
@@ -196,6 +198,7 @@ export type StudySessionHomePageProps = {
   activeReviewProgress: ReviewActionProgress | undefined;
   activePureCueFailureCount: number;
   activePureCueReinforcementStreak: number;
+  completedReinforcementStreak?: number | null;
   hasUndo: boolean;
   submittingRating: ReviewRating | null;
   personalNotesEditorOpen: boolean;
@@ -323,6 +326,7 @@ export function useStudySession({
   const [frozenProductionCard, setFrozenProductionCard] = useState<FrozenProductionCard | null>(null);
   const [frozenPureCueCard, setFrozenPureCueCard] = useState<FrozenPureCueCard | null>(null);
   const [frozenContrastCard, setFrozenContrastCard] = useState<FrozenContrastCard | null>(null);
+  const [completedReinforcementStreak, setCompletedReinforcementStreak] = useState<number | null>(null);
   const [shortcutGuideOpen, setShortcutGuideOpen] = useState(false);
   const personalNotesEditorInputRef = useRef<HTMLTextAreaElement | null>(null);
   const productionHanziInputRef = useRef<HTMLInputElement | null>(null);
@@ -542,6 +546,7 @@ export function useStudySession({
     setAnswerRevealed(false);
     resetProductionUi();
     resetContrastUi();
+    setCompletedReinforcementStreak(null);
   }
 
   function resetPersonalNotesEditorUi() {
@@ -577,6 +582,7 @@ export function useStudySession({
       frozenPureCueCard,
       contrastSelectedWordId,
       frozenContrastCard,
+      completedReinforcementStreak,
     };
   }
 
@@ -594,6 +600,7 @@ export function useStudySession({
     setFrozenPureCueCard(snapshot.frozenPureCueCard);
     setContrastSelectedWordId(snapshot.contrastSelectedWordId);
     setFrozenContrastCard(snapshot.frozenContrastCard);
+    setCompletedReinforcementStreak(snapshot.completedReinforcementStreak);
   }
 
   async function applyPendingUndoClosure(): Promise<SessionReflectionEvidenceAccumulator> {
@@ -937,6 +944,14 @@ export function useStudySession({
                   ? productionResponseResolution
                   : null,
             });
+      setCompletedReinforcementStreak(getCompletedReinforcementStreak({
+        sessionCompleted: transition.state.phase === 'completed',
+        reviewInReinforcement,
+        rating,
+        reinforcementStreak: activePureCue
+          ? activeReviewReinforcementStreak
+          : activeReviewProgress?.reinforcementStreak ?? 0,
+      }));
       const outcome = rating === null ? 'done' : getSessionDeskOutcome(rating, transition.commit);
       if (activeUnit?.type !== 'study') throw new Error('Session desk requires an active study unit.');
       const key = getSessionDeskUnitKey(activeUnit.bucket, activeUnit.item.sessionActionId, activeWord?.id);
@@ -2020,6 +2035,7 @@ export function useStudySession({
       activeReviewProgress,
       activePureCueFailureCount,
       activePureCueReinforcementStreak: activePureCueReviewProgress?.reinforcementStreak ?? 0,
+      completedReinforcementStreak,
       hasUndo: lastUndoSnapshot !== null,
       submittingRating,
       personalNotesEditorOpen,

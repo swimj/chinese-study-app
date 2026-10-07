@@ -5,7 +5,7 @@ import {
   type CharacterPresentation,
 } from '../../domain/card-characters';
 import type { SessionStudyItem } from '../../domain/study-actions';
-import type { Word, WordMeaning } from '../../types';
+import type { ReviewRating, Word, WordMeaning } from '../../types';
 
 export function hasServedProductionCueSupplement(
   production: SessionStudyItem['production'] | null | undefined,
@@ -250,6 +250,22 @@ export function isReviewInReinforcement({
 
 export function isPureCueReviewInReinforcement(failureCount: number) {
   return failureCount > 0;
+}
+
+export function getCompletedReinforcementStreak({
+  sessionCompleted,
+  reviewInReinforcement,
+  rating,
+  reinforcementStreak,
+}: {
+  sessionCompleted: boolean;
+  reviewInReinforcement: boolean;
+  rating: ReviewRating | null;
+  reinforcementStreak: number;
+}): number | null {
+  return sessionCompleted && reviewInReinforcement && rating !== null && rating !== 'forgot'
+    ? reinforcementStreak + 1
+    : null;
 }
 
 export function getActiveReviewState({

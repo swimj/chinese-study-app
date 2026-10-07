@@ -4,6 +4,7 @@ import {
   getPersonalNotesEditorTarget,
   getActiveAnswerText,
   getActivePrompt,
+  getCompletedReinforcementStreak,
   getStudySessionPanelView,
   hasServedProductionCueSupplement,
   isPureCueReviewInReinforcement,
@@ -11,6 +12,18 @@ import {
 import type { Word } from '../src/types.ts';
 
 describe('session selectors', () => {
+  test('shows the final successful reinforcement count only when the session completes on that rating', () => {
+    assert.equal(getCompletedReinforcementStreak({
+      sessionCompleted: true, reviewInReinforcement: true, rating: 'good', reinforcementStreak: 2,
+    }), 3);
+    assert.equal(getCompletedReinforcementStreak({
+      sessionCompleted: true, reviewInReinforcement: true, rating: null, reinforcementStreak: 2,
+    }), null);
+    assert.equal(getCompletedReinforcementStreak({
+      sessionCompleted: false, reviewInReinforcement: true, rating: 'good', reinforcementStreak: 1,
+    }), null);
+  });
+
   test('targets the frozen production card for notes while awaiting next after a wrong answer', () => {
     const target = getPersonalNotesEditorTarget({
       word: createWord({ id: 'next-card', personalNotes: 'next card notes' }),
