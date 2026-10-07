@@ -73,8 +73,9 @@ file when their subjects and roles are explicit.
 For this project, **Steward** maintains the current vision and priorities, as
 described in [the project context](../AGENTS.md#11-project-context-and-task-scope).
 Working plans and investigation notes support the task that uses them. Accepted
-product decisions become part of the relevant model or contract, with useful
-rationale retained in the explanation or a linked decision record.
+product decisions that change the model or its promises become part of the
+relevant model or contract, with useful rationale retained in the explanation
+or a linked decision record.
 
 ## Intent, evidence, and disagreement
 
@@ -91,10 +92,12 @@ visible. Tests supply bounded evidence for the behavior they exercise.
 
 When sources disagree, identify the intended promise, actual behavior, relevant
 evidence, and any unresolved decision. Correct a clearly stale description
-within scope. An authorized behavior change should update the relevant
-contract, implementation, and tests together. Ask for human judgment when a
-consequential product or architectural choice remains unresolved, while
-continuing independent, well-defined work.
+within scope. When an authorized change alters a product promise, update the
+owning contract alongside the implementation and relevant tests. Changes to
+mechanisms or operating procedures belong in the explanations that maintain
+them, at the level needed for those explanations to remain useful and accurate.
+Ask for human judgment when a consequential product or architectural choice
+remains unresolved, while continuing independent, well-defined work.
 
 Existing specifications can preserve accidental choices or superseded intent.
 A canonical label alone does not establish that every sentence reflects a
@@ -103,6 +106,21 @@ explicit decisions. Do not silently rewrite a promise to fit the code, repair
 code to a suspect spec, or turn uncertainty into a new guarantee.
 
 ## How explanations evolve
+
+Maintained documentation selects the detail readers need to understand the
+product, reason about changes, or act safely. A detail earns its place through
+the explanatory work it does. Choose the level of abstraction that makes the
+relevant relationships and consequences clear while allowing the implementation
+to evolve.
+
+For example, a contract might explain when an action is available and what
+invoking it means for the learner. The button's exact screen position usually
+contributes little to that account, while a requirement that learners can
+recognize and access the action may be central. Similarly, an interleaving
+contract might define the constraints on exercise order; an implementation
+explanation can describe how the current algorithm achieves them. Algorithmic
+detail belongs where it helps readers reason about the mechanism, its
+tradeoffs, or its limitations, with code references supplying further detail.
 
 A document's purpose determines what it maintains. Each document should
 identify the reader questions it answers and the explanations it owns. Other
@@ -119,10 +137,11 @@ documentation toward these responsibilities. Choose file boundaries that keep
 related concepts understandable and responsibilities clear.
 
 Proposals should state the change under consideration, its reasons, and open
-decisions. Once a proposal is accepted, incorporate the decision into the
-current model, contract, or implementation explanation and preserve the
-rationale that will help future readers. Retain useful prior context as dated
-history linked from the current explanation.
+decisions. As proposals are accepted, incorporate the conclusions that change
+the maintained account of the product or its implementation. Preserve rationale
+that helps readers understand those conclusions and reason about future
+changes. Retain useful prior context as dated history linked from the current
+explanation.
 
 A working note can preserve exploration or support a handoff. Its durable
 conclusions should graduate into the appropriate explanation. The task or PR

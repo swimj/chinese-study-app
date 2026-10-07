@@ -7,8 +7,20 @@ structure and quality; this guide explains how an agent should produce it.
 ## Establish the question and destination
 
 Identify the reader's question and the understanding the document should give
-them. Use the conceptual documentation tree to choose the relevant document or
-section. Name that destination explicitly in the proposed change.
+them. When maintaining existing documentation, consider how the proposed change
+affects its answer. An update is warranted when that answer becomes inaccurate
+or inadequate, or when the change creates a useful new question for the
+documentation to answer. An implementation change may leave the maintained
+explanations sufficient as they stand.
+
+Where reader questions are still implicit, infer them from the document's
+purpose, content, and place in the documentation tree. Make them explicit as
+part of relevant cleanup. Treat these questions as a developing account of
+reader needs; missing questions can reveal gaps in the documentation.
+
+Choose the document or section responsible for the explanation and name that
+destination in the proposed change. Related documents need revision where
+their own answers are affected.
 
 For example, a feature contract explains intended behavior; an implementation
 guide explains the mechanisms that realize it; a runbook gives a procedure and
@@ -65,7 +77,8 @@ readers can follow the current account.
 Read the revised text as a reader who has the relevant technical background but
 has not followed the task conversation. Check that:
 
-- it answers the intended question and explains the desired model directly;
+- it answers the intended question and explains the desired model directly,
+  with each detail and reference contributing to that understanding;
 - its subjects, terms, and destinations are concrete;
 - any negative boundary protects a specific, meaningful distinction;
 - promises, current behavior, evidence, and proposals are distinguishable;
