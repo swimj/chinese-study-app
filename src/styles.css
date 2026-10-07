@@ -26,9 +26,7 @@
   --warning: #875d22;
   --warning-soft: #f7efd9;
   --attention-whats-new: #7353a8;
-  --attention-whats-new-soft: #f0eaf8;
   --attention-reflections: #246eae;
-  --attention-reflections-soft: #e5f1fb;
   --shadow-card: 0 12px 36px rgba(45, 59, 47, 0.08);
   --color-text-muted: var(--text-muted);
   --color-surface-muted: var(--surface-muted);
@@ -239,34 +237,23 @@ button:where(:hover:not(:disabled)) {
 }
 
 .nav-tab-count-about,
-.nav-tab-count-reflections,
-.nav-tab.active .nav-tab-count-about,
-.nav-tab.active .nav-tab-count-reflections {
-  flex-shrink: 0;
-  padding: 0.12rem 0.45rem;
-  border-radius: 999px;
-  font-weight: 750;
-  line-height: 1.25;
-}
-
-.nav-tab-count-about,
 .nav-tab.active .nav-tab-count-about {
   color: var(--attention-whats-new);
-  background: var(--attention-whats-new-soft);
+  font-weight: 700;
 }
 
 .nav-tab-count-reflections,
 .nav-tab.active .nav-tab-count-reflections {
   color: var(--attention-reflections);
-  background: var(--attention-reflections-soft);
+  font-weight: 700;
 }
 
 .nav-tab-generating {
   width: 0.7rem;
   height: 0.7rem;
   flex-shrink: 0;
-  border: 2px solid var(--attention-reflections-soft);
-  border-top-color: var(--attention-reflections);
+  border: 2px solid var(--attention-reflections);
+  border-top-color: transparent;
   border-radius: 50%;
   animation: reflections-nav-refresh-spin 0.8s linear infinite;
 }
