@@ -142,7 +142,7 @@ export function AppChrome({
                 >
                   <span>{label}</span>
                   {badge.kind === 'count' ? (
-                    <span className="nav-tab-count">{badge.count}</span>
+                    <span className={`nav-tab-count nav-tab-count-${page.key}`}>{badge.count}</span>
                   ) : null}
                   {badge.kind === 'generating' ? (
                     <span className="nav-tab-generating" aria-hidden="true" />

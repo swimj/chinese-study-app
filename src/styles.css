@@ -25,6 +25,8 @@
   --danger-soft: #f7e7e3;
   --warning: #875d22;
   --warning-soft: #f7efd9;
+  --attention-whats-new: #7353a8;
+  --attention-reflections: #246eae;
   --shadow-card: 0 12px 36px rgba(45, 59, 47, 0.08);
   --color-text-muted: var(--text-muted);
   --color-surface-muted: var(--surface-muted);
@@ -234,12 +236,24 @@ button:where(:hover:not(:disabled)) {
   color: rgba(255, 255, 255, 0.86);
 }
 
+.nav-tab-count-about,
+.nav-tab.active .nav-tab-count-about {
+  color: var(--attention-whats-new);
+  font-weight: 700;
+}
+
+.nav-tab-count-reflections,
+.nav-tab.active .nav-tab-count-reflections {
+  color: var(--attention-reflections);
+  font-weight: 700;
+}
+
 .nav-tab-generating {
   width: 0.7rem;
   height: 0.7rem;
   flex-shrink: 0;
-  border: 2px solid var(--border);
-  border-top-color: var(--accent);
+  border: 2px solid var(--attention-reflections);
+  border-top-color: transparent;
   border-radius: 50%;
   animation: reflections-nav-refresh-spin 0.8s linear infinite;
 }

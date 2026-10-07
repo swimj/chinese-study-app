@@ -118,7 +118,7 @@ describe('AppChrome primary navigation', () => {
   test('hides the Reflections unseen count while that tab is current', () => {
     const home = renderChrome('home', null, { reflectionUnseenCount: 2 });
     assert.match(home, /aria-label="Reflections, 2 new"/);
-    assert.match(home, /class="nav-tab-count">2</);
+    assert.match(home, /class="nav-tab-count nav-tab-count-reflections">2</);
 
     const reflections = renderChrome('reflections', null, { reflectionUnseenCount: 2 });
     assert.doesNotMatch(reflections, /nav-tab-count/);
