@@ -140,7 +140,7 @@ import {
   extendPureCueAcceptedWordsWithoutTransaction,
   getPureCueContent,
   getActivePureCuesAcceptingAny,
-  assertActionLapseCompensationAttempt,
+  hasActionLapseToCompensate,
   restoreProductionSchedulerSnapshotWithoutTransaction,
 } from './pure-cues.ts';
 import {
@@ -3509,7 +3509,7 @@ function applyUnfairCueRepairCompensation(
   if (misleadingAttemptIds.some((attemptId) => attemptId !== sourceAttemptId)) {
     throw new Error('Unfair-cue compensation restores one action and cannot name multiple attempts.');
   }
-  assertActionLapseCompensationAttempt(sourceAttemptId);
+  if (!hasActionLapseToCompensate(sourceAttemptId)) return state;
 
   const causedEffectRefs = state.kind === 'applied' ? [...state.effectRefs] : [];
   const satisfyingEffectRefs = state.kind === 'already_satisfied'

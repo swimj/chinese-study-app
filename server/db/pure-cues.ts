@@ -713,10 +713,10 @@ export function captureProductionSchedulerSnapshotForAttemptBatchWithoutTransact
 
 /**
  * A compensation snapshot belongs to one production action. Reflection addresses
- * it through that action's first attempt, which is the mistake when later
- * reinforcement attempts exist.
+ * it through that action's first attempt. Correct requested reviews can repair
+ * a cue too, but have no lapse to compensate.
  */
-export function assertActionLapseCompensationAttempt(sourceAttemptId: string): void {
+export function hasActionLapseToCompensate(sourceAttemptId: string): boolean {
   assertNonEmpty(sourceAttemptId, 'Source attempt id');
   const source = getDb().prepare(`
     SELECT session_id, session_action_id, action_kind, outcome
@@ -727,8 +727,11 @@ export function assertActionLapseCompensationAttempt(sourceAttemptId: string): v
     action_kind: string;
     outcome: string;
   } | undefined;
-  if (!source || source.action_kind !== 'production') {
-    throw new Error(`Unfair-cue compensation attempt ${sourceAttemptId} is unavailable.`);
+  if (!source) {
+    throw new Error(`Cue repair source attempt ${sourceAttemptId} is unavailable.`);
+  }
+  if (source.action_kind !== 'production') {
+    throw new Error(`Cue repair requires a production attempt (${sourceAttemptId}).`);
   }
   const first = getDb().prepare(`
     SELECT id, outcome
@@ -740,11 +743,15 @@ export function assertActionLapseCompensationAttempt(sourceAttemptId: string): v
     id: string;
     outcome: string;
   } | undefined;
-  if (!first || first.id !== sourceAttemptId || first.outcome !== 'incorrect') {
+  if (!first || first.id !== sourceAttemptId) {
     throw new Error(
-      'Unfair-cue compensation requires the action\'s first attempt, which must be the mistake.',
+      'Cue repair must reference the action\'s first attempt.',
     );
   }
+  if (first.outcome !== 'correct' && first.outcome !== 'incorrect') {
+    throw new Error(`Cue repair source attempt ${sourceAttemptId} has invalid outcome ${first.outcome}.`);
+  }
+  return first.outcome === 'incorrect';
 }
 
 /**
