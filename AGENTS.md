@@ -115,8 +115,11 @@ Justin authorizes pushing task branches and creating or updating review pull
 requests in this project's configured GitHub repository. Before publishing,
 verify that `origin` points to `https://github.com/swimj/chinese-study-app.git`.
 This authorization covers review publication, not merging, deploying,
-force-pushing, or publishing to another repository. Those actions need separate
-explicit authorization.
+or publishing to another repository. Agents may force-push an existing task
+branch when updating the pull request they created or are responsible for. Use
+`--force-with-lease` so the update is rejected if the remote branch changed
+since it was last observed. This authorization does not cover rewriting another
+person's branch or a branch outside the task's review boundary.
 
 A sandbox failure accessing shared Git metadata or GitHub does not establish
 that host authentication is broken. Diagnose the execution context and request
