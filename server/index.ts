@@ -1,6 +1,7 @@
 import { listWhatsNewPosts, saveWhatsNewPost, WhatsNewConflictError } from './db/whats-new.ts';
 import { WhatsNewInputError, parseWhatsNewWriteRequest } from '../src/domain/whats-new.ts';
 import { updateWhatsNewSeenThroughSequence } from './db/attention.ts';
+import { getWhatsNewAttention, updateWhatsNewAttention } from './db/whats-new-attention.ts';
 import { createFileReflectionFailureArtifactSink } from './reflection/failure-artifacts.ts';
 import { installModelInvocationLedger } from './llm/invocation-ledger.ts';
 import { listModelInvocations, ModelInvocationInputError } from './db/model-invocations.ts';
@@ -234,6 +235,7 @@ export function createApp(options: CreateAppOptions = {}) {
       }
     : undefined));
   app.use('/api/operator/whats-new', express.json({ limit: '1mb' }));
+  app.use('/api/whats-new-attention', express.json({ limit: '160kb' }));
   app.use(express.json({ limit: defaultJsonBodyLimit }));
 
   // Fly health checks and browser assets must remain available without a learner session.
@@ -1561,6 +1563,18 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.get('/api/whats-new', (_req, res) => {
     res.json({ posts: listWhatsNewPosts() });
+  });
+  app.get('/api/whats-new-attention', (_req, res) => {
+    res.json(getWhatsNewAttention());
+  });
+  app.post('/api/whats-new-attention', (req, res) => {
+    try {
+      res.json(updateWhatsNewAttention(req.body));
+    } catch (error) {
+      if (error instanceof WhatsNewInputError) { res.status(400).json({ error: error.message }); return; }
+      console.error('Failed to update blog attention', error);
+      res.status(500).json({ error: 'Failed to update blog attention' });
+    }
   });
   app.get('/api/operator/whats-new', createOperatorAllowlistMiddleware(), (_req, res) => {
     res.json({ posts: listWhatsNewPosts({ includeDrafts: true }) });

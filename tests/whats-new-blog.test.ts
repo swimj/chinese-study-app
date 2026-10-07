@@ -12,7 +12,7 @@ import { listWhatsNewPosts, saveWhatsNewPost, WhatsNewConflictError } from '../s
 import { parseWhatsNewWriteRequest, WhatsNewInputError } from '../src/domain/whats-new.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { getWhatsNewSeenThroughSequence, updateWhatsNewSeenThroughSequence } from '../server/db/attention.ts';
-const request = { id: 'new-post', expectedRevision: null, date: '2026-10-07', title: 'Hello', paragraphs: ['你好'], status: 'draft' as const, sourceFrom: null, sourceThrough: null };
+const request = { id: 'new-post', expectedRevision: null, date: '2026-10-07', title: 'Hello', summary: 'A short welcome.', paragraphs: ['你好'], status: 'draft' as const, sourceFrom: null, sourceThrough: null };
 
 test('blog migration preserves history and learners, repeats safely, and matches fresh schema', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'blog-migration-'));
@@ -29,8 +29,13 @@ test('blog migration preserves history and learners, repeats safely, and matches
     migrateDatabase(db); migrateDatabase(other);
     assert.deepEqual(db.prepare('SELECT * FROM learners').all(), learner);
     assert.equal(db.prepare('SELECT count(*) n FROM whats_new_posts').get()!.n, 12);
-    assert.deepEqual(db.prepare('SELECT * FROM whats_new_posts ORDER BY post_id').all(), other.prepare('SELECT * FROM whats_new_posts ORDER BY post_id').all());
-    assert.deepEqual(db.prepare('SELECT * FROM whats_new_post_revisions ORDER BY post_id').all(), other.prepare('SELECT * FROM whats_new_post_revisions ORDER BY post_id').all());
+    const currentPosts = (connection: DatabaseSync) => connection.prepare('SELECT * FROM whats_new_posts ORDER BY post_id').all().map(({ updated_at: _at, ...post }) => post);
+    assert.deepEqual(currentPosts(db), currentPosts(other));
+    const revisions = (connection: DatabaseSync) => connection.prepare('SELECT * FROM whats_new_post_revisions ORDER BY post_id, revision').all().map(({ saved_at: _at, post_json, ...row }) => {
+      const { updatedAt: _updatedAt, ...post } = JSON.parse(post_json as string);
+      return { ...row, post };
+    });
+    assert.deepEqual(revisions(db), revisions(other));
     const history = db.prepare('SELECT * FROM schema_migrations').all();
     assert.deepEqual(migrateDatabase(db), []); assert.deepEqual(db.prepare('SELECT * FROM schema_migrations').all(), history);
     setDb(db);
@@ -74,7 +79,65 @@ test('blog migration preserves history and learners, repeats safely, and matches
 });
 
 test('blog validation rejects malformed dates, stale shapes and oversized content', () => {
-  for (const bad of [{ date: '2026-99-01' }, { date: '2026-02-30' }, { id: '../bad' }, { unexpected: true }, { expectedRevision: 0 }, { paragraphs: [] }, { paragraphs: ['x'.repeat(10001)] }, { paragraphs: Array(11).fill('x'.repeat(10000)) }, { sourceFrom: 'short' }, { status: 'deleted' }]) {
+  for (const bad of [{ date: '2026-99-01' }, { date: '2026-02-30' }, { id: '../bad' }, { unexpected: true }, { expectedRevision: 0 }, { paragraphs: [] }, { paragraphs: ['x'.repeat(10001)] }, { paragraphs: Array(11).fill('x'.repeat(10000)) }, { sourceFrom: 'short' }, { status: 'deleted' }, { summary: '' }, { summary: '   ' }, { summary: 'x'.repeat(301) }, { summary: undefined }]) {
     assert.throws(() => parseWhatsNewWriteRequest({ ...request, ...bad }), WhatsNewInputError);
   }
+});
+
+
+test('preview migration preserves old revisions and custom content, appends audit records, and rolls back safely', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'blog-preview-migration-'));
+  createBaselineFixture(dir);
+  const db = new DatabaseSync(path.join(dir, 'app.db'));
+  try {
+    db.function('current_learner_id', () => 'reader');
+    const index = schemaMigrations.findIndex(m => m.id === 'app_schema:0030_whats_new_previews');
+    const previous = schemaMigrations.slice(0, index);
+    migrateDatabase(db, previous);
+    db.prepare(`INSERT INTO whats_new_posts
+      (post_id, revision, date, title, paragraphs_json, status, publication_sequence, source_from, source_through, updated_at)
+      VALUES (?, 1, ?, ?, ?, 'draft', NULL, ?, ?, ?)`)
+      .run('custom-draft', '2026-10-08', 'An operator’s draft', JSON.stringify(['Keep this exact custom paragraph.']), 'a'.repeat(40), 'b'.repeat(40), '2026-10-08T01:00:00.000Z');
+    db.exec(`UPDATE whats_new_posts SET revision=2, title='A custom correction',
+      paragraphs_json='["Changed historical content."]', status='draft'
+      WHERE post_id='update-2026-09-09'`);
+    // Represent the pre-upgrade operator saves with the old payload shape.
+    db.exec(`INSERT INTO whats_new_post_revisions
+      SELECT post_id, revision, 'operator:before-upgrade', updated_at,
+        json_object('id',post_id,'revision',revision,'date',date,'title',title,
+          'paragraphs',json(paragraphs_json),'status',status,'publicationSequence',publication_sequence,
+          'sourceFrom',source_from,'sourceThrough',source_through,'updatedAt',updated_at)
+      FROM whats_new_posts WHERE post_id IN ('custom-draft','update-2026-09-09')`);
+    const before = db.prepare('SELECT * FROM whats_new_posts ORDER BY post_id').all();
+    const history = db.prepare('SELECT * FROM whats_new_post_revisions ORDER BY post_id, revision').all();
+    const migration = schemaMigrations[index];
+    assert.throws(() => migrateDatabase(db, [...previous, { ...migration, sql: migration.sql + '\nINSERT INTO missing_table VALUES (1);' }]), /missing_table/);
+    assert.deepEqual(db.prepare('SELECT * FROM whats_new_posts ORDER BY post_id').all(), before);
+    assert.deepEqual(db.prepare('SELECT * FROM whats_new_post_revisions ORDER BY post_id, revision').all(), history);
+    migrateDatabase(db);
+    const after = db.prepare('SELECT * FROM whats_new_posts ORDER BY post_id').all();
+    for (const [index, oldPost] of before.entries()) {
+      const { revision, updated_at: _oldAt, ...oldContent } = oldPost;
+      const { revision: newRevision, updated_at: newAt, summary, ...newContent } = after[index];
+      assert.deepEqual(newContent, oldContent);
+      assert.equal(newRevision, Number(revision) + 1);
+      assert.ok(typeof summary === 'string' && summary.trim().length > 0 && summary.length <= 300);
+      const audit = db.prepare('SELECT * FROM whats_new_post_revisions WHERE post_id=? AND revision=?').get(oldPost.post_id, newRevision)!;
+      assert.equal(audit.actor_id, 'migration:0030');
+      assert.equal(audit.saved_at, newAt);
+      assert.equal(JSON.parse(audit.post_json as string).summary, summary);
+    }
+    for (const oldRevision of history) {
+      assert.deepEqual(db.prepare('SELECT * FROM whats_new_post_revisions WHERE post_id=? AND revision=?').get(oldRevision.post_id, oldRevision.revision), oldRevision);
+    }
+    assert.equal(after.find(post => post.post_id === 'custom-draft')!.summary, 'Read “An operator’s draft” for the full update.');
+    assert.equal(after.find(post => post.post_id === 'update-2026-09-09')!.summary, 'Read “A custom correction” for the full update.');
+    assert.equal(after.find(post => post.post_id === 'update-2026-10-06')!.summary, 'Connections brings studied words to life with notes about culture, language, and your interests after a session.');
+    const allHistory = db.prepare('SELECT * FROM whats_new_post_revisions ORDER BY post_id, revision').all();
+    assert.deepEqual(migrateDatabase(db), []);
+    assert.deepEqual(db.prepare('SELECT * FROM whats_new_posts ORDER BY post_id').all(), after);
+    assert.deepEqual(db.prepare('SELECT * FROM whats_new_post_revisions ORDER BY post_id, revision').all(), allHistory);
+    assert.throws(() => db.exec("UPDATE whats_new_post_revisions SET actor_id='forged'"), /immutable/);
+    assert.throws(() => db.exec('DELETE FROM whats_new_post_revisions'), /immutable/);
+  } finally { db.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });

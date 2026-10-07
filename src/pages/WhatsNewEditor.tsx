@@ -4,12 +4,12 @@ import { fetchOperatorWhatsNew, saveOperatorWhatsNew } from '../services/api';
 import { WhatsNewPosts } from './WhatsNewFeed';
 import './WhatsNewEditor.css';
 
-type EditorFields = { id: string; date: string; title: string; body: string };
+type EditorFields = { id: string; date: string; title: string; summary: string; body: string };
 function newFields(): EditorFields {
-  return { id: '', date: new Date().toISOString().slice(0, 10), title: '', body: '' };
+  return { id: '', date: new Date().toISOString().slice(0, 10), title: '', summary: '', body: '' };
 }
 function fieldsFor(post: WhatsNewPost): EditorFields {
-  return { id: post.id, date: post.date, title: post.title, body: post.paragraphs.join('\n\n') };
+  return { id: post.id, date: post.date, title: post.title, summary: post.summary, body: post.paragraphs.join('\n\n') };
 }
 export function splitBlogParagraphs(body: string): string[] {
   return body.split(/\n\s*\n/).map((paragraph) => paragraph.trim()).filter(Boolean);
@@ -44,7 +44,7 @@ export function WhatsNewEditor() {
     try {
       const post = await saveOperatorWhatsNew({
         id: fields.id.trim(), expectedRevision: selected?.revision ?? null,
-        date: fields.date, title: fields.title.trim(), paragraphs: splitBlogParagraphs(fields.body), status,
+        date: fields.date, title: fields.title.trim(), summary: fields.summary.trim(), paragraphs: splitBlogParagraphs(fields.body), status,
         sourceFrom: selected?.sourceFrom ?? null, sourceThrough: selected?.sourceThrough ?? null,
       });
       setPosts((previous) => [post, ...previous.filter((item) => item.id !== post.id)]);
@@ -55,10 +55,10 @@ export function WhatsNewEditor() {
   }
   function field(key: keyof EditorFields, value: string) { setFields((previous) => ({ ...previous, [key]: value })); }
   const paragraphs = splitBlogParagraphs(fields.body);
-  const valid = /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(fields.id) && Boolean(fields.date && fields.title.trim() && paragraphs.length);
+  const valid = /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(fields.id) && Boolean(fields.date && fields.title.trim() && fields.summary.trim() && fields.summary.length <= 300 && paragraphs.length);
   const preview: WhatsNewPost = {
     id: fields.id || 'preview', revision: selected?.revision ?? 0, date: fields.date || newFields().date,
-    title: fields.title || 'Untitled post', paragraphs, status: 'draft', publicationSequence: null,
+    title: fields.title || 'Untitled post', summary: fields.summary, paragraphs, status: 'draft', publicationSequence: null,
     sourceFrom: null, sourceThrough: null, updatedAt: '',
   };
   return <section className="whats-new-editor">
@@ -80,6 +80,8 @@ export function WhatsNewEditor() {
       <p className="notes">A unique permanent ID using lowercase letters, numbers, and hyphens.</p>
       <label>Date (UTC)<input type="date" value={fields.date} disabled={saving} onChange={(event) => field('date', event.target.value)} required /></label>
       <label>Title<input value={fields.title} disabled={saving} onChange={(event) => field('title', event.target.value)} required maxLength={200} /></label>
+      <label>Preview text<textarea value={fields.summary} disabled={saving} onChange={(event) => field('summary', event.target.value)} required rows={3} maxLength={300} aria-describedby="whats-new-summary-help" /></label>
+      <p id="whats-new-summary-help" className="notes">A short description for Home updates, up to 300 characters.</p>
       <label>Paragraphs<textarea value={fields.body} disabled={saving} onChange={(event) => field('body', event.target.value)} required rows={12} maxLength={100000} /></label>
       {selected?.status === 'published' ? <p className="notes">Saving a draft removes this post from What’s New. Publishing edits updates the visible post without marking it unread again.</p> : <p className="notes">A draft stays hidden. Publishing makes it visible to learners and marks a new post unread.</p>}
       <div className="whats-new-editor-actions">
@@ -89,7 +91,7 @@ export function WhatsNewEditor() {
     </form>
     {error ? <p role="alert">{error} Your text remains in the editor. To load the latest saved version, copy your edits first, discard them, and reload posts.</p> : null}
     {message ? <p role="status">{message}</p> : null}
-    <details><summary>Preview</summary><WhatsNewPosts posts={[preview]} /></details>
+    <details><summary>Preview</summary><h3>Home preview</h3><p>{preview.title}</p><p>{preview.summary}</p><h3>Full post</h3><WhatsNewPosts posts={[preview]} /></details>
   </section>;
 }
-function newFieldsWithDate(date: string): EditorFields { return { id: '', date, title: '', body: '' }; }
+function newFieldsWithDate(date: string): EditorFields { return { id: '', date, title: '', summary: '', body: '' }; }

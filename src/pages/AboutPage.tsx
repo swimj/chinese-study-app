@@ -10,11 +10,13 @@ const ABOUT_VIEWS = [
 
 export type AboutView = typeof ABOUT_VIEWS[number][0];
 
-export function AboutPage({ view, onSelectView, whatsNewUnseenCount = 0, onWhatsNewDisplayed }: {
+export function AboutPage({ view, onSelectView, whatsNewUnseenCount = 0, onWhatsNewRead, selectedPostId, onViewAllUpdates }: {
   view: AboutView;
   onSelectView: (view: AboutView) => void;
   whatsNewUnseenCount?: number;
-  onWhatsNewDisplayed?: (throughSequence: number) => Promise<void>;
+  onWhatsNewRead?: (postIds: string[]) => Promise<void>;
+  selectedPostId?: string | null;
+  onViewAllUpdates?: () => void;
 }) {
   return (
     <>
@@ -101,7 +103,7 @@ export function AboutPage({ view, onSelectView, whatsNewUnseenCount = 0, onWhats
         ) : (
           <>
             <p>Notes on how the app is evolving, newest first.</p>
-            <WhatsNewFeed onDisplayed={onWhatsNewDisplayed} />
+            <WhatsNewFeed onRead={onWhatsNewRead} selectedPostId={selectedPostId} onViewAll={onViewAllUpdates} />
           </>
         )}
       </article>
