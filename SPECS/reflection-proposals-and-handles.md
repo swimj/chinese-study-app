@@ -573,8 +573,10 @@ invocation whose exact postcondition is already present produces
 meaning visibility, rewrites historical attempts, or destructively deletes cues.
 
 An accepted repair smart-resets the target's production schedule only when it
-both installs a fairer cue and judges the served exercise misleading or
-overloaded. `create` and `replace` install that cue. Deactivation alone does
+both installs a fairer cue and judges an incorrect first attempt's served exercise
+misleading or overloaded. A correct requested review can repair a misleading cue;
+its successful study projection remains intact. `create` and `replace` install
+that cue. Deactivation alone does
 not, and a repair without `misleading_or_overloaded_cue` does not: improving a
 fair exercise leaves the lapse in place. The reset uses the same pre-lapse
 snapshot as pure-cue promotion. It restores production interval, ease, and

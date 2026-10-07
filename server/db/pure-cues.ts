@@ -713,10 +713,10 @@ export function captureProductionSchedulerSnapshotForAttemptBatchWithoutTransact
 
 /**
  * A compensation snapshot belongs to one production action. Reflection addresses
- * it through that action's first attempt, which is the mistake when later
- * reinforcement attempts exist.
+ * it through that action's first attempt. Correct requested reviews can repair
+ * a cue too, but have no lapse to compensate.
  */
-export function assertActionLapseCompensationAttempt(sourceAttemptId: string): void {
+export function hasActionLapseToCompensate(sourceAttemptId: string): boolean {
   assertNonEmpty(sourceAttemptId, 'Source attempt id');
   const source = getDb().prepare(`
     SELECT session_id, session_action_id, action_kind, outcome
@@ -740,11 +740,13 @@ export function assertActionLapseCompensationAttempt(sourceAttemptId: string): v
     id: string;
     outcome: string;
   } | undefined;
-  if (!first || first.id !== sourceAttemptId || first.outcome !== 'incorrect') {
+  if (!first || first.id !== sourceAttemptId
+    || (first.outcome !== 'correct' && first.outcome !== 'incorrect')) {
     throw new Error(
       'Unfair-cue compensation requires the action\'s first attempt, which must be the mistake.',
     );
   }
+  return first.outcome === 'incorrect';
 }
 
 /**

@@ -1463,6 +1463,51 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.deepEqual(dbModule.getSessionPayload('2026-07-29').buckets.review, []);
   });
 
+  for (const sourceKind of ['fallback', 'durable'] as const) {
+    test(`repairs a misleading ${sourceKind} cue after a correct requested review without compensation`, () => {
+      const cueId = sourceKind === 'durable' ? seedBroadCue('correct-seed', 'target') : null;
+      insertStudyAttempt('correct-review', { cueId });
+      sqlite.prepare(`UPDATE study_attempt_events
+        SET outcome = 'correct', rating = 'good', response = '目标', metadata_json = ?
+        WHERE id = 'correct-review'`).run(JSON.stringify({ production: {
+        taskId: 'production-task:target:default_production', cueId,
+        cueType: 'definition_gloss', text: cueId === null ? 'target' : 'broad target',
+        acceptedWordIds: ['target'], anchorWordId: 'target',
+        submittedText: '目标', submittedWordId: 'target', result: 'accepted_anchor',
+      } }));
+      dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
+        evidenceId: 'correct-review-evidence', occurredAt: appliedAt,
+        taskId: 'production-task:target:default_production', cueId,
+        sourceAttemptId: 'correct-review', attemptResult: 'accepted_anchor', submittedWordId: 'target',
+      });
+      sqlite.prepare(`INSERT INTO word_skill_state
+        (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor)
+        VALUES ('target', 'production', 1, 240, ?, '2026-08-08T12:01:00.000Z', 2.4)`)
+        .run(appliedAt);
+      const scheduleBefore = sqlite.prepare('SELECT * FROM word_skill_state').all();
+      const attemptsBefore = sqlite.prepare('SELECT * FROM study_attempt_events').all();
+      const cue = { cueType: 'circumstance' as const, text: 'a fairer situation for 目标', acceptedWordIds: ['target'] };
+      insertInvocation('correct-repair', {
+        ...cueRepairOperation({ changes: cueId === null
+          ? [{ kind: 'create', cue }]
+          : [{ kind: 'replace', cueId, replacements: [cue] }],
+        }),
+        sourceAttemptJudgments: [{ kind: 'misleading_or_overloaded_cue', sourceAttemptId: 'correct-review' }],
+      });
+      const repaired = dbModule.applyReflectionInvocation('correct-repair', appliedAt);
+      assert.equal(repaired.application.state.kind, 'applied');
+      if (repaired.application.state.kind !== 'applied') throw new Error('Correct review repair failed.');
+      assert.ok(repaired.application.state.effectRefs.some(ref => ref.type === 'production_cue'));
+      assert.ok(repaired.application.state.effectRefs.some(ref => ref.type === 'production_cue_evidence_judgment'));
+      assert.equal(repaired.application.state.effectRefs.some(ref => ref.type === 'production_scheduler_compensation'), false);
+      if (cueId !== null) assert.equal(dbModule.getProductionCue(cueId)?.active, false);
+      assert.deepEqual(sqlite.prepare('SELECT * FROM word_skill_state').all(), scheduleBefore);
+      assert.deepEqual(sqlite.prepare('SELECT * FROM study_attempt_events').all(), attemptsBefore);
+      assert.equal(sqlite.prepare('SELECT COUNT(*) AS count FROM pure_cue_scheduler_compensation_snapshots').get()?.count, 0);
+      assert.deepEqual(dbModule.applyReflectionInvocation('correct-repair', appliedAt), repaired);
+    });
+  }
+
   test('rejects unfair-cue compensation that does not name the action\'s first mistake', () => {
     const cueId = seedBroadCue('later-attempt-seed', 'target');
     insertStudyAttempt('later-attempt-first', { cueId });
