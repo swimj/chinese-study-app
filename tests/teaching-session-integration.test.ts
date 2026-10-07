@@ -210,3 +210,59 @@ test('review items interleave between teaching and first-encounter reinforcement
   const lastRecall = sequence.lastIndexOf('unstudied');
   assert.ok(sequence.slice(1, lastRecall).includes('review'), sequence.join(','));
 });
+
+
+test('new-words-first teaches every new word before all other work and preserves Undo and interleaving', () => {
+  const newWords = wordContentFixtures.slice(0, 3).map(({ content }) => ({
+    ...word, id: content.word.wordId, hanzi: content.word.hanzi, traditional: content.word.traditional,
+    pinyin: content.word.pinyin, status: 'unstudied' as const,
+  }));
+  const introductions = Object.fromEntries(wordContentFixtures.slice(0, 3).map(({ content, teaching }) => [content.word.wordId, {
+    ...library, wordId: content.word.wordId, selectedPackageId: teaching.id,
+    contents: [{ content, createdAt: '2026-10-02T00:00:00Z' }],
+    packages: [{ teaching, createdAt: '2026-10-02T00:00:00Z' }],
+  }]));
+  const review = Array.from({ length: 12 }, (_, index) => ({
+    ...buildWordLifecycleSessionStudyItems({ source: 'learning', word: { ...word, id: `review-first-${index}` } })[0]!,
+    actionKind: 'recognition' as const, sampledSkillIds: ['recognition' as const],
+  }));
+  const buckets = { review, learning: [{ ...word, id: 'learning-other' }], unstudied: newWords, introductions };
+  let state = createBucketSessionState({ buckets, sessionId: 'new-first', seed: 1,
+    schedulerPolicy: { studyNewWordsFirst: true } });
+  const taught = new Set<string>();
+  for (let index = 0; index < newWords.length; index += 1) {
+    const active = getActiveSessionUnit(state);
+    assert.equal(active.type, 'unstudied_intro');
+    if (active.type !== 'unstudied_intro') throw new Error('Expected intro');
+    assert.ok(!taught.has(active.word.id));
+    const undo = cloneBucketSessionState(state);
+    const next = completeActiveUnstudiedTeaching(state, active.word.id);
+    assert.deepEqual(next.commit, { type: 'none' });
+    assert.equal(undo.scheduler.policy.studyNewWordsFirst, true);
+    assert.deepEqual(completeActiveUnstudiedTeaching(undo, active.word.id), next);
+    taught.add(active.word.id);
+    state = next.state;
+  }
+  assert.equal(taught.size, newWords.length);
+  const sequence: string[] = [];
+  for (let count = 0; count < 100 && state.phase !== 'completed'; count += 1) {
+    const active = getActiveSessionUnit(state);
+    assert.equal(active.type, 'study');
+    if (active.type !== 'study') throw new Error('Expected recall');
+    sequence.push(active.bucket);
+    state = rateActiveSessionUnit(markActiveSessionUnitStarted(state), 'good').state;
+  }
+  assert.equal(state.phase, 'completed');
+  assert.equal(sequence.filter(bucket => bucket === 'unstudied').length, newWords.length * 6);
+  assert.ok(sequence.slice(0, sequence.lastIndexOf('unstudied')).includes('review'));
+  assert.ok(sequence.includes('learning'));
+
+  const defaultState = createBucketSessionState({ buckets, sessionId: 'new-first', seed: 1 });
+  const offState = createBucketSessionState({ buckets, sessionId: 'new-first', seed: 1,
+    schedulerPolicy: { studyNewWordsFirst: false } });
+  assert.deepEqual(getActiveSessionUnit(offState), getActiveSessionUnit(defaultState));
+  assert.equal(getActiveSessionUnit(offState).type, 'study');
+  const emptyNewWords = createBucketSessionState({ buckets: { ...buckets, unstudied: [] }, sessionId: 'no-new',
+    schedulerPolicy: { studyNewWordsFirst: true } });
+  assert.equal(getActiveSessionUnit(emptyNewWords).type, 'study');
+});
