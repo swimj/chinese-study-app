@@ -239,13 +239,17 @@ explicitly. Add the installed CLI's supported draft option when the task says
 new pull requests should remain drafts. Do not use an update-only mode when the
 boundary contains new branches that need pull requests.
 
-Publishing authorizes only the Graphite-managed branch pushes and pull-request
-creation or updates needed for the task's stack. It does not authorize merging,
-changing unrelated repository settings, or mutating a different review
-boundary. Never merge unless the human separately authorizes it. If publishing
-is blocked by authentication, permissions, repository configuration, or an
-unclear CLI operation, stop and report the exact blocker rather than bypassing
-Graphite with an improvised Git/GitHub workflow.
+Publishing authorizes the branch pushes and pull-request creation or updates
+needed for the task's review boundary. Agents may force-push a branch in that
+boundary when updating a pull request they created or are responsible for; use
+`--force-with-lease` so an unexpected remote change stops the update. If a
+Graphite update cannot publish the intended branch rewrite, a direct Git push
+with that lease is authorized after verifying the remote, branch, and expected
+remote head. This does not authorize rewriting another person's branch or a
+branch outside the task's review boundary. It does not authorize merging or
+changing unrelated repository settings. Never merge unless the human separately
+authorizes it. If publishing is blocked by authentication, permissions, or
+repository configuration, report the exact blocker.
 
 ## Review rounds
 
