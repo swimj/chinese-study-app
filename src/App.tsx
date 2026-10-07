@@ -57,6 +57,7 @@ function readInitialPage(): AppPageKey {
 function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
   const [currentPage, setCurrentPage] = useState<AppPageKey>(readInitialPage);
   const [aboutView, setAboutView] = useState<AboutView>('getting-started');
+  const [selectedUpdateId, setSelectedUpdateId] = useState<string | null>(null);
   const [wordsView, setWordsView] = useState<'stash' | 'my-words'>('stash');
   const myWords = useMyWordsController(currentPage === 'priority' && wordsView === 'my-words');
   const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);
@@ -278,6 +279,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
         || reflectionPage.deferredSecondOpinionStatus === 'generating'
       }
       aboutUnseenCount={attention.whatsNewUnseenCount}
+      onUpdatesBadgeVisible={attention.acknowledgeWhatsNewBadge}
       onOpenHomePage={() => setCurrentPage('home')}
       onOpenPriorityPage={() => void leaveCompletedSessionThen(() => priorityPage.openPage())}
       onOpenReflectionsPage={() => void leaveCompletedSessionThen(() => reflectionPage.openPage())}
@@ -296,6 +298,8 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     >
       {currentPage === 'home' ? (
         <HomePage
+          onOpenUpdate={(id) => { setSelectedUpdateId(id); setAboutView('whats-new'); setCurrentPage('about'); }}
+          onViewAllUpdates={() => { setSelectedUpdateId(null); setAboutView('whats-new'); setCurrentPage('about'); }}
           backendStatus={backendStatus}
           onSaveSessionSettings={saveSessionSettings}
           onNudgeDiet={nudgeDietAndRefresh}
@@ -349,8 +353,11 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
         <AboutPage
           view={aboutView}
           whatsNewUnseenCount={attention.whatsNewUnseenCount}
-          onWhatsNewDisplayed={attention.acknowledgeWhatsNew}
+          onWhatsNewRead={attention.acknowledgeWhatsNew}
+          selectedPostId={selectedUpdateId}
+          onViewAllUpdates={() => setSelectedUpdateId(null)}
           onSelectView={(view) => {
+            setSelectedUpdateId(null);
             setAboutView(view);
           }}
         />

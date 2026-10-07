@@ -32,8 +32,11 @@ import { HomeConnections } from '../features/session/HomeConnections';
 import { ConnectionSignals } from '../features/session/ConnectionSignals';
 import { useHomeConnectionsView } from '../features/session/useHomeConnectionsView';
 import { HomeOverviewPanel, SessionSettingsPanel } from './HomeOverviewPanel';
+import { HomeUpdates } from './HomeUpdates';
 
 export function HomePage({
+  onOpenUpdate,
+  onViewAllUpdates,
   introductionGate,
   backendStatus,
   onSaveSessionSettings,
@@ -118,6 +121,8 @@ export function HomePage({
   onCloseShortcutGuide,
   onNudgeDiet,
 }: {
+  onOpenUpdate?: (id: string) => void;
+  onViewAllUpdates?: () => void;
   introductionGate?: SessionIntroductionGate | null;
   backendStatus: BackendStatus | null;
   onSaveSessionSettings: (settings: {
@@ -224,7 +229,7 @@ export function HomePage({
   return (
     <div className={sessionStarted ? 'home-page home-session-active' : `home-page${connectionsExpanded ? ' home-connections-expanded' : ''}`}>
       {connectionsExpanded ? <ConnectionSignals /> : null}
-      <div className="grid home-grid">
+      <div className={`grid home-grid${!sessionStarted && !connectionsExpanded && !sessionSettingsOpen && onOpenUpdate && onViewAllUpdates ? ' home-with-updates' : ''}`}>
         <HomeOverviewPanel
           backendStatus={backendStatus}
           compact={connectionsExpanded}
@@ -253,6 +258,9 @@ export function HomePage({
         ) : !sessionStarted && recent.error && backendStatus?.studyProfile === 'mandarin' ? (
           <p className="notes" role="status">Couldn’t load the recent session. <button type="button" className="secondary-button" onClick={recent.reload}>Try again</button></p>
         ) : null}
+
+        {!sessionStarted && !connectionsExpanded && !sessionSettingsOpen && onOpenUpdate && onViewAllUpdates
+          ? <HomeUpdates onOpenPost={onOpenUpdate} onViewAll={onViewAllUpdates} /> : null}
 
         {sessionSettingsOpen && !sessionStarted ? (
           <SessionSettingsPanel

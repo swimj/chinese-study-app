@@ -1,6 +1,6 @@
 ---
 name: publish-whats-new
-description: Draft learner-facing What’s New posts from verified deployed commits, iterate with Justin on content, and publish the reviewed version after explicit approval using the operator command.
+description: Draft learner-facing What’s New posts and Home preview text from verified deployed commits, iterate with Justin on content, and publish the reviewed version after explicit approval using the operator command.
 ---
 
 # Publish What’s New
@@ -45,6 +45,12 @@ uses it, and necessary consequences. Avoid marketing hype, developer jargon,
 and unsupported promises. Keep the post focused on helpful changes rather
 than a commit inventory. Use plain text; markup is not rendered.
 
+Write a `summary` of 1–300 characters alongside the post: a short, useful
+description for the Home Updates preview. Name the learner-visible change
+without copying the title or promising anything beyond the full post. Prefer
+one sentence that reads naturally in a compact card; do not use a truncated
+paragraph or a teaser that withholds the change.
+
 Choose a stable lowercase slug and UTC date. Include the full exclusive
 `sourceFrom` and inclusive `sourceThrough` SHAs. Manual corrections can retain
 existing provenance; do not advance commit coverage merely for a wording edit.
@@ -54,13 +60,13 @@ reconciling the other edit, not an automatic overwrite.
 
 Prepare the exact JSON input with `status: "draft"` for a new or existing
 unpublished post, save it using the operator command, and reread the saved
-revision. Show Justin the full title, date, and paragraphs as readable prose,
+revision. Show Justin the full title, date, preview text, and paragraphs as readable prose,
 plus the draft ID/revision and a brief note on the covered changes or uncertain
 evidence. Then end the turn and wait for his feedback. Even an initial request
 to publish starts with this review pause; it does not approve unseen content.
 
 Iterate in the same conversation and on the same draft. Apply requested edits,
-save another draft revision, and show the full updated text. Continue this
+save another draft revision, and show the full updated post and preview text. Continue this
 review loop until Justin explicitly asks to publish the version he has read.
 A request for wording changes or a positive reaction such as "looks good" is
 not a publication instruction. Content changes after approval require showing
@@ -89,7 +95,7 @@ preserve the terminal session handle, and wait for its exit status. Do not
 restart the app for a routine post update.
 
 After a successful command, reread the post and verify its revision, status,
-content, and source range. For a publication, check the learner endpoint's
+content (including preview text), and source range. For a publication, check the learner endpoint's
 published list. If the session is lost, first reread the post and its revision
 before retrying: the original save may already have committed. Report the
 saved result and any skipped changes or uncertain deployment evidence.

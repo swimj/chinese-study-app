@@ -4494,3 +4494,31 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1
 .home-overview-intro, .home-overview .session-start-shell { grid-column: 1 / -1; }
 .home-overview .session-start-shell { max-width: 420px; width: 100%; }
 @media (max-width: 520px) { .home-page:not(.home-session-active) .home-overview { grid-template-columns: 1fr; } }
+
+/* Update previews share the resting home, and stack in narrow desktop panels. */
+.home-page:not(.home-session-active):not(.home-connections-expanded) { container-type: inline-size; }
+.home-updates { min-width: 0; border-top: 1px solid var(--border); padding-top: 1.5rem; }
+.home-updates-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: .75rem; }
+.home-updates-heading h2 { margin: 0; font-size: 1.25rem; font-weight: 600; }
+.home-updates-all { padding: .35rem 0; background: transparent; color: var(--accent); font-size: .9rem; }
+.home-updates-all:hover:not(:disabled) { background: transparent; text-decoration: underline; }
+.home-update-list { list-style: none; padding: 0; margin: .75rem 0 0; display: grid; gap: .4rem; }
+.home-update-preview { display: grid; gap: .45rem; width: 100%; text-align: left; padding: 1rem; background: transparent; color: var(--text); font-weight: 400; line-height: 1.5; overflow-wrap: anywhere; }
+.home-update-preview:hover:not(:disabled) { background: var(--surface-hover); transform: none; }
+.home-update-preview time { color: var(--text-muted); font-size: .8rem; }
+.home-update-title { font-weight: 600; }
+.home-update-title span { color: var(--accent); }
+.home-update-summary { color: var(--text-secondary); font-size: .95rem; }
+.nav-tab.active .nav-tab-count-about { color: #e4d6fc; }
+.about-update { overflow-wrap: anywhere; }
+@container (min-width: 58rem) {
+  .home-page:not(.home-session-active) .home-grid.home-with-updates {
+    max-width: 1200px; grid-template-columns: minmax(0, 1.3fr) minmax(18rem, 1fr);
+    column-gap: clamp(2rem, 5cqw, 5rem); align-items: start;
+  }
+  .home-with-updates > :not(.home-updates) { grid-column: 1; }
+  .home-with-updates > .home-updates { grid-column: 2; grid-row: 1 / span 4; border-top: 0; border-left: 1px solid var(--border); padding: 0 0 0 1.5rem; }
+}
+@container (max-width: 35rem) {
+  .home-page:not(.home-session-active) .home-overview { grid-template-columns: minmax(0, 1fr); }
+}

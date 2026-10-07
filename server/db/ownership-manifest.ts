@@ -56,6 +56,7 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
   operationalEntry('service_banner', 'current operator-posted signed-in service notice'),
   operationalEntry('whats_new_posts', 'operator-authored blog drafts and published learner-facing posts; published-only reader access'),
   operationalEntry('whats_new_post_revisions', 'immutable attributed blog revisions including operator-only draft history'),
+  privateEntry('learner_whats_new_attention', 'per-learner published-post exposure and read timestamps', 'create empty; interpret existing legacy cursor without initializing new read state'),
   sharedEntry(
     'shared_content_publications',
     'immutable reusable content plus publication disposition',

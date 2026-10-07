@@ -274,3 +274,21 @@ retaining the legacy date cursor for compatibility.
 Apply this migration once through the schema-changing release procedure with
 the app stopped and a backup retained. Subsequent [blog edits](../whats-new.md)
 use normal live transactions and need no maintenance window or migration.
+
+## Home updates and per-post notifications
+
+`0030_whats_new_previews.sql` adds the required summary field and backfills
+previews from the twelve imported blog posts. Authored summaries apply only
+when a post still matches its original title and body; edited/custom content
+gets neutral title-based text. Each post receives an attributed new revision,
+while its old immutable revisions, publication sequence, status, body, and
+provenance remain intact. Concurrent operators must reload after migration
+because the current revision advances.
+
+`0031_whats_new_attention.sql` adds empty per-learner/post exposure and read
+state. Existing legacy read boundaries remain effective. No historical
+first-exposure time is invented; unseen posts start their 12-hour window only
+after their navigation badge becomes visible in the new client.
+
+Apply both through the stopped-writer procedure, rehearsing against a restored
+copy and retaining the backup. An app-only upgrade cannot perform this release.

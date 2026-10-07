@@ -28,7 +28,7 @@ test('operator command changes a running database without bootstrap and rejects 
     const input = path.join(dir, 'post.json');
     const request = {
       id: 'live-update', expectedRevision: null, date: '2026-10-07',
-      title: 'Clearer updates', paragraphs: ['Read changes while continuing to study.'],
+      title: 'Clearer updates', summary: 'See the latest improvements while studying.', paragraphs: ['Read changes while continuing to study.'],
       status: 'published', sourceFrom: null, sourceThrough: null,
     };
     fs.writeFileSync(input, JSON.stringify(request));
@@ -36,6 +36,7 @@ test('operator command changes a running database without bootstrap and rejects 
     const result = command(args);
     assert.equal(result.status, 0, result.stderr);
     assert.equal(JSON.parse(result.stdout).post.revision, 1);
+    assert.equal(JSON.parse(result.stdout).post.summary, request.summary);
     assert.equal(reader.prepare("SELECT title FROM whats_new_posts WHERE post_id='live-update'").get()?.title, request.title);
     assert.equal(reader.prepare("SELECT actor_id FROM whats_new_post_revisions WHERE post_id='live-update'").get()?.actor_id, 'test-operator');
     const stale = command(args);
@@ -44,7 +45,7 @@ test('operator command changes a running database without bootstrap and rejects 
     assert.equal(reader.prepare("SELECT revision FROM whats_new_posts WHERE post_id='live-update'").get()?.revision, 1);
     const list = command([`--data-dir=${dir}`, '--list=true']);
     assert.equal(list.status, 0, list.stderr);
-    assert.ok(JSON.parse(list.stdout).posts.some((post: { id: string }) => post.id === request.id));
+    assert.ok(JSON.parse(list.stdout).posts.some((post: { id: string; summary: string }) => post.id === request.id && post.summary === request.summary));
     assert.deepEqual(reader.prepare('SELECT type, name, sql FROM sqlite_schema ORDER BY type, name').all(), schema);
     assert.deepEqual(reader.prepare('SELECT * FROM learners').all(), learners);
   } finally {

@@ -269,12 +269,17 @@ test('component migration preserves previous-version rows and matches fresh sche
   previous.exec('PRAGMA foreign_keys=ON');
   previous.function('current_learner_id', () => 'migration-test');
   try {
-    migrateDatabase(previous, schemaMigrations.slice(0, -1));
+    const index = schemaMigrations.findIndex(migration => migration.id === 'app_schema:0029_introduction_components');
+    assert(index > 0);
+    const throughComponents = schemaMigrations.slice(0, index + 1);
+    migrateDatabase(previous, schemaMigrations.slice(0, index));
     previous.exec("INSERT INTO lexical_words (id, hanzi, traditional, pinyin, meaning, meanings_json, examples_json, priority, created_at) VALUES ('preserved', '你好', NULL, 'nǐ hǎo', 'hello', '[\"hello\"]', '[]', 10, '2026-10-07T00:00:00.000Z')");
     const before = previous.prepare('SELECT * FROM lexical_words ORDER BY id').all();
-    assert.deepEqual(migrateDatabase(previous), ['app_schema:0029_introduction_components']);
+    assert.deepEqual(migrateDatabase(previous, throughComponents), ['app_schema:0029_introduction_components']);
     assert.deepEqual(previous.prepare('SELECT * FROM lexical_words ORDER BY id').all(), before);
-    assert.deepEqual(migrateDatabase(previous), []);
+    assert.deepEqual(migrateDatabase(previous, throughComponents), []);
+    assertSchemaCurrent(previous, throughComponents);
+    migrateDatabase(previous);
     assertSchemaCurrent(previous);
     const schema = (database: DatabaseSync) => database.prepare(
       "SELECT type, name, sql FROM sqlite_schema WHERE name LIKE '%introduction_components%' OR name LIKE '%package_components%' ORDER BY name",

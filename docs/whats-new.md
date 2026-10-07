@@ -2,13 +2,21 @@
 
 This document owns the blog’s content and publication contract, its persistence
 mechanism, and the operator procedure for updating it. Learners read published
-posts in About → What’s New. Operators can save drafts, publish posts, correct
+the four latest posts as previews on Home and the full archive in About →
+What’s New. A Home preview opens its individual post. Operators can save drafts, publish posts, correct
 existing posts, and withdraw a post by returning it to draft.
+
+The Home updates section is hidden while Connections occupies the centered,
+expanded view. Minimizing Connections restores the updates alongside the
+overview; notification badge behavior is unchanged.
 
 ## Content and publication
 
-Posts contain a stable lowercase slug, a UTC `YYYY-MM-DD` date, a title, and
-plain-text paragraphs. The renderer does not interpret HTML or Markdown.
+Posts contain a stable lowercase slug, a UTC `YYYY-MM-DD` date, a title, a
+short `summary` for the Home preview, and plain-text paragraphs. The summary
+is 1–300 characters and describes a concrete learner-facing change. It is
+written with the post rather than clipped from its first paragraph. The
+renderer does not interpret HTML or Markdown, and preview text wraps in full.
 Titles are bounded to 200 characters; a post has 1–100 nonempty paragraphs,
 each at most 10,000 characters and at most 100,000 characters in total.
 
@@ -34,23 +42,34 @@ alone cannot establish a deployed commit boundary.
 
 ## Unread updates
 
-About counts published posts whose publication sequence is later than the
-learner's acknowledged sequence. Opening What’s New acknowledges the newest
-published post in the displayed list; a post published after that list was
-loaded stays unread. Edits and republications retain the original sequence,
-so they do not create another unread announcement.
+The About badge counts each published post until the learner reads it or
+12 hours pass after that post was first represented in a visible navigation
+badge. A visible badge means it intersects the viewport in a visible, focused
+browser tab; navigation hidden during study does not count. Fetching posts,
+publication time, and time away before seeing the badge do not start the clock.
+A learner returning after several days sees the updates they have missed.
 
-On a learner's first attention refresh, the current catalog is treated as
-already read. A learner with a read date from the former bundled notes instead
-keeps that boundary: the server maps the date to the original imported posts,
-so later publications remain unread even if they are backdated. Subsequent
-acknowledgements only advance the boundary. The `ensure` mode initializes it
-when absent; `seen` advances it to the displayed publication sequence without
-moving it backward.
+Each post has its own first-exposure timestamp. A later post gets a fresh
+12-hour window, without extending older windows. Reloads, repeated exposure,
+edits, and republication do not restart a clock. The badge updates at expiry
+even if its tab stays open. Expiry clears the notification, not the post:
+the Home preview and archive remain available.
 
-`whatsNewSeenThroughSequence` is the API's current cursor. The server retains
-`whatsNewSeenThroughDate` and its date endpoint for compatibility with older
-clients. These are learner-private parameters in `learner_params`, named
+Opening an individual post acknowledges only that post when its full article
+heading becomes visible. In the archive, articles are acknowledged as their
+headings enter view; merely loading the archive does not mark every post read.
+Acknowledgement requests contain the exact observed post IDs, so concurrent
+publication cannot accidentally mark a new post exposed or read.
+
+Read and first-exposure timestamps are durable, learner-private rows in
+`learner_whats_new_attention`, shared across that learner's browsers. Existing
+sequence/date acknowledgements still suppress previously read posts; learners
+with neither a legacy boundary nor per-post state start with published posts
+eligible for notification. New clients do not silently mark the catalog read
+on their first refresh.
+
+The server retains `whatsNewSeenThroughSequence`, `whatsNewSeenThroughDate`,
+and their endpoints for older clients. These remain parameters in `learner_params`, named
 `whats_new_seen_through_sequence` and `whats_new_seen_through_date`. When the
 sequence parameter is absent, the server derives the legacy boundary from the
 immutable imported revisions; corrections to those posts cannot move it.
@@ -59,8 +78,9 @@ immutable imported revisions; corrections to those posts cannot move it.
 
 Small, infrequently edited posts fit the application’s existing SQLite store.
 `whats_new_posts` stores current content; `whats_new_post_revisions` retains
-attributable snapshots. The existing database backup and restore route covers
-both. This avoids adding a CMS or a separate publishing service.
+attributable snapshots. The existing database backup and restore route also
+covers the per-learner attention table. This avoids adding a CMS or a separate
+publishing service.
 The [shared parser](../src/domain/whats-new.ts) validates content for both the
 editor API and the operator command; the [save module](../server/db/whats-new.ts)
 checks the expected revision and writes the post and history in one transaction.
@@ -71,20 +91,30 @@ transaction. WAL allows the running API to read while another connection saves.
 Routine content updates require no build, deployment, maintenance mode, or app
 restart. The blog fetches current posts when opened, when the browser regains
 focus or visibility, and on an explicit retry after a loading error. Attention
-refreshes fetch the catalog separately to update the About badge. There is no
+refreshes fetch per-post attention separately to update the About badge. There is no
 push notification or continuous polling of open tabs.
 
 Migration `0028_whats_new_blog` creates the tables and seeds the former bundled
 notes without changing their wording. The **first rollout is a schema-changing
 release** and follows the [offline migration procedure](ops/schema-migrations.md).
+Migration `0030_whats_new_previews` adds summaries, with authored backfills for
+the twelve imported posts whose title and body still match their original
+revision. Edited or custom posts receive a neutral title-based summary for
+operator refinement. The migration appends attributed revisions; it preserves
+old snapshots, body text, publication order, status, and commit provenance.
+`0031_whats_new_attention` creates empty learner-private attention storage;
+it does not infer first exposure from old visits or publication dates.
+This rollout also requires the offline schema-changing release procedure.
+
 Later post edits are normal live data writes. The command never creates a
 missing target, bootstraps learners, starts provider jobs, or applies migrations.
 
 ## Manual operator editor
 
 Open the operator panel’s What’s New editor. Select an existing post or create
-a new one, enter its slug, date, title and paragraphs, and choose Save draft or
-Publish. Review the preview and publication consequences before saving. Editing
+a new one, enter its slug, date, title, preview text and paragraphs, and choose
+Save draft or Publish. Review the Home preview, full post and publication
+consequences before saving. Editing
 loads the current revision; reload and reconcile if another operator saves first.
 Operator API access uses the existing operator allowlist. Content is shared
 across learners; operator actions are attributable to the authenticated actor.
@@ -108,6 +138,7 @@ Prepare an absolute JSON input file. For example, `/tmp/whats-new-post.json`:
   "expectedRevision": null,
   "date": "2026-10-07",
   "title": "Clearer study updates",
+  "summary": "Find recent improvements on Home and open a preview to read the full update.",
   "paragraphs": ["Open About → What’s New to read the latest changes."],
   "status": "draft",
   "sourceFrom": null,
@@ -140,7 +171,7 @@ The repo skill
 [`publish-whats-new`](../.agents/skills/publish-whats-new/SKILL.md) identifies
 changes from saved coverage through the verified deployed revision, writes in
 the established learner-facing tone, and saves a draft with this command. It
-shows Justin the full text and pauses for review, supports iterative draft
+shows Justin the preview and full text and pauses for review, supports iterative draft
 edits in the same conversation, and publishes only after he explicitly approves
 publishing the reviewed version. Proposed corrections to an already published
 post stay local during review so the live post remains available.

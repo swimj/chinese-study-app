@@ -1,4 +1,5 @@
 import type { WhatsNewPost, WhatsNewWriteRequest } from '../domain/whats-new';
+import type { WhatsNewAttention } from '../domain/whats-new-attention';
 import type { ModelInvocationRow } from '../domain/model-invocations';
 import type { SessionDebrief, SessionDebriefInventoryItem } from '../domain/session-debrief';
 import type {
@@ -1401,6 +1402,22 @@ export async function retrySessionDebrief(sessionId: string, signal?: AbortSigna
 export async function fetchWhatsNew(): Promise<{ posts: WhatsNewPost[] }> {
   const response = await apiFetch(`${API_BASE}/api/whats-new`);
   if (!response.ok) throw new Error(await readApiErrorMessage(response, "Failed to load What's New"));
+  return response.json();
+}
+
+export async function fetchWhatsNewAttention(): Promise<WhatsNewAttention> {
+  const response = await apiFetch(`${API_BASE}/api/whats-new-attention`);
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Failed to load update notifications'));
+  return response.json();
+}
+
+export async function updateWhatsNewAttention(request: {
+  postIds: string[]; kind: 'badge-seen' | 'read';
+}): Promise<WhatsNewAttention> {
+  const response = await apiFetch(`${API_BASE}/api/whats-new-attention`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+  });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Failed to acknowledge updates'));
   return response.json();
 }
 

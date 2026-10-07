@@ -1,10 +1,10 @@
-import type { WhatsNewPost } from '../../domain/whats-new';
+import { WHATS_NEW_BADGE_WINDOW_MS, type WhatsNewAttention } from '../../domain/whats-new-attention';
 
-export function latestWhatsNewSequence(posts: readonly WhatsNewPost[]): number {
-  return posts.reduce((latest, post) => Math.max(latest, post.publicationSequence ?? 0), 0);
-}
-
-export function countUnseenWhatsNew(posts: readonly WhatsNewPost[], seenThroughSequence: number | null): number {
-  if (seenThroughSequence === null) return 0;
-  return posts.filter((post) => post.publicationSequence !== null && post.publicationSequence > seenThroughSequence).length;
+export function activeWhatsNewPostIds(attention: WhatsNewAttention, now: number): string[] {
+  return attention.unseenPostIds.filter(id => {
+    const item = attention.items.find(item => item.postId === id);
+    if (!item) throw new Error('Blog attention is missing a post state.');
+    return item.readAt === null && (item.firstBadgeSeenAt === null
+      || now < Date.parse(item.firstBadgeSeenAt) + WHATS_NEW_BADGE_WINDOW_MS);
+  });
 }

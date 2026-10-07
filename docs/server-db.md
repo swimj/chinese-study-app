@@ -21,6 +21,7 @@ the reflection application adapter in `reflections.ts`; the runbook is
 | [`reflection-quality.ts`](../server/db/reflection-quality.ts) | Dogfood item quality-tag overlay, upsert-by-item, and model-arm stats joins |
 | [`reflection-help-inbox.ts`](../server/db/reflection-help-inbox.ts) | Open explanation-only Help inbox rows, keyed by `(artifact_id, item_id)`; Done deletes the row |
 | [`whats-new.ts`](../server/db/whats-new.ts) | Shared blog posts, publication ordering, revision conflicts, and immutable attributable save history; see [What’s New](whats-new.md) |
+| [`whats-new-attention.ts`](../server/db/whats-new-attention.ts) | Learner-private per-post first badge exposure and read timestamps, twelve-hour expiry, and legacy cursor compatibility |
 | [`attention.ts`](../server/db/attention.ts) | Help `inbox_seen_at` stamps, unseen Help-queue count, unseen failed generation-run ids, failed-run seen-through cursor, and the What’s New seen-through cursor |
 | [`intake-triage.ts`](../server/db/intake-triage.ts) | Dormant intake-triage schema creation and validation retained for database compatibility |
 | [`domain-commands.ts`](../server/db/domain-commands.ts) | Shared transaction-aware domain commands used by reflection and manual paths; definition-production suppression and contextual-selection eligibility |

@@ -4,18 +4,16 @@ import {
   fetchAttentionBadges,
   markFailedReflectionRunsSeen,
   markReflectionInboxSeen,
-  markWhatsNewSeenSequence,
-  fetchWhatsNew,
 } from '../../services/api';
-import { countUnseenWhatsNew, latestWhatsNewSequence } from './whats-new-attention';
+import { useWhatsNewAttention } from './useWhatsNewAttention';
 
 export function useAttentionBadges() {
   const [reflectionUnseenCount, setReflectionUnseenCount] = useState(0);
   const [failedReflectionRunIds, setFailedReflectionRunIds] = useState<string[]>([]);
-  const [whatsNewUnseenCount, setWhatsNewUnseenCount] = useState(0);
+  const updates = useWhatsNewAttention();
+  const refreshUpdates = updates.refresh;
 
   const refreshGeneration = useRef(0);
-  const seenSequence = useRef<number | null>(null);
   const refresh = useCallback(async () => {
     const generation = ++refreshGeneration.current;
     const attention = await fetchAttentionBadges();
@@ -25,19 +23,13 @@ export function useAttentionBadges() {
       throw new Error('Attention badges response is missing failedReflectionRunIds.');
     }
     setFailedReflectionRunIds(attention.failedReflectionRunIds);
-    // Blog availability must not prevent reflection attention from updating.
-    const feed = await fetchWhatsNew();
-    let seenThrough = attention.whatsNewSeenThroughSequence;
-    if (seenThrough === null) {
-      const ensured = await markWhatsNewSeenSequence({
-        throughSequence: latestWhatsNewSequence(feed.posts), mode: 'ensure',
-      });
-      seenThrough = ensured.whatsNewSeenThroughSequence;
-    }
-    if (generation !== refreshGeneration.current) return;
-    seenSequence.current = Math.max(seenSequence.current ?? 0, seenThrough);
-    setWhatsNewUnseenCount(countUnseenWhatsNew(feed.posts, seenSequence.current));
   }, []);
+  const refreshAll = useCallback(async () => {
+    // Either attention source can still refresh if the other one is unavailable.
+    const results = await Promise.allSettled([refresh(), refreshUpdates()]);
+    const failure = results.find(result => result.status === 'rejected');
+    if (failure?.status === 'rejected') throw failure.reason;
+  }, [refresh, refreshUpdates]);
 
   const markHelpCardSeen = useCallback(async (request: MarkReflectionInboxSeenRequest) => {
     const result = await markReflectionInboxSeen(request);
@@ -49,35 +41,30 @@ export function useAttentionBadges() {
     setFailedReflectionRunIds(result.failedReflectionRunIds);
   }, []);
 
-  const acknowledgeWhatsNew = useCallback(async (throughSequence: number) => {
-    const result = await markWhatsNewSeenSequence({ throughSequence, mode: 'seen' });
-    seenSequence.current = Math.max(seenSequence.current ?? 0, result.whatsNewSeenThroughSequence);
-    await refresh();
-  }, [refresh]);
-
   useEffect(() => {
-    void refresh().catch(() => undefined);
+    void refreshAll().catch(() => undefined);
     function onVisibility() {
       if (document.visibilityState === 'visible') {
-        void refresh().catch(() => undefined);
+        void refreshAll().catch(() => undefined);
       }
     }
-    function onFocus() { void refresh().catch(() => undefined); }
+    function onFocus() { void refreshAll().catch(() => undefined); }
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('focus', onFocus);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('focus', onFocus);
     };
-  }, [refresh]);
+  }, [refreshAll]);
 
   return {
     reflectionUnseenCount,
     hasUnseenReflectionFailure: failedReflectionRunIds.length > 0,
-    whatsNewUnseenCount,
-    refresh,
+    whatsNewUnseenCount: updates.count,
+    refresh: refreshAll,
     markHelpCardSeen,
     acknowledgeFailedReflectionRuns,
-    acknowledgeWhatsNew,
+    acknowledgeWhatsNew: updates.read,
+    acknowledgeWhatsNewBadge: updates.exposeBadge,
   };
 }
