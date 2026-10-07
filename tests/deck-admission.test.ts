@@ -73,6 +73,7 @@ describe('deck-aware diet admission', { concurrency: false }, () => {
       VALUES ('test-learner', 'daily_new_word_limit', '10', '2026-01-01T00:00:00.000Z')
     `).run();
     process.env.APP_DECK_MANIFEST_PATH = FIXTURE_MANIFEST_PATH;
+    dbModule.setOperatorDietDeck('hsk2-l1');
   });
 
   test('stash-only ignores deck weights and leaves underfill empty until mixed resumes', () => {
@@ -91,7 +92,7 @@ describe('deck-aware diet admission', { concurrency: false }, () => {
     assert.equal(mixed.filter((id) => L2.includes(id)).length, 3);
   });
 
-  test('the default profile draws diet words from the first deck only', () => {
+  test('an explicit first-deck profile draws diet words from that deck only', () => {
     insertCorpusWords();
     dbModule.setDailyNewWordLimit(4);
     const admitted = admittedUnstudiedIds();

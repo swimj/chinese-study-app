@@ -4,7 +4,7 @@ import {
   type CharacterPresentation,
   type SentenceCharacterPresentation,
 } from './domain/card-characters';
-import type { BackendStatus, DietIntakeInput, DietSelfSelect } from './services/api';
+import type { BackendStatus } from './services/api';
 import {
   clearReflectionQuality,
   fetchReflectionArtifactDetail,
@@ -13,8 +13,6 @@ import {
   fetchReflectionQualityStats,
   fetchStatus,
   nudgeDiet,
-  submitDietIntake,
-  submitDietIntakeAssessment,
   reviewReflectionProposal,
   retryReflectionGenerationRun,
   generateDeferredReflectionSecondOpinion,
@@ -47,13 +45,6 @@ import { useContentDiagnosticsController } from './features/content/useContentDi
 import { ContentDiagnosticsPage } from './pages/ContentDiagnosticsPage';
 import { OperatorUsagePulsePage } from './pages/OperatorUsagePulsePage';
 import { useAttentionBadges } from './features/attention/useAttentionBadges';
-import {
-  doesDietIntakeBlockSessionStart,
-  INITIAL_DIET_INTAKE_SUBMISSION_STATE,
-  retryDietIntakeRefresh,
-  submitDietIntakePlacement,
-  type DietIntakeSubmissionState,
-} from './features/diet/diet-intake-submission';
 
 const OPERATOR_USAGE_HASH = '#operator-usage';
 
@@ -69,11 +60,6 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
   const myWords = useMyWordsController(currentPage === 'priority' && wordsView === 'my-words');
   const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [dietIntakeSubmission, setDietIntakeSubmission] = useState<DietIntakeSubmissionState>(
-    INITIAL_DIET_INTAKE_SUBMISSION_STATE,
-  );
-  const [dietIntakeDrafts, setDietIntakeDrafts] = useState<Record<string, string>>({});
-  const [dietIntakeSelfSelect, setDietIntakeSelfSelect] = useState<DietSelfSelect | null>(null);
   const attention = useAttentionBadges();
   const studySession = useStudySession({
     setError,
@@ -159,46 +145,18 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
   }, []);
 
   useEffect(() => {
-    if (currentPage !== 'home' || studySession.sessionStarted || doesDietIntakeBlockSessionStart(dietIntakeSubmission)) {
+    if (currentPage !== 'home' || studySession.sessionStarted) {
       return;
     }
 
     // Proposal acceptance only invalidates the cache. Prefetch when Home is
     // shown, which is when the learner may start a session.
     void studySession.prefetchSession().catch(() => undefined);
-  }, [currentPage, dietIntakeSubmission, studySession.sessionStarted]);
+  }, [currentPage, studySession.sessionStarted]);
 
   async function reloadDashboard() {
     const statusResponse = await fetchStatus();
     setBackendStatus(statusResponse);
-  }
-
-  function dietIntakePlacementDependencies(submitPlacement: () => Promise<void>) {
-    return {
-      submitPlacement,
-      ...dietIntakeRefreshDependencies(),
-    };
-  }
-
-  function dietIntakeRefreshDependencies() {
-    return {
-      invalidateSessionPrefetch: studySession.invalidateSessionPrefetch,
-      reloadDashboard,
-      refreshSessionPrefetch: studySession.refreshSessionPrefetch,
-      onStateChange: setDietIntakeSubmission,
-    };
-  }
-
-  async function submitDietIntakeAssessmentAndRefresh(input: Pick<DietIntakeInput, 'answers'>) {
-    await submitDietIntakePlacement(dietIntakePlacementDependencies(() => submitDietIntakeAssessment(input)));
-  }
-
-  async function submitManualDietIntakeAndRefresh(input: DietIntakeInput) {
-    await submitDietIntakePlacement(dietIntakePlacementDependencies(() => submitDietIntake(input)));
-  }
-
-  async function retrySavedDietIntakeRefresh() {
-    await retryDietIntakeRefresh(dietIntakeRefreshDependencies());
   }
 
   async function nudgeDietAndRefresh(direction: 'easier' | 'harder') {
@@ -330,15 +288,6 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
         <HomePage
           backendStatus={backendStatus}
           onSaveSessionSettings={saveSessionSettings}
-          dietIntakeSubmission={dietIntakeSubmission}
-          dietIntakeDrafts={dietIntakeDrafts}
-          dietIntakeSelfSelect={dietIntakeSelfSelect}
-          onDietIntakeDraftsChange={setDietIntakeDrafts}
-          onDietIntakeSelfSelectChange={setDietIntakeSelfSelect}
-          onSubmitDietIntakeAssessment={submitDietIntakeAssessmentAndRefresh}
-          onSubmitManualDietIntake={submitManualDietIntakeAndRefresh}
-          onRetryDietIntakeRefresh={retrySavedDietIntakeRefresh}
-          dietIntakeStartBlocked={doesDietIntakeBlockSessionStart(dietIntakeSubmission)}
           onNudgeDiet={nudgeDietAndRefresh}
           {...studySession.homePageProps}
         />

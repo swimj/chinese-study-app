@@ -17,7 +17,6 @@ export function HomeOverviewPanel({
   displayedSessionItemCount,
   sessionSettingsOpen,
   sessionSettingsSaving,
-  dietIntakeStartBlocked,
   onToggleSessionSettings,
   onStartSession,
   onEndSession,
@@ -32,7 +31,6 @@ export function HomeOverviewPanel({
   displayedSessionItemCount: number;
   sessionSettingsOpen: boolean;
   sessionSettingsSaving: boolean;
-  dietIntakeStartBlocked: boolean;
   onToggleSessionSettings: () => void;
   onStartSession: () => void;
   onEndSession: () => void;
@@ -54,10 +52,10 @@ export function HomeOverviewPanel({
             type="button"
             className="session-start-card"
             onClick={onStartSession}
-            disabled={sessionSettingsOpen || sessionLoading || dietIntakeStartBlocked || !canStartSession}
+            disabled={sessionSettingsOpen || sessionLoading || !canStartSession}
           >
             <span className="session-start-card-label">
-              {sessionLoading || dietIntakeStartBlocked || entryWaiting ? 'Preparing session...'
+              {sessionLoading || entryWaiting ? 'Preparing session...'
                 : prefetchedSessionItemCount === 0 ? 'Check again' : 'Start session'}
             </span>
             <span className="session-start-card-helper">

@@ -7,7 +7,6 @@ import { getDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { listModelInvocations } from '../server/db/model-invocations.ts';
 import { installModelInvocationLedger } from '../server/llm/invocation-ledger.ts';
-import { createDietIntakePlacementProvider } from '../server/diet/intake-placement-provider.ts';
 import { createSessionDebriefProvider } from '../server/session-debrief/provider.ts';
 import { createLunaReflectionProvider } from '../server/reflection/luna-provider.ts';
 import { createWordIntroductionProvider } from '../server/word-content/provider.ts';
@@ -42,17 +41,11 @@ async function rejectedInvocation(work: () => Promise<unknown>) {
   assert.ok(added[0].spendUsd! > 0, 'validation failure retains incurred spend');
   assert.ok(added[0].latencyMs! >= 0, 'validation failure retains transport latency');
 }
-const intake = { schemaVersion: 'diet_intake_placement_request.v1', answers: [{ prompt: 'Background?', answer: 'Beginner.' }] } as const;
 const debrief: SessionDebriefInput = { schemaVersion: 'session_debrief_input.v1', sessionDate: '2026-10-06T00:00:00.000Z', interests: [],
   items: [{ ref: 'w1', word: '学问', pinyin: 'xué wèn' }] };
 const session = { sessionId: 's1', startedAt: null, endedAt: null, studyProfile: 'mandarin' } as const;
 
-test('intake and debrief retain spend for JSON, schema, domain and truncation failures', async () => {
-  for (const [content, finish] of [
-    ['not JSON', 'stop'], ['{}', 'stop'],
-    [JSON.stringify({ schemaVersion: 'diet_intake_placement_result.v1', nextLearningLevel: 2, rationale: ' ' }), 'stop'],
-    [JSON.stringify({ schemaVersion: 'diet_intake_placement_result.v1', nextLearningLevel: 2, rationale: 'Ready.' }), 'length'],
-  ]) await rejectedInvocation(() => createDietIntakePlacementProvider(providerOptions(content, finish)).assess(intake));
+test('debrief retains spend for JSON, schema, domain and truncation failures', async () => {
   for (const [content, finish] of [
     ['not JSON', 'stop'], ['{}', 'stop'],
     [JSON.stringify({ notes: [{ text: 'Example.', refs: ['missing'], followUp: null }] }), 'stop'],

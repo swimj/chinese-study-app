@@ -1275,8 +1275,9 @@ describe('session composition', { concurrency: false }, () => {
     assert.deepEqual(sessionIds, []);
   });
 
-  test('daily new-word limit defaults to 10 and persists independently from the completed count', () => {
-    assert.equal(dbModule.getLearningPolicy(studyDayKey).dailyNewWordLimit, 10);
+  test('daily new-word limit defaults to 5 and persists independently from the completed count', () => {
+    sqlite.exec("DELETE FROM learner_settings WHERE setting_key = 'daily_new_word_limit'");
+    assert.equal(dbModule.getLearningPolicy(studyDayKey).dailyNewWordLimit, 5);
     assert.equal(dbModule.getLearningPolicy(studyDayKey).unstudiedAdmissionSource, 'mixed');
     assert.throws(
       () => dbModule.setDailyNewWordLimit(-1),

@@ -244,7 +244,7 @@ describe('user priority layer', { concurrency: false }, () => {
     assert.deepEqual(ordered, ['newer-top', 'older-top', 'newer-bump', 'older-bump']);
   });
 
-  test('session unstudied intake respects cap and expected selection set', () => {
+  test('new learner intake respects the cap and selects only stash words', () => {
     const { dailyNewWordLimit } = dbModule.getLearningPolicy(studyDayKey);
 
     insertWord('old-base', 60, 'unstudied', '2026-01-01T00:00:00.000Z');
@@ -260,8 +260,6 @@ describe('user priority layer', { concurrency: false }, () => {
     const expectedIdSet = new Set([
       'unstudied/forced',
       'unstudied/boosted',
-      'unstudied/old-base',
-      'unstudied/very-low',
     ].slice(0, dailyNewWordLimit));
 
     assert.equal(sessionIds.length, expectedIdSet.size);

@@ -260,12 +260,26 @@ contrast eligibility repair remains in fresh initialization and explicit dev
 seed application, rather than rewriting persisted eligibility at every restart.
 
 The `learner_settings` row keyed by `(learner_id, daily_new_word_limit)` stores
-the learner's configured non-negative integer limit as JSON. A missing row
-reads as the current default of `10`. The row keyed by
-`(learner_id, unstudied_admission_source)` stores `"mixed"` or `"stash_only"`;
-a missing row reads as `"mixed"`. These settings are independent of
-`daily_new_word_intake.new_study_count`, the per-UTC-day counter incremented
-only when an unstudied word is completed.
+the learner's configured limit as JSON. The row keyed by
+`(learner_id, unstudied_admission_source)` stores `"mixed"` or `"stash_only"`.
+These settings are independent of `daily_new_word_intake.new_study_count`, the
+per-UTC-day counter incremented only when an unstudied word is completed.
+The [new-learner policy](../SPECS/diet-deck-distribution.md#25-new-user-defaults-and-retired-placement-intake)
+owns their initial values.
+
+`identity.ts` saves the initial admission source only when inserting a new
+learner, for both local and external identities. Repeated bootstrap preserves
+existing rows and leaves an absent source setting absent. The reader retains
+`mixed` as the legacy fallback, so changing the creation-time policy does not
+change existing learners. A missing daily-limit row instead reads the current
+`DEFAULT_DAILY_NEW_WORD_LIMIT`.
+
+`diet-profile.ts` reads saved deck weights and provenance, or constructs an
+unpersisted effective profile from the policy default when the setting is
+absent. The manifest must contain the required default deck; an incomplete
+manifest fails explicitly. Parsing and subsequent profile updates preserve
+historical intake evidence. These paths require no schema migration or rewrite
+of saved settings and study history.
 
 Character display preferences also use `learner_settings`: `character_presentation`
 stores `"simplified"`, `"traditional"`, or `"both"`; `sentence_character_presentation`

@@ -11,6 +11,8 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `word-content-lab-api.test.ts` | Local opt-in, host/origin gates, route response contracts | Express lab router |
 | `introduction-player.test.ts` | Paced navigation, rehearsal matching, retry/finish, IME and keyboard guards | Pure local player |
 | `session-composition.test.ts` | Session payload / scheduling composition | Dynamic `server/db.ts` |
+| `diet-intake-placement-api.test.ts` | Retired placement endpoints and removed intake status gate | `server/index.ts` registered routes + temporary SQLite |
+| `diet-profile.test.ts` | Default diet selection, profile round-trip, nudge/jump behavior, and historical intake compatibility | `server/db/diet-profile.ts` + temporary SQLite |
 | `unstudied-admission.test.ts` | Experimental dual-pool unstudied admission selector, including stash-only source | `server/db/unstudied-admission.ts` |
 | `session-completion.test.ts` | Session completion commits | Dynamic `server/db.ts` |
 | `session-bucket-scheduler.test.ts` | Bucket ordering helpers | `src/domain/study-actions.ts` |
@@ -60,7 +62,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `priority-aliases.test.ts` | French alias lookup | Dynamic `server/db.ts` |
 | `word-meanings.test.ts` | Word meanings CRUD | Dynamic `server/db.ts` |
 | `dev-db-bootstrap.test.ts` | Dev DB bootstrap | Dynamic `server/db.ts` |
-| `learner-isolation.test.ts` | Shared lexical visibility, private overlays/content, duplicate private ids, cross-owner references | Dynamic `server/db.ts` + raw scoped connection |
+| `learner-isolation.test.ts` | Fresh local/external learner defaults, preserved settings, shared lexical visibility, private overlays/content, duplicate private ids, cross-owner references | Dynamic `server/db.ts` + raw scoped connection |
 | `study-profile.test.ts` | Study profile helpers | `src/study-profile.ts` |
 | `clerk-auth-gate.test.ts` | Clerk loading vs sign-in vs invite sign-up vs app gate; invitation tickets mount SignUp | `src/auth/clerk-auth-gate.ts`, `ClerkAuthGateViews.tsx` |
 | `canonical-words.test.ts` | Canonical wordlist scripts | `scripts/lib/canonical-words.ts` |
@@ -79,6 +81,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 
 | Area | Run first |
 | --- | --- |
+| New-learner defaults / diet profile | `diet-profile.test.ts`, `diet-intake-placement-api.test.ts`, `learner-isolation.test.ts` |
 | Session composition / SQL scheduling | `session-composition.test.ts`, `unstudied-admission.test.ts` |
 | Session end / word lifecycle commits | `session-completion.test.ts` |
 | Contrast content | `contrast-content.test.ts` |

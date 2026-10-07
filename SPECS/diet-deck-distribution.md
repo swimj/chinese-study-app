@@ -1,6 +1,7 @@
 # Diet Deck Distribution And HSK Delta Tiers
 
-Status: **accepted design** (drafted 2026-09-09; review decisions
+Status: **accepted design**, with new-user defaults and intake retirement updated
+2026-10-07 in §2.5 (drafted 2026-09-09; review decisions
 incorporated same day; accepted for implementation 2026-09-10). Part 2 is
 the implementation contract for this deliverable; Part 1 remains a vision
 sketch, explicitly subject to change. Remaining implementation defaults
@@ -64,7 +65,7 @@ declared noise.
 ## 1.2 The learner as a distribution
 
 Each learner is modeled as a distribution over decks, initialized at 100%
-on their indicated (placed) deck. The distribution shifts over time via:
+on their initial deck. The distribution shifts over time via:
 
 - **explicit learner nudges** (near-term, disjoint jumps);
 - **performance evidence** (later, gradual; per this app's consent culture,
@@ -190,13 +191,13 @@ sized, and sampled before any behavior changes.
 New per-learner state: the **diet profile**. Design-level shape:
 
 - **deck weights** — the learner's distribution over decks, initialized
-  degenerate at 100% on the placed deck. A **nudge** shifts a fixed weight
+  degenerate at 100% on the default deck (§2.5). A **nudge** shifts a fixed weight
   quantum (default 0.1, internal and never user-visible) toward an adjacent
   deck — e.g. (1, 0) → (0.9, 0.1) (decided, §2.11). Deck references are
   stable identities, never raw corpus ranks, so corpus rebuilds cannot
   silently reinterpret a placement;
-- **provenance** — who last moved the distribution (intake answer / learner
-  nudge / operator) and when. Cheap to store now, expensive to retrofit.
+- **provenance** — who last moved the distribution (learner nudge /
+  operator; historical intake evidence is retained) and when. Cheap to store now, expensive to retrofit.
 
 The representation is per-deck weights from day one — nudges need them.
 What is deferred is *automatic* distribution evolution from performance
@@ -226,88 +227,29 @@ Final schema remains deferred with the data work (§2.8).
 - The split ratio becomes a learner setting (same settings store), default
   50/50, stored but **not user-visible** in v1 (decided, §2.11).
 
-## 2.5 New-user placement intake
+## 2.5 New-user defaults and retired placement intake
 
-There is currently no new-user flow: hosted Clerk bootstrap creates a learner
-with defaults, and local bootstrap does the same. This deliverable adds a
-placement intake, delivered **through the session interface** rather than a
-separate form: the app's one well-developed interaction surface (card-style
-prompts, typed input) is reused as the channel through which the user gives
-the system input.
+This section owns the initial new-word policy. New learners start with
+**stash-only** admission, a daily new-word limit of **5**, and an effective diet
+profile at 100% on the **first HSK 2.0 Level 6 deck** (`hsk2-l6-s1`).
 
-Design line: overload the session's *interaction grammar*, not its
-*machinery*. Intake responses are profile evidence, not study actions — they
-never enter the study-action pipeline (no attempt events, no covering, no
-commits). They land as diet-profile provenance (§2.3).
+Diet words enter sessions only if the learner turns off stash-only mode.
+An empty stash can therefore leave a session with no new words; existing
+learning and review work remains available. Learners can change the source and
+daily limit in session settings. Learner nudges and operator jumps remain the
+diet adjustment paths.
 
-Visibility (decided, §2.11): the learner knows they are being assessed; intake
-does not expose deck machinery. After intake, sessions simply source their
-words. The later [My words Current deck view](./my-words.md) provides read-only
-deck vocabulary and HSK level/part labels without exposing distribution controls.
+Saved choices remain authoritative. Existing learners without a daily limit or
+diet profile receive those defaults. The source default applies only at learner
+creation: existing learners without a source setting retain their mixed policy.
+The [database guide](../docs/server-db.md#init-order) explains
+how initialization and missing-setting reads preserve this distinction.
 
-Intake evidence, deliberately not advanced for v1 — a mix of:
-
-- **open-ended natural-language questions** (background, goals, what they
-  want to read/watch/do);
-- optionally, **a few placement-exam-style recognition checks**;
-- optionally, a coarse self-select fallback (complete beginner / some basics
-  / intermediate / advanced or heritage background).
-
-Judgment paths:
-
-1. **Provider-assessed first pass**: on an explicitly disclosed learner
-   submission, a configured provider receives only bounded prompt/answer pairs
-   and returns a versioned next HSK 2.0 learning level (1–6) plus rationale.
-   The backend strictly validates the result, maps it to a deck internally, and
-   applies it immediately as the learner-authorized initial profile. Deck ids,
-   weights, manifest contents, learner identity, history, and corpus words are
-   never provider input. A failed, invalid, stale, or unavailable assessment
-   leaves the profile unchanged; the learner can retry or take a manual path.
-   The stored judgment keeps its selected next learning level even when a
-   reduced manifest maps placement down to the highest available lower HSK deck;
-   the tail is never a placement target.
-   Provider-assisted intake requires an HSK 2.0 Level 1 deck as the baseline
-   for every supported next-learning-level result.
-2. **Operator-judged** during the concierge phase: the cohort is small and
-   invite-only, so natural-language answers are immediately useful as a
-   concierge artifact with zero automation.
-3. **Fixed/manual mapping** through coarse self-selection or skip, which is a
-   no-provider fallback and remains available independently of assessment.
-
-The learner can start only after a successful placement write has invalidated
-and refreshed any future-session prefetch. An assessment failure preserves the
-answers for retry or manual fallback. If placement succeeds but that later
-refresh fails, the learner sees a distinct refresh failure and can retry it
-without repeating the provider assessment.
-
-The same intake is forward-compatible with the vision: answers seed not only
-the deck anchor but eventually goal/interest *tilts* — "I'm preparing for
-HSK 5" or "I want to read wuxia novels" compile into deck/tilt parameters
-without exam vocabulary becoming UI furniture. V1 consumes only the placement
-signal; raw answers are retained as profile evidence.
-
-Set aside for now: a full **diagnostic first-session draw** (composing
-session 1 as word probes sampled across decks). Recorded costs: a
-diagnostic composition mode; probe interaction with the daily new-word cap
-and covering/commit semantics; "known on probe" lifecycle transitions are a
-`learning-review-model` question, not a diet question; and probe signal
-choice is fraught (typed production places readers and heritage speakers too
-low; self-rated recognition is the soft signal the vision notes already list
-as an open question). The light recognition checks above capture most of the
-value without the composition machinery.
-
-Framing note: natural-language intake sets the product's register from the
-first minute — the system listens before it drills — and mirrors the
-reflection loop (the learner expresses; the system responds). This is a
-feature of the approach, not just its packaging.
-
-Placement is realized as the initial diet profile, so it needs the §2.3
-setting to exist; the flow lands with the data work, not before.
-
-Frontier note: the frontier defers a *polished self-service onboarding
-system* and permits concierge-assisted onboarding. This intake is a minimal
-step in service of the first cohort, not an onboarding system — flagged for
-explicit human confirmation that it stays inside the boundary.
+The placement intake survey is retired as of 2026-10-07. New learners enter
+ordinary study without an assessment. The evolving app no longer relies on a
+survey as its bootstrap surface. Historical intake evidence and study history
+remain intact; no migration is required. The [API reference](../docs/api.md#diet-profile)
+records the removed endpoints.
 
 ## 2.6 Feedback surface; no settings page in v1
 
@@ -340,7 +282,7 @@ for the beta cohort.
 
 - Rationale: triage exists to compensate for SUBTLEX ordering oddities — its
   defer / recognition-only judgments target corpus noise at the top of a
-  global frequency ranking. Decked diet plus placement attacks the cause
+  global frequency ranking. Decked diet attacks the cause
   rather than the symptom, and every retained control is something new users
   must learn and we must validate. Product clarity wins.
 - Recognition-only disposition (decided, §2.11): suppressions already
@@ -402,8 +344,7 @@ Decisions from the 2026-09-09 review (previously open questions):
 4. **Nudge = fine-grained weight shift**, e.g. (1, 0) → (0.9, 0.1) toward an
    adjacent deck — a coarse deck jump labeled "nudge" would be
    misleading. UI specifics TBD (see 10).
-5. **Deck controls stay internal.** The learner knows they are being
-   assessed at intake; afterwards sessions source their words without
+5. **Deck controls stay internal.** Sessions source their words without
    exposing distribution controls. The later My words Current deck shortcut
    exposes read-only vocabulary and level/part labels (§2.6). The nudge remains
    intentionally coarse, gut-level feedback.
@@ -424,10 +365,8 @@ Decisions from the 2026-09-09 review (previously open questions):
     cleanest implementation. Recorded choice: composition-time spill into
     successor decks without mutating the profile (no new write path);
     nudges or operator action correct residual staleness.
-12. **Placement intake: natural-language first pass** — disclosed
-    assess-and-apply submission yields a bounded, validated next learning
-    level and concise rationale; manual self-selection/skip remains available.
-    The full diagnostic session draw remains set aside per §2.5.
+12. **Placement intake retired (2026-10-07).** The original natural-language
+    assessment and manual fallback are superseded by the defaults in §2.5.
 
 Remaining implementation defaults (provisional; owned by implementation and
 revisable without re-review):
@@ -439,9 +378,6 @@ revisable without re-review):
 - **Subdivision thresholds**: target deck sizes of roughly 150–400 words;
   HSK deltas larger than ~400 split into frequency-ordered strata of ~250.
   Tuned against the §2.2 tag artifact's real sizes.
-- **Intake questions**: 2–3 open-ended prompts — background with the
-  language, goals ("what do you want to be able to do?") — with an optional
-  coarse self-select as fallback. Wording refined at implementation.
 - **Progress presentation**: a completion-percentage / strength heuristic
   over a word group is expected eventually, but is not v1 and is not
   critical to the vision.

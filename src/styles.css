@@ -4195,53 +4195,7 @@ textarea {
   }
 }
 
-/* Diet intake + gut-level nudge (SPECS/diet-deck-distribution.md) */
-
-.diet-intake-panel h2 {
-  margin-top: 0;
-}
-
-.diet-intake-field {
-  display: grid;
-  gap: 0.4rem;
-  margin: 1rem 0;
-}
-
-.diet-intake-prompt {
-  font-weight: 600;
-}
-
-.diet-intake-answer {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  color: inherit;
-  font: inherit;
-  padding: 0.5rem 0.75rem;
-  resize: vertical;
-}
-
-.diet-intake-answer:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.diet-intake-self-select {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin: 1rem 0;
-}
-
-.diet-intake-actions {
-  display: grid;
-  gap: 0.5rem;
-  margin-top: 1rem;
-}
-
-.diet-intake-actions button {
-  width: 100%;
-}
+/* Diet nudge (SPECS/diet-deck-distribution.md) */
 
 .diet-chip {
   background: var(--surface-muted);
@@ -4261,11 +4215,6 @@ textarea {
 .diet-chip:disabled {
   cursor: default;
   opacity: 0.6;
-}
-
-.diet-chip-selected {
-  background: var(--accent-soft);
-  border-color: var(--accent);
 }
 
 .diet-nudge-prompt {

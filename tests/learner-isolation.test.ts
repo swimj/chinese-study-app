@@ -51,6 +51,38 @@ describe('learner isolation', { concurrency: false }, () => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
+  test('new local and external learners use stash only, five words and HSK 6 without resetting preferences', () => {
+    const external = dbModule.resolveOrBootstrapExternalLearner({ provider: 'clerk', providerSubject: 'user_defaults_test' });
+    for (const learner of ['learner-a', external]) {
+      dbModule.runWithLearnerId(learner, () => {
+        assert.equal(dbModule.getLearningPolicy('2026-10-07').dailyNewWordLimit, 5);
+        assert.equal(dbModule.getLearningPolicy('2026-10-07').unstudiedAdmissionSource, 'stash_only');
+        assert.deepEqual(dbModule.getDietProfile()?.weights, { 'hsk2-l6-s1': 1 });
+      });
+    }
+    dbModule.runWithLearnerId(external, () => {
+      dbModule.setDailyNewWordLimit(12);
+      dbModule.setUnstudiedAdmissionSource('mixed');
+      dbModule.setOperatorDietDeck('hsk2-l2');
+    });
+    assert.equal(dbModule.resolveOrBootstrapExternalLearner({ provider: 'clerk', providerSubject: 'user_defaults_test' }), external);
+    dbModule.runWithLearnerId(external, () => {
+      assert.equal(dbModule.getLearningPolicy('2026-10-07').dailyNewWordLimit, 12);
+      assert.equal(dbModule.getLearningPolicy('2026-10-07').unstudiedAdmissionSource, 'mixed');
+      assert.deepEqual(dbModule.getDietProfile()?.weights, { 'hsk2-l2': 1 });
+    });
+  });
+
+  test('repeated local bootstrap preserves explicit and legacy admission choices', () => {
+    dbModule.bootstrapLearner({ learnerId: 'existing-local' });
+    dbModule.runWithLearnerId('existing-local', () => dbModule.setUnstudiedAdmissionSource('mixed'));
+    dbModule.bootstrapLearner({ learnerId: 'existing-local' });
+    assert.equal(dbModule.runWithLearnerId('existing-local', () => dbModule.getLearningPolicy('2026-10-07').unstudiedAdmissionSource), 'mixed');
+    sqlite.prepare("DELETE FROM learner_settings WHERE learner_id = ? AND setting_key = 'unstudied_admission_source'").run('existing-local');
+    dbModule.bootstrapLearner({ learnerId: 'existing-local' });
+    assert.equal(dbModule.runWithLearnerId('existing-local', () => dbModule.getLearningPolicy('2026-10-07').unstudiedAdmissionSource), 'mixed');
+  });
+
   test('shares lexical content while isolating learner overlays', () => {
     dbModule.runWithLearnerId('learner-a', () => {
       dbModule.updateWordPersonalNotes('shared-word', 'A private note');

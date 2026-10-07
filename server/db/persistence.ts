@@ -5961,6 +5961,7 @@ function getDailyNewWordLimit(): number {
     .get(requireLearnerId()) as { value_json: string } | undefined;
 
   if (!row) {
+    // Existing saved limits remain authoritative; only unset learners use the default.
     return DEFAULT_DAILY_NEW_WORD_LIMIT;
   }
 
@@ -5979,6 +5980,8 @@ function getUnstudiedAdmissionSource(): UnstudiedAdmissionSource {
     .get(requireLearnerId()) as { value_json: string } | undefined;
 
   if (!row) {
+    // New learners receive an explicit stash-only setting during bootstrap.
+    // Keep the legacy mixed policy for existing learners without a saved choice.
     return DEFAULT_UNSTUDIED_ADMISSION_SOURCE;
   }
 
