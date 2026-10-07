@@ -21,6 +21,7 @@ import {
   updateUnstudiedAdmissionSource,
   updateCharacterPresentation,
   updateSentenceCharacterPresentation,
+  updateStudyNewWordsFirst,
   upsertReflectionQuality,
   withdrawReflectionAuthorization,
   fetchReflectionHelpInbox,
@@ -66,6 +67,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     onSessionEnded: reloadDashboard,
     onReflectionGenerated: attention.refresh,
     sessionSurfaceVisible: currentPage === 'home',
+    studyNewWordsFirst: backendStatus?.studyNewWordsFirst ?? false,
     characterPresentation: backendStatus?.characterPresentation ?? DEFAULT_CHARACTER_PRESENTATION,
   });
   const priorityPage = usePriorityPageController({
@@ -167,6 +169,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
 
   async function saveSessionSettings(settings: {
     dailyNewWordLimit?: number;
+    studyNewWordsFirst?: boolean;
     unstudiedAdmissionSource?: BackendStatus['unstudiedAdmissionSource'];
     characterPresentation?: CharacterPresentation;
     sentenceCharacterPresentation?: SentenceCharacterPresentation;
@@ -205,15 +208,21 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
       sentenceCharacterPresentation = saved.sentenceCharacterPresentation;
     }
 
+    let studyNewWordsFirst = settings.studyNewWordsFirst;
+    if (studyNewWordsFirst !== undefined) {
+      studyNewWordsFirst = (await updateStudyNewWordsFirst(studyNewWordsFirst)).studyNewWordsFirst;
+    }
+
     let debriefInterests = settings.debriefInterests;
     if (debriefInterests !== undefined) {
       debriefInterests = (await updateDebriefInterests(debriefInterests)).debriefInterests;
     }
 
-    if (!policy && characterPresentation === undefined && sentenceCharacterPresentation === undefined && debriefInterests === undefined) {
+    if (studyNewWordsFirst === undefined && !policy && characterPresentation === undefined && sentenceCharacterPresentation === undefined && debriefInterests === undefined) {
       return;
     }
 
+    const nextStudyNewWordsFirst = studyNewWordsFirst;
     const nextPolicy = policy;
     const nextPresentation = characterPresentation;
     const nextSentencePresentation = sentenceCharacterPresentation;
@@ -221,6 +230,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     setBackendStatus((currentStatus) => currentStatus
       ? {
           ...currentStatus,
+          ...(nextStudyNewWordsFirst !== undefined ? { studyNewWordsFirst: nextStudyNewWordsFirst } : {}),
           ...(nextPolicy
             ? {
                 dailyNewWordLimit: nextPolicy.dailyNewWordLimit,

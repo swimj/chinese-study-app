@@ -2284,6 +2284,23 @@ export function setCharacterPresentation(characterPresentation: CharacterPresent
   return { characterPresentation: readCharacterPresentation() };
 }
 
+export function getStudyNewWordsFirst(): boolean {
+  const row = getDb().prepare(`
+    SELECT value_json FROM learner_settings
+    WHERE learner_id = ? AND setting_key = 'study_new_words_first'
+  `).get(requireLearnerId()) as { value_json: string } | undefined;
+  if (!row) return false;
+  const value: unknown = JSON.parse(row.value_json);
+  if (typeof value !== 'boolean') throw new Error('Expected studyNewWordsFirst to be a boolean');
+  return value;
+}
+
+export function setStudyNewWordsFirst(studyNewWordsFirst: boolean) {
+  if (typeof studyNewWordsFirst !== 'boolean') throw new Error('Expected studyNewWordsFirst to be a boolean');
+  upsertLearnerSetting('study_new_words_first', studyNewWordsFirst);
+  return { studyNewWordsFirst: getStudyNewWordsFirst() };
+}
+
 export function getSentenceCharacterPresentation(): SentenceCharacterPresentation {
   const row = getDb()
     .prepare(`

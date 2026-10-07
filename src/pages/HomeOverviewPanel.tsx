@@ -175,6 +175,7 @@ export function SessionSettingsPanel({
   backendStatus: BackendStatus | null;
   onSaveSessionSettings: (settings: {
     dailyNewWordLimit?: number;
+    studyNewWordsFirst?: boolean;
     unstudiedAdmissionSource?: UnstudiedAdmissionSource;
     characterPresentation?: CharacterPresentation;
     sentenceCharacterPresentation?: SentenceCharacterPresentation;
@@ -190,6 +191,7 @@ export function SessionSettingsPanel({
       ? ''
       : String(backendStatus.dailyNewWordLimit)
   ));
+  const [newWordsFirstDraft, setNewWordsFirstDraft] = useState(backendStatus?.studyNewWordsFirst ?? false);
   const [sourceDraft, setSourceDraft] = useState<UnstudiedAdmissionSource>(
     backendStatus?.unstudiedAdmissionSource ?? 'mixed',
   );
@@ -204,6 +206,8 @@ export function SessionSettingsPanel({
   const [limitError, setLimitError] = useState<string | null>(null);
 
   const committedLimit = backendStatus?.dailyNewWordLimit ?? null;
+  const committedNewWordsFirst = backendStatus?.studyNewWordsFirst ?? false;
+  const newWordsFirstDirty = newWordsFirstDraft !== committedNewWordsFirst;
   const committedSource = backendStatus?.unstudiedAdmissionSource ?? 'mixed';
   const committedPresentation = backendStatus?.characterPresentation ?? 'simplified';
   const committedSentencePresentation = backendStatus?.sentenceCharacterPresentation ?? 'simplified';
@@ -214,7 +218,7 @@ export function SessionSettingsPanel({
     && sentencePresentationDraft !== committedSentencePresentation;
   const committedInterests = backendStatus?.debriefInterests ?? '';
   const interestsDirty = backendStatus?.studyProfile === 'mandarin' && interestsDraft !== committedInterests;
-  const settingsDirty = limitDirty || sourceDirty || presentationDirty || sentencePresentationDirty || interestsDirty;
+  const settingsDirty = newWordsFirstDirty || limitDirty || sourceDirty || presentationDirty || sentencePresentationDirty || interestsDirty;
 
   function beginLimitEdit() {
     setLimitDraft(committedLimit === null ? '' : String(committedLimit));
@@ -224,6 +228,7 @@ export function SessionSettingsPanel({
 
   function cancelAndClose() {
     setLimitDraft(committedLimit === null ? '' : String(committedLimit));
+    setNewWordsFirstDraft(committedNewWordsFirst);
     setSourceDraft(committedSource);
     setPresentationDraft(committedPresentation);
     setSentencePresentationDraft(committedSentencePresentation);
@@ -249,6 +254,7 @@ export function SessionSettingsPanel({
 
     const patch: {
       dailyNewWordLimit?: number;
+      studyNewWordsFirst?: boolean;
       unstudiedAdmissionSource?: UnstudiedAdmissionSource;
       characterPresentation?: CharacterPresentation;
       sentenceCharacterPresentation?: SentenceCharacterPresentation;
@@ -264,6 +270,8 @@ export function SessionSettingsPanel({
       }
       patch.dailyNewWordLimit = dailyNewWordLimit;
     }
+
+    if (newWordsFirstDirty) patch.studyNewWordsFirst = newWordsFirstDraft;
 
     if (sourceDirty) {
       patch.unstudiedAdmissionSource = sourceDraft;
@@ -347,6 +355,8 @@ export function SessionSettingsPanel({
     setSentencePresentationDraft(committedSentencePresentation);
   }, [committedSentencePresentation]);
 
+  useEffect(() => { setNewWordsFirstDraft(committedNewWordsFirst); }, [committedNewWordsFirst]);
+
   useEffect(() => { setInterestsDraft(committedInterests); }, [committedInterests]);
 
   return (
@@ -401,6 +411,17 @@ export function SessionSettingsPanel({
               }}
             />
             New words from stash only
+          </label>
+        </div>
+        <div className="session-settings-row">
+          <label className="inline-checkbox" title="Introduce all new words first; later practice stays interleaved.">
+            <input
+              type="checkbox"
+              checked={newWordsFirstDraft}
+              disabled={backendStatus?.studyNewWordsFirst === undefined || limitSaving}
+              onChange={(event) => { setNewWordsFirstDraft(event.target.checked); setLimitError(null); }}
+            />
+            Study new words first
           </label>
         </div>
         {backendStatus?.studyProfile === 'mandarin' ? (

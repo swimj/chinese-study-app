@@ -120,6 +120,7 @@ export function HomePage({
   backendStatus: BackendStatus | null;
   onSaveSessionSettings: (settings: {
     dailyNewWordLimit?: number;
+    studyNewWordsFirst?: boolean;
     unstudiedAdmissionSource?: UnstudiedAdmissionSource;
     characterPresentation?: CharacterPresentation;
     sentenceCharacterPresentation?: SentenceCharacterPresentation;

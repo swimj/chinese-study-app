@@ -35,6 +35,8 @@ import {
   nudgeDietProfile,
   getLearningPolicy,
   getCharacterPresentation,
+  getStudyNewWordsFirst,
+  setStudyNewWordsFirst,
   getSentenceCharacterPresentation,
   setSentenceCharacterPresentation,
   setCharacterPresentation,
@@ -614,6 +616,7 @@ export function createApp(options: CreateAppOptions = {}) {
       ...getLearningPolicy(studyDayKey),
       characterPresentation: getCharacterPresentation(),
       sentenceCharacterPresentation: getSentenceCharacterPresentation(),
+      studyNewWordsFirst: getStudyNewWordsFirst(),
       debriefInterests: getDebriefInterests(),
     });
   });
@@ -693,6 +696,18 @@ export function createApp(options: CreateAppOptions = {}) {
       }
 
       res.status(500).json({ error: 'Failed to update character presentation' });
+    }
+  });
+
+  app.patch('/api/learner-settings/study-new-words-first', (req, res) => {
+    if (typeof req.body?.studyNewWordsFirst !== 'boolean') {
+      res.status(400).json({ error: 'Expected studyNewWordsFirst to be a boolean' });
+      return;
+    }
+    try {
+      res.json(setStudyNewWordsFirst(req.body.studyNewWordsFirst));
+    } catch {
+      res.status(500).json({ error: 'Failed to update new-word ordering' });
     }
   });
 

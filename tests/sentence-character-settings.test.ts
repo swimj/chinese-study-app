@@ -78,3 +78,33 @@ test('sentence setting rejects both, missing and unknown presentations', async (
   }
   assert.equal(db.getSentenceCharacterPresentation(), 'traditional');
 });
+
+
+test('new-word ordering defaults off, validates booleans, persists and remains learner-private', async () => {
+  assert.equal(db.getStudyNewWordsFirst(), false);
+  for (const value of [true, false, true]) {
+    const response = await fetch(`${base}/api/learner-settings/study-new-words-first`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ studyNewWordsFirst: value, learnerId: 'forged' }),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { studyNewWordsFirst: value });
+    assert.equal(db.getStudyNewWordsFirst(), value);
+  }
+  for (const value of ['true', 1, null, undefined]) {
+    const response = await fetch(`${base}/api/learner-settings/study-new-words-first`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ studyNewWordsFirst: value }),
+    });
+    assert.equal(response.status, 400);
+  }
+  const status = await fetch(`${base}/api/status?studyDayKey=2026-10-07`).then(response => response.json());
+  assert.equal(status.studyNewWordsFirst, true);
+  const { getDb } = await import('../server/db/connection.ts');
+  const stored = getDb().prepare("SELECT learner_id, value_json FROM learner_settings WHERE setting_key = 'study_new_words_first'").all();
+  assert.deepEqual(stored.map(row => ({ ...row })), [
+    { learner_id: 'sentence-settings-learner', value_json: 'true' },
+  ]);
+  db.runWithLearnerId('sentence-settings-other', () => assert.equal(db.getStudyNewWordsFirst(), false));
+  assert.equal(db.getStudyNewWordsFirst(), true);
+});

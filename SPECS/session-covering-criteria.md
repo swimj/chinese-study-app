@@ -24,7 +24,15 @@ It does not yet define:
 
 ## Intra-session ordering
 
-The live session interleaves nonempty buckets with weighted random selection:
+The **Study new words first** session setting defaults to off and is saved per
+learner. When enabled, every admitted new word's introduction runs before review,
+learning, or new-word recall. Completing an introduction leaves that word's recall
+pending while the remaining introductions run. Once all introductions finish,
+recall uses the ordinary weighted scheduler below. The setting is captured at
+session start and preserved through Undo; it does not change admission or covering.
+
+With the setting off, introductions retain their existing place in the weighted
+scheduler. The live session interleaves nonempty buckets with weighted random selection:
 
 | Bucket | Weight |
 | --- | ---: |

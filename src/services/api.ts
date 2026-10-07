@@ -259,6 +259,7 @@ type BackendStatus = {
   unstudiedAdmissionSource: UnstudiedAdmissionSource;
   characterPresentation: CharacterPresentation;
   sentenceCharacterPresentation: SentenceCharacterPresentation;
+  studyNewWordsFirst: boolean;
   debriefInterests: string;
   learningCoverageDate: string;
   /** True when deck-based diet admission is active (Mandarin profile with a manifest). */
@@ -591,6 +592,20 @@ export async function updateCharacterPresentation(
     throw new Error(await readApiErrorMessage(response, 'Failed to update character presentation'));
   }
 
+  return response.json();
+}
+
+export async function updateStudyNewWordsFirst(
+  studyNewWordsFirst: boolean,
+): Promise<{ studyNewWordsFirst: boolean }> {
+  const response = await apiFetch(`${API_BASE}/api/learner-settings/study-new-words-first`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ studyNewWordsFirst }),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to update new-word ordering'));
+  }
   return response.json();
 }
 

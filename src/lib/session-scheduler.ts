@@ -20,6 +20,7 @@ export type BucketSchedulerWeights = Record<BucketSchedulerBucket, number>;
 
 export type BucketSessionSchedulerPolicy = {
   bucketWeights: BucketSchedulerWeights;
+  studyNewWordsFirst?: boolean;
 };
 
 export type BucketSchedulerLearningProgress = {
@@ -228,6 +229,7 @@ export function cloneBucketSessionScheduler(scheduler: BucketSessionScheduler): 
     learningPool: scheduler.learningPool.map(cloneWord),
     unstudiedPool: scheduler.unstudiedPool.map(cloneWord),
     policy: {
+      ...scheduler.policy,
       bucketWeights: { ...scheduler.policy.bucketWeights },
     },
     rngState: scheduler.rngState,
@@ -308,6 +310,19 @@ function recomputeActiveBucketSchedulerUnit(
   scheduler: BucketSessionScheduler,
   progress: BucketSchedulerProgress,
 ): BucketSessionScheduler {
+  // Only unfinished introductions get priority; recall keeps ordinary bucket weights.
+  const pendingIntros = scheduler.policy.studyNewWordsFirst
+    ? scheduler.unstudiedPool.filter((word) => !progress.unstudied[word.id]?.introComplete)
+    : [];
+  if (pendingIntros.length > 0) {
+    const rngState = lcg(scheduler.rngState);
+    return {
+      ...scheduler,
+      rngState: lcg(rngState),
+      activeUnit: { type: 'unstudied_intro', word: pendingIntros[randomIndex(rngState, pendingIntros.length)]! },
+    };
+  }
+
   const counts = getBucketSchedulerBucketCountsForProgress(scheduler, progress);
   if (counts.review === 0 && counts.learning === 0 && counts.unstudied === 0) {
     return {

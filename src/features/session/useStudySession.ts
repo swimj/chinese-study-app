@@ -171,6 +171,7 @@ export type StudySessionControllerOptions = {
   onSessionEnded: () => Promise<void>;
   onReflectionGenerated?: () => Promise<void> | void;
   sessionSurfaceVisible: boolean;
+  studyNewWordsFirst?: boolean;
   characterPresentation?: CharacterPresentation;
 };
 
@@ -285,6 +286,7 @@ export function useStudySession({
   onSessionEnded,
   onReflectionGenerated,
   sessionSurfaceVisible,
+  studyNewWordsFirst = false,
   characterPresentation = DEFAULT_CHARACTER_PRESENTATION,
 }: StudySessionControllerOptions): StudySessionController {
   const [sessionPrefetch, setSessionPrefetch] = useState<SessionPrefetchState>(() => getSessionPrefetchSnapshot());
@@ -666,7 +668,7 @@ export function useStudySession({
         visibilityState: typeof document === 'undefined' ? undefined : document.visibilityState,
         supportsVisibilityApi: typeof document !== 'undefined' && 'visibilityState' in document,
       });
-      setSessionState(createBucketSessionState({ buckets: sessionPayload.buckets, sessionId }));
+      setSessionState(createBucketSessionState({ buckets: sessionPayload.buckets, sessionId, schedulerPolicy: { studyNewWordsFirst } }));
       resetSessionScopedUi();
       setPendingSessionCommit(null);
       setLastUndoSnapshot(null);

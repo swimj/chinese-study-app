@@ -141,6 +141,7 @@ Conversion preserves stored content and exact attempt evidence. See
 | --- | --- | --- |
 | PATCH | `/api/learner-settings/character-presentation` | Learner settings |
 | PATCH | `/api/learner-settings/sentence-character-presentation` | Learner settings |
+| PATCH | `/api/learner-settings/study-new-words-first` | Accept/return `{studyNewWordsFirst:boolean}`; private learner setting, default false, also returned in status; invalid values return 400 |
 
 The first route accepts
 `{ "characterPresentation": "simplified" | "traditional" | "both" }` and returns
