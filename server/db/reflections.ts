@@ -10,7 +10,8 @@ import {
 } from '../../src/domain/pure-cue-reflection.ts';
 import { PURE_CUE_REFLECTION_FLOW_VERSION, PURE_CUE_REFLECTION_PROMPT_VERSION } from '../../src/domain/reflection-contracts.ts';
 import { restorePureCueSchedulerSnapshotWithoutTransaction, repairPureCueStimulusWithoutTransaction } from './pure-cues.ts';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { getHostedServiceControls } from './hosted-operations.ts';
 import { selectNonOverlappingReflectionItems } from '../reflection/bundle-admission.ts';
 import type {
   EffectRef,
@@ -2836,6 +2837,141 @@ export function applyReflectionInvocation(
       throw error;
     }
     return getReflectionInvocation(invocationId);
+  }
+}
+
+const CORRECT_CUE_REPAIR_FAILURE = 'Reflection application failed: Unfair-cue compensation requires the action\'s first attempt, which must be the mistake.';
+
+export type CorrectCueRepairRecoveryPlan = {
+  digest: string;
+  candidates: Array<{ invocationId: string; wordId: string; cueCount: number }>;
+  skipped: Array<{ invocationId: string; reason: string }>;
+};
+
+function correctCueRepairRecoveryPlanWithoutTransaction(): CorrectCueRepairRecoveryPlan {
+  const database = getDb();
+  const learnerId = requireLearnerId();
+  const rows = database.prepare(`SELECT invocation_id FROM reflection_operation_invocations
+    WHERE application_state='failed' AND application_error=?
+    ORDER BY created_at DESC, invocation_id DESC`).all(CORRECT_CUE_REPAIR_FAILURE) as Array<{ invocation_id: string }>;
+  const candidates: CorrectCueRepairRecoveryPlan['candidates'] = [];
+  const skipped: CorrectCueRepairRecoveryPlan['skipped'] = [];
+  const chosenWords = new Set<string>();
+  const frozenInvocations: OperationInvocationStatus[] = [];
+  for (const row of rows) {
+    const status = getReflectionInvocation(row.invocation_id);
+    const operation = status.invocation.operation;
+    const skip = (reason: string) => skipped.push({ invocationId: row.invocation_id, reason });
+    if (!reflectionInvocationSupportsCurrentActions(row.invocation_id)) {
+      skip('obsolete_contract');
+      continue;
+    }
+    const review = database.prepare(`SELECT accepted_invocation_id FROM reflection_proposal_reviews
+      WHERE proposal_id=(SELECT origin_proposal_id FROM reflection_operation_invocations WHERE invocation_id=?)
+      AND disposition='accepted'`).get(row.invocation_id) as { accepted_invocation_id: string } | undefined;
+    if (!review || review.accepted_invocation_id !== row.invocation_id) {
+      skip('not_accepted_proposal');
+      continue;
+    }
+    if (operation.kind !== 'repair_production_cue' || operation.version !== 2
+      || operation.changes.some(change => change.kind !== 'create')
+      || operation.sourceAttemptJudgments.length !== 1
+      || operation.sourceAttemptJudgments[0].kind !== 'misleading_or_overloaded_cue') {
+      skip('not_fallback_correct_repair');
+      continue;
+    }
+    const sourceAttemptId = operation.sourceAttemptJudgments[0].sourceAttemptId;
+    const source = database.prepare(`SELECT a.outcome,a.target_word_id,a.action_kind,
+      a.action_attempt_sequence,e.cue_id,e.task_id
+      FROM study_attempt_events a JOIN production_cue_evidence_records e
+      ON e.source_attempt_id=a.id AND e.record_kind='attempt'
+      WHERE a.id=?`).get(sourceAttemptId) as {
+        outcome: string; target_word_id: string; action_kind: string;
+        action_attempt_sequence: number; cue_id: string | null; task_id: string;
+      } | undefined;
+    if (!source || source.outcome !== 'correct' || source.action_kind !== 'production'
+      || source.action_attempt_sequence !== 1 || source.cue_id !== null
+      || source.target_word_id !== operation.wordId || source.task_id !== operation.taskId
+      || hasActionLapseToCompensate(sourceAttemptId)
+      || validateProductionCueRepairCurrentStateWithoutTransaction(operation) !== null) {
+      skip('invalid_source');
+      continue;
+    }
+    // Even retired cues count as modification: recovery must not undo a later
+    // decision to retire content or add redundant alternatives to a repaired word.
+    const existingCue = database.prepare(`SELECT 1 FROM scoped_production_cues
+      WHERE task_id=? AND (content_scope='shared' OR owner_learner_id=?) LIMIT 1`)
+      .get(operation.taskId, learnerId);
+    if (existingCue) {
+      skip('modified_word');
+      continue;
+    }
+    if (chosenWords.has(operation.wordId)) {
+      skip('older_proposal');
+      continue;
+    }
+    chosenWords.add(operation.wordId);
+    candidates.push({ invocationId: row.invocation_id, wordId: operation.wordId, cueCount: operation.changes.length });
+    frozenInvocations.push(status);
+  }
+  const digest = createHash('sha256').update(JSON.stringify({ learnerId, frozenInvocations, skipped })).digest('hex');
+  return { digest, candidates, skipped };
+}
+
+export function previewCorrectCueRepairRecovery(): CorrectCueRepairRecoveryPlan {
+  const database = getDb();
+  database.exec('BEGIN');
+  try {
+    const plan = correctCueRepairRecoveryPlanWithoutTransaction();
+    database.exec('COMMIT');
+    return plan;
+  } catch (error) {
+    database.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+/** Operator-only repair of this specific historical bug, not an application retry API. */
+export function recoverCorrectCueRepairs(input: {
+  actorId: string;
+  expectedPlanDigest: string;
+  recoveredAt?: string;
+}): { recoveredInvocationIds: string[]; planDigest: string } {
+  assertNonEmpty(input.actorId, 'operator actor id');
+  assertNonEmpty(input.expectedPlanDigest, 'recovery plan digest');
+  const recoveredAt = input.recoveredAt ?? new Date().toISOString();
+  assertIsoTimestamp(recoveredAt, 'recovery time');
+  const database = getDb();
+  database.exec('BEGIN IMMEDIATE');
+  try {
+    const controls = getHostedServiceControls();
+    if (!controls.maintenanceMode || controls.providerWorkEnabled) {
+      throw new Error('Cue repair recovery requires maintenance mode and disabled provider work.');
+    }
+    const plan = correctCueRepairRecoveryPlanWithoutTransaction();
+    if (plan.digest !== input.expectedPlanDigest) throw new Error('Recovery plan changed; preview it again before applying.');
+    for (const candidate of plan.candidates) {
+      const original = getReflectionInvocation(candidate.invocationId);
+      // This transient state exists only inside the locked recovery transaction;
+      // it is never exposed to the background application worker.
+      const updated = database.prepare(`UPDATE ${physicalLearnerTableName('reflection_operation_invocations')}
+        SET application_state='pending',application_error=NULL
+        WHERE learner_id=? AND invocation_id=? AND application_state='failed' AND application_error=?`)
+        .run(requireLearnerId(), candidate.invocationId, CORRECT_CUE_REPAIR_FAILURE);
+      if (updated.changes !== 1) throw new Error('Recovery source failure changed.');
+      const state = applyPendingOperationWithoutTransaction(original.invocation.operation, candidate.invocationId, recoveredAt);
+      if (state.kind !== 'applied') throw new Error(`Recovery did not apply ${candidate.invocationId}: ${state.kind}.`);
+      writeApplicationStateWithoutTransaction(candidate.invocationId, state, recoveredAt);
+      database.prepare(`INSERT INTO operator_reflection_cue_recoveries
+        (invocation_id,learner_id,actor_id,recovered_at,plan_digest,original_failure_json,recovered_application_json)
+        VALUES (?,?,?,?,?,?,?)`).run(candidate.invocationId, requireLearnerId(), input.actorId,
+        recoveredAt, plan.digest, JSON.stringify(original.application), JSON.stringify(state));
+    }
+    database.exec('COMMIT');
+    return { recoveredInvocationIds: plan.candidates.map(candidate => candidate.invocationId), planDigest: plan.digest };
+  } catch (error) {
+    database.exec('ROLLBACK');
+    throw error;
   }
 }
 

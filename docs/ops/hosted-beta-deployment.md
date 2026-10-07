@@ -268,6 +268,49 @@ fly ssh console --app <app-name> --command \
 
 ## Operator recovery
 
+### Recover failed cue repairs from correct requested reviews
+
+`hosted:recover-correct-cue-repairs` selects the latest accepted current-contract
+fallback repair per word for an explicit learner, while that word has no stored
+production cues (including retired ones). It preserves the failure and recovered
+effects in an immutable operator audit. No hand-written SQL or provider calls
+are needed; the command leaves service controls to the operator.
+
+This command ships with `0027_correct_cue_repair_recovery`. Deploy using the
+[offline schema-release procedure](schema-migrations.md), applying the migration
+before target startup. Recovery may run in that window or a later maintenance
+window:
+
+1. Disable provider work, enable maintenance, and wait for `/healthz` to report
+   zero active provider work. Sync Litestream and take a fresh volume snapshot
+   before recovery, using the commands above.
+2. Preview the plan from the deployed image:
+
+   ```bash
+   fly ssh console --app <app-name> --command \
+     'npm run --silent hosted:recover-correct-cue-repairs -- --data-dir=/data --learner-id=<learner-id>'
+   ```
+
+   Review `candidates`, `skipped`, and `digest`. Output identifies words and
+   invocations without learner responses or provider payloads; retain it as
+   private operator evidence. The October 7 incident inspection found 69 distinct
+   current-contract word candidates; always re-preview the live selection.
+3. Confirm that digest to recover the selected batch atomically:
+
+   ```bash
+   fly ssh console --app <app-name> --command \
+     'npm run --silent hosted:recover-correct-cue-repairs -- --data-dir=/data --learner-id=<learner-id> --actor-id=<operator> --apply=true --confirm-plan=<digest>'
+   ```
+
+   A changed plan refuses all writes; adapter or audit failure rolls back every
+   recovery. On failure, retain maintenance and investigate before re-previewing.
+4. Preview again: recovered invocations should be absent. Verify the returned
+   ids, target identity, health, and authenticated hosted smoke. Original failures
+   and recovered effect refs are in `operator_reflection_cue_recoveries`; the
+   same invocations now report applied.
+5. Reopen writes first and provider work last using the existing control commands;
+   clear any pre-upgrade banner. Recovery remains a deliberate operator action.
+
 ### Provision a reflection test card
 
 For operator smoke only, prepare one untouched shared word as a due

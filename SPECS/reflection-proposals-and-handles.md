@@ -1055,7 +1055,8 @@ Semantics:
   were caused by this invocation.
 - `failed` means no intended effect committed because of application or
   infrastructure error. It is terminal under the current contract and has no
-  automatic retry.
+  automatic retry. The operator-only recovery below is a narrow exception for
+  the historical correct-response cue-repair bug.
 - `stale` means current-state preconditions no longer allow the exact operation
   to be applied safely.
 - `already_satisfied` means current state deterministically proves the intended
@@ -1068,6 +1069,26 @@ Accepting an unsupported operation grants standing authorization for that exact
 version. If a faithful adapter later becomes available, the application may
 move from `unsupported` to `pending` after current-state revalidation. The
 product must let the user withdraw authorization before any effect.
+
+### Operator recovery of correct-response cue repairs
+
+The operator command selects accepted V2 fallback cue repairs with the exact
+historical first-mistake compensation error, current artifact contracts, and a
+correct first production attempt with its fallback cue evidence. A word is
+eligible only while it has no stored production cues accessible to the learner,
+including retired cues. The latest eligible authorization per word wins, ordered
+by authorization time and then invocation id. Other failures stay unchanged.
+
+Preview returns a digest of the selected authorizations and exclusions. Apply
+requires maintenance, disabled provider work, an attributable operator, and the
+same recomputed digest inside a write transaction. It uses the immutable
+authorized operation, acceptance record, domain adapter, and invocation identity.
+The transient `failed -> pending` transition and all selected applications commit
+together; any application or audit failure rolls back the entire batch. Original
+failure status and timestamp and recovered effects are retained in an immutable
+operator audit. Scheduling and attempt history preserve the successful source
+projection. Ordinary workers and learner APIs cannot retry failed invocations
+through this exception.
 
 Adapter-discovery and re-enqueueing policy may be milestone-specific. Whatever
 the mechanism, it cannot apply a newer or merely similar operation version
