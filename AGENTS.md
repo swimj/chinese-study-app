@@ -2,56 +2,59 @@
 
 Guidance for AI coding agents working in this repository.
 
+**Status (2026-10-07):** Most of this guidance is established, but the file has
+accumulated ad hoc. Some areas may be inconsistent or underspecified, and the
+document remains a work in progress.
+
 ## 1) Project Snapshot
 
-- App type: Mandarin study app with an invite-only hosted beta and local development workflow.
+- App type: Mandarin study app used through an invite-only hosted beta; contributor development and tests are separate from learner use.
 - Frontend: React + Vite + TypeScript in `src/`.
 - Backend: Express + TypeScript in `server/`.
 - Persistence: SQLite (`app.db`) via Node `DatabaseSync`, modules under `server/db/`.
 - Direction: polish, maturity, and debt in the existing learner experience; preserve the hosted ownership and data-safety boundaries while improving it.
-- Documentation taxonomy: [`docs/README.md`](docs/README.md), [`SPECS/README.md`](SPECS/README.md), and [`notes/README.md`](notes/README.md) (medium-lived working memory).
-- Product behavior source of truth:
-  - `SPECS/learning-review-model.md` — word lifecycle
-  - `SPECS/session-covering-criteria.md` — in-session covering and commits
-  - `SPECS/study-action-model.md` — scheduling, study actions, attempt events
-  - `SPECS/session-reflection-generation.md` — post-session finalization,
-    reflection evidence, generation, failure isolation, and retry
-  - `SPECS/reflection-proposals-and-handles.md` — reflection proposals,
-    authorization, application, provenance, and handle operations
+- Documentation target: [`docs/documentation-principles.md`](docs/documentation-principles.md) defines the hierarchy independently of today's folders.
+- Documentation routes and known adoption gaps: [`docs/README.md`](docs/README.md). Existing files are sources to reconcile, not certified examples of the target.
 
-## 2) First Files To Read
+## 2) Orientation And Task Routing
 
-1. `README.md`
-2. `docs/README.md`
-3. `package.json`
-4. `SPECS/learning-review-model.md`
-5. `SPECS/session-covering-criteria.md`
-6. `SPECS/study-action-model.md`
-7. `STABILITY_FRONTIER.md` — safe architectural assumptions and unsettled decisions (see §12)
-8. Task-spec notes linked from the relevant Linear item or supplied dispatch context, followed by only the working notes relevant to the task (working memory only; surface conflicts as described below — see [`notes/README.md`](notes/README.md))
-9. Relevant tests under `tests/` (see [`docs/testing.md`](docs/testing.md))
+Use `README.md` for product/repository orientation. This file is the entry point
+for instructions about how to conduct a task; choose the contributor guidance
+below. Use `docs/README.md` to find application knowledge the task needs:
+product models and contracts, implementation explanations, and operations
+guides. The index also records known documentation gaps.
+
+Read `STABILITY_FRONTIER.md` for preserved architectural assumptions and
+unsettled decisions when they affect the task (see §12). `SPECS/README.md`
+provides more detailed routes to existing product and feature sources.
+
+Read the owning contracts and implementation descriptions for the area being
+changed, the relevant tests (see [`docs/testing.md`](docs/testing.md)), and
+`package.json` before running commands. Consult supplied task-spec notes and
+only the working notes relevant to the task; they provide context rather than
+authority (see [`notes/README.md`](notes/README.md)).
 
 The direct task instruction and subsequent clarifications supply execution scope.
-Canonical specs describe intended behavior; code and tests show implemented
-behavior. If they conflict with each other or with an explicit instruction,
-surface the discrepancy. Apply a clear authorized change with matching docs and
-tests; do not silently fix code to a stale spec or treat existing code as product
-intent. Continue well-defined work and ask only when a consequential unresolved
-product or architectural choice is needed. Old plans do not override the task.
+Product contracts state intended behavior; code determines actual behavior
+and tests show what is checked. If these sources conflict with each other or
+with an explicit instruction, surface the discrepancy. Apply a clear authorized
+change with matching docs and tests; do not silently fix code to a stale spec or
+treat existing code as product intent. Continue well-defined work and ask only
+when a consequential unresolved product or architectural choice is needed.
+Old plans do not override the task.
 
-### Task routing
+### Contributor guidance
 
-| If you are changing… | Read first | Tests to touch |
-| --- | --- | --- |
-| Session composition / scheduling | `SPECS/study-action-model.md` (scheduling sections), `session-covering-criteria.md` | `session-composition.test.ts`, `session-bucket-scheduler.test.ts` |
-| In-flight session UI / undo | `session-covering-criteria.md`, `SPECS/frontend-architecture-map.md` | `session-selectors.test.ts`, `session-bucket-state.test.ts` |
-| Contrast clusters / content | `study-action-model.md` (contrast sections), `reflection-proposals-and-handles.md` (`create_contrast_cluster`) | `contrast-content.test.ts`, `reflection-application.test.ts` |
-| Word priority / French aliases | `README.md` (French section), `src/study-profile.ts` | `user-priority.test.ts`, `priority-aliases.test.ts` |
-| Persistence / SQL | [`docs/server-db.md`](docs/server-db.md) | matching `tests/*.test.ts` that import `server/db.ts` |
-| HTTP API contract | [`docs/api.md`](docs/api.md), `server/index.ts` | domain tests above + manual smoke if needed |
-| Reflection generation / evidence | `SPECS/session-reflection-generation.md`, `session-covering-criteria.md`, `docs/reflection-frontend-architecture.md` | `reflection-generation.test.ts`, `reflection-generation-isolation.test.ts`, `session-finalization.test.ts` |
-| Reflection proposals / handles | `SPECS/reflection-proposals-and-handles.md`, `SPECS/session-reflection-generation.md` | `llm-provider-runner.test.ts` plus matching lifecycle/adapter tests |
-| Hosted application-only release | [`docs/ops/hosted-beta-deployment.md`](docs/ops/hosted-beta-deployment.md), agent terminal-driver procedure | No schema/data migration; use authenticated Fly access on the first launch when the sandbox blocks `~/.fly`; retain and poll one terminal session through its terminal exit status; never start a second upgrade while the first has unknown state |
+| Work | Guidance |
+| --- | --- |
+| Documentation authoring and maintenance | [Authoring procedure](docs/documentation-authoring.md), using the [documentation principles](docs/documentation-principles.md) as the target |
+| Implementation, testing, and review | Working agreements, runbook commands, safety rules, and verification in §§3–9 below; [development and review workflow](docs/stacked-feature-development-and-review.md) |
+| Hosted application-only release | [Hosted release runbook](docs/ops/hosted-beta-deployment.md), including its agent terminal-driver procedure |
+
+The release route permits no schema/data migration. Use authenticated Fly
+access on the first launch when the sandbox blocks `~/.fly`; retain and poll
+one terminal session through its terminal exit status; never start a second
+upgrade while the first has unknown state.
 
 ### Environment variables
 
@@ -182,10 +185,18 @@ This repo contains real DB artifacts and backups under `data/`.
 
 ## 9) Done Checklist
 
-1. Code compiles and relevant tests pass.
-2. Behavior is aligned with spec docs.
+1. Code compiles and relevant tests pass, where applicable to the change.
+2. Relevant intended behavior, implementation, and tests have been reviewed
+   for agreement; consequential unresolved discrepancies are surfaced.
 3. No accidental data-file modifications.
-4. Docs updated when behavior or commands changed.
+4. Make a proportional, best-effort update to owning docs when behavior,
+   mechanisms, or commands change; report meaningful remaining gaps.
+
+The [documentation principles](docs/documentation-principles.md) define the
+target even where the corpus does not conform. Adoption is incremental without
+a blanket documentation merge gate. A touched file is not thereby certified;
+report the scope checked and meaningful gaps left. Task-specific correctness
+and safety requirements still apply.
 
 ## 10) If Unsure
 
@@ -221,9 +232,11 @@ This repo contains real DB artifacts and backups under `data/`.
 ## 12) Using The Stability Frontier
 
 Read [STABILITY_FRONTIER.md](STABILITY_FRONTIER.md) for safe architectural
-assumptions, invariants, and unsettled decisions. Use canonical specs and feature
-contracts for detailed intended behavior, architecture maps to locate code, and
-runbooks for operations. Plans and working notes supply dated context, not
+assumptions, invariants, and unsettled decisions. Use product and feature
+contracts for detailed intended behavior, implementation explanations for
+current mechanisms, and runbooks for operations. The frontier's current mixed
+role is an [adoption gap](docs/README.md#known-adoption-gaps), not the target
+hierarchy. Plans and working notes supply dated context, not
 automatic execution authority; an `active` label alone does not establish
 current priority or unfinished implementation.
 
