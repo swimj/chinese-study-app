@@ -1,26 +1,32 @@
 # Authoring and maintaining documentation
 
-Use this procedure when creating or revising repository documentation. The
+This guide helps contributors decide whether and how to create or revise
+repository documentation: establish its purpose, choose the scope of a change,
+and write and review the explanation. The
 [documentation principles](documentation-principles.md) define the desired
-structure and quality; this guide explains how an agent should produce it.
+structure and quality that this procedure puts into practice.
 
-## Establish the question and destination
+## Establish the reader, purpose, and scope
 
-Identify the reader's question and the understanding the document should give
-them. When maintaining existing documentation, consider how the proposed change
-affects its answer. An update is warranted when that answer becomes inaccurate
-or inadequate, or when the change creates a useful new question for the
-documentation to answer. An implementation change may leave the maintained
-explanations sufficient as they stand.
+For any document being considered for creation or revision, start with who
+would open it and why. What topics or questions do they have in mind? What
+should they be able to understand or do after reading it? Use those needs to
+establish the document's purpose and scope, and express them in its opening.
 
-Where reader questions are still implicit, infer them from the document's
-purpose, content, and place in the documentation tree. Make them explicit as
-part of relevant cleanup. Treat these questions as a developing account of
-reader needs; missing questions can reveal gaps in the documentation.
+When an existing document leaves its purpose implicit, infer it from its
+content, context, and place in the documentation tree. As you encounter such
+documents during a task, proactively add or improve the opening where that
+purpose is clear. If the material suggests conflicting purposes, surface the
+choice. This incremental clarification helps establish the reader questions
+that guide maintenance; those questions can evolve as new needs or gaps emerge.
 
-Choose the document or section responsible for the explanation and name that
-destination in the proposed change. Related documents need revision where
-their own answers are affected.
+With that purpose in view, consider how the proposed change affects the
+explanation. Revise it when its answers become inaccurate or inadequate, or
+when a useful new question needs an answer. An implementation change may leave
+the maintained explanations sufficient as they stand. Choose the document or
+section responsible for the needed explanation and name that destination in
+the proposed change. Related documents need revision where their own answers
+are affected.
 
 For example, a feature contract explains intended behavior; an implementation
 guide explains the mechanisms that realize it; a runbook gives a procedure and
@@ -77,7 +83,8 @@ readers can follow the current account.
 Read the revised text as a reader who has the relevant technical background but
 has not followed the task conversation. Check that:
 
-- it answers the intended question and explains the desired model directly,
+- its opening establishes why a reader would use it and what it explains;
+- it answers those reader questions and explains the desired model directly,
   with each detail and reference contributing to that understanding;
 - its subjects, terms, and destinations are concrete;
 - any negative boundary protects a specific, meaningful distinction;

@@ -2,6 +2,11 @@
 
 ## Purpose
 
+These principles help contributors decide what repository documentation should
+explain, how its parts relate, and how to maintain it as the product changes.
+The [authoring procedure](documentation-authoring.md) applies these principles
+when creating or revising a document.
+
 Documentation should help a reader recover the product's model, understand its
 promises, explain how the implementation works, operate it safely, and reason
 about the next change. Clear models and causal explanations make that knowledge
@@ -93,9 +98,9 @@ visible. Tests supply bounded evidence for the behavior they exercise.
 When sources disagree, identify the intended promise, actual behavior, relevant
 evidence, and any unresolved decision. Correct a clearly stale description
 within scope. When an authorized change alters a product promise, update the
-owning contract alongside the implementation and relevant tests. Changes to
-mechanisms or operating procedures belong in the explanations that maintain
-them, at the level needed for those explanations to remain useful and accurate.
+owning contract alongside the implementation and relevant tests. For changes to
+mechanisms or operating procedures, revise the explanations whose answers would
+otherwise become inaccurate or inadequate for their readers.
 Ask for human judgment when a consequential product or architectural choice
 remains unresolved, while continuing independent, well-defined work.
 
@@ -107,34 +112,33 @@ code to a suspect spec, or turn uncertainty into a new guarantee.
 
 ## How explanations evolve
 
-Maintained documentation selects the detail readers need to understand the
-product, reason about changes, or act safely. A detail earns its place through
-the explanatory work it does. Choose the level of abstraction that makes the
-relevant relationships and consequences clear while allowing the implementation
-to evolve.
+A document's purpose begins with why someone opens it: the topics or questions
+they bring and the understanding or action it should enable. Each document
+should open by establishing that purpose and scope, so readers can tell what
+they can expect to learn and whether it meets their needs. A short introduction
+can do this; use a dedicated section when the scope needs more explanation.
+
+That purpose determines the explanations the document owns and the detail they
+need. A detail earns its place through the explanatory work it does. Choose the
+level of abstraction that makes the relevant relationships and consequences
+clear while allowing the implementation to evolve. To decide whether
+information or a reference belongs, ask: without it, what would the reader be
+unable to understand or do that this document is meant to support?
 
 For example, a contract might explain when an action is available and what
 invoking it means for the learner. The button's exact screen position usually
 contributes little to that account, while a requirement that learners can
 recognize and access the action may be central. Similarly, an interleaving
-contract might define the constraints on exercise order; an implementation
-explanation can describe how the current algorithm achieves them. Algorithmic
-detail belongs where it helps readers reason about the mechanism, its
-tradeoffs, or its limitations, with code references supplying further detail.
-
-A document's purpose determines what it maintains. Each document should
-identify the reader questions it answers and the explanations it owns. Other
-explanations belong elsewhere, with references where answering those reader
-questions depends on them.
-
-To decide whether information or a reference belongs, ask: if the reader does
-not know this information, what question can this document no longer answer
-adequately?
+contract might explain the constraints on exercise order and why they matter.
+Those explanations may be sufficient, with the particular algorithm remaining
+in code. Its details warrant prose when they are needed to answer a reader's
+question, such as why a mechanism has a consequential limitation.
 
 A change should require updates to other documents only when it changes an
-explanation they own. As understanding changes, maintain and reorganize the
-documentation toward these responsibilities. Choose file boundaries that keep
-related concepts understandable and responsibilities clear.
+explanation they own. Link to another explanation where the reader's
+understanding depends on it. As understanding changes, maintain and reorganize
+the documentation toward these responsibilities. Choose file boundaries that
+keep related concepts understandable and responsibilities clear.
 
 Proposals should state the change under consideration, its reasons, and open
 decisions. As proposals are accepted, incorporate the conclusions that change
