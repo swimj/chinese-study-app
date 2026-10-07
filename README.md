@@ -11,10 +11,10 @@ and testing are separate from that learner experience.
 
 - [Documentation index](docs/README.md): routes to product models, current
   implementation, operations, and the documentation target and known gaps.
+  For hosted release and maintenance, this route leads to the
+  [hosted operations runbook](docs/ops/hosted-beta-deployment.md).
 - [Contributor guidance](AGENTS.md): task scope, conventions, safety,
   verification, and review delivery.
-- [Hosted operations](docs/ops/hosted-beta-deployment.md): current release and
-  maintenance procedures; use the owning runbook for an operational task.
 
 **README adoption status, 2026-10-07:** the orientation above has been updated.
 The remaining sections below are legacy material pending reconciliation,

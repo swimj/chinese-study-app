@@ -1,7 +1,7 @@
 # Product documentation routes
 
 This is a retrieval map for existing material under `SPECS/`, not a definition
-of the target taxonomy. The [documentation hierarchy](../docs/documentation-principles.md#target-hierarchy-and-ownership)
+of the target taxonomy. The [documentation hierarchy](../docs/documentation-principles.md#documentation-map)
 defines ownership independently of this folder. The
 [adoption inventory](../docs/README.md#known-adoption-gaps) records the known gap
 between that target and the current corpus.
@@ -12,7 +12,7 @@ canonical label does not certify every sentence as deliberate or current.
 Distinguish promises from implementation details, and surface consequential
 conflicts rather than changing a promise solely to match the code.
 
-## Sources for the product-wide model
+## Shared product-model sources
 
 - [learning-review-model.md](learning-review-model.md): word lifecycle,
   direction-level rules, and word-level session inclusion.
@@ -22,9 +22,10 @@ conflicts rather than changing a promise solely to match the code.
   covering, Undo, and commit intent.
 
 These explain related parts of the product and currently carry both shared and
-area-specific concepts. This PR has not established a coherent product-wide
-owner or certified their layering. The target needs shared definitions and
-cross-cutting guarantees with explicit refinement by the area owners below.
+area-specific concepts. The boundaries between shared definitions in these
+files and feature-specific contracts remain to be reconciled. Identify the
+document or section that maintains each shared concept, then link the feature
+contracts that refine it to those definitions.
 
 ## Existing feature and domain sources
 
@@ -42,10 +43,11 @@ cross-cutting guarantees with explicit refinement by the area owners below.
 | My Words | [my-words.md](my-words.md): personal collections, browsing, and word details |
 | New-word intake | [diet-deck-distribution.md](diet-deck-distribution.md): deck distribution and intake decisions alongside original delivery planning |
 
-For an area being reconciled, establish the owning model and promises, link or
-clearly separate its current realization, explain important decisions, and
-identify concrete gaps. The table records where material is found today, not
-a decision to preserve one file per row or the present boundaries forever.
+For an area being reconciled, identify the document or section for its model
+and promises, link or clearly separate its current realization, explain
+important decisions, and identify concrete gaps. The table locates material
+available today. Choose future boundaries according to the concepts and reader
+questions described in the target hierarchy.
 
 ## Material with other destination roles
 
@@ -54,7 +56,7 @@ a decision to preserve one file per row or the present boundaries forever.
   structure a product guarantee. See the [technical routes](../docs/README.md#current-architecture-and-implementation).
 - [study-db-setup.md](study-db-setup.md) describes older study-mode setup and
   restore. Assess current applicability for the task; it is not the default
-  hosted-service workflow. See the [operations routes](../docs/README.md#operations-and-contributor-workflows).
+  hosted-service workflow. See the [operations routes](../docs/README.md#operations-guides).
 - [diet-deck-distribution.md](diet-deck-distribution.md) mixes durable design
   material with delivery planning; preserve the useful intent while separating
   historical sequencing when this area is reconciled.

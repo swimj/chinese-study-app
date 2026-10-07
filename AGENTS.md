@@ -14,12 +14,15 @@ Guidance for AI coding agents working in this repository.
 
 ## 2) Orientation And Task Routing
 
-Use `README.md` for product/repository orientation and `docs/README.md` to locate
-the relevant product, implementation, or operations owner and known gaps. Read
-`STABILITY_FRONTIER.md` for preserved architectural assumptions and unsettled
-decisions when they affect the task (see §12). Then use the task routes below
-and `SPECS/README.md` to find existing sources; neither index is an additional
-mandatory reading sequence or a claim that its targets meet the standard.
+Use `README.md` for product/repository orientation. This file is the entry point
+for instructions about how to conduct a task; choose the contributor guidance
+below. Use `docs/README.md` to find application knowledge the task needs:
+product models and contracts, implementation explanations, and operations
+guides. The index also records known documentation gaps.
+
+Read `STABILITY_FRONTIER.md` for preserved architectural assumptions and
+unsettled decisions when they affect the task (see §12). `SPECS/README.md`
+provides more detailed routes to existing product and feature sources.
 
 Read the owning contracts and implementation descriptions for the area being
 changed, the relevant tests (see [`docs/testing.md`](docs/testing.md)), and
@@ -36,27 +39,18 @@ treat existing code as product intent. Continue well-defined work and ask only
 when a consequential unresolved product or architectural choice is needed.
 Old plans do not override the task.
 
-For documentation work, use [`docs/documentation-principles.md`](docs/documentation-principles.md).
-Keep promises, current implementation, and rationale distinguishable; explain
-the model in human-readable prose. Establish the right owner under the target
-hierarchy instead of preserving accidental structure; improve an existing
-explanation in place when it is the right owner.
-Existing specs may also contain accidental or stale choices, so recover intent
-deliberately rather than treating either code or every spec sentence as settled.
+### Contributor guidance
 
-### Task routing
+| Work | Guidance |
+| --- | --- |
+| Documentation authoring and maintenance | [Authoring procedure](docs/documentation-authoring.md), using the [documentation principles](docs/documentation-principles.md) as the target |
+| Implementation, testing, and review | Working agreements, runbook commands, safety rules, and verification in §§3–9 below; [development and review workflow](docs/stacked-feature-development-and-review.md) |
+| Hosted application-only release | [Hosted release runbook](docs/ops/hosted-beta-deployment.md), including its agent terminal-driver procedure |
 
-| If you are changing… | Read first | Tests to touch |
-| --- | --- | --- |
-| Session composition / scheduling | `SPECS/study-action-model.md` (scheduling sections), `session-covering-criteria.md` | `session-composition.test.ts`, `session-bucket-scheduler.test.ts` |
-| In-flight session UI / undo | `session-covering-criteria.md`, `SPECS/frontend-architecture-map.md` | `session-selectors.test.ts`, `session-bucket-state.test.ts` |
-| Contrast clusters / content | `study-action-model.md` (contrast sections), `reflection-proposals-and-handles.md` (`create_contrast_cluster`) | `contrast-content.test.ts`, `reflection-application.test.ts` |
-| Word priority / French aliases | `README.md` (French section), `src/study-profile.ts` | `user-priority.test.ts`, `priority-aliases.test.ts` |
-| Persistence / SQL | [`docs/server-db.md`](docs/server-db.md) | matching `tests/*.test.ts` that import `server/db.ts` |
-| HTTP API behavior | Relevant feature contract, [`docs/api.md`](docs/api.md), `server/index.ts` | domain tests above + manual smoke if needed |
-| Reflection generation / evidence | `SPECS/session-reflection-generation.md`, `session-covering-criteria.md`, `docs/reflection-frontend-architecture.md` | `reflection-generation.test.ts`, `reflection-generation-isolation.test.ts`, `session-finalization.test.ts` |
-| Reflection proposals / handles | `SPECS/reflection-proposals-and-handles.md`, `SPECS/session-reflection-generation.md` | `llm-provider-runner.test.ts` plus matching lifecycle/adapter tests |
-| Hosted application-only release | [`docs/ops/hosted-beta-deployment.md`](docs/ops/hosted-beta-deployment.md), agent terminal-driver procedure | No schema/data migration; use authenticated Fly access on the first launch when the sandbox blocks `~/.fly`; retain and poll one terminal session through its terminal exit status; never start a second upgrade while the first has unknown state |
+The release route permits no schema/data migration. Use authenticated Fly
+access on the first launch when the sandbox blocks `~/.fly`; retain and poll
+one terminal session through its terminal exit status; never start a second
+upgrade while the first has unknown state.
 
 ### Environment variables
 
