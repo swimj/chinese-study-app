@@ -45,7 +45,7 @@ test('learning uses curated recognition and frozen target exercise with unchange
     } else {
       assert.equal(item.production, null);
       assert.equal(item.rehearsal?.contract.kind, 'target_rehearsal');
-      assert.equal(item.wordContent, undefined);
+      assert.equal(item.wordContent?.id, fixture.content.id);
       assert.equal(getActivePrompt({ item, word, allMeanings: word.meanings, promptDisplayedMeanings: word.meanings }),
         `${rehearsal.instruction}\n${rehearsal.stimulus.text}`);
       assert.equal(resolveContentExerciseResponse(item.rehearsal!, '通知').outcome, 'rejected');

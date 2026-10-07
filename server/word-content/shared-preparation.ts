@@ -5,13 +5,14 @@ import {
   claimSharedWordIntroductionStage,
   finishSharedWordIntroductionBootstrap, finishSharedWordIntroductionTeaching,
   releaseSharedWordIntroductionStage,
+  getSharedWordIntroductionComponent, saveSharedWordIntroductionComponent,
 } from '../db/word-introductions.ts';
 import {
   claimSharedWordReviewPreparation, finishSharedWordReviewPreparation,
   releaseSharedWordReviewPreparation,
 } from '../db/review-content.ts';
 import { isSharedWordPreparationReady, type WordPreparationStage } from '../db/preparation-work.ts';
-import { normalizeWordContent, normalizeTeachingPackage } from './authoring.ts';
+import { normalizeWordContent, normalizeTeachingBeats, normalizePracticeRehearsals } from './authoring.ts';
 import { normalizeReviewExercises } from './review-authoring.ts';
 import { createWordIntroductionProvider, validateWordProviderOutput, type WordIntroductionProvider } from './provider.ts';
 
@@ -71,14 +72,41 @@ export function createSharedWordPreparation(provider: WordIntroductionProvider =
       }
       const content = getSharedWordIntroductionContent(wordId);
       if (!content) throw new Error('Eligible bootstrap content unavailable');
-      let output: unknown;
-      try { output = await (stage === 'teaching' ? provider.generateTeaching(content, generationOptions) : provider.generateReview(content, generationOptions)); }
-      catch (error) { throw providerFailure(error); }
-      // Validation diagnostics contain only shared model output identities, never learner evidence or provider bodies.
       if (stage === 'teaching') {
-        const teaching = validateWordProviderOutput(invocationId, () => normalizeTeachingPackage(output, content, `word-teaching:${randomUUID()}`));
-        finishSharedWordIntroductionTeaching(wordId, token, teaching, provider.model);
+        const keys = { teaching: await provider.generationKey('teaching'), practice: await provider.generationKey('practice') };
+        async function component(part: 'teaching' | 'practice') {
+          const existing = getSharedWordIntroductionComponent(wordId, token, content!.id, part, keys[part]);
+          if (existing) return existing.payload;
+          let componentInvocation: string | null | undefined;
+          const options = { onInvocation: (id: string | null | undefined) => { componentInvocation = id; } };
+          let output: unknown;
+          try {
+            output = await (part === 'teaching' ? provider.generateTeaching(content!, options) : provider.generatePractice(content!, options));
+          } catch (error) { throw providerFailure(error); }
+          const payload = validateWordProviderOutput(componentInvocation, () => part === 'teaching'
+            ? { beats: normalizeTeachingBeats(output, content!) }
+            : { rehearsals: normalizePracticeRehearsals(output, content!) });
+          saveSharedWordIntroductionComponent(wordId, token, { contentId: content!.id, stage: part,
+            generationKey: keys[part], payload, model: provider.model, invocationId: componentInvocation ?? null });
+          return payload;
+        }
+        // Wait for both so a failed companion never releases the lease before a successful save.
+        const results = await Promise.allSettled([component('teaching'), component('practice')]);
+        const failure = results.find((result) => result.status === 'rejected'
+          && result.reason instanceof WordPreparationProviderError && result.reason.providerWide)
+          ?? results.find((result) => result.status === 'rejected');
+        if (failure?.status === 'rejected') throw failure.reason;
+        const lesson = getSharedWordIntroductionComponent(wordId, token, content.id, 'teaching', keys.teaching)!;
+        const practice = getSharedWordIntroductionComponent(wordId, token, content.id, 'practice', keys.practice)!;
+        // Components were normalized before storage; package parsing/materialization revalidates their assembly.
+        const teaching = { schemaVersion: 1 as const, id: `word-teaching:${randomUUID()}`, wordContentId: content.id,
+          beats: (lesson.payload as { beats: import('../../src/domain/word-content/types.ts').TeachingPackage['beats'] }).beats,
+          rehearsals: (practice.payload as { rehearsals: import('../../src/domain/word-content/types.ts').TeachingPackage['rehearsals'] }).rehearsals };
+        finishSharedWordIntroductionTeaching(wordId, token, teaching, provider.model, keys);
       } else {
+        let output: unknown;
+        try { output = await provider.generateReview(content, generationOptions); }
+        catch (error) { throw providerFailure(error); }
         const batch = randomUUID();
         const exercises = validateWordProviderOutput(invocationId, () => normalizeReviewExercises(output, content, (id) => `word-review:${batch}:${id}`));
         finishSharedWordReviewPreparation(wordId, token, exercises, provider.model);

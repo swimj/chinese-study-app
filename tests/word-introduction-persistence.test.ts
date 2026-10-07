@@ -223,3 +223,65 @@ test('0015 database migrates to 0016 preserving existing shared publications and
     } finally { upgrade.close(); }
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('component drafts survive retries and publish both provenance links atomically', async () => {
+  const shared = await import('../server/db/word-introductions.ts');
+  const wordId = 'component-word';
+  sqlite.prepare(`INSERT INTO lexical_words
+    (id, hanzi, traditional, pinyin, meaning, meanings_json, examples_json, priority, created_at)
+    VALUES (?, '你好', NULL, 'nǐ hǎo', 'hello', '["hello"]', '[]', 10, ?)`)
+    .run(wordId, new Date().toISOString());
+  const source = { ...content, id: 'component-content', word: { ...content.word, wordId } };
+  const claim = (stage: 'bootstrap' | 'teaching', token: string) => shared.claimSharedWordIntroductionStage(
+    wordId, stage, token, new Date().toISOString(), new Date(Date.now() + 60_000).toISOString());
+  assert.equal(claim('bootstrap', 'bootstrap'), 'claimed');
+  shared.finishSharedWordIntroductionBootstrap(wordId, 'bootstrap', source, 'test');
+  assert.equal(claim('teaching', 'first'), 'claimed');
+  const part = { contentId: source.id, stage: 'teaching' as const, generationKey: 'prompt-v1:model',
+    payload: { beats: teaching.beats }, model: 'model', invocationId: 'invocation-1' };
+  shared.saveSharedWordIntroductionComponent(wordId, 'first', part);
+  assert.throws(() => shared.saveSharedWordIntroductionComponent(wordId, 'stale', part), /lease is not active/);
+  assert.throws(() => shared.saveSharedWordIntroductionComponent(wordId, 'first', { ...part, contentId: content.id }), /active prepared content/);
+  assert.throws(() => shared.saveSharedWordIntroductionComponent(wordId, 'first', { ...part, payload: {} }), /different payload/);
+  shared.releaseSharedWordIntroductionStage(wordId, 'first');
+  assert.equal(claim('teaching', 'retry'), 'claimed');
+  assert.deepEqual(shared.getSharedWordIntroductionComponent(wordId, 'retry', source.id, 'teaching', part.generationKey)?.payload, part.payload);
+  assert.equal(shared.getSharedWordIntroductionComponent(wordId, 'retry', source.id, 'teaching', 'prompt-v2:model'), null);
+  assert.equal(shared.getSharedWordIntroductionComponent(wordId, 'retry', source.id, 'practice', part.generationKey), null);
+  const output: TeachingPackage = { ...teaching, id: 'component-package', wordContentId: source.id,
+    rehearsals: teaching.rehearsals.map((item) => ({ ...item,
+      contract: { kind: 'target_rehearsal', wordId },
+      acceptedAnswers: [{ wordId, hanzi: '你好', traditional: null }] })) };
+  const keys = { teaching: part.generationKey, practice: 'practice-v1:model' };
+  assert.throws(() => shared.finishSharedWordIntroductionTeaching(wordId, 'retry', output, 'model', keys), /Both introduction components/);
+  assert.equal(sqlite.prepare('SELECT 1 FROM word_teaching_packages WHERE package_id = ?').get(output.id), undefined);
+  shared.saveSharedWordIntroductionComponent(wordId, 'retry', { ...part, stage: 'practice', generationKey: keys.practice,
+    payload: { rehearsals: output.rehearsals }, invocationId: 'invocation-2' });
+  shared.finishSharedWordIntroductionTeaching(wordId, 'retry', output, 'model', keys);
+  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM word_teaching_package_components WHERE package_id = ?').get(output.id)?.n, 2);
+  assert.throws(() => shared.saveSharedWordIntroductionComponent(wordId, 'retry', part), /lease is not active/);
+});
+
+test('component migration preserves previous-version rows and matches fresh schema', () => {
+  const previousDir = fs.mkdtempSync(path.join(os.tmpdir(), 'component-migration-'));
+  createBaselineFixture(previousDir);
+  const previous = new DatabaseSync(path.join(previousDir, 'app.db'));
+  previous.exec('PRAGMA foreign_keys=ON');
+  previous.function('current_learner_id', () => 'migration-test');
+  try {
+    migrateDatabase(previous, schemaMigrations.slice(0, -1));
+    previous.exec("INSERT INTO lexical_words (id, hanzi, traditional, pinyin, meaning, meanings_json, examples_json, priority, created_at) VALUES ('preserved', '你好', NULL, 'nǐ hǎo', 'hello', '[\"hello\"]', '[]', 10, '2026-10-07T00:00:00.000Z')");
+    const before = previous.prepare('SELECT * FROM lexical_words ORDER BY id').all();
+    assert.deepEqual(migrateDatabase(previous), ['app_schema:0029_introduction_components']);
+    assert.deepEqual(previous.prepare('SELECT * FROM lexical_words ORDER BY id').all(), before);
+    assert.deepEqual(migrateDatabase(previous), []);
+    assertSchemaCurrent(previous);
+    const schema = (database: DatabaseSync) => database.prepare(
+      "SELECT type, name, sql FROM sqlite_schema WHERE name LIKE '%introduction_components%' OR name LIKE '%package_components%' ORDER BY name",
+    ).all();
+    assert.deepEqual(schema(previous), schema(sqlite));
+  } finally {
+    previous.close();
+    fs.rmSync(previousDir, { recursive: true, force: true });
+  }
+});

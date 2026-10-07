@@ -43,6 +43,7 @@ export type ClozeBlank = {
 
 export type ContentStimulus =
   | { readonly kind: 'direct_text'; readonly text: string }
+  | { readonly kind: 'phrase_cloze'; readonly frame: string; readonly text: string }
   | {
     readonly kind: 'example_cloze';
     readonly example: ExampleRef;

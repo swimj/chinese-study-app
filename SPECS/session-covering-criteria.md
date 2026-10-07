@@ -102,7 +102,7 @@ coverage is per direction, not a requirement to complete every authored exercise
 The package and content remain frozen through the session and Undo. Generic
 rehearsal framing is presentation owned by the frontend, separate from the
 persisted base cue and answer contract. The default shows the cue without a
-generic preamble; content-specific instructions, when present, remain visible.
+generic preamble; content-specific instructions, when present, remain visible. Post-introduction new-word recall cards display a seedling/New word badge, and learning recall cards display a repeat-arrow/Practice badge with a subtle accent. Source usage examples and translations are available on production reveal as on recognition reveal; this support does not change coverage or grading.
 
 Only completing both recall streaks covers the word through the existing
 deferred commit and Undo path. Merely opening or completing it in My Words grants

@@ -36,6 +36,8 @@ function fixture() {
   const provider: WordIntroductionProvider = {
     model: 'test', isConfigured: () => true,
     generateBootstrap: async () => { throw new Error('bootstrap must not rerun'); },
+    generationKey: async () => 'test',
+    generatePractice: async () => { throw new Error('practice must not rerun'); },
     generateTeaching: async () => { throw new Error('teaching must not rerun'); },
     generateReview: async (input) => {
       calls += 1; assert.deepEqual(input, content);

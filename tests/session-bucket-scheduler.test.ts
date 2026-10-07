@@ -281,3 +281,22 @@ function createWord(overrides: Partial<Word> & Pick<Word, 'id' | 'status'>): Wor
     lastLearningCoveredOn: overrides.lastLearningCoveredOn ?? null,
   };
 }
+
+
+test('both Practice recall directions retain pinned source content for reveal', async () => {
+  const { wordContentFixtures } = await import('./fixtures/word-content.ts');
+  const { content } = wordContentFixtures[0]!;
+  const { createBucketSessionScheduler, getBucketSchedulerActiveUnit } = await loadBucketSchedulerApi();
+  const word = createWord({ id: content.word.wordId, hanzi: content.word.hanzi, traditional: content.word.traditional, status: 'learning' });
+  const seen = new Set<string>();
+  for (let seed=1; seed<=32; seed++) {
+    const scheduler = createBucketSessionScheduler({ buckets: { review: [], learning: [word], unstudied: [], learningContent: { [word.id]: content } }, seed });
+    const active = getBucketSchedulerActiveUnit(scheduler);
+    assert.equal(active.type, 'study');
+    if (active.type !== 'study' || 'itemType' in active.item) throw new Error('Expected word recall');
+    seen.add(active.item.actionKind);
+    assert.deepEqual(active.item.wordContent, content);
+    assert.notEqual(active.item.wordContent, content, 'session freezes its own content snapshot');
+  }
+  assert.deepEqual([...seen].sort(), ['production','recognition']);
+});

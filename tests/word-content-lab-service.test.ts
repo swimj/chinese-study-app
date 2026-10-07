@@ -49,7 +49,8 @@ function provider(overrides: Partial<IntroductionLabProvider> = {}): Introductio
     model: 'test-model',
     isConfigured: () => true,
     generateBootstrap: async () => bootstrapWire(),
-    generateTeaching: async () => teachingWire(),
+    generateTeaching: async () => ({ beats: teachingWire().beats }),
+    generatePractice: async () => ({ rehearsals: teachingWire().rehearsals }),
     generateReview: async () => { throw new Error('The introduction lab does not generate review cues.'); },
     ...overrides,
   };
@@ -94,8 +95,7 @@ test('invalid provider output or references never archive a partial generation',
   assert.deepEqual(await lab.listDrafts(), []);
 
   const { lab: teachingLab } = await service(provider({
-    generateTeaching: async () => ({
-      ...teachingWire(),
+    generatePractice: async () => ({
       rehearsals: [{ id: 'bad',
         stimulus: { kind: 'example_cloze', exampleId: 'visit', occurrenceIndexes: [2], frame: null } }],
     }),
@@ -155,8 +155,7 @@ test('generated rehearsal cannot reveal its answer in instructions or unhidden o
     { kind: 'direct_text', text: 'Type 報備.' },
     { kind: 'example_cloze', exampleId: 'visit', occurrenceIndexes: [1], frame: null },
   ]) {
-    const { lab } = await service(provider({ generateTeaching: async () => ({
-      ...teachingWire(), rehearsals: [{ id: 'leak', stimulus }],
+    const { lab } = await service(provider({ generatePractice: async () => ({ rehearsals: [{ id: 'leak', stimulus }],
     }) }));
     const content = await lab.bootstrap(lexical);
     await assert.rejects(lab.generateTeaching(content.id), (error) => (
@@ -164,8 +163,8 @@ test('generated rehearsal cannot reveal its answer in instructions or unhidden o
     ));
     assert.equal((await lab.listDrafts()).length, 1);
   }
-  const { lab } = await service(provider({ generateTeaching: async () => ({
-    ...teachingWire(), rehearsals: [{ ...teachingWire().rehearsals[0], instruction: 'Recall 报备.' }],
+  const { lab } = await service(provider({ generatePractice: async () => ({
+    rehearsals: [{ ...teachingWire().rehearsals[0], instruction: 'Recall 报备.' }],
   }) }));
   const content = await lab.bootstrap(lexical);
   await assert.rejects(lab.generateTeaching(content.id), (error) => (
@@ -176,11 +175,48 @@ test('generated rehearsal cannot reveal its answer in instructions or unhidden o
 
 test('direct-text rehearsal saves its base cue without generic instructions', async () => {
   const stimulus = { kind: 'direct_text', text: 'Let the responsible person know about your visit ahead of time.' };
-  const { lab } = await service(provider({ generateTeaching: async () => ({
-    ...teachingWire(), rehearsals: [{ id: 'direct', stimulus }],
+  const { lab } = await service(provider({ generatePractice: async () => ({
+    rehearsals: [{ id: 'direct', stimulus }],
   }) }));
   const first = await lab.bootstrap(lexical);
   const generated = await lab.generateTeaching(first.id);
   assert.equal(generated.teaching!.rehearsals[0].instruction, '');
   assert.deepEqual(generated.teaching!.rehearsals[0].stimulus, stimulus);
+});
+
+test('lab assembles independently generated teaching and authored practice from the same content', async () => {
+  const seen: WordContentDocument[] = [];
+  const { lab } = await service(provider({
+    generateTeaching: async (content) => { seen.push(content); return { beats: teachingWire().beats }; },
+    generatePractice: async (content) => {
+      seen.push(content);
+      return { rehearsals: [{ id: 'phrase', stimulus: {
+        kind: 'phrase_cloze', frame: 'Give advance notice.', text: '来之前先____。',
+      } }] };
+    },
+  }));
+  const first = await lab.bootstrap(lexical);
+  const generated = await lab.generateTeaching(first.id);
+  assert.equal(seen.length, 2);
+  assert.equal(seen[0], seen[1]);
+  assert.equal(generated.teaching!.rehearsals[0].stimulus.kind, 'phrase_cloze');
+  assert.deepEqual((await lab.listDrafts()).find((draft) => draft.id === generated.id), generated);
+});
+
+test('lab reports the failing generation stage and never publishes an incomplete package', async () => {
+  let practiceCalls = 0;
+  const { lab } = await service(provider({
+    generateTeaching: async () => ({ beats: [] }),
+    generatePractice: async () => { practiceCalls += 1; return { rehearsals: [] }; },
+  }));
+  const first = await lab.bootstrap(lexical);
+  await assert.rejects(lab.generateTeaching(first.id), /Teaching output failed validation/);
+  assert.equal(practiceCalls, 0);
+  assert.equal((await lab.listDrafts()).length, 1);
+  const { lab: failingPractice } = await service(provider({
+    generatePractice: async () => { throw new Error('Unavailable'); },
+  }));
+  const second = await failingPractice.bootstrap(lexical);
+  await assert.rejects(failingPractice.generateTeaching(second.id), /Practice provider request failed/);
+  assert.equal((await failingPractice.listDrafts()).length, 1);
 });

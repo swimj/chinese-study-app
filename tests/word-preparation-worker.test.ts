@@ -47,8 +47,9 @@ function fake(overrides: Partial<WordIntroductionProvider> = {}): WordIntroducti
   return {
     model: 'test', isConfigured: () => true,
     generateBootstrap: async () => ({ uses: fixture.content.uses, examples: fixture.content.examples }),
-    generateTeaching: async () => ({ beats: fixture.teaching.beats,
-      rehearsals: [{ id: 'rehearsal', stimulus: { kind: 'direct_text', text: 'Recall the expression.' } }] }),
+    generationKey: async (stage) => `test-${stage}-v1`,
+    generateTeaching: async () => ({ beats: fixture.teaching.beats }),
+    generatePractice: async () => ({ rehearsals: [{ id: 'rehearsal', stimulus: { kind: 'direct_text', text: 'Recall the expression.' } }] }),
     generateReview: async () => ({ exercises: [{ id: 'cue', cueType: 'circumstance',
       stimulus: { kind: 'direct_text', text: 'Tell a colleague formally that their request has been recorded.' }, supplement: null }] }),
     ...overrides,
@@ -287,4 +288,45 @@ test('unattributed historical demand waits for a real requester', async () => {
   await worker.drain();
   assert.equal(calls, 1);
   await worker.stop();
+});
+
+for (const failing of ['teaching', 'practice'] as const) {
+  test(`retains successful companion across ${failing} failure and fresh worker retry`, async () => {
+    const id = `component-retry-${failing}`; word(id);
+    let clock = Date.now(); let fail = true;
+    const calls = { teaching: 0, practice: 0 };
+    const base = fake();
+    const provider = fake({
+      generateTeaching: async (input) => { calls.teaching++; if (fail && failing === 'teaching') throw new Error('temporary'); return base.generateTeaching(input); },
+      generatePractice: async (input) => { calls.practice++; if (fail && failing === 'practice') throw new Error('temporary'); return base.generatePractice(input); },
+    });
+    const first = createWordPreparationWorker({ controls, providerWork, provider, now: () => clock });
+    enqueueWordPreparation(id, 'teaching', new Date(clock).toISOString());
+    await first.drain(); await first.stop();
+    assert.equal(getSharedWordIntroductionPreparation(id)?.packageId, null);
+    assert.deepEqual(calls, { teaching: 1, practice: 1 });
+    fail = false; clock += 120_000;
+    const second = createWordPreparationWorker({ controls, providerWork, provider, now: () => clock });
+    await second.drain(); await second.stop();
+    assert.equal(getWordPreparationWork(id, 'teaching')?.status, 'ready');
+    assert.deepEqual(calls, failing === 'teaching' ? { teaching: 2, practice: 1 } : { teaching: 1, practice: 2 });
+    assert.ok(getSharedWordIntroductionPreparation(id)?.packageId);
+  });
+}
+
+
+test('a companion provider outage takes precedence over a teaching validation error', async () => {
+  word('dual-failure');
+  const { WordPreparationProviderError } = await import('../server/word-content/shared-preparation.ts');
+  const { ProviderHttpError } = await import('../server/llm/types.ts');
+  const prep = createSharedWordPreparation(fake({
+    generateTeaching: async () => ({ beats: [] }),
+    generatePractice: async () => { throw new ProviderHttpError('test', 429, 'rate limited', new Headers()); },
+  }));
+  const now = new Date(); const expiry = new Date(Date.now() + 300_000).toISOString();
+  prep.claim('dual-failure','bootstrap','b',now.toISOString(),expiry);
+  await prep.generate('dual-failure','bootstrap','b');
+  prep.claim('dual-failure','teaching','t',now.toISOString(),expiry);
+  await assert.rejects(prep.generate('dual-failure','teaching','t'), error => error instanceof WordPreparationProviderError && error.providerWide);
+  prep.release('dual-failure','teaching','t');
 });

@@ -138,6 +138,17 @@ function stimulus(value: unknown, path: string): ContentStimulus {
     const direct = object(value, path, ['kind', 'text']);
     return { kind: 'direct_text', text: string(direct.text, `${path}.text`) };
   }
+  if (kind(value, path) === 'phrase_cloze') {
+    const cloze = object(value, path, ['kind', 'frame', 'text']);
+    const text = string(cloze.text, `${path}.text`);
+    if (text.match(/_+/g)?.join('|') !== '____') {
+      fail(`${path}.text`, 'expected exactly one ____ blank');
+    }
+    if (text.replace('____', '').trim().length === 0) {
+      fail(`${path}.text`, 'expected surrounding phrase text');
+    }
+    return { kind: 'phrase_cloze', frame: string(cloze.frame, `${path}.frame`), text };
+  }
   if (kind(value, path) === 'example_cloze') {
     const cloze = object(value, path, ['kind', 'example', 'blanks', 'frame']);
     const blanks = array(cloze.blanks, `${path}.blanks`, parseBlank, 1);
@@ -198,6 +209,13 @@ function exercise(value: unknown, path: string): ContentExercise {
     && (result.acceptedAnswers.length !== 1 || result.acceptedAnswers[0].wordId !== intent.wordId)) {
     fail(`${path}.acceptedAnswers`, 'target contract must accept exactly its owner');
   }
+  if (result.stimulus.kind === 'phrase_cloze') {
+    const visible = `${result.instruction}\n${result.stimulus.frame}\n${result.stimulus.text}`;
+    if (result.acceptedAnswers.some((entry) => [entry.hanzi, entry.traditional]
+      .some((form) => form !== null && visible.includes(form)))) {
+      fail(`${path}.stimulus`, 'phrase cloze exposes an accepted answer');
+    }
+  }
   if (result.stimulus.kind === 'example_cloze') {
     const forms = new Set(result.acceptedAnswers.flatMap((entry) => [entry.hanzi, entry.traditional]));
     for (const blank of result.stimulus.blanks) {
@@ -244,16 +262,22 @@ function part(value: unknown, path: string): TeachingPart {
   }
 }
 
+export function parseTeachingBeats(value: unknown): TeachingPackage['beats'] {
+  const beats = array(value, '$.beats', (value, path) => {
+    const beat = object(value, path, ['id', 'parts']);
+    return { id: string(beat.id, `${path}.id`), parts: array(beat.parts, `${path}.parts`, part, 1) };
+  }, 1);
+  assertUniqueIds(beats.map((beat) => beat.id), '$.beats');
+  return freezeContent(beats);
+}
+
 export function parseTeachingPackage(value: unknown): TeachingPackage {
   const root = object(value, '$', ['schemaVersion', 'id', 'wordContentId', 'beats', 'rehearsals']);
   const result: TeachingPackage = {
     schemaVersion: literal(root.schemaVersion, 1, '$.schemaVersion'),
     id: string(root.id, '$.id'),
     wordContentId: string(root.wordContentId, '$.wordContentId'),
-    beats: array(root.beats, '$.beats', (value, path) => {
-      const beat = object(value, path, ['id', 'parts']);
-      return { id: string(beat.id, `${path}.id`), parts: array(beat.parts, `${path}.parts`, part, 1) };
-    }, 1),
+    beats: parseTeachingBeats(root.beats),
     rehearsals: array(root.rehearsals, '$.rehearsals', exercise, 1),
   };
   assertUniqueIds(result.beats.map((beat) => beat.id), '$.beats');

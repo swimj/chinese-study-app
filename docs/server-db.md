@@ -385,3 +385,7 @@ its domain normalizers. A late same-learner validation update changes only
 `completed` to `invalid_response`, retaining measured latency and spend. Unrelated
 persistence, lease, or publication failures do not mislabel a valid model response.
 This is an offline schema migration, with no provider calls or history reclassification.
+
+## Independent introduction components
+
+`word_introduction_components` retains validated teaching and practice outputs across failed companion calls, keyed by exact bootstrap content, component stage, and generation key. Writes require the current teaching lease. `word_teaching_package_components` links the published immutable package to each component and its model/invocation provenance. Package readiness is still atomic; existing packages need no regeneration. Migration `0029_introduction_components` adds these tables and requires the offline schema-migration release procedure.

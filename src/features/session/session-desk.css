@@ -95,3 +95,11 @@
 @keyframes debrief-breathe { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
 @media (max-width: 520px) { .debrief-note { font-size: 1rem; } .recent-session-entry { padding: 1rem; align-items: flex-start; } .recent-session-status { text-align: right; } .session-desk .debrief-actions { gap: .5rem; } }
 .home-session-active .home-grid > .session-debrief-panel:first-child { display: grid; }
+
+.study-stage-badge { display: inline-flex; align-items: center; gap: .4rem; vertical-align: middle; }
+.study-stage-icon { width: 1.1em; height: 1.1em; flex: none; }
+.session-desk .is-practice-card .review-card-header .badge,
+.session-desk .is-new-word-card .review-card-header .badge { color: var(--accent); }
+.session-desk .is-practice-card > .session-card-scroll,
+.session-desk .is-new-word-card > .session-card-scroll { box-shadow: inset 0 3px 0 color-mix(in srgb, var(--accent) 40%, transparent); }
+.word-source-examples p { overflow-wrap: anywhere; }

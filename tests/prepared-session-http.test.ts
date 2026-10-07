@@ -27,8 +27,9 @@ test('session entry hydrates lessons; open and complete stay model-free and defe
   const worker = createWordPreparationWorker({ provider: {
     model: 'fake', isConfigured: () => true,
     async generateBootstrap() { calls++; return { uses: fixture.content.uses, examples: fixture.content.examples }; },
-    async generateTeaching() { calls++; return { beats: fixture.teaching.beats,
-      rehearsals: [{ id: 'rehearse', stimulus: { kind: 'direct_text', text: 'Recall this expression.' } }] }; },
+    generationKey: async stage => `fake-${stage}`,
+    async generateTeaching() { calls++; return { beats: fixture.teaching.beats }; },
+    async generatePractice() { calls++; return { rehearsals: [{ id: 'rehearse', stimulus: { kind: 'direct_text', text: 'Recall this expression.' } }] }; },
     async generateReview() { throw new Error('Review must wait for durable study'); },
   } });
   const app = createApp({ frontendDistPath: null, wakeWordPreparation: worker.wake, canPrepareWords: () => true });
@@ -47,18 +48,18 @@ test('session entry hydrates lessons; open and complete stay model-free and defe
     assert.equal(payload.preparation.pending, false);
     const introduction = payload.buckets.introductions[id];
     assert.ok(introduction.selectedPackageId);
-    assert.equal(calls, 2);
+    assert.equal(calls, 3);
     assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM learner_word_introduction_events').get()!.n, 0);
     for (const action of ['open', 'complete']) {
       const result = await post(`/api/words/${id}/introduction/${action}`, { packageId: introduction.selectedPackageId });
       assert.equal(result.status, 200);
     }
-    assert.equal(calls, 2);
+    assert.equal(calls, 3);
     assert.equal(getWordPreparationWork(id, 'review'), null);
     assert.equal(sql.prepare('SELECT status FROM words WHERE id = ?').get(id)!.status, 'unstudied');
     const again = await post('/api/session-payload', { studyDayKey: '2026-10-01' });
     assert.equal((await again.json()).buckets.introductions[id].selectedPackageId, introduction.selectedPackageId);
-    assert.equal(calls, 2);
+    assert.equal(calls, 3);
     await worker.stop();
     db.completeUnstudiedWordSession(id, '2026-10-01');
     assert.equal(getWordPreparationWork(id, 'review')?.status, 'queued');

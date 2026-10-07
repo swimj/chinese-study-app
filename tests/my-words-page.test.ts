@@ -63,18 +63,18 @@ test('stage chips sit beside Recent lapses; Recently studied disables unstudied 
   const personal = render({});
   assert.match(personal, /aria-label="Word stage"/);
   assert.match(personal, />Not yet studied</);
-  assert.match(personal, />Learning</);
+  assert.match(personal, />Practice</);
   assert.match(personal, />In review</);
   assert.match(personal, />Recent lapses</);
   assert.match(personal, /aria-pressed="false"[^>]*>Not yet studied</);
-  assert.match(personal, /aria-pressed="false"[^>]*>Learning</);
+  assert.match(personal, /aria-pressed="false"[^>]*>Practice</);
   assert.match(personal, /aria-pressed="false"[^>]*>In review</);
   assert.doesNotMatch(personal, /disabled=""[^>]*>Not yet studied</);
   const recent = render({ view: 'recent' });
   assert.match(recent, /disabled=""[^>]*>Not yet studied</);
   assert.doesNotMatch(recent, /disabled=""[^>]*>Recent lapses</);
   assert.match(render({ recentLapses: true }), /aria-pressed="true"[^>]*>Recent lapses</);
-  assert.match(render({ statuses: ['learning'] }), /aria-pressed="true"[^>]*>Learning</);
+  assert.match(render({ statuses: ['learning'] }), /aria-pressed="true"[^>]*>Practice</);
 });
 
 test('current deck is available only with placement and includes unseen words in its detail', () => {

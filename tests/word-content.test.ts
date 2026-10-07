@@ -170,3 +170,27 @@ test('review matching retains the frozen study profile without adding a new matc
   const snapshot = materializeExercise(french, [], 'french');
   assert.equal(resolveContentExerciseResponse(snapshot, 'ETUDIER').outcome, 'accepted');
 });
+
+test('authored phrase clozes survive snapshots and answer matching without a source example', () => {
+  const exercise: ContentExercise = { ...rehearsal(), instruction: '', stimulus: {
+    kind: 'phrase_cloze', frame: 'Give advance notice of the visit.', text: '来之前先____。',
+  } };
+  const snapshot = materializeExercise(JSON.parse(JSON.stringify(exercise)), []);
+  assert.equal(snapshot.stimulus.text, 'Give advance notice of the visit.\n来之前先____。');
+  assert.equal(snapshot.stimulus.source.kind, 'phrase_cloze');
+  assert.equal(resolveContentExerciseResponse(snapshot, '報備').outcome, 'accepted');
+  assert.equal(resolveContentExerciseResponse(snapshot, '通知').outcome, 'rejected');
+  assert.ok(Object.isFrozen(snapshot.stimulus.source));
+  const pkg = materializeTeachingPackage({ ...teaching(), rehearsals: [exercise] }, [content()]);
+  assert.deepEqual(pkg.rehearsals[0], snapshot);
+});
+
+test('phrase clozes reject malformed blanks, missing frames, and exposed simplified or traditional answers', () => {
+  const valid = { kind: 'phrase_cloze', frame: 'Give advance notice.', text: '先____。' };
+  for (const stimulus of [
+    { ...valid, text: '先通知。' }, { ...valid, text: '____以后再____。' },
+    { ...valid, text: '先_____。' }, { ...valid, text: '____' },
+    { ...valid, frame: '' }, { ...valid, frame: null },
+    { ...valid, frame: 'Use 報備.' }, { ...valid, text: '报备以后再____。' },
+  ]) assert.throws(() => parseContentExercise({ ...rehearsal(), stimulus }));
+});

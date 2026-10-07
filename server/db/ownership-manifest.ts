@@ -86,6 +86,8 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
   sharedEntry('lexical_word_meanings', 'shared lexical meaning', 'copy legacy meaning content once'),
   sharedEntry('word_content_documents', 'shared immutable word introduction content', 'new immutable generated content'),
   sharedEntry('word_teaching_packages', 'shared immutable teaching package', 'new pinned generated package'),
+  operationalEntry('word_introduction_components', 'validated teaching and practice components retained across companion failures'),
+  sharedEntry('word_teaching_package_components', 'immutable package generation provenance', 'atomic teaching package publication'),
   operationalEntry('word_introduction_preparation', 'shared per-word generation stage and recoverable lease'),
   scopedContentEntry('scoped_review_content_records', 'immutable review source version', 'new structured authoring source'),
   operationalEntry('word_review_preparation', 'shared per-word first-review generation claim'),
