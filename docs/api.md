@@ -174,9 +174,24 @@ The operator surface has Usage, Model invocations, Content quality, and Preparat
 failures tabs. The invocation endpoint uses the same operator allowlist and returns
 `{ rows }`: timestamp, provider/model identifier, invocation type, learner identity
 and display name, `latencyMs`, status, USD spend, and its reported/estimated/unknown
-basis. Dates are validated; rows cover the full selected range without silent
-truncation. The frontend supports sorting, grouping by day/model/type/user, and
-count/spend aggregates. Unknown costs remain unknown and are counted separately.
+basis. Optional dates are validated; omitting them returns the full ledger without
+silent truncation. Unknown costs remain unknown and are counted separately.
+
+The ledger table's column headers expose sorting, grouping, and type-specific
+filters: inclusive UTC dates, numeric ranges, and discrete multi-select values
+with All/None controls. The initial timestamp filter selects the last seven UTC
+calendar days including today. Filters combine across columns and remain available
+when rows are grouped. Optional light-red shading identifies failed, timed-out,
+and invalid-response calls.
+
+The summary table compares Today, Last 7 days (including today), and Current
+selection using invocation count, known USD spend, and unknown-spend count. Fixed
+periods ignore table filters; Current selection includes every matching row. The
+frontend loads the full accounting dataset for exact summaries and filter options,
+then progressively reveals rows as the table is scrolled, with a Load more button
+for keyboard access. Rendering fewer rows does not change aggregates. Refresh
+reloads the accounting snapshot; this bounded beta implementation does not use
+server-side pagination.
 
 The ledger records actual production transport attempts from this release onward,
 including failed attempts. Latency covers the provider request through response

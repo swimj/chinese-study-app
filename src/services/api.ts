@@ -529,8 +529,10 @@ export async function fetchStatus(): Promise<BackendStatus> {
   return response.json();
 }
 
-export async function fetchModelInvocations(from: string, to: string): Promise<{ rows: ModelInvocationRow[] }> {
-  const params = new URLSearchParams({ from, to });
+export async function fetchModelInvocations(from?: string, to?: string): Promise<{ rows: ModelInvocationRow[] }> {
+  const params = new URLSearchParams();
+  if (from !== undefined) params.set('from', from);
+  if (to !== undefined) params.set('to', to);
   const response = await apiFetch(`${API_BASE}/api/operator/model-invocations?${params}`);
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to load model invocations'));
