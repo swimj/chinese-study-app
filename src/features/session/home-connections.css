@@ -37,8 +37,21 @@
 .home-connections-neighbor:focus-visible { z-index: 3; }
 .home-connections-turn { display: none; }
 .home-connections-loop { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-.home-connections-loop rect { fill: none; stroke: var(--accent); stroke-width: 5px; stroke-linecap: round; stroke-dasharray: .01 99.99; animation: home-connection-loop 1400ms ease-in-out both; }
-@keyframes home-connection-loop { 0% { stroke-dashoffset: 0; opacity: 0; } 8% { opacity: 1; } 92% { opacity: 1; } 100% { stroke-dashoffset: -100; opacity: 0; } }
+.home-connections-loop rect { fill: none; stroke: var(--accent); stroke-linecap: round; }
+.home-connections-loop-border { stroke-width: 2px; stroke-dasharray: 100; animation: home-connection-loop-border 2200ms ease-in-out both; }
+.home-connections-loop-dot { stroke-width: 5px; stroke-dasharray: .01 99.99; animation: home-connection-loop-dot 2200ms ease-in-out both; }
+@keyframes home-connection-loop-border {
+  0% { stroke-dashoffset: 100; opacity: 1; stroke-width: 2px; }
+  64% { stroke-dashoffset: 0; opacity: 1; stroke-width: 2px; }
+  80% { stroke-dashoffset: 0; opacity: 1; stroke-width: 5px; }
+  92% { stroke-dashoffset: 0; opacity: 1; stroke-width: 2px; }
+  100% { stroke-dashoffset: 0; opacity: 0; stroke-width: 2px; }
+}
+@keyframes home-connection-loop-dot {
+  0% { stroke-dashoffset: 0; opacity: 1; }
+  64% { stroke-dashoffset: -100; opacity: 1; }
+  65%, 100% { stroke-dashoffset: -100; opacity: 0; }
+}
 .home-connections-preview { display: block; width: 100%; background: var(--surface); color: var(--text); border: 1px solid var(--border); text-align: left; padding: 1.25rem 1.5rem; margin-top: 1rem; }
 .home-connections-preview:hover { background: var(--surface-hover); }
 .home-connections-preview > span { display: block; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1rem; line-height: 1.8; }
@@ -76,6 +89,7 @@
   .home-connections-astral b:nth-of-type(2) { transform: translate(35px, -50px); }
   .home-connections-astral b:nth-of-type(3) { transform: translate(45px, 40px); }
   .home-connections-neighbor { transition: none; }
-  .home-connections-loop rect { stroke-dasharray: none; stroke-width: 2px; animation: home-connection-loop-still 900ms linear both; }
+  .home-connections-loop-border { stroke-dasharray: none; stroke-width: 2px; animation: home-connection-loop-still 900ms linear both; }
+  .home-connections-loop-dot { display: none; animation: none; }
 }
 @keyframes home-connection-loop-still { 0%, 90% { opacity: 1; } 100% { opacity: 0; } }

@@ -104,7 +104,9 @@ ring on click and offer hover feedback, without visible arrows. There is no
 separate pagination bar, visible position counter,
 or session date/exercise metadata in this Home surface. Position remains available
 to assistive technology. Moving forward from the final note to the first briefly
-traces a green dot around the main card; reduced motion uses a still border cue.
+traces a green dot around the main card, leaving a green border behind it. Once
+the outline is complete, it pulses once and returns to the base border. Reduced
+motion uses a still border cue without tracing or pulsing.
 Neighbor previews and the compact preview are literal excerpts, not generated
 titles or new relationships. The left navigation stays in place. Start session,
 and settings remain available above the expanded connections. Study metrics are

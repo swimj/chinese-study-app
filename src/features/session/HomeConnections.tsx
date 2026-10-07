@@ -72,8 +72,11 @@ export function HomeConnections({ debrief, expanded, error, retrying, onToggle, 
             <span className="home-connections-sr-only">Connection {activeIndex + 1} of {notes.length}.</span>
             <p className="home-connections-prose">{notes[activeIndex].text}</p>
             </div>
-            {loop !== null ? <svg key={loop} className="home-connections-loop" aria-hidden="true"
-              onAnimationEnd={() => setLoop(null)}><rect width="100%" height="100%" rx="12" pathLength="100" /></svg> : null}
+            {loop !== null ? <svg key={loop} className="home-connections-loop" aria-hidden="true">
+              <rect className="home-connections-loop-border" width="100%" height="100%" rx="12" pathLength="100"
+                onAnimationEnd={() => setLoop(null)} />
+              <rect className="home-connections-loop-dot" width="100%" height="100%" rx="12" pathLength="100" />
+            </svg> : null}
           </article>
         </div>
       </> : <button type="button" className="home-connections-preview" ref={previewRef} onClick={toggle}
