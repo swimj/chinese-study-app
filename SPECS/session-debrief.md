@@ -111,8 +111,8 @@ completed session. Minimizing while generation is pending holds through polling
 and in-app navigation for that visit. On a later page reload, ready notes are
 introduced again unless the learner has already explicitly reopened that batch,
 even while pending. Once introduced, subsequent presentation choices persist
-until another completed session. Empty results leave the ordinary Home overview
-available; pending and failed results remain accessible, with explicit recovery
+until another completed session. Empty results show the ordinary Home overview
+without a connections section; pending and failed results remain accessible, with explicit recovery
 from generation failures or read errors.
 
 Home presents connections rather than reopening the post-session summary.

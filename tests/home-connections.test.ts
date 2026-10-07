@@ -91,13 +91,18 @@ test('compact preview always uses the first note and a count, with bounded text'
   assert.doesNotMatch(html, /Exact paragraph 2|字{241}|home-connections-ring/);
 });
 
-test('pending, failure, empty and stale read errors retain correct recovery actions', () => {
+test('empty completed results render no connections section', () => {
+  for (const expanded of [false, true]) {
+    assert.equal(render({ ...ready, notes: [] }, expanded), '');
+  }
+});
+
+test('pending, failure and stale read errors retain correct recovery actions', () => {
   assert.match(render(pending), /home-connections-astral/);
   assert.doesNotMatch(render(pending, false), /home-connections-astral/);
   assert.match(render(pending, false), /class="home-connections-preview"/);
   assert.match(render({ ...pending, status: 'failed' }, false), /Open connections to try again/);
   assert.match(render({ ...pending, status: 'failed' }), /Try again/);
-  assert.match(render({ ...ready, notes: [] }, false), /Nothing extra to add/);
   const stale = render(ready, true, 'Offline');
   assert.match(stale, /Exact paragraph 1/);
   assert.match(stale, /Try loading again/);
