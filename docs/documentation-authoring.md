@@ -28,7 +28,7 @@ account of how current decisions, task plans, and useful history relate.
 
 Write the desired state directly: what each document explains, what the
 system promises, how a procedure works, or what a reader should do. Use negative
-boundaries when they rule out a consequential, plausible misunderstanding.
+boundaries only when they rule out a consequential, plausible misunderstanding.
 For instance, "Do not rewrite a product promise solely to match the current
 code" protects the distinction between intent and implementation.
 
@@ -41,7 +41,7 @@ apply it consistently to related text within the task's scope.
 Use named documents, sections, people, or components as sentence subjects.
 "The feature contract defines the retry guarantee" assigns a clear job.
 "The retry implementation guide explains the current state machine" makes a
-different job equally clear. In project context, refer to Steward by name.
+different job equally clear.
 
 Define important entities and relationships before listing files or exceptions.
 Explain causes, tradeoffs, and useful examples. When presenting a hierarchy,

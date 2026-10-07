@@ -2,6 +2,10 @@
 
 Guidance for AI coding agents working in this repository.
 
+**Status (2026-10-07):** Most of this guidance is established, but the file has
+accumulated ad hoc. Some areas may be inconsistent or underspecified, and the
+document remains a work in progress.
+
 ## 1) Project Snapshot
 
 - App type: Mandarin study app used through an invite-only hosted beta; contributor development and tests are separate from learner use.
