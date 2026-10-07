@@ -326,7 +326,7 @@ export type PriorityWordRow = WordRow & {
   overlay_updated_at: string | null;
 };
 
-export const DEFAULT_DAILY_NEW_WORD_LIMIT = 10;
+export const DEFAULT_DAILY_NEW_WORD_LIMIT = 5;
 export const INITIAL_REVIEW_EASE_FACTOR = 2.5;
 export const INITIAL_CONTEXTUAL_SELECTION_INTERVAL_HOURS = 6;
 export const PRIORITY_TIER_TOP = 1;

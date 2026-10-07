@@ -261,11 +261,17 @@ seed application, rather than rewriting persisted eligibility at every restart.
 
 The `learner_settings` row keyed by `(learner_id, daily_new_word_limit)` stores
 the learner's configured non-negative integer limit as JSON. A missing row
-reads as the current default of `10`. The row keyed by
+reads as the current default of `5`; stored limits are preserved. The row keyed by
 `(learner_id, unstudied_admission_source)` stores `"mixed"` or `"stash_only"`;
 a missing row reads as `"mixed"`. These settings are independent of
 `daily_new_word_intake.new_study_count`, the per-UTC-day counter incremented
 only when an unstudied word is completed.
+
+The `diet_profile` setting stores deck weights and provenance. When absent,
+the effective profile starts on the first HSK 2.0 Level 6 deck (`hsk2-l6-s1`).
+Existing profiles and historical intake evidence remain readable; the retired
+placement survey no longer writes new intake evidence. These default changes
+require no migration and do not rewrite existing settings or study history.
 
 Character display preferences also use `learner_settings`: `character_presentation`
 stores `"simplified"`, `"traditional"`, or `"both"`; `sentence_character_presentation`

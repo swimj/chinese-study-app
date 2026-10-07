@@ -5961,6 +5961,7 @@ function getDailyNewWordLimit(): number {
     .get(requireLearnerId()) as { value_json: string } | undefined;
 
   if (!row) {
+    // Existing saved limits remain authoritative; only unset learners use the default.
     return DEFAULT_DAILY_NEW_WORD_LIMIT;
   }
 

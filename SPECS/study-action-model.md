@@ -663,7 +663,7 @@ frequency-ranked fill applies unchanged.
 
 - The learner's **diet profile** (a versioned JSON value in
   `learner_settings` under `diet_profile`) holds per-deck weights; when
-  unset it defaults to 100% on the first deck by manifest order. Deck
+  unset it defaults to 100% on the first HSK 2.0 Level 6 deck (`hsk2-l6-s1`). Deck
   membership comes from the manifest's word→deck assignments; words absent
   from assignments belong to the `beyond-hsk` tail.
 - Diet demand is `remaining quota − stash contribution before readiness`, so stash
@@ -678,7 +678,8 @@ frequency-ranked fill applies unchanged.
 - **Tail:** the `beyond-hsk` expanse has no manifest membership; anything
   still needed after deck spill keeps the legacy corpus-priority order
   (`words.priority` descending, then `created_at`, then `id`).
-- Nudges, placement intake, and operator jumps own the profile writes; see
+- Learner nudges and operator jumps own the profile writes; the placement
+  intake survey is retired and existing profiles are preserved. See
   [diet-deck-distribution.md](./diet-deck-distribution.md).
 
 The composed unstudied admitted set is:
@@ -705,8 +706,9 @@ enter via this bypass.
 
 ### Mandarin preparation readiness
 
-The configured daily new-word limit is an integer from 0 through 20; migration
-clamps existing larger values to 20. The Mandarin reserve targets twice that
+The configured daily new-word limit is an integer from 0 through 20, defaulting
+to 5 when unset. Stored limits are preserved; the earlier cap migration clamps
+existing larger values to 20. The Mandarin reserve targets twice that
 configured limit, independent of how much of today's intake has been consumed.
 Reserve membership is stable across visits, follows the selection policy above,
 and counts queued as well as ready candidates toward its bound.

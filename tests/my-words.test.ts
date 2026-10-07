@@ -224,13 +224,13 @@ describe('My words collections', { concurrency: false }, () => {
     db.updateWordUserPriority('personal', { bumpDelta: 1 });
     db.dismissWordFromStudy('dismissed');
     place({ 'hsk2-l1': 1 });
-    const before = db.snapshotStoredDietProfile();
+    const before = db.getStoredDietProfile();
     const result = db.getMyWords({ view: 'deck' });
     assert.equal(result.currentDeck?.label, 'HSK 1');
     assert.deepEqual(new Set(result.words.map((entry) => entry.word.id)), new Set(['unseen', 'personal', 'studied', 'normalized']));
     assert.equal(result.words.find((entry) => entry.word.id === 'unseen')?.word.status, 'unstudied');
     assert.equal(result.total, 4);
-    assert.equal(db.snapshotStoredDietProfile(), before);
+    assert.deepEqual(db.getStoredDietProfile(), before);
     assert.equal(db.getMyWords({ view: 'personal' }).words.length, 1);
     const response = await fetch(`${origin}/api/my-words?view=deck&q=我`);
     assert.equal(response.status, 200);

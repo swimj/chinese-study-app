@@ -1,3 +1,4 @@
+import { DEFAULT_DAILY_NEW_WORD_LIMIT } from './types.ts';
 import { getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
 import { randomUUID } from 'node:crypto';
@@ -203,8 +204,8 @@ export function resolveOrBootstrapExternalLearner({
     `).run(normalizedProvider, normalizedSubject, learnerId, createdAt);
     getDb().prepare(`
       INSERT INTO learner_settings (learner_id, setting_key, value_json, updated_at)
-      VALUES (?, 'daily_new_word_limit', '10', ?)
-    `).run(learnerId, createdAt);
+      VALUES (?, 'daily_new_word_limit', ?, ?)
+    `).run(learnerId, JSON.stringify(DEFAULT_DAILY_NEW_WORD_LIMIT), createdAt);
     getDb().exec('COMMIT');
     return learnerId;
   } catch (error) {

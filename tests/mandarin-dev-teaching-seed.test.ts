@@ -5,7 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { wordContentFixtures } from '../src/features/introduction-lab/samples.ts';
 
-test('default Mandarin dev seed admits all six authored lessons through ordinary study', async () => {
+test('Mandarin dev seed respects the five-word default and admits all lessons with a raised limit', async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mandarin-teaching-seed-'));
   process.env.APP_MODE = 'dev';
   process.env.APP_AUTH_MODE = 'trusted_local';
@@ -15,7 +15,12 @@ test('default Mandarin dev seed admits all six authored lessons through ordinary
   const db = await import('../server/db.ts');
   const { getDb } = await import('../server/db/connection.ts');
   try {
-    const payload = db.getSessionPayload(new Date().toISOString().slice(0, 10));
+    const studyDayKey = new Date().toISOString().slice(0, 10);
+    const initial = db.getSessionPayload(studyDayKey);
+    assert.equal(db.getLearningPolicy(studyDayKey).dailyNewWordLimit, 5);
+    assert.equal(initial.buckets.unstudied.length, 5);
+    db.setDailyNewWordLimit(6);
+    const payload = db.getSessionPayload(studyDayKey);
     assert.deepEqual(payload.buckets.unstudied.map((word) => word.id),
       wordContentFixtures.map(({ content }) => content.word.wordId));
     assert.ok(payload.buckets.review.length > 0, 'existing review fixtures remain available');

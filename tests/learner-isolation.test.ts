@@ -51,6 +51,25 @@ describe('learner isolation', { concurrency: false }, () => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
+  test('new local and external learners use five words and HSK 6 without resetting saved preferences', () => {
+    const external = dbModule.resolveOrBootstrapExternalLearner({ provider: 'clerk', providerSubject: 'user_defaults_test' });
+    for (const learner of ['learner-a', external]) {
+      dbModule.runWithLearnerId(learner, () => {
+        assert.equal(dbModule.getLearningPolicy('2026-10-07').dailyNewWordLimit, 5);
+        assert.deepEqual(dbModule.getDietProfile()?.weights, { 'hsk2-l6-s1': 1 });
+      });
+    }
+    dbModule.runWithLearnerId(external, () => {
+      dbModule.setDailyNewWordLimit(12);
+      dbModule.setOperatorDietDeck('hsk2-l2');
+    });
+    assert.equal(dbModule.resolveOrBootstrapExternalLearner({ provider: 'clerk', providerSubject: 'user_defaults_test' }), external);
+    dbModule.runWithLearnerId(external, () => {
+      assert.equal(dbModule.getLearningPolicy('2026-10-07').dailyNewWordLimit, 12);
+      assert.deepEqual(dbModule.getDietProfile()?.weights, { 'hsk2-l2': 1 });
+    });
+  });
+
   test('shares lexical content while isolating learner overlays', () => {
     dbModule.runWithLearnerId('learner-a', () => {
       dbModule.updateWordPersonalNotes('shared-word', 'A private note');

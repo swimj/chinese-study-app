@@ -102,14 +102,14 @@ for the current unexpired operator-posted signed-in notice. Expired and cleared
 notices are omitted. The banner is not public; it is on this authenticated
 status read only.
 
-The status payload also returns two diet-deck flags (SPECS/diet-deck-distribution.md):
-`dietDecksActive` (deck-based diet admission is active: Mandarin profile with a
-deck manifest present) and `dietIntakeRequired` (deck mode active and the learner
-has no stored diet profile yet — the first-run placement intake should be shown).
+The status payload also returns `dietDecksActive`: deck-based diet admission
+is active when the Mandarin profile has a deck manifest. New learners can
+start studying directly; status no longer exposes `dietIntakeRequired`.
 
 The status payload also returns `dailyNewWordLimit` and
 `unstudiedAdmissionSource`, the durable configured limit and unstudied
-admission source used when composing a new session. `unstudiedAdmissionSource`
+admission source used when composing a new session. An absent daily limit defaults
+to `5`; existing configured limits are preserved. `unstudiedAdmissionSource`
 is `"mixed"` (default 50/50 stash/diet split) or `"stash_only"`. Update them
 with JSON bodies containing `dailyNewWordLimit` as an integer from 0 through 20 or
 `unstudiedAdmissionSource` as `"mixed"` or `"stash_only"`:
@@ -237,15 +237,14 @@ The durable contract is
 [`SPECS/diet-deck-distribution.md`](../SPECS/diet-deck-distribution.md) (§2.3,
 §2.5, §2.6). The diet profile is a versioned JSON value in the
 `learner_settings` store (`diet_profile`): deck weights, provenance
-(`intake` / `learner-nudge` / `operator`), and `updatedAt`. When unset it
-defaults to 100% weight on the first deck by manifest order. Deck machinery
-is never user-visible.
+(`learner-nudge` / `operator`, plus retained historical `intake` entries), and
+`updatedAt`. When unset it defaults to 100% weight on the first HSK 2.0 Level 6
+deck (`hsk2-l6-s1`). Stored profiles remain unchanged. My words exposes read-only
+deck vocabulary and level/part labels; distribution controls remain internal.
 
 | Method | Path | Handler domain |
 | --- | --- | --- |
 | POST | `/api/diet/nudge` | `diet-profile` |
-| POST | `/api/diet/intake` | `diet-profile` |
-| POST | `/api/diet/intake/assess` | `diet-placement` |
 
 `POST /api/diet/nudge` accepts `{ direction: 'easier' | 'harder' }` and shifts
 a fixed internal weight quantum from the current max-weight deck toward the
@@ -255,35 +254,10 @@ past the first/last deck is a no-op (`changed: false`, no provenance entry).
 Returns `200` with `{ profile, changed }`; `400` for an invalid direction;
 `409` when the deck manifest is unavailable on the installation.
 
-`POST /api/diet/intake` accepts
-`{ answers: Array<{ prompt: string, answer: string }>, selfSelect?: 'complete-beginner' | 'some-basics' | 'intermediate' | 'advanced-or-heritage' | null }`.
-It stores the raw natural-language answers plus the resulting initial
-placement in the diet profile. Intake answers are profile evidence, never
-study actions: no attempt events, no covering, no commits. The v1 placement
-mapping is fixed (self-select maps directly onto the deck ladder by manifest
-order; absent self-select starts on the first deck). Returns `201` with the
-stored profile; `400` for invalid input; `409` when the deck manifest is
-unavailable.
-
-`POST /api/diet/intake/assess` accepts `{ answers, providerDisclosureAccepted: true }`, where
-`answers` contains one or two exact `{ prompt, answer }` pairs (each prompt is
-at most 200 characters, each answer at most 2,000 characters, and the combined
-answer text at most 4,000 characters). The explicit flag records authorization
-to send those answers to the configured provider. On a validated response, the
-server maps its next HSK 2.0 learning level internally and atomically stores the
-resulting diet profile and intake evidence. The provider never receives deck
-configuration, learner identity, history, or corpus data. It returns `201` on
-success, `400` for invalid input or missing disclosure, `409` for a concurrent
-or stale placement, `502` for provider or output validation failure, and `503`
-when hosted provider work is disabled. It never writes study actions, attempts,
-covering, or commits. The existing manual `/api/diet/intake` route remains the
-explicit self-select/skip fallback and does not call a provider.
-
-The stored assessment retains the model's `nextLearningLevel` and rationale.
-For a reduced manifest, the internal placement may use the first available
-lower HSK 2.0 deck; the tail deck is never an intake placement target.
-An installation must retain an HSK 2.0 Level 1 deck to offer provider-assisted
-intake, because all supported next-learning levels rely on that baseline.
+The placement survey and both `/api/diet/intake` and
+`/api/diet/intake/assess` routes are retired. There is no provider placement
+request or first-run intake gate. Previously stored intake evidence remains
+readable as historical profile data.
 
 Operator jumps (100% weight on a chosen deck, provenance actor `operator`)
 are performed with `scripts/set-diet-deck.ts`; there is no HTTP endpoint.
