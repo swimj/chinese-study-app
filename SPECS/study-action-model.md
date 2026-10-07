@@ -613,10 +613,9 @@ only outside the prepared Mandarin flow.
 
 ### Stash-only source
 
-New learners start with stash-only admission saved at creation. Existing saved
-choices remain authoritative; existing learners without a source setting retain
-the legacy mixed 50/50 split. Session settings may set the unstudied
-admission source to `stash_only`.
+Session settings select the unstudied admission source: `mixed` or `stash_only`.
+The [new-learner policy](./diet-deck-distribution.md#25-new-user-defaults-and-retired-placement-intake)
+defines initial settings and treatment of existing learners.
 
 When `stash_only`:
 
@@ -664,9 +663,8 @@ present and the study profile is Mandarin. Otherwise the legacy
 frequency-ranked fill applies unchanged.
 
 - The learner's **diet profile** (a versioned JSON value in
-  `learner_settings` under `diet_profile`) holds per-deck weights; when
-  unset it defaults to 100% on the first HSK 2.0 Level 6 deck (`hsk2-l6-s1`). Deck
-  membership comes from the manifest's word→deck assignments; words absent
+  `learner_settings` under `diet_profile`) supplies the effective per-deck weights.
+  Deck membership comes from the manifest's word→deck assignments; words absent
   from assignments belong to the `beyond-hsk` tail.
 - Diet demand is `remaining quota − stash contribution before readiness`, so stash
   underfill is absorbed without letting a full stash distort the deck mix. It
@@ -680,9 +678,9 @@ frequency-ranked fill applies unchanged.
 - **Tail:** the `beyond-hsk` expanse has no manifest membership; anything
   still needed after deck spill keeps the legacy corpus-priority order
   (`words.priority` descending, then `created_at`, then `id`).
-- Learner nudges and operator jumps own the profile writes; the placement
-  intake survey is retired and existing profiles are preserved. See
-  [diet-deck-distribution.md](./diet-deck-distribution.md).
+- Profile initialization and adjustments follow the
+  [diet contract](./diet-deck-distribution.md#23-learner-diet-profile).
+  Session composition reads the effective profile without changing it.
 
 The composed unstudied admitted set is:
 
@@ -708,10 +706,10 @@ enter via this bypass.
 
 ### Mandarin preparation readiness
 
-The configured daily new-word limit is an integer from 0 through 20, defaulting
-to 5 when unset. Stored limits are preserved; the earlier cap migration clamps
-existing larger values to 20. The Mandarin reserve targets twice that
-configured limit, independent of how much of today's intake has been consumed.
+The configured daily new-word limit is an integer from 0 through 20; the earlier
+cap migration clamps existing larger values to 20. The Mandarin reserve targets
+twice that configured limit, independent of how much of today's intake has been
+consumed.
 Reserve membership is stable across visits, follows the selection policy above,
 and counts queued as well as ready candidates toward its bound.
 

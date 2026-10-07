@@ -260,20 +260,26 @@ contrast eligibility repair remains in fresh initialization and explicit dev
 seed application, rather than rewriting persisted eligibility at every restart.
 
 The `learner_settings` row keyed by `(learner_id, daily_new_word_limit)` stores
-the learner's configured non-negative integer limit as JSON. A missing row
-reads as the current default of `5`; stored limits are preserved. The row keyed by
-`(learner_id, unstudied_admission_source)` stores `"mixed"` or `"stash_only"`;
-new local and external learners receive `"stash_only"` at creation. Existing
-saved choices are preserved, and a missing row still reads as legacy `"mixed"`.
-These settings are independent of
-`daily_new_word_intake.new_study_count`, the per-UTC-day counter incremented
-only when an unstudied word is completed.
+the learner's configured limit as JSON. The row keyed by
+`(learner_id, unstudied_admission_source)` stores `"mixed"` or `"stash_only"`.
+These settings are independent of `daily_new_word_intake.new_study_count`, the
+per-UTC-day counter incremented only when an unstudied word is completed.
+The [new-learner policy](../SPECS/diet-deck-distribution.md#25-new-user-defaults-and-retired-placement-intake)
+owns their initial values.
 
-The `diet_profile` setting stores deck weights and provenance. When absent,
-the effective profile starts on the first HSK 2.0 Level 6 deck (`hsk2-l6-s1`).
-Existing profiles and historical intake evidence remain readable; the retired
-placement survey no longer writes new intake evidence. These default changes
-require no migration and do not rewrite existing settings or study history.
+`identity.ts` saves the initial admission source only when inserting a new
+learner, for both local and external identities. Repeated bootstrap preserves
+existing rows and leaves an absent source setting absent. The reader retains
+`mixed` as the legacy fallback, so changing the creation-time policy does not
+change existing learners. A missing daily-limit row instead reads the current
+`DEFAULT_DAILY_NEW_WORD_LIMIT`.
+
+`diet-profile.ts` reads saved deck weights and provenance, or constructs an
+unpersisted effective profile from the policy default when the setting is
+absent. The manifest must contain the required default deck; an incomplete
+manifest fails explicitly. Parsing and subsequent profile updates preserve
+historical intake evidence. These paths require no schema migration or rewrite
+of saved settings and study history.
 
 Character display preferences also use `learner_settings`: `character_presentation`
 stores `"simplified"`, `"traditional"`, or `"both"`; `sentence_character_presentation`

@@ -12,7 +12,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `introduction-player.test.ts` | Paced navigation, rehearsal matching, retry/finish, IME and keyboard guards | Pure local player |
 | `session-composition.test.ts` | Session payload / scheduling composition | Dynamic `server/db.ts` |
 | `diet-intake-placement-api.test.ts` | Retired placement endpoints and removed intake status gate | `server/index.ts` registered routes + temporary SQLite |
-| `diet-profile.test.ts` | HSK 2.0 Level 6 default, profile round-trip, nudge/jump behavior, and historical intake compatibility | `server/db/diet-profile.ts` + temporary SQLite |
+| `diet-profile.test.ts` | Default diet selection, profile round-trip, nudge/jump behavior, and historical intake compatibility | `server/db/diet-profile.ts` + temporary SQLite |
 | `unstudied-admission.test.ts` | Experimental dual-pool unstudied admission selector, including stash-only source | `server/db/unstudied-admission.ts` |
 | `session-completion.test.ts` | Session completion commits | Dynamic `server/db.ts` |
 | `session-bucket-scheduler.test.ts` | Bucket ordering helpers | `src/domain/study-actions.ts` |

@@ -103,16 +103,14 @@ notices are omitted. The banner is not public; it is on this authenticated
 status read only.
 
 The status payload also returns `dietDecksActive`: deck-based diet admission
-is active when the Mandarin profile has a deck manifest. New learners can
-start studying directly; status no longer exposes `dietIntakeRequired`.
+is active when the Mandarin profile has a deck manifest. The former
+`dietIntakeRequired` field has been removed.
 
 The status payload also returns `dailyNewWordLimit` and
-`unstudiedAdmissionSource`, the durable configured limit and unstudied
-admission source used when composing a new session. An absent daily limit defaults
-to `5`; existing configured limits are preserved. `unstudiedAdmissionSource`
-is `"stash_only"` for new learners or `"mixed"` (50/50 stash/diet split).
-Existing saved choices and the legacy mixed policy for absent settings are preserved. Update them
-with JSON bodies containing `dailyNewWordLimit` as an integer from 0 through 20 or
+`unstudiedAdmissionSource`, the resolved settings used when composing a new
+session. The [new-learner policy](../SPECS/diet-deck-distribution.md#25-new-user-defaults-and-retired-placement-intake)
+defines their initial values. Update them with JSON bodies containing
+`dailyNewWordLimit` as an integer from 0 through 20 or
 `unstudiedAdmissionSource` as `"mixed"` or `"stash_only"`:
 
 | Method | Path | Handler domain |
@@ -234,14 +232,11 @@ before.
 
 ## Diet profile
 
-The durable contract is
-[`SPECS/diet-deck-distribution.md`](../SPECS/diet-deck-distribution.md) (§2.3,
-§2.5, §2.6). The diet profile is a versioned JSON value in the
-`learner_settings` store (`diet_profile`): deck weights, provenance
-(`learner-nudge` / `operator`, plus retained historical `intake` entries), and
-`updatedAt`. When unset it defaults to 100% weight on the first HSK 2.0 Level 6
-deck (`hsk2-l6-s1`). Stored profiles remain unchanged. My words exposes read-only
-deck vocabulary and level/part labels; distribution controls remain internal.
+The [diet contract](../SPECS/diet-deck-distribution.md) defines profile
+initialization and adjustment behavior. A profile response contains `version`,
+`weights`, `provenance`, and `updatedAt`, with optional historical `intake`
+evidence. Provenance actors are `learner-nudge`, `operator`, and historical
+`intake` entries.
 
 | Method | Path | Handler domain |
 | --- | --- | --- |
@@ -255,10 +250,7 @@ past the first/last deck is a no-op (`changed: false`, no provenance entry).
 Returns `200` with `{ profile, changed }`; `400` for an invalid direction;
 `409` when the deck manifest is unavailable on the installation.
 
-The placement survey and both `/api/diet/intake` and
-`/api/diet/intake/assess` routes are retired. There is no provider placement
-request or first-run intake gate. Previously stored intake evidence remains
-readable as historical profile data.
+The `/api/diet/intake` and `/api/diet/intake/assess` routes are retired.
 
 Operator jumps (100% weight on a chosen deck, provenance actor `operator`)
 are performed with `scripts/set-diet-deck.ts`; there is no HTTP endpoint.
