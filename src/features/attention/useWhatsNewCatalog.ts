@@ -20,15 +20,9 @@ export function useWhatsNewCatalog() {
       }
     }
     void load();
-    const onFocus = () => { void load(); };
-    const onVisibility = () => { if (document.visibilityState === 'visible') void load(); };
-    window.addEventListener('focus', onFocus);
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      active = false;
-      window.removeEventListener('focus', onFocus);
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
+    return () => { active = false; };
   }, [attempt]);
   return { posts, error, retry };
 }
+
+export type WhatsNewCatalog = ReturnType<typeof useWhatsNewCatalog>;

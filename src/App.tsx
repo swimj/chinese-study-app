@@ -1,3 +1,4 @@
+import { useWhatsNewCatalog } from './features/attention/useWhatsNewCatalog';
 import { useEffect, useState } from 'react';
 import {
   DEFAULT_CHARACTER_PRESENTATION,
@@ -63,6 +64,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
   const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const attention = useAttentionBadges();
+  const updatesCatalog = useWhatsNewCatalog();
   const studySession = useStudySession({
     setError,
     onSessionEnded: reloadDashboard,
@@ -298,6 +300,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     >
       {currentPage === 'home' ? (
         <HomePage
+          updatesCatalog={updatesCatalog}
           onOpenUpdate={(id) => { setSelectedUpdateId(id); setAboutView('whats-new'); setCurrentPage('about'); }}
           onViewAllUpdates={() => { setSelectedUpdateId(null); setAboutView('whats-new'); setCurrentPage('about'); }}
           backendStatus={backendStatus}
@@ -351,6 +354,7 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
         />
       ) : currentPage === 'about' ? (
         <AboutPage
+          updatesCatalog={updatesCatalog}
           view={aboutView}
           whatsNewUnseenCount={attention.whatsNewUnseenCount}
           onWhatsNewRead={attention.acknowledgeWhatsNew}

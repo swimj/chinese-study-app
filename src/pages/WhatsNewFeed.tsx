@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { WhatsNewPost } from '../domain/whats-new';
-import { useWhatsNewCatalog } from '../features/attention/useWhatsNewCatalog';
+import type { WhatsNewCatalog } from '../features/attention/useWhatsNewCatalog';
 import { useVisibleAcknowledgement } from '../features/attention/useVisibleAcknowledgement';
 
 export function formatWhatsNewDate(date: string) {
@@ -29,12 +29,13 @@ export function WhatsNewPosts({ posts, onRead, focus = false }: {
   return <div className="about-updates">{posts.map(post => <WhatsNewArticle key={post.id} post={post} onRead={onRead} focus={focus} />)}</div>;
 }
 
-export function WhatsNewFeed({ onRead, selectedPostId, onViewAll }: {
+export function WhatsNewFeed({ catalog, onRead, selectedPostId, onViewAll }: {
+  catalog: WhatsNewCatalog;
   onRead?: (postIds: string[]) => Promise<void>;
   selectedPostId?: string | null;
   onViewAll?: () => void;
 }) {
-  const { posts, error, retry } = useWhatsNewCatalog();
+  const { posts, error, retry } = catalog;
   const displayed = selectedPostId ? posts?.filter(post => post.id === selectedPostId) : posts;
   return <>
     {selectedPostId && onViewAll ? <button type="button" className="secondary-button" onClick={onViewAll}>← All updates</button> : null}
