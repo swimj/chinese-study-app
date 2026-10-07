@@ -79,6 +79,7 @@ test('pure cue quality is available before recall without leaking its accepted a
     startedAt: '2026-09-26T00:00:00.000Z', initialQueueLength: 1 }) });
   assert.match(markup, /Thumbs up: Cue quality/);
   assert.match(markup, /Thumbs down: Cue quality/);
+  assert.ok(markup.indexOf('Thumbs down: Cue quality') < markup.indexOf('Thumbs up: Cue quality'));
   assert.doesNotMatch(markup, /Frozen teaching|Semantic classification|古怪/);
 });
 
