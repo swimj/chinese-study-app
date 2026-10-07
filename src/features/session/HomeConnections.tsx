@@ -49,7 +49,7 @@ export function HomeConnections({ debrief, expanded, error, retrying, onToggle, 
   }, [expanded]);
   return <section className={`home-connections${expanded ? ' is-expanded' : ' is-compact'}`} aria-label="Last session connections">
     <header className="home-connections-heading">
-      <h2>Recent Connections</h2>
+      {!expanded ? <h2>don't miss these connections...</h2> : null}
       {expanded ? <button type="button" className="secondary-button" ref={toggleRef} onClick={toggle}
         aria-expanded="true" aria-controls="home-connections-content">Minimize</button> : null}
     </header>

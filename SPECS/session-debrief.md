@@ -97,7 +97,9 @@ these shortcuts. The finalized study keyboard handler yields to this surface.
 
 Queued and running summaries show a waiting state and may be left immediately.
 Home gives the latest completed session's connections the main reading area,
-under **Recent Connections**, using a turning ring of exact note text. Left/right
+using a turning ring of exact note text, without a visible heading in the focused
+view. The compact Home preview is headed **don't miss these connections...**.
+Left/right
 arrow keys turn the ring while expanded; editing, composition, modifier keys, and
 other interactive widgets retain their native keys. Neighboring cards turn the
 ring on click and offer hover feedback, without visible arrows. There is no

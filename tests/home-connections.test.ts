@@ -74,7 +74,7 @@ test('expanded ring shows exact text and clickable neighbors without summary, me
   const html = render();
   assert.match(html, /Exact paragraph 1\n中文 &lt;literal text&gt;/);
   assert.match(html, /Connection 1 of 10/);
-  assert.match(html, /Recent Connections/);
+  assert.doesNotMatch(html, /<h2>|Recent Connections|miss these connections/);
   assert.match(html, /class="home-connections-sr-only">Connection 1 of 10/);
   assert.doesNotMatch(html, /Session summary|home-connections-navigation|home-connections-position|October|20 exercises/);
   assert.equal((html.match(/class="home-connections-neighbor /g) ?? []).length, 2);
@@ -85,6 +85,7 @@ test('expanded ring shows exact text and clickable neighbors without summary, me
 test('compact preview always uses the first note and a count, with bounded text', () => {
   const html = render({ ...ready, notes: [{ ...ready.notes![0], text: '字'.repeat(1000) }, ...ready.notes!.slice(1)] }, false);
   assert.match(html, /10 connections · Open connections/);
+  assert.match(html, /<h2>don&#x27;t miss these connections\.\.\.<\/h2>/);
   assert.doesNotMatch(html, />Expand<|>Minimize</);
   assert.match(html, new RegExp('字'.repeat(240) + '…'));
   assert.doesNotMatch(html, /Exact paragraph 2|字{241}|home-connections-ring/);

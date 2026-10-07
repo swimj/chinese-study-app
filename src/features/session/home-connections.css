@@ -22,6 +22,7 @@
 .home-overview.is-compact .session-settings-gear { color: var(--text-secondary); }
 .home-connections { min-width: 0; }
 .home-connections-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.home-connections.is-expanded .home-connections-heading { justify-content: flex-end; }
 .home-connections-heading h2 { font-size: 1.15rem; font-weight: 500; margin: 0; }
 .home-connections-heading button { font-size: .85rem; min-height: 44px; }
 .home-connections-ring { position: relative; isolation: isolate; perspective: 1200px; padding: 3rem 13%; min-height: 380px; display: grid; align-items: center; }
