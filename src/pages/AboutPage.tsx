@@ -64,7 +64,7 @@ export function AboutPage({ view, onSelectView, whatsNewUnseenCount = 0, onWhats
               <h2>Answer and rate honestly</h2>
               <p>Recognition asks you to recall a word’s meaning and pronunciation. Production asks you to type the Chinese word from a cue. Contextual selection asks you to choose between similar words in a sentence.</p>
               <p>Use the ratings offered by the exercise: Forgot for a miss, Hard for effortful recall, Good for comfortable recall, and Easy when it feels effortless. Incorrect typed answers and incorrect choices are recorded as Forgot. Use Undo when you need to correct the most recent answer or rating.</p>
-              <p>New words and missed reviews can repeat within a session. This is deliberate practice. Learning words later graduate into spaced review, where different skills can become due at different times.</p>
+              <p>New words and missed reviews can repeat within a session. This is deliberate practice. Words in Practice later graduate into spaced review, where different skills can become due at different times.</p>
             </section>
             <section>
               <h2>Choose what comes next</h2>

@@ -1186,6 +1186,7 @@ export function useStudySession({
       contentRef: itemAtResponse.contentRef,
       production: itemAtResponse.production ?? null,
       rehearsal: itemAtResponse.rehearsal,
+      wordContent: itemAtResponse.wordContent,
       attemptedHanzi,
       status: wordAtResponse.status,
       reviewedCount,

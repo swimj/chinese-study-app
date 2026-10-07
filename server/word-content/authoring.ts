@@ -1,6 +1,6 @@
 import type { ContentStimulus, TeachingPackage, WordContentDocument } from '../../src/domain/word-content/types.ts';
-import { materializeTeachingPackage } from '../../src/domain/word-content/materialize.ts';
-import { parseTeachingPackage, parseWordContent } from '../../src/domain/word-content/validation.ts';
+import { materializeExercise, materializeTeachingPackage, materializeTeachingPart } from '../../src/domain/word-content/materialize.ts';
+import { assertUniqueIds, freezeContent, parseContentExercise, parseTeachingBeats, parseTeachingPackage, parseWordContent } from '../../src/domain/word-content/validation.ts';
 
 type RecordValue = Record<string, unknown>;
 
@@ -48,6 +48,10 @@ function normalizeStimulus(value: unknown, content: WordContentDocument): Conten
     exactKeys(stimulus, ['kind', 'text'], 'Direct stimulus');
     return { kind: 'direct_text', text: stimulus.text as string };
   }
+  if (stimulus.kind === 'phrase_cloze') {
+    exactKeys(stimulus, ['kind', 'frame', 'text'], 'Phrase cloze stimulus');
+    return { kind: 'phrase_cloze', frame: stimulus.frame as string, text: stimulus.text as string };
+  }
   if (stimulus.kind !== 'example_cloze') throw new Error('Unsupported rehearsal stimulus.');
   exactKeys(stimulus, ['kind', 'exampleId', 'occurrenceIndexes', 'frame'], 'Cloze stimulus');
   if (typeof stimulus.exampleId !== 'string' || !Array.isArray(stimulus.occurrenceIndexes)
@@ -73,14 +77,14 @@ function normalizeStimulus(value: unknown, content: WordContentDocument): Conten
   };
 }
 
-export function normalizeTeachingPackage(value: unknown, content: WordContentDocument, id: string): TeachingPackage {
-  const wire = record(value, 'Teaching result');
-  exactKeys(wire, ['beats', 'rehearsals'], 'Teaching result');
+export function normalizePracticeRehearsals(value: unknown, content: WordContentDocument): TeachingPackage['rehearsals'] {
+  const wire = record(value, 'Practice result');
+  exactKeys(wire, ['rehearsals'], 'Practice result');
   if (!Array.isArray(wire.rehearsals)) throw new Error('Teaching rehearsals must be an array.');
   const rehearsals = wire.rehearsals.map((raw, index) => {
     const item = record(raw, `Rehearsal ${index}`);
     exactKeys(item, ['id', 'stimulus'], `Rehearsal ${index}`);
-    return {
+    return parseContentExercise({
       id: item.id,
       responseMode: 'hanzi_entry',
       contract: { kind: 'target_rehearsal', wordId: content.word.wordId },
@@ -92,8 +96,32 @@ export function normalizeTeachingPackage(value: unknown, content: WordContentDoc
         hanzi: content.word.hanzi,
         traditional: content.word.traditional,
       }],
-    };
+    });
   });
+  if (rehearsals.length === 0) throw new Error('Practice needs at least one exercise.');
+  assertUniqueIds(rehearsals.map((exercise) => exercise.id), 'Practice rehearsals');
+  const forms = [content.word.hanzi, content.word.traditional].filter((form): form is string => form !== null);
+  for (const exercise of rehearsals) {
+    const snapshot = materializeExercise(exercise, [content]);
+    if (forms.some((form) => snapshot.instruction.includes(form) || snapshot.stimulus.text.includes(form))) {
+      throw new Error('Generated rehearsal exposes its target answer.');
+    }
+  }
+  return freezeContent(rehearsals);
+}
+
+export function normalizeTeachingBeats(value: unknown, content: WordContentDocument): TeachingPackage['beats'] {
+  const wire = record(value, 'Teaching result');
+  exactKeys(wire, ['beats'], 'Teaching result');
+  const beats = parseTeachingBeats(wire.beats);
+  for (const beat of beats) for (const part of beat.parts) materializeTeachingPart(part, content);
+  return beats;
+}
+
+export function normalizeTeachingPackage(value: unknown, content: WordContentDocument, id: string): TeachingPackage {
+  const wire = record(value, 'Teaching result');
+  exactKeys(wire, ['beats', 'rehearsals'], 'Teaching result');
+  const rehearsals = normalizePracticeRehearsals({ rehearsals: wire.rehearsals }, content);
   const teaching = parseTeachingPackage({
     schemaVersion: 1,
     id,
@@ -101,12 +129,6 @@ export function normalizeTeachingPackage(value: unknown, content: WordContentDoc
     beats: wire.beats,
     rehearsals,
   });
-  const snapshot = materializeTeachingPackage(teaching, [content]);
-  const forms = [content.word.hanzi, content.word.traditional]
-    .filter((form): form is string => form !== null);
-  if (snapshot.rehearsals.some((exercise) => forms.some((form) => (
-    exercise.instruction.includes(form) || exercise.stimulus.text.includes(form)
-  )))) throw new Error('Generated rehearsal exposes its target answer.');
+  materializeTeachingPackage(teaching, [content]);
   return teaching;
 }
-

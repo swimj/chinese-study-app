@@ -90,11 +90,11 @@ bootstrapped words uses curated use labels and an example/translation;
 unbootstrapped words retain their existing reveal. This display improvement
 does not alter recognition grading or scheduling.
 
-## 4. Introduction And Rehearsal Belong Together
+## 4. Introduction And Practice Form One Package
 
 A teaching package identifies exact word content, an ordered introduction,
 and the rehearsal definitions associated with what it teaches. It is one
-coherent immutable assembly. Changing a constituent produces a new package
+coherent immutable assembly. Teaching and practice are authored in separate provider calls: teaching receives the full bootstrap document, while practice receives its word and selected uses/notes without structured examples or example IDs. Both remain anchored to the same exact bootstrap. Changing a constituent produces a new package
 identity rather than silently changing an existing lesson.
 
 The introduction proceeds in small learner-advanced beats. Space advances
@@ -115,9 +115,7 @@ grading are not required.
 
 Associated rehearsal intentionally practices the taught target, even where
 other words could naturally fit. Repetition and constrained drills are welcome
-when they help acquire that specific word or pattern. The instruction must
-make that intent clear: recall the taught expression, rather than supply any
-valid completion. An out-of-contract response is not a claim of bad Chinese.
+when they help acquire that specific word or pattern. Cues should evoke a clear meaning or intention while preserving useful register and feeling. Stable English associations are useful; concise framed Mandarin phrase clozes may practice constructions. New phrase clozes are authored for retrieval rather than constrained to teaching sentences. Existing source-example clozes remain supported. An out-of-contract response is not a claim of bad Chinese.
 
 Coupling means coherent content and exact references, not identical presentation
 or forced immediate practice after each beat. The package can supply reusable
@@ -268,7 +266,7 @@ reconciliation is required to proceed with this work.
   word content and then its teaching package. Both publish immediately after deterministic validation,
   with no learner quality-review step. Later learners reuse the result. Each stage
   has durable shared readiness and an expiring generation claim. A failed teaching
-  stage retains the completed bootstrap. A withdrawn ready result is unavailable;
+  stage retains the completed bootstrap. Within that stage, teaching and practice calls run independently; validated components are retained by exact content, component kind, and generation key. A retry reuses a successful component after the companion failed. The generation key covers prompt, schema, model, reasoning, output limit, and input projection. Both validated components publish atomically as one package, with separate invocation provenance. No partial package is eligible for learners. A withdrawn ready result is unavailable;
   ordinary requests do not silently regenerate it.
 - **Private association:** opening pins an eligible package for that learner.
   Completion is a private navigation marker, separate from study credit. A
@@ -278,16 +276,16 @@ reconciliation is required to proceed with this work.
   target rehearsal through the existing session scheduler. Both directions must
   reach three consecutive `Good` ratings before the first-encounter word unit
   completes through the existing deferred commit and Undo path. Recognition uses
-  curated source content; production selects a rehearsal by its current streak
+  curated source content. Production selects a rehearsal by its current streak
   modulo the package rehearsal count, returning to the first on a streak reset.
   in-session walkthrough has no skip-to-cards or Escape bypass; leaving uses
   normal session controls and grants no teaching completion. Missing preparation excludes
   the word at session entry rather than triggering generation during study.
-- **Learning:** one recognition direction and one production direction remain
+- **Practice (persisted `learning`):** one recognition direction and one production direction remain
   the daily obligation. Production can use a cloze or direct definition/situation
   from a pinned package whose introduction the learner has completed. Rotate available rehearsals with a simple deterministic
   policy; no per-example or per-sense mastery ledger is required. Retries retain
-  the served exercise. Missing eligible package content uses existing cards.
+  the served exercise. On reveal, recognition and production can show the same source usage examples and translations, including in frozen incorrect-answer cards. Missing eligible package content uses existing cards.
 - **Graduation:** preserve three consecutive successful study sessions, with
   first-try Good in both directions. Adjacent calendar days are not required.
   Graduation restores the ordinary review contracts and scheduler.

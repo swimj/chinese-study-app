@@ -41,6 +41,7 @@ function renderStimulus(
   source: ContentStimulus, contents: ReadonlyMap<string, WordContentDocument>,
 ): MaterializedStimulus {
   if (source.kind === 'direct_text') return { text: source.text, source };
+  if (source.kind === 'phrase_cloze') return { text: `${source.frame}\n${source.text}`, source };
   const example = getExample(getContent(contents, source.example.contentId), source.example.exampleId);
   const points = Array.from(example.text);
   const pieces: string[] = [];
@@ -99,7 +100,7 @@ export function materializeExercise(
   return freezeContent(exerciseSnapshot(parseContentExercise(exercise), catalog(contents), profile));
 }
 
-function partText(part: TeachingPart, content: WordContentDocument): string {
+export function materializeTeachingPart(part: TeachingPart, content: WordContentDocument): string {
   if (part.kind === 'text') return part.text;
   if (part.kind === 'use_note') {
     const use = content.uses.find((item) => item.id === part.useId);
@@ -128,7 +129,7 @@ export function materializeTeachingPackage(
     wordId: content.word.wordId,
     beats: pkg.beats.map((beat) => ({
       id: beat.id,
-      parts: beat.parts.map((part) => ({ text: partText(part, content), source: part })),
+      parts: beat.parts.map((part) => ({ text: materializeTeachingPart(part, content), source: part })),
     })),
     rehearsals: pkg.rehearsals.map((exercise) => exerciseSnapshot(exercise, documents, 'mandarin')),
   });

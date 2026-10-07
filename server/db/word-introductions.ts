@@ -240,6 +240,85 @@ function requireLiveClaim(wordId: string, stage: WordIntroductionStage, token: s
   return row;
 }
 
+export type IntroductionComponentStage = 'teaching' | 'practice';
+export type SavedIntroductionComponent = {
+  contentId: string;
+  stage: IntroductionComponentStage;
+  generationKey: string;
+  payload: unknown;
+  model: string;
+  invocationId: string | null;
+  createdAt: string;
+};
+
+function requireComponentClaim(wordId: string, token: string, contentId: string): void {
+  const claim = requireLiveClaim(wordId, 'teaching', token);
+  if (claim.content_id !== contentId || claim.package_id !== null
+    || getSharedWordIntroductionContent(wordId)?.id !== contentId) {
+    throw new WordIntroductionError('conflict', 'Component does not use the active prepared content');
+  }
+}
+
+function componentKey(stage: IntroductionComponentStage, generationKey: string): void {
+  if ((stage !== 'teaching' && stage !== 'practice') || !generationKey.trim()) {
+    throw new WordIntroductionError('invalid_source', 'Component stage and generation key are required');
+  }
+}
+
+function readComponent(contentId: string, stage: IntroductionComponentStage, generationKey: string): SavedIntroductionComponent | null {
+  const row = getDb().prepare(`
+    SELECT payload_json, model, invocation_id, created_at FROM word_introduction_components
+    WHERE content_id = ? AND stage = ? AND generation_key = ?
+  `).get(contentId, stage, generationKey) as {
+    payload_json: string; model: string; invocation_id: string | null; created_at: string;
+  } | undefined;
+  return row ? { contentId, stage, generationKey, payload: JSON.parse(row.payload_json) as unknown,
+    model: row.model, invocationId: row.invocation_id, createdAt: row.created_at } : null;
+}
+
+/** The caller validates normalized domain content before saving and after reading. */
+export function getSharedWordIntroductionComponent(
+  wordId: string, token: string, contentId: string, stage: IntroductionComponentStage, generationKey: string,
+): SavedIntroductionComponent | null {
+  componentKey(stage, generationKey);
+  return transaction(() => {
+    requireComponentClaim(wordId, token, contentId);
+    return readComponent(contentId, stage, generationKey);
+  });
+}
+
+export function saveSharedWordIntroductionComponent(
+  wordId: string, token: string, input: Omit<SavedIntroductionComponent, 'createdAt'>,
+): SavedIntroductionComponent {
+  componentKey(input.stage, input.generationKey);
+  const model = modelName(input.model);
+  const json = JSON.stringify(input.payload);
+  if (json === undefined || input.payload === null || typeof input.payload !== 'object') {
+    throw new WordIntroductionError('invalid_source', 'Component payload must be JSON content');
+  }
+  if (input.invocationId !== null && !input.invocationId.trim()) {
+    throw new WordIntroductionError('invalid_source', 'Component invocation id must be nonempty or null');
+  }
+  return transaction(() => {
+    requireComponentClaim(wordId, token, input.contentId);
+    const existing = readComponent(input.contentId, input.stage, input.generationKey);
+    if (existing) {
+      if (JSON.stringify(existing.payload) !== json || existing.model !== model
+        || existing.invocationId !== input.invocationId) {
+        throw new WordIntroductionError('conflict', 'Component identity already has a different payload or provenance');
+      }
+      return existing;
+    }
+    const createdAt = new Date().toISOString();
+    getDb().prepare(`
+      INSERT INTO word_introduction_components
+        (content_id, stage, generation_key, payload_json, model, invocation_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(input.contentId, input.stage, input.generationKey, json, model, input.invocationId, createdAt);
+    return { ...input, model, payload: JSON.parse(json) as unknown, createdAt };
+  });
+}
+
 export function finishSharedWordIntroductionBootstrap(
   wordId: string, token: string, input: WordContentDocument, model: string,
 ): SavedWordContent {
@@ -264,6 +343,7 @@ export function finishSharedWordIntroductionBootstrap(
 
 export function finishSharedWordIntroductionTeaching(
   wordId: string, token: string, input: TeachingPackage, model: string,
+  componentKeys?: { teaching: string; practice: string },
 ): SavedTeachingPackage {
   const teaching = parseTeachingPackage(input);
   const sourceModel = modelName(model);
@@ -273,7 +353,22 @@ export function finishSharedWordIntroductionTeaching(
     if (row.content_id === null || teaching.wordContentId !== row.content_id) {
       throw new WordIntroductionError('invalid_source', 'Teaching does not use the prepared word content');
     }
+    if (componentKeys) {
+      for (const stage of ['teaching', 'practice'] as const) {
+        componentKey(stage, componentKeys[stage]);
+        if (!readComponent(row.content_id, stage, componentKeys[stage])) {
+          throw new WordIntroductionError('conflict', 'Both introduction components must be saved before publication');
+        }
+      }
+    }
     const saved = insertTeaching(teaching, sourceModel);
+    if (componentKeys) {
+      for (const stage of ['teaching', 'practice'] as const) {
+        getDb().prepare(`INSERT INTO word_teaching_package_components
+          (package_id, content_id, stage, generation_key) VALUES (?, ?, ?, ?)`)
+          .run(teaching.id, row.content_id, stage, componentKeys[stage]);
+      }
+    }
     getDb().prepare(`
       UPDATE word_introduction_preparation
       SET package_id = ?, active_stage = NULL, lease_token = NULL, lease_expires_at = NULL

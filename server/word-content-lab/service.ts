@@ -10,7 +10,7 @@ import type {
 } from '../../src/domain/word-content/types.ts';
 import { materializeTeachingPackage } from '../../src/domain/word-content/materialize.ts';
 import { parseTeachingPackage, parseWordContent } from '../../src/domain/word-content/validation.ts';
-import { normalizeWordContent, normalizeTeachingPackage } from '../word-content/authoring.ts';
+import { normalizeWordContent, normalizeTeachingBeats, normalizePracticeRehearsals } from '../word-content/authoring.ts';
 import { createIntroductionLabProvider, type IntroductionLabProvider } from './provider.ts';
 
 export class IntroductionLabError extends Error {
@@ -195,12 +195,26 @@ export function createIntroductionLabService(options: {
         const generationOptions = { onInvocation: (id: string | null | undefined) => { invocationId = id; } };
         try { output = await provider.generateTeaching(source.content, generationOptions); }
         catch { throw new IntroductionLabError(502, 'Teaching provider request failed.'); }
-        let teaching: TeachingPackage;
+        let beats: TeachingPackage['beats'];
         try {
-          teaching = validateWordProviderOutput(invocationId, () => normalizeTeachingPackage(output, source.content, `teaching-lab:${randomUUID()}`));
+          beats = validateWordProviderOutput(invocationId, () => normalizeTeachingBeats(output, source.content));
         } catch {
           throw new IntroductionLabError(502, 'Teaching output failed validation.');
         }
+        invocationId = undefined;
+        try { output = await provider.generatePractice(source.content, generationOptions); }
+        catch { throw new IntroductionLabError(502, 'Practice provider request failed.'); }
+        let rehearsals: TeachingPackage['rehearsals'];
+        try {
+          rehearsals = validateWordProviderOutput(invocationId, () => normalizePracticeRehearsals(output, source.content));
+        } catch {
+          throw new IntroductionLabError(502, 'Practice output failed validation.');
+        }
+        const teaching = parseTeachingPackage({
+          schemaVersion: 1, id: `teaching-lab:${randomUUID()}`,
+          wordContentId: source.content.id, beats, rehearsals,
+        });
+        materializeTeachingPackage(teaching, [source.content]);
         return save(source.content, teaching, 'generated');
       });
     },

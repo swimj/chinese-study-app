@@ -1,5 +1,7 @@
-import { convertSentenceCharacters, effectiveSentenceCharacterPresentation, formatSentenceAnswer, sentenceCharacterLanguage } from '../../domain/sentence-characters';
+import { convertSentenceCharacters, effectiveSentenceCharacterPresentation, formatSentenceAnswer } from '../../domain/sentence-characters';
 import { SessionDesk, RecallChips, type SessionDeskHandle } from './SessionDesk';
+import { StudyStageBadge, studyStageCardClass } from './StudyStageBadge';
+import { WordSourceExamples } from './WordSourceExamples';
 import { ClozePrompt } from './ClozePrompt';
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ContentQualityControls } from '../content-quality/ContentQualityControls';
@@ -62,6 +64,7 @@ export type FrozenProductionCard = {
   example: string;
   production?: SessionStudyItem['production'];
   rehearsal?: SessionStudyItem['rehearsal'];
+  wordContent?: SessionStudyItem['wordContent'];
 };
 
 export type FrozenContrastCard = {
@@ -302,7 +305,6 @@ function StudySessionPanelContent({
   });
   const sentenceScript = effectiveSentenceCharacterPresentation(characterPresentation, sentenceCharacterPresentation);
   const sentenceText = (text: string) => convertSentenceCharacters(text, sentenceScript);
-  const sentenceLang = sentenceCharacterLanguage(sentenceScript);
   const showRatingButtons = answerRevealed && (
     (!isProductionItem || productionAwaitingRating) &&
     (!activeItem || activeItem.actionKind !== 'contrast_selection' || contrastAwaitingRating)
@@ -381,15 +383,11 @@ function StudySessionPanelContent({
         {panelView === 'not_started' ? (
           <p className="notes">Start a session when you’re ready to study.</p>
         ) : panelView === 'frozen_production' && frozenProductionCard ? (
-        <div className="review-card session-card-shell">
+        <div className={`review-card session-card-shell ${studyStageCardClass(frozenProductionCard.status)}`}>
           <div className="session-card-scroll">
             <div className="review-card-header">
               <p className="badge">
-                {frozenProductionCard.status === 'review'
-                  ? 'Review'
-                  : frozenProductionCard.status === 'learning'
-                    ? 'Learning'
-                    : 'New word'}
+                <StudyStageBadge status={frozenProductionCard.status} />
                 {` · ${studyProfile.labels.productionDirection}`}
               </p>
             </div>
@@ -406,12 +404,12 @@ function StudySessionPanelContent({
             </div>
             {qualityControls(getSessionContentQualityTarget({ ...frozenProductionCard, production: frozenProductionCard.production ?? null }),
               frozenProductionCard.sessionActionId, frozenProductionCard.reviewedCount,
-              frozenProductionCard.rehearsal ? 'Rehearsal quality' : 'Cue quality', !frozenProductionCard.production?.supplement)}
+              frozenProductionCard.rehearsal ? 'Practice quality' : 'Cue quality', !frozenProductionCard.production?.supplement)}
             <div className="answer-block">
               <span className="prompt-label">Answer</span>
               <span className="answer-pinyin">{frozenProductionCard.answerPinyin}</span>
               <strong className="answer-value">{frozenProductionCard.answerText}</strong>
-              <details className="desk-reference"><summary>Word reference</summary><MeaningList meanings={frozenProductionCard.allMeanings.map(sentenceText)} /></details>
+              <details className="desk-reference" open={frozenProductionCard.status !== 'review' || undefined}><summary>Word reference</summary>{frozenProductionCard.wordContent ? <WordSourceExamples content={frozenProductionCard.wordContent} sentenceCharacterPresentation={sentenceScript} /> : <MeaningList meanings={frozenProductionCard.allMeanings.map(sentenceText)} />}</details>
               {frozenProductionCard.production?.supplement ? (
                 <div className="production-supplement">
                   <span className="prompt-label">In context</span>
@@ -432,7 +430,7 @@ function StudySessionPanelContent({
               <span className="prompt-meta">
                 Interval {formatIntervalHours(frozenProductionCard.intervalHours)}
               </span>
-              <span className="prompt-meta">{sentenceText(frozenProductionCard.example)}</span>
+              {!frozenProductionCard.wordContent && <span className="prompt-meta">{sentenceText(frozenProductionCard.example)}</span>}
             </div>
             {frozenProductionCard.attemptedHanzi ? (
               <div className="answer-block">
@@ -800,19 +798,12 @@ function StudySessionPanelContent({
           </div>)}
         </div>
       ) : activeItem && activeWord ? (
-        <div className="review-card session-card-shell">
+        <div className={`review-card session-card-shell ${studyStageCardClass(activeWord.status)}`}>
           <div className="session-card-scroll">
             <div className="review-card-header">
               <p className="badge">
-                {sessionPhase === 'draining'
-                  ? 'Draining'
-                  : activeWord.status === 'review'
-                    ? reviewInReinforcement
-                      ? 'Review reinforcement'
-                      : 'Review'
-                    : activeWord.status === 'learning'
-                      ? 'Learning'
-                      : 'New word'}
+                <StudyStageBadge status={activeWord.status} reinforcement={reviewInReinforcement} />
+                {sessionPhase === 'draining' ? ' · Draining' : null}
                 {' · '}
                 {activeItem.actionKind === 'recognition'
                   ? studyProfile.labels.recognitionDirection
@@ -848,7 +839,7 @@ function StudySessionPanelContent({
               /> : reviewInReinforcement ? <RecallChips count={activeReviewProgress?.reinforcementStreak ?? 0} label="Practice again" /> : null}
             </div>
             {qualityControls(getSessionContentQualityTarget(activeItem), activeItem.sessionActionId, reviewedCount,
-              activeItem.rehearsal ? 'Rehearsal quality' : 'Cue quality', !showProductionSupplementAside)}
+              activeItem.rehearsal ? 'Practice quality' : 'Cue quality', !showProductionSupplementAside)}
             {activeItem.actionKind === 'contrast_selection' ? (
               <ContrastSelectionDrill
                 item={activeItem}
@@ -876,18 +867,10 @@ function StudySessionPanelContent({
                     <strong className="answer-value">{activeItem.actionKind === 'recognition' ? sentenceText(activeAnswerText ?? '') : activeAnswerText}</strong>
                   </>
                 )}
-                {!productionAwaitingSupplement ? <details className="desk-reference" open={isProductionItem ? undefined : true}>
+                {!productionAwaitingSupplement ? <details className="desk-reference" open={!isProductionItem || activeWord.status !== 'review' || undefined}>
                   <summary>Word reference</summary>
                 {productionAwaitingSupplement ? null : activeItem.wordContent ? (
-                  <div className="stack">
-                    {activeItem.wordContent.uses.map((use) => {
-                      const example = activeItem.wordContent!.examples.find((row) => row.id === use.exampleIds[0]);
-                      return <div key={use.id}>
-                        <strong>{sentenceText(use.label)}</strong>
-                        {example && <><p lang={sentenceLang}>{sentenceText(example.text)}</p><p>{sentenceText(example.translation)}</p></>}
-                      </div>;
-                    })}
-                  </div>
+                  <WordSourceExamples content={activeItem.wordContent} sentenceCharacterPresentation={sentenceScript} />
                 ) : activeItem.actionKind === 'recognition' && activeItem.recognitionSupplement ? (
                   <>
                     <ProductionSupplementAside supplement={activeItem.recognitionSupplement} sentenceCharacterPresentation={sentenceScript} />

@@ -138,7 +138,7 @@ function WordDetail({ item }: { item: WordDiagnosticItem }) {
       <dl className="content-fact-grid">
         <Fact label="Pronunciation" value={word.pinyin} />
         <Fact label="Priority" value={String(word.priority)} />
-        <Fact label="Learning streak" value={String(word.learningStreak)} />
+        <Fact label="Practice streak" value={String(word.learningStreak)} />
         <Fact label="Created" value={formatDate(word.createdAt)} />
       </dl>
       <section className="content-detail-section">

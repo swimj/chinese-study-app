@@ -84,7 +84,7 @@ export function SessionSummaryPanel({
           </div>
         ) : null}
         <div className="stat-card">
-          <span className="stat-label">Learning words covered</span>
+          <span className="stat-label">Practice words covered</span>
           <strong className="stat-value">{summary.completedLearningWords}</strong>
         </div>
         <div className="stat-card">

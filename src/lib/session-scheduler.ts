@@ -500,7 +500,7 @@ function buildBucketWordStudyItem({
   }
   return { ...item,
     ...(skillId === 'production' && rehearsal ? { rehearsal } : {}),
-    ...(skillId === 'recognition' && wordContent ? { wordContent } : {}),
+    ...(wordContent ? { wordContent } : {}),
   };
 }
 

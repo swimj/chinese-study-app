@@ -52,6 +52,8 @@ A word has one of three persisted states:
 
 ### `learning`
 
+The learner-facing name is **Practice**. This is a presentation name; stored state, daily coverage, and graduation semantics remain `learning`.
+
 - The word is in an active acquisition phase.
 - It should be included in a session whenever it has not yet been covered successfully today.
 - It is not governed by review due dates for session inclusion.

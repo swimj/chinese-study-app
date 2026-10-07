@@ -18,7 +18,7 @@ export type MyWordsResponse = {
 
 export const WORD_STAGE_LABELS: Record<MyWordsStatus, string> = {
   unstudied: 'Not yet studied',
-  learning: 'Learning',
+  learning: 'Practice',
   review: 'In review',
 };
 

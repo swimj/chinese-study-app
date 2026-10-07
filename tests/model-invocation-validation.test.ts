@@ -113,18 +113,31 @@ test('shared teaching and review domain validation invalidate calls after schema
   assert.equal(bootstrap.claim('validation-bootstrap', 'bootstrap', 'bootstrap-token', now.toISOString(),
     new Date(now.getTime() + 60_000).toISOString()), 'claimed');
   await owner(() => bootstrap.generate('validation-bootstrap', 'bootstrap', 'bootstrap-token'));
-  const outputs = {
-    teaching: { beats: [{ id: 'beat', parts: [{ kind: 'text', text: 'Read the example.' }] }], rehearsals: [{
-      id: 'rehearsal', stimulus: { kind: 'example_cloze', exampleId: 'missing', occurrenceIndexes: [0], frame: null },
-    }] },
-    review: { exercises: [{ ...validReview.exercises[0], cueType: 'minimal_context', stimulus: {
-      kind: 'example_cloze', exampleId: 'missing', occurrenceIndexes: [0], frame: null,
-    } }] },
-  };
-  for (const stage of ['teaching', 'review'] as const) {
-    const shared = createSharedWordPreparation(createWordIntroductionProvider(providerOptions(JSON.stringify(outputs[stage]))));
-    await rejectedInvocation(() => shared.generate('validation-bootstrap', stage, 'unclaimed-token'));
-  }
+  const invalidTeaching = { beats: [{ id: 'beat', parts: [{ kind: 'example', exampleId: 'missing', field: 'sentence' }] }] };
+  const practice = { rehearsals: [{ id: 'r', stimulus: { kind: 'direct_text', text: 'Report in advance.' } }] };
+  const options = providerOptions('');
+  const shared = createSharedWordPreparation(createWordIntroductionProvider({ ...options,
+    fetchImplementation: async (_url, init) => {
+      const request = JSON.parse(String(init?.body));
+      const payload = request.response_format.json_schema.name.includes('practice') ? practice : invalidTeaching;
+      return providerOptions(JSON.stringify(payload)).fetchImplementation();
+    },
+  }));
+  const existing = new Set(listModelInvocations().rows.map(row => row.id));
+  assert.equal(shared.claim('validation-bootstrap', 'teaching', 'teaching-token', new Date().toISOString(),
+    new Date(Date.now() + 60_000).toISOString()), 'claimed');
+  await assert.rejects(() => owner(() => shared.generate('validation-bootstrap', 'teaching', 'teaching-token')));
+  shared.release('validation-bootstrap', 'teaching', 'teaching-token');
+  const added = listModelInvocations().rows.filter(row => !existing.has(row.id));
+  assert.equal(added.length, 2);
+  assert.equal(added.find(row => row.invocationType === 'intro_lab_teaching_v2')?.status, 'invalid_response');
+  assert.equal(added.find(row => row.invocationType === 'intro_lab_practice_v1')?.status, 'completed');
+  assert.ok(added.every(row => row.spendUsd! > 0));
+  const invalidReview = { exercises: [{ ...validReview.exercises[0], cueType: 'minimal_context', stimulus: {
+    kind: 'example_cloze', exampleId: 'missing', occurrenceIndexes: [0], frame: null,
+  } }] };
+  const review = createSharedWordPreparation(createWordIntroductionProvider(providerOptions(JSON.stringify(invalidReview))));
+  await rejectedInvocation(() => review.generate('validation-bootstrap', 'review', 'unclaimed-token'));
 });
 
 test('local lab domain validation also invalidates its own bootstrap and teaching calls', async () => {
@@ -134,8 +147,7 @@ test('local lab domain validation also invalidates its own bootstrap and teachin
     provider: createWordIntroductionProvider(providerOptions(JSON.stringify(invalidBootstrap))) });
   await rejectedInvocation(() => invalidLab.bootstrap(lexical));
   const lab = createIntroductionLabService({ dataDir: directory,
-    provider: createWordIntroductionProvider(providerOptions(JSON.stringify({ beats: [{ id: 'beat', parts: [{ kind: 'example', exampleId: 'missing', field: 'sentence' }] }],
-      rehearsals: [{ id: 'rehearsal', stimulus: { kind: 'direct_text', text: 'Recall the expression.' } }] }))) });
+    provider: createWordIntroductionProvider(providerOptions(JSON.stringify({ beats: [{ id: 'beat', parts: [{ kind: 'example', exampleId: 'missing', field: 'sentence' }] }] }))) });
   const draft = await lab.importDraft({ content, origin: 'sample' });
   await rejectedInvocation(() => lab.generateTeaching(draft.id));
 });

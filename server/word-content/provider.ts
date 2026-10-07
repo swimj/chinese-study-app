@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { invalidateInvocation } from '../llm/invocation-ledger.ts';
 import { readFile } from 'node:fs/promises';
 import type { WordBootstrapInput } from '../../src/domain/word-content/application.ts';
@@ -26,6 +27,8 @@ export type WordIntroductionProvider = {
   isConfigured(): boolean;
   generateBootstrap(input: WordBootstrapInput, options?: WordGenerationOptions): Promise<unknown>;
   generateTeaching(content: WordContentDocument, options?: WordGenerationOptions): Promise<unknown>;
+  generatePractice(content: WordContentDocument, options?: WordGenerationOptions): Promise<unknown>;
+  generationKey(stage: 'teaching' | 'practice'): Promise<string>;
   generateReview(content: WordContentDocument, options?: WordGenerationOptions): Promise<unknown>;
 };
 
@@ -60,18 +63,21 @@ const teachingPartSchema: JsonSchema = { anyOf: [
   oneOfKinds('example', { exampleId: string, field: { type: 'string', enum: ['sentence', 'translation', 'pronunciation'] } }),
   oneOfKinds('use_note', { useId: string, noteIndex: integer }),
 ] };
-const teachingStimulusSchema: JsonSchema = { anyOf: [
-  oneOfKinds('direct_text', { text: string }),
-  // The cloze is the base cue; generic task framing belongs to presentation.
-  oneOfKinds('example_cloze', { exampleId: string, occurrenceIndexes: array(integer, 1), frame: { type: 'null' } }),
-] };
 const teachingSchema = object({
   beats: array(object({ id: string, parts: array(teachingPartSchema, 1) }), 1),
-  rehearsals: array(object({
-    id: string,
-    stimulus: teachingStimulusSchema,
-  }), 1),
 });
+const practiceSchema = object({
+  rehearsals: array(object({ id: string, stimulus: { anyOf: [
+    oneOfKinds('direct_text', { text: string }),
+    oneOfKinds('phrase_cloze', { frame: string, text: string }),
+  ] } }), 1),
+});
+
+/** Practice uses lexical notes but not teaching sentences or their lookup IDs. */
+export function practiceInput(content: WordContentDocument) {
+  const { examples: _examples, ...source } = content;
+  return { ...source, uses: content.uses.map(({ exampleIds: _exampleIds, ...use }) => use) };
+}
 
 const reviewSchema = object({
   exercises: {
@@ -90,11 +96,15 @@ const reviewSchema = object({
   },
 });
 
+function schemaFor(stage: 'bootstrap' | 'teaching' | 'practice' | 'review'): JsonSchema {
+  return stage === 'bootstrap' ? bootstrapSchema : stage === 'teaching' ? teachingSchema : stage === 'practice' ? practiceSchema : reviewSchema;
+}
+
 export function createWordIntroductionProvider(options: {
   environment?: NodeJS.ProcessEnv;
   fetchImplementation?: FetchImplementation;
   /** Local diagnostics hook; never receives request headers or credentials. */
-  onRawText?: (stage: 'bootstrap' | 'teaching' | 'review', rawText: string) => void;
+  onRawText?: (stage: 'bootstrap' | 'teaching' | 'practice' | 'review', rawText: string) => void;
 } = {}): WordIntroductionProvider {
   const environment = options.environment ?? process.env;
   const adapter = createOpenAiCompatibleAdapter({
@@ -106,19 +116,19 @@ export function createWordIntroductionProvider(options: {
     fetchImplementation: options.fetchImplementation ?? fetchImplementationForProvider('openai', TIMEOUT_MS),
   });
   async function generate(
-    stage: 'bootstrap' | 'teaching' | 'review', input: WordBootstrapInput | WordContentDocument,
+    stage: 'bootstrap' | 'teaching' | 'practice' | 'review', input: WordBootstrapInput | WordContentDocument,
     generationOptions: WordGenerationOptions = {},
   ): Promise<unknown> {
     const apiKey = environment.OPENAI_API_KEY?.trim();
     if (!apiKey) throw new Error('Introduction generation is not configured.');
-    const schema = stage === 'bootstrap' ? bootstrapSchema : stage === 'teaching' ? teachingSchema : reviewSchema;
+    const schema = schemaFor(stage);
     const prompt = await readFile(new URL(`./prompts/${stage}.md`, import.meta.url), 'utf8');
     const result = await adapter.run({
       model: WORD_INTRODUCTION_MODEL,
       reasoningEffort: 'high',
       systemPrompt: prompt,
-      userPrompt: JSON.stringify(input),
-      outputSchemaName: `intro_lab_${stage}_v1`,
+      userPrompt: JSON.stringify(stage === 'practice' ? practiceInput(input as WordContentDocument) : input),
+      outputSchemaName: `intro_lab_${stage}_${stage === 'teaching' ? 'v2' : 'v1'}`,
       outputSchema: schema,
       maxOutputTokens: MAX_OUTPUT_TOKENS,
       temperature: null,
@@ -148,6 +158,12 @@ export function createWordIntroductionProvider(options: {
     isConfigured: () => Boolean(environment.OPENAI_API_KEY?.trim()),
     generateBootstrap: (input, generationOptions) => generate('bootstrap', input, generationOptions),
     generateTeaching: (content, generationOptions) => generate('teaching', content, generationOptions),
+    generatePractice: (content, generationOptions) => generate('practice', content, generationOptions),
+    generationKey: async (stage) => createHash('sha256').update(JSON.stringify({
+      prompt: await readFile(new URL(`./prompts/${stage}.md`, import.meta.url), 'utf8'),
+      schema: schemaFor(stage), model: WORD_INTRODUCTION_MODEL, reasoning: 'high',
+      maxOutputTokens: MAX_OUTPUT_TOKENS, inputVersion: stage === 'practice' ? 'without-examples-v1' : 'full-v1',
+    })).digest('hex'),
     generateReview: (content, generationOptions) => generate('review', content, generationOptions),
   };
 }
