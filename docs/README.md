@@ -37,6 +37,10 @@ These sources remain to be reconciled into the target hierarchy. In particular,
 the frontier and service-boundary document mix several roles. Their existing
 guarantees remain relevant while the documentation is reorganized.
 
+[What’s New](whats-new.md#content-and-publication) defines the blog’s publication
+and unread-update contract; its persistence and operator sections explain how
+the application realizes those promises.
+
 ## Current architecture and implementation
 
 **Target:** explain actual components, data flow, mechanisms, and limitations,
@@ -68,6 +72,8 @@ hosted operations, and contributor development clearly separated.
   [observability](ops/hosted-observability.md),
   [diagnostics](ops/error-diagnostics.md), and
   [schema migrations](ops/schema-migrations.md).
+- Blog publication: [manual editor and operator command](whats-new.md#manual-operator-editor),
+  including the skill’s interactive draft-review procedure.
 - Contributor environments: [scripts](scripts.md) and the
   [introduction lab](word-introduction-lab.md).
 

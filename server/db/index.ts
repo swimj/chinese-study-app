@@ -30,3 +30,5 @@ export * from './content-quality.ts';
 
 export * from './session-debrief.ts';
 export * from './recovery-highlights.ts';
+
+export * from './whats-new.ts';

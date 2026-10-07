@@ -54,6 +54,8 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
     'content-free daily cohort product-usage pulse aggregates',
   ),
   operationalEntry('service_banner', 'current operator-posted signed-in service notice'),
+  operationalEntry('whats_new_posts', 'operator-authored blog drafts and published learner-facing posts; published-only reader access'),
+  operationalEntry('whats_new_post_revisions', 'immutable attributed blog revisions including operator-only draft history'),
   sharedEntry(
     'shared_content_publications',
     'immutable reusable content plus publication disposition',

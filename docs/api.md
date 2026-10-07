@@ -407,8 +407,12 @@ Request/result types live in
 | PUT | `/api/reflection-quality` | Upsert the tag set on one reflection item |
 | DELETE | `/api/reflection-quality` | Clear quality tags for one reflection item |
 | GET | `/api/reflection-quality-stats` | Aggregate dogfood quality rates by model arm |
-| GET | `/api/attention-badges` | Unseen Help-queue count, unseen failed generation-run ids, failed-run seen-through cursor, and What’s New seen-through date |
+| GET | `/api/attention-badges` | Unseen Help-queue count, unseen failed generation-run ids, failed-run seen-through cursor, and What’s New read cursors |
 | POST | `/api/reflection-inbox-seen` | Stamp one Help card as displayed |
+| GET | `/api/whats-new` | Read shared published blog posts |
+| GET | `/api/operator/whats-new` | Operator-only current posts including drafts |
+| PUT | `/api/operator/whats-new` | Operator-only validated, revision-checked post save |
+| POST | `/api/whats-new-seen-sequence` | Ensure or advance the What’s New publication sequence |
 | POST | `/api/whats-new-seen` | Ensure or advance the What’s New seen-through date |
 | POST | `/api/failed-reflection-runs-seen` | Advance the failed-reflection-run seen-through timestamp |
 | GET | `/api/reflection-help-inbox` | List open explanation-only Help inbox rows |
@@ -702,6 +706,7 @@ The second-opinion request accepts `helpInboxIds` alongside `proposalIds`.
   failedReflectionRunIds: string[];
   failedReflectionRunsSeenThroughAt: string | null;
   whatsNewSeenThroughDate: string | null;
+  whatsNewSeenThroughSequence: number | null;
 }
 ```
 
@@ -715,10 +720,10 @@ is current and gives the failure marker priority over the count. Opening Run
 meta durably acknowledges currently failed runs. `failedReflectionRunsSeenThroughAt`
 is that ISO-8601 UTC cursor in `learner_params`
 (`failed_reflection_runs_seen_through_at`), or null if it has never been
-written. `whatsNewSeenThroughDate` is the learner’s stored YYYY-MM-DD cursor in
-`learner_params` (`whats_new_seen_through_date`), or null if it has never been
-written. It is not a `learner_settings` value. The client grandfathers a
-missing cursor against the current catalog and counts later posts itself.
+written.
+
+The What’s New cursor fields follow the
+[blog's unread-update contract](whats-new.md#unread-updates).
 
 `POST /api/reflection-inbox-seen` accepts one of:
 
@@ -731,15 +736,33 @@ It stamps `inbox_seen_at` once and returns `{ marked, reflectionUnseenCount }`.
 Missing proposals return `404`. A missing explanation inbox row is a no-op
 `200` so Done races do not fail the pager.
 
-`POST /api/whats-new-seen` accepts `{ throughDate, mode }` where `throughDate`
-is `YYYY-MM-DD` and `mode` is `ensure` (fill only when unset) or `seen`
-(monotonic max). Success returns `{ whatsNewSeenThroughDate }`.
-
 `POST /api/failed-reflection-runs-seen` accepts `{}` or `{ seenThroughAt }`
 where `seenThroughAt` is an ISO-8601 UTC timestamp. An empty body uses the
 server clock. Success advances the cursor monotonically and returns
 `{ failedReflectionRunIds, failedReflectionRunsSeenThroughAt }`, where the ids
 are the remaining unseen failed runs.
+
+### What’s New blog
+
+`GET /api/whats-new` returns `{ posts: WhatsNewPost[] }` containing published
+posts. Operator-only `GET /api/operator/whats-new` returns the same shape,
+including drafts. `PUT /api/operator/whats-new` requires the existing operator
+allowlist and accepts `WhatsNewWriteRequest`; success returns the saved
+`WhatsNewPost`. The [shared types](../src/domain/whats-new.ts) define these
+shapes, and the [operator command](whats-new.md#operator-command) shows a full
+write-input example. Invalid content returns 400, stale revisions return 409,
+and missing operator access returns 403. The write endpoint has a scoped 1 MiB
+JSON limit to accommodate escaped content within the domain bounds.
+
+`POST /api/whats-new-seen-sequence` accepts
+`{ throughSequence: number, mode: 'ensure' | 'seen' }` and returns
+`{ whatsNewSeenThroughSequence: number }`. An invalid mode, negative/noninteger
+sequence, or sequence beyond publication history returns 400.
+The retained `POST /api/whats-new-seen` accepts
+`{ throughDate: string, mode: 'ensure' | 'seen' }`, where the date is
+`YYYY-MM-DD`, and returns `{ whatsNewSeenThroughDate: string }`.
+The [blog contract](whats-new.md#unread-updates) explains acknowledgement,
+initialization, and compatibility behavior.
 
 ### Manual authorization from explanation-only items
 

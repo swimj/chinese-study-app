@@ -200,6 +200,7 @@ describe('attention badges', { concurrency: false }, () => {
       failedReflectionRunIds: ['failed-run'],
       failedReflectionRunsSeenThroughAt: null,
       whatsNewSeenThroughDate: null,
+      whatsNewSeenThroughSequence: null,
     });
   });
 

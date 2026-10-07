@@ -1,3 +1,4 @@
+import { WhatsNewFeed } from './WhatsNewFeed';
 import { NestedNav } from '../components/AppChrome';
 
 const ABOUT_VIEWS = [
@@ -7,142 +8,13 @@ const ABOUT_VIEWS = [
   ['whats-new', "What's New"],
 ] as const;
 
-// Entry dates follow the change history; add new posts at the top.
-const UPDATES = [
-  {
-    date: '2026-10-06',
-    displayDate: 'October 6, 2026',
-    title: 'Connect the words you studied to your interests',
-    paragraphs: [
-      'The words you study can take you somewhere unexpected. After a session, Connections brings a few of them to life with short notes: a surprising turn of phrase, a glimpse of Chinese culture, or a link to something you love. Look for them in your session summary. They can take a little time to arrive, so feel free to head back to Home and reopen your latest session later.',
-      'Give Connections a few starting points: open the gear beside Start session, add topics under Interests, and save. Tennis, historical dramas, video games, cooking—whatever has your curiosity. Future sessions can draw on those interests, and you can leave the field blank to let the words lead the way.',
-      'The summary may also show Coming back more reliably, when words that were repeatedly tricky have started to stick. It’s a highlight, not a change to when the word comes due.',
-      'Missed a review and don’t want the extra practice that follows? Skip reinforcement finishes that item for the session. The miss still counts in the moment, and compensation is determined on a slightly slower cadence.',
-      'Card characters still offers Simplified, Traditional, or Both. This will now apply to not just the exercise word(s) but also any Mandarin content associated with it (like an example sentence). When Both is set, the additional Sentences and examples setting lets you pick which character system the study content should use.',
-    ],
-  },
-  {
-    date: '2026-10-05',
-    displayDate: 'October 5, 2026',
-    title: 'A quieter study desk, and a fairer failure rate',
-    paragraphs: [
-      'The app has a warmer, quieter palette: paper in the background, green for the ink and buttons. In a session, one card stays in the center, with the prompt, your answer, and the buttons together. The next card waits just behind it. A finished card moves off; a miss settles into Practice again at the bottom. On a fill-in-the-blank, the answer appears in the blank when you reveal it.',
-      'New-word introductions now keep the current beat in one reading place, with earlier beats still on the page above it. If you scroll back, Space returns you there before it advances. We are still tuning this walkthrough, so expect that part of a session to keep changing.',
-      'Sometimes a miss is the prompt’s fault: the cue was vague, or another answer was also fair. If you accept a reflection proposal that says so, that miss is compensated. The app puts the review back roughly where it was, so you are not punished for a bad prompt. The attempt itself stays in your history. On Home, Exercise failure rate now shows Adjusted failure and Compensation. Adjusted failure is your misses after those unfair ones are taken back, so the number can fall when a compensation is applied, even for an earlier miss. Compensation is how often that has happened. Open Rate details if you want the raw counts.',
-    ],
-  },
-  {
-    date: '2026-10-02',
-    displayDate: 'October 2, 2026',
-    title: 'New words start with a short walkthrough',
-    paragraphs: [
-      'A new word no longer opens as one card with the characters, pronunciation, and a single example. You read a short introduction one beat at a time. Space or Next beat shows the next thought, and earlier beats stay on the page. Finish walkthrough at the end. There is no skip straight to the drills.',
-      'Reading it does not count as learning the word. Continue, and the session mixes in the usual practice: recognize the word, and type the expression the introduction taught. That prompt wants the taught expression, so another natural answer may not count. When you reveal an answer, you may see the uses and examples from the introduction.',
-      'If an introduction is not ready, that new word waits instead of using the old card. Start session may wait up to about 30 seconds while material is prepared, or ask you to check again later, and you may get fewer new words than your daily limit. Words you are already learning keep their existing cards. The daily new-word limit now stops at 20.',
-    ],
-  },
-  {
-    date: '2026-09-27',
-    displayDate: 'September 27, 2026',
-    title: 'Reflection proposals for vague production prompts',
-    paragraphs: [
-      'We’ve made some changes to how reflection generates content improvement proposals, especially when a production mistake comes from a vague prompt.',
-      'If a proposal looks questionable, or anything else behaves oddly, please capture it and share it with Justin.',
-    ],
-  },
-  {
-    date: '2026-09-23',
-    displayDate: 'September 23, 2026',
-    title: 'Choose simplified, traditional, or both on study cards',
-    paragraphs: [
-      'Study cards can now follow the characters you want to practice. Open the gear beside Start session and set Card characters to Simplified, Traditional, or Both. Simplified stays the default. Both shows the two forms together when they differ, like 门 / 門.',
-      'Card characters controls word headings, recognition prompts, answers, and contrast choices. Sentences and examples follow that choice. If you choose Both, a second option lets you read sentences and examples in Simplified or Traditional. A revealed cloze uses one answer form matching its sentence; a separate answer can still show both. Personal notes stay as you wrote them.',
-      'Typing works the same in every setting. A production answer still counts if you type the simplified form or the traditional one.',
-    ],
-  },
-  {
-    date: '2026-09-22',
-    displayDate: 'September 22, 2026',
-    title: 'A smoother ride when more than one answer is right',
-    paragraphs: [
-      'Some prompts really do have more than one good Chinese answer. We’re making that feel less like a gotcha. If you type something that fits the cue, we want the app to treat it as a success more often, instead of acting as if you’d missed one hidden target word.',
-      'You may see this in a few places. After you reveal a production cue, the card can list every accepted answer, not just one. Some of that practice now follows the prompt itself rather than a single word, so a card labeled Pure cue production can show up alongside ordinary word reviews. And if a reflection decides your “Forgot” was actually a valid alternative, it can offer to treat the cue as shared. Authorize that and it can also unwind the unfair miss so the original word isn’t punished.',
-      'This is new, so expect a few bumps. A suggestion might be too broad, a card might show up at an odd time, or the reveal might list more answers than you expected. Read those proposals before applying them. If something feels off, send the cue, what you typed, and what you expected to the person who invited you.',
-      'A few smaller changes. Fixed a bug in My Words which led to the Recent Lapses selector picking up today’s newly learned words. Reflections shows a spinner on the tab while a reflection is generating, including after you close the session summary, hides its count while you’re already there, and uses a red ! if generation failed — open Run meta to clear that.',
-    ],
-  },
-  {
-    date: '2026-09-17',
-    displayDate: 'September 17, 2026',
-    title: 'See what’s waiting, finish with Space, and pick the right stash word',
-    paragraphs: [
-      'Reflections and About can now show a little number when something’s waiting. Reflections counts new Help cards after a session. About counts unread What’s New notes, including this one. Open the page and the count goes away.',
-      'When you hit the session summary, Space now finishes the session the same way Finish session does. Heading somewhere else in the app also wraps it up, so the last attempt is saved and a reflection can start without you sitting on the waiting screen. Leaving in the middle of a session is unchanged, and closing the tab still isn’t a reliable way to finish.',
-      'Stash add got two small improvements. You no longer have to type the comma in a saying: 吃一堑长一智 still finds 吃一堑，长一智. And if what you typed matches more than one unstudied word, a picker pops up so you can choose which ones to add instead of getting all of them. One match still adds immediately.',
-    ],
-  },
-  {
-    date: '2026-09-16',
-    displayDate: 'September 16, 2026',
-    title: 'Filter My words by stage or recent lapses',
-    paragraphs: [
-      'Words → My words now has chips to show only Not yet studied, Learning, or In review words. Turn on Recent lapses when you want to look at words you recently forgot or whose last learning attempt didn’t go well. The chips work with search across Recently studied, Personally added, and Current deck.',
-    ],
-  },
-  {
-    date: '2026-09-14',
-    displayDate: 'September 14, 2026',
-    title: 'A home for help and updates',
-    paragraphs: [
-      'About now brings getting-started advice, a usage guide, known limitations, and these update notes into the left rail. We’ll keep adding entries here as the app evolves.',
-    ],
-  },
-  {
-    date: '2026-09-13',
-    displayDate: 'September 13, 2026',
-    title: 'Find your words and your starting point',
-    paragraphs: [
-      'Words → My words gives you a place to browse your collection and inspect individual words, including recent additions and words with personal notes.',
-      'Before your first session, you can answer a few questions to help choose a starting level or pick it yourself. After a session, you can nudge the suggested vocabulary easier or harder.',
-    ],
-  },
-  {
-    date: '2026-09-11',
-    displayDate: 'September 11, 2026',
-    title: 'Study just the words in your stash',
-    paragraphs: [
-      'Session settings now let you choose stash-only new words. The default still mixes your stash with the app’s selection. Choose stash-only when you want to concentrate on vocabulary you’ve picked yourself.',
-    ],
-  },
-  {
-    date: '2026-09-09',
-    displayDate: 'September 9, 2026',
-    title: 'Give a dismissed suggestion another look',
-    paragraphs: [
-      'Dismissed a reflection proposal by mistake? Open By session in Reflections and use Undo dismiss to return it to Help.',
-    ],
-  },
-] as const;
-
 export type AboutView = typeof ABOUT_VIEWS[number][0];
 
-export function latestWhatsNewDate(): string {
-  const latest = UPDATES[0];
-  if (latest === undefined) {
-    throw new Error('Expected at least one What’s New entry.');
-  }
-  return latest.date;
-}
-
-export function countUnseenWhatsNew(seenThroughDate: string | null): number {
-  if (seenThroughDate === null) return 0;
-  return UPDATES.filter((entry) => entry.date > seenThroughDate).length;
-}
-
-export function AboutPage({ view, onSelectView, whatsNewUnseenCount = 0 }: {
+export function AboutPage({ view, onSelectView, whatsNewUnseenCount = 0, onWhatsNewDisplayed }: {
   view: AboutView;
   onSelectView: (view: AboutView) => void;
   whatsNewUnseenCount?: number;
+  onWhatsNewDisplayed?: (throughSequence: number) => Promise<void>;
 }) {
   return (
     <>
@@ -229,15 +101,7 @@ export function AboutPage({ view, onSelectView, whatsNewUnseenCount = 0 }: {
         ) : (
           <>
             <p>Notes on how the app is evolving, newest first.</p>
-            <div className="about-updates">
-              {UPDATES.map((entry) => (
-                <article className="about-update" key={entry.date} aria-labelledby={`update-${entry.date}`}>
-                  <time className="notes" dateTime={entry.date}>{entry.displayDate}</time>
-                  <h2 id={`update-${entry.date}`}>{entry.title}</h2>
-                  {entry.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
-                </article>
-              ))}
-            </div>
+            <WhatsNewFeed onDisplayed={onWhatsNewDisplayed} />
           </>
         )}
       </article>

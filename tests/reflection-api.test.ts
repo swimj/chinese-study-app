@@ -787,6 +787,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       failedReflectionRunIds: [],
       failedReflectionRunsSeenThroughAt: null,
       whatsNewSeenThroughDate: null,
+      whatsNewSeenThroughSequence: null,
     });
 
     const marked = await request('/api/reflection-inbox-seen', {
