@@ -1,23 +1,22 @@
 # Documentation index
 
-How documentation in this repo is classified and where to start.
+How documentation in this repo is classified and where to start. See
+[documentation principles](documentation-principles.md) for how to write and
+maintain it, distinguish promises from descriptions, and improve it incrementally.
 
-## Reading order for agents
+## Entry points
 
-1. [AGENTS.md](../AGENTS.md) — runbook, conventions, task routing
-2. [STABILITY_FRONTIER.md](../STABILITY_FRONTIER.md) — safe architectural assumptions, invariants, and unsettled decisions
-3. [SPECS/README.md](../SPECS/README.md) — product spec index
-4. Canonical specs (intended behavior; surface conflicts with instructions or code):
-   - [SPECS/learning-review-model.md](../SPECS/learning-review-model.md)
-   - [SPECS/session-covering-criteria.md](../SPECS/session-covering-criteria.md)
-   - [SPECS/study-action-model.md](../SPECS/study-action-model.md)
-   - [SPECS/session-debrief.md](../SPECS/session-debrief.md)
-   - [SPECS/session-reflection-generation.md](../SPECS/session-reflection-generation.md)
-   - [SPECS/reflection-proposals-and-handles.md](../SPECS/reflection-proposals-and-handles.md)
-5. [architecture.md](./architecture.md) — system map (navigation only)
-6. [private-beta-service-boundary.md](./private-beta-service-boundary.md) — accepted hosted-beta ownership, identity, persistence, release, and trust contract
-7. [hosted-dogfood-shared-trial-policy.md](./hosted-dogfood-shared-trial-policy.md) — one-time shared-trial backfill used at the hosted dogfood cutover
-8. Relevant tests — see [testing.md](./testing.md)
+- **Getting started:** [README.md](../README.md) covers the app, modes, and local
+  workflow. Use [architecture.md](architecture.md) for the system map.
+- **Agent tasks:** [AGENTS.md](../AGENTS.md#2-orientation-and-task-routing) owns
+  orientation and task routing. Use the entries below to select relevant
+  material; this index adds no second mandatory reading sequence.
+- **Intent and boundaries:** [STABILITY_FRONTIER.md](../STABILITY_FRONTIER.md)
+  summarizes safe architectural assumptions and unsettled decisions;
+  [SPECS/README.md](../SPECS/README.md) routes to product and feature contracts.
+
+Reading order helps navigation; it does not rank truth or resolve conflicts.
+The separate human and agent entry points share the same owning explanations.
 
 ## Doc classes
 
@@ -25,7 +24,7 @@ How documentation in this repo is classified and where to start.
 | --- | --- | --- |
 | **Architectural boundary** | `STABILITY_FRONTIER.md` | Understanding safe assumptions, preserved constraints, and decisions requiring human guidance |
 | **Canonical product** | `SPECS/learning-review-model.md`, `session-covering-criteria.md`, `study-action-model.md`, `session-reflection-generation.md`, `reflection-proposals-and-handles.md` | Changing user-visible study or reflection behavior |
-| **Architecture maps** | `docs/architecture.md`, `docs/api.md`, `docs/server-db.md`, `SPECS/frontend-architecture-map.md` | Finding code; must stay in sync with implementation |
+| **Implementation descriptions and maps** | `docs/architecture.md`, `docs/api.md`, `docs/server-db.md`, `SPECS/frontend-architecture-map.md`, feature guides | Understanding how the system works today, including mechanisms, limitations, and code navigation |
 | **Accepted architecture contracts** | `docs/private-beta-service-boundary.md` | Building the hosted private-beta service boundary and steel thread |
 | **Plans** | `PLANS/`, milestone slices in `SPECS/` | Dated sequencing and rationale; verify current applicability rather than infer unfinished work from a label |
 | **Completed / historical** | `SPECS/archive/`, completed plans retained in `PLANS/` | Context only; not authoritative for current behavior |
@@ -34,10 +33,14 @@ How documentation in this repo is classified and where to start.
 | **Working memory** | `notes/active/` | Cross-thread context, research, multi-day work bundles (days–weeks; not authoritative or live task state) |
 | **Archived working memory** | `notes/archive/` | Retired working notes retained for context only; not part of the default agent reading path |
 
+These classes describe document roles; a document can serve several when its
+sections distinguish intended guarantees, current implementation, and rationale.
 Task instructions supply execution scope. Specs describe intended behavior; code
-and tests provide implementation evidence. Surface consequential conflicts instead
-of silently choosing a source. Correct stale maps within scope; report unresolved
-discrepancies. Historical plans and vision documents do not assign current work.
+determines actual behavior and tests show what is checked. Surface consequential
+conflicts instead of silently choosing a source or rewriting a promise to match
+the code. Correct stale descriptions within scope; report unresolved discrepancies.
+Historical plans and vision documents do not assign current work. The principles
+are a target for incremental improvement, not a certification of this corpus.
 
 ## Companion maps
 
@@ -60,6 +63,7 @@ discrepancies. Historical plans and vision documents do not assign current work.
 
 ## Development and review workflows
 
+- [documentation-principles.md](documentation-principles.md) — readable models, promises and descriptions, incremental maintenance, and future custodial work
 - [stacked-feature-development-and-review.md](./stacked-feature-development-and-review.md) — default proportional implementation delivery and review model; it scales from one PR to a Graphite stack
 - [hosted-beta-implementation-steel-thread.md](../PLANS/hosted-beta-implementation-steel-thread.md) — historical implementation sequence and release/recovery proof context
 

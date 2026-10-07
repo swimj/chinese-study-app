@@ -10,7 +10,7 @@ Guidance for AI coding agents working in this repository.
 - Persistence: SQLite (`app.db`) via Node `DatabaseSync`, modules under `server/db/`.
 - Direction: polish, maturity, and debt in the existing learner experience; preserve the hosted ownership and data-safety boundaries while improving it.
 - Documentation taxonomy: [`docs/README.md`](docs/README.md), [`SPECS/README.md`](SPECS/README.md), and [`notes/README.md`](notes/README.md) (medium-lived working memory).
-- Product behavior source of truth:
+- Intended product behavior (see §2 for reconciliation with implementation):
   - `SPECS/learning-review-model.md` — word lifecycle
   - `SPECS/session-covering-criteria.md` — in-session covering and commits
   - `SPECS/study-action-model.md` — scheduling, study actions, attempt events
@@ -19,25 +19,34 @@ Guidance for AI coding agents working in this repository.
   - `SPECS/reflection-proposals-and-handles.md` — reflection proposals,
     authorization, application, provenance, and handle operations
 
-## 2) First Files To Read
+## 2) Orientation And Task Routing
 
-1. `README.md`
-2. `docs/README.md`
-3. `package.json`
-4. `SPECS/learning-review-model.md`
-5. `SPECS/session-covering-criteria.md`
-6. `SPECS/study-action-model.md`
-7. `STABILITY_FRONTIER.md` — safe architectural assumptions and unsettled decisions (see §12)
-8. Task-spec notes linked from the relevant Linear item or supplied dispatch context, followed by only the working notes relevant to the task (working memory only; surface conflicts as described below — see [`notes/README.md`](notes/README.md))
-9. Relevant tests under `tests/` (see [`docs/testing.md`](docs/testing.md))
+Start with `README.md` for the app and local workflow, `docs/README.md` for the
+documentation map, and `STABILITY_FRONTIER.md` for safe architectural assumptions
+and unsettled decisions (see §12). Then follow the task routes below and the
+relevant entries in `SPECS/README.md`; the index is a map, not an additional
+required reading list.
+
+Read the owning contracts and implementation descriptions for the area being
+changed, the relevant tests (see [`docs/testing.md`](docs/testing.md)), and
+`package.json` before running commands. Consult supplied task-spec notes and
+only the working notes relevant to the task; they provide context rather than
+authority (see [`notes/README.md`](notes/README.md)).
 
 The direct task instruction and subsequent clarifications supply execution scope.
-Canonical specs describe intended behavior; code and tests show implemented
-behavior. If they conflict with each other or with an explicit instruction,
-surface the discrepancy. Apply a clear authorized change with matching docs and
-tests; do not silently fix code to a stale spec or treat existing code as product
-intent. Continue well-defined work and ask only when a consequential unresolved
-product or architectural choice is needed. Old plans do not override the task.
+Canonical specs describe intended behavior; code determines actual behavior
+and tests show what is checked. If these sources conflict with each other or
+with an explicit instruction, surface the discrepancy. Apply a clear authorized
+change with matching docs and tests; do not silently fix code to a stale spec or
+treat existing code as product intent. Continue well-defined work and ask only
+when a consequential unresolved product or architectural choice is needed.
+Old plans do not override the task.
+
+For documentation work, use [`docs/documentation-principles.md`](docs/documentation-principles.md).
+Keep promises, current implementation, and rationale distinguishable; explain
+the model in human-readable prose and improve the owning explanation in place.
+Existing specs may also contain accidental or stale choices, so recover intent
+deliberately rather than treating either code or every spec sentence as settled.
 
 ### Task routing
 
@@ -48,7 +57,7 @@ product or architectural choice is needed. Old plans do not override the task.
 | Contrast clusters / content | `study-action-model.md` (contrast sections), `reflection-proposals-and-handles.md` (`create_contrast_cluster`) | `contrast-content.test.ts`, `reflection-application.test.ts` |
 | Word priority / French aliases | `README.md` (French section), `src/study-profile.ts` | `user-priority.test.ts`, `priority-aliases.test.ts` |
 | Persistence / SQL | [`docs/server-db.md`](docs/server-db.md) | matching `tests/*.test.ts` that import `server/db.ts` |
-| HTTP API contract | [`docs/api.md`](docs/api.md), `server/index.ts` | domain tests above + manual smoke if needed |
+| HTTP API behavior | Relevant feature contract, [`docs/api.md`](docs/api.md), `server/index.ts` | domain tests above + manual smoke if needed |
 | Reflection generation / evidence | `SPECS/session-reflection-generation.md`, `session-covering-criteria.md`, `docs/reflection-frontend-architecture.md` | `reflection-generation.test.ts`, `reflection-generation-isolation.test.ts`, `session-finalization.test.ts` |
 | Reflection proposals / handles | `SPECS/reflection-proposals-and-handles.md`, `SPECS/session-reflection-generation.md` | `llm-provider-runner.test.ts` plus matching lifecycle/adapter tests |
 | Hosted application-only release | [`docs/ops/hosted-beta-deployment.md`](docs/ops/hosted-beta-deployment.md), agent terminal-driver procedure | No schema/data migration; use authenticated Fly access on the first launch when the sandbox blocks `~/.fly`; retain and poll one terminal session through its terminal exit status; never start a second upgrade while the first has unknown state |
@@ -182,10 +191,17 @@ This repo contains real DB artifacts and backups under `data/`.
 
 ## 9) Done Checklist
 
-1. Code compiles and relevant tests pass.
-2. Behavior is aligned with spec docs.
+1. Code compiles and relevant tests pass, where applicable to the change.
+2. Relevant intended behavior, implementation, and tests have been reviewed
+   for agreement; consequential unresolved discrepancies are surfaced.
 3. No accidental data-file modifications.
-4. Docs updated when behavior or commands changed.
+4. Make a proportional, best-effort update to owning docs when behavior,
+   mechanisms, or commands change; report meaningful remaining gaps.
+
+The [documentation principles](docs/documentation-principles.md) are an
+incremental target, not a blanket hard merge gate or a claim that all existing
+docs have been verified. Task-specific correctness and safety requirements
+still apply.
 
 ## 10) If Unsure
 

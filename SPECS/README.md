@@ -6,12 +6,16 @@ Product and planning documents under `SPECS/`. See [docs/README.md](../docs/READ
 
 These define intended behavior. Surface conflicts with explicit instructions or
 verified implementation; agreed behavior changes update contracts and tests together.
+Canonical ownership does not certify every existing sentence as deliberate or
+current. Use the [documentation principles](../docs/documentation-principles.md)
+to recover intent and distinguish guarantees from implementation details; do
+not revise a promise solely because the code behaves differently.
 
 | Document | Role |
 | --- | --- |
 | [learning-review-model.md](./learning-review-model.md) | Word lifecycle (`unstudied` / `learning` / `review`), direction-level rules, session inclusion at word level |
 | [session-covering-criteria.md](./session-covering-criteria.md) | In-session covering, undo, commit payload intent (frontend-owned session snapshot) |
-| [study-action-model.md](./study-action-model.md) | Implemented scheduling architecture: study actions, word-skill state, attempt events, contrast selection, and the bounded production-task/cue model |
+| [study-action-model.md](./study-action-model.md) | Scheduling model and intended behavior: study actions, word-skill state, attempt events, contrast selection, and the bounded production-task/cue model |
 | [session-debrief.md](./session-debrief.md) | Informational Mandarin debrief inventory, durable generation, interests, failure and retry |
 | [session-recovery-highlights.md](./session-recovery-highlights.md) | Deterministic acknowledgment of repeated trouble followed by reliable recall |
 | [session-reflection-generation.md](./session-reflection-generation.md) | Completed-session boundary, reflection evidence, generation attempts, failure isolation, retry, and resource bounds |
@@ -24,7 +28,10 @@ active session; `session-reflection-generation` owns finalized evidence and
 generation; and `reflection-proposals-and-handles` owns review, authorization,
 application, and provenance after generation succeeds.
 
-## Architecture maps (navigation only)
+## Implementation descriptions and maps
+
+These explain current mechanisms and code boundaries rather than establish new
+product guarantees. Keep any known gaps from intended behavior explicit.
 
 | Document | Role |
 | --- | --- |
