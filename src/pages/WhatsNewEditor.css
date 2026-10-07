@@ -1,0 +1,11 @@
+.whats-new-editor { max-width: 55rem; }
+.whats-new-editor form, .whats-new-editor label { display: grid; gap: .5rem; }
+.whats-new-editor form { gap: 1rem; }
+.whats-new-editor input, .whats-new-editor select, .whats-new-editor textarea { width: 100%; box-sizing: border-box; min-width: 0; font: inherit; }
+.whats-new-editor textarea { resize: vertical; line-height: 1.5; }
+.whats-new-editor-picker { display: flex; align-items: end; flex-wrap: wrap; gap: .75rem; margin-bottom: 1.5rem; }
+.whats-new-editor-picker label { flex: 1 1 20rem; min-width: 0; }
+.whats-new-editor-actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+.whats-new-editor .notes { margin: 0; }
+.whats-new-editor details { margin-top: 1.5rem; }
+.whats-new-editor .about-update { overflow-wrap: anywhere; white-space: pre-line; }

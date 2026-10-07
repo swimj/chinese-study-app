@@ -1,3 +1,4 @@
+import type { WhatsNewPost, WhatsNewWriteRequest } from '../domain/whats-new';
 import type { ModelInvocationRow } from '../domain/model-invocations';
 import type { SessionDebrief, SessionDebriefInventoryItem } from '../domain/session-debrief';
 import type {
@@ -1077,6 +1078,7 @@ export type AttentionBadgesDto = {
   failedReflectionRunIds: string[];
   failedReflectionRunsSeenThroughAt: string | null;
   whatsNewSeenThroughDate: string | null;
+  whatsNewSeenThroughSequence: number | null;
 };
 
 export async function fetchReflectionHelpInbox(): Promise<{ entries: ReflectionHelpInboxEntry[] }> {
@@ -1392,4 +1394,35 @@ export async function retrySessionDebrief(sessionId: string, signal?: AbortSigna
   const response = await apiFetch(`${API_BASE}/api/session-debriefs/${encodeURIComponent(sessionId)}/retry`, { method: 'POST', signal });
   if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not retry session debrief'));
   return (await response.json() as { debrief: SessionDebrief }).debrief;
+}
+
+export async function fetchWhatsNew(): Promise<{ posts: WhatsNewPost[] }> {
+  const response = await apiFetch(`${API_BASE}/api/whats-new`);
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, "Failed to load What's New"));
+  return response.json();
+}
+
+export async function fetchOperatorWhatsNew(): Promise<{ posts: WhatsNewPost[] }> {
+  const response = await apiFetch(`${API_BASE}/api/operator/whats-new`);
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, "Failed to load blog posts"));
+  return response.json();
+}
+
+export async function saveOperatorWhatsNew(request: WhatsNewWriteRequest): Promise<WhatsNewPost> {
+  const response = await apiFetch(`${API_BASE}/api/operator/whats-new`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+  });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response,
+    response.status === 409 ? 'This post changed elsewhere. Copy your edits, then reload the post before saving.' : 'Failed to save blog post'));
+  return response.json();
+}
+
+export async function markWhatsNewSeenSequence(request: {
+  throughSequence: number; mode: 'ensure' | 'seen';
+}): Promise<{ whatsNewSeenThroughSequence: number }> {
+  const response = await apiFetch(`${API_BASE}/api/whats-new-seen-sequence`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+  });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Failed to acknowledge blog posts'));
+  return response.json();
 }

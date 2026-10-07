@@ -349,9 +349,9 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
         <AboutPage
           view={aboutView}
           whatsNewUnseenCount={attention.whatsNewUnseenCount}
+          onWhatsNewDisplayed={attention.acknowledgeWhatsNew}
           onSelectView={(view) => {
             setAboutView(view);
-            if (view === 'whats-new') void attention.acknowledgeWhatsNew();
           }}
         />
       ) : currentPage === 'content' ? (

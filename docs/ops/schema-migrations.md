@@ -261,3 +261,16 @@ inventory inference or provider backfill. Use the stopped-writer offline
 migration procedure; an application-only upgrade is insufficient. Queued jobs
 resume after restart; expired running attempts become failed and require an
 explicit learner retry to avoid replaying an unknown upstream outcome.
+
+## What’s New blog rollout
+
+`0028_whats_new_blog.sql` creates the shared current-post table and immutable
+revision history, and copies the former bundled notes into published rows with
+publication sequences. Historical notes retain their text; source commit
+provenance remains null because a publication date cannot prove a deployed
+revision. The blog uses a separate learner publication-sequence cursor while
+retaining the legacy date cursor for compatibility.
+
+Apply this migration once through the schema-changing release procedure with
+the app stopped and a backup retained. Subsequent [blog edits](../whats-new.md)
+use normal live transactions and need no maintenance window or migration.

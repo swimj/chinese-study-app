@@ -50,7 +50,8 @@
     "test": "node --import tsx --test tests/*.test.ts",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "dev:intro-lab": "node --env-file-if-exists=.env --import tsx scripts/dev-introduction-lab.ts"
+    "dev:intro-lab": "node --env-file-if-exists=.env --import tsx scripts/dev-introduction-lab.ts",
+    "hosted:whats-new": "node --import tsx scripts/manage-whats-new.ts"
   },
   "dependencies": {
     "@clerk/express": "^2.1.60",

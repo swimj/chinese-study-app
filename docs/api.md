@@ -392,8 +392,12 @@ Request/result types live in
 | PUT | `/api/reflection-quality` | Upsert the tag set on one reflection item |
 | DELETE | `/api/reflection-quality` | Clear quality tags for one reflection item |
 | GET | `/api/reflection-quality-stats` | Aggregate dogfood quality rates by model arm |
-| GET | `/api/attention-badges` | Unseen Help-queue count, unseen failed generation-run ids, failed-run seen-through cursor, and What’s New seen-through date |
+| GET | `/api/attention-badges` | Unseen Help-queue count, unseen failed generation-run ids, failed-run seen-through cursor, and What’s New seen-through date/sequence |
 | POST | `/api/reflection-inbox-seen` | Stamp one Help card as displayed |
+| GET | `/api/whats-new` | Read shared published blog posts |
+| GET | `/api/operator/whats-new` | Operator-only current posts including drafts |
+| PUT | `/api/operator/whats-new` | Operator-only validated, revision-checked post save |
+| POST | `/api/whats-new-seen-sequence` | Ensure or advance the What’s New publication sequence |
 | POST | `/api/whats-new-seen` | Ensure or advance the What’s New seen-through date |
 | POST | `/api/failed-reflection-runs-seen` | Advance the failed-reflection-run seen-through timestamp |
 | GET | `/api/reflection-help-inbox` | List open explanation-only Help inbox rows |
@@ -702,8 +706,12 @@ is that ISO-8601 UTC cursor in `learner_params`
 (`failed_reflection_runs_seen_through_at`), or null if it has never been
 written. `whatsNewSeenThroughDate` is the learner’s stored YYYY-MM-DD cursor in
 `learner_params` (`whats_new_seen_through_date`), or null if it has never been
-written. It is not a `learner_settings` value. The client grandfathers a
-missing cursor against the current catalog and counts later posts itself.
+written. It is not a `learner_settings` value. `whatsNewSeenThroughSequence`
+is the current publication-order cursor in `learner_params`. The sequence
+replaces date comparisons for new clients, so same-day and backdated posts
+remain distinguishable. Initialization respects legacy dates or grandfathers
+the loaded catalog. See [What’s New](whats-new.md) for the blog contract,
+write request, operator permissions, and conflict handling.
 
 `POST /api/reflection-inbox-seen` accepts one of:
 

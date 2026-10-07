@@ -1,3 +1,6 @@
+import { listWhatsNewPosts, saveWhatsNewPost, WhatsNewConflictError } from './db/whats-new.ts';
+import { WhatsNewInputError, parseWhatsNewWriteRequest } from '../src/domain/whats-new.ts';
+import { updateWhatsNewSeenThroughSequence } from './db/attention.ts';
 import { createFileReflectionFailureArtifactSink } from './reflection/failure-artifacts.ts';
 import { installModelInvocationLedger } from './llm/invocation-ledger.ts';
 import { listModelInvocations, ModelInvocationInputError } from './db/model-invocations.ts';
@@ -230,6 +233,7 @@ export function createApp(options: CreateAppOptions = {}) {
         allowedHeaders: ['Authorization', 'Content-Type'],
       }
     : undefined));
+  app.use('/api/operator/whats-new', express.json({ limit: '1mb' }));
   app.use(express.json({ limit: defaultJsonBodyLimit }));
 
   // Fly health checks and browser assets must remain available without a learner session.
@@ -1552,6 +1556,31 @@ export function createApp(options: CreateAppOptions = {}) {
         return;
       }
       res.status(500).json({ error: 'Failed to mark reflection inbox item seen' });
+    }
+  });
+
+  app.get('/api/whats-new', (_req, res) => {
+    res.json({ posts: listWhatsNewPosts() });
+  });
+  app.get('/api/operator/whats-new', createOperatorAllowlistMiddleware(), (_req, res) => {
+    res.json({ posts: listWhatsNewPosts({ includeDrafts: true }) });
+  });
+  app.put('/api/operator/whats-new', createOperatorAllowlistMiddleware(), (req, res) => {
+    try {
+      res.json(saveWhatsNewPost(parseWhatsNewWriteRequest(req.body), res.locals.operatorSubject as string));
+    } catch (error) {
+      if (error instanceof WhatsNewInputError) { res.status(400).json({ error: error.message }); return; }
+      if (error instanceof WhatsNewConflictError) { res.status(409).json({ error: error.message }); return; }
+      console.error('Failed to save blog post', error);
+      res.status(500).json({ error: 'Failed to save blog post' });
+    }
+  });
+  app.post('/api/whats-new-seen-sequence', (req, res) => {
+    try {
+      res.json({ whatsNewSeenThroughSequence: updateWhatsNewSeenThroughSequence(req.body?.throughSequence, req.body?.mode) });
+    } catch (error) {
+      if (error instanceof WhatsNewInputError) { res.status(400).json({ error: error.message }); return; }
+      res.status(500).json({ error: 'Failed to update blog seen sequence' });
     }
   });
 

@@ -1,3 +1,4 @@
+import { WhatsNewEditor } from './WhatsNewEditor';
 import { useEffect, useState } from 'react';
 import { ModelInvocationsPanel } from './ModelInvocationsPanel';
 import './OperatorUsagePulsePage.css';
@@ -14,6 +15,7 @@ const OPERATOR_TABS = [
   { id: 'invocations', label: 'Model invocations' },
   { id: 'quality', label: 'Content quality' },
   { id: 'failures', label: 'Preparation failures' },
+  { id: 'whats-new', label: 'What’s New' },
 ] as const;
 type OperatorTab = typeof OPERATOR_TABS[number]['id'];
 
@@ -44,6 +46,7 @@ export function OperatorUsagePulsePage() {
       {tab === 'invocations' && <ModelInvocationsPanel />}
       {tab === 'quality' && <ContentQualityPanel />}
       {tab === 'failures' && <PreparationFailuresPanel />}
+      {tab === 'whats-new' && <WhatsNewEditor />}
     </div>
   </section>;
 }

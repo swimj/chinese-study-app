@@ -1,3 +1,5 @@
+import { getLatestWhatsNewPublicationSequence } from './whats-new.ts';
+import { WhatsNewInputError } from '../../src/domain/whats-new.ts';
 import { getDb } from './connection.ts';
 import { getLearnerParam, upsertLearnerParam } from './identity.ts';
 import { isCurrentReflectionArtifactContract } from '../../src/domain/reflection-contracts.ts';
@@ -15,6 +17,7 @@ export type AttentionBadges = {
   failedReflectionRunIds: string[];
   failedReflectionRunsSeenThroughAt: string | null;
   whatsNewSeenThroughDate: string | null;
+  whatsNewSeenThroughSequence: number | null;
 };
 
 export function getAttentionBadges(): AttentionBadges {
@@ -24,6 +27,7 @@ export function getAttentionBadges(): AttentionBadges {
     failedReflectionRunIds: listFailedReflectionRunIds(failedReflectionRunsSeenThroughAt),
     failedReflectionRunsSeenThroughAt,
     whatsNewSeenThroughDate: getWhatsNewSeenThroughDate(),
+    whatsNewSeenThroughSequence: getWhatsNewSeenThroughSequence(),
   };
 }
 
@@ -245,4 +249,32 @@ function assertIsoTimestamp(value: string, label: string): void {
   if (Number.isNaN(parsed.valueOf()) || parsed.toISOString() !== value) {
     throw new Error(`Expected ${label} to be an ISO-8601 UTC timestamp.`);
   }
+}
+
+const WHATS_NEW_SEQUENCE_KEY = 'whats_new_seen_through_sequence';
+export function getWhatsNewSeenThroughSequence(): number | null {
+  const stored = getLearnerParam(WHATS_NEW_SEQUENCE_KEY);
+  if (stored !== null) {
+    if (typeof stored !== 'number' || !Number.isSafeInteger(stored) || stored < 0) throw new Error('Stored blog seen sequence is invalid.');
+    return stored;
+  }
+  const date = getWhatsNewSeenThroughDate();
+  if (date === null) return null;
+  return (getDb().prepare(`SELECT COALESCE(MAX(json_extract(post_json, '$.publicationSequence')), 0) AS sequence
+    FROM whats_new_post_revisions WHERE actor_id = 'migration:0028'
+      AND json_extract(post_json, '$.date') <= ?`).get(date) as { sequence: number }).sequence;
+}
+export function updateWhatsNewSeenThroughSequence(throughSequence: unknown, mode: unknown): number {
+  if (typeof throughSequence !== 'number' || !Number.isSafeInteger(throughSequence) || throughSequence < 0
+    || (mode !== 'ensure' && mode !== 'seen')) throw new WhatsNewInputError('Expected a nonnegative publication sequence and ensure or seen mode.');
+  const db = getDb();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    if (throughSequence > getLatestWhatsNewPublicationSequence()) throw new WhatsNewInputError('Publication sequence exceeds the newest blog post.');
+    const current = getWhatsNewSeenThroughSequence();
+    const next = mode === 'ensure' && current !== null ? current : Math.max(current ?? 0, throughSequence);
+    upsertLearnerParam(WHATS_NEW_SEQUENCE_KEY, next);
+    db.exec('COMMIT');
+    return next;
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
 }

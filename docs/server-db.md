@@ -20,6 +20,7 @@ the reflection application adapter in `reflections.ts`; the runbook is
 | [`content-quality.ts`](../server/db/content-quality.ts) | Exact-content exposure records, standing learner votes, and operator triage |
 | [`reflection-quality.ts`](../server/db/reflection-quality.ts) | Dogfood item quality-tag overlay, upsert-by-item, and model-arm stats joins |
 | [`reflection-help-inbox.ts`](../server/db/reflection-help-inbox.ts) | Open explanation-only Help inbox rows, keyed by `(artifact_id, item_id)`; Done deletes the row |
+| [`whats-new.ts`](../server/db/whats-new.ts) | Shared blog posts, publication ordering, revision conflicts, and immutable attributable save history; see [What’s New](whats-new.md) |
 | [`attention.ts`](../server/db/attention.ts) | Help `inbox_seen_at` stamps, unseen Help-queue count, unseen failed generation-run ids, failed-run seen-through cursor, and the What’s New seen-through cursor |
 | [`intake-triage.ts`](../server/db/intake-triage.ts) | Dormant intake-triage schema creation and validation retained for database compatibility |
 | [`domain-commands.ts`](../server/db/domain-commands.ts) | Shared transaction-aware domain commands used by reflection and manual paths; definition-production suppression and contextual-selection eligibility |
@@ -291,8 +292,11 @@ or schema migration.
 `learner_params` is the sibling per-learner key-value store for non-setting
 parameters (`learner_id`, `param_key`, `value_json`, `updated_at`). The first
 key, `whats_new_seen_through_date`, stores the learner’s What’s New YYYY-MM-DD
-cursor as JSON; a missing row means the client should grandfather the current
-catalog without badging historical posts.
+legacy cursor as JSON. Migration `0028_whats_new_blog` introduces shared
+`whats_new_posts`, immutable `whats_new_post_revisions`, and the learner-private
+`whats_new_seen_through_sequence` cursor. Publication sequences distinguish
+same-day and backdated posts; initialization respects an existing legacy date
+cursor or grandfathers the current catalog. See [the blog contract](whats-new.md).
 
 Legacy single-learner databases are not mutated during startup and are no
 longer supported. The sole dogfood database completed the one-time SWI-47

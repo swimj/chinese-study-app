@@ -54,6 +54,8 @@ linking to the intended guarantees they realize and any known gaps.
 - [Content model](word-content-model.md) and [content quality](content-quality.md):
   additional model, implementation, and operator material to reconcile with
   the relevant feature explanations.
+- [What’s New blog](whats-new.md): content/publication contract, live operator
+  editor and command, and release-note skill.
 - [Test coverage map](testing.md): test files and the domains they exercise.
 
 The maps provide useful navigation. The target also calls for explanatory

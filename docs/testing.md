@@ -44,6 +44,10 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `reflection-api.test.ts` | Generation statuses/errors, queue/detail, compact generation run log/retry, strict independent proposal review, quality tag upsert/stats, Help inbox Done, attention badges, durable failed-run acknowledgement, explanation-only manual authorization, apply/withdraw, startup recovery | `server/index.ts` registered Express route handlers + temporary SQLite |
 | `reflection-quality.test.ts` | Item quality tag-set upsert, multi-tag coexistence, model-arm disposition + tag stats | `server/db/reflection-quality.ts` + temporary SQLite |
 | `reflection-help-inbox.test.ts` | Explanation-only Help inbox seed at materialize, Done delete, manual authorization, independence from proposal disposition, 404 | `server/db/reflection-help-inbox.ts` + temporary SQLite |
+| `whats-new-blog.test.ts` | Migration/seeding, atomic revisions, draft visibility, publication ordering, live connection updates, input bounds and sequence attention | Temporary SQLite + shared parser |
+| `whats-new-api.test.ts` | Published feed, operator permissions, invalid writes, stale revisions and sequence endpoint | Express app + temporary SQLite |
+| `whats-new-command.test.ts` | Live command writes, actor history, conflict rejection, missing targets, old schema refusal and no bootstrap | CLI subprocess + temporary SQLite |
+| `whats-new-frontend.test.ts` | Same-day sequence counts, safe text rendering and unloaded-feed acknowledgement | Pure selectors + React server render |
 | `attention-badges.test.ts` | Unseen Help count, sticky `inbox_seen_at`, dismiss/reopen, durable failed-run seen-through cursor, What’s New cursor | `server/db/attention.ts` + temporary SQLite |
 | `reflection-attention.test.ts` | Reflections nav badge hiding, failure-over-count priority, and failed-run seen-through comparison | `src/features/attention/reflection-attention.ts` |
 | `session-debrief-inventory.test.ts` | Covered-only frozen inventory, actual contrast target, one-row purecue alternatives, pronunciation absence, Undo | `session-summary.ts` + session state machine |
