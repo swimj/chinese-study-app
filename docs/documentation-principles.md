@@ -112,11 +112,12 @@ code to a suspect spec, or turn uncertainty into a new guarantee.
 
 ## How explanations evolve
 
-A document's purpose begins with why someone opens it: the topics or questions
-they bring and the understanding or action it should enable. Each document
-should open by establishing that purpose and scope, so readers can tell what
-they can expect to learn and whether it meets their needs. A short introduction
-can do this; use a dedicated section when the scope needs more explanation.
+Each document should open by establishing its purpose and scope. Purpose
+explains who the document is for and what it helps them understand or do; scope
+identifies the topics and questions it addresses. Together, they help readers
+decide whether the document meets their needs. The [opening of this
+document](#purpose) provides an example. A short introduction can be sufficient;
+use a dedicated section when the scope needs more explanation.
 
 That purpose determines the explanations the document owns and the detail they
 need. A detail earns its place through the explanatory work it does. Choose the
