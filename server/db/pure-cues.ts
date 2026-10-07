@@ -727,8 +727,11 @@ export function hasActionLapseToCompensate(sourceAttemptId: string): boolean {
     action_kind: string;
     outcome: string;
   } | undefined;
-  if (!source || source.action_kind !== 'production') {
-    throw new Error(`Unfair-cue compensation attempt ${sourceAttemptId} is unavailable.`);
+  if (!source) {
+    throw new Error(`Cue repair source attempt ${sourceAttemptId} is unavailable.`);
+  }
+  if (source.action_kind !== 'production') {
+    throw new Error(`Cue repair compensation eligibility requires a production attempt (${sourceAttemptId}).`);
   }
   const first = getDb().prepare(`
     SELECT id, outcome
@@ -740,11 +743,13 @@ export function hasActionLapseToCompensate(sourceAttemptId: string): boolean {
     id: string;
     outcome: string;
   } | undefined;
-  if (!first || first.id !== sourceAttemptId
-    || (first.outcome !== 'correct' && first.outcome !== 'incorrect')) {
+  if (!first || first.id !== sourceAttemptId) {
     throw new Error(
-      'Unfair-cue compensation requires the action\'s first attempt, which must be the mistake.',
+      'Cue repair compensation eligibility requires the action\'s first attempt.',
     );
+  }
+  if (first.outcome !== 'correct' && first.outcome !== 'incorrect') {
+    throw new Error(`Cue repair source attempt ${sourceAttemptId} has invalid outcome ${first.outcome}.`);
   }
   return first.outcome === 'incorrect';
 }
