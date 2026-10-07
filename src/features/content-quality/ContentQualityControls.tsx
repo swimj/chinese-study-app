@@ -79,17 +79,17 @@ function QualityControls({ target, encounterId, label, hotkeysActive = false }: 
 
   return <div className="content-quality-controls" data-content-quality-controls role="group" aria-label={label}>
     <span className="content-quality-label">{label}</span>
-    <button type="button" className="content-quality-vote" aria-label={`Thumbs up: ${label}`}
-      aria-pressed={state?.rating === 'up'} disabled={!state || busy}
-      title={`Useful content${hotkeysActive ? ' (])' : ''}. Click again to clear.`}
-      onClick={() => void vote('up')}>
-      <span aria-hidden="true">👍</span>{hotkeysActive && <kbd>]</kbd>}
-    </button>
     <button type="button" className="content-quality-vote" aria-label={`Thumbs down: ${label}`}
       aria-pressed={state?.rating === 'down'} disabled={!state || busy}
       title={`Poor content${hotkeysActive ? ' ([)' : ''}. Click again to clear.`}
       onClick={() => void vote('down')}>
       <span aria-hidden="true">👎</span>{hotkeysActive && <kbd>[</kbd>}
+    </button>
+    <button type="button" className="content-quality-vote" aria-label={`Thumbs up: ${label}`}
+      aria-pressed={state?.rating === 'up'} disabled={!state || busy}
+      title={`Useful content${hotkeysActive ? ' (])' : ''}. Click again to clear.`}
+      onClick={() => void vote('up')}>
+      <span aria-hidden="true">👍</span>{hotkeysActive && <kbd>]</kbd>}
     </button>
     <span className="content-quality-status" role="status">{busy ? 'Saving…' : state?.rating ? 'Saved' : ''}</span>
     {error && <span className="content-quality-error" role="alert">{error} {!state &&
