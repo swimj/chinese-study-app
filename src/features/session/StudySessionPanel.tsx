@@ -102,6 +102,7 @@ export function StudySessionPanel(props: StudySessionPanelProps) {
       activeElapsedTime={props.activeElapsedTime}
       sessionFinalization={props.sessionFinalization}
       sessionSummary={props.sessionSummary}
+      completedReinforcementStreak={props.completedReinforcementStreak}
       hasUndo={props.hasUndo}
       submittingRating={props.submittingRating}
       shortcutGuideOpen={props.shortcutGuideOpen}
@@ -143,6 +144,7 @@ function StudySessionPanelContent({
   activeReviewProgress,
   activePureCueFailureCount,
   activePureCueReinforcementStreak,
+  completedReinforcementStreak = null,
   reviewedCount,
   queuedCount,
   hasUndo,
@@ -223,6 +225,7 @@ function StudySessionPanelContent({
   activeReviewProgress: ReviewActionProgress | undefined;
   activePureCueFailureCount: number;
   activePureCueReinforcementStreak: number;
+  completedReinforcementStreak?: number | null;
   reviewedCount: number;
   queuedCount: number;
   hasUndo: boolean;
@@ -673,7 +676,12 @@ function StudySessionPanelContent({
             <div className="prompt-block">
               <span className="prompt-label">Cue</span>
               <strong className="prompt-value">{sentenceText(activePureCue.snapshot.stimulus)}</strong>
-              {reviewInReinforcement ? <RecallChips count={activePureCueReinforcementStreak} label="Practice again" /> : null}
+              {reviewInReinforcement ? <RecallChips
+                count={completionGate && completedReinforcementStreak !== null
+                  ? completedReinforcementStreak
+                  : activePureCueReinforcementStreak}
+                label="Practice again"
+              /> : null}
             </div>
             {qualityControls({ kind: 'pure_cue', snapshotId: activePureCue.snapshot.snapshotId },
               activePureCue.sessionActionId, reviewedCount, 'Cue quality')}
@@ -845,7 +853,12 @@ function StudySessionPanelContent({
                 label={activeItem.actionKind === 'recognition' ? 'Recognition' : 'Production'}
               /> : activeWord.status === 'learning' ? <RecallChips total={2}
                 count={Number(activeLearningProgress?.coveredDirections.forward ?? false) + Number(activeLearningProgress?.coveredDirections.reverse ?? false)} label="Recall skills"
-              /> : reviewInReinforcement ? <RecallChips count={activeReviewProgress?.reinforcementStreak ?? 0} label="Practice again" /> : null}
+              /> : reviewInReinforcement ? <RecallChips
+                count={completionGate && completedReinforcementStreak !== null
+                  ? completedReinforcementStreak
+                  : activeReviewProgress?.reinforcementStreak ?? 0}
+                label="Practice again"
+              /> : null}
             </div>
             {qualityControls(getSessionContentQualityTarget(activeItem), activeItem.sessionActionId, reviewedCount,
               activeItem.rehearsal ? 'Rehearsal quality' : 'Cue quality', !showProductionSupplementAside)}
