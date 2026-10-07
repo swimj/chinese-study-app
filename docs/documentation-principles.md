@@ -141,13 +141,6 @@ understanding depends on it. As understanding changes, maintain and reorganize
 the documentation toward these responsibilities. Choose file boundaries that
 keep related concepts understandable and responsibilities clear.
 
-Proposals should state the change under consideration, its reasons, and open
-decisions. As proposals are accepted, incorporate the conclusions that change
-the maintained account of the product or its implementation. Preserve rationale
-that helps readers understand those conclusions and reason about future
-changes. Retain useful prior context as dated history linked from the current
-explanation.
-
 A working note can preserve exploration or support a handoff. Its durable
 conclusions should graduate into the appropriate explanation. The task or PR
 can retain execution detail, while the maintained documentation tells readers
