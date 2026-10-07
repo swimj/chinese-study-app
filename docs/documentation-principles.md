@@ -51,7 +51,7 @@ A procedure can link to the application explanations needed to carry it out.
 ## What each document group provides
 
 Here, an explanation's **owner** means the named document or section that
-maintains its current account. Use the document's name when assigning that
+maintains it. Use the document's name when assigning that
 responsibility.
 
 | Document or group | Reader's question | Content it maintains | Useful links |
@@ -104,17 +104,25 @@ code to a suspect spec, or turn uncertainty into a new guarantee.
 
 ## How explanations evolve
 
-Each durable explanation should answer a distinct question and have an
-identifiable document or section that maintains it. Update that account as
-understanding changes; summaries and entry points link readers to it. Choose
-file boundaries that keep related concepts understandable and responsibilities
-clear.
+A document's purpose determines what it maintains. Each document should
+identify the reader questions it answers and the explanations it owns. Other
+explanations belong elsewhere, with references where answering those reader
+questions depends on them.
+
+To decide whether information or a reference belongs, ask: if the reader does
+not know this information, what question can this document no longer answer
+adequately?
+
+A change should require updates to other documents only when it changes an
+explanation they own. As understanding changes, maintain and reorganize the
+documentation toward these responsibilities. Choose file boundaries that keep
+related concepts understandable and responsibilities clear.
 
 Proposals should state the change under consideration, its reasons, and open
 decisions. Once a proposal is accepted, incorporate the decision into the
 current model, contract, or implementation explanation and preserve the
 rationale that will help future readers. Retain useful prior context as dated
-history linked from the current account.
+history linked from the current explanation.
 
 A working note can preserve exploration or support a handoff. Its durable
 conclusions should graduate into the appropriate explanation. The task or PR
