@@ -27,8 +27,10 @@ import {
   type FrozenProductionCard,
   type FrozenPureCueCard,
 } from '../features/session/StudySessionPanel';
-import { SessionDebriefPanel } from '../features/session/SessionDebriefPanel';
 import { useSessionDebrief } from '../features/session/useSessionDebrief';
+import { HomeConnections } from '../features/session/HomeConnections';
+import { ConnectionSignals } from '../features/session/ConnectionSignals';
+import { useHomeConnectionsView } from '../features/session/useHomeConnectionsView';
 import { HomeOverviewPanel, SessionSettingsPanel } from './HomeOverviewPanel';
 
 export function HomePage({
@@ -207,11 +209,12 @@ export function HomePage({
   onCloseShortcutGuide: () => void;
   onNudgeDiet: (direction: 'easier' | 'harder') => Promise<void>;
 }) {
-  const [reopenedSessionId, setReopenedSessionId] = useState<string | null>(null);
-  const showingDebrief = reopenedSessionId !== null;
-  const recent = useSessionDebrief(undefined, !sessionStarted && !showingDebrief && backendStatus?.studyProfile === 'mandarin');
+  const recent = useSessionDebrief(undefined, !sessionStarted && backendStatus?.studyProfile === 'mandarin');
   const [sessionSettingsOpen, setSessionSettingsOpen] = useState(false);
   const [sessionSettingsSaving, setSessionSettingsSaving] = useState(false);
+  const connectionsVisible = !sessionStarted && !sessionSettingsOpen;
+  const connections = useHomeConnectionsView(recent.debrief, connectionsVisible);
+  const connectionsExpanded = connectionsVisible && connections.expanded;
   useEffect(() => {
     if (sessionStarted) {
       setSessionSettingsOpen(false);
@@ -219,10 +222,12 @@ export function HomePage({
   }, [sessionStarted]);
 
   return (
-    <div className={sessionStarted || showingDebrief ? 'home-page home-session-active' : 'home-page'}>
+    <div className={sessionStarted ? 'home-page home-session-active' : `home-page${connectionsExpanded ? ' home-connections-expanded' : ''}`}>
+      {connectionsExpanded ? <ConnectionSignals /> : null}
       <div className="grid home-grid">
-        {!showingDebrief ? <HomeOverviewPanel
+        <HomeOverviewPanel
           backendStatus={backendStatus}
+          compact={connectionsExpanded}
           sessionPrefetch={sessionPrefetch}
           sessionStarted={sessionStarted}
           sessionPhase={sessionPhase}
@@ -239,26 +244,17 @@ export function HomePage({
           onStartSession={onStartSession}
           onEndSession={onEndSession}
           onNudgeDiet={onNudgeDiet}
-        /> : null}
+        />
 
-        {!sessionStarted && !showingDebrief && !sessionSettingsOpen && recent.debrief ? (
-          <section className="recent-session-section" aria-label="Recent session">
-            <p className="debrief-kicker">Recent session</p>
-            <button type="button" className="recent-session-entry" onClick={() => setReopenedSessionId(recent.debrief!.sessionId)}>
-              <span><strong>{new Date(recent.debrief.completedAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}</strong>
-                <small>{recent.debrief.exerciseCount} exercise{recent.debrief.exerciseCount === 1 ? '' : 's'}</small></span>
-              <span className="recent-session-status">{recent.debrief.status === 'queued' || recent.debrief.status === 'running'
-                ? 'Connections on the way' : recent.debrief.status === 'failed' ? 'Try again' : 'Open summary'} <span aria-hidden="true">↗</span></span>
-            </button>
-            {recent.error ? <p className="notes" role="status">Couldn’t refresh the recent session. <button type="button" className="secondary-button" onClick={recent.reload}>Try again</button></p> : null}
-          </section>
-        ) : !sessionStarted && !showingDebrief && recent.error && backendStatus?.studyProfile === 'mandarin' ? (
+        {!sessionStarted && !sessionSettingsOpen && recent.debrief ? (
+          <HomeConnections key={recent.debrief.sessionId} debrief={recent.debrief} expanded={connections.expanded}
+            error={recent.error} retrying={recent.retrying} onToggle={connections.toggle}
+            onRetry={recent.retry} onReload={recent.reload} />
+        ) : !sessionStarted && recent.error && backendStatus?.studyProfile === 'mandarin' ? (
           <p className="notes" role="status">Couldn’t load the recent session. <button type="button" className="secondary-button" onClick={recent.reload}>Try again</button></p>
         ) : null}
 
-        {showingDebrief ? <SessionDebriefPanel key={reopenedSessionId} sessionId={reopenedSessionId}
-          characterPresentation={backendStatus?.characterPresentation ?? DEFAULT_CHARACTER_PRESENTATION}
-          onDone={() => { setReopenedSessionId(null); recent.reload(); }} /> : sessionSettingsOpen && !sessionStarted ? (
+        {sessionSettingsOpen && !sessionStarted ? (
           <SessionSettingsPanel
             backendStatus={backendStatus}
             onSaveSessionSettings={onSaveSessionSettings}

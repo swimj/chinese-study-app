@@ -52,6 +52,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `reflection-attention.test.ts` | Reflections nav badge hiding, failure-over-count priority, and failed-run seen-through comparison | `src/features/attention/reflection-attention.ts` |
 | `session-debrief-inventory.test.ts` | Covered-only frozen inventory, actual contrast target, one-row purecue alternatives, pronunciation absence, Undo | `session-summary.ts` + session state machine |
 | `session-debrief-loader.test.ts` | Pending-only polling, request abort/fencing, retry races and lost response recovery | `session-debrief-loader.ts` |
+| `home-connections.test.ts` | Completed-session presentation preferences, deferred ready introduction, exact previews, bounded ring navigation, arrow-key guards, loop cue, waiting/failure/empty states | Home connections state/keyboard models + server-rendered component |
 | `session-debrief-ui.test.ts` | Exact stepped text, empty/loading/failure, safe keyboard navigation, blank optional interests and French exclusion | Debrief card and settings server render + keyboard model |
 | `session-finalization.test.ts` | Explicit summary-entry boundary, commit-before-summary ordering, reflection isolation/retry and stale-response guards | `session-finalization.ts` |
 | `reflection-page-model.test.ts` | Item/proposal grouping, help-queue cards from Help inbox membership, deep draft edits for four operations, support and validation presentation | `reflection-page-model.ts` |
