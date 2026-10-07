@@ -23,9 +23,9 @@ Use the [documentation principles](docs/documentation-principles.md#intent-evide
 to reconcile sources: contracts describe intended promises, code and observed
 execution establish actual behavior, and tests provide bounded evidence. Surface
 material discrepancies; correct clearly stale descriptions within scope. An
-authorized behavior change updates the relevant contract, implementation, and
-tests together. Neither existing code nor an old specification automatically
-settles disputed intent.
+authorized change to a product promise updates the owning contract alongside
+the implementation and relevant tests. Neither existing code nor an old
+specification automatically settles disputed intent.
 
 ## Find the relevant guidance
 
@@ -138,11 +138,11 @@ panels and enlarged text. Exercise relevant long labels, large values, empty
 states, expanded disclosures, and keyboard access. A build does not establish
 visual correctness; report missing rendered verification.
 
-Update owning documentation proportionally when behavior, mechanisms, or
-commands change, using the authoring procedure. Report meaningful remaining
-gaps; touching a document does not certify its entire contents. Documentation
-completeness is not a blanket merge gate, while task-specific correctness and
-safety requirements still apply.
+Update owning documentation when a change affects the explanations readers
+need, using the authoring procedure to choose useful detail and scope. Report
+meaningful remaining gaps; touching a document does not certify its entire
+contents. Documentation completeness is not a blanket merge gate, while
+task-specific correctness and safety requirements still apply.
 
 Implementation work normally finishes with a verified review pull request.
 Before substantial implementation, state whether the change is one cohesive PR

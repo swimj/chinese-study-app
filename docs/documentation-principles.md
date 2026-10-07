@@ -2,6 +2,11 @@
 
 ## Purpose
 
+These principles help contributors decide what repository documentation should
+explain, how its parts relate, and how to maintain it as the product changes.
+The [authoring procedure](documentation-authoring.md) applies these principles
+when creating or revising a document.
+
 Documentation should help a reader recover the product's model, understand its
 promises, explain how the implementation works, operate it safely, and reason
 about the next change. Clear models and causal explanations make that knowledge
@@ -73,8 +78,9 @@ file when their subjects and roles are explicit.
 For this project, **Steward** maintains the current vision and priorities, as
 described in [the project context](../AGENTS.md#11-project-context-and-task-scope).
 Working plans and investigation notes support the task that uses them. Accepted
-product decisions become part of the relevant model or contract, with useful
-rationale retained in the explanation or a linked decision record.
+product decisions that change the model or its promises become part of the
+relevant model or contract, with useful rationale retained in the explanation
+or a linked decision record.
 
 ## Intent, evidence, and disagreement
 
@@ -91,10 +97,12 @@ visible. Tests supply bounded evidence for the behavior they exercise.
 
 When sources disagree, identify the intended promise, actual behavior, relevant
 evidence, and any unresolved decision. Correct a clearly stale description
-within scope. An authorized behavior change should update the relevant
-contract, implementation, and tests together. Ask for human judgment when a
-consequential product or architectural choice remains unresolved, while
-continuing independent, well-defined work.
+within scope. When an authorized change alters a product promise, update the
+owning contract alongside the implementation and relevant tests. For changes to
+mechanisms or operating procedures, revise the explanations whose answers would
+otherwise become inaccurate or inadequate for their readers.
+Ask for human judgment when a consequential product or architectural choice
+remains unresolved, while continuing independent, well-defined work.
 
 Existing specifications can preserve accidental choices or superseded intent.
 A canonical label alone does not establish that every sentence reflects a
@@ -104,25 +112,34 @@ code to a suspect spec, or turn uncertainty into a new guarantee.
 
 ## How explanations evolve
 
-A document's purpose determines what it maintains. Each document should
-identify the reader questions it answers and the explanations it owns. Other
-explanations belong elsewhere, with references where answering those reader
-questions depends on them.
+Each document should open by establishing its purpose and scope. Purpose
+explains who the document is for and what it helps them understand or do; scope
+identifies the topics and questions it addresses. Together, they help readers
+decide whether the document meets their needs. The [opening of this
+document](#purpose) provides an example. A short introduction can be sufficient;
+use a dedicated section when the scope needs more explanation.
 
-To decide whether information or a reference belongs, ask: if the reader does
-not know this information, what question can this document no longer answer
-adequately?
+That purpose determines the explanations the document owns and the detail they
+need. A detail earns its place through the explanatory work it does. Choose the
+level of abstraction that makes the relevant relationships and consequences
+clear while allowing the implementation to evolve. To decide whether
+information or a reference belongs, ask: without it, what would the reader be
+unable to understand or do that this document is meant to support?
+
+For example, a contract might explain when an action is available and what
+invoking it means for the learner. The button's exact screen position usually
+contributes little to that account, while a requirement that learners can
+recognize and access the action may be central. Similarly, an interleaving
+contract might explain the constraints on exercise order and why they matter.
+Those explanations may be sufficient, with the particular algorithm remaining
+in code. Its details warrant prose when they are needed to answer a reader's
+question, such as why a mechanism has a consequential limitation.
 
 A change should require updates to other documents only when it changes an
-explanation they own. As understanding changes, maintain and reorganize the
-documentation toward these responsibilities. Choose file boundaries that keep
-related concepts understandable and responsibilities clear.
-
-Proposals should state the change under consideration, its reasons, and open
-decisions. Once a proposal is accepted, incorporate the decision into the
-current model, contract, or implementation explanation and preserve the
-rationale that will help future readers. Retain useful prior context as dated
-history linked from the current explanation.
+explanation they own. Link to another explanation where the reader's
+understanding depends on it. As understanding changes, maintain and reorganize
+the documentation toward these responsibilities. Choose file boundaries that
+keep related concepts understandable and responsibilities clear.
 
 A working note can preserve exploration or support a handoff. Its durable
 conclusions should graduate into the appropriate explanation. The task or PR
