@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -54,6 +55,8 @@ describe('reflection application adapters', { concurrency: false }, () => {
       DROP TRIGGER IF EXISTS fail_reflection_prompt_insert;
       DROP TRIGGER IF EXISTS fail_production_cue_lifecycle_insert;
       DROP TRIGGER IF EXISTS fail_promotion_second_cue_insert;
+      DROP TRIGGER IF EXISTS fail_recovery_second_cue;
+      DROP TRIGGER IF EXISTS operator_reflection_cue_recoveries_no_delete;
       DROP TRIGGER IF EXISTS production_cues_no_delete;
       DROP TRIGGER IF EXISTS production_cue_supplements_no_delete;
       DROP TRIGGER IF EXISTS production_cue_accepted_words_no_delete;
@@ -92,6 +95,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
       DELETE FROM pure_cues;
       DELETE FROM reflection_help_inbox;
       DELETE FROM reflection_quality_annotations;
+      DELETE FROM operator_reflection_cue_recoveries;
       DELETE FROM reflection_proposal_reviews;
       DELETE FROM reflection_operation_invocations;
       DELETE FROM reflection_generation_continuation_runs;
@@ -116,6 +120,8 @@ describe('reflection application adapters', { concurrency: false }, () => {
 
     insertWord('target', '目标');
     insertWord('alternate', '替代');
+    dbModule.setHostedServiceControl({ key: 'maintenance_mode', enabled: false, actorId: 'test-reset', updatedAt: createdAt });
+    dbModule.setHostedServiceControl({ key: 'provider_work_enabled', enabled: true, actorId: 'test-reset', updatedAt: createdAt });
   });
 
   after(() => {
@@ -2038,6 +2044,128 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.deepEqual(dbModule.applyReflectionInvocation('contrast-failed', createdAt), result);
   });
 
+  test('previews only the latest unchanged accepted fallback repair with the exact historical failure', () => {
+    seedFailedAcceptedCorrectCueRepair('recovery-older');
+    seedFailedAcceptedCorrectCueRepair('recovery-latest', { acceptedAt: '2026-07-29T12:02:00.000Z' });
+    seedFailedAcceptedCorrectCueRepair('wrong-error', { error: 'Different application failure' });
+    const obsolete = seedFailedAcceptedCorrectCueRepair('obsolete-recovery');
+    // Simulate an artifact accepted before its prompt contract was retired.
+    sqlite.prepare(`UPDATE learner_owned_reflection_artifacts SET prompt_version = 'reflection-staged-v1'
+      WHERE artifact_id = ?`).run(obsolete.artifact.artifactId);
+    const wrongSource = seedFailedAcceptedCorrectCueRepair('wrong-source-recovery');
+    sqlite.prepare(`UPDATE study_attempt_events SET target_word_id = 'alternate' WHERE id = ?`).run(wrongSource.attemptId);
+    seedFailedAcceptedCorrectCueRepair('modified-word', { wordId: 'alternate' });
+    insertInvocation('manual-recovery', cueRepairOperation({ changes: [{ kind: 'create', cue: {
+      cueType: 'circumstance', text: 'manual target', acceptedWordIds: ['target'],
+    } }] }));
+    sqlite.prepare(`UPDATE reflection_operation_invocations SET application_state = 'failed', application_error = ?
+      WHERE invocation_id = 'manual-recovery'`).run(historicalCorrectCueRepairError);
+    const cueId = seedBroadCue('modified-word-seed', 'alternate');
+    insertInvocation('retire-modified-cue', { kind: 'repair_production_cue', version: 2,
+      wordId: 'alternate', taskId: 'production-task:alternate:default_production',
+      changes: [{ kind: 'deactivate', cueId }], sourceAttemptJudgments: [] });
+    dbModule.applyReflectionInvocation('retire-modified-cue', appliedAt);
+    assert.equal(dbModule.getProductionCue(cueId)?.active, false);
+    const plan = dbModule.previewCorrectCueRepairRecovery();
+    assert.deepEqual(plan.candidates, [{ invocationId: 'recovery-latest', wordId: 'target', cueCount: 1 }]);
+    assert.ok(plan.skipped.some(row => row.invocationId === 'recovery-older' && row.reason === 'older_proposal'));
+    assert.ok(plan.skipped.some(row => row.invocationId === 'modified-word' && row.reason === 'modified_word'));
+    assert.ok(plan.skipped.some(row => row.invocationId === 'manual-recovery'));
+    assert.ok(plan.skipped.some(row => row.invocationId === 'obsolete-recovery' && row.reason === 'obsolete_contract'));
+    assert.ok(plan.skipped.some(row => row.invocationId === 'wrong-source-recovery' && row.reason === 'invalid_source'));
+    assert.equal(plan.skipped.some(row => row.invocationId === 'wrong-error'), false);
+  });
+
+  test('requires quiescence and an unchanged preview, then preserves acceptance and immutable recovery audit', () => {
+    const source = seedFailedAcceptedCorrectCueRepair('recover-success');
+    sqlite.prepare(`INSERT INTO word_skill_state
+      (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor)
+      VALUES ('target', 'production', 1, 240, ?, '2026-08-08T12:01:00.000Z', 2.4)`).run(appliedAt);
+    const attempts = sqlite.prepare('SELECT * FROM study_attempt_events').all();
+    const schedules = sqlite.prepare('SELECT * FROM word_skill_state').all();
+    const original = dbModule.getReflectionInvocation('recover-success');
+    const beforePlan = dbModule.previewCorrectCueRepairRecovery();
+    const recover = (digest: string) => dbModule.recoverCorrectCueRepairs({ actorId: 'test-operator',
+      expectedPlanDigest: digest, recoveredAt: '2026-07-29T12:05:00.000Z' });
+    assert.throws(() => recover(beforePlan.digest), /maintenance mode and disabled provider work/);
+    dbModule.setHostedServiceControl({ key: 'maintenance_mode', enabled: true, actorId: 'test-operator', updatedAt: appliedAt });
+    assert.throws(() => recover(beforePlan.digest), /maintenance mode and disabled provider work/);
+    quiesceCueRecovery();
+    seedFailedAcceptedCorrectCueRepair('recover-newer', { acceptedAt: '2026-07-29T12:03:00.000Z' });
+    assert.throws(() => recover(beforePlan.digest), /plan changed/);
+    sqlite.prepare(`UPDATE reflection_operation_invocations SET application_error = 'different'
+      WHERE invocation_id = 'recover-newer'`).run();
+    const plan = dbModule.previewCorrectCueRepairRecovery();
+    assert.deepEqual(recover(plan.digest).recoveredInvocationIds, ['recover-success']);
+    assert.equal(dbModule.getReflectionInvocation('recover-success').application.state.kind, 'applied');
+    assert.deepEqual(dbModule.getReflectionArtifactDetail(source.artifact.artifactId).proposals[0]!.review.disposition,
+      { kind: 'accepted', acceptanceMode: 'exact', acceptedInvocationId: 'recover-success' });
+    assert.deepEqual(sqlite.prepare('SELECT * FROM word_skill_state').all(), schedules);
+    // The second source was deliberately added after the snapshot; the original source is still unchanged.
+    assert.deepEqual(sqlite.prepare('SELECT * FROM study_attempt_events WHERE id = ?').all(source.attemptId), attempts);
+    const audit = sqlite.prepare('SELECT * FROM operator_reflection_cue_recoveries WHERE invocation_id = ?')
+      .get('recover-success') as { original_failure_json: string; actor_id: string; recovered_at: string };
+    assert.deepEqual(JSON.parse(audit.original_failure_json), original.application);
+    assert.equal(audit.actor_id, 'test-operator');
+    assert.equal(audit.recovered_at, '2026-07-29T12:05:00.000Z');
+    assert.throws(() => sqlite.prepare(`UPDATE operator_reflection_cue_recoveries SET actor_id = 'changed'`).run(), /immutable/);
+    assert.throws(() => sqlite.prepare('DELETE FROM operator_reflection_cue_recoveries').run(), /immutable/);
+    const repeatedPlan = dbModule.previewCorrectCueRepairRecovery();
+    assert.deepEqual(repeatedPlan.candidates, []);
+    assert.deepEqual(recover(repeatedPlan.digest).recoveredInvocationIds, []);
+    assert.equal(countRows('operator_reflection_cue_recoveries'), 1);
+  });
+
+  test('rolls back every recovery candidate and audit when a later cue insertion fails', () => {
+    seedFailedAcceptedCorrectCueRepair('atomic-first', { acceptedAt: '2026-07-29T12:03:00.000Z' });
+    seedFailedAcceptedCorrectCueRepair('atomic-second', { wordId: 'alternate' });
+    const before = ['atomic-first', 'atomic-second'].map(id => dbModule.getReflectionInvocation(id));
+    const attempts = sqlite.prepare('SELECT * FROM study_attempt_events').all();
+    quiesceCueRecovery();
+    const plan = dbModule.previewCorrectCueRepairRecovery();
+    assert.deepEqual(plan.candidates.map(row => row.invocationId), ['atomic-first', 'atomic-second']);
+    sqlite.exec(`CREATE TRIGGER fail_recovery_second_cue BEFORE INSERT ON scoped_production_cues
+      WHEN NEW.cue_text LIKE 'recovered alternate %'
+      BEGIN SELECT RAISE(ABORT, 'injected recovery cue failure'); END;`);
+    assert.throws(() => dbModule.recoverCorrectCueRepairs({ actorId: 'test-operator', expectedPlanDigest: plan.digest }),
+      /injected recovery cue failure/);
+    assert.deepEqual(['atomic-first', 'atomic-second'].map(id => dbModule.getReflectionInvocation(id)), before);
+    assert.equal(countRows('production_cues'), 0);
+    assert.equal(countRows('operator_reflection_cue_recoveries'), 0);
+    assert.deepEqual(sqlite.prepare('SELECT * FROM study_attempt_events').all(), attempts);
+  });
+
+  test('the host command previews without applying and recovers only the confirmed plan', () => {
+    seedFailedAcceptedCorrectCueRepair('cli-recovery');
+    const command = (...args: string[]) => JSON.parse(execFileSync(process.execPath,
+      ['--import', 'tsx', 'scripts/recover-correct-cue-repairs.ts',
+        `--data-dir=${dataDir}`, '--learner-id=test-learner', ...args],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    const plan = command();
+    assert.deepEqual(plan, dbModule.previewCorrectCueRepairRecovery());
+    assert.equal(dbModule.getReflectionInvocation('cli-recovery').application.state.kind, 'failed');
+    assert.equal(countRows('production_cues'), 0);
+    quiesceCueRecovery();
+    const result = command('--apply=true', '--actor-id=cli-operator', `--confirm-plan=${plan.digest}`);
+    assert.deepEqual(result.recoveredInvocationIds, ['cli-recovery']);
+    assert.equal(dbModule.getReflectionInvocation('cli-recovery').application.state.kind, 'applied');
+    assert.equal(sqlite.prepare('SELECT actor_id FROM operator_reflection_cue_recoveries').get()?.actor_id, 'cli-operator');
+  });
+
+  test('does not expose another learner\'s recovery candidates', () => {
+    seedFailedAcceptedCorrectCueRepair('own-recovery');
+    dbModule.bootstrapLearner({ learnerId: 'recovery-other-learner', displayName: 'Other' });
+    assert.deepEqual(dbModule.runWithLearnerId('recovery-other-learner', () =>
+      dbModule.previewCorrectCueRepairRecovery().candidates), []);
+    const ownPlan = dbModule.previewCorrectCueRepairRecovery();
+    assert.deepEqual(ownPlan.candidates.map(row => row.invocationId), ['own-recovery']);
+    quiesceCueRecovery();
+    assert.throws(() => dbModule.runWithLearnerId('recovery-other-learner', () => dbModule.recoverCorrectCueRepairs({
+      actorId: 'test-operator', expectedPlanDigest: ownPlan.digest,
+    })), /plan changed/);
+    assert.equal(dbModule.getReflectionInvocation('own-recovery').application.state.kind, 'failed');
+  });
+
   test('leaves unsupported invocations and domain state untouched', () => {
     insertInvocation(
       'unsupported',
@@ -2078,6 +2206,71 @@ describe('reflection application adapters', { concurrency: false }, () => {
 
 function suppressOperation(wordId: string): ReflectionOperation {
   return { kind: 'suppress_definition_production', version: 1, wordId };
+}
+
+const historicalCorrectCueRepairError = "Reflection application failed: Unfair-cue compensation requires the action's first attempt, which must be the mistake.";
+
+function seedFailedAcceptedCorrectCueRepair(
+  invocationId: string,
+  options: { wordId?: 'target' | 'alternate'; acceptedAt?: string; error?: string } = {},
+) {
+  const wordId = options.wordId ?? 'target';
+  const hanzi = wordId === 'target' ? '目标' : '替代';
+  const acceptedAt = options.acceptedAt ?? appliedAt;
+  const attemptId = `recovery-attempt:${invocationId}`;
+  insertStudyAttempt(attemptId);
+  const sessionId = `cue-evidence-session:${attemptId}`;
+  const actionId = `cue-action:${attemptId}`;
+  sqlite.prepare(`UPDATE study_attempt_events SET target_word_id = ?, outcome = 'correct',
+    rating = 'good', response = ?, metadata_json = ? WHERE id = ?`).run(wordId, hanzi, JSON.stringify({ production: {
+    taskId: `production-task:${wordId}:default_production`, cueId: null,
+    cueType: 'definition_gloss', text: wordId, acceptedWordIds: [wordId],
+    anchorWordId: wordId, submittedText: hanzi, submittedWordId: wordId, result: 'accepted_anchor',
+  } }), attemptId);
+  dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
+    evidenceId: `recovery-evidence:${invocationId}`, occurredAt: appliedAt,
+    taskId: `production-task:${wordId}:default_production`, cueId: null,
+    sourceAttemptId: attemptId, attemptResult: 'accepted_anchor', submittedWordId: wordId,
+  });
+  const operation: Extract<ReflectionOperation, { kind: 'repair_production_cue'; version: 2 }> = {
+    kind: 'repair_production_cue', version: 2, wordId,
+    taskId: `production-task:${wordId}:default_production`,
+    changes: [{ kind: 'create', cue: { cueType: 'circumstance',
+      text: `recovered ${wordId} ${invocationId}`, acceptedWordIds: [wordId] } }],
+    sourceAttemptJudgments: [{ kind: 'misleading_or_overloaded_cue', sourceAttemptId: attemptId }],
+  };
+  const artifact = dbModule.materializeReflectionArtifact({
+    sourceSessionId: sessionId, reflectionFlowVersion: 'initial_post_session_reflection.v6',
+    generatedAt: acceptedAt, provider: 'openai', model: 'gpt-5.6-luna', promptVersion: 'reflection-staged-v4.0',
+    evidenceBundle: {
+      schemaVersion: 'session_reflection_bundle.v6', generatedAt: acceptedAt,
+      session: { sessionId, startedAt: createdAt, endedAt: appliedAt, studyProfile: 'mandarin' },
+      items: [{ itemId: 'recovery-item', sessionActionId: actionId, sourceAttemptId: attemptId,
+        occurredAt: appliedAt, source: 'production_mistake', sourceActionKind: 'production',
+        learnerRequestedReview: true, targetWord: wordSnapshot(wordId, hanzi), sessionNote: null,
+        existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+        servedCue: { cueId: null, cueType: 'definition_gloss', text: wordId,
+          acceptedWordIds: [wordId], supplement: null }, promotionEvidence: null,
+        rawResponse: hanzi, submittedWord: null, responseKind: null,
+      }],
+    },
+    result: { schemaVersion: 'session_reflection_result.v10', itemResults: [{ itemId: 'recovery-item',
+      diagnosisTags: ['production_cue_overloaded'], learnerExplanation: 'Improve the cue after successful recall.',
+      proposals: [{ proposalGroupKey: null, rationale: 'Make the fallback precise.', operation }], questions: [],
+    }] },
+  }).artifact;
+  const accepted = dbModule.acceptReflectionProposal({ proposalId: artifact.proposals[0]!.review.proposalId,
+    operation, invocationId, createdAt: acceptedAt });
+  assert.equal(accepted.invocation.application.state.kind, 'pending');
+  sqlite.prepare(`UPDATE reflection_operation_invocations SET application_state = 'failed',
+    application_error = ?, application_updated_at = ? WHERE invocation_id = ?`)
+    .run(options.error ?? historicalCorrectCueRepairError, acceptedAt, invocationId);
+  return { artifact, operation, attemptId, sessionId };
+}
+
+function quiesceCueRecovery() {
+  dbModule.setHostedServiceControl({ key: 'maintenance_mode', enabled: true, actorId: 'test-operator', updatedAt: appliedAt });
+  dbModule.setHostedServiceControl({ key: 'provider_work_enabled', enabled: false, actorId: 'test-operator', updatedAt: appliedAt });
 }
 
 function contrastOperation(): ReflectionOperation {

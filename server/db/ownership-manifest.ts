@@ -48,6 +48,7 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
   operationalEntry('service_controls', 'hosted maintenance and provider-work controls'),
   operationalEntry('deployment_sentinels', 'hosted persistence and restore proof markers'),
   operationalEntry('operator_actions', 'attributable hosted administrative action ledger'),
+  operationalEntry('operator_reflection_cue_recoveries', 'immutable operator-only recovery audit with explicit learner and same-owner invocation; private failure and application provenance'),
   operationalEntry(
     'usage_daily_snapshots',
     'content-free daily cohort product-usage pulse aggregates',

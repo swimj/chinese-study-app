@@ -2,6 +2,11 @@
 
 Persistence lives under [`server/db/`](../server/db/). The stable import path for callers and tests remains [`server/db.ts`](../server/db.ts) (barrel).
 
+Migration `0027_correct_cue_repair_recovery` adds the immutable operator-only
+`operator_reflection_cue_recoveries` audit. Selection and atomic recovery use
+the reflection application adapter in `reflections.ts`; the runbook is
+[`hosted-beta-deployment.md`](ops/hosted-beta-deployment.md#recover-failed-cue-repairs-from-correct-requested-reviews).
+
 ## Modules
 
 | Module | Responsibility |
