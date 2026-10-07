@@ -118,7 +118,11 @@ published post.
 The repo skill
 [`publish-whats-new`](../.agents/skills/publish-whats-new/SKILL.md) identifies
 changes from saved coverage through the verified deployed revision, writes in
-the established learner-facing tone, and uses this command.
+the established learner-facing tone, and saves a draft with this command. It
+shows Justin the full text and pauses for review, supports iterative draft
+edits in the same conversation, and publishes only after he explicitly approves
+publishing the reviewed version. Proposed corrections to an already published
+post stay local during review so the live post remains available.
 
 ## API and verification
 
