@@ -2,6 +2,31 @@
 
 Entry points under `scripts/`. Run with `node --import tsx scripts/<name>.ts` unless `package.json` defines an npm script.
 
+## Contributor setup and local checks
+
+These commands run a contributor environment, separate from hosted learner use.
+Use the checked-out [package.json](../package.json) for command definitions.
+
+In a fresh worktree, run `./scripts/codex-setup.sh` when dependencies are missing;
+it installs the lockfile dependencies with `npm ci`. Each worktree needs its own
+setup. `node_modules/` and generated `.codex/environments/environment.toml` are
+ignored local files; do not add them to `.worktreeinclude`.
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev:backend` | Start the seeded development API on port 5174 |
+| `npm run dev:frontend` | Start Vite on port 4173 |
+| `node --import tsx --test tests/<name>.test.ts` | Run a focused Node test file; use the [testing map](testing.md) to choose coverage |
+| `npm test` | Run the full Node test suite |
+| `npm run build` | Run TypeScript compilation and the Vite build |
+
+The development backend uses repo-local `data/app.db` by default. Check the
+effective data directory before starting or resetting it: existing files under
+`data/` may be valued artifacts. Configuration references are in the
+[architecture map](architecture.md#configuration) and [.env.example](../.env.example).
+The [hosted runbook](ops/hosted-beta-deployment.md) owns deployment configuration
+and release procedures.
+
 ## Safe in dev (repo-local data)
 
 | Script / npm command | Purpose |

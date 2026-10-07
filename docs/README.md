@@ -116,8 +116,7 @@ the relevant document or existing issue/PR.
    service-boundary document includes guarantees, alternatives, the hosted
    package, one-time migration, and acceptance scenarios. The frontier combines direction,
    constraints, and unresolved decisions; the content-model checkpoint combines
-   model and implementation evidence. AGENTS.md still embeds environment
-   reference material alongside its execution guidance. Close each instance by
+   model and implementation evidence. Close each remaining instance by
    identifying the document or section for each explanation and reconciling
    the content into current explanation, contract, rationale, or history.
 5. **Feature documents await area-by-area assessment.** `SPECS/README.md` lists
