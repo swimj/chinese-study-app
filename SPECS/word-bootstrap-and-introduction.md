@@ -115,7 +115,7 @@ grading are not required.
 
 Associated rehearsal intentionally practices the taught target, even where
 other words could naturally fit. Repetition and constrained drills are welcome
-when they help acquire that specific word or pattern. The learner-facing Practice label and recall-card styling communicate this stage. Cues should evoke a clear meaning or intention while preserving useful register and feeling. Stable English associations are useful; concise framed Mandarin phrase clozes may practice constructions. New phrase clozes are authored for retrieval rather than constrained to teaching sentences. Existing source-example clozes remain supported. An out-of-contract response is not a claim of bad Chinese.
+when they help acquire that specific word or pattern. Cues should evoke a clear meaning or intention while preserving useful register and feeling. Stable English associations are useful; concise framed Mandarin phrase clozes may practice constructions. New phrase clozes are authored for retrieval rather than constrained to teaching sentences. Existing source-example clozes remain supported. An out-of-contract response is not a claim of bad Chinese.
 
 Coupling means coherent content and exact references, not identical presentation
 or forced immediate practice after each beat. The package can supply reusable
@@ -276,7 +276,7 @@ reconciliation is required to proceed with this work.
   target rehearsal through the existing session scheduler. Both directions must
   reach three consecutive `Good` ratings before the first-encounter word unit
   completes through the existing deferred commit and Undo path. Recognition uses
-  curated source content. Post-introduction recall cards carry a seedling/New word badge; the introduction keeps its distinct presentation. Production selects a rehearsal by its current streak
+  curated source content. Production selects a rehearsal by its current streak
   modulo the package rehearsal count, returning to the first on a streak reset.
   in-session walkthrough has no skip-to-cards or Escape bypass; leaving uses
   normal session controls and grants no teaching completion. Missing preparation excludes
@@ -285,7 +285,7 @@ reconciliation is required to proceed with this work.
   the daily obligation. Production can use a cloze or direct definition/situation
   from a pinned package whose introduction the learner has completed. Rotate available rehearsals with a simple deterministic
   policy; no per-example or per-sense mastery ledger is required. Retries retain
-  the served exercise. Practice recall cards carry a repeat-arrow badge and subtle accent. On reveal, recognition and production can show the same source usage examples and translations, including in frozen incorrect-answer cards. Missing eligible package content uses existing cards.
+  the served exercise. On reveal, recognition and production can show the same source usage examples and translations, including in frozen incorrect-answer cards. Missing eligible package content uses existing cards.
 - **Graduation:** preserve three consecutive successful study sessions, with
   first-try Good in both directions. Adjacent calendar days are not required.
   Graduation restores the ordinary review contracts and scheduler.
