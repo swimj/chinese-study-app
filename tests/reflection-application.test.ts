@@ -1658,7 +1658,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.equal(repaired.application.state.kind, 'failed');
     assert.match(
       repaired.application.state.kind === 'failed' ? repaired.application.state.error : '',
-      /eligibility requires the action's first attempt/,
+      /must reference the action's first attempt/,
     );
     assert.equal(dbModule.getProductionCue(cueId)?.active, true);
   });

@@ -731,7 +731,7 @@ export function hasActionLapseToCompensate(sourceAttemptId: string): boolean {
     throw new Error(`Cue repair source attempt ${sourceAttemptId} is unavailable.`);
   }
   if (source.action_kind !== 'production') {
-    throw new Error(`Cue repair compensation eligibility requires a production attempt (${sourceAttemptId}).`);
+    throw new Error(`Cue repair requires a production attempt (${sourceAttemptId}).`);
   }
   const first = getDb().prepare(`
     SELECT id, outcome
@@ -745,7 +745,7 @@ export function hasActionLapseToCompensate(sourceAttemptId: string): boolean {
   } | undefined;
   if (!first || first.id !== sourceAttemptId) {
     throw new Error(
-      'Cue repair compensation eligibility requires the action\'s first attempt.',
+      'Cue repair must reference the action\'s first attempt.',
     );
   }
   if (first.outcome !== 'correct' && first.outcome !== 'incorrect') {
