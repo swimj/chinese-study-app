@@ -290,13 +290,11 @@ switches away from Both. These are display preferences, with no corpus rewrite
 or schema migration.
 
 `learner_params` is the sibling per-learner key-value store for non-setting
-parameters (`learner_id`, `param_key`, `value_json`, `updated_at`). The first
-key, `whats_new_seen_through_date`, stores the learner’s What’s New YYYY-MM-DD
-legacy cursor as JSON. Migration `0028_whats_new_blog` introduces shared
-`whats_new_posts`, immutable `whats_new_post_revisions`, and the learner-private
-`whats_new_seen_through_sequence` cursor. Publication sequences distinguish
-same-day and backdated posts; initialization respects an existing legacy date
-cursor or grandfathers the current catalog. See [the blog contract](whats-new.md).
+parameters (`learner_id`, `param_key`, `value_json`, `updated_at`). The blog's
+read cursors use this store. The [blog explanation](whats-new.md#unread-updates)
+maintains their meaning and compatibility behavior; its
+[persistence section](whats-new.md#persistence-and-live-updates) describes the
+current-post and revision tables introduced by migration `0028_whats_new_blog`.
 
 Legacy single-learner databases are not mutated during startup and are no
 longer supported. The sole dogfood database completed the one-time SWI-47

@@ -10,9 +10,7 @@ existing posts, and withdraw a post by returning it to draft.
 Posts contain a stable lowercase slug, a UTC `YYYY-MM-DD` date, a title, and
 plain-text paragraphs. The renderer does not interpret HTML or Markdown.
 Titles are bounded to 200 characters; a post has 1–100 nonempty paragraphs,
-each at most 10,000 characters and at most 100,000 characters in total. These
-bounds are enforced by the shared parser in
-[`src/domain/whats-new.ts`](../src/domain/whats-new.ts).
+each at most 10,000 characters and at most 100,000 characters in total.
 
 The first publication assigns a monotonically increasing publication sequence.
 Published posts are ordered by that sequence, so two posts on the same date
@@ -20,12 +18,6 @@ and backdated posts still count as new. Editing a published post retains its
 sequence and does not create another unread announcement. Returning it to
 draft removes it from the learner list; republishing retains its original
 sequence. Drafts never appear in the learner list.
-
-The learner’s `whats_new_seen_through_sequence` parameter records the sequence
-last acknowledged. Opening What’s New advances it to the newest published post
-in the loaded list. On first use, a missing sequence is initialized from the
-legacy date cursor when available, otherwise all posts currently published in the loaded catalog are grandfathered.
-The legacy date endpoint remains compatible; new clients use the sequence.
 
 Each save requires `expectedRevision`: null to create a slug, or the current
 revision number to update it. A stale save fails rather than overwriting another
@@ -40,19 +32,47 @@ find new learner-facing changes; a draft’s range does not establish announced
 coverage. Migrated historical posts have null provenance because their date
 alone cannot establish a deployed commit boundary.
 
+## Unread updates
+
+About counts published posts whose publication sequence is later than the
+learner's acknowledged sequence. Opening What’s New acknowledges the newest
+published post in the displayed list; a post published after that list was
+loaded stays unread. Edits and republications retain the original sequence,
+so they do not create another unread announcement.
+
+On a learner's first attention refresh, the current catalog is treated as
+already read. A learner with a read date from the former bundled notes instead
+keeps that boundary: the server maps the date to the original imported posts,
+so later publications remain unread even if they are backdated. Subsequent
+acknowledgements only advance the boundary. The `ensure` mode initializes it
+when absent; `seen` advances it to the displayed publication sequence without
+moving it backward.
+
+`whatsNewSeenThroughSequence` is the API's current cursor. The server retains
+`whatsNewSeenThroughDate` and its date endpoint for compatibility with older
+clients. These are learner-private parameters in `learner_params`, named
+`whats_new_seen_through_sequence` and `whats_new_seen_through_date`. When the
+sequence parameter is absent, the server derives the legacy boundary from the
+immutable imported revisions; corrections to those posts cannot move it.
+
 ## Persistence and live updates
 
 Small, infrequently edited posts fit the application’s existing SQLite store.
 `whats_new_posts` stores current content; `whats_new_post_revisions` retains
 attributable snapshots. The existing database backup and restore route covers
 both. This avoids adding a CMS or a separate publishing service.
+The [shared parser](../src/domain/whats-new.ts) validates content for both the
+editor API and the operator command; the [save module](../server/db/whats-new.ts)
+checks the expected revision and writes the post and history in one transaction.
 
 The API queries current database content. The operator command opens the same
 existing database directly, checks its schema version, and performs one short
 transaction. WAL allows the running API to read while another connection saves.
 Routine content updates require no build, deployment, maintenance mode, or app
-restart. Learners see updates when the blog reloads or normal attention refresh
-fetches the catalog; the blog does not push edits to every open tab instantly.
+restart. The blog fetches current posts when opened, when the browser regains
+focus or visibility, and on an explicit retry after a loading error. Attention
+refreshes fetch the catalog separately to update the About badge. There is no
+push notification or continuous polling of open tabs.
 
 Migration `0028_whats_new_blog` creates the tables and seeds the former bundled
 notes without changing their wording. The **first rollout is a schema-changing
@@ -73,7 +93,8 @@ across learners; operator actions are attributable to the authenticated actor.
 
 Run from a checkout or hosted image containing this feature. Always identify
 the target’s role and use an explicit absolute data directory containing
-`app.db`. Listing includes drafts and each post’s current revision/provenance metadata:
+`app.db`. Listing includes drafts and each post’s current revision and commit
+provenance:
 
 ```bash
 npm run hosted:whats-new -- --data-dir=/data --list=true
@@ -124,19 +145,11 @@ edits in the same conversation, and publishes only after he explicitly approves
 publishing the reviewed version. Proposed corrections to an already published
 post stay local during review so the live post remains available.
 
-## API and verification
+## Interfaces and verification
 
-`GET /api/whats-new` returns published posts. Operator-only
-`GET /api/operator/whats-new` includes drafts; `PUT /api/operator/whats-new`
-accepts the JSON write request above and returns the saved post. Invalid content
-returns 400 and stale revisions return 409. The operator write endpoint has a
-scoped 1 MiB JSON limit to accommodate escaped content within the domain bounds.
-`POST /api/whats-new-seen-sequence` accepts `{ throughSequence, mode }`, where
-mode is `ensure` or `seen`, and rejects a sequence beyond current publication.
-
-[`tests/whats-new-command.test.ts`](../tests/whats-new-command.test.ts) checks
-writes visible to an already-open connection, attributable revisions, stale
-save rejection, unchanged schema/learners, missing-target refusal, and refusal
-to migrate an old database. Domain and API coverage is listed in the
-[testing map](testing.md). These checks establish bounded local behavior;
-hosted rollout and rendered editor verification remain separate evidence.
+The [API map](api.md#whats-new-blog) maintains endpoint request/response shapes,
+validation statuses, and operator access requirements. The
+[testing map](testing.md) lists the blog's domain, migration, API, command, and
+frontend coverage. Automated checks use temporary databases and establish
+bounded local behavior; hosted rollout and rendered editor checks require
+separate execution evidence.
