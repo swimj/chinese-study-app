@@ -9,6 +9,7 @@ import { DietNudgePrompt } from '../features/diet/DietNudgePrompt';
 
 export function HomeOverviewPanel({
   backendStatus,
+  compact = false,
   sessionPrefetch,
   sessionStarted,
   sessionPhase,
@@ -23,6 +24,7 @@ export function HomeOverviewPanel({
   onNudgeDiet,
 }: {
   backendStatus: BackendStatus | null;
+  compact?: boolean;
   sessionPrefetch: SessionPrefetchState;
   sessionStarted: boolean;
   sessionPhase: SessionPhase | null;
@@ -44,8 +46,67 @@ export function HomeOverviewPanel({
   const entryWaiting = sessionPrefetch.status === 'pending';
   const canStartSession = sessionStarted || sessionPrefetch.status === 'ready' || sessionPrefetch.status === 'error';
 
+  const metrics = <>
+      <section className="failure-rate-section" aria-label="Exercise failure rate">
+        <h3>Exercise failure rate</h3>
+        <table className="overview-rate-table" aria-label="Exercise rates by period">
+          <thead>
+            <tr>
+              <td />
+              {failureRatePeriods.map((period) => <th key={period.days} scope="col">{period.days}-day</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="overview-rate-primary">
+              <th scope="row">Adjusted failure</th>
+              {failureRatePeriods.map((period) => <td key={period.days}>{formatFailureRate(period.adjustedFailureRate)}</td>)}
+            </tr>
+            <tr>
+              <th scope="row">Compensation</th>
+              {failureRatePeriods.map((period) => <td key={period.days}>{formatFailureRate(period.compensationRate)}</td>)}
+            </tr>
+          </tbody>
+        </table>
+        <details className="overview-rate-details">
+          <summary>Rate details</summary>
+          <table className="overview-rate-table" aria-label="Exercise counts by period">
+            <thead>
+              <tr>
+                <td />
+                {failureRatePeriods.map((period) => <th key={period.days} scope="col">{period.days}-day</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Recorded failures</th>
+                {failureRatePeriods.map((period) => <td key={period.days}>{period.failedCount}</td>)}
+              </tr>
+              <tr>
+                <th scope="row">Compensations</th>
+                {failureRatePeriods.map((period) => <td key={period.days}>{period.compensatedCount}</td>)}
+              </tr>
+              <tr>
+                <th scope="row">Exercises</th>
+                {failureRatePeriods.map((period) => <td key={period.days}>{period.completedCount}</td>)}
+              </tr>
+            </tbody>
+          </table>
+          <p>Adjusted failure subtracts compensations from recorded failures, down to zero. Both rates divide by completed exercises.</p>
+          <p>Compensations count when applied and may correct earlier failures. Periods include today, in UTC.</p>
+        </details>
+      </section>
+      <section className="failure-rate-section" aria-label="Active study time">
+        <h3>Active study time</h3>
+        <div className="failure-rate-list">
+          <ActiveTimeMetric label="Today" value={backendStatus?.sessionActiveTimeMetrics.todayActiveDurationMs ?? 0} />
+          <ActiveTimeMetric label="3-day average" value={backendStatus?.sessionActiveTimeMetrics.rolling3DayAverageActiveDurationMs ?? 0} />
+          <ActiveTimeMetric label="7-day average" value={backendStatus?.sessionActiveTimeMetrics.rolling7DayAverageActiveDurationMs ?? 0} />
+        </div>
+      </section>
+  </>;
+
   return (
-    <div className="panel home-overview">
+    <div className={`panel home-overview${compact ? ' is-compact' : ''}`}>
       {!sessionStarted ? (
         <div className={`session-start-shell${sessionSettingsOpen ? ' is-settings-open' : ''}`}>
           <button
@@ -106,62 +167,7 @@ export function HomeOverviewPanel({
           ) : null}
         </div>
       )}
-      <section className="failure-rate-section" aria-label="Exercise failure rate">
-        <h3>Exercise failure rate</h3>
-        <table className="overview-rate-table" aria-label="Exercise rates by period">
-          <thead>
-            <tr>
-              <td />
-              {failureRatePeriods.map((period) => <th key={period.days} scope="col">{period.days}-day</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="overview-rate-primary">
-              <th scope="row">Adjusted failure</th>
-              {failureRatePeriods.map((period) => <td key={period.days}>{formatFailureRate(period.adjustedFailureRate)}</td>)}
-            </tr>
-            <tr>
-              <th scope="row">Compensation</th>
-              {failureRatePeriods.map((period) => <td key={period.days}>{formatFailureRate(period.compensationRate)}</td>)}
-            </tr>
-          </tbody>
-        </table>
-        <details className="overview-rate-details">
-          <summary>Rate details</summary>
-          <table className="overview-rate-table" aria-label="Exercise counts by period">
-            <thead>
-              <tr>
-                <td />
-                {failureRatePeriods.map((period) => <th key={period.days} scope="col">{period.days}-day</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <th scope="row">Recorded failures</th>
-                {failureRatePeriods.map((period) => <td key={period.days}>{period.failedCount}</td>)}
-              </tr>
-              <tr>
-                <th scope="row">Compensations</th>
-                {failureRatePeriods.map((period) => <td key={period.days}>{period.compensatedCount}</td>)}
-              </tr>
-              <tr>
-                <th scope="row">Exercises</th>
-                {failureRatePeriods.map((period) => <td key={period.days}>{period.completedCount}</td>)}
-              </tr>
-            </tbody>
-          </table>
-          <p>Adjusted failure subtracts compensations from recorded failures, down to zero. Both rates divide by completed exercises.</p>
-          <p>Compensations count when applied and may correct earlier failures. Periods include today, in UTC.</p>
-        </details>
-      </section>
-      <section className="failure-rate-section" aria-label="Active study time">
-        <h3>Active study time</h3>
-        <div className="failure-rate-list">
-          <ActiveTimeMetric label="Today" value={backendStatus?.sessionActiveTimeMetrics.todayActiveDurationMs ?? 0} />
-          <ActiveTimeMetric label="3-day average" value={backendStatus?.sessionActiveTimeMetrics.rolling3DayAverageActiveDurationMs ?? 0} />
-          <ActiveTimeMetric label="7-day average" value={backendStatus?.sessionActiveTimeMetrics.rolling7DayAverageActiveDurationMs ?? 0} />
-        </div>
-      </section>
+      {compact ? <details className="home-overview-activity"><summary>Study activity</summary>{metrics}</details> : metrics}
     </div>
   );
 }

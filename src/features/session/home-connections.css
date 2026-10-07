@@ -1,0 +1,81 @@
+.home-page.home-connections-expanded .home-grid {
+  max-width: 1240px;
+  margin-top: 0;
+}
+.home-page.home-connections-expanded .home-overview {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.home-overview.is-compact .session-start-shell { width: min(100%, 320px); }
+.home-overview.is-compact .session-start-card {
+  padding: .75rem 3rem .75rem 1rem;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+.home-overview.is-compact .session-start-card-label { font-size: 1rem; }
+.home-overview.is-compact .session-start-card-helper { color: var(--text-secondary); font-size: .8rem; }
+.home-overview.is-compact .session-settings-gear { color: var(--text-secondary); }
+.home-overview-activity { width: min(100%, 440px); font-size: .9rem; }
+.home-overview-activity > summary { padding: .85rem .5rem; cursor: pointer; color: var(--text-secondary); }
+.home-overview-activity[open] { padding: 0 1rem 1rem; background: var(--surface); border-radius: .75rem; }
+.home-connections { min-width: 0; }
+.home-connections-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.home-connections-heading h2 { font-size: 1.15rem; font-weight: 500; margin: 0; }
+.home-connections-heading p { margin: .35rem 0 0; font-size: .85rem; color: var(--text-muted); }
+.home-connections-heading button { font-size: .85rem; min-height: 44px; }
+.home-connections-ring { position: relative; isolation: isolate; perspective: 1200px; padding: 3rem 13%; min-height: 380px; display: grid; align-items: center; }
+.home-connections-note { position: relative; z-index: 2; margin: 0; padding: clamp(1.5rem, 3vw, 3rem); background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-card); }
+.home-connections-note-content { animation: home-connection-arrive 300ms ease-out; }
+.home-connections-position { color: var(--text-muted); font-size: .8rem; margin: 0 0 1rem; }
+.home-connections-prose { white-space: pre-wrap; overflow-wrap: anywhere; font-size: clamp(1.1rem, 1.5vw, 1.35rem); line-height: 1.9; margin: 0; }
+.home-connections-neighbor { position: absolute; top: 50%; width: 27%; max-height: 300px; overflow: hidden; padding: 1.5rem; background: var(--surface-muted); color: var(--text-secondary); border: 1px solid var(--border); border-radius: 10px; text-align: left; font-size: 1rem; line-height: 1.8; overflow-wrap: anywhere; z-index: 1; }
+.home-connections-neighbor.is-previous { left: 0; transform: translateY(-50%) rotateY(48deg); transform-origin: left center; }
+.home-connections-neighbor.is-next { right: 0; transform: translateY(-50%) rotateY(-48deg); transform-origin: right center; }
+.home-connections-neighbor.is-previous:hover { transform: translateY(-50%) rotateY(42deg); background: var(--surface-hover); }
+.home-connections-neighbor.is-next:hover { transform: translateY(-50%) rotateY(-42deg); background: var(--surface-hover); }
+.home-connections-navigation { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 1rem; }
+.home-connections-navigation > span { color: var(--text-muted); font-size: .85rem; }
+.home-connections-navigation button { min-height: 44px; }
+.home-connections-preview { display: block; width: 100%; background: var(--surface); color: var(--text); border: 1px solid var(--border); text-align: left; padding: 1.25rem 1.5rem; margin-top: 1rem; }
+.home-connections-preview:hover { background: var(--surface-hover); }
+.home-connections-preview > span { display: block; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1rem; line-height: 1.8; }
+.home-connections-preview > small { display: block; color: var(--accent); margin-top: .8rem; font-size: .85rem; }
+.home-connections footer { margin-top: 1rem; text-align: right; }
+.home-connections-summary { background: transparent; color: var(--text-secondary); font-size: .85rem; min-height: 44px; }
+.home-connections-summary:hover { background: var(--surface-hover); }
+.home-connections-waiting { padding: 1.5rem 0; }
+.home-connections.is-expanded .home-connections-waiting { min-height: 350px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.home-connections-waiting p { margin: .4rem 0; }
+.home-connections-astral { position: relative; width: 170px; height: 170px; margin: 1rem auto 2rem; color: var(--accent); }
+.home-connections-astral i { position: absolute; inset: 15%; border: 1px solid var(--border); border-radius: 50%; transform: rotateX(55deg) rotate(-25deg); }
+.home-connections-astral i:nth-child(2) { transform: rotateY(55deg) rotate(35deg); }
+.home-connections-astral i:nth-child(3) { inset: 5%; transform: rotateX(25deg) rotateY(30deg); }
+.home-connections-astral b { position: absolute; width: 6px; height: 6px; border-radius: 50%; background: currentColor; left: 48%; top: 48%; animation: home-connection-orbit 9s linear infinite; }
+.home-connections-astral b:nth-of-type(2) { animation-delay: -3s; animation-duration: 12s; }
+.home-connections-astral b:nth-of-type(3) { animation-delay: -6s; animation-duration: 15s; }
+@keyframes home-connection-orbit { from { transform: rotate(0deg) translateX(64px) rotate(0deg); } to { transform: rotate(360deg) translateX(64px) rotate(-360deg); } }
+@keyframes home-connection-arrive { from { transform: translateX(12px) rotateY(-4deg); } to { transform: translateX(0) rotateY(0deg); } }
+@media (max-width: 760px) {
+  .home-connections-ring { padding: 2rem 7%; }
+  .home-connections-neighbor { width: 20%; padding: .75rem; }
+  .home-connections-heading h2 { font-size: 1rem; }
+}
+@media (max-width: 520px) {
+  .home-connections-ring { padding: 1.5rem 0; min-height: 0; }
+  .home-connections-neighbor { display: none; }
+  .home-connections-note { padding: 1.25rem; }
+  .home-connections-navigation { gap: .65rem; }
+  .home-connections-navigation button { padding: .65rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-connections-note-content, .home-connections-astral b { animation: none; }
+  .home-connections-astral b:nth-of-type(1) { transform: translate(-60px, -10px); }
+  .home-connections-astral b:nth-of-type(2) { transform: translate(35px, -50px); }
+  .home-connections-astral b:nth-of-type(3) { transform: translate(45px, 40px); }
+  .home-connections-neighbor { transition: none; }
+}

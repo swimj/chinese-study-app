@@ -96,8 +96,32 @@ typing, IME composition, repeated keys, modifiers, and the shortcut guide pause
 these shortcuts. The finalized study keyboard handler yields to this surface.
 
 Queued and running summaries show a waiting state and may be left immediately.
-Home shows one durable recent-session entry, including pending and failed jobs,
-and opens that session in the same card component after refresh. A visible live
+Home gives the latest completed session's connections the main reading area,
+using a turning ring of exact note text with previous/next controls and a count.
+Neighbor previews and the compact preview are literal excerpts, not generated
+titles or new relationships. The left navigation stays in place. Start session,
+settings, and a study-activity disclosure remain available above the expanded
+connections. Small screens use the same paged reading surface without side cards;
+long notes grow the page rather than shrinking the text.
+
+Minimize restores the ordinary Home overview with the first connection's preview
+and total count. Expand returns to the ring. A newly completed session defaults
+to expanded; merely starting a session does not reset a choice. Browser-local
+preferences are keyed by the completed session id and contain only presentation
+booleans. Once ready notes are presented in the expanded view, the learner's
+subsequent toggle persists across page reloads for that session.
+
+Queued/running results can occupy the expanded area with a quiet orbital waiting
+animation (static under reduced motion). Minimizing while waiting holds through
+polling, settings, and in-app navigation for the rest of that document visit.
+If those notes have not been proactively opened, a later document reload expands
+them once ready. Explicitly expanding or opening the session summary acknowledges
+that batch, including while it is pending, and cancels this deferred introduction.
+Ready-empty results keep the ordinary Home overview. Failed results retain an
+explicit retry, and read errors retain a separate reload action.
+
+Home also retains access to the complete session summary, including recovery
+highlights, in the existing card component. A visible live
 summary reads its own immutable session id; latest retrieval cannot replace it.
 Only queued/running records poll. Requests and timers are cancelled on unmount,
 and old request completions cannot overwrite a retry or later surface. A lost
