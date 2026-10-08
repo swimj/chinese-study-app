@@ -244,6 +244,10 @@ An undoable transition begins when user action changes session progress:
 - rating a correct contrast choice as `Hard`, `Good`, or `Easy`
 - completing a learning or unstudied word unit
 
+**No clue** also uses `Shift+Enter` while the production answer is empty,
+including with the answer field focused. The shortcut ignores IME composition
+and does not submit a nonempty response.
+
 The transition is applied to frontend session state immediately, but its backend
 commit remains deferred while the undo window is open.
 

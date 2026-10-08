@@ -141,6 +141,11 @@ reinforcement, or completion. When the action also has a production failure,
 the V3 bundle has one item with both the original failure evidence and the
 marker.
 
+On an eligible production review card or its correction card, `R` toggles the
+learner request using the same action as the visible reflection-review button.
+Typing fields, IME composition, and modifier combinations keep their normal
+behavior; the shortcut guide and button expose the available shortcut.
+
 The marker and all learner-authored fields are hints, not strict content
 management directives. Backend reconstruction remains authoritative, and the
 prompt treats the marker only as a request for useful feedback. V4 retains that

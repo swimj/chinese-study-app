@@ -26,8 +26,8 @@ test('session teaching has no close callback for its button or Escape; completio
   assert.equal(experience.props.onCompleted, gate.complete);
   assert.equal(experience.props.qualityEncounterId, gate.key);
   const markup = renderToStaticMarkup(panel);
-  assert.match(markup, /Thumbs up: Introduction quality/);
-  assert.doesNotMatch(markup, /Thumbs up: Rehearsal quality/);
+  assert.match(markup, /Useful: Introduction quality/);
+  assert.doesNotMatch(markup, /Useful: Rehearsal quality/);
   assert.doesNotMatch(markup, /Continue with study cards|Back to word|Begin recall drills/);
   assert.match(markup, /Continue|Finish walkthrough/);
   assert.match(markup, /Undo last study action/);

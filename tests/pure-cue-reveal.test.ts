@@ -77,9 +77,9 @@ test('auto-forgot reveal uses the frozen teaching snapshot even when another cue
 test('pure cue quality is available before recall without leaking its accepted answers', () => {
   const markup = render({ sessionSummary: createSessionSummary({ sessionId: 'quality-session',
     startedAt: '2026-09-26T00:00:00.000Z', initialQueueLength: 1 }) });
-  assert.match(markup, /Thumbs up: Cue quality/);
-  assert.match(markup, /Thumbs down: Cue quality/);
-  assert.ok(markup.indexOf('Thumbs down: Cue quality') < markup.indexOf('Thumbs up: Cue quality'));
+  assert.match(markup, /Useful: Cue quality/);
+  assert.match(markup, /Needs work: Cue quality/);
+  assert.ok(markup.indexOf('Needs work: Cue quality') < markup.indexOf('Useful: Cue quality'));
   assert.doesNotMatch(markup, /Frozen teaching|Semantic classification|古怪/);
 });
 
@@ -99,8 +99,8 @@ test('frozen production keeps cue feedback and gives the visible supplement the 
       },
     },
   });
-  assert.match(markup, /Thumbs up: Cue quality/);
-  assert.match(markup, /Thumbs up: Supplement quality/);
+  assert.match(markup, /Useful: Cue quality/);
+  assert.match(markup, /Useful: Supplement quality/);
   assert.match(markup, /<mark class="desk-cloze-answer">词<\/mark>/);
   assert.equal((markup.match(/Useful content \(\]\)/g) ?? []).length, 1);
   assert.doesNotMatch(markup, /Describe unusual behavior/);
@@ -126,7 +126,7 @@ test('recognition reuses supplement teaching only after reveal and retains dicti
   assert.match(revealed, /Knowingly shielding someone/);
   assert.match(revealed, /他包庇了他。/);
   assert.match(revealed, /He shielded him/);
-  assert.match(revealed, /Thumbs up: Supplement quality/);
+  assert.match(revealed, /Useful: Supplement quality/);
   assert.doesNotMatch(revealed, /legacy example/);
   const fallback = render({ ...overrides, answerRevealed: true,
     activeItem: { ...item, recognitionSupplement: undefined } });
