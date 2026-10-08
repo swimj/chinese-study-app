@@ -30,6 +30,7 @@ const PRIMARY_PAGES: ReadonlyArray<{
 export function AppChrome({
   currentPage,
   gettingStartedUnseen = false,
+  guideToStash = false,
   onOpenGettingStarted,
   error,
   serviceBanner,
@@ -51,6 +52,7 @@ export function AppChrome({
 }: {
   currentPage: AppPageKey;
   gettingStartedUnseen?: boolean;
+  guideToStash?: boolean;
   onOpenGettingStarted?: () => void;
   error: string | null;
   serviceBanner: { message: string } | null;
@@ -126,7 +128,7 @@ export function AppChrome({
               const tabButton = (
                 <button
                   type="button"
-                  className={`nav-tab ${active ? 'active' : ''}`}
+                  className={`nav-tab ${active ? 'active' : ''}${page.key === 'priority' && guideToStash ? ' getting-started-attention' : ''}`}
                   aria-current={active ? 'page' : undefined}
                   aria-label={
                     badge.kind === 'failure'
@@ -141,6 +143,7 @@ export function AppChrome({
                   disabled={navigationLoading}
                 >
                   <span>{label}</span>
+                  {page.key === 'priority' && guideToStash ? <span className="getting-started-new">Add to your stash</span> : null}
                   {badge.kind === 'count' ? (
                     <span className={`nav-tab-count nav-tab-count-${page.key}`}>{badge.count}</span>
                   ) : null}

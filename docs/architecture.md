@@ -46,9 +46,12 @@ Detail: [SPECS/frontend-architecture-map.md](../SPECS/frontend-architecture-map.
 Home remains the initial page. Until Getting Started has been opened, the About
 menu exposes a highlighted Getting Started button with a gentle halo and a
 “Start here” label. Reduced-motion preferences disable the animation. Opening
-the guide clears the cue; opening another About view does not mark it read.
+the guide moves the cue to Words with “Add to your stash”. Following that cue
+opens Stash even if My words was previously selected. The cue clears once
+Stash opens successfully; opening another About view does not mark the guide read.
 The acknowledgement is stored in localStorage per Clerk account (per origin
-for trusted-local mode), so subsequent loads return to ordinary Home navigation.
+for trusted-local mode), so subsequent loads return to Home with the next unfinished cue, or ordinary
+navigation once both steps are complete.
 It does not sync across devices, and clearing or blocking browser storage can
 make the cue appear again. Existing accounts without this browser marker also
 see the guide once. `App.tsx` owns acknowledgement; `AppChrome.tsx` owns the cue.

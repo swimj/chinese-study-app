@@ -4532,19 +4532,21 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1
   .home-page:not(.home-session-active) .home-overview { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* First-visit guide: a quiet halo, with a static cue for reduced motion. */
+/* First-visit guide: a bright halo, with a static cue for reduced motion. */
 .getting-started-attention {
   flex-direction: column;
   align-items: flex-start;
   gap: .2rem;
-  outline: 2px solid var(--accent, #326956);
+  outline: 2px solid #39a878;
   outline-offset: 2px;
-  animation: getting-started-pulse 2.4s ease-in-out infinite;
+  background: #d8f5df;
+  color: #173f30;
+  animation: getting-started-pulse 1.8s ease-in-out infinite;
 }
 .getting-started-new { display: block; font-size: .8em; font-weight: 400; }
 @keyframes getting-started-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(50, 105, 86, .12); }
-  50% { box-shadow: 0 0 0 5px rgba(50, 105, 86, .28); }
+  0%, 100% { box-shadow: 0 0 0 2px rgba(45, 190, 120, .2), 0 0 8px rgba(45, 190, 120, .18); }
+  50% { box-shadow: 0 0 0 6px rgba(45, 190, 120, .5), 0 0 22px rgba(45, 190, 120, .55); background: #b5efc8; }
 }
 @media (prefers-reduced-motion: reduce) {
   .getting-started-attention { animation: none; }
