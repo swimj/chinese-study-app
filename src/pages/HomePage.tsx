@@ -33,10 +33,14 @@ import { HomeConnections } from '../features/session/HomeConnections';
 import { ConnectionSignals } from '../features/session/ConnectionSignals';
 import { useHomeConnectionsView } from '../features/session/useHomeConnectionsView';
 import { HomeOverviewPanel, SessionSettingsPanel } from './HomeOverviewPanel';
-import { HomeUpdates } from './HomeUpdates';
+import { HomeUpdates, HomeUpdatesCollapsedControl } from './HomeUpdates';
 
 export function HomePage({
   updatesCatalog,
+  unseenPostIds = [],
+  onUnseenBadgeVisible = async () => {},
+  updatesCollapsed = false,
+  onToggleUpdatesCollapsed = () => {},
   onOpenUpdate,
   onViewAllUpdates,
   introductionGate,
@@ -124,6 +128,10 @@ export function HomePage({
   onNudgeDiet,
 }: {
   updatesCatalog?: WhatsNewCatalog;
+  unseenPostIds?: readonly string[];
+  onUnseenBadgeVisible?: (postIds: string[]) => Promise<void>;
+  updatesCollapsed?: boolean;
+  onToggleUpdatesCollapsed?: () => void;
   onOpenUpdate?: (id: string) => void;
   onViewAllUpdates?: () => void;
   introductionGate?: SessionIntroductionGate | null;
@@ -230,9 +238,11 @@ export function HomePage({
   }, [sessionStarted]);
 
   return (
-    <div className={sessionStarted ? 'home-page home-session-active' : `home-page${connectionsExpanded ? ' home-connections-expanded' : ''}`}>
+    <div className={sessionStarted ? 'home-page home-session-active' : `home-page${connectionsExpanded ? ' home-connections-expanded' : ''}${updatesCollapsed ? ' home-updates-collapsed' : ''}`}>
       {connectionsExpanded ? <ConnectionSignals /> : null}
-      <div className={`grid home-grid${!sessionStarted && !connectionsExpanded && !sessionSettingsOpen && updatesCatalog && onOpenUpdate && onViewAllUpdates ? ' home-with-updates' : ''}`}>
+      {!sessionStarted && !connectionsExpanded && !sessionSettingsOpen && updatesCollapsed && updatesCatalog
+        ? <HomeUpdatesCollapsedControl unseenPostIds={unseenPostIds} onVisible={onUnseenBadgeVisible} onExpand={onToggleUpdatesCollapsed} /> : null}
+      <div className={`grid home-grid${!sessionStarted && !connectionsExpanded && !sessionSettingsOpen && !updatesCollapsed && updatesCatalog && onOpenUpdate && onViewAllUpdates ? ' home-with-updates' : ''}`}>
         <HomeOverviewPanel
           backendStatus={backendStatus}
           compact={connectionsExpanded}
@@ -262,8 +272,9 @@ export function HomePage({
           <p className="notes" role="status">Couldn’t load the recent session. <button type="button" className="secondary-button" onClick={recent.reload}>Try again</button></p>
         ) : null}
 
-        {!sessionStarted && !connectionsExpanded && !sessionSettingsOpen && updatesCatalog && onOpenUpdate && onViewAllUpdates
-          ? <HomeUpdates catalog={updatesCatalog} onOpenPost={onOpenUpdate} onViewAll={onViewAllUpdates} /> : null}
+        {!sessionStarted && !connectionsExpanded && !sessionSettingsOpen && !updatesCollapsed && updatesCatalog && onOpenUpdate && onViewAllUpdates
+          ? <HomeUpdates catalog={updatesCatalog} unseenPostIds={unseenPostIds} onUnseenBadgeVisible={onUnseenBadgeVisible}
+            onOpenPost={onOpenUpdate} onViewAll={onViewAllUpdates} onCollapse={onToggleUpdatesCollapsed} /> : null}
 
         {sessionSettingsOpen && !sessionStarted ? (
           <SessionSettingsPanel

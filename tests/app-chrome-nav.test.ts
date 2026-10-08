@@ -61,6 +61,11 @@ describe('AppChrome primary navigation', () => {
     assert.doesNotMatch(renderChrome('content'), /class="app-nav-nested"/);
   });
 
+  test('keeps What’s New unread counts out of the About primary navigation', () => {
+    assert.doesNotMatch(renderChrome('home'), /nav-tab-count-about/);
+    assert.doesNotMatch(renderChrome('about'), /nav-tab-count-about/);
+  });
+
   test('overlays a refresh control on Reflections only while that view is open', () => {
     const withHandler = renderToStaticMarkup(createElement(AppChrome, {
       currentPage: 'reflections',

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { WhatsNewAttention } from '../../domain/whats-new-attention';
 import { WHATS_NEW_BADGE_WINDOW_MS } from '../../domain/whats-new-attention';
 import { fetchWhatsNewAttention, updateWhatsNewAttention } from '../../services/api';
-import { activeWhatsNewPostIds } from './whats-new-attention';
+import { activeUnexposedWhatsNewPostIds, activeWhatsNewPostIds } from './whats-new-attention';
 
 export function useWhatsNewAttention() {
   const [snapshot, setSnapshot] = useState<{ attention: WhatsNewAttention; receivedAt: number } | null>(null);
@@ -28,12 +28,13 @@ export function useWhatsNewAttention() {
   const read = useCallback((postIds: string[]) => run(() => updateWhatsNewAttention({ postIds, kind: 'read' })), [run]);
   const serverNow = snapshot ? Date.parse(snapshot.attention.serverNow) + Math.max(0, clock - snapshot.receivedAt) : 0;
   const unseenIds = snapshot ? activeWhatsNewPostIds(snapshot.attention, serverNow) : [];
-  const exposureKey = JSON.stringify(unseenIds.filter(id =>
-    snapshot?.attention.items.find(item => item.postId === id)?.firstBadgeSeenAt === null));
-  const exposeBadge = useCallback(async () => {
-    const postIds = JSON.parse(exposureKey) as string[];
-    if (postIds.length) await run(() => updateWhatsNewAttention({ postIds, kind: 'badge-seen' }));
-  }, [exposureKey, run]);
+  const exposeBadge = useCallback(async (postIds: string[]) => {
+    if (!snapshot || !postIds.length) return;
+    const unseenUnexposedIds = activeUnexposedWhatsNewPostIds(snapshot.attention, serverNow, postIds);
+    if (unseenUnexposedIds.length) {
+      await run(() => updateWhatsNewAttention({ postIds: unseenUnexposedIds, kind: 'badge-seen' }));
+    }
+  }, [run, serverNow, snapshot]);
 
   useEffect(() => {
     if (!snapshot) return;
@@ -48,5 +49,5 @@ export function useWhatsNewAttention() {
     return () => window.clearTimeout(timer);
   }, [snapshot, serverNow]);
 
-  return { count: unseenIds.length, refresh, read, exposeBadge };
+  return { unseenPostIds: unseenIds, refresh, read, exposeBadge };
 }

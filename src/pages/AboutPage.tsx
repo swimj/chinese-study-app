@@ -11,11 +11,10 @@ const ABOUT_VIEWS = [
 
 export type AboutView = typeof ABOUT_VIEWS[number][0];
 
-export function AboutPage({ updatesCatalog, view, onSelectView, whatsNewUnseenCount = 0, onWhatsNewRead, selectedPostId, onViewAllUpdates }: {
+export function AboutPage({ updatesCatalog, view, onSelectView, onWhatsNewRead, selectedPostId, onViewAllUpdates }: {
   updatesCatalog: WhatsNewCatalog;
   view: AboutView;
   onSelectView: (view: AboutView) => void;
-  whatsNewUnseenCount?: number;
   onWhatsNewRead?: (postIds: string[]) => Promise<void>;
   selectedPostId?: string | null;
   onViewAllUpdates?: () => void;
@@ -33,9 +32,6 @@ export function AboutPage({ updatesCatalog, view, onSelectView, whatsNewUnseenCo
               onClick={() => onSelectView(key)}
             >
               <span>{label}</span>
-              {key === 'whats-new' && whatsNewUnseenCount > 0 ? (
-                <span className="reflection-view-rail-count">{whatsNewUnseenCount}</span>
-              ) : null}
             </button>
           ))}
         </nav>
