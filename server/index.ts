@@ -1,3 +1,4 @@
+import { registerContentImprovementRoutes } from './content-improvement-routes.ts';
 import { listWhatsNewPosts, saveWhatsNewPost, WhatsNewConflictError } from './db/whats-new.ts';
 import { WhatsNewInputError, parseWhatsNewWriteRequest } from '../src/domain/whats-new.ts';
 import { updateWhatsNewSeenThroughSequence } from './db/attention.ts';
@@ -234,6 +235,7 @@ export function createApp(options: CreateAppOptions = {}) {
         allowedHeaders: ['Authorization', 'Content-Type'],
       }
     : undefined));
+  app.use('/api/operator/content-improvements', express.json({ limit: '512kb' }));
   app.use('/api/operator/whats-new', express.json({ limit: '1mb' }));
   app.use('/api/whats-new-attention', express.json({ limit: '160kb' }));
   app.use(express.json({ limit: defaultJsonBodyLimit }));
@@ -373,6 +375,7 @@ export function createApp(options: CreateAppOptions = {}) {
       res.status(500).json({ error: 'Failed to save content quality rating' });
     }
   });
+  registerContentImprovementRoutes(app);
   app.get('/api/operator/content-quality', createOperatorAllowlistMiddleware(), (req, res) => {
     if (Object.values(req.query).some(value => typeof value !== 'string')) {
       res.status(400).json({ error: 'Expected string quality filters' }); return;

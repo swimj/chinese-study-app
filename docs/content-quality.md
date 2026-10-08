@@ -67,6 +67,13 @@ rated material, including private authored material, but this view does not
 include learner identifiers, responses, private notes, or reflection bundles.
 Quality evidence is not fed to any model provider.
 
+## Improving content
+
+The [operator content-improvement workspace](content-improvement.md) opens a
+revisioned correction case from an inspected item or a directly selected source.
+Feedback remains a descriptive overlay; only a separately reviewed, explicitly
+approved correction changes future content selection.
+
 ## Deployment
 
 This release adds an offline schema migration. Follow the stopped-writer,

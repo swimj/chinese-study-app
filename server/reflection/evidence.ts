@@ -561,7 +561,8 @@ function validateProductionAttemptMetadata(
   }
 
   const contentRef = parseNullableObjectJson(attempt.content_ref_json);
-  const durableSupplement = getProductionCueSupplement(metadata.taskId, metadata.cueId);
+  const durableSupplement = metadata.supplement === null ? null
+    : getProductionCueSupplement(metadata.taskId, metadata.cueId, metadata.supplement.supplementId);
   if (metadata.supplement !== null && (
     durableSupplement === null
     || durableSupplement.supplementId !== metadata.supplement.supplementId

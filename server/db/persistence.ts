@@ -1220,7 +1220,8 @@ export function getContrastPromptsForCluster(clusterId: string): ContrastPrompt[
         prompt_text,
         explanation
       FROM contrast_prompts
-      WHERE cluster_id = ?
+      WHERE cluster_id = ? AND NOT EXISTS (SELECT 1 FROM content_improvement_replacements r
+        WHERE r.kind = 'contrast_prompt' AND r.source_id = contrast_prompts.id)
       ORDER BY id ASC
     `)
     .all(normalizedClusterId) as ContrastPromptRow[];
@@ -5589,6 +5590,8 @@ function getEligibleContrastDistractorPromptCandidatesForScheduledWord(
       LEFT JOIN contrast_prompts
         ON contrast_prompts.cluster_id = scheduled_member.cluster_id
        AND contrast_prompts.target_word_id IN (scheduled_member.word_id, sibling_member.word_id)
+       AND NOT EXISTS (SELECT 1 FROM content_improvement_replacements r
+         WHERE r.kind = 'contrast_prompt' AND r.source_id = contrast_prompts.id)
       WHERE scheduled_member.word_id = ?
       ORDER BY
         contrast_clusters.id ASC,

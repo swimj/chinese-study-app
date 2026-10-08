@@ -8,6 +8,7 @@ import {
   type ContentQualityKind,
 } from '../domain/content-quality';
 import { fetchContentQualityStats } from '../services/api';
+import { ContentImprovementWorkspace, type ImprovementSelection } from './ContentImprovementWorkspace';
 import { contentQualityTextBlocks } from './content-quality-presentation';
 
 const PAGE_SIZE = 25;
@@ -38,6 +39,11 @@ function percent(numerator: number, denominator: number): string {
 }
 
 export function ContentQualityPanel() {
+  const [improvementSelection, setImprovementSelection] = useState<ImprovementSelection | null>(null);
+  function improve(item: ContentQualityItem) {
+    setImprovementSelection({ kind: item.kind, sourceId: item.sourceId, contentKey: item.contentKey });
+    document.getElementById('content-improvement-workspace')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
   const [kind, setKind] = useState<ContentQualityKind | ''>('');
   const [since, setSince] = useState('');
   const [until, setUntil] = useState('');
@@ -121,7 +127,7 @@ export function ContentQualityPanel() {
               <th scope="col">Learners seen</th><th scope="col">Up</th><th scope="col">Down</th>
               <th scope="col">Coverage</th><th scope="col">Down / votes</th>
             </tr></thead>
-            <tbody>{payload.items.map((item) => <QualityRow key={item.contentKey} item={item} />)}</tbody>
+            <tbody>{payload.items.map((item) => <QualityRow key={item.contentKey} item={item} onImprove={improve} />)}</tbody>
           </table>
         </div>
         <nav className="content-quality-pagination" aria-label="Content quality pages">
@@ -131,6 +137,7 @@ export function ContentQualityPanel() {
         </nav>
       </>}
     </>}
+    <ContentImprovementWorkspace selection={improvementSelection} />
   </section>;
 }
 
@@ -170,7 +177,7 @@ function QualityMetric({ label, value }: { label: string; value: string }) {
   </div>;
 }
 
-function QualityRow({ item }: { item: ContentQualityItem }) {
+function QualityRow({ item, onImprove }: { item: ContentQualityItem; onImprove: (item: ContentQualityItem) => void }) {
   const textBlocks = contentQualityTextBlocks(item.content);
   return <Fragment>
     <tr>
@@ -195,6 +202,7 @@ function QualityRow({ item }: { item: ContentQualityItem }) {
           <dt>Model</dt><dd>{item.provenance.model ?? 'Unknown / not recorded'}</dd>
           <dt>Last seen (UTC)</dt><dd><time dateTime={item.lastSeenAt}>{item.lastSeenAt}</time></dd>
         </dl>
+        <button type="button" className="secondary-button" onClick={() => onImprove(item)}>Improve this item</button>
         <details>
           <summary>Exact content snapshot (JSON)</summary>
           <pre className="content-quality-snapshot">{JSON.stringify(item.content, null, 2)}</pre>

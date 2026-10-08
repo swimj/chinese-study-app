@@ -115,6 +115,12 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0031_whats_new_attention',
   sql: fs.readFileSync(new URL('./migrations/0031_whats_new_attention.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0032_content_improvement_workspace',
+  sql: fs.readFileSync(new URL('./migrations/0032_content_improvement_workspace.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0033_content_improvement_repairs',
+  sql: fs.readFileSync(new URL('./migrations/0033_content_improvement_repairs.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

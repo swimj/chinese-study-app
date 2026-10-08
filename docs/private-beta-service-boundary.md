@@ -117,6 +117,13 @@ immutable before/after revision record. An unfair source lapse can receive the
 existing restore-once learner-private compensation. It does not generalize to
 other shared content.
 This affects future snapshots, never historical grading or reveal text.
+The operator [content-improvement workspace](content-improvement.md) separately
+authorizes revision-checked wording and teaching-note repairs on pure cues, with
+immutable before/after operator evidence. Axis, accepted membership, publication
+status and scheduling remain fixed; operator corrections do not compensate
+lapses. Other workspace corrections create explicit successors, retain private
+ownership, and preserve served snapshots. Introduction successors apply to new
+unpinned selections while existing learner pins continue using their package.
 Other corrections create distinct attributable content
 or an explicit disposition rather than rewriting history. A repair operation
 preserves causal provenance without assuming that its inputs and outputs are

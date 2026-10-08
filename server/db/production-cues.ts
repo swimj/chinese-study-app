@@ -556,6 +556,7 @@ export function getActiveProductionCuesForWord(wordId: string): ProductionCueEnt
 export function getProductionCueSupplement(
   taskId: string,
   cueId: string | null,
+  exactSupplementId?: string,
 ): ProductionCueSupplementEntryV1 | null {
   const row = getDb().prepare(`
     SELECT
@@ -568,11 +569,14 @@ export function getProductionCueSupplement(
       created_at,
       origin_invocation_id
     FROM production_cue_supplements
-    WHERE task_id = ? AND (
+    WHERE task_id = ? AND ${exactSupplementId === undefined ? `NOT EXISTS (
+      SELECT 1 FROM content_improvement_replacements r
+      WHERE r.kind = 'supplement' AND r.source_id = production_cue_supplements.supplement_id
+    )` : 'supplement_id = ?'} AND (
       (? IS NULL AND cue_id IS NULL)
       OR cue_id = ?
     )
-  `).get(taskId, cueId, cueId) as ProductionCueSupplementRow | undefined;
+  `).get(...(exactSupplementId === undefined ? [taskId, cueId, cueId] : [taskId, exactSupplementId, cueId, cueId])) as ProductionCueSupplementRow | undefined;
   if (!row) return null;
   const supplement = mapProductionCueSupplementRow(row);
   const canonical = getCanonicalReviewContent('production_cue_supplement', row.supplement_id);
@@ -1434,6 +1438,8 @@ function productionCueSelect(): string {
       END AS origin_kind,
       provenance.source_invocation_id AS origin_invocation_id,
       CASE
+        WHEN EXISTS (SELECT 1 FROM content_improvement_replacements r
+          WHERE r.kind = 'production_cue' AND r.source_id = production_cues.cue_id) THEN 0
         WHEN production_cues.content_scope = 'shared' THEN
           CASE
             WHEN publication.publication_status IN ('shared_trial', 'available')
