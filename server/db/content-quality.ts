@@ -362,7 +362,7 @@ export function getContentQualityAnalytics(filters: ContentQualityFilters = {}):
   };
 }
 
-/** Current non-null votes, ordered newest first, plus counts grouped by exact snapshot. */
+/** Current non-null votes, ordered newest first. */
 export function getContentQualityRatingLedger(): ContentQualityRatingLedger {
   const rows = getDb().prepare(`
     SELECT i.content_key, i.kind, i.source_id, i.title, i.content_json, r.rating, r.updated_at
@@ -378,24 +378,7 @@ export function getContentQualityRatingLedger(): ContentQualityRatingLedger {
     rating: 'up' | 'down';
     updated_at: string;
   }>;
-  const bySnapshot = new Map<string, ContentQualityRatingLedger['snapshots'][number]>();
   const ratings = rows.map((row) => {
-    let snapshot = bySnapshot.get(row.content_key);
-    if (!snapshot) {
-      snapshot = {
-        contentKey: row.content_key,
-        kind: row.kind,
-        sourceId: row.source_id,
-        title: row.title,
-        content: JSON.parse(row.content_json),
-        up: 0,
-        down: 0,
-        totalRatings: 0,
-      };
-      bySnapshot.set(row.content_key, snapshot);
-    }
-    snapshot[row.rating] += 1;
-    snapshot.totalRatings += 1;
     return {
       contentKey: row.content_key,
       kind: row.kind,
@@ -406,7 +389,7 @@ export function getContentQualityRatingLedger(): ContentQualityRatingLedger {
       updatedAt: row.updated_at,
     };
   });
-  return { ratings, snapshots: [...bySnapshot.values()], totalRatings: ratings.length };
+  return { ratings, totalRatings: ratings.length };
 }
 
 export function validateContentQualitySchema(): void {

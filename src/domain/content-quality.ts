@@ -82,7 +82,6 @@ export type ContentQualityAnalytics = {
 /** Current non-null learner votes, with exact snapshots aggregated for triage. */
 export type ContentQualityRatingLedger = {
   ratings: ContentQualityRatingEntry[];
-  snapshots: ContentQualityRatedSnapshot[];
   totalRatings: number;
 };
 

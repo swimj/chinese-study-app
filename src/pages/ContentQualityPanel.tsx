@@ -49,7 +49,6 @@ export function ContentQualityPanel() {
   const [direction, setDirection] = useState<'asc' | 'desc'>('desc');
   const [view, setView] = useState<'ratings' | 'snapshot'>('ratings');
   const [dateWindow, setDateWindow] = useState(lastSevenUtcDays);
-
   function improve(item: Pick<ContentQualityRatingEntry, 'kind' | 'sourceId' | 'contentKey'>) {
     setImprovementSelection({ kind: item.kind, sourceId: item.sourceId, contentKey: item.contentKey });
     document.getElementById('content-improvement-workspace')?.scrollIntoView({ behavior: 'smooth', block: 'start' });

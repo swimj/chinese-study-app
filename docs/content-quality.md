@@ -48,19 +48,18 @@ observations, not verified attention or learning outcomes. Nothing is backfilled
 for encounters before the feature was installed. No answer typed by the learner
 is included in this overlay.
 
-The operator page (`#operator-usage`) leads with a recency-ordered ledger of
-current non-null learner/content ratings: last changed time (UTC), item details,
-content type, and vote. Column controls sort the ledger; filters inside the
-table select item text, type, and vote. A second table groups those current
-ratings by exact content snapshot and sorts by Useful, Needs work, or rated
-learner/content pairs. The total number of current ratings is the count of
-learner/content pairs that currently have a rating. Changing a vote moves its
-ledger row; clearing it removes the row. Earlier vote states are not retained.
+The operator page (`#operator-usage`) shows a single table of current non-null
+learner/content ratings, defaulting to the last seven UTC days by last-change
+time. Date bounds, item text, content type, and vote can be filtered in the
+table; column headings sort it. A table control switches between individual
+ratings and an aggregate by exact content snapshot, with Useful, Needs work, and
+rated-pair counts. Changing a vote moves its ledger row; clearing it removes the
+row. Earlier vote states are not retained.
 
 This is a sparse, voluntary impression ledger, not a representative quality
 score or causal comparison of models. It deliberately focuses on ratings rather
-than un-rated displays. Exact content snapshots remain inspectable from either
-table.
+than un-rated displays. Exact content snapshots remain inspectable in either
+table view.
 
 Access uses the existing operator allowlist. The operator can inspect the exact
 rated material, including private authored material, but this view does not
