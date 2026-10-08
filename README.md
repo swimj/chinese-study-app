@@ -106,8 +106,9 @@ server and `VITE_API_BASE` are not required for the hosted beta.
 
 First encounters open a paced lesson in a Mandarin study session. The preparation
 workflow supplies ready content before the session admits a new word. Validated content publishes automatically
-and is reused across learners. See [the in-app guide](docs/word-introduction-in-app.md)
-for the learning policy and required offline database migration.
+and is reused across learners. See [content generation](docs/word-content-generation.md)
+and [study integration](docs/word-content-serving.md) for the implementation,
+and the [migration guide](docs/ops/schema-migrations.md) for database upgrades.
 
 Run `npm run dev:intro-lab` and open <http://localhost:4177/intro-lab> to try
 the six paced introductions, deterministic rehearsal, and optional two-stage

@@ -275,6 +275,20 @@ Apply this migration once through the schema-changing release procedure with
 the app stopped and a backup retained. Subsequent [blog edits](../whats-new.md)
 use normal live transactions and need no maintenance window or migration.
 
+## Introduction component retention (0029)
+
+`0029_introduction_components.sql` adds empty tables for retained teaching and
+practice components and their published-package provenance links. The migration
+does not rewrite existing content or packages, backfill component records, or
+invoke providers. Existing packages and learner pins remain compatible without
+component links; historical packages therefore have no component-level
+provenance reconstructed by this upgrade.
+
+Use the [stopped-writer procedure](#operator-procedure), including a rehearsal
+on a restored copy and a retained backup. An app-only upgrade cannot apply this
+schema change. The [word content generation guide](../word-content-generation.md)
+explains how new preparation retains and publishes components.
+
 ## Home updates and per-post notifications
 
 `0030_whats_new_previews.sql` adds the required summary field and backfills

@@ -1,29 +1,21 @@
-# Word content model: executable checkpoint
+# Word content data representation
 
-This implements the representation and materialization portion of
-[Word Bootstrap, Introduction, And Early Rehearsal](../SPECS/word-bootstrap-and-introduction.md).
-The domain layer remains independent of persistence and scheduling. The
-[in-app integration](word-introduction-in-app.md) adds shared SQLite storage,
-provider preparation, and an initial learning flow around these objects.
+Learners encounter a word through meanings, examples, an introduction, and recall
+exercises. Those presentations can share source material while asking different
+things of the learner. The application needs to retain both the source of what
+was shown and the answer contract of the particular exercise.
 
-Run the six worked examples and old/new review coexistence:
+This guide explains how that learner-facing content is represented: immutable
+source documents and teaching packages, exercise stimuli and accepted answers,
+and the frozen snapshots used for presentation. It also explains how structured
+review content coexists with older cues. The [feature contract](../SPECS/word-bootstrap-and-introduction.md)
+defines the intended content model. [Generation](word-content-generation.md)
+explains how these objects are authored and published;
+[serving](word-content-serving.md) explains their use in study sessions.
 
-```sh
-npm run inspect:word-content
-npm run inspect:word-content -- --json
-```
-
-The CLI has no database or network access. It uses synthetic fixtures derived
-from the teaching explorations, not an export of learner data. The JSON report
-includes source identities and frozen presentations; it is diagnostic output,
-not a new persistence envelope.
-
-## The two authored documents
+## Source documents and teaching packages
 
 Shared types live in [src/domain/word-content/types.ts](../src/domain/word-content/types.ts).
-Strict parsers in [validation.ts](../src/domain/word-content/validation.ts) read
-unknown JSON, reject unknown properties and invalid structures, and return
-detached, deeply frozen values. Materialization validates cross-document refs.
 
 **WordContentDocument** has an immutable document ID and a lexical snapshot
 (`wordId`, `hanzi`, `traditional`, `pinyin`). It contains local use IDs and
@@ -33,7 +25,9 @@ nullable pronunciation. An example can belong to more than one use. There is
 no collocations field, schedule, accepted-answer set, or publication state.
 
 **TeachingPackage** pins `wordContentId`. It contains ordered beats and at least
-one target rehearsal. Every beat has an ID and one or more parts:
+one target rehearsal. The package contains both the introduction and its
+practice exercises, even though they are generated independently. Every beat
+has an ID and one or more parts:
 
 - authored text;
 - a referenced example's sentence, translation, or pronunciation;
@@ -56,7 +50,9 @@ A stimulus is one of:
 
 ```ts
 { kind: 'direct_text', text: string }
-// or
+// or: an authored phrase, with no source-example reference
+{ kind: 'phrase_cloze', frame: string, text: string }
+// or: blanks selected from an exact source example
 {
   kind: 'example_cloze',
   example: { contentId: string, exampleId: string },
@@ -65,6 +61,14 @@ A stimulus is one of:
 }
 ```
 
+A `phrase_cloze` carries its own frame and phrase, for example English
+“Give advance notice.” with Mandarin “来之前先____。”. The parser requires a
+nonempty frame, exactly one `____` blank, and surrounding phrase text. Exercise
+validation rejects visible accepted Chinese answer forms in its instruction,
+frame, or phrase. Materialization joins frame and phrase on separate lines
+without looking up a source example.
+
+An `example_cloze` instead retains a source reference and chosen spans.
 Offsets are half-open **Unicode code-point** offsets. Blanks are ordered,
 non-overlapping, nonempty, and checked against the referenced text. Recording
 `expectedText` makes drift or an incorrectly selected occurrence an error.
@@ -77,26 +81,27 @@ accepted word IDs/forms, and one explicit contract:
 
 | Contract | Ownership and answers |
 | --- | --- |
-| `target_rehearsal` | One owner and exactly its answer; nonempty instruction |
+| `target_rehearsal` | One owner and exactly its answer |
 | `targeted_review` | One owner and exactly its answer |
 | `pure_review` | Semantic-axis note, no owner, explicit accepted members |
 
-The model never derives an answer space from the example. Hidden text in a
-structured exercise must be an explicitly accepted form. A source sentence
+An instruction may be empty; content-specific wording stays with the exercise,
+while generic task framing belongs to the presentation layer.
+
+The model never derives an answer space from the stimulus. Hidden spans in a
+source-example cloze must be explicitly accepted forms. A source sentence
 can therefore remain whole in teaching while its rehearsal and review
 interpretations differ. Direct text remains useful for definitions and
 situations; it is not automatically deprecated by the structured alternative.
 
-V1 has one typed response. In a multi-blank exercise that response fills every
-gap with the same word; all source blanks must be forms of one accepted word.
-Exercises requiring different answers in different gaps need a future response
-contract. Authors should make the repeat-in-every-gap instruction explicit.
+The current response contract has one typed response. In a multi-blank
+source-example cloze that response fills every gap with the same word; all
+source blanks must be forms of one accepted word. An exercise's instruction can
+make that repeated use explicit. Authored phrase clozes have only one blank.
 
 Package rehearsals must target the pinned word and use its exact answer forms;
 their example clozes must reference the package's content document. Standalone
-exercises can refer to other documents explicitly. New contrast-choice
-authoring is not implemented in this checkpoint; it will need choices and a
-selection contract rather than abusing the typed-answer contract.
+exercises can refer to other documents explicitly.
 
 ## Materialization and matching
 
@@ -110,21 +115,20 @@ rendering to text.
 `resolveContentExerciseResponse` delegates to the existing profile-aware answer
 matcher and returns only acceptance and matched word identity. It awards no
 coverage, review interval, graduation credit, or reflection eligibility.
-The package path is Mandarin; the review adapter retains the existing matcher
-profile for compatibility. There is no new multilingual feature promise.
+Teaching packages materialize with Mandarin matching. Standalone review
+snapshots retain their matching profile through the compatibility adapter.
 
-An exercise ID inside a package is scoped to that package; future durable
-events must retain the enclosing package ID as well. The package materializer
-does this at the enclosing snapshot level. Standalone review identity is
-retained separately in the compatibility wrapper. This checkpoint does not
-introduce a study-event ingestion route.
+An exercise ID inside a package is scoped to that package. The enclosing
+package snapshot retains the package ID, so consumers can identify which
+exercise was shown even when another package uses the same local exercise ID.
+Standalone review identity is retained separately in the compatibility wrapper.
 
 ## Existing cues and supplements coexist
 
 [review-compat.ts](../src/domain/word-content/review-compat.ts) provides explicit,
 pure adapters without changing existing DTOs or tables.
 
-| Existing representation | Checkpoint representation |
+| Existing representation | Domain representation |
 | --- | --- |
 | Cue text (any current cue type) | Opaque `direct_text`; no parsing or rewriting |
 | Task/cue identity and cue type | Separate exact review metadata |
@@ -152,42 +156,27 @@ canonical exercises and their exact source documents alongside durable cue IDs.
 Live readers rematerialize these records through the adapter while retaining
 legacy lifecycle/evidence compatibility.
 
-## What the fixtures establish
+## Validation and evidence
 
-[src/features/introduction-lab/samples.ts](../src/features/introduction-lab/samples.ts) represents all
-six explored words: 报备, 藤椒, 泡沫, 不堪, 石沉大海, 为所欲为. The model handles
-multiple uses, literary parsing, independent translation beats, contextual
-notes, private questions, and direct-text or source-backed rehearsal without
-adding special per-word schemas.
+The strict [parsers](../src/domain/word-content/validation.ts) read unknown JSON,
+reject unsupported properties and invalid structures, and return detached,
+deeply frozen values. Materialization then checks relationships that require
+source documents: referenced examples and notes exist, blank spans match their
+source text, and package rehearsals use the pinned word and its exact answer
+forms. Duplicate document IDs fail rather than choosing a source by insertion
+order.
 
-Focused tests cover JSON roundtrips, reference validation, repeated occurrences,
-Unicode spans, source drift, snapshot detachment, explicit answer contracts,
-old/new review matching, and supplement provenance. A replacement content
-document can coexist with the old one without changing a pinned package.
+[Domain tests](../tests/word-content.test.ts) exercise roundtrips, references,
+Unicode spans, source drift, snapshot detachment, and explicit answer contracts.
+They also check phrase clozes without a source example, malformed blanks, missing
+frames, and exposed answer forms.
+[Compatibility tests](../tests/word-content-compat.test.ts) cover old/new review
+matching and retained supplement identity. These checks establish representation
+and matching behavior; they do not assess whether a generated explanation or cue
+teaches the word well.
 
-## Convergence path and remaining limits
-
-1. The [local introduction lab](word-introduction-lab.md) now persists immutable
-   authoring drafts and generates content/packages through separate provider
-   stages. The application now has separate shared storage, attribution and publication
-   eligibility. Local lab drafts remain separate; do not mistake them for
-   published content or reuse their IDs for changed bodies.
-2. Author structured new content directly. Reflection continues emitting compatible cue/supplement proposal shapes,
-   but newly applied effects are stored as canonical exercises and example sources. No old cloze-to-sentence conversion
-   is necessary to use the new model.
-3. When reflection emits structured examples/clozes, retain source references
-   alongside the existing cue identity and lifecycle. An optional conservative
-   legacy conversion may recover simple examples; ambiguous stimuli remain
-   text. Pure cues cannot be filled with one hidden “correct” target to recover
-   a canonical sentence.
-4. Move new supplements to example references when useful, preserving exact
-   cue attachment and their own framing. Retain old snapshots for history.
-5. Use deliberate custodial revision to align teaching and review discoveries.
-   The current model does not build a replacement graph or automatically swap
-   packages. Global sentence deduplication can wait until reuse justifies it.
-
-Provider authoring, local draft storage, and paced introduction/rehearsal UI
-are exercised by the lab. Shared publication, package selection for learners,
-and study progress policies are the next integration layers. They need not
-change the core separation demonstrated here. No production database access
-was needed.
+The [worked examples](../src/features/introduction-lab/samples.ts) represent six
+words with multiple uses, literary parsing, independent translation beats,
+private questions, and direct or source-backed rehearsal using the same types.
+The [inspection procedure](scripts.md#inspect-word-content-fixtures) shows how to
+examine their objects and frozen presentations locally.

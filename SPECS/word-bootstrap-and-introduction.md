@@ -3,7 +3,7 @@
 Status: accepted design direction, with preparation-reserve policy agreed 2026-10-01.
 The [local authoring lab](../docs/word-introduction-lab.md) remains available alongside
 shared preparation, paced introductions, and package-based early learning. See the
-[executable model and compatibility guide](../docs/word-content-model.md).
+[data representation and compatibility guide](../docs/word-content-representation.md).
 This is the product and content-model north star for the combined feature.
 The policy choices in §9 can remain open through a merged prototype. Define
 their initial behavior when enabling the corresponding live study effects.

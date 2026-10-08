@@ -12,6 +12,7 @@ can and cannot prove. Deployment and Grafana setup remain in the
 | `Failed to fetch` with a client incident ID during a review or contrast commit | `hosted:inspect-client-incidents`, then study-commit success logs for the same event IDs | The browser's auth-token or fetch promise rejected. A matching backend success proves the commit completed; no matching success does not prove it never arrived. |
 | An application error with `Diagnostic ID: ...` during a study commit | `hosted:inspect-study-commits -- --diagnostic-id=...` | The request reached the commit handler and the handler caught a validation or persistence failure. |
 | An HTTP error without an ID | Service metrics, `fly logs`, then the relevant domain store | The browser received an HTTP response. Existing route-specific logging varies. |
+| A word introduction or review preparation failure | Operator view's [Preparation failures tab](#shared-word-preparation-failures) | The shared word/stage status, last error, and recorded attempt history. |
 | A reflection-generation failure | Reflections run log, reflection lifecycle logs, then the provider diagnostics sidecar | The durable run state and safe provider classification; transport metadata is available for provider failures. |
 | An intake-triage generation failure | Intake-triage run rows in SQLite | Expected provider/domain failures are durable, but there is no user-facing run-history inspector yet. |
 | A generic aborted request in Grafana | Prometheus route/method/outcome metrics | A response closed before completion. It is aggregate telemetry, not a per-request log, and `GET /api/*` may be unresolved to a specific route. |
@@ -116,6 +117,30 @@ appear as `/api/*`; a connection closed before response completion has status
 request that never reached the app. Fly's managed metric history is currently
 approximately 15 days. See [hosted observability](./hosted-observability.md) for
 queries, dashboard interpretation, and the complete label policy.
+
+## Shared word preparation failures
+
+Open the bookmark-only operator view at `#operator-usage` and select
+**Preparation failures**. Access requires an operator identity allowed by
+`APP_OPERATOR_CLERK_USER_IDS`; an empty allowlist fails closed. Each entry
+identifies the word and preparation stage (`bootstrap`, `teaching`, or `review`),
+current status, attempt count, and last error. Expand **Attempt history** for
+recorded start/end times, outcomes, and diagnostics. **Refresh failures** reloads
+this durable SQLite state.
+
+Automatic retries stop after three attempts for a shared word/stage. For paused
+work, **Retry this stage** queues a new attempt budget and records the operator
+in the retry ledger. Retry can issue new provider calls; successful earlier
+stages and reusable saved components are retained. Retry clears the current
+error, so disappearance from the failures list does not establish completion.
+Retry does not republish or regenerate withdrawn content: work blocked by
+withdrawal pauses again for operator disposition. Ordinary learner requests
+cannot reset an exhausted budget.
+
+The [operator API reference](../api.md#operator-view) lists the failure and retry
+endpoints and their access requirements. The
+[word content generation guide](../word-content-generation.md) explains stage
+dependencies, component reuse, and publication eligibility.
 
 ## Reflection diagnostics
 

@@ -17,7 +17,7 @@ shared per-word readiness and an expiring claim, preventing duplicate publicatio
 across learners. Once prepared, retry never resurrects a cue retired by
 reflection. Review failure preserves teaching and ordinary review fallback.
 Bounded automatic retries and attributable operator retry use the
-[shared preparation worker](word-introduction-in-app.md#storage-and-concurrency).
+[shared preparation worker](word-content-generation.md#retaining-work-without-exposing-a-partial-lesson).
 
 Publication inserts structured content and its compatibility projection in one
 transaction. Generated cues enter the existing shared-trial registry under an
