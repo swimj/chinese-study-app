@@ -1,6 +1,8 @@
 # Scripts catalog
 
-Entry points under `scripts/`. Run with `node --import tsx scripts/<name>.ts` unless `package.json` defines an npm script.
+This catalog helps contributors and operators find script commands and the
+procedures needed to run them safely. Scripts live under `scripts/`; run with
+`node --import tsx scripts/<name>.ts` unless `package.json` defines an npm script.
 
 ## Contributor setup and local checks
 
@@ -26,6 +28,24 @@ effective data directory before starting or resetting it: existing files under
 [architecture map](architecture.md#configuration) and [.env.example](../.env.example).
 The [hosted runbook](ops/hosted-beta-deployment.md) owns deployment configuration
 and release procedures.
+
+## Inspect word content fixtures
+
+To inspect how source content becomes a teaching package and review presentation,
+run the synthetic examples after contributor setup:
+
+```sh
+npm run inspect:word-content
+npm run inspect:word-content -- --json
+```
+
+The first command prints a readable report; `--json` prints the structured
+report. Both cover six word introductions and legacy/structured review
+coexistence, including source identities and frozen presentations. The CLI
+accesses no database or network and uses no learner data. Its output is a
+diagnostic report, not a persistence envelope. See
+[word content representation](word-content-representation.md) for the objects
+and compatibility boundary being inspected.
 
 ## Safe in dev (repo-local data)
 

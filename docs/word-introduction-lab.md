@@ -1,10 +1,19 @@
-# Local word introduction lab
+# Local introduction development aid
 
-The lab exercises the full authoring and presentation path for the
-[word content model](word-content-model.md): lexical input → bootstrap content
-→ pinned teaching package → paced introduction → deterministic rehearsal.
-It is a development preview, with no study-session coverage, graduation,
-review reflection, or learner-progress writes.
+The introduction lab was built to explore the initial teaching prompt and
+content representation. It remains runnable as a local development aid for
+trying sample or generated introductions and their recall exercises.
+
+This page records its launch instructions and current draft behavior for
+contributors revisiting that work. Its longer-term role as a reusable
+prompt-development lab remains undecided. Preview navigation and responses are
+temporary and award no study credit.
+
+The aid uses the [word content representation](word-content-representation.md)
+and shared provider module, with a local draft workflow. The
+[generation guide](word-content-generation.md) explains the application's shared
+publication path, and [serving](word-content-serving.md) explains live study
+integration.
 
 ## Run locally
 
@@ -41,45 +50,58 @@ node --env-file=/absolute/path/to/.env --import tsx scripts/dev-introduction-lab
    its source content separately from the teaching player.
 5. With credentials configured, enter a new word, its pronunciation and optional
    guidance. Bootstrap it, inspect the uses and examples, then generate teaching.
-   The teaching stage uses that exact saved content. Retry either stage as a new
-   draft when needed.
+   Generating a package makes teaching and then practice generation calls using
+   that exact saved content. A successful bootstrap or complete package is saved
+   as a new draft; retrying never overwrites the source draft.
 
 ## Persistence and compatibility
 
 Each saved draft is an immutable JSON envelope with a server-generated ID,
 UTC creation time, origin, word content, and optional teaching package. A
-bootstrap draft has no teaching yet. Authoring teaching creates another draft
-that retains the exact content identity and supplies a new package identity;
-it does not overwrite the bootstrap. Import validates the complete model and
-references before saving. These files are local authoring drafts, not published
-shared study content.
+bootstrap draft has no teaching yet. The generate-teaching action creates
+another draft containing both teaching beats and practice rehearsals, retaining
+the exact content identity and supplying a new package identity.
+
+The [lab service](../server/word-content-lab/service.ts) validates the generated
+teaching beats before making the practice generation call, then validates and
+materializes their assembly before saving.
+A failure reports the failing stage and saves no partial package. The lab does
+not persist individual successful components: retrying package generation repeats
+teaching generation, then practice generation. The shared application's
+[component-retention mechanism](word-content-generation.md#retaining-work-without-exposing-a-partial-lesson)
+has a different recovery path because it must preserve background work across
+worker restarts.
+
+Import validates the complete model and references before saving. These files
+are local authoring drafts, separate from published shared study content.
 
 The archive lives at `<APP_DATA_DIR>/word-content-workbench/`. The launch script
-sets `APP_DATA_DIR` through an explicit argument to `data/intro-lab/`. There is
-no migration of the study tables. Existing cues and supplements keep their
-current representation; the model's compatibility adapters remain the bridge
-for explicit review integration.
+sets `APP_DATA_DIR` through an explicit argument to `data/intro-lab/`. There is a
+separate synthetic application database under that directory; launching the lab
+does not modify the ordinary development or hosted study database.
 
 The development page is selected before mounting the live app and its study
-controllers. The backend routes additionally require dev mode, trusted-local
-authentication, Mandarin, and `APP_WORD_CONTENT_WORKBENCH=1`. They are not a
-hosted publishing API. Provider output must pass schema and domain validation
-before it becomes a saved draft. Teaching generation selects a target occurrence;
-server code computes the actual Unicode spans rather than asking a model to
-count characters. For generated rehearsal, the app supplies the exact response
-instruction and uses no extra cloze frame; the provider authors the cue only.
-Generated rehearsal stimuli are rejected if they expose the target answer; the player also hides answer-bearing surrounding
-content during recall. Import preserves authored content after model validation.
+controllers. The backend routes require dev mode, trusted-local authentication,
+Mandarin, and `APP_WORD_CONTENT_WORKBENCH=1`. Saving a lab draft does not publish
+or import it into shared application content.
 
-## What this prototype settles and leaves open
+## Inspecting generated content
 
-The lab makes content identity, source references, immutable package assembly,
-paced navigation, and constrained response matching concrete. Player position
-and responses are temporary preview state. Reopening a package starts a fresh
-preview; completion awards no study credit.
+The teaching generation call receives the full bootstrap document; the practice
+generation call receives its word and selected uses/notes without structured
+examples or example IDs. The practice output contains direct cues or Mandarin
+phrase clozes with English frames. The app supplies the target-rehearsal answer
+contract and stores an empty instruction. The
+[generation explanation](word-content-generation.md#authoring-and-validation)
+describes that division and its validation limits.
 
-Shared publication/storage, learner-package association, resume across learning
-days, recognition reveal integration, and learning/graduation policy remain the
-next integration layer. None requires changing the existing word lifecycle just
-to represent a teaching package. See the
-[owning spec](../SPECS/word-bootstrap-and-introduction.md) for those policy seams.
+The lab rejects generated rehearsals that expose an accepted Chinese answer
+form. Its player hides answer-bearing surrounding content during recall.
+Imported drafts preserve authored content after representation/reference
+validation, including source-example clozes supported by older packages and
+samples. Reopening a package starts a fresh preview.
+
+To inspect the synthetic examples without running the lab or calling a provider,
+use the [word-content inspection commands](scripts.md#inspect-word-content-fixtures).
+They show the source objects and their frozen presentations separately from
+player behavior.

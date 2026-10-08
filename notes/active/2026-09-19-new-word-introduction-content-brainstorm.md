@@ -19,9 +19,9 @@ Snapshot as of 2026-09-24. The accepted content-model direction has graduated to
 That spec supersedes provisional proposals here. This note retains worked
 explorations and feedback; the draft prompt remains linked below. The earlier learning-transition questions below do not describe an unimplemented
 feature: prepared introductions and early learning are now integrated. See
-[the in-app guide](../../docs/word-introduction-in-app.md) for current behavior.
+[the in-app guide](../../docs/word-content-serving.md) for current behavior.
 The first executable representation checkpoint is described in
-[the model/compatibility guide](../../docs/word-content-model.md): all six
+[the model/compatibility guide](../../docs/word-content-representation.md): all six
 introductions, explicit rehearsal contracts, exact-span clozes, and existing
 review/supplement adapters can be exercised with `npm run inspect:word-content`.
 

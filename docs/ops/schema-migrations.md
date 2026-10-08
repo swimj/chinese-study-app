@@ -1,8 +1,8 @@
 # Offline schema migrations
 
-Schema-changing releases use a maintenance window. `npm run hosted:upgrade`
-remains app-only; do not use it for the first baseline adoption or later schema
-changes. This mechanism does not deploy or back up a database automatically.
+This guide helps operators apply versioned database changes safely and
+contributors write new migrations. It covers baseline adoption, the shared
+release and recovery procedure, and migration-specific effects on existing data.
 
 ## First adoption
 
@@ -41,10 +41,17 @@ automatically rebuilds an incompatible development database.
 
 ## Operator procedure
 
+Use this procedure for first baseline adoption and every migration applied to
+an existing database, including data-only migrations. All require a
+stopped-writer maintenance window; `npm run hosted:upgrade` is app-only and
+cannot perform these changes. The migration runner does not deploy or back up a
+database automatically.
+
 1. Rehearse with the target release and a coherent restored copy of the current
    database. Record the source/target revisions and the migration command output.
 2. Disable provider work, enable maintenance, and wait for active requests and
    provider work to drain. Sync Litestream and record a verified recovery point.
+   Retain the pre-release backup and its matching application image for recovery.
 3. Stop the normal app and provider workers. Maintenance mode alone is not a
    stopped writer. Keep them stopped until the migration finishes. Preserve the
    database together with any SQLite sidecars; never copy a live main file alone
@@ -68,8 +75,9 @@ automatically rebuilds an incompatible development database.
 The CLI does not import backend initialization and needs no Clerk credentials,
 learner id, seed configuration, or running server. Normal startup rejects a
 missing baseline, pending or unknown version, edited applied migration, or
-schema drift. Fresh databases still initialize automatically and apply the
-shipped migrations before serving; existing databases never migrate on startup.
+schema drift. Fresh databases initialize with the frozen baseline and apply the
+same shipped migrations before serving; existing databases never migrate on
+startup.
 
 ### Hosted target code and stopped process
 
@@ -88,6 +96,19 @@ refuse an unbaselined or pending database.
 The existing `hosted:control`, `hosted:inspect`, and restore helpers initialize
 the backend and therefore also refuse incompatible schemas. Use source-release
 controls before stopping and target-release controls after successful migration.
+
+### Failure and rollback
+
+On migration failure, keep the app stopped, inspect the error, correct the
+unapplied migration, and rehearse again. A failed batch records no completed
+steps. Successful repeat runs are no-ops. There is no automatic down migration.
+
+After success, an older migration-aware application rejects a newer schema.
+Use a corrective forward migration or restore the identified pre-release backup
+and its matching application image. Pre-infrastructure releases cannot enforce
+this version check: do not use them against a migrated database. Restore before
+reopening writes whenever possible; after reopening, restoration can discard
+accepted learner activity and needs an explicit recovery decision.
 
 ## Writing the next migration
 
@@ -149,9 +170,7 @@ and copies any existing `whats_new_seen_through_date` rows out of
 `learner_settings`.
 `0008_normalized_hanzi.sql` adds `lexical_words.normalized_hanzi` and indexes
 nonempty keys. Its `after` hook backfills the Mandarin production
-punctuation/whitespace strip. Display `hanzi` is unchanged. Fresh installations
-start with the frozen baseline
-and apply this same SQL.
+punctuation/whitespace strip. Display `hanzi` is unchanged.
 `0013_deferred_explanation_items.sql` gives explanation-only Help rows a
 learner-scoped deferred/retired disposition and stores selected explanation
 inbox ids on staged generation continuations. Existing inbox rows remain open.
@@ -198,10 +217,6 @@ Authorized extension rewrites retain immutable private teaching revisions and
 leave already-served snapshots unchanged. Reflection execution cuts over to the
 new diagnosis/cleanup contracts; historical results remain readable.
 
-This is a schema-changing release: use the stopped-writer migration procedure
-above, not the application-only hosted upgrade. Fresh databases apply the same
-migration automatically; existing databases require the explicit offline step.
-
 ## Rehearsal presentation cleanup
 
 `0020_rehearsal_presentation.sql` clears only an exact match for the former
@@ -213,33 +228,17 @@ unchanged. Custom or extended instructions are preserved, as are persisted
 session snapshots and learner history. Nonmatching package JSON is not rewritten.
 
 This data migration temporarily removes and restores the package immutability
-trigger within the runner's transaction. Use the stopped-writer procedure above
-with a backup and rehearsal on a database copy; an application-only hosted upgrade
-is insufficient. Existing browser sessions retain their original snapshots;
-session presentation suppresses this exact preamble without rewriting those
-snapshots. Fresh databases apply the same migration automatically.
+trigger within the runner's transaction. Existing browser sessions retain their
+original snapshots; session presentation suppresses this exact preamble without
+rewriting those snapshots.
 
 ## Content quality overlay
 
 `0021_content_quality.sql` adds immutable authored-content snapshots, private
 idempotent encounter records, and one optional standing rating per learner and
 content revision. Existing content, study history, and reflection annotations
-are untouched. No previous encounters or votes are inferred. This requires the
-ordinary stopped-writer migration; see [content quality](../content-quality.md).
-
-## Failure and rollback
-
-On migration failure, keep the app stopped, inspect the error, correct the
-unapplied migration, and rehearse again. A failed batch records no completed
-steps. Successful repeat runs are no-ops. There is no automatic down migration.
-
-After success, an older migration-aware application rejects a newer schema.
-Use a corrective forward migration or restore the identified pre-release backup
-and its matching application image. Pre-infrastructure releases cannot enforce
-this version check: do not use them against a migrated database. Restore before
-reopening writes whenever possible; after reopening, restoration can discard
-accepted learner activity and needs an explicit recovery decision.
-
+are untouched. No previous encounters or votes are inferred. See
+[content quality](../content-quality.md) for the encounter and rating model.
 
 ## Exercise compensation counters (0022)
 
@@ -248,19 +247,17 @@ table. It performs no backfill or rewrite of summaries, attempts, or restoration
 history. New session completions include pure-cue totals in the existing summary
 fields; only newly applied compensations increment the daily counter.
 
-This is a schema-changing release and requires the offline migration procedure
-above, not an application-only upgrade. Windows crossing rollout intentionally
-mix earlier word-only summaries with new combined exercise totals.
+Windows crossing rollout intentionally mix earlier word-only summaries with
+new combined exercise totals.
 
 ## Session debrief (0023)
 
 `0023_session_debrief` creates empty learner-private debrief jobs and attempts,
 with composite ownership references to completed summaries. Existing summaries,
 study history and reflection records are unchanged. There is no historical
-inventory inference or provider backfill. Use the stopped-writer offline
-migration procedure; an application-only upgrade is insufficient. Queued jobs
-resume after restart; expired running attempts become failed and require an
-explicit learner retry to avoid replaying an unknown upstream outcome.
+inventory inference or provider backfill. Queued jobs resume after restart;
+expired running attempts become failed and require an explicit learner retry to
+avoid replaying an unknown upstream outcome.
 
 ## What’s New blog rollout
 
@@ -271,9 +268,20 @@ provenance remains null because a publication date cannot prove a deployed
 revision. The blog uses a separate learner publication-sequence cursor while
 retaining the legacy date cursor for compatibility.
 
-Apply this migration once through the schema-changing release procedure with
-the app stopped and a backup retained. Subsequent [blog edits](../whats-new.md)
-use normal live transactions and need no maintenance window or migration.
+Subsequent [blog edits](../whats-new.md) use normal live transactions and need no
+maintenance window or migration.
+
+## Introduction component retention (0029)
+
+`0029_introduction_components.sql` adds empty tables for retained teaching and
+practice components and their published-package provenance links. The migration
+does not rewrite existing content or packages, backfill component records, or
+invoke providers. Existing packages and learner pins remain compatible without
+component links; historical packages therefore have no component-level
+provenance reconstructed by this upgrade.
+
+The [word content generation guide](../word-content-generation.md) explains how
+new preparation retains and publishes components.
 
 ## Home updates and per-post notifications
 
@@ -289,6 +297,3 @@ because the current revision advances.
 state. Existing legacy read boundaries remain effective. No historical
 first-exposure time is invented; unseen posts start their 12-hour window only
 after their navigation badge becomes visible in the new client.
-
-Apply both through the stopped-writer procedure, rehearsing against a restored
-copy and retaining the backup. An app-only upgrade cannot perform this release.

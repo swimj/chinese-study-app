@@ -16,7 +16,7 @@ The accepted content-model north star is
 [Word Bootstrap, Introduction, And Early Rehearsal](../../SPECS/word-bootstrap-and-introduction.md).
 It couples introduction and associated rehearsal in a pinned package. This
 historical prompt covers the introduction portion. Rehearsal and learning
-contracts now exist; see [the in-app guide](../../docs/word-introduction-in-app.md).
+contracts now exist; see [the in-app guide](../../docs/word-content-serving.md).
 
 The [local introduction lab](../../docs/word-introduction-lab.md) now exercises
 this stance with separate [bootstrap](../../server/word-content/prompts/bootstrap.md)

@@ -853,7 +853,8 @@ is never archived, and teaching failure preserves its input bootstrap draft.
 ## Shared word introduction (Mandarin)
 
 Mounted after authentication and maintenance controls. See
-[word-introduction-in-app.md](word-introduction-in-app.md) for the full policy.
+[serving word content](word-content-serving.md#private-association-api) for the
+package-association mechanism and its separation from study progress.
 
 | Method | Route | Effect |
 | --- | --- | --- |

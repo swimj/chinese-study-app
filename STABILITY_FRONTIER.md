@@ -36,7 +36,8 @@ belong there and in task instructions, not in this frontier.
   Neither model should be collapsed into the other during polish.
 - **Introduction and reflection:** shared preparation, pinned introduction and
   rehearsal packages, and review content have distinct lifecycles. Use the
-  [introduction guide](docs/word-introduction-in-app.md) and
+  [generation](docs/word-content-generation.md),
+  [serving](docs/word-content-serving.md), and
   [structured review guide](docs/structured-review-content.md) for the implemented
   boundary. Staged reflection is part of the existing experience; it is optional
   and failure-isolated from session correctness.
