@@ -1,6 +1,9 @@
 # Server database module map
 
-Persistence lives under [`server/db/`](../server/db/). The stable import path for callers and tests remains [`server/db.ts`](../server/db.ts) (barrel).
+Use this map to locate persistence responsibilities and understand the current
+storage boundaries, initialization, and domain-specific write paths. Persistence
+lives under [`server/db/`](../server/db/); callers and tests use the stable
+[`server/db.ts`](../server/db.ts) barrel.
 
 Migration `0027_correct_cue_repair_recovery` adds the immutable operator-only
 `operator_reflection_cue_recoveries` audit. Selection and atomic recovery use
@@ -197,13 +200,79 @@ databases remain readable until the planned migration removes them.
 
 ## Learner and content scope
 
-`learners` is the stable local identity. `learner_auth_mappings` keeps provider
-subjects separate, including the current `trusted_local` mapping used for
-dogfood without Clerk. In `APP_AUTH_MODE=clerk`, the Express boundary verifies
-the Clerk principal, resolves or transactionally creates its `clerk` mapping,
-rejects disabled learners, then establishes that learner context for the
-request. Every request runs under its resolved learner context; SQLite views
-and triggers apply that context to private reads and writes.
+The hosted service keeps multiple learners' private state alongside shared
+content in one SQLite database. The [account and authorization
+contract](private-beta-service-boundary.md#account-and-authorization-contract)
+defines the intended isolation guarantees. This section explains how identity,
+query scoping, and relationship checks currently realize that boundary.
+
+### From authenticated account to learner context
+
+`learners.learner_id` is the durable ownership key. A Clerk subject identifies an
+account at the authentication provider; `learner_auth_mappings` maps that subject
+to a learner. Adding a Clerk mapping for an existing local learner can therefore
+preserve the ownership keys on their private history. In Clerk mode,
+[authentication middleware](../server/authentication.ts)
+resolves the verified subject before entering `/api` handlers. The
+[identity module](../server/db/identity.ts) resolves an existing mapping or
+creates the learner and mapping in one immediate transaction, so concurrent
+first requests converge on one identity. Missing authentication returns 401;
+a disabled learner returns 403 before the handler runs.
+
+The middleware enters `runWithLearnerId`, whose `AsyncLocalStorage` context
+carries the learner through the request's asynchronous work. The SQLite
+connection stays shared: its `current_learner_id()` function calls
+`requireLearnerId()` to read the active context. The [context
+module](../server/db/learner-context.ts) throws when Clerk-mode work needs a
+learner but none is present. Trusted-local mode retains a configured-learner
+fallback for local use; that fallback is unavailable in hosted Clerk mode.
+
+Work resumed outside a request needs its own context. For example, the
+[session-debrief worker](../server/session-debrief/worker.ts) selects a queued
+job with its learner ID, enters that learner's context, and checks that the
+learner remains enabled before claiming the job and calling the provider.
+Entering context itself selects an ID; it does not authenticate an account or
+check disablement.
+
+### Scoped queries and stored relationships
+
+Many established private SQL names, such as `study_sessions`, are
+[compatibility views](../server/db/learner-scoped-tables.ts) over physical
+`learner_owned_*` tables. A view filters rows by `current_learner_id()` and omits
+the ownership column. Its insert trigger supplies that ID; its update and delete
+triggers restrict the affected rows to that learner. This preserves existing
+domain queries while separating private records. For example, two learners can
+use the same logical session ID because the stored key includes `learner_id`.
+Other persistence modules query private tables with an explicit learner
+predicate, such as the learner-parameter queries in the identity module.
+
+Query scoping and reference integrity do different jobs. The [application
+connection](../server/db/connection.ts) enables SQLite foreign-key enforcement.
+The physical study-event tables have composite foreign keys containing
+`learner_id`, so an event cannot name a session belonging only to another learner.
+[Same-owner
+triggers](../server/db/learner-ownership-guards.ts) check additional private
+relationships, such as a reflection artifact's source session. These checks
+protect the stored relationship even when a write reaches the physical table.
+A reference to shared lexical content supplies no proof of private ownership.
+
+This is application-controlled scoping, not a SQLite permission boundary against
+arbitrary SQL. Direct reads and writes to a physical table bypass the view's
+filtering and write routing. Same-owner constraints still check stored
+relationships; they do not establish that the caller may act as the supplied
+learner. Operator and service-wide work therefore need their own authorized scope.
+The [ownership manifest](../server/db/ownership-manifest.ts) identifies table
+ownership and enforcement points when inspecting or extending a persistence path.
+
+### Focused verification
+
+[Learner-isolation tests](../tests/learner-isolation.test.ts) exercise private
+overlays, duplicate logical session IDs, and cross-owner session rejection.
+[Clerk authentication tests](../tests/clerk-authentication.test.ts) cover stable
+mapping, missing/disabled accounts, and separate reflection-run ledgers. These
+are focused checks of those paths, not a complete authorization audit.
+
+### Shared content and learner overlays
 
 Lexical content lives in shared `lexical_words` and
 `lexical_word_meanings`. Learner lifecycle/notes and meaning visibility live in
