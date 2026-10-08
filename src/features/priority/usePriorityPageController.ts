@@ -41,7 +41,6 @@ export type PriorityPageController = {
   confirmMatchSelection: () => Promise<void>;
   moveToTop: (wordId: string) => Promise<void>;
   bumpAgain: (wordId: string) => Promise<void>;
-  requireForNextSession: (wordIds: string[], requiredForNextSession: boolean) => Promise<void>;
   moveSelectedToTop: (wordIds: string[]) => Promise<void>;
   moveSelectedToStash: (wordIds: string[]) => Promise<void>;
   bumpSelectedAgain: (wordIds: string[]) => Promise<void>;
@@ -306,8 +305,6 @@ export function usePriorityPageController({
     confirmMatchSelection,
     moveToTop: (wordId: string) => updateWordPriority(wordId, { forceTop: true }),
     bumpAgain: (wordId: string) => updateWordPriority(wordId, { bumpDelta: 1 }),
-    requireForNextSession: (wordIds: string[], requiredForNextSession: boolean) =>
-      batchUpdateWordPriority(wordIds, { requiredForNextSession }),
     moveSelectedToTop: (wordIds: string[]) => batchUpdateWordPriority(wordIds, { forceTop: true }),
     moveSelectedToStash: (wordIds: string[]) => batchUpdateWordPriority(wordIds, { forceTop: false, bumpDelta: 1 }),
     bumpSelectedAgain: (wordIds: string[]) => batchUpdateWordPriority(wordIds, { bumpDelta: 1 }),

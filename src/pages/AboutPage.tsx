@@ -68,7 +68,7 @@ export function AboutPage({ updatesCatalog, view, onSelectView, onWhatsNewRead, 
             </section>
             <section>
               <h2>Choose what comes next</h2>
-              <p>Words → Stash holds words you want to study. Move selected words to the top to prioritize them, or use Require for words you want included in the next session. Words → My words lets you browse your collection and inspect individual words.</p>
+              <p>Words → Stash holds words you want to study. Move selected words to the top to prioritize them. Words → My words lets you browse your collection and inspect individual words.</p>
               <p>The daily new-word limit controls new vocabulary, not the number of reviews. If the suggested vocabulary feels too easy or too hard, use the difficulty adjustment offered after a session.</p>
             </section>
             <section>

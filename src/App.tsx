@@ -339,9 +339,6 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
               onCancelMatchSelection={priorityPage.cancelMatchSelection}
               onHighlightsHandled={priorityPage.clearHighlights}
               priorityBatchSubmitting={priorityPage.priorityBatchSubmitting}
-              onRequireForNextSession={(wordIds, requiredForNextSession) =>
-                priorityPage.requireForNextSession(wordIds, requiredForNextSession)
-              }
               onMoveSelectedToTop={priorityPage.moveSelectedToTop}
               onMoveSelectedToStash={priorityPage.moveSelectedToStash}
               onRemoveSelected={priorityPage.removeSelected}
