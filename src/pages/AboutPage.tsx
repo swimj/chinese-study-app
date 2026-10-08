@@ -47,7 +47,7 @@ export function AboutPage({ updatesCatalog, view, onSelectView, onWhatsNewRead, 
                 <li><strong>Use a desktop browser and a Chinese input method.</strong> Some exercises ask you to type the Chinese word.</li>
                 <li><strong>Add words to your stash.</strong> Open Words → Stash and add words you want to learn. By default, new words in your sessions come only from your stash.</li>
                 <li><strong>Return to Home and select Start session.</strong> Read the introduction for each new word, then try the recall exercises. Reveal the answer when needed and rate how well you remembered it.</li>
-                <li><strong>End when you are done studying.</strong> To stop early, use End session and work through the remaining in-progress items.</li>
+                <li><strong>If you need to wrap up early,</strong> select End session. You’ll finish the exercises already underway, then you’re done.</li>
                 <li><strong>Let each session shape the next.</strong> Visit Reflections for explanations and suggestions that help your study material fit you better. Choose which suggestions to apply, whenever you are ready. Back on Home, Connections offers little discoveries linking the words you studied to language, culture, and your interests.</li>
               </ol>
             </section>
