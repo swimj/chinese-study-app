@@ -29,6 +29,9 @@ const PRIMARY_PAGES: ReadonlyArray<{
 
 export function AppChrome({
   currentPage,
+  gettingStartedUnseen = false,
+  guideToStash = false,
+  onOpenGettingStarted,
   error,
   serviceBanner,
   sessionActive,
@@ -48,6 +51,9 @@ export function AppChrome({
   onSignOut,
 }: {
   currentPage: AppPageKey;
+  gettingStartedUnseen?: boolean;
+  guideToStash?: boolean;
+  onOpenGettingStarted?: () => void;
   error: string | null;
   serviceBanner: { message: string } | null;
   sessionActive: boolean;
@@ -122,7 +128,7 @@ export function AppChrome({
               const tabButton = (
                 <button
                   type="button"
-                  className={`nav-tab ${active ? 'active' : ''}`}
+                  className={`nav-tab ${active ? 'active' : ''}${page.key === 'priority' && guideToStash ? ' getting-started-attention' : ''}`}
                   aria-current={active ? 'page' : undefined}
                   aria-label={
                     badge.kind === 'failure'
@@ -137,6 +143,7 @@ export function AppChrome({
                   disabled={navigationLoading}
                 >
                   <span>{label}</span>
+                  {page.key === 'priority' && guideToStash ? <span className="getting-started-new">Add to your stash</span> : null}
                   {badge.kind === 'count' ? (
                     <span className={`nav-tab-count nav-tab-count-${page.key}`}>{badge.count}</span>
                   ) : null}
@@ -167,6 +174,17 @@ export function AppChrome({
                   ) : (
                     tabButton
                   )}
+                  {page.key === 'about' && !active && gettingStartedUnseen ? (
+                    <div className="app-nav-nested">
+                      <nav className="reflection-view-rail" aria-label="About views">
+                        <button type="button" className="reflection-view-rail-tab getting-started-attention"
+                          disabled={navigationLoading} onClick={onOpenGettingStarted ?? onOpenAboutPage}>
+                          <span>Getting Started</span>
+                          <span className="getting-started-new">Start here</span>
+                        </button>
+                      </nav>
+                    </div>
+                  ) : null}
                   {active && page.nested ? (
                     <div ref={nestedSlotRef} className="app-nav-nested" />
                   ) : null}

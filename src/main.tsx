@@ -20,7 +20,7 @@ if (import.meta.env.DEV && window.location.pathname === '/intro-lab') {
   root.render(
     <React.StrictMode>
       <ClerkAuthenticationBoundary>
-        {(signOut) => <App onSignOut={signOut} />}
+        {(signOut, accountScope) => <App key={accountScope} accountScope={accountScope} onSignOut={signOut} />}
       </ClerkAuthenticationBoundary>
     </React.StrictMode>,
   );

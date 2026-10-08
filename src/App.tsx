@@ -55,7 +55,24 @@ function readInitialPage(): AppPageKey {
   return window.location.hash === OPERATOR_USAGE_HASH ? 'operator-usage' : 'home';
 }
 
-function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
+function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => Promise<void>; accountScope?: string }) {
+  const gettingStartedKey = `getting-started-seen:v1:${accountScope}`;
+  const [gettingStartedUnseen, setGettingStartedUnseen] = useState(() => {
+    try { return window.localStorage.getItem(gettingStartedKey) !== 'true'; }
+    catch { return true; }
+  });
+  const stashVisitedKey = `getting-started-stash-seen:v1:${accountScope}`;
+  const [stashUnseen, setStashUnseen] = useState(() => {
+    try { return window.localStorage.getItem(stashVisitedKey) !== 'true'; }
+    catch { return true; }
+  });
+  const guideToStash = !gettingStartedUnseen && stashUnseen;
+  const settingsVisitedKey = `getting-started-settings-seen:v1:${accountScope}`;
+  const [settingsUnseen, setSettingsUnseen] = useState(() => {
+    try { return window.localStorage.getItem(settingsVisitedKey) !== 'true'; }
+    catch { return true; }
+  });
+  const guideToSettings = !gettingStartedUnseen && !stashUnseen && settingsUnseen;
   const [currentPage, setCurrentPage] = useState<AppPageKey>(readInitialPage);
   const [aboutView, setAboutView] = useState<AboutView>('getting-started');
   const [selectedUpdateId, setSelectedUpdateId] = useState<string | null>(null);
@@ -159,6 +176,20 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     // shown, which is when the learner may start a session.
     void studySession.prefetchSession().catch(() => undefined);
   }, [currentPage, studySession.sessionStarted]);
+
+  useEffect(() => {
+    if (currentPage !== 'about' || aboutView !== 'getting-started') return;
+    setGettingStartedUnseen(false);
+    try { window.localStorage.setItem(gettingStartedKey, 'true'); }
+    catch { /* Optional browser storage must not block the guide. */ }
+  }, [currentPage, aboutView, gettingStartedKey]);
+
+  useEffect(() => {
+    if (!guideToStash || currentPage !== 'priority' || wordsView !== 'stash') return;
+    setStashUnseen(false);
+    try { window.localStorage.setItem(stashVisitedKey, 'true'); }
+    catch { /* Optional browser storage must not block Words. */ }
+  }, [guideToStash, currentPage, wordsView, stashVisitedKey]);
 
   async function reloadDashboard() {
     const statusResponse = await fetchStatus();
@@ -268,6 +299,12 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
   return (
     <AppChrome
       currentPage={currentPage}
+      gettingStartedUnseen={gettingStartedUnseen}
+      guideToStash={guideToStash}
+      onOpenGettingStarted={() => void leaveCompletedSessionThen(() => {
+        setAboutView('getting-started');
+        setCurrentPage('about');
+      })}
       error={error}
       serviceBanner={backendStatus?.serviceBanner ?? null}
       sessionActive={sessionActive}
@@ -282,7 +319,10 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
         || reflectionPage.deferredSecondOpinionStatus === 'generating'
       }
       onOpenHomePage={() => setCurrentPage('home')}
-      onOpenPriorityPage={() => void leaveCompletedSessionThen(() => priorityPage.openPage())}
+      onOpenPriorityPage={() => void leaveCompletedSessionThen(() => {
+        if (guideToStash) setWordsView('stash');
+        return priorityPage.openPage();
+      })}
       onOpenReflectionsPage={() => void leaveCompletedSessionThen(() => reflectionPage.openPage())}
       onRefreshReflections={() => void reflectionPage.refresh()}
       onOpenContentPage={() => void leaveCompletedSessionThen(() => contentPage.openPage())}
@@ -299,6 +339,13 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     >
       {currentPage === 'home' ? (
         <HomePage
+          guideToSettings={guideToSettings}
+          onSettingsOpened={() => {
+            if (!guideToSettings) return;
+            setSettingsUnseen(false);
+            try { window.localStorage.setItem(settingsVisitedKey, 'true'); }
+            catch { /* Optional browser storage must not block settings. */ }
+          }}
           updatesCatalog={updatesCatalog}
           unseenPostIds={attention.whatsNewUnseenPostIds}
           onUnseenBadgeVisible={attention.acknowledgeWhatsNewBadge}

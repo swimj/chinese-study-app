@@ -37,24 +37,25 @@ export function AboutPage({ updatesCatalog, view, onSelectView, onWhatsNewRead, 
         </nav>
       </NestedNav>
       <article className="panel about-page" aria-labelledby="about-title">
-        <p className="notes">About · Mandarin private beta</p>
         <h1 id="about-title">{ABOUT_VIEWS.find(([key]) => key === view)?.[1]}</h1>
         {view === 'getting-started' ? (
           <>
-            <p>A place to build a Chinese vocabulary you can actually recall and use. Short study sessions mix new words, practice, and spaced review, with extra help for words that are easy to confuse.</p>
+            <p>Follow your curiosity. Bring the Chinese words you meet in conversations, books, and everyday life, and build the instincts to use them with confidence. Short sessions introduce new words, strengthen recall, and help you tell similar expressions apart. As you practice and reflect, your study material grows with you.</p>
             <section>
               <h2>Your first session</h2>
               <ol>
                 <li><strong>Use a desktop browser and a Chinese input method.</strong> Some exercises ask you to type the Chinese word.</li>
-                <li><strong>Choose a starting point on Home.</strong> Answer the background and goals questions for an AI assessment, or choose your own level. If you skip, you start from the beginning.</li>
-                <li><strong>Select Start session.</strong> Read the introduction for each new word, then try the recall exercises. Reveal the answer when needed and rate how well you remembered it.</li>
-                <li><strong>End when you are done studying.</strong> To stop early, use End session and work through the remaining in-progress items. The summary saves the final attempt when you finish or go to another page.</li>
+                <li><strong>Add words to your stash.</strong> Open Words → Stash and add words you want to learn. By default, new words in your sessions come only from your stash.</li>
+                <li><strong>Return to Home and select Start session.</strong> Read the introduction for each new word, then try the recall exercises. Reveal the answer when needed and rate how well you remembered it.</li>
+                <li><strong>If you need to wrap up early,</strong> select End session. You’ll finish the exercises already underway, then you’re done.</li>
+                <li><strong>Let each session shape the next.</strong> Visit Reflections for explanations and suggestions that help your study material fit you better. Choose which suggestions to apply, whenever you are ready. Back on Home, Connections offers little discoveries linking the words you studied to language, culture, and your interests.</li>
               </ol>
             </section>
             <section>
               <h2>Make it yours</h2>
-              <p>Add words you care about in Words → Stash. The gear beside Start session lets you adjust the daily new-word limit and choose whether new words come from your stash alone or a mix of your stash and the app’s selection.</p>
-              <p>Each mistake is a chance to make your study content fit you better. Reflections uses your session to suggest clearer cues, useful explanations, and practice that targets the distinctions you find tricky. Visit Reflections after studying to review those suggestions and choose which to apply. You can come back later; you do not need to act on every suggestion.</p>
+              <p>Open the session settings gear on Home to choose your daily new-word limit, study new words first, and select simplified characters, traditional characters, or both.</p>
+              <p>Want to explore beyond your stash? Uncheck <strong>New words from stash only</strong> to include the app’s vocabulary selection. After a session, tell the app if those words felt too easy or too hard to adjust what comes next.</p>
+              <p>Add a few topics you enjoy under <strong>Interests</strong> in session settings. Connections can use them to bring your vocabulary closer to the things you care about. Change them whenever curiosity takes you somewhere new.</p>
             </section>
           </>
         ) : view === 'usage-guide' ? (
@@ -82,7 +83,7 @@ export function AboutPage({ updatesCatalog, view, onSelectView, onWhatsNewRead, 
             <p>This is an early private beta. These are the main limitations to keep in mind while studying.</p>
             <section>
               <h2>Keep an active session open</h2>
-              <p>The live session lives in your browser’s memory. Refreshing or closing the tab can lose unfinished work; the app does not restore the active session. Use End session to wrap up in-progress cards. On the summary, Finish session, Space, or going to another page saves the final attempt. Closing the tab from the summary is still not a reliable way to finish.</p>
+              <p>The live session lives in your browser’s memory. Refreshing or closing the tab can lose unfinished work; the app does not restore the active session. Use End session to wrap up in-progress cards. If saving reports an error, keep the tab open and follow the message before leaving.</p>
             </section>
             <section>
               <h2>Prompts and AI help can be imperfect</h2>

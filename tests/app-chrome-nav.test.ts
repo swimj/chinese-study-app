@@ -10,6 +10,8 @@ function renderChrome(
   currentPage: AppPageKey,
   children: string | null = null,
   extras: {
+    gettingStartedUnseen?: boolean;
+    guideToStash?: boolean;
     serviceBanner?: { message: string } | null;
     sessionActive?: boolean;
     reflectionUnseenCount?: number;
@@ -19,6 +21,8 @@ function renderChrome(
 ) {
   return renderToStaticMarkup(createElement(AppChrome, {
     currentPage,
+    gettingStartedUnseen: extras.gettingStartedUnseen,
+    guideToStash: extras.guideToStash,
     error: null,
     serviceBanner: extras.serviceBanner ?? null,
     sessionActive: extras.sessionActive ?? false,
@@ -59,6 +63,23 @@ describe('AppChrome primary navigation', () => {
     assert.match(renderChrome('reflections'), /class="app-nav-nested"/);
     assert.doesNotMatch(renderChrome('home'), /class="app-nav-nested"/);
     assert.doesNotMatch(renderChrome('content'), /class="app-nav-nested"/);
+  });
+
+  test('exposes the first-visit guide from Home without changing the active page', () => {
+    const markup = renderChrome('home', null, { gettingStartedUnseen: true });
+    assert.match(markup, /getting-started-attention/);
+    assert.match(markup, /Getting Started/);
+    assert.match(markup, /Start here/);
+    assert.match(markup, /aria-current="page"><span>Home/);
+    assert.doesNotMatch(renderChrome('home'), /getting-started-attention/);
+    assert.doesNotMatch(renderChrome('about', null, { gettingStartedUnseen: true }), /getting-started-attention/);
+  });
+
+  test('guides toward Words after the guide, and clears the cue after Stash', () => {
+    const markup = renderChrome('about', null, { guideToStash: true });
+    assert.match(markup, /getting-started-attention[^]*?Words[^]*?Add to your stash/);
+    assert.doesNotMatch(markup, /Start here/);
+    assert.doesNotMatch(renderChrome('home'), /Add to your stash/);
   });
 
   test('keeps What’s New unread counts out of the About primary navigation', () => {
