@@ -141,6 +141,29 @@ nested children.
 The primary landmark remains `aria-label="Primary"`. Nested rails keep their
 existing `New Words views` / `Reflection views` labels and keyboard behavior.
 
+### First-visit guidance
+
+Home remains the initial page. The welcome path highlights one next action:
+
+1. About exposes Getting Started with a pulsing halo and “Start here” label.
+   Opening another About view does not acknowledge the guide.
+2. Opening Getting Started moves the cue to Words with “Add to your stash”.
+   Following this cue opens Stash even if My words was previously selected.
+3. Once Stash opens successfully, the settings gear is highlighted when the
+   learner returns to Home. Opening settings completes the path.
+
+Reduced-motion preferences replace the pulse with a static highlight.
+Acknowledgements are stored in localStorage per Clerk account (per origin in
+trusted-local mode). Reloads return to Home with the next unfinished cue, or
+ordinary navigation after all three steps. These markers do not sync across
+browsers or devices. Clearing or blocking storage can make cues reappear;
+existing accounts without a marker also see each step once.
+
+`App.tsx` owns the progression and persistence. `AppChrome.tsx` renders the
+navigation cues; `HomePage.tsx` reports settings opening, and
+`HomeOverviewPanel.tsx` renders the gear cue. The authentication boundary supplies
+the account scope, and `main.tsx` remounts the app when that scope changes.
+
 ## Page Controllers
 
 `useStudySession` owns the in-flight study session on the home page (see Session Controller below).

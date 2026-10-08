@@ -41,21 +41,6 @@ Private metrics listener (server/observability.ts, :9091 hosted only)
 
 Detail: [SPECS/frontend-architecture-map.md](../SPECS/frontend-architecture-map.md).
 
-### First-visit guide
-
-Home remains the initial page. Until Getting Started has been opened, the About
-menu exposes a highlighted Getting Started button with a gentle halo and a
-“Start here” label. Reduced-motion preferences disable the animation. Opening
-the guide moves the cue to Words with “Add to your stash”. Following that cue
-opens Stash even if My words was previously selected. Once Stash opens successfully, the next cue highlights the session settings
-gear when the learner returns to Home. Opening settings completes the path; opening another About view does not mark the guide read.
-The acknowledgement is stored in localStorage per Clerk account (per origin
-for trusted-local mode), so subsequent loads return to Home with the next unfinished cue, or ordinary
-navigation once all three steps are complete.
-It does not sync across devices, and clearing or blocking browser storage can
-make the cue appear again. Existing accounts without this browser marker also
-see the guide once. `App.tsx` owns acknowledgement; `AppChrome.tsx` owns the cue.
-
 ## Backend (`server/`)
 
 | File | Role |
