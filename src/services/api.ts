@@ -1427,6 +1427,26 @@ export async function fetchOperatorWhatsNew(): Promise<{ posts: WhatsNewPost[] }
   return response.json();
 }
 
+export async function fetchOperatorServiceBanner(): Promise<{ serviceBanner: ServiceBanner | null }> {
+  const response = await apiFetch(`${API_BASE}/api/operator/service-banner`);
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Failed to load service banner'));
+  return response.json();
+}
+
+export async function saveOperatorServiceBanner(request: { message: string; expiresAt?: string }): Promise<{ serviceBanner: ServiceBanner }> {
+  const response = await apiFetch(`${API_BASE}/api/operator/service-banner`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+  });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Failed to save service banner'));
+  return response.json();
+}
+
+export async function clearOperatorServiceBanner(): Promise<{ status: 'cleared' | 'noop' }> {
+  const response = await apiFetch(`${API_BASE}/api/operator/service-banner`, { method: 'DELETE' });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Failed to clear service banner'));
+  return response.json();
+}
+
 export async function saveOperatorWhatsNew(request: WhatsNewWriteRequest): Promise<WhatsNewPost> {
   const response = await apiFetch(`${API_BASE}/api/operator/whats-new`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),

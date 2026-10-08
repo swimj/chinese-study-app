@@ -77,6 +77,8 @@ import {
   getSharedContentPublicationForContent,
   getHostedServiceControls,
   getActiveServiceBanner,
+  setServiceBanner,
+  clearServiceBanner,
   toPublicServiceBanner,
   reportSharedContentPublication,
   searchWords,
@@ -417,6 +419,33 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.get('/api/operator/word-preparation/failures', createOperatorAllowlistMiddleware(), (_req, res) => {
     res.json({ failures: listWordPreparationFailures() });
+  });
+
+  app.get('/api/operator/service-banner', createOperatorAllowlistMiddleware(), (_req, res) => {
+    const banner = getActiveServiceBanner();
+    res.json({ serviceBanner: banner ? toPublicServiceBanner(banner) : null });
+  });
+  app.put('/api/operator/service-banner', createOperatorAllowlistMiddleware(), (req, res) => {
+    const message = req.body?.message;
+    const expiresAt = req.body?.expiresAt;
+    if (typeof message !== 'string' || (expiresAt !== undefined && typeof expiresAt !== 'string')) {
+      res.status(400).json({ error: 'Expected a message and optional ISO expiry timestamp.' });
+      return;
+    }
+    try {
+      const banner = setServiceBanner({ message, expiresAt, actorId: res.locals.operatorSubject });
+      res.json({ serviceBanner: toPublicServiceBanner(banner) });
+    } catch (error) {
+      if (error instanceof Error && /service banner message|service banner expiry|expires at/i.test(error.message)) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      console.error('Failed to update operator service banner', error);
+      res.status(500).json({ error: 'Failed to update service banner' });
+    }
+  });
+  app.delete('/api/operator/service-banner', createOperatorAllowlistMiddleware(), (_req, res) => {
+    res.json(clearServiceBanner({ actorId: res.locals.operatorSubject }));
   });
   app.post('/api/operator/word-preparation/:workId/retry', createOperatorAllowlistMiddleware(), (req, res) => {
     if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object' || Object.keys(req.body).length !== 0

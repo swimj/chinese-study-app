@@ -429,6 +429,36 @@ describe('operator usage pulse API', { concurrency: false }, () => {
     assert.equal((await fetch(`${endpoint}?from=2026-01-01&to=2026-01-01`)).status, 200);
   });
 
+  test('service banner read, set, and clear are operator-only and attribute the authenticated actor', async () => {
+    const endpoint = `${baseUrl}/api/operator/service-banner`;
+    process.env.APP_OPERATOR_CLERK_USER_IDS = '';
+    assert.equal((await fetch(endpoint)).status, 403);
+    assert.equal((await fetch(endpoint, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'Planned downtime', expiresAt: '2099-10-08T08:00:00.000Z' }),
+    })).status, 403);
+    process.env.APP_OPERATOR_CLERK_USER_IDS = 'trusted_local';
+
+    assert.deepEqual(await (await fetch(endpoint)).json(), { serviceBanner: null });
+    const set = await fetch(endpoint, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'Planned downtime', expiresAt: '2099-10-08T08:00:00.000Z' }),
+    });
+    assert.equal(set.status, 200);
+    const posted = await set.json() as { serviceBanner: { message: string; postedAt: string; expiresAt: string } };
+    assert.equal(posted.serviceBanner.message, 'Planned downtime');
+    assert.match(posted.serviceBanner.postedAt, /^\d{4}-\d\d-\d\dT/);
+    assert.equal(posted.serviceBanner.expiresAt, '2099-10-08T08:00:00.000Z');
+    const { getDb } = await import('../server/db/connection.ts');
+    assert.equal(getDb().prepare('SELECT actor_id FROM service_banner WHERE singleton = 1').get()!.actor_id, 'operator-local');
+    assert.equal((await fetch(endpoint, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: ' '.repeat(1) }),
+    })).status, 400);
+    assert.equal((await fetch(endpoint, { method: 'DELETE' })).status, 200);
+    assert.deepEqual(await (await fetch(endpoint)).json(), { serviceBanner: null });
+  });
+
   test('allows trusted_local operators and rejects empty allowlist', async () => {
     const allowed = await fetch(`${baseUrl}/api/operator/usage-pulse`);
     assert.equal(allowed.status, 200);

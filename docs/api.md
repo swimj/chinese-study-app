@@ -158,6 +158,9 @@ accepts a client-selected learner; writes use the authenticated learner context.
 | GET | `/api/operator/model-invocations?from=YYYY-MM-DD&to=YYYY-MM-DD` | User-attributed model calls in an inclusive UTC date range |
 | GET | `/api/operator/word-preparation/failures` | Shared preparation failures and attempt history |
 | POST | `/api/operator/word-preparation/:workId/retry` | Retry paused work; empty `{}` body and operator actor audit |
+| GET | `/api/operator/service-banner` | Current active banner |
+| PUT | `/api/operator/service-banner` | Set a banner with `{ message, expiresAt? }` |
+| DELETE | `/api/operator/service-banner` | Clear the current banner |
 
 Bookmark-only frontend surface: `#operator-usage` (not in primary nav).
 Requires the caller’s Clerk user id (or trusted-local learner id / `trusted_local`
@@ -170,8 +173,12 @@ allowlist fails closed with `403 OPERATOR_FORBIDDEN`. The same allowlist protect
 preparation diagnostics and retries. Retry preserves successful earlier stages;
 ordinary learner requests do not reset exhausted budgets.
 
-The operator surface has Usage, Model invocations, Content quality, and Preparation
-failures tabs. The invocation endpoint uses the same operator allowlist and returns
+The operator surface has Usage, Model invocations, Content quality, Preparation
+failures, What’s New, and Service banner tabs. Banner reads and writes use the same
+operator allowlist and authenticated actor attribution. Messages are single-line
+text up to 280 characters. Omitting `expiresAt` uses the existing 24-hour default;
+the operator page accepts a local datetime for planned downtime and sends its ISO
+timestamp. The invocation endpoint uses the same operator allowlist and returns
 `{ rows }`: timestamp, provider/model identifier, invocation type, learner identity
 and display name, `latencyMs`, status, USD spend, and its reported/estimated/unknown
 basis. Optional dates are validated; omitting them returns the full ledger without
