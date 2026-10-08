@@ -39,7 +39,7 @@ declare global {
 const publishableKey = import.meta.env?.VITE_CLERK_PUBLISHABLE_KEY;
 const enabled = import.meta.env?.VITE_AUTH_MODE === 'clerk';
 
-export function ClerkAuthenticationBoundary({ children }: { children: (signOut?: () => Promise<void>) => ReactNode }) {
+export function ClerkAuthenticationBoundary({ children }: { children: (signOut?: () => Promise<void>, accountScope?: string) => ReactNode }) {
   const authTarget = useRef<HTMLDivElement>(null);
   const [invitationTicket] = useState(() => (
     typeof window === 'undefined' ? false : hasClerkInvitationTicket(window.location)
@@ -47,6 +47,7 @@ export function ClerkAuthenticationBoundary({ children }: { children: (signOut?:
   const [client, setClient] = useState<ClerkClient | null>(null);
   const [clerkReady, setClerkReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
+  const [accountScope, setAccountScope] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(() => (
     enabled && !publishableKey
       ? 'VITE_CLERK_PUBLISHABLE_KEY is required when VITE_AUTH_MODE=clerk.'
@@ -83,6 +84,7 @@ export function ClerkAuthenticationBoundary({ children }: { children: (signOut?:
         setClient(loadedClient);
         setClerkReady(true);
         setSignedIn(hasSession);
+        setAccountScope(hasSession ? loadedClient.user?.id : undefined);
       };
       removeListener = loadedClient.addListener(updateSession);
       updateSession();
@@ -133,7 +135,7 @@ export function ClerkAuthenticationBoundary({ children }: { children: (signOut?:
     invitationTicket,
   });
   if (phase === 'app') {
-    return <>{children(enabled && client ? () => client.signOut({ redirectUrl: window.location.origin }) : undefined)}</>;
+    return <>{children(enabled && client ? () => client.signOut({ redirectUrl: window.location.origin }) : undefined, enabled ? accountScope : 'trusted-local')}</>;
   }
   if (phase === 'loading') {
     return <ClerkAuthLoadingView />;

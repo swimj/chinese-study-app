@@ -55,7 +55,12 @@ function readInitialPage(): AppPageKey {
   return window.location.hash === OPERATOR_USAGE_HASH ? 'operator-usage' : 'home';
 }
 
-function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
+function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => Promise<void>; accountScope?: string }) {
+  const gettingStartedKey = `getting-started-seen:v1:${accountScope}`;
+  const [gettingStartedUnseen, setGettingStartedUnseen] = useState(() => {
+    try { return window.localStorage.getItem(gettingStartedKey) !== 'true'; }
+    catch { return true; }
+  });
   const [currentPage, setCurrentPage] = useState<AppPageKey>(readInitialPage);
   const [aboutView, setAboutView] = useState<AboutView>('getting-started');
   const [selectedUpdateId, setSelectedUpdateId] = useState<string | null>(null);
@@ -159,6 +164,13 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
     // shown, which is when the learner may start a session.
     void studySession.prefetchSession().catch(() => undefined);
   }, [currentPage, studySession.sessionStarted]);
+
+  useEffect(() => {
+    if (currentPage !== 'about' || aboutView !== 'getting-started') return;
+    setGettingStartedUnseen(false);
+    try { window.localStorage.setItem(gettingStartedKey, 'true'); }
+    catch { /* Optional browser storage must not block the guide. */ }
+  }, [currentPage, aboutView, gettingStartedKey]);
 
   async function reloadDashboard() {
     const statusResponse = await fetchStatus();
@@ -268,6 +280,11 @@ function App({ onSignOut }: { onSignOut?: () => Promise<void> }) {
   return (
     <AppChrome
       currentPage={currentPage}
+      gettingStartedUnseen={gettingStartedUnseen}
+      onOpenGettingStarted={() => void leaveCompletedSessionThen(() => {
+        setAboutView('getting-started');
+        setCurrentPage('about');
+      })}
       error={error}
       serviceBanner={backendStatus?.serviceBanner ?? null}
       sessionActive={sessionActive}
