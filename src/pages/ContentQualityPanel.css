@@ -33,6 +33,20 @@
   font-weight: 600;
 }
 
+.content-quality-table { min-width: 48rem; }
+.content-quality-table .operator-column-button {
+  width: 100%; padding: 0.5rem 0.2rem; text-align: left; border-radius: 0.3rem;
+  color: var(--text); background: transparent; font-weight: 650;
+}
+.content-quality-table .operator-column-button:hover { background: var(--surface-hover); }
+.content-quality-filter-row input, .content-quality-filter-row select { max-width: 100%; min-width: 0; }
+.content-quality-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.content-quality-date-filter { display: grid; gap: 0.2rem; font-size: 0.75rem; font-weight: 500; }
+.content-quality-date-filter input { width: 100%; }
+.content-quality-filter-note { font-size: 0.75rem; color: var(--text-muted); }
+.content-quality-table caption label { display: inline-flex; align-items: center; gap: 0.4rem; margin-left: 0.5rem; }
+.content-quality-table caption select { min-height: 2rem; max-width: 100%; }
+
 .content-quality-table .content-quality-title {
   min-width: 12rem;
   max-width: 24rem;

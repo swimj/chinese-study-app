@@ -1375,6 +1375,12 @@ export async function fetchContentQualityStats(
   return response.json();
 }
 
+export async function fetchContentQualityRatingLedger(): Promise<import('../domain/content-quality').ContentQualityRatingLedger> {
+  const response = await apiFetch(`${API_BASE}/api/operator/content-quality/ratings`);
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not load content quality ratings'));
+  return response.json();
+}
+
 export async function updateDebriefInterests(debriefInterests: string): Promise<{ debriefInterests: string }> {
   const response = await apiFetch(`${API_BASE}/api/learner-settings/debrief-interests`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ debriefInterests }),
