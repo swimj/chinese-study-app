@@ -24,7 +24,6 @@ export type PriorityPageProps = {
   onCancelMatchSelection: () => void;
   onHighlightsHandled: () => void;
   priorityBatchSubmitting: boolean;
-  onRequireForNextSession: (wordIds: string[], requiredForNextSession: boolean) => Promise<void>;
   onMoveSelectedToTop: (wordIds: string[]) => Promise<void>;
   onMoveSelectedToStash: (wordIds: string[]) => Promise<void>;
   onRemoveSelected: (wordIds: string[]) => Promise<void>;
@@ -45,7 +44,6 @@ export function PriorityPage({
   onCancelMatchSelection,
   onHighlightsHandled,
   priorityBatchSubmitting,
-  onRequireForNextSession,
   onMoveSelectedToTop,
   onMoveSelectedToStash,
   onRemoveSelected,
@@ -111,8 +109,6 @@ export function PriorityPage({
   }
 
   const selectedManageRows = rows.filter((entry) => selectedManageWordIds.includes(entry.word.id));
-  const allSelectedRequired =
-    selectedManageRows.length > 0 && selectedManageRows.every((entry) => entry.requiredForNextSession);
   const someSelectedNotTop = selectedManageRows.some((entry) => !entry.forceTop);
   const someSelectedTop = selectedManageRows.some((entry) => entry.forceTop);
   const manageSelectionActive = selectedManageWordIds.length > 0;
@@ -228,18 +224,6 @@ export function PriorityPage({
                 disabled={priorityBatchSubmitting || !someSelectedTop}
               >
                 To stash
-              </button>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() =>
-                  void handleSelectedManageAction((wordIds) =>
-                    onRequireForNextSession(wordIds, !allSelectedRequired),
-                  )
-                }
-                disabled={priorityBatchSubmitting}
-              >
-                {allSelectedRequired ? 'Unrequire' : 'Require'}
               </button>
               <button
                 type="button"

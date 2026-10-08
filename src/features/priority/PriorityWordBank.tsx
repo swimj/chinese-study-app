@@ -397,7 +397,6 @@ function PriorityBankSection({
             const chipClassName = [
               'priority-word-chip',
               selected ? 'is-selected' : '',
-              entry.requiredForNextSession ? 'is-required' : '',
               highlightedWordIds.includes(wordId) ? 'is-highlighted' : '',
               draggingWordIds.includes(wordId) ? 'is-dragging' : '',
             ].filter(Boolean).join(' ');
@@ -472,7 +471,6 @@ function PriorityChipPopover({
           ×
         </button>
       </div>
-      {word.requiredForNextSession ? <span className="priority-required-pill">Required</span> : null}
       <MeaningList meanings={word.word.meanings.length > 0 ? word.word.meanings : [word.word.meaning]} />
     </div>
   );
