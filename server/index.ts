@@ -1742,6 +1742,7 @@ export function createApp(options: CreateAppOptions = {}) {
     const completedAt = req.body?.completedAt;
     const completedReviewActionCount = req.body?.completedReviewActionCount;
     const failedReviewActionCount = req.body?.failedReviewActionCount;
+    const completedLearningWordCount = req.body?.completedLearningWordCount;
     const activeDurationMs = req.body?.activeDurationMs;
     const debriefInventory: unknown = req.body?.debriefInventory;
     if (debriefInventory !== undefined) {
@@ -1774,6 +1775,12 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
 
+    if (completedLearningWordCount !== undefined &&
+      (!Number.isInteger(completedLearningWordCount) || completedLearningWordCount < 0)) {
+      res.status(400).json({ error: 'Expected non-negative integer completedLearningWordCount' });
+      return;
+    }
+
     const commitStartedAtMs = Date.now();
     try {
       recordReviewSessionSummary({
@@ -1782,6 +1789,7 @@ export function createApp(options: CreateAppOptions = {}) {
         completedReviewActionCount,
         failedReviewActionCount,
         activeDurationMs,
+        completedLearningWordCount,
         ...(debriefInventory === undefined ? {} : { debriefInventory }),
       });
       try {

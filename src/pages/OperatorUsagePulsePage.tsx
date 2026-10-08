@@ -160,9 +160,15 @@ function UsagePulsePanel() {
       <h2>Usage pulse</h2>
       <p className="notes">
         Operator-only cohort view. Historical days are daily snapshots; today is live.
-        Stash median is as-of each snapshot&apos;s capture time.
+        Mean stash is as-of each snapshot&apos;s capture time.
       </p>
-      <details className="operator-spend-notes"><summary>Spend coverage</summary><p className="notes">Usage snapshots include reflection and intake spend only. The Model invocations tab covers production model calls recorded since the ledger was introduced, including preparation and debriefs.</p></details>
+      <details><summary>Metric definitions</summary><p className="notes">
+        Practice counts completed learning word encounters. Review correct and wrong count completed
+        exercises without and with a lapse, including contrast and pure cues; reinforcement attempts
+        do not add exercises. Session time totals active time in completed sessions. Proposals accepted
+        counts acceptance events, regardless of application outcome. A dash means unavailable historical
+        data or a session saved without a practice count.
+      </p></details>
       {loading ? <p className="notes">Loading…</p> : null}
       {error ? <p className="notes">{error}</p> : null}
       {payload ? (
@@ -171,11 +177,14 @@ function UsagePulsePanel() {
             <MetricTile label="DAU (today)" value={formatInt(payload.today.dau)} />
             <MetricTile label="Sessions (today)" value={formatInt(payload.today.sessionsCompleted)} />
             <MetricTile label="New words (today)" value={formatInt(payload.today.newWords)} />
-            <MetricTile label="Reflection + intake spend (today)" value={formatUsd(payload.today.modelSpendUsd)} />
-            <MetricTile label="Median stash" value={formatNullableNumber(payload.today.medianStashSize)} />
+            <MetricTile label="Practice (today)" value={formatNullableNumber(payload.today.practiceCompleted)} />
+            <MetricTile label="Review correct (today)" value={formatInt(payload.today.reviewCorrect)} />
+            <MetricTile label="Review wrong (today)" value={formatInt(payload.today.reviewWrong)} />
+            <MetricTile label="Proposals accepted (today)" value={formatInt(payload.today.proposalsAccepted)} />
+            <MetricTile label="Mean stash" value={formatNullableNumber(payload.today.meanStashSize)} />
             <MetricTile
-              label="Median session time"
-              value={formatDuration(payload.today.medianSessionActiveMs)}
+              label="Total session time"
+              value={formatDuration(payload.today.sessionActiveMs)}
             />
           </div>
 
@@ -188,7 +197,7 @@ function UsagePulsePanel() {
           </ul>
 
           <h3>Last 7 completed days + today</h3>
-          <div className="operator-usage-table-wrap">
+          <div className="operator-usage-table-wrap" role="region" aria-label="Daily usage totals" tabIndex={0}>
             <table className="operator-usage-table">
               <thead>
                 <tr>
@@ -196,9 +205,12 @@ function UsagePulsePanel() {
                   <th>DAU</th>
                   <th>Sessions</th>
                   <th>New words</th>
-                  <th>Reflection + intake spend</th>
-                  <th>Med stash</th>
-                  <th>Med session</th>
+                  <th>Practice</th>
+                  <th>Review correct</th>
+                  <th>Review wrong</th>
+                  <th>Proposals accepted</th>
+                  <th>Mean stash</th>
+                  <th>Session time</th>
                   <th>Inactive 7d</th>
                   <th>Abandoned</th>
                   <th>Spend∅accept</th>
@@ -230,9 +242,12 @@ function SnapshotRow({ row, isToday }: { row: UsageDailySnapshot; isToday: boole
       <td>{formatInt(row.dau)}</td>
       <td>{formatInt(row.sessionsCompleted)}</td>
       <td>{formatInt(row.newWords)}</td>
-      <td>{formatUsd(row.modelSpendUsd)}</td>
-      <td>{formatNullableNumber(row.medianStashSize)}</td>
-      <td>{formatDuration(row.medianSessionActiveMs)}</td>
+      <td>{formatNullableNumber(row.practiceCompleted)}</td>
+      <td>{formatInt(row.reviewCorrect)}</td>
+      <td>{formatInt(row.reviewWrong)}</td>
+      <td>{formatInt(row.proposalsAccepted)}</td>
+      <td>{formatNullableNumber(row.meanStashSize)}</td>
+      <td>{formatDuration(row.sessionActiveMs)}</td>
       <td>{formatInt(row.learnersInactive7d)}</td>
       <td>{formatInt(row.sessionsAbandoned)}</td>
       <td>{formatInt(row.learnersSpendWithoutAccepts)}</td>
@@ -252,10 +267,6 @@ function MetricTile({ label, value }: { label: string; value: string }) {
 
 function formatInt(value: number): string {
   return String(value);
-}
-
-function formatUsd(value: number): string {
-  return `$${value.toFixed(4)}`;
 }
 
 function formatNullableNumber(value: number | null): string {

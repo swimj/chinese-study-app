@@ -66,3 +66,14 @@ test('14-item completion is available as recent ready-empty without waking gener
   assert.equal((await fetch(`${base}/api/review-session-summaries`, json('POST', oversized))).status, 400);
   assert.equal(getDb().prepare(`SELECT 1 FROM learner_owned_review_session_summaries WHERE session_id = 'oversized-http'`).get(), undefined);
 });
+
+test('summary accepts learning totals, rejects malformed counts, and preserves known counts on legacy retry', async () => {
+  const known = { ...summary, sessionId: 'learning-count', completedLearningWordCount: 7 };
+  assert.equal((await fetch(`${base}/api/review-session-summaries`, json('POST', known))).status, 204);
+  assert.equal((await fetch(`${base}/api/review-session-summaries`, json('POST', { ...summary, sessionId: known.sessionId }))).status, 204);
+  assert.equal(getDb().prepare(`SELECT learning_completed_count AS count FROM learner_owned_review_session_summaries
+    WHERE session_id = ?`).get(known.sessionId)?.count, 7);
+  for (const count of [-1, 1.5, null, '7']) {
+    assert.equal((await fetch(`${base}/api/review-session-summaries`, json('POST', { ...known, completedLearningWordCount: count }))).status, 400);
+  }
+});

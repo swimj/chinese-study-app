@@ -94,13 +94,6 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
-  test('medianOf handles empty, odd, and even lists', () => {
-    assert.equal(usagePulse.medianOf([]), null);
-    assert.equal(usagePulse.medianOf([3]), 3);
-    assert.equal(usagePulse.medianOf([1, 3, 2]), 2);
-    assert.equal(usagePulse.medianOf([4, 1, 2, 3]), 2.5);
-  });
-
   test('computes cohort metrics, sparse counts, and persists idempotent daily snapshots', () => {
     const dayKey = '2026-09-10';
     const earlierDay = '2026-09-09';
@@ -168,9 +161,12 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     assert.equal(computed.dau, 1);
     assert.equal(computed.sessionsCompleted, 1);
     assert.equal(computed.newWords, 2);
-    assert.equal(computed.modelSpendUsd, 0.75);
-    assert.equal(computed.medianSessionActiveMs, 120_000);
-    assert.equal(computed.medianStashSize, 0.5);
+    assert.equal(computed.practiceCompleted, null);
+    assert.equal(computed.reviewCorrect, 1);
+    assert.equal(computed.reviewWrong, 0);
+    assert.equal(computed.proposalsAccepted, 0);
+    assert.equal(computed.sessionActiveMs, 120_000);
+    assert.equal(computed.meanStashSize, 0.75);
     assert.equal(computed.sessionsAbandoned, 1);
     assert.equal(computed.learnersSpendWithoutAccepts, 2);
     assert.equal(computed.studyCommitFailures, 1);
@@ -190,6 +186,72 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     assert.equal(stored.length, 1);
     assert.equal(stored[0]?.capturedAt, `${dayKey}T23:59:30.000Z`);
     assert.equal(stored[0]?.dau, 1);
+  });
+
+  test('sums completed exercises and time; practice remains unknown for partial legacy days', () => {
+    const dayKey = '2026-10-05';
+    const summary = { sessionId: 'totals-a', completedAt: `${dayKey}T12:00:00.000Z`,
+      completedReviewActionCount: 5, failedReviewActionCount: 2,
+      activeDurationMs: 120_000, completedLearningWordCount: 3 };
+    dbModule.runWithLearnerId('learner-a', () => {
+      dbModule.recordReviewSessionSummary(summary);
+      dbModule.recordReviewSessionSummary(summary);
+      const { completedLearningWordCount, ...legacy } = summary;
+      dbModule.recordReviewSessionSummary(legacy);
+      assert.equal(getDb().prepare(`SELECT learning_completed_count AS count FROM review_session_summaries
+        WHERE session_id = ?`).get(summary.sessionId)?.count, 3);
+      dbModule.recordReviewSessionSummary({ ...summary, sessionId: 'totals-b',
+        completedReviewActionCount: 2, failedReviewActionCount: 1, activeDurationMs: 30_000,
+        completedLearningWordCount: 4 });
+      assert.throws(() => dbModule.recordReviewSessionSummary({ ...summary, completedLearningWordCount: -1 }), /completedLearningWordCount/);
+    });
+    let totals = usagePulse.computeUsagePulseDay({ dayKey });
+    assert.equal(totals.reviewCorrect, 4);
+    assert.equal(totals.reviewWrong, 3);
+    assert.equal(totals.sessionActiveMs, 150_000);
+    assert.equal(totals.practiceCompleted, 7);
+    dbModule.runWithLearnerId('learner-a', () => insertSessionSummary({
+      sessionId: 'legacy-totals', dayKey, completedAt: `${dayKey}T13:00:00.000Z`, activeDurationMs: 10_000,
+    }));
+    totals = usagePulse.computeUsagePulseDay({ dayKey });
+    assert.equal(totals.practiceCompleted, null);
+    assert.equal(totals.sessionActiveMs, 160_000);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-10-04' }).practiceCompleted, 0);
+    // Existing cohort sizes are [0, 2, 1, 0]; empty stashes participate in the mean.
+    assert.equal(totals.meanStashSize, 0.75);
+  });
+
+  test('counts proposal acceptance events by creation day regardless of application state', () => {
+    const dayKey = '2026-10-03';
+    dbModule.runWithLearnerId('learner-a', () => {
+      getDb().exec(`INSERT INTO reflection_artifacts
+        (artifact_id, reflection_flow_version, generated_at, provider, model, prompt_version,
+          bundle_schema_version, result_schema_version, evidence_bundle_json, result_json)
+        VALUES ('usage-artifact', 'test', '2026-10-03T00:00:00.000Z', 'test', 'test', 'test', 'test', 'test', '{}', '{}');`);
+      const entries = [
+        ['accepted-start', `${dayKey}T00:00:00.000Z`, 'authorization_withdrawn', 'proposal_acceptance'],
+        ['accepted-failed', `${dayKey}T23:59:59.999Z`, 'failed', 'proposal_acceptance'],
+        ['accepted-next', '2026-10-04T00:00:00.000Z', 'pending', 'proposal_acceptance'],
+        ['manual', `${dayKey}T12:00:00.000Z`, 'pending', 'manual'],
+        ['replacement', `${dayKey}T12:00:00.000Z`, 'pending', 'user_replacement'],
+      ];
+      entries.forEach(([id, createdAt, state, origin], index) => {
+        getDb().prepare(`INSERT INTO reflection_proposal_reviews
+          (proposal_id, artifact_id, item_id, proposal_index, disposition, updated_at)
+          VALUES (?, 'usage-artifact', 'item', ?, 'pending', ?)`).run(`proposal-${id}`, index, createdAt);
+        getDb().prepare(`INSERT INTO reflection_operation_invocations
+          (invocation_id, created_at, origin_kind, origin_proposal_id, origin_superseded_proposal_id,
+            operation_kind, operation_version, operation_json, application_state, application_updated_at, application_error)
+          VALUES (?, ?, ?, ?, ?, 'suppress_skill', 1, '{}', ?, ?, ?)`).run(id, createdAt, origin,
+            origin === 'proposal_acceptance' ? `proposal-${id}` : null,
+            origin === 'user_replacement' ? `proposal-${id}` : null, state,
+            '2026-10-07T12:00:00.000Z', state === 'failed' ? 'failure' : null);
+      });
+    });
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey }).proposalsAccepted, 2);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-10-04' }).proposalsAccepted, 1);
+    usagePulse.captureUsagePulseDay({ dayKey });
+    assert.equal(usagePulse.listUsageDailySnapshots([dayKey])[0]?.proposalsAccepted, 2);
   });
 
   test('excludes the configured smoke learner from inactive 7d count', () => {
