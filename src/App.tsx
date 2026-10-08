@@ -67,6 +67,12 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
     catch { return true; }
   });
   const guideToStash = !gettingStartedUnseen && stashUnseen;
+  const settingsVisitedKey = `getting-started-settings-seen:v1:${accountScope}`;
+  const [settingsUnseen, setSettingsUnseen] = useState(() => {
+    try { return window.localStorage.getItem(settingsVisitedKey) !== 'true'; }
+    catch { return true; }
+  });
+  const guideToSettings = !gettingStartedUnseen && !stashUnseen && settingsUnseen;
   const [currentPage, setCurrentPage] = useState<AppPageKey>(readInitialPage);
   const [aboutView, setAboutView] = useState<AboutView>('getting-started');
   const [selectedUpdateId, setSelectedUpdateId] = useState<string | null>(null);
@@ -333,6 +339,13 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
     >
       {currentPage === 'home' ? (
         <HomePage
+          guideToSettings={guideToSettings}
+          onSettingsOpened={() => {
+            if (!guideToSettings) return;
+            setSettingsUnseen(false);
+            try { window.localStorage.setItem(settingsVisitedKey, 'true'); }
+            catch { /* Optional browser storage must not block settings. */ }
+          }}
           updatesCatalog={updatesCatalog}
           unseenPostIds={attention.whatsNewUnseenPostIds}
           onUnseenBadgeVisible={attention.acknowledgeWhatsNewBadge}

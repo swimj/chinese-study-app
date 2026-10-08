@@ -45,6 +45,8 @@ export function HomePage({
   onViewAllUpdates,
   introductionGate,
   backendStatus,
+  guideToSettings = false,
+  onSettingsOpened,
   onSaveSessionSettings,
   sessionPrefetch,
   sessionStarted,
@@ -136,6 +138,8 @@ export function HomePage({
   onViewAllUpdates?: () => void;
   introductionGate?: SessionIntroductionGate | null;
   backendStatus: BackendStatus | null;
+  guideToSettings?: boolean;
+  onSettingsOpened?: () => void;
   onSaveSessionSettings: (settings: {
     dailyNewWordLimit?: number;
     studyNewWordsFirst?: boolean;
@@ -252,10 +256,12 @@ export function HomePage({
           sessionFinalization={sessionFinalization}
           sessionLoading={sessionLoading}
           displayedSessionItemCount={displayedSessionItemCount}
+          guideToSettings={guideToSettings}
           sessionSettingsOpen={sessionSettingsOpen}
           sessionSettingsSaving={sessionSettingsSaving}
           onToggleSessionSettings={() => {
             if (!sessionSettingsSaving) {
+              if (!sessionSettingsOpen) onSettingsOpened?.();
               setSessionSettingsOpen((open) => !open);
             }
           }}

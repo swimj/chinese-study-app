@@ -10,6 +10,7 @@ import { DietNudgePrompt } from '../features/diet/DietNudgePrompt';
 export function HomeOverviewPanel({
   backendStatus,
   compact = false,
+  guideToSettings = false,
   sessionPrefetch,
   sessionStarted,
   sessionPhase,
@@ -25,6 +26,7 @@ export function HomeOverviewPanel({
 }: {
   backendStatus: BackendStatus | null;
   compact?: boolean;
+  guideToSettings?: boolean;
   sessionPrefetch: SessionPrefetchState;
   sessionStarted: boolean;
   sessionPhase: SessionPhase | null;
@@ -129,7 +131,8 @@ export function HomeOverviewPanel({
           </button>
           <button
             type="button"
-            className="session-settings-gear"
+            className={`session-settings-gear${guideToSettings && !sessionSettingsOpen ? ' getting-started-attention' : ''}`}
+            title={guideToSettings ? 'Make it yours: explore session settings' : 'Session settings'}
             aria-label="Session settings"
             aria-expanded={sessionSettingsOpen}
             aria-controls="session-settings-panel"

@@ -4551,3 +4551,12 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1
 @media (prefers-reduced-motion: reduce) {
   .getting-started-attention { animation: none; }
 }
+.session-settings-gear.getting-started-attention {
+  align-items: center;
+  color: #173f30;
+}
+@media (prefers-reduced-motion: reduce) {
+  .session-start-shell:has(.session-settings-gear:hover) .session-settings-gear.getting-started-attention {
+    animation: none;
+  }
+}
