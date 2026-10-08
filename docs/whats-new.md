@@ -1,19 +1,28 @@
 # What’s New blog
 
-This document owns the blog’s content and publication contract, its persistence
-mechanism, and the operator procedure for updating it. Learners read published
-the four latest posts as previews on Home and the full archive in About →
-What’s New. A Home preview opens its individual post. Operators can save drafts, publish posts, correct
-existing posts, and withdraw a post by returning it to draft.
-
-The Home updates section is hidden while Connections occupies the centered,
-expanded view. Minimizing Connections restores the updates alongside the
-overview; notification badge behavior is unchanged.
+What’s New is the learner-facing product update blog: it helps learners learn
+about shipped product changes and catch up when they return. This document
+defines the blog’s content and publication contract, learner reading and unread
+behavior, persistence, and operator workflow.
 
 Home and About share a catalog loaded once when the app opens. Session changes,
 navigation, and window focus reuse that catalog; a browser page refresh loads
-new content. A failed load can be retried explicitly. Notification badges keep
-their independent refresh and acknowledgement behavior.
+new content. A failed load can be retried explicitly. Learner attention state
+refreshes independently of the shared post catalog.
+
+## Home updates
+
+Home shows previews of the four latest published posts. Selecting a preview
+opens that post’s full article. Learners can collapse the whole updates column
+to reclaim its space; a compact control above the Home overview restores it.
+The column starts expanded. Its collapsed choice persists while navigating in
+the open app and resets to expanded after a page reload.
+
+When collapsed, the control shows the number of active unread posts when that
+number is greater than zero. When expanded, each active unread post among the
+four previews has its own “New” marker. The updates section and its control are
+hidden while Connections occupies the centered, expanded view; minimizing
+Connections restores the Home layout.
 
 ## Content and publication
 
@@ -47,12 +56,14 @@ alone cannot establish a deployed commit boundary.
 
 ## Unread updates
 
-The About badge counts each published post until the learner reads it or
-12 hours pass after that post was first represented in a visible navigation
-badge. A visible badge means it intersects the viewport in a visible, focused
-browser tab; navigation hidden during study does not count. Fetching posts,
-publication time, and time away before seeing the badge do not start the clock.
-A learner returning after several days sees the updates they have missed.
+Each post remains unread until the learner reads it or 12 hours pass after it
+was first represented by a visible badge. In the collapsed state, the count
+represents all active unread posts; in the expanded state, each post marker
+represents only that post. A badge is exposed only when it intersects the
+viewport in a visible, focused browser tab; navigation hidden during study
+does not count. Fetching posts, publication time, and time away before seeing a
+badge do not start the clock. A learner returning after several days sees the
+updates they have missed until a badge is exposed.
 
 Each post has its own first-exposure timestamp. A later post gets a fresh
 12-hour window, without extending older windows. Reloads, repeated exposure,
@@ -63,8 +74,11 @@ the Home preview and archive remain available.
 Opening an individual post acknowledges only that post when its full article
 heading becomes visible. In the archive, articles are acknowledged as their
 headings enter view; merely loading the archive does not mark every post read.
-Acknowledgement requests contain the exact observed post IDs, so concurrent
-publication cannot accidentally mark a new post exposed or read.
+Expanded Home markers start exposure independently as each marker enters view.
+The collapsed count starts exposure for the unread posts it represents when
+that count enters view. Acknowledgement requests contain the exact observed
+post IDs, so concurrent publication cannot accidentally mark a new post
+exposed or read.
 
 Read and first-exposure timestamps are durable, learner-private rows in
 `learner_whats_new_attention`, shared across that learner's browsers. Existing
@@ -96,8 +110,9 @@ transaction. WAL allows the running API to read while another connection saves.
 Routine content updates require no build, deployment, maintenance mode, or app
 restart. The blog fetches current posts when opened, when the browser regains
 focus or visibility, and on an explicit retry after a loading error. Attention
-refreshes fetch per-post attention separately to update the About badge. There is no
-push notification or continuous polling of open tabs.
+refreshes provide active unread post IDs to Home so aggregate and per-post
+markers follow each post’s independent exposure window. There is no push
+notification or continuous polling of open tabs.
 
 Migration `0028_whats_new_blog` creates the tables and seeds the former bundled
 notes without changing their wording. The **first rollout is a schema-changing

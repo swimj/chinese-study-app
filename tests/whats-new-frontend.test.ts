@@ -4,8 +4,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { WhatsNewPost } from '../src/domain/whats-new.ts';
 import { WhatsNewPosts, WhatsNewFeed } from '../src/pages/WhatsNewFeed.tsx';
-import { HomeUpdates, UpdatePreviews } from '../src/pages/HomeUpdates.tsx';
-import { activeWhatsNewPostIds } from '../src/features/attention/whats-new-attention.ts';
+import { HomeUpdates, HomeUpdatesCollapsedControl, UpdatePreviews } from '../src/pages/HomeUpdates.tsx';
+import { activeUnexposedWhatsNewPostIds, activeWhatsNewPostIds } from '../src/features/attention/whats-new-attention.ts';
 import { WHATS_NEW_BADGE_WINDOW_MS, type WhatsNewAttention } from '../src/domain/whats-new-attention.ts';
 import { observeVisibleElement } from '../src/features/attention/visible-element.ts';
 
@@ -48,6 +48,25 @@ test('home previews contain safe summary text and do not mark full posts read', 
   assert.equal(opened, false);
 });
 
+test('Home previews mark only the active unread posts supplied by attention state', () => {
+  const html = renderToStaticMarkup(createElement(HomeUpdates, {
+    catalog: { posts: [post('unread', 2), post('read', 1)], error: null, retry: () => {} },
+    unseenPostIds: ['unread'], onOpenPost: () => {}, onViewAll: () => {}, onCollapse: () => {},
+  }));
+  assert.match(html, /Unread update/);
+  assert.match(html, /Hide updates/);
+  assert.equal((html.match(/Unread update/g) ?? []).length, 1);
+});
+
+test('collapsed Home updates control exposes its unread count and reopens the column', () => {
+  const html = renderToStaticMarkup(createElement(HomeUpdatesCollapsedControl, {
+    unseenPostIds: ['one', 'two'], onVisible: async () => {}, onExpand: () => {},
+  }));
+  assert.match(html, /aria-expanded="false"/);
+  assert.match(html, /2 unread updates/);
+  assert.match(html, />2<\/span>/);
+});
+
 test('local badge expiry counts each window independently, leaving unexposed updates eligible', () => {
   const firstSeen = Date.parse('2026-10-07T00:00:00.000Z');
   const attention: WhatsNewAttention = {
@@ -62,6 +81,21 @@ test('local badge expiry counts each window independently, leaving unexposed upd
   assert.deepEqual(activeWhatsNewPostIds(attention, firstSeen + WHATS_NEW_BADGE_WINDOW_MS - 1), ['old', 'new', 'away']);
   assert.deepEqual(activeWhatsNewPostIds(attention, firstSeen + WHATS_NEW_BADGE_WINDOW_MS), ['new', 'away']);
   assert.deepEqual(activeWhatsNewPostIds(attention, firstSeen + 7 * 86400000), ['away']);
+});
+
+test('visible post markers expose only the represented active unread posts once', () => {
+  const now = Date.parse('2026-10-07T00:00:00.000Z');
+  const attention: WhatsNewAttention = {
+    items: [
+      { postId: 'already-exposed', firstBadgeSeenAt: new Date(now - 1000).toISOString(), readAt: null },
+      { postId: 'fresh', firstBadgeSeenAt: null, readAt: null },
+      { postId: 'read', firstBadgeSeenAt: null, readAt: new Date(now - 1000).toISOString() },
+      { postId: 'expired', firstBadgeSeenAt: new Date(now - WHATS_NEW_BADGE_WINDOW_MS).toISOString(), readAt: null },
+    ],
+    unseenPostIds: ['already-exposed', 'fresh', 'read', 'expired'], nextExpiryAt: null, serverNow: new Date(now).toISOString(),
+  };
+  assert.deepEqual(activeUnexposedWhatsNewPostIds(attention, now,
+    ['fresh', 'read', 'expired', 'not-in-snapshot', 'fresh']), ['fresh']);
 });
 
 test('exposure requires an intersecting element in a visible focused tab and cleans up listeners', (t) => {

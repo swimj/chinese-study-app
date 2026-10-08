@@ -414,7 +414,7 @@ Request/result types live in
 | PUT | `/api/operator/whats-new` | Operator-only validated, revision-checked post save |
 | POST | `/api/whats-new-seen-sequence` | Ensure or advance the What’s New publication sequence |
 | GET | `/api/whats-new-attention` | Read per-post learner attention and active badge IDs without starting clocks |
-| POST | `/api/whats-new-attention` | Record visible navigation badge exposure or reading for a published-post snapshot |
+| POST | `/api/whats-new-attention` | Record visible badge exposure or reading for a published-post snapshot |
 | POST | `/api/whats-new-seen` | Ensure or advance the What’s New seen-through date |
 | POST | `/api/failed-reflection-runs-seen` | Advance the failed-reflection-run seen-through timestamp |
 | GET | `/api/reflection-help-inbox` | List open explanation-only Help inbox rows |
@@ -760,19 +760,20 @@ JSON limit to accommodate escaped content within the domain bounds.
 `{ items, unseenPostIds, nextExpiryAt, serverNow }`, using the
 [attention type](../src/domain/whats-new-attention.ts). Each item has `postId`,
 nullable `firstBadgeSeenAt`, and nullable `readAt`. `unseenPostIds` contains
-published posts that are unread and either never exposed in the visible
-navigation badge or still inside their own twelve-hour window. `nextExpiryAt`
+published posts that are unread and either never exposed in a visible badge or
+still inside their own twelve-hour window. `nextExpiryAt`
 is the earliest active expiry or null; `serverNow` permits clock-offset-aware
 client expiry. Reading this endpoint changes no state.
 
 `POST /api/whats-new-attention` accepts
 `{ postIds: string[], kind: 'badge-seen' | 'read' }` and returns the same state.
-The client submits the exact published-post snapshot represented by the visible
-badge, or the individual post opened for reading. Each first timestamp is
-durable and idempotent. A new post receives its own clock without extending an
-older one. Both operations use server UTC time and only affect the signed-in
-learner. Missing/unknown fields, invalid kinds, empty or duplicate IDs, more
-than 1000 IDs, and unknown or draft post IDs return 400 without partial writes.
+The client submits the exact published-post IDs represented by the visible
+aggregate badge or visible per-post markers, or the individual post opened for
+reading. Each first timestamp is durable and idempotent. A new post receives
+its own clock without extending an older one. Both operations use server UTC
+time and only affect the signed-in learner. Missing/unknown fields, invalid
+kinds, empty or duplicate IDs, more than 1000 IDs, and unknown or draft post
+IDs return 400 without partial writes.
 Existing legacy cursors retain acknowledged reads, with their parameter update
 time used as `readAt`; a learner without a cursor starts with all published
 posts eligible, however old their publication dates are.

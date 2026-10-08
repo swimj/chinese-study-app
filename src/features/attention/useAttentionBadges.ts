@@ -60,7 +60,7 @@ export function useAttentionBadges() {
   return {
     reflectionUnseenCount,
     hasUnseenReflectionFailure: failedReflectionRunIds.length > 0,
-    whatsNewUnseenCount: updates.count,
+    whatsNewUnseenPostIds: updates.unseenPostIds,
     refresh: refreshAll,
     markHelpCardSeen,
     acknowledgeFailedReflectionRuns,

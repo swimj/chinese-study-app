@@ -8,3 +8,9 @@ export function activeWhatsNewPostIds(attention: WhatsNewAttention, now: number)
       || now < Date.parse(item.firstBadgeSeenAt) + WHATS_NEW_BADGE_WINDOW_MS);
   });
 }
+
+export function activeUnexposedWhatsNewPostIds(attention: WhatsNewAttention, now: number, representedPostIds: readonly string[]): string[] {
+  const activeIds = new Set(activeWhatsNewPostIds(attention, now));
+  return [...new Set(representedPostIds)].filter(id => activeIds.has(id)
+    && attention.items.find(item => item.postId === id)?.firstBadgeSeenAt === null);
+}

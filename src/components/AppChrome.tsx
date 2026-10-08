@@ -1,7 +1,6 @@
 import { createContext, useContext, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { reflectionNavBadge } from '../features/attention/reflection-attention';
-import { useVisibleAcknowledgement } from '../features/attention/useVisibleAcknowledgement';
 
 export type AppPageKey = 'home' | 'priority' | 'reflections' | 'content' | 'about' | 'operator-usage';
 export type PrimaryAppPageKey = Exclude<AppPageKey, 'operator-usage'>;
@@ -39,8 +38,6 @@ export function AppChrome({
   reflectionUnseenCount = 0,
   hasUnseenReflectionFailure = false,
   reflectionGenerating = false,
-  aboutUnseenCount = 0,
-  onUpdatesBadgeVisible,
   children,
   onOpenHomePage,
   onOpenPriorityPage,
@@ -60,8 +57,6 @@ export function AppChrome({
   reflectionUnseenCount?: number;
   hasUnseenReflectionFailure?: boolean;
   reflectionGenerating?: boolean;
-  aboutUnseenCount?: number;
-  onUpdatesBadgeVisible?: () => Promise<void>;
   children: ReactNode;
   onOpenHomePage: () => void;
   onOpenPriorityPage: () => void;
@@ -72,8 +67,6 @@ export function AppChrome({
   onSignOut?: () => Promise<void>;
 }) {
   const nestedSlotRef = useRef<HTMLDivElement | null>(null);
-  const updatesBadgeRef = useRef<HTMLSpanElement | null>(null);
-  useVisibleAcknowledgement(updatesBadgeRef, onUpdatesBadgeVisible, !sessionActive && aboutUnseenCount > 0);
   const [nestedSlot, setNestedSlot] = useState<HTMLDivElement | null>(null);
   const navigationLoading = priorityPageLoading || reflectionPageLoading || contentPageLoading;
   const showNested = currentPage === 'priority' || currentPage === 'reflections' || currentPage === 'about';
@@ -124,9 +117,7 @@ export function AppChrome({
                     hasUnseenFailure: hasUnseenReflectionFailure,
                     isGenerating: reflectionGenerating,
                   })
-                : page.key === 'about' && aboutUnseenCount > 0
-                  ? { kind: 'count' as const, count: aboutUnseenCount }
-                  : { kind: 'none' as const };
+                : { kind: 'none' as const };
               const label = loadingLabels[page.key] ?? page.label;
               const tabButton = (
                 <button
@@ -147,7 +138,7 @@ export function AppChrome({
                 >
                   <span>{label}</span>
                   {badge.kind === 'count' ? (
-                    <span ref={page.key === 'about' ? updatesBadgeRef : undefined} className={`nav-tab-count nav-tab-count-${page.key}`}>{badge.count}</span>
+                    <span className={`nav-tab-count nav-tab-count-${page.key}`}>{badge.count}</span>
                   ) : null}
                   {badge.kind === 'generating' ? (
                     <span className="nav-tab-generating" aria-hidden="true" />
