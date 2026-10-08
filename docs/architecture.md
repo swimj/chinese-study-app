@@ -26,6 +26,9 @@ Private metrics listener (server/observability.ts, :9091 hosted only)
 | Session composition (what is due today) | Backend `getSessionPayload` |
 | API contract | `server/index.ts` routes + `src/services/api.ts` |
 
+For how authenticated identity reaches private SQLite reads and writes, see
+[learner context, query scoping, and relationship checks](server-db.md#learner-and-content-scope).
+
 ## Frontend (`src/`)
 
 | Area | Path | Notes |
