@@ -61,8 +61,13 @@ Use named documents, sections, people, or components as sentence subjects.
 "The retry implementation guide explains the current state machine" makes a
 different job equally clear.
 
-Define important entities and relationships before listing files or exceptions.
-Explain causes, tradeoffs, and useful examples. When presenting a hierarchy,
+Introduce an implementation mechanism through the reader's problem that makes
+it necessary, then define important entities and relationships before listing
+files or exceptions. At section transitions, make the next question clear before
+introducing a new subsystem or technical term. Distinguish an activity, its
+content, and the mechanism that produces or serves that content when they share
+everyday terminology. Explain causes, tradeoffs, and useful examples. When
+presenting a hierarchy,
 show the tree and say what its nodes and edges mean. Keep sibling categories
 consistent so the reader can predict where another explanation would belong.
 

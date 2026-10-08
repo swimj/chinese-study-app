@@ -18,8 +18,8 @@ available result.
 The workflow separates source material from the experiences built around it:
 
 - A **word content document** is a shared, immutable lexical snapshot with
-  selected uses, notes, and examples. Bootstrap generates it from the stored
-  word's written forms, pronunciation, and corpus meanings.
+  selected uses, notes, and examples. A bootstrap generation call creates it
+  from the stored word's written forms, pronunciation, and corpus meanings.
 - A **teaching package** pins that exact document and contains both the ordered
   introduction and its practice exercises, called **target rehearsals** in the
   data model.
@@ -33,19 +33,22 @@ stored lexical word -> bootstrap -> immutable word content
                                     +-> word + uses/notes -> rehearsals -+-> teaching package
 ```
 
-Teaching and practice use the same source document, without receiving each
-other's output. Teaching can show a natural source sentence and explain its
-use; practice can choose a compact English cue or author a short Mandarin phrase
-cloze for retrieval. A good example therefore need not double as a good recall
-prompt. Separate authoring still produces one package, as defined by the
+Teaching and practice generation calls use the same source document, without
+receiving each other's output. The resulting teaching beats can show a natural
+source sentence and explain its use; the practice exercises can use a compact
+English cue or a short authored Mandarin phrase cloze for retrieval. A good
+example therefore need not double as a good recall prompt. Separate authoring
+still produces one package, as defined by the
 [package contract](../SPECS/word-bootstrap-and-introduction.md#4-introduction-and-practice-form-one-package).
 
 ## Authoring and validation
 
-The [provider](../server/word-content/provider.ts) sends the complete bootstrap
-document to teaching. For practice, it removes the structured `examples` array
-and each use's `exampleIds`, retaining the document identity, word, use labels,
-and notes. The practice wire accepts `direct_text` and `phrase_cloze`; the domain
+The [provider module](../server/word-content/provider.ts) makes separate model
+API calls to generate teaching beats and practice exercises. The teaching
+generation call receives the complete bootstrap document. The practice
+generation call receives a projection without the structured `examples` array
+or each use's `exampleIds`, retaining the document identity, word, use labels,
+and notes. Its output schema accepts `direct_text` and `phrase_cloze`; the domain
 representation also supports source-backed `example_cloze` in existing packages
 and imports.
 
@@ -53,27 +56,38 @@ The [teaching prompt](../server/word-content/prompts/teaching.md) asks for depth
 suited to the word. A familiar concrete meaning can have a direct explanation
 and brief example; a construction or literary expression may need more context.
 The [practice prompt](../server/word-content/prompts/practice.md) asks for a small
-set of clear retrieval associations. These are editorial instructions to the
-provider. Deterministic validation checks structure and source references,
+set of clear retrieval associations. These prompts give the model editorial
+guidance. Deterministic validation checks structure and source references,
 not the pedagogical quality of the output or whether every practised meaning
 was developed in the teaching beats.
 
-[Normalization](../server/word-content/authoring.ts) validates teaching references
-against the exact content. For practice, it supplies the `target_rehearsal`
-contract, `hanzi_entry` response mode, and the pinned word's accepted forms.
-The model authors the stimulus; the application defines which word is accepted.
+[Normalization](../server/word-content/authoring.ts) validates the generated
+teaching references against the exact content. For each generated practice
+exercise, it supplies the `target_rehearsal` contract, `hanzi_entry` response mode,
+and the pinned word's accepted forms. The model authors the stimulus; the
+application defines which word is accepted.
 Generated rehearsals store an empty instruction and are rejected when their
 visible stimulus exposes an accepted Chinese form. Package parsing and
 materialization recheck the assembly before publication.
 
 ## Retaining work without exposing a partial lesson
 
-The durable work journal has a `bootstrap` stage followed by a `teaching` stage.
-Inside the teaching stage, [shared preparation](../server/word-content/shared-preparation.ts)
-runs the two component calls concurrently under the same expiring claim. Each
-normalized success is saved separately. Its provenance records the model and
-available provider invocation ID, so the final package can identify the calls
-that produced its two parts.
+A generation call can fail, its output can fail validation, or the worker can
+stop between completing the two components. Demand for the same word can also
+arrive from several learners. Recovery needs to preserve successful work and
+prevent competing attempts from publishing different or incomplete packages.
+
+The application tracks each word's preparation in a durable work journal. A
+`bootstrap` stage produces the source document, followed by a `teaching` stage
+that assembles both teaching and practice. The journal records attempts and
+retry timing. A separate expiring generation lease determines which attempt
+may save results and publish.
+
+Within the teaching stage, [shared preparation](../server/word-content/shared-preparation.ts)
+runs the two generation calls concurrently under that lease. Each normalized
+component is saved separately. Its provenance records the model and available
+provider invocation ID, so the final package can identify the calls that
+produced its two parts.
 
 A retained component is addressed by the exact content ID, component kind, and
 **generation key**. The provider computes that key from the prompt, output
@@ -83,15 +97,15 @@ component in an unfinished package while leaving a matching teaching component
 reusable.
 
 Shared preparation waits for both calls to settle before releasing a failed
-attempt. If practice fails after teaching succeeds, teaching stays in storage
-and no package becomes ready. A later attempt, including one in a new worker
-process, reuses those beats if their content and generation key still match,
-and calls only practice again. Both components share the teaching stage's
-attempt budget.
+attempt. If teaching beats have been saved but practice generation or validation
+fails, the beats stay in storage and no package becomes ready. A later attempt,
+including one in a new worker process, reuses those beats if their content and
+generation key still match, and repeats only the practice generation call. Both
+components share the teaching stage's attempt budget.
 
 The [worker](../server/word-content/preparation-worker.ts) polls every five
 seconds by default, with two concurrent work stages. A teaching stage can make
-two component calls within one worker slot. Each stage uses a five-minute shared
+two generation calls within one worker slot. Each stage uses a five-minute
 generation lease; its work journal records attempts rather than granting a
 second publication claim. Restart recovery recognizes already-published success
 or consumes the interrupted attempt. Three failed attempts exhaust the shared
@@ -124,6 +138,13 @@ The records have distinct responsibilities:
 | `word_introduction_components` | Normalized teaching/practice payloads and invocation provenance, keyed by source, kind, and generation key |
 | `word_teaching_package_components` | Links from a published package to its retained components |
 
+A `word_introduction_components` row holds the generated beats or exercises and
+can exist before any package is ready. A `word_teaching_package_components` row
+holds no authored payload: it records which retained result a published package
+uses. This publication path writes two such links, one for the teaching result
+and one for practice. The separate records let a successful component survive a
+failed attempt while preserving the exact assembly of a completed package.
+
 Application-authorized validated content and packages enter the shared registry
 as `shared_trial`, with an attributable publication event. The authored content
 contains no learner identity. The worker records a requesting learner separately
@@ -140,18 +161,21 @@ Prepared-but-withdrawn content remains stored; ordinary demand does not replace
 or regenerate it. [Serving](word-content-serving.md#selection-and-withdrawal)
 explains what that means for a learner's private pin and fallback.
 
-## Relationship to local authoring and review
+## Development aid and post-graduation review content
 
-The [local lab](word-introduction-lab.md) uses the same provider and representation,
-but saves local draft envelopes rather than shared publications. It calls
-teaching and then practice, saving only their complete assembly. It does not
-retain successful components across a failed package-generation attempt.
+The [local introduction lab](word-introduction-lab.md) was built for the initial
+teaching-prompt exploration. It uses the same provider module and representation,
+but saves local drafts rather than shared publications. It makes the teaching
+generation call and then the practice generation call, saving only their complete
+assembly. It does not retain successful components across a failed attempt.
 
-Ordinary review has a separate authoring stage using the bootstrap source.
-The first durable study commit requests it asynchronously; preparation or
-opening an introduction does not. Review failure preserves usable teaching and
-ordinary fallback. [Structured review content](structured-review-content.md)
-explains those exercises, publication, and their reflection lifecycle.
+Content for the post-graduation `review` stage is authored by a separate
+generation call using the bootstrap source. The first durable study commit
+requests this work asynchronously, allowing preparation before graduation;
+preparing or opening an introduction does not. A review-content generation
+failure preserves usable teaching and ordinary review fallback.
+[Structured review content](structured-review-content.md) explains those
+exercises, publication, and their reflection lifecycle.
 
 ## Evidence and limits
 

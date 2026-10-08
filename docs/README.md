@@ -71,7 +71,8 @@ accounts of the mechanisms and causal relationships behind that structure.
 
 The [word bootstrap and introduction contract](../SPECS/word-bootstrap-and-introduction.md)
 defines the intended content model and feature guarantees. The
-[local lab](word-introduction-lab.md) provides the contributor preview procedure.
+[local introduction aid](word-introduction-lab.md) retains the launch reference
+for the original teaching-prompt exploration.
 
 ## Operations guides
 
@@ -85,7 +86,7 @@ hosted operations, and contributor development clearly separated.
 - Blog publication: [manual editor and operator command](whats-new.md#manual-operator-editor),
   including the skill’s interactive draft-review procedure.
 - Contributor environments: [scripts](scripts.md) and the
-  [introduction lab](word-introduction-lab.md).
+  [local introduction development aid](word-introduction-lab.md).
 
 The hosted service is the current learner path. These guides provide the
 existing operational references; their coverage and accuracy need verification
@@ -124,3 +125,4 @@ and the referenced documents.
 | 2026-10-07 | `architecture.md` is primarily a navigation map. The system-level explanation of components, data flow, state boundaries, and mechanisms remains missing. |
 | 2026-10-07 | The service-boundary document mixes guarantees, alternatives, the hosted package, one-time migration, and acceptance scenarios. The frontier combines direction, constraints, and unresolved decisions. These documents still need clearer responsibilities. |
 | 2026-10-07 | Legacy in-repo plans and vision copies need a retention decision: useful conclusions need current explanatory homes, and retained historical material needs a deliberate reference role alongside the Steward workspace. |
+| 2026-10-08 | The local introduction lab is an exploratory development aid. Its longer-term role and the documentation needed for it remain undecided; a reusable local prompt-development workflow has not been specified. |

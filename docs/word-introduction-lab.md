@@ -1,13 +1,16 @@
-# Local word introduction lab
+# Local introduction development aid
 
-Use the lab to preview the content a learner would see: a word's selected
-meanings and examples, a paced introduction, and exercises for recalling it.
-This guide covers launching the local preview, generating or importing drafts,
-and understanding how they are saved and retried. Preview navigation and
-responses remain temporary; they award no study credit.
+The introduction lab was built to explore the initial teaching prompt and
+content representation. It remains runnable as a local development aid for
+trying sample or generated introductions and their recall exercises.
 
-The lab uses the [word content representation](word-content-representation.md)
-and shared provider, with a local draft workflow. The
+This page records its launch instructions and current draft behavior for
+contributors revisiting that work. Its longer-term role as a reusable
+prompt-development lab remains undecided. Preview navigation and responses are
+temporary and award no study credit.
+
+The aid uses the [word content representation](word-content-representation.md)
+and shared provider module, with a local draft workflow. The
 [generation guide](word-content-generation.md) explains the application's shared
 publication path, and [serving](word-content-serving.md) explains live study
 integration.
@@ -47,9 +50,9 @@ node --env-file=/absolute/path/to/.env --import tsx scripts/dev-introduction-lab
    its source content separately from the teaching player.
 5. With credentials configured, enter a new word, its pronunciation and optional
    guidance. Bootstrap it, inspect the uses and examples, then generate teaching.
-   Generating a package calls teaching and then practice from that exact saved
-   content. A successful bootstrap or complete package is saved as a new draft;
-   retrying never overwrites the source draft.
+   Generating a package makes teaching and then practice generation calls using
+   that exact saved content. A successful bootstrap or complete package is saved
+   as a new draft; retrying never overwrites the source draft.
 
 ## Persistence and compatibility
 
@@ -59,11 +62,12 @@ bootstrap draft has no teaching yet. The generate-teaching action creates
 another draft containing both teaching beats and practice rehearsals, retaining
 the exact content identity and supplying a new package identity.
 
-The [lab service](../server/word-content-lab/service.ts) validates teaching before
-calling practice, then validates and materializes their assembly before saving.
+The [lab service](../server/word-content-lab/service.ts) validates the generated
+teaching beats before making the practice generation call, then validates and
+materializes their assembly before saving.
 A failure reports the failing stage and saves no partial package. The lab does
-not persist individual successful components: retrying package generation calls
-teaching again, then practice. The shared application's
+not persist individual successful components: retrying package generation repeats
+teaching generation, then practice generation. The shared application's
 [component-retention mechanism](word-content-generation.md#retaining-work-without-exposing-a-partial-lesson)
 has a different recovery path because it must preserve background work across
 worker restarts.
@@ -83,10 +87,11 @@ or import it into shared application content.
 
 ## Inspecting generated content
 
-Teaching receives the full bootstrap document; practice receives its word and
-selected uses/notes without structured examples or example IDs. Practice authors
-direct cues or Mandarin phrase clozes with English frames. The app supplies the
-target-rehearsal answer contract and stores an empty instruction. The
+The teaching generation call receives the full bootstrap document; the practice
+generation call receives its word and selected uses/notes without structured
+examples or example IDs. The practice output contains direct cues or Mandarin
+phrase clozes with English frames. The app supplies the target-rehearsal answer
+contract and stores an empty instruction. The
 [generation explanation](word-content-generation.md#authoring-and-validation)
 describes that division and its validation limits.
 
