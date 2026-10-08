@@ -6,6 +6,7 @@ import {
   type ContentQualityTotals,
   type ContentQualityFilters,
   type ContentQualityItem,
+  type ContentQualityRatingLedger,
   type ContentQualityRating,
   type ContentQualityState,
   type ContentQualityTarget,
@@ -359,6 +360,53 @@ export function getContentQualityAnalytics(filters: ContentQualityFilters = {}):
       });
     })
   };
+}
+
+/** Current non-null votes, ordered newest first, plus counts grouped by exact snapshot. */
+export function getContentQualityRatingLedger(): ContentQualityRatingLedger {
+  const rows = getDb().prepare(`
+    SELECT i.content_key, i.kind, i.source_id, i.title, i.content_json, r.rating, r.updated_at
+    FROM learner_content_quality_ratings r
+    JOIN content_quality_items i ON i.content_key = r.content_key
+    ORDER BY r.updated_at DESC, i.content_key ASC, r.rating ASC
+  `).all() as Array<{
+    content_key: string;
+    kind: ContentQualityItem['kind'];
+    source_id: string;
+    title: string;
+    content_json: string;
+    rating: 'up' | 'down';
+    updated_at: string;
+  }>;
+  const bySnapshot = new Map<string, ContentQualityRatingLedger['snapshots'][number]>();
+  const ratings = rows.map((row) => {
+    let snapshot = bySnapshot.get(row.content_key);
+    if (!snapshot) {
+      snapshot = {
+        contentKey: row.content_key,
+        kind: row.kind,
+        sourceId: row.source_id,
+        title: row.title,
+        content: JSON.parse(row.content_json),
+        up: 0,
+        down: 0,
+        totalRatings: 0,
+      };
+      bySnapshot.set(row.content_key, snapshot);
+    }
+    snapshot[row.rating] += 1;
+    snapshot.totalRatings += 1;
+    return {
+      contentKey: row.content_key,
+      kind: row.kind,
+      sourceId: row.source_id,
+      title: row.title,
+      content: JSON.parse(row.content_json),
+      rating: row.rating,
+      updatedAt: row.updated_at,
+    };
+  });
+  return { ratings, snapshots: [...bySnapshot.values()], totalRatings: ratings.length };
 }
 
 export function validateContentQualitySchema(): void {

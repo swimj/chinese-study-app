@@ -48,19 +48,19 @@ observations, not verified attention or learning outcomes. Nothing is backfilled
 for encounters before the feature was installed. No answer typed by the learner
 is included in this overlay.
 
-The operator page (`#operator-usage`) includes content triage with UTC date and
-content-type filters, display counts, unique learner/content pairs, current
-thumb counts, source/model breakdowns, and exact-content inspection. Repeated exposure does not inflate
-votes. Coverage is rated learner/content pairs divided by exposed learner/content
-pairs. The thumbs-down fraction uses rated pairs as its denominator; an unrated
-item is not implicitly good or bad.
+The operator page (`#operator-usage`) leads with a recency-ordered ledger of
+current non-null learner/content ratings: last changed time (UTC), item details,
+content type, and vote. Column controls sort the ledger; filters inside the
+table select item text, type, and vote. A second table groups those current
+ratings by exact content snapshot and sorts by Useful, Needs work, or rated
+learner/content pairs. The total number of current ratings is the count of
+learner/content pairs that currently have a rating. Changing a vote moves its
+ledger row; clearing it removes the row. Earlier vote states are not retained.
 
-Date filters select the exposure cohort. Votes are the **current standing
-ratings** from those exposed learners, including subsequent edits or clears;
-the view is not a historical time series of opinions. Low-volume voluntary
-ratings are useful manual evidence, not a representative quality score or a
-causal comparison of models. Provenance is displayed where known; missing
-provenance remains unknown rather than guessed.
+This is a sparse, voluntary impression ledger, not a representative quality
+score or causal comparison of models. It deliberately focuses on ratings rather
+than un-rated displays. Exact content snapshots remain inspectable from either
+table.
 
 Access uses the existing operator allowlist. The operator can inspect the exact
 rated material, including private authored material, but this view does not

@@ -9,7 +9,7 @@ import { listModelInvocations, ModelInvocationInputError } from './db/model-invo
 import { getDebriefInterests, setDebriefInterests, getLatestSessionDebrief, getSessionDebrief, retrySessionDebrief, SessionDebriefNotFoundError, SessionDebriefRetryConflictError } from './db/session-debrief.ts';
 import { SessionDebriefInputError, validateDebriefInventory } from '../src/domain/session-debrief.ts';
 import { startSessionDebriefRuntime } from './session-debrief/worker.ts';
-import { ContentQualityInputError, parseContentQualityTarget, recordContentQualityEncounter, setContentQualityRating, getContentQualityAnalytics } from './db/content-quality.ts';
+import { ContentQualityInputError, parseContentQualityTarget, recordContentQualityEncounter, setContentQualityRating, getContentQualityAnalytics, getContentQualityRatingLedger } from './db/content-quality.ts';
 import type { ContentQualityKind } from '../src/domain/content-quality.ts';
 import cors from 'cors';
 import express, { type NextFunction, type Request, type Response } from 'express';
@@ -391,6 +391,13 @@ export function createApp(options: CreateAppOptions = {}) {
       if (error instanceof ContentQualityInputError) { res.status(400).json({ error: error.message }); return; }
       console.error('Content quality analytics failed', error);
       res.status(500).json({ error: 'Failed to load content quality analytics' });
+    }
+  });
+  app.get('/api/operator/content-quality/ratings', createOperatorAllowlistMiddleware(), (_req, res) => {
+    try { res.json(getContentQualityRatingLedger()); }
+    catch (error) {
+      console.error('Content quality rating ledger failed', error);
+      res.status(500).json({ error: 'Failed to load content quality rating ledger' });
     }
   });
 

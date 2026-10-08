@@ -878,6 +878,9 @@ review fallback remain available.
   Optional `kind`, `since`, `until` (inclusive UTC dates), `limit`, and `offset`
   select an exposure cohort with current standing votes. Returns full-filter
   totals and paginated exact-content snapshots without learner identifiers.
+- `GET /api/operator/content-quality/ratings`: operator-allowlisted current
+  non-null ratings ordered by last change, plus totals grouped by exact content
+  snapshot. Learner identifiers are omitted.
 
 See [content quality](content-quality.md) for supported target shapes and
 interpretation; the shared wire types live in `src/domain/content-quality.ts`.
