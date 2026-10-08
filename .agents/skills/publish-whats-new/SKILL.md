@@ -10,6 +10,44 @@ Use the database-backed What’s New blog for learner updates. Read
 JSON command input, and live-write procedure. Resolve repository links from
 the repository root when the skill loader does not resolve relative links.
 
+## Access the hosted service
+
+Launch remote commands from the execution tool using the operator's authenticated
+Fly CLI. An attached Codex app terminal or an existing SSH session is not a
+prerequisite; launching a command creates any execution session handle needed.
+The live database is `/data/app.db` on the hosted machine. Local `data/` files
+and backups do not establish current posts or the deployed source revision.
+
+Read the [hosted terminal-driver procedure](../../../docs/ops/hosted-beta-deployment.md#agent-or-automated-terminal-driver-procedure)
+before remote access. Resolve `<app-name>` from the `app` field in the operator's
+ignored `deploy/fly/.generated/fly.toml`, or an explicitly supplied hosted target.
+A new worktree may lack that generated file; check an available operator checkout
+for the target configuration without copying secrets or printing its entire
+contents. The template's `REPLACE_WITH_APP_NAME` is not a target.
+
+Use these read-only commands on the selected hosted app:
+
+```bash
+fly ssh console --app <app-name> --command \
+  'npm run --silent hosted:whats-new -- --data-dir=/data --list=true'
+fly ssh console --app <app-name> --command \
+  'npm run --silent hosted:inspect -- --data-dir=/data --litestream-socket=/data/litestream.sock'
+```
+
+When the managed sandbox blocks authenticated Fly state or network access,
+request the execution tool's required elevated permission on the first remote
+launch, as the runbook directs. A sandbox preflight failure does not establish
+missing authentication. Preserve any returned session handle and wait for that
+command's exit status before interpreting its result.
+
+Ask Justin for the specific missing prerequisite only when configuration cannot
+establish the target, the Fly CLI is unavailable, authentication actually fails,
+or execution permission is denied. Report the concrete blocker rather than
+asking him to attach a terminal. Respect a permission denial. If hosted access
+remains blocked, continue inspecting available code and release evidence and
+prepare a local proposal; identify missing post/deployment evidence, do not
+claim complete coverage, and do not claim the draft was saved remotely.
+
 ## Establish the covered changes
 
 Read current posts with `hosted:whats-new -- --data-dir=<absolute> --list=true`.
