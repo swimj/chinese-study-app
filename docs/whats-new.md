@@ -1,23 +1,28 @@
 # What’s New blog
 
-This document owns the blog’s content and publication contract, its persistence
-mechanism, and the operator procedure for updating it. Learners read the four
-latest published posts as previews on Home and the full archive in About →
-What’s New. A Home preview opens its individual post. Learners can collapse the
-entire Home updates column to reclaim its space; a compact control remains above
-the Home overview and restores the column. The collapsed choice persists while
-navigating within the open app and resets to expanded after a page reload.
-Operators can save drafts, publish posts, correct existing posts, and withdraw
-a post by returning it to draft.
-
-The Home updates section and its collapsed control are hidden while Connections
-occupies the centered, expanded view. Minimizing Connections restores the
-updates alongside the overview.
+What’s New is the learner-facing product update blog: it helps learners learn
+about shipped product changes and catch up when they return. This document
+defines the blog’s content and publication contract, learner reading and unread
+behavior, persistence, and operator workflow.
 
 Home and About share a catalog loaded once when the app opens. Session changes,
 navigation, and window focus reuse that catalog; a browser page refresh loads
-new content. A failed load can be retried explicitly. Notification badges keep
-their independent refresh and acknowledgement behavior.
+new content. A failed load can be retried explicitly. Learner attention state
+refreshes independently of the shared post catalog.
+
+## Home updates
+
+Home shows previews of the four latest published posts. Selecting a preview
+opens that post’s full article. Learners can collapse the whole updates column
+to reclaim its space; a compact control above the Home overview restores it.
+The column starts expanded. Its collapsed choice persists while navigating in
+the open app and resets to expanded after a page reload.
+
+When collapsed, the control shows the number of active unread posts when that
+number is greater than zero. When expanded, each active unread post among the
+four previews has its own “New” marker. The updates section and its control are
+hidden while Connections occupies the centered, expanded view; minimizing
+Connections restores the Home layout.
 
 ## Content and publication
 
@@ -50,11 +55,6 @@ coverage. Migrated historical posts have null provenance because their date
 alone cannot establish a deployed commit boundary.
 
 ## Unread updates
-
-Home owns the What’s New unread badges. When the updates column is collapsed, its
-control shows the count of active unread posts. When expanded, each active
-unread post among the four Home previews has its own “New” marker. About no
-longer carries a What’s New count badge.
 
 Each post remains unread until the learner reads it or 12 hours pass after it
 was first represented by a visible badge. In the collapsed state, the count
