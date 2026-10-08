@@ -31,7 +31,7 @@ import { studyProfile } from '../../study-profile';
 import type { RatingOption } from './session-rating';
 import type { SessionSummary } from './session-summary';
 import type { SessionFinalizationState } from './session-finalization';
-import { getStudySessionPanelView, hasServedProductionCueSupplement } from './session-selectors';
+import { getDisplayedReinforcementStreak, getStudySessionPanelView, hasServedProductionCueSupplement } from './session-selectors';
 import {
   isImeComposingEvent,
   getSessionPrimaryAction,
@@ -680,9 +680,11 @@ function StudySessionPanelContent({
               <span className="prompt-label">Cue</span>
               <strong className="prompt-value">{sentenceText(activePureCue.snapshot.stimulus)}</strong>
               {reviewInReinforcement ? <RecallChips
-                count={completionGate && completedReinforcementStreak !== null
-                  ? completedReinforcementStreak
-                  : activePureCueReinforcementStreak}
+                count={getDisplayedReinforcementStreak({
+                  completionGate,
+                  activeReinforcementStreak: activePureCueReinforcementStreak,
+                  completedReinforcementStreak,
+                })}
                 label="Practice again"
               /> : null}
             </div>
@@ -851,9 +853,11 @@ function StudySessionPanelContent({
               /> : activeWord.status === 'learning' ? <RecallChips total={2}
                 count={Number(activeLearningProgress?.coveredDirections.forward ?? false) + Number(activeLearningProgress?.coveredDirections.reverse ?? false)} label="Recall skills"
               /> : reviewInReinforcement ? <RecallChips
-                count={completionGate && completedReinforcementStreak !== null
-                  ? completedReinforcementStreak
-                  : activeReviewProgress?.reinforcementStreak ?? 0}
+                count={getDisplayedReinforcementStreak({
+                  completionGate,
+                  activeReinforcementStreak: activeReviewProgress?.reinforcementStreak ?? 0,
+                  completedReinforcementStreak,
+                })}
                 label="Practice again"
               /> : null}
             </div>

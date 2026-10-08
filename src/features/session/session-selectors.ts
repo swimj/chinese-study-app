@@ -268,6 +268,20 @@ export function getCompletedReinforcementStreak({
     : null;
 }
 
+export function getDisplayedReinforcementStreak({
+  completionGate,
+  activeReinforcementStreak,
+  completedReinforcementStreak,
+}: {
+  completionGate: boolean;
+  activeReinforcementStreak: number;
+  completedReinforcementStreak: number | null;
+}): number {
+  return completionGate && completedReinforcementStreak !== null
+    ? completedReinforcementStreak
+    : activeReinforcementStreak;
+}
+
 export function getActiveReviewState({
   reviewInReinforcement,
   reinforcementStreak,

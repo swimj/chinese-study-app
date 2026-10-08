@@ -546,7 +546,6 @@ export function useStudySession({
     setAnswerRevealed(false);
     resetProductionUi();
     resetContrastUi();
-    setCompletedReinforcementStreak(null);
   }
 
   function resetPersonalNotesEditorUi() {
@@ -566,6 +565,7 @@ export function useStudySession({
     resetPersonalNotesEditorUi();
     resetProductionUi();
     resetContrastUi();
+    setCompletedReinforcementStreak(null);
   }
 
   function createSessionUiSnapshot(): SessionUiSnapshot {
