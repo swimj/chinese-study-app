@@ -277,9 +277,12 @@ export type UsageDailySnapshot = {
   dau: number;
   sessionsCompleted: number;
   newWords: number;
-  modelSpendUsd: number;
-  medianStashSize: number | null;
-  medianSessionActiveMs: number | null;
+  practiceCompleted: number | null;
+  reviewCorrect: number;
+  reviewWrong: number;
+  proposalsAccepted: number;
+  meanStashSize: number | null;
+  sessionActiveMs: number;
   learnersInactive7d: number;
   sessionsAbandoned: number;
   learnersSpendWithoutAccepts: number;
@@ -815,6 +818,7 @@ export async function recordReviewSessionSummary({
   completedReviewActionCount,
   failedReviewActionCount,
   activeDurationMs,
+  completedLearningWordCount,
   debriefInventory,
 }: {
   sessionId: string;
@@ -822,6 +826,7 @@ export async function recordReviewSessionSummary({
   completedReviewActionCount: number;
   failedReviewActionCount: number;
   activeDurationMs: number;
+  completedLearningWordCount?: number;
   debriefInventory?: SessionDebriefInventoryItem[];
 }): Promise<void> {
   const response = await apiFetch(`${API_BASE}/api/review-session-summaries`, {
@@ -835,6 +840,7 @@ export async function recordReviewSessionSummary({
       completedReviewActionCount,
       failedReviewActionCount,
       activeDurationMs,
+      completedLearningWordCount,
       ...(debriefInventory === undefined ? {} : { debriefInventory }),
     }),
   });

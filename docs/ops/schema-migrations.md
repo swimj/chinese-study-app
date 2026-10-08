@@ -297,3 +297,16 @@ because the current revision advances.
 state. Existing legacy read boundaries remain effective. No historical
 first-exposure time is invented; unseen posts start their 12-hour window only
 after their navigation badge becomes visible in the new client.
+
+## Usage exercise totals (0034)
+
+`0034_usage_exercise_totals` adds nullable completed-learning counts to session
+summaries and the corresponding learner-scoped view. Legacy submissions leave
+unknown counts NULL; retries that omit the count retain an already-known value.
+It adds daily snapshot fields for practice, completed review outcomes, acceptance
+events, mean stash, and total active session time, plus a partial creation-time
+index for proposal-acceptance invocations. Existing snapshots gain review, time,
+and acceptance totals from durable records. Historical practice and mean stash
+remain NULL; no attempts, word state, or debrief inventories are interpreted to
+reconstruct them. Legacy spend and median columns remain stored but are retired
+from the usage API. This release requires the offline schema upgrade procedure.

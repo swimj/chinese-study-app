@@ -763,6 +763,7 @@ export function useStudySession({
             sessionId: finalizingSummary.sessionId,
             completedAt: finalizingSummary.completedAt ?? new Date().toISOString(),
             ...getCompletedExerciseCounts(finalizingSummary),
+            completedLearningWordCount: finalizingSummary.completedLearningWords,
             activeDurationMs,
             ...(studyProfile.id === 'mandarin' ? { debriefInventory: finalizingSummary.debriefInventory } : {}),
           });

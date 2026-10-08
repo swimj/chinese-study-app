@@ -232,7 +232,7 @@ test('exercise compensation migration starts empty and preserves existing summar
     migrateDatabase(db);
     assertSchemaCurrent(db);
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM learner_exercise_compensation_days').get()?.n, 0);
-    assert.deepEqual(db.prepare('SELECT * FROM learner_owned_review_session_summaries').all(), summary);
+    assert.deepEqual(db.prepare('SELECT * FROM learner_owned_review_session_summaries').all().map(row => ({ ...row })), summary.map(row => ({ ...row, learning_completed_count: null })));
     assert.deepEqual(db.prepare('SELECT * FROM pure_cue_scheduler_compensation_snapshots').all(), restorations);
     assert.deepEqual(migrateDatabase(db), []);
   } finally { db.close(); }
@@ -250,7 +250,7 @@ test('session debrief migration preserves valued completion rows and starts with
     assert.deepEqual(migrateDatabase(db), schemaMigrations
       .filter((migration) => migration.id >= 'app_schema:0023_session_debrief')
       .map((migration) => migration.id));
-    assert.deepEqual(db.prepare('SELECT * FROM learner_owned_review_session_summaries').all(), old);
+    assert.deepEqual(db.prepare('SELECT * FROM learner_owned_review_session_summaries').all().map(row => ({ ...row })), old.map(row => ({ ...row, learning_completed_count: null })));
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM learner_session_debrief_jobs').get()?.count, 0);
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM learner_session_debrief_attempts').get()?.count, 0);
     assert.deepEqual(migrateDatabase(db), []);

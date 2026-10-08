@@ -4,7 +4,7 @@ import type { Word } from '../src/types.ts';
 import type { PureCueSessionReviewItem, SessionStudyItem } from '../src/domain/study-actions.ts';
 import { createBucketSessionState, markActiveSessionUnitStarted, getActiveSessionUnit, rateActiveSessionUnit,
   rateActiveContrastSelectionUnit, rateActivePureCueProductionUnit, completeActiveUnstudiedIntro, beginBucketDrainSession } from '../src/lib/session-state.ts';
-import { createSessionSummary, updateSessionSummaryForRating, updateSessionSummaryForPureCueRating } from '../src/features/session/session-summary.ts';
+import { createSessionSummary, getCompletedExerciseCounts, updateSessionSummaryForRating, updateSessionSummaryForPureCueRating } from '../src/features/session/session-summary.ts';
 import { validateDebriefInventory } from '../src/domain/session-debrief.ts';
 
 function word(id: string, status: Word['status'] = 'review'): Word {
@@ -32,6 +32,10 @@ test('reinforcement records only a covered exercise; immutable summary restores 
     state = transition.state;
   }
   assert.deepEqual(current.debriefInventory, [{ word: '选', pinyin: 'A-pinyin' }]);
+  assert.deepEqual(getCompletedExerciseCounts(current), {
+    completedReviewActionCount: 1,
+    failedReviewActionCount: 1,
+  });
   // Undo is the controller's snapshot assignment; no array or object was mutated.
   current = initial;
   assert.deepEqual(current.debriefInventory, []);
@@ -53,6 +57,12 @@ test('covered learning and new word each add one row; unvisited drain queue adds
     }
     assert.equal(state.phase, 'completed');
     assert.deepEqual(current.debriefInventory, [{ word: status, pinyin: `${status}-pinyin` }]);
+    assert.equal(current.completedLearningWords, status === 'learning' ? 1 : 0);
+    assert.equal(current.completedUnstudiedWords, status === 'unstudied' ? 1 : 0);
+    assert.deepEqual(getCompletedExerciseCounts(current), {
+      completedReviewActionCount: 0,
+      failedReviewActionCount: 0,
+    });
   }
   const unvisited = createBucketSessionState({ sessionId: 'inventory', buckets: { review: [], learning: [word('unvisited', 'learning')], unstudied: [] } });
   beginBucketDrainSession(unvisited);

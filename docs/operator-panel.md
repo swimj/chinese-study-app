@@ -29,6 +29,29 @@ periods cover today and the last seven calendar days including today; the
 selection summary reflects the active filters. Refresh reloads the accounting
 snapshot. The view does not use server-side pagination.
 
+## Usage metrics
+
+Usage shows today live and seven completed UTC days as saved snapshots. Each day
+counts completed learning word encounters as **Practice**, separately from new
+words. **Review correct** and **Review wrong** count completed review exercises
+without and with a lapse, including contrast selection and pure cues. Successful
+reinforcement after a lapse adds no exercise and does not turn that exercise into
+a correct review. These counts and total active session time come from completed
+session summaries; work in incomplete sessions is not included.
+
+**Proposals accepted** counts durable proposal-acceptance invocations on their UTC
+creation day, including exact and revised acceptances, regardless of later
+application outcome or withdrawn authorization. Manual operations and replacement
+operations are excluded. **Mean stash** averages all learners, including empty
+stashes, at the snapshot capture time. Late captures use the stash at capture time,
+not a reconstruction of the earlier day's stash.
+
+A dash marks unavailable data. Existing snapshot medians cannot supply historical
+means. Historical practice counts are not reconstructed; any completed summary
+without the new learning count makes that day's practice total unavailable. A day
+with no completed sessions has zero practice. Spend accounting is available in
+Model invocations; the existing sparse spend-without-accepts signal remains.
+
 ## Service banner workflow
 
 The Service banner view shows the current active notice and its expiry. The

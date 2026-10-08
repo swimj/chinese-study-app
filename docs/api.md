@@ -170,9 +170,11 @@ workflows.
 
 `GET /api/operator/usage-pulse` returns content-free cohort aggregates: live
 `today` plus the last 7 completed UTC-day snapshots (`dau`, sessions, new words,
-model spend, median stash, median session time, and sparse scenario counts). The
+practice completed, review correct/wrong, proposals accepted, mean stash, total
+active session time, and sparse scenario counts). The
 configured hosted smoke learner (`APP_SMOKE_CLERK_USER_ID`) is omitted from the
-inactive-7d count.
+inactive-7d count. See [usage metric definitions](operator-panel.md#usage-metrics)
+for units and historical availability.
 
 `GET /api/operator/model-invocations` returns `{ rows }`: timestamp,
 provider/model identifier, invocation type, learner identity and display name,

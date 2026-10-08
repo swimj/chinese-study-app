@@ -2513,6 +2513,7 @@ export function recordReviewSessionSummary({
   completedReviewActionCount,
   failedReviewActionCount,
   activeDurationMs,
+  completedLearningWordCount,
   debriefInventory,
 }: {
   sessionId: string;
@@ -2520,6 +2521,7 @@ export function recordReviewSessionSummary({
   completedReviewActionCount: number;
   failedReviewActionCount: number;
   activeDurationMs: number;
+  completedLearningWordCount?: number;
   debriefInventory?: SessionDebriefInventoryItem[];
 }) {
   const normalizedSessionId = sessionId.trim();
@@ -2543,6 +2545,11 @@ export function recordReviewSessionSummary({
     throw new Error('Expected non-negative integer activeDurationMs');
   }
 
+  if (completedLearningWordCount !== undefined &&
+    (!Number.isInteger(completedLearningWordCount) || completedLearningWordCount < 0)) {
+    throw new Error('Expected non-negative integer completedLearningWordCount');
+  }
+
   if (debriefInventory !== undefined) validateDebriefInventory(debriefInventory);
   const ownsTransaction = debriefInventory !== undefined;
   if (ownsTransaction) getDb().exec('BEGIN IMMEDIATE');
@@ -2554,14 +2561,16 @@ export function recordReviewSessionSummary({
         day_key,
         completed_count,
         failed_count,
-        active_duration_ms
-      ) VALUES (?, ?, ?, ?, ?, ?)
+        active_duration_ms,
+        learning_completed_count
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(learner_id, session_id) DO UPDATE SET
         completed_at = excluded.completed_at,
         day_key = excluded.day_key,
         completed_count = excluded.completed_count,
         failed_count = excluded.failed_count,
-        active_duration_ms = excluded.active_duration_ms
+        active_duration_ms = excluded.active_duration_ms,
+        learning_completed_count = COALESCE(excluded.learning_completed_count, learner_owned_review_session_summaries.learning_completed_count)
     `).run(
       normalizedSessionId,
       completedAt,
@@ -2569,6 +2578,7 @@ export function recordReviewSessionSummary({
       completedReviewActionCount,
       failedReviewActionCount,
       activeDurationMs,
+      completedLearningWordCount ?? null,
     );
     if (debriefInventory !== undefined && config.studyProfile === 'mandarin') enqueueSessionDebrief(normalizedSessionId, completedAt, debriefInventory);
     if (ownsTransaction) getDb().exec('COMMIT');
