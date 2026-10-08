@@ -4485,6 +4485,7 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1
 .home-updates { min-width: 0; border-top: 1px solid var(--border); padding-top: 1.5rem; }
 .home-updates-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: .75rem; }
 .home-updates-heading h2 { margin: 0; font-size: 1.25rem; font-weight: 600; }
+.home-updates-title { min-width: 0; }
 .home-updates-all { padding: .35rem 0; background: transparent; color: var(--accent); font-size: .9rem; }
 .home-updates-all:hover:not(:disabled) { background: transparent; text-decoration: underline; }
 .home-update-list { list-style: none; padding: 0; margin: .75rem 0 0; display: grid; gap: .4rem; }
@@ -4494,7 +4495,6 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1
 .home-update-title { font-weight: 600; }
 .home-update-title span { color: var(--accent); }
 .home-update-summary { color: var(--text-secondary); font-size: .95rem; }
-.home-updates-actions { display: flex; align-items: center; gap: 1rem; }
 .home-updates-collapse { padding: .35rem 0; background: transparent; color: var(--text-secondary); font-size: .9rem; }
 .home-updates-collapse:hover:not(:disabled) { background: transparent; text-decoration: underline; }
 .home-update-unseen { display: inline-block; margin-left: .55rem; color: var(--accent); font-size: .75rem; font-weight: 600; }

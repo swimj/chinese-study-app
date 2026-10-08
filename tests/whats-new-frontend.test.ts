@@ -54,7 +54,8 @@ test('Home previews mark only the active unread posts supplied by attention stat
     unseenPostIds: ['unread'], onOpenPost: () => {}, onViewAll: () => {}, onCollapse: () => {},
   }));
   assert.match(html, /Unread update/);
-  assert.match(html, /Hide updates/);
+  assert.match(html, /<h2 id="home-updates-title">What’s new<\/h2>/);
+  assert.match(html, /aria-label="Hide What’s new" aria-expanded="true"[^>]*>Hide<\/button>/);
   assert.equal((html.match(/Unread update/g) ?? []).length, 1);
 });
 

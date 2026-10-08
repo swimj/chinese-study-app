@@ -19,7 +19,7 @@ const OPERATOR_TABS = [
   { id: 'invocations', label: 'Model invocations' },
   { id: 'quality', label: 'Content quality' },
   { id: 'failures', label: 'Preparation failures' },
-  { id: 'whats-new', label: 'What’s New' },
+  { id: 'whats-new', label: 'What’s new' },
   { id: 'banner', label: 'Service banner' },
 ] as const;
 type OperatorTab = typeof OPERATOR_TABS[number]['id'];
