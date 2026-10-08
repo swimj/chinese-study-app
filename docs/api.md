@@ -99,8 +99,8 @@ exposed as a learner-controlled HTTP endpoint.
 
 The status payload also returns `serviceBanner`: `null`, or `{ message, postedAt, expiresAt }`
 for the current unexpired operator-posted signed-in notice. Expired and cleared
-notices are omitted. The banner is not public; it is on this authenticated
-status read only.
+notices are omitted. Operators can also read and manage the banner through the
+operator API below.
 
 The status payload also returns `dietDecksActive`: deck-based diet admission
 is active when the Mandarin profile has a deck manifest. The former
@@ -158,41 +158,27 @@ accepts a client-selected learner; writes use the authenticated learner context.
 | GET | `/api/operator/model-invocations?from=YYYY-MM-DD&to=YYYY-MM-DD` | User-attributed model calls in an inclusive UTC date range |
 | GET | `/api/operator/word-preparation/failures` | Shared preparation failures and attempt history |
 | POST | `/api/operator/word-preparation/:workId/retry` | Retry paused work; empty `{}` body and operator actor audit |
+| GET | `/api/operator/service-banner` | Current active banner |
+| PUT | `/api/operator/service-banner` | Set a banner with `{ message, expiresAt? }` |
+| DELETE | `/api/operator/service-banner` | Clear the current banner |
 
-Bookmark-only frontend surface: `#operator-usage` (not in primary nav).
-Requires the caller’s Clerk user id (or trusted-local learner id / `trusted_local`
-sentinel) to appear in `APP_OPERATOR_CLERK_USER_IDS`. Returns content-free
-cohort aggregates: live `today` plus the last 7 completed UTC-day snapshots
-(`dau`, sessions, new words, model spend, median stash, median session time,
-and sparse scenario counts). The configured hosted smoke learner
-(`APP_SMOKE_CLERK_USER_ID`) is omitted from the inactive-7d count. Empty
-allowlist fails closed with `403 OPERATOR_FORBIDDEN`. The same allowlist protects
-preparation diagnostics and retries. Retry preserves successful earlier stages;
-ordinary learner requests do not reset exhausted budgets.
+Operator routes require the caller’s Clerk user id (or trusted-local learner id /
+`trusted_local` sentinel) in `APP_OPERATOR_CLERK_USER_IDS`. An empty allowlist
+fails closed with `403 OPERATOR_FORBIDDEN`. See the
+[operator panel guide](operator-panel.md) for the bookmark-only UI and its
+workflows.
 
-The operator surface has Usage, Model invocations, Content quality, and Preparation
-failures tabs. The invocation endpoint uses the same operator allowlist and returns
-`{ rows }`: timestamp, provider/model identifier, invocation type, learner identity
-and display name, `latencyMs`, status, USD spend, and its reported/estimated/unknown
-basis. Optional dates are validated; omitting them returns the full ledger without
-silent truncation. Unknown costs remain unknown and are counted separately.
+`GET /api/operator/usage-pulse` returns content-free cohort aggregates: live
+`today` plus the last 7 completed UTC-day snapshots (`dau`, sessions, new words,
+model spend, median stash, median session time, and sparse scenario counts). The
+configured hosted smoke learner (`APP_SMOKE_CLERK_USER_ID`) is omitted from the
+inactive-7d count.
 
-The ledger table's column headers expose sorting, grouping, and type-specific
-filters: inclusive UTC dates, numeric ranges, and discrete multi-select values
-with All/None controls. The initial timestamp filter selects the last seven UTC
-calendar days including today. Filters combine across columns and remain available
-when rows are grouped. Optional light-red shading identifies failed, timed-out,
-and invalid-response calls.
-
-The summary table compares Today, Last 7 days (including today), and Current
-selection using invocation count, known USD spend, and unknown-spend count. Fixed
-periods ignore table filters; Current selection includes every matching row. The
-frontend loads the full accounting dataset for exact summaries and filter options,
-then progressively reveals rows as the table is scrolled, with a Load more button
-for keyboard access. Rendering fewer rows does not change aggregates. Refresh
-reloads the accounting snapshot; this bounded beta implementation does not use
-server-side pagination.
-
+`GET /api/operator/model-invocations` returns `{ rows }`: timestamp,
+provider/model identifier, invocation type, learner identity and display name,
+`latencyMs`, status, USD spend, and its reported/estimated/unknown basis. Optional
+dates are validated; omitting them returns the full ledger without silent
+truncation. Unknown costs remain unknown and are counted separately.
 The ledger records actual production transport attempts from this release onward,
 including failed attempts. Latency covers the provider request through response
 receipt, excluding later domain validation and persistence. A timeout records
@@ -201,11 +187,21 @@ failures record `failed` with measured latency. Invalid JSON, malformed response
 truncation, or rejected schema/domain output record `invalid_response`; validation
 may update an already `completed` call to this status without changing its cost or
 latency. Completed still does not imply published model output. Historical calls
-and unfinished calls have null latency; elapsed times are never invented. It stores no prompts, answers, or response bodies. OpenRouter
-`usage.cost` takes precedence over token-price estimates. Other current transports
-supply token usage rather than per-request USD charges; estimates use pinned pricing
-snapshots. Existing usage-pulse spend snapshots retain their reflection/intake scope.
-No historical invocation rows or missing user attribution are fabricated.
+and unfinished calls have null latency; elapsed times are never invented. It
+stores no prompts, answers, or response bodies. OpenRouter `usage.cost` takes
+precedence over token-price estimates. Other current transports supply token usage
+rather than per-request USD charges; estimates use pinned pricing snapshots.
+Existing usage-pulse spend snapshots retain their reflection/intake scope. No
+historical invocation rows or missing user attribution are fabricated.
+
+Service-banner messages are single-line text up to 280 characters. Omitting
+`expiresAt` uses the 24-hour default. `PUT` returns
+`{ serviceBanner: { message, postedAt, expiresAt } }`; `GET` returns that shape or
+`{ serviceBanner: null }`, and `DELETE` returns `{ status }` with `cleared` or
+`noop`. Invalid messages or expiry timestamps return `400`. Writes use the
+authenticated operator as the audit actor. Preparation retry preserves
+successful earlier stages; ordinary learner requests do not reset exhausted
+budgets.
 
 ## Words and meanings
 

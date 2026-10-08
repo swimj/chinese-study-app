@@ -6,6 +6,10 @@ import { PreparationFailuresPanel } from './PreparationFailuresPanel';
 import { ContentQualityPanel } from './ContentQualityPanel';
 import {
   fetchOperatorUsagePulse,
+  fetchOperatorServiceBanner,
+  saveOperatorServiceBanner,
+  clearOperatorServiceBanner,
+  type ServiceBanner,
   type UsageDailySnapshot,
   type UsagePulsePayload,
 } from '../services/api';
@@ -16,6 +20,7 @@ const OPERATOR_TABS = [
   { id: 'quality', label: 'Content quality' },
   { id: 'failures', label: 'Preparation failures' },
   { id: 'whats-new', label: 'What’s New' },
+  { id: 'banner', label: 'Service banner' },
 ] as const;
 type OperatorTab = typeof OPERATOR_TABS[number]['id'];
 
@@ -47,7 +52,76 @@ export function OperatorUsagePulsePage() {
       {tab === 'quality' && <ContentQualityPanel />}
       {tab === 'failures' && <PreparationFailuresPanel />}
       {tab === 'whats-new' && <WhatsNewEditor />}
+      {tab === 'banner' && <ServiceBannerPanel />}
     </div>
+  </section>;
+}
+
+function ServiceBannerPanel() {
+  const [banner, setBanner] = useState<ServiceBanner | null>(null);
+  const [message, setMessage] = useState('');
+  const [localExpiry, setLocalExpiry] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchOperatorServiceBanner().then(({ serviceBanner }) => {
+      if (cancelled) return;
+      setBanner(serviceBanner);
+      setMessage(serviceBanner?.message ?? '');
+    }).catch((err: unknown) => {
+      if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load service banner');
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function save(expiresAt?: string) {
+    setBusy(true); setError(null); setNotice(null);
+    try {
+      const result = await saveOperatorServiceBanner({ message, ...(expiresAt ? { expiresAt } : {}) });
+      setBanner(result.serviceBanner);
+      setMessage(result.serviceBanner.message);
+      setNotice('Service banner saved.');
+    } catch (err) { setError(err instanceof Error ? err.message : 'Failed to save service banner'); }
+    finally { setBusy(false); }
+  }
+
+  async function clear() {
+    setBusy(true); setError(null); setNotice(null);
+    try {
+      const result = await clearOperatorServiceBanner();
+      setBanner(null); setMessage(''); setLocalExpiry('');
+      setNotice(result.status === 'cleared' ? 'Service banner cleared.' : 'There was no active banner.');
+    } catch (err) { setError(err instanceof Error ? err.message : 'Failed to clear service banner'); }
+    finally { setBusy(false); }
+  }
+
+  const expiryDate = localExpiry ? new Date(localExpiry) : null;
+  const invalidExpiry = !expiryDate || !Number.isFinite(expiryDate.getTime()) || expiryDate.getTime() <= Date.now();
+
+  return <section className="operator-service-banner">
+    <h2>Service banner</h2>
+    <p className="notes">Post a notice shown to signed-in learners outside an active study session.</p>
+    {banner ? <p><strong>Current banner:</strong> {banner.message}<br /><span className="notes">Expires {new Date(banner.expiresAt).toLocaleString()}</span></p>
+      : <p className="notes">No active banner.</p>}
+    {error && <p role="alert" className="error-message">{error}</p>}
+    {notice && <p role="status" className="notes">{notice}</p>}
+    <div className="operator-banner-action">
+      <h3>Planned downtime</h3>
+      <p className="notes">Choose when the notice should expire in your local time.</p>
+      <label>Downtime end time <input type="datetime-local" value={localExpiry} onChange={(event) => setLocalExpiry(event.target.value)} /></label>
+      <button type="button" disabled={busy || !localExpiry || invalidExpiry} onClick={() => expiryDate && void save(expiryDate.toISOString())}>Set planned downtime</button>
+    </div>
+    <div className="operator-banner-action">
+      <h3>Custom message</h3>
+      <label>Message (280 characters or less)
+        <textarea rows={3} maxLength={280} value={message} onChange={(event) => setMessage(event.target.value)} />
+      </label>
+      <button type="button" disabled={busy || !message.trim() || message.length > 280} onClick={() => void save()}>Set custom message</button>
+    </div>
+    <button type="button" className="secondary-button" disabled={busy || !banner} onClick={() => void clear()}>Clear banner</button>
   </section>;
 }
 

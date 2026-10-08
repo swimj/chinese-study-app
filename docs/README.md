@@ -52,6 +52,8 @@ linking to the intended guarantees they realize and any known gaps.
   currently identifies itself as navigation-only.
 - [API map](api.md), [database map](server-db.md), and
   [frontend map](../SPECS/frontend-architecture-map.md): focused code references.
+- [Operator panel guide](operator-panel.md): how to reach and use the
+  bookmark-only operator surface.
 - [Structured review content](structured-review-content.md),
   [reflection frontend](reflection-frontend-architecture.md), and
   [content quality](content-quality.md): related feature realization and operator
@@ -85,6 +87,8 @@ hosted operations, and contributor development clearly separated.
   [observability](ops/hosted-observability.md),
   [diagnostics](ops/error-diagnostics.md), and
   [schema migrations](ops/schema-migrations.md).
+- Operator interface: [operator panel guide](operator-panel.md), with the
+  [API reference](api.md#operator-view) describing its HTTP contracts.
 - Blog publication: [manual editor and operator command](whats-new.md#manual-operator-editor),
   including the skill’s interactive draft-review procedure.
 - Contributor environments: [scripts](scripts.md) and the
