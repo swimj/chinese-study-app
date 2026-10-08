@@ -1,6 +1,8 @@
 # Frontend Architecture Map
 
-Navigation map for the React frontend. Product behavior is defined by the canonical specs, especially:
+For contributors tracing the React frontend, this document maps component
+ownership, controller wiring, and session interaction handling. Product behavior
+is defined by the canonical specs, especially:
 
 - `SPECS/learning-review-model.md`
 - `SPECS/session-covering-criteria.md`
@@ -174,9 +176,8 @@ bounded server-side selection and result loading.
 - personal notes editor state
 - active word meaning loading and visibility updates
 - keyboard shortcuts and focus effects, using `session-keyboard.ts` as the
-  shared state-to-action/shortcut description so the panel and controller
-  cannot drift; Enter on the completed card opens the saved summary; Space on
-  the finalized summary closes it
+  shared state-to-action/shortcut descriptions for the panel and controller
+  (see [Session keyboard interactions](#session-keyboard-interactions))
 - accepted production with a served cue supplement: an `await-supplement`
   Continue beat before rating; cards without a supplement still rate immediately
 
@@ -212,6 +213,45 @@ The hook returns:
 The completed-session finalization, evidence accumulator, and reflection review
 workspace are mapped separately in the
 [reflection frontend architecture map](../docs/reflection-frontend-architecture.md).
+
+### Session keyboard interactions
+
+The in-app shortcut guide provides the current card's key bindings and their
+availability. Button hints expose the same actions on hover and keyboard focus.
+Use that guide for a key lookup; this section explains how contributors keep
+keyboard behavior aligned with the displayed controls.
+
+[`session-keyboard.ts`](../src/features/session/session-keyboard.ts) resolves
+keys against the current interaction state and supplies descriptions for the
+guide. [`useStudySession`](../src/features/session/useStudySession.ts) dispatches
+commands to the same handlers used by the buttons in
+[`StudySessionPanel`](../src/features/session/StudySessionPanel.tsx). Availability
+must follow the displayed card: a correction card can refer to a frozen attempt
+while the session already has a different active item. For example, the
+reflection-request shortcut (`R`) targets that frozen attempt until the learner
+continues, then targets the active eligible production review card.
+
+Focus is part of command resolution. Ordinary letter shortcuts leave editable
+fields alone. Production input explicitly accepts submission with Enter and
+**No clue** with Shift+Enter when the response is empty. The latter ignores IME
+composition and cannot fall through to native form submission when a typed
+response makes No clue unavailable. The controller also suspends study commands
+while a transition is busy or the notes editor or shortcut guide is open.
+Native disclosure activation remains with the disclosure. The finalized
+Mandarin summary yields to the debrief's keyboard handler.
+
+Some surfaces own their own handlers. [Content feedback](../docs/content-quality.md)
+explains which cue or supplement owns the bracket shortcuts; the
+[debrief contract](session-debrief.md) describes connection navigation. Those
+feature-specific explanations remain with their features. Learning and
+reflection contracts describe the effects of invoking actions, independently
+of their current key bindings.
+
+When changing a binding, check its resolver, button hint, guide entry, and focus
+behavior together. `tests/session-keyboard.test.ts` covers command resolution;
+a browser check is also needed for event propagation, native form submission,
+and hint visibility. A passing resolver test alone does not establish that the
+focused input dispatches the command correctly.
 
 ## Boundaries
 

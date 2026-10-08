@@ -2,8 +2,8 @@
 
 Content feedback is a descriptive overlay. A learner has one optional thumbs-up
 or thumbs-down rating for an exact content item/revision, reused on later
-encounters. Clicking the selected thumb clears it. This is a judgment of the
-material, separate from whether the learner recalled the answer.
+encounters. Clicking the selected feedback button clears it. This is a judgment
+of the material, separate from whether the learner recalled the answer.
 
 The first release covers authored production cues, pure cues, contrast prompts,
 whole teaching introductions, individual package rehearsals, and post-reveal
@@ -21,6 +21,8 @@ The physical bracket keys also work with Chinese/Pinyin punctuation enabled.
 The visible controls advertise which item owns those shortcuts. A visible
 supplement takes shortcut priority over its cue; both remain clickable. Typing,
 IME composition, modifier combinations, and held-key repeats do not vote.
+The [frontend interaction section](../SPECS/frontend-architecture-map.md#session-keyboard-interactions)
+explains how session commands and focused controls share keyboard input.
 
 Feedback saves immediately and independently of study commits and Undo. Ending
 or abandoning a session does not remove it. Rating never suppresses content,
