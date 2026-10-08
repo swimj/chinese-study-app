@@ -76,7 +76,15 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
   const [currentPage, setCurrentPage] = useState<AppPageKey>(readInitialPage);
   const [aboutView, setAboutView] = useState<AboutView>('getting-started');
   const [selectedUpdateId, setSelectedUpdateId] = useState<string | null>(null);
-  const [homeUpdatesCollapsed, setHomeUpdatesCollapsed] = useState(false);
+  const homeUpdatesCollapsedKey = `home-updates-collapsed:v1:${accountScope}`;
+  const [homeUpdatesCollapsed, setHomeUpdatesCollapsed] = useState(() => {
+    try { return window.localStorage.getItem(homeUpdatesCollapsedKey) === 'true'; }
+    catch { return false; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem(homeUpdatesCollapsedKey, String(homeUpdatesCollapsed)); }
+    catch { /* Storage restrictions must not prevent toggling updates. */ }
+  }, [homeUpdatesCollapsedKey, homeUpdatesCollapsed]);
   const [wordsView, setWordsView] = useState<'stash' | 'my-words'>('stash');
   const myWords = useMyWordsController(currentPage === 'priority' && wordsView === 'my-words');
   const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);

@@ -56,11 +56,11 @@ export function HomeUpdates({ catalog, unseenPostIds = [], onUnseenBadgeVisible 
   const { posts, error, retry } = catalog;
   return <aside className="home-updates" aria-labelledby="home-updates-title">
     <div className="home-updates-heading">
-      <h2 id="home-updates-title">Updates</h2>
-      <div className="home-updates-actions">
+      <div className="home-updates-title">
+        <h2 id="home-updates-title">What’s new</h2>
         <button type="button" className="home-updates-all" onClick={onViewAll}>View all <span aria-hidden="true">→</span></button>
-        <button type="button" className="home-updates-collapse" aria-expanded="true" onClick={onCollapse}>Hide updates</button>
       </div>
+      <button type="button" className="home-updates-collapse" aria-label="Hide What’s new" aria-expanded="true" onClick={onCollapse}>Hide</button>
     </div>
     {posts === null && !error ? <p className="notes" role="status">Loading updates…</p> : null}
     {error ? <p className="notes" role="status">Couldn’t refresh updates. <button type="button" className="secondary-button" onClick={retry}>Try again</button></p> : null}

@@ -1413,7 +1413,7 @@ export async function retrySessionDebrief(sessionId: string, signal?: AbortSigna
 
 export async function fetchWhatsNew(): Promise<{ posts: WhatsNewPost[] }> {
   const response = await apiFetch(`${API_BASE}/api/whats-new`);
-  if (!response.ok) throw new Error(await readApiErrorMessage(response, "Failed to load What's New"));
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Failed to load What’s new'));
   return response.json();
 }
 

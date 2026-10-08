@@ -6,7 +6,7 @@ const ABOUT_VIEWS = [
   ['getting-started', 'Getting Started'],
   ['usage-guide', 'Usage Guide'],
   ['known-issues', 'Known Issues'],
-  ['whats-new', "What's New"],
+  ['whats-new', 'What’s new'],
 ] as const;
 
 export type AboutView = typeof ABOUT_VIEWS[number][0];

@@ -12,11 +12,14 @@ refreshes independently of the shared post catalog.
 
 ## Home updates
 
-Home shows previews of the four latest published posts. Selecting a preview
-opens that post’s full article. Learners can collapse the whole updates column
+Home’s “What’s new” section shows previews of the four latest published posts.
+“View all” below the heading opens the archive; “Hide” collapses the section.
+Selecting a preview opens that post’s full article. Learners can collapse the whole updates column
 to reclaim its space; a compact control above the Home overview restores it.
-The column starts expanded. Its collapsed choice persists while navigating in
-the open app and resets to expanded after a page reload.
+The column starts expanded. Its collapsed choice persists across navigation and
+page reloads in the same browser, separately for each account. Reopening the
+column saves the expanded choice too. If browser storage is unavailable, the
+choice lasts only while the app remains open.
 
 When collapsed, the control shows the number of active unread posts when that
 number is greater than zero. When expanded, each active unread post among the

@@ -49,7 +49,7 @@ export function WhatsNewEditor() {
       });
       setPosts((previous) => [post, ...previous.filter((item) => item.id !== post.id)]);
       setSelected(post); setFields(fieldsFor(post));
-      setMessage(post.status === 'published' ? 'Saved. This post is visible in What’s New.' : 'Draft saved. This post is hidden from learners.');
+      setMessage(post.status === 'published' ? 'Saved. This post is visible in What’s new.' : 'Draft saved. This post is hidden from learners.');
     } catch (err) { setError(err instanceof Error ? err.message : 'Failed to save post'); }
     finally { setSaving(false); }
   }
@@ -62,7 +62,7 @@ export function WhatsNewEditor() {
     sourceFrom: null, sourceThrough: null, updatedAt: '',
   };
   return <section className="whats-new-editor">
-    <h2>What’s New posts</h2>
+    <h2>What’s new posts</h2>
     <p className="notes">Write plain text. Leave a blank line between paragraphs. Published posts appear immediately without restarting the app.</p>
     {loading ? <p role="status">Loading posts…</p> : null}
     <div className="whats-new-editor-picker">
@@ -83,7 +83,7 @@ export function WhatsNewEditor() {
       <label>Preview text<textarea value={fields.summary} disabled={saving} onChange={(event) => field('summary', event.target.value)} required rows={3} maxLength={300} aria-describedby="whats-new-summary-help" /></label>
       <p id="whats-new-summary-help" className="notes">A short description for Home updates, up to 300 characters.</p>
       <label>Paragraphs<textarea value={fields.body} disabled={saving} onChange={(event) => field('body', event.target.value)} required rows={12} maxLength={100000} /></label>
-      {selected?.status === 'published' ? <p className="notes">Saving a draft removes this post from What’s New. Publishing edits updates the visible post without marking it unread again.</p> : <p className="notes">A draft stays hidden. Publishing makes it visible to learners and marks a new post unread.</p>}
+      {selected?.status === 'published' ? <p className="notes">Saving a draft removes this post from What’s new. Publishing edits updates the visible post without marking it unread again.</p> : <p className="notes">A draft stays hidden. Publishing makes it visible to learners and marks a new post unread.</p>}
       <div className="whats-new-editor-actions">
         <button type="button" className="secondary-button" disabled={loading || saving || !valid} onClick={() => void save('draft')}>{selected?.status === 'published' ? 'Unpublish and save draft' : 'Save draft'}</button>
         <button type="button" disabled={loading || saving || !valid} onClick={() => void save('published')}>{saving ? 'Saving…' : selected?.status === 'published' ? 'Publish changes' : 'Publish post'}</button>
