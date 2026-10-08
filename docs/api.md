@@ -99,8 +99,8 @@ exposed as a learner-controlled HTTP endpoint.
 
 The status payload also returns `serviceBanner`: `null`, or `{ message, postedAt, expiresAt }`
 for the current unexpired operator-posted signed-in notice. Expired and cleared
-notices are omitted. The banner is not public; it is on this authenticated
-status read only.
+notices are omitted. The status response is authenticated. Operators can also
+read and manage the banner through the operator routes below.
 
 The status payload also returns `dietDecksActive`: deck-based diet admission
 is active when the Mandarin profile has a deck manifest. The former
@@ -177,9 +177,13 @@ The operator surface has Usage, Model invocations, Content quality, Preparation
 failures, What’s New, and Service banner tabs. Banner reads and writes use the same
 operator allowlist and authenticated actor attribution. Messages are single-line
 text up to 280 characters. Omitting `expiresAt` uses the existing 24-hour default;
-the operator page accepts a local datetime for planned downtime and sends its ISO
-timestamp. The invocation endpoint uses the same operator allowlist and returns
-`{ rows }`: timestamp, provider/model identifier, invocation type, learner identity
+`PUT` returns `{ serviceBanner: { message, postedAt, expiresAt } }`; `GET` returns
+the same shape or `{ serviceBanner: null }`, and `DELETE` returns `{ status }` with
+`cleared` or `noop`. Invalid messages or expiry timestamps return `400`. The
+operator page converts its local planned-downtime end time to an ISO timestamp
+for `expiresAt`; custom-message saves use the 24-hour default and preload the
+current banner message. The invocation endpoint uses the same operator allowlist
+and returns `{ rows }`: timestamp, provider/model identifier, invocation type, learner identity
 and display name, `latencyMs`, status, USD spend, and its reported/estimated/unknown
 basis. Optional dates are validated; omitting them returns the full ledger without
 silent truncation. Unknown costs remain unknown and are counted separately.
