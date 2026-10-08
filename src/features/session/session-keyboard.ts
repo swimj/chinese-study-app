@@ -18,7 +18,9 @@ export type SessionSummaryFinalizationKind = 'unfinalized' | 'finalizing' | 'fin
 export type SessionKeyCommand =
   | { type: 'toggle_production_input_focus' }
   | { type: 'submit_production' }
+  | { type: 'no_clue_production' }
   | { type: 'open_notes' }
+  | { type: 'toggle_reflection_review' }
   | { type: 'reveal' }
   | { type: 'begin_unstudied_drill' }
   | { type: 'continue_after_auto_forgot' }
@@ -39,10 +41,16 @@ export type SessionKeyEvent = {
   isComposing: boolean;
   keyCode: number;
   shiftKey?: boolean;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  altKey?: boolean;
 };
 
 export type SessionKeyboardContext = {
   canSkipReinforcement?: boolean;
+  canNoClueProduction?: boolean;
+  canRequestReflectionReview?: boolean;
+  isProductionInputTarget?: boolean;
   sessionStarted: boolean;
   isEditableTarget: boolean;
   isQualityControlTarget?: boolean;
@@ -206,6 +214,10 @@ export function getSessionShortcutGuide(
     },
   ];
 
+  if (context.canRequestReflectionReview) sessionRows.unshift({
+    key: 'R', description: 'Ask reflection to review / remove request', available: true,
+  });
+
   const sections: SessionShortcutGuideSection[] = [];
   if (thisCard.length > 0) {
     sections.push({ title: 'This card', rows: thisCard });
@@ -233,6 +245,16 @@ export function resolveSessionKey(
 ): SessionKeyCommand | null {
   if (!context.sessionStarted) {
     return null;
+  }
+
+  if (event.key === 'Enter' && event.shiftKey) {
+    return !event.ctrlKey && !event.metaKey && !event.altKey
+      && !isImeComposingEvent(event)
+      && getSessionInteractionKind(context) === 'production_input'
+      && context.canNoClueProduction
+      && (!context.isEditableTarget || context.isProductionInputTarget)
+      && !context.isQualityControlTarget
+      ? { type: 'no_clue_production' } : null;
   }
 
   // Native activation of feedback controls must not submit or grade the exercise.
@@ -263,6 +285,11 @@ export function resolveSessionKey(
 
   if (context.isEditableTarget) {
     return null;
+  }
+
+  if (event.key.toLowerCase() === 'r' && context.canRequestReflectionReview && !context.completedSummary) {
+    return !composing && !event.ctrlKey && !event.metaKey && !event.altKey
+      ? { type: 'toggle_reflection_review' } : null;
   }
 
   if (event.key === ' ' && event.shiftKey) {
@@ -380,6 +407,7 @@ function getThisCardShortcutRows(
     case 'production_input':
       return [
         { key: 'Enter', description: 'Submit the typed response', available: true },
+        { key: 'Shift+Enter', description: 'No clue (empty answer)', available: context.canNoClueProduction === true },
         {
           key: 'Escape',
           description: 'Leave or return to the answer field',

@@ -1089,6 +1089,32 @@ export function useStudySession({
     }
   }
 
+  function handleToggleLearnerRequestedReview() {
+    if (!activeItem || activeItem.actionKind !== 'production') return;
+    learnerRequestedReflectionRef.current = toggleLearnerRequestedReview(
+      learnerRequestedReflectionRef.current,
+      activeItem,
+      activePromptDisplayedMeanings,
+    );
+    setSessionNow(new Date().toISOString());
+  }
+
+  function handleToggleFrozenProductionLearnerRequestedReview() {
+    if (!frozenProductionCard || frozenProductionCard.status !== 'review') return;
+    learnerRequestedReflectionRef.current = toggleLearnerRequestedReview(
+      learnerRequestedReflectionRef.current,
+      {
+        sessionActionId: frozenProductionCard.sessionActionId,
+        targetWordId: frozenProductionCard.targetWordId,
+        actionKind: 'production',
+        production: frozenProductionCard.production ?? null,
+        word: { status: frozenProductionCard.status },
+      },
+      frozenProductionCard.promptDisplayedMeanings,
+    );
+    setSessionNow(new Date().toISOString());
+  }
+
   async function handleNoClueProduction() {
     if (deskBusyRef.current || submittingRating !== null) return;
     if (
@@ -1860,6 +1886,9 @@ export function useStudySession({
           isComposing: event.isComposing,
           keyCode: event.keyCode,
           shiftKey: event.shiftKey,
+          ctrlKey: event.ctrlKey,
+          metaKey: event.metaKey,
+          altKey: event.altKey,
         },
         {
           sessionStarted: true,
@@ -1868,6 +1897,12 @@ export function useStudySession({
           isQualityControlTarget: event.target instanceof Element
             && event.target.closest('[data-content-quality-controls]') !== null,
           productionInputActive: productionSubmissionInputActive,
+          canNoClueProduction: productionHanziInput.trim().length === 0,
+          canRequestReflectionReview: !completedSummary && (productionAwaitingNext
+            ? frozenProductionCard?.status === 'review'
+            : !pureCueAwaitingNext && !contrastAwaitingNext
+              && activeItem?.actionKind === 'production' && activeWord?.status === 'review'),
+          isProductionInputTarget: event.target === productionHanziInputRef.current,
           productionAwaitingNext,
           pureCueAwaitingNext,
           productionAwaitingSupplement,
@@ -1911,8 +1946,15 @@ export function useStudySession({
         case 'skip_reinforcement':
           void handleRate(null);
           return;
+        case 'no_clue_production':
+          void handleNoClueProduction();
+          return;
         case 'submit_production':
           void handleSubmitProductionHanzi();
+          return;
+        case 'toggle_reflection_review':
+          if (productionAwaitingNext) handleToggleFrozenProductionLearnerRequestedReview();
+          else handleToggleLearnerRequestedReview();
           return;
         case 'open_notes':
           handleOpenPersonalNotesEditor();
@@ -1986,6 +2028,7 @@ export function useStudySession({
     activeUnstudiedProgress?.introComplete,
     activeWord,
     activeWordPersonalNotes,
+    activePromptDisplayedMeanings,
     answerRevealed,
     contrastAwaitingNext,
     contrastSelectionActive,
@@ -1995,6 +2038,7 @@ export function useStudySession({
     productionAwaitingSupplement,
     isProductionItem,
     productionSubmissionInputActive,
+    productionHanziInput,
     frozenProductionCard,
     lastUndoSnapshot,
     personalNotesEditorOpen,
@@ -2094,30 +2138,8 @@ export function useStudySession({
       },
       onSelectContrastChoice: handleSelectContrastChoice,
       onRevealAnswer: () => setAnswerRevealed(true),
-      onToggleLearnerRequestedReview: () => {
-        if (!activeItem || activeItem.actionKind !== 'production') return;
-        learnerRequestedReflectionRef.current = toggleLearnerRequestedReview(
-          learnerRequestedReflectionRef.current,
-          activeItem,
-          activePromptDisplayedMeanings,
-        );
-        setSessionNow(new Date().toISOString());
-      },
-      onToggleFrozenProductionLearnerRequestedReview: () => {
-        if (!frozenProductionCard || frozenProductionCard.status !== 'review') return;
-        learnerRequestedReflectionRef.current = toggleLearnerRequestedReview(
-          learnerRequestedReflectionRef.current,
-          {
-            sessionActionId: frozenProductionCard.sessionActionId,
-            targetWordId: frozenProductionCard.targetWordId,
-            actionKind: 'production',
-            production: frozenProductionCard.production ?? null,
-            word: { status: frozenProductionCard.status },
-          },
-          frozenProductionCard.promptDisplayedMeanings,
-        );
-        setSessionNow(new Date().toISOString());
-      },
+      onToggleLearnerRequestedReview: handleToggleLearnerRequestedReview,
+      onToggleFrozenProductionLearnerRequestedReview: handleToggleFrozenProductionLearnerRequestedReview,
       onSkipReinforcement: () => void handleRate(null),
       onRate: (rating, options) => void handleRate(rating, options),
       shortcutGuideOpen,

@@ -23,7 +23,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `sentence-character-settings.test.ts` | Private sentence preferences, retention, status, and HTTP validation | Temporary SQLite + Express app |
 | `session-character-settings-panel.test.ts` | Conditional sentence selector and remembered script | Settings panel server render |
 | `cloze-prompt.test.ts` | Display normalization of manual blank markers, reveal, and ambiguous-text fallback | `ClozePrompt.tsx` server render |
-| `session-keyboard.test.ts` | Session action/shortcut mapping, rating labels, Undo aliases | `src/features/session/session-keyboard.ts` |
+| `session-keyboard.test.ts` | Session action/shortcut mapping, empty-answer No clue guards, rating labels, Undo aliases | `src/features/session/session-keyboard.ts` |
 | `study-actions.test.ts` | Study action adapters / event derivation | `src/domain/study-actions.ts` |
 | `study-attempt-events.test.ts` | Attempt event persistence | Dynamic `server/db.ts` |
 | `study-management.test.ts` | Suppress / bad-prompt / management actions | Dynamic `server/db.ts` |

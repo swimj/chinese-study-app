@@ -393,3 +393,37 @@ test('Shift+Space skips only reinforcement outside typing and IME composition', 
   assert.equal(resolveSessionKey(key(' ', { shiftKey: true, keyCode: 229 }), context), null);
   assert.ok(getSessionShortcutGuide(context).flatMap((section) => section.rows).some((row) => row.key === 'Shift+Space'));
 });
+
+test('Shift+Enter records No clue only for an empty production answer', () => {
+  const context = createContext({ productionInputActive: true, isProductionItem: true,
+    canNoClueProduction: true, isEditableTarget: true, isProductionInputTarget: true });
+  const shortcut = key('Enter', { shiftKey: true });
+  assert.deepEqual(resolveSessionKey(shortcut, context), { type: 'no_clue_production' });
+  assert.deepEqual(resolveSessionKey(shortcut, { ...context, isEditableTarget: false }), { type: 'no_clue_production' });
+  assert.deepEqual(resolveSessionKey(key('Enter'), context), { type: 'submit_production' });
+  for (const overrides of [
+    { canNoClueProduction: false }, { productionInputActive: false }, { sessionStarted: false },
+    { isProductionInputTarget: false }, { isQualityControlTarget: true },
+    { completedSummary: true }, { productionAwaitingNext: true }, { pureCueAwaitingNext: true },
+  ]) assert.equal(resolveSessionKey(shortcut, { ...context, ...overrides }), null);
+  for (const overrides of [{ isComposing: true }, { keyCode: 229 }, { ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
+    assert.equal(resolveSessionKey({ ...shortcut, ...overrides }, context), null);
+  }
+  for (const available of [true, false]) {
+    const rows = getSessionShortcutGuide({ ...context, canNoClueProduction: available }).flatMap(section => section.rows);
+    assert.equal(rows.find(row => row.key === 'Shift+Enter')?.available, available);
+  }
+});
+
+test('R toggles an available reflection request outside typing and composition', () => {
+  const context = createContext({ canRequestReflectionReview: true });
+  for (const letter of ['r', 'R']) assert.deepEqual(resolveSessionKey(key(letter), context), { type: 'toggle_reflection_review' });
+  for (const overrides of [{ isEditableTarget: true }, { completedSummary: true }, { sessionStarted: false }, { canRequestReflectionReview: false }]) {
+    assert.equal(resolveSessionKey(key('r'), { ...context, ...overrides }), null);
+  }
+  for (const overrides of [{ isComposing: true }, { keyCode: 229 }, { ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
+    assert.equal(resolveSessionKey({ ...key('r'), ...overrides }, context), null);
+  }
+  assert.ok(getSessionShortcutGuide(context).flatMap(section => section.rows).some(row => row.key === 'R' && row.available));
+  assert.ok(!getSessionShortcutGuide({ ...context, canRequestReflectionReview: false }).flatMap(section => section.rows).some(row => row.key === 'R'));
+});

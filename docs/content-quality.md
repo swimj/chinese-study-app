@@ -2,8 +2,8 @@
 
 Content feedback is a descriptive overlay. A learner has one optional thumbs-up
 or thumbs-down rating for an exact content item/revision, reused on later
-encounters. Clicking the selected thumb clears it. This is a judgment of the
-material, separate from whether the learner recalled the answer.
+encounters. Clicking the selected feedback button clears it. This is a judgment
+of the material, separate from whether the learner recalled the answer.
 
 The first release covers authored production cues, pure cues, contrast prompts,
 whole teaching introductions, individual package rehearsals, and post-reveal
@@ -11,11 +11,18 @@ supplements. The in-session introduction player exposes the introduction rating
 throughout playback. Rehearsal ratings appear on the subsequent study cards.
 Dictionary fallback prompts and the local authoring lab are outside this scope.
 
-Controls use `]` for thumbs up and `[` for thumbs down outside editable fields.
+Study-card cue and practice feedback sits in the action area beside the session
+controls. Supplement feedback stays beside its corresponding content. Feedback
+uses “Needs work” and “Useful” text buttons, with the selected vote highlighted
+in the app accent color.
+
+Controls use `]` for Useful and `[` for Needs work outside editable fields.
 The physical bracket keys also work with Chinese/Pinyin punctuation enabled.
 The visible controls advertise which item owns those shortcuts. A visible
 supplement takes shortcut priority over its cue; both remain clickable. Typing,
 IME composition, modifier combinations, and held-key repeats do not vote.
+The [frontend interaction section](../SPECS/frontend-architecture-map.md#session-keyboard-interactions)
+explains how session commands and focused controls share keyboard input.
 
 Feedback saves immediately and independently of study commits and Undo. Ending
 or abandoning a session does not remove it. Rating never suppresses content,

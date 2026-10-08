@@ -103,3 +103,7 @@
 .session-desk .is-practice-card > .session-card-scroll,
 .session-desk .is-new-word-card > .session-card-scroll { box-shadow: inset 0 3px 0 color-mix(in srgb, var(--accent) 40%, transparent); }
 .word-source-examples p { overflow-wrap: anywhere; }
+
+.session-desk .session-action-bar > .content-quality-controls { margin: 0; font-size: .75rem; }
+.session-desk .session-action-bar > .content-quality-controls .content-quality-vote { color: var(--text-muted); }
+.session-desk .session-action-bar > .content-quality-controls .content-quality-vote[aria-pressed="true"] { color: var(--accent); }

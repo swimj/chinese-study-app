@@ -526,7 +526,7 @@ button:where(:hover:not(:disabled)) {
   padding: 0.65rem 0.75rem;
 }
 
-.session-action-bar .rating-button span {
+.session-action-bar .rating-button > span:not(.session-shortcut-hints) {
   display: none;
 }
 
@@ -608,7 +608,7 @@ button:where(:hover:not(:disabled)) {
 
 .session-shortcut-hints {
   position: absolute;
-  top: 0.2rem;
+  bottom: calc(100% + 0.2rem);
   right: 0.3rem;
   z-index: 1;
   display: flex;
@@ -4503,7 +4503,6 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1
 .home-updates-show { display: flex; align-items: center; gap: .55rem; padding: .35rem .55rem; background: transparent; color: var(--text-secondary); font-size: .9rem; }
 .home-updates-show:hover:not(:disabled) { background: var(--surface-hover); }
 .home-updates-count { min-width: 1.35rem; padding: .1rem .35rem; border-radius: 999px; background: var(--accent); color: white; font-size: .75rem; line-height: 1.3; text-align: center; }
-.home-updates-show-action { color: var(--accent); }
 .about-update { overflow-wrap: anywhere; }
 @container (min-width: 58rem) {
   .home-page:not(.home-session-active) .home-grid.home-with-updates {

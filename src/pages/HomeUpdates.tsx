@@ -41,7 +41,6 @@ export function HomeUpdatesCollapsedControl({ unseenPostIds, onVisible, onExpand
     <button type="button" className="home-updates-show" aria-expanded="false" onClick={onExpand}>
       <span>What’s new</span>
       {unseenPostIds.length ? <span ref={badgeRef} className="home-updates-count" aria-label={`${unseenPostIds.length} unread updates`}>{unseenPostIds.length}</span> : null}
-      <span className="home-updates-show-action">Show →</span>
     </button>
   </div>;
 }

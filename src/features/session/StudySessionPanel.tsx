@@ -3,7 +3,7 @@ import { SessionDesk, RecallChips, type SessionDeskHandle } from './SessionDesk'
 import { StudyStageBadge, studyStageCardClass } from './StudyStageBadge';
 import { WordSourceExamples } from './WordSourceExamples';
 import { ClozePrompt } from './ClozePrompt';
-import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { ContentQualityControls } from '../content-quality/ContentQualityControls';
 import { getSessionContentQualityTarget, sessionContentQualityEncounterId } from './session-content-quality';
 import type { ContentQualityTarget } from '../../domain/content-quality';
@@ -33,6 +33,7 @@ import type { SessionSummary } from './session-summary';
 import type { SessionFinalizationState } from './session-finalization';
 import { getStudySessionPanelView, hasServedProductionCueSupplement } from './session-selectors';
 import {
+  isImeComposingEvent,
   getSessionPrimaryAction,
   getSessionShortcutGuide,
   type SessionKeyboardContext,
@@ -345,6 +346,11 @@ function StudySessionPanelContent({
     completedSummary: completionGate || panelView === 'completed',
     summaryFinalizationKind: sessionFinalization.kind,
   });
+  keyboardContext.canRequestReflectionReview = !completionGate && (panelView === 'frozen_production'
+    ? frozenProductionCard?.status === 'review'
+    : panelView === 'active_card' && activeItem?.actionKind === 'production' && activeWord?.status === 'review');
+  keyboardContext.canNoClueProduction = keyboardContext.productionInputActive && !completionGate
+    && !studyManagementSubmitting && submittingRating === null && productionHanziInput.trim().length === 0;
   keyboardContext.canSkipReinforcement = !completionGate && reviewInReinforcement && !productionAwaitingNext && !pureCueAwaitingNext && !contrastAwaitingNext;
   const skipReinforcementButton = keyboardContext.canSkipReinforcement ? (
     <button type="button" className="secondary-button" onClick={onSkipReinforcement}
@@ -398,16 +404,12 @@ function StudySessionPanelContent({
               Answered {frozenProductionCard.reviewedCount} this session · {frozenProductionCard.queuedCount} still queued
             </p>
             <div className="prompt-block">
-              <span className="prompt-label">Prompt</span>
               {frozenProductionCard.promptDisplayedMeanings.length > 0 ? (
                 <MeaningList meanings={frozenProductionCard.promptDisplayedMeanings.map(sentenceText)} className="meaning-list-prompt" />
               ) : (
                 <strong className="prompt-value"><ClozePrompt text={frozenProductionCard.fallbackPrompt} answer={formatSentenceAnswer(frozenProductionCard.answerForms, sentenceScript)} sentenceCharacterPresentation={sentenceScript} /></strong>
               )}
             </div>
-            {qualityControls(getSessionContentQualityTarget({ ...frozenProductionCard, production: frozenProductionCard.production ?? null }),
-              frozenProductionCard.sessionActionId, frozenProductionCard.reviewedCount,
-              frozenProductionCard.rehearsal ? 'Practice quality' : 'Cue quality', !frozenProductionCard.production?.supplement)}
             <div className="answer-block">
               <span className="prompt-label">Answer</span>
               <span className="answer-pinyin">{frozenProductionCard.answerPinyin}</span>
@@ -457,15 +459,20 @@ function StudySessionPanelContent({
                 onUndoLastRating={onUndoLastRating}
               />
             </SessionActionSection>
+            {qualityControls(getSessionContentQualityTarget({ ...frozenProductionCard, production: frozenProductionCard.production ?? null }),
+              frozenProductionCard.sessionActionId, frozenProductionCard.reviewedCount,
+              frozenProductionCard.rehearsal ? 'Practice quality' : 'Cue quality', !frozenProductionCard.production?.supplement)}
             {frozenProductionCard.status === 'review' ? (
               <SessionActionSection>
                 <button
                   type="button"
                   className="secondary-button"
                   onClick={onToggleFrozenProductionLearnerRequestedReview}
+                  aria-keyshortcuts="R"
                   disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}
                 >
                   {frozenProductionLearnerRequestedReview ? 'Remove reflection request' : 'Ask reflection to review'}
+                  <ShortcutHint shortcut="R" />
                 </button>
                 <FrozenProductionCardActions
                   isSubmitting={studyManagementSubmitting}
@@ -498,8 +505,6 @@ function StudySessionPanelContent({
                 <span className="prompt-meta">{sentenceText(frozenPureCueCard.item.snapshot.teachingNote)}</span>
               ) : null}
             </div>
-            {qualityControls({ kind: 'pure_cue', snapshotId: frozenPureCueCard.item.snapshot.snapshotId },
-              frozenPureCueCard.item.sessionActionId, frozenPureCueCard.reviewedCount, 'Cue quality')}
             <div className="answer-block">
               <span className="prompt-label">Accepted answers</span>
               {frozenPureCueCard.item.snapshot.acceptedAnswers.map((answer) => (
@@ -529,6 +534,8 @@ function StudySessionPanelContent({
                 onUndoLastRating={onUndoLastRating}
               />
             </SessionActionSection>
+            {qualityControls({ kind: 'pure_cue', snapshotId: frozenPureCueCard.item.snapshot.snapshotId },
+              frozenPureCueCard.item.sessionActionId, frozenPureCueCard.reviewedCount, 'Cue quality')}
             <SessionActionSection>
               <button type="button" className="secondary-button" onClick={onEndSession} disabled={sessionEndDisabled}>
                 {sessionEndLabel}
@@ -547,11 +554,8 @@ function StudySessionPanelContent({
               Answered {frozenContrastCard.reviewedCount} this session · {frozenContrastCard.queuedCount} still queued
             </p>
             <div className="prompt-block">
-              <span className="prompt-label">Prompt</span>
               <strong className="contrast-prompt-text">{sentenceText(frozenContrastCard.item.contrastSelection?.prompt.promptText ?? '')}</strong>
             </div>
-            {qualityControls(getSessionContentQualityTarget(frozenContrastCard.item),
-              frozenContrastCard.item.sessionActionId, frozenContrastCard.reviewedCount, 'Cue quality')}
             <ContrastSelectionDrill
               item={frozenContrastCard.item}
               selectedWordId={frozenContrastCard.selectedWordId}
@@ -577,6 +581,8 @@ function StudySessionPanelContent({
                 onUndoLastRating={onUndoLastRating}
               />
             </SessionActionSection>
+            {qualityControls(getSessionContentQualityTarget(frozenContrastCard.item),
+              frozenContrastCard.item.sessionActionId, frozenContrastCard.reviewedCount, 'Cue quality')}
             <SessionActionSection>
               <button type="button" className="secondary-button" onClick={onEndSession} disabled={sessionEndDisabled}>
                 {sessionEndLabel}
@@ -681,8 +687,6 @@ function StudySessionPanelContent({
                 label="Practice again"
               /> : null}
             </div>
-            {qualityControls({ kind: 'pure_cue', snapshotId: activePureCue.snapshot.snapshotId },
-              activePureCue.sessionActionId, reviewedCount, 'Cue quality')}
             {answerRevealed ? (
               <div className="answer-block">
                 <span className="prompt-label">Accepted answers</span>
@@ -715,6 +719,7 @@ function StudySessionPanelContent({
                   type="text"
                   value={productionHanziInput}
                   onChange={(event) => onProductionHanziInputChange(event.target.value)}
+                  onKeyDown={preventNoClueImplicitSubmit}
                   autoComplete="off"
                   autoCapitalize="none"
                   spellCheck={false}
@@ -741,7 +746,7 @@ function StudySessionPanelContent({
                     >
                       <strong>
                         {option.label}
-                        <ShortcutHint shortcuts={[option.shortcutKey, option.isDefault ? 'Space' : null]} />
+                        <ShortcutHint shortcuts={[option.isDefault ? 'Space' : null, option.shortcutKey]} />
                       </strong>
                       <span>{option.note}</span>
                     </button>
@@ -761,9 +766,10 @@ function StudySessionPanelContent({
                     type="button"
                     className="secondary-button"
                     onClick={onNoClueProduction}
+                    aria-keyshortcuts="Shift+Enter"
                     disabled={submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting || productionHanziInput.trim().length > 0}
                   >
-                    No clue
+                    No clue<ShortcutHint shortcut="Shift+Enter" />
                   </button>
                 </div>
               )}
@@ -775,6 +781,8 @@ function StudySessionPanelContent({
                 onUndoLastRating={onUndoLastRating}
               />
             </SessionActionSection>
+            {qualityControls({ kind: 'pure_cue', snapshotId: activePureCue.snapshot.snapshotId },
+              activePureCue.sessionActionId, reviewedCount, 'Cue quality')}
             <SessionActionSection>
               <button type="button" className="secondary-button" onClick={onEndSession} disabled={sessionEndDisabled}>
                 {sessionEndLabel}
@@ -825,7 +833,6 @@ function StudySessionPanelContent({
               {sessionSummary?.lapsedReviewActionIds.length ?? 0} · Elapsed {activeElapsedTime}
             </p>
             <div className={showProductionSupplementAside ? 'prompt-block is-compact' : 'prompt-block'}>
-              <span className="prompt-label">Prompt</span>
               {activeItem.actionKind === 'contrast_selection' ? (
                 <>
                   <strong className="contrast-prompt-text">{sentenceText(activePrompt ?? '')}</strong>
@@ -851,8 +858,6 @@ function StudySessionPanelContent({
                 label="Practice again"
               /> : null}
             </div>
-            {qualityControls(getSessionContentQualityTarget(activeItem), activeItem.sessionActionId, reviewedCount,
-              activeItem.rehearsal ? 'Practice quality' : 'Cue quality', !showProductionSupplementAside)}
             {activeItem.actionKind === 'contrast_selection' ? (
               <ContrastSelectionDrill
                 item={activeItem}
@@ -958,6 +963,7 @@ function StudySessionPanelContent({
                   type="text"
                   value={productionHanziInput}
                   onChange={(event) => onProductionHanziInputChange(event.target.value)}
+                  onKeyDown={preventNoClueImplicitSubmit}
                   autoComplete="off"
                   autoCapitalize="none"
                   spellCheck={false}
@@ -1016,7 +1022,7 @@ function StudySessionPanelContent({
                     >
                       <strong>
                         {option.label}
-                        <ShortcutHint shortcuts={[option.shortcutKey, option.isDefault ? 'Space' : null]} />
+                        <ShortcutHint shortcuts={[option.isDefault ? 'Space' : null, option.shortcutKey]} />
                       </strong>
                       <span>{option.note}</span>
                     </button>
@@ -1036,13 +1042,15 @@ function StudySessionPanelContent({
                     type="button"
                     className="secondary-button"
                     onClick={onNoClueProduction}
+                    aria-keyshortcuts="Shift+Enter"
                     disabled={
                       submittingRating !== null
                       || personalNotesEditorOpen
+                      || studyManagementSubmitting
                       || productionHanziInput.trim().length > 0
                     }
                   >
-                    No clue
+                    No clue<ShortcutHint shortcut="Shift+Enter" />
                   </button>
                 </div>
               ) : (
@@ -1059,15 +1067,19 @@ function StudySessionPanelContent({
                 onUndoLastRating={onUndoLastRating}
               />
             </SessionActionSection>
+            {qualityControls(getSessionContentQualityTarget(activeItem), activeItem.sessionActionId, reviewedCount,
+              activeItem.rehearsal ? 'Practice quality' : 'Cue quality', !showProductionSupplementAside)}
             <SessionActionSection>
               {activeItem.actionKind === 'production' && activeWord.status === 'review' ? (
                 <button
                   type="button"
                   className="secondary-button"
                   onClick={onToggleLearnerRequestedReview}
+                  aria-keyshortcuts="R"
                   disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}
                 >
                   {learnerRequestedReview ? 'Remove reflection request' : 'Ask reflection to review'}
+                  <ShortcutHint shortcut="R" />
                 </button>
               ) : null}
               <CardActions
@@ -1569,4 +1581,12 @@ function createSessionKeyboardContext({
     completedSummary,
     summaryFinalizationKind,
   };
+}
+
+// The document shortcut handler owns Shift+Enter. If unavailable, it must not
+// fall through to the answer form's native Enter submission.
+function preventNoClueImplicitSubmit(event: KeyboardEvent<HTMLInputElement>) {
+  if (event.key === 'Enter' && event.shiftKey && !isImeComposingEvent(event.nativeEvent)) {
+    event.preventDefault();
+  }
 }
