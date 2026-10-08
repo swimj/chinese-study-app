@@ -19,12 +19,14 @@ function render(value = state, index = 0) {
 }
 test('one connection per card with only exact text and progress; final card has Done', () => {
   const first = render(); assert.match(first, /First paragraph\nwith preserved breaks/); assert.doesNotMatch(first, /Second paragraph|w1|Never show this/);
+  assert.match(first, /Return to Home <kbd>Space<\/kbd>/);
+  assert.match(first, /Enter \/ →/); assert.doesNotMatch(first, /Space \/ Enter/);
   assert.match(first, /Connection 1 of 2/); assert.match(first, /Next connection/); assert.match(first, /disabled="">Back/);
   const last = render(state, 1); assert.match(last, /Second paragraph/); assert.doesNotMatch(last, /First paragraph|Next connection/); assert.match(last, />Done/);
 });
 test('pending, failed, empty, and read-error summaries all allow leaving with the right recovery action', () => {
   const pending = render({ ...state, debrief: { ...state.debrief!, status: 'running', notes: null } });
-  assert.match(pending, /Finding a few connections/); assert.match(pending, /Back to Home/); assert.doesNotMatch(pending, /First paragraph|remaining|Practice again/);
+  assert.match(pending, /Finding a few connections/); assert.match(pending, /Return to Home/); assert.doesNotMatch(pending, /First paragraph|remaining|Practice again/);
   const failed = render({ ...state, debrief: { ...state.debrief!, status: 'failed', notes: null } });
   assert.match(failed, /Try again/); assert.match(failed, /Your session is saved/);
   assert.match(render({ ...state, debrief: { ...state.debrief!, notes: [] } }), /Nothing extra to add/);
@@ -33,11 +35,15 @@ test('pending, failed, empty, and read-error summaries all allow leaving with th
 const context = { editable: false, native: false, guideOpen: false, busy: false, ready: true, canGoBack: true };
 const event = { key: ' ', isComposing: false, keyCode: 32 };
 test('summary keys step without replaying study actions and respect IME, native controls, typing, guide and modifiers', () => {
-  for (const key of [' ', 'Enter', 'ArrowRight']) assert.equal(resolveSessionDebriefKey({ ...event, key }, context), 'next');
+  for (const key of ['Enter', 'ArrowRight']) assert.equal(resolveSessionDebriefKey({ ...event, key }, context), 'next');
+  assert.equal(resolveSessionDebriefKey(event, context), 'home');
+  assert.equal(resolveSessionDebriefKey({ ...event, key: 'Unidentified', code: 'Space' }, context), 'home');
+  assert.equal(resolveSessionDebriefKey(event, { ...context, ready: false }), 'home');
+  assert.equal(resolveSessionDebriefKey({ ...event, key: 'Enter' }, { ...context, ready: false }), null);
   assert.equal(resolveSessionDebriefKey({ ...event, key: 'ArrowLeft' }, context), 'back');
   assert.equal(resolveSessionDebriefKey({ ...event, key: 'ArrowLeft' }, { ...context, canGoBack: false }), null);
   assert.equal(resolveSessionDebriefKey({ ...event, key: '?' }, context), 'guide');
-  for (const override of [{ editable: true }, { native: true }, { guideOpen: true }, { busy: true }, { ready: false }]) {
+  for (const override of [{ editable: true }, { native: true }, { guideOpen: true }, { busy: true }]) {
     assert.equal(resolveSessionDebriefKey(event, { ...context, ...override }), null);
   }
   for (const override of [{ isComposing: true }, { keyCode: 229 }, { repeat: true }, { defaultPrevented: true }, { ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
