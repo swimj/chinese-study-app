@@ -43,6 +43,7 @@ import { useSessionDialogFocus } from './session-dialog-focus';
 import { SessionDebriefPanel } from './SessionDebriefPanel';
 import { SessionSummaryPanel } from './SessionSummaryPanel';
 import { formatIntervalHours } from '../../lib/format-interval';
+import { ReflectionRequestButton } from './ReflectionRequestButton';
 
 export type FrozenProductionCard = {
   sessionActionId: string;
@@ -464,16 +465,14 @@ function StudySessionPanelContent({
               frozenProductionCard.rehearsal ? 'Practice quality' : 'Cue quality', !frozenProductionCard.production?.supplement)}
             {frozenProductionCard.status === 'review' ? (
               <SessionActionSection>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={onToggleFrozenProductionLearnerRequestedReview}
-                  aria-keyshortcuts="R"
+                <ReflectionRequestButton
+                  key={frozenProductionCard.sessionActionId}
+                  requested={frozenProductionLearnerRequestedReview}
+                  onToggle={onToggleFrozenProductionLearnerRequestedReview}
                   disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}
                 >
-                  {frozenProductionLearnerRequestedReview ? 'Remove reflection request' : 'Ask reflection to review'}
                   <ShortcutHint shortcut="R" />
-                </button>
+                </ReflectionRequestButton>
                 <FrozenProductionCardActions
                   isSubmitting={studyManagementSubmitting}
                   onDismissFrozenProductionWord={onDismissFrozenProductionWord}
@@ -1071,16 +1070,14 @@ function StudySessionPanelContent({
               activeItem.rehearsal ? 'Practice quality' : 'Cue quality', !showProductionSupplementAside)}
             <SessionActionSection>
               {activeItem.actionKind === 'production' && activeWord.status === 'review' ? (
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={onToggleLearnerRequestedReview}
-                  aria-keyshortcuts="R"
+                <ReflectionRequestButton
+                  key={activeItem.sessionActionId}
+                  requested={learnerRequestedReview}
+                  onToggle={onToggleLearnerRequestedReview}
                   disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}
                 >
-                  {learnerRequestedReview ? 'Remove reflection request' : 'Ask reflection to review'}
                   <ShortcutHint shortcut="R" />
-                </button>
+                </ReflectionRequestButton>
               ) : null}
               <CardActions
                 activeItem={activeItem}

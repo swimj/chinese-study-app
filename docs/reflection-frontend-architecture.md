@@ -125,6 +125,14 @@ merges both accumulators into the V3 evidence supplement by action, so a marked
 mistake becomes one item and a marked correct response can still enter
 reflection. Cancellation, dismissal, and management remove the request.
 
+Both production-card views use `ReflectionRequestButton` to expose the marked
+state with `aria-pressed` and a solid green fill. The fill moves inward from all
+four edges over one second, revealing white text with the same boundary;
+unmarking reverses it. Reduced-motion preferences make the change immediate.
+Each action mounts its own button so navigating to another card does not animate
+a request carried over from the previous card. The existing labels, R shortcut,
+and busy/editor guards remain in place.
+
 ## Reflection review workspace
 
 `useReflectionPageController` loads the capped open and recent artifact lists,
