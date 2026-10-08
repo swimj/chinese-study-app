@@ -915,3 +915,11 @@ jobs resume after restart. See [the contract](../SPECS/session-debrief.md).
 ### Session recovery highlights
 
 `GET /api/study-sessions/:sessionId/recovery-highlights` returns `{ highlights }` for a learner-owned completed summary. Missing, unfinished, and other-learner sessions return `404`; empty IDs return `400`. This independent read uses accepted attempts and currently applied corrections; it does not generate reflection or alter scheduling. See [the feature contract](../SPECS/session-recovery-highlights.md) for thresholds and evidence references.
+
+## Operator content improvement
+
+The revisioned draft, validation, application and evidence-history endpoints
+under `/api/operator/content-improvements` are described in the
+[workspace API contract](content-improvement.md#agent-api). All require operator
+access. Application is an explicit, revision-checked transaction, independent
+of learner feedback and study commits.

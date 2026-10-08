@@ -391,3 +391,19 @@ This is an offline schema migration, with no provider calls or history reclassif
 ## Independent introduction components
 
 `word_introduction_components` retains validated teaching and practice outputs across failed companion calls, keyed by exact bootstrap content, component stage, and generation key. Writes require the current teaching lease. `word_teaching_package_components` links the published immutable package to each component and its model/invocation provenance. Package readiness is still atomic; existing packages need no regeneration. Migration `0029_introduction_components` adds these tables and requires the offline schema-migration release procedure.
+
+## Operator content improvements
+
+`content_improvement_cases` owns revision-checked operator drafts and resolved
+outcomes. `content_improvement_revisions` retains immutable snapshots of each
+saved revision, including accepted before/after evidence. These operational
+records are operator-only and can contain private authored content; they do not
+change its ownership or expose learner responses.
+
+`content_improvement_replacements` retains explicit successor links used by
+future cue, supplement, contrast and introduction selection. Existing learner
+introduction pins may retain their predecessor. `operator_pure_cue_repairs`
+records the bounded in-place wording repair before a guarded update. The
+workspace transaction owns correction application and audit together. See the
+[workflow and API](content-improvement.md) for the operator contract. Migrations
+`0032` and `0033` require the offline schema migration procedure.

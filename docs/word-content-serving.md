@@ -56,6 +56,14 @@ does not silently select another package. Unprepared new words are omitted at
 session entry; established Practice words without eligible completed-package
 content use their existing ordinary cards.
 
+The [operator content-improvement workspace](content-improvement.md) can correct
+an eligible introduction or rehearsal by publishing a coherent source/package
+revision. New unpinned selections use the successor; existing learner pins
+continue using the predecessor while its publications remain eligible. The
+original source stays available to other packages and review exercises that
+reference it. Supersession does not revive withdrawn content or silently move
+an existing learner pin.
+
 Active session and Undo snapshots retain the exact package, content, exercise,
 and accepted-answer identities already served. Selection for a later session
 checks availability again. The [generation guide](word-content-generation.md#publication-and-availability)

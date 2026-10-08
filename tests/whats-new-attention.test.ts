@@ -181,7 +181,7 @@ test('attention migration preserves prior data, starts empty, repeats safely and
     const posts = db.prepare('SELECT * FROM whats_new_posts ORDER BY post_id').all();
     const history = db.prepare('SELECT * FROM whats_new_post_revisions ORDER BY post_id, revision').all();
     const params = db.prepare('SELECT * FROM learner_params').all();
-    assert.deepEqual(migrateDatabase(db), ['app_schema:0031_whats_new_attention']);
+    assert.deepEqual(migrateDatabase(db), schemaMigrations.slice(index).map(migration => migration.id));
     assert.deepEqual(db.prepare('SELECT * FROM whats_new_posts ORDER BY post_id').all(), posts);
     assert.deepEqual(db.prepare('SELECT * FROM whats_new_post_revisions ORDER BY post_id, revision').all(), history);
     assert.deepEqual(db.prepare('SELECT * FROM learner_params').all(), params);

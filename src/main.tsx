@@ -5,6 +5,7 @@ import { ClerkAuthenticationBoundary } from './auth/ClerkAuthenticationBoundary'
 import './styles.css';
 import './features/content-quality/styles.css';
 import './pages/ContentQualityPanel.css';
+import './pages/ContentImprovementWorkspace.css';
 import './features/introduction-lab/styles.css';
 import './features/word-introduction/styles.css';
 import './features/session/session-desk.css';

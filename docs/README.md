@@ -56,6 +56,8 @@ linking to the intended guarantees they realize and any known gaps.
   [reflection frontend](reflection-frontend-architecture.md), and
   [content quality](content-quality.md): related feature realization and operator
   material.
+- [Operator content improvement](content-improvement.md): correction review,
+  safe application, agent API, and retained evidence for generation improvements.
 - [Test coverage map](testing.md): test files and the domains they exercise.
 
 The maps provide useful navigation. The target also calls for explanatory

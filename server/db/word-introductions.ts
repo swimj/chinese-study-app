@@ -389,7 +389,7 @@ export function releaseSharedWordIntroductionStage(wordId: string, token: string
   });
 }
 
-function eligiblePackageRows(wordId: string): PackageRow[] {
+function eligiblePackageRows(wordId: string, retainedPin: string | null = null): PackageRow[] {
   return getDb().prepare(`
     SELECT package.package_id, package.package_json, package.created_at, package.model,
            package.word_id, package.content_id
@@ -402,14 +402,17 @@ function eligiblePackageRows(wordId: string): PackageRow[] {
     WHERE package.word_id = ?
       AND package_publication.publication_status IN ('shared_trial', 'available')
       AND content_publication.publication_status IN ('shared_trial', 'available')
+      AND (package.package_id = ? OR NOT EXISTS (
+        SELECT 1 FROM content_improvement_replacements r
+        WHERE r.kind = 'teaching_package' AND r.source_id = package.package_id
+      ))
     ORDER BY package.created_at, package.package_id
-  `).all(wordId) as PackageRow[];
+  `).all(wordId, retainedPin) as PackageRow[];
 }
 
 export function getWordIntroductionLibrary(wordId: string): WordIntroductionLibrary | null {
   const learnerId = requireLearnerId();
   if (!lexicalRow(wordId)) return null;
-  const packageRows = eligiblePackageRows(wordId);
   const contentRows = getDb().prepare(`
     SELECT content.content_id, content.content_json, content.created_at, content.model, content.word_id
     FROM word_content_documents AS content
@@ -422,6 +425,7 @@ export function getWordIntroductionLibrary(wordId: string): WordIntroductionLibr
     WHERE learner_id = ? AND word_id = ? AND event_kind = 'opened'
     ORDER BY sequence DESC LIMIT 1
   `).get(learnerId, wordId) as { package_id: string } | undefined;
+  const packageRows = eligiblePackageRows(wordId, latestOpen?.package_id ?? null);
   // A withdrawn private pin must not silently turn into a different lesson.
   // A learner who has never opened one may take the first eligible package.
   const selectedPackageId = latestOpen
@@ -439,7 +443,10 @@ export function getWordIntroductionLibrary(wordId: string): WordIntroductionLibr
 }
 
 function requireEligiblePackage(wordId: string, packageId: string): void {
-  if (!eligiblePackageRows(wordId).some((row) => row.package_id === packageId)) {
+  const latest = getDb().prepare(`SELECT package_id FROM learner_word_introduction_events
+    WHERE learner_id=? AND word_id=? AND event_kind='opened' ORDER BY sequence DESC LIMIT 1`)
+    .get(requireLearnerId(), wordId) as {package_id:string} | undefined;
+  if (!eligiblePackageRows(wordId, latest?.package_id ?? null).some((row) => row.package_id === packageId)) {
     throw new WordIntroductionError('not_found', 'Eligible teaching package not found for word');
   }
 }
