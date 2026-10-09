@@ -1,3 +1,4 @@
+import type { StudyIntroductionOrder } from '../domain/introduction-order';
 import type { WhatsNewPost, WhatsNewWriteRequest } from '../domain/whats-new';
 import type { WhatsNewAttention } from '../domain/whats-new-attention';
 import type { ModelInvocationRow } from '../domain/model-invocations';
@@ -262,6 +263,8 @@ type BackendStatus = {
   characterPresentation: CharacterPresentation;
   sentenceCharacterPresentation: SentenceCharacterPresentation;
   studyNewWordsFirst: boolean;
+  studyIntroductionOrder: StudyIntroductionOrder;
+  studyIntroductionSpacing: number;
   debriefInterests: string;
   learningCoverageDate: string;
   /** True when deck-based diet admission is active (Mandarin profile with a manifest). */
@@ -599,6 +602,21 @@ export async function updateCharacterPresentation(
     throw new Error(await readApiErrorMessage(response, 'Failed to update character presentation'));
   }
 
+  return response.json();
+}
+
+export async function updateStudyIntroductionOrder(
+  studyIntroductionOrder: StudyIntroductionOrder,
+  studyIntroductionSpacing: number,
+): Promise<{ studyIntroductionOrder: StudyIntroductionOrder; studyIntroductionSpacing: number }> {
+  const response = await apiFetch(`${API_BASE}/api/learner-settings/study-introduction-order`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ studyIntroductionOrder, studyIntroductionSpacing }),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to update introduction ordering'));
+  }
   return response.json();
 }
 

@@ -1,3 +1,4 @@
+import { DEFAULT_INTRODUCTION_SPACING, isStudyIntroductionOrder, isStudyIntroductionSpacing, type StudyIntroductionOrder } from '../../src/domain/introduction-order.ts';
 import { enqueueSessionDebrief } from './session-debrief.ts';
 import { allocateSessionBucketSlots } from '../../src/domain/session-limits.ts';
 import type { PureCue } from '../../src/domain/pure-cues.ts';
@@ -2298,8 +2299,47 @@ export function getStudyNewWordsFirst(): boolean {
 
 export function setStudyNewWordsFirst(studyNewWordsFirst: boolean) {
   if (typeof studyNewWordsFirst !== 'boolean') throw new Error('Expected studyNewWordsFirst to be a boolean');
-  upsertLearnerSetting('study_new_words_first', studyNewWordsFirst);
+  setStudyIntroductionOrder(studyNewWordsFirst ? 'first' : 'random', getStudyIntroductionSpacing());
   return { studyNewWordsFirst: getStudyNewWordsFirst() };
+}
+
+export function getStudyIntroductionOrder(): StudyIntroductionOrder {
+  const row = getDb().prepare(`
+    SELECT value_json FROM learner_settings
+    WHERE learner_id = ? AND setting_key = 'study_introduction_order'
+  `).get(requireLearnerId()) as { value_json: string } | undefined;
+  if (!row) return getStudyNewWordsFirst() ? 'first' : 'random';
+  const value: unknown = JSON.parse(row.value_json);
+  if (!isStudyIntroductionOrder(value)) throw new Error('Expected studyIntroductionOrder to be random, first or paced');
+  return value;
+}
+
+export function getStudyIntroductionSpacing(): number {
+  const row = getDb().prepare(`
+    SELECT value_json FROM learner_settings
+    WHERE learner_id = ? AND setting_key = 'study_introduction_spacing'
+  `).get(requireLearnerId()) as { value_json: string } | undefined;
+  if (!row) return DEFAULT_INTRODUCTION_SPACING;
+  const value: unknown = JSON.parse(row.value_json);
+  if (!isStudyIntroductionSpacing(value)) throw new Error('Expected integer studyIntroductionSpacing between 1 and 10');
+  return value;
+}
+
+export function setStudyIntroductionOrder(studyIntroductionOrder: StudyIntroductionOrder, studyIntroductionSpacing: number) {
+  if (!isStudyIntroductionOrder(studyIntroductionOrder)) throw new Error('Expected studyIntroductionOrder to be random, first or paced');
+  if (!isStudyIntroductionSpacing(studyIntroductionSpacing)) throw new Error('Expected integer studyIntroductionSpacing between 1 and 10');
+  getDb().exec('SAVEPOINT set_study_introduction_order');
+  try {
+    upsertLearnerSetting('study_introduction_order', studyIntroductionOrder);
+    upsertLearnerSetting('study_introduction_spacing', studyIntroductionSpacing);
+    upsertLearnerSetting('study_new_words_first', studyIntroductionOrder === 'first');
+    getDb().exec('RELEASE SAVEPOINT set_study_introduction_order');
+  } catch (error) {
+    getDb().exec('ROLLBACK TO SAVEPOINT set_study_introduction_order');
+    getDb().exec('RELEASE SAVEPOINT set_study_introduction_order');
+    throw error;
+  }
+  return { studyIntroductionOrder: getStudyIntroductionOrder(), studyIntroductionSpacing: getStudyIntroductionSpacing() };
 }
 
 export function getSentenceCharacterPresentation(): SentenceCharacterPresentation {

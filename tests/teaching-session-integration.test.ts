@@ -266,3 +266,102 @@ test('new-words-first teaches every new word before all other work and preserves
     schedulerPolicy: { studyNewWordsFirst: true } });
   assert.equal(getActiveSessionUnit(emptyNewWords).type, 'study');
 });
+
+function pacedState(spacing = 3, reviewCount = 20, learning = true) {
+  const unstudied = wordContentFixtures.slice(0, 3).map(({ content }) => ({
+    ...word, id: content.word.wordId, hanzi: content.word.hanzi, traditional: content.word.traditional,
+    pinyin: content.word.pinyin, status: 'unstudied' as const,
+  }));
+  const introductions = Object.fromEntries(wordContentFixtures.slice(0, 3).map(({ content, teaching }) => [content.word.wordId, {
+    ...library, wordId: content.word.wordId, selectedPackageId: teaching.id,
+    contents: [{ content, createdAt: '2026-10-02T00:00:00Z' }],
+    packages: [{ teaching, createdAt: '2026-10-02T00:00:00Z' }],
+  }]));
+  const review = Array.from({ length: reviewCount }, (_, index) => ({
+    ...buildWordLifecycleSessionStudyItems({ source: 'learning', word: { ...word, id: `paced-review-${index}` } })[0]!,
+    actionKind: 'recognition' as const, sampledSkillIds: ['recognition' as const],
+  }));
+  return createBucketSessionState({
+    buckets: { review, learning: learning ? [{ ...word, id: 'paced-learning' }] : [], unstudied, introductions },
+    sessionId: 'paced', seed: 7,
+    schedulerPolicy: { studyIntroductionOrder: 'paced', studyIntroductionSpacing: spacing },
+  });
+}
+
+for (const spacing of [1, 3, 10]) {
+  test(`paced introductions have exactly ${spacing} existing exercises between them, with Undo`, () => {
+    let state = pacedState(spacing, 30);
+    for (let introIndex = 0; introIndex < 3; introIndex += 1) {
+      const active = getActiveSessionUnit(state);
+      assert.equal(active.type, 'unstudied_intro');
+      if (active.type !== 'unstudied_intro') throw new Error('Expected intro');
+      const undo = cloneBucketSessionState(state);
+      const next = completeActiveUnstudiedTeaching(state, active.word.id);
+      assert.deepEqual(completeActiveUnstudiedTeaching(undo, active.word.id), next);
+      state = next.state;
+      if (introIndex === 2) break;
+      for (let exerciseIndex = 0; exerciseIndex < spacing; exerciseIndex += 1) {
+        const exercise = getActiveSessionUnit(state);
+        assert.equal(exercise.type, 'study');
+        if (exercise.type !== 'study') throw new Error('Expected existing exercise');
+        assert.ok(exercise.bucket === 'review' || exercise.bucket === 'learning');
+        assert.equal(state.scheduler.introductionExercisesRemaining, spacing - exerciseIndex);
+        const beforeExercise = cloneBucketSessionState(state);
+        const result = rateActiveSessionUnit(markActiveSessionUnitStarted(state), 'good');
+        const replay = rateActiveSessionUnit(markActiveSessionUnitStarted(beforeExercise), 'good');
+        assert.deepEqual(replay.state.scheduler, result.state.scheduler);
+        assert.deepEqual(replay.state.progress, result.state.progress);
+        state = result.state;
+      }
+    }
+    const buckets: string[] = [];
+    for (let count = 0; count < 150 && state.phase !== 'completed'; count += 1) {
+      const active = getActiveSessionUnit(state);
+      assert.equal(active.type, 'study');
+      if (active.type !== 'study') throw new Error('Expected recall');
+      buckets.push(active.bucket);
+      state = rateActiveSessionUnit(markActiveSessionUnitStarted(state), 'good').state;
+    }
+    assert.equal(state.phase, 'completed');
+    assert.equal(buckets.filter(bucket => bucket === 'unstudied').length, 18);
+    assert.ok(buckets.slice(0, buckets.lastIndexOf('unstudied')).includes('review'));
+  });
+}
+
+test('paced introductions continue when existing work runs out and count failed exercises', () => {
+  let state = pacedState(3, 1, false);
+  let active = getActiveSessionUnit(state);
+  if (active.type !== 'unstudied_intro') throw new Error('Expected intro');
+  state = completeActiveUnstudiedTeaching(state, active.word.id).state;
+  state = rateActiveSessionUnit(markActiveSessionUnitStarted(state), 'forgot').state;
+  assert.equal(state.scheduler.introductionExercisesRemaining, 2);
+  state = rateActiveSessionUnit(markActiveSessionUnitStarted(state), 'good').state;
+  state = rateActiveSessionUnit(markActiveSessionUnitStarted(state), 'good').state;
+  active = getActiveSessionUnit(state);
+  if (active.type !== 'unstudied_intro') throw new Error('Expected second intro after three exercises');
+  state = completeActiveUnstudiedTeaching(state, active.word.id).state;
+  state = rateActiveSessionUnit(markActiveSessionUnitStarted(state), 'good').state;
+  assert.equal(state.scheduler.reviewQueue.length, 0);
+  assert.equal(getActiveSessionUnit(state).type, 'unstudied_intro');
+  assert.equal(state.scheduler.introductionExercisesRemaining, 2);
+});
+
+test('paced defaults to three exercises when spacing is omitted', () => {
+  const original = pacedState();
+  let state = createBucketSessionState({ sessionId: 'paced-default', buckets: {
+    review: original.scheduler.reviewQueue, learning: [], unstudied: original.scheduler.unstudiedPool,
+  }, schedulerPolicy: { studyIntroductionOrder: 'paced' } });
+  state = completeActiveUnstudiedIntro(state).state;
+  assert.equal(state.scheduler.introductionExercisesRemaining, 3);
+});
+
+test('paced sessions with no existing work finish all intros before recall; spacing validates', () => {
+  let state = pacedState(3, 0, false);
+  for (let index = 0; index < 3; index += 1) {
+    const active = getActiveSessionUnit(state);
+    if (active.type !== 'unstudied_intro') throw new Error('Expected intro');
+    state = completeActiveUnstudiedTeaching(state, active.word.id).state;
+  }
+  assert.equal(getActiveSessionUnit(state).type, 'study');
+  for (const spacing of [0, 11, 1.5, NaN]) assert.throws(() => pacedState(spacing), /spacing/);
+});

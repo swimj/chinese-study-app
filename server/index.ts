@@ -1,3 +1,4 @@
+import { isStudyIntroductionOrder, isStudyIntroductionSpacing } from '../src/domain/introduction-order.ts';
 import { registerContentImprovementRoutes } from './content-improvement-routes.ts';
 import { listWhatsNewPosts, saveWhatsNewPost, WhatsNewConflictError } from './db/whats-new.ts';
 import { WhatsNewInputError, parseWhatsNewWriteRequest } from '../src/domain/whats-new.ts';
@@ -41,6 +42,9 @@ import {
   getLearningPolicy,
   getCharacterPresentation,
   getStudyNewWordsFirst,
+  getStudyIntroductionOrder,
+  getStudyIntroductionSpacing,
+  setStudyIntroductionOrder,
   setStudyNewWordsFirst,
   getSentenceCharacterPresentation,
   setSentenceCharacterPresentation,
@@ -662,6 +666,8 @@ export function createApp(options: CreateAppOptions = {}) {
       characterPresentation: getCharacterPresentation(),
       sentenceCharacterPresentation: getSentenceCharacterPresentation(),
       studyNewWordsFirst: getStudyNewWordsFirst(),
+      studyIntroductionOrder: getStudyIntroductionOrder(),
+      studyIntroductionSpacing: getStudyIntroductionSpacing(),
       debriefInterests: getDebriefInterests(),
     });
   });
@@ -741,6 +747,23 @@ export function createApp(options: CreateAppOptions = {}) {
       }
 
       res.status(500).json({ error: 'Failed to update character presentation' });
+    }
+  });
+
+  app.patch('/api/learner-settings/study-introduction-order', (req, res) => {
+    const { studyIntroductionOrder, studyIntroductionSpacing } = req.body ?? {};
+    if (!isStudyIntroductionOrder(studyIntroductionOrder)) {
+      res.status(400).json({ error: 'Expected studyIntroductionOrder to be random, first or paced' });
+      return;
+    }
+    if (!isStudyIntroductionSpacing(studyIntroductionSpacing)) {
+      res.status(400).json({ error: 'Expected integer studyIntroductionSpacing between 1 and 10' });
+      return;
+    }
+    try {
+      res.json(setStudyIntroductionOrder(studyIntroductionOrder, studyIntroductionSpacing));
+    } catch {
+      res.status(500).json({ error: 'Failed to update introduction ordering' });
     }
   });
 

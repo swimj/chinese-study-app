@@ -273,8 +273,16 @@ reconciliation is required to proceed with this work.
   Completion is a private navigation marker, separate from study credit. A
   withdrawn private pin is not silently replaced with another package.
 - **First encounter:** an unstudied Mandarin word opens its introduction before
-  ordinary cards. Completing the teaching beats opens interleaved recognition and
-  target rehearsal through the existing session scheduler. Both directions must
+  ordinary cards. The learner chooses Random, Introductions first, or Paced
+  ordering. Random uses ordinary weighted scheduling; Introductions first
+  completes every introduction before other work. Paced starts with an
+  introduction, then inserts 3 existing learning/review exercises between
+  introductions, adjustable from 1 to 10. Rated attempts count even when failed;
+  exhausted existing work allows the next introduction immediately. Both priority
+  modes defer new-word recall until all introductions finish, then resume ordinary
+  weighted interleaving. Session admission freezes this preference; Undo restores
+  the cadence. Completing the teaching beats opens recognition and
+  target rehearsal according to this ordering policy. Both directions must
   reach three consecutive `Good` ratings before the first-encounter word unit
   completes through the existing deferred commit and Undo path. Recognition uses
   curated source content. Production selects a rehearsal by its current streak

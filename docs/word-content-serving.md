@@ -96,8 +96,19 @@ the current beat; a separate press advances. Held keys, typing, and IME
 composition do not trigger navigation. Text sizes stay stable in both modes,
 and reduced-motion preferences disable smooth scrolling.
 
-Finishing the walkthrough opens recognition and production through the ordinary
-weighted session scheduler. Recognition reveals curated source material;
+Session settings choose how introductions enter the session. **Random** uses
+ordinary weighted scheduling throughout. **Introductions first** finishes all
+introductions before any other exercises. **Paced** starts with an introduction,
+then schedules a fixed number of existing learning/review exercises before the
+next introduction: 3 by default, adjustable from 1 to 10. Each rated exercise,
+including a failed attempt, counts toward that gap. If existing work runs out,
+the next introduction proceeds immediately. New-word recall waits until every
+introduction is finished in both priority modes, then joins ordinary weighted
+scheduling. The cadence and preferences are frozen for the session, and Undo
+restores the pacing position alongside progress.
+
+Finishing the walkthrough makes recognition and production available according
+to that ordering policy. Recognition reveals curated source material;
 production asks for the taught expression using a package rehearsal. Each
 direction needs three consecutive `Good` ratings. A non-`Good` rating resets only
 that direction. Production selects the rehearsal at the current production
