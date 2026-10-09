@@ -93,7 +93,9 @@ uses the same paper deck as study, with completion date and covered-exercise
 count in place of study counters. It presents one exact provider paragraph per
 card, with **Next connection**, **Back**, and **Done** on the last card. It adds
 no note titles, subtitles, reference labels, follow-up questions, or chat UI.
-Space, Enter, and right arrow advance; left arrow goes back. Native controls,
+Space returns to Home from any summary state, including loading, failed, and
+empty results. Right arrow advances connections; left arrow goes back. Enter
+has no summary navigation shortcut. Native controls,
 typing, IME composition, repeated keys, modifiers, and the shortcut guide pause
 these shortcuts. The finalized study keyboard handler yields to this surface.
 
