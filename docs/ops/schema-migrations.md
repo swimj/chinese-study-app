@@ -310,3 +310,14 @@ and acceptance totals from durable records. Historical practice and mean stash
 remain NULL; no attempts, word state, or debrief inventories are interpreted to
 reconstruct them. Legacy spend and median columns remain stored but are retired
 from the usage API. This release requires the offline schema upgrade procedure.
+
+## Practice correct-day usage (0035)
+
+Migration 0035 creates a learner-private ledger of unique word correct days,
+seeded from each word's latest stored successful UTC date. It clears only the
+practice field of old usage snapshots, whose encounter totals used a different
+definition. Other snapshot fields and learner progress are preserved. Complete
+historical counts cannot be reconstructed from latest word state; availability
+starts on the migration UTC day with recoverable gains; complete recording
+covers subsequent days. Pre-migration resets are unrecoverable.
+This requires the stopped-writer offline migration procedure above.

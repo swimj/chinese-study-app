@@ -96,6 +96,7 @@ describe('session completion', { concurrency: false }, () => {
       DELETE FROM study_attempt_events;
       DELETE FROM study_sessions;
       DELETE FROM daily_new_word_intake;
+      DELETE FROM learner_practice_correct_days;
       DELETE FROM review_session_summaries;
       DELETE FROM word_skill_state;
       DELETE FROM word_study_admission_state;

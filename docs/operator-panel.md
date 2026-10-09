@@ -32,12 +32,15 @@ snapshot. The view does not use server-side pagination.
 ## Usage metrics
 
 Usage shows today live and seven completed UTC days as saved snapshots. Each day
-counts completed learning word encounters as **Practice**, separately from new
-words. **Review correct** and **Review wrong** count completed review exercises
+counts words that gain a correct day as **Practice**, once per learner and word
+per UTC day, including graduation into Review. A successful practice completion
+records the gain immediately, even if the enclosing session is not finished.
+Failed completions and same-day repeats add no gain. **Review correct** and
+**Review wrong** count completed review exercises
 without and with a lapse, including contrast selection and pure cues. Successful
 reinforcement after a lapse adds no exercise and does not turn that exercise into
-a correct review. These counts and total active session time come from completed
-session summaries; work in incomplete sessions is not included.
+a correct review. Review counts and total active session time come from completed
+session summaries; their work in incomplete sessions is not included.
 
 **Proposals accepted** counts durable proposal-acceptance invocations on their UTC
 creation day, including exact and revised acceptances, regardless of later
@@ -47,9 +50,13 @@ stashes, at the snapshot capture time. Late captures use the stash at capture ti
 not a reconstruction of the earlier day's stash.
 
 A dash marks unavailable data. Existing snapshot medians cannot supply historical
-means. Historical practice counts are not reconstructed; any completed summary
-without the new learning count makes that day's practice total unavailable. A day
-with no completed sessions has zero practice. Spend accounting is available in
+means. Practice uses a durable correct-day ledger, independent of browser session
+summary fields. Migration 0035 seeds the latest successful dates still present in
+word state; gains erased by a reset before migration cannot be recovered.
+The migration UTC day reports recoverable gains; complete recording covers
+subsequent days. Earlier days remain unavailable,
+including old snapshots whose encounter counts measured a different quantity.
+Covered days with no gains show zero. Spend accounting is available in
 Model invocations; the existing sparse spend-without-accepts signal remains.
 
 ## Service banner workflow

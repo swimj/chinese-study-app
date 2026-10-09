@@ -110,15 +110,19 @@ export function computeUsagePulseDay(input: {
   const totals = getDb().prepare(`
     SELECT COALESCE(SUM(completed_count - failed_count), 0) AS review_correct,
       COALESCE(SUM(failed_count), 0) AS review_wrong,
-      COALESCE(SUM(active_duration_ms), 0) AS session_active_ms,
-      CASE WHEN COUNT(*) = COUNT(learning_completed_count)
-        THEN COALESCE(SUM(learning_completed_count), 0) ELSE NULL END AS practice_completed
+      COALESCE(SUM(active_duration_ms), 0) AS session_active_ms
     FROM learner_owned_review_session_summaries
     WHERE day_key = ?
   `).get(dayKey) as {
     review_correct: number; review_wrong: number; session_active_ms: number;
-    practice_completed: number | null;
   };
+  const coverage = getDb().prepare(`SELECT substr(applied_at, 1, 10) AS day_key
+    FROM schema_migrations WHERE migration_id = 'app_schema:0035_practice_correct_days'
+  `).get() as { day_key: string } | undefined;
+  if (!coverage) throw new Error('Practice correct-day migration is required');
+  const practice = getDb().prepare(`SELECT COUNT(*) AS value
+    FROM learner_practice_correct_days WHERE day_key = ?
+  `).get(dayKey) as { value: number };
   const proposals = getDb().prepare(`
     SELECT COUNT(*) AS value FROM learner_owned_reflection_operation_invocations
     WHERE origin_kind = 'proposal_acceptance'
@@ -197,7 +201,7 @@ export function computeUsagePulseDay(input: {
     dau: Number(dauRow.value),
     sessionsCompleted: Number(sessionsCompletedRow.value),
     newWords: Number(newWordsRow.value),
-    practiceCompleted: totals.practice_completed,
+    practiceCompleted: dayKey >= coverage.day_key ? practice.value : null,
     reviewCorrect: totals.review_correct,
     reviewWrong: totals.review_wrong,
     proposalsAccepted: proposals.value,
