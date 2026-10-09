@@ -79,7 +79,7 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 | `hosted-upgrade.test.ts` | App-only upgrade command: identity confirmation, dirty-tree refusal, deploy build-arg, smoke-failure stays closed, reopen banner clear | `scripts/lib/hosted-upgrade.ts` |
 | `hosted-smoke.test.ts` | Read-only Clerk smoke: existing-learner gate, token mint/revoke, no token leakage | `scripts/lib/hosted-smoke.ts` |
 | `observability.test.ts` | Bounded route labels, request/response histograms, private Prometheus listener, and metrics-port validation | `server/observability.ts` |
-| `usage-pulse.test.ts` | Daily cohort exercise/time totals, correct-day practice gains, legacy summary independence, mean stash, snapshot idempotency, smoke-learner inactive exclusion, operator allowlist, and usage-pulse, preparation-retry, model-invocation, and service-banner API behavior | `server/db/usage-pulse.ts`, operator routes and access control |
+| `usage-pulse.test.ts` | Daily cohort exercise/time totals, nullable practice, mean stash, snapshot idempotency, smoke-learner inactive exclusion, operator allowlist, and usage-pulse, preparation-retry, model-invocation, and service-banner API behavior | `server/db/usage-pulse.ts`, operator routes and access control |
 | `client-incident-diagnostics.test.ts` | Account-scoped client queue bounds/retention, visible IDs, private sidecar deduplication/pruning, and inspection | Client/server incident diagnostic modules |
 | `study-commit-diagnostics.test.ts` | Success/failure correlation, exact private payload/error retention, 30-day pruning, diagnostic-id responses, contrast routing, and logging isolation | `server/study-commit-diagnostics.ts`, study-commit API handlers |
 
@@ -158,8 +158,6 @@ The `clientRequestId` is sent to OpenAI as `X-Client-Request-Id`, so it can also
 be supplied to OpenAI Support if a transport failure gives no server-generated
 request ID.
 
-`practice-correct-days-migration.test.ts` covers latest-success recovery,
-progress preservation, snapshot practice invalidation, daily uniqueness, and
-idempotency. `usage-exercise-totals-migration.test.ts` covers populated upgrade preservation,
+`usage-exercise-totals-migration.test.ts` covers populated upgrade preservation,
 unknown historical values, learner-scoped writes, repeat migration, fresh schema
 equivalence, and the acceptance time index.

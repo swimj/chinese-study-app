@@ -188,7 +188,7 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     assert.equal(stored[0]?.dau, 1);
   });
 
-  test('sums completed exercises and time; historical practice is unavailable', () => {
+  test('sums completed exercises and time; practice remains unknown for partial legacy days', () => {
     const dayKey = '2026-10-05';
     const summary = { sessionId: 'totals-a', completedAt: `${dayKey}T12:00:00.000Z`,
       completedReviewActionCount: 5, failedReviewActionCount: 2,
@@ -209,49 +209,16 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     assert.equal(totals.reviewCorrect, 4);
     assert.equal(totals.reviewWrong, 3);
     assert.equal(totals.sessionActiveMs, 150_000);
-    assert.equal(totals.practiceCompleted, null);
+    assert.equal(totals.practiceCompleted, 7);
     dbModule.runWithLearnerId('learner-a', () => insertSessionSummary({
       sessionId: 'legacy-totals', dayKey, completedAt: `${dayKey}T13:00:00.000Z`, activeDurationMs: 10_000,
     }));
     totals = usagePulse.computeUsagePulseDay({ dayKey });
     assert.equal(totals.practiceCompleted, null);
     assert.equal(totals.sessionActiveMs, 160_000);
-    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-10-04' }).practiceCompleted, null);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-10-04' }).practiceCompleted, 0);
     // Existing cohort sizes are [0, 2, 1, 0]; empty stashes participate in the mean.
     assert.equal(totals.meanStashSize, 0.75);
-  });
-
-  test('counts correct days across learners despite legacy summaries, repeats, failures, and resets', () => {
-    const dayKey = new Date().toISOString().slice(0, 10);
-    insertLexicalWord('practice-success');
-    insertLexicalWord('practice-failure');
-    dbModule.runWithLearnerId('learner-a', () => {
-      insertSessionSummary({ sessionId: 'practice-legacy', dayKey,
-        completedAt: `${dayKey}T12:00:00.000Z`, activeDurationMs: 0 });
-      dbModule.completeLearningWordSession('practice-failure', false);
-      assert.equal(usagePulse.computeUsagePulseDay({ dayKey }).practiceCompleted, 0);
-      dbModule.completeLearningWordSession('practice-success', true);
-      dbModule.completeLearningWordSession('practice-success', true);
-      dbModule.completeLearningWordSession('practice-success', true); // graduation
-      dbModule.completeLearningWordSession('practice-success', false);
-      dbModule.dismissWordFromStudy('practice-success');
-    });
-    assert.equal(usagePulse.computeUsagePulseDay({ dayKey }).practiceCompleted, 1);
-    dbModule.runWithLearnerId('learner-b', () => {
-      dbModule.completeLearningWordSession('practice-success', true);
-    });
-    assert.equal(usagePulse.computeUsagePulseDay({ dayKey }).practiceCompleted, 2);
-    usagePulse.captureUsagePulseDay({ dayKey });
-    assert.equal(usagePulse.listUsageDailySnapshots([dayKey])[0]?.practiceCompleted, 2);
-    // A failed state update must roll back the ledger write too.
-    getDb().exec(`CREATE TEMP TRIGGER fail_practice_update BEFORE INSERT ON learner_word_state
-      WHEN NEW.word_id = 'practice-failure' BEGIN SELECT RAISE(ABORT, 'test failure'); END;`);
-    try {
-      dbModule.runWithLearnerId('learner-a', () => {
-        assert.throws(() => dbModule.completeLearningWordSession('practice-failure', true), /test failure/);
-      });
-      assert.equal(usagePulse.computeUsagePulseDay({ dayKey }).practiceCompleted, 2);
-    } finally { getDb().exec('DROP TRIGGER fail_practice_update'); }
   });
 
   test('counts proposal acceptance events by creation day regardless of application state', () => {

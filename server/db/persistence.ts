@@ -2622,13 +2622,6 @@ export function completeLearningWordSession(wordId: string, success: boolean): W
   getDb().exec('BEGIN');
 
   try {
-    if (success) {
-      getDb().prepare(`
-        INSERT INTO learner_practice_correct_days (learner_id, word_id, day_key)
-        VALUES (?, ?, ?)
-        ON CONFLICT(learner_id, word_id, day_key) DO NOTHING
-      `).run(requireLearnerId(), wordId, today);
-    }
     getDb().prepare(`
       UPDATE words
       SET status = ?,
