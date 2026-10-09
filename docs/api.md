@@ -895,7 +895,10 @@ array of `{word,pinyin}` encounter snapshots (at most 1000 rows; nonempty word
 text and a pinyin string, which may be empty). The first Mandarin inventory and interests snapshot enqueue atomically
 with the completed summary; response remains 204. Missing inventory creates no
 job. Inventories of 0–14 exercises are ready with zero notes and no provider call
-or generation attempt; inventories of 15–1000 queue generation. The existing 100kb JSON
+or generation attempt; inventories of 15–1000 queue generation when at least
+one row survives the [recent connection cooldown](../SPECS/session-debrief.md#recent-connection-cooldown),
+otherwise they are also ready-empty. The exercise count remains the original
+covered inventory size. The existing 100kb JSON
 request-body limit also applies. Duplicate finalization preserves the first
 snapshot. No historical job is inferred.
 

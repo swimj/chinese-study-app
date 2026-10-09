@@ -350,13 +350,22 @@ reads only due identities before restoring each learner context.
 The optional summary inventory freezes exact encountered word/pinyin rows and
 the learner's `debrief_interests` setting. Missing interests read as empty text.
 Inventories below 15 exercises persist as ready-empty without an attempt; larger
-inventories queue generation up to the shared 1000-unit session cap. Worker
+inventories queue generation up to the shared 1000-unit session cap when an
+eligible row remains. At enqueue, recent ready jobs serve as the connection
+ledger: their immutable `updated_at` is the result-save time, and their note
+references resolve against the saved input. Two connected sessions in the last
+72 hours suppress a word. The full inventory stays in `input_json`, alongside
+`excludedRefs`; claim returns only eligible rows and completion validates those
+references. Missing `excludedRefs` on older snapshots means no exclusions.
+Retries reuse the selection; an entirely excluded inventory is ready-empty.
+No new table or migration is needed. See the [cooldown contract](../SPECS/session-debrief.md#recent-connection-cooldown)
+for counting and word-matching semantics. Worker
 recovery, enumeration, claim and explicit retry settle old small queued/failed
 jobs without generating, preserving existing ready results and attempt records.
 Ready results and concluded attempts are immutable. Queue recovery, leases,
 token fencing, provider controls and draining shutdown live in
 `server/session-debrief/worker.ts`; provider transport/validation and the
-approved byte-identical v6 prompt live beside it. This flow does not use
+approved byte-identical v7 prompt live beside it. This flow does not use
 reflection artifacts, evidence, runs, proposals, or model-selection policy.
 
 

@@ -35,19 +35,49 @@ The immutable input records the UTC completion timestamp, sequential `w1`, `w2`
 references, exact inventory strings, and the learner's interests at completion.
 Interests are an optional learner-owned settings text field, initially empty.
 They establish curiosity, not expertise or biography. Changing interests affects
-future snapshots; failed-job retries reuse the original input.
+future snapshots; failed-job retries reuse the original input and candidate selection.
+
+## Recent connection cooldown
+
+At session finalization, omit a word from generation when it has supported
+connections in at least two distinct successful debriefs saved for this learner
+within the preceding 72 hours. Several notes or repeated inventory rows in one
+debrief count as one connected session. Words merely supplied to the model do
+not count. The timestamp is when a successful result was saved, whether or not
+the learner opened it; failed, pending, and empty results contribute nothing.
+The window uses server time at finalization, excludes occurrences exactly 72
+hours old, and does not use the client's session completion date.
+
+This allows a second appearance to reinforce an association while reducing
+persistent repetition. Each occurrence expires independently. Suppressed
+appearances do not extend the cooldown. Match trimmed word text, independent of
+pinyin; slash-separated alternatives each contribute to history when their row
+is referenced. Omit an entire candidate row if any alternative is suppressed,
+preserving the exact text and pinyin of retained rows. Character variants are
+not unified by this policy.
+
+The job retains its full original inventory and freezes excluded references
+alongside it. Provider input contains only eligible rows, with their original
+references. Duplicate finalization and failed-job retries preserve this choice,
+even if history subsequently changes or expires. Already queued jobs retain
+their earlier snapshots. Sessions finalized before an earlier result is saved
+cannot count that result; this is a candidate-selection policy, not a strict
+quota on eventual connections. It also cannot prevent the same cultural material
+from returning through a different eligible word.
 
 ## Generation and results
 
 Use the approved v7 prompt verbatim, `gpt-6.1-sol` with low reasoning, strict JSON
 output, at most 4096 output tokens, and a 180-second transport timeout. The model
-receives the whole inventory and shared interests, without mistakes, mastery
+receives the eligible inventory rows and shared interests, without mistakes, mastery
 claims, prompts, personal notes, or later history. The result contains zero to
 ten notes, each with `text`, exact supporting `refs`, and nullable `followUp`.
 Validate shape and known references before storing or displaying notes. An empty
 successful result is ready with zero notes. Inventories with fewer than 15
 covered exercises become ready with zero notes without a provider call or
-generation attempt. At 15 exercises, ordinary queued generation applies.
+generation attempt. At 15 exercises, queued generation applies when at least one
+eligible row remains; fewer than 15 eligible rows may still be sent. If filtering
+removes every row, the job is ready-empty without a provider call or attempt.
 
 Jobs are learner-private and durable. Provider work continues when the learner
 leaves the summary, navigates away, refreshes, or closes the browser. A serial

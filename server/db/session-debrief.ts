@@ -7,6 +7,40 @@ import {
 } from '../../src/domain/session-debrief.ts';
 import type { DebriefRunMetadata } from '../session-debrief/provider.ts';
 
+const CONNECTION_WINDOW_MS = 72 * 60 * 60 * 1000;
+const CONNECTION_SESSION_LIMIT = 2;
+
+// Keep the exact encounter inventory alongside the frozen candidate selection.
+// Older snapshots without this field retain their original provider input.
+type StoredDebriefInput = SessionDebriefInput & { excludedRefs?: string[] };
+
+function providerInput(input: StoredDebriefInput): SessionDebriefInput {
+  const { excludedRefs = [], ...snapshot } = input;
+  const excluded = new Set(excludedRefs);
+  return { ...snapshot, items: snapshot.items.filter((item) => !excluded.has(item.ref)) };
+}
+
+function wordKeys(word: string): string[] {
+  return word.split('/').map((part) => part.trim()).filter(Boolean);
+}
+
+function recentlyConnectedWords(now: string): Set<string> {
+  const cutoff = new Date(Date.parse(now) - CONNECTION_WINDOW_MS).toISOString();
+  const history = getDb().prepare(`SELECT input_json, result_json FROM learner_session_debrief_jobs
+    WHERE learner_id = ? AND status = 'ready' AND updated_at > ? AND updated_at <= ?`)
+    .all(requireLearnerId(), cutoff, now) as Array<{ input_json: string; result_json: string }>;
+  const counts = new Map<string, number>();
+  for (const row of history) {
+    const input = JSON.parse(row.input_json) as StoredDebriefInput;
+    const result = JSON.parse(row.result_json) as SessionDebriefResult;
+    const refs = new Set(result.notes.flatMap((note) => note.refs));
+    // Several notes or inventory rows still represent one connected session.
+    const words = new Set(input.items.filter((item) => refs.has(item.ref)).flatMap((item) => wordKeys(item.word)));
+    for (const word of words) counts.set(word, (counts.get(word) ?? 0) + 1);
+  }
+  return new Set([...counts].filter(([, count]) => count >= CONNECTION_SESSION_LIMIT).map(([word]) => word));
+}
+
 export function getDebriefInterests(): string {
   const row = getDb().prepare(`SELECT value_json FROM learner_settings WHERE learner_id = ? AND setting_key = 'debrief_interests'`)
     .get(requireLearnerId()) as { value_json: string } | undefined;
@@ -25,20 +59,24 @@ export function setDebriefInterests(value: unknown): { debriefInterests: string 
 }
 
 /** Called within the durable summary transaction. First inventory wins on repeat finalization. */
-export function enqueueSessionDebrief(sessionId: string, completedAt: string, inventory: SessionDebriefInventoryItem[]): void {
+export function enqueueSessionDebrief(sessionId: string, completedAt: string, inventory: SessionDebriefInventoryItem[],
+  now = new Date().toISOString()): void {
   validateDebriefInventory(inventory);
   const interests = getDebriefInterests();
-  const input: SessionDebriefInput = {
+  const input: StoredDebriefInput = {
     schemaVersion: 'session_debrief_input.v1', sessionDate: new Date(completedAt).toISOString(),
     interests: interests.trim() ? [interests] : [],
     items: inventory.map((item, index) => ({ ...item, ref: `w${index + 1}` })),
   };
-  const generate = inventory.length >= MIN_SESSION_DEBRIEF_ITEMS;
+  const suppressed = recentlyConnectedWords(now);
+  input.excludedRefs = input.items.filter((item) => wordKeys(item.word).some((word) => suppressed.has(word)))
+    .map((item) => item.ref);
+  const generate = inventory.length >= MIN_SESSION_DEBRIEF_ITEMS && providerInput(input).items.length > 0;
   getDb().prepare(`INSERT INTO learner_session_debrief_jobs
     (learner_id, session_id, completed_at, exercise_count, input_json, status, result_json, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(learner_id, session_id) DO NOTHING`)
     .run(requireLearnerId(), sessionId, input.sessionDate, inventory.length, JSON.stringify(input),
-      generate ? 'queued' : 'ready', generate ? null : '{"notes":[]}', new Date().toISOString());
+      generate ? 'queued' : 'ready', generate ? null : '{"notes":[]}', now);
 }
 
 /** Apply the current threshold to pending legacy jobs without touching ready results or attempts. */
@@ -105,7 +143,7 @@ export function claimSessionDebrief(sessionId: string, token: string, startedAt:
       .run(requireLearnerId(), token, sessionId, startedAt);
     const row = getDb().prepare(`SELECT input_json FROM learner_session_debrief_jobs WHERE learner_id = ? AND session_id = ?`)
       .get(requireLearnerId(), sessionId) as { input_json: string };
-    return JSON.parse(row.input_json) as SessionDebriefInput;
+    return providerInput(JSON.parse(row.input_json) as StoredDebriefInput);
   });
 }
 export function finishSessionDebrief(input: {
@@ -116,7 +154,7 @@ export function finishSessionDebrief(input: {
     const row = getDb().prepare(`SELECT input_json FROM learner_session_debrief_jobs WHERE learner_id = ? AND session_id = ?
       AND status = 'running' AND active_token = ?`).get(requireLearnerId(), input.sessionId, input.token) as { input_json: string } | undefined;
     if (!row) return false;
-    if (input.result) validateSessionDebriefResult(input.result, JSON.parse(row.input_json) as SessionDebriefInput);
+    if (input.result) validateSessionDebriefResult(input.result, providerInput(JSON.parse(row.input_json) as StoredDebriefInput));
     getDb().prepare(`UPDATE learner_session_debrief_jobs SET status = ?, result_json = ?, active_token = NULL,
       expires_at = NULL, last_error = ?, updated_at = ? WHERE learner_id = ? AND session_id = ? AND active_token = ?`)
       .run(input.result ? 'ready' : 'failed', input.result ? JSON.stringify(input.result) : null, input.error,
