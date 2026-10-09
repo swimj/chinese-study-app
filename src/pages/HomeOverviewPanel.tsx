@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { DEFAULT_INTRODUCTION_SPACING, MAX_INTRODUCTION_SPACING, isStudyIntroductionOrder, type StudyIntroductionOrder } from '../domain/introduction-order';
 import type { BackendStatus, UnstudiedAdmissionSource } from '../services/api';
 import type { CharacterPresentation, SentenceCharacterPresentation } from '../domain/card-characters';
 import type { SessionPrefetchState } from '../features/session/session-prefetch';
@@ -184,7 +185,8 @@ export function SessionSettingsPanel({
   backendStatus: BackendStatus | null;
   onSaveSessionSettings: (settings: {
     dailyNewWordLimit?: number;
-    studyNewWordsFirst?: boolean;
+    studyIntroductionOrder?: StudyIntroductionOrder;
+    studyIntroductionSpacing?: number;
     unstudiedAdmissionSource?: UnstudiedAdmissionSource;
     characterPresentation?: CharacterPresentation;
     sentenceCharacterPresentation?: SentenceCharacterPresentation;
@@ -200,7 +202,12 @@ export function SessionSettingsPanel({
       ? ''
       : String(backendStatus.dailyNewWordLimit)
   ));
-  const [newWordsFirstDraft, setNewWordsFirstDraft] = useState(backendStatus?.studyNewWordsFirst ?? false);
+  const [introductionOrderDraft, setIntroductionOrderDraft] = useState<StudyIntroductionOrder>(
+    backendStatus?.studyIntroductionOrder ?? (backendStatus?.studyNewWordsFirst ? 'first' : 'random'),
+  );
+  const [introductionSpacingDraft, setIntroductionSpacingDraft] = useState(
+    backendStatus?.studyIntroductionSpacing ?? DEFAULT_INTRODUCTION_SPACING,
+  );
   const [sourceDraft, setSourceDraft] = useState<UnstudiedAdmissionSource>(
     backendStatus?.unstudiedAdmissionSource ?? 'mixed',
   );
@@ -215,8 +222,10 @@ export function SessionSettingsPanel({
   const [limitError, setLimitError] = useState<string | null>(null);
 
   const committedLimit = backendStatus?.dailyNewWordLimit ?? null;
-  const committedNewWordsFirst = backendStatus?.studyNewWordsFirst ?? false;
-  const newWordsFirstDirty = newWordsFirstDraft !== committedNewWordsFirst;
+  const committedIntroductionOrder = backendStatus?.studyIntroductionOrder ?? (backendStatus?.studyNewWordsFirst ? 'first' : 'random');
+  const committedIntroductionSpacing = backendStatus?.studyIntroductionSpacing ?? DEFAULT_INTRODUCTION_SPACING;
+  const introductionOrderDirty = introductionOrderDraft !== committedIntroductionOrder;
+  const introductionSpacingDirty = introductionSpacingDraft !== committedIntroductionSpacing;
   const committedSource = backendStatus?.unstudiedAdmissionSource ?? 'mixed';
   const committedPresentation = backendStatus?.characterPresentation ?? 'simplified';
   const committedSentencePresentation = backendStatus?.sentenceCharacterPresentation ?? 'simplified';
@@ -227,7 +236,7 @@ export function SessionSettingsPanel({
     && sentencePresentationDraft !== committedSentencePresentation;
   const committedInterests = backendStatus?.debriefInterests ?? '';
   const interestsDirty = backendStatus?.studyProfile === 'mandarin' && interestsDraft !== committedInterests;
-  const settingsDirty = newWordsFirstDirty || limitDirty || sourceDirty || presentationDirty || sentencePresentationDirty || interestsDirty;
+  const settingsDirty = introductionOrderDirty || introductionSpacingDirty || limitDirty || sourceDirty || presentationDirty || sentencePresentationDirty || interestsDirty;
 
   function beginLimitEdit() {
     setLimitDraft(committedLimit === null ? '' : String(committedLimit));
@@ -237,7 +246,8 @@ export function SessionSettingsPanel({
 
   function cancelAndClose() {
     setLimitDraft(committedLimit === null ? '' : String(committedLimit));
-    setNewWordsFirstDraft(committedNewWordsFirst);
+    setIntroductionOrderDraft(committedIntroductionOrder);
+    setIntroductionSpacingDraft(committedIntroductionSpacing);
     setSourceDraft(committedSource);
     setPresentationDraft(committedPresentation);
     setSentencePresentationDraft(committedSentencePresentation);
@@ -263,7 +273,8 @@ export function SessionSettingsPanel({
 
     const patch: {
       dailyNewWordLimit?: number;
-      studyNewWordsFirst?: boolean;
+      studyIntroductionOrder?: StudyIntroductionOrder;
+      studyIntroductionSpacing?: number;
       unstudiedAdmissionSource?: UnstudiedAdmissionSource;
       characterPresentation?: CharacterPresentation;
       sentenceCharacterPresentation?: SentenceCharacterPresentation;
@@ -280,7 +291,10 @@ export function SessionSettingsPanel({
       patch.dailyNewWordLimit = dailyNewWordLimit;
     }
 
-    if (newWordsFirstDirty) patch.studyNewWordsFirst = newWordsFirstDraft;
+    if (introductionOrderDirty || introductionSpacingDirty) {
+      patch.studyIntroductionOrder = introductionOrderDraft;
+      patch.studyIntroductionSpacing = introductionSpacingDraft;
+    }
 
     if (sourceDirty) {
       patch.unstudiedAdmissionSource = sourceDraft;
@@ -327,7 +341,7 @@ export function SessionSettingsPanel({
 
       if (event.key === 'Enter' && !limitSaving) {
         const target = event.target as HTMLElement | null;
-        if (target?.closest('textarea, button')) {
+        if (target?.closest('textarea, button, select, summary')) {
           return;
         }
         event.preventDefault();
@@ -337,7 +351,7 @@ export function SessionSettingsPanel({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [limitDraft, sourceDraft, presentationDraft, sentencePresentationDraft, interestsDraft, committedInterests, limitSaving, settingsDirty, committedLimit, committedSource, committedPresentation, committedSentencePresentation]);
+  }, [limitDraft, introductionOrderDraft, introductionSpacingDraft, committedIntroductionOrder, committedIntroductionSpacing, sourceDraft, presentationDraft, sentencePresentationDraft, interestsDraft, committedInterests, limitSaving, settingsDirty, committedLimit, committedSource, committedPresentation, committedSentencePresentation]);
 
   useEffect(() => {
     if (limitEditing) {
@@ -364,7 +378,9 @@ export function SessionSettingsPanel({
     setSentencePresentationDraft(committedSentencePresentation);
   }, [committedSentencePresentation]);
 
-  useEffect(() => { setNewWordsFirstDraft(committedNewWordsFirst); }, [committedNewWordsFirst]);
+  useEffect(() => { setIntroductionOrderDraft(committedIntroductionOrder); }, [committedIntroductionOrder]);
+
+  useEffect(() => { setIntroductionSpacingDraft(committedIntroductionSpacing); }, [committedIntroductionSpacing]);
 
   useEffect(() => { setInterestsDraft(committedInterests); }, [committedInterests]);
 
@@ -422,17 +438,49 @@ export function SessionSettingsPanel({
             New words from stash only
           </label>
         </div>
-        <div className="session-settings-row">
-          <label className="inline-checkbox" title="Introduce all new words first; later practice stays interleaved.">
-            <input
-              type="checkbox"
-              checked={newWordsFirstDraft}
-              disabled={backendStatus?.studyNewWordsFirst === undefined || limitSaving}
-              onChange={(event) => { setNewWordsFirstDraft(event.target.checked); setLimitError(null); }}
-            />
-            Study new words first
-          </label>
+        <div className="session-settings-row" style={{ flexWrap: 'wrap' }}>
+          <label className="session-settings-label" htmlFor="study-introduction-order">Introductions:</label>
+          <select
+            id="study-introduction-order"
+            className="session-settings-select"
+            value={introductionOrderDraft}
+            disabled={backendStatus === null || limitSaving}
+            onChange={(event) => {
+              if (isStudyIntroductionOrder(event.target.value)) {
+                setIntroductionOrderDraft(event.target.value);
+                setLimitError(null);
+              }
+            }}
+          >
+            <option value="random">Random</option>
+            <option value="first">Introductions first</option>
+            <option value="paced">Paced</option>
+          </select>
         </div>
+        {introductionOrderDraft === 'paced' ? (
+          <div className="session-settings-row" style={{ flexWrap: 'wrap' }}>
+            <label className="session-settings-label" htmlFor="study-introduction-spacing">Exercises between introductions:</label>
+            <select
+              id="study-introduction-spacing"
+              className="session-settings-select"
+              value={introductionSpacingDraft}
+              disabled={backendStatus === null || limitSaving}
+              onChange={(event) => {
+                setIntroductionSpacingDraft(Number(event.target.value));
+                setLimitError(null);
+              }}
+            >
+              {Array.from({ length: MAX_INTRODUCTION_SPACING }, (_, index) => index + 1).map((spacing) => (
+                <option key={spacing} value={spacing}>{spacing}</option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+        <details>
+          <summary>Introduction order details</summary>
+          <p>Random mixes introductions into the session. Introductions first shows every new word before other exercises.</p>
+          <p>Paced starts with an introduction, then spaces introductions with the selected number of existing learning or review exercises, when available. New-word practice joins the mix after all introductions are done.</p>
+        </details>
         {backendStatus?.studyProfile === 'mandarin' ? (
           <div className="session-settings-row">
             <label className="session-settings-label" htmlFor="card-character-presentation">

@@ -1,3 +1,4 @@
+import { DEFAULT_INTRODUCTION_SPACING, type StudyIntroductionOrder } from './domain/introduction-order';
 import { useWhatsNewCatalog } from './features/attention/useWhatsNewCatalog';
 import { useEffect, useState } from 'react';
 import {
@@ -22,7 +23,7 @@ import {
   updateUnstudiedAdmissionSource,
   updateCharacterPresentation,
   updateSentenceCharacterPresentation,
-  updateStudyNewWordsFirst,
+  updateStudyIntroductionOrder,
   upsertReflectionQuality,
   withdrawReflectionAuthorization,
   fetchReflectionHelpInbox,
@@ -96,7 +97,8 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
     onSessionEnded: reloadDashboard,
     onReflectionGenerated: attention.refresh,
     sessionSurfaceVisible: currentPage === 'home',
-    studyNewWordsFirst: backendStatus?.studyNewWordsFirst ?? false,
+    studyIntroductionOrder: backendStatus?.studyIntroductionOrder ?? (backendStatus?.studyNewWordsFirst ? 'first' : 'random'),
+    studyIntroductionSpacing: backendStatus?.studyIntroductionSpacing ?? DEFAULT_INTRODUCTION_SPACING,
     characterPresentation: backendStatus?.characterPresentation ?? DEFAULT_CHARACTER_PRESENTATION,
   });
   const priorityPage = usePriorityPageController({
@@ -212,7 +214,8 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
 
   async function saveSessionSettings(settings: {
     dailyNewWordLimit?: number;
-    studyNewWordsFirst?: boolean;
+    studyIntroductionOrder?: StudyIntroductionOrder;
+    studyIntroductionSpacing?: number;
     unstudiedAdmissionSource?: BackendStatus['unstudiedAdmissionSource'];
     characterPresentation?: CharacterPresentation;
     sentenceCharacterPresentation?: SentenceCharacterPresentation;
@@ -251,21 +254,22 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
       sentenceCharacterPresentation = saved.sentenceCharacterPresentation;
     }
 
-    let studyNewWordsFirst = settings.studyNewWordsFirst;
-    if (studyNewWordsFirst !== undefined) {
-      studyNewWordsFirst = (await updateStudyNewWordsFirst(studyNewWordsFirst)).studyNewWordsFirst;
-    }
+    const introductionSettings = settings.studyIntroductionOrder !== undefined || settings.studyIntroductionSpacing !== undefined
+      ? await updateStudyIntroductionOrder(
+          settings.studyIntroductionOrder ?? backendStatus?.studyIntroductionOrder ?? (backendStatus?.studyNewWordsFirst ? 'first' : 'random'),
+          settings.studyIntroductionSpacing ?? backendStatus?.studyIntroductionSpacing ?? DEFAULT_INTRODUCTION_SPACING,
+        )
+      : null;
 
     let debriefInterests = settings.debriefInterests;
     if (debriefInterests !== undefined) {
       debriefInterests = (await updateDebriefInterests(debriefInterests)).debriefInterests;
     }
 
-    if (studyNewWordsFirst === undefined && !policy && characterPresentation === undefined && sentenceCharacterPresentation === undefined && debriefInterests === undefined) {
+    if (!introductionSettings && !policy && characterPresentation === undefined && sentenceCharacterPresentation === undefined && debriefInterests === undefined) {
       return;
     }
 
-    const nextStudyNewWordsFirst = studyNewWordsFirst;
     const nextPolicy = policy;
     const nextPresentation = characterPresentation;
     const nextSentencePresentation = sentenceCharacterPresentation;
@@ -273,7 +277,7 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
     setBackendStatus((currentStatus) => currentStatus
       ? {
           ...currentStatus,
-          ...(nextStudyNewWordsFirst !== undefined ? { studyNewWordsFirst: nextStudyNewWordsFirst } : {}),
+          ...(introductionSettings ? { ...introductionSettings, studyNewWordsFirst: introductionSettings.studyIntroductionOrder === 'first' } : {}),
           ...(nextPolicy
             ? {
                 dailyNewWordLimit: nextPolicy.dailyNewWordLimit,

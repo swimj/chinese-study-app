@@ -1,3 +1,4 @@
+import type { StudyIntroductionOrder } from '../domain/introduction-order';
 import type { WhatsNewCatalog } from '../features/attention/useWhatsNewCatalog';
 import type { SessionDeskHandle } from '../features/session/SessionDesk';
 import { SessionIntroductionGatePanel } from '../features/session/SessionIntroductionGatePanel';
@@ -142,7 +143,8 @@ export function HomePage({
   onSettingsOpened?: () => void;
   onSaveSessionSettings: (settings: {
     dailyNewWordLimit?: number;
-    studyNewWordsFirst?: boolean;
+    studyIntroductionOrder?: StudyIntroductionOrder;
+    studyIntroductionSpacing?: number;
     unstudiedAdmissionSource?: UnstudiedAdmissionSource;
     characterPresentation?: CharacterPresentation;
     sentenceCharacterPresentation?: SentenceCharacterPresentation;

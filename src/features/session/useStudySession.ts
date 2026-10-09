@@ -1,3 +1,4 @@
+import { DEFAULT_INTRODUCTION_SPACING, type StudyIntroductionOrder } from '../../domain/introduction-order';
 import { resolveContentExerciseResponse } from '../../domain/word-content/materialize';
 import { useIntroductionGate, type SessionIntroductionGate } from './useIntroductionGate';
 import { selectedIntroduction } from '../word-introduction/model';
@@ -174,6 +175,8 @@ export type StudySessionControllerOptions = {
   onReflectionGenerated?: () => Promise<void> | void;
   sessionSurfaceVisible: boolean;
   studyNewWordsFirst?: boolean;
+  studyIntroductionOrder?: StudyIntroductionOrder;
+  studyIntroductionSpacing?: number;
   characterPresentation?: CharacterPresentation;
 };
 
@@ -290,6 +293,8 @@ export function useStudySession({
   onReflectionGenerated,
   sessionSurfaceVisible,
   studyNewWordsFirst = false,
+  studyIntroductionOrder,
+  studyIntroductionSpacing = DEFAULT_INTRODUCTION_SPACING,
   characterPresentation = DEFAULT_CHARACTER_PRESENTATION,
 }: StudySessionControllerOptions): StudySessionController {
   const [sessionPrefetch, setSessionPrefetch] = useState<SessionPrefetchState>(() => getSessionPrefetchSnapshot());
@@ -675,7 +680,7 @@ export function useStudySession({
         visibilityState: typeof document === 'undefined' ? undefined : document.visibilityState,
         supportsVisibilityApi: typeof document !== 'undefined' && 'visibilityState' in document,
       });
-      setSessionState(createBucketSessionState({ buckets: sessionPayload.buckets, sessionId, schedulerPolicy: { studyNewWordsFirst } }));
+      setSessionState(createBucketSessionState({ buckets: sessionPayload.buckets, sessionId, schedulerPolicy: { studyNewWordsFirst, studyIntroductionOrder, studyIntroductionSpacing } }));
       resetSessionScopedUi();
       setPendingSessionCommit(null);
       setLastUndoSnapshot(null);

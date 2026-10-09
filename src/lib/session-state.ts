@@ -13,6 +13,8 @@ import { isPureCueSessionReviewItem as isPureCueReviewItem } from '../domain/stu
 import type { PureCueAssessmentEvent, PureCueServedSnapshot } from '../domain/pure-cues';
 import {
   createBucketSessionScheduler,
+  recordBucketIntroductionCompleted,
+  recordBucketStudyExercise,
   createInitialBucketLearningProgress,
   createInitialBucketUnstudiedProgress,
   getBucketSchedulerActiveUnit,
@@ -247,6 +249,7 @@ export function completeActiveUnstudiedIntro(state: BucketSessionState): BucketS
     state: refreshBucketSessionScheduler({
       ...state,
       progress,
+      scheduler: recordBucketIntroductionCompleted(state.scheduler),
     }),
     commit: { type: 'none' },
   };
@@ -299,6 +302,7 @@ export function rateActiveSessionUnit(
   }
 
   assertActiveSessionUnitStarted(state, active, rating);
+  state = { ...state, scheduler: recordBucketStudyExercise(state.scheduler) };
 
   switch (active.bucket) {
     case 'learning':
@@ -341,6 +345,7 @@ export function rateActiveContrastSelectionUnit({
   }
 
   assertActiveSessionUnitStarted(state, active, rating);
+  state = { ...state, scheduler: recordBucketStudyExercise(state.scheduler) };
 
   const item = active.item;
   const contrastSelection = item.contrastSelection;
@@ -457,6 +462,7 @@ export function rateActivePureCueProductionUnit(
     throw new Error('Session invariant violated: pure cue production rating requires the active pure cue review item.');
   }
   assertActiveSessionUnitStarted(state, active, rating);
+  state = { ...state, scheduler: recordBucketStudyExercise(state.scheduler) };
   const item = active.item;
   if (options.outcome === 'rejected' && rating !== 'forgot') {
     throw new Error('Session invariant violated: rejected pure cue response must be rated forgot.');

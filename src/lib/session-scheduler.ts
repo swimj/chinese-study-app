@@ -8,6 +8,7 @@ import type {
 } from '../domain/study-actions';
 import { buildWordLifecycleSessionStudyItems, cloneProductionExerciseSnapshot, isPureCueSessionReviewItem } from '../domain/study-actions';
 import type { Word } from '../types';
+import { DEFAULT_INTRODUCTION_SPACING, isStudyIntroductionOrder, isStudyIntroductionSpacing, type StudyIntroductionOrder } from '../domain/introduction-order';
 import { DEFAULT_SESSION_BUCKET_WEIGHTS } from '../domain/session-limits';
 
 // Live sessions seed from sessionId. This fallback keeps scheduler unit tests
@@ -21,6 +22,8 @@ export type BucketSchedulerWeights = Record<BucketSchedulerBucket, number>;
 export type BucketSessionSchedulerPolicy = {
   bucketWeights: BucketSchedulerWeights;
   studyNewWordsFirst?: boolean;
+  studyIntroductionOrder?: StudyIntroductionOrder;
+  studyIntroductionSpacing?: number;
 };
 
 export type BucketSchedulerLearningProgress = {
@@ -63,6 +66,8 @@ export type BucketSessionScheduler = {
   unstudiedPool: Word[];
   policy: BucketSessionSchedulerPolicy;
   rngState: number;
+  /** Remaining existing-work exercises before the next paced introduction. */
+  introductionExercisesRemaining: number;
   activeUnit: ActiveBucketSchedulerUnit | null;
 };
 
@@ -85,6 +90,12 @@ export function createBucketSessionScheduler({
   progress?: Partial<BucketSchedulerProgress>;
   seed?: number;
 }): BucketSessionScheduler {
+  if (policy?.studyIntroductionOrder !== undefined && !isStudyIntroductionOrder(policy.studyIntroductionOrder)) {
+    throw new Error('Invalid introduction order.');
+  }
+  if (policy?.studyIntroductionSpacing !== undefined && !isStudyIntroductionSpacing(policy.studyIntroductionSpacing)) {
+    throw new Error('Introduction spacing must be an integer from 1 to 10.');
+  }
   const scheduler: BucketSessionScheduler = {
     learningRehearsals: structuredClone(buckets.learningRehearsals ?? {}),
     learningContent: structuredClone(buckets.learningContent ?? {}),
@@ -100,10 +111,24 @@ export function createBucketSessionScheduler({
       },
     },
     rngState: normalizeSeed(seed ?? DEFAULT_SEED),
+    introductionExercisesRemaining: 0,
     activeUnit: null,
   };
 
   return syncBucketScheduler(scheduler, normalizeBucketSchedulerProgress(progress));
+}
+
+/** Advance only at accepted session transitions, never at a recomputation. */
+export function recordBucketIntroductionCompleted(scheduler: BucketSessionScheduler): BucketSessionScheduler {
+  return scheduler.policy.studyIntroductionOrder === 'paced'
+    ? { ...scheduler, introductionExercisesRemaining: scheduler.policy.studyIntroductionSpacing ?? DEFAULT_INTRODUCTION_SPACING }
+    : scheduler;
+}
+
+export function recordBucketStudyExercise(scheduler: BucketSessionScheduler): BucketSessionScheduler {
+  return scheduler.policy.studyIntroductionOrder === 'paced'
+    ? { ...scheduler, introductionExercisesRemaining: Math.max(0, scheduler.introductionExercisesRemaining - 1) }
+    : scheduler;
 }
 
 export function sessionIdToSchedulerSeed(sessionId: string): number {
@@ -233,6 +258,7 @@ export function cloneBucketSessionScheduler(scheduler: BucketSessionScheduler): 
       bucketWeights: { ...scheduler.policy.bucketWeights },
     },
     rngState: scheduler.rngState,
+    introductionExercisesRemaining: scheduler.introductionExercisesRemaining,
     activeUnit: scheduler.activeUnit ? cloneActiveBucketSchedulerUnit(scheduler.activeUnit) : null,
   };
 }
@@ -311,10 +337,15 @@ function recomputeActiveBucketSchedulerUnit(
   progress: BucketSchedulerProgress,
 ): BucketSessionScheduler {
   // Only unfinished introductions get priority; recall keeps ordinary bucket weights.
-  const pendingIntros = scheduler.policy.studyNewWordsFirst
+  const order = scheduler.policy.studyIntroductionOrder
+    ?? (scheduler.policy.studyNewWordsFirst ? 'first' : 'random');
+  const pendingIntros = order !== 'random'
     ? scheduler.unstudiedPool.filter((word) => !progress.unstudied[word.id]?.introComplete)
     : [];
-  if (pendingIntros.length > 0) {
+  const counts = getBucketSchedulerBucketCountsForProgress(scheduler, progress);
+  const spacingWorkAvailable = counts.review > 0 || counts.learning > 0;
+  if (pendingIntros.length > 0 && (order === 'first'
+    || scheduler.introductionExercisesRemaining === 0 || !spacingWorkAvailable)) {
     const rngState = lcg(scheduler.rngState);
     return {
       ...scheduler,
@@ -323,7 +354,6 @@ function recomputeActiveBucketSchedulerUnit(
     };
   }
 
-  const counts = getBucketSchedulerBucketCountsForProgress(scheduler, progress);
   if (counts.review === 0 && counts.learning === 0 && counts.unstudied === 0) {
     return {
       ...scheduler,
@@ -331,7 +361,8 @@ function recomputeActiveBucketSchedulerUnit(
     };
   }
 
-  const bucket = pickBucketSchedulerBucket(scheduler, progress, scheduler.rngState);
+  const bucket = pickBucketSchedulerBucket(scheduler, progress, scheduler.rngState,
+    pendingIntros.length > 0 && order === 'paced' ? ['review', 'learning'] : REVIEW_BUCKETS);
   const activeUnit = pickActiveBucketSchedulerUnit(scheduler, bucket, progress, lcg(scheduler.rngState));
 
   return {
@@ -345,8 +376,9 @@ function pickBucketSchedulerBucket(
   scheduler: BucketSessionScheduler,
   progress: BucketSchedulerProgress,
   rngState: number,
+  eligibleBuckets: BucketSchedulerBucket[] = REVIEW_BUCKETS,
 ): BucketSchedulerBucket {
-  const nonemptyBuckets = getNonemptyBucketSchedulerBuckets(scheduler, progress);
+  const nonemptyBuckets = getNonemptyBucketSchedulerBuckets(scheduler, progress).filter(bucket => eligibleBuckets.includes(bucket));
   const totalWeight = nonemptyBuckets.reduce((sum, bucket) => sum + Math.max(0, scheduler.policy.bucketWeights[bucket]), 0);
 
   if (totalWeight <= 0) {
