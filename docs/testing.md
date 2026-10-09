@@ -2,6 +2,18 @@
 
 Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 
+## Browser regression checks
+
+With `npm run dev:frontend` running, open
+`/tests/browser/final-reinforcement.html` on the Vite server. This isolated fixture
+intercepts all HTTP and exercises the real session controller, HomePage, and
+retained completion card. It reports PASS after verifying that the final correct
+production reinforcement fills all three boxes, Undo restores two, skipping a
+revealed reinforcement keeps two, and a subsequent correct retry fills three.
+It leaves the completed card visible for visual inspection. These browser
+assertions are separate from `npm test`; server rendering cannot exercise the
+retained card's layout-effect lifecycle.
+
 ## By domain
 
 | Test file | Domain | Imports |

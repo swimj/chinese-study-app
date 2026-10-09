@@ -149,7 +149,7 @@ function StudySessionPanelContent({
   activeReviewProgress,
   activePureCueFailureCount,
   activePureCueReinforcementStreak,
-  completedReinforcementStreak = null,
+  completedReinforcementStreak,
   reviewedCount,
   queuedCount,
   hasUndo,
@@ -230,7 +230,7 @@ function StudySessionPanelContent({
   activeReviewProgress: ReviewActionProgress | undefined;
   activePureCueFailureCount: number;
   activePureCueReinforcementStreak: number;
-  completedReinforcementStreak?: number | null;
+  completedReinforcementStreak: number | null;
   reviewedCount: number;
   queuedCount: number;
   hasUndo: boolean;

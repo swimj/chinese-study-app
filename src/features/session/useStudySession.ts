@@ -201,7 +201,7 @@ export type StudySessionHomePageProps = {
   activeReviewProgress: ReviewActionProgress | undefined;
   activePureCueFailureCount: number;
   activePureCueReinforcementStreak: number;
-  completedReinforcementStreak?: number | null;
+  completedReinforcementStreak: number | null;
   hasUndo: boolean;
   submittingRating: ReviewRating | null;
   personalNotesEditorOpen: boolean;
