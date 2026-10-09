@@ -8,7 +8,7 @@ import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { bootstrapLearner } from '../server/db/identity.ts';
 import { recordReviewSessionSummary } from '../server/db/persistence.ts';
 import { claimSessionDebrief, enqueueSessionDebrief, finishSessionDebrief, getSessionDebrief,
-  retrySessionDebrief } from '../server/db/session-debrief.ts';
+  retrySessionDebrief, listQueuedSessionDebriefs } from '../server/db/session-debrief.ts';
 import { createSessionDebriefWorker } from '../server/session-debrief/worker.ts';
 import type { SessionDebriefResult } from '../src/domain/session-debrief.ts';
 
@@ -16,7 +16,7 @@ let dir: string;
 let sequence = 0;
 const start = Date.parse('2026-10-01T00:00:00.000Z');
 const at = (hours: number) => new Date(start + hours * 60 * 60 * 1000).toISOString();
-const words = ['诗意', '诗意', '清风', ...Array.from({ length: 12 }, (_, i) => `词${i}`)];
+const words = ['诗意', '诗意', '清风', ...Array.from({ length: 15 }, (_, i) => `词${i}`)];
 const note = (...refs: string[]) => ({ text: 'A connection', refs, followUp: null });
 function learner() {
   const id = `cooldown-${sequence++}`;
@@ -53,15 +53,15 @@ test('two distinct connected sessions suppress all matching rows; duplicate note
   learner()(() => {
     connect('first', 0, [note('w1', 'w2'), note('w1')]);
     enqueue('second', 24);
-    assert.equal(claim('second', 24)!.items.length, 15, 'one session allows a second connection');
+    assert.equal(claim('second', 24)!.items.length, 18, 'one session allows a second connection');
     finish('second', 24, { notes: [note('w2')] });
     enqueue('third', 48);
     const input = claim('third', 48)!;
     assert.deepEqual(input.items.map((item) => item.word), words.slice(2));
     assert.equal(input.items[0].ref, 'w3', 'references still identify original rows');
-    assert.equal(getSessionDebrief('third')!.exerciseCount, 15, 'threshold uses covered exercises');
+    assert.equal(getSessionDebrief('third')!.exerciseCount, 18, 'reported count preserves covered exercises');
     const stored = JSON.parse(String(getDb().prepare(`SELECT input_json FROM learner_session_debrief_jobs WHERE session_id = 'third'`).get()!.input_json));
-    assert.equal(stored.items.length, 15);
+    assert.equal(stored.items.length, 18);
     assert.deepEqual(stored.excludedRefs, ['w1', 'w2']);
     assert.equal('excludedRefs' in input, false, 'selection metadata is not sent to the provider');
     assert.throws(() => finish('third', 48, { notes: [note('w1')] }), /Invalid debrief/);
@@ -77,7 +77,7 @@ test('rolling 72-hour boundary expires independently; suppressed appearances do 
     assert.equal(claim('boundary-before', 72)!.items.some((item) => item.word === '诗意'), false);
     finish('boundary-before', 72, { notes: [] });
     enqueue('boundary-exact', 72);
-    assert.equal(claim('boundary-exact', 72)!.items.length, 15);
+    assert.equal(claim('boundary-exact', 72)!.items.length, 18);
     finish('boundary-exact', 72, { notes: [] });
   });
 });
@@ -92,7 +92,7 @@ test('history is learner-private and excludes failed, pending, empty, and future
     connect('empty', 3, []);
     connect('future', 100);
     enqueue('eligible', 4);
-    assert.equal(claim('eligible', 4)!.items.length, 15);
+    assert.equal(claim('eligible', 4)!.items.length, 18);
     finish('eligible', 4, { notes: [] });
     claim('pending', 4); finish('pending', 4, { notes: [] });
   });
@@ -130,7 +130,7 @@ test('existing ready snapshots without exclusions contribute history and old que
         failedReviewActionCount: 0, activeDurationMs: 0 });
       getDb().prepare(`INSERT INTO learner_session_debrief_jobs
         (learner_id, session_id, completed_at, exercise_count, input_json, status, result_json, updated_at)
-        SELECT learner_id, session_id, ?, 15, ?, ?, ?, ? FROM learner_owned_review_session_summaries WHERE session_id = ?`)
+        SELECT learner_id, session_id, ?, 18, ?, ?, ?, ? FROM learner_owned_review_session_summaries WHERE session_id = ?`)
         .run(at(-1000), JSON.stringify({ schemaVersion: 'session_debrief_input.v1', sessionDate: at(-1000),
           interests: [], items: words.map((word, i) => ({ word, pinyin: '', ref: `w${i + 1}` })) }),
         status, status === 'ready' ? JSON.stringify({ notes: [note('w1')] }) : null, at(0), id);
@@ -139,8 +139,46 @@ test('existing ready snapshots without exclusions contribute history and old que
     enqueue('legacy-next', 2);
     assert.equal(claim('legacy-next', 2)!.items.some((item) => item.word === '诗意'), false);
     finish('legacy-next', 2, { notes: [] });
-    assert.equal(claim('legacy-queued', 2)!.items.length, 15);
+    assert.equal(claim('legacy-queued', 2)!.items.length, 18);
     finish('legacy-queued', 2, { notes: [] });
+  });
+});
+
+test('generation requires at least 15 post-filter rows, while exercise count preserves the original inventory', () => {
+  learner()(() => {
+    connect('minimum-first', 0); connect('minimum-second', 1);
+    enqueue('minimum-14', 2, words.slice(0, 16));
+    const small = getSessionDebrief('minimum-14')!;
+    assert.equal(small.exerciseCount, 16);
+    assert.equal(small.status, 'ready'); assert.deepEqual(small.notes, []);
+    assert.equal(small.attemptCount, 0); assert.equal(claim('minimum-14', 2), null);
+    enqueue('minimum-15', 2, words.slice(0, 17));
+    assert.equal(getSessionDebrief('minimum-15')!.status, 'queued');
+    assert.equal(claim('minimum-15', 2)!.items.length, 15);
+    finish('minimum-15', 2, { notes: [] });
+  });
+});
+
+test('pending snapshots below the filtered minimum settle on claim, retry, and queue enumeration', () => {
+  learner()(() => {
+    for (const [id, status] of [['filtered-claim', 'queued'], ['filtered-retry', 'failed'], ['filtered-list', 'queued']] as const) {
+      recordReviewSessionSummary({ sessionId: id, completedAt: at(0), completedReviewActionCount: 0,
+        failedReviewActionCount: 0, activeDurationMs: 0 });
+      getDb().prepare(`INSERT INTO learner_session_debrief_jobs
+        (learner_id, session_id, completed_at, exercise_count, input_json, status, updated_at)
+        SELECT learner_id, session_id, ?, 18, ?, ?, ? FROM learner_owned_review_session_summaries WHERE session_id = ?`)
+        .run(at(0), JSON.stringify({ schemaVersion: 'session_debrief_input.v1', sessionDate: at(0),
+          interests: [], excludedRefs: ['w1', 'w2', 'w3', 'w4'],
+          items: words.map((word, i) => ({ word, pinyin: '', ref: `w${i + 1}` })) }), status, at(0), id);
+    }
+    assert.equal(claim('filtered-claim', 1), null);
+    assert.equal(retrySessionDebrief('filtered-retry').status, 'ready');
+    assert.equal(listQueuedSessionDebriefs().some((job) => job.sessionId === 'filtered-list'), false);
+    for (const id of ['filtered-claim', 'filtered-retry', 'filtered-list']) {
+      const job = getSessionDebrief(id)!;
+      assert.equal(job.status, 'ready'); assert.deepEqual(job.notes, []);
+      assert.equal(job.attemptCount, 0); assert.equal(job.exerciseCount, 18);
+    }
   });
 });
 

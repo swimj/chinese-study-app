@@ -73,11 +73,11 @@ receives the eligible inventory rows and shared interests, without mistakes, mas
 claims, prompts, personal notes, or later history. The result contains zero to
 ten notes, each with `text`, exact supporting `refs`, and nullable `followUp`.
 Validate shape and known references before storing or displaying notes. An empty
-successful result is ready with zero notes. Inventories with fewer than 15
-covered exercises become ready with zero notes without a provider call or
-generation attempt. At 15 exercises, queued generation applies when at least one
-eligible row remains; fewer than 15 eligible rows may still be sent. If filtering
-removes every row, the job is ready-empty without a provider call or attempt.
+successful result is ready with zero notes. Apply the 15-item generation minimum
+to the eligible inventory after cooldown filtering. Fewer than 15 eligible rows
+become ready with zero notes without a provider call or generation attempt;
+15 or more queue generation. The displayed exercise count still records the
+original covered inventory size.
 
 Jobs are learner-private and durable. Provider work continues when the learner
 leaves the summary, navigates away, refreshes, or closes the browser. A serial
@@ -93,7 +93,7 @@ the database.
 Provider failure, invalid or truncated output, and interruption are retryable
 through a deliberate learner action. Retry applies only to failed jobs and
 never regenerates ready results. Existing queued or failed jobs below the
-15-exercise threshold settle to ready with zero notes during worker recovery,
+15-eligible-row threshold settle to ready with zero notes during worker recovery,
 queue enumeration, claim, or explicit failed-job retry, without a new attempt.
 Already ready results and concluded attempts remain immutable; active calls
 retain their ordinary lease and completion handling. Persist concluded attempt timestamps, duration,

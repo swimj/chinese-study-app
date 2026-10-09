@@ -9,6 +9,9 @@ import type { DebriefRunMetadata } from '../session-debrief/provider.ts';
 
 const CONNECTION_WINDOW_MS = 72 * 60 * 60 * 1000;
 const CONNECTION_SESSION_LIMIT = 2;
+// Excluded refs are unique original-row references, frozen by enqueue.
+const ELIGIBLE_ITEM_COUNT_SQL = `(json_array_length(input_json, '$.items')
+  - COALESCE(json_array_length(input_json, '$.excludedRefs'), 0))`;
 
 // Keep the exact encounter inventory alongside the frozen candidate selection.
 // Older snapshots without this field retain their original provider input.
@@ -71,7 +74,7 @@ export function enqueueSessionDebrief(sessionId: string, completedAt: string, in
   const suppressed = recentlyConnectedWords(now);
   input.excludedRefs = input.items.filter((item) => wordKeys(item.word).some((word) => suppressed.has(word)))
     .map((item) => item.ref);
-  const generate = inventory.length >= MIN_SESSION_DEBRIEF_ITEMS && providerInput(input).items.length > 0;
+  const generate = providerInput(input).items.length >= MIN_SESSION_DEBRIEF_ITEMS;
   getDb().prepare(`INSERT INTO learner_session_debrief_jobs
     (learner_id, session_id, completed_at, exercise_count, input_json, status, result_json, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(learner_id, session_id) DO NOTHING`)
@@ -83,7 +86,7 @@ export function enqueueSessionDebrief(sessionId: string, completedAt: string, in
 function completeSmallSessionDebriefs(learnerId: string | null = null, sessionId: string | null = null,
   now = new Date().toISOString()): void {
   getDb().prepare(`UPDATE learner_session_debrief_jobs SET status = 'ready', result_json = '{"notes":[]}',
-    last_error = NULL, updated_at = ? WHERE exercise_count < ? AND status IN ('queued', 'failed')
+    last_error = NULL, updated_at = ? WHERE ${ELIGIBLE_ITEM_COUNT_SQL} < ? AND status IN ('queued', 'failed')
     AND (? IS NULL OR learner_id = ?) AND (? IS NULL OR session_id = ?)`)
     .run(now, MIN_SESSION_DEBRIEF_ITEMS, learnerId, learnerId, sessionId, sessionId);
 }
@@ -113,10 +116,7 @@ export function retrySessionDebrief(sessionId: string): SessionDebrief {
   const job = getSessionDebrief(sessionId);
   if (!job) throw new SessionDebriefNotFoundError('Session debrief not found');
   if (job.status !== 'failed') throw new SessionDebriefRetryConflictError('Only failed debriefs can be retried');
-  if (job.exerciseCount < MIN_SESSION_DEBRIEF_ITEMS) {
-    completeSmallSessionDebriefs(requireLearnerId(), sessionId);
-    return getSessionDebrief(sessionId)!;
-  }
+  completeSmallSessionDebriefs(requireLearnerId(), sessionId);
   getDb().prepare(`UPDATE learner_session_debrief_jobs SET status = 'queued', last_error = NULL, updated_at = ?
     WHERE learner_id = ? AND session_id = ? AND status = 'failed'`).run(new Date().toISOString(), requireLearnerId(), sessionId);
   return getSessionDebrief(sessionId)!;
@@ -134,7 +134,7 @@ export function claimSessionDebrief(sessionId: string, token: string, startedAt:
     completeSmallSessionDebriefs(requireLearnerId(), sessionId, startedAt);
     const changed = getDb().prepare(`UPDATE learner_session_debrief_jobs SET status = 'running', active_token = ?, expires_at = ?,
       attempt_count = attempt_count + 1, updated_at = ? WHERE learner_id = ? AND session_id = ? AND status = 'queued'
-      AND exercise_count >= ?`)
+      AND ${ELIGIBLE_ITEM_COUNT_SQL} >= ?`)
       .run(token, expiresAt, startedAt, requireLearnerId(), sessionId, MIN_SESSION_DEBRIEF_ITEMS).changes;
     if (changed !== 1) return null;
     getDb().prepare(`INSERT INTO learner_session_debrief_attempts
