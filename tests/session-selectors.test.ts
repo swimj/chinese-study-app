@@ -5,6 +5,7 @@ import {
   getActiveAnswerText,
   getActivePrompt,
   getCompletedReinforcementStreak,
+  getDisplayedReinforcementStreak,
   getStudySessionPanelView,
   hasServedProductionCueSupplement,
   isPureCueReviewInReinforcement,
@@ -22,6 +23,18 @@ describe('session selectors', () => {
     assert.equal(getCompletedReinforcementStreak({
       sessionCompleted: false, reviewInReinforcement: true, rating: 'good', reinforcementStreak: 1,
     }), null);
+  });
+
+  test('retains the third success on the completion card while skips keep their actual count', () => {
+    assert.equal(getDisplayedReinforcementStreak({
+      completionGate: true, activeReinforcementStreak: 2, completedReinforcementStreak: 3,
+    }), 3);
+    assert.equal(getDisplayedReinforcementStreak({
+      completionGate: true, activeReinforcementStreak: 2, completedReinforcementStreak: null,
+    }), 2);
+    assert.equal(getDisplayedReinforcementStreak({
+      completionGate: false, activeReinforcementStreak: 1, completedReinforcementStreak: 3,
+    }), 1);
   });
 
   test('targets the frozen production card for notes while awaiting next after a wrong answer', () => {
