@@ -105,7 +105,7 @@ export function SessionDebriefCard({ sessionId, characterPresentation = DEFAULT_
     </div>
     <div className="session-action-bar debrief-actions">
       {notes.length && !error ? <><button type="button" disabled={busy} onClick={onNext}>
-        {index === notes.length - 1 ? 'Done' : 'Next connection'} <kbd>Enter / →</kbd></button>
+        {index === notes.length - 1 ? 'Done' : 'Next connection'} <kbd>→</kbd></button>
         <button type="button" className="secondary-button" disabled={index === 0 || busy} onClick={onBack}>Back <kbd>←</kbd></button>
         <button type="button" className="secondary-button debrief-home" disabled={busy} onClick={onDone}>Return to Home <kbd>Space</kbd></button></>
         : <button type="button" onClick={onDone}>Return to Home <kbd>Space</kbd></button>}
@@ -125,7 +125,7 @@ function DebriefShortcutGuide({ onClose }: { onClose: () => void }) {
       <div className="keyboard-shortcuts-heading"><h3 id="debrief-shortcuts-title">Keyboard shortcuts</h3>
         <button type="button" ref={close} className="secondary-button" onClick={onClose}>Close <kbd>Escape</kbd></button></div>
       <dl className="keyboard-shortcuts-list"><div><dt>Space</dt><dd>Return to Home</dd></div>
-        <div><dt>Enter / →</dt><dd>Next connection, or Done on the last card</dd></div>
+        <div><dt>→</dt><dd>Next connection, or Done on the last card</dd></div>
         <div><dt>←</dt><dd>Previous connection</dd></div><div><dt>?</dt><dd>Open or close this guide</dd></div></dl>
       <p className="notes">Shortcuts pause while typing or using buttons and disclosures.</p>
     </section>

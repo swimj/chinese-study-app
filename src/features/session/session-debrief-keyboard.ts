@@ -9,7 +9,7 @@ export function resolveSessionDebriefKey(event: SessionKeyEvent & {
   if (context.native) return null;
   if (event.key === ' ' || event.code === 'Space') return 'home';
   if (!context.ready) return null;
-  if (event.key === 'Enter' || event.key === 'ArrowRight') return 'next';
+  if (event.key === 'ArrowRight') return 'next';
   if (event.key === 'ArrowLeft' && context.canGoBack) return 'back';
   return null;
 }
