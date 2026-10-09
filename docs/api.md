@@ -894,8 +894,11 @@ interpretation; the shared wire types live in `src/domain/content-quality.ts`.
 array of `{word,pinyin}` encounter snapshots (at most 1000 rows; nonempty word
 text and a pinyin string, which may be empty). The first Mandarin inventory and interests snapshot enqueue atomically
 with the completed summary; response remains 204. Missing inventory creates no
-job. Inventories of 0–14 exercises are ready with zero notes and no provider call
-or generation attempt; inventories of 15–1000 queue generation. The existing 100kb JSON
+job. Inventories with 0–14 eligible rows after the
+[recent connection cooldown](../SPECS/session-debrief.md#recent-connection-cooldown)
+are ready with zero notes and no provider call or generation attempt;
+15–1000 eligible rows queue generation. The exercise count remains the original
+covered inventory size. The existing 100kb JSON
 request-body limit also applies. Duplicate finalization preserves the first
 snapshot. No historical job is inferred.
 
@@ -903,7 +906,7 @@ snapshot. No historical job is inferred.
 | --- | --- | --- |
 | GET | `/api/session-debriefs/latest` | `{debrief}` for the latest completed debrief record, or null |
 | GET | `/api/session-debriefs/:sessionId` | `{debrief}`, or 404 |
-| POST | `/api/session-debriefs/:sessionId/retry` | `{debrief}` requeued from failed, or ready-empty for a legacy failed inventory below 15; 404 for absent/private records, 409 for other states |
+| POST | `/api/session-debriefs/:sessionId/retry` | `{debrief}` requeued from failed, or ready-empty for a failed inventory with fewer than 15 eligible rows; 404 for absent/private records, 409 for other states |
 | PATCH | `/api/learner-settings/debrief-interests` | Accept/return `{debriefInterests:string}`; at most 1000 characters, empty allowed |
 
 `GET /api/status` includes `debriefInterests` with an empty default. All routes
