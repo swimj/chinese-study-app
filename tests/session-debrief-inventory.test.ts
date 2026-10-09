@@ -111,3 +111,28 @@ test('distinct covered directions retain repeated word rows and an empty session
   assert.deepEqual(current.debriefInventory, [{ word: '选', pinyin: 'A-pinyin' }, { word: '选', pinyin: 'A-pinyin' }]);
   assert.deepEqual(summary().debriefInventory, []);
 });
+
+test('practice usage counts correct-day gains while preserving covered words and Undo snapshots', () => {
+  for (const firstRating of ['good', 'forgot'] as const) {
+    const w = word('practice', 'learning');
+    let state = createBucketSessionState({ sessionId: 'inventory', buckets: { review: [], learning: [w], unstudied: [] } });
+    let current = summary();
+    const initial = current;
+    for (let pass = 0; state.phase !== 'completed' && pass < 20; pass += 1) {
+      const active = getActiveSessionUnit(state);
+      if (active.type !== 'study') throw new Error('Expected practice word');
+      state = markActiveSessionUnitStarted(state);
+      const rating = pass === 0 ? firstRating : 'good';
+      const transition = rateActiveSessionUnit(state, rating);
+      current = updateSessionSummaryForRating({ summary: current, transition, rating,
+        activeWord: w, activeItem: active.item, previousPhase: state.phase })!;
+      state = transition.state;
+    }
+    assert.equal(state.phase, 'completed');
+    assert.equal(current.completedLearningWords, 1);
+    assert.equal(current.correctDayLearningWords, firstRating === 'good' ? 1 : 0);
+    assert.equal(current.debriefInventory.length, 1);
+    assert.equal(initial.correctDayLearningWords, 0);
+    assert.equal(initial.completedLearningWords, 0);
+  }
+});

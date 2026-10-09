@@ -14,7 +14,7 @@ export type UsageDailySnapshot = {
   dau: number;
   sessionsCompleted: number;
   newWords: number;
-  practiceCompleted: number | null;
+  practiceCompleted: number;
   reviewCorrect: number;
   reviewWrong: number;
   proposalsAccepted: number;
@@ -38,7 +38,7 @@ type SnapshotRow = {
   dau: number;
   sessions_completed: number;
   new_words: number;
-  practice_completed: number | null;
+  practice_completed: number;
   review_correct: number;
   review_wrong: number;
   proposals_accepted: number;
@@ -111,13 +111,12 @@ export function computeUsagePulseDay(input: {
     SELECT COALESCE(SUM(completed_count - failed_count), 0) AS review_correct,
       COALESCE(SUM(failed_count), 0) AS review_wrong,
       COALESCE(SUM(active_duration_ms), 0) AS session_active_ms,
-      CASE WHEN COUNT(*) = COUNT(learning_completed_count)
-        THEN COALESCE(SUM(learning_completed_count), 0) ELSE NULL END AS practice_completed
+      COALESCE(SUM(learning_completed_count), 0) AS practice_completed
     FROM learner_owned_review_session_summaries
     WHERE day_key = ?
   `).get(dayKey) as {
     review_correct: number; review_wrong: number; session_active_ms: number;
-    practice_completed: number | null;
+    practice_completed: number;
   };
   const proposals = getDb().prepare(`
     SELECT COUNT(*) AS value FROM learner_owned_reflection_operation_invocations
@@ -274,7 +273,11 @@ export function listUsageDailySnapshots(dayKeys: readonly string[]): UsageDailyS
       dau,
       sessions_completed,
       new_words,
-      practice_completed,
+      COALESCE(practice_completed, (
+        SELECT COALESCE(SUM(learning_completed_count), 0)
+        FROM learner_owned_review_session_summaries
+        WHERE day_key = usage_daily_snapshots.day_key
+      )) AS practice_completed,
       review_correct,
       review_wrong,
       proposals_accepted,

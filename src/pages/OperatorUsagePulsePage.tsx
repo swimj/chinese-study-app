@@ -163,11 +163,12 @@ function UsagePulsePanel() {
         Mean stash is as-of each snapshot&apos;s capture time.
       </p>
       <details><summary>Metric definitions</summary><p className="notes">
-        Practice counts completed learning word encounters. Review correct and wrong count completed
+        Practice sums recorded correct-day gains in completed sessions. Missing counts
+        contribute zero, so Practice is a lower bound when records are missing. Review correct and wrong count completed
         exercises without and with a lapse, including contrast and pure cues; reinforcement attempts
         do not add exercises. Session time totals active time in completed sessions. Proposals accepted
         counts acceptance events, regardless of application outcome. A dash means unavailable historical
-        data or a session saved without a practice count.
+        data.
       </p></details>
       {loading ? <p className="notes">Loading…</p> : null}
       {error ? <p className="notes">{error}</p> : null}

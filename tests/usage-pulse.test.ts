@@ -161,7 +161,7 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     assert.equal(computed.dau, 1);
     assert.equal(computed.sessionsCompleted, 1);
     assert.equal(computed.newWords, 2);
-    assert.equal(computed.practiceCompleted, null);
+    assert.equal(computed.practiceCompleted, 0);
     assert.equal(computed.reviewCorrect, 1);
     assert.equal(computed.reviewWrong, 0);
     assert.equal(computed.proposalsAccepted, 0);
@@ -188,7 +188,7 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     assert.equal(stored[0]?.dau, 1);
   });
 
-  test('sums completed exercises and time; practice remains unknown for partial legacy days', () => {
+  test('sums completed exercises and time; practice counts known records as a lower bound for partial legacy days', () => {
     const dayKey = '2026-10-05';
     const summary = { sessionId: 'totals-a', completedAt: `${dayKey}T12:00:00.000Z`,
       completedReviewActionCount: 5, failedReviewActionCount: 2,
@@ -214,8 +214,14 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
       sessionId: 'legacy-totals', dayKey, completedAt: `${dayKey}T13:00:00.000Z`, activeDurationMs: 10_000,
     }));
     totals = usagePulse.computeUsagePulseDay({ dayKey });
-    assert.equal(totals.practiceCompleted, null);
+    assert.equal(totals.practiceCompleted, 7);
     assert.equal(totals.sessionActiveMs, 160_000);
+    usagePulse.captureUsagePulseDay({ dayKey });
+    getDb().prepare('UPDATE usage_daily_snapshots SET practice_completed = NULL WHERE day_key = ?').run(dayKey);
+    assert.equal(usagePulse.listUsageDailySnapshots([dayKey])[0]?.practiceCompleted, 7);
+    usagePulse.captureUsagePulseDay({ dayKey: '2026-10-04' });
+    getDb().prepare('UPDATE usage_daily_snapshots SET practice_completed = NULL WHERE day_key = ?').run('2026-10-04');
+    assert.equal(usagePulse.listUsageDailySnapshots(['2026-10-04'])[0]?.practiceCompleted, 0);
     assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-10-04' }).practiceCompleted, 0);
     // Existing cohort sizes are [0, 2, 1, 0]; empty stashes participate in the mean.
     assert.equal(totals.meanStashSize, 0.75);

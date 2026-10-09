@@ -32,6 +32,7 @@ export type SessionSummary = {
   lapsedReviewLabels: string[];
   lapsedReviewActionIds: string[];
   completedLearningWords: number;
+  correctDayLearningWords: number;
   completedUnstudiedWords: number;
   completionMode: 'natural' | 'drain';
   debriefInventory: SessionDebriefInventoryItem[];
@@ -60,6 +61,7 @@ export function createSessionSummary({
     lapsedReviewLabels: [],
     lapsedReviewActionIds: [],
     completedLearningWords: 0,
+    correctDayLearningWords: 0,
     completedUnstudiedWords: 0,
     completionMode: 'natural',
     debriefInventory: [],
@@ -166,6 +168,7 @@ export function updateSessionSummaryForRating({
       break;
     case 'commit-learning-word-session':
       nextSummary.completedLearningWords += 1;
+      if (transition.commit.success) nextSummary.correctDayLearningWords += 1;
       break;
     case 'commit-unstudied-word-session':
       nextSummary.completedUnstudiedWords += 1;
