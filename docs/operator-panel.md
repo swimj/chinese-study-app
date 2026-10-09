@@ -50,8 +50,9 @@ stashes, at the snapshot capture time. Late captures use the stash at capture ti
 not a reconstruction of the earlier day's stash.
 
 A dash marks unavailable data. Existing snapshot medians cannot supply historical
-means. Historical practice counts are not reconstructed; any completed summary
-without the learning count makes that day's practice total unavailable.
+means. Practice sums recorded counts, treating missing counts as zero, so it is
+a lower bound when records are missing. A historical snapshot with a null
+practice total reads the sum of available session counts for that day.
 Counts submitted by older clients before this qualification change measured
 covered practice encounters; those saved counts are not reclassified. A day
 with no completed sessions has zero practice. Spend accounting is available in

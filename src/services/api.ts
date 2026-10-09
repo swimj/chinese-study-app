@@ -277,7 +277,7 @@ export type UsageDailySnapshot = {
   dau: number;
   sessionsCompleted: number;
   newWords: number;
-  practiceCompleted: number | null;
+  practiceCompleted: number;
   reviewCorrect: number;
   reviewWrong: number;
   proposalsAccepted: number;
