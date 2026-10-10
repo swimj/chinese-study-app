@@ -32,6 +32,15 @@ export function parseContentQualityTarget(value: unknown): ContentQualityTarget 
     return invalid('Expected content target');
   }
   const v = value as Record<string, unknown>;
+  if (v.kind === 'definition_fallback' && identifier(v.wordId)
+    && v.expected && typeof v.expected === 'object' && !Array.isArray(v.expected)) {
+    const expected = v.expected as Record<string, unknown>;
+    if (typeof expected.promptText === 'string' && Array.isArray(expected.displayedMeanings)
+      && expected.displayedMeanings.every((meaning: unknown) => typeof meaning === 'string')) {
+      return { kind: v.kind, wordId: v.wordId,
+        expected: { promptText: expected.promptText, displayedMeanings: [...expected.displayedMeanings] } };
+    }
+  }
   if (v.kind === 'pure_cue' && identifier(v.snapshotId)) {
     return { kind: v.kind, snapshotId: v.snapshotId };
   }
@@ -70,6 +79,33 @@ export function parseContentQualityTarget(value: unknown): ContentQualityTarget 
 type Resolved = Pick<ContentQualityItem, 'kind' | 'sourceId' | 'wordId' | 'title' | 'content' | 'provenance'>;
 function resolve(target: ContentQualityTarget): Resolved {
   const db = getDb();
+  if (target.kind === 'definition_fallback') {
+    const word = db.prepare('SELECT id, hanzi, meaning, meanings_json FROM words WHERE id=?')
+      .get(target.wordId) as { id: string; hanzi: string; meaning: string; meanings_json: string } | undefined;
+    if (!word) return invalid('Content is not available');
+    const rows = db.prepare(`SELECT text, show_on_production_prompt FROM word_meanings
+      WHERE word_id=? ORDER BY position`).all(word.id) as Array<{ text: string; show_on_production_prompt: number }>;
+    const selected = rows.filter(row => row.show_on_production_prompt).map(row => row.text);
+    const legacy = JSON.parse(word.meanings_json) as string[];
+    const displayedMeanings = rows.length > 0 ? selected
+      : legacy.length > 0 ? legacy : word.meaning.trim() ? [word.meaning] : [];
+    // Review snapshots display one joined prompt; legacy learning cards display a definition list.
+    const matchesSnapshot = target.expected.displayedMeanings.length === 0
+      && (rows.length === 0 || selected.length > 0)
+      && target.expected.promptText === (selected.join('; ') || word.meaning);
+    const matchesList = JSON.stringify(target.expected.displayedMeanings) === JSON.stringify(displayedMeanings)
+      && target.expected.promptText === displayedMeanings.join('; ');
+    if (!matchesSnapshot && !matchesList) {
+      return invalid('Content changed since this encounter; open a fresh session to rate it');
+    }
+    return {
+      kind: target.kind, sourceId: word.id, wordId: word.id,
+      title: target.expected.promptText || 'No production meanings selected',
+      content: { wordId: word.id, promptText: target.expected.promptText,
+        displayedMeanings: [...target.expected.displayedMeanings] },
+      provenance: { source: 'definition fallback', model: null },
+    };
+  }
   if (target.kind === 'pure_cue') {
     const snapshot = getPureCueServedSnapshot(target.snapshotId);
     if (!snapshot) {

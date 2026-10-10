@@ -147,7 +147,7 @@ export function ReflectionsPage({
   return (
     <section className="reflections-page">
       <NestedNav>
-        <nav className="reflection-view-rail" aria-label="Reflection views">
+        <nav className="reflection-view-rail" aria-label="Feedback views">
           {views.map((option) => (
             <button
               type="button"
@@ -178,7 +178,7 @@ export function ReflectionsPage({
         {controller.unreadableArtifactIds.size > 0 ? (
           <section className="panel reflection-unreadable-notice" role="status">
             <strong>
-              {controller.unreadableArtifactIds.size} stored reflection
+              {controller.unreadableArtifactIds.size} stored feedback result
               {controller.unreadableArtifactIds.size === 1 ? '' : 's'} could not be read
             </strong>
             <p className="notes">
@@ -912,7 +912,7 @@ export function SessionWorkspace({ controller }: { controller: ReflectionPageCon
         />
         <ArtifactList
           title="Recent history"
-          emptyLabel="No reflection artifacts yet."
+          emptyLabel="No feedback results yet."
           artifacts={controller.recentArtifacts}
           selectedArtifactId={controller.selectedArtifactId}
           unreadableArtifactIds={controller.unreadableArtifactIds}
@@ -923,9 +923,9 @@ export function SessionWorkspace({ controller }: { controller: ReflectionPageCon
       <main className="reflection-detail">
         {controller.selectedArtifact === null ? (
           <div className="panel reflection-empty-state">
-            <h2>No reflection selected</h2>
+            <h2>No feedback selected</h2>
             <p className="notes">
-              Completed-session reflections, including informational results without proposals,
+              Completed-session feedback results, including informational results without proposals,
               will appear in recent history.
             </p>
           </div>
@@ -935,7 +935,7 @@ export function SessionWorkspace({ controller }: { controller: ReflectionPageCon
               <div>
                 <p className="reflection-eyebrow">
                   {controller.selectedArtifact.sourceSessionId === null
-                    ? 'Curated reflection batch'
+                    ? 'Curated feedback batch'
                     : 'Source session'}
                 </p>
                 <h2>{formatDateTime(
@@ -945,7 +945,7 @@ export function SessionWorkspace({ controller }: { controller: ReflectionPageCon
                 )}</h2>
                 <p className="notes reflection-long-metadata">
                   {controller.selectedArtifact.sourceSessionId === null
-                    ? 'Curated non-session reflection'
+                    ? 'Curated non-session feedback'
                     : `Session ${controller.selectedArtifact.sourceSessionId}`}
                   {' · '}
                   {controller.selectedArtifact.sourceRunId === null
@@ -980,7 +980,7 @@ export function SessionWorkspace({ controller }: { controller: ReflectionPageCon
               <article className="panel reflection-item-card" key={item.result.itemId}>
                 <header className="reflection-item-heading">
                   <div>
-                    <p className="reflection-eyebrow">Reflection item {itemIndex + 1}</p>
+                    <p className="reflection-eyebrow">Feedback item {itemIndex + 1}</p>
                     <ItemIdentityHeading evidence={item.evidence} />
                   </div>
                   <div className="reflection-tag-list">
@@ -1029,7 +1029,7 @@ export function SessionWorkspace({ controller }: { controller: ReflectionPageCon
                           ? 'Content review disagreed with the shared-axis handoff; no actionable change is available.'
                           : item.result.diagnosisTags.includes('ordinary_retrieval_noise')
                           ? 'Judged as ordinary forgetting / retrieval noise; no durable change proposed.'
-                          : 'Informational reflection only; no change was proposed.'}
+                          : 'Informational feedback only; no change was proposed.'}
                       </p>
                       <ItemQualityTagControls
                         artifactId={selectedArtifact.artifactId}
@@ -1199,11 +1199,11 @@ export function TokenUsageView({
       {runs.length === 0 ? (
         <section className="panel reflection-empty-state">
           <h2>No run meta yet</h2>
-          <p className="notes">No reflection generation attempts yet.</p>
+          <p className="notes">No feedback generation attempts yet.</p>
         </section>
       ) : (
         <section className="panel reflection-run-table-wrap">
-          <div className="reflection-run-table" role="table" aria-label="Reflection run meta">
+          <div className="reflection-run-table" role="table" aria-label="Feedback run meta">
             <div className="reflection-run-table-header" role="row">
               <span>Status</span><span>Run</span><span>Duration</span><span>Input</span><span>Cached</span>
               <span>Output</span><span>Reasoning</span><span>Visible</span>
@@ -1327,8 +1327,8 @@ function RunStatusControl({
     return <span className="reflection-state-pill state-generating" role="status">In flight…</span>;
   }
   return run.state === 'succeeded'
-    ? <StatusIcon kind="success" label="Reflection generation succeeded" />
-    : <StatusIcon kind="failure" label="Reflection generation failed" />;
+    ? <StatusIcon kind="success" label="Feedback generation succeeded" />
+    : <StatusIcon kind="failure" label="Feedback generation failed" />;
 }
 
 function ReflectionRetryControl({
@@ -1366,8 +1366,8 @@ function ReflectionRetryControl({
   ];
   const firstEnabledIndex = Math.max(0, options.findIndex((option) => !option.disabled));
   const label = retryFailed
-    ? 'Retry failed. Choose a model to retry this reflection.'
-    : `Retry reflection${run.failureCode === null ? '' : `: ${humanize(run.failureCode)}`}. Choose a model.`;
+    ? 'Retry failed. Choose a model to retry this feedback.'
+    : `Retry feedback${run.failureCode === null ? '' : `: ${humanize(run.failureCode)}`}. Choose a model.`;
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -1475,7 +1475,7 @@ function ReflectionRetryControl({
             id={listId}
             className="reflection-retry-menu-list"
             role="listbox"
-            aria-label="Choose model for reflection retry"
+            aria-label="Choose model for feedback retry"
             aria-activedescendant={`${listId}-option-${selectedIndex}`}
           >
             {options.map((option, index) => {
@@ -2024,7 +2024,7 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
         <section className="panel reflection-empty-state">
           <h2>No quality signal yet</h2>
           <p className="notes">
-            Accept, dismiss, and tag reflection items while reviewing to accumulate rates by model
+            Accept, dismiss, and tag feedback items while reviewing to accumulate rates by model
             arm.
           </p>
         </section>
@@ -2055,9 +2055,9 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
         </header>
         <div className="reflection-quality-toolbar" role="group" aria-label="Quality table controls">
           <label className="reflection-field reflection-quality-filter">
-            <span>Reflection version</span>
+            <span>Feedback version</span>
             <select
-              aria-label="Filter by reflection version"
+              aria-label="Filter by feedback version"
               value={promptVersionFilter}
               onChange={(event) => {
                 const value = event.target.value;
@@ -2078,7 +2078,7 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
           </label>
         </div>
         {rows.length === 0 ? (
-          <p className="notes">No rows match this reflection version filter.</p>
+          <p className="notes">No rows match this feedback version filter.</p>
         ) : (
           <div className="reflection-quality-table" role="table" aria-label="Quality by model arm">
             <div className="reflection-quality-table-header" role="row">
@@ -2545,7 +2545,7 @@ function itemTitle(evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | Ref
     return wordLabel(evidence.targetWord);
   }
   if (evidence?.source === 'pure_cue_mistake') return `Pure cue · ${wordLabel(evidence.submittedWord)}`;
-  return evidence?.source === 'session_note' ? 'Session note' : 'Reflection evidence';
+  return evidence?.source === 'session_note' ? 'Session note' : 'Feedback evidence';
 }
 
 function wordLabel(word: { hanzi: string; pinyin: string }): string {

@@ -54,7 +54,7 @@ describe('reflection run log presentation', () => {
     };
 
     const markup = renderToStaticMarkup(createElement(ReflectionsPage, { controller }));
-    assert.match(markup, /1 stored reflection could not be read/);
+    assert.match(markup, /1 stored feedback result could not be read/);
     assert.match(markup, /No remaining proposals to review/);
     assert.match(markup, /reflection-view-rail/);
     assert.match(markup, />Proposals</);
@@ -238,7 +238,7 @@ describe('reflection run log presentation', () => {
   test('renders the empty dogfood state', () => {
     const markup = renderRuns([]);
 
-    assert.match(markup, /No reflection generation attempts yet/);
+    assert.match(markup, /No feedback generation attempts yet/);
   });
 
   test('renders failed usage with unavailable cost and successful priced usage', () => {
@@ -289,7 +289,7 @@ describe('reflection run log presentation', () => {
     assert.doesNotMatch(markup, /provider run /);
     assert.doesNotMatch(markup, /Token usage summary/);
     assert.doesNotMatch(markup, /Estimated cost/);
-    assert.match(markup, /Retry reflection: output truncated\. Choose a model\./);
+    assert.match(markup, /Retry feedback: output truncated\. Choose a model\./);
     assert.doesNotMatch(markup, /<select/);
     assert.doesNotMatch(markup, /Choose model for reflection retry/);
   });
@@ -297,7 +297,7 @@ describe('reflection run log presentation', () => {
   test('run-meta view explains the Luna-only spend cap', () => {
     const markup = renderRuns([], null, cappedSpendCap());
     assert.match(markup, /Luna is the only available model until/);
-    assert.match(markup, /No reflection generation attempts yet/);
+    assert.match(markup, /No feedback generation attempts yet/);
   });
 
   test('replaces retry with a concise generation status', () => {
@@ -311,7 +311,7 @@ describe('reflection run log presentation', () => {
     })];
     const markup = renderRuns(runs, { runId: 'failed', state: 'generating' });
     assert.match(markup, /Generating…/);
-    assert.doesNotMatch(markup, /Retry reflection/);
+    assert.doesNotMatch(markup, /Retry feedback/);
   });
 });
 

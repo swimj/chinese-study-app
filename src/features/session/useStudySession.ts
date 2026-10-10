@@ -118,6 +118,7 @@ import {
   appendAcceptedLearnerRequestedAttemptIds,
   dropLearnerRequestedReflectionForAction,
   toggleLearnerRequestedReview,
+  setContentRatingRequestedReview,
   type SessionReflectionEvidenceAccumulator,
   type LearnerRequestedReflectionAccumulator,
   type SessionReflectionEvidenceSupplementV1,
@@ -204,6 +205,7 @@ export type StudySessionHomePageProps = {
   completedReinforcementStreak: number | null;
   hasUndo: boolean;
   submittingRating: ReviewRating | null;
+  contentRatingSaving: boolean;
   personalNotesEditorOpen: boolean;
   personalNotesEditorSaving: boolean;
   studyManagementSubmitting: boolean;
@@ -255,6 +257,9 @@ export type StudySessionHomePageProps = {
   onProductionHanziInputChange: (value: string) => void;
   onSelectContrastChoice: (wordId: string) => void;
   onRevealAnswer: () => void;
+  onContentRatingSavingChange: (saving: boolean) => void;
+  onContentRatingChange: (rating: 'up' | 'down' | null) => void;
+  onFrozenProductionContentRatingChange: (rating: 'up' | 'down' | null) => void;
   onToggleLearnerRequestedReview: () => void;
   onToggleFrozenProductionLearnerRequestedReview: () => void;
   onSkipReinforcement: () => void;
@@ -347,6 +352,13 @@ export function useStudySession({
   const learnerRequestedReflectionRef = useRef<LearnerRequestedReflectionAccumulator>(
     createLearnerRequestedReflectionAccumulator(),
   );
+  const contentRatingRequestedReflectionRef = useRef<LearnerRequestedReflectionAccumulator>(
+    createLearnerRequestedReflectionAccumulator(),
+  );
+  const contentRatingSavingRef = useRef(false);
+  const contentRatingSaveBarrierRef = useRef<Promise<void>>(Promise.resolve());
+  const releaseContentRatingSaveRef = useRef<(() => void) | null>(null);
+  const [contentRatingSaving, setContentRatingSaving] = useState(false);
   const pendingReflectionSupplementRef = useRef<unknown>(null);
   const hasCommittedPureCueReflectionRef = useRef(false);
   const activeSessionIdRef = useRef<string | null>(null);
@@ -631,6 +643,11 @@ export function useStudySession({
             sessionActionId: commit.sessionActionId, acceptedAttempts: commit.events,
           })
         : learnerRequestedReflectionRef.current;
+      const acceptedRatingRequests = commit.type === 'commit-review-action-session'
+        ? appendAcceptedLearnerRequestedAttemptIds(contentRatingRequestedReflectionRef.current, {
+            sessionActionId: commit.sessionActionId, acceptedAttempts: commit.events,
+          })
+        : contentRatingRequestedReflectionRef.current;
       await applySessionCommit(commit);
       if (commit.type === 'commit-pure-cue-production-session') {
         hasCommittedPureCueReflectionRef.current ||= hasPureCueReflectionEvidence({
@@ -639,6 +656,7 @@ export function useStudySession({
       }
       reflectionEvidenceRef.current = acceptedEvidence;
       learnerRequestedReflectionRef.current = acceptedRequests;
+      contentRatingRequestedReflectionRef.current = acceptedRatingRequests;
       setPendingSessionCommit(null);
     }
 
@@ -677,6 +695,7 @@ export function useStudySession({
       reflectionEvidenceRef.current = createSessionReflectionEvidenceAccumulator();
       hasCommittedPureCueReflectionRef.current = false;
       learnerRequestedReflectionRef.current = createLearnerRequestedReflectionAccumulator();
+      contentRatingRequestedReflectionRef.current = createLearnerRequestedReflectionAccumulator();
       pendingReflectionSupplementRef.current = null;
       updateSessionFinalization(() => createSessionFinalizationState());
       setSessionNow(startedAt);
@@ -703,7 +722,7 @@ export function useStudySession({
   }
 
   async function handleEndSession() {
-    if (deskBusyRef.current) return;
+    if (contentRatingSavingRef.current || deskBusyRef.current) return;
     if (sessionStarted && sessionState && sessionState.phase === 'active') {
       const drainedState = beginBucketDrainSession(sessionState);
       setSessionState(drainedState);
@@ -729,6 +748,7 @@ export function useStudySession({
   }
 
   async function finishCompletedSessionIfLeaving(): Promise<boolean> {
+    await contentRatingSaveBarrierRef.current;
     if (!shouldFinishSessionOnLeave({
       sessionStarted: sessionStartedRef.current,
       sessionPhase: sessionStateRef.current?.phase ?? null,
@@ -742,6 +762,7 @@ export function useStudySession({
   }
 
   async function finishCompletedSession() {
+    if (contentRatingSavingRef.current) return;
     if (sessionFinalizationRef.current.kind === 'finalized') {
       return;
     }
@@ -787,7 +808,8 @@ export function useStudySession({
 
     const hasReflectionEvidence = hasCommittedPureCueReflectionRef.current
       || evidence.items.length > 0
-      || learnerRequestedReflectionRef.current.items.length > 0;
+      || learnerRequestedReflectionRef.current.items.length > 0
+      || contentRatingRequestedReflectionRef.current.items.length > 0;
     updateSessionFinalization((current) =>
       completeSessionFinalization({
         state: current,
@@ -797,8 +819,8 @@ export function useStudySession({
 
     if (hasReflectionEvidence) {
       try {
-        const supplement = learnerRequestedReflectionRef.current.items.length > 0
-          ? buildLearnerRequestedReflectionSupplement(evidence, learnerRequestedReflectionRef.current)
+        const supplement = learnerRequestedReflectionRef.current.items.length > 0 || contentRatingRequestedReflectionRef.current.items.length > 0
+          ? buildLearnerRequestedReflectionSupplement(evidence, learnerRequestedReflectionRef.current, contentRatingRequestedReflectionRef.current)
           : buildSessionReflectionEvidenceSupplement(evidence);
         pendingReflectionSupplementRef.current = supplement;
         void runSessionReflectionGeneration(finalizingSummary.sessionId, supplement);
@@ -806,7 +828,7 @@ export function useStudySession({
         updateSessionFinalization((current) =>
           failSessionReflectionGeneration(
             current,
-            err instanceof Error ? err.message : 'Unknown reflection error',
+            err instanceof Error ? err.message : 'Unknown feedback error',
             { retryable: false },
           ),
         );
@@ -844,7 +866,7 @@ export function useStudySession({
         updateSessionFinalization((current) =>
           failSessionReflectionGeneration(
             current,
-            err instanceof Error ? err.message : 'Unknown reflection error',
+            err instanceof Error ? err.message : 'Unknown feedback error',
           ),
         );
       }
@@ -884,6 +906,7 @@ export function useStudySession({
     reflectionEvidenceRef.current = createSessionReflectionEvidenceAccumulator();
     hasCommittedPureCueReflectionRef.current = false;
     learnerRequestedReflectionRef.current = createLearnerRequestedReflectionAccumulator();
+    contentRatingRequestedReflectionRef.current = createLearnerRequestedReflectionAccumulator();
     pendingReflectionSupplementRef.current = null;
     resetSessionScopedUi();
     setPendingSessionCommit(null);
@@ -901,7 +924,7 @@ export function useStudySession({
       confirmKeyboardRating?: boolean;
     },
   ) {
-    if (deskBusyRef.current || submittingRating !== null || !sessionState || (!activeItem && !activePureCue) || (!activeWord && !activePureCue)) {
+    if (contentRatingSavingRef.current || deskBusyRef.current || submittingRating !== null || !sessionState || (!activeItem && !activePureCue) || (!activeWord && !activePureCue)) {
       return;
     }
 
@@ -1007,7 +1030,7 @@ export function useStudySession({
   }
 
   async function handleSubmitProductionHanzi() {
-    if (deskBusyRef.current || submittingRating !== null) return;
+    if (contentRatingSavingRef.current || deskBusyRef.current || submittingRating !== null) return;
     if (
       personalNotesEditorOpen ||
       !sessionState ||
@@ -1106,6 +1129,27 @@ export function useStudySession({
     }
   }
 
+  // These callbacks capture the rendered action. Saving fences departure until the
+  // server confirms the rating, so its request is present before attempt commit.
+  const ratingSessionId = sessionState?.sessionId;
+  function handleContentRatingChange(rating: 'up' | 'down' | null, frozen = false) {
+    if (ratingSessionId !== sessionStateRef.current?.sessionId
+      || sessionFinalizationRef.current.kind !== 'unfinalized') return;
+    const item = frozen && frozenProductionCard ? {
+      sessionActionId: frozenProductionCard.sessionActionId,
+      targetWordId: frozenProductionCard.targetWordId,
+      actionKind: 'production' as const,
+      production: frozenProductionCard.production ?? null,
+      word: { status: frozenProductionCard.status },
+    } : activeItem;
+    if (!item) return;
+    contentRatingRequestedReflectionRef.current = setContentRatingRequestedReview(
+      contentRatingRequestedReflectionRef.current, item,
+      frozen && frozenProductionCard ? frozenProductionCard.promptDisplayedMeanings : activePromptDisplayedMeanings,
+      rating,
+    );
+  }
+
   function handleToggleLearnerRequestedReview() {
     if (!activeItem || activeItem.actionKind !== 'production') return;
     learnerRequestedReflectionRef.current = toggleLearnerRequestedReview(
@@ -1133,7 +1177,7 @@ export function useStudySession({
   }
 
   async function handleNoClueProduction() {
-    if (deskBusyRef.current || submittingRating !== null) return;
+    if (contentRatingSavingRef.current || deskBusyRef.current || submittingRating !== null) return;
     if (
       personalNotesEditorOpen ||
       !sessionState ||
@@ -1313,7 +1357,7 @@ export function useStudySession({
   }
 
   async function handleContinueAfterAutoForgot() {
-    if (deskBusyRef.current || submittingRating !== null || (!frozenProductionCard && !frozenPureCueCard)) return;
+    if (contentRatingSavingRef.current || deskBusyRef.current || submittingRating !== null || (!frozenProductionCard && !frozenPureCueCard)) return;
     deskBusyRef.current = true;
     setSubmittingRating('forgot');
     try {
@@ -1353,7 +1397,7 @@ export function useStudySession({
   }
 
   async function handleSelectContrastChoice(wordId: string) {
-    if (deskBusyRef.current || submittingRating !== null) return;
+    if (contentRatingSavingRef.current || deskBusyRef.current || submittingRating !== null) return;
     if (!activeItem || activeItem.actionKind !== 'contrast_selection' || answerRevealed || personalNotesEditorOpen) {
       return;
     }
@@ -1423,7 +1467,7 @@ export function useStudySession({
   }
 
   async function handleContinueAfterAutoContrastForgot() {
-    if (deskBusyRef.current || submittingRating !== null || !frozenContrastCard) return;
+    if (contentRatingSavingRef.current || deskBusyRef.current || submittingRating !== null || !frozenContrastCard) return;
     deskBusyRef.current = true;
     setSubmittingRating('forgot');
     try {
@@ -1437,7 +1481,7 @@ export function useStudySession({
   }
 
   function handleUndoLastRating() {
-    if (deskBusyRef.current || sessionFinalizationRef.current.kind !== 'unfinalized' || !lastUndoSnapshot || submittingRating !== null) {
+    if (contentRatingSavingRef.current || deskBusyRef.current || sessionFinalizationRef.current.kind !== 'unfinalized' || !lastUndoSnapshot || submittingRating !== null) {
       return;
     }
 
@@ -1490,7 +1534,7 @@ export function useStudySession({
   }
 
   async function handleDismissCurrentWord() {
-    if (deskBusyRef.current) return;
+    if (contentRatingSavingRef.current || deskBusyRef.current) return;
     if (!sessionState || !activeWord) {
       return;
     }
@@ -1523,6 +1567,10 @@ export function useStudySession({
           learnerRequestedReflectionRef.current,
           activeItem.sessionActionId,
         );
+        contentRatingRequestedReflectionRef.current = dropLearnerRequestedReflectionForAction(
+          contentRatingRequestedReflectionRef.current,
+          activeItem.sessionActionId,
+        );
       }
       resetAnswerAndProductionUi();
       setLastUndoSnapshot(null);
@@ -1536,7 +1584,7 @@ export function useStudySession({
   }
 
   async function handleManageStudyAction() {
-    if (deskBusyRef.current) return;
+    if (contentRatingSavingRef.current || deskBusyRef.current) return;
     if (!sessionState || !activeItem || !activeWord) {
       return;
     }
@@ -1575,6 +1623,10 @@ export function useStudySession({
           learnerRequestedReflectionRef.current,
           activeItem.sessionActionId,
         );
+        contentRatingRequestedReflectionRef.current = dropLearnerRequestedReflectionForAction(
+          contentRatingRequestedReflectionRef.current,
+          activeItem.sessionActionId,
+        );
         setSessionState(dropActiveReviewSessionAction(sessionState));
         resetAnswerAndProductionUi();
         setLastUndoSnapshot(null);
@@ -1588,7 +1640,7 @@ export function useStudySession({
   }
 
   async function handleManageFrozenProductionAction() {
-    if (deskBusyRef.current) return;
+    if (contentRatingSavingRef.current || deskBusyRef.current) return;
     if (!sessionState || !frozenProductionCard) {
       return;
     }
@@ -1626,6 +1678,10 @@ export function useStudySession({
         learnerRequestedReflectionRef.current,
         frozenProductionCard.sessionActionId,
       );
+      contentRatingRequestedReflectionRef.current = dropLearnerRequestedReflectionForAction(
+        contentRatingRequestedReflectionRef.current,
+        frozenProductionCard.sessionActionId,
+      );
       setSessionState(nextState);
       setSessionSummary((current) =>
         cancelFrozenProductionRatingInSummary({
@@ -1646,7 +1702,7 @@ export function useStudySession({
   }
 
   async function handleDismissFrozenProductionWord() {
-    if (deskBusyRef.current) return;
+    if (contentRatingSavingRef.current || deskBusyRef.current) return;
     if (!sessionState || !frozenProductionCard) {
       return;
     }
@@ -1674,6 +1730,10 @@ export function useStudySession({
       );
       learnerRequestedReflectionRef.current = dropLearnerRequestedReflectionForAction(
         learnerRequestedReflectionRef.current,
+        frozenProductionCard.sessionActionId,
+      );
+      contentRatingRequestedReflectionRef.current = dropLearnerRequestedReflectionForAction(
+        contentRatingRequestedReflectionRef.current,
         frozenProductionCard.sessionActionId,
       );
       setSessionState(nextState);
@@ -1888,7 +1948,7 @@ export function useStudySession({
       // Native disclosures (including the sidebar) retain their own activation keys.
       if ((event.key === ' ' || event.key === 'Enter' || event.code === 'Space')
         && event.target instanceof Element && event.target.closest('summary')) return;
-      if (deskBusyRef.current || event.repeat || introductionBlockedRef.current || event.defaultPrevented || shortcutGuideOpen || submittingRating !== null || personalNotesEditorOpen) {
+      if (contentRatingSavingRef.current || deskBusyRef.current || event.repeat || introductionBlockedRef.current || event.defaultPrevented || shortcutGuideOpen || submittingRating !== null || personalNotesEditorOpen) {
         return;
       }
 
@@ -2100,6 +2160,7 @@ export function useStudySession({
       completedReinforcementStreak,
       hasUndo: lastUndoSnapshot !== null,
       submittingRating,
+      contentRatingSaving,
       personalNotesEditorOpen,
       personalNotesEditorSaving,
       studyManagementSubmitting,
@@ -2156,6 +2217,20 @@ export function useStudySession({
       },
       onSelectContrastChoice: handleSelectContrastChoice,
       onRevealAnswer: () => setAnswerRevealed(true),
+      onContentRatingSavingChange: (saving) => {
+        if (saving) {
+          contentRatingSaveBarrierRef.current = new Promise<void>((resolve) => {
+            releaseContentRatingSaveRef.current = resolve;
+          });
+        } else {
+          releaseContentRatingSaveRef.current?.();
+          releaseContentRatingSaveRef.current = null;
+        }
+        contentRatingSavingRef.current = saving;
+        setContentRatingSaving(saving);
+      },
+      onContentRatingChange: (rating) => handleContentRatingChange(rating),
+      onFrozenProductionContentRatingChange: (rating) => handleContentRatingChange(rating, true),
       onToggleLearnerRequestedReview: handleToggleLearnerRequestedReview,
       onToggleFrozenProductionLearnerRequestedReview: handleToggleFrozenProductionLearnerRequestedReview,
       onSkipReinforcement: () => void handleRate(null),

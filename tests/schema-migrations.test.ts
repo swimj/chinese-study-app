@@ -273,3 +273,30 @@ test('model invocation outcome migration preserves old accounting without invent
     assertSchemaCurrent(db);
   } finally { db.close(); }
 });
+
+test('definition fallback migration preserves snapshots, encounters, ratings and integrity guards', () => {
+  const { db } = copy('definition-fallback-quality', true);
+  try {
+    const index = schemaMigrations.findIndex(item => item.id === 'app_schema:0035_definition_fallback_quality');
+    assert.ok(index > 0);
+    migrateDatabase(db, schemaMigrations.slice(0, index));
+    db.exec(`INSERT INTO learners(learner_id,display_name,created_at) VALUES ('test','Test','2026-10-10');
+      INSERT INTO content_quality_items VALUES ('existing','production_cue','cue','word','A greeting','{"cueText":"A greeting"}','{"source":"manual","model":null}','2026-10-10');
+      INSERT INTO learner_content_quality_encounters VALUES ('test','encounter','existing','2026-10-10');
+      INSERT INTO learner_content_quality_ratings VALUES ('test','existing','down','2026-10-10');`);
+    const tables = ['content_quality_items', 'learner_content_quality_encounters', 'learner_content_quality_ratings'];
+    const before = tables.map(table => db.prepare(`SELECT * FROM ${table}`).all());
+    migrateDatabase(db);
+    assertSchemaCurrent(db);
+    assert.deepEqual(tables.map(table => db.prepare(`SELECT * FROM ${table}`).all()), before);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+    assert.throws(() => db.exec("UPDATE content_quality_items SET title='changed'"), /immutable/);
+    assert.throws(() => db.exec("UPDATE learner_content_quality_encounters SET encounter_id='changed'"), /immutable/);
+    assert.throws(() => db.exec("UPDATE learner_content_quality_ratings SET content_key='changed'"), /immutable/);
+    db.exec(`INSERT INTO content_quality_items VALUES ('fallback','definition_fallback','word','word','hello','{"promptText":"hello","displayedMeanings":[]}','{"source":"definition fallback","model":null}','2026-10-10')`);
+    assert.throws(() => db.exec("INSERT INTO learner_content_quality_ratings VALUES ('test','fallback','down','2026-10-10')"), /requires own encounter/);
+    db.exec(`INSERT INTO learner_content_quality_encounters VALUES ('test','fallback-encounter','fallback','2026-10-10');
+      INSERT INTO learner_content_quality_ratings VALUES ('test','fallback','down','2026-10-10');`);
+    assert.deepEqual(migrateDatabase(db), []);
+  } finally { db.close(); }
+});

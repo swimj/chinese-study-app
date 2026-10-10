@@ -71,6 +71,7 @@ export function HomePage({
   completedReinforcementStreak,
   hasUndo,
   submittingRating,
+  contentRatingSaving = false,
   personalNotesEditorOpen,
   personalNotesEditorSaving,
   studyManagementSubmitting,
@@ -122,6 +123,9 @@ export function HomePage({
   onProductionHanziInputChange,
   onSelectContrastChoice,
   onRevealAnswer,
+  onContentRatingSavingChange,
+  onContentRatingChange,
+  onFrozenProductionContentRatingChange,
   onToggleLearnerRequestedReview,
   onToggleFrozenProductionLearnerRequestedReview,
   onRate,
@@ -173,6 +177,7 @@ export function HomePage({
   completedReinforcementStreak: number | null;
   hasUndo: boolean;
   submittingRating: ReviewRating | null;
+  contentRatingSaving?: boolean;
   personalNotesEditorOpen: boolean;
   personalNotesEditorSaving: boolean;
   studyManagementSubmitting: boolean;
@@ -224,6 +229,9 @@ export function HomePage({
   onProductionHanziInputChange: (value: string) => void;
   onSelectContrastChoice: (wordId: string) => void;
   onRevealAnswer: () => void;
+  onContentRatingSavingChange?: (saving: boolean) => void;
+  onContentRatingChange?: (rating: 'up' | 'down' | null) => void;
+  onFrozenProductionContentRatingChange?: (rating: 'up' | 'down' | null) => void;
   onToggleLearnerRequestedReview: () => void;
   onToggleFrozenProductionLearnerRequestedReview: () => void;
   onSkipReinforcement: () => void;
@@ -322,6 +330,7 @@ export function HomePage({
             queuedCount={displayedSessionItemCount}
             hasUndo={hasUndo}
             submittingRating={submittingRating}
+            contentRatingSaving={contentRatingSaving}
             personalNotesEditorOpen={personalNotesEditorOpen}
             personalNotesEditorSaving={personalNotesEditorSaving}
             studyManagementSubmitting={studyManagementSubmitting}
@@ -372,6 +381,9 @@ export function HomePage({
             onProductionHanziInputChange={onProductionHanziInputChange}
             onSelectContrastChoice={onSelectContrastChoice}
             onRevealAnswer={onRevealAnswer}
+            onContentRatingSavingChange={onContentRatingSavingChange}
+            onContentRatingChange={onContentRatingChange}
+            onFrozenProductionContentRatingChange={onFrozenProductionContentRatingChange}
             onToggleLearnerRequestedReview={onToggleLearnerRequestedReview}
             onToggleFrozenProductionLearnerRequestedReview={onToggleFrozenProductionLearnerRequestedReview}
             onRate={onRate}

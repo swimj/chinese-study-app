@@ -900,8 +900,8 @@ export async function generateSessionReflection({
 
   if (!response.ok) {
     const payload = await response.clone().json().catch(() => null) as { code?: string } | null;
-    if (payload?.code === 'no_qualifying_evidence') throw new NoQualifyingReflectionEvidenceError('No qualifying reflection evidence.');
-    throw new Error(await readApiErrorMessage(response, 'Failed to generate session reflection'));
+    if (payload?.code === 'no_qualifying_evidence') throw new NoQualifyingReflectionEvidenceError('No qualifying feedback evidence.');
+    throw new Error(await readApiErrorMessage(response, 'Failed to generate session feedback'));
   }
 
   return response.json();
@@ -914,7 +914,7 @@ export async function fetchReflectionArtifacts(
     `${API_BASE}/api/reflection-artifacts?review=${encodeURIComponent(review)}`,
   );
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to load reflection artifacts'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to load feedback artifacts'));
   }
 
   const payload = await response.json() as { artifacts: ReflectionArtifactSummaryDto[] };
@@ -924,7 +924,7 @@ export async function fetchReflectionArtifacts(
 export async function fetchReflectionGenerationRuns(): Promise<ReflectionGenerationRunsResponse> {
   const response = await apiFetch(`${API_BASE}/api/reflection-generation-runs`);
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to load reflection generation runs'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to load feedback generation runs'));
   }
   const payload = await response.json() as ReflectionGenerationRunsResponse;
   return payload;
@@ -943,7 +943,7 @@ export async function retryReflectionGenerationRun(
     },
   );
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to retry reflection generation'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to retry feedback generation'));
   }
   return response.json();
 }
@@ -971,7 +971,7 @@ export async function fetchReflectionArtifactDetail(
     `${API_BASE}/api/reflection-artifacts/${encodeURIComponent(artifactId)}`,
   );
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to load reflection artifact'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to load feedback artifact'));
   }
 
   return response.json();
@@ -992,7 +992,7 @@ export async function reviewReflectionProposal(
     },
   );
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to review reflection proposal'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to review feedback proposal'));
   }
 
   return response.json();
@@ -1013,7 +1013,7 @@ export async function withdrawReflectionAuthorization(
   );
   if (!response.ok) {
     throw new Error(
-      await readApiErrorMessage(response, 'Failed to withdraw reflection authorization'),
+      await readApiErrorMessage(response, 'Failed to withdraw feedback authorization'),
     );
   }
 
@@ -1029,7 +1029,7 @@ export async function upsertReflectionQuality(
     body: JSON.stringify(request),
   });
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to save reflection quality'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to save feedback quality'));
   }
   return response.json();
 }
@@ -1043,7 +1043,7 @@ export async function clearReflectionQuality(
     body: JSON.stringify(request),
   });
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to clear reflection quality'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to clear feedback quality'));
   }
   return response.json();
 }
@@ -1051,7 +1051,7 @@ export async function clearReflectionQuality(
 export async function fetchReflectionQualityStats(): Promise<ReflectionQualityStatsDto> {
   const response = await apiFetch(`${API_BASE}/api/reflection-quality-stats`);
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to load reflection quality stats'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to load feedback quality stats'));
   }
   return response.json();
 }
@@ -1073,7 +1073,7 @@ export async function markReflectionInboxSeen(
     body: JSON.stringify(request),
   });
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to mark reflection inbox item seen'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to mark feedback inbox item seen'));
   }
   return response.json();
 }
@@ -1105,7 +1105,7 @@ export async function markFailedReflectionRunsSeen(request: {
     body: JSON.stringify(request),
   });
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to acknowledge failed reflection runs'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to acknowledge failed feedback runs'));
   }
   return response.json();
 }
@@ -1121,7 +1121,7 @@ export type AttentionBadgesDto = {
 export async function fetchReflectionHelpInbox(): Promise<{ entries: ReflectionHelpInboxEntry[] }> {
   const response = await apiFetch(`${API_BASE}/api/reflection-help-inbox`);
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to load reflection help inbox'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to load feedback help inbox'));
   }
   return response.json();
 }
@@ -1135,7 +1135,7 @@ export async function markReflectionHelpInboxDone(
     body: JSON.stringify(request),
   });
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to mark reflection help inbox item done'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to mark feedback help inbox item done'));
   }
   return response.json();
 }
@@ -1149,7 +1149,7 @@ export async function deferReflectionHelpInboxItem(
     body: JSON.stringify(request),
   });
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to defer reflection help item'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to defer feedback help item'));
   }
   return response.json();
 }
@@ -1167,7 +1167,7 @@ export async function authorizeManualReflectionOperation(
   );
   if (!response.ok) {
     throw new Error(
-      await readApiErrorMessage(response, 'Failed to authorize manual reflection operation'),
+      await readApiErrorMessage(response, 'Failed to authorize manual feedback operation'),
     );
   }
   return response.json();

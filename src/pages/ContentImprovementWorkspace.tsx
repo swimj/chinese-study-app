@@ -107,7 +107,7 @@ export function ContentImprovementWorkspace({ selection }: { selection: Improvem
     <h2 id="improvement-heading">Improve content</h2>
     <p>Work freely through diagnosis, revision, and preview. Saving retains a draft; applying changes future eligible content.</p>
     <form className="improvement-source" onSubmit={event => { event.preventDefault(); if (maySwitch()) void run(async () => { accept(await createContentImprovement(source)); setRefresh(value => value + 1); }); }}>
-      <label>Content type<select value={source.kind} onChange={event => setSource({ kind: event.target.value as ContentQualityKind, sourceId: '' })}>{CONTENT_QUALITY_KINDS.map(kind => <option key={kind} value={kind}>{LABELS[kind]}</option>)}</select></label>
+      <label>Content type<select value={source.kind} onChange={event => setSource({ kind: event.target.value as ContentQualityKind, sourceId: '' })}>{CONTENT_QUALITY_KINDS.filter(kind => kind !== 'definition_fallback').map(kind => <option key={kind} value={kind}>{LABELS[kind]}</option>)}</select></label>
       <label>Source ID<input required value={source.sourceId} onChange={event => setSource({ kind: source.kind, sourceId: event.target.value })} /></label>
       <button type="submit" disabled={busy || !source.sourceId.trim()}>Open improvement draft</button>
       {source.contentKey && <p className="notes">Selected learner-rated version: <code>{source.contentKey}</code></p>}

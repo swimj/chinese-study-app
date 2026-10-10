@@ -1,12 +1,16 @@
 /** Descriptive content feedback, deliberately independent of learning events. */
 export const CONTENT_QUALITY_KINDS = [
-  'production_cue', 'pure_cue', 'contrast_prompt', 'teaching_package', 'rehearsal', 'supplement'
+  'production_cue', 'definition_fallback', 'pure_cue', 'contrast_prompt', 'teaching_package', 'rehearsal', 'supplement'
 ] as const;
 export type ContentQualityKind = typeof CONTENT_QUALITY_KINDS[number];
 export type ContentQualityRating = 'up' | 'down' | null;
 export type ContentQualityTarget = {
   kind: 'production_cue' | 'supplement';
   id: string;
+} | {
+  kind: 'definition_fallback';
+  wordId: string;
+  expected: { promptText: string; displayedMeanings: string[] };
 } | {
   kind: 'contrast_prompt';
   id: string;

@@ -8,10 +8,21 @@ const production: NonNullable<SessionStudyItem['production']> = {
   acceptedAnswers: [{ wordId: 'word', hanzi: '词', traditional: null }], supplement: null,
 };
 
-test('quality targets identify authored cue content without treating dictionary prompts as generated content', () => {
+test('quality targets distinguish authored cues from exact definition fallback snapshots', () => {
   assert.deepEqual(getSessionContentQualityTarget({ actionKind: 'production', contentRef: null, production }),
     { kind: 'production_cue', id: 'cue' });
-  assert.equal(getSessionContentQualityTarget({ actionKind: 'production', contentRef: null, production: null }), null);
+  assert.deepEqual(getSessionContentQualityTarget({ actionKind: 'production', contentRef: null, production: null },
+    { wordId: 'word', displayedMeanings: ['a word', 'an expression'] }), {
+      kind: 'definition_fallback', wordId: 'word',
+      expected: { promptText: 'a word; an expression', displayedMeanings: ['a word', 'an expression'] },
+    });
+  assert.deepEqual(getSessionContentQualityTarget({ actionKind: 'production', contentRef: null,
+    production: { ...production, cueId: null, text: 'Frozen fallback' } },
+    { wordId: 'word', displayedMeanings: ['Newer definition'] }), {
+      kind: 'definition_fallback', wordId: 'word',
+      expected: { promptText: 'Frozen fallback', displayedMeanings: [] },
+    });
+  assert.throws(() => getSessionContentQualityTarget({ actionKind: 'production', contentRef: null, production: null }), /requires the displayed word/);
   assert.equal(getSessionContentQualityTarget({ actionKind: 'recognition', contentRef: null, production }), null);
 });
 
@@ -52,4 +63,17 @@ test('contrast quality carries the exact frozen prompt and answer identity', () 
   assert.throws(() => getSessionContentQualityTarget({ ...item, contrastSelection: null }), /matching frozen prompt/);
   assert.throws(() => getSessionContentQualityTarget({ ...item,
     contentRef: { type: 'contrast_prompt', id: 'other' } }), /matching frozen prompt/);
+});
+
+test('fallback list identity keeps order and copies the rendered definitions, including an empty selection', () => {
+  const item = { actionKind: 'production' as const, contentRef: null, production: null };
+  const meanings = ['first meaning', 'second meaning'];
+  const target = getSessionContentQualityTarget(item, { wordId: 'word', displayedMeanings: meanings });
+  meanings.reverse();
+  assert.deepEqual(target, { kind: 'definition_fallback', wordId: 'word',
+    expected: { promptText: 'first meaning; second meaning', displayedMeanings: ['first meaning', 'second meaning'] } });
+  assert.notDeepEqual(getSessionContentQualityTarget(item, { wordId: 'word', displayedMeanings: meanings }), target);
+  assert.deepEqual(getSessionContentQualityTarget(item, { wordId: 'word', displayedMeanings: [] }), {
+    kind: 'definition_fallback', wordId: 'word', expected: { promptText: '', displayedMeanings: [] },
+  });
 });
