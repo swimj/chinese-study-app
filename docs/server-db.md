@@ -20,6 +20,7 @@ the reflection application adapter in `reflections.ts`; the runbook is
 | [`unstudied-admission.ts`](../server/db/unstudied-admission.ts) | Experimental diet/stash unstudied admission selector |
 | [`deck-words.ts`](../server/db/deck-words.ts) | Shared resolved deck-ID cache for session composition and whole-deck browsing; fresh details by ID and batched learner study dates |
 | [`reflections.ts`](../server/db/reflections.ts) | Reflection schema validation, immutable artifact materialization, queue/detail read models, proposal review, immutable invocation authorization, application/recovery, and supported adapters |
+| [`content-sharing.ts`](../server/db/content-sharing.ts) | Read-only weekly exact-content second-learner milestones, cross-origin shared cue attempts, current word overlap, and bounded evidence examples |
 | [`content-quality.ts`](../server/db/content-quality.ts) | Exact-content exposure records, standing learner votes, and operator triage |
 | [`reflection-quality.ts`](../server/db/reflection-quality.ts) | Dogfood item quality-tag overlay, upsert-by-item, and model-arm stats joins |
 | [`reflection-help-inbox.ts`](../server/db/reflection-help-inbox.ts) | Open explanation-only Help inbox rows, keyed by `(artifact_id, item_id)`; Done deletes the row |

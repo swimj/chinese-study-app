@@ -548,6 +548,16 @@ export async function fetchModelInvocations(from?: string, to?: string): Promise
   return response.json();
 }
 
+export async function fetchContentSharingDigest(weekStart?: string): Promise<import('../domain/content-sharing').ContentSharingDigest> {
+  const params = new URLSearchParams();
+  if (weekStart !== undefined) params.set('weekStart', weekStart);
+  const response = await apiFetch(`${API_BASE}/api/operator/content-sharing?${params}`);
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to load content sharing'));
+  }
+  return response.json();
+}
+
 export async function fetchOperatorUsagePulse(): Promise<UsagePulsePayload> {
   const response = await apiFetch(`${API_BASE}/api/operator/usage-pulse`);
   if (!response.ok) {

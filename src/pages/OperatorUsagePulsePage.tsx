@@ -1,3 +1,4 @@
+import { ContentSharingPanel } from './ContentSharingPanel';
 import { WhatsNewEditor } from './WhatsNewEditor';
 import { useEffect, useState } from 'react';
 import { ModelInvocationsPanel } from './ModelInvocationsPanel';
@@ -17,6 +18,7 @@ import {
 const OPERATOR_TABS = [
   { id: 'usage', label: 'Usage' },
   { id: 'invocations', label: 'Model invocations' },
+  { id: 'sharing', label: 'Content sharing' },
   { id: 'quality', label: 'Content quality' },
   { id: 'failures', label: 'Preparation failures' },
   { id: 'whats-new', label: 'What’s new' },
@@ -49,6 +51,7 @@ export function OperatorUsagePulsePage() {
     <div role="tabpanel" id={`operator-panel-${tab}`} aria-labelledby={`operator-tab-${tab}`} tabIndex={0}>
       {tab === 'usage' && <UsagePulsePanel />}
       {tab === 'invocations' && <ModelInvocationsPanel />}
+      {tab === 'sharing' && <ContentSharingPanel />}
       {tab === 'quality' && <ContentQualityPanel />}
       {tab === 'failures' && <PreparationFailuresPanel />}
       {tab === 'whats-new' && <WhatsNewEditor />}
