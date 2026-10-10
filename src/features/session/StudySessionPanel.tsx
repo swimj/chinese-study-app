@@ -110,6 +110,7 @@ export function StudySessionPanel(props: StudySessionPanelProps) {
       completedReinforcementStreak={props.completedReinforcementStreak}
       hasUndo={props.hasUndo}
       submittingRating={props.submittingRating}
+      contentRatingSaving={props.contentRatingSaving}
       shortcutGuideOpen={props.shortcutGuideOpen}
       onEndSession={props.onEndSession}
       onUndoLastRating={props.onUndoLastRating}
@@ -154,6 +155,7 @@ function StudySessionPanelContent({
   queuedCount,
   hasUndo,
   submittingRating,
+  contentRatingSaving = false,
   personalNotesEditorOpen,
   personalNotesEditorSaving,
   studyManagementSubmitting,
@@ -204,6 +206,9 @@ function StudySessionPanelContent({
   onProductionHanziInputChange,
   onSelectContrastChoice,
   onRevealAnswer,
+  onContentRatingSavingChange,
+  onContentRatingChange,
+  onFrozenProductionContentRatingChange,
   onToggleLearnerRequestedReview,
   onToggleFrozenProductionLearnerRequestedReview,
   onRate,
@@ -235,6 +240,7 @@ function StudySessionPanelContent({
   queuedCount: number;
   hasUndo: boolean;
   submittingRating: ReviewRating | null;
+  contentRatingSaving?: boolean;
   personalNotesEditorOpen: boolean;
   personalNotesEditorSaving: boolean;
   studyManagementSubmitting: boolean;
@@ -285,6 +291,9 @@ function StudySessionPanelContent({
   onProductionHanziInputChange: (value: string) => void;
   onSelectContrastChoice: (wordId: string) => void;
   onRevealAnswer: () => void;
+  onContentRatingSavingChange?: (saving: boolean) => void;
+  onContentRatingChange?: (rating: 'up' | 'down' | null) => void;
+  onFrozenProductionContentRatingChange?: (rating: 'up' | 'down' | null) => void;
   onToggleLearnerRequestedReview: () => void;
   onToggleFrozenProductionLearnerRequestedReview: () => void;
   onSkipReinforcement: () => void;
@@ -316,17 +325,21 @@ function StudySessionPanelContent({
   );
   const showProductionSupplementAside =
     answerRevealed && hasServedProductionCueSupplement(activeItem?.production);
-  const qualityHotkeysActive = !personalNotesEditorOpen && !shortcutGuideOpen && submittingRating === null && !studyManagementSubmitting;
-  function qualityControls(target: ContentQualityTarget | null, actionId: string, count: number, label: string, hotkeys = true) {
+  const sessionInteractionPending = contentRatingSaving || submittingRating !== null;
+  const qualityHotkeysActive = !personalNotesEditorOpen && !shortcutGuideOpen && !sessionInteractionPending && !studyManagementSubmitting;
+  function qualityControls(target: ContentQualityTarget | null, actionId: string, count: number, label: string, hotkeys = true, onRatingChange?: (rating: 'up' | 'down' | null) => void) {
     if (completionGate || !target || !sessionSummary) return null;
     return <ContentQualityControls
       target={target}
       encounterId={sessionContentQualityEncounterId(sessionSummary.sessionId, actionId, count)}
       label={label}
       hotkeysActive={hotkeys && qualityHotkeysActive}
+      disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}
+      onRatingChange={onRatingChange}
+      onSavingChange={onRatingChange ? onContentRatingSavingChange : undefined}
     />;
   }
-  const sessionEndDisabled = sessionPhase === 'draining' || personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting;
+  const sessionEndDisabled = sessionPhase === 'draining' || personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting;
   const sessionEndLabel = sessionPhase === 'draining' ? 'Session draining' : 'End session';
   const keyboardContext = createSessionKeyboardContext({
     sessionStarted,
@@ -351,15 +364,15 @@ function StudySessionPanelContent({
     ? frozenProductionCard?.status === 'review'
     : panelView === 'active_card' && activeItem?.actionKind === 'production' && activeWord?.status === 'review');
   keyboardContext.canNoClueProduction = keyboardContext.productionInputActive && !completionGate
-    && !studyManagementSubmitting && submittingRating === null && productionHanziInput.trim().length === 0;
+    && !studyManagementSubmitting && !sessionInteractionPending && productionHanziInput.trim().length === 0;
   keyboardContext.canSkipReinforcement = !completionGate && reviewInReinforcement && !productionAwaitingNext && !pureCueAwaitingNext && !contrastAwaitingNext;
   const skipReinforcementButton = keyboardContext.canSkipReinforcement ? (
     <button type="button" className="secondary-button" onClick={onSkipReinforcement}
       data-session-skip-reinforcement
       aria-keyshortcuts="Shift+Space"
       title="Complete this review with its recorded miss. Compensation is handled separately."
-      disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}>
-      Skip reinforcement<ShortcutHint shortcut="Shift+Space" persist />
+      disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}>
+      Skip reinforcement<ShortcutHint shortcut="Shift+Space" />
     </button>
   ) : null;
   const primaryAction = getSessionPrimaryAction(keyboardContext);
@@ -373,7 +386,7 @@ function StudySessionPanelContent({
           <ShortcutHint shortcut={sessionFinalization.kind === 'finalizing' ? null : 'Enter'} />
         </button>
         <UndoButton hasUndo={hasUndo && sessionFinalization.kind === 'unfinalized'}
-          submittingRating={submittingRating} personalNotesEditorOpen={personalNotesEditorOpen}
+          submittingRating={submittingRating} contentRatingSaving={contentRatingSaving} personalNotesEditorOpen={personalNotesEditorOpen}
           onUndoLastRating={onUndoLastRating} />
         <KeyboardGuideButton onClick={onOpenShortcutGuide} />
       </SessionActionSection>
@@ -449,32 +462,33 @@ function StudySessionPanelContent({
             completionActions
           ) : (<div className="session-action-bar">
             <SessionActionSection>
-              <button type="button" onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}>
+              <button type="button" onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}>
                 Continue
                 <ShortcutHint shortcut={shortcutFor(primaryAction, 'continue_after_auto_forgot')} />
               </button>
               <UndoButton
                 hasUndo={hasUndo}
-                submittingRating={submittingRating}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving}
                 personalNotesEditorOpen={personalNotesEditorOpen}
                 onUndoLastRating={onUndoLastRating}
               />
             </SessionActionSection>
             {qualityControls(getSessionContentQualityTarget({ ...frozenProductionCard, production: frozenProductionCard.production ?? null }),
               frozenProductionCard.sessionActionId, frozenProductionCard.reviewedCount,
-              frozenProductionCard.rehearsal ? 'Practice quality' : 'Cue quality', !frozenProductionCard.production?.supplement)}
+              frozenProductionCard.rehearsal ? 'Practice quality' : 'Cue quality', !frozenProductionCard.production?.supplement,
+              frozenProductionCard.status === 'review' ? onFrozenProductionContentRatingChange : undefined)}
             {frozenProductionCard.status === 'review' ? (
               <SessionActionSection>
                 <ReflectionRequestButton
                   key={frozenProductionCard.sessionActionId}
                   requested={frozenProductionLearnerRequestedReview}
                   onToggle={onToggleFrozenProductionLearnerRequestedReview}
-                  disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}
+                  disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}
                 >
                   <ShortcutHint shortcut="R" />
                 </ReflectionRequestButton>
                 <FrozenProductionCardActions
-                  isSubmitting={studyManagementSubmitting}
+                  isSubmitting={studyManagementSubmitting || contentRatingSaving}
                   onDismissFrozenProductionWord={onDismissFrozenProductionWord}
                   onManageFrozenProductionAction={onManageFrozenProductionAction}
                 />
@@ -522,13 +536,13 @@ function StudySessionPanelContent({
             completionActions
           ) : (<div className="session-action-bar">
             <SessionActionSection>
-              <button type="button" onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}>
+              <button type="button" onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}>
                 Continue
                 <ShortcutHint shortcut={shortcutFor(primaryAction, 'continue_after_auto_forgot')} />
               </button>
               <UndoButton
                 hasUndo={hasUndo}
-                submittingRating={submittingRating}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving}
                 personalNotesEditorOpen={personalNotesEditorOpen}
                 onUndoLastRating={onUndoLastRating}
               />
@@ -569,13 +583,13 @@ function StudySessionPanelContent({
             completionActions
           ) : (<div className="session-action-bar">
             <SessionActionSection>
-              <button type="button" onClick={onContinueAfterAutoContrastForgot} disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}>
+              <button type="button" onClick={onContinueAfterAutoContrastForgot} disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}>
                 Continue
                 <ShortcutHint shortcut={shortcutFor(primaryAction, 'continue_after_auto_forgot')} />
               </button>
               <UndoButton
                 hasUndo={hasUndo}
-                submittingRating={submittingRating}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving}
                 personalNotesEditorOpen={personalNotesEditorOpen}
                 onUndoLastRating={onUndoLastRating}
               />
@@ -634,14 +648,14 @@ function StudySessionPanelContent({
               <button
                 type="button"
                 onClick={() => onBeginUnstudiedDrill(activeWord.id)}
-                disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}
+                disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}
               >
                 Begin recall drills
                 <ShortcutHint shortcut={shortcutFor(primaryAction, 'begin_unstudied_drill')} />
               </button>
               <UndoButton
                 hasUndo={hasUndo}
-                submittingRating={submittingRating}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving}
                 personalNotesEditorOpen={personalNotesEditorOpen}
                 onUndoLastRating={onUndoLastRating}
               />
@@ -651,7 +665,7 @@ function StudySessionPanelContent({
                 activeItem={null}
                 activeWord={activeWord}
                 personalNotesEditorSaving={personalNotesEditorSaving}
-                studyManagementSubmitting={studyManagementSubmitting}
+                studyManagementSubmitting={studyManagementSubmitting || contentRatingSaving}
                 onDismissCurrentWord={onDismissCurrentWord}
                 onManageStudyAction={onManageStudyAction}
                 onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
@@ -724,7 +738,7 @@ function StudySessionPanelContent({
                   autoComplete="off"
                   autoCapitalize="none"
                   spellCheck={false}
-                  disabled={completionGate || submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
+                  disabled={completionGate || sessionInteractionPending || personalNotesEditorOpen || studyManagementSubmitting}
                 />
                 {productionHanziError ? <p className="notes">{productionHanziError}</p> : null}
               </form>
@@ -743,7 +757,7 @@ function StudySessionPanelContent({
                       className={option.isDefault ? 'rating-button is-default' : 'rating-button'}
                       title={option.note}
                       onClick={() => onRate(option.value, { restoreUi: 'production-input' })}
-                      disabled={completionGate || submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
+                      disabled={completionGate || sessionInteractionPending || personalNotesEditorOpen || studyManagementSubmitting}
                     >
                       <strong>
                         {option.label}
@@ -758,7 +772,7 @@ function StudySessionPanelContent({
                   <button
                     type="submit"
                     form={productionFormId}
-                    disabled={completionGate || submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
+                    disabled={completionGate || sessionInteractionPending || personalNotesEditorOpen || studyManagementSubmitting}
                   >
                     {studyProfile.labels.submitProductionInput}
                     <ShortcutHint shortcut={shortcutFor(primaryAction, 'submit_production')} />
@@ -768,7 +782,7 @@ function StudySessionPanelContent({
                     className="secondary-button"
                     onClick={onNoClueProduction}
                     aria-keyshortcuts="Shift+Enter"
-                    disabled={submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting || productionHanziInput.trim().length > 0}
+                    disabled={sessionInteractionPending || personalNotesEditorOpen || studyManagementSubmitting || productionHanziInput.trim().length > 0}
                   >
                     No clue<ShortcutHint shortcut="Shift+Enter" />
                   </button>
@@ -777,7 +791,7 @@ function StudySessionPanelContent({
               {skipReinforcementButton}
               <UndoButton
                 hasUndo={hasUndo}
-                submittingRating={submittingRating}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving}
                 personalNotesEditorOpen={personalNotesEditorOpen}
                 onUndoLastRating={onUndoLastRating}
               />
@@ -803,7 +817,7 @@ function StudySessionPanelContent({
             <SessionActionSection>
               <UndoButton
                 hasUndo={hasUndo}
-                submittingRating={submittingRating}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving}
                 personalNotesEditorOpen={personalNotesEditorOpen}
                 onUndoLastRating={onUndoLastRating}
               />
@@ -866,7 +880,7 @@ function StudySessionPanelContent({
                 item={activeItem}
                 selectedWordId={contrastSelectedWordId}
                 answerRevealed={answerRevealed}
-                disabled={completionGate || submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
+                disabled={completionGate || sessionInteractionPending || personalNotesEditorOpen || studyManagementSubmitting}
                 characterPresentation={characterPresentation}
                 sentenceCharacterPresentation={sentenceScript}
                 onSelectChoice={onSelectContrastChoice}
@@ -970,7 +984,7 @@ function StudySessionPanelContent({
                   autoComplete="off"
                   autoCapitalize="none"
                   spellCheck={false}
-                  disabled={completionGate || submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
+                  disabled={completionGate || sessionInteractionPending || personalNotesEditorOpen || studyManagementSubmitting}
                 />
                 {productionHanziError ? <p className="notes">{productionHanziError}</p> : null}
               </form>
@@ -991,7 +1005,7 @@ function StudySessionPanelContent({
                     }}
                     disabled={
                       contrastSelectedWordId === null
-                      || submittingRating !== null
+                      || sessionInteractionPending
                       || personalNotesEditorOpen
                     }
                   >
@@ -1003,7 +1017,7 @@ function StudySessionPanelContent({
                 <button
                   type="button"
                   onClick={onContinueAfterProductionSupplement}
-                  disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}
+                  disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}
                 >
                   Continue
                   <ShortcutHint shortcut={shortcutFor(primaryAction, 'continue_after_supplement')} />
@@ -1021,7 +1035,7 @@ function StudySessionPanelContent({
                           restoreUi: isProductionItem ? 'production-input' : 'revealed',
                         })
                       }
-                      disabled={completionGate || submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
+                      disabled={completionGate || sessionInteractionPending || personalNotesEditorOpen || studyManagementSubmitting}
                     >
                       <strong>
                         {option.label}
@@ -1036,7 +1050,7 @@ function StudySessionPanelContent({
                   <button
                     type="submit"
                     form={productionFormId}
-                    disabled={completionGate || submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
+                    disabled={completionGate || sessionInteractionPending || personalNotesEditorOpen || studyManagementSubmitting}
                   >
                     {studyProfile.labels.submitProductionInput}
                     <ShortcutHint shortcut={shortcutFor(primaryAction, 'submit_production')} />
@@ -1047,7 +1061,7 @@ function StudySessionPanelContent({
                     onClick={onNoClueProduction}
                     aria-keyshortcuts="Shift+Enter"
                     disabled={
-                      submittingRating !== null
+                      sessionInteractionPending
                       || personalNotesEditorOpen
                       || studyManagementSubmitting
                       || productionHanziInput.trim().length > 0
@@ -1057,7 +1071,7 @@ function StudySessionPanelContent({
                   </button>
                 </div>
               ) : (
-                <button type="button" onClick={onRevealAnswer} disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}>
+                <button type="button" onClick={onRevealAnswer} disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}>
                   Reveal answer
                   <ShortcutHint shortcut={shortcutFor(primaryAction, 'reveal')} />
                 </button>
@@ -1065,20 +1079,21 @@ function StudySessionPanelContent({
               {skipReinforcementButton}
               <UndoButton
                 hasUndo={hasUndo}
-                submittingRating={submittingRating}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving}
                 personalNotesEditorOpen={personalNotesEditorOpen}
                 onUndoLastRating={onUndoLastRating}
               />
             </SessionActionSection>
             {qualityControls(getSessionContentQualityTarget(activeItem), activeItem.sessionActionId, reviewedCount,
-              activeItem.rehearsal ? 'Practice quality' : 'Cue quality', !showProductionSupplementAside)}
+              activeItem.rehearsal ? 'Practice quality' : 'Cue quality', !showProductionSupplementAside,
+              activeItem.actionKind === 'production' && activeWord.status === 'review' ? onContentRatingChange : undefined)}
             <SessionActionSection>
               {activeItem.actionKind === 'production' && activeWord.status === 'review' ? (
                 <ReflectionRequestButton
                   key={activeItem.sessionActionId}
                   requested={learnerRequestedReview}
                   onToggle={onToggleLearnerRequestedReview}
-                  disabled={personalNotesEditorOpen || submittingRating !== null || studyManagementSubmitting}
+                  disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}
                 >
                   <ShortcutHint shortcut="R" />
                 </ReflectionRequestButton>
@@ -1087,7 +1102,7 @@ function StudySessionPanelContent({
                 activeItem={activeItem}
                 activeWord={activeWord}
                 personalNotesEditorSaving={personalNotesEditorSaving}
-                studyManagementSubmitting={studyManagementSubmitting}
+                studyManagementSubmitting={studyManagementSubmitting || contentRatingSaving}
                 onDismissCurrentWord={onDismissCurrentWord}
                 onManageStudyAction={onManageStudyAction}
                 onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
@@ -1171,7 +1186,7 @@ function KeyboardShortcutsOverlay({
             onClick={onClose}
           >
             Close
-            <ShortcutHint shortcut="Escape" persist />
+            <ShortcutHint shortcut="Escape" />
           </button>
         </div>
         <p className="notes">Content quality: [ thumbs down · ] thumbs up. Press the selected vote again to clear it.
@@ -1302,11 +1317,13 @@ function ContrastSelectionDrill({
 function UndoButton({
   hasUndo,
   submittingRating,
+  contentRatingSaving = false,
   personalNotesEditorOpen,
   onUndoLastRating,
 }: {
   hasUndo: boolean;
   submittingRating: ReviewRating | null;
+  contentRatingSaving?: boolean;
   personalNotesEditorOpen: boolean;
   onUndoLastRating: () => void;
 }) {
@@ -1319,7 +1336,7 @@ function UndoButton({
       type="button"
       className="secondary-button"
       onClick={onUndoLastRating}
-      disabled={submittingRating !== null || personalNotesEditorOpen}
+      disabled={contentRatingSaving || submittingRating !== null || personalNotesEditorOpen}
       aria-label="Undo last rating"
     >
       Undo
@@ -1471,20 +1488,15 @@ function ManageStudyPanel({
 function ShortcutHint({
   shortcut,
   shortcuts,
-  persist = false,
 }: {
   shortcut?: string | null;
   shortcuts?: Array<string | null | undefined>;
-  persist?: boolean;
 }) {
   const keys = (shortcuts ?? [shortcut]).filter((key): key is string => Boolean(key));
   if (keys.length === 0) {
     return null;
   }
 
-  if (persist) {
-    return <kbd className="session-shortcut-hint is-persistent">{keys[0]}</kbd>;
-  }
 
   return (
     <span className="session-shortcut-hints">

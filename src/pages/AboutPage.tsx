@@ -48,7 +48,7 @@ export function AboutPage({ updatesCatalog, view, onSelectView, onWhatsNewRead, 
                 <li><strong>Add words to your stash.</strong> Open Words → Stash and add words you want to learn. By default, new words in your sessions come only from your stash.</li>
                 <li><strong>Return to Home and select Start session.</strong> Read the introduction for each new word, then try the recall exercises. Reveal the answer when needed and rate how well you remembered it.</li>
                 <li><strong>If you need to wrap up early,</strong> select End session. You’ll finish the exercises already underway, then you’re done.</li>
-                <li><strong>Let each session shape the next.</strong> Visit Reflections for explanations and suggestions that help your study material fit you better. Choose which suggestions to apply, whenever you are ready. Back on Home, Connections offers little discoveries linking the words you studied to language, culture, and your interests.</li>
+                <li><strong>Let each session shape the next.</strong> Visit Feedback for explanations and suggestions that help your study material fit you better. Choose which suggestions to apply, whenever you are ready. Back on Home, Connections offers little discoveries linking the words you studied to language, culture, and your interests.</li>
               </ol>
             </section>
             <section>
@@ -60,7 +60,7 @@ export function AboutPage({ updatesCatalog, view, onSelectView, onWhatsNewRead, 
           </>
         ) : view === 'usage-guide' ? (
           <>
-            <p>The core rhythm is simple: study on Home, shape your vocabulary in Words, and use Reflections when you want to investigate a difficulty.</p>
+            <p>The core rhythm is simple: study on Home, shape your vocabulary in Words, and use Feedback when you want to investigate a difficulty.</p>
             <section>
               <h2>Answer and rate honestly</h2>
               <p>Recognition asks you to recall a word’s meaning and pronunciation. Production asks you to type the Chinese word from a cue. Contextual selection asks you to choose between similar words in a sentence.</p>
@@ -73,8 +73,8 @@ export function AboutPage({ updatesCatalog, view, onSelectView, onWhatsNewRead, 
               <p>The daily new-word limit controls new vocabulary, not the number of reviews. If the suggested vocabulary feels too easy or too hard, use the difficulty adjustment offered after a session.</p>
             </section>
             <section>
-              <h2>Get help from reflections</h2>
-              <p>Reflections can explain a mistake and propose changes such as a better cue or practice distinguishing similar words. Read each proposal before authorizing it. You can dismiss an unhelpful suggestion, request a second opinion where offered, or return to a session’s proposals later.</p>
+              <h2>Get help from feedback</h2>
+              <p>Feedback can explain a mistake and propose changes such as a better cue or practice distinguishing similar words. Read each proposal before authorizing it. You can dismiss an unhelpful suggestion, request a second opinion where offered, or return to a session’s proposals later.</p>
               <p>Content Bin is a read-only browser for supporting study content. It is useful for looking around, but you do not need it for everyday study.</p>
             </section>
           </>
@@ -87,11 +87,11 @@ export function AboutPage({ updatesCatalog, view, onSelectView, onWhatsNewRead, 
             </section>
             <section>
               <h2>Prompts and AI help can be imperfect</h2>
-              <p>A cue may be ambiguous, a valid alternative answer may be missing, or a reflection may give weak advice. Use the available feedback and proposal review controls. If something seems wrong, share the word, prompt, your answer, and what you expected with the person who invited you.</p>
+              <p>A cue may be ambiguous, a valid alternative answer may be missing, or generated feedback may give weak advice. Use the available feedback and proposal review controls. If something seems wrong, share the word, prompt, your answer, and what you expected with the person who invited you.</p>
             </section>
             <section>
-              <h2>Reflection can take time or fail</h2>
-              <p>Reflection generation happens separately from saving your completed study. A reflection failure does not undo saved progress. Check Reflections for its status and retry options. If saving the session itself shows an error, keep the tab open and report the message.</p>
+              <h2>Feedback can take time or fail</h2>
+              <p>Feedback generation happens separately from saving your completed study. A feedback generation failure does not undo saved progress. Check Feedback for its status and retry options. If saving the session itself shows an error, keep the tab open and report the message.</p>
             </section>
             <section>
               <h2>A narrow beta experience</h2>

@@ -13,21 +13,37 @@ Dictionary fallback prompts and the local authoring lab are outside this scope.
 
 Study-card cue and practice feedback sits in the action area beside the session
 controls. Supplement feedback stays beside its corresponding content. Feedback
-uses “Needs work” and “Useful” text buttons, with the selected vote highlighted
+uses a “Helpful?” label with “Not helpful” and “Helpful” text buttons, with the selected vote highlighted
 in the app accent color.
 
-Controls use `]` for Useful and `[` for Needs work outside editable fields.
+Controls use `]` for Helpful and `[` for Not helpful outside editable fields.
 The physical bracket keys also work with Chinese/Pinyin punctuation enabled.
-The visible controls advertise which item owns those shortcuts. A visible
+Shortcuts appear on button hover or keyboard focus; the keyboard guide remains available. A visible
 supplement takes shortcut priority over its cue; both remain clickable. Typing,
 IME composition, modifier combinations, and held-key repeats do not vote.
 The [frontend interaction section](../SPECS/frontend-architecture-map.md#session-keyboard-interactions)
 explains how session commands and focused controls share keyboard input.
 
 Feedback saves immediately and independently of study commits and Undo. Ending
-or abandoning a session does not remove it. Rating never suppresses content,
-changes publication, schedules a word, affects grading, or triggers generation.
+or abandoning a session does not remove it. Rating never suppresses content, changes publication, schedules a word, or
+affects grading. A newly saved “Not helpful” rating on an eligible review
+production cue also requests post-session feedback through the existing
+reflection workflow. Other content ratings remain available for operator review.
+The acknowledgment is “Feedback saved”; it does not promise an individual reply
+or a content change. Previously saved ratings do not request feedback merely
+because an exercise is shown again.
 A save failure is shown next to the controls and does not block study.
+
+An explicit “Request feedback” action remains available on eligible production
+exercises, independently of the rating. Its selected state is “Feedback requested”.
+Explicit requests and requests from negative ratings combine into one reflection
+evidence item per exercise. Clearing a negative rating or switching to Helpful
+removes its implicit request while preserving any explicit request. Existing
+failed-attempt evidence also remains independently eligible. Requests retain the
+existing session acceptance and cancellation boundaries.
+
+The learner-facing surface is named **Feedback**. Internal reflection module,
+route, and evidence names remain unchanged.
 
 ## Evidence and interpretation
 
@@ -52,7 +68,7 @@ The operator page (`#operator-usage`) shows a single table of current non-null
 learner/content ratings, defaulting to the last seven UTC days by last-change
 time. Date bounds, item text, content type, and vote can be filtered in the
 table; column headings sort it. A table control switches between individual
-ratings and an aggregate by exact content snapshot, with Useful, Needs work, and
+ratings and an aggregate by exact content snapshot, with Helpful, Not helpful, and
 rated-pair counts. Changing a vote moves its ledger row; clearing it removes the
 row. Earlier vote states are not retained.
 

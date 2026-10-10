@@ -22,7 +22,7 @@ const PRIMARY_PAGES: ReadonlyArray<{
 }> = [
   { key: 'home', label: 'Home', nested: false },
   { key: 'priority', label: 'Words', nested: true },
-  { key: 'reflections', label: 'Reflections', nested: true },
+  { key: 'reflections', label: 'Feedback', nested: true },
   { key: 'content', label: 'Content Bin', nested: false },
   { key: 'about', label: 'About', nested: true },
 ];
@@ -88,7 +88,7 @@ export function AppChrome({
     // While already on Reflections, the overlay refresh icon owns loading feedback.
     reflections:
       reflectionPageLoading && currentPage !== 'reflections'
-        ? 'Loading reflections...'
+        ? 'Loading feedback...'
         : undefined,
     content: contentPageLoading ? 'Loading content bin...' : undefined,
   };
@@ -163,8 +163,8 @@ export function AppChrome({
                       <button
                         type="button"
                         className="reflections-nav-refresh"
-                        title="Reload reflection lists, help inbox, run log, and all artifact details"
-                        aria-label="Refresh reflection workspace from server"
+                        title="Reload feedback lists, help inbox, run log, and all artifact details"
+                        aria-label="Refresh feedback workspace from server"
                         disabled={reflectionPageLoading}
                         onClick={() => onRefreshReflections()}
                       >

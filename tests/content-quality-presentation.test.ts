@@ -37,7 +37,7 @@ test('source breakdown distinguishes rating coverage from negative share and lab
     kind: 'production_cue', source: 'reflection', model: null,
     totals: { exposures: 90, learnerContentPairs: 10, up: 3, down: 1, ratedLearners: 4, coverage: 0.4 },
   }] }));
-  assert.match(html, /Session reflection/);
+  assert.match(html, /Session feedback/);
   assert.match(html, /Unknown \/ not recorded/);
   assert.match(html, /40\.0%/);
   assert.match(html, /25\.0%/);

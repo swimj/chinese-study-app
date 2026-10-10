@@ -14,6 +14,13 @@ It leaves the completed card visible for visual inspection. These browser
 assertions are separate from `npm test`; server rendering cannot exercise the
 retained card's layout-effect lifecycle.
 
+The isolated `/tests/browser/content-feedback.html` fixture exercises the real
+session controller and content-rating buttons: negative-rating feedback requests,
+independent explicit requests, clear/switch behavior, failed saves, durable attempt
+links, deduplication, and delayed-save navigation. It leaves a production card
+visible after PASS; `?preview=1` opens that card directly for layout inspection.
+All HTTP is intercepted, so these fixtures do not modify learner data.
+
 ## By domain
 
 | Test file | Domain | Imports |

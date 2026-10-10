@@ -1,7 +1,7 @@
 # Reflection Frontend Architecture
 
-Feature-specific navigation map for completed-session reflection and proposal
-review. Product and lifecycle behavior remains authoritative in
+Feature-specific navigation map for the learner-facing Feedback surface, backed
+by completed-session reflection and proposal review. Product and lifecycle behavior remains authoritative in
 [`SPECS/reflection-proposals-and-handles.md`](../SPECS/reflection-proposals-and-handles.md);
 the general React map remains
 [`SPECS/frontend-architecture-map.md`](../SPECS/frontend-architecture-map.md).
@@ -116,10 +116,16 @@ production supplement separately from the pre-reveal cue. New provider bundles
 include that exact snapshot so reflection does not propose a second V1
 supplement for content the learner already saw.
 
-A separate learner-request accumulator backs the **Ask reflection to review**
+A separate learner-request accumulator backs the **Request feedback**
 toggle on review production cards, including the frozen post-answer card. It
 captures the cue at marking time, is deliberately outside the Undo snapshot,
-and can be unmarked explicitly. At the deferred commit boundary it receives
+and can be unmarked explicitly. A separate content-rating accumulator captures
+newly saved “Not helpful” ratings on eligible production cues, so clearing a
+rating preserves an explicit request. The button reflects only the explicit
+request. Both accumulators survive study Undo, drop canceled or managed actions,
+and merge into one evidence item per action. Eligible rating saves fence study
+actions; leaving waits for the save before finalization. At the deferred commit
+boundary each accumulator receives
 the same complete accepted attempt batch as failure evidence. Finalization
 merges both accumulators into the V3 evidence supplement by action, so a marked
 mistake becomes one item and a marked correct response can still enter
@@ -130,8 +136,10 @@ state with `aria-pressed` and a solid green fill. The fill moves inward from all
 four edges over one second, revealing white text with the same boundary;
 unmarking reverses it. Reduced-motion preferences make the change immediate.
 Each action mounts its own button so navigating to another card does not animate
-a request carried over from the previous card. The existing labels, R shortcut,
-and busy/editor guards remain in place.
+a request carried over from the previous card. The learner-facing surface is
+named **Feedback**; internal reflection names and routes are unchanged. The R
+shortcut and busy/editor guards remain in place. Button shortcuts appear on
+hover or keyboard focus.
 
 ## Reflection review workspace
 

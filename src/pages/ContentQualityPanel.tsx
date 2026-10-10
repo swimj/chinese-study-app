@@ -19,7 +19,7 @@ const KIND_LABELS: Record<ContentQualityKind, string> = {
   supplement: 'Supplement',
 };
 const SOURCE_LABELS: Record<string, string> = {
-  reflection: 'Session reflection',
+  reflection: 'Session feedback',
   manual: 'Manually authored',
   'prepared review': 'Prepared review generation',
   'served pure cue': 'Pure cue (served version)',
@@ -125,8 +125,8 @@ export function ContentQualityPanel() {
             <th scope="col" aria-sort={sortBy === 'title' ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}><SortButton label="Item" active={sortBy === 'title'} direction={direction} onClick={() => toggleSort('title', sortBy, direction, setSortBy, setDirection)} /></th>
             <th scope="col" aria-sort={sortBy === 'kind' ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}><SortButton label="Type" active={sortBy === 'kind'} direction={direction} onClick={() => toggleSort('kind', sortBy, direction, setSortBy, setDirection)} /></th>
             {view === 'ratings' ? <th scope="col" aria-sort={sortBy === 'rating' ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}><SortButton label="Vote" active={sortBy === 'rating'} direction={direction} onClick={() => toggleSort('rating', sortBy, direction, setSortBy, setDirection)} /></th> : <>
-              <th scope="col" aria-sort={sortBy === 'up' ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}><SortButton label="Useful" active={sortBy === 'up'} direction={direction} onClick={() => toggleSort('up', sortBy, direction, setSortBy, setDirection)} /></th>
-              <th scope="col" aria-sort={sortBy === 'down' ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}><SortButton label="Needs work" active={sortBy === 'down'} direction={direction} onClick={() => toggleSort('down', sortBy, direction, setSortBy, setDirection)} /></th>
+              <th scope="col" aria-sort={sortBy === 'up' ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}><SortButton label="Helpful" active={sortBy === 'up'} direction={direction} onClick={() => toggleSort('up', sortBy, direction, setSortBy, setDirection)} /></th>
+              <th scope="col" aria-sort={sortBy === 'down' ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}><SortButton label="Not helpful" active={sortBy === 'down'} direction={direction} onClick={() => toggleSort('down', sortBy, direction, setSortBy, setDirection)} /></th>
               <th scope="col" aria-sort={sortBy === 'totalRatings' ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}><SortButton label="Rated pairs" active={sortBy === 'totalRatings'} direction={direction} onClick={() => toggleSort('totalRatings', sortBy, direction, setSortBy, setDirection)} /></th>
             </>}
           </tr></thead>
@@ -138,9 +138,9 @@ export function ContentQualityPanel() {
               <option value="">All types</option>{CONTENT_QUALITY_KINDS.map((value) => <option key={value} value={value}>{KIND_LABELS[value]}</option>)}
             </select></td>
             {view === 'ratings' ? <td><label className="content-quality-visually-hidden" htmlFor="quality-vote-filter">Filter vote</label><select id="quality-vote-filter" value={rating} onChange={(event) => setRating(event.target.value as 'up' | 'down' | '')}>
-              <option value="">All votes</option><option value="up">Useful</option><option value="down">Needs work</option>
+              <option value="">All votes</option><option value="up">Helpful</option><option value="down">Not helpful</option>
             </select></td> : <td colSpan={3}><label className="content-quality-visually-hidden" htmlFor="quality-vote-filter">Filter ratings included in aggregate</label><select id="quality-vote-filter" value={rating} onChange={(event) => setRating(event.target.value as 'up' | 'down' | '')}>
-              <option value="">All votes</option><option value="up">Useful only</option><option value="down">Needs work only</option>
+              <option value="">All votes</option><option value="up">Helpful only</option><option value="down">Not helpful only</option>
             </select><span className="content-quality-filter-note">Filter which votes are counted.</span></td>}
           </tr>{view === 'ratings' ? orderedRatings.map((entry, index) => <RatingRow key={`${entry.contentKey}:${entry.updatedAt}:${index}`} entry={entry} onImprove={improve} />)
             : orderedSnapshots.map((item) => <SnapshotRow key={item.contentKey} item={item} onImprove={improve} />)}</tbody>
@@ -180,7 +180,7 @@ function RatingRow({ entry, onImprove }: { entry: ContentQualityRatingEntry; onI
       <button type="button" className="secondary-button" onClick={() => onImprove(entry)}>Improve this item</button>
       <details><summary>Exact content snapshot (JSON)</summary><pre className="content-quality-snapshot">{JSON.stringify(entry.content, null, 2)}</pre></details>
     </details></th>
-    <td>{KIND_LABELS[entry.kind]}</td><td>{entry.rating === 'up' ? 'Useful' : 'Needs work'}</td>
+    <td>{KIND_LABELS[entry.kind]}</td><td>{entry.rating === 'up' ? 'Helpful' : 'Not helpful'}</td>
   </tr>;
 }
 

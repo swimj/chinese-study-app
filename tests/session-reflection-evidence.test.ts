@@ -19,6 +19,7 @@ import {
   restoreSessionReflectionEvidence,
   snapshotSessionReflectionEvidence,
   toggleLearnerRequestedReview,
+  setContentRatingRequestedReview,
 } from '../src/features/session/session-reflection-evidence.ts';
 import type { Word } from '../src/types.ts';
 
@@ -426,6 +427,51 @@ describe('completed-session reflection evidence', () => {
       dropSessionReflectionEvidenceForAction(linked, item.sessionActionId).items,
       [],
     );
+  });
+
+  test('negative rating and explicit requests remain independent and deduplicate by action', () => {
+    const item = createStudyItem({ actionKind: 'production', status: 'review' });
+    const empty = createLearnerRequestedReflectionAccumulator();
+    const failures = createSessionReflectionEvidenceAccumulator();
+    const explicit = toggleLearnerRequestedReview(empty, item, ['target']);
+    const implicit = setContentRatingRequestedReview(empty, item, ['target'], 'down');
+    assert.equal(buildLearnerRequestedReflectionSupplement(failures, explicit, implicit).items.length, 1);
+    assert.equal(buildLearnerRequestedReflectionSupplement(failures, empty, implicit).items.length, 1);
+    for (const rating of ['up', null] as const) {
+      const cleared = setContentRatingRequestedReview(implicit, item, ['target'], rating);
+      assert.equal(buildLearnerRequestedReflectionSupplement(failures, empty, cleared).items.length, 0);
+      assert.equal(buildLearnerRequestedReflectionSupplement(failures, explicit, cleared).items.length, 1);
+    }
+    assert.equal(setContentRatingRequestedReview(implicit, item, ['target'], 'down'), implicit);
+  });
+
+  test('rating requests link accepted attempts, preserve failure evidence, and drop removed actions', () => {
+    const item = createStudyItem({ actionKind: 'production', status: 'review' });
+    const empty = createLearnerRequestedReflectionAccumulator();
+    const failure = createAttempt({ item, id: 'wrong', response: 'wrong' });
+    const failures = recordProductionMistakeEvidence(createSessionReflectionEvidenceAccumulator(), {
+      item, incorrectAttempt: failure, promptDisplayedMeanings: ['target'],
+    });
+    const implicit = appendAcceptedLearnerRequestedAttemptIds(
+      setContentRatingRequestedReview(empty, item, ['target'], 'down'),
+      { sessionActionId: item.sessionActionId, acceptedAttempts: [failure] },
+    );
+    assert.deepEqual(buildLearnerRequestedReflectionSupplement(createSessionReflectionEvidenceAccumulator(), empty, implicit).items[0]?.attemptIds, ['wrong']);
+    const merged = buildLearnerRequestedReflectionSupplement(failures, empty, implicit);
+    assert.equal(merged.items.length, 1);
+    assert.equal(merged.items[0]?.rawResponse, 'wrong');
+    const removed = dropLearnerRequestedReflectionForAction(implicit, item.sessionActionId);
+    assert.equal(buildLearnerRequestedReflectionSupplement(failures, empty, removed).items.length, 1);
+    assert.deepEqual(removed.items, []);
+  });
+
+  test('ratings on unsupported content do not request reflection', () => {
+    const empty = createLearnerRequestedReflectionAccumulator();
+    for (const item of [
+      createStudyItem({ actionKind: 'recognition', status: 'review' }),
+      createStudyItem({ actionKind: 'production', status: 'learning' }),
+      createStudyItem({ actionKind: 'contrast_selection', status: 'review' }),
+    ]) assert.equal(setContentRatingRequestedReview(empty, item, ['target'], 'down'), empty);
   });
 
   test('keeps an explicit review request outside Undo while joining it to the accepted action batch', () => {

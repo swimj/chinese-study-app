@@ -215,7 +215,7 @@ export function getSessionShortcutGuide(
   ];
 
   if (context.canRequestReflectionReview) sessionRows.unshift({
-    key: 'R', description: 'Ask reflection to review / remove request', available: true,
+    key: 'R', description: 'Request feedback / remove request', available: true,
   });
 
   const sections: SessionShortcutGuideSection[] = [];
