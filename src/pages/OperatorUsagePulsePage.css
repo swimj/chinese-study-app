@@ -47,3 +47,27 @@
 .operator-column-choice-list input { flex: 0 0 auto; margin-top: 0.2rem; }
 .operator-column-footer { margin-top: 1rem; justify-content: flex-end; }
 @media (max-width: 420px) { .operator-column-range { grid-template-columns: 1fr; } }
+
+.content-sharing-panel h2, .content-sharing-panel h3, .content-sharing-panel h4 { margin: 0; }
+.sharing-heading, .sharing-example-heading { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.75rem; }
+.sharing-heading p { margin-bottom: 0; }
+.sharing-week-controls { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.sharing-period { display: grid; gap: 0.35rem; margin-bottom: 1rem; }
+.sharing-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
+.sharing-metric-value { font-size: 1.8rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sharing-metrics .notes { margin-bottom: 0; }
+.sharing-examples { display: grid; gap: 0.75rem; }
+.sharing-example { min-width: 0; overflow-wrap: anywhere; }
+.sharing-example-heading h4 { font-size: 1.15rem; }
+.sharing-example-heading .notes { font-weight: normal; }
+.sharing-example-heading p { margin: 0.25rem 0 0; }
+.sharing-learner-count { color: var(--accent); background: var(--accent-soft); padding: 0.3rem 0.6rem; border-radius: 0.4rem; }
+.sharing-context { border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1.25rem; }
+.sharing-definitions { border-top: 1px solid var(--border); margin-top: 1rem; padding-top: 1rem; }
+.sharing-definitions summary, .sharing-example summary { cursor: pointer; }
+.sharing-definitions dt, .sharing-evidence dt { font-weight: 600; margin-top: 0.75rem; }
+.sharing-definitions dd, .sharing-evidence dd { margin: 0.25rem 0 0; overflow-wrap: anywhere; }
+@media (max-width: 650px) { .sharing-metrics { grid-template-columns: 1fr; } }
+.sharing-evidence-list { display: grid; gap: 1rem; margin-top: 1rem; }
+.sharing-evidence-list section + section { border-top: 1px solid var(--border); padding-top: 1rem; }
+.sharing-evidence-list h5 { font-size: 1rem; margin: 0; }

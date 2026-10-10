@@ -17,6 +17,7 @@ An empty allowlist denies access.
 | --- | --- | --- |
 | Usage | Current cohort pulse and the last seven completed daily snapshots | [Hosted observability](ops/hosted-observability.md) |
 | Model invocations | Inspect attributed provider calls, filter and group rows, compare spend summaries, and refresh the ledger | [Operator API](api.md#operator-view) |
+| Content sharing | Weekly exact-content reuse counts, learner-originated cue reuse, and inspectable examples | [Sharing metrics](#content-sharing) |
 | Content quality | Review content-quality signals and filter the triage queue | [Content quality](content-quality.md) |
 | Preparation failures | Inspect paused shared preparation work and retry eligible stages | [Error diagnostics](ops/error-diagnostics.md#shared-word-preparation-failures) |
 | What’s New | Edit and publish learner-facing update posts | [What’s New](whats-new.md#manual-operator-editor) |
@@ -57,6 +58,45 @@ Counts submitted by older clients before this qualification change measured
 covered practice encounters; those saved counts are not reclassified. A day
 with no completed sessions has zero practice. Spend accounting is available in
 Model invocations; the existing sparse spend-without-accepts signal remains.
+
+## Content sharing
+
+Content sharing shows how prepared material reaches another learner. Choose a
+UTC week (Monday through Sunday), browse earlier weeks, or refresh the current
+report. Counts are computed from existing records at request time; historical
+weeks are reconstructed rather than stored daily snapshots. The current week
+is partial. The report makes no provider calls and changes no study state.
+
+**Introductions newly reused** counts immutable teaching packages whose second
+distinct learner first opened them during the selected week. **Practice exercises
+newly reused** counts exact frozen rehearsal content encountered by its second
+learner during that week. Repeated use by one learner contributes once; an
+item reaching its third learner does not become newly reused again. The first
+learner can have used it in any earlier week.
+
+**Reflection cues used by others** counts distinct shared, learner-originated
+production or standalone cues with a recorded attempt during the selected week
+by someone other than the originating learner. This is a cue identity count,
+not an assertion that different learners saw identical text after a repair.
+
+Up to five newly reused items are grouped by word. Examples expose the relevant
+word/content label and recorded use dates, with
+additional evidence in a disclosure. Preparation history describes recorded
+generation attempts when available. One published package alone does not
+establish that only one generation attempt occurred. Content use is also
+separate from lesson completion or a durable word-level study commit.
+
+The **Sharing potential** count describes words with Practice or Review state
+for multiple learners as of the report's capture, including historical/imported
+progress. It is current context even when viewing an earlier week, and does not
+prove reuse of the same content.
+
+Exact practice and review content reuse depends on recorded content encounters;
+older progress and records without an exact content identity cannot supply that
+evidence. A zero means no qualifying recorded reuse, rather than proving no
+sharing ever occurred. Content withdrawal does not erase historical encounters.
+The report exposes aggregate counts and shared-content labels, without learner
+identities, submitted answers, personal notes, or reflection payloads.
 
 ## Service banner workflow
 

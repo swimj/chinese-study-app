@@ -12,6 +12,7 @@ import { SessionDebriefInputError, validateDebriefInventory } from '../src/domai
 import { startSessionDebriefRuntime } from './session-debrief/worker.ts';
 import { ContentQualityInputError, parseContentQualityTarget, recordContentQualityEncounter, setContentQualityRating, getContentQualityAnalytics, getContentQualityRatingLedger } from './db/content-quality.ts';
 import type { ContentQualityKind } from '../src/domain/content-quality.ts';
+import { ContentSharingInputError, getContentSharingDigest } from './db/content-sharing.ts';
 import cors from 'cors';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { randomUUID } from 'node:crypto';
@@ -417,6 +418,19 @@ export function createApp(options: CreateAppOptions = {}) {
       }
     },
   );
+
+  app.get('/api/operator/content-sharing', createOperatorAllowlistMiddleware(), (req, res) => {
+    try {
+      res.json(getContentSharingDigest(req.query.weekStart));
+    } catch (error) {
+      if (error instanceof ContentSharingInputError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      console.error('Failed to load content sharing digest', error);
+      res.status(500).json({ error: 'Failed to load content sharing digest' });
+    }
+  });
 
   app.get('/api/operator/model-invocations', createOperatorAllowlistMiddleware(), (req, res) => {
     try {

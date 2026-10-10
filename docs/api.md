@@ -156,6 +156,7 @@ accepts a client-selected learner; writes use the authenticated learner context.
 | Method | Path | Handler domain |
 | --- | --- | --- |
 | GET | `/api/operator/usage-pulse` | Operational cohort pulse |
+| GET | `/api/operator/content-sharing?weekStart=YYYY-MM-DD` | Reconstructed UTC-week content reuse and bounded shared-content examples |
 | GET | `/api/operator/model-invocations?from=YYYY-MM-DD&to=YYYY-MM-DD` | User-attributed model calls in an inclusive UTC date range |
 | GET | `/api/operator/word-preparation/failures` | Shared preparation failures and attempt history |
 | POST | `/api/operator/word-preparation/:workId/retry` | Retry paused work; empty `{}` body and operator actor audit |
@@ -168,6 +169,15 @@ Operator routes require the caller’s Clerk user id (or trusted-local learner i
 fails closed with `403 OPERATOR_FORBIDDEN`. See the
 [operator panel guide](operator-panel.md) for the bookmark-only UI and its
 workflows.
+
+`GET /api/operator/content-sharing` defaults to the current UTC week. Optional
+`weekStart` must be a valid Monday date key no later than the current week;
+malformed, repeated, or future values return `400`. The operator-only response
+contains weekly exact-content reuse metrics, learner-originated cue reuse,
+bounded examples, and current study-overlap context. It is read-only and
+reconstructs historical weeks from available evidence. See
+[sharing metric definitions](operator-panel.md#content-sharing) for counting
+rules and coverage limits.
 
 `GET /api/operator/usage-pulse` returns content-free cohort aggregates: live
 `today` plus the last 7 completed UTC-day snapshots (`dau`, sessions, new words,
