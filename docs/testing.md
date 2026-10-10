@@ -22,6 +22,7 @@ retained card's layout-effect lifecycle.
 | `word-content-lab-service.test.ts` | Two-stage local generation, immutable archive, exact references, invalid output and identity conflicts | Injected lab provider + temporary draft archive |
 | `word-content-lab-api.test.ts` | Local opt-in, host/origin gates, route response contracts | Express lab router |
 | `introduction-player.test.ts` | Paced navigation, rehearsal matching, retry/finish, IME and keyboard guards | Pure local player |
+| `ui-annotation-fixtures.test.ts` | Fresh annotation setup, relative UTC dates, prepared stash/learning/review serving, Home content, and existing-data protection | Fixture command + temporary SQLite |
 | `session-composition.test.ts` | Session payload / scheduling composition | Dynamic `server/db.ts` |
 | `diet-intake-placement-api.test.ts` | Retired placement endpoints and removed intake status gate | `server/index.ts` registered routes + temporary SQLite |
 | `diet-profile.test.ts` | Default diet selection, profile round-trip, nudge/jump behavior, and historical intake compatibility | `server/db/diet-profile.ts` + temporary SQLite |

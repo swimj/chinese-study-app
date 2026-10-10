@@ -47,6 +47,50 @@ diagnostic report, not a persistence envelope. See
 [word content representation](word-content-representation.md) for the objects
 and compatibility boundary being inspected.
 
+## Repeatable UI annotation fixtures
+
+Use `npm run prepare:ui-fixtures -- --data-dir=data/ui-fixtures/<new-run-name>`
+to create a fresh Mandarin annotation database. The directory must not already
+exist, even if empty. This keeps earlier annotation sessions and other local
+databases intact. Each preparation starts from the standard Mandarin seed and
+adds these prepared scenarios:
+
+| Words / content | Initial state |
+| --- | --- |
+| 藤椒, 泡沫 | Top stash, unstudied, bootstrap content and teaching ready; introduction not yet completed |
+| 不堪, 石沉大海, 为所欲为 | Teaching completed; learning with 0, 1, and 2 successful practice days, available today |
+| 报备 | Teaching and authored review content ready; review admission open and both skills due |
+| Home | Five Connections notes in a completed sample session, plus two published sample update posts |
+
+The three-day practice period is the learning phase. Successful practice
+completions increase the learning streak; reaching three graduates a word to review. Fixture coverage dates
+and review due times are relative to preparation time in UTC, so a newly created
+fixture remains useful in later months. Existing standard review and contrast
+examples remain available. The normal session composer chooses the study order
+and review action; due recognition and production do not imply two separate
+cards for the same word in one session.
+
+The command prints the backend startup command for the new directory. Start
+that backend and `npm run dev:frontend` in separate terminals, using the normal
+local ports. To resume an annotation run, start its existing database again;
+to restore the initial scenarios, prepare a new directory. The standard
+`dev:backend` seed and existing development databases are unchanged.
+
+Preparation uses authored content and domain persistence functions without
+starting provider workers. These are synthetic state snapshots, not replayed
+learner histories: teaching-completion events are recorded at preparation time,
+while prior learning progress and due dates describe the intended scenario.
+The sample session supplies overview and Connections data, not a full attempt
+or reflection history. Posts are labeled as local sample content.
+
+`annotation-seed.json` records the dated seed and `fixture-manifest.json` records
+the creation time, learner, and scenario identities alongside `app.db`. The
+recommended `data/ui-fixtures/` location is ignored by Git. To extend coverage,
+update `server/seeds/ui-annotation-data.ts` (dated word states) and
+`server/seeds/ui-annotations.ts` (prepared content), then run
+`tests/ui-annotation-fixtures.test.ts`. That test checks actual session serving,
+scheduler invariants, repeat creation, and refusal to overwrite existing data.
+
 ## Safe in dev (repo-local data)
 
 | Script / npm command | Purpose |
