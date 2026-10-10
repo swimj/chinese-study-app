@@ -740,7 +740,7 @@ function StudySessionPanelContent({
                     <button
                       key={option.value}
                       type="button"
-                      className={option.isDefault ? 'rating-button is-default' : 'rating-button'}
+                      className={`rating-button${(submittingRating === null ? option.isDefault : submittingRating === option.value) ? ' is-highlighted' : ''}${submittingRating === option.value ? ' is-submitting' : ''}`}
                       title={option.note}
                       onClick={() => onRate(option.value, { restoreUi: 'production-input' })}
                       disabled={completionGate || submittingRating !== null || personalNotesEditorOpen || studyManagementSubmitting}
@@ -1014,7 +1014,7 @@ function StudySessionPanelContent({
                     <button
                     key={option.value}
                     type="button"
-                    className={option.isDefault ? 'rating-button is-default' : 'rating-button'}
+                    className={`rating-button${(submittingRating === null ? option.isDefault : submittingRating === option.value) ? ' is-highlighted' : ''}${submittingRating === option.value ? ' is-submitting' : ''}`}
                     title={option.note}
                     onClick={() =>
                         onRate(option.value, {

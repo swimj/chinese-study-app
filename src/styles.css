@@ -642,8 +642,13 @@ button:where(:hover:not(:disabled)) {
   outline-offset: 2px;
 }
 
-.rating-button.is-default {
-  border: 1px solid var(--accent);
+.rating-button.is-highlighted {
+  border-color: var(--accent);
+}
+
+.rating-button.is-submitting:disabled {
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--accent);
 }
 
 .keyboard-shortcuts-section {
@@ -1656,10 +1661,18 @@ button:where(:hover:not(:disabled)) {
 }
 
 .rating-button {
+  border: 1px solid transparent;
+  transition: border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
   display: grid;
   gap: 0.35rem;
   text-align: left;
   min-height: 100px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rating-button {
+    transition: none;
+  }
 }
 
 .rating-button span {

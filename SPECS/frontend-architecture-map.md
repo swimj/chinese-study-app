@@ -254,6 +254,12 @@ while the session already has a different active item. For example, the
 reflection-request shortcut (`R`) targets that frozen attempt until the learner
 continues, then targets the active eligible production review card.
 
+Numeric rating shortcuts briefly highlight the chosen rating before advancing
+(the confirmation lasts about 180 ms). During submission, that rating replaces
+the default highlight and the transition lock prevents duplicate actions.
+Button clicks and Space keep their existing timing; reduced-motion preferences
+remove the highlight transition while preserving the visible confirmation.
+
 Focus is part of command resolution. Ordinary letter shortcuts leave editable
 fields alone. Production input explicitly accepts submission with Enter and
 **No clue** with Shift+Enter when the response is empty. The latter ignores IME

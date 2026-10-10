@@ -300,6 +300,11 @@ export function useStudySession({
   const [sessionPrefetch, setSessionPrefetch] = useState<SessionPrefetchState>(() => getSessionPrefetchSnapshot());
   const sessionDeskRef = useRef<SessionDeskHandle>(null);
   const deskBusyRef = useRef(false);
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const [deskAgainKeys, setDeskAgainKeys] = useState<string[]>([]);
   const [deskRemainingOverride, setDeskRemainingOverride] = useState<number | null>(null);
   const [sessionStarted, setSessionStarted] = useState(false);
@@ -891,8 +896,9 @@ export function useStudySession({
 
   async function handleRate(
     rating: ReviewRating | null,
-    _options?: {
+    options?: {
       restoreUi?: 'revealed' | 'production-input';
+      confirmKeyboardRating?: boolean;
     },
   ) {
     if (deskBusyRef.current || submittingRating !== null || !sessionState || (!activeItem && !activePureCue) || (!activeWord && !activePureCue)) {
@@ -910,6 +916,11 @@ export function useStudySession({
     setError(null);
 
     try {
+      if (options?.confirmKeyboardRating) {
+        // Let the chosen button paint before the desk starts moving the card.
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 180));
+        if (!mountedRef.current) return;
+      }
       // A new rating closes the undo window for the previously deferred commit.
       const submittedProductionUndoSnapshot =
         productionAwaitingRating ? lastUndoSnapshot : null;
@@ -2009,6 +2020,7 @@ export function useStudySession({
           return;
         case 'rate':
           void handleRate(command.rating, {
+            confirmKeyboardRating: true,
             restoreUi: isProductionItem ? 'production-input' : 'revealed',
           });
           return;
