@@ -1,5 +1,5 @@
 const TEXT_LABELS: Record<string, string> = {
-  cueText: 'Cue', stimulus: 'Prompt', prompt_text: 'Prompt', instruction: 'Instruction',
+  promptText: 'Prompt', cueText: 'Cue', stimulus: 'Prompt', prompt_text: 'Prompt', instruction: 'Instruction',
   text: 'Text', axisNote: 'Distinction', teachingNote: 'Teaching note', explanation: 'Explanation',
   english_frame: 'Frame', example_sentence: 'Example', example_translation: 'Translation',
   hanzi: 'Answer', traditional: 'Traditional form', pinyin: 'Pronunciation', meaning: 'Meaning',

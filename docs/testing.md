@@ -19,6 +19,9 @@ session controller and content-rating buttons: negative-rating feedback requests
 independent explicit requests, clear/switch behavior, failed saves, durable attempt
 links, deduplication, and delayed-save navigation. It leaves a production card
 visible after PASS; `?preview=1` opens that card directly for layout inspection.
+Use `?fallback=1` to run the same checks on definition fallback production,
+including the frozen post-answer card. Combine it with `preview=1` and
+`large-text=1` to inspect fallback controls at 125% text size.
 All HTTP is intercepted, so these fixtures do not modify learner data.
 
 ## By domain

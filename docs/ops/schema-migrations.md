@@ -110,6 +110,13 @@ this version check: do not use them against a migrated database. Restore before
 reopening writes whenever possible; after reopening, restoration can discard
 accepted learner activity and needs an explicit recovery decision.
 
+Migration `0035_definition_fallback_quality` expands the content quality snapshot
+kind constraint to include definition fallback exercises. It rebuilds only the
+snapshot table, preserving its keys, existing learner encounters and ratings,
+and immutable-update trigger. The populated upgrade regression lives in
+`tests/schema-migrations.test.ts`. Use the offline upgrade procedure for this
+change; the app-only upgrade path is insufficient.
+
 ## Writing the next migration
 
 Add a SQL file under `server/db/migrations/` and append its definition to

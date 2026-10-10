@@ -5,11 +5,13 @@ or thumbs-down rating for an exact content item/revision, reused on later
 encounters. Clicking the selected feedback button clears it. This is a judgment
 of the material, separate from whether the learner recalled the answer.
 
-The first release covers authored production cues, pure cues, contrast prompts,
+Ratings cover authored production cues, definition fallback production exercises,
+pure cues, contrast prompts,
 whole teaching introductions, individual package rehearsals, and post-reveal
 supplements. The in-session introduction player exposes the introduction rating
 throughout playback. Rehearsal ratings appear on the subsequent study cards.
-Dictionary fallback prompts and the local authoring lab are outside this scope.
+The local authoring lab is outside this scope. Definition fallback ratings use
+the same controls as authored cues; provenance does not change the learner action.
 
 Study-card cue and practice feedback sits in the action area beside the session
 controls. Supplement feedback stays beside its corresponding content. Feedback
@@ -27,7 +29,7 @@ explains how session commands and focused controls share keyboard input.
 Feedback saves immediately and independently of study commits and Undo. Ending
 or abandoning a session does not remove it. Rating never suppresses content, changes publication, schedules a word, or
 affects grading. A newly saved “Not helpful” rating on an eligible review
-production cue also requests post-session feedback through the existing
+production exercise, including its definition fallback, also requests post-session feedback through the existing
 reflection workflow. Other content ratings remain available for operator review.
 The acknowledgment is “Feedback saved”; it does not promise an individual reply
 or a content change. Previously saved ratings do not request feedback merely
@@ -44,6 +46,14 @@ existing session acceptance and cancellation boundaries.
 
 The learner-facing surface is named **Feedback**. Internal reflection module,
 route, and evidence names remain unchanged.
+
+Definition fallback snapshots record the target word, exact prompt text, and
+ordered displayed definitions for list-based presentations. Frozen review
+fallbacks retain their served prompt text. A changed prompt or definition list
+has a distinct rating identity. The server validates newly encountered fallback
+material against the learner-accessible word and current definition selection;
+stale or invented text is rejected rather than attributed to different content.
+Previously recorded snapshots and their ratings remain intact.
 
 ## Evidence and interpretation
 
@@ -87,7 +97,10 @@ Quality evidence is not fed to any model provider.
 The [operator content-improvement workspace](content-improvement.md) opens a
 revisioned correction case from an inspected item or a directly selected source.
 Feedback remains a descriptive overlay; only a separately reviewed, explicitly
-approved correction changes future content selection.
+approved correction changes future content selection. Definition fallback ratings
+are inspectable in the ledger but do not expose the authored-content correction
+editor; review production can already request feedback and a proposed cue repair
+through reflection.
 
 ## Deployment
 
@@ -97,7 +110,9 @@ Fresh databases apply the same migration automatically. Do not use the app-only
 hosted upgrade procedure for this release. The implementation PR does not
 migrate or deploy production.
 
-The storage migration is `0021_content_quality`. The shared contract lives in
+The initial storage migration is `0021_content_quality`. Migration
+`0035_definition_fallback_quality` expands the allowed content types while
+preserving existing snapshots, encounters, ratings, and immutability guards. The shared contract lives in
 `src/domain/content-quality.ts`; the backend resolves and records references in
 `server/db/content-quality.ts`. Learner controls live in
 `src/features/content-quality/`, and `ContentQualityPanel` is part of the

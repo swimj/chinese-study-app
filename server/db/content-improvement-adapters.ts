@@ -73,6 +73,7 @@ function read(kind: ContentQualityKind, id: string) {
     return { data, editable, dependencies, pub, replacement };
 }
 export function readImprovementSource(kind: ContentQualityKind, sourceId: string): ImprovementSource {
+    if (kind === 'definition_fallback') throw new ImprovementInputError('Definition fallback corrections are not supported.');
     if (kind === 'teaching_package' || kind === 'rehearsal')
         return readPackageImprovementSource(kind, sourceId);
     const state = read(kind, sourceId);

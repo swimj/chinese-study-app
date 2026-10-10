@@ -133,7 +133,8 @@ path whose durable meaning is that the exercise should not be reflected on.
 
 The V3 bundle introduced an untrusted learner-request marker on a
 review-phase production action. The learner can request feedback explicitly,
-or implicitly by saving a “Not helpful” rating on that action's production cue.
+or implicitly by saving a “Not helpful” rating on that action's production
+exercise, whether it uses an authored cue or a definition fallback.
 These sources are tracked separately in the session and combine into one marker.
 Clearing the negative rating removes only its implicit request; an explicit
 request or ordinary failure evidence remains independently eligible. Loading a

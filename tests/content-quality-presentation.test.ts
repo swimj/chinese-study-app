@@ -49,3 +49,7 @@ test('source breakdown distinguishes rating coverage from negative share and lab
   assert.match(unrated, /0\.0%/);
   assert.match(unrated, /<td>—<\/td>/);
 });
+
+test('definition fallback inspection shows the exact prompt without exposing internal source IDs', () => {
+  assert.deepEqual(contentQualityTextBlocks({wordId: 'word', promptText: 'to understand; to be clear', displayedMeanings: []}), [{label: 'Prompt', text: 'to understand; to be clear'}]);
+});

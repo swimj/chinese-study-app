@@ -120,7 +120,8 @@ A separate learner-request accumulator backs the **Request feedback**
 toggle on review production cards, including the frozen post-answer card. It
 captures the cue at marking time, is deliberately outside the Undo snapshot,
 and can be unmarked explicitly. A separate content-rating accumulator captures
-newly saved “Not helpful” ratings on eligible production cues, so clearing a
+newly saved “Not helpful” ratings on eligible production exercises, including
+definition fallbacks, so clearing a
 rating preserves an explicit request. The button reflects only the explicit
 request. Both accumulators survive study Undo, drop canceled or managed actions,
 and merge into one evidence item per action. Eligible rating saves fence study

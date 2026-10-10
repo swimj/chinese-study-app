@@ -12,6 +12,7 @@ import { contentQualityTextBlocks } from './content-quality-presentation';
 
 const KIND_LABELS: Record<ContentQualityKind, string> = {
   production_cue: 'Production cue',
+  definition_fallback: 'Definition fallback',
   pure_cue: 'Pure cue',
   contrast_prompt: 'Contrast prompt',
   teaching_package: 'Word introduction',
@@ -20,6 +21,7 @@ const KIND_LABELS: Record<ContentQualityKind, string> = {
 };
 const SOURCE_LABELS: Record<string, string> = {
   reflection: 'Session feedback',
+  'definition fallback': 'Definition fallback',
   manual: 'Manually authored',
   'prepared review': 'Prepared review generation',
   'served pure cue': 'Pure cue (served version)',
@@ -177,7 +179,7 @@ function RatingRow({ entry, onImprove }: { entry: ContentQualityRatingEntry; onI
     <td><time dateTime={entry.updatedAt}>{entry.updatedAt.replace('T', ' ').replace(/\.\d+Z$/, '').replace(/Z$/, '')}</time></td>
     <th scope="row" className="content-quality-title"><details><summary>{entry.title}</summary>
       <dl className="content-quality-readable">{textBlocks.map((block, index) => <div key={index}><dt>{block.label}</dt><dd>{block.text}</dd></div>)}</dl>
-      <button type="button" className="secondary-button" onClick={() => onImprove(entry)}>Improve this item</button>
+      {entry.kind !== 'definition_fallback' && <button type="button" className="secondary-button" onClick={() => onImprove(entry)}>Improve this item</button>}
       <details><summary>Exact content snapshot (JSON)</summary><pre className="content-quality-snapshot">{JSON.stringify(entry.content, null, 2)}</pre></details>
     </details></th>
     <td>{KIND_LABELS[entry.kind]}</td><td>{entry.rating === 'up' ? 'Helpful' : 'Not helpful'}</td>
@@ -188,7 +190,7 @@ function SnapshotRow({ item, onImprove }: { item: ContentQualityRatedSnapshot; o
   const textBlocks = contentQualityTextBlocks(item.content);
   return <tr><td><time dateTime={item.updatedAt}>{item.updatedAt.replace('T', ' ').replace(/\.\d+Z$/, '').replace(/Z$/, '')}</time></td><th scope="row" className="content-quality-title"><details><summary>{item.title}</summary>
     <dl className="content-quality-readable">{textBlocks.map((block, index) => <div key={index}><dt>{block.label}</dt><dd>{block.text}</dd></div>)}</dl>
-    <button type="button" className="secondary-button" onClick={() => onImprove(item)}>Improve this item</button>
+    {item.kind !== 'definition_fallback' && <button type="button" className="secondary-button" onClick={() => onImprove(item)}>Improve this item</button>}
     <details><summary>Exact content snapshot (JSON)</summary><pre className="content-quality-snapshot">{JSON.stringify(item.content, null, 2)}</pre></details>
   </details></th><td>{KIND_LABELS[item.kind]}</td><td>{item.up}</td><td>{item.down}</td><td>{item.totalRatings}</td></tr>;
 }

@@ -420,6 +420,8 @@ function StudySessionPanelContent({
             <div className="prompt-block">
               {frozenProductionCard.promptDisplayedMeanings.length > 0 ? (
                 <MeaningList meanings={frozenProductionCard.promptDisplayedMeanings.map(sentenceText)} className="meaning-list-prompt" />
+              ) : !frozenProductionCard.production && !frozenProductionCard.rehearsal && !frozenProductionCard.contentRef ? (
+                <span className="prompt-meta meaning-list-prompt">No production meanings selected</span>
               ) : (
                 <strong className="prompt-value"><ClozePrompt text={frozenProductionCard.fallbackPrompt} answer={formatSentenceAnswer(frozenProductionCard.answerForms, sentenceScript)} sentenceCharacterPresentation={sentenceScript} /></strong>
               )}
@@ -473,7 +475,8 @@ function StudySessionPanelContent({
                 onUndoLastRating={onUndoLastRating}
               />
             </SessionActionSection>
-            {qualityControls(getSessionContentQualityTarget({ ...frozenProductionCard, production: frozenProductionCard.production ?? null }),
+            {qualityControls(getSessionContentQualityTarget({ ...frozenProductionCard, production: frozenProductionCard.production ?? null },
+              { wordId: frozenProductionCard.targetWordId, displayedMeanings: frozenProductionCard.promptDisplayedMeanings }),
               frozenProductionCard.sessionActionId, frozenProductionCard.reviewedCount,
               frozenProductionCard.rehearsal ? 'Practice quality' : 'Cue quality', !frozenProductionCard.production?.supplement,
               frozenProductionCard.status === 'review' ? onFrozenProductionContentRatingChange : undefined)}
@@ -1084,7 +1087,7 @@ function StudySessionPanelContent({
                 onUndoLastRating={onUndoLastRating}
               />
             </SessionActionSection>
-            {qualityControls(getSessionContentQualityTarget(activeItem), activeItem.sessionActionId, reviewedCount,
+            {qualityControls(getSessionContentQualityTarget(activeItem, { wordId: activeItem.targetWordId, displayedMeanings: activePromptDisplayedMeanings }), activeItem.sessionActionId, reviewedCount,
               activeItem.rehearsal ? 'Practice quality' : 'Cue quality', !showProductionSupplementAside,
               activeItem.actionKind === 'production' && activeWord.status === 'review' ? onContentRatingChange : undefined)}
             <SessionActionSection>
