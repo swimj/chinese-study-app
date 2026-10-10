@@ -29,6 +29,13 @@ export function HomeConnections({ debrief, expanded, error, retrying, onToggle, 
       const target = event.target;
       const blocked = isEditableKeyboardTarget(target)
         || (target instanceof Element && !!target.closest('[role="dialog"], [role="slider"], [role="tablist"], audio, video'));
+      if (event.key === 'Escape' && !blocked && !event.defaultPrevented
+        && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
+        && !event.repeat && !event.isComposing && event.keyCode !== 229) {
+        event.preventDefault();
+        toggle();
+        return;
+      }
       const direction = resolveHomeConnectionKey(event, blocked);
       if (direction === null) return;
       event.preventDefault();
