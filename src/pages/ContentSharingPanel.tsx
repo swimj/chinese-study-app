@@ -37,10 +37,10 @@ export function ContentSharingPanel() {
       <button type="button" className="secondary-button" disabled={loading} onClick={() => setRefresh(n => n + 1)}>Refresh digest</button>
     </div>
     <div className="sharing-week-controls" aria-label="Digest week">
-      <button type="button" className="secondary-button" disabled={loading || !visiblePayload}
-        onClick={() => visiblePayload && setWeek(shiftSharingWeek(visiblePayload.weekStart, -1))}>Previous week</button>
-      <button type="button" className="secondary-button" disabled={loading || !visiblePayload || visiblePayload.isCurrentWeek}
-        onClick={() => visiblePayload && setWeek(shiftSharingWeek(visiblePayload.weekStart, 1))}>Next week</button>
+      <button type="button" className="secondary-button" aria-label="Previous week" disabled={loading || !visiblePayload}
+        onClick={() => visiblePayload && setWeek(shiftSharingWeek(visiblePayload.weekStart, -1))}><span aria-hidden="true">←</span></button>
+      <button type="button" className="secondary-button" aria-label="Next week" disabled={loading || !visiblePayload || visiblePayload.isCurrentWeek}
+        onClick={() => visiblePayload && setWeek(shiftSharingWeek(visiblePayload.weekStart, 1))}><span aria-hidden="true">→</span></button>
       <button type="button" className="secondary-button" disabled={loading || week === undefined}
         onClick={() => setWeek(undefined)}>Current week</button>
     </div>
