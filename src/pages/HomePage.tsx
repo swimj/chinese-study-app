@@ -68,6 +68,7 @@ export function HomePage({
   activeReviewProgress,
   activePureCueFailureCount,
   activePureCueReinforcementStreak,
+  completedReinforcementStreak,
   hasUndo,
   submittingRating,
   personalNotesEditorOpen,
@@ -169,6 +170,7 @@ export function HomePage({
   activeReviewProgress: ReviewActionProgress | undefined;
   activePureCueFailureCount: number;
   activePureCueReinforcementStreak: number;
+  completedReinforcementStreak: number | null;
   hasUndo: boolean;
   submittingRating: ReviewRating | null;
   personalNotesEditorOpen: boolean;
@@ -315,6 +317,7 @@ export function HomePage({
             activeReviewProgress={activeReviewProgress}
             activePureCueFailureCount={activePureCueFailureCount}
             activePureCueReinforcementStreak={activePureCueReinforcementStreak}
+            completedReinforcementStreak={completedReinforcementStreak}
             reviewedCount={reviewedCount}
             queuedCount={displayedSessionItemCount}
             hasUndo={hasUndo}
