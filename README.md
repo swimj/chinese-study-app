@@ -18,9 +18,9 @@ and testing are separate from that learner experience.
 
 **README adoption status, 2026-10-07:** the orientation above has been updated.
 The remaining sections below are legacy material pending reconciliation,
-including former local-study workflows, French experimentation, and
-machine-specific links. They are not current learner onboarding or an endorsed
-operating procedure. See the [bounded adoption gap](docs/README.md#known-adoption-gaps)
+including former local-study workflows and French experimentation. They are
+not current learner onboarding or an endorsed operating procedure. See the
+[bounded adoption gap](docs/README.md#known-adoption-gaps)
 and remove this notice when the retained material has been reconciled with
 the README's orientation-only role and the relevant owning guides.
 
@@ -48,7 +48,7 @@ When making changes, prefer designs that avoid unnecessary coupling to single-ma
 
 The current implementation includes:
 
-- local Express backend in [`server/`](/Users/jw/dev/chinese-study-app/server)
+- local Express backend in [`server/`](server/)
 - SQLite persistence
 - revised word/review schema aligned to the learning-review spec
 - separate `dev` and `study` backend modes
@@ -88,7 +88,7 @@ The current implementation includes:
    npm run dev:backend
    ```
 
-   This runs the backend in `dev` mode and uses the repo-local database at [`data/app.db`](/Users/jw/dev/chinese-study-app/data/app.db).
+   This runs the backend in `dev` mode and uses the repo-local database at `data/app.db`.
 
 3. In a second terminal, start the frontend:
 
@@ -125,7 +125,7 @@ progress. See [the lab guide](docs/word-introduction-lab.md).
   npm run dev:backend
   ```
 
-- Uses the repo-local database at [`data/app.db`](/Users/jw/dev/chinese-study-app/data/app.db)
+- Uses the repo-local database at `data/app.db`
 - Seeds sample data on first run
 - The Mandarin seed includes six ready new-word lessons (报备、藤椒、泡沫、不堪、石沉大海、为所欲为),
   shared with the introduction lab. They appear through ordinary **Start session**
@@ -250,13 +250,13 @@ destination for the later dogfood migration.
 
 ## Data Layout
 
-- Backend entrypoint: [`server/index.ts`](/Users/jw/dev/chinese-study-app/server/index.ts)
-- Backend config: [`server/config.ts`](/Users/jw/dev/chinese-study-app/server/config.ts)
-- Database barrel: [`server/db.ts`](/Users/jw/dev/chinese-study-app/server/db.ts) (modules in [`server/db/`](server/db/), map in [`docs/server-db.md`](docs/server-db.md))
+- Backend entrypoint: [`server/index.ts`](server/index.ts)
+- Backend config: [`server/config.ts`](server/config.ts)
+- Database barrel: [`server/db.ts`](server/db.ts) (modules in [`server/db/`](server/db/), map in [`docs/server-db.md`](docs/server-db.md))
 - Agent/docs index: [`docs/README.md`](docs/README.md)
-- Product model spec: [`SPECS/learning-review-model.md`](/Users/jw/dev/chinese-study-app/SPECS/learning-review-model.md)
-- Default dev database: [`data/app.db`](/Users/jw/dev/chinese-study-app/data/app.db)
-- Checked-in dev seed files: [`server/seeds/mandarin-dev.json`](/Users/jw/dev/chinese-study-app/server/seeds/mandarin-dev.json), [`server/seeds/french-dev.json`](/Users/jw/dev/chinese-study-app/server/seeds/french-dev.json)
+- Product model spec: [`SPECS/learning-review-model.md`](SPECS/learning-review-model.md)
+- Default dev database: `data/app.db` (generated locally and ignored by Git)
+- Checked-in dev seed files: [`server/seeds/mandarin-dev.json`](server/seeds/mandarin-dev.json), [`server/seeds/french-dev.json`](server/seeds/french-dev.json)
 - Deck manifest (HSK delta decks for the new-word diet): `server/decks/mandarin-decks-v1.json` — checked-in runtime artifact with logical source provenance in its metadata. Rebuild with `npm run build:deck-manifest` only after supplying the external inputs described in [the deck-build script](scripts/build-deck-manifest.ts) at its expected local paths.
 
 ### Deck manifest provenance and regeneration
