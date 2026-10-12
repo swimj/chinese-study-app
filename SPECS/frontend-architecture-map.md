@@ -254,11 +254,17 @@ while the session already has a different active item. For example, the
 reflection-request shortcut (`R`) targets that frozen attempt until the learner
 continues, then targets the active eligible production review card.
 
-Numeric rating shortcuts briefly highlight the chosen rating before advancing
-(the confirmation lasts about 180 ms). During submission, that rating replaces
+The default rating has a filled highlight to show what Space will choose.
+Keyboard rating shortcuts move that fill to the chosen rating before advancing
+(the confirmation lasts about 240 ms). During submission, that rating replaces
 the default highlight and the transition lock prevents duplicate actions.
-Button clicks and Space keep their existing timing; reduced-motion preferences
-remove the highlight transition while preserving the visible confirmation.
+Every chosen rating pulses during the pause, alongside its fill transition.
+Space uses this same confirmation, including after a supplement. Rating-button
+clicks keep their existing timing; reduced-motion preferences remove the
+highlight transition while preserving the visible confirmation.
+Reveal answer and Continue actions after a supplement or an incorrect answer
+use the same pulse and pause before revealing content or advancing the card. Both
+clicks and Space confirm these actions under the transition lock.
 
 Focus is part of command resolution. Ordinary letter shortcuts leave editable
 fields alone. Production input explicitly accepts submission with Enter and

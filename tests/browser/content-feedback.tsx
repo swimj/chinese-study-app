@@ -1,9 +1,11 @@
 // Run with npm run dev:frontend, then open /tests/browser/content-feedback.html.
-// Add ?fallback=1 for the real definition-fallback snapshot shape, or &preview=1 to explore.
+// Add ?fallback=1 for the definition-fallback snapshot, or ?preview=1 to explore.
+// Add &supplement=1 to check supplements, or &recognition=1 to check Reveal answer.
 // Real controller, HomePage, and retained card; all HTTP is intercepted here.
 import { createRoot } from 'react-dom/client';
 import { HomePage } from '../../src/pages/HomePage';
 import { useStudySession, type StudySessionController } from '../../src/features/session/useStudySession';
+import type { SessionCompletion, StageSessionCompletionRequest } from '../../src/domain/session-completion';
 import type { SessionPayload } from '../../src/services/api';
 import type { ContentQualityTarget } from '../../src/domain/content-quality';
 import '../../src/styles.css';
@@ -27,7 +29,11 @@ const payload: SessionPayload = {
         cueType: fallback ? 'definition_gloss' : 'minimal_context',
         text: fallback ? 'namely' : '"..., namely ...": 他出生于中国的首都，____北京。',
         acceptedAnswers: [{ wordId: 'namely', hanzi: '即', traditional: null }],
-        supplement: null,
+        supplement: query.has('preview') && query.has('supplement') ? {
+          supplementId: 'namely-supplement', englishFrame: '..., namely ...',
+          exampleSentence: '他出生于中国的首都，即北京。',
+          exampleTranslation: 'He was born in the capital of China, namely Beijing.',
+        } : null,
       },
       word: {
         id: 'namely', hanzi: '即', traditional: null, pinyin: 'jí',
@@ -40,6 +46,22 @@ const payload: SessionPayload = {
   },
 };
 
+// Keep an active next card while comparing keyboard timing in the preview.
+if (query.has('preview') && query.has('supplement')) {
+  const first = payload.buckets.review[0]!;
+  payload.buckets.review.push({
+    ...first, sessionActionId: 'review/example/recognition', actionKind: 'recognition',
+    targetWordId: 'example', sampledSkillIds: ['recognition'], production: null,
+    word: { ...first.word, id: 'example', hanzi: '例', pinyin: 'lì', meaning: 'example', meanings: ['example'] },
+  });
+}
+
+if (query.has('preview') && query.has('recognition')) {
+  const first = payload.buckets.review[0]!;
+  payload.buckets.review = [{ ...first, sessionActionId: 'review/namely/recognition',
+    actionKind: 'recognition', sampledSkillIds: ['recognition'], production: null }];
+}
+
 type Rating = 'up' | 'down' | null;
 let rating: Rating = null;
 let saveFailure = false;
@@ -50,8 +72,23 @@ let commits = 0;
 let ratingWrites = 0;
 let finishManagement: (() => void) | null = null;
 let encounterTargets: ContentQualityTarget[] = [];
+let previewCompletion: SessionCompletion | null = null;
 window.fetch = async (input, init) => {
   const url = String(input);
+  if (url.endsWith('/api/session-completions/current')) return Response.json({ completion: null });
+  // Rating previews also allow finishing the fixture without a real server write.
+  const completionMatch = query.has('preview') && url.match(/\/study-sessions\/([^/]+)\/completion(\/close)?$/);
+  if (completionMatch) {
+    if (!completionMatch[2] && init?.method === 'POST') {
+      const body = JSON.parse(String(init.body)) as StageSessionCompletionRequest;
+      const now = new Date().toISOString();
+      previewCompletion = { sessionId: completionMatch[1]!, revisionId: body.revisionId,
+        status: 'closed', canUndo: false, closeAt: now, serverNow: now,
+        completedAt: body.summary.completedAt, report: { newWords: [], graduatedWords: [] }, error: null };
+    }
+    if (!previewCompletion) throw new Error('No fixture completion to read');
+    return Response.json(previewCompletion);
+  }
   if (url.includes('/api/session-payload')) return Response.json(payload);
   if (url.endsWith('/meanings')) return Response.json([]);
   if (url.endsWith('/content-quality/encounters')) {
@@ -115,7 +152,8 @@ async function start() {
   root.render(<Harness key={++scenario} />);
   await delay();
   controller.homePageProps.onStartSession();
-  await until(() => controller.homePageProps.sessionStarted && Boolean(voteButton('down')) && !voteButton('down').disabled);
+  await until(() => controller.homePageProps.sessionStarted && (query.has('recognition')
+    || (Boolean(voteButton('down')) && !voteButton('down').disabled)));
   if (fallback) {
     const target = encounterTargets[0];
     check(target?.kind === 'definition_fallback', 'Fallback must register an exercise rating encounter');

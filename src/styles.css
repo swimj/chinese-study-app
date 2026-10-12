@@ -642,12 +642,25 @@ button:where(:hover:not(:disabled)) {
 }
 
 .rating-button.is-highlighted {
+  background: var(--accent);
+  color: white;
   border-color: var(--accent);
 }
 
 .rating-button.is-submitting:disabled {
   opacity: 1;
-  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.session-action-bar .is-confirming-action {
+  opacity: 1;
+  animation: session-confirmation-pulse 240ms ease-in-out;
+}
+
+@keyframes session-confirmation-pulse {
+  50% {
+    filter: brightness(1.3);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
 }
 
 .keyboard-shortcuts-section {
@@ -1661,7 +1674,7 @@ button:where(:hover:not(:disabled)) {
 
 .rating-button {
   border: 1px solid transparent;
-  transition: border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease, opacity 120ms ease;
   display: grid;
   gap: 0.35rem;
   text-align: left;
@@ -1671,6 +1684,10 @@ button:where(:hover:not(:disabled)) {
 @media (prefers-reduced-motion: reduce) {
   .rating-button {
     transition: none;
+  }
+  .session-action-bar .is-confirming-action {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--accent);
   }
 }
 

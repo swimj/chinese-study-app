@@ -192,6 +192,7 @@ export type StudySessionHomePageProps = {
   completedReinforcementStreak: number | null;
   hasUndo: boolean;
   submittingRating: ReviewRating | null;
+  confirmingSessionAction: boolean;
   contentRatingSaving: boolean;
   personalNotesEditorOpen: boolean;
   personalNotesEditorSaving: boolean;
@@ -305,6 +306,7 @@ export function useStudySession({
   const [sessionLoading, setSessionLoading] = useState(false);
   const [answerRevealed, setAnswerRevealed] = useState(false);
   const [submittingRating, setSubmittingRating] = useState<ReviewRating | null>(null);
+  const [confirmingSessionAction, setConfirmingSessionAction] = useState(false);
   const [pendingSessionCommit, setPendingSessionCommit] = useState<DeferredSessionCommit | null>(null);
   const [lastUndoSnapshot, setLastUndoSnapshot] = useState<SessionUndoSnapshot | null>(null);
   const [sessionNow, setSessionNow] = useState(() => new Date().toISOString());
@@ -827,7 +829,7 @@ export function useStudySession({
     try {
       if (options?.confirmKeyboardRating) {
         // Let the chosen button paint before the desk starts moving the card.
-        await new Promise<void>((resolve) => window.setTimeout(resolve, 180));
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 240));
         if (!mountedRef.current) return;
       }
       // A new rating closes the undo window for the previously deferred commit.
@@ -1242,11 +1244,30 @@ export function useStudySession({
     setAnswerRevealed(true);
   }
 
+  async function confirmSessionAction() {
+    setConfirmingSessionAction(true);
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 240));
+    return mountedRef.current;
+  }
+
+  async function handleRevealAnswer() {
+    if (contentRatingSavingRef.current || deskBusyRef.current || answerRevealed || (!activeItem && !activePureCue)) return;
+    deskBusyRef.current = true;
+    try {
+      if (!await confirmSessionAction()) return;
+      setAnswerRevealed(true);
+    } finally {
+      deskBusyRef.current = false;
+      setConfirmingSessionAction(false);
+    }
+  }
+
   async function handleContinueAfterAutoForgot() {
     if (contentRatingSavingRef.current || deskBusyRef.current || submittingRating !== null || (!frozenProductionCard && !frozenPureCueCard)) return;
     deskBusyRef.current = true;
     setSubmittingRating('forgot');
     try {
+      if (!await confirmSessionAction()) return;
       const key = frozenPureCueCard
         ? getSessionDeskUnitKey('review', frozenPureCueCard.item.sessionActionId)
         : getSessionDeskUnitKey(frozenProductionCard!.status, frozenProductionCard!.sessionActionId, frozenProductionCard!.targetWordId);
@@ -1257,15 +1278,20 @@ export function useStudySession({
     } finally {
       deskBusyRef.current = false;
       setSubmittingRating(null);
+      setConfirmingSessionAction(false);
     }
   }
 
-  function handleContinueAfterProductionSupplement() {
-    if (!productionAwaitingSupplement) {
-      return;
+  async function handleContinueAfterProductionSupplement() {
+    if (contentRatingSavingRef.current || deskBusyRef.current || !productionAwaitingSupplement) return;
+    deskBusyRef.current = true;
+    try {
+      if (!await confirmSessionAction()) return;
+      setProductionUiPhase('await-rating');
+    } finally {
+      deskBusyRef.current = false;
+      setConfirmingSessionAction(false);
     }
-
-    setProductionUiPhase('await-rating');
   }
 
   function handlePreviewContrastChoice(wordId: string) {
@@ -1357,12 +1383,14 @@ export function useStudySession({
     deskBusyRef.current = true;
     setSubmittingRating('forgot');
     try {
+      if (!await confirmSessionAction()) return;
       // Contrast is completed on its first answer; it does not enter reinforcement.
       if (sessionState?.phase !== 'completed' && sessionDeskRef.current) await sessionDeskRef.current.depart('contrast-miss', resetAnswerAndProductionUi);
       else resetAnswerAndProductionUi();
     } finally {
       deskBusyRef.current = false;
       setSubmittingRating(null);
+      setConfirmingSessionAction(false);
     }
   }
 
@@ -1934,7 +1962,7 @@ export function useStudySession({
           handleOpenPersonalNotesEditor();
           return;
         case 'reveal':
-          setAnswerRevealed(true);
+          void handleRevealAnswer();
           return;
         case 'begin_unstudied_drill':
           if (activeWord) {
@@ -1955,6 +1983,7 @@ export function useStudySession({
           const defaultRating = getDefaultRating(activeRatingOptions);
           if (defaultRating && (activeWord || activePureCue)) {
             void handleRate(defaultRating, {
+              confirmKeyboardRating: true,
               restoreUi: isProductionItem ? 'production-input' : 'revealed',
             });
           }
@@ -2064,6 +2093,7 @@ export function useStudySession({
       completedReinforcementStreak,
       hasUndo: lastUndoSnapshot !== null,
       submittingRating,
+      confirmingSessionAction,
       contentRatingSaving,
       personalNotesEditorOpen,
       personalNotesEditorSaving,
@@ -2120,7 +2150,7 @@ export function useStudySession({
         }
       },
       onSelectContrastChoice: handleSelectContrastChoice,
-      onRevealAnswer: () => setAnswerRevealed(true),
+      onRevealAnswer: () => void handleRevealAnswer(),
       onContentRatingSavingChange: (saving) => {
         if (saving) {
           contentRatingSaveBarrierRef.current = new Promise<void>((resolve) => {

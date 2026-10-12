@@ -21,7 +21,7 @@
 .session-desk .session-action-bar button { width: auto; min-height: 2.25rem; }
 .session-desk .session-action-bar .rating-grid { display: flex; flex-wrap: wrap; width: auto; flex: 1; gap: .5rem; }
 .session-desk .rating-grid > button { flex: 1; }
-.session-desk .rating-button:not(.is-default) { background: var(--surface); color: var(--text-secondary); border-color: var(--border); }
+.session-desk .rating-button:not(.is-highlighted) { background: var(--surface); color: var(--text-secondary); border-color: var(--border); }
 .session-desk .session-action-bar .inline-actions { display: flex; }
 .session-desk .session-action-bar .manage-study-popover { position: absolute; bottom: 100%; top: auto; left: 0; width: min(330px,75vw); z-index: 25; background: var(--surface); box-shadow: var(--shadow-card); }
 .session-desk .session-action-bar .manage-study-actions { display: grid; }

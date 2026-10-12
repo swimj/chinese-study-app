@@ -82,7 +82,8 @@ async function run() {
       controller.homePageProps.onRate('good', { restoreUi: 'production-input' });
     } else if (p.activeItem) {
       p.onRevealAnswer();
-      await delay();
+      await until(() => controller.homePageProps.answerRevealed
+        && !controller.homePageProps.confirmingSessionAction);
       controller.homePageProps.onRate('good', { restoreUi: 'revealed' });
     } else {
       throw new Error('No active exercise while preparing the mixed session');
