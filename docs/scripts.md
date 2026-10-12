@@ -91,6 +91,27 @@ update `server/seeds/ui-annotation-data.ts` (dated word states) and
 `tests/ui-annotation-fixtures.test.ts`. That test checks actual session serving,
 scheduler invariants, repeat creation, and refusal to overwrite existing data.
 
+### Mixed-session summary walkthrough
+
+To inspect the session summary without manually completing the fixture, point a
+Vite frontend at its backend with `VITE_API_BASE=http://localhost:<backend-port>`
+and open `/tests/browser/mixed-session.html?prepare=1`. Use a fresh annotation
+database with the new and Practice words still available. The page checks that
+the backend is in development mode and its data directory is under
+`data/ui-fixtures/` before starting. It makes real HTTP requests, records the
+prepared introductions as completed, and submits successful exercises through
+the real study controller. It stages completion, checks that the report contains
+new words and a graduation, then cancels the final action through Undo and
+pauses for manual input. Finish that action to inspect the normal 15-second
+summary flow. The recorded attempts are scripted fixture activity, not learner
+history. Reloading the page does not reset the database; prepare a fresh directory
+for another initial run.
+
+This differs from `/tests/browser/final-reinforcement.html?interactive=1`, which
+has only one Review word and mocks HTTP, and
+`/tests/browser/session-completion.html?preview=1`, which renders sample report
+data without a study session.
+
 ## Safe in dev (repo-local data)
 
 | Script / npm command | Purpose |
