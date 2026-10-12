@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { resolveContentExerciseResponse, type ContentExerciseSnapshot, type TeachingPackageSnapshot, type WordContentDocument } from '../domain/word-content';
 import { IntroductionPlayer } from '../features/introduction-lab/IntroductionPlayer';
 import { initialIntroductionPlayerState, reduceIntroductionPlayer } from '../features/introduction-lab/player';
@@ -6,17 +6,28 @@ import type { ImprovementCase, ImprovementCheck, ImprovementDraftFields } from '
 import { CONTENT_QUALITY_KINDS, type ContentQualityKind } from '../domain/content-quality';
 import { applyContentImprovement, closeContentImprovement, createContentImprovement, fetchContentImprovement, fetchContentImprovementHistory, fetchContentImprovements, saveContentImprovement, validateContentImprovement } from '../services/api';
 
+import { rehearsalFocus, replaceFocusedRehearsal, focusedRehearsalPreview } from './content-improvement-focus';
+
 export type ImprovementSelection = { kind: ContentQualityKind; sourceId: string; contentKey?: string };
-const LABELS: Record<string, string> = { production_cue: 'Production cue', pure_cue: 'Pure cue', contrast_prompt: 'Contrast prompt', teaching_package: 'Word introduction', rehearsal: 'Word rehearsal', supplement: 'Supplement', cueText: 'Cue', stimulus: 'Prompt', teachingNote: 'Teaching note', promptText: 'Prompt', explanation: 'Explanation', targetWordId: 'Target word ID', acceptedWordIds: 'Accepted word IDs', acceptedAnswers: 'Accepted answers', axisNote: 'Distinction', hanzi: 'Answer', traditional: 'Traditional form', text: 'Text', contract: 'Practice focus', instruction: 'Instruction', englishFrame: 'English frame', exampleSentence: 'Example sentence', exampleTranslation: 'Example translation' };
+const LABELS: Record<string, string> = { production_cue: 'Production cue', pure_cue: 'Pure cue', contrast_prompt: 'Contrast prompt', teaching_package: 'Word introduction', rehearsal: 'Word rehearsal', supplement: 'Supplement', cueText: 'Cue', stimulus: 'Prompt', teachingNote: 'Teaching note', promptText: 'Prompt', explanation: 'Explanation', targetWordId: 'Target word ID', acceptedWordIds: 'Accepted word IDs', acceptedAnswers: 'Accepted answers', axisNote: 'Distinction', hanzi: 'Answer', traditional: 'Traditional form', text: 'Text', contract: 'Practice focus', instruction: 'Instruction', englishFrame: 'English frame', exampleSentence: 'Example sentence', exampleTranslation: 'Example translation', frame: 'English frame' };
 const label = (key: string) => LABELS[key] ?? key.replace(/([a-z])([A-Z])/g, '$1 $2').replaceAll('_', ' ');
 const draftOf = (item: ImprovementCase): ImprovementDraftFields => ({ diagnosis: item.diagnosis, rationale: item.rationale, generalLesson: item.generalLesson, proposalOrigin: item.proposalOrigin, proposed: item.proposed });
 
 /** Recursive fields retain the adapter's shape, including source identities. Validation owns domain rules. */
 function ContentFields({ value, onChange, path = 'Proposed content' }: { value: unknown; onChange: (value: unknown) => void; path?: string }) {
+  if (value === null && path === 'frame') return <label>English frame (optional)<textarea rows={2} value="" onChange={event => onChange(event.target.value || null)} /></label>;
   if (typeof value === 'string') return <label>{label(path)}<textarea rows={value.length > 120 ? 4 : 2} value={value} onChange={event => onChange(event.target.value)} /></label>;
   if (Array.isArray(value)) return <fieldset><legend>{label(path)}</legend>{value.map((entry, index) => <ContentFields key={index} value={entry} path={`${path} ${index + 1}`} onChange={next => onChange(value.map((old, i) => i === index ? next : old))} />)}</fieldset>;
   if (value && typeof value === 'object') return <div className="improvement-fields">{Object.entries(value).filter(([key]) => !['id', 'schemaVersion', 'wordContentId', 'contentId', 'responseMode', 'kind', 'wordId', 'targetWordId', 'acceptedWordIds', 'formId', 'useId', 'exampleId'].includes(key)).map(([key, entry]) => <ContentFields key={key} path={key} value={entry} onChange={next => onChange({ ...value, [key]: next })} />)}</div>;
   return <p>{label(path)}: {String(value)}</p>;
+}
+
+export function FocusedRehearsalFields({ proposed, sourceId, onChange }: { proposed: ImprovementDraftFields['proposed']; sourceId: string; onChange: (proposed: ImprovementDraftFields['proposed']) => void }) {
+  try {
+    return <ContentFields value={rehearsalFocus(proposed, sourceId)} onChange={value => onChange(replaceFocusedRehearsal(proposed, sourceId, value))} />;
+  } catch (cause) {
+    return <p role="alert">{cause instanceof Error ? cause.message : String(cause)} Use Advanced or structured import to repair this proposal.</p>;
+  }
 }
 
 function ReadableContent({ value }: { value: unknown }) {
@@ -30,6 +41,11 @@ function PackagePreview({ snapshot, content }: { snapshot: TeachingPackageSnapsh
   const [state, setState] = useState(initialIntroductionPlayerState);
   const [playing, setPlaying] = useState(false);
   return <><button type="button" className="secondary-button" onClick={() => setPlaying(!playing)}>{playing ? 'Close introduction player' : 'Try learner introduction'}</button>{playing ? <IntroductionPlayer snapshot={snapshot} content={content} state={state} onAction={action => setState(current => reduceIntroductionPlayer(current, action, snapshot))} onRestart={() => setState(initialIntroductionPlayerState())} /> : <ReadableContent value={snapshot} />}</>;
+}
+
+export function RehearsalPreview({ value, sourceId }: { value: unknown; sourceId: string }) {
+  try { return <ContentPreview value={focusedRehearsalPreview(value, sourceId)} />; }
+  catch (cause) { return <p role="status">Preview unavailable: {cause instanceof Error ? cause.message : String(cause)}. Save and validate to check the proposal.</p>; }
 }
 
 function ContentPreview({ value, interactive = true }: { value: unknown; interactive?: boolean }) {
@@ -70,7 +86,15 @@ export function ContentImprovementWorkspace({ selection }: { selection: Improvem
   const [resolution, setResolution] = useState('');
   const [importText, setImportText] = useState('');
   const dirty = Boolean(selected && draft && JSON.stringify(draftOf(selected)) !== JSON.stringify(draft));
-  useEffect(() => { if (selection) setSource(selection); }, [selection]);
+  const openingSelection = useRef<ImprovementSelection | null>(null);
+  useEffect(() => {
+    if (!selection || busy || openingSelection.current === selection) return;
+    openingSelection.current = selection;
+    if (maySwitch()) {
+      setSource(selection);
+      void run(async () => { accept(await createContentImprovement(selection)); setRefresh(value => value + 1); });
+    }
+  }, [selection, busy]);
   useEffect(() => {
     let cancelled = false;
     void fetchContentImprovements(status, offset).then(result => { if (!cancelled) setList(result); }).catch(cause => { if (!cancelled) setError(String(cause)); });
@@ -106,15 +130,16 @@ export function ContentImprovementWorkspace({ selection }: { selection: Improvem
   return <section id="content-improvement-workspace" className="improvement-workspace" aria-labelledby="improvement-heading">
     <h2 id="improvement-heading">Improve content</h2>
     <p>Work freely through diagnosis, revision, and preview. Saving retains a draft; applying changes future eligible content.</p>
-    <form className="improvement-source" onSubmit={event => { event.preventDefault(); if (maySwitch()) void run(async () => { accept(await createContentImprovement(source)); setRefresh(value => value + 1); }); }}>
+    <details><summary>Open content by source ID</summary><form className="improvement-source" onSubmit={event => { event.preventDefault(); if (maySwitch()) void run(async () => { accept(await createContentImprovement(source)); setRefresh(value => value + 1); }); }}>
       <label>Content type<select value={source.kind} onChange={event => setSource({ kind: event.target.value as ContentQualityKind, sourceId: '' })}>{CONTENT_QUALITY_KINDS.filter(kind => kind !== 'definition_fallback').map(kind => <option key={kind} value={kind}>{LABELS[kind]}</option>)}</select></label>
       <label>Source ID<input required value={source.sourceId} onChange={event => setSource({ kind: source.kind, sourceId: event.target.value })} /></label>
       <button type="submit" disabled={busy || !source.sourceId.trim()}>Open improvement draft</button>
       {source.contentKey && <p className="notes">Selected learner-rated version: <code>{source.contentKey}</code></p>}
-    </form>
-    <label>Cases<select value={status} onChange={event => { setStatus(event.target.value as ImprovementCase['status']); setOffset(0); }}><option value="draft">Unresolved drafts</option><option value="applied">Applied corrections</option><option value="closed">Closed cases</option></select></label>
+    </form></details>
+    <details open={!selected}><summary>Browse improvement cases</summary><label>Cases<select value={status} onChange={event => { setStatus(event.target.value as ImprovementCase['status']); setOffset(0); }}><option value="draft">Unresolved drafts</option><option value="applied">Applied corrections</option><option value="closed">Closed cases</option></select></label>
     <div className="improvement-case-list">{list.items.map(item => <button key={item.id} type="button" className="secondary-button" disabled={busy} aria-pressed={selected?.id === item.id} onClick={() => { if (maySwitch()) void run(async () => accept(await fetchContentImprovement(item.id))); }}>{item.source.title} · revision {item.revision}</button>)}{!list.total && <p>No cases in this view.</p>}</div>
     {list.total > 25 && <nav aria-label="Improvement cases"><button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 25))}>Previous</button><span>{offset + 1}–{Math.min(offset + 25, list.total)} of {list.total}</span><button type="button" disabled={offset + 25 >= list.total} onClick={() => setOffset(offset + 25)}>Next</button></nav>}
+    </details>
     {error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}{busy && <p role="status">Working…</p>}
     {selected && draft && <article>
       <h3>{selected.source.title}</h3>
@@ -122,19 +147,33 @@ export function ContentImprovementWorkspace({ selection }: { selection: Improvem
       <details><summary>Generation provenance for the source</summary><dl><dt>Source</dt><dd>{selected.source.provenance?.source ?? 'Unknown'}</dd><dt>Model</dt><dd>{selected.source.provenance?.model ?? 'Unknown / not recorded'}</dd></dl></details>
       <ul>{selected.source.impact.map((impact, index) => <li key={index}>{impact}</li>)}</ul>
       {selected.flagged && <details><summary>Exact learner-rated version and generation provenance</summary><ReadableContent value={selected.flagged.content} /><pre>{JSON.stringify(selected.flagged.provenance, null, 2)}</pre><p>This snapshot is retained separately from the source captured when the draft was opened.</p></details>}
-      <fieldset disabled={busy || !editable}>
-        <legend>Editorial judgment {dirty ? '· unsaved changes' : '· saved'}</legend>
+      <div className="improvement-comparison">
+        <section><h4>Original</h4>{selected.source.kind === 'rehearsal' ? <RehearsalPreview key={`${selected.id}-original`} value={selected.source.preview} sourceId={selected.source.sourceId} /> : <ContentPreview key={`${selected.id}-original`} value={selected.source.preview} interactive={false} />}</section>
+        <section><fieldset disabled={busy || !editable}><legend>Revision {dirty ? '· unsaved changes' : '· saved'}</legend>
+          {selected.source.kind === 'rehearsal' ? <>
+            <FocusedRehearsalFields proposed={draft.proposed} sourceId={selected.source.sourceId} onChange={proposed => edit({ ...draft, proposed })} />
+            <details><summary>Advanced: edit full source and teaching package</summary><ContentFields value={draft.proposed} onChange={proposed => edit({ ...draft, proposed: proposed as ImprovementDraftFields['proposed'] })} /></details>
+          </> : <ContentFields value={draft.proposed} onChange={proposed => edit({ ...draft, proposed: proposed as ImprovementDraftFields['proposed'] })} />}
+        </fieldset>
+        <h4>{selected.status === 'applied' ? 'Applied preview' : check ? 'Validated preview' : 'Preview · not validated'}</h4>
+        {selected.source.kind === 'rehearsal' ? <RehearsalPreview key={`${selected.id}-${JSON.stringify(draft.proposed)}-${check?.revision}`} value={selected.outcome?.appliedSource?.preview ?? check?.preview ?? draft.proposed} sourceId={selected.source.sourceId} /> : <ContentPreview key={`${selected.id}-${JSON.stringify(draft.proposed)}-${check?.revision}`} value={selected.outcome?.appliedSource?.preview ?? check?.preview ?? draft.proposed} />}
+        </section>
+      </div>
+      <fieldset disabled={busy || !editable}><legend>Editorial evidence</legend>
         <label>Diagnosis — what should improve?<textarea rows={3} value={draft.diagnosis} onChange={event => edit({ ...draft, diagnosis: event.target.value })} /></label>
         <label>Rationale — why is this revision better?<textarea rows={3} value={draft.rationale} onChange={event => edit({ ...draft, rationale: event.target.value })} /></label>
         <label>Possible general lesson (optional)<textarea rows={2} value={draft.generalLesson} onChange={event => edit({ ...draft, generalLesson: event.target.value })} /></label>
         <label>Proposal authored by<select value={draft.proposalOrigin} onChange={event => edit({ ...draft, proposalOrigin: event.target.value as 'operator' | 'agent' })}><option value="operator">Operator</option><option value="agent">Agent proposal</option></select></label>
         {draft.proposalOrigin === 'agent' && <p className="notes">{selected.status === 'applied' ? 'Agent proposal accepted by the applying operator.' : 'Agent proposals require your review and explicit approval before application.'}</p>}
-        <h4>Revision</h4><ContentFields value={draft.proposed} onChange={proposed => edit({ ...draft, proposed: proposed as ImprovementDraftFields['proposed'] })} />
       </fieldset>
-      <div className="improvement-comparison"><section><h4>Source captured at draft creation</h4><ContentPreview key={`${selected.id}-original`} value={selected.source.preview} interactive={false} /></section><section><h4>{selected.status === 'applied' ? 'Applied revision' : check ? 'Validated revision preview' : 'Proposed content · not validated'}</h4><ContentPreview key={`${selected.id}-${check?.revision ?? 'draft'}`} value={selected.outcome?.appliedSource?.preview ?? check?.preview ?? draft.proposed} /></section></div>
       <p className="notes">Preview does not record study attempts or change progress. Saved exercise previews use the learner answer matcher. Validate the saved draft to resolve source references and check its content contract.</p>
-      <div className="improvement-actions">
-        {editable && <><button type="button" disabled={busy || !dirty} onClick={() => void run(async () => { accept(await saveContentImprovement(selected.id, selected.revision, draft)); setRefresh(value => value + 1); setNotice('Draft saved. Production content is unchanged.'); })}>Save draft</button><button type="button" className="secondary-button" disabled={busy || dirty} onClick={() => void run(async () => { setCheck(await validateContentImprovement(selected.id, selected.revision)); setApproved(false); setAnswerApproved(false); })}>Validate saved draft</button></>}
+      <div className="improvement-actions" aria-label="Draft actions">
+        <strong role="status">{selected.status !== 'draft' ? selected.status : dirty ? 'Unsaved edits' : check ? check.sourceChanged || check.errors.length ? 'Needs attention' : 'Validated · ready for review' : 'Saved · needs validation'}</strong>
+        {editable && <><button type="button" disabled={busy || !dirty} onClick={() => void run(async () => { accept(await saveContentImprovement(selected.id, selected.revision, draft)); setRefresh(value => value + 1); setNotice('Draft saved. Production content is unchanged.'); })}>Save draft</button><button type="button" className="secondary-button" disabled={busy} onClick={() => void run(async () => {
+          const saved = dirty ? await saveContentImprovement(selected.id, selected.revision, draft) : selected;
+          if (dirty) { accept(saved); setRefresh(value => value + 1); }
+          setCheck(await validateContentImprovement(saved.id, saved.revision)); setApproved(false); setAnswerApproved(false);
+        })}>{dirty ? 'Save and validate' : 'Validate saved draft'}</button></>}
         <button type="button" className="secondary-button" disabled={busy} onClick={() => { if (maySwitch()) void run(async () => accept(await fetchContentImprovement(selected.id))); }}>Load saved version</button>
       </div>
       {check && <section aria-label="Validation"><h4>Validation</h4>{check.errors.length ? <ul>{check.errors.map((message, index) => <li key={index}>{message}</li>)}</ul> : <p>Content checks passed.</p>}{check.sourceChanged && <p role="alert">The source has changed since this case was opened. Application is blocked; review the current source and open a new case.</p>}{check.sourceChanged && <details><summary>Current source</summary><ReadableContent value={check.currentSource.preview} /></details>}

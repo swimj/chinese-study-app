@@ -19,7 +19,9 @@ package corrections affect later selection and existing learner pins.
 ## Review and application
 
 Open a case from **Improve this item** in content triage, or select a content
-kind and source ID directly. A case records the current source and, when
+kind and source ID directly under **Open content by source ID**. The triage action
+opens the draft directly, with an unsaved-edit warning before switching cases.
+A case records the current source and, when
 selected from feedback, the exact rated snapshot separately. An older flag is
 evidence about what was served, not permission to overwrite newer material.
 
@@ -28,6 +30,14 @@ be revisited in any order. The possible general lesson is optional. An agent
 proposal remains labeled as agent-originated even when an operator accepts it.
 Saving a draft changes no study content. The workspace retains each saved
 revision with its actor and time.
+
+For a rehearsal, the editor focuses on the selected exercise beside its original
+and a live materialized preview. The full source and teaching package remain
+available under **Advanced**; focused edits preserve the rest of the package.
+An example cloze can receive an optional English frame. Editorial evidence sits
+below the comparison. **Save and validate** retains an immutable draft revision
+before checking it; a validation failure leaves that saved revision available.
+The separate **Save draft** action remains available without validation.
 
 Before application, inspect the materialized preview, check the answers and
 reveal, and record both the problem and why the revision is better. Application

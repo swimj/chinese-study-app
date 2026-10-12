@@ -16,3 +16,6 @@
 .improvement-workspace .improvement-checkbox { flex-direction: row; align-items: flex-start; }
 .improvement-checkbox input { flex: 0 0 auto; margin-top: .3em; }
 .improvement-prompt { font-size: 1.2em; white-space: pre-wrap; }
+.improvement-comparison fieldset { margin-top: 0; }
+.improvement-actions { position: sticky; bottom: 0; z-index: 2; padding: .8rem; background: var(--surface, #fff); border: 1px solid var(--border, #d6d6d6); border-radius: .5rem; }
+.improvement-actions strong { flex-basis: 100%; }
