@@ -321,32 +321,12 @@ Once acknowledged, pending completion survives refresh, backgrounding, tab close
 and navigation to another URL. Server recovery closes overdue records. A later
 visit after closure opens Home. Browser unload is not required for closure.
 
-### Completion-view reload recovery
-
-This feature restores only the completed-session view while its backend revision
-is still pending or has failed to close. It does not persist an ordinary active
-study session, the current app destination, or a general navigation history.
-Before staging, the tab saves a best-effort, versioned `sessionStorage` snapshot of its
-completed scheduler state, summary, final deferred commit, preceding Undo state,
-exercise UI, and reflection accumulators. On mount, the frontend first asks the
-server for the current learner's pending completion. It restores the completion
-view only when the local snapshot's session and revision match that response,
-and no new session has started or begun loading.
-The entire snapshot is validated before any UI or controller state is restored;
-its stored Undo state and session-scoped commit must belong to that same session.
-Unknown snapshot versions are ignored rather than migrated implicitly.
-
-The original server deadline remains fixed; reload grants no extra Undo time.
-The restored view uses the normal countdown and automatic return behavior:
-**Keep summary open** is not restored. Undo still requires successful server
-cancellation before the preceding study state can be restored. Recovery does
-not add reload persistence to that resumed active session.
-
-Absent, unreadable, or unmatched local state leaves the learner on Home while
-the server's pending completion continues independently. A closed revision does
-not restore the summary, even if its old local snapshot remains. Browser storage
-is a UI recovery aid, never a source of accepted study progress. This narrow
-exception is the starting point for a future intentional app-wide reload model.
+Reload returns to Home and discards the active session, completion view, and
+final Undo snapshot. The frontend does not serialize or restore session state
+from browser storage. An already-staged backend completion retains its original
+deadline and closes independently; no reload or unload message is needed. Starting
+another session may close that pending completion early through the existing
+start-session check. Broader frontend reload semantics are outside this feature.
 
 Before acknowledgement, show saving/retry rather than promising a server deadline.
 The server resolves a cancellation-versus-expiry race atomically. Duplicate

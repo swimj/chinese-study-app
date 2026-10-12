@@ -12,7 +12,7 @@ the general React map remains
 App.tsx
 ├─ useStudySession
 │  ├─ session-reflection-evidence.ts   ephemeral capture and Undo snapshots
-│  ├─ useSessionCompletionFlow.ts       acknowledgement, countdown, cancel, recovery
+│  ├─ useSessionCompletionFlow.ts       acknowledgement, countdown, cancel, close
 │  ├─ session-finalization.ts          finalization state and study guards
 │  ├─ SessionCompletionPanel.tsx       deterministic report and final Undo
 │  └─ services/api.ts                  pending completion, cancel, close requests
@@ -40,15 +40,11 @@ acceptance and closure. Refresh, backgrounding, tab close, and navigation to
 another URL therefore do not prevent an acknowledged completion from closing.
 
 `useSessionCompletionFlow` uses the session completion endpoints centralized in
-`src/services/api.ts`: stage, read, cancel, and close, plus the current pending
-completion read for recovery. A browser session-storage snapshot restores the
-completion view itself when its session and revision match the server's current
-pending or failed completion. The deadline stays fixed and **Keep summary open**
-resets. Only subsequent successful server cancellation restores the preceding
-study state. Closed revisions and missing/unmatched snapshots leave Home visible.
-This does not recover ordinary active study or the prior app destination; see
-[the reload contract](../SPECS/session-covering-criteria.md#completion-view-reload-recovery).
-The backend
+`src/services/api.ts`: stage, read, cancel, and close. The study controller also
+reads the current pending completion before starting another session. Reload leaves Home visible;
+there is no tab-local session snapshot or completion-view restoration. The server
+retains the staged revision and deadline independently. In-memory Undo remains
+available only in the uninterrupted session view. The backend
 stores each revision in `learner_session_completions`. Staging previews the final
 commit inside a rolled-back savepoint to report its provisional transition.
 Closure applies the stored final action and saves the summary, confirmed report,
@@ -60,7 +56,7 @@ its asynchronous reflection dispatch calls.
 **Return to Home now** and in-app navigation close pending completion early.
 The selected in-app destination is retained. Starting a new session first reads
 and closes any pending previous completion before fetching the fresh session
-queue; this also settles completion recovered after reload or created in
+queue; this also settles completion still pending after reload or created in
 another tab. **Keep summary open** stops automatic
 return while backend closure continues at the deadline. On a held-open summary,
 the countdown and temporary notices fade over two seconds after closure; expired
@@ -82,7 +78,21 @@ policy on that reader.
 Backend closure saves the summary and durably dispatches qualifying reflection.
 Provider or validation failure remains independent of study correctness, and
 Reflections supplies later result and retry access. The completion screen does
-not depend on a browser-owned generation request or wait for provider latency.
+not await providers. Pending completion survives backend restart and is closed
+when deadline processing resumes. A caught closure transaction failure rolls
+back the final action, summary, and job inserts together and marks completion
+failed; **Try saving again** or starting another session retries the same stored
+revision. The worker automatically closes pending revisions, not failed ones.
+If the database cannot store the failure marker, the original pending record
+remains eligible for a later attempt.
+
+Reflection dispatch is queued in the closure transaction and claimed afterward.
+On an expired dispatch lease, recovery safely requeues work only if no provider
+run was started. A started run with an unknown outcome becomes an explicit failed
+run for the existing Feedback retry path, rather than silently replaying the
+provider request. Provider failures do not roll back a successfully closed
+session. Slow provider calls do not block the independent deadline cadence.
+
 See the authoritative lifecycle in
 [`session-covering-criteria.md`](../SPECS/session-covering-criteria.md#completed-session-reflection-boundary)
 and eligibility in

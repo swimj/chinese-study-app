@@ -1,5 +1,4 @@
 import { useSessionCompletionFlow } from './useSessionCompletionFlow';
-import { readCompletionRecovery, type CompletionRecoverySnapshot } from './completion-recovery';
 import type { SessionCompletionPanelProps } from './SessionCompletionPanel';
 import type { SessionCompletion, StageSessionCompletionRequest } from '../../domain/session-completion';
 import { DEFAULT_INTRODUCTION_SPACING, type StudyIntroductionOrder } from '../../domain/introduction-order';
@@ -131,7 +130,7 @@ import {
   type SessionFinalizationState,
 } from './session-finalization';
 
-export type SessionUndoSnapshot = {
+type SessionUndoSnapshot = {
   introductionWordId?: string;
   sessionState: BucketSessionState;
   sessionSummary: SessionSummary | null;
@@ -141,7 +140,7 @@ export type SessionUndoSnapshot = {
 
 type ProductionUiPhase = 'idle' | 'await-supplement' | 'await-rating' | 'await-next';
 
-export type SessionUiSnapshot = {
+type SessionUiSnapshot = {
   deskAgainKeys: string[];
   answerRevealed: boolean;
   productionHanziInput: string;
@@ -399,7 +398,7 @@ export function useStudySession({
   const activeWord = activeUnit?.type === 'unstudied_intro' ? activeUnit.word : activeItem?.word ?? null;
   const introductionController = useIntroductionGate({
     sessionId: sessionStarted ? sessionState?.sessionId ?? null : null,
-    visible: sessionSurfaceVisible && activeUnit?.type === 'unstudied_intro' && frozenProductionCard === null
+    visible: sessionSurfaceVisible && frozenProductionCard === null
       && frozenPureCueCard === null && frozenContrastCard === null,
     profile: studyProfile.id, word: activeWord,
     completedSession: sessionState?.phase === 'completed',
@@ -655,7 +654,6 @@ export function useStudySession({
       if (previousCompletion && previousCompletion.status !== 'closed') {
         const closed = await closeSessionCompletion(previousCompletion.sessionId, previousCompletion.revisionId);
         if (closed.status !== 'closed') throw new Error('Finish saving your previous session before starting another.');
-        clearCompletionRecovery();
         resetSessionPrefetchCache();
       }
       const sessionPayload = await ensureSessionPrefetch(syncSessionPrefetchState);
@@ -741,7 +739,6 @@ export function useStudySession({
   }
 
   async function closeCompletedSession() {
-    clearCompletionRecovery();
     setSessionStarted(false);
     setSessionState(null);
     setSessionSummary(null);
@@ -760,10 +757,6 @@ export function useStudySession({
     void ensureSessionPrefetch(syncSessionPrefetchState).catch(() => undefined);
   }
 
-  const completionRecoveryKey = 'session-completion-recovery:v1';
-  function clearCompletionRecovery() {
-    try { window.sessionStorage.removeItem(completionRecoveryKey); } catch { /* Storage is optional. */ }
-  }
   function completedActiveDurationMs(): number {
     const completedAtMs = sessionSummary?.completedAt ? Date.parse(sessionSummary.completedAt) : Date.now();
     return activeSessionClockRef.current
@@ -798,46 +791,9 @@ export function useStudySession({
         activeDurationMs: completedActiveDurationMs(),
         ...(studyProfile.id === 'mandarin' ? { debriefInventory: sessionSummary.debriefInventory } : {}) } };
   }
-  function saveCompletionRecovery(revisionId: string) {
-    // Same-tab reload recovery only; backend ownership is checked before reading this snapshot.
-    if (!sessionState || !sessionSummary || sessionState.phase !== 'completed') {
-      throw new Error('Completion recovery requires a completed session and summary.');
-    }
-    const recovery: CompletionRecoverySnapshot = { version: 1, revisionId, sessionState,
-      sessionSummary: { ...sessionSummary, activeDurationMs: completedActiveDurationMs() },
-      pendingSessionCommit, lastUndoSnapshot, ui: createSessionUiSnapshot(),
-      reflectionEvidence: reflectionEvidenceRef.current, learnerRequests: learnerRequestedReflectionRef.current,
-      ratingRequests: contentRatingRequestedReflectionRef.current, pureEvidence: hasCommittedPureCueReflectionRef.current };
-    try {
-      window.sessionStorage.setItem(completionRecoveryKey, JSON.stringify(recovery));
-    } catch { /* Browser storage limits cannot prevent durable backend completion. */ }
-  }
-  function restoreCompletionRecovery(completion: SessionCompletion): boolean {
-    if (sessionStarted || sessionLoading) return false;
-    try {
-      const raw = window.sessionStorage.getItem(completionRecoveryKey);
-      if (!raw) return false;
-      const recovery = readCompletionRecovery(raw, completion);
-      if (!recovery) return false;
-      setSessionStarted(true);
-      setSessionState(recovery.sessionState);
-      setSessionSummary(recovery.sessionSummary);
-      setPendingSessionCommit(recovery.pendingSessionCommit);
-      setLastUndoSnapshot(recovery.lastUndoSnapshot);
-      restoreSessionUiSnapshot(recovery.ui);
-      reflectionEvidenceRef.current = recovery.reflectionEvidence;
-      learnerRequestedReflectionRef.current = recovery.learnerRequests;
-      contentRatingRequestedReflectionRef.current = recovery.ratingRequests;
-      hasCommittedPureCueReflectionRef.current = recovery.pureEvidence;
-      activeSessionClockRef.current = { accumulatedMs: recovery.sessionSummary.activeDurationMs,
-        activeIntervalStartedAtMs: null, usesVisibilityApi: true };
-      return true;
-    } catch { return false; }
-  }
   const completionFlow = useSessionCompletionFlow({
     sessionId: sessionState?.phase === 'completed' && sessionSummary ? sessionState.sessionId : null,
     surfaceVisible: sessionSurfaceVisible, buildRequest: buildCompletionRequest,
-    saveRecovery: saveCompletionRecovery, restoreRecovery: restoreCompletionRecovery,
     onCancelled: restoreLastRating, onReturnHome: closeCompletedSession,
   });
 
@@ -1434,7 +1390,6 @@ export function useStudySession({
     );
     setPendingSessionCommit(null);
     setLastUndoSnapshot(null);
-    clearCompletionRecovery();
     if (activeSessionClockRef.current) {
       activeSessionClockRef.current = updateActiveSessionClockForVisibility({ clock: activeSessionClockRef.current, nowMs: Date.now(), visibilityState: document.visibilityState });
     }

@@ -11,8 +11,8 @@ import '../../src/features/session/session-completion.css';
 let server: SessionCompletion | null = null;
 let failStage = false;
 let stageCalls = 0;
+let lastStageRevision: string | null = null;
 let closedCount = 0;
-let restoredCount = 0;
 let homeCount = 0;
 let cancellationCount = 0;
 let delayNextRead = false;
@@ -20,7 +20,6 @@ let delayedRead: { resolve: (response: Response) => void; snapshot: SessionCompl
 let loseNextUndoResponse = false;
 let loseNextCloseResponse = false;
 let completionReads = 0;
-let savedRevision: string | null = null;
 window.fetch = async (input, init) => {
   const url = String(input);
   if (url.includes('/recovery-highlights')) return Response.json({ highlights: [] });
@@ -39,8 +38,9 @@ window.fetch = async (input, init) => {
   }
   if (!action && init?.method === 'POST') {
     stageCalls++;
-    if (failStage) { failStage = false; return Response.json({ error: 'Fixture offline' }, { status: 503 }); }
     const body = JSON.parse(String(init.body)) as StageSessionCompletionRequest;
+    lastStageRevision = body.revisionId;
+    if (failStage) { failStage = false; return Response.json({ error: 'Fixture offline' }, { status: 503 }); }
     server = { sessionId, revisionId: body.revisionId, status: 'pending', canUndo: true,
       closeAt: new Date(Date.now() + 1200).toISOString(), serverNow: new Date().toISOString(),
       completedAt: body.summary.completedAt, report: { newWords: [{ id: 'learn', hanzi: '学', traditional: '學', pinyin: 'xué', meaning: 'learn' }], graduatedWords: [] }, error: null };
@@ -68,11 +68,6 @@ function Harness({ initialSessionId }: { initialSessionId: string | null }) {
     buildRequest: (revisionId) => ({ revisionId, startedAt: new Date().toISOString(), studyDayKey: '2026-10-12',
       pendingCommit: null, reflectionEvidence: null,
       summary: { completedAt: new Date().toISOString(), completedReviewActionCount: 1, failedReviewActionCount: 0, activeDurationMs: 3000 } }),
-    saveRecovery: (revision) => { savedRevision = revision; },
-    restoreRecovery: (completion) => {
-      if (completion.revisionId !== savedRevision) return false;
-      restoredCount++; setSessionId(completion.sessionId); return true;
-    },
     onCancelled: () => { cancellationCount++; setStudyResumed(true); setSessionId(null); },
     onReturnHome: async () => { homeCount++; setStudyResumed(false); setSessionId(null); },
   });
@@ -140,10 +135,10 @@ async function run() {
   root.render(<Harness initialSessionId="saving-failure" />);
   await until(() => !!flow?.error);
   assert(flow.remainingSeconds === null && !flow.completion, 'Failed acknowledgement must not start countdown');
-  const firstRevision = savedRevision;
+  const firstRevision = lastStageRevision;
   await flow.retry();
   await until(() => flow.completion?.status === 'pending');
-  assert(savedRevision === firstRevision && stageCalls === 2, 'Retry must reuse completion revision');
+  assert(lastStageRevision === firstRevision && stageCalls === 2, 'Retry must reuse completion revision');
   const keepButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Keep summary open');
   if (!keepButton) throw new Error('Missing keep-open action');
   keepButton.click();
@@ -193,23 +188,24 @@ async function run() {
 
   start('reload');
   await until(() => flow.completion?.status === 'pending');
-  const revisionBeforeReload = savedRevision;
+  const completionBeforeReload = server;
   const stagesBeforeReload = stageCalls;
+  const homesBeforeReload = homeCount;
   root.unmount();
   root = createRoot(document.getElementById('root')!);
   root.render(<Harness initialSessionId={null} />);
-  await until(() => restoredCount === 1 && flow.completion?.status === 'pending');
-  assert(savedRevision === revisionBeforeReload && stageCalls === stagesBeforeReload, 'Reload must retain original server window');
-  await until(() => homeCount === 2);
-  assert(document.body.textContent?.includes('Home overview') === true, 'Expiry must return to Home');
+  await until(() => document.body.textContent?.includes('Home overview') === true);
+  await delay();
+  assert(flow.completion === null && server === completionBeforeReload && stageCalls === stagesBeforeReload
+    && homeCount === homesBeforeReload, 'Reload must leave Home without restoring, cancelling, or restaging pending completion');
   start('lost-close');
   await until(() => flow.completion?.status === 'pending');
   const readsBeforeLostClose = completionReads;
   loseNextCloseResponse = true;
   assert(await flow.finish(), 'Lost close response must reconcile successful completion');
-  await until(() => homeCount === 3);
+  await until(() => homeCount === 2);
   assert(completionReads === readsBeforeLostClose + 1 && !flow.error, 'Lost close response must return Home without a second close');
-  document.getElementById('result')!.textContent = 'PASS: saving retry, keep open, Undo, external cancellation, stale-revision reads, lost Undo/close responses, reload recovery, and automatic Home return.';
+  document.getElementById('result')!.textContent = 'PASS: saving retry, keep open, Undo, external cancellation, stale-revision reads, lost Undo/close responses, Home after remount, and automatic Home return.';
 }
 if (parameters.has('preview')) {
   document.getElementById('result')!.hidden = true;

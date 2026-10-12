@@ -18,7 +18,7 @@ The isolated `/tests/browser/session-completion.html` fixture exercises the real
 completion hook and panel against intercepted HTTP with shortened deadlines. It
 checks acknowledgement failure and retry with one revision, final Undo,
 automatic return, keeping the summary open through backend closure, explicit
-return, and recovery after remount. Use `?preview=1` for visual inspection,
+return, and Home after remount without restoring the pending completion view. Use `?preview=1` for visual inspection,
 `large=1` for enlarged text, and `empty=1` for empty report groups. The fixture verifies browser state;
 `durable-session-completion.test.ts` verifies persistence and server expiry.
 

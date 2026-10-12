@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SessionCompletion, StageSessionCompletionRequest } from '../../domain/session-completion';
-import { closeSessionCompletion, fetchCurrentSessionCompletion, fetchSessionCompletion,
+import { closeSessionCompletion, fetchSessionCompletion,
   stageSessionCompletion, undoSessionCompletion } from '../../services/api';
 
 export function completionDeadline(completion: SessionCompletion, receivedAt = Date.now()): number {
@@ -12,8 +12,6 @@ export function useSessionCompletionFlow(options: {
   sessionId: string | null;
   surfaceVisible: boolean;
   buildRequest: (revisionId: string) => StageSessionCompletionRequest;
-  saveRecovery: (revisionId: string) => void;
-  restoreRecovery: (completion: SessionCompletion) => boolean;
   onCancelled: () => void;
   onReturnHome: () => Promise<void>;
 }) {
@@ -56,7 +54,6 @@ export function useSessionCompletionFlow(options: {
     setError(null);
     const run = (async () => {
       try {
-        latest.current.saveRecovery(revisionId);
         const result = await stageSessionCompletion(sessionId, latest.current.buildRequest(revisionId));
         if (latest.current.sessionId !== sessionId || !mounted.current) return null;
         receive(result);
@@ -147,15 +144,7 @@ export function useSessionCompletionFlow(options: {
 
   useEffect(() => {
     mounted.current = true;
-    let cancelled = false;
-    void fetchCurrentSessionCompletion().then((result) => {
-      if (cancelled || !result || latest.current.sessionId || (result.status !== 'pending' && result.status !== 'failed')) return;
-      if (!latest.current.restoreRecovery(result)) return;
-      revision.current = result.revisionId;
-      attemptedSession.current = result.sessionId;
-      receive(result);
-    }).catch(() => { /* A fresh Home visit remains usable; the backend still owns expiry. */ });
-    return () => { cancelled = true; mounted.current = false; };
+    return () => { mounted.current = false; };
   }, []);
 
   useEffect(() => {

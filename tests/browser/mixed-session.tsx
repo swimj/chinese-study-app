@@ -26,7 +26,6 @@ async function until(condition: () => boolean) {
 
 async function run() {
   const query = new URLSearchParams(location.search);
-  const reloadCheckKey = 'ui-mixed-session-reload-check';
   if (!query.has('prepare')) {
     throw new Error('Open with ?prepare=1 to authorize completing the local annotation session.');
   }
@@ -43,25 +42,6 @@ async function run() {
   }
   createRoot(document.getElementById('root')!).render(<Harness />);
   await until(() => Boolean(controller));
-  const expectedReload = query.has('reload-check') ? sessionStorage.getItem(reloadCheckKey) : null;
-  if (expectedReload) {
-    sessionStorage.removeItem(reloadCheckKey);
-    const expected = JSON.parse(expectedReload) as { sessionId: string; revisionId: string; closeAt: string; dataDir: string };
-    if (expected.dataDir !== status.dataDir) throw new Error('Reload check belongs to another fixture database');
-    await until(() => controller.homePageProps.completionPanel?.completion?.status === 'pending');
-    const restored = controller.homePageProps.completionPanel!.completion!;
-    if (restored.sessionId !== expected.sessionId || restored.revisionId !== expected.revisionId
-      || restored.closeAt !== expected.closeAt || controller.homePageProps.completionPanel!.keepOpen) {
-      throw new Error('Reload must restore the same revision/deadline and reset Keep summary open');
-    }
-    controller.homePageProps.onUndoLastRating();
-    await until(() => controller.homePageProps.sessionPhase !== 'completed');
-    if (controller.homePageProps.introductionGate && controller.homePageProps.activeUnstudiedProgress?.introComplete) {
-      throw new Error('Reload Undo must resume recall rather than replaying completed teaching');
-    }
-    result.textContent = 'PASS: real-controller reload restored completion with the same deadline; server-confirmed Undo restored the final exercise. Finish it to view the summary.';
-    return;
-  }
   controller.homePageProps.onStartSession();
   await until(() => controller.homePageProps.sessionStarted);
   let steps = 0;
@@ -115,13 +95,6 @@ async function run() {
   const report = controller.homePageProps.completionPanel!.completion!.report;
   if (!report.newWords.length || !report.graduatedWords.length) {
     throw new Error('Expected new-word and graduation outcomes from a fresh mixed annotation fixture');
-  }
-  if (query.has('reload-check')) {
-    const staged = controller.homePageProps.completionPanel!.completion!;
-    sessionStorage.setItem(reloadCheckKey, JSON.stringify({ sessionId: staged.sessionId,
-      revisionId: staged.revisionId, closeAt: staged.closeAt, dataDir: status.dataDir }));
-    location.reload();
-    return;
   }
   controller.homePageProps.onUndoLastRating();
   await until(() => controller.homePageProps.sessionPhase !== 'completed');
