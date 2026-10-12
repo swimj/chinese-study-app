@@ -126,7 +126,7 @@ and the referenced documents.
 
 | Date added | Outstanding description |
 | --- | --- |
-| 2026-10-07 | The root README mixes product/repository orientation with former local-study clone advice, French try-out instructions, and machine-local links. Its retained material needs appropriate current guides or an explicit historical role. |
+| 2026-10-07 | The root README mixes product/repository orientation with former local-study clone advice and French try-out instructions. Its retained material needs appropriate current guides or an explicit historical role. |
 | 2026-10-07 | Shared product concepts and guarantees are spread across word/session/scheduling specifications and the frontier. Their explanatory boundaries, duplicated accounts, and links from feature contracts need reconciliation. |
 | 2026-10-07 | `architecture.md` is primarily a navigation map. The system-level explanation of components, data flow, state boundaries, and mechanisms remains missing. |
 | 2026-10-07 | The service-boundary document mixes guarantees, alternatives, the hosted package, one-time migration, and acceptance scenarios. The frontier combines direction, constraints, and unresolved decisions. These documents still need clearer responsibilities. |
