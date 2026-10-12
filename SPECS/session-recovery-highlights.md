@@ -20,7 +20,7 @@ changes or mastery claim. V1 covers word review recognition and production only.
 - Inspect one candidate at a time, backward through its own encounters, within
   the summary's 30-UTC-day history window. Compensated historical encounters are
   neutral: skip them without counting a success, counting a miss, or breaking a
-  streak. Unknown/incompatible encounters remain barriers to successful recall.
+  streak. Unknown/incompatible encounters are barriers to successful recall.
 - Require exactly three consecutive successful encounter days ending at the
   current candidate. Fewer than three before a miss/barrier fails; a fourth
   successful day fails because the milestone belongs to an earlier session.
@@ -49,10 +49,11 @@ changes or mastery claim. V1 covers word review recognition and production only.
 
 ## Reflection corrections
 
-Original attempts remain immutable. Active applied cue judgments, applied unfair
+Original attempts are immutable. Active applied cue judgments, applied unfair
 pair reconciliation/promotion, and actual scheduler restorations make their
-historical source attempt neutral. A valid applied unfair judgment still matters
-if its historical restoration snapshot was unavailable. Pending, failed,
+historical source attempt neutral. A valid applied unfair judgment makes its
+source attempt neutral even when its historical restoration snapshot was
+unavailable. Pending, failed,
 withdrawn, and unsupported operations do not change eligibility. A cue-evidence
 judgment's retraction is distinct from a scheduler restoration. The current
 session's raw-lapse rejection happens before these corrections are considered.
@@ -86,9 +87,9 @@ avoid interpreting client timezone changes as additional study days.
 The learner-scoped response includes a stable derived ID, rule version, word,
 skill, which trouble rule(s) matched, three supporting trouble attempts, latest
 miss, and three success references (attempt/action/session IDs and timestamps).
-Raw outcomes, ratings and served production snapshots remain available through
-those durable references. No new table, analytics UI, exposure telemetry, model
-call, or history backfill is introduced. Migration `0024_recovery_attempt_window`
+Raw outcomes, ratings and served production snapshots are available through
+those durable references. Derivation requires no milestone table, analytics UI,
+exposure telemetry, model call, or history backfill. Migration `0024_recovery_attempt_window`
 adds a partial `(learner_id, occurred_at)` index for projected attempts so the
-history read seeks directly into the bounded range. Existing databases require
-the ordinary offline schema-migration procedure before running this release.
+history read seeks directly into the bounded range. Apply this versioned migration through the
+[offline schema-migration procedure](../docs/ops/schema-migrations.md).

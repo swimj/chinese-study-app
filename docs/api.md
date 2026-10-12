@@ -369,7 +369,7 @@ server deadline. Repeating the exact revision preserves its deadline; changing
 its input conflicts. Undo and close POST accept `{ revisionId }`. Undo cancels
 only before expiry; close accepts the final action, summary, and generation work
 atomically and can close early or retry failed closure. Repeated cancellation or
-successful closure returns the existing result.
+successful closure returns the saved result.
 
 Current GET returns `{ completion: SessionCompletion | null }` for the learner's
 pending/failed completion. Session GET returns its latest revision and may close

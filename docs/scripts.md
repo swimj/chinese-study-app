@@ -63,12 +63,12 @@ adds these prepared scenarios:
 | Home | Five Connections notes in a completed sample session, plus two published sample update posts |
 
 The three-day practice period is the learning phase. Successful practice
-completions increase the learning streak; reaching three graduates a word to review. Fixture coverage dates
-and review due times are relative to preparation time in UTC, so a newly created
-fixture remains useful in later months. Existing standard review and contrast
-examples remain available. The normal session composer chooses the study order
-and review action; due recognition and production do not imply two separate
-cards for the same word in one session.
+completions increase the learning streak; reaching three graduates a word to
+review. Fixture coverage dates and review due times are relative to preparation
+time in UTC. The fixture also includes standard review and contrast examples.
+The normal session composer chooses the study order and review action; due
+recognition and production do not imply two separate cards for the same word in
+one session.
 
 The command prints the backend startup command for the new directory. Start
 that backend and `npm run dev:frontend` in separate terminals, using the normal

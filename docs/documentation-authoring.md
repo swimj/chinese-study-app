@@ -50,6 +50,10 @@ boundaries only when they rule out a consequential, plausible misunderstanding.
 For instance, "Do not rewrite a product promise solely to match the current
 code" protects the distinction between intent and implementation.
 
+Apply the [current-state language rule](documentation-principles.md#current-state-language)
+when revising prose: describe the behavior and its lifecycle directly, rather
+than announcing what changed or implicitly comparing it with an earlier state.
+
 When feedback leaves a consequential choice open, state the proposed model and
 ask the user before encoding it as settled guidance. Once the model is agreed,
 apply it consistently to related text within the task's scope.
@@ -92,6 +96,7 @@ has not followed the task conversation. Check that:
 - it answers those reader questions and explains the desired model directly,
   with each detail and reference contributing to that understanding;
 - its subjects, terms, and destinations are concrete;
+- its wording describes the model without requiring task or release history;
 - any negative boundary protects a specific, meaningful distinction;
 - promises, current behavior, evidence, and proposals are distinguishable;
 - the hierarchy and links lead to the appropriate explanations; and

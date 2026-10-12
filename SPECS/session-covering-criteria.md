@@ -31,7 +31,7 @@ pending while the remaining introductions run. Once all introductions finish,
 recall uses the ordinary weighted scheduler below. The setting is captured at
 session start and preserved through Undo; it does not change admission or covering.
 
-With the setting off, introductions retain their existing place in the weighted
+With the setting off, introductions follow the weighted
 scheduler. The live session interleaves nonempty buckets with weighted random selection:
 
 | Bucket | Weight |
@@ -45,7 +45,7 @@ learning or unstudied unit counts once; each review action, including a standalo
 pure cue, counts once. Above the cap, admission allocates slots in the same
 50/30/20 proportions, redistributing unused slots from smaller buckets among
 the remaining buckets and rounding fractional slots by largest remainder.
-Each bucket retains its existing internal order. Excluded units retain their
+Each bucket preserves its internal order. Excluded units retain their
 durable study state and remain eligible for future sessions; they add no covered
 inventory or commits. Pure-cue served snapshots are issued only for admitted
 review items.
@@ -87,10 +87,10 @@ For the purposes of this spec:
 ## Unstudied Word Covering
 
 An `unstudied` Mandarin word uses its pinned teaching beats for the initial
-introduction. Finishing those beats opens the existing recall phase; it does not
+introduction. Finishing those beats opens the recall phase; it does not
 complete the word unit or award study credit. Recognition uses the package's
 curated source material, and production uses its constrained target rehearsals.
-Both directions still require three consecutive `Good` ratings. A non-`Good`
+Both directions require three consecutive `Good` ratings. A non-`Good`
 rating resets only the corresponding direction's streak.
 
 Recall appearances use the ordinary weighted bucket scheduler, interleaving with
@@ -104,7 +104,7 @@ rehearsal framing is presentation owned by the frontend, separate from the
 persisted base cue and answer contract. The default shows the cue without a
 generic preamble; content-specific instructions, when present, remain visible.
 
-Only completing both recall streaks covers the word through the existing
+Only completing both recall streaks covers the word through the
 deferred commit and Undo path. Merely opening or completing it in My Words grants
 no study credit; a saved navigation-completion marker does not automatically
 complete a later session unit.
@@ -114,7 +114,7 @@ session entry. Missing preparation reduces the new-word count; it never causes a
 generation wait or content fetch inside the session. The prepared walkthrough
 has no skip-to-legacy-cards control or Escape bypass. The learner can leave via
 the normal session controls without advancing the teaching gate. Other profiles
-retain the existing two-phase first encounter below. First-study preparation/replenishment effects follow the durable commit,
+use the two-phase first encounter below. First-study preparation/replenishment effects follow the durable commit,
 not provisional covering or navigation, preserving deferred commit and Undo.
 
 ### Phase 1: Intro
@@ -304,7 +304,7 @@ same pending completion preserve its original deadline.
 
 At expiry the backend accepts the final action, records the completed summary,
 and durably schedules Connections and qualifying reflection. The completion
-screen returns to Home when closure succeeds. **Return to Home now**
+screen returns to Home when closure succeeds. **Return to Home**
 closes early. Navigation to another page within the app uses the same closure
 operation and preserves the selected destination; an old timer must never pull
 the learner back from that destination. **Keep summary open** cancels automatic
@@ -325,8 +325,8 @@ Reload returns to Home and discards the active session, completion view, and
 final Undo snapshot. The frontend does not serialize or restore session state
 from browser storage. An already-staged backend completion retains its original
 deadline and closes independently; no reload or unload message is needed. Starting
-another session may close that pending completion early through the existing
-start-session check. Broader frontend reload semantics are outside this feature.
+another session closes that pending completion before selecting the study
+queue. Broader frontend reload semantics are outside this feature.
 
 Before acknowledgement, show saving/retry rather than promising a server deadline.
 The server resolves a cancellation-versus-expiry race atomically. Duplicate
@@ -335,12 +335,12 @@ closure does not duplicate accepted attempts, completion, or generation work.
 Starting a new session first closes any previous pending completion, including
 after reload or when another tab created it. Only then select the refreshed
 study queue, so the final action from the previous session informs admission.
-If previous closure fails, starting remains retryable rather than selecting a
-queue from unaccepted progress.
+If previous closure fails, the learner can retry starting; no queue is selected
+from unaccepted progress.
 
-Leaving an active or still-draining session does not finish it. Failure to save
-or close completion remains retryable and does not fabricate accepted work or
-start generation. Reflection and Connections remain best-effort after closure;
+Leaving an active or draining session does not finish it. Failure to save
+or close completion is retryable and does not fabricate accepted work or
+start generation. Reflection and Connections are best-effort after closure;
 their latency does not delay Home or reopen study. Connections is read from Home,
 separately from this immediate deterministic report. See
 [`session-debrief.md`](./session-debrief.md).
@@ -404,7 +404,7 @@ Conceptually:
 
 ## Deferred Questions
 
-The following remain intentionally open:
+The following decisions are open:
 
 - how repeated exposures are spaced relative to other items in the session
 - whether reinforcement of a failed review item should ever surface the opposite direction too

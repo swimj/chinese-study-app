@@ -146,6 +146,24 @@ conclusions should graduate into the appropriate explanation. The task or PR
 can retain execution detail, while the maintained documentation tells readers
 what is true, what is promised, and why.
 
+### Current-state language
+
+Maintained explanations describe the model directly for readers who do not know
+the task history. Avoid release-relative wording such as "now", "still",
+"remains", "continues to", or "no longer" when it implicitly compares the
+documented behavior with an earlier implementation. Write "Connections is a
+Home reader" instead of "Connections remains a Home reader". Write "Word-owned
+cues accept only the target word" instead of "Word-owned cues now accept only
+the target word". Put change comparisons in pull requests, release notes, or
+explicitly dated/versioned historical and migration explanations.
+
+Temporal language is useful when it describes a relationship within the model:
+"The server retains the staged input across restart" specifies persistence,
+and "Undo is available until the deadline" specifies a lifecycle boundary.
+Name the relevant state, event, or version so the sentence does not depend on
+knowing what changed in the current task. This is a test of meaning, not a ban
+on particular words.
+
 ## Coverage and maintenance
 
 Keep the target clear and improve the corpus alongside development, with effort
