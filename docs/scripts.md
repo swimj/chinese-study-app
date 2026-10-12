@@ -107,6 +107,12 @@ summary flow. The recorded attempts are scripted fixture activity, not learner
 history. Reloading the page does not reset the database; prepare a fresh directory
 for another initial run.
 
+Add `&reload-check=1` on a fresh fixture to verify actual controller recovery:
+the walkthrough reloads immediately after staging, checks the restored session,
+revision, original deadline, and reset **Keep summary open** preference, then
+uses server-confirmed Undo to restore the final exercise. This checks the real
+JSON snapshot path separately from the isolated hook regression.
+
 This differs from `/tests/browser/final-reinforcement.html?interactive=1`, which
 has only one Review word and mocks HTTP, and
 `/tests/browser/session-completion.html?preview=1`, which renders sample report

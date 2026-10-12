@@ -13,35 +13,36 @@ const ready: SessionDebrief = { sessionId: 'completed-session', completedAt: '20
   notes: Array.from({ length: 10 }, (_, i) => ({ text: `Exact paragraph ${i + 1}\n中文 <literal text>`, refs: ['w1'], followUp: 'Do not display this' })) };
 const pending: SessionDebrief = { ...ready, status: 'running', notes: null };
 
-test('new completed results stay compact and manual expansion persists across reloads', () => {
+test('new completed result opens large, and a ready-result toggle persists across reloads', () => {
   let view = receiveHomeConnections(beginHomeConnectionsVisit(null), ready);
-  assert.equal(view.expanded, false);
-  assert.equal(view.introduced, false);
+  assert.equal(view.expanded, true);
+  assert.equal(view.introduced, true);
   view = toggleHomeConnections(view, true);
-  assert.equal(receiveHomeConnections(beginHomeConnectionsVisit(view), ready).expanded, true);
-  assert.equal(receiveHomeConnections(beginHomeConnectionsVisit(null), { ...ready, sessionId: 'next-completed-session' }).expanded, false);
+  assert.equal(receiveHomeConnections(beginHomeConnectionsVisit(view), ready).expanded, false);
+  assert.equal(receiveHomeConnections(beginHomeConnectionsVisit(null), { ...ready, sessionId: 'next-completed-session' }).expanded, true);
 });
 
-test('pending results do not expand during polling or on a subsequent visit', () => {
-  const view = receiveHomeConnections(beginHomeConnectionsVisit(null), pending);
+test('minimizing pending holds through polling, but an unseen ready batch opens on the next document visit', () => {
+  const view = toggleHomeConnections(receiveHomeConnections(beginHomeConnectionsVisit(null), pending), false);
   assert.equal(view.expanded, false);
   assert.equal(view.introduced, false);
   assert.equal(receiveHomeConnections(view, ready).expanded, false);
-  assert.equal(receiveHomeConnections(beginHomeConnectionsVisit(view), ready).expanded, false);
+  assert.equal(receiveHomeConnections(beginHomeConnectionsVisit(view), ready).expanded, true);
   const nextVisit = receiveHomeConnections(beginHomeConnectionsVisit(view), pending);
   assert.equal(nextVisit.expanded, false);
-  assert.equal(receiveHomeConnections(nextVisit, ready).expanded, false);
+  assert.equal(receiveHomeConnections(nextVisit, ready).expanded, true);
 });
 
-test('manual expansion and minimization of pending connections persist', () => {
-  const reopened = toggleHomeConnections(beginHomeConnectionsVisit(null), false);
+test('proactively reopening pending connections consumes the deferred introduction', () => {
+  const minimized = toggleHomeConnections(beginHomeConnectionsVisit(null), false);
+  const reopened = toggleHomeConnections(minimized, false);
   const minimizedAgain = toggleHomeConnections(reopened, false);
   assert.equal(minimizedAgain.introduced, true);
   assert.equal(receiveHomeConnections(beginHomeConnectionsVisit(minimizedAgain), ready).expanded, false);
 });
 
 test('empty or failed results do not count as introducing ready notes; retry retains same visit choice', () => {
-  const compact = beginHomeConnectionsVisit(null);
+  const compact = toggleHomeConnections(beginHomeConnectionsVisit(null), false);
   for (const result of [{ ...ready, notes: [] }, { ...pending, status: 'failed' as const }, pending]) {
     assert.equal(receiveHomeConnections(compact, result), compact);
   }

@@ -41,9 +41,14 @@ another URL therefore do not prevent an acknowledged completion from closing.
 
 `useSessionCompletionFlow` uses the session completion endpoints centralized in
 `src/services/api.ts`: stage, read, cancel, and close, plus the current pending
-completion read for recovery. A browser session-storage snapshot allows same-tab
-refresh recovery to restore Undo after successful server cancellation; absence
-of that local snapshot must not fabricate restored study state. The backend
+completion read for recovery. A browser session-storage snapshot restores the
+completion view itself when its session and revision match the server's current
+pending or failed completion. The deadline stays fixed and **Keep summary open**
+resets. Only subsequent successful server cancellation restores the preceding
+study state. Closed revisions and missing/unmatched snapshots leave Home visible.
+This does not recover ordinary active study or the prior app destination; see
+[the reload contract](../SPECS/session-covering-criteria.md#completion-view-reload-recovery).
+The backend
 stores each revision in `learner_session_completions`. Staging previews the final
 commit inside a rolled-back savepoint to report its provisional transition.
 Closure applies the stored final action and saves the summary, confirmed report,
@@ -67,8 +72,12 @@ or overriding a chosen destination. Failed saving or closure remains retryable.
 
 The immediate summary reports distinct first-study words entering Practice and
 actual Practice-to-Review transitions, with provisional wording during Undo.
-Automatic return opens the ordinary Home overview. Connections is a separate
-Home reader: asynchronous readiness does not open it automatically.
+Automatic return opens Home. Connections remains a separate Home reader using
+its existing presentation policy: a new batch starts expanded; explicitly
+minimizing pending content holds for that document visit, while an unseen ready
+batch may promote on a later visit. Once introduced, its saved expanded/compact
+choice persists. Session completion does not impose a different presentation
+policy on that reader.
 
 Backend closure saves the summary and durably dispatches qualifying reflection.
 Provider or validation failure remains independent of study correctness, and
@@ -253,7 +262,7 @@ proposal removes it from the current queue when its new lifecycle state no
 longer matches that filter. By session can restore a learner-dismissed proposal
 to pending with **Undo dismiss**; second-opinion retirement cannot be undone.
 Questions remain informational and do not receive
-synthetic review state. Completion returns to ordinary Home; learners open
+synthetic review state. Completion returns to Home; learners open
 Feedback through the persistent Reflections navigation.
 
 Each proposal has a purpose-built editor for each registered operation family:

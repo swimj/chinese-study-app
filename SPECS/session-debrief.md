@@ -140,12 +140,13 @@ moving the existing report or footer. Reduced-motion preferences skip the fade.
 
 Connections generation begins after backend closure and does not occupy the
 immediate completion screen. Automatic return and **Return to Home now** open
-ordinary Home. Pending generation cannot automatically replace the overview
-with a focused reading screen. The latest session's Connections remains
+Home. The latest session's Connections remains
 accessible there while queued, running, or failed, and can be opened when ready.
 Empty results omit the Connections section. Learners can explicitly open or
-minimize a batch; polling, reload, and later readiness preserve that choice.
-A new completed session starts in the ordinary Home overview. The immediate
+minimize a batch. New batches start expanded. Minimizing pending content holds
+through readiness polling for that document visit; an unseen ready batch may
+promote on a later visit. Once introduced, a batch's saved expanded/compact choice
+persists across reload. The immediate
 completion summary may stay visible through **Keep summary open**; Home does
 not provide a history or reopen action for that deterministic summary.
 

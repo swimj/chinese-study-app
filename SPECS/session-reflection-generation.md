@@ -71,7 +71,7 @@ Once closure succeeds, reflection is best-effort. Durable dispatch does not
 require a mounted summary or a later browser request. Generation failure,
 invalid output, timeout, or absence of qualifying evidence does not reopen the
 session, change covering, or affect scheduling projection. The learner returns
-to ordinary Home while generation may continue; retry remains available from
+to Home while generation may continue; retry remains available from
 Reflections rather than blocking the completion screen.
 
 ## 3. Evidence Boundary

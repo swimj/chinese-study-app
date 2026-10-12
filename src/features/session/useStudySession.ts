@@ -1,4 +1,5 @@
 import { useSessionCompletionFlow } from './useSessionCompletionFlow';
+import { readCompletionRecovery, type CompletionRecoverySnapshot } from './completion-recovery';
 import type { SessionCompletionPanelProps } from './SessionCompletionPanel';
 import type { SessionCompletion, StageSessionCompletionRequest } from '../../domain/session-completion';
 import { DEFAULT_INTRODUCTION_SPACING, type StudyIntroductionOrder } from '../../domain/introduction-order';
@@ -130,7 +131,7 @@ import {
   type SessionFinalizationState,
 } from './session-finalization';
 
-type SessionUndoSnapshot = {
+export type SessionUndoSnapshot = {
   introductionWordId?: string;
   sessionState: BucketSessionState;
   sessionSummary: SessionSummary | null;
@@ -140,7 +141,7 @@ type SessionUndoSnapshot = {
 
 type ProductionUiPhase = 'idle' | 'await-supplement' | 'await-rating' | 'await-next';
 
-type SessionUiSnapshot = {
+export type SessionUiSnapshot = {
   deskAgainKeys: string[];
   answerRevealed: boolean;
   productionHanziInput: string;
@@ -398,7 +399,7 @@ export function useStudySession({
   const activeWord = activeUnit?.type === 'unstudied_intro' ? activeUnit.word : activeItem?.word ?? null;
   const introductionController = useIntroductionGate({
     sessionId: sessionStarted ? sessionState?.sessionId ?? null : null,
-    visible: sessionSurfaceVisible && frozenProductionCard === null
+    visible: sessionSurfaceVisible && activeUnit?.type === 'unstudied_intro' && frozenProductionCard === null
       && frozenPureCueCard === null && frozenContrastCard === null,
     profile: studyProfile.id, word: activeWord,
     completedSession: sessionState?.phase === 'completed',
@@ -799,11 +800,16 @@ export function useStudySession({
   }
   function saveCompletionRecovery(revisionId: string) {
     // Same-tab reload recovery only; backend ownership is checked before reading this snapshot.
+    if (!sessionState || !sessionSummary || sessionState.phase !== 'completed') {
+      throw new Error('Completion recovery requires a completed session and summary.');
+    }
+    const recovery: CompletionRecoverySnapshot = { version: 1, revisionId, sessionState,
+      sessionSummary: { ...sessionSummary, activeDurationMs: completedActiveDurationMs() },
+      pendingSessionCommit, lastUndoSnapshot, ui: createSessionUiSnapshot(),
+      reflectionEvidence: reflectionEvidenceRef.current, learnerRequests: learnerRequestedReflectionRef.current,
+      ratingRequests: contentRatingRequestedReflectionRef.current, pureEvidence: hasCommittedPureCueReflectionRef.current };
     try {
-      window.sessionStorage.setItem(completionRecoveryKey, JSON.stringify({ revisionId, sessionState, sessionSummary: sessionSummary ? { ...sessionSummary, activeDurationMs: completedActiveDurationMs() } : null,
-        pendingSessionCommit, lastUndoSnapshot, ui: createSessionUiSnapshot(),
-        reflectionEvidence: reflectionEvidenceRef.current, learnerRequests: learnerRequestedReflectionRef.current,
-        ratingRequests: contentRatingRequestedReflectionRef.current, pureEvidence: hasCommittedPureCueReflectionRef.current }));
+      window.sessionStorage.setItem(completionRecoveryKey, JSON.stringify(recovery));
     } catch { /* Browser storage limits cannot prevent durable backend completion. */ }
   }
   function restoreCompletionRecovery(completion: SessionCompletion): boolean {
@@ -811,13 +817,8 @@ export function useStudySession({
     try {
       const raw = window.sessionStorage.getItem(completionRecoveryKey);
       if (!raw) return false;
-      const recovery = JSON.parse(raw) as { revisionId: string; sessionState: BucketSessionState;
-        sessionSummary: SessionSummary; pendingSessionCommit: DeferredSessionCommit | null;
-        lastUndoSnapshot: SessionUndoSnapshot | null; ui: SessionUiSnapshot;
-        reflectionEvidence: SessionReflectionEvidenceAccumulator; learnerRequests: LearnerRequestedReflectionAccumulator;
-        ratingRequests: LearnerRequestedReflectionAccumulator; pureEvidence: boolean };
-      if (recovery.revisionId !== completion.revisionId || recovery.sessionState.sessionId !== completion.sessionId
-        || recovery.sessionState.phase !== 'completed' || recovery.sessionSummary.sessionId !== completion.sessionId) return false;
+      const recovery = readCompletionRecovery(raw, completion);
+      if (!recovery) return false;
       setSessionStarted(true);
       setSessionState(recovery.sessionState);
       setSessionSummary(recovery.sessionSummary);
