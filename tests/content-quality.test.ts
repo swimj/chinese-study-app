@@ -220,3 +220,37 @@ test('prepared canonical review retains model attribution despite the manual com
     assert.equal((item.content as { exerciseId: string }).exerciseId, 'quality-cue');
   });
 });
+
+test('definition fallback ratings preserve exact shown content, learner selection and historical snapshots', () => {
+  const target = { kind: 'definition_fallback' as const, wordId: 'quality-word',
+    expected: { promptText: 'hello', displayedMeanings: [] as string[] } };
+  const first = db.runWithLearnerId('qa', () => db.recordContentQualityEncounter(target, 'fallback-1'));
+  db.runWithLearnerId('qa', () => db.setContentQualityRating(first.contentKey, 'down'));
+  assert.equal(db.runWithLearnerId('qa', () => db.recordContentQualityEncounter(target, 'fallback-2')).rating, 'down');
+  assert.equal(db.runWithLearnerId('qb', () => db.recordContentQualityEncounter(target, 'fallback-other')).rating, null);
+  assert.throws(() => db.runWithLearnerId('qa', () => db.recordContentQualityEncounter({ ...target,
+    expected: { promptText: 'arbitrary supplied text', displayedMeanings: [] } }, 'fallback-invalid')), /Content changed/);
+  assert.throws(() => db.runWithLearnerId('qa', () => db.recordContentQualityEncounter({ ...target,
+    wordId: 'missing' }, 'fallback-missing')), /not available/);
+  sql.exec(`UPDATE lexical_word_meanings SET text='greeting' WHERE id='qm'`);
+  assert.throws(() => db.runWithLearnerId('qa', () => db.recordContentQualityEncounter(target, 'fallback-stale')), /Content changed/);
+  const updated = db.runWithLearnerId('qa', () => db.recordContentQualityEncounter({ ...target,
+    expected: { promptText: 'greeting', displayedMeanings: [] } }, 'fallback-new'));
+  assert.notEqual(updated.contentKey, first.contentKey);
+  assert.equal(updated.rating, null);
+  // Once encountered, the immutable older snapshot remains rateable after definitions change.
+  db.runWithLearnerId('qa', () => db.setContentQualityRating(first.contentKey, 'up'));
+  const stats = db.getContentQualityAnalytics({ kind: 'definition_fallback' });
+  const original = stats.items.find(item => item.contentKey === first.contentKey)!;
+  assert.deepEqual(original.content, { wordId: 'quality-word', promptText: 'hello', displayedMeanings: [] });
+  assert.deepEqual(original.provenance, { source: 'definition fallback', model: null });
+  assert.equal(original.up, 1);
+  sql.exec(`INSERT INTO learner_word_meaning_preferences(learner_id,meaning_id,show_on_production_prompt,updated_at)
+    VALUES ('qa','qm',0,'2026-10-10T00:00:00.000Z')`);
+  assert.throws(() => db.runWithLearnerId('qa', () => db.recordContentQualityEncounter({ ...target,
+    expected: { promptText: 'greeting', displayedMeanings: [] } }, 'hidden-invalid')), /Content changed/);
+  assert.ok(db.runWithLearnerId('qa', () => db.recordContentQualityEncounter({ ...target,
+    expected: { promptText: '', displayedMeanings: [] } }, 'hidden-list')).contentKey);
+  assert.ok(db.runWithLearnerId('qb', () => db.recordContentQualityEncounter({ ...target,
+    expected: { promptText: 'greeting', displayedMeanings: ['greeting'] } }, 'visible-list')).contentKey);
+});

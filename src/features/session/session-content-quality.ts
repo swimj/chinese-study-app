@@ -1,16 +1,27 @@
 import type { ContentQualityTarget } from '../../domain/content-quality';
 import type { SessionStudyItem } from '../../domain/study-actions';
 
-/** Only authored prompts qualify; a dictionary fallback is not a generated cue. */
+/** Rate the exercise as shown, retaining its authored or definition provenance. */
 export function getSessionContentQualityTarget(
   item: Pick<SessionStudyItem, 'actionKind' | 'contentRef' | 'production' | 'rehearsal'>
     & Partial<Pick<SessionStudyItem, 'contrastSelection'>>,
+  fallback?: { wordId: string; displayedMeanings: readonly string[] },
 ): ContentQualityTarget | null {
   if (item.actionKind === 'production' && item.rehearsal) {
     return { kind: 'rehearsal', packageId: item.rehearsal.packageId, rehearsalId: item.rehearsal.exerciseId };
   }
   if (item.actionKind === 'production' && item.production?.cueId) {
     return { kind: 'production_cue', id: item.production.cueId };
+  }
+  if (item.actionKind === 'production') {
+    if (!fallback) throw new Error('Definition fallback feedback requires the displayed word and meanings.');
+    return {
+      kind: 'definition_fallback', wordId: fallback.wordId,
+      expected: {
+        promptText: item.production?.text ?? fallback.displayedMeanings.join('; '),
+        displayedMeanings: item.production ? [] : [...fallback.displayedMeanings],
+      },
+    };
   }
   if (item.actionKind === 'contrast_selection' && item.contentRef?.type === 'contrast_prompt') {
     const prompt = item.contrastSelection?.prompt;

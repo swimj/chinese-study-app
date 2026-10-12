@@ -617,17 +617,16 @@ button:where(:hover:not(:disabled)) {
   pointer-events: none;
 }
 
-.session-shortcut-hint.is-persistent {
-  margin-left: 0.4rem;
-}
-
 .session-action-bar button,
+.keyboard-shortcuts-card button,
 .keyboard-guide-button {
   position: relative;
 }
 
 .session-action-bar button:hover .session-shortcut-hints,
-.session-action-bar button:focus-visible .session-shortcut-hints {
+.session-action-bar button:focus-visible .session-shortcut-hints,
+.keyboard-shortcuts-card button:hover .session-shortcut-hints,
+.keyboard-shortcuts-card button:focus-visible .session-shortcut-hints {
   opacity: 1;
 }
 

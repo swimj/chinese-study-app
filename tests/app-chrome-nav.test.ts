@@ -51,13 +51,13 @@ describe('AppChrome primary navigation', () => {
     assert.doesNotMatch(markup, /v2\.3\.0/);
     assert.match(markup, />Home</);
     assert.match(markup, />Words</);
-    assert.match(markup, />Reflections</);
+    assert.match(markup, />Feedback</);
     assert.match(markup, />Content Bin</);
     assert.match(markup, />About</);
     assert.doesNotMatch(markup, /class="app-nav-nested"/);
   });
 
-  test('opens a nested slot only for Words, Reflections, and About', () => {
+  test('opens a nested slot only for Words, Feedback, and About', () => {
     assert.match(renderChrome('about'), /class="app-nav-nested"/);
     assert.match(renderChrome('priority'), /class="app-nav-nested"/);
     assert.match(renderChrome('reflections'), /class="app-nav-nested"/);
@@ -104,7 +104,7 @@ describe('AppChrome primary navigation', () => {
       onOpenAboutPage: noop,
     }));
     assert.match(withHandler, /class="reflections-nav-shell"/);
-    assert.match(withHandler, /aria-label="Refresh reflection workspace from server"/);
+    assert.match(withHandler, /aria-label="Refresh feedback workspace from server"/);
     assert.match(withHandler, /class="reflections-nav-refresh"/);
 
     assert.doesNotMatch(renderChrome('reflections'), /class="reflections-nav-shell"/);
@@ -143,12 +143,12 @@ describe('AppChrome primary navigation', () => {
 
   test('hides the Reflections unseen count while that tab is current', () => {
     const home = renderChrome('home', null, { reflectionUnseenCount: 2 });
-    assert.match(home, /aria-label="Reflections, 2 new"/);
+    assert.match(home, /aria-label="Feedback, 2 new"/);
     assert.match(home, /class="nav-tab-count nav-tab-count-reflections">2</);
 
     const reflections = renderChrome('reflections', null, { reflectionUnseenCount: 2 });
     assert.doesNotMatch(reflections, /nav-tab-count/);
-    assert.doesNotMatch(reflections, /Reflections, 2 new/);
+    assert.doesNotMatch(reflections, /Feedback, 2 new/);
   });
 
   test('shows a failure marker instead of the count, and hides it while Reflections is current', () => {
@@ -156,7 +156,7 @@ describe('AppChrome primary navigation', () => {
       reflectionUnseenCount: 4,
       hasUnseenReflectionFailure: true,
     });
-    assert.match(home, /aria-label="Reflections, generation failed"/);
+    assert.match(home, /aria-label="Feedback, generation failed"/);
     assert.match(home, /class="nav-tab-alert"/);
     assert.doesNotMatch(home, /nav-tab-count/);
 
@@ -174,7 +174,7 @@ describe('AppChrome primary navigation', () => {
       reflectionUnseenCount: 4,
       reflectionGenerating: true,
     });
-    assert.match(home, /aria-label="Reflections, generating"/);
+    assert.match(home, /aria-label="Feedback, generating"/);
     assert.match(home, /class="nav-tab-generating"/);
     assert.doesNotMatch(home, /nav-tab-count/);
     assert.doesNotMatch(home, /nav-tab-alert/);
@@ -184,7 +184,7 @@ describe('AppChrome primary navigation', () => {
       reflectionGenerating: true,
       hasUnseenReflectionFailure: true,
     });
-    assert.match(failed, /aria-label="Reflections, generation failed"/);
+    assert.match(failed, /aria-label="Feedback, generation failed"/);
     assert.match(failed, /class="nav-tab-alert"/);
     assert.doesNotMatch(failed, /nav-tab-generating/);
 
@@ -193,6 +193,6 @@ describe('AppChrome primary navigation', () => {
       reflectionGenerating: true,
     });
     assert.doesNotMatch(reflections, /nav-tab-generating/);
-    assert.doesNotMatch(reflections, /Reflections, generating/);
+    assert.doesNotMatch(reflections, /Feedback, generating/);
   });
 });

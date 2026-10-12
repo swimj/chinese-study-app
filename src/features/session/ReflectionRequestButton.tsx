@@ -11,12 +11,13 @@ export function ReflectionRequestButton({
   onToggle: () => void;
   children: ReactNode;
 }) {
-  const label = requested ? 'Remove reflection request' : 'Ask reflection to review';
+  const label = requested ? 'Feedback requested' : 'Request feedback';
 
   return (
     <button
       type="button"
       className="secondary-button reflection-request-button"
+      title={requested ? 'Remove your post-session feedback request' : 'Include this exercise in your post-session feedback'}
       aria-pressed={requested}
       aria-keyshortcuts="R"
       disabled={disabled}

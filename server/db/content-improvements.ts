@@ -64,6 +64,7 @@ export function createImprovementCase(value: unknown, actor: string): Improvemen
   const input = improvementObject(value);
   keys(input, ['kind', 'sourceId', 'contentKey', 'id']);
   if (!CONTENT_QUALITY_KINDS.includes(input.kind as ContentQualityKind)) throw new ImprovementInputError('Invalid content kind.');
+  if (input.kind === 'definition_fallback') throw new ImprovementInputError('Definition fallback corrections are not supported.');
   const sourceId = improvementText(input.sourceId, 'Source ID', true);
   const kind = input.kind as ContentQualityKind;
   const id = input.id === undefined ? randomUUID() : improvementText(input.id, 'Case ID', true);

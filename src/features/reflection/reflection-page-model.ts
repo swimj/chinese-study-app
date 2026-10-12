@@ -1458,7 +1458,7 @@ function reflectionEvidenceTitle(
     return reflectionWordLabel(evidence.targetWord);
   }
   if (evidence?.source === 'pure_cue_mistake') return `Pure cue · ${reflectionWordLabel(evidence.submittedWord)}`;
-  return evidence?.source === 'session_note' ? 'Session note' : 'Reflection evidence';
+  return evidence?.source === 'session_note' ? 'Session note' : 'Feedback evidence';
 }
 
 function reflectionResponseSummary(

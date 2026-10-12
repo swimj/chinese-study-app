@@ -81,3 +81,23 @@ test('date filters select exposures but intentionally report current standing vo
   assert.equal(payload.totals.ratedLearners,0);
   assert.equal(payload.totals.coverage,0);
 });
+
+test('definition fallback API accepts server-owned displayed material and rejects fabricated or malformed targets', async () => {
+  const target = { kind: 'definition_fallback', wordId: 'w', expected: { promptText: 'hello', displayedMeanings: [] } };
+  const response = await write('encounters', { target, encounterId: 'fallback' });
+  assert.equal(response.status, 200);
+  const state = await response.json() as { contentKey: string };
+  assert.equal((await write('ratings', { contentKey: state.contentKey, rating: 'down' }, 'PUT')).status, 200);
+  for (const expected of [null, { promptText: 'fabricated', displayedMeanings: [] },
+    { promptText: 'hello', displayedMeanings: [7] }, { promptText: 'hello' }]) {
+    assert.equal((await write('encounters', { target: { ...target, expected }, encounterId: 'invalid-fallback' })).status, 400);
+  }
+  const analytics = await fetch(`${base}/api/operator/content-quality?kind=definition_fallback`);
+  assert.equal(analytics.status, 200);
+  const payload = await analytics.json();
+  assert.equal(payload.totalItems, 1);
+  assert.equal(payload.totals.down, 1);
+  assert.deepEqual(payload.items[0].content, { wordId: 'w', promptText: 'hello', displayedMeanings: [] });
+  const { createImprovementCase } = await import('../server/db/content-improvements.ts');
+  assert.throws(() => createImprovementCase({ kind: 'definition_fallback', sourceId: 'w' }, 'trusted_local'), /not supported/);
+});

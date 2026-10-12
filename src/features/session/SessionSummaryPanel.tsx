@@ -151,7 +151,7 @@ export function SessionReflectionStatus({
   if (finalization.kind === 'unfinalized') {
     return (
       <p className="notes">
-        Finish the session to save the final attempt and start reflection.
+        Finish the session to save the final attempt and start feedback.
         Leaving for another page does the same.
       </p>
     );
@@ -164,22 +164,22 @@ export function SessionReflectionStatus({
     case 'skipped':
       return (
         <p className="notes">
-          Reflection skipped: this session had no qualifying reflection evidence.
+          No feedback to generate for this session.
         </p>
       );
     case 'generating':
       return (
         <p className="notes">
-          Reflection is generating. You can close this summary while it finishes.
+          Feedback is generating. You can close this summary while it finishes.
         </p>
       );
     case 'succeeded':
       return (
         <p className="notes">
-          Reflection ready with {finalization.reflection.proposalCount} proposal
+          Feedback ready with {finalization.reflection.proposalCount} proposal
           {finalization.reflection.proposalCount === 1 ? '' : 's'}.
           {finalization.reflection.partialFailure ? (
-            <> Some reflection could not be generated: {finalization.reflection.partialFailure} Retry the failed run in Reflections.</>
+            <> Some feedback could not be generated: {finalization.reflection.partialFailure} Retry the failed run in Feedback.</>
           ) : null}
         </p>
       );
@@ -187,11 +187,11 @@ export function SessionReflectionStatus({
       return (
         <div className="stack">
           <p className="notes">
-            Reflection failed without affecting the completed session: {finalization.reflection.error}
+            Feedback failed without affecting the completed session: {finalization.reflection.error}
           </p>
           {finalization.reflection.retryable ? (
             <button type="button" className="secondary-button" onClick={onRetryReflection}>
-              Retry reflection
+              Retry feedback
             </button>
           ) : null}
         </div>

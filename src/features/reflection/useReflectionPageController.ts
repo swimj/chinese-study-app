@@ -113,7 +113,7 @@ export function useReflectionPageController({
 
   function requireApi(): ReflectionReviewApi {
     if (api === undefined) {
-      throw new Error('Reflection review API is not available.');
+      throw new Error('Feedback review API is not available.');
     }
     return api;
   }
@@ -215,7 +215,7 @@ export function useReflectionPageController({
     try {
       await task();
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Unknown reflection review error');
+      setError(error instanceof Error ? error.message : 'Unknown feedback review error');
       throw error;
     } finally {
       setIsLoading(false);
@@ -301,7 +301,7 @@ export function useReflectionPageController({
       notifyHelpQueueChanged();
     } catch (error) {
       setGenerationRetryStatus({ runId, state: 'failed' });
-      setError(error instanceof Error ? error.message : 'Failed to retry reflection generation');
+      setError(error instanceof Error ? error.message : 'Failed to retry feedback generation');
       try {
         const payload = await requireApi().listGenerationRuns();
         setGenerationRuns(payload.runs);
@@ -340,7 +340,7 @@ export function useReflectionPageController({
       );
       notifyHelpQueueChanged();
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to review reflection proposal');
+      setError(error instanceof Error ? error.message : 'Failed to review feedback proposal');
       throw error;
     } finally {
       setSubmittingProposalId(null);
@@ -383,7 +383,7 @@ export function useReflectionPageController({
         new Set([request.artifactId]),
       );
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to save reflection quality');
+      setError(error instanceof Error ? error.message : 'Failed to save feedback quality');
       throw error;
     } finally {
       setSubmittingQualityItemKey(null);
@@ -401,7 +401,7 @@ export function useReflectionPageController({
         new Set([request.artifactId]),
       );
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to clear reflection quality');
+      setError(error instanceof Error ? error.message : 'Failed to clear feedback quality');
       throw error;
     } finally {
       setSubmittingQualityItemKey(null);
@@ -420,7 +420,7 @@ export function useReflectionPageController({
       );
       notifyHelpQueueChanged();
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to mark reflection help item done');
+      setError(error instanceof Error ? error.message : 'Failed to mark feedback item done');
       throw error;
     } finally {
       setSubmittingHelpInboxItemKey(null);
@@ -436,7 +436,7 @@ export function useReflectionPageController({
       await loadListsAndDetail(selectedArtifact?.artifactId ?? null, new Set([request.artifactId]));
       notifyHelpQueueChanged();
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to defer reflection help item');
+      setError(error instanceof Error ? error.message : 'Failed to defer feedback item');
       throw error;
     } finally {
       setSubmittingHelpInboxItemKey(null);
@@ -462,7 +462,7 @@ export function useReflectionPageController({
       );
     } catch (error) {
       setError(
-        error instanceof Error ? error.message : 'Failed to authorize manual reflection operation',
+        error instanceof Error ? error.message : 'Failed to authorize manual feedback operation',
       );
       throw error;
     } finally {

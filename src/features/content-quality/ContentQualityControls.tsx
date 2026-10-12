@@ -10,6 +10,9 @@ export type ContentQualityControlsProps = {
   encounterId: string;
   label: string;
   hotkeysActive?: boolean;
+  disabled?: boolean;
+  onRatingChange?: (rating: 'up' | 'down' | null) => void;
+  onSavingChange?: (saving: boolean) => void;
 };
 
 /** A target change remounts local request state; votes themselves live on the server. */
@@ -17,7 +20,7 @@ export function ContentQualityControls(props: ContentQualityControlsProps) {
   return <QualityControls key={`${JSON.stringify(props.target)}:${props.encounterId}`} {...props} />;
 }
 
-function QualityControls({ target, encounterId, label, hotkeysActive = false }: ContentQualityControlsProps) {
+function QualityControls({ target, encounterId, label, hotkeysActive = false, disabled = false, onRatingChange, onSavingChange }: ContentQualityControlsProps) {
   const [state, setState] = useState<ContentQualityState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,24 +50,27 @@ function QualityControls({ target, encounterId, label, hotkeysActive = false }: 
   }, []);
 
   async function vote(value: 'up' | 'down') {
-    if (!state || pending.current) return;
+    if (disabled || !state || pending.current) return;
     pending.current = true;
     setBusy(true);
+    onSavingChange?.(true);
     setError(null);
     try {
       const next = await saveContentQualityRating(state.contentKey, state.rating === value ? null : value);
       if (mounted.current) setState(next);
+      onRatingChange?.(next.rating);
       window.dispatchEvent(new Event(QUALITY_UPDATED_EVENT));
     } catch {
       if (mounted.current) setError('Feedback was not saved. Please try again.');
     } finally {
       pending.current = false;
+      onSavingChange?.(false);
       if (mounted.current) setBusy(false);
     }
   }
 
   useEffect(() => {
-    if (!hotkeysActive) return;
+    if (!hotkeysActive || disabled) return;
     function onKey(event: KeyboardEvent) {
       const targetElement = event.target instanceof Element ? event.target : null;
       const editable = !!targetElement?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="dialog"], [aria-modal="true"]');
@@ -75,23 +81,23 @@ function QualityControls({ target, encounterId, label, hotkeysActive = false }: 
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [hotkeysActive, state]);
+  }, [hotkeysActive, disabled, state, onRatingChange, onSavingChange]);
 
   return <div className="content-quality-controls" data-content-quality-controls role="group" aria-label={label}>
-    <span className="content-quality-label">{label}</span>
-    <button type="button" className="content-quality-vote" aria-label={`Needs work: ${label}`}
-      aria-pressed={state?.rating === 'down'} disabled={!state || busy}
-      title={`Poor content${hotkeysActive ? ' ([)' : ''}. Click again to clear.`}
+    <span className="content-quality-label">Helpful?</span>
+    <button type="button" className="content-quality-vote" aria-keyshortcuts={hotkeysActive ? '[' : undefined} aria-label={`Not helpful: ${label}`}
+      aria-pressed={state?.rating === 'down'} disabled={disabled || !state || busy}
+      title={`Unhelpful content${hotkeysActive ? ' ([)' : ''}. Click again to clear.`}
       onClick={() => void vote('down')}>
-      <span>Needs work</span>{hotkeysActive && <kbd>[</kbd>}
+      <span>Not helpful</span>{hotkeysActive && <kbd>[</kbd>}
     </button>
-    <button type="button" className="content-quality-vote" aria-label={`Useful: ${label}`}
-      aria-pressed={state?.rating === 'up'} disabled={!state || busy}
-      title={`Useful content${hotkeysActive ? ' (])' : ''}. Click again to clear.`}
+    <button type="button" className="content-quality-vote" aria-keyshortcuts={hotkeysActive ? ']' : undefined} aria-label={`Helpful: ${label}`}
+      aria-pressed={state?.rating === 'up'} disabled={disabled || !state || busy}
+      title={`Helpful content${hotkeysActive ? ' (])' : ''}. Click again to clear.`}
       onClick={() => void vote('up')}>
-      <span>Useful</span>{hotkeysActive && <kbd>]</kbd>}
+      <span>Helpful</span>{hotkeysActive && <kbd>]</kbd>}
     </button>
-    <span className="content-quality-status" role="status">{busy ? 'Saving…' : state?.rating ? 'Saved' : ''}</span>
+    <span className="content-quality-status" role="status">{busy ? 'Saving…' : state?.rating ? 'Feedback saved' : ''}</span>
     {error && <span className="content-quality-error" role="alert">{error} {!state &&
       <button type="button" onClick={() => setRetry((value) => value + 1)}>Retry</button>}</span>}
   </div>;

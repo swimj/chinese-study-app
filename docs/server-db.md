@@ -10,6 +10,10 @@ Migration `0027_correct_cue_repair_recovery` adds the immutable operator-only
 the reflection application adapter in `reflections.ts`; the runbook is
 [`hosted-beta-deployment.md`](ops/hosted-beta-deployment.md#recover-failed-cue-repairs-from-correct-requested-reviews).
 
+Migration `0035_definition_fallback_quality` extends the content quality kind
+constraint for exact definition fallback snapshots. It preserves existing
+encounters and ratings and requires the offline schema-upgrade procedure.
+
 ## Modules
 
 | Module | Responsibility |
