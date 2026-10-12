@@ -116,9 +116,19 @@ performs.
 
 ### Post a pre-upgrade banner
 
-Hours before a planned window, post a signed-in chrome notice from the **currently
-running** image. Do not bake the message into the upgrade itself. Quote the
-message so spaces survive `fly ssh`:
+Hours before a planned window, use the operator **Service banner** panel in the
+**currently running** app. Enter the estimated update kickoff in your local
+time to preview and publish the standardized update notice. This time describes
+when the update is expected to start; the notice expires 24 hours after that
+kickoff. The panel shows the actual expiry separately.
+
+For other announcements, use the custom-message path. Its editor starts with
+the current banner text, including a standardized update notice when one is
+active. Publishing a custom message replaces that banner and sets its expiry
+to 24 hours after saving.
+
+The CLI remains available for a custom notice. Do not bake the message into the
+upgrade itself. Quote the message so spaces survive `fly ssh`:
 
 ```bash
 fly ssh console --app <app-name> --command \
@@ -126,7 +136,7 @@ fly ssh console --app <app-name> --command \
 ```
 
 The notice is visible to signed-in learners on the next Home load (including
-returning from a session). It expires after 24 hours. Successful
+returning from a session). CLI notices expire 24 hours after posting. Successful
 `hosted:upgrade` reopen also clears it and no-ops when none exists. Clear
 manually with `--clear=true` instead of `--message`.
 
