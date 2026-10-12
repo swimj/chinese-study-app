@@ -67,7 +67,7 @@ async function run() {
       if (!choice) throw new Error('Missing contrast snapshot');
       p.onSelectContrastChoice(choice.promptTargetWordId);
       await until(() => controller.homePageProps.contrastAwaitingRating);
-      controller.homePageProps.onRate('good', undefined);
+      controller.homePageProps.onRate('good', { restoreUi: 'revealed' });
     } else if (p.isProductionItem || p.activePureCue) {
       const answer = p.activePureCue?.snapshot.acceptedAnswers[0]?.hanzi
         ?? p.activeWord?.hanzi;
@@ -82,7 +82,7 @@ async function run() {
     } else if (p.activeItem) {
       p.onRevealAnswer();
       await delay();
-      controller.homePageProps.onRate('good', undefined);
+      controller.homePageProps.onRate('good', { restoreUi: 'revealed' });
     } else {
       throw new Error('No active exercise while preparing the mixed session');
     }
